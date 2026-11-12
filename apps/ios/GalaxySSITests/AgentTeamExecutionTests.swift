@@ -1559,6 +1559,10 @@ extension GalaxySSIStoreTests {
     try history.bindDesktopGoalWork(binding, now: 6)
     XCTAssertEqual(try open().goalWork(planner.workID, scope: coordinator, now: 6).1?.dispatchID, planner.dispatchID)
     let firstDeskPage = try open().readGoalWorkMilestone(["mode": .string("workspace")], claim: planner, now: 6, desktopWire: true)
+    let throughScopedRoute = try open().readDesktopScopedGoalWorkEvidence(["mode": .string("workspace")],
+      claim: planner, rosterIDs: [], now: 6)
+    XCTAssertEqual(throughScopedRoute["entries"], firstDeskPage["entries"])
+    XCTAssertEqual(throughScopedRoute["success"], .bool(true))
     let deskList = staged.batch.tokens.first == token ? firstDeskPage : try open().readGoalWorkMilestone(
       ["mode": .string("workspace"), "cursor": .string(supportToken)], claim: planner, now: 6, desktopWire: true)
     XCTAssertEqual(deskList["entries"], .array([.object(original)]))
@@ -1668,6 +1672,139 @@ extension GalaxySSIStoreTests {
     let ordinary = AgentCollaborationLiveGraph.Work(id: "execute", member: peer, assignment: "Use fixture",
       depends_on: [], dependency_policy: nil, independent_review: false, uses_milestones: [support], review_milestones: [])
     XCTAssertFalse(ordinary.hasIndependentReviewAuthors({ _ in nil }, milestoneAuthors: origins))
+  }
+
+  func testAddressedPeerUpdatesGrantOnlyExactReplayedVersionsToTheOptedInDispatch() throws {
+    let suite = "peer-updates-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    func open() -> AgentTeamExecutionHistoryStore {
+      AgentTeamExecutionHistoryStore(defaults: defaults, secrets: secrets, executionStore: SavedTeamRecoveryFixture([]),
+        fileURL: root.appendingPathComponent("history.sqlite3"))
+    }
+    let author = UUID().uuidString.lowercased(), recipient = UUID().uuidString.lowercased()
+    let other = UUID().uuidString.lowercased(), coordinatorID = UUID().uuidString.lowercased()
+    let rosterIDs: Set<String> = [author, recipient, other, coordinatorID]
+    var team = durableTeamSnapshot("peer-evidence")
+    team.goal = "Compare research alternatives"
+    team.primaryInstanceId = coordinatorID
+    team.members[0].instanceId = coordinatorID
+    team.members[0].dispatchCheckpoint = .accepted
+    team.members[1].instanceId = author
+    team.members[1].dispatchCheckpoint = .accepted
+    team.members[1].status = .running
+    team.members += [.init(agentId: "peer", instanceId: recipient, sourceMessageId: "peer-source"),
+                     .init(agentId: "other", instanceId: other, sourceMessageId: "other-source")]
+    func scope(_ member: AgentTeamMemberSnapshot) -> AgentCollaborationToolEvidenceScope {
+      .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: member.memberId, sourceId: member.sourceMessageId)
+    }
+    let history = open()
+    XCTAssertTrue(history.upsert(team))
+    let coordinator = scope(team.members[0]), producer = scope(team.members[1])
+    let assessment = #"{"format":"galaxyssi.goal-assessment.v1","summary":"Review","decision":"continue","work":[],"blockers":[],"criteria":[{"id":"one","requirement":"Check","verification":"documentary","status":"open","evidence":[]}]}"#
+    _ = try history.publishCollaborationMilestone(["mode": .string("establish_contract"),
+      "artifact": .string(assessment)], scope: coordinator)
+    func admission(_ id: String, member: String, peers: [String], independent: Bool, revision: Int64) -> AgentMcpJSONObject {
+      let item: AgentMcpJSONObject = ["id": .string(id), "member": .string(member),
+        "assignment": .string("Compare the supplied evidence"), "depends_on": .array([]),
+        "independent_review": .bool(independent), "peer_updates_from": .array(peers.map(AgentMcpJSONValue.string))]
+      let raw = AgentMcpJSONCodec.stringify(["format": .string("galaxyssi.work-expansion.v1"), "work": .array([.object(item)])])
+      return ["mode": .string("append_work"), "milestone_id": .string(id), "artifact": .string(raw),
+        "expected_revision": .int(revision)]
+    }
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(admission("independent", member: recipient,
+      peers: [author], independent: true, revision: 1), scope: coordinator))
+    XCTAssertThrowsError(try history.publishCollaborationMilestone(admission("self", member: recipient,
+      peers: [recipient], independent: false, revision: 1), scope: coordinator))
+    _ = try history.publishCollaborationMilestone(admission("recipient", member: recipient,
+      peers: [author], independent: false, revision: 1), scope: coordinator)
+    _ = try history.publishCollaborationMilestone(admission("other", member: other,
+      peers: [author, recipient], independent: false, revision: 2), scope: coordinator)
+    let work = try history.goalWork("recipient", scope: coordinator).0
+    let desktop = AgentCollaborationGoalWorkRun.Target(kind: .desktop, resourceID: "peer", modelID: "codex")
+    let claim = try history.claimGoalWork(work, scope: coordinator, target: desktop, now: 10).run
+    let otherWork = try history.goalWork("other", scope: coordinator).0
+    let foreignClaim = try history.claimGoalWork(otherWork, scope: coordinator, now: 10).run
+    let browse: AgentMcpJSONObject = ["mode": .string("peer_updates")]
+    XCTAssertEqual(try history.readPeerWorkEvidence(browse, claim: claim, rosterIDs: rosterIDs, now: 11)["caught_up_at_read"],
+      .bool(true))
+    func publish(_ label: String, revision: Int64, object: String? = nil) throws -> AgentMcpJSONObject {
+      var draft: AgentMcpJSONObject = ["id": .string("note"), "base_revision": .int(revision), "kind": .string("artifact"),
+        "title": .string(label), "body": .object(["content": .string(label)]), "parents": .array([])]
+      if let object { draft["object_id"] = .string(object) }
+      let raw = AgentMcpJSONCodec.stringify(["format": .string(AgentCollaborationResearchEnvelope.wireFormat),
+        "summary": .string(label), "workspace": .array([.object(draft)]),
+        "coordination": .object(["mode": .string("record_only")]),
+        "requests": .array([.object(["to": .array([.string(recipient)]), "question": .string("Check " + label)])])])
+      let result = try history.publishCollaborationMilestone(["mode": .string("publish"),
+        "milestone_id": .string(label), "artifact": .string(raw)], scope: producer)
+      return try XCTUnwrap(result["references"]?.arrayValue?.first?.objectValue)
+    }
+    let first = try publish("first", revision: 0)
+    XCTAssertEqual(try publish("first", revision: 0), first)
+    var read = first
+    read["mode"] = .string("workspace")
+    XCTAssertThrowsError(try history.readPeerWorkEvidence(read, claim: claim, rosterIDs: rosterIDs, now: 11))
+    let page = try open().readPeerWorkEvidence(browse, claim: claim, rosterIDs: rosterIDs, now: 11)
+    XCTAssertEqual(page["milestones"]?.arrayValue?.count, 1)
+    XCTAssertEqual(page["caught_up_at_read"], .bool(false))
+    XCTAssertEqual(try open().readPeerWorkEvidence(browse, claim: claim, rosterIDs: rosterIDs, now: 12), page)
+    XCTAssertNotNil(try open().readPeerWorkEvidence(read, claim: claim, rosterIDs: rosterIDs, now: 12)["data_b64"])
+    XCTAssertEqual(try open().readDesktopScopedGoalWorkEvidence(browse, claim: claim, rosterIDs: rosterIDs, now: 12), page)
+    XCTAssertNotNil(try open().readDesktopScopedGoalWorkEvidence(read, claim: claim, rosterIDs: rosterIDs, now: 12)["data_b64"])
+    XCTAssertThrowsError(try history.readPeerWorkEvidence(["mode": .string("archive"),
+      "record_id": .string(String(repeating: "a", count: 64))], claim: claim, rosterIDs: rosterIDs, now: 12, desktopWire: true))
+    XCTAssertThrowsError(try history.readPeerWorkEvidence(read, claim: foreignClaim, rosterIDs: rosterIDs, now: 12))
+    XCTAssertEqual(try history.readPeerWorkEvidence(browse, claim: foreignClaim, rosterIDs: rosterIDs, now: 12)["milestones"], .array([]))
+    let second = try publish("second", revision: 1, object: first.string("object_id"))
+    var newer = second
+    newer["mode"] = .string("workspace")
+    XCTAssertThrowsError(try history.readPeerWorkEvidence(newer, claim: claim, rosterIDs: rosterIDs, now: 12))
+    let next: AgentMcpJSONObject = ["mode": .string("peer_updates"), "cursor": try XCTUnwrap(page["next_cursor"])]
+    XCTAssertThrowsError(try history.readPeerWorkEvidence(next, claim: foreignClaim, rosterIDs: rosterIDs, now: 12))
+    XCTAssertEqual(try open().readPeerWorkEvidence(next, claim: claim, rosterIDs: rosterIDs, now: 12)["milestones"]?
+      .arrayValue?.first?.objectValue?["revisions"], .array([.object(second)]))
+    XCTAssertNotNil(try open().readPeerWorkEvidence(newer, claim: claim, rosterIDs: rosterIDs, now: 12)["data_b64"])
+    XCTAssertThrowsError(try history.readPeerWorkEvidence(newer, claim: claim, rosterIDs: rosterIDs.subtracting([author]), now: 12))
+    XCTAssertThrowsError(try history.readPeerWorkEvidence(newer, claim: claim, rosterIDs: rosterIDs,
+      now: 10 + AgentCollaborationGoalWorkRun.leaseMillis))
+    XCTAssertEqual(history.snapshot(supervisorRunId: team.supervisorRunId)?.members[1].status, .running)
+    let report: AgentMcpJSONObject = ["id": .string("peer-report"), "base_revision": .int(0), "kind": .string("artifact"),
+      "title": .string("Peer result"), "body": .object(["content": .string("Compare the exact earlier version")]),
+      "parents": .array([.object(first)])]
+    let interim = AgentMcpJSONCodec.stringify(["format": .string(AgentCollaborationResearchEnvelope.wireFormat),
+      "summary": .string("Interim peer result"), "workspace": .array([.object(report)]),
+      "coordination": .object(["mode": .string("record_only")]),
+      "requests": .array([.object(["to": .array([.string(other)]), "question": .string("Compare this result")])])])
+    let publish: AgentMcpJSONObject = ["mode": .string("publish"), "milestone_id": .string("peer-report"),
+      "artifact": .string(interim)]
+    let directed = try history.publishPeerWorkMilestone(publish, claim: claim, rosterIDs: rosterIDs, now: 13)
+    XCTAssertEqual(directed["status"], .string("published"))
+    XCTAssertEqual(try open().publishPeerWorkMilestone(publish, claim: claim, rosterIDs: rosterIDs, now: 13), directed)
+    let offered = try open().readPeerWorkEvidence(browse, claim: foreignClaim, rosterIDs: rosterIDs, now: 14)
+    XCTAssertEqual(offered["milestones"]?.arrayValue?.count, 1)
+    XCTAssertEqual(offered["milestones"]?.arrayValue?.first?.objectValue?["producer_member_id"], .string(recipient))
+    XCTAssertEqual(try history.goalWork("recipient", scope: coordinator).1?.state, .running)
+    var finalReport = report
+    finalReport["id"] = .string("final-report")
+    let rawFinal = AgentMcpJSONCodec.stringify(["format": .string(AgentCollaborationResearchEnvelope.wireFormat),
+      "summary": .string("Final peer result"), "workspace": .array([.object(finalReport)]),
+      "milestones": .array([.string("peer-report")])])
+    _ = try history.finishGoalWork(claim, output: rawFinal, interrupted: false, now: 15)
+    let publication = try XCTUnwrap(open().finalizePeerWorkResearch(claim, rosterIDs: rosterIDs, now: 16))
+    XCTAssertEqual(publication["status"], .string("published"))
+    XCTAssertEqual(publication["goal_accepted"], .bool(false))
+    XCTAssertEqual(publication["references"]?.arrayValue?.count, 2)
+    XCTAssertEqual(try open().goalWork("recipient", scope: coordinator).1?.peerPublication, publication)
+    XCTAssertThrowsError(try history.publishPeerWorkMilestone(publish, claim: claim, rosterIDs: rosterIDs, now: 16))
+    let ungrantedFinal = AgentMcpJSONCodec.stringify(["format": .string(AgentCollaborationResearchEnvelope.wireFormat),
+      "summary": .string("The parent was not directly granted"), "workspace": .array([.object(finalReport)])])
+    _ = try history.finishGoalWork(foreignClaim, output: ungrantedFinal, interrupted: false, now: 17)
+    XCTAssertEqual(try open().finalizePeerWorkResearch(foreignClaim, rosterIDs: rosterIDs, now: 18)?["status"], .string("rejected"))
+    XCTAssertEqual(try open().goalWork("other", scope: coordinator).1?.output, ungrantedFinal)
   }
 
   func testDesktopEvidenceAdmissionRejectsCallableAliasesWithoutChangingLegacyBindings() throws {

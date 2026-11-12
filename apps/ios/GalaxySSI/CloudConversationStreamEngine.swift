@@ -137,7 +137,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     milestoneRead: GoalWorkHandler? = nil,
     desktopEvidenceRefresh: DesktopEvidenceRefresh? = nil,
     researchRetrySource: ChatMessage? = nil,
-    retainResearch: Bool = true
+    retainResearch: Bool = true,
+    peerWorkRecall: GoalWorkHandler? = nil,
+    peerWorkPublish: GoalWorkHandler? = nil
   ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
     let conversationRequestId = Self.normalizedRequestId(requestId)
     return AsyncThrowingStream { continuation in
@@ -158,6 +160,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           desktopEvidenceRefresh: desktopEvidenceRefresh,
           researchRetrySource: researchRetrySource,
           retainResearch: retainResearch,
+          peerWorkRecall: peerWorkRecall,
+          peerWorkPublish: peerWorkPublish,
           continuation: continuation
         )
       }
@@ -203,6 +207,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     desktopEvidenceRefresh: DesktopEvidenceRefresh?,
     researchRetrySource: ChatMessage?,
     retainResearch: Bool,
+    peerWorkRecall: GoalWorkHandler?,
+    peerWorkPublish: GoalWorkHandler?,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
     defer { CloudImageAnnotationSession.discard(requestId: requestId) }
@@ -286,6 +292,19 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       )
       var prepared = try CloudModelStreamMutableConversation(request: request)
       let collaborationRecallScope = collaborationEvidence ?? collaborationModelAudit
+      let isolatedWork = peerWorkRecall != nil || peerWorkPublish != nil || workInputPublisher != nil || milestoneRead != nil
+      if isolatedWork {
+        guard collaborationRecallScope == nil, !retainResearch, turns.last?.readOnlyAnalysis == true
+        else { throw AgentTeamHistoryDatabase.Failure.stale }
+        prepared.clearScopedWorkTools()
+        if peerWorkPublish != nil { try prepared.installPeerWorkPublication(allowWorkInputs: workInputPublisher != nil) }
+        else if workInputPublisher != nil { prepared.installWorkInputPublication() }
+        if peerWorkRecall != nil { try prepared.installPeerWorkRecall() }
+        if milestoneRead != nil {
+          try prepared.installGoalWorkMilestoneRead(
+            preservingWorkInput: workInputPublisher != nil || peerWorkRecall != nil || peerWorkPublish != nil)
+        }
+      }
       let goalAssessmentOnly = collaborationEvidence == nil && collaborationModelAudit != nil && goalWorkHandler != nil
       let coordinationScope = goalAssessmentOnly && usesCoordinationLane ? collaborationModelAudit : nil
       let coordinationProfile: String
@@ -302,12 +321,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       } else if collaborationModelAudit != nil {
         prepared.installCollaborationPublication(assessmentOnly: true, canRunGoalWork: goalWorkHandler != nil)
       }
-      if workInputPublisher != nil || milestoneRead != nil {
-        guard collaborationRecallScope == nil, turns.last?.readOnlyAnalysis == true else { throw CancellationError() }
-      }
-      if workInputPublisher != nil { prepared.installWorkInputPublication() }
-      if milestoneRead != nil { try prepared.installGoalWorkMilestoneRead(preservingWorkInput: workInputPublisher != nil) }
       let publishName = CloudModelStreamMutableConversation.collaborationPublishName
+      func isPeerRecall(_ name: String) -> Bool {
+        peerWorkRecall != nil && name == CloudModelStreamMutableConversation.collaborationRecallName
+      }
       var publishedMilestones = Set<String>()
       var visitedWorkInputResponses = Set<String>()
       var evidenceResults: [(String, String)] = []
@@ -746,16 +763,17 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var freshKeys = Set<String>()
         let preparedCalls = parsedCalls.compactMap { item -> AssembledToolCall? in
           let (call, arguments) = item
-          if workInputPublisher != nil || milestoneRead != nil {
-            guard (workInputPublisher != nil && call.name == publishName) ||
-                  (milestoneRead != nil && call.name == AgentGoalWorkMilestoneRead.toolID) else { return nil }
+          if isolatedWork {
+            guard isPeerRecall(call.name) ||
+                  (milestoneRead != nil && call.name == AgentGoalWorkMilestoneRead.toolID) ||
+                  (call.name == publishName && (peerWorkPublish != nil || workInputPublisher != nil)) else { return nil }
           }
           if AgentCollaborationWorkflowCheck.isCall(call.name, arguments) {
             let key = progress.semanticKey(toolName: call.name, arguments: arguments)
             return freshKeys.insert(key).inserted ? call : nil
           }
           if call.name == publishName { return call }
-          guard AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) ||
+          guard isPeerRecall(call.name) || AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) ||
                 progress.cached(toolName: call.name, arguments: arguments) == nil else { return nil }
           let key = progress.semanticKey(toolName: call.name, arguments: arguments)
           return freshKeys.insert(key).inserted ? call : nil
@@ -766,35 +784,32 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           continue
         }
 
-        var outcomes = await executeToolCalls(
-          preparedCalls,
-          context: CloudConversationToolExecutionContext(
-            requestId: requestId,
-            researchToolTimeoutMillis: research.limits.toolMillis,
-            conversationId: conversationId,
-            turnId: turnId,
-            images: images,
-            readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false,
-            researchDisclosure: researchDisclosure
-          ),
-          onObservation: { call, output in
-            await recovery?.record(call: call, output: output, store: store)
-          },
-          milestoneRead: milestoneRead,
-          collaborationRecall: collaborationRecallScope.map { scope in
-            { arguments in
-              let sync = await desktopEvidenceRefresh?(arguments, scope)
-              return await MainActor.run {
-                guard var result = Self.scopedCollaborationRecall(arguments, scope: scope, allowsResearch: collaborationEvidence != nil,
-                  resourceID: contact.id, session: store.agentSession(id: scope.conversationId), history: .shared) else { return nil }
-                if let sync { result["live_sync"] = .string(sync) }
-                return result
-              }
+        let recall: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)?
+        if let peerWorkRecall {
+          recall = { await peerWorkRecall($0) }
+        } else if let scope = collaborationRecallScope {
+          recall = { arguments in
+            let sync = await desktopEvidenceRefresh?(arguments, scope)
+            return await MainActor.run {
+              guard var result = Self.scopedCollaborationRecall(arguments, scope: scope, allowsResearch: collaborationEvidence != nil,
+                resourceID: contact.id, session: store.agentSession(id: scope.conversationId), history: .shared) else { return nil }
+              if let sync { result["live_sync"] = .string(sync) }
+              return result
             }
-          },
-          collaborationPublish: workInputPublisher.map { publisher in
-            { arguments in await publisher(arguments) }
-          } ?? collaborationRecallScope.map { scope in
+          }
+        } else {
+          recall = nil
+        }
+        let publish: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)?
+        if isolatedWork {
+          publish = { input in
+            if input["mode"] == .string(AgentCollaborationWorkInputBindings.publishMode) {
+              return await workInputPublisher?(input)
+            }
+            return await peerWorkPublish?(input)
+          }
+        } else {
+          publish = collaborationRecallScope.map { scope in
             { arguments in
               let requestedMode = arguments.string("mode")
               let mode = requestedMode == AgentCollaborationMilestoneCoordination.readMode
@@ -824,6 +839,23 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               }
             }
           }
+        }
+        var outcomes = await executeToolCalls(
+          preparedCalls,
+          context: CloudConversationToolExecutionContext(
+            requestId: requestId,
+            researchToolTimeoutMillis: research.limits.toolMillis,
+            conversationId: conversationId,
+            turnId: turnId,
+            images: images,
+            readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false,
+            researchDisclosure: researchDisclosure
+          ),
+          onObservation: { call, output in
+            await recovery?.record(call: call, output: output, store: store)
+          },
+          milestoneRead: milestoneRead, collaborationRecall: recall,
+          collaborationPublish: publish
         )
         if let scope = collaborationEvidence {
           for index in outcomes.indices {
@@ -930,11 +962,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                progress.requestRepair("collaboration_work_lineage") { madeProgress = true }
             continue
           }
-          if AgentCollaborationSourceAccess.matches(tool: outcome.call.name, input: arguments) {
+          if isPeerRecall(outcome.call.name) || AgentCollaborationSourceAccess.matches(tool: outcome.call.name, input: arguments) {
             let key = progress.semanticKey(toolName: outcome.call.name, arguments: arguments)
             sourceAccessResults[key] = output
             if let page = try? CloudModelStreamJSON.mcpObject(from: output), page["status"] == .string("returned"),
-               visitedSourceAccessPages.insert(key).inserted { madeProgress = true }
+               visitedSourceAccessPages.insert(isPeerRecall(outcome.call.name) ? key + ":" + output : key).inserted {
+              madeProgress = true
+            }
             continue
           }
           if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {
@@ -954,7 +988,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           }
           let (call, arguments) = item
           if call.name == publishName, let output = publicationResults[call.callId] { return (call, output) }
-          if AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) {
+          if isPeerRecall(call.name) || AgentCollaborationSourceAccess.matches(tool: call.name, input: arguments) {
             let key = progress.semanticKey(toolName: call.name, arguments: arguments)
             return sourceAccessResults[key].map { (call, $0) }
           }

@@ -589,6 +589,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
   var milestoneTokens: [String]? = nil
   var reviewMilestoneTokens: [String]? = nil
   var milestonePlannerBatch: AgentCollaborationLiveMilestonePlan.Batch? = nil
+  var peerPublication: AgentMcpJSONObject? = nil
 
   func visibleState(now: Int64) -> State {
     guard state == .running, process != Self.processID || now >= startedAt + Self.leaseMillis
@@ -606,6 +607,7 @@ struct AgentCollaborationGoalWorkRun: Codable {
       "output_truncated": .bool(truncated ?? false), "goal_accepted": .bool(false), "automatically_reexecuted": .bool(false)]
     if let repair { result.merge(repair.wire) { current, _ in current } }
     if let templateMemberID { result["template_member_id"] = .string(templateMemberID) }
+    if let peerPublication { result["peer_publication"] = .object(peerPublication) }
     if let inputRevision { result["input_revision"] = .int(inputRevision) }
     if let probeOrigin { result["probe_origin"] = .object(probeOrigin) }
     return result
@@ -642,6 +644,7 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
     var workflowObservedBinding: AgentMcpJSONObject? = nil
     var recruitment: Recruitment? = nil
     var blockerResolution: AgentCollaborationGoalAssessmentPolicy.Resolution? = nil
+    var peer_updates_from: [String]? = nil
     var uses_milestones: [String]? = nil
     var review_milestones: [String]? = nil
     var data_dependencies: [InputBindings.Requirement]? = nil
@@ -1053,6 +1056,10 @@ struct AgentCollaborationLiveGraph: Codable, Equatable {
             item.assignment.utf8.count <= AgentTeamDispatchText.liveAssignmentBytes, authorizedMembers.contains(item.member),
             byId[item.id] == nil, settled[item.id] == nil, historicalAuthors[item.id] == nil,
             Set(item.depends_on).count == item.depends_on.count,
+            item.peer_updates_from?.isEmpty != false || item.recruitment == nil,
+            AgentCollaborationPeerEvidence.allowed(item.peer_updates_from,
+              worker: authorIdentity(item.recruitment?.template ?? item.member), independent: item.independent_review == true,
+              roster: Set(authorizedMembers.map(authorIdentity))) != nil,
             InputBindings.validRequirements(item.data_dependencies, dependencies: item.depends_on),
             InputBindings.validBarriers(item.completion_barriers, dependencies: item.depends_on, data: item.data_dependencies),
             !item.depends_on.contains(item.id) else { return nil }
