@@ -188,6 +188,7 @@ struct GalaxySSIHealthRecords {
     var localCareFeedback: [String: [GalaxySSIHealthCareFollowUp.FeedbackReceipt]]?
     var localCareResearch: GalaxySSIHealthCareResearch.Ledger?
     var localCareQuestions: [String: GalaxySSIHealthCareQuestions.Ledger]?
+    var localCareAnswerDrafts: [String: [GalaxySSIHealthCareAnswerDraft.Item]]?
     var localCareEncounters: GalaxySSIHealthEncounter.Ledger?
     var localCareEncounterDocuments: [UUID: GalaxySSIHealthEncounterDocument.Link]?
     var localCareInstructions: GalaxySSIHealthInstruction.Ledger?
@@ -931,9 +932,17 @@ struct GalaxySSIHealthRecords {
 
   func reviewLocalCareQuestion(id: UUID, metric: GalaxySSIHealthMetric, row: GalaxySSIHealthCareQuestions.Row,
       state: GalaxySSIHealthCareQuestions.State, answer: String? = nil, now: Date = Date()) throws {
-    typealias Questions = GalaxySSIHealthCareQuestions
     var archive = try load()
-    var concern = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: now)
+    let concern = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: now)
+    try applyLocalCareQuestionReview(concern, row: row, state: state, answer: answer, now: now, archive: &archive)
+    try persist(archive)
+  }
+
+  private func applyLocalCareQuestionReview(_ original: GalaxySSIHealthCare.Concern, row: GalaxySSIHealthCareQuestions.Row,
+      state: GalaxySSIHealthCareQuestions.State, answer: String?, now: Date, archive: inout Archive) throws {
+    typealias Questions = GalaxySSIHealthCareQuestions
+    var concern = original
+    let id = concern.id
     guard var care = archive.localCare, var ledger = archive.localCareQuestions?[id.uuidString],
           concern.revision < Int.max else { throw Failure.stale }
     let facts = try Questions.known(concern, profile: localCareProfilePayload(concern))
@@ -953,6 +962,106 @@ struct GalaxySSIHealthRecords {
     archive.localCare = care
     archive.localCareResearch?.revoke(id)
     archive.localCareFollowUps = archive.localCareFollowUps?.filter { $0.value.concernID != id }
+  }
+
+  @discardableResult
+  func stageLocalCareAnswerDraft(_ approval: GalaxySSIHealthCareDiscussion.Approval,
+      arguments: AgentMcpJSONObject, now: Date = Date()) throws -> GalaxySSIHealthCareAnswerDraft.Item {
+    typealias Draft = GalaxySSIHealthCareAnswerDraft
+    guard approval.allowsAnswerDraft, !approval.feedbackHistoryAllowed, approval.research == nil,
+          !approval.asksQuestions, !approval.proposesPlan,
+          approval.history == nil, approval.model != nil, let page = approval.questions else { throw Failure.permission }
+    let input = try Draft.Input(arguments)
+    let digest = Draft.digest(approval.question)
+    guard Draft.matches(input.quote, in: approval.question),
+          let row = Draft.eligible(page).first(where: { $0.id == input.question && $0.revision == input.revision })
+    else { throw Failure.invalid }
+    var archive = try load()
+    let key = approval.concernID.uuidString
+    var thread = try checkedDiscussion(approval, archive: archive, now: now)
+    guard let index = thread.turns.indices.last else { throw Failure.stale }
+    let turn = thread.turns[index]
+    guard turn.id == approval.id, turn.destination == approval.destinationDigest,
+          turn.feedbackHistoryAllowed != true,
+          turn.answerDraftSourceDigest == digest, turn.questionContextIncluded == true,
+          turn.questionSnapshotVersion == page.ledgerVersion, Draft.digest(turn.question) == digest,
+          turn.answer == nil, turn.proposalID == nil else { throw Failure.stale }
+    var drafts = archive.localCareAnswerDrafts ?? [:]
+    var items = drafts[key] ?? []
+    if let prior = items.first(where: { $0.thread == thread.id && $0.turn == turn.id && $0.question == row.id }) {
+      return prior
+    }
+    guard items.count < Draft.limit else { throw Failure.invalid }
+    let item = Draft.Item(thread: thread.id, turn: turn.id, question: row.id, revision: row.revision,
+      basis: page.basis, questionText: row.proposal.question, scope: row.scope, carePermission: approval.carePermission,
+      onlinePermission: approval.onlinePermission, profileScopeEpoch: approval.profileScopeEpoch,
+      sourceDigest: digest, quote: input.quote, answer: input.answer, createdAt: now)
+    items.insert(item, at: 0)
+    drafts[key] = items
+    archive.localCareAnswerDrafts = drafts
+    thread.turns[index].answerDraftStaged = true
+    archive.localCareDiscussions?[key] = thread
+    try persist(archive)
+    return item
+  }
+
+  private func localCareAnswerDraftRow(_ draft: GalaxySSIHealthCareAnswerDraft.Item,
+      concern: GalaxySSIHealthCare.Concern, archive: Archive) -> GalaxySSIHealthCareQuestions.Row? {
+    typealias Draft = GalaxySSIHealthCareAnswerDraft
+    typealias Questions = GalaxySSIHealthCareQuestions
+    let key = concern.id.uuidString
+    guard archive.matchesLocalCarePermission(draft.carePermission),
+          archive.healthOnlinePermission == draft.onlinePermission, concern.profileScopeEpoch == draft.profileScopeEpoch,
+          localCareProfileIsCurrent(concern.profileScope),
+          let thread = archive.localCareDiscussions?[key], thread.id == draft.thread,
+          let turn = thread.turns.first(where: { $0.id == draft.turn }),
+          turn.answerDraftSourceDigest == draft.sourceDigest, turn.questionContextIncluded == true,
+          Draft.digest(turn.question) == draft.sourceDigest, Draft.matches(draft.quote, in: turn.question),
+          let row = archive.localCareQuestions?[key]?.revisions[draft.question.uuidString]?.last,
+          row.revision == draft.revision, row.scope == draft.scope, row.basis == draft.basis,
+          draft.scope == Questions.scope(concern), draft.basis == Questions.basis(concern),
+          let known = try? Questions.known(concern, profile: localCareProfilePayload(concern)),
+          row.displayedState(basis: draft.basis, known: known[row.proposal.key]) == .open
+    else { return nil }
+    return row
+  }
+
+  func localCareAnswerDraftPage(id: UUID, metric: GalaxySSIHealthMetric, after: UUID? = nil,
+      now: Date = Date()) throws -> GalaxySSIHealthCareAnswerDraft.Page {
+    typealias Draft = GalaxySSIHealthCareAnswerDraft
+    let archive = try load()
+    let concern = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: now)
+    let visible = (archive.localCareAnswerDrafts?[id.uuidString] ?? []).filter {
+      $0.state == .pending && localCareAnswerDraftRow($0, concern: concern, archive: archive) != nil
+    }
+    let start: Int
+    if let after {
+      guard let index = visible.firstIndex(where: { $0.id == after }) else { throw Failure.stale }
+      start = index + 1
+    } else { start = 0 }
+    let items = Array(visible.dropFirst(start).prefix(Draft.pageSize))
+    return .init(items: items, next: start + items.count < visible.count ? items.last?.id : nil)
+  }
+
+  func reviewLocalCareAnswerDraft(id: UUID, metric: GalaxySSIHealthMetric,
+      draft: GalaxySSIHealthCareAnswerDraft.Item, answer: String?, now: Date = Date()) throws {
+    var archive = try load()
+    let concern = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: now)
+    let key = id.uuidString
+    guard var items = archive.localCareAnswerDrafts?[key],
+          let index = items.firstIndex(where: { $0.id == draft.id }), items[index] == draft, draft.state == .pending,
+          let row = localCareAnswerDraftRow(draft, concern: concern, archive: archive) else { throw Failure.stale }
+    if let answer {
+      let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard GalaxySSIHealthCareAnswerDraft.valid(text) else { throw Failure.invalid }
+      try applyLocalCareQuestionReview(concern, row: row, state: .answered, answer: text, now: now, archive: &archive)
+      items[index].state = .accepted
+      items[index].reviewedAnswer = text
+    } else {
+      items[index].state = .dismissed
+    }
+    items[index].reviewedAt = max(now, draft.createdAt)
+    archive.localCareAnswerDrafts?[key] = items
     try persist(archive)
   }
 
@@ -982,12 +1091,16 @@ struct GalaxySSIHealthRecords {
   func prepareLocalCareDiscussion(id: UUID, metric: GalaxySSIHealthMetric, question: String,
       destinationID: String, model: CloudModelConfig, credential: String, proposesPlan: Bool = false,
       allowsHistory: Bool = false, research: GalaxySSIHealthCareResearch.Job? = nil,
-      includesQuestions: Bool = false, asksQuestions: Bool = false, includesActionFeedback: Bool = true,
+      includesQuestions: Bool = false, asksQuestions: Bool = false, allowsAnswerDraft: Bool = false,
+      includesActionFeedback: Bool = true,
       feedbackHistoryAllowed: Bool = false, now: Date = Date())
       throws -> GalaxySSIHealthCareDiscussion.Approval {
     guard research == nil || (proposesPlan && !allowsHistory) else { throw Failure.invalid }
     guard !asksQuestions || (!proposesPlan && !allowsHistory && research == nil),
           research == nil || !includesQuestions else { throw Failure.invalid }
+    guard !allowsAnswerDraft || (includesQuestions && !asksQuestions && !proposesPlan && !allowsHistory &&
+            !feedbackHistoryAllowed && research == nil)
+    else { throw Failure.permission }
     guard !feedbackHistoryAllowed || (research == nil && !asksQuestions) else { throw Failure.invalid }
     let archive = try load()
     let concern = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: now)
@@ -1000,7 +1113,7 @@ struct GalaxySSIHealthRecords {
     let destination = GalaxySSIHealthCareDiscussion.destination(contactID: destinationID, model: model, endpoint: endpoint,
       credential: credentialDigest)
     let turn = research?.id ?? UUID()
-    let sharesFeedback = research == nil ? includesActionFeedback :
+    let sharesFeedback = research == nil ? (includesActionFeedback && !allowsAnswerDraft) :
       archive.localCareResearch?.authorizations[id.uuidString]?.sharesActionFeedback == true
     let sharesHistory = research == nil ? feedbackHistoryAllowed :
       archive.localCareResearch?.authorizations[id.uuidString]?.sharesFeedbackHistory == true
@@ -1021,8 +1134,13 @@ struct GalaxySSIHealthRecords {
     if includesQuestions || asksQuestions {
       let page = try localCareQuestionPage(concern, archive: archive, after: nil)
       approval.questions = page
-      approval.questionCursor = .init(page, remaining: GalaxySSIHealthCareQuestions.maximumContinuations)
+      if allowsAnswerDraft {
+        guard !GalaxySSIHealthCareAnswerDraft.eligible(page).isEmpty else { throw Failure.stale }
+      } else {
+        approval.questionCursor = .init(page, remaining: GalaxySSIHealthCareQuestions.maximumContinuations)
+      }
       approval.asksQuestions = asksQuestions
+      approval.allowsAnswerDraft = allowsAnswerDraft
     }
     if let research {
       if let authorization = archive.localCareResearch?.authorizations[id.uuidString], authorization.sharesQuestionSnapshot == true {
@@ -1103,7 +1221,7 @@ struct GalaxySSIHealthRecords {
   func authorizeLocalCareResearch(_ approval: GalaxySSIHealthCareDiscussion.Approval,
       sources: Set<GalaxySSIHealthCareEvidence.PublicSource>, sharesActionFeedback: Bool = false,
       now: Date = Date()) throws {
-    guard !sources.isEmpty, approval.research == nil, approval.history == nil, !approval.asksQuestions,
+    guard !sources.isEmpty, approval.research == nil, approval.history == nil, !approval.asksQuestions, !approval.allowsAnswerDraft,
           !approval.feedbackHistoryAllowed, !approval.allowsStandingFeedbackPages || approval.model != nil,
           !sharesActionFeedback || approval.includesActionFeedback,
           !approval.allowsStandingQuestionPages || (approval.questions != nil && approval.model != nil)
@@ -1420,6 +1538,7 @@ struct GalaxySSIHealthRecords {
   }
 
   func beginLocalCareDiscussionTurn(_ approval: GalaxySSIHealthCareDiscussion.Approval, now: Date = Date()) throws {
+    guard !approval.allowsAnswerDraft || !approval.feedbackHistoryAllowed else { throw Failure.permission }
     var archive = try load()
     var thread = try checkedDiscussion(approval, archive: archive, now: now)
     guard thread.turns.last?.id == approval.priorTurnID,
@@ -1453,6 +1572,7 @@ struct GalaxySSIHealthRecords {
       planRequested: approval.proposesPlan ? true : nil, historyIncluded: approval.history == nil ? nil : true,
       questionsRequested: approval.asksQuestions ? true : nil, questionContextIncluded: approval.questions == nil ? nil : true,
       questionSnapshotVersion: approval.questions?.ledgerVersion,
+      answerDraftSourceDigest: approval.allowsAnswerDraft ? GalaxySSIHealthCareAnswerDraft.digest(approval.question) : nil,
       actionFeedbackContextIncluded: approval.actionFeedbackContextIncluded || approval.feedbackCursor != nil ? true : nil,
       feedbackHistoryAllowed: approval.feedbackCursor == nil ? nil : true))
     archive.localCareDiscussions?[approval.concernID.uuidString] = thread
@@ -1473,6 +1593,8 @@ struct GalaxySSIHealthRecords {
     guard thread.turns.last?.id == approval.id, thread.turns.last?.answer == nil,
           thread.turns.last?.proposalID == nil,
           thread.turns.last?.questionsRetained != true,
+          thread.turns.last?.answerDraftStaged != true,
+          (thread.turns.last?.answerDraftSourceDigest != nil) == approval.allowsAnswerDraft,
           thread.turns.last?.questionSnapshotVersion == approval.questions?.ledgerVersion,
           (thread.turns.last?.questionsRequested == true) == approval.asksQuestions,
           (thread.turns.last?.planRequested == true) == approval.proposesPlan,
@@ -2220,6 +2342,7 @@ struct GalaxySSIHealthRecords {
     ledger.current.removeValue(forKey: key)
     ledger.history.removeValue(forKey: concern.id.uuidString)
     archive.localCareQuestions?.removeValue(forKey: concern.id.uuidString)
+    archive.localCareAnswerDrafts?.removeValue(forKey: concern.id.uuidString)
     archive.localCareFeedback?.removeValue(forKey: concern.id.uuidString)
     archive.localCareEncounters?.remove(concern: concern.id)
     archive.localCareEncounterDocuments = archive.localCareEncounterDocuments?.filter { $0.value.concern != concern.id }

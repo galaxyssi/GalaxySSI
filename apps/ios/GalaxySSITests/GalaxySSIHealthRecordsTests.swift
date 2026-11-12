@@ -1755,6 +1755,116 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertThrowsError(try records.readLocalCareDiscussionQuestions(paged, after: cursor.after, now: now))
   }
 
+
+  @MainActor
+  func testHealthAnswerDraftBindsHumanSourceAndRequiresLocalConfirmation() throws {
+    typealias Draft = GalaxySSIHealthCareAnswerDraft
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "answer-review", secrets: secrets, isolatedFile: file)
+    let now = Date()
+    let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 110,
+      unitOverride: "mg/dL")
+    try records.write(reading)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.setHealthOnlinePermission(true)
+    try records.reconcileLocalCare(now: now)
+    let concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
+    _ = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
+      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+    func prepare(asks: Bool = false, shares: Bool = true, stages: Bool = false, feedback: Bool = false)
+        throws -> GalaxySSIHealthCareDiscussion.Approval {
+      try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "I fasted for 8 hours.",
+        destinationID: "provider", model: model, credential: "fixture-api-key", includesQuestions: shares,
+        asksQuestions: asks, allowsAnswerDraft: stages, feedbackHistoryAllowed: feedback, now: now)
+    }
+    func question() throws -> GalaxySSIHealthCareQuestions.Row {
+      try XCTUnwrap(records.localCareQuestionPage(id: concern.id, metric: .glucose, now: now).rows.first)
+    }
+    let proposal = try prepare(asks: true)
+    try records.beginLocalCareDiscussionTurn(proposal, now: now)
+    try records.saveLocalCareQuestionProposals(proposal, arguments: ["questions": .array([
+      .object(["key": .string("context.fasting_hours"), "question": .string("How long did you fast?"),
+        "purpose": .string("Understand measurement context")])
+    ])], now: now)
+    let row = try question()
+    let arguments: AgentMcpJSONObject = ["question_id": .string(row.id.uuidString),
+      "question_revision": .int(Int64(row.revision)), "quote": .string("fasted for 8 hours"), "answer": .string("8 hours")]
+    XCTAssertThrowsError(try prepare(shares: false, stages: true))
+    XCTAssertThrowsError(try prepare(stages: true, feedback: true))
+    var legacy = try prepare()
+    XCTAssertTrue(legacy.includesActionFeedback)
+    try records.beginLocalCareDiscussionTurn(legacy, now: now)
+    legacy.allowsAnswerDraft = true
+    XCTAssertThrowsError(try records.stageLocalCareAnswerDraft(legacy, arguments: arguments, now: now))
+    let active = try prepare(stages: true)
+    var conflicting = active
+    conflicting.feedbackHistoryAllowed = true
+    XCTAssertThrowsError(try records.beginLocalCareDiscussionTurn(conflicting, now: now))
+    XCTAssertFalse(active.includesActionFeedback)
+    XCTAssertFalse(active.actionFeedbackContextIncluded)
+    XCTAssertThrowsError(try records.authorizeLocalCareResearch(active, sources: [.glucose], now: now))
+    let request = try GalaxySSIHealthCareDiscussion.request(active, key: "fixture-api-key")
+    let wire = String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self)
+    XCTAssertTrue(wire.contains(Draft.tool))
+    XCTAssertFalse(wire.contains(GalaxySSIHealthCareFeedbackTool.function))
+    XCTAssertThrowsError(try records.stageLocalCareAnswerDraft(active, arguments: arguments, now: now))
+    try records.beginLocalCareDiscussionTurn(active, now: now)
+    for (key, value) in [("quote", AgentMcpJSONValue.string("I fasted for 10 hours.")),
+                         ("question_revision", .int(Int64(row.revision + 1))), ("confirmed", .bool(true))] {
+      var forged = arguments
+      forged[key] = value
+      XCTAssertThrowsError(try records.stageLocalCareAnswerDraft(active, arguments: forged, now: now))
+    }
+    let first = try records.stageLocalCareAnswerDraft(active, arguments: arguments, now: now)
+    XCTAssertThrowsError(try records.validateLocalCareDiscussionTurn(active, now: now))
+    XCTAssertEqual(try records.stageLocalCareAnswerDraft(active, arguments: arguments, now: now).id, first.id)
+    XCTAssertNil(try question().answer)
+    try records.reviewLocalCareAnswerDraft(id: concern.id, metric: .glucose, draft: first, answer: nil, now: now)
+    XCTAssertEqual(try records.stageLocalCareAnswerDraft(active, arguments: arguments, now: now).state, .dismissed)
+    XCTAssertTrue(try records.localCareAnswerDraftPage(id: concern.id, metric: .glucose, now: now).items.isEmpty)
+    let second = try prepare(stages: true)
+    try records.beginLocalCareDiscussionTurn(second, now: now)
+    let saved = try records.stageLocalCareAnswerDraft(second, arguments: arguments, now: now)
+    let reopened = GalaxySSIHealthRecords(owner: "answer-review", secrets: secrets, isolatedFile: file)
+    XCTAssertEqual(try reopened.localCareAnswerDraftPage(id: concern.id, metric: .glucose, now: now).items, [saved])
+    try records.setHealthOnlinePermission(false)
+    XCTAssertTrue(try reopened.localCareAnswerDraftPage(id: concern.id, metric: .glucose, now: now).items.isEmpty)
+    XCTAssertThrowsError(try reopened.reviewLocalCareAnswerDraft(id: concern.id, metric: .glucose,
+      draft: saved, answer: "8 hours overnight", now: now))
+    try records.setHealthOnlinePermission(true)
+    XCTAssertTrue(try reopened.localCareAnswerDraftPage(id: concern.id, metric: .glucose, now: now).items.isEmpty)
+    let third = try prepare(stages: true)
+    try records.beginLocalCareDiscussionTurn(third, now: now)
+    let confirmed = try records.stageLocalCareAnswerDraft(third, arguments: arguments, now: now)
+    try reopened.reviewLocalCareAnswerDraft(id: concern.id, metric: .glucose,
+      draft: confirmed, answer: "8 hours overnight", now: now)
+    XCTAssertEqual(try question().answer, "8 hours overnight")
+    XCTAssertEqual(try records.load().current.first, reading)
+    XCTAssertTrue(try reopened.localCareAnswerDraftPage(id: concern.id, metric: .glucose, now: now).items.isEmpty)
+  }
+
+  func testHealthAnswerDraftRecognizesOnlyItsExactProviderToolCall() throws {
+    typealias Draft = GalaxySSIHealthCareAnswerDraft
+    let inputs: AgentMcpJSONObject = ["question_id": .string(UUID().uuidString), "question_revision": .int(1),
+      "quote": .string("8 hours"), "answer": .string("8 hours")]
+    let function: AgentMcpJSONValue = .object(["name": .string(Draft.tool),
+      "arguments": .string(AgentMcpJSONCodec.stringify(inputs))])
+    func response(_ calls: [AgentMcpJSONValue]) throws -> Data {
+      try JSONEncoder().encode(["choices": AgentMcpJSONValue.array([
+        .object(["finish_reason": .string(calls.isEmpty ? "stop" : "tool_calls"),
+          "message": .object(["content": .string("Please review your answer."), "tool_calls": .array(calls)])])
+      ])])
+    }
+    let call: AgentMcpJSONValue = .object(["id": .string("call_1"), "type": .string("function"), "function": function])
+    XCTAssertEqual(try Draft.argumentsIfPresent(response([call]), style: .openAICompatible), inputs)
+    XCTAssertNil(try Draft.argumentsIfPresent(response([]), style: .openAICompatible))
+    XCTAssertThrowsError(try Draft.argumentsIfPresent(response([call, call]), style: .openAICompatible))
+    XCTAssertThrowsError(try GalaxySSIHealthCareHistoryTool.call(response([call]), style: .openAICompatible, proposesPlan: false))
+  }
+
   @MainActor
   func testLocalCareDiscussionBindsConsentToConcernTurnAndProvider() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

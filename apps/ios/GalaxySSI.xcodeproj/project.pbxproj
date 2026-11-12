@@ -236,6 +236,7 @@
     A10000000000000000009885 /* GalaxySSIHealthScopedReadTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009885 /* GalaxySSIHealthScopedReadTransport.swift */; };
     A10000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift */; };
     A10000000000000000009882 /* GalaxySSIHealthCareQuestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009882 /* GalaxySSIHealthCareQuestions.swift */; };
+    A10000000000000000009886 /* GalaxySSIHealthCareAnswerDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009886 /* GalaxySSIHealthCareAnswerDraft.swift */; };
     A10000000000000000009883 /* GalaxySSIHealthCareQuestionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009883 /* GalaxySSIHealthCareQuestionsView.swift */; };
     A10000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift */; };
     E39090000000000000000001 /* GalaxySSIHealthOCRSourceContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */; };
@@ -1554,6 +1555,7 @@
     A20000000000000000009885 /* GalaxySSIHealthScopedReadTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthScopedReadTransport.swift; sourceTree = "<group>"; };
     A20000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareResearchHandoff.swift; sourceTree = "<group>"; };
     A20000000000000000009882 /* GalaxySSIHealthCareQuestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareQuestions.swift; sourceTree = "<group>"; };
+    A20000000000000000009886 /* GalaxySSIHealthCareAnswerDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareAnswerDraft.swift; sourceTree = "<group>"; };
     A20000000000000000009883 /* GalaxySSIHealthCareQuestionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareQuestionsView.swift; sourceTree = "<group>"; };
     A20000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareSeriesView.swift; sourceTree = "<group>"; };
     E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOCRSourceContext.swift; sourceTree = "<group>"; };
@@ -3505,6 +3507,7 @@
         A20000000000000000009885 /* GalaxySSIHealthScopedReadTransport.swift */,
         A20000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift */,
         A20000000000000000009882 /* GalaxySSIHealthCareQuestions.swift */,
+        A20000000000000000009886 /* GalaxySSIHealthCareAnswerDraft.swift */,
         A20000000000000000009883 /* GalaxySSIHealthCareQuestionsView.swift */,
         A20000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift */,
         E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */,
@@ -4958,6 +4961,7 @@
         A10000000000000000009885 /* GalaxySSIHealthScopedReadTransport.swift in Sources */,
         A10000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift in Sources */,
         A10000000000000000009882 /* GalaxySSIHealthCareQuestions.swift in Sources */,
+        A10000000000000000009886 /* GalaxySSIHealthCareAnswerDraft.swift in Sources */,
         A10000000000000000009883 /* GalaxySSIHealthCareQuestionsView.swift in Sources */,
         A10000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift in Sources */,
         E39090000000000000000001 /* GalaxySSIHealthOCRSourceContext.swift in Sources */,
