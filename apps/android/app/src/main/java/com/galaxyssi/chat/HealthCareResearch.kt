@@ -8,7 +8,7 @@ internal data class HealthCareResearchAuthorization(val id: String, val scope: H
     val configuration: String, val revokedAt: Long = 0) {
     init {
         require(HealthProfilePolicy.uuid(id) && configuration.matches(Regex("[0-9a-f]{64}")))
-        require(revokedAt >= 0 && scope.researchAuthorizationId.isEmpty())
+        require(revokedAt >= 0 && scope.researchAuthorizationId.isEmpty() && scope.instruction == null)
     }
     val active get() = revokedAt == 0L
     fun permits(grant: HealthCareDiscussionGrant): Boolean = active && grant.researchAuthorizationId == id &&

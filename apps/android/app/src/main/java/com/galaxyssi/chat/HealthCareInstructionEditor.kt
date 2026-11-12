@@ -48,7 +48,8 @@ internal class HealthCareInstructionEditor(private val activity: Activity) {
         inputs.values.forEach { it.setText("") }; inputs.clear(); statuses.clear(); retained.clear()
         root?.removeAllViews(); root = null
     }
-    fun show(value: HealthCareInstruction, save: (HealthCareInstructionDraft) -> Unit) {
+    fun show(value: HealthCareInstruction, proposed: Map<HealthCareInstructionField, HealthCareExtractedField>? = null,
+        save: (HealthCareInstructionDraft) -> Unit) {
         clear(); retained.putAll(value.draft.fields)
         var kind = value.draft.kind
         val content = ui.column().apply { setPadding(ui.dp(20), ui.dp(8), ui.dp(20), ui.dp(8)) }
@@ -58,6 +59,7 @@ internal class HealthCareInstructionEditor(private val activity: Activity) {
         fun render() {
             content.removeAllViews(); inputs.clear(); statuses.clear()
             content.addView(ui.text(value.source.quote, 14f, muted = true))
+            if (proposed != null) ui.add(content, ui.text(activity.getString(R.string.health_instruction_agent_review_notice), 14f), 12)
             ui.add(content, ui.profileRow(activity.getString(R.string.health_instruction_kind), activity.getString(kind.label())) {
                 val values = runCatching(::collect).getOrElse { error.text = activity.getString(R.string.health_instruction_invalid); return@profileRow }
                 retained.putAll(values)
@@ -69,6 +71,11 @@ internal class HealthCareInstructionEditor(private val activity: Activity) {
             HealthCareInstructionDraft(kind).required.forEach { field ->
                 val initial = retained[field] ?: HealthCareInstructionValue()
                 ui.add(content, ui.text(activity.getString(field.label()), 14f, bold = true), 16)
+                proposed?.get(field)?.let { source -> ui.add(content, ui.text(activity.getString(when (source.certainty) {
+                    HealthCareExtractionCertainty.QUOTED -> R.string.health_instruction_agent_quoted
+                    HealthCareExtractionCertainty.UNCERTAIN -> R.string.health_instruction_agent_uncertain
+                    HealthCareExtractionCertainty.NOT_FOUND -> R.string.health_instruction_agent_not_found
+                }), 13f, muted = true).apply { tag = "instruction-certainty-${field.name}" }, 4) }
                 val input = activity.healthProfileInput(initial.text, 1000, multiline = true).apply { minLines = 1; maxLines = 4; tag = "instruction-field-${field.name}" }
                 val group = RadioGroup(activity).apply { orientation = RadioGroup.VERTICAL }
                 val checked = RadioButton(activity).apply { id = android.view.View.generateViewId(); text = activity.getString(R.string.health_instruction_transcribed); tag = "instruction-checked-${field.name}" }

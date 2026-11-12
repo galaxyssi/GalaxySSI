@@ -1,0 +1,13 @@
+<resources>
+    <string name="health_instruction_agent">让 Agent 整理</string>
+    <string name="health_instruction_agent_question">请仅将选中的就诊原文整理成待我逐项核对的草稿，不推断缺失医嘱，不安排任何行动或提醒。</string>
+    <string name="health_instruction_agent_disclosure">本次仅将选中的原文及页码、识别方式发送给 %1$s · %2$s，不包含个人档案、指标数值、问题清单或历史对话。模型结果仍需逐项核对，不会改变治疗，也不会创建行动或提醒。</string>
+    <string name="health_instruction_agent_pending">Agent 建议待核对</string>
+    <string name="health_instruction_agent_review">核对建议字段</string>
+    <string name="health_instruction_agent_discard">丢弃建议</string>
+    <string name="health_instruction_agent_origin">模型辅助整理，各项核对情况以你的选择为准，不代表医生确认。</string>
+    <string name="health_instruction_agent_review_notice">所有建议字段均未核对。请逐项对照原件、更正错误，并明确标记未注明的信息。保存草稿不会确认行动或创建提醒。</string>
+    <string name="health_instruction_agent_quoted">原文摘录，含义和准确性仍需核对。</string>
+    <string name="health_instruction_agent_uncertain">识别不确定，请对照原件或向医生确认。</string>
+    <string name="health_instruction_agent_not_found">选中原文中未找到，尚未确认是否未注明。</string>
+</resources>

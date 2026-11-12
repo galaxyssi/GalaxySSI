@@ -97,7 +97,8 @@ class HealthCareDiscussionPolicyTest {
         val filtered = HealthCareDiscussionPolicy.historyForGrant(history, grant, approvals::get)
         assertEquals(listOf(entries.first(), entries.last()), filtered.turns)
         assertEquals("", filtered.summary); assertEquals("", filtered.globalContext)
-        assertEquals(history, HealthCareDiscussionPolicy.historyForGrant(history, grant.copy(feedbackHistoryShared = true), approvals::get))
+        assertEquals(history.copy(summary = "", globalContext = ""),
+            HealthCareDiscussionPolicy.historyForGrant(history, grant.copy(feedbackHistoryShared = true), approvals::get))
     }
 
     @Test fun narrowedHistoryRejectsChangedPermissionDestinationOrImportedReferences() {

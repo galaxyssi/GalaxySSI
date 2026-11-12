@@ -21,6 +21,40 @@ class HealthCareLiveResearchDeviceTest {
     private val deliveredFeedback = mutableSetOf<String>()
     private val reportFile get() = File(context.filesDir, "health-care-live-research.json")
 
+    @Test fun pairedModelOrganizesOnlySelectedSourceIntoUnreviewedProposal(): Unit = runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("health_live_instruction") == "true")
+        val contacts = AppStore.contacts(context)
+        val contact = (0 until contacts.length()).map { contacts.getJSONObject(it) }.firstOrNull {
+            !it.optBoolean("deleted") && AppStore.agentIdForContact(context, it.optString("id")) == "codex" &&
+                !AppStore.isDesktopDeviceContact(context, it.optString("id")) &&
+                GalaxySSILinkProtocol.serverLink(context, it.optString("desktop_id"))?.paired == true
+        } ?: error("No paired Codex contact; preserve pairing and credentials")
+        GalaxySSIMqttClient.connect(context)
+        withTimeout(30_000) { while (!GalaxySSIMqttClient.isRequestReplyReady()) delay(100) }
+        try { HealthCareInstructionFixture(context).use { f ->
+            val value = f.create()
+            HealthCareStore(context, f.documents.names.care).use { store ->
+                val issue = store.concern(value.concernId)!!
+                val selected = AgentModelSelectionSettings.configurationForTarget(context, issue.conversationId, contact.getString("id"))
+                val grant = HealthCareDiscussionGrant(issue.conversationId, UUID.randomUUID().toString(), issue.id, issue.revision,
+                    store.settings().version, HealthPrivacyStore(context, f.documents.names.privacy).use { it.policy().version },
+                    HealthCareDiscussion.desktopDestination(context, contact.getString("id")), System.currentTimeMillis(),
+                    contact.getString("id"), selected?.modelId.orEmpty(), selected?.reasoningEffort?.wireValue.orEmpty(),
+                    profileLink = issue.profileLink, instruction = HealthCareInstructionScope.of(value))
+                store.approveDiscussion(grant)
+                val answer = runTurn(store, issue, grant, contact,
+                    "这是隔离的合成测试，不是我的医嘱。请把选中的复查原文整理成待我核对的建议字段，缺失日期不要推断。", emptyList(), f.documents.names)
+                assertTrue(answer.isNotBlank())
+                val proposal = store.instructionProposal(grant.turnId) ?: error("Real provider did not stage a source-grounded proposal")
+                assertEquals(HealthCareInstructionProposalState.PENDING, proposal.state)
+                assertTrue(proposal.fields.values.all { it.quote.isEmpty() || value.source.quote.contains(it.quote) })
+                assertFalse(proposal.draft.reviewed); assertEquals(value, store.instruction(value.id))
+                assertEquals(issue, store.concern(value.concernId)); assertNull(store.nextReminder()); assertNull(store.plan(grant.turnId))
+                println("HEALTH_LIVE instruction_proposal=true exact_source=true unreviewed=true no_action_or_reminder=true real_provider=true")
+            }
+        } } finally { reportFile.writeText(report.toString(2)) }
+    }
+
     @Test fun pairedModelReadsAuthorizedResearchFeedbackAcrossPages(): Unit = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("health_live_feedback") == "true")
         val contacts = AppStore.contacts(context)
@@ -206,12 +240,20 @@ class HealthCareLiveResearchDeviceTest {
         if (grant.feedbackHistoryShared) registry.register(HealthCareFeedbackTool.definition { invocation, input ->
             HealthCareFeedbackTool.read(context, names, invocation, input)
         })
+        if (grant.instruction != null) registry.register(HealthCareInstructionTool.definition { invocation, input ->
+            check(invocation.conversationId == grant.conversationId && invocation.turnId == grant.turnId)
+            HealthCareInstructionTool.selected(context, store, grant.concernId, grant.instruction, names)
+            store.proposeInstruction(grant, input, System.currentTimeMillis())
+        })
         val screen = ScreenContext("Synthetic health acceptance", pageTitle = "Synthetic health concern")
-        val goal = HealthCareDiscussionPolicy.prompt(question, HealthCareDiscussionPolicy.snapshot(concern,
-            feedbackHistoryShared = grant.feedbackHistoryShared))
+        val goal = HealthCareDiscussionPolicy.prompt(question, if (grant.instruction != null)
+            HealthCareInstructionTool.snapshot(store.instruction(grant.instruction.id)!!)
+            else HealthCareDiscussionPolicy.snapshot(concern, feedbackHistoryShared = grant.feedbackHistoryShared))
         val runtime = AgentRuntimeContextBuilder.build(sessionId = grant.conversationId, goal = goal, screen = screen,
             permissionMode = PermissionMode.AUTO_LOW_RISK, highRiskGuard = true, memoryCapture = false,
-            callableTargets = emptyList(), memories = emptyList(), nativeTools = registry.availableCatalog().descriptors)
+            callableTargets = emptyList(), memories = emptyList(), nativeTools = registry.availableCatalog().descriptors.filter {
+                grant.instruction == null || it.id in HealthCareDiscussionPolicy.tools(grant)
+            })
         val observations = mutableListOf<AgentAction>()
         val seed = AgentRequest(goal, screen, emptyList(), memories = emptyList(), runtimeContext = runtime,
             conversationContext = AgentConversationContext(grant.conversationId, "", turns, true, trackingPaused = true),
@@ -243,6 +285,7 @@ class HealthCareLiveResearchDeviceTest {
                 actions.forEach { action ->
                     require(action.kind == AgentActionKind.CALL_NATIVE_TOOL) { "Only scoped phone tools allowed" }
                     val id = action.parameters.getValue("tool_id")
+                    require(grant.instruction == null || id in HealthCareDiscussionPolicy.tools(grant))
                     require(registry.lookup(id) != null)
                     val input = jsonObject(JSONObject(action.parameters.getValue("input_json")))
                     val result = registry.invoke(id, input, AgentNativeToolInvocationContext(

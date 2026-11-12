@@ -36,13 +36,18 @@ internal object HealthCareDiscussion {
 
     fun prepare(context: Context, conversationId: String, question: String, runtime: AgentRuntimeContext,
         research: HealthCareResearchAuthorization? = null, turnId: String = UUID.randomUUID().toString(),
-        feedbackHistoryShared: Boolean = false): HealthCareDiscussionPreview {
+        feedbackHistoryShared: Boolean = false, instructionId: String? = null): HealthCareDiscussionPreview {
+        require(instructionId == null || research == null && HealthProfilePolicy.uuid(instructionId))
         HealthCareEngine.evaluate(context)
         val privacy = HealthPrivacyStore(context).use { it.policy() }
         check(privacy.metrics && privacy.profile) { context.getString(R.string.health_care_discussion_permissions) }
         return HealthCareStore(context).use { care ->
             val id = care.discussion(conversationId) ?: error(context.getString(R.string.health_care_profile_discussion_changed))
             val concern = care.concern(id) ?: throw HealthCareConflict()
+            val instruction = instructionId?.let { selected ->
+                val value = care.instruction(selected) ?: throw HealthCareConflict()
+                HealthCareInstructionTool.selected(context, care, id, HealthCareInstructionScope.of(value))
+            }
             check(care.settings().enabled && concern.stage !in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) &&
                 HealthCareSignal.SOURCE_REMOVED !in concern.assessment.signals) { context.getString(R.string.health_care_discussion_inactive) }
             val registry = AppStoreAgentConnectorRegistry(context)
@@ -70,9 +75,10 @@ internal object HealthCareDiscussion {
             val destination = destination(context, target.id, model)
             val grant = HealthCareDiscussionGrant(conversationId, turnId, id, concern.revision,
                 care.settings().version, privacy.version, destination, System.currentTimeMillis(), target.id, model, effort.wireValue,
-                research?.id.orEmpty(), concern.profileLink, questionsShared = research?.scope?.questionsShared ?: true,
+                research?.id.orEmpty(), concern.profileLink, questionsShared = instruction == null && (research?.scope?.questionsShared ?: true),
                 userInputDigest = if (research == null) AgentNativeJsonCodec.sha256(question.trim()) else "",
-                feedbackHistoryShared = research?.scope?.feedbackHistoryShared ?: feedbackHistoryShared)
+                feedbackHistoryShared = instruction == null && (research?.scope?.feedbackHistoryShared ?: feedbackHistoryShared),
+                instruction = instruction?.let(HealthCareInstructionScope::of))
             check(HealthCareDiscussionPolicy.questionScopeCurrent(grant, concern)) { context.getString(R.string.health_care_changed) }
             if (research != null) check(research.permits(grant) && care.researchGrantCurrent(grant)) {
                 context.getString(R.string.health_care_changed)
@@ -84,11 +90,12 @@ internal object HealthCareDiscussion {
                     previous?.let { care.revision(concern.id, it.revision) }, care.priorResearchEvidence(job, grant),
                     care.hasRecordedPlan(concern.id, job.createdAt))
             }
-            val profile = concern.profileLink?.let { link ->
+            val profile = concern.profileLink?.takeIf { instruction == null }?.let { link ->
                 try { HealthCareProfileAccess.capture(context, link) }
                 catch (_: HealthProfileConflict) { error(context.getString(R.string.health_care_profile_changed)) }
             }
-            val snapshot = HealthCareDiscussionPolicy.snapshot(concern, followUp, profile,
+            val snapshot = if (instruction != null) HealthCareInstructionTool.snapshot(instruction)
+            else HealthCareDiscussionPolicy.snapshot(concern, followUp, profile,
                 if (grant.questionsShared) care.questions(concern, limit = 8) else null, grant.feedbackHistoryShared)
             val goal = HealthCareDiscussionPolicy.prompt(question, snapshot)
             val history = HealthCareDiscussionPolicy.historyForGrant(AgentTranscriptStore(context).context(conversationId),
@@ -126,7 +133,10 @@ internal object HealthCareDiscussion {
             check(policy.version == grant.privacyVersion && policy.metrics && policy.profile &&
                 (grant.targetId == "local-llm" || policy.online)) { context.getString(R.string.health_care_changed) }
         }
-        HealthCareStore(context).use { it.approveDiscussion(grant) }
+        HealthCareStore(context).use {
+            grant.instruction?.let { scope -> HealthCareInstructionTool.selected(context, it, grant.concernId, scope) }
+            it.approveDiscussion(grant)
+        }
     }
 
     fun cloudDestination(contact: JSONObject): String = AgentNativeJsonCodec.sha256(JSONObject()
@@ -176,6 +186,7 @@ internal object HealthCareDiscussion {
                 val sourceCurrent = concern?.let { issue -> HealthRecordStore(context).use {
                     issue.inputVersion == HealthCareEngine.inputVersion(settings.version, privacy.version, it.metricVersion(issue.metric))
                 } } == true
+                grant.instruction?.let { HealthCareInstructionTool.selected(context, care, grant.concernId, it) }
                 HealthCareDiscussionPolicy.permitted(grant, conversationId, turnId, concern, settings, privacy,
                     actualDestination ?: destination(context, grant.targetId, grant.modelId), System.currentTimeMillis()) &&
                     sourceCurrent && HealthCareProfileAccess.current(context, grant.profileLink) &&
@@ -213,7 +224,7 @@ internal object HealthCareDiscussion {
                 it.discussionGrant(invocation.turnId)?.let { grant -> tool.id in HealthCareDiscussionPolicy.tools(grant) } == true
             }) context.getString(R.string.health_care_discussion_scope)
             else if (tool.id !in setOf(AgentToolDiscoveryTools.ID, AgentToolInspectionTools.DESCRIBE, AgentConversationRecallTool.ID,
-                    HealthCarePlanTool.ID, HealthCareHistoryTool.ID, HealthCareFeedbackTool.ID) && tool.id !in HealthCareQuestionTools.ids &&
+                    HealthCarePlanTool.ID, HealthCareHistoryTool.ID, HealthCareFeedbackTool.ID, HealthCareInstructionTool.ID) && tool.id !in HealthCareQuestionTools.ids &&
                 !HealthPrivacyStore(context).use { it.policy().online }) context.getString(R.string.health_care_discussion_online)
             else null
     }

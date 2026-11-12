@@ -64,6 +64,59 @@ class HealthCareInstructionUiDeviceTest {
         await(scenario) { find(it, "instruction-edit") != null }
         return value
     }
+    @Test fun proposalReviewStartsUncheckedAndCancelDoesNotChangeSourceDraft(): Unit = fixture { f, scenario ->
+        val value = open(f, scenario); val proposal = stageInstructionProposal(context, f, value)
+        await(scenario) { find(it, "instruction-proposal-review") != null }
+        scenario.onActivity { activity ->
+            find(activity, "instruction-proposal-review")!!.performClick()
+            proposal.draft.required.forEach { field ->
+                assertFalse((find(activity, "instruction-checked-${field.name}") as RadioButton).isChecked)
+                assertFalse((find(activity, "instruction-missing-${field.name}") as RadioButton).isChecked)
+                assertNotNull(find(activity, "instruction-certainty-${field.name}"))
+            }
+            assertEquals("Synthetic follow-up", (find(activity, "instruction-field-NAME") as EditText).text.toString())
+        }
+        if (InstrumentationRegistry.getArguments().getString("health_instruction_screenshot") == "true") {
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            instrumentation.waitForIdleSync()
+            SystemClock.sleep(250)
+            instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
+                try { File(context.getExternalFilesDir(null), "health-instruction-proposal-fixture.png").outputStream().use {
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+                } } finally { bitmap.recycle() }
+            }
+        }
+        scenario.onActivity { dialog(it)!!.getButton(AlertDialog.BUTTON_NEGATIVE).performClick() }
+        assertEquals(value, f.snapshot(value.id).selected); assertEquals(proposal, f.snapshot(value.id).proposal)
+        scenario.onActivity { find(it, "instruction-proposal-discard")!!.performClick() }
+        await(scenario) { find(it, "instruction-proposal-review") == null && !(field(it, "busy") as Boolean) }
+        assertEquals(value, f.snapshot(value.id).selected); assertNull(f.snapshot(value.id).proposal)
+    }
+    @Test fun proposalSaveDoesNotCheckFieldsOrCreateAnAction(): Unit = fixture { f, scenario ->
+        val value = open(f, scenario); val proposal = stageInstructionProposal(context, f, value)
+        await(scenario) { find(it, "instruction-proposal-review") != null }
+        scenario.onActivity {
+            find(it, "instruction-proposal-review")!!.performClick()
+            dialog(it)!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        }
+        await(scenario) { find(it, "instruction-proposal-review") == null && !(field(it, "busy") as Boolean) }
+        val saved = f.snapshot(value.id).selected!!
+        assertEquals(proposal.id, saved.modelProposalId); assertFalse(saved.draft.reviewed)
+        scenario.onActivity { assertNull(find(it, "instruction-action-add")) }
+        HealthCareStore(context, f.documents.names.care).use { assertTrue(it.reminders(value.concernId).isEmpty()) }
+    }
+    @Test fun backgroundClearsCandidateEditorButRetainsEncryptedPendingProposal(): Unit = fixture { f, scenario ->
+        val value = open(f, scenario); val proposal = stageInstructionProposal(context, f, value)
+        await(scenario) { find(it, "instruction-proposal-review") != null }
+        scenario.onActivity { find(it, "instruction-proposal-review")!!.performClick() }
+        scenario.moveToState(Lifecycle.State.CREATED)
+        scenario.onActivity { assertNull(dialog(it)); assertNull(field(it, "snapshot")); assertNull(field(editor(it), "root")) }
+        scenario.moveToState(Lifecycle.State.RESUMED)
+        await(scenario) { find(it, "instruction-row-${value.id}") != null }
+        scenario.onActivity { find(it, "instruction-row-${value.id}")!!.performClick() }
+        await(scenario) { find(it, "instruction-proposal-review") != null }
+        assertEquals(proposal, f.snapshot(value.id).proposal); assertEquals(value, f.snapshot(value.id).selected)
+    }
     @Test fun selectingActualSourceLinesCreatesOnlyAnUnreviewedDraft(): Unit = fixture(read = true) { f, scenario ->
         scenario.onActivity {
             (find(it, "instruction-line-0") as CheckBox).performClick()

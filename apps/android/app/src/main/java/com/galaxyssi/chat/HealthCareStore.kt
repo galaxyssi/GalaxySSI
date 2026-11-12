@@ -21,6 +21,31 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     private fun feedbackRows() = HealthCareFeedbackRows(db, ::pack, ::unpack)
     private fun encounterRows() = HealthCareEncounterRows(db, ::pack, ::unpack)
     private fun instructionRows() = HealthCareInstructionRows(db, ::pack, ::unpack)
+    private fun instructionProposals() = HealthCareInstructionProposalRows(db, ::pack, ::unpack)
+    fun instructionProposal(id: String) = instructionProposals().get(id)
+    fun pendingInstructionProposal(id: String) = instructionProposals().pending(id)
+    fun proposeInstruction(grant: HealthCareDiscussionGrant, input: AgentNativeJsonObject, now: Long): HealthCareInstructionProposal = transaction(true) {
+        val issue = concern(grant.concernId) ?: throw HealthCareConflict()
+        val value = grant.instruction?.id?.let(::instruction) ?: throw HealthCareConflict()
+        if (discussionGrant(grant.turnId) != grant || discussion(grant.conversationId) != issue.id || issue.revision != grant.revision ||
+            issue.profileLink != grant.profileLink || !settings().enabled || settings().version != grant.settingsVersion ||
+            issue.stage in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) || now < grant.approvedAt ||
+            now - grant.approvedAt >= HealthCareDiscussionPolicy.MAX_APPROVAL_AGE) throw HealthCareConflict()
+        val proposed = HealthCareInstructionProposal.parse(grant, value, input, now)
+        instructionProposals().get(grant.turnId)?.let { prior ->
+            if (prior.grant != grant) throw HealthCareConflict()
+            return@transaction prior
+        }
+        if (instructionProposals().pending(value.id) != null) throw HealthCareConflict()
+        instructionProposals().write(proposed)
+        proposed
+    }
+    fun dismissInstructionProposal(id: String, expected: HealthCareInstructionScope) = transaction(true) {
+        val value = instructionProposals().get(id) ?: throw HealthCareConflict()
+        if (value.scope != expected) throw HealthCareConflict()
+        if (value.state == HealthCareInstructionProposalState.PENDING)
+            instructionProposals().write(value.copy(state = HealthCareInstructionProposalState.DISMISSED))
+    }
     fun instruction(id: String) = instructionRows().get(id)
     fun instructions(id: String, encounterId: String, before: Int = Int.MAX_VALUE, limit: Int = 30) = instructionRows().page(id, encounterId, before, limit)
     fun instructionHistory(id: String, instructionId: String, before: Int = Int.MAX_VALUE, limit: Int = 30) = instructionRows().history(id, instructionId, before, limit)
@@ -646,6 +671,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         encounterRows().delete(id, encounterId)
         documentRows().purge(id, encounterId)
         instructionRows().purge(id, encounterId)
+        instructionProposals().purge(id, encounterId)
         Unit
     }
     fun linkEncounterDocument(id: String, expectedRevision: Int, encounterId: String, expectedEncounterRevision: Int,
@@ -676,11 +702,13 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         documentRows().remove(linkId)
     }
     fun saveInstruction(id: String, expectedRevision: Int, encounterId: String, instructionId: String, expectedInstruction: Int?,
-        source: HealthCareInstructionSource, draft: HealthCareInstructionDraft, operationId: String, now: Long): HealthCareInstructionReceipt = transaction(true) {
+        source: HealthCareInstructionSource, draft: HealthCareInstructionDraft, operationId: String, now: Long,
+        proposalId: String? = null): HealthCareInstructionReceipt = transaction(true) {
         require(listOf(id, encounterId, instructionId, operationId).all(HealthProfilePolicy::uuid) && now > 0)
         instructionRows().receipt(operationId)?.let {
             if (it.expectedConcern != expectedRevision || it.expectedInstruction != expectedInstruction || it.value.id != instructionId ||
-                it.value.concernId != id || it.value.encounterId != encounterId || it.value.source != source || it.value.draft != draft) throw HealthCareConflict()
+                it.value.concernId != id || it.value.encounterId != encounterId || it.value.source != source || it.value.draft != draft ||
+                proposalId != null && it.value.modelProposalId != proposalId) throw HealthCareConflict()
             return@transaction it
         }
         val issue = concern(id) ?: throw HealthCareConflict()
@@ -692,13 +720,21 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val before = instructionRows().get(instructionId)
         if (before?.revision != expectedInstruction || before != null && (before.concernId != id || before.encounterId != encounterId || before.source != source))
             throw HealthCareConflict()
+        val proposal = proposalId?.let { instructionProposals().get(it) ?: throw HealthCareConflict() }
+        if (proposal != null && (before == null || !proposal.scope.matches(before) || proposal.grant.concernId != id ||
+                proposal.encounterId != encounterId || proposal.state != HealthCareInstructionProposalState.PENDING ||
+                !HealthCareInstructionProposal.eligible(before))) throw HealthCareConflict()
         val time = maxOf(now, issue.updatedAt)
         val value = HealthCareInstruction(instructionId, id, encounterId, Math.addExact(issue.revision, 1), source, draft,
-            before?.createdAt ?: time, time)
+            before?.createdAt ?: time, time, proposalId ?: before?.modelProposalId)
         val receipt = HealthCareInstructionReceipt(operationId, issue.revision, before?.revision, value)
         persist(HealthCareInstructionActionPolicy.invalidate(issue) { it.instructionId == instructionId }
             .copy(revision = value.revision, updatedAt = time), "instruction_review_saved")
         instructionRows().write(receipt)
+        proposal?.let { instructionProposals().write(it.copy(state = HealthCareInstructionProposalState.APPLIED)) }
+        instructionProposals().pending(instructionId)?.let {
+            instructionProposals().write(it.copy(state = HealthCareInstructionProposalState.DISMISSED))
+        }
         receipt
     }
     fun deleteInstruction(id: String, expectedRevision: Int, instructionId: String, expectedInstruction: Int, now: Long) = transaction(true) {
@@ -709,6 +745,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         persist(HealthCareInstructionActionPolicy.invalidate(issue) { it.instructionId == instructionId }
             .copy(revision = Math.addExact(issue.revision, 1), updatedAt = maxOf(now, issue.updatedAt)), "instruction_deleted")
         instructionRows().purge(id, instructionId = instructionId)
+        instructionProposals().purge(id, instruction = instructionId)
     }
     fun instructionCurrent(issue: HealthCareConcern, action: HealthCareAction): Boolean {
         val ref = action.instruction ?: return true
@@ -750,6 +787,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         encounterRows().delete(id)
         documentRows().purge(id)
         instructionRows().purge(id)
+        instructionProposals().purge(id)
         // Keep only encrypted routing tombstones so a late result cannot revive deleted health data.
         var after = ""
         while (true) {
@@ -771,7 +809,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         Unit
     }
     override fun close() = helper.close()
-    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 15) {
+    private class Database(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 16) {
         init { setWriteAheadLoggingEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE settings(id INTEGER PRIMARY KEY,version TEXT NOT NULL,payload BLOB NOT NULL)")
@@ -793,6 +831,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             HealthCareEncounterRows.create(db)
             HealthCareDocumentRows.create(db)
             HealthCareInstructionRows.create(db)
+            HealthCareInstructionProposalRows.create(db)
         }
         private fun discussions(db: SQLiteDatabase) {
             // Bindings survive concern deletion so an old sensitive conversation cannot become an ordinary chat.
@@ -800,7 +839,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             db.execSQL("CREATE TABLE discussion_grants(turn_id TEXT PRIMARY KEY,payload BLOB NOT NULL)")
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            check(oldVersion in 1..14 && newVersion == 15)
+            check(oldVersion in 1..15 && newVersion == 16)
             if (oldVersion < 2) discussions(db)
             if (oldVersion < 3) plans(db)
             if (oldVersion < 4) reminders(db)
@@ -819,6 +858,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             if (oldVersion < 12) HealthCareEncounterRows.create(db)
             if (oldVersion < 13) HealthCareDocumentRows.create(db)
             if (oldVersion < 14) HealthCareInstructionRows.create(db)
+            if (oldVersion < 16) HealthCareInstructionProposalRows.create(db)
         }
         private fun research(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE research_authorizations(concern_id TEXT PRIMARY KEY,id TEXT NOT NULL UNIQUE,payload BLOB NOT NULL)")

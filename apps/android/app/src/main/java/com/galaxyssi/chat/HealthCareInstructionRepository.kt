@@ -4,7 +4,8 @@ import android.content.Context
 import android.os.CancellationSignal
 
 internal data class HealthCareInstructionSnapshot(val visit: HealthCareEncounterSnapshot, val page: HealthCareInstructionPage,
-    val selected: HealthCareInstruction? = null, val available: Boolean = false, val history: HealthCareInstructionPage? = null)
+    val selected: HealthCareInstruction? = null, val available: Boolean = false, val history: HealthCareInstructionPage? = null,
+    val proposal: HealthCareInstructionProposal? = null)
 internal data class HealthCareInstructionReading(val visit: HealthCareEncounterSnapshot, val document: HealthCareDocumentLink,
     val original: HealthOriginal, val page: HealthOcrPage, val pageCount: Int, val capturedAt: Long)
 
@@ -25,7 +26,8 @@ internal class HealthCareInstructionRepository(private val context: Context, pri
                     instruction.source.original.matches(original) && originals.present(original)
             } } == true
             HealthCareInstructionSnapshot(visit, if (selected == null) store.instructions(id, encounterId, before) else HealthCareInstructionPage(emptyList(), null),
-                value, available, if (selected != null && historyBefore != null) store.instructionHistory(id, selected, historyBefore) else null)
+                value, available, if (selected != null && historyBefore != null) store.instructionHistory(id, selected, historyBefore) else null,
+                value?.let { store.pendingInstructionProposal(it.id)?.takeIf { p -> p.scope.matches(it) && p.grant.concernId == id && p.encounterId == encounterId } })
         }
         encounters.commit(visit) { }; return result
     }
@@ -62,15 +64,28 @@ internal class HealthCareInstructionRepository(private val context: Context, pri
         val source = HealthCareInstructionSource.select(reading.document, reading.page, reading.pageCount, selected)
         return save(reading.visit, operationId, null, source, HealthCareInstructionDraft(), operationId, now)
     }
-    fun update(snapshot: HealthCareInstructionSnapshot, draft: HealthCareInstructionDraft, operationId: String, now: Long = System.currentTimeMillis()): HealthCareInstructionReceipt {
+    fun update(snapshot: HealthCareInstructionSnapshot, draft: HealthCareInstructionDraft, operationId: String, now: Long = System.currentTimeMillis(),
+        proposalId: String? = null): HealthCareInstructionReceipt {
         val before = snapshot.selected ?: throw HealthCareConflict()
-        return save(snapshot.visit, before.id, before.revision, before.source, draft, operationId, now)
+        require(proposalId == null || snapshot.proposal?.id == proposalId)
+        return save(snapshot.visit, before.id, before.revision, before.source, draft, operationId, now, proposalId)
     }
     private fun save(visit: HealthCareEncounterSnapshot, id: String, expected: Int?, source: HealthCareInstructionSource,
-        draft: HealthCareInstructionDraft, operationId: String, now: Long) = encounters.commit(visit) { care ->
+        draft: HealthCareInstructionDraft, operationId: String, now: Long, proposalId: String? = null) = encounters.commit(visit) { care ->
         val original = originals().use { store -> store.original(source.original.originalId)?.takeIf { source.original.matches(it) && store.present(it) } }
         if (original == null) throw HealthCareConflict()
-        care.saveInstruction(visit.issue.id, visit.issue.revision, visit.selected!!.id, id, expected, source, draft, operationId, now)
+        care.saveInstruction(visit.issue.id, visit.issue.revision, visit.selected!!.id, id, expected, source, draft, operationId, now, proposalId)
+    }
+    fun dismiss(snapshot: HealthCareInstructionSnapshot) = encounters.commit(snapshot.visit) { care ->
+        val proposal = snapshot.proposal ?: throw HealthCareConflict()
+        care.dismissInstructionProposal(proposal.id, proposal.scope)
+    }
+    fun discuss(snapshot: HealthCareInstructionSnapshot): String = encounters.commit(snapshot.visit) { care ->
+        check(names.fixture == null)
+        val value = snapshot.selected ?: throw HealthCareConflict()
+        HealthCareInstructionTool.selected(context, care, snapshot.visit.issue.id, HealthCareInstructionScope.of(value), names)
+        if (care.pendingInstructionProposal(value.id) != null) throw HealthCareConflict()
+        HealthCareDiscussion.open(context, value.concernId, names)
     }
     fun delete(snapshot: HealthCareInstructionSnapshot) = encounters.commit(snapshot.visit) { care ->
         val value = snapshot.selected ?: throw HealthCareConflict()

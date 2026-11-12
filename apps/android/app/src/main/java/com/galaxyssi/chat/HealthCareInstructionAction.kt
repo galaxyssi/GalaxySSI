@@ -36,7 +36,8 @@ internal object HealthCareInstructionActionPolicy {
         return HealthCareAction(actionId(value), HealthCareActionKind.CLINICAL_INSTRUCTION,
             value.draft.fields.getValue(HealthCareInstructionField.NAME).text,
             value.draft.fields.getValue(HealthCareInstructionField.DETAILS).text,
-            "user_transcribed", HealthCareActionState.CONFIRMED, confirmedAt = now, basis = HealthCareFollowUpPolicy.basis(issue),
+            if (value.modelProposalId == null) "user_transcribed" else "model_assisted_transcription",
+            HealthCareActionState.CONFIRMED, confirmedAt = now, basis = HealthCareFollowUpPolicy.basis(issue),
             instruction = HealthCareInstructionActionRef.of(value))
     }
 
