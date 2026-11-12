@@ -9,22 +9,33 @@ enum GalaxySSIHealthScopedReadTransport {
       }) async throws -> Data {
     typealias Tool = GalaxySSIHealthCareHistoryTool
     typealias Questions = GalaxySSIHealthCareQuestions
+    typealias Feedback = GalaxySSIHealthCareFeedbackTool
     var bytes = initial
     var history = review.history?.recent
     var questionCursor = review.questionCursor
     var request = request
     var historyRemaining = Tool.maximumPages
     var questionRemaining = Questions.maximumContinuations
+    var feedbackCursor = review.feedbackCursor
+    var feedbackRemaining = Feedback.maximumPages
     while true {
       try Task.checkCancellation()
       guard let contact = currentDestination() else { throw CancellationError() }
       try records.validateLocalCareDiscussionTurn(review)
       guard let call = try Tool.call(bytes, style: style, proposesPlan: review.proposesPlan,
-        allowsQuestionRead: review.questions != nil, asksQuestions: review.asksQuestions)
+        allowsQuestionRead: review.questions != nil, asksQuestions: review.asksQuestions, allowsFeedbackRead: feedbackCursor != nil)
       else { return bytes }
       let payload: AgentMcpJSONObject
       let purpose: String
-      if call.name == Questions.readTool {
+      if call.name == Feedback.function {
+        guard feedbackRemaining > 0, let cursor = feedbackCursor,
+              cursor.arguments == call.arguments else { throw GalaxySSIHealthRecords.Failure.permission }
+        feedbackRemaining -= 1
+        let output = try records.readLocalCareDiscussionFeedback(review, cursor: cursor, remaining: feedbackRemaining)
+        feedbackCursor = output.cursor
+        payload = output.payload
+        purpose = "Approved Health action feedback history"
+      } else if call.name == Questions.readTool {
         guard questionRemaining > 0, let cursor = questionCursor,
               cursor.arguments(turn: review.id) == call.arguments else { throw GalaxySSIHealthRecords.Failure.permission }
         questionRemaining -= 1
@@ -44,7 +55,8 @@ enum GalaxySSIHealthScopedReadTransport {
       }
       request = try Tool.continuing(request, with: call, payload: payload, style: style,
         proposesPlan: review.proposesPlan, historyAvailable: history?.cursor != nil, allowsMaintenance: review.history != nil,
-        questionsAvailable: questionCursor != nil, asksQuestions: review.asksQuestions)
+        questionsAvailable: questionCursor != nil, asksQuestions: review.asksQuestions,
+        feedbackAvailable: feedbackCursor != nil)
       let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: ledger, destination: .init(contact: contact),
         text: "", purpose: purpose,
         textSummary: .init(characters: request.httpBody?.count ?? 0, kinds: [.messageText, .systemInstructions, .toolOutput]))

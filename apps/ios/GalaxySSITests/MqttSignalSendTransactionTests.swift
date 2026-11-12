@@ -3,6 +3,31 @@ import XCTest
 
 #if canImport(LibSignalClient)
 final class MqttSignalSendTransactionTests: XCTestCase {
+  func testMissingArtifactChunksUseTransientSignalWithoutDurableOutbox() throws {
+    let f = try SignalSendFixture()
+    let identity = try MqttBusinessIdentity(MqttPeerBinding(scope: "direct:receiver",
+      sender: f.senderIdentity.fingerprint, receiver: f.receiverIdentity.fingerprint,
+      secret: Data(repeating: 7, count: 32).base64URLEncodedString(), sendTopic: sendTopic,
+      sendTopics: [sendTopic], receiveTopics: [String(repeating: "r", count: 43)]))
+    let id = String(repeating: "a", count: 64), hash = String(repeating: "b", count: 64)
+    let original: [String: Any] = ["phone_owned": true, "artifact_id": id, "sha256": hash, "task_id": "task",
+      "artifact_uri": "galaxyssi-artifact://task/outputs/fixture.bin", "client_route_id": "route"]
+    let binding = try XCTUnwrap(AgentDesktopArtifactRecovery.Binding(payload: original,
+      desktopID: f.receiverIdentity.name, routeID: "route", owner: .journal(identity)))
+    let nonce = UUID().uuidString
+    let request = AgentDesktopArtifactRecovery.Request(binding: binding, missing: [1, 5])
+    let outgoing = try MqttSignalSendRequest(identity: identity, payload: request.payload(id: nonce),
+      remoteName: f.receiverIdentity.name, topic: sendTopic, clientRouteID: "route", traffic: .control)
+    let bytes = try f.sender.makeRecoveryQueryWire(outgoing)
+    let wire = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+    let envelope = try XCTUnwrap(f.receiver.decrypt(wire))
+    let payload = try XCTUnwrap(GalaxySSILinkProtocol.unwrapEnvelope(envelope))
+    XCTAssertEqual(payload["artifact_id"] as? String, id)
+    XCTAssertEqual(payload["missing_chunks"] as? [Int], [1, 5])
+    XCTAssertEqual(payload["request_id"] as? String, nonce)
+    XCTAssertNil(try f.journal.outbox.entry(identity: identity, messageID: nonce))
+  }
+
   func testRecoveryQueryEncryptsWithoutCreatingBusinessOutboxRecord() throws {
     let f = try SignalSendFixture()
     let identity = try MqttBusinessIdentity(MqttPeerBinding(scope: "direct:receiver",

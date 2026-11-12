@@ -4,14 +4,13 @@ import android.content.Intent
 import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
-import android.text.TextUtils
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Toast
 import java.util.concurrent.Executors
 
-/** The Agent landing page surfaces local concerns without putting health data in an unrelated chat transcript. */
+/** Displays local health context only inside its independently bound Agent conversation. */
 internal class HealthCareAgentSurface(private val activity: MainActivity, private val names: HealthOverviewDatabases = HealthOverviewDatabases()) {
     private val host = activity.findViewById<LinearLayout>(R.id.agentHealthCareSurface)
     private val ui = HealthCenterViews(activity)
@@ -67,10 +66,11 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
         if (!active || !agentPage) return
         val conversation = activity.agentTranscriptStore.activeConversation()
         if (conversation.id != visibleConversation) {
+            clear()
             visibleConversation = conversation.id
-            expanded = false; visibleConcern = ""; navigationGeneration++
-            planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); researchReview.clear(); answerReview.clear(); generation++
         }
+        val concernId = HealthCareAgentScope.concernId(conversation)
+        if (concernId == null) { clear(); dirty = false; return }
         if (loading) { dirty = true; return }
         loading = true; dirty = false; val token = generation
         worker.execute {
@@ -80,10 +80,8 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                     HealthCareEngine.evaluate(context, names)
                     HealthPrivacyStore(context, names.privacy).use { privacy ->
                         if (!privacy.policy().metrics) Snapshot(emptyList()) else HealthCareStore(context, names.care).use { store ->
-                            val concerns = if (!store.settings().enabled) emptyList()
-                            else if (conversation.globalTopicKey.startsWith(HealthCareDiscussionPolicy.TOPIC_PREFIX))
-                                listOfNotNull(store.discussion(conversation.id)?.let(store::concern))
-                            else store.page(limit = 3, includePaused = false).items
+                            val concerns = if (store.settings().enabled && store.discussion(conversation.id) == concernId)
+                                listOfNotNull(store.concern(concernId)) else emptyList()
                             val issue = concerns.firstOrNull()
                             val profile = privacy.policy().profile
                             val reminders = if (profile && issue != null) store.reminders(issue.id) else emptyList()
@@ -106,7 +104,7 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                 loading = false
                 if (active && agentPage && token == generation && activity.agentTranscriptStore.activeConversation().id == conversation.id) {
                     main.removeCallbacks(deadlineRefresh)
-                    val previousScroll = (host.getChildAt(0) as? ScrollView)?.scrollY ?: 0
+                    val previousScroll = host.findViewWithTag<ScrollView>("agent-health-care-scroll")?.scrollY ?: 0
                     host.removeAllViews()
                     val snapshot = result.getOrDefault(Snapshot(emptyList()))
                     val concerns = snapshot.concerns
@@ -115,36 +113,29 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                     else concerns.firstOrNull()?.let { item ->
                         val sameConcern = visibleConcern == item.id
                         if (!sameConcern) { expanded = false; visibleConcern = item.id }
-                        val content = ui.column()
-                        val scroll = object : ScrollView(activity) {
-                            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                                val available = View.MeasureSpec.getSize(heightMeasureSpec)
-                                val limit = if (View.MeasureSpec.getMode(heightMeasureSpec) == View.MeasureSpec.UNSPECIFIED)
-                                    ui.dp(300) else minOf(ui.dp(300), (available * .4f).toInt())
-                                super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(limit, View.MeasureSpec.AT_MOST))
-                            }
-                        }.apply { tag = "agent-health-care-scroll"; isFillViewport = false; addView(content) }
-                        host.addView(scroll)
+                        val panel = HealthCareAgentPanel(activity,
+                            activity.getString(item.metric.titleResource()) + " · " + activity.getString(item.stage.titleResource()),
+                            HealthCareComparisonPresentation.summary(activity, item.assessment)
+                                ?: "${item.assessment.value} ${item.assessment.unit}",
+                            if (HealthCarePriority.rank(item.assessment) > 0) activity.getString(R.string.health_care_bp_title) else null,
+                            expanded) { expanded = it }
+                        val content = panel.content
+                        val scroll = panel.scroll
+                        host.addView(panel)
                         HealthCarePriorityPresentation.add(activity, content, item, compact = true) {
                             activity.startActivity(Intent(activity, HealthCareActivity::class.java).putExtra("health_care_id", item.id)
                                 .putHealthNavigationFixture(names))
                         }
-                        content.addView(ui.profileRow(activity.getString(item.metric.titleResource()) + " · " + activity.getString(item.stage.titleResource()),
-                            HealthCareComparisonPresentation.summary(activity, item.assessment)
-                                ?: "${item.assessment.value} ${item.assessment.unit}") {
-                            activity.startActivity(Intent(activity, HealthCareActivity::class.java).putExtra("health_care_id", item.id)
-                                .putHealthNavigationFixture(names))
-                        }.apply { tag = "agent-health-care-concern" })
                         val why = item.assessment.signals.joinToString(" ") { activity.getString(it.titleResource()) }
                             .ifBlank { activity.getString(R.string.health_care_changed_result) }
                         content.addView(ui.text(activity.getString(R.string.health_agent_why, why), 14f).apply {
-                            tag = "agent-health-care-why"; maxLines = 2; ellipsize = TextUtils.TruncateAt.END
+                            tag = "agent-health-care-why"
                         })
                         content.addView(ui.text(activity.getString(R.string.health_agent_next, activity.getString(
                             if (snapshot.plans.isNotEmpty()) R.string.health_agent_next_plan else nextStep(item))), 14f).apply {
                             tag = "agent-health-care-next"
                         })
-                        val details = ui.column().apply { visibility = if (expanded) View.VISIBLE else View.GONE }
+                        val details = ui.column()
                         content.addView(ui.line().apply {
                             if (snapshot.profile) addView(ui.text(activity.getString(R.string.health_care_discussion_title_short), 14f, bold = true).apply {
                                 tag = "agent-health-care-discuss"; minimumHeight = ui.dp(48); gravity = android.view.Gravity.CENTER_VERTICAL
@@ -154,19 +145,16 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                                 isFocusable = true; setOnClickListener { discuss(item.id) }
                             }, LinearLayout.LayoutParams(0, -2, 1f))
                             else addView(ui.text(activity.getString(R.string.health_care_attention), 14f), LinearLayout.LayoutParams(0, -2, 1f))
-                            addView(ui.icon(R.drawable.ic_chevron_down, if (expanded) R.string.health_agent_collapse else R.string.health_agent_expand) {
-                                expanded = !expanded; details.visibility = if (expanded) View.VISIBLE else View.GONE
-                                val button = findViewWithTag<View>("agent-health-care-expand")
-                                button.rotation = if (expanded) 180f else 0f
-                                button.contentDescription = activity.getString(if (expanded) R.string.health_agent_collapse else R.string.health_agent_expand)
-                                button.tooltipText = button.contentDescription
-                            }.apply { tag = "agent-health-care-expand"; rotation = if (expanded) 180f else 0f })
                         })
                         if (snapshot.profile) content.addView(ui.text(activity.getString(R.string.health_agent_research_state, activity.getString(
                             if (snapshot.authorization?.active != true) R.string.health_research_off else
                                 HealthCareResearchPolicy.displayState(item, snapshot.authorization, snapshot.research, System.currentTimeMillis())
                                     ?.titleResource() ?: R.string.health_research_queued)), 13f, muted = true).apply { tag = "agent-health-care-state" })
                         content.addView(details)
+                        details.addView(ui.profileRow(activity.getString(R.string.health_agent_open_record)) {
+                            activity.startActivity(Intent(activity, HealthCareActivity::class.java).putExtra("health_care_id", item.id)
+                                .putHealthNavigationFixture(names))
+                        }.apply { tag = "agent-health-care-record" })
                         if (snapshot.answers) details.addView(ui.profileRow(activity.getString(R.string.health_answer_title),
                             activity.getString(R.string.health_answer_pending)) { answerReview.show(item.id) }
                             .apply { tag = "agent-health-care-answers" })
@@ -196,7 +184,7 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                                 actionReview.show(item.id, action.id)
                             }.apply { tag = "agent-health-care-followup" })
                         }
-                        if (sameConcern && previousScroll > 0) scroll.post { scroll.scrollTo(0, previousScroll) }
+                        if (sameConcern && expanded && previousScroll > 0) scroll.post { scroll.scrollTo(0, previousScroll) }
                         if (snapshot.profile) {
                             val now = System.currentTimeMillis()
                             HealthCareResearchPolicy.nextDisplayChange(item, now)?.let {

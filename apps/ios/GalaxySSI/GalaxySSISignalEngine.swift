@@ -420,9 +420,12 @@ final class GalaxySSISignalEngine {
   // Recovery nonces belong to the live owner, not the durable business outbox.
   func makeRecoveryQueryWire(_ request: MqttSignalSendRequest) throws -> Data {
     let payload = try request.applicationPayload()
+    let standardQuery = ["agent_task_recovery_request", "agent_task_result_page_request", "agent_task_evidence_request"]
+      .contains(payload.string("type"))
     guard journal != nil, request.traffic == .control, request.attachmentDependencies.isEmpty,
           request.identity.local == Self.sha256(store.identityKeyPair.publicKey.serialize()),
-          ["agent_task_recovery_request", "agent_task_result_page_request", "agent_task_evidence_request"].contains(payload.string("type")),
+          standardQuery || AgentDesktopArtifactRecovery.acceptsTransientRequest(payload,
+            desktop: request.remoteName, route: request.clientRouteID),
           payload.string("request_id") == request.messageID, request.payload.count <= 16_384 else {
       throw MqttRouteError.invalidPayload
     }

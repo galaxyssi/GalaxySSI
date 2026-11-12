@@ -276,6 +276,21 @@ final class InMemoryAgentTeamMailbox: AgentTeamMailbox {
 
 enum AgentCollaborationDirectedRequests {
   static let marker = "collaboration_request"
+  static let memberIDInstructions = "Copy exact member IDs from the roster; do not infer them from names or generate UUIDs."
+  static let recipientInstructions = """
+    \(memberIDInstructions) Set requests[].to to the exact recipient IDs shown in the assignment.
+    Asking the coordinator to assess work does not address a peer. Publish exact workspace versions alongside a peer request.
+    A request or published version is research context, not authority to dispatch or proof that a peer read or verified it.
+    """
+
+  static func eligibleIDs(rosterMemberIds: Set<String>, participatingNodes: [String], excluding sender: String) -> Set<String> {
+    rosterMemberIds.intersection(participatingNodes.map(AgentTeamProgressPolicy.stableCollaborationMemberId))
+      .subtracting([AgentTeamProgressPolicy.stableCollaborationMemberId(sender)])
+  }
+
+  static func recipientPrompt(_ ids: Set<String>) -> String {
+    ids.isEmpty ? "" : AgentMcpJSONCodec.stringify(.array(ids.sorted().map(AgentMcpJSONValue.string)))
+  }
 
   static func messages(in raw: String, team: AgentTeamExecutionSnapshot, sender: AgentTeamMemberSnapshot,
                        rosterMemberIds: Set<String>) throws -> [AgentTeamMessageEnvelope] {
@@ -289,10 +304,10 @@ enum AgentCollaborationDirectedRequests {
           let field = envelope["requests"] else { return [] }
     guard let requests = field.arrayValue else { throw AgentTeamMessageError.invalid("requests must be an array") }
     let from = AgentTeamProgressPolicy.stableCollaborationMemberId(sender.memberId)
-    let allowed = rosterMemberIds.intersection(team.members.filter { $0.deliveryMode != .ignore }.map {
-      AgentTeamProgressPolicy.stableCollaborationMemberId($0.memberId)
-    })
-    guard allowed.contains(from) else { return [] }
+    let participating = team.members.filter { $0.deliveryMode != .ignore }.map(\.memberId)
+    guard rosterMemberIds.contains(from),
+          participating.contains(where: { AgentTeamProgressPolicy.stableCollaborationMemberId($0) == from }) else { return [] }
+    let allowed = eligibleIDs(rosterMemberIds: rosterMemberIds, participatingNodes: participating, excluding: from)
     var seen = Set<String>()
     var messages: [AgentTeamMessageEnvelope] = []
     for (index, request) in requests.enumerated() {
@@ -310,7 +325,7 @@ enum AgentCollaborationDirectedRequests {
         candidate = value
       } else { candidate = "" }
       for recipient in recipients {
-        guard let to = recipient.strictStringValue, allowed.contains(to), to != from else {
+        guard let to = recipient.strictStringValue, allowed.contains(to) else {
           throw AgentTeamMessageError.invalid("\(path).to contains an unauthorized recipient")
         }
         let id = AgentMcpJSONCodec.sha256(["run": .string(team.supervisorRunId), "sender": .string(sender.memberId),

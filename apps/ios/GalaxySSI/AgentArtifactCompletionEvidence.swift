@@ -368,6 +368,11 @@ enum AgentVerifiedArtifactSnapshot {
     verifyBinary(data, extension: ext, format: "image_first_frame_decode")
   }
 
+  static func verifiesContainer(_ data: Data, extension ext: String) -> Bool {
+    guard let format = binaryFormat(for: ext) else { return false }
+    return verifyBinary(data, extension: ext, format: format)
+  }
+
   static func verifiesImage(at url: URL, extension ext: String) -> Bool {
     verifyImageSource(CGImageSourceCreateWithURL(url as CFURL, nil), extension: ext)
   }
@@ -435,7 +440,8 @@ enum AgentVerifiedArtifactSnapshot {
 
   static func readLinuxFile(path: String, project: URL) throws -> Data {
     let parts = path.split(separator: "/").map(String.init)
-    guard !parts.contains(".galaxyssi-runtime"), !parts.contains(".git") else {
+    guard !parts.contains(".galaxyssi-runtime"), !parts.contains(AgentIOSRuntimeGuestABI.controlDirectory),
+          !parts.contains(".git") else {
       throw AgentRuntimeProjectWorkspaceError.invalid("The Linux artifact path is reserved")
     }
     return try readRegularFile(path: path, root: project, limit: maximumBytes)

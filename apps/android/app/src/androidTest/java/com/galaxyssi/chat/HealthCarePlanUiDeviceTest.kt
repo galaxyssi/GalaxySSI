@@ -53,14 +53,17 @@ class HealthCarePlanUiDeviceTest {
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
         val transcripts = AgentTranscriptStore(context)
         val previous = transcripts.activeConversation().id
-        val temporary = transcripts.createAgentConversation("Synthetic plan UI", privateMode = true, trackingPaused = true)
+        var temporaryId = ""
         val workers = mutableListOf<ExecutorService>()
         try {
-            transcripts.switchConversation(temporary.id)
-            val plan = HealthCarePlanTestFixture.propose(context, names)
+            val plan = HealthCarePlanTestFixture.propose(context, names, conversation = { concernId ->
+                transcripts.createAgentConversation("健康计划界面测试", globalTopicKey = HealthCareDiscussionPolicy.TOPIC_PREFIX + concernId,
+                    privateMode = true, trackingPaused = true).id.also { temporaryId = it }
+            })
+            transcripts.switchConversation(temporaryId)
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)
-                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporary.id)).use { scenario ->
-                await(scenario) { it.agentTranscriptStore.activeConversation().id == temporary.id && it.renderedAgentTranscriptSourceEntries.isEmpty() }
+                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporaryId)).use { scenario ->
+                await(scenario) { it.agentTranscriptStore.activeConversation().id == temporaryId && it.renderedAgentTranscriptSourceEntries.isEmpty() }
                 lateinit var review: HealthCarePlanReview
                 scenario.onActivity { activity ->
                     activity.healthCareSurface?.destroy()
@@ -95,7 +98,7 @@ class HealthCarePlanUiDeviceTest {
             }
         } finally {
             workers.forEach { it.awaitTermination(10, TimeUnit.SECONDS) }
-            transcripts.switchConversation(previous); transcripts.deleteConversation(temporary.id); clean(names)
+            transcripts.switchConversation(previous); if (temporaryId.isNotEmpty()) transcripts.deleteConversation(temporaryId); clean(names)
         }
     }
     @Test fun carePageCancelBackgroundAndRecreationDoNotAcceptDraft() {
@@ -284,16 +287,19 @@ class HealthCarePlanUiDeviceTest {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
         val transcripts = AgentTranscriptStore(context); val previous = transcripts.activeConversation().id
-        val temporary = transcripts.createAgentConversation("合成目标界面测试", privateMode = true, trackingPaused = true)
+        var temporaryId = ""
         val workers = mutableListOf<ExecutorService>()
         try {
-            transcripts.switchConversation(temporary.id)
-            val plan = HealthCarePlanTestFixture.propose(context, names) { HealthCareTargetTestFixture.input(it) }
+            val plan = HealthCarePlanTestFixture.propose(context, names, conversation = { concernId ->
+                transcripts.createAgentConversation("合成目标界面测试", globalTopicKey = HealthCareDiscussionPolicy.TOPIC_PREFIX + concernId,
+                    privateMode = true, trackingPaused = true).id.also { temporaryId = it }
+            }) { HealthCareTargetTestFixture.input(it) }
+            transcripts.switchConversation(temporaryId)
             HealthCareStore(context, names.care).use { store -> store.resolvePlan(plan.id, emptySet(), plan.grant.revision,
                 HealthPrivacyStore(context, names.privacy).use { it.policy() }, plan.inputVersion, System.currentTimeMillis(), true) }
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)
-                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporary.id)).use { scenario ->
-                await(scenario) { it.agentTranscriptStore.activeConversation().id == temporary.id && it.renderedAgentTranscriptSourceEntries.isEmpty() }
+                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporaryId)).use { scenario ->
+                await(scenario) { it.agentTranscriptStore.activeConversation().id == temporaryId && it.renderedAgentTranscriptSourceEntries.isEmpty() }
                 lateinit var review: HealthCareTargetReview
                 scenario.onActivity { activity ->
                     activity.healthCareSurface?.destroy()
@@ -319,7 +325,7 @@ class HealthCarePlanUiDeviceTest {
             }
         } finally {
             workers.forEach { it.awaitTermination(10, TimeUnit.SECONDS) }
-            transcripts.switchConversation(previous); transcripts.deleteConversation(temporary.id); clean(names)
+            transcripts.switchConversation(previous); if (temporaryId.isNotEmpty()) transcripts.deleteConversation(temporaryId); clean(names)
         }
     }
 }
