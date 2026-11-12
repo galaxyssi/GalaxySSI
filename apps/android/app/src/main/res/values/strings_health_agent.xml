@@ -3,8 +3,9 @@
     <string name="health_agent_why">Why it needs review: %1$s</string>
     <string name="health_agent_next">Next step: %1$s</string>
     <string name="health_agent_research_state">Evidence review: %1$s</string>
-    <string name="health_agent_expand">Show health actions</string>
-    <string name="health_agent_collapse">Hide health actions</string>
+    <string name="health_agent_expand">Expand health assessment</string>
+    <string name="health_agent_collapse">Collapse health assessment</string>
+    <string name="health_agent_open_record">View health details</string>
     <string name="health_agent_next_context">Confirm the conditions and source of this measurement.</string>
     <string name="health_agent_next_evidence">Review applicable evidence and discuss next steps.</string>
     <string name="health_agent_next_plan">Review each proposed action before accepting it.</string>

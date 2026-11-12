@@ -19,9 +19,8 @@ enum AgentCollaborationReleasedToolRun {
             result.receipt.outputSha256 == AgentMcpJSONCodec.sha256(result.output) else { return failed("runtime_receipt_mismatch") }
       guard result.status == .succeeded, result.receipt.status == .succeeded, result.output["exit_code"] == .int(0)
       else { return failed("runtime_not_successful") }
-      guard let stdout = result.output["stdout"]?.strictStringValue, stdout.utf8.count <= 96 * 1_024,
-            result.output["output_truncated"] != .bool(true),
-            (result.output["stdout_original_chars"]?.intValue ?? 0) <= Int64(stdout.utf16.count),
+      guard AgentCollaborationSavedToolTest.captureProblem(result.output) == nil,
+            let stdout = result.output["stdout"]?.strictStringValue,
             let report = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(stdout.utf8)),
             report["format"] == .string(AgentCollaborationReleasedToolRun.format) else { return failed("invalid_run_report") }
       guard report["runtime"]?.objectValue == runtime, report["environment_matches"] == .bool(true)

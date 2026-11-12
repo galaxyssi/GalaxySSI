@@ -44,6 +44,22 @@ final class AgentIOSPhonePublicHTMLAttachmentTests: XCTestCase {
       "https://example.com/article", weChatOnly: false))
   }
 
+  @MainActor
+  func testWeChatPasteRequiresExactlyOneVerifiedArticleAndPreservesQuery() throws {
+    let article = "https://mp.weixin.qq.com/s?__biz=abc&mid=123&sn=%2Fopaque%2Bvalue"
+    let other = "https://mp.weixin.qq.com/s/another"
+    XCTAssertEqual(try GalaxySSIWeChatLinkPaste.resolve(["Article title\n\(article)\n", article]).get(), article)
+    XCTAssertEqual(try GalaxySSIWeChatLinkPaste.resolve(["unrelated item", other]).get(), other)
+    XCTAssertEqual(GalaxySSIWeChatLinkPaste.resolve([article, other]), .failure(.ambiguous))
+    XCTAssertEqual(GalaxySSIWeChatLinkPaste.resolve(["\(article)\n\(other)"]), .failure(.ambiguous))
+    for value in ["", "Copied to clipboard", "https://mp.weixin.qq.com.attacker.invalid/s/example",
+      "https://mp.weixin.qq.com@attacker.invalid/s/example", "http://mp.weixin.qq.com/s/unsafe",
+      "https://mp.weixin.qq.com/s", "https://mp.weixin.qq.com/s/example\u{0000}extra",
+      String(repeating: "a", count: 16_385)] {
+      XCTAssertEqual(GalaxySSIWeChatLinkPaste.resolve([value]), .failure(.invalid))
+    }
+  }
+
   func testSourceArchivePreservesBytesWithoutPublishingExecutableHTML() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
