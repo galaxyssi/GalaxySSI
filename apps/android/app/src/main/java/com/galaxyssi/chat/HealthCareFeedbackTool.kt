@@ -96,7 +96,7 @@ internal object HealthCareFeedbackTool {
             .put("kind", receipt.feedback.kind.name).put("note", receipt.feedback.note)
             .put("recorded_at", receipt.feedback.recordedAt).put("self_reported", true).put("health_improvement_verified", false)
             .put("plan_basis_current", basisCurrent)
-            .put("action_requires_review", action == null || !basisCurrent || action.instruction?.invalidated == true)
+            .put("action_requires_review", action == null || !basisCurrent || action.sourceInvalidated)
             .apply { action?.instruction?.let {
                 put("instruction_invalidated", it.invalidated).put("instruction_source_verified", false)
             } }

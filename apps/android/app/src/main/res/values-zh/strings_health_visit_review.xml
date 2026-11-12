@@ -1,0 +1,10 @@
+<resources>
+    <string name="health_visit_review_schedule">安排回顾提醒</string>
+    <string name="health_visit_review_action">回顾诊后随访</string>
+    <string name="health_visit_review_provenance">用户确认的随访回顾</string>
+    <string name="health_visit_review_confirm">在 %1$s 提醒我回顾这次随访？</string>
+    <string name="health_visit_review_notice">这是你选择的记录回顾时间，不是临床检查或治疗周期。普通打卡不会取消提醒；暂停、结束、删除随访，修改目标或修订就诊资料后，需要重新确认。已有治疗提醒不受影响。</string>
+    <string name="health_visit_review_manage">管理回顾提醒与反馈</string>
+    <string name="health_visit_review_unavailable">请先核对更新后的就诊与随访资料，再安排提醒。</string>
+    <string name="health_visit_review_notice_private">有一项随访待回顾，请打开个人健康。</string>
+</resources>

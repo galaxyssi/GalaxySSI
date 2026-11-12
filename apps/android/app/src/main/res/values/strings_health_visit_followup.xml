@@ -1,6 +1,6 @@
 <resources>
     <string name="health_visit_followup_title">Post-visit follow-up</string>
-    <string name="health_visit_followup_notice">These are your own records, not a clinical assessment. They do not change treatment, confirm recovery or schedule reminders. Sharing this journal with an Agent requires your confirmation for each request.</string>
+    <string name="health_visit_followup_notice">These are your own records, not a clinical assessment. Saving an entry does not change treatment, confirm recovery or schedule a reminder. Review reminders require separate confirmation. Sharing this journal with an Agent requires your confirmation for each request.</string>
     <string name="health_visit_followup_active">Following up</string>
     <string name="health_visit_followup_review_needed">Review needed</string>
     <string name="health_visit_followup_paused">Paused</string>
@@ -24,7 +24,7 @@
     <string name="health_visit_followup_reason">Review or reason</string>
     <string name="health_visit_followup_needs_review">I need to review or discuss this change</string>
     <string name="health_visit_followup_review_notice">Check the current visit record before saving. A proposed adjustment or maintenance transition is not a treatment change or an accepted maintenance plan.</string>
-    <string name="health_visit_followup_archive_notice">I am ending this journal, not confirming recovery or stopping treatment or reminders.</string>
+    <string name="health_visit_followup_archive_notice">I am ending this journal and its review reminder, not confirming recovery or stopping treatment or other reminders.</string>
     <string name="health_visit_followup_invalid">Enter a follow-up goal, an observation or a reason as appropriate, and choose a review decision when reviewing.</string>
     <string name="health_visit_followup_save">Save record</string>
     <string name="health_visit_followup_attended_required">First record that this visit took place. A planned appointment is not a completed visit.</string>
@@ -32,5 +32,5 @@
     <string name="health_visit_followup_history">Follow-up history</string>
     <string name="health_visit_followup_empty">No follow-up records. Missing records do not establish improvement.</string>
     <string name="health_visit_followup_delete">Delete this follow-up journal</string>
-    <string name="health_visit_followup_delete_notice">Delete this journal and its history? The visit, original files, instructions, actions and reminders will remain.</string>
+    <string name="health_visit_followup_delete_notice">Delete this journal and its history, and cancel its review reminder? The visit, original files, instructions and other reminders will remain. The review action stays in history but cannot deliver an alert.</string>
 </resources>

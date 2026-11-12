@@ -213,8 +213,11 @@ class HealthCareActivity : Activity() {
         value.actions.forEach { action ->
             ui.add(content, ui.text(action.description, 16f, bold = true), 12)
             ui.add(content, ui.text(action.rationale, 14f), 4)
-            ui.add(content, ui.text(if (action.instruction != null) getString(R.string.health_instruction_action_provenance) else action.source, 13f, muted = true), 4)
-            ui.add(content, ui.text(getString(if (action.instruction?.invalidated == true) R.string.health_instruction_action_stale else action.state.titleResource()), 13f, muted = true), 4)
+            ui.add(content, ui.text(when {
+                action.visitReview != null -> getString(R.string.health_visit_review_provenance)
+                action.instruction != null -> getString(R.string.health_instruction_action_provenance)
+                else -> action.source }, 13f, muted = true), 4)
+            ui.add(content, ui.text(getString(if (action.sourceInvalidated) R.string.health_instruction_action_stale else action.state.titleResource()), 13f, muted = true), 4)
             action.dueFrom?.let { from -> ui.add(content, ui.text("${date(from)} - ${date(action.dueUntil!!)}", 14f), 4) }
             if (action.state in setOf(HealthCareActionState.CONFIRMED, HealthCareActionState.DONE)) {
                 ui.add(content, ui.profileRow(getString(R.string.health_care_followup_title)) { actionReview.show(value.id, action.id) }

@@ -17,12 +17,16 @@ class HealthCareVisitFollowUpActivity : Activity() {
     private val names by lazy { intent.healthNavigationDatabases() }
     private val repository by lazy { HealthCareVisitFollowUpRepository(applicationContext, names) }
     private val editor by lazy { HealthCareVisitFollowUpEditor(this) }
+    private val reminderEditor by lazy { HealthCareVisitReviewEditor(this) }
+    private val actionReview by lazy { HealthCareActionReview(this, names) }
+    private val visibilityOwner = Any()
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private lateinit var body: LinearLayout
     private var concernId = ""
     private var encounterId = ""
     private var active = false
+    private var resumed = false
     private var busy = false
     private var dirty = false
     private var openingAgent = false
@@ -54,14 +58,23 @@ class HealthCareVisitFollowUpActivity : Activity() {
         if (::body.isInitialized) { active = false; clear(); reset(); contentResolver.unregisterContentObserver(observer) }
         super.onStop()
     }
-    override fun onDestroy() { editor.clear(); worker.shutdown(); super.onDestroy() }
+    override fun onResume() { super.onResume(); resumed = true; if (snapshot != null) showVisible() }
+    override fun onPause() { resumed = false; HealthCareVisitReviewVisibility.hide(visibilityOwner); super.onPause() }
+    override fun onDestroy() { editor.clear(); reminderEditor.clear(); actionReview.destroy(); worker.shutdown(); super.onDestroy() }
+    private fun showVisible() {
+        if (active && resumed && !getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked) {
+            HealthCareVisitReviewVisibility.show(visibilityOwner, names.care, encounterId)
+            if (names.fixture == null) HealthReminderWork.sourceRemindersChanged(applicationContext)
+        }
+    }
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (::body.isInitialized && level >= TRIM_MEMORY_RUNNING_LOW) { clear(); reset(); if (active) load() }
     }
     private fun reset() { cursor = Int.MAX_VALUE; previous.clear() }
     private fun clear() {
-        generation++; openingAgent = false; snapshot = null; editor.clear(); dialog?.dismiss(); dialog = null
+        generation++; openingAgent = false; snapshot = null; editor.clear(); reminderEditor.clear(); actionReview.clear()
+        HealthCareVisitReviewVisibility.hide(visibilityOwner); dialog?.dismiss(); dialog = null
         main.removeCallbacks(expiry); body.removeAllViews()
     }
     private fun invalidate() { clear(); reset(); load() }
@@ -78,6 +91,7 @@ class HealthCareVisitFollowUpActivity : Activity() {
         editor.show(kind, value.followUp) { input -> reset(); work({ repository.record(value, input, operation) }) { load() } }
     }
     private fun render(value: HealthCareVisitFollowUpSnapshot) {
+        showVisible()
         val content = healthProfileContent(body)
         content.addView(ui.text(value.visit.selected!!.details.purpose, 18f, bold = true))
         ui.add(content, ui.text(getString(R.string.health_visit_followup_notice), 14f, muted = true), 8)
@@ -106,6 +120,23 @@ class HealthCareVisitFollowUpActivity : Activity() {
             }
             if (current.state in setOf(HealthCareVisitFollowUpState.ACTIVE, HealthCareVisitFollowUpState.REVIEW)) command(HealthCareVisitFollowUpKind.PAUSE)
             if (current.state != HealthCareVisitFollowUpState.ARCHIVED) command(HealthCareVisitFollowUpKind.ARCHIVE)
+            val canSchedule = HealthCareVisitReviewRef.of(current, value.visit.selected).matches(current, value.visit.selected) &&
+                value.visit.issue.stage !in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED)
+            if (canSchedule) ui.add(content, ui.profileRow(getString(R.string.health_visit_review_schedule)) {
+                if (!busy) reminderEditor.show(value) { at -> work({ repository.schedule(value, at) }) { load() } }
+            }.apply { tag = "visit-review-schedule" }, 12)
+            else ui.add(content, ui.text(getString(R.string.health_visit_review_unavailable), 14f, muted = true), 8)
+            value.reminder?.let { reminder ->
+                ui.add(content, ui.text(getString(reminder.state.label(), encounterTime(this, reminder.dueAt,
+                    ZoneId.systemDefault().id)), 14f).apply { tag = "visit-review-status" }, 8)
+                if (reminder.state != HealthCareReminderState.CANCELLED) ui.add(content,
+                    ui.profileRow(getString(R.string.health_care_followup_cancel)) {
+                        work({ repository.cancelReminder(value) }) { load() }
+                    }.apply { tag = "visit-review-cancel" }, 4)
+                ui.add(content, ui.profileRow(getString(R.string.health_visit_review_manage)) {
+                    actionReview.show(concernId, reminder.actionId)
+                }.apply { tag = "visit-review-manage" }, 4)
+            }
             if (attended && names.fixture == null) ui.add(content, ui.profileRow(getString(R.string.health_visit_followup_agent)) {
                 if (!busy) {
                     val scope = HealthCareVisitFollowUpScope.of(current, value.visit.selected)
