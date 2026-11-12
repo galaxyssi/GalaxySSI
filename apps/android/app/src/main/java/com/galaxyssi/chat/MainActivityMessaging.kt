@@ -605,7 +605,7 @@ internal fun MainActivity.sendOutgoingText(contact: Contact, content: String, vo
                     MqttPublishResult.QUEUED -> {
                         updateMessageStatus(msg.id, contact.id, getString(R.string.delivery_status_queued))
                     }
-                    MqttPublishResult.FAILED -> {
+                    MqttPublishResult.FAILED, MqttPublishResult.BACKPRESSURE -> {
                         appendDeliveryTrace(msg.id, contact.id, "publish_failed", target)
                         updateMessageStatus(msg.id, contact.id, getString(R.string.delivery_status_failed))
                         failVoiceCoordinator(voiceTraceId, "publish_failed")

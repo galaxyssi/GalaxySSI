@@ -9,6 +9,7 @@ internal object MqttPublishGuard {
 internal enum class MqttPublishResult(val accepted: Boolean) {
     PUBLISHED(true),
     QUEUED(true),
+    BACKPRESSURE(false),
     FAILED(false)
 }
 

@@ -10,6 +10,49 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentProductionAdaptersTest {
+    @Test fun freshAvailabilityPermitsOneProbeWithoutReplayingRuns() {
+        val ledger = InMemoryAgentProviderHealthLedger()
+        val codex = registration("codex", "codex-app-server-or-cli")
+        repeat(3) { ledger.recordFailure(codex, "start_run", AgentProviderFailureKind.EXECUTION, 1, 1_000L + it) }
+        ledger.observeAvailability(codex.copy(lastHeartbeatMillis = 999L), 2_000L)
+        assertFalse(ledger.acquire(codex, "start_run", 2_000L).allowed)
+        ledger.observeAvailability(codex.copy(lastHeartbeatMillis = 1_500L), 2_000L)
+        assertEquals(3, ledger.snapshot(codex).consecutiveFailures)
+        assertTrue(ledger.acquire(codex, "start_run", 2_001L).probe)
+        ledger.observeAvailability(codex.copy(lastHeartbeatMillis = 2_002L), 2_003L)
+        assertFalse(ledger.acquire(codex, "start_run", 2_004L).allowed)
+        ledger.recordSuccess(codex, "start_run", 1, 2_005L)
+        assertEquals(AgentProviderCircuitState.CLOSED, ledger.snapshot(codex).circuitState(2_006L))
+    }
+
+    @Test fun availabilityDoesNotReleaseOtherRuntimeAuthTimeoutOrProtocolFailures() {
+        val codex = registration("codex", "codex-app-server-or-cli")
+        for (kind in listOf(AgentProviderFailureKind.AUTHORIZATION, AgentProviderFailureKind.PROTOCOL,
+            AgentProviderFailureKind.TIMEOUT)) {
+            val ledger = InMemoryAgentProviderHealthLedger()
+            repeat(3) { ledger.recordFailure(codex, "start_run", kind, 1, 1_000L + it) }
+            ledger.observeAvailability(codex.copy(lastHeartbeatMillis = 1_500L), 2_000L)
+            assertFalse(ledger.acquire(codex, "start_run", 2_001L).allowed)
+        }
+        val ledger = InMemoryAgentProviderHealthLedger()
+        ledger.recordFailure(codex, "start_run", AgentProviderFailureKind.TRANSPORT_CRASH, 1, 1_000L)
+        ledger.observeAvailability(registration("hermes", "hermes-cli").copy(lastHeartbeatMillis = 1_500L), 2_000L)
+        ledger.observeAvailability(codex.copy(status = AgentEndpointStatus.OFFLINE, lastHeartbeatMillis = 1_500L), 2_000L)
+        ledger.observeAvailability(codex.copy(lastHeartbeatMillis = 100_000L), 2_000L)
+        assertFalse(ledger.acquire(codex, "start_run", 2_001L).allowed)
+    }
+
+    @Test fun oldReadyReportCannotReleaseANewFailedProbe() {
+        val ledger = InMemoryAgentProviderHealthLedger()
+        val codex = registration("codex", "codex-app-server-or-cli").copy(lastHeartbeatMillis = 1_500L)
+        ledger.recordFailure(codex, "start_run", AgentProviderFailureKind.TRANSPORT_CRASH, 1, 1_000L)
+        ledger.observeAvailability(codex, 2_000L)
+        assertTrue(ledger.acquire(codex, "start_run", 2_001L).allowed)
+        ledger.recordFailure(codex, "start_run", AgentProviderFailureKind.TRANSPORT_CRASH, 1, 2_002L)
+        ledger.observeAvailability(codex, 2_003L)
+        assertFalse(ledger.acquire(codex, "start_run", 2_004L).allowed)
+    }
+
     @Test
     fun `factory creates dedicated production adapter for every supported family`() {
         val cases = listOf(

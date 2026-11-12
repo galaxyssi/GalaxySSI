@@ -324,7 +324,8 @@ object GalaxySSIMqttClient {
         val transientQuery = MqttQueryDeliveryPolicy.isTransient(payload.optString("type"))
         if (transientQuery && peerRoutes?.readyForTopic(link.routes.control) != true) return false
         val durableDelivery = durable && !transientQuery
-        if (durableDelivery && !GalaxySSILinkDeliveryStore.hasCapacity(context, link.routes, MqttTrafficPolicy.classify(payload))) {
+        if (durableDelivery && !GalaxySSILinkDeliveryStore.hasCapacity(context, link.routes,
+                MqttTrafficPolicy.classify(payload), payload.optString("type"))) {
             Log.w(TAG, "Desktop control deferred: durable outbox capacity reached")
             return false
         }
@@ -710,9 +711,9 @@ object GalaxySSIMqttClient {
                     when (result) {
                         MqttPublishResult.PUBLISHED -> AgentDisclosureStatus.SENT
                         MqttPublishResult.QUEUED -> AgentDisclosureStatus.QUEUED
-                        MqttPublishResult.FAILED -> AgentDisclosureStatus.FAILED
+                        MqttPublishResult.FAILED, MqttPublishResult.BACKPRESSURE -> AgentDisclosureStatus.FAILED
                     },
-                    if (result == MqttPublishResult.FAILED) "GalaxySSI Link publish failed" else ""
+                    if (!result.accepted) "GalaxySSI Link publish failed" else ""
                 )
             }
             return result
@@ -1268,7 +1269,7 @@ object GalaxySSIMqttClient {
         if (receiptRoutes == null) return MqttPublishResult.FAILED
         if (!callerRetried && !GalaxySSILinkDeliveryStore.hasCapacity(context, receiptRoutes, MqttTrafficPolicy.classify(payload))) {
             Log.w(TAG, "Message deferred: durable outbox capacity reached")
-            return MqttPublishResult.FAILED
+            return MqttPublishResult.BACKPRESSURE
         }
         if (usesPcConnectorTunnel(contactId) &&
             !AppStore.isDesktopDeviceContact(context, contactId) &&
@@ -1407,7 +1408,7 @@ object GalaxySSIMqttClient {
                 isDirectPhoneContact = AppStore.phoneRoutesForIdentity(context, contactId) != null &&
                     !usesPcConnectorTunnel(contactId)
             )
-        )) return MqttPublishResult.FAILED
+        )) return MqttPublishResult.BACKPRESSURE
         if (!payload.optBoolean("peer_chat")) {
             AgentLatencyTelemetry.transportQueued(context, targetId, messageId,
                 com.galaxyssi.chat.metrics.AgentTransportTiming.taskId(payload))

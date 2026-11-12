@@ -721,7 +721,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     globalRunSlots.release(slotOwnerId)
                 }
             }
-            if (result.metadata["awaiting_response"] != "true") {
+            if (result.metadata["awaiting_response"] != "true" &&
+                result.metadata["provider_failure_attribution"] != "local_transport") {
                 resourceHealth.record("target:$connectorId", result.success, System.currentTimeMillis() - startedAt)
             }
             val trackedResult = result.copy(
@@ -1258,6 +1259,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             trace.put(
                 JSONObject()
                     .put("stage", when (dispatch) {
+                        MqttPublishResult.BACKPRESSURE -> "local_outbox_full"
                         MqttPublishResult.PUBLISHED -> "mqtt_published"
                         MqttPublishResult.QUEUED -> "mqtt_queued"
                         MqttPublishResult.FAILED -> "publish_failed"
@@ -1277,7 +1279,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             when (dispatch) {
                                 MqttPublishResult.PUBLISHED -> R.string.delivery_status_sent
                                 MqttPublishResult.QUEUED -> R.string.delivery_status_queued
-                                MqttPublishResult.FAILED -> R.string.delivery_status_failed
+                                MqttPublishResult.FAILED, MqttPublishResult.BACKPRESSURE -> R.string.delivery_status_failed
                             }
                         ),
                         deliveryTrace = trace
@@ -1291,6 +1293,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             actionId = action.id,
             success = published,
             message = when (dispatch) {
+                MqttPublishResult.BACKPRESSURE -> context.getString(R.string.agent_local_outbox_full)
                 MqttPublishResult.QUEUED -> "Task queued locally; waiting for a verified connection to ${action.target}"
                 MqttPublishResult.PUBLISHED -> "Waiting for ${action.target} response"
                 MqttPublishResult.FAILED -> "Could not send task to ${action.target}"
@@ -1322,7 +1325,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     "manual_target_locked" to action.parameters["manual_target_locked"].orEmpty()
                 )
             } else {
-                emptyMap()
+                mapOf("provider_failure_attribution" to "local_transport",
+                    "delivery_failure_reason" to if (dispatch == MqttPublishResult.BACKPRESSURE)
+                        "local_outbox_full" else "local_publish_failed")
             }
         )
     }

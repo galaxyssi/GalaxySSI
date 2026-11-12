@@ -73,12 +73,26 @@ internal class GalaxySSILinkOutboxDatabase(
     )
 
     @Synchronized
-    fun canEnqueue(routeScope: String, control: Boolean): Boolean {
+    fun canEnqueue(routeScope: String, control: Boolean, payloadType: String = ""): Boolean {
         val limit = if (control) 64 else 56
         return readableDatabase.rawQuery(
-            "SELECT COUNT(*) FROM $TABLE_OUTBOX WHERE status <> 'held_unclassified' AND (route_scope = ? OR route_scope = '')",
-            arrayOf(routeScope)
+            "SELECT COUNT(*) FROM $TABLE_OUTBOX WHERE status <> 'held_unclassified' AND (route_scope = ? OR route_scope = '')" +
+                if (payloadType == "artifact_blob_capability" && routeScope.isNotBlank())
+                    " AND NOT (route_scope = ? AND $UNSENT_CAPABILITY)" else "",
+            if (payloadType == "artifact_blob_capability" && routeScope.isNotBlank()) arrayOf(routeScope, routeScope)
+            else arrayOf(routeScope)
         ).use { it.moveToFirst() && it.getInt(0) < limit }
+    }
+
+    /** Only replace internal, never-sent state snapshots, never user messages or file manifests. */
+    @Synchronized
+    fun redundantUnsentCapabilities(): List<String> {
+        ensureLegacyRowsMigrated()
+        return readableDatabase.rawQuery(
+            "SELECT message_id FROM $TABLE_OUTBOX WHERE $UNSENT_CAPABILITY AND route_scope <> '' " +
+                "AND rowid NOT IN (SELECT MAX(rowid) FROM $TABLE_OUTBOX WHERE $UNSENT_CAPABILITY " +
+                "AND route_scope <> '' GROUP BY route_scope)", null
+        ).use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.getString(0)) } }
     }
 
     @Synchronized
@@ -497,6 +511,8 @@ internal class GalaxySSILinkOutboxDatabase(
     }
 
     private companion object {
+        const val UNSENT_CAPABILITY = "payload_type = 'artifact_blob_capability' AND client_source_message_id = 0 " +
+            "AND attachment_transfer_id = '' AND blocked_dependency_count = 0 AND attempts = 0 AND status = 'queued'"
         const val DATABASE_NAME = "opaque_link_outbox_v3.db"
         const val DATABASE_VERSION = 3
         const val SQL_BIND_BATCH_SIZE = 500

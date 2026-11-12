@@ -368,9 +368,13 @@ class AppStoreAgentConnectorRegistry(
                 lastHeartbeatMillis = contact.optLong("setup_updated_at", registration.lastHeartbeatMillis),
                 updatedAtMillis = contact.optLong("setup_updated_at", registration.updatedAtMillis)
             )
-            val healthState = healthSnapshots[projected.runtimeHealthScope()]
-                ?.circuitState(System.currentTimeMillis())
+            val now = System.currentTimeMillis()
+            val priorHealth = healthSnapshots[projected.runtimeHealthScope()]?.circuitState(now)
                 ?: AgentProviderCircuitState.CLOSED
+            val healthState = if (priorHealth == AgentProviderCircuitState.OPEN) {
+                providerHealthLedger.observeAvailability(projected, now)
+                providerHealthLedger.snapshot(projected).circuitState(now)
+            } else priorHealth
             projected.copy(
                 activeRuns = maxOf(
                     AgentRemoteCapacitySnapshotPolicy.activeRuns(

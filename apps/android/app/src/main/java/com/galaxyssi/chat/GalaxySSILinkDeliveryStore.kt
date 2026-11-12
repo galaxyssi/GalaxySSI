@@ -117,7 +117,7 @@ object GalaxySSILinkDeliveryStore {
         require(!deferredSignalEncryption || (blockedByAttachmentTransferIds.isNotEmpty() && recoverableEnvelope.isNotBlank()))
         val database = outboxDatabase(context)
         if (database.contains(messageId)) return true
-        if (!database.canEnqueue(receiptRoutes?.let(::receiptBinding).orEmpty(), transportTraffic == "control")) return false
+        if (!database.canEnqueue(receiptRoutes?.let(::receiptBinding).orEmpty(), transportTraffic == "control", payloadType)) return false
         val item = JSONObject()
             .put("message_id", messageId)
             .put("topic", topic)
@@ -163,6 +163,7 @@ object GalaxySSILinkDeliveryStore {
             recoveryDatabase(context).writeString(recoveryKey(messageId), recoverableEnvelope)
         }
         check(database.insert(item)) { "Encrypted outbox message could not be persisted" }
+        if (payloadType == "artifact_blob_capability") compactCapabilityDeclarations(context, database)
         return true
     }
 
@@ -201,8 +202,9 @@ object GalaxySSILinkDeliveryStore {
     }
 
     @Synchronized
-    internal fun hasCapacity(context: Context, routes: GalaxySSILinkProtocol.Routes, traffic: String): Boolean =
-        outboxDatabase(context).canEnqueue(receiptBinding(routes), traffic == "control")
+    internal fun hasCapacity(context: Context, routes: GalaxySSILinkProtocol.Routes, traffic: String,
+        payloadType: String = ""): Boolean =
+        outboxDatabase(context).canEnqueue(receiptBinding(routes), traffic == "control", payloadType)
 
     @Synchronized
     internal fun hasPendingAttachmentManifest(context: Context, routes: GalaxySSILinkProtocol.Routes,
@@ -808,10 +810,18 @@ object GalaxySSILinkDeliveryStore {
                 database.redundantUnsentAttachmentManifests().forEach { messageId ->
                     database.delete(messageId)?.let { deleteOutboxPayload(context, it) }
                 }
+                compactCapabilityDeclarations(context, database)
                 outboxMigrationChecked = true
             }
         }
         return database
+    }
+
+    private fun compactCapabilityDeclarations(context: Context, database: GalaxySSILinkOutboxDatabase) {
+        database.redundantUnsentCapabilities().forEach { messageId ->
+            database.delete(messageId)?.let { deleteOutboxPayload(context, it) }
+            retryWindow.release(messageId)
+        }
     }
 
     private fun inboundDatabase(context: Context): AgentEncryptedDatabase =

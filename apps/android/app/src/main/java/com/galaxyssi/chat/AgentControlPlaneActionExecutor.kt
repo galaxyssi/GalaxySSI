@@ -280,6 +280,9 @@ internal class ActionExecutorAgentProvider(
 
     fun recordDispatchOutcome(agentId: String, result: AgentActionResult, latencyMillis: Long) {
         val registration = registration(agentId) ?: return
+        if (!result.success && result.metadata["provider_failure_attribution"] == "local_transport") {
+            return
+        }
         val now = System.currentTimeMillis()
         if (result.success) {
             healthLedger.recordSuccess(registration, "start_run", latencyMillis, now)

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_local_outbox_full">手机发送队列已满，本次请求尚未发送。请待积压发送完成后重试。</string>
+</resources>

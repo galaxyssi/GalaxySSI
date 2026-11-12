@@ -11,6 +11,9 @@ class AttachmentControlPublicationTest {
         assertThrows(IllegalStateException::class.java) {
             MqttPublishResult.FAILED.requireAttachmentQueued()
         }
+        assertThrows(IllegalStateException::class.java) {
+            MqttPublishResult.BACKPRESSURE.requireAttachmentQueued()
+        }
     }
 
     @Test fun rejectedStatusManifestOrChunkRetainsTheSameControlForReplay() {

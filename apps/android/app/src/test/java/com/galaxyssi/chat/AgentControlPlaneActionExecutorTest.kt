@@ -12,6 +12,46 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
 class AgentControlPlaneActionExecutorTest {
+    @Test fun localFailureCannotReleaseAnExistingRecoveryProbe() {
+        val health = InMemoryAgentProviderHealthLedger()
+        val registration = registration().copy(lastHeartbeatMillis = 1_500L)
+        val provider = ActionExecutorAgentProvider({ listOf(registration) }, object : AgentActionExecutor {
+            override fun execute(action: AgentAction, screen: ScreenContext) = error("No dispatch expected")
+        }, healthLedger = health)
+        health.recordFailure(registration, "start_run", AgentProviderFailureKind.TRANSPORT_CRASH, 1, 1_000L)
+        health.observeAvailability(registration, 2_000L)
+        assertTrue(health.acquire(registration, "start_run", 2_001L).probe)
+        val before = health.snapshot(registration)
+        provider.recordDispatchOutcome(registration.agentId, AgentActionResult("late-local-failure", false,
+            "Phone queue full", mapOf("provider_failure_attribution" to "local_transport")), 1)
+        assertEquals(before, health.snapshot(registration))
+        assertFalse(health.acquire(registration, "start_run", 2_002L).allowed)
+        assertTrue(health.acquire(registration, "start_run", before.probeLeaseUntilMillis + 1).probe)
+    }
+
+    @Test fun localTransportFailureDoesNotPoisonTheProvider() {
+        val health = InMemoryAgentProviderHealthLedger()
+        val registration = registration()
+        val executions = AtomicInteger()
+        val provider = ActionExecutorAgentProvider({ listOf(registration) }, object : AgentActionExecutor {
+            override fun execute(action: AgentAction, screen: ScreenContext): AgentActionResult {
+                executions.incrementAndGet()
+                return AgentActionResult(action.id, false, "Phone queue full",
+                    mapOf("provider_failure_attribution" to "local_transport", "delivery_failure_reason" to "local_outbox_full"))
+            }
+        }, healthLedger = health)
+        val executor = AgentControlPlaneActionExecutor(provider)
+        repeat(8) { index ->
+            val action = connectorAction().copy(id = "local-$index",
+                parameters = connectorAction().parameters + ("_galaxyssi_turn_id" to "local-$index"))
+            val result = executor.execute(action, ScreenContext(foregroundApp = "GalaxySSI", pageTitle = "Agent"))
+            assertFalse(result.success)
+            assertEquals("local_outbox_full", result.metadata["delivery_failure_reason"])
+        }
+        assertEquals(8, executions.get())
+        assertEquals(0, health.snapshot(registration).failures)
+    }
+
     @Test fun managedRunCancellationReachesCloudOwner() = runBlocking {
         val id = AgentCloudDispatchIdentity(87654, "cloud", "test-conversation", "test-turn", "test-task", "test-action")
         val lease = AgentCloudDispatchRegistry.register(id)
