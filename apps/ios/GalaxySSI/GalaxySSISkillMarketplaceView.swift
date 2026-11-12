@@ -3,6 +3,8 @@ import UniformTypeIdentifiers
 
 struct GalaxySSISkillMarketplaceView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var store: GalaxySSIStore
+  @State private var doorAccess: GalaxySSIDoorAccessView.Launch?
   @State private var installations: [AgentSkillInstallation] = []
   @State private var statusMessage = ""
   @State private var statusIsError = false
@@ -87,6 +89,14 @@ struct GalaxySSISkillMarketplaceView: View {
             )
           }
 
+          if let configuration = AgentDoorAccessConfiguration.enabled() {
+            Button {
+              doorAccess = .init(owner: store.profile.identityFingerprint, conversation: nil,
+                configuration: configuration, command: .list, automatic: false)
+            } label: {
+              Label(GalaxySSIDoorAccessView.text("title", "Door access", language: interfaceLanguage), systemImage: "lock")
+            }
+          }
           installedSection
           recommendedSection
         }
@@ -97,6 +107,7 @@ struct GalaxySSISkillMarketplaceView: View {
     }
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .sheet(item: $doorAccess) { launch in GalaxySSIDoorAccessView(launch: launch) }
     .fileImporter(
       isPresented: $importPresented,
       allowedContentTypes: [.zip, .data],

@@ -16,7 +16,17 @@ final class AgentSkillRuntime {
   }
 
   func validate(_ manifest: AgentSkillManifest) -> AgentSkillValidationResult {
-    AgentSkillManifestValidator.validate(manifest, availableNativeToolIds: availableTools)
+    if manifest.id == AgentDoorAccessConfiguration.skillID {
+      guard AgentDoorAccessConfiguration(manifest) != nil else {
+        return .init(issues: [skillRuntimeIssue("$.steps", "invalid_door_configuration", "Invalid local door Skill configuration")])
+      }
+      return AgentSkillManifestValidator.validate(manifest,
+        availableNativeToolIds: availableTools?.union([AgentDoorAccessConfiguration.toolID]))
+    }
+    if manifest.nativeTools.contains(AgentDoorAccessConfiguration.toolID) {
+      return .init(issues: [skillRuntimeIssue("$.native_tools", "reserved_door_tool", "Door access is not a general-purpose tool")])
+    }
+    return AgentSkillManifestValidator.validate(manifest, availableNativeToolIds: availableTools)
   }
 
   func validate(_ rawManifest: String) -> AgentSkillValidationResult {
@@ -33,8 +43,12 @@ final class AgentSkillRuntime {
     return validate(manifest)
   }
 
-  func install(_ manifest: AgentSkillManifest, enabled: Bool = true) throws -> AgentSkillInstallation {
+  func install(_ manifest: AgentSkillManifest, enabled: Bool = true,
+               verifiedDoorPackage: Bool = false) throws -> AgentSkillInstallation {
     try validate(manifest).requireValid()
+    guard manifest.id != AgentDoorAccessConfiguration.skillID || verifiedDoorPackage else {
+      throw AgentSkillPackageError("Door access requires a verified package import")
+    }
     if let existing = get(id: manifest.id, version: manifest.version) {
       if AgentSkillManifestCodec.encode(existing.manifest) != AgentSkillManifestCodec.encode(manifest) {
         throw AgentSkillConflictError(id: manifest.id, version: manifest.version)
@@ -70,7 +84,7 @@ final class AgentSkillRuntime {
   func installAvailable(_ manifests: [AgentSkillManifest], enabled: Bool = true) -> [AgentSkillInstallation] {
     var current = store.list()
     var accepted: [AgentSkillInstallation] = []
-    for manifest in manifests where validate(manifest).isValid {
+    for manifest in manifests where manifest.id != AgentDoorAccessConfiguration.skillID && validate(manifest).isValid {
       if let existing = current.first(where: { $0.id == manifest.id && $0.version == manifest.version }) {
         if AgentSkillManifestCodec.encode(existing.manifest) == AgentSkillManifestCodec.encode(manifest) {
           accepted.append(existing)
@@ -149,6 +163,9 @@ final class AgentSkillRuntime {
 
   func expand(_ manifest: AgentSkillManifest, parameters: AgentMcpJSONObject = [:]) throws -> AgentSkillExpansion {
     try validate(manifest).requireValid()
+    guard manifest.id != AgentDoorAccessConfiguration.skillID else {
+      throw AgentSkillPackageError("Door access must be confirmed in the local panel")
+    }
     try AgentSkillValidationResult(
       issues: AgentSkillManifestValidator.validateParameters(manifest.parameters, value: .object(parameters), path: "$.parameters")
     ).requireValid()

@@ -100,7 +100,8 @@ final class AgentSkillPackageInstaller {
     if !inspected.integrityVerified && !allowUnsignedLocalPackage {
       throw AgentSkillPackageError("Unsigned Skill package requires explicit local-install approval")
     }
-    return try runtime.install(inspected.manifest, enabled: false)
+    return try runtime.install(inspected.manifest, enabled: false,
+      verifiedDoorPackage: inspected.integrityVerified && inspected.entries == [Self.manifestFile, Self.integrityFile])
   }
 
   static func sha256(_ data: Data) -> String {
