@@ -21,6 +21,7 @@ struct GalaxySSIHealthCareResearchControls: View {
   @State private var shareQuestions = false
   @State private var shareQuestionPages = false
   @State private var shareActionFeedback = false
+  @State private var shareFeedbackHistory = false
   @State private var sources = Set<GalaxySSIHealthCareEvidence.PublicSource>()
   @State private var review: Review?
   @State private var confirmed = false
@@ -74,6 +75,9 @@ struct GalaxySSIHealthCareResearchControls: View {
               isOn: $shareQuestionPages)
           }
           Toggle(t("share_action_feedback", "Include latest action feedback in automatic research"), isOn: $shareActionFeedback)
+          if route(provider) != nil {
+            Toggle(t("share_feedback_history", "Allow action feedback history in automatic research"), isOn: $shareFeedbackHistory)
+          }
           Button(t("review", "Review authorization"), action: preview).disabled(provider.isEmpty || sources.isEmpty)
         } else {
           Text(t("online_off", "Online Health discussion is off.")).foregroundColor(.secondary)
@@ -84,6 +88,7 @@ struct GalaxySSIHealthCareResearchControls: View {
     .onAppear(perform: reload)
     .onChange(of: provider) { _ in
       desktopModel = ""; desktopEffort = .automatic; shareQuestionPages = false; shareActionFeedback = false
+      shareFeedbackHistory = false
     }
     .onChange(of: shareQuestions) { if !$0 { shareQuestionPages = false } }
     .onChange(of: scene) { if $0 == .active { reload() } else { clear() } }
@@ -115,7 +120,12 @@ struct GalaxySSIHealthCareResearchControls: View {
               }
             }
             Text(t("scope", "While GalaxySSI is active, this concern may send updated measurements, approved profile context, recent private replies and scoped plan status to this model. Research may save a reply or draft, but cannot adopt steps or schedule reminders. You can revoke access at any time."))
-            if proposed.approval.includesActionFeedback {
+            if proposed.approval.allowsStandingFeedbackPages {
+              Text(t("feedback_history_scope", "The selected model may request up to four pages of eligible action feedback, including future entries, for each automatic review of this concern."))
+              if proposed.approval.includesActionFeedback {
+                Text(t("feedback_history_recent", "The initial request also includes the latest eligible action notes."))
+              }
+            } else if proposed.approval.includesActionFeedback {
               Text(t("action_feedback_scope", "This model may receive the latest eligible self-reported action notes for this concern, including future notes, but not their history."))
             }
             if let questions = proposed.approval.questions {
@@ -162,6 +172,7 @@ struct GalaxySSIHealthCareResearchControls: View {
           destinationID: provider, model: model, credential: key, includesQuestions: shareQuestions,
           includesActionFeedback: shareActionFeedback)
         approval.allowsStandingQuestionPages = shareQuestions && shareQuestionPages
+        approval.allowsStandingFeedbackPages = shareFeedbackHistory
       } else if let paired = coordinator.privateHealthDesktopRoute(contactID: provider, modelID: desktopModel,
                    effort: desktopEffort) {
         approval = try records.prepareLocalCareDesktopDiscussion(id: concern, metric: metric, question: question, route: paired,
@@ -211,6 +222,7 @@ struct GalaxySSIHealthCareResearchControls: View {
     shareQuestions = false
     shareQuestionPages = false
     shareActionFeedback = false
+    shareFeedbackHistory = false
   }
 
   private func status(_ state: Research.State) -> String {

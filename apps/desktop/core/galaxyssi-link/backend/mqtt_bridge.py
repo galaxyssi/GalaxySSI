@@ -2091,6 +2091,7 @@ def _codex_server(executable: str, env: dict, experiment=None) -> CodexAppServer
         server = codex_app_server
     if previous is not None:
         previous.close()
+    server.refresh_proxy_environment(env)
     return server
 
 

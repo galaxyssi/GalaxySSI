@@ -163,8 +163,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1544
-        versionName = "0.1.7.131"
+        versionCode = 1562
+        versionName = "0.18.1"
         testInstrumentationRunner = if (providers.gradleProperty("healthResearchAcceptance").orNull == "true")
             "com.galaxyssi.chat.HealthResearchAcceptanceRunner" else "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")

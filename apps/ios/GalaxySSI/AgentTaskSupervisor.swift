@@ -469,6 +469,14 @@ final class AgentTaskSupervisor {
     workspaceId: String,
     reason: String = AgentTaskWorkspaceControlReducer.defaultCancelReason
   ) -> Bool {
+    cancelWorkspace(workspaceId: workspaceId, matching: nil, reason: reason)
+  }
+
+  func cancelWorkspace(matching expected: AgentWorkspace, reason: String) -> Bool {
+    cancelWorkspace(workspaceId: expected.workspaceId, matching: expected, reason: reason)
+  }
+
+  private func cancelWorkspace(workspaceId: String, matching expected: AgentWorkspace?, reason: String) -> Bool {
     let cleanWorkspaceId = Self.clean(workspaceId)
     guard !cleanWorkspaceId.isEmpty else { return false }
     var changed = false
@@ -478,6 +486,9 @@ final class AgentTaskSupervisor {
       let found = try withMutationLock { () -> Bool in
         guard workspaceStore.find(cleanWorkspaceId) != nil else { return false }
         _ = try mutateWorkspaceLocked(cleanWorkspaceId) { current in
+          if let expected, current != expected {
+            throw AgentTaskSupervisorError(message: "Workspace changed before cancellation")
+          }
           let reduction = AgentTaskWorkspaceControlReducer.cancel(
             workspace: current,
             reason: reason,

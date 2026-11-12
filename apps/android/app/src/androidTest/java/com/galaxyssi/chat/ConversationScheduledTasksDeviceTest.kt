@@ -359,6 +359,153 @@ class ConversationScheduledTasksDeviceTest {
     private fun command(prompt: String) = ConversationScheduleCommand(ConversationScheduleOperation.SAVE, prompt,
         AgentProactiveTrigger(AgentProactiveTriggerKind.INTERVAL, intervalSeconds = 86400), "Every day")
 
+    @Test fun legacyQuestionSchedulesPauseWithoutChangingAnyMessage() = isolated { context ->
+        val transcript = AgentTranscriptStore(context)
+        val conversation = transcript.createConversation("旧版任务迁移测试", privateMode = true)
+        val task = legacy(context, conversation.id)
+        val run = AgentProactiveRun("legacy-result", task.taskId, 1L, AgentProactiveRunStatus.COMPLETED,
+            completedAtMillis = 2L, resultSummary = "保留这段完整回答", deliveryRecorded = true)
+        AgentProactiveTaskStore(context).upsertRun(run)
+        transcript.append(AgentTranscriptRole.USER, "每天运动多久合适", conversationId = conversation.id, turnId = "question")
+        transcript.append(AgentTranscriptRole.ASSISTANT, context.getString(R.string.schedule_saved),
+            conversationId = conversation.id, turnId = "question", dedupeKey = "schedule-command:question",
+            richOutputJson = ConversationScheduledTasks.richCard(context, task))
+        transcript.append(AgentTranscriptRole.ASSISTANT, context.getString(R.string.schedule_result, task.name, run.resultSummary),
+            conversationId = conversation.id, turnId = ConversationScheduledReplyPolicy.turnId(conversation.id, run.runId),
+            taskId = run.runId, dedupeKey = "scheduled-result:${run.runId}")
+        val before = transcript.list(conversation.id)
+        val unread = AgentReplyUnreadStore.tokens(context, conversation.id)
+        val metadata = requireNotNull(transcript.conversation(conversation.id))
+        val paused = ConversationScheduleProvenance.reconcile(context, task)
+        assertFalse(paused.enabled); assertEquals(0L, paused.nextRunAtMillis)
+        assertTrue(ConversationScheduleProvenance.requiresReview(paused))
+        assertEquals(before, transcript.list(conversation.id))
+        assertEquals(unread, AgentReplyUnreadStore.tokens(context, conversation.id))
+        val after = requireNotNull(transcript.conversation(conversation.id))
+        assertEquals(metadata.latestMessageTimestampMillis, after.latestMessageTimestampMillis)
+        assertEquals(metadata.latestMessageEntryId, after.latestMessageEntryId)
+        assertEquals(run.resultSummary, after.latestMessagePreview)
+        assertTrue(transcript.list(conversation.id).last().text.startsWith(context.getString(R.string.schedule_result, task.name, "")))
+        repeat(3) { assertEquals(paused, ConversationScheduleProvenance.reconcile(context, task)) }
+    }
+
+    @Test fun historicalEditorAndModelReceiptsRemainEnabledAcrossRestore() = isolated { context ->
+        for (source in listOf("schedule-editor:fixture", "schedule-tool:")) {
+            val transcript = AgentTranscriptStore(context)
+            val conversation = transcript.createConversation("合法定时任务", privateMode = true)
+            val task = legacy(context, conversation.id).copy(nextRunAtMillis = System.currentTimeMillis() + 86_400_000L)
+            AgentProactiveTaskStore(context).upsert(task)
+            transcript.append(AgentTranscriptRole.ASSISTANT, "已保存", conversationId = conversation.id,
+                dedupeKey = if (source.endsWith(':')) "$source${task.taskId}:1" else source,
+                richOutputJson = ConversationScheduledTasks.richCard(context, task))
+            // Provenance discovery must page beyond the recent chat window.
+            repeat(120) { transcript.append(AgentTranscriptRole.USER, "测试消息 $it", conversationId = conversation.id) }
+            AgentProactiveTaskScheduler.restoreAll(context, conversationOnly = true)
+            val restored = requireNotNull(AgentProactiveTaskStore(context).task(task.taskId))
+            assertTrue(restored.enabled)
+            assertEquals(if (source.endsWith(':')) ConversationScheduleProvenance.MODEL_TOOL else ConversationScheduleProvenance.EDITOR,
+                restored.action.scheduleOrigin)
+            assertEquals(task.nextRunAtMillis, restored.nextRunAtMillis)
+            assertEquals(0, context.launches)
+        }
+    }
+
+    @Test fun missingOrForeignReceiptNeverAuthorizesAnOldTask() = isolated { context ->
+        val transcript = AgentTranscriptStore(context)
+        val owner = transcript.createConversation("旧任务", privateMode = true)
+        val foreign = transcript.createConversation("其他会话", privateMode = true)
+        val task = legacy(context, owner.id)
+        transcript.append(AgentTranscriptRole.ASSISTANT, "已保存", conversationId = foreign.id,
+            dedupeKey = "schedule-editor:foreign", richOutputJson = ConversationScheduledTasks.richCard(context, task))
+        assertFalse(ConversationScheduleProvenance.reconcile(context, task).enabled)
+        assertEquals(1, transcript.list(foreign.id).size)
+    }
+
+    @Test fun oldReceiptForDifferentPromptOrTimeDoesNotAuthorizeTheCurrentSchedule() = isolated { context ->
+        for (changeTime in listOf(false, true)) {
+            val transcript = AgentTranscriptStore(context)
+            val conversation = transcript.createConversation("修改记录核对", privateMode = true)
+            val task = legacy(context, conversation.id)
+            val old = if (changeTime) task.copy(action = task.action.copy(scheduleText = "Every hour"))
+                else task.copy(name = "Different work")
+            val receipt = AgentTranscriptEntry("receipt", AgentTranscriptRole.ASSISTANT, "Saved", 1L,
+                dedupeKey = "schedule-editor:old", conversationId = conversation.id,
+                richOutputJson = ConversationScheduledTasks.richCard(context, old))
+            assertNull(ConversationScheduleProvenance.receiptOrigin(task, receipt))
+        }
+    }
+
+    @Test fun alarmRecoveryAndLateDeliveryCannotRestartAnUnconfirmedTask() = isolated { context ->
+        val transcript = AgentTranscriptStore(context)
+        val conversation = transcript.createConversation("中断恢复核对", privateMode = true)
+        val task = legacy(context, conversation.id)
+        val store = AgentProactiveTaskStore(context)
+        val run = AgentProactiveRun("legacy-pending", task.taskId, 1L, AgentProactiveRunStatus.WAITING)
+        store.createRun(run)
+        AgentProactiveTaskScheduler.handleAlarm(context, task.taskId)
+        AgentProactiveTaskExecutor.execute(context, run.runId)
+        repeat(2) { AgentProactiveTaskScheduler.restoreAll(context, conversationOnly = true) }
+        assertFalse(ConversationScheduledTasks.deliver(context, task, run.copy(status = AgentProactiveRunStatus.COMPLETED,
+            resultSummary = "迟到结果", completedAtMillis = 2L)))
+        assertEquals(0, context.launches)
+        assertEquals(AgentProactiveRunStatus.CANCELLED, store.run(run.runId)?.status)
+        assertTrue(requireNotNull(store.run(run.runId)).deliveryRecorded)
+        assertTrue(transcript.list(conversation.id).isEmpty())
+        assertTrue(runCatching { AgentProactiveTaskScheduler.triggerNow(context, task.taskId) }.isFailure)
+    }
+
+    @Test fun reviewedTaskCanResumeButOldResultsAreNotDeliveredAgain() = isolated { context ->
+        val transcript = AgentTranscriptStore(context)
+        val conversation = transcript.createConversation("确认恢复", privateMode = true)
+        val task = legacy(context, conversation.id)
+        val store = AgentProactiveTaskStore(context)
+        val run = AgentProactiveRun("unpublished-legacy", task.taskId, 1L, AgentProactiveRunStatus.COMPLETED,
+            resultSummary = "旧结果", completedAtMillis = 2L)
+        store.createRun(run)
+        val paused = ConversationScheduleProvenance.reconcile(context, task)
+        assertTrue(ConversationScheduleState.text(context, paused, null).contains(context.getString(R.string.schedule_legacy_review)))
+        val resumed = requireNotNull(ConversationScheduledTasks.setEnabled(context, task.taskId, true))
+        assertEquals(ConversationScheduleProvenance.EDITOR, resumed.action.scheduleOrigin)
+        assertTrue(resumed.enabled)
+        assertFalse(ConversationScheduledTasks.deliver(context, resumed, run))
+        assertTrue(transcript.list(conversation.id).isEmpty())
+        val launches = context.launches
+        store.upsert(resumed.copy(nextRunAtMillis = System.currentTimeMillis() - 1))
+        AgentProactiveTaskScheduler.handleAlarm(context, task.taskId)
+        assertTrue(context.launches > launches)
+    }
+
+    @Test fun executorAndWakeEntryPointsPreserveCancelledDeliveryState() = isolated { context ->
+        for (wake in listOf(false, true)) {
+            val transcript = AgentTranscriptStore(context)
+            val conversation = transcript.createConversation("直接恢复入口", privateMode = true)
+            val task = legacy(context, conversation.id)
+            val store = AgentProactiveTaskStore(context)
+            val run = AgentProactiveRun("direct-${task.taskId}", task.taskId, 1L, AgentProactiveRunStatus.WAITING)
+            store.createRun(run)
+            if (wake) AgentProactiveTaskScheduler.resumeRun(context, run.runId)
+            else AgentProactiveTaskExecutor.execute(context, run.runId)
+            val stopped = requireNotNull(store.run(run.runId))
+            assertEquals(AgentProactiveRunStatus.CANCELLED, stopped.status)
+            assertTrue(stopped.deliveryRecorded)
+            assertEquals(0, context.launches)
+        }
+    }
+
+    @Test fun nonConversationAutomationAndOrdinaryReplyPreviewsStayUnchanged() = isolated { context ->
+        val task = legacy(context, "")
+        assertEquals(task, ConversationScheduleProvenance.reconcile(context, task))
+        val entry = AgentTranscriptEntry("answer", AgentTranscriptRole.ASSISTANT,
+            "Scheduled task · quoted text\n\nNormal answer", 1L, conversationId = "ordinary", dedupeKey = "assistant-final:turn")
+        assertEquals(entry.text, ConversationScheduleProvenance.previewText(context, entry))
+    }
+
+    private fun legacy(context: Context, conversation: String): AgentProactiveTask = AgentProactiveTask(
+        name = "Synthetic inspection", trigger = AgentProactiveTrigger(AgentProactiveTriggerKind.INTERVAL, intervalSeconds = 86400),
+        action = AgentProactiveAction(AgentProactiveActionKind.AGENT, targetId = "conversation", prompt = "Synthetic inspection",
+            conversationId = conversation, scheduleText = "Every day"), nextRunAtMillis = 1L
+    ).also { AgentProactiveTaskStore(context).upsert(it) }
+
     private fun isolated(block: (IsolatedContext) -> Unit) {
         val context = IsolatedContext(InstrumentationRegistry.getInstrumentation().targetContext)
         try { block(context) } finally {

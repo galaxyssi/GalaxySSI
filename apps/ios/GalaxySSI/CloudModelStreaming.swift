@@ -181,6 +181,7 @@ struct ModelStreamRequest: Codable, Equatable {
   var connectTimeoutMs: Int64
   var readTimeoutMs: Int64
   var preserveProviderReasoning = false
+  var singleHTTPAdmissionSHA256: String? = nil
 
   var isDirectDeepSeekChatEndpoint: Bool {
     guard provider == .openAICompatible, let url = URLComponents(string: endpoint) else { return false }
