@@ -95,6 +95,24 @@ Temporary Agent, network, and delivery failures may retry within the task budget
 
 Every Desktop state transition emits a structured event. Paired clients can receive those events without polling the task database.
 
+### Android conversation schedule provenance
+
+Conversation schedules persist their creation source (`editor` or `model_tool`).
+Legacy records without that field are checked against paged, conversation-scoped
+schedule receipts before restoration, alarm execution, recovery, or delivery.
+Only a matching editor/tool receipt for the current task and schedule is accepted;
+the removed chat-prefix parser's `schedule-command` receipts are not authorization.
+Unverifiable schedules are retained, disabled, and marked `legacy_review_required`.
+Pending occurrences are cancelled and late results cannot be delivered. The task
+editor exposes review/resume without silently enabling the old task.
+
+Migration does not delete or rewrite transcript entries, attachments, timestamps,
+or unread tokens. The list preview shows the answer body for affected historical
+deliveries, while the original delivery label remains in the conversation history.
+Verification compares message identities and content fingerprints before and after
+upgrade. Explicitly resuming or saving a reviewed task records a new trusted source;
+it does not replay results from the old occurrences.
+
 ## Delivery
 
 All results remain available in run history.

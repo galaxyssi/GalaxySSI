@@ -7,6 +7,7 @@
     <string name="schedule_resume">Resume</string>
     <string name="schedule_delete">Delete</string>
     <string name="schedule_paused">Paused</string>
+    <string name="schedule_legacy_review">Paused: this older schedule has no verified creation record. Review its task and time before resuming. Existing answers are retained.</string>
     <string name="schedule_next">Next: %1$s</string>
     <string name="schedule_empty">No scheduled tasks</string>
     <string name="schedule_prompt">Task</string>
