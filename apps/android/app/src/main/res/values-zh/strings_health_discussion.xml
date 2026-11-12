@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_care_agent_open">打开健康 Agent</string>
     <string name="health_care_discussion_title">健康讨论 · %1$s</string>
     <string name="health_care_discussion_title_short">讨论下一步</string>
     <string name="health_care_discussion_confirm">确认健康资料使用范围</string>

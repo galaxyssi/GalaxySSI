@@ -197,6 +197,15 @@ struct GalaxySSIControlCenterView: View {
       controlCenterSectionTitle(t("cc_section_connected_devices", "Connected devices"))
       controlCenterGroup {
         GalaxySSIControlCenterNavigationRow(
+          title: t("galaxyssi.glasses_setup.title", "Configure AR glasses"),
+          subtitle: t("galaxyssi.glasses_setup.subtitle", "Pair and transfer a cloud model over Wi-Fi"),
+          systemImage: "eyeglasses",
+          tint: .galaxySSIAccent,
+          badge: ""
+        ) {
+          GalaxySSIGlassesSetupView()
+        }
+        GalaxySSIControlCenterNavigationRow(
           title: t("cc_phone_title", "Phone Capabilities"),
           subtitle: String(
             format: t("cc_phone_subtitle", "%d native tools - %d need attention"),
@@ -229,6 +238,15 @@ struct GalaxySSIControlCenterView: View {
           badge: desktopControlBadge
         ) {
           GalaxySSIDesktopControlView()
+        }
+        GalaxySSIControlCenterNavigationRow(
+          title: t("galaxyssi.glasses_wifi_qr.title", "Glasses Wi-Fi QR"),
+          subtitle: t("galaxyssi.glasses_wifi_qr.subtitle", "Set up Wi-Fi on offline AR glasses"),
+          systemImage: "qrcode",
+          tint: .galaxySSIAccent,
+          badge: ""
+        ) {
+          GalaxySSIGlassesWifiQRView()
         }
       }
     }

@@ -145,6 +145,8 @@ class HealthCareActivity : Activity() {
         ui.add(content, ui.text("${value.assessment.value} ${value.assessment.unit}", 22f, bold = true), 8)
         ui.add(content, ui.text(getString(value.stage.titleResource()), 14f, muted = true), 6)
         HealthCarePriorityPresentation.add(this, content, value)
+        ui.add(content, ui.command(R.string.health_care_agent_open) { discuss(value) }
+            .apply { tag = "health-care-discuss" }, 12)
         if (profile) ui.add(content, ui.profileRow(getString(R.string.health_visit_title), getString(R.string.health_visit_entry)) {
             startActivity(Intent(this, HealthCareVisitActivity::class.java).putHealthNavigationFixture(names).putExtra("health_care_id", value.id))
         }.apply { tag = "health-care-visit" }, 8)
@@ -166,8 +168,6 @@ class HealthCareActivity : Activity() {
             .apply { tag = "health-care-profile" }, 8)
         if (profile && value.assessment.series != null) ui.add(content, ui.profileRow(getString(R.string.health_series_title),
             getString(R.string.health_series_summary)) { historyReview.show(value.id) }.apply { tag = "health-care-series" }, 8)
-        ui.add(content, ui.command(R.string.health_care_discussion_title_short) { discuss(value) }
-            .apply { tag = "health-care-discuss" }, 12)
         if (profile) ui.add(content, ui.profileRow(getString(R.string.health_research_title)) { researchReview.show(value.id) }
             .apply { tag = "health-care-research" }, 8)
         proposals.forEach { plan -> ui.add(content, ui.profileRow(HealthCareTargetPresentation.planTitle(this, plan)) {

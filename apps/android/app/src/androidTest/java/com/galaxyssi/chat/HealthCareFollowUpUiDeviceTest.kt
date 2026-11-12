@@ -92,14 +92,17 @@ class HealthCareFollowUpUiDeviceTest {
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
         val transcripts = AgentTranscriptStore(context)
         val previous = transcripts.activeConversation().id
-        val temporary = transcripts.createAgentConversation("Synthetic follow-up UI", privateMode = true, trackingPaused = true)
+        var temporaryId = ""
         val workers = mutableListOf<ExecutorService>()
         try {
-            transcripts.switchConversation(temporary.id)
-            val issue = HealthCareFollowUpTestFixture.confirmed(context, names)
+            val issue = HealthCareFollowUpTestFixture.confirmed(context, names, conversation = { concernId ->
+                transcripts.createAgentConversation("健康跟进界面测试", globalTopicKey = HealthCareDiscussionPolicy.TOPIC_PREFIX + concernId,
+                    privateMode = true, trackingPaused = true).id.also { temporaryId = it }
+            })
+            transcripts.switchConversation(temporaryId)
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)
-                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporary.id)).use { scenario ->
-                await(scenario) { it.agentTranscriptStore.activeConversation().id == temporary.id && it.renderedAgentTranscriptSourceEntries.isEmpty() }
+                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporaryId)).use { scenario ->
+                await(scenario) { it.agentTranscriptStore.activeConversation().id == temporaryId && it.renderedAgentTranscriptSourceEntries.isEmpty() }
                 lateinit var review: HealthCareActionReview
                 scenario.onActivity { activity ->
                     activity.healthCareSurface?.destroy()
@@ -132,7 +135,7 @@ class HealthCareFollowUpUiDeviceTest {
             }
         } finally {
             workers.forEach { it.awaitTermination(10, TimeUnit.SECONDS) }
-            transcripts.switchConversation(previous); transcripts.deleteConversation(temporary.id)
+            transcripts.switchConversation(previous); if (temporaryId.isNotEmpty()) transcripts.deleteConversation(temporaryId)
             listOf(names.care, names.records, names.privacy, names.reminders).forEach(context::deleteDatabase)
         }
     }
