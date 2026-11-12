@@ -6,7 +6,8 @@ internal data class HealthCareDiscussionGrant(
     val conversationId: String, val turnId: String, val concernId: String, val revision: Int,
     val settingsVersion: String, val privacyVersion: String, val destination: String, val approvedAt: Long,
     val targetId: String, val modelId: String, val effort: String, val researchAuthorizationId: String = "",
-    val profileLink: HealthCareProfileLink? = null, val questionsShared: Boolean = false, val userInputDigest: String = ""
+    val profileLink: HealthCareProfileLink? = null, val questionsShared: Boolean = false, val userInputDigest: String = "",
+    val feedbackHistoryShared: Boolean = false
 ) {
     init {
         require(listOf(conversationId, turnId, concernId).all(HealthProfilePolicy::uuid))
@@ -20,6 +21,7 @@ internal data class HealthCareDiscussionGrant(
         .put("revision", revision).put("settings", settingsVersion).put("privacy", privacyVersion)
         .put("destination", destination).put("approved_at", approvedAt).put("target", targetId).put("model", modelId).put("effort", effort)
         .put("questions_shared", questionsShared)
+        .put("feedback_history_shared", feedbackHistoryShared)
         .put("user_input_digest", userInputDigest)
         .apply {
             if (researchAuthorizationId.isNotEmpty()) put("research_authorization", researchAuthorizationId)
@@ -29,7 +31,8 @@ internal data class HealthCareDiscussionGrant(
         fun from(j: JSONObject) = HealthCareDiscussionGrant(j.getString("conversation"), j.getString("turn"),
             j.getString("concern"), j.getInt("revision"), j.getString("settings"), j.getString("privacy"),
             j.getString("destination"), j.getLong("approved_at"), j.getString("target"), j.getString("model"), j.getString("effort"),
-            j.optString("research_authorization"), j.optJSONObject("profile_link")?.let(HealthCareProfileLink::from), j.optBoolean("questions_shared"), j.optString("user_input_digest"))
+            j.optString("research_authorization"), j.optJSONObject("profile_link")?.let(HealthCareProfileLink::from), j.optBoolean("questions_shared"),
+            j.optString("user_input_digest"), j.optBoolean("feedback_history_shared"))
     }
 }
 
@@ -53,9 +56,11 @@ internal object HealthCareDiscussionPolicy {
     val researchTools = setOf("web.search", "web.open", "galaxyssi.web.head", "galaxyssi.web.fetch",
         "galaxyssi.web.intelligence.search", "galaxyssi.web.intelligence.fetch",
         "galaxyssi.tools.discover", "galaxyssi.tools.describe", "galaxyssi.phone.conversation.recall")
-    val discussionTools get() = researchTools + setOf(HealthCarePlanTool.ID, HealthCareHistoryTool.ID) + HealthCareQuestionTools.ids
+    val discussionTools get() = researchTools + setOf(HealthCarePlanTool.ID, HealthCareHistoryTool.ID, HealthCareFeedbackTool.ID) + HealthCareQuestionTools.ids
     fun tools(grant: HealthCareDiscussionGrant) = (if (grant.questionsShared) discussionTools else discussionTools - HealthCareQuestionTools.ids).let {
         if (grant.userInputDigest.isEmpty() || grant.researchAuthorizationId.isNotEmpty()) it - HealthCareAnswerTool.ID else it
+    }.let {
+        if (!grant.feedbackHistoryShared || grant.researchAuthorizationId.isNotEmpty()) it - HealthCareFeedbackTool.ID else it
     }
 
     // This is transport detection only. Actual record access still requires the persisted per-turn grant.
@@ -72,7 +77,7 @@ internal object HealthCareDiscussionPolicy {
     }
 
     fun snapshot(value: HealthCareConcern, followUp: JSONObject? = null, profile: HealthProfileContext? = null,
-        questions: HealthCareQuestionPage? = null): String = JSONObject()
+        questions: HealthCareQuestionPage? = null, feedbackHistoryShared: Boolean = false): String = JSONObject()
         .put("metric", value.metric.name).put("revision", value.revision).put("stage", value.stage.name).put("input_version", value.inputVersion)
         .put("assessment", value.assessment.json().apply {
             remove("comparison"); remove("series"); if (value.assessment.comparison != null) remove("sample")
@@ -91,6 +96,8 @@ internal object HealthCareDiscussionPolicy {
         .put("measurement_history", value.assessment.series?.modelJson(value.assessment.sample!!, value.context, value.assessment.comparison) ?: JSONObject.NULL)
         .put("priority_notice", HealthCarePriority.handoff(value) ?: JSONObject.NULL)
         .put("actions", org.json.JSONArray(value.actions.map { HealthCareFeedbackPolicy.modelAction(value, it) }))
+        .put("feedback_history", JSONObject().put("authorized", feedbackHistoryShared).put("included", false)
+            .put("read_tool", if (feedbackHistoryShared) HealthCareFeedbackTool.ID else JSONObject.NULL))
         .apply { followUp?.let { put("automatic_follow_up", it) } }.toString(2)
 
     fun prompt(question: String, snapshot: String): String = """
@@ -151,7 +158,17 @@ internal object HealthCareDiscussionPolicy {
         elapsed_time_only means a review window arrived, not that a test was performed or health improved.
         When an actual recorded plan exists, ask about its due action, missing results or practical barriers;
         continue it rather than reissue it. An action's feedback is the latest user-reported execution note, not a measured
-        outcome or the entire feedback history. PARTIAL and BARRIER do not complete the action, cancel its
+        outcome or the entire feedback history. When feedback_history.authorized is true, use
+        galaxyssi.health.feedback.read with the snapshot revision and input_version to inspect the
+        contiguous feedback history before claiming a pattern of progress or difficulty. Follow next
+        as before_revision. Pages are ordered by saved revision, not by an inferred execution date.
+        Redacted rows are outside the current scope, not missing feedback or negative answers. Do not
+        reconstruct their content from conversation history. Historical action titles do not prove
+        the action remains in the current plan. A changed source or scope requires a fresh user review;
+        action_requires_review also covers an invalidated instruction. Reading feedback does not verify
+        a prescription or its original source, even when the measurement-based plan basis is unchanged.
+        do not combine pages across different concern revisions. Explicitly disclose incomplete coverage.
+        PARTIAL and BARRIER do not complete the action, cancel its
         reminder or authorize a stronger treatment plan. Acknowledge the actual difficulty and discuss a
         feasible adjustment for user review; do not blame the user or silently rewrite the plan. COMPLETED
         records execution only, not symptom relief, a new measurement or recovery. plan_basis_current=false

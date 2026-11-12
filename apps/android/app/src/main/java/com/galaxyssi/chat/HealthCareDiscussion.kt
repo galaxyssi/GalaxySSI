@@ -35,7 +35,8 @@ internal object HealthCareDiscussion {
     }
 
     fun prepare(context: Context, conversationId: String, question: String, runtime: AgentRuntimeContext,
-        research: HealthCareResearchAuthorization? = null, turnId: String = UUID.randomUUID().toString()): HealthCareDiscussionPreview {
+        research: HealthCareResearchAuthorization? = null, turnId: String = UUID.randomUUID().toString(),
+        feedbackHistoryShared: Boolean = false): HealthCareDiscussionPreview {
         HealthCareEngine.evaluate(context)
         val privacy = HealthPrivacyStore(context).use { it.policy() }
         check(privacy.metrics && privacy.profile) { context.getString(R.string.health_care_discussion_permissions) }
@@ -70,7 +71,8 @@ internal object HealthCareDiscussion {
             val grant = HealthCareDiscussionGrant(conversationId, turnId, id, concern.revision,
                 care.settings().version, privacy.version, destination, System.currentTimeMillis(), target.id, model, effort.wireValue,
                 research?.id.orEmpty(), concern.profileLink, questionsShared = research?.scope?.questionsShared ?: true,
-                userInputDigest = if (research == null) AgentNativeJsonCodec.sha256(question.trim()) else "")
+                userInputDigest = if (research == null) AgentNativeJsonCodec.sha256(question.trim()) else "",
+                feedbackHistoryShared = research == null && feedbackHistoryShared)
             check(HealthCareDiscussionPolicy.questionScopeCurrent(grant, concern)) { context.getString(R.string.health_care_changed) }
             if (research != null) check(research.permits(grant) && care.researchGrantCurrent(grant)) {
                 context.getString(R.string.health_care_changed)
@@ -87,7 +89,7 @@ internal object HealthCareDiscussion {
                 catch (_: HealthProfileConflict) { error(context.getString(R.string.health_care_profile_changed)) }
             }
             val snapshot = HealthCareDiscussionPolicy.snapshot(concern, followUp, profile,
-                if (grant.questionsShared) care.questions(concern, limit = 8) else null)
+                if (grant.questionsShared) care.questions(concern, limit = 8) else null, grant.feedbackHistoryShared)
             val goal = HealthCareDiscussionPolicy.prompt(question, snapshot)
             val history = AgentTranscriptStore(context).context(conversationId)
             check(history.conversationId == conversationId && history.privateMode && history.trackingPaused) {
@@ -207,11 +209,14 @@ internal object HealthCareDiscussion {
         if (!bound(context, invocation.conversationId)) return null
         return rejection(context, invocation.conversationId, invocation.turnId)
             ?: if (tool.id !in HealthCareDiscussionPolicy.discussionTools) context.getString(R.string.health_care_discussion_scope)
+            else if (tool.id == HealthCareFeedbackTool.ID && !HealthCareStore(context).use {
+                it.discussionGrant(invocation.turnId)?.let { grant -> tool.id in HealthCareDiscussionPolicy.tools(grant) } == true
+            }) context.getString(R.string.health_care_discussion_scope)
             else if (tool.id in HealthCareQuestionTools.ids && !HealthCareStore(context).use {
                 it.discussionGrant(invocation.turnId)?.questionsShared == true
             }) context.getString(R.string.health_care_discussion_scope)
             else if (tool.id !in setOf(AgentToolDiscoveryTools.ID, AgentToolInspectionTools.DESCRIBE, AgentConversationRecallTool.ID,
-                    HealthCarePlanTool.ID, HealthCareHistoryTool.ID) && tool.id !in HealthCareQuestionTools.ids &&
+                    HealthCarePlanTool.ID, HealthCareHistoryTool.ID, HealthCareFeedbackTool.ID) && tool.id !in HealthCareQuestionTools.ids &&
                 !HealthPrivacyStore(context).use { it.policy().online }) context.getString(R.string.health_care_discussion_online)
             else null
     }

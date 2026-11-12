@@ -21,7 +21,7 @@ internal class HealthCareDiscussionController(private val activity: MainActivity
         val token = ++generation
         activity.agentSubmissionExecutor.execute {
             val result = runCatching { HealthCareDiscussion.prepare(activity.applicationContext, conversation.id, question,
-                activity.mobileNativeAgent.snapshot().runtimeContext) }
+                activity.mobileNativeAgent.snapshot().runtimeContext, feedbackHistoryShared = true) }
             activity.runOnUiThread {
                 if (token != generation || activity.isFinishing || activity.isDestroyed) return@runOnUiThread
                 busy = false
@@ -33,6 +33,8 @@ internal class HealthCareDiscussionController(private val activity: MainActivity
                     body.addView(ui.text(activity.getString(R.string.health_care_discussion_disclosure,
                         preview.target.title, preview.grant.modelId.ifBlank { activity.getString(R.string.health_care_discussion_default_model) }), 15f))
                     if (preview.grant.questionsShared) ui.add(body, ui.text(activity.getString(R.string.health_questions_disclosure), 14f), 8)
+                    if (preview.grant.feedbackHistoryShared) ui.add(body,
+                        ui.text(activity.getString(R.string.health_feedback_history_disclosure), 14f), 8)
                     ui.add(body, ui.text(question, 16f, bold = true), 16)
                     preview.grant.profileLink?.scope?.let {
                         ui.add(body, ui.text(activity.getString(R.string.health_care_profile_summary, it.fields.size, it.entries.size), 14f), 8)
