@@ -777,12 +777,15 @@ struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProvid
       if let readinessFailure = brokerReadinessFailure(invocation) {
         return readinessFailure
       }
-      let output = try broker.execute(
+      var output = try broker.execute(
         input: input,
         context: invocation.context,
         deadlineEpochMillis: invocation.deadlineEpochMillis,
         cancellationRequested: { invocation.isCancellationRequested }
       )
+      if ["galaxyssi.collaboration.saved_test", "galaxyssi.collaboration.saved_run"].contains(invocation.context.callerId) {
+        output = AgentCollaborationSavedToolTest.boundCapture(output)
+      }
       return AgentNativeToolExecutionResult.success(
         output: output,
         message: output["message"]?.stringValue?.nonEmpty ?? "iOS on-device runtime execution completed",

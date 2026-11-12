@@ -492,7 +492,13 @@ def _strip_prompt_echo(text: str, prompt: str) -> str:
 
 def clean_agent_output(spec: AgentSpec, raw: str, prompt: str = "") -> str:
     if spec.output_cleaner == "hermes":
-        return clean_hermes_output(raw, prompt)
+        reply = clean_hermes_output(raw, prompt)
+        # Hermes can print a provider authentication error and still exit zero.
+        # Match its standalone diagnostic, not an answer discussing HTTP codes.
+        if re.fullmatch(r"HTTP (?:401|403):[^\n]*(?:Authentication Fails|invalid_api_key|"
+                        r"api key[^\n]*invalid|Incorrect API key)[^\n]*", reply, re.IGNORECASE):
+            return f"[{spec.name}] Authentication failed: provider credentials are invalid or unavailable."
+        return reply
     if spec.output_cleaner == "openclaw":
         return clean_openclaw_output(raw, prompt)
     return clean_output(raw)
@@ -2834,12 +2840,13 @@ def _run_cli_agent_process(
                     pooled.session_id,
                 )
             reply = clean_agent_output(spec, pooled.reply, text)
-            _mark_native_session_synced(
-                spec,
-                conversation_id,
-                task_id,
-                original_text,
-            )
+            if not _agent_reply_failed(reply):
+                _mark_native_session_synced(
+                    spec,
+                    conversation_id,
+                    task_id,
+                    original_text,
+                )
             return reply
         from codex_cli_stream import collect_codex_stream, final_codex_answer, supports_json_stream
         stream_codex = spec.id == "codex" and not plan_only and supports_json_stream(args)
@@ -2950,7 +2957,7 @@ def _run_cli_agent_process(
         if image_paths:
             raw = final_cli_output(spec.id, raw)
         reply = clean_agent_output(spec, raw, text)
-        if not plan_only:
+        if not plan_only and not _agent_reply_failed(reply):
             _mark_native_session_synced(
                 spec,
                 conversation_id,

@@ -1,6 +1,63 @@
 import CryptoKit
 import Foundation
 
+enum AgentGoalWorkMilestoneRead {
+  static let toolID = "collaboration_milestone_read"
+  static let instructions = "Read only the milestones granted to this assignment. Use list to see tokens, references " +
+    "with a token for exact versions, workspace with token/object_id/revision/sha256, or evidence, native_evidence " +
+    "and desktop_evidence with token/evidence_id/sha256. Follow byte next_offset until null and join decoded data_b64. " +
+    "An input_role of prerequisite is supporting data, not a review subject. " +
+    "A reference is not proof of delivery, truth, or independent review. No other member output is granted."
+  static let schema: AgentMcpJSONObject = [
+    "type": .string("object"), "required": .array([.string("mode")]), "additionalProperties": .bool(false),
+    "properties": .object([
+      "mode": .object(["type": .string("string"), "enum": .array(
+        ["list", "references", "workspace", "evidence", "native_evidence", "desktop_evidence"].map(AgentMcpJSONValue.string))]),
+      "token": .object(["type": .string("string")]), "object_id": .object(["type": .string("string")]),
+      "revision": .object(["type": .string("integer")]), "evidence_id": .object(["type": .string("string")]),
+      "sha256": .object(["type": .string("string")]), "offset": .object(["type": .string("integer")])
+    ])
+  ]
+
+  static let pageBytes = AgentDesktopToolEvidenceWire.maximumPageBytes
+  static let desktopInstructions = "Use collaboration_recall mode=workspace to list granted versions. Follow next_cursor. " +
+    "Read only an exact object_id/revision/sha256 from that directory. For recorded observations use mode=archive " +
+    "with the listed record_id. Follow byte next_offset until null and join decoded data_b64. " +
+    "An input_role of prerequisite is supporting data, not a review subject. " +
+    "A reference is not proof of delivery, truth, or independent review."
+  static let coordinatorInstructions = "Use uses_milestones:[exact host token] for an interim version; this does not " +
+    "wait for, complete, or expose the author's other work. Use depends_on when the whole work result is required. " +
+    "For independent_review, review_milestones is the subset of uses_milestones being reviewed; omit it to review all. " +
+    "The other tokens are supporting prerequisites and can come from the reviewer."
+
+  static func inputRole(_ token: String, reviewTokens: [String]?) -> AgentMcpJSONValue? {
+    reviewTokens.map { .string($0.contains(token) ? "review_subject" : "prerequisite") }
+  }
+
+  static func inputRoles(_ tokens: [String], reviewTokens: [String]?) -> AgentMcpJSONValue? {
+    guard let reviewTokens else { return nil }
+    return .array(tokens.map { token in
+      .object(["token": .string(token), "input_role": .string(reviewTokens.contains(token) ? "review_subject" : "prerequisite")])
+    })
+  }
+
+  static func response(bytes: Data, offset: Int, total: Int, reference: AgentMcpJSONObject) -> AgentMcpJSONObject {
+    ["status": .string("returned"), "data_b64": .string(bytes.base64EncodedString()),
+     "offset": .int(Int64(offset)), "total_bytes": .int(Int64(total)),
+     "next_offset": offset + bytes.count < total ? .int(Int64(offset + bytes.count)) : .null,
+     "source_reference": .object(reference), "trust": .string("untrusted_group_evidence")]
+  }
+
+  static func observationSelectors(_ record: AgentCollaborationResearchRevision, token: String) -> [AgentMcpJSONObject] {
+    func selector(_ mode: String, id: String, hash: String) -> AgentMcpJSONObject {
+      ["mode": .string(mode), "token": .string(token), "evidence_id": .string(id), "sha256": .string(hash)]
+    }
+    return (record.frozenCloudReads ?? []).map { selector("evidence", id: $0.evidenceId, hash: $0.sha256) } +
+      (record.frozenNativeReads ?? []).map { selector("native_evidence", id: $0.evidenceId, hash: $0.sha256) } +
+      (record.frozenDesktopReads ?? []).map { selector("desktop_evidence", id: $0.evidenceId, hash: $0.sha256) }
+  }
+}
+
 enum AgentCollaborationSourceAccess {
   static let mode = "source_access"
   static let pageSize = 20
@@ -140,23 +197,64 @@ enum AgentDesktopCollaborationEvidenceDelivery {
   }
 }
 
+enum AgentCollaborationCoordinatorUpdates {
+  static let mode = "team_updates"
+  static let instructions = "An active coordinator can use team_updates with optional cursor to discover late published versions. Keep next_cursor, including at the empty tail. Offered versions are not completed or verified work."
+
+  struct Entry: Codable {
+    let producer: AgentCollaborationToolEvidenceScope
+    let publicationKey: String
+  }
+
+  static func prefix(_ scope: AgentCollaborationToolEvidenceScope) -> String {
+    "coordinator-update:" + AgentMcpJSONCodec.sha256(["run": .string(scope.runId), "turn": .string(scope.turnId)]) + ":"
+  }
+
+  static func key(_ prefix: String, _ sequence: Int64) -> String {
+    prefix + String(format: "%020lld", sequence)
+  }
+
+  static func cursorKey(_ cursor: String, scope: AgentCollaborationToolEvidenceScope) -> String {
+    "coordinator-cursor:" + scope.ownershipDigest + ":" + cursor
+  }
+
+  static func grantKey(_ kind: String, id: String, hash: String, revision: Int64 = 0,
+                       scope: AgentCollaborationToolEvidenceScope) -> String {
+    "coordinator-grant:" + AgentMcpJSONCodec.sha256(["reader": .string(scope.ownershipDigest), "kind": .string(kind),
+      "id": .string(id), "sha256": .string(hash), "revision": .int(revision)])
+  }
+
+  static func record(_ entry: Entry, database: AgentTeamHistoryDatabase) throws {
+    let scope = entry.producer
+    let prefix = Self.prefix(scope)
+    let counter = prefix + "sequence"
+    let prior = try database.researchRecord(Int64.self, conversationId: scope.conversationId, key: counter, revision: 1) ?? 0
+    guard prior >= 0, prior < Int64.max else { throw AgentTeamHistoryDatabase.Failure.corrupt }
+    try database.insertResearchRecord(entry, conversationId: scope.conversationId, key: key(prefix, prior + 1), revision: 0)
+    try database.removeResearchRecord(conversationId: scope.conversationId, key: counter)
+    try database.insertResearchRecord(prior + 1, conversationId: scope.conversationId, key: counter, revision: 1)
+  }
+}
+
 extension AgentTeamHistoryDatabase {
   func readableCollaborationRevision(_ reference: AgentCollaborationResearchReference,
-                                     scope: AgentCollaborationToolEvidenceScope) throws -> AgentCollaborationResearchRevision? {
+                                     scope: AgentCollaborationToolEvidenceScope, offered: Bool = false) throws -> AgentCollaborationResearchRevision? {
     guard AgentCollaborationSourceAccess.validDigest(reference.objectId),
           AgentCollaborationSourceAccess.validDigest(reference.sha256), reference.revision > 0,
           let record = try researchRecord(AgentCollaborationResearchRevision.self, conversationId: scope.conversationId,
             key: "object:" + reference.objectId, revision: reference.revision), record.reference == reference,
-          record.turnId != scope.turnId || (record.runId == scope.runId && record.authorId == scope.memberId) else { return nil }
+          record.turnId != scope.turnId || (record.runId == scope.runId && (record.authorId == scope.memberId || offered))
+    else { return nil }
     return record
   }
 
-  func readableCollaborationEvidence(id: String, sha256: String, scope: AgentCollaborationToolEvidenceScope)
+  func readableCollaborationEvidence(id: String, sha256: String, scope: AgentCollaborationToolEvidenceScope, offered: Bool = false)
     throws -> (record: AgentCollaborationCloudToolEvidence, bytes: Data)? {
     guard AgentCollaborationSourceAccess.validDigest(id), AgentCollaborationSourceAccess.validDigest(sha256),
           let record = try cloudEvidence(id: id, conversationId: scope.conversationId),
           record.scope.conversationId == scope.conversationId,
-          record.scope.turnId != scope.turnId || record.scope == scope else { return nil }
+          record.scope.turnId != scope.turnId || record.scope == scope || (offered && record.scope.runId == scope.runId)
+    else { return nil }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     let bytes = try encoder.encode(record)

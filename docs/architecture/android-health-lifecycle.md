@@ -19,6 +19,22 @@ The clinical concern owns its durable state; its associated private conversation
 is an interaction surface. Changing models, navigating away, or deleting a chat
 must not silently create a new concern or mark the original concern resolved.
 
+The local reassessment surface is restricted to that independent private
+conversation: its `health-care:<concern-id>` topic and the encrypted discussion
+binding must agree. Ordinary Agent and collaboration conversations never load
+the global latest concern as a fallback. Switching conversations clears the old
+surface immediately; generation checks reject late loads from the prior scope.
+Personal Health exposes an **Open Health Agent** action near the top of the
+concern details. It reuses the linked active conversation, which remains available
+in the conversation list even before its first message. Opening it does not
+submit a model request, authorize research, or share health records.
+
+Inside that discussion, the assessment starts as a compact, collapsed summary.
+Expanding it reveals the complete explanation and actions in a bounded scrolling
+area; the collapse control remains outside that scroll. Priority status remains
+visible in the summary. Refreshes preserve the user's current expansion choice,
+while leaving the conversation or backgrounding clears the expanded sensitive UI.
+
 ## Six connected views
 
 | View | Content and interaction |

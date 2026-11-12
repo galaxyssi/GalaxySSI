@@ -1058,6 +1058,87 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(resumed.messages.compactMap(\.toolResult).map(\.toolId), [Self.toolId])
   }
 
+  func testManagedBrowserBusyWakeIsConsumedOnceByExactOwner() {
+    typealias Wakes = AgentManagedBrowserContinuationStore.DeferredWakes
+    var wakes = Wakes()
+    let member = Wakes.Key.member("original-member")
+    let team = Wakes.Key.team(dispatch: "original-team", generation: 42)
+
+    XCTAssertFalse(wakes.canStart(member, busy: true, remember: false))
+    XCTAssertFalse(wakes.take(member, busy: false), "Routine scans must not create a retry loop")
+    XCTAssertFalse(wakes.canStart(member, busy: true, remember: true))
+    XCTAssertFalse(wakes.canStart(member, busy: true, remember: true))
+    XCTAssertFalse(wakes.canStart(team, busy: true, remember: true))
+    XCTAssertFalse(wakes.take(member, busy: true))
+    XCTAssertFalse(wakes.take(team, busy: true), "The outer recovery owner still holds the run")
+    XCTAssertFalse(wakes.take(.member("other-member"), busy: false))
+    XCTAssertFalse(wakes.take(.team(dispatch: "original-team", generation: 43), busy: false))
+    XCTAssertTrue(wakes.take(member, busy: false))
+    XCTAssertFalse(wakes.take(member, busy: false))
+    XCTAssertTrue(wakes.take(team, busy: false))
+    XCTAssertFalse(wakes.take(team, busy: false))
+  }
+
+  func testManagedBrowserControlIntentAndStopSurviveRestart() async throws {
+    let domain = "managed-browser-control-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let secrets = InMemorySecretStore()
+    let original = AgentManagedBrowserContinuationStore(defaults: defaults, secrets: secrets, namespace: domain)
+    let owner = AgentCollaborationToolEvidenceScope(runId: "run", conversationId: "conversation",
+      turnId: "turn", memberId: "member", sourceId: "source")
+    let member = AgentTeamMemberSnapshot(agentId: "local-model", status: .running, instanceId: owner.memberId,
+      sourceMessageId: owner.sourceId, dispatchCheckpoint: .accepted)
+    let team = AgentTeamExecutionSnapshot(supervisorRunId: owner.runId, teamId: "team",
+      conversationId: owner.conversationId, taskId: owner.turnId, primaryAgentId: "other",
+      state: .running, members: [member])
+    let binding = try XCTUnwrap(AgentManagedBrowserDispatchBinding(owner: owner, team: team,
+      profileID: "profile", modelID: "model", hostContextDigest: "context"))
+    let scope = AgentManagedBrowserContinuationStore.RunScope(binding)
+    let foreign = AgentManagedBrowserContinuationStore.RunScope(profileID: "foreign", team: team,
+      hostContextDigest: "context")
+    let input = AgentManagedBrowserLoopInput(loopID: "loop", inputIdentity: "immutable",
+      toolManifestHash: "pinned", systemPrompt: "", prompt: "Original member input", hasAttachments: false)
+    try original.enroll(binding, input: input, legacyLoopExists: false)
+    let ticket = try await original.withLease(binding: binding, mode: .initial, control: .run) { lease, _ in
+      try original.requestControl(lease: lease, binding: binding, callID: "call",
+        invocationID: "invocation", address: "https://example.test/").ticket
+    }
+    XCTAssertTrue(try original.writeControl(.pause, scope: scope))
+    let restarted = AgentManagedBrowserContinuationStore(defaults: defaults, secrets: secrets, namespace: domain)
+    XCTAssertEqual(try restarted.control(scope: scope), .pause)
+    XCTAssertNil(try restarted.control(scope: foreign))
+    XCTAssertEqual(restarted.indexedBindings(scope: scope), [binding])
+    XCTAssertTrue(restarted.hasPendingMember(binding))
+    XCTAssertTrue(restarted.indexedBindings(scope: foreign).isEmpty)
+    let observation = AgentManagedBrowserHandoff.Observation(address: "https://example.test/",
+      title: "Example", text: "Read only")
+    XCTAssertThrowsError(try restarted.returnControl(ticket, binding: binding, observation: observation))
+    XCTAssertTrue(try restarted.writeControl(.run, scope: scope))
+    do {
+      _ = try await restarted.withLease(binding: binding, mode: .recovery, control: .run) { _, _ in
+        XCTFail("RUN must not take an active human handoff")
+      }
+    } catch let failure as AgentManagedBrowserContinuationStore.Failure {
+      XCTAssertEqual(failure, .notReady)
+    }
+    XCTAssertTrue(try restarted.writeControl(.stop, scope: scope))
+    XCTAssertFalse(try restarted.writeControl(.run, scope: scope))
+    let stopped = AgentManagedBrowserContinuationStore(defaults: defaults, secrets: secrets, namespace: domain)
+    try stopped.retireStoppedBinding(binding)
+    XCTAssertEqual(try stopped.handoff(ticket, binding: binding).state, .stopped)
+    XCTAssertThrowsError(try stopped.returnControl(ticket, binding: binding, observation: observation))
+    try await stopped.withLease(binding: binding, mode: .recovery, control: .run) { lease, work in
+      guard case .settleCancellation = work else { return XCTFail("STOP must not resume inference") }
+      let receipt = try stopped.commit(.cancelled, text: "Stopped", lease: lease, binding: binding)
+      try stopped.acknowledge(receipt, lease: lease, binding: binding)
+    }
+    try stopped.backfillWakeIndex(binding)
+    XCTAssertTrue(stopped.indexedBindings(scope: scope).isEmpty)
+    XCTAssertFalse(stopped.hasPendingMember(binding))
+    XCTAssertTrue(stopped.pendingBindings(profileID: "profile").isEmpty)
+  }
+
   func testManagedBrowserReturnReopensOriginalLoopAndDoesNotRepeatHandoff() async throws {
     let domain = "managed-browser-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))

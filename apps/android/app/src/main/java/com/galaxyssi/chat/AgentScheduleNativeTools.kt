@@ -18,7 +18,8 @@ internal object AgentScheduleNativeTools {
         "If intent is genuinely ambiguous, clarify instead of creating a task. Do not claim scheduling without a successful " +
         "receipt. Creating/updating a schedule requests one immediate run followed by repetition; that receipt proves " +
         "the schedule was saved, not that its action succeeded. During a scheduled execution perform the assigned work, " +
-        "do not create another schedule."
+        "do not create another schedule. A task with requires_confirmation=true was paused because its legacy " +
+        "creation intent could not be verified. Do not resume it unless the user explicitly confirms recurring execution."
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> = listOf(
         AgentNativeToolDefinition(
@@ -91,7 +92,8 @@ internal object AgentScheduleNativeTools {
         if (existing != null && existing.revision != request.expectedRevision) return@synchronized failure(
             "schedule_revision_conflict", "The task changed. List its latest state before deciding the next action.")
         val saved = if (request.operation in setOf("pause", "resume")) {
-            requireNotNull(ConversationScheduledTasks.setEnabled(context, request.taskId, request.operation == "resume"))
+            requireNotNull(ConversationScheduledTasks.setEnabled(context, request.taskId, request.operation == "resume",
+                ConversationScheduleProvenance.MODEL_TOOL))
         } else {
             val command = ConversationScheduleCommand(ConversationScheduleOperation.SAVE,
                 prompt = request.prompt ?: requireNotNull(existing).action.prompt,
@@ -99,7 +101,8 @@ internal object AgentScheduleNativeTools {
                 scheduleText = request.label ?: requireNotNull(existing).action.scheduleText,
                 createNew = request.operation == "create")
             val creationId = if (existing == null) creationId(scope, input) else null
-            ConversationScheduledTasks.save(context, scope.conversationId, command, existing?.taskId, creationId)
+            ConversationScheduledTasks.save(context, scope.conversationId, command, existing?.taskId, creationId,
+                ConversationScheduleProvenance.MODEL_TOOL)
         }
         val card = ConversationScheduledTasks.richCard(context, saved)
         AgentTranscriptStore(context).append(AgentTranscriptRole.ASSISTANT,
@@ -120,6 +123,7 @@ internal object AgentScheduleNativeTools {
 
     private fun value(task: AgentProactiveTask): AgentNativeJsonObject = mapOf(
         "task_id" to task.taskId, "revision" to task.revision, "enabled" to task.enabled,
+        "requires_confirmation" to ConversationScheduleProvenance.requiresReview(task),
         "prompt" to task.action.prompt, "schedule_label" to task.action.scheduleText,
         "schedule" to mapOf("kind" to task.trigger.kind.name.lowercase(), "cron" to task.trigger.cron,
             "interval_seconds" to task.trigger.intervalSeconds, "time_zone" to task.trigger.timeZone),

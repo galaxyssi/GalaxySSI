@@ -51,6 +51,8 @@ private struct GalaxySSIHealthCareAgendaRows: View {
   @State private var cursors: [Agenda.Cursor] = []
   @State private var editor: Editor?
   @State private var history: History?
+  @State private var instructionSource: InstructionSource?
+  @State private var journalReview: Agenda.Item?
   @State private var cancelling: GalaxySSIHealthCareFollowUp.Reminder?
   @State private var failed = false
   @State private var disallowed = false
@@ -65,6 +67,12 @@ private struct GalaxySSIHealthCareAgendaRows: View {
     let id = UUID()
     let scope: Agenda.Scope
     let actionID: String?
+  }
+
+  private struct InstructionSource: Identifiable {
+    var id: UUID { reference.instruction }
+    let scope: Agenda.Scope
+    let reference: GalaxySSIHealthInstruction.ActionReference
   }
 
   var body: some View {
@@ -119,17 +127,31 @@ private struct GalaxySSIHealthCareAgendaRows: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.profileInputsChanged)) {
       if $0.object as? String == records.owner { reset() }
     }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthOriginalStore.indexChanged)) {
+      if $0.object as? String == records.owner { reset() }
+    }
     .sheet(item: $editor) { edit in
-      NavigationView {
-        GalaxySSIHealthCareFollowUpEditor(records: records, concernID: edit.item.scope.concern, metric: edit.item.scope.metric,
-          action: edit.item.action, revision: edit.item.revision, operation: edit.id,
-          existing: edit.item.reminder, editingOutcome: edit.outcome)
-      }.navigationViewStyle(.stack)
+      if let action = edit.item.action {
+        NavigationView {
+          GalaxySSIHealthCareFollowUpEditor(records: records, concernID: edit.item.scope.concern, metric: edit.item.scope.metric,
+            action: action, revision: edit.item.revision, operation: edit.id,
+            existing: edit.item.reminder, editingOutcome: edit.outcome)
+        }.navigationViewStyle(.stack)
+      }
+    }
+    .sheet(item: $journalReview) { item in
+      if let visit = item.reminder?.journalReview?.visit {
+        GalaxySSIHealthVisitJournalView(records: records, concern: item.scope.concern, metric: item.scope.metric, visit: visit)
+      }
     }
     .sheet(item: $history) { selection in
       NavigationView {
         GalaxySSIHealthCareFeedbackHistory(records: records, scope: selection.scope, actionID: selection.actionID)
       }.navigationViewStyle(.stack)
+    }
+    .sheet(item: $instructionSource) { source in
+      GalaxySSIHealthInstructionReviewView(records: records, concern: source.scope.concern, metric: source.scope.metric,
+        visit: source.reference.visit, actionSource: source.reference)
     }
     .confirmationDialog(t("cancel_reminder", "Cancel reminder"),
       isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } }), titleVisibility: .visible) {
@@ -146,9 +168,28 @@ private struct GalaxySSIHealthCareAgendaRows: View {
     scene == .active && UIApplication.shared.isProtectedDataAvailable && store.profile.identityFingerprint == records.owner
   }
 
-  private func row(_ item: Agenda.Item, remindersEnabled: Bool) -> some View {
-    let action = item.action
-    return VStack(alignment: .leading, spacing: 7) {
+  @ViewBuilder private func row(_ item: Agenda.Item, remindersEnabled: Bool) -> some View {
+    if let action = item.action {
+      actionRow(item, action: action, remindersEnabled: remindersEnabled)
+    } else if let reminder = item.reminder, reminder.journalReview != nil {
+      VStack(alignment: .leading, spacing: 7) {
+        Button(GalaxySSIHealthCareFollowUp.JournalReview.text("title", "Post-visit review", language)) {
+          journalReview = item
+        }.buttonStyle(.borderless)
+        Text(reminder.requestedAt, format: .dateTime).font(.caption).foregroundColor(.secondary)
+        if let scheduled = reminder.submittedFor, abs(scheduled.timeIntervalSince(reminder.requestedAt)) >= 60 {
+          Text(t("registered", "Registered notification time")).font(.caption).foregroundColor(.secondary)
+          Text(scheduled, format: .dateTime).font(.caption).foregroundColor(.secondary)
+        }
+        Button(t("cancel_reminder", "Cancel reminder"), role: .destructive) { cancelling = reminder }
+          .buttonStyle(.borderless)
+      }
+    }
+  }
+
+  private func actionRow(_ item: Agenda.Item, action: GalaxySSIHealthCarePlan.AdoptedAction,
+      remindersEnabled: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 7) {
       Text(action.action.description).font(.body.weight(.semibold))
       if scope == nil {
         Text(item.scope.metric.title(language: language)).font(.caption).foregroundColor(.secondary)
@@ -157,6 +198,19 @@ private struct GalaxySSIHealthCareAgendaRows: View {
         Text(action.source.title).font(.caption).foregroundColor(.secondary)
         Text(proof.quote).font(.caption).textSelection(.enabled)
         Text(proof.retrievedAt, format: .dateTime).font(.caption).foregroundColor(.secondary)
+      }
+      if let ref = action.instruction {
+        Text(action.action.rationale)
+        Text(instruction("action_notice", "This action uses your transcription, not clinician verification. No medication schedule is created."))
+          .font(.caption).foregroundColor(.secondary)
+        Text(ref.pageLabel(language: language)).font(.caption).foregroundColor(.secondary)
+        if ref.invalidated {
+          Text(instruction("action_stale", "Instruction changed or was deleted.")).font(.caption).foregroundColor(.secondary)
+        } else if item.bucket != .review {
+          Button(instruction("action_source", "Open source review")) {
+            instructionSource = .init(scope: item.scope, reference: ref)
+          }.buttonStyle(.borderless)
+        }
       }
       if let feedback = action.feedback {
         Text(GalaxySSIHealthCareFollowUpText.label(feedback.kind, language: language))
@@ -223,7 +277,8 @@ private struct GalaxySSIHealthCareAgendaRows: View {
   private func reset() { clear(); reload() }
 
   private func clear() {
-    page = nil; cursors = []; editor = nil; history = nil; cancelling = nil; failed = false; disallowed = false
+    page = nil; cursors = []; editor = nil; history = nil; instructionSource = nil
+    cancelling = nil; failed = false; disallowed = false
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -232,6 +287,10 @@ private struct GalaxySSIHealthCareAgendaRows: View {
 
   private func agenda(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.agenda." + key, fallback: fallback, language: language)
+  }
+
+  private func instruction(_ key: String, _ fallback: String) -> String {
+    GalaxySSIHealthInstruction.text(key, fallback, language)
   }
 }
 
@@ -307,6 +366,7 @@ private struct GalaxySSIHealthCareFollowUpEditor: View {
           expectedRevision: revision, kind: feedbackKind, note: note, operation: operation)
       } else {
         try records.scheduleLocalCareFollowUp(concernID: concernID, metric: metric, actionID: action.id,
+          expectedRevision: revision,
           replacing: existing?.id, at: time)
       }
       dismiss()

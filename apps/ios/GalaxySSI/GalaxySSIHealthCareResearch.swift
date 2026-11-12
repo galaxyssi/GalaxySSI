@@ -22,6 +22,7 @@ enum GalaxySSIHealthCareResearch {
     var sharesQuestionSnapshot: Bool?
     var sharesQuestionPages: Bool?
     var sharesActionFeedback: Bool?
+    var sharesFeedbackHistory: Bool?
   }
 
   enum State: String, Codable {
@@ -148,9 +149,10 @@ enum GalaxySSIHealthCareResearch {
   }
 
   static func trigger(_ concern: GalaxySSIHealthCare.Concern, history: String, now: Date,
-                      scopedActions: [GalaxySSIHealthCarePlan.AdoptedAction]) throws -> String {
+                      scopedActions: [GalaxySSIHealthCarePlan.AdoptedAction],
+                      clinicalFeedback: [String: UUID] = [:]) throws -> String {
     let actions = scopedActions.sorted { $0.id < $1.id }
-    var latest: [String: UUID] = [:]
+    var latest = clinicalFeedback
     for action in actions {
       if let feedback = action.feedback, feedback.isInScope(concern) { latest[action.id] = feedback.id }
     }
