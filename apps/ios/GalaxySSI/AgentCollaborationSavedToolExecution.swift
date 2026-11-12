@@ -45,6 +45,7 @@ enum AgentCollaborationSavedToolExecution {
           let targets: [ReleaseTarget] = [.release, .channel]
           guard let target = targets.first(where: { Set(input.keys) == base.union([$0.rawValue, "parameters"]) }),
                 let values = input["parameters"]?.objectValue,
+                (try? JSONEncoder().encode(values)) != nil,
                 AgentMcpJSONCodec.stringify(values).utf8.count <= 4_096 else { return nil }
           key = target.rawValue
           releaseTarget = target
@@ -105,14 +106,36 @@ enum AgentCollaborationSavedToolExecution {
     var releaseTarget: ReleaseTarget? = nil
     var parameters: AgentMcpJSONObject? = nil
 
+    var executionMode: String { releaseTarget == nil ? "test" : "run" }
+
     var response: AgentMcpJSONObject {
-      ["success": .bool(true), "status": .string(state.rawValue), "execution_id": .string(executionID),
+      var response: AgentMcpJSONObject = ["success": .bool(true), "status": .string(state.rawValue), "execution_id": .string(executionID),
+        "execution_mode": .string(executionMode),
         "input_sha256": .string(inputHash), "updated_at": .int(updatedAt), "result": result.map(AgentMcpJSONValue.object) ?? .null,
         "retry_after_ms": state.active ? .int(2_000) : .null, "automatically_reexecuted": .bool(false),
         "reason": .string(state == .interrupted
           ? "Execution ended without a confirmed result. Recover original evidence before choosing another execution ID."
           : "")]
+      if let problem = result?["record_validation"] { response["record_validation"] = problem }
+      return response
     }
+  }
+
+  static func validationObservation(_ problem: AgentMcpJSONObject, record: Record,
+      now: Int64) -> AgentCollaborationNativeToolObservation {
+    let scope = record.scope.assignment
+    let input: AgentMcpJSONObject = ["mode": .string("preflight"), "execution_id": .string(record.executionID),
+      "target": .object(AgentCollaborationCandidateRecall.reference(record.plan))]
+    let output: AgentMcpJSONObject = ["record_validation": .object(problem), "runtime_invoked": .bool(false)]
+    let key = record.scope.key(record.executionID) + ":preflight"
+    let result = AgentNativeToolResult(status: .rejected, output: output, message: "Saved record validation rejected the request.",
+      error: .init(code: problem.string("code"), message: "Saved record validation failed.", details: problem),
+      receipt: .init(invocationId: key, startedAtEpochMillis: now, finishedAtEpochMillis: now, durationMillis: 0,
+        status: .rejected, inputSha256: AgentMcpJSONCodec.sha256(input), outputSha256: AgentMcpJSONCodec.sha256(output)),
+      provenance: .init(toolId: "galaxyssi.collaboration.saved_tool_preflight", toolVersion: "1", location: .application,
+        executorId: "ios.saved_tool_preflight", contractVersion: "1"))
+    return .init(runId: scope.runId, conversationId: scope.conversationId, turnId: scope.turnId,
+      memberId: scope.memberId, sourceId: scope.sourceId, input: input, result: result, evaluation: output)
   }
 
   enum Operation {
@@ -134,10 +157,13 @@ enum AgentCollaborationSavedToolExecution {
     var shouldLaunch = false
     var shouldCancel = false
     var didStart = false
-    var busy = false
+    var busyExecutionMode: String? = nil
 
     var response: AgentMcpJSONObject {
-      if busy { return ["success": .bool(true), "status": .string("busy"), "retry_after_ms": .int(2_000)] }
+      if let busyExecutionMode {
+        return ["success": .bool(true), "status": .string("busy"),
+          "execution_mode": .string(busyExecutionMode), "retry_after_ms": .int(2_000)]
+      }
       return record?.response ?? ["success": .bool(true), "status": .string("not_recorded")]
     }
   }
@@ -165,7 +191,9 @@ enum AgentCollaborationSavedToolExecution {
           guard record.inputHash == request.inputHash else { throw AgentTeamHistoryDatabase.Failure.stale }
           return Outcome(record: record)
         }
-        guard allowAdmission else { return Outcome(record: nil, busy: true) }
+        guard allowAdmission else {
+          return Outcome(record: nil, busyExecutionMode: request.releaseTarget == nil ? "test" : "run")
+        }
         return Outcome(record: Record(scope: scope, executionID: request.executionID, inputHash: request.inputHash,
           plan: plan, timeoutMillis: timeoutMillis, ownerProcess: process, state: .queued, updatedAt: now,
           releaseTarget: request.releaseTarget, parameters: request.parameters), shouldLaunch: true)

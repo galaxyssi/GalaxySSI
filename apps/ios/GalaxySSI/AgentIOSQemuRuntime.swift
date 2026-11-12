@@ -3,6 +3,24 @@ import Darwin
 import Foundation
 import Network
 
+enum AgentIOSRuntimeGuestABI {
+  // These values belong to the released Linux guest API, not to app branding.
+  static let version: Int64 = 1
+  static let channel = "org.signalasi.runtime"
+  static let workspaceMountTag = "signalasi_workspaces"
+  static let persistentMount = "/var/lib/signalasi"
+  static let controlDirectory = ".signalasi-runtime"
+  static let sessionFirmwareKey = "opt/com.signalasi/runtime-session"
+  static let configFirmwareKey = "opt/com.signalasi/runtime-config"
+
+  static func transportArguments(session: URL, configuration: URL) -> [String] {
+    ["-device", "virtserialport,chardev=galaxyssi_api,name=\(channel)",
+     "-device", "virtio-9p-device,fsdev=galaxyssi_workspaces,mount_tag=\(workspaceMountTag)",
+     "-fw_cfg", "name=\(sessionFirmwareKey),file=\(session.path)",
+     "-fw_cfg", "name=\(configFirmwareKey),file=\(configuration.path)"]
+  }
+}
+
 /// Runs the UTM SE QEMU library inside the app process. The TCI build does not require JIT.
 final class AgentIOSQemuRuntimeController {
   static let shared = AgentIOSQemuRuntimeController()
@@ -274,11 +292,11 @@ final class AgentIOSQemuRuntimeController {
     }
     let values: [String: Any] = [
       "format_version": 1,
-      "guest_api_version": 1,
+      "guest_api_version": AgentIOSRuntimeGuestABI.version,
       "host_epoch_millis": Int64(Date().timeIntervalSince1970 * 1_000),
       "architecture": "aarch64",
-      "api_channel": "org.galaxyssi.runtime",
-      "workspace_mount_tag": "galaxyssi_workspaces",
+      "api_channel": AgentIOSRuntimeGuestABI.channel,
+      "workspace_mount_tag": AgentIOSRuntimeGuestABI.workspaceMountTag,
       "workspace_uid": 1000,
       "workspace_gid": 1000,
       "execution_mode": "full_access",
@@ -288,7 +306,7 @@ final class AgentIOSQemuRuntimeController {
       "system_disk": [
         "serial": "sa-system",
         "filesystem": "ext4",
-        "mount_path": "/var/lib/galaxyssi",
+        "mount_path": AgentIOSRuntimeGuestABI.persistentMount,
         "logical_bytes": 30 * 1024 * 1024 * 1024
       ],
       "packs": packConfiguration
@@ -382,16 +400,14 @@ final class AgentIOSQemuRuntimeController {
       "-append", "console=ttyAMA0,115200 panic=1 quiet loglevel=3 galaxyssi.runtime=1",
       "-chardev", "socket,id=galaxyssi_api,path=\(files.socket.path),server=on,wait=on",
       "-device", "virtio-serial-device",
-      "-device", "virtserialport,chardev=galaxyssi_api,name=org.galaxyssi.runtime",
       "-fsdev", "local,id=galaxyssi_workspaces,path=\(files.workspace.path),security_model=none,multidevs=remap",
-      "-device", "virtio-9p-device,fsdev=galaxyssi_workspaces,mount_tag=galaxyssi_workspaces",
-      "-fw_cfg", "name=opt/com.galaxyssi/runtime-session,file=\(files.session.path)",
-      "-fw_cfg", "name=opt/com.galaxyssi/runtime-config,file=\(files.configuration.path)",
       "-object", "rng-random,id=galaxyssi_rng,filename=/dev/urandom",
       "-device", "virtio-rng-device,rng=galaxyssi_rng",
       "-drive", "if=none,id=galaxyssi_system,file=\(files.disk.path),format=raw,cache=none,aio=threads",
       "-device", "virtio-blk-device,drive=galaxyssi_system,serial=sa-system"
     ]
+    arguments.append(contentsOf: AgentIOSRuntimeGuestABI.transportArguments(session: files.session,
+      configuration: files.configuration))
     for (index, pack) in files.packAttachments.enumerated() {
       let driveID = "galaxyssi_pack_\(index)"
       arguments.append(contentsOf: [
@@ -531,7 +547,7 @@ final class AgentIOSUnixRuntimeBrokerTransport: AgentIOSRuntimeBrokerTransport {
 
 /// Implements the signed guest protocol shared with the Android QEMU runtime.
 private final class AgentIOSQemuGuestClient {
-  private static let protocolVersion: Int64 = 1
+  private static let protocolVersion = AgentIOSRuntimeGuestABI.version
   private static let maximumFrameBytes = 1_048_576
 
   private let socketPath: String
@@ -1020,7 +1036,7 @@ struct AgentIOSInAppQemuRuntimeBroker: AgentIOSRuntimeBrokerProviding {
     let workspace = runtimeRootURL
       .appendingPathComponent("projects", isDirectory: true)
       .appendingPathComponent(workspaceId, isDirectory: true)
-    let control = workspace.appendingPathComponent(".galaxyssi-runtime", isDirectory: true)
+    let control = workspace.appendingPathComponent(AgentIOSRuntimeGuestABI.controlDirectory, isDirectory: true)
     try FileManager.default.createDirectory(at: control, withIntermediateDirectories: true)
     try Data(source.utf8).write(to: control.appendingPathComponent(fileName), options: [.atomic])
     return "/workspace/\(workspaceId)"
