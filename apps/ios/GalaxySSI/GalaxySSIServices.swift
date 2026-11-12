@@ -3512,6 +3512,7 @@ final class MessageCoordinator: ObservableObject {
     finish(["native_status": .string(result.status.rawValue), "passed": verdict,
       "native_receipt": result.toJSONObject()["receipt"] ?? .null,
       "galaxyssi_evidence_receipt": receipt.map(AgentMcpJSONValue.object) ?? .null,
+      "first_problem": receipt == nil ? .null : AgentCollaborationSavedToolTest.firstProblem(evaluation),
       "reason": evaluation["reason"] ?? .null,
       "error": result.error.map { .object(["code": .string($0.code), "details_in_original_evidence": .bool(receipt != nil)]) } ?? .null])
   }

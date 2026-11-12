@@ -4404,6 +4404,29 @@ extension GalaxySSIStoreTests {
     XCTAssertThrowsError(try reopened.updateSavedToolExecution(.request(original), scope: scope(), process: "b", now: 14))
   }
 
+  func testSavedToolCapturePreservesKnownCountsAndRejectsTruncatedStderr() throws {
+    typealias Tool = AgentCollaborationSavedToolTest
+    let original: AgentMcpJSONObject = ["stdout": .string("a\u{1F9EA}z"), "stderr": .string("diagnostic")]
+    let bounded = Tool.boundCapture(original, stdoutLimit: 4, stderrLimit: 8)
+    XCTAssertEqual(bounded["stdout"], .string("a"))
+    XCTAssertEqual(bounded["stdout_original_chars"], .int(4))
+    XCTAssertEqual(bounded["stderr_original_chars"], .int(10))
+    XCTAssertEqual(bounded["output_truncated"], .bool(true))
+    let second = Tool.boundCapture(bounded, stdoutLimit: 2, stderrLimit: 3)
+    XCTAssertEqual(second["stdout_original_chars"], .int(4))
+    XCTAssertEqual(second["stderr_original_chars"], .int(10))
+    XCTAssertEqual(second["stderr"], .string("dia"))
+    let stderrOnly = Tool.boundCapture(original, stdoutLimit: 16, stderrLimit: 3)
+    let problem = try XCTUnwrap(Tool.captureProblem(stderrOnly))
+    XCTAssertEqual(problem["code"], .string("report_stderr_truncated"))
+    XCTAssertEqual(problem["path"], .string("/stderr"))
+    XCTAssertEqual(problem["expected"], .int(10))
+    XCTAssertEqual(problem["actual"], .int(3))
+    let upstream = Tool.boundCapture(["stdout": .string("{}"), "output_truncated": .bool(true)])
+    XCTAssertNil(upstream["stdout_original_chars"])
+    XCTAssertEqual(Tool.captureProblem(upstream)?["code"], .string("report_capture_truncated"))
+  }
+
   func testSavedToolTestResolvesExactRecordsAndKeepsTheOracleOutsidePython() throws {
     let suite = "saved-tool-test-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -4530,6 +4553,16 @@ extension GalaxySSIStoreTests {
     let mismatch = prepared.evaluate(report(wrong))
     XCTAssertEqual(mismatch["passed"], .bool(false))
     XCTAssertEqual(mismatch["problems"]?.arrayValue?.first?.objectValue?["path"], .string("/results/0/output/a~1b/1"))
+    XCTAssertEqual(mismatch["problems"]?.arrayValue?.first?.objectValue?["code"], .string("type_mismatch"))
+    XCTAssertEqual(mismatch["checks"]?.arrayValue?.first?.objectValue?["expected"], oracle)
+    XCTAssertEqual(mismatch["checks"]?.arrayValue?.first?.objectValue?["actual"], wrong[0].objectValue?["output"])
+    for (invalid, expectedCode) in [("{", "report_json_unparseable"), ("[]", "report_object_required")] {
+      var malformed = report(rows)
+      malformed.output["stdout"] = .string(invalid)
+      malformed.receipt.outputSha256 = AgentMcpJSONCodec.sha256(malformed.output)
+      XCTAssertEqual(AgentCollaborationSavedToolTest.firstProblem(prepared.evaluate(malformed)).objectValue?["code"],
+        .string(expectedCode))
+    }
     var tampered = report(rows)
     tampered.receipt.inputSha256 = "changed"
     XCTAssertEqual(prepared.evaluate(tampered)["passed"], .bool(false))
@@ -4544,10 +4577,28 @@ extension GalaxySSIStoreTests {
       XCTAssertEqual(($0 as? AgentCollaborationTypedRecordValidation)?.problem["code"], .string("record_kind_mismatch"))
     }
 
+    let badResult = report(wrong)
+    let failedProof = try history.recordNativeObservation(.init(runId: reader.runId, conversationId: reader.conversationId,
+      turnId: reader.turnId, memberId: reader.memberId, sourceId: reader.sourceId, input: prepared.evidenceInput,
+      result: badResult, evaluation: mismatch))
     let result = report(rows)
     let proof = try history.recordNativeObservation(.init(runId: reader.runId, conversationId: reader.conversationId,
       turnId: reader.turnId, memberId: reader.memberId, sourceId: reader.sourceId, input: prepared.evidenceInput,
-      result: result, evaluation: prepared.evaluate(result)))
+      result: result, evaluation: prepared.evaluate(result, detailed: false)))
+    let candidateHistory = try history.recallCollaborationOriginal(AgentCollaborationCandidateRecall.selector(tool), scope: reader)
+    let attempts = try XCTUnwrap(candidateHistory["records"]?.arrayValue).compactMap(\.objectValue)
+    XCTAssertEqual(attempts.count, 2)
+    let failed = try XCTUnwrap(attempts.first { $0["evidence_id"] == failedProof["evidence_id"] })
+    XCTAssertEqual(failed["runtime_reported_passed"], .bool(false))
+    XCTAssertEqual(failed["first_problem"]?.objectValue?["case_id"], .string("target"))
+    XCTAssertNil(failed["first_problem"]?.objectValue?["actual"])
+    XCTAssertTrue(attempts.contains { $0["runtime_reported_passed"] == .bool(true) })
+    let failures = try history.recallCollaborationOriginal(["mode": .string("problems"),
+      "origin": .string("ios_native_tool")], scope: reader)
+    let indexed = try XCTUnwrap(failures["problems"]?.arrayValue).compactMap(\.objectValue)
+    XCTAssertEqual(indexed.map { $0["evidence_id"] }, [failedProof["evidence_id"]])
+    XCTAssertEqual(indexed.first?["read_original"]?.objectValue?["sha256"], failedProof["sha256"])
+    XCTAssertEqual(indexed.first?["first_problem"]?.objectValue?["path"], .string("/results/0/output/a~1b/1"))
     let citation = proof.filter { ["evidence_id", "sha256", "origin"].contains($0.key) }
     let reviewer = running.members[1]
     let reviewScope = AgentCollaborationToolEvidenceScope(runId: reader.runId, conversationId: reader.conversationId,

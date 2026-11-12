@@ -486,6 +486,7 @@ struct CloudModelStreamMutableConversation {
     ]
     if !originalsOnly {
       properties["case_filter"] = ["type": "string", "enum": AgentCollaborationNumericFeedback.filters]
+      properties["origin"] = ["type": "string", "enum": ["ios_cloud_tool", "ios_native_tool"]]
       properties["record_id"] = ["type": "string", "description": AgentCollaborationMethodExperience.instructions]
     }
     let scoped = AgentCollaborationCandidateRecall.cloudProperties(properties, enabled: !originalsOnly)
@@ -502,7 +503,8 @@ struct CloudModelStreamMutableConversation {
     if !originalsOnly, let description = advertised["description"] as? String {
       advertised["description"] = description + " Use method_history with exact tool release object_id, revision and sha256 for native outcomes, not quality measures. " +
         AgentCollaborationSourceAccess.instructions + " " + AgentCollaborationNumericFeedback.instructions + " " +
-        AgentCollaborationCoordinatorUpdates.instructions
+        AgentCollaborationCoordinatorUpdates.instructions +
+        " Use problems with origin=ios_native_tool for saved tool failures and original evidence selectors."
     }
     advertised["description"] = (advertised["description"] as? String ?? "") +
       " Use acceptance_record with an exact current object_id, revision and sha256 to read a saved criterion delivery or review from this run. " +
