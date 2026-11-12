@@ -8,6 +8,10 @@ internal object HealthCareHistoryObservation {
     const val PROTOCOL = "galaxyssi.health-history.v1"
     fun compact(value: String, budget: Int, preserveReceipt: Boolean = false): String? {
         val source = runCatching { JSONObject(value) }.getOrNull() ?: return null
+        if (source.optString("protocol") == HealthCareVisitFollowUpTool.PROTOCOL)
+            return HealthCareVisitFollowUpObservation.compact(source, budget, preserveReceipt)
+        if (source.optString("protocol") == HealthCareFeedbackObservation.PROTOCOL)
+            return HealthCareFeedbackObservation.compact(source, budget, preserveReceipt)
         if (source.optString("protocol") == HealthCareQuestionObservation.PROTOCOL)
             return HealthCareQuestionObservation.compact(source, budget, preserveReceipt)
         if (source.optString("protocol") != PROTOCOL) return null

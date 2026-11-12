@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_care_agent_open">Open Health Agent</string>
     <string name="health_care_discussion_title">Health discussion · %1$s</string>
     <string name="health_care_discussion_title_short">Discuss next steps</string>
     <string name="health_care_discussion_confirm">Review health data sharing</string>

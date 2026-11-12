@@ -18,6 +18,8 @@ internal object ConversationScheduleState {
     fun text(context: Context, task: AgentProactiveTask?, lastRun: AgentProactiveRun?, includeSchedule: Boolean = false): String {
         if (task == null) return context.getString(R.string.schedule_not_found)
         val frequency = task.action.scheduleText.takeIf { includeSchedule }.orEmpty()
+        if (ConversationScheduleProvenance.requiresReview(task)) return listOf(frequency,
+            context.getString(R.string.schedule_legacy_review)).filter(String::isNotBlank).joinToString("\n")
         if (!task.enabled) return listOf(frequency, context.getString(R.string.schedule_paused))
             .filter(String::isNotBlank).joinToString(if (includeSchedule) " · " else "\n")
         if (includeSchedule) return frequency

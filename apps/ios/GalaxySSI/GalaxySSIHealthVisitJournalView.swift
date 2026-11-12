@@ -13,6 +13,16 @@ struct GalaxySSIHealthVisitJournalView: View {
   let metric: GalaxySSIHealthMetric
   let visit: UUID
 
+  @State private var reviewEligible = false
+  @State private var reviewEnabled = false
+  @State private var reviewReminder: GalaxySSIHealthCareFollowUp.Reminder?
+  @State private var reviewTime: Date?
+  @State private var reviewConfirmation = false
+  @State private var cancellingReview = false
+  @State private var reviewFailed = false
+  @State private var visibilityID = UUID()
+  @State private var journalVisible = false
+
   @State private var page: Journal.Page?
   @State private var rows: [Journal.Receipt] = []
   @State private var editor: Journal.Input?
@@ -56,6 +66,7 @@ struct GalaxySSIHealthVisitJournalView: View {
     }
     .onChange(of: scene) { if $0 == .active { reload() } else { clear() } }
     .onChange(of: store.profile.identityFingerprint) { _ in reload() }
+    .onChange(of: editor != nil) { _ in updateReviewVisibility() }
     .onDisappear { clear() }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in clear(failed: true) }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in clear() }
@@ -77,9 +88,10 @@ struct GalaxySSIHealthVisitJournalView: View {
                 .foregroundColor(.secondary)
             }
           }
-          Text(t("notice", "Self-reported notes only. Journal changes do not alter treatment, reminders, or clinical status."))
+          Text(t("notice", "Self-reported notes only. Journal changes do not alter treatment or clinical status."))
             .font(.footnote).foregroundColor(.secondary)
         }
+        if reviewEligible { reviewSection }
         let commands = Journal.commands(page.entry?.state, attended: page.scope.visit.details.state == .attended)
         if let primary = commands.first {
           Button(commandTitle(primary)) { begin(primary) }.buttonStyle(.borderedProminent)
@@ -120,6 +132,90 @@ struct GalaxySSIHealthVisitJournalView: View {
     .confirmationDialog(t("delete_confirm", "Delete this journal and its history?"), isPresented: $deleting,
       titleVisibility: .visible) {
       Button(t("delete", "Delete journal"), role: .destructive, action: delete)
+    }
+    .onAppear { journalVisible = true; updateReviewVisibility() }
+    .onDisappear { journalVisible = false; updateReviewVisibility() }
+  }
+
+  private var reviewSection: some View {
+    Section(reviewText("title", "Post-visit review")) {
+      if let reminder = reviewReminder {
+        Text(reminder.requestedAt, format: .dateTime)
+        if let scheduled = reminder.submittedFor, abs(scheduled.timeIntervalSince(reminder.requestedAt)) >= 60 {
+          Text(reviewText("registered", "Registered notification time")).font(.caption).foregroundColor(.secondary)
+          Text(scheduled, format: .dateTime)
+        }
+      }
+      if reviewEnabled {
+        if let time = reviewTime {
+          DatePicker(reviewText("time", "Review date and time"),
+            selection: Binding(get: { reviewTime ?? time }, set: { reviewTime = $0 }),
+            in: Date()..., displayedComponents: [.date, .hourAndMinute])
+          Button(reviewText("continue", "Review selected time")) {
+            cancellingReview = false
+            reviewConfirmation = true
+          }.disabled(time <= Date())
+          Button(t("cancel", "Cancel")) { reviewTime = nil }
+        } else {
+          Button(reviewReminder == nil ? reviewText("schedule", "Schedule review reminder") :
+            reviewText("change", "Change reminder time")) {
+            reviewFailed = false
+            reviewTime = max(reviewReminder?.requestedAt ?? .distantPast, Date().addingTimeInterval(3_600))
+          }
+          if reviewReminder != nil {
+            Button(reviewText("cancel", "Cancel reminder"), role: .destructive) {
+              cancellingReview = true
+              reviewConfirmation = true
+            }
+          }
+        }
+      } else {
+        NavigationLink(reviewText("settings", "Health reminder settings")) {
+          GalaxySSIHealthReviewReminderView(records: records)
+        }
+      }
+      if reviewFailed { Text(reviewText("failed", "Could not update the review reminder.")).foregroundColor(.secondary) }
+    }
+    .alert(cancellingReview ? reviewText("cancel", "Cancel reminder") :
+      reviewText("confirm_title", "Confirm review reminder"), isPresented: $reviewConfirmation) {
+      if cancellingReview {
+        Button(reviewText("cancel", "Cancel reminder"), role: .destructive, action: commitReview)
+        Button(reviewText("keep", "Keep reminder"), role: .cancel) {}
+      } else {
+        Button(reviewText("confirm", "Confirm reminder"), action: commitReview)
+        Button(t("cancel", "Cancel"), role: .cancel) {}
+      }
+    } message: {
+      if !cancellingReview, let time = reviewTime {
+        Text(time, format: .dateTime) + Text("\n" + reviewText("notice",
+          "This is a reminder to review your journal, not a treatment instruction."))
+      }
+    }
+  }
+
+  private func reviewText(_ key: String, _ fallback: String) -> String {
+    GalaxySSIHealthCareFollowUp.JournalReview.text(key, fallback, language)
+  }
+
+  private func updateReviewVisibility() {
+    GalaxySSIHealthCareFollowUp.JournalVisibility.shared.update(visibilityID,
+      reminder: canRead && journalVisible && editor == nil ? reviewReminder : nil)
+  }
+
+  private func commitReview() {
+    guard canRead, let page, !saving else { return }
+    saving = true
+    defer { saving = false }
+    do {
+      if cancellingReview, let reminder = reviewReminder {
+        try records.cancelLocalCareFollowUp(reminder)
+      } else if !cancellingReview, let reviewTime {
+        try records.scheduleVisitReview(page, replacing: reviewReminder?.id, at: reviewTime)
+      } else { return }
+      reload()
+    } catch {
+      reload()
+      reviewFailed = true
     }
   }
 
@@ -204,6 +300,9 @@ struct GalaxySSIHealthVisitJournalView: View {
 
   private func clear(failed: Bool = false) {
     page = nil; rows = []; editor = nil; operation = UUID(); deleting = false; invalid = false; self.failed = failed
+    reviewReminder = nil; reviewEligible = false; reviewEnabled = false; reviewTime = nil
+    reviewConfirmation = false; cancellingReview = false; reviewFailed = false
+    GalaxySSIHealthCareFollowUp.JournalVisibility.shared.update(visibilityID, reminder: nil)
   }
   private func reload() { clear(); load() }
   private func load(append: Bool = false) {
@@ -212,8 +311,11 @@ struct GalaxySSIHealthVisitJournalView: View {
     do {
       let loaded = try records.visitJournal(concern: concern, metric: metric, visit: visit,
         before: append ? page?.next : nil, expected: append ? page : nil)
+      let review = try records.visitReviewStatus(loaded)
       rows = (append ? rows : []) + loaded.rows
       page = loaded; failed = false
+      reviewEligible = review.eligible; reviewEnabled = review.enabled; reviewReminder = review.reminder
+      updateReviewVisibility()
     } catch { clear(failed: true) }
   }
   private func begin(_ kind: Journal.Kind) {

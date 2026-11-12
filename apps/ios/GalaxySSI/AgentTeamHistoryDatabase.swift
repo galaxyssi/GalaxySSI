@@ -586,7 +586,8 @@ final class AgentTeamHistoryDatabase {
     guard data.count <= limit else { throw Failure.corrupt }
     let payload = try cipher.encrypt(data, purpose: researchPurpose(group: group, key: key, revision: revision))
     guard !replaceCoverage || (revision == 0 &&
-      (key.hasPrefix("cloud-read-coverage:") || key.hasPrefix("native-read-coverage:"))) else { throw Failure.corrupt }
+      (key.hasPrefix("cloud-read-coverage:") || key.hasPrefix("native-read-coverage:") ||
+        key.hasPrefix("desktop-import-coverage:"))) else { throw Failure.corrupt }
     let insert = replaceCoverage ? "INSERT OR REPLACE" : "INSERT"
     let statement = try prepare(insert + " INTO collaboration_research_records VALUES(?,?,?,?,?)")
     defer { sqlite3_finalize(statement) }

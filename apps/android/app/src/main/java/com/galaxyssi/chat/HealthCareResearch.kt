@@ -8,14 +8,15 @@ internal data class HealthCareResearchAuthorization(val id: String, val scope: H
     val configuration: String, val revokedAt: Long = 0) {
     init {
         require(HealthProfilePolicy.uuid(id) && configuration.matches(Regex("[0-9a-f]{64}")))
-        require(revokedAt >= 0 && scope.researchAuthorizationId.isEmpty())
+        require(revokedAt >= 0 && scope.researchAuthorizationId.isEmpty() && scope.instruction == null && scope.visitFollowUp == null)
     }
     val active get() = revokedAt == 0L
-    fun permits(grant: HealthCareDiscussionGrant): Boolean = active && grant.researchAuthorizationId == id &&
+    fun permits(grant: HealthCareDiscussionGrant): Boolean = active && grant.researchAuthorizationId == id && grant.instruction == null && grant.visitFollowUp == null &&
         scope.concernId == grant.concernId && scope.conversationId == grant.conversationId &&
         scope.settingsVersion == grant.settingsVersion && scope.privacyVersion == grant.privacyVersion &&
         scope.targetId == grant.targetId && scope.modelId == grant.modelId && scope.effort == grant.effort &&
-        scope.destination == grant.destination && scope.profileLink?.scope == grant.profileLink?.scope && scope.questionsShared == grant.questionsShared
+        scope.destination == grant.destination && scope.profileLink?.scope == grant.profileLink?.scope && scope.questionsShared == grant.questionsShared &&
+        scope.feedbackHistoryShared == grant.feedbackHistoryShared
     fun json() = JSONObject().put("id", id).put("scope", scope.json()).put("configuration", configuration).put("revoked_at", revokedAt)
     companion object { fun from(j: JSONObject) = HealthCareResearchAuthorization(j.getString("id"),
         HealthCareDiscussionGrant.from(j.getJSONObject("scope")), j.getString("configuration"), j.getLong("revoked_at")) }

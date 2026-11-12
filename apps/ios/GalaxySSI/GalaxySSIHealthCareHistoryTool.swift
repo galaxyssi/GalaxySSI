@@ -109,7 +109,8 @@ enum GalaxySSIHealthCareHistoryTool {
   }
 
   static func call(_ bytes: Data, style: GalaxySSICloudAPIStyle, proposesPlan: Bool,
-                   allowsQuestionRead: Bool = false, asksQuestions: Bool = false, allowsFeedbackRead: Bool = false,
+                   allowsQuestionRead: Bool = false, asksQuestions: Bool = false,
+                   allowsAnswerDraft: Bool = false, allowsFeedbackRead: Bool = false,
                    allowsJournalRead: Bool = false) throws -> Call? {
     let root = try JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes)
     let message: AgentMcpJSONObject
@@ -153,15 +154,17 @@ enum GalaxySSIHealthCareHistoryTool {
     if proposesPlan && name == GalaxySSIHealthCarePlan.tool || asksQuestions && name == GalaxySSIHealthCareQuestions.tool {
       return nil
     }
+    let answerDraft = allowsAnswerDraft && name == GalaxySSIHealthCareAnswerDraft.tool
     guard name == function || (allowsQuestionRead && name == GalaxySSIHealthCareQuestions.readTool) ||
-          (allowsFeedbackRead && name == GalaxySSIHealthCareFeedbackTool.function) ||
+          answerDraft || (allowsFeedbackRead && name == GalaxySSIHealthCareFeedbackTool.function) ||
           (allowsJournalRead && name == GalaxySSIHealthVisitJournalRead.providerName) else { throw invalid }
     let id = entry["id"]?.strictStringValue
     guard (style == .gemini && id == nil) || id.map({ !$0.isBlank && $0.utf8.count <= 256 }) == true else { throw invalid }
     let args: AgentMcpJSONObject
     switch style {
     case .openAICompatible:
-      guard entry.string("type") == "function", let raw = spec["arguments"]?.strictStringValue, raw.utf8.count <= 1_024
+      guard entry.string("type") == "function", let raw = spec["arguments"]?.strictStringValue,
+            raw.utf8.count <= (answerDraft ? 25_000 : 1_024)
       else { throw invalid }
       args = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
     case .anthropic:

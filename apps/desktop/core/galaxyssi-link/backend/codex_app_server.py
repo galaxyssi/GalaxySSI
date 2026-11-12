@@ -47,6 +47,7 @@ from research_audit import ResearchEvidenceAudit, TOOL as RESEARCH_AUDIT_TOOL, t
 from research_trace import search_receipt
 from codex_compaction import CompactionPhase, COMPACTION_TIMEOUT_SECONDS
 from codex_provider_recovery import ProviderRecovery
+from codex_proxy import PROXY_KEYS
 from research_checkpoint import ResearchCheckpoints, TOOL as RESEARCH_CHECKPOINT_TOOL, tool_spec as research_checkpoint_tool_spec, handoff_prompt, transport_packets, with_handoff, checkpoint_store
 from office_preview import TOOL as OFFICE_PREVIEW_TOOL, tool_spec as office_preview_tool_spec, execute as execute_office_preview
 
@@ -209,7 +210,8 @@ class CodexRun:
 class CodexAppServer:
     def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None, collaboration_publish=None, collaboration_file=None, collaboration_test=None, experiment_boundary=None) -> None:
         self.executable = executable
-        self.env = dict(env) if experiment_boundary is not None else env
+        self.env = dict(env)
+        self._desired_proxy_env: dict[str, str] | None = None
         self.on_event = on_event
         self._experiment_boundary = experiment_boundary
         self._collaboration_recall = collaboration_recall
@@ -221,6 +223,7 @@ class CodexAppServer:
         self._process_start_lock = threading.RLock()
         self._next_id = 1
         self._pending: dict[int, queue.Queue] = {}
+        self._prewarm_inflight = 0
         self._runs: dict[str, CodexRun] = {}
         self._turn_tasks: dict[str, str] = {}
         self._conversation_threads: dict[str, str] = self._load_conversation_threads()
@@ -263,6 +266,37 @@ class CodexAppServer:
             "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
         }
 
+    def refresh_proxy_environment(self, env: Mapping[str, str]) -> None:
+        if self._experiment_boundary is not None:
+            return
+        keys = (*PROXY_KEYS, "NO_PROXY", "no_proxy", "GALAXYSSI_CODEX_PROXY_SOURCE")
+        with self._lock:
+            self._desired_proxy_env = {key: env[key] for key in keys if key in env}
+
+    def _refresh_idle_proxy(self) -> None:
+        # Called under the startup lock, also held through turn reservation.
+        # Never replay or interrupt an active turn to change its network route.
+        keys = (*PROXY_KEYS, "NO_PROXY", "no_proxy", "GALAXYSSI_CODEX_PROXY_SOURCE")
+        with self._lock:
+            desired = self._desired_proxy_env
+            if desired is None:
+                return
+            current = {key: self.env[key] for key in keys if key in self.env}
+            if current == desired:
+                self._desired_proxy_env = None
+                return
+            if self._pending or self._prewarm_inflight or any(not run.finished for run in self._runs.values()):
+                return
+            previous_source = self.env.get("GALAXYSSI_CODEX_PROXY_SOURCE", "unknown")
+            for key in keys:
+                self.env.pop(key, None)
+            self.env.update(desired)
+            self._desired_proxy_env = None
+        self._close_process()
+        # Proxy URLs may contain credentials. Log only the selection source.
+        log.info("Codex idle network environment refreshed source=%s -> %s",
+                 previous_source, self.env.get("GALAXYSSI_CODEX_PROXY_SOURCE", "unknown"))
+
     def prewarm_recent_threads(self, limit: int = 3) -> dict[str, object]:
         """Load recent persisted conversations into the current App Server process."""
         self._ensure_started()
@@ -278,7 +312,15 @@ class CodexAppServer:
             if not thread_id or thread_id in self._loaded_thread_ids:
                 continue
             try:
-                self._resume_thread(thread_id)
+                with self._process_start_lock:
+                    self._ensure_started()
+                    with self._lock:
+                        self._prewarm_inflight += 1
+                try:
+                    self._resume_thread(thread_id)
+                finally:
+                    with self._lock:
+                        self._prewarm_inflight -= 1
                 resumed.append(thread_id)
             except RuntimeError as exc:
                 if not self._is_thread_not_found_error(exc):
@@ -320,7 +362,6 @@ class CodexAppServer:
             policy = execution_policy or execution_policy_for(prompt)
             self._experiment_boundary.admit(conversation_id, cwd, model, policy.reasoning_effort.value,
                 [*(image_paths or []), *(fresh_thread_image_paths or [])])
-        self._ensure_started()
         local_images = self._existing_image_paths(image_paths)
         restored_images = self._existing_image_paths(
             [*local_images, *(fresh_thread_image_paths or [])]
@@ -362,16 +403,18 @@ class CodexAppServer:
         run.host_config_guard = None if fast_chat or phone_planner else self._begin_host_config_guard(run)
         reused_thread = False
         try:
-            with self._lock:
-                active_run = self._active_run_locked(clean_conversation_id, exclude_task_id=task_id)
-                if active_run is not None:
-                    raise CodexConversationBusyError(active_run.task_id)
-                self._runs[task_id] = run
-                conversation_key = self._conversation_key(clean_conversation_id)
-                run.thread_id = self._conversation_threads.get(conversation_key, "") if conversation_key else ""
-                # This active reservation prevents eviction of a loaded thread.
-                # Warm turns need not wait for unrelated lifecycle RPCs.
-                thread_loaded = run.thread_id in self._loaded_thread_ids
+            with self._process_start_lock:
+                self._ensure_started()
+                with self._lock:
+                    active_run = self._active_run_locked(clean_conversation_id, exclude_task_id=task_id)
+                    if active_run is not None:
+                        raise CodexConversationBusyError(active_run.task_id)
+                    self._runs[task_id] = run
+                    conversation_key = self._conversation_key(clean_conversation_id)
+                    run.thread_id = self._conversation_threads.get(conversation_key, "") if conversation_key else ""
+                    # This active reservation prevents eviction of a loaded thread.
+                    # Warm turns need not wait for unrelated lifecycle RPCs.
+                    thread_loaded = run.thread_id in self._loaded_thread_ids
             # Reserve this conversation under the state lock, then release it
             # before RPC waits. Reader callbacks also need this lock.
             if run.thread_id and not thread_loaded:
@@ -567,7 +610,6 @@ class CodexAppServer:
                 "Cannot recover the original Codex turn because its thread or turn identity is missing"
             )
 
-        self._ensure_started()
         now = time.monotonic()
         run = CodexRun(
             task_id=task_id,
@@ -598,9 +640,11 @@ class CodexAppServer:
                 and isinstance(saved_compaction.get("started_at"), (int, float))):
             run.compaction.item_id = str(saved_compaction.get("item_id") or "context-compaction")
             run.compaction.started = now - max(0, time.time() - saved_compaction["started_at"])
-        with self._lock:
-            self._runs[task_id] = run
-            self._turn_tasks[clean_turn_id] = task_id
+        with self._process_start_lock:
+            self._ensure_started()
+            with self._lock:
+                self._runs[task_id] = run
+                self._turn_tasks[clean_turn_id] = task_id
 
         self.on_event(task_id, {
             "thread_id": clean_thread_id,
@@ -1818,6 +1862,7 @@ class CodexAppServer:
 
     def _ensure_started(self) -> None:
         with self._process_start_lock:
+            self._refresh_idle_proxy()
             if self._experiment_boundary is not None:
                 self._experiment_boundary.verify_storage_environment(self.env)
             if self.is_ready():

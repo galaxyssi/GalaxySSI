@@ -484,7 +484,7 @@ replace_existing="$5"
 local_branch="${base_branch:-main}"
 control_dir='.galaxyssi-runtime'
 askpass="$control_dir/git-askpass.sh"
-metadata_root="${GALAXYSSI_GIT_METADATA_ROOT:-/var/lib/galaxyssi/git}"
+metadata_root="${GALAXYSSI_GIT_METADATA_ROOT:-${GALAXYSSI_SYSTEM_ROOT:-/var/lib/signalasi}/git}"
 workspace_key="$(basename "$PWD")"
 case "$PWD" in /workspace/*) ;; *) printf '%s\n' 'Invalid project workspace' >&2; exit 2 ;; esac
 case "$workspace_key" in *[!A-Za-z0-9._-]*|'') printf '%s\n' 'Invalid project workspace' >&2; exit 2 ;; esac
@@ -515,7 +515,7 @@ trap cleanup EXIT INT TERM
 configure_excludes() {
   exclude_file="$(git rev-parse --git-path info/exclude)"
   mkdir -p "$(dirname "$exclude_file")"
-  for pattern in '.galaxyssi-runtime/' '.galaxyssi-tools/' '.galaxyssi-inputs/' '.tmp/' \
+  for pattern in '.galaxyssi-runtime/' '.signalasi-runtime/' '.galaxyssi-tools/' '.galaxyssi-inputs/' '.tmp/' \
     'request.json' 'status.json' '.galaxyssi-checkpoint.json' '.galaxyssi-stdout' \
     '.galaxyssi-stderr' '.galaxyssi-main'; do
     grep -Fqx "$pattern" "$exclude_file" 2>/dev/null || printf '%s\n' "$pattern" >>"$exclude_file"
@@ -538,7 +538,7 @@ fi
 if [ -n "$base_branch" ]; then remote_ref="refs/heads/$base_branch"; else remote_ref='HEAD'; fi
 if [ "$existing" = true ]; then
   GALAXYSSI_GITHUB_TOKEN="$github_token" git -c credential.helper= fetch --depth "$depth" origin "$remote_ref"
-  if [ -n "$(git status --porcelain --untracked-files=all -- . ':(exclude).galaxyssi-runtime')" ]; then
+  if [ -n "$(git status --porcelain --untracked-files=all -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime')" ]; then
     current_branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
     [ -z "$feature_branch" ] || [ "$current_branch" = "$feature_branch" ] || exit 43
   elif [ -n "$feature_branch" ]; then
@@ -572,7 +572,7 @@ print_value state ready
 print_value repository_url "$origin"
 print_value branch "$branch"
 print_value head_commit "$head_commit"
-if [ -z "$(git status --porcelain --untracked-files=all -- . ':(exclude).galaxyssi-runtime')" ]; then
+if [ -z "$(git status --porcelain --untracked-files=all -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime')" ]; then
   print_value clean true
 else
   print_value clean false
@@ -621,17 +621,17 @@ emit_repository
 message="$1"
 author_name="$2"
 author_email="$3"
-if [ -z "$(git status --porcelain --untracked-files=all -- . ':(exclude).galaxyssi-runtime')" ]; then
+if [ -z "$(git status --porcelain --untracked-files=all -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime')" ]; then
   exit 64
 fi
-if [ -n "$(git diff --name-only --diff-filter=U -- . ':(exclude).galaxyssi-runtime')" ]; then
+if [ -n "$(git diff --name-only --diff-filter=U -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime')" ]; then
   exit 66
 fi
 emit_changed_files() {
   {
-    git diff --cached --name-only --no-renames -- . ':(exclude).galaxyssi-runtime'
-    git diff --name-only --no-renames -- . ':(exclude).galaxyssi-runtime'
-    git ls-files --others --exclude-standard -- . ':(exclude).galaxyssi-runtime'
+    git diff --cached --name-only --no-renames -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime'
+    git diff --name-only --no-renames -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime'
+    git ls-files --others --exclude-standard -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime'
   } | sort -u | while IFS= read -r path; do
     [ -n "$path" ] || continue
     encoded="$(printf '%s' "$path" | base64 | tr -d '\n')"
@@ -641,7 +641,7 @@ emit_changed_files() {
 emit_changed_files
 git config user.name "$author_name"
 git config user.email "$author_email"
-git add -A -- . ':(exclude).galaxyssi-runtime'
+git add -A -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime'
 git -c core.hooksPath=/dev/null -c commit.gpgSign=false commit -q -m "$message"
 emit_repository
 """#
@@ -730,14 +730,14 @@ require_trusted_remote() {
   case "$remote_repository" in *[!A-Za-z0-9_.-]*|'') exit 65 ;; esac
 }
 require_clean() {
-  [ -z "$(git status --porcelain --untracked-files=all -- . ':(exclude).galaxyssi-runtime')" ] || exit 43
+  [ -z "$(git status --porcelain --untracked-files=all -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime')" ] || exit 43
 }
 emit_repository() {
   print_value state ready
   print_value repository_url "$(git remote get-url origin 2>/dev/null || true)"
   print_value branch "$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
   print_value head_commit "$(git rev-parse --verify HEAD 2>/dev/null || true)"
-  if [ -z "$(git status --porcelain --untracked-files=all -- . ':(exclude).galaxyssi-runtime')" ]; then
+  if [ -z "$(git status --porcelain --untracked-files=all -- . ':(exclude).galaxyssi-runtime' ':(exclude).signalasi-runtime')" ]; then
     print_value clean true
   else
     print_value clean false

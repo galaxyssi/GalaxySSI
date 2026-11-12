@@ -83,4 +83,37 @@ class HealthCareDiscussionPolicyTest {
         assertNotEquals(version, HealthCareEngine.inputVersion("settings1", "privacy2", "records1"))
         assertNotEquals(version, HealthCareEngine.inputVersion("settings1", "privacy1", "records2"))
     }
+
+    @Test fun narrowedHistoryDropsSharedFeedbackAndUnprovenSummariesButKeepsPermittedTurns() {
+        val safe = grant.copy(turnId = UUID.randomUUID().toString())
+        val broad = safe.copy(turnId = UUID.randomUUID().toString(), feedbackHistoryShared = true)
+        val unknown = safe.copy(turnId = UUID.randomUUID().toString())
+        fun entry(value: HealthCareDiscussionGrant) = AgentTranscriptEntry(UUID.randomUUID().toString(),
+            AgentTranscriptRole.ASSISTANT, "Synthetic reference", now, conversationId = value.conversationId, turnId = value.turnId)
+        val entries = listOf(entry(safe), entry(broad), entry(unknown), entry(grant))
+        val history = AgentConversationContext(grant.conversationId, "Mixed historical summary", entries, true,
+            globalContext = "Historical derived context", trackingPaused = true)
+        val approvals = listOf(safe, broad).associateBy { it.turnId }
+        val filtered = HealthCareDiscussionPolicy.historyForGrant(history, grant, approvals::get)
+        assertEquals(listOf(entries.first(), entries.last()), filtered.turns)
+        assertEquals("", filtered.summary); assertEquals("", filtered.globalContext)
+        assertEquals(history.copy(summary = "", globalContext = ""),
+            HealthCareDiscussionPolicy.historyForGrant(history, grant.copy(feedbackHistoryShared = true), approvals::get))
+    }
+
+    @Test fun narrowedHistoryRejectsChangedPermissionDestinationOrImportedReferences() {
+        val old = grant.copy(turnId = UUID.randomUUID().toString())
+        val entry = AgentTranscriptEntry(UUID.randomUUID().toString(), AgentTranscriptRole.ASSISTANT,
+            "Synthetic reference", now, conversationId = grant.conversationId, turnId = old.turnId)
+        val history = AgentConversationContext(grant.conversationId, "", listOf(entry), true, trackingPaused = true)
+        listOf(old.copy(privacyVersion = "changed"), old.copy(destination = "c".repeat(64)),
+            old.copy(concernId = UUID.randomUUID().toString()), old.copy(questionsShared = true)).forEach { previous ->
+            assertTrue(HealthCareDiscussionPolicy.historyForGrant(history, grant) { previous }.turns.isEmpty())
+        }
+        assertTrue(HealthCareDiscussionPolicy.historyForGrant(history.copy(turns = listOf(entry.copy(
+            sourceConversationId = UUID.randomUUID().toString()))), grant) { old }.turns.isEmpty())
+        assertThrows(IllegalArgumentException::class.java) {
+            HealthCareDiscussionPolicy.historyForGrant(history.copy(conversationId = UUID.randomUUID().toString()), grant) { old }
+        }
+    }
 }

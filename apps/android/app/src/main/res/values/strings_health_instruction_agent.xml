@@ -1,0 +1,13 @@
+<resources>
+    <string name="health_instruction_agent">Ask Agent to organize</string>
+    <string name="health_instruction_agent_question">Organize only the selected clinical-source excerpt into a draft for my individual review. Do not infer missing instructions or schedule anything.</string>
+    <string name="health_instruction_agent_disclosure">Send only this selected excerpt and its page/recognition metadata to %1$s · %2$s for this turn. Your profile, measurements, questions and previous conversations are not included. Model results remain unreviewed; they do not change treatment or create actions or reminders.</string>
+    <string name="health_instruction_agent_pending">Agent proposal awaiting review</string>
+    <string name="health_instruction_agent_review">Review proposed fields</string>
+    <string name="health_instruction_agent_discard">Discard proposal</string>
+    <string name="health_instruction_agent_origin">Model-assisted transcription, reviewed separately by you. Not clinician verification.</string>
+    <string name="health_instruction_agent_review_notice">All proposed fields are unreviewed. Compare each with the original, correct errors and mark missing information explicitly. Saving a draft does not confirm an action or reminder.</string>
+    <string name="health_instruction_agent_quoted">Exact source excerpt; meaning and accuracy still need review.</string>
+    <string name="health_instruction_agent_uncertain">Uncertain reading: check the original or ask the clinician.</string>
+    <string name="health_instruction_agent_not_found">Not found in the excerpt; not yet confirmed as absent.</string>
+</resources>

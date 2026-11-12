@@ -19,6 +19,22 @@ The clinical concern owns its durable state; its associated private conversation
 is an interaction surface. Changing models, navigating away, or deleting a chat
 must not silently create a new concern or mark the original concern resolved.
 
+The local reassessment surface is restricted to that independent private
+conversation: its `health-care:<concern-id>` topic and the encrypted discussion
+binding must agree. Ordinary Agent and collaboration conversations never load
+the global latest concern as a fallback. Switching conversations clears the old
+surface immediately; generation checks reject late loads from the prior scope.
+Personal Health exposes an **Open Health Agent** action near the top of the
+concern details. It reuses the linked active conversation, which remains available
+in the conversation list even before its first message. Opening it does not
+submit a model request, authorize research, or share health records.
+
+Inside that discussion, the assessment starts as a compact, collapsed summary.
+Expanding it reveals the complete explanation and actions in a bounded scrolling
+area; the collapse control remains outside that scroll. Priority status remains
+visible in the summary. Refreshes preserve the user's current expansion choice,
+while leaving the conversation or backgrounding clears the expanded sensitive UI.
+
 ## Six connected views
 
 | View | Content and interaction |
@@ -283,5 +299,364 @@ date, and the snapshot does not claim to include the full local feedback history
 
 Background navigation and privacy withdrawal clear feedback editors and history
 dialogs. Automatic voice-to-feedback writes, correction/retraction workflows,
-model pagination of feedback history, and the full visit/rehabilitation lifecycle
-remain future increments. No software test establishes clinical effectiveness.
+and the full visit/rehabilitation lifecycle remain future increments. No software
+test establishes clinical effectiveness.
+
+### Scoped feedback history for Agent discussions
+
+The existing manual discussion approval now discloses paged access to this
+concern's execution feedback. A persisted per-turn flag authorizes the read-only
+phone tool `galaxyssi.health.feedback.read`; old grants default to false, and
+automatic research requires a separate explicit choice for this permission. The Agent main
+layout is unchanged. No feedback is included automatically in the first prompt
+beyond the existing latest action notes. The snapshot names the available tool.
+
+The tool uses indexed revision-keyset pages of at most 30 encrypted receipts,
+including feedback for actions no longer in the current plan. It binds the
+conversation, turn, concern revision, measurement clock, selected profile and
+privacy approval before and after reading. It cannot select another concern or
+write records. New feedback or changed permission/source data requires a fresh
+approval instead of mixing pages from different snapshots. Local-model access
+works offline; remote-model access still requires online-analysis permission.
+
+Feedback outside the current profile-sharing scope is redacted, including its
+action title and timestamp, while its revision keeps pagination continuous.
+Current-plan membership, stale basis, user-reported execution and save time are
+separate facts; no entry proves clinical improvement. Legacy outcome text is not
+fabricated into feedback receipts. Observation compaction retains entire entries
+and advances only past delivered entries; an insufficient budget preserves the
+cursor and explicitly requires a larger budget, not repeated identical reads.
+
+The proactive research consent dialog offers a separate, initially unchecked
+history option. It does not replace the mandatory destination/standing-consent
+acknowledgement. The disclosed data preview and saved scope show the choice.
+New research turns inherit only the persisted standing scope, not a manual turn's
+permissions. Authorization matching includes the history flag. Replacing or
+narrowing consent cancels unfinished jobs durably; revoked, terminal and
+superseded turns cannot continue paging. New feedback requires a new revision
+and turn while retaining a still-valid standing authorization. Reads remain
+phone-local and read-only; online analysis is still required for remote models.
+This does not authorize clinical plan changes or expand selected profile data.
+Without history consent, generic conversation recall is unavailable and both
+planning and launch filter prior dialogue through its persisted turn grants.
+Unattributed summaries and broader-history turns are excluded; already-permitted
+turns and the fresh scoped health snapshot remain available. Existing transcripts
+are not deleted. This prevents a narrowed grant from reintroducing feedback
+through an old conversation summary instead of the paged tool.
+
+This adds model access to recorded follow-up evidence, not an independently
+verified clinical review, automatic treatment adjustment or background authority.
+
+## Local visit-preparation preview
+
+The existing Personal Health concern detail opens a local visit-summary workflow.
+The Agent main-page layout is unchanged. Users choose measurements, measurement
+context, confirmed actions and feedback, question history, and optionally the
+already selected profile fields/background entries. Profile details are off by
+default; enabling them never expands the concern's approved profile scope. Each
+resulting item can be excluded again before sharing. Missing or unselected
+history is not represented as absence of disease, medications or allergies.
+
+The preview separates measurements and exact source revisions from self-reported
+context, user-confirmed actions and questions. It includes up to eight recent
+measurements and eight scoped questions, explicitly disclosing additional history.
+Original records remain accessible independently by record ID and revision; no
+original attachment is included in a text share. Incompatible measurements retain
+their comparison caveats. Stale questions and actions are not silently promoted
+to current advice, and user confirmation is not described as clinician review.
+
+Generation runs on a worker without a model or network call and creates no disk
+report. A final explicit confirmation opens Android's text share chooser with
+exactly the selected preview items. Internal IDs, paths and profile names are not
+added; free text may still identify someone, so the UI does not promise automatic
+anonymization. Sharing transfers plaintext to the selected app, outside GalaxySSI's
+subsequent control. Cancelling confirmation does not launch the chooser, and
+opening it is not recorded as successful delivery to a clinician.
+
+Source clocks, concern revision, privacy version and selected profile stamps are
+checked after generation and immediately before sharing. Changed data or permission
+requires a new preview. Previews expire after ten minutes and clear on background,
+recreation, memory pressure and observed source/privacy changes. Oversized text is
+rejected, not truncated. No new database or persisted plaintext snapshot is added.
+
+This increment provides a selected text summary, not a PDF report, symptom intake,
+hospital booking, medical record transmission or post-visit instruction review.
+Agent-triggered preparation, appointment reminders, reviewed prescriptions and
+rehabilitation follow-up remain separate work in the full lifecycle goal.
+
+## Local encounter records
+
+The next increment introduces local encounter records bound to an existing self
+concern. Planned, user-recorded booking, attended and cancelled are separate
+states. A planned date alone does not imply a booking. Attendance requires an
+explicit non-future date. These records are always user reports, not hospital
+receipts, verified clinician findings, prescriptions or permission to change a
+plan. Correcting a record preserves its original source anchor and creation time.
+
+Schema 12 adds individually authenticated encrypted current records and immutable
+operation receipts. Only opaque IDs and concern revisions are indexed; facility,
+purpose, visit dates, time zone and notes stay encrypted. Updating the concern
+revision, current encounter and history is atomic. Replayed operation IDs return
+the same receipt; changed content, ownership or editor revisions fail closed.
+Recording attendance does not complete existing actions or mark a concern cured.
+
+Current lists and per-encounter history use revision-keyset pages of at most 30
+records. A mutable-list cursor also requires the original concern revision, so
+concurrent edits require a refresh rather than silently losing moved records.
+Deleting an encounter purges its current row and encrypted history; deleting the
+concern purges all its encounters. Old operation retries cannot revive them.
+
+The existing concern detail opens the native list, editor, detail and change
+history. Explicit deletion confirms the removal of this encounter and its history,
+not its measurements or confirmed actions. Editors use native date/time pickers
+and retain the recorded time zone. Nonexistent local times are rejected; ambiguous
+clock-change times require an explicit offset selection. Saving a user-recorded
+booking requires its planned time. Planned and actual times remain distinct.
+
+Repository snapshots bind privacy and settings versions, the concern revision and
+the measurement clock. Changed inputs require a fresh review. Local writes hold a
+short consent transaction so concurrent revocation cannot pass an obsolete check;
+no model or network work runs under that lock. Manual records remain available
+when proactive checking is off, as long as the relevant local permissions remain
+granted. Backgrounding, recreation, source changes, memory pressure and a ten-minute
+TTL clear the editor and loaded plaintext; resuming reloads from encrypted storage.
+Invalidated worker results never render into a newer screen, and current failures
+offer an explicit retry instead of looping.
+
+Appointment reminders, post-visit original import and reviewed clinical
+instructions remain separate increments. This implementation has no external
+booking or clinical execution tool. Device UI, storage migration and privacy
+regression acceptance must pass before it is considered ready for delivery.
+
+## Encounter source documents
+
+Visit detail now opens a local source list. Users select an existing retained
+original, link the whole file, or preview a PDF/image and explicitly choose a
+page. Native pinch/drag preview reuses the bounded original rasterizer. The
+existing import workflow remains available; returning from it reloads local
+sources, without automatically associating an imported document or interpreting
+it as a prescription. Private review-only imports cannot be selected.
+
+Schema 13 stores each association independently with authenticated encryption.
+The payload binds the concern, encounter, their expected revisions, original ID,
+SHA-256, byte size, MIME type, optional page/count and user confirmation time.
+Indexed source fingerprints use a keyed digest, not a public file hash. Recording
+the association and its concern event is atomic; duplicate sources and operation
+retries do not create duplicate links. Changed replay payloads and stale parents
+are rejected. Removing a link leaves the original file intact. Deleting the visit
+or concern purges its associations; stale callbacks cannot revive removed links.
+
+Preparation verifies the complete original through a bounded stream, without
+creating a plaintext file. Rendering, verification and library reads run outside
+the main thread and outside the short commit lock. A prepared confirmation expires
+after ten minutes and rechecks privacy, source metadata, parent revisions and
+measurement clocks before committing. Lists use at most 30 items per page; linked
+source continuations are tied to the concern revision. Backgrounding, memory
+pressure, source changes and expiry discard dialogs, loaded plaintext and preview
+bitmaps, including obsolete worker results.
+
+Missing or changed originals remain visible as unavailable associations that can
+be removed, never as verified clinical evidence. Preview failure is explicit;
+password-protected PDFs require the original-library reader rather than an
+invented page preview. Selecting a source is not clinician verification and does
+not create medication, appointment or rehabilitation reminders. The sections
+below describe source-backed drafts, field review, original dependencies and
+scoped Agent assistance. Full post-treatment follow-up remains subsequent work.
+
+## Source-backed instruction review
+
+Linked encounter originals now provide a local page-reading entry. A PDF text
+layer is preferred; image-only pages use the existing on-device OCR engine. Only
+the selected page is decoded. Users select exact source lines to create an
+unreviewed instruction draft, then classify and transcribe its fields. The
+retained source includes original identity/hash, page, recognition method, line
+indices, available bounding boxes and blur warning. There is no invented numeric
+OCR confidence. Password-protected PDFs remain unsupported in this page workflow.
+
+Medication, test, follow-up, rehabilitation, lifestyle and other drafts have
+explicit field states: unreviewed, checked against the source, or not stated in
+the source. Editing checked text resets its review. Not-stated fields contain no
+guessed text. Review records user transcription, not a clinician signature or
+medical validation. Field review alone cannot create executable actions or
+reminders. The explicit action confirmation step below is separate.
+
+Schema 14 adds encrypted current drafts and immutable operation receipts with
+authenticated ownership indices. Draft and concern revisions commit atomically;
+retries cannot change their source or overwrite newer edits. Current drafts and
+review history use indexed keyset pages of at most 30 items. Source quotations
+and creation time survive later reviews. Deleting a draft purges its review
+history but not the original. A linked source cannot be unlinked while it has
+dependent drafts. Missing original bytes leave historical transcription visible,
+but block further field confirmation. Visit/concern deletion purges dependent
+drafts and review history.
+
+Reads, OCR and rendering run on a worker. Save rechecks the encounter, concern,
+privacy, measurement clock and original metadata/presence. Revocation, background,
+memory pressure and ten-minute expiry discard draft editors, selected source
+lines and preview bitmaps. No new plaintext file or network request is produced.
+
+Source selection remains explicit; the scoped Agent drafting increment below
+assists classification, not autonomous clinical extraction. Full
+treatment/rehabilitation follow-up remains subsequent work.
+Software and device tests do not establish clinical effectiveness;
+the full lifecycle still requires its separate clinical and end-to-end gates.
+
+## Confirmed instruction actions
+
+The instruction detail can add a separately confirmed action to the existing
+care agenda. The confirmation shows the immutable quotation, page, reviewed
+fields and an unchecked acknowledgement. Cancel or backgrounding discards an
+unconfirmed dialog; authorization is rechecked when committing a confirmed
+action. An unreviewed draft cannot offer confirmation. Medication
+requires every required field to be explicitly transcribed and checked, including
+name, dose, unit, route, frequency, start/end dates and details. Other instructions
+require a checked name/details and explicit review of the remaining fields;
+not-stated dates remain unknown. Users must clarify ambiguous instructions with
+their clinician; the application does not validate prescriptions clinically.
+
+Schema 15 adds an optional typed instruction reference inside the existing
+encrypted action payload. Existing actions and schema-14 sources survive the
+upgrade. The reference binds instruction revision, encounter, source association
+and original hash/page. Confirmation verifies the complete encrypted original on
+a worker, then rechecks authorization, parent revisions and source presence in
+the short commit path. One deterministic action ID per instruction revision
+prevents repeated confirmation from creating duplicates or rearming a completed
+action. No reminder is created by confirmation itself.
+
+The existing reminder/feedback UI displays all transcribed fields and links back
+to the source. Its date/time picker schedules one user-selected reminder; it does
+not infer a recurring dose schedule from free text or rewrite clinical dates.
+Scheduling and delivery check the current instruction and original presence in
+addition to existing privacy, measurement and profile checks. The default store
+scheduling path rejects clinical actions without an explicit source-availability
+check. Generic model plan schemas and parsers cannot create clinical instruction
+actions. Scoped model-assisted clinical drafting uses the separate proposal flow below.
+
+Editing/deleting an instruction or deleting its encounter invalidates dependent
+action references and cancels old reminders in the same transaction. The old
+action remains in review/history rather than silently becoming the new medical
+instruction. A changed instruction requires a fresh confirmation. Missing
+original bytes block confirmation, scheduling and actual reminder delivery.
+Feedback continues to use the existing encrypted, idempotent receipts; completing
+an action never establishes recovery or clinical improvement.
+
+This does not yet deliver recurring prescription schedules, diagnosis-specific
+rehabilitation cycles or full lifecycle acceptance.
+The existing 30-action concern budget is unchanged; exceeding it must fail
+without dropping history, and durable paged plan archival remains a separate
+architecture gap. No Agent main-page layout changes are introduced.
+
+## Selected-source Agent proposals
+
+An unreviewed instruction can open its existing private health discussion with
+an opaque instruction ID. MainActivity consumes that ID only in the foreground
+after conversation hydration, then uses the normal one-turn consent dialog and
+selected provider configuration. The disclosure shows the selected quote and
+provider/model. Cancel or backgrounding does not submit. Only the selected
+quote, page, recognition method and blurry flag enter the model snapshot; no
+profile, measurements, questions or earlier chat accompany this extraction turn.
+The source identity, revision and hash remain in the local persisted grant.
+
+The restricted tool `galaxyssi.health.instructions.propose` accepts a kind and
+exact, contiguous excerpts for every required field. Missing fields are explicit
+`NOT_FOUND` values, not reviewed omissions. `QUOTED` means text matched, not
+clinical confidence; blurry sources force `UNCERTAIN`. All fields remain
+`UNREVIEWED`. No model tool can confirm an instruction, prescribe, alter an
+existing reviewed field, create an action or schedule a reminder.
+
+Schema 16 adds an encrypted per-proposal table, authenticated owner/state indexes,
+one pending proposal per instruction and turn-level replay receipts. Proposals
+do not change the concern revision or original instruction, so a successful
+tool receipt does not revoke its own turn. Replaying a dismissed result cannot
+resurrect it. Review loads the existing editor with unchecked fields and source
+certainty labels. Saving records model-assisted provenance; a separate user
+confirmation still gates actions. Manual edits dismiss old pending proposals;
+stale source versions, removed originals and changed privacy block adoption.
+Deleting the owning instruction, encounter or concern also purges proposals.
+
+Selected-source turns are excluded from later ordinary history and recall.
+Unproven summaries/global context are omitted because they may incorporate
+older extraction turns outside the current history page. Authorized ordinary
+turns and scoped paged feedback remain available. Proposal/editor plaintext
+uses the existing background, memory-pressure and ten-minute cleanup paths.
+
+Acceptance uses synthetic documents in isolated databases. The opt-in real
+provider probe exercises production prompts, phone tools and encrypted writes,
+not the Activity consent UI. It is not clinical validation or full lifecycle
+acceptance. Multiple independent instructions require separate source selection;
+recurring dose interpretation and autonomous treatment changes are not provided.
+
+Visit refreshes retain the selected visit identifier while clearing plaintext and
+reloading the source. A delayed write notification cannot send a newly opened
+detail back to the list. Ownership and privacy are still rechecked on reload;
+missing or revoked records fail closed rather than retaining stale details.
+
+## Post-visit follow-up journals
+
+An explicitly recorded attended visit can start its own follow-up journal. It
+retains a goal, subjective physical feelings, daily function, sleep, barriers and
+review notes separately from action completion and laboratory assessments.
+Review can record continuation, a proposed adjustment or a proposed maintenance
+discussion. The latter two remain pending review; they do not change the concern
+stage, treatment, targets or existing reminders. Pause/resume and archive/reopen
+are journal states only. Archiving requires an explicit acknowledgement that it
+does not establish recovery or stop treatment/reminders.
+
+Schema 17 adds encrypted current journals and immutable operation receipts, with
+indexed 30-entry keyset history. Parent concern revisions and journal writes
+commit atomically. Retries preserve the first payload; stale ownership, revisions
+and revoked privacy fail closed. A revised visit remains flagged until an
+explicit journal review, not merely another check-in. Deleting a journal retains
+the visit and instructions; deleting its visit or concern purges dependent
+journals. UI reads/writes use a worker and clear plaintext on background, memory
+pressure and the existing ten-minute expiry. Snapshot reads revalidate the
+concern, source and permission versions after loading history, so a concurrent
+check-in cannot combine different journal revisions on one screen.
+
+The opt-in process-recovery test retains only an isolated synthetic journal
+between its seed and recovery phases. It requires a different process identity,
+checks the same journal and paged history, replays the last operation without a
+duplicate, and verifies an explicit resume returns to review. It also supports
+covering an application upgrade between phases and cleans up only its fixture
+databases after recovery.
+
+This stores self-reported post-visit evidence, not an autonomous rehabilitation
+plan. Recording notes is not an emergency assessment or a clinical outcome, and
+no observed change proves an effect caused by the application.
+
+## Scoped Agent follow-up discussion
+
+The journal's discussion entry opens the existing Agent page without changing
+its layout. A separate per-turn preview identifies the model destination and
+discloses the selected visit purpose, journal goal, state and paged entries.
+Confirmation is required before dispatch. It does not add journal content to
+ordinary discussion grants or standing research consent. Original files,
+instructions, unrelated visits and profile values are not included.
+
+`galaxyssi.health.visit_followup.read` is a phone-local, read-only tool for all
+reasoning providers. A persisted grant binds conversation, turn, concern,
+journal and encounter revisions, privacy, settings and destination. Reads check
+these bindings before and after retrieval. Pages have at most eight entries and
+a 24,000-character row budget. Observation compaction preserves whole entries
+and advances only past delivered entries. An oversized entry supplies its exact
+revision and nonempty fields for 256-character chunk reads; the caller resumes
+older history only after reading those fields. Neither path permits arbitrary
+person, journal or visit selectors. Deletion, new check-ins, source changes,
+permission withdrawal and expiry invalidate old reads rather than mixing pages.
+
+Follow-up questions reuse the selected journal but require a fresh sharing
+preview. Only earlier turns with the same journal scope, destination and privacy
+binding can enter that discussion's history. New journal revisions do not reuse
+older journal prose. Ordinary health discussion and conversation recall exclude
+these scoped turns; summaries without per-turn provenance are omitted.
+
+The Agent may read the approved journal and public sources, but cannot use this
+grant to write plans, change treatment, mark recovery, schedule reminders or
+launch other models. Software tests of storage, scoped tools and UI do not
+constitute clinical validation. The opt-in paired-provider probe reads an
+isolated ten-entry synthetic journal through the production phone tool and
+observation pipeline, checks complete paging and verifies no plan or reminder
+was created. It does not exercise the Activity sharing dialog or establish
+clinical accuracy. Full consent-to-provider UI acceptance, review reminder
+integration, diagnosis-specific review and longitudinal lifecycle acceptance
+remain separate outstanding work.

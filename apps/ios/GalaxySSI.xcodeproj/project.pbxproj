@@ -158,6 +158,8 @@
     A10000000000000000001430 /* GalaxySSIContactDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001430 /* GalaxySSIContactDetailView.swift */; };
     A10000000000000000001432 /* GalaxySSIMyContactQRCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001432 /* GalaxySSIMyContactQRCodeView.swift */; };
     A10000000000000000001441 /* GalaxySSIQRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001441 /* GalaxySSIQRCodeScannerView.swift */; };
+    D13242000000000000000001 /* GalaxySSIGlassesWifiQR.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23242000000000000000001 /* GalaxySSIGlassesWifiQR.swift */; };
+    D13242000000000000000002 /* GalaxySSIGlassesWifiQRView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23242000000000000000002 /* GalaxySSIGlassesWifiQRView.swift */; };
     A10000000000000000001434 /* GalaxySSISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001434 /* GalaxySSISettingsView.swift */; };
     A10000000000000000009801 /* GalaxySSIHealthRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009801 /* GalaxySSIHealthRecords.swift */; };
     A10000000000000000009802 /* GalaxySSIHealthCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009802 /* GalaxySSIHealthCenterView.swift */; };
@@ -238,6 +240,7 @@
     A10000000000000000009885 /* GalaxySSIHealthScopedReadTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009885 /* GalaxySSIHealthScopedReadTransport.swift */; };
     A10000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift */; };
     A10000000000000000009882 /* GalaxySSIHealthCareQuestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009882 /* GalaxySSIHealthCareQuestions.swift */; };
+    A10000000000000000009886 /* GalaxySSIHealthCareAnswerDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009886 /* GalaxySSIHealthCareAnswerDraft.swift */; };
     A10000000000000000009883 /* GalaxySSIHealthCareQuestionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009883 /* GalaxySSIHealthCareQuestionsView.swift */; };
     A10000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift */; };
     E39090000000000000000001 /* GalaxySSIHealthOCRSourceContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */; };
@@ -388,6 +391,10 @@
     A10000000000000000001140 /* GalaxySSISystemStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001140 /* GalaxySSISystemStatusView.swift */; };
     A10000000000000000001130 /* GalaxySSIProfileIdentityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001130 /* GalaxySSIProfileIdentityView.swift */; };
     A10000000000000000001120 /* GalaxySSIControlCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001120 /* GalaxySSIControlCenterView.swift */; };
+    D13237000000000000000001 /* GalaxySSIGlassesSetupProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23237000000000000000001 /* GalaxySSIGlassesSetupProtocol.swift */; };
+    D13237000000000000000002 /* GalaxySSIGlassesSetupConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23237000000000000000002 /* GalaxySSIGlassesSetupConnection.swift */; };
+    D13237000000000000000003 /* GalaxySSIGlassesSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23237000000000000000003 /* GalaxySSIGlassesSetupView.swift */; };
+    D13244000000000000000001 /* GalaxySSIGlassesCloudConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23244000000000000000001 /* GalaxySSIGlassesCloudConfiguration.swift */; };
     A10000000000000000001110 /* GalaxySSIVoiceAssistantSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001110 /* GalaxySSIVoiceAssistantSettingsView.swift */; };
     A10000000000000000001360 /* GalaxySSIVoiceProviderPagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001360 /* GalaxySSIVoiceProviderPagesView.swift */; };
     A10000000000000000000888 /* GalaxySSIAndroidParityUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000888 /* GalaxySSIAndroidParityUI.swift */; };
@@ -481,6 +488,8 @@
     A10000000000000000000889 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000889 /* Assets.xcassets */; };
     A10000000000000000000890 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A41000000000000000000890 /* Localizable.strings */; };
     A10000000000000000000006 /* GalaxySSILinkProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* GalaxySSILinkProtocolTests.swift */; };
+    D13237000000000000000004 /* GalaxySSIGlassesSetupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23237000000000000000004 /* GalaxySSIGlassesSetupTests.swift */; };
+    D13244000000000000000002 /* GalaxySSIGlassesCloudConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23244000000000000000002 /* GalaxySSIGlassesCloudConfigurationTests.swift */; };
     A10000000000000000000007 /* GalaxySSIStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* GalaxySSIStoreTests.swift */; };
     A10000000000000000000892 /* LanguagePolicySettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000892 /* LanguagePolicySettingsTests.swift */; };
     A10000000000000000000008 /* GalaxySSILinkReliability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* GalaxySSILinkReliability.swift */; };
@@ -545,6 +554,7 @@
     A10000000000000000000781 /* CloudModelStreamProviderAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000781 /* CloudModelStreamProviderAdapters.swift */; };
     A10000000000000000000782 /* CloudModelStreamProviderAdaptersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000782 /* CloudModelStreamProviderAdaptersTests.swift */; };
     A10000000000000000000783 /* URLSessionCloudModelStreamClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000783 /* URLSessionCloudModelStreamClient.swift */; };
+    D13381000000000000000001 /* CloudTrialHTTPTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23381000000000000000001 /* CloudTrialHTTPTransport.swift */; };
     A10000000000000000000784 /* URLSessionCloudModelStreamClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000784 /* URLSessionCloudModelStreamClientTests.swift */; };
     A10000000000000000000785 /* CloudModelClientStreaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000785 /* CloudModelClientStreaming.swift */; };
     A10000000000000000000786 /* CloudModelClientStreamingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000786 /* CloudModelClientStreamingTests.swift */; };
@@ -1194,6 +1204,8 @@
     A10000000000000000000674 /* AgentWorkspaceStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000674 /* AgentWorkspaceStoreTests.swift */; };
     A10000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift */; };
     D34950000000000000000001 /* AgentCollaborationPilotIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D34950000000000000000002 /* AgentCollaborationPilotIdentityTests.swift */; };
+    D13393000000000000000001 /* AgentFrozenPilotArtifactTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23393000000000000000001 /* AgentFrozenPilotArtifactTests.swift */; };
+    D13398000000000000000001 /* AgentPilotReportRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23398000000000000000001 /* AgentPilotReportRecovery.swift */; };
     A10000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift */; };
     A10000000000000000000680 /* AgentTaskSupervisorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000680 /* AgentTaskSupervisorTests.swift */; };
     D13280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift */; };
@@ -1223,6 +1235,7 @@
     A10000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift */; };
     D13281000000000000000001 /* AgentBusinessArtifactEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23281000000000000000001 /* AgentBusinessArtifactEvidence.swift */; };
     D13281000000000000000002 /* AgentBusinessArtifactEvidenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23281000000000000000002 /* AgentBusinessArtifactEvidenceTests.swift */; };
+    D13397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift */; };
     A10000000000000000000225 /* AgentSkillLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000225 /* AgentSkillLifecycleTests.swift */; };
     A10000000000000000000226 /* AgentSkillExecutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000226 /* AgentSkillExecutionTests.swift */; };
     A10000000000000000000227 /* AgentSkillPackageInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */; };
@@ -1264,6 +1277,7 @@
     A10000000000000000000263 /* AgentRemoteApprovalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000263 /* AgentRemoteApprovalTests.swift */; };
     A10000000000000000000264 /* AgentClarificationPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000264 /* AgentClarificationPolicyTests.swift */; };
     A10000000000000000000265 /* AgentSkillCommandParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000265 /* AgentSkillCommandParserTests.swift */; };
+    D13242000000000000000003 /* GalaxySSIGlassesWifiQRTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23242000000000000000003 /* GalaxySSIGlassesWifiQRTests.swift */; };
     A10000000000000000000266 /* AgentTaskRequirementAnalyzerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000266 /* AgentTaskRequirementAnalyzerTests.swift */; };
     A10000000000000000000267 /* AgentDynamicTeamCompilerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000267 /* AgentDynamicTeamCompilerTests.swift */; };
     A10000000000000000000268 /* AgentTeamPlanBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000268 /* AgentTeamPlanBridgeTests.swift */; };
@@ -1272,7 +1286,10 @@
     B10000000000000000000274 /* AgentTeamExecutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000274 /* AgentTeamExecutionTests.swift */; };
     B1000000000000000000E352 /* AgentSingleResearchCalibrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000E352 /* AgentSingleResearchCalibrationTests.swift */; };
     D13477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift */; };
+    D13470000000000000000001 /* AgentSingleDeliveryCalibrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23470000000000000000001 /* AgentSingleDeliveryCalibrationTests.swift */; };
     B1000000000000000000E353 /* AgentInterimPilotArchiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000E353 /* AgentInterimPilotArchiveTests.swift */; };
+    D13394000000000000000001 /* AgentArtifactAvailabilityProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23394000000000000000001 /* AgentArtifactAvailabilityProbeTests.swift */; };
+    D13382000000000000000001 /* AgentPairedCloudPilotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23382000000000000000001 /* AgentPairedCloudPilotTests.swift */; };
     A10000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift */; };
     A10000000000000000000279 /* AgentIOSSystemNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000279 /* AgentIOSSystemNativeToolTests.swift */; };
     A10000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift */; };
@@ -1465,6 +1482,8 @@
     A20000000000000000001430 /* GalaxySSIContactDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactDetailView.swift; sourceTree = "<group>"; };
     A20000000000000000001432 /* GalaxySSIMyContactQRCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIMyContactQRCodeView.swift; sourceTree = "<group>"; };
     A20000000000000000001441 /* GalaxySSIQRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIQRCodeScannerView.swift; sourceTree = "<group>"; };
+    D23242000000000000000001 /* GalaxySSIGlassesWifiQR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesWifiQR.swift; sourceTree = "<group>"; };
+    D23242000000000000000002 /* GalaxySSIGlassesWifiQRView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesWifiQRView.swift; sourceTree = "<group>"; };
     A20000000000000000001434 /* GalaxySSISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSISettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000009801 /* GalaxySSIHealthRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthRecords.swift; sourceTree = "<group>"; };
     A20000000000000000009802 /* GalaxySSIHealthCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCenterView.swift; sourceTree = "<group>"; };
@@ -1545,6 +1564,7 @@
     A20000000000000000009885 /* GalaxySSIHealthScopedReadTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthScopedReadTransport.swift; sourceTree = "<group>"; };
     A20000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareResearchHandoff.swift; sourceTree = "<group>"; };
     A20000000000000000009882 /* GalaxySSIHealthCareQuestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareQuestions.swift; sourceTree = "<group>"; };
+    A20000000000000000009886 /* GalaxySSIHealthCareAnswerDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareAnswerDraft.swift; sourceTree = "<group>"; };
     A20000000000000000009883 /* GalaxySSIHealthCareQuestionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareQuestionsView.swift; sourceTree = "<group>"; };
     A20000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareSeriesView.swift; sourceTree = "<group>"; };
     E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOCRSourceContext.swift; sourceTree = "<group>"; };
@@ -1695,6 +1715,10 @@
     A20000000000000000001140 /* GalaxySSISystemStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSISystemStatusView.swift; sourceTree = "<group>"; };
     A20000000000000000001130 /* GalaxySSIProfileIdentityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIProfileIdentityView.swift; sourceTree = "<group>"; };
     A20000000000000000001120 /* GalaxySSIControlCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIControlCenterView.swift; sourceTree = "<group>"; };
+    D23237000000000000000001 /* GalaxySSIGlassesSetupProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesSetupProtocol.swift; sourceTree = "<group>"; };
+    D23237000000000000000002 /* GalaxySSIGlassesSetupConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesSetupConnection.swift; sourceTree = "<group>"; };
+    D23237000000000000000003 /* GalaxySSIGlassesSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesSetupView.swift; sourceTree = "<group>"; };
+    D23244000000000000000001 /* GalaxySSIGlassesCloudConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesCloudConfiguration.swift; sourceTree = "<group>"; };
     A20000000000000000001110 /* GalaxySSIVoiceAssistantSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIVoiceAssistantSettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000001360 /* GalaxySSIVoiceProviderPagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIVoiceProviderPagesView.swift; sourceTree = "<group>"; };
     A20000000000000000000888 /* GalaxySSIAndroidParityUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAndroidParityUI.swift; sourceTree = "<group>"; };
@@ -1788,6 +1812,8 @@
     A20000000000000000000889 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
     A20000000000000000000890 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
     A20000000000000000000006 /* GalaxySSILinkProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSILinkProtocolTests.swift; sourceTree = "<group>"; };
+    D23237000000000000000004 /* GalaxySSIGlassesSetupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesSetupTests.swift; sourceTree = "<group>"; };
+    D23244000000000000000002 /* GalaxySSIGlassesCloudConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesCloudConfigurationTests.swift; sourceTree = "<group>"; };
     A20000000000000000000007 /* GalaxySSIStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000892 /* LanguagePolicySettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguagePolicySettingsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000008 /* GalaxySSI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxySSI.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1854,6 +1880,7 @@
     A20000000000000000000781 /* CloudModelStreamProviderAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelStreamProviderAdapters.swift; sourceTree = "<group>"; };
     A20000000000000000000782 /* CloudModelStreamProviderAdaptersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelStreamProviderAdaptersTests.swift; sourceTree = "<group>"; };
     A20000000000000000000783 /* URLSessionCloudModelStreamClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLSessionCloudModelStreamClient.swift; sourceTree = "<group>"; };
+    D23381000000000000000001 /* CloudTrialHTTPTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudTrialHTTPTransport.swift; sourceTree = "<group>"; };
     A20000000000000000000784 /* URLSessionCloudModelStreamClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLSessionCloudModelStreamClientTests.swift; sourceTree = "<group>"; };
     A20000000000000000000785 /* CloudModelClientStreaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelClientStreaming.swift; sourceTree = "<group>"; };
     A20000000000000000000786 /* CloudModelClientStreamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelClientStreamingTests.swift; sourceTree = "<group>"; };
@@ -2502,6 +2529,8 @@
     A20000000000000000000674 /* AgentWorkspaceStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunRecoveryCoordinatorTests.swift; sourceTree = "<group>"; };
     D34950000000000000000002 /* AgentCollaborationPilotIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCollaborationPilotIdentityTests.swift; sourceTree = "<group>"; };
+    D23393000000000000000001 /* AgentFrozenPilotArtifactTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFrozenPilotArtifactTests.swift; sourceTree = "<group>"; };
+    D23398000000000000000001 /* AgentPilotReportRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPilotReportRecovery.swift; sourceTree = "<group>"; };
     A20000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPermissionRevocationCoordinatorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000680 /* AgentTaskSupervisorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskSupervisorTests.swift; sourceTree = "<group>"; };
     D23280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBusinessTimeoutCleanupTests.swift; sourceTree = "<group>"; };
@@ -2531,6 +2560,7 @@
     A20000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopArtifactHandoffTests.swift; sourceTree = "<group>"; };
     D23281000000000000000001 /* AgentBusinessArtifactEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBusinessArtifactEvidence.swift; sourceTree = "<group>"; };
     D23281000000000000000002 /* AgentBusinessArtifactEvidenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentBusinessArtifactEvidenceTests.swift; sourceTree = "<group>"; };
+    D23397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentArtifactFeedbackPilotTests.swift; sourceTree = "<group>"; };
     A20000000000000000000225 /* AgentSkillLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillLifecycleTests.swift; sourceTree = "<group>"; };
     A20000000000000000000226 /* AgentSkillExecutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillExecutionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillPackageInstallerTests.swift; sourceTree = "<group>"; };
@@ -2572,6 +2602,7 @@
     A20000000000000000000263 /* AgentRemoteApprovalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteApprovalTests.swift; sourceTree = "<group>"; };
     A20000000000000000000264 /* AgentClarificationPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentClarificationPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000265 /* AgentSkillCommandParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillCommandParserTests.swift; sourceTree = "<group>"; };
+    D23242000000000000000003 /* GalaxySSIGlassesWifiQRTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIGlassesWifiQRTests.swift; sourceTree = "<group>"; };
     A20000000000000000000266 /* AgentTaskRequirementAnalyzerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskRequirementAnalyzerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000267 /* AgentDynamicTeamCompilerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDynamicTeamCompilerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000268 /* AgentTeamPlanBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamPlanBridgeTests.swift; sourceTree = "<group>"; };
@@ -2580,7 +2611,10 @@
     B20000000000000000000274 /* AgentTeamExecutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamExecutionTests.swift; sourceTree = "<group>"; };
     B2000000000000000000E352 /* AgentSingleResearchCalibrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSingleResearchCalibrationTests.swift; sourceTree = "<group>"; };
     D23477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAdaptivePilotContinuityTests.swift; sourceTree = "<group>"; };
+    D23470000000000000000001 /* AgentSingleDeliveryCalibrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSingleDeliveryCalibrationTests.swift; sourceTree = "<group>"; };
     B2000000000000000000E353 /* AgentInterimPilotArchiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInterimPilotArchiveTests.swift; sourceTree = "<group>"; };
+    D23394000000000000000001 /* AgentArtifactAvailabilityProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentArtifactAvailabilityProbeTests.swift; sourceTree = "<group>"; };
+    D23382000000000000000001 /* AgentPairedCloudPilotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPairedCloudPilotTests.swift; sourceTree = "<group>"; };
     A20000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneCapabilityCatalogTests.swift; sourceTree = "<group>"; };
     A20000000000000000000279 /* AgentIOSSystemNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareNativeToolTests.swift; sourceTree = "<group>"; };
@@ -2694,6 +2728,7 @@
         A20000000000000000000779 /* CloudModelStreaming.swift */,
         A20000000000000000000781 /* CloudModelStreamProviderAdapters.swift */,
         A20000000000000000000783 /* URLSessionCloudModelStreamClient.swift */,
+        D23381000000000000000001 /* CloudTrialHTTPTransport.swift */,
         A20000000000000000000785 /* CloudModelClientStreaming.swift */,
         A20000000000000000000787 /* CloudConversationStreamEngine.swift */,
         A2000000000000000000E350 /* AgentCollaborationSourceAccess.swift */,
@@ -3404,6 +3439,8 @@
         A20000000000000000001430 /* GalaxySSIContactDetailView.swift */,
         A20000000000000000001432 /* GalaxySSIMyContactQRCodeView.swift */,
         A20000000000000000001441 /* GalaxySSIQRCodeScannerView.swift */,
+        D23242000000000000000001 /* GalaxySSIGlassesWifiQR.swift */,
+        D23242000000000000000002 /* GalaxySSIGlassesWifiQRView.swift */,
         A20000000000000000001434 /* GalaxySSISettingsView.swift */,
         A20000000000000000009801 /* GalaxySSIHealthRecords.swift */,
         A20000000000000000009802 /* GalaxySSIHealthCenterView.swift */,
@@ -3484,6 +3521,7 @@
         A20000000000000000009885 /* GalaxySSIHealthScopedReadTransport.swift */,
         A20000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift */,
         A20000000000000000009882 /* GalaxySSIHealthCareQuestions.swift */,
+        A20000000000000000009886 /* GalaxySSIHealthCareAnswerDraft.swift */,
         A20000000000000000009883 /* GalaxySSIHealthCareQuestionsView.swift */,
         A20000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift */,
         E39090000000000000000002 /* GalaxySSIHealthOCRSourceContext.swift */,
@@ -3634,6 +3672,10 @@
         A20000000000000000001140 /* GalaxySSISystemStatusView.swift */,
         A20000000000000000001130 /* GalaxySSIProfileIdentityView.swift */,
         A20000000000000000001120 /* GalaxySSIControlCenterView.swift */,
+        D23237000000000000000001 /* GalaxySSIGlassesSetupProtocol.swift */,
+        D23237000000000000000002 /* GalaxySSIGlassesSetupConnection.swift */,
+        D23237000000000000000003 /* GalaxySSIGlassesSetupView.swift */,
+        D23244000000000000000001 /* GalaxySSIGlassesCloudConfiguration.swift */,
         A20000000000000000001110 /* GalaxySSIVoiceAssistantSettingsView.swift */,
         A20000000000000000001360 /* GalaxySSIVoiceProviderPagesView.swift */,
         A20000000000000000000A00 /* GalaxySSIRichContentView.swift */,
@@ -3693,6 +3735,8 @@
         A20000000000000000000017 /* GalaxySSIContactExchangeTests.swift */,
         F32540000000000000000004 /* GalaxySSIPairingDeliveryTests.swift */,
         A20000000000000000000006 /* GalaxySSILinkProtocolTests.swift */,
+        D23237000000000000000004 /* GalaxySSIGlassesSetupTests.swift */,
+        D23244000000000000000002 /* GalaxySSIGlassesCloudConfigurationTests.swift */,
         A20000000000000000000011 /* GalaxySSILinkReliabilityTests.swift */,
         A20000000000000000002707 /* AgentEvalOpsTests.swift */,
         A20000000000000000002710 /* AgentMemoryTrustAndLabRuntimeTests.swift */,
@@ -3722,6 +3766,8 @@
         A20000000000000000000674 /* AgentWorkspaceStoreTests.swift */,
         A20000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift */,
         D34950000000000000000002 /* AgentCollaborationPilotIdentityTests.swift */,
+        D23393000000000000000001 /* AgentFrozenPilotArtifactTests.swift */,
+        D23398000000000000000001 /* AgentPilotReportRecovery.swift */,
         A20000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift */,
         A20000000000000000000680 /* AgentTaskSupervisorTests.swift */,
         D23280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift */,
@@ -3826,6 +3872,7 @@
         A20000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift */,
         D23281000000000000000001 /* AgentBusinessArtifactEvidence.swift */,
         D23281000000000000000002 /* AgentBusinessArtifactEvidenceTests.swift */,
+        D23397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift */,
         A20000000000000000000225 /* AgentSkillLifecycleTests.swift */,
         A20000000000000000000226 /* AgentSkillExecutionTests.swift */,
         A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */,
@@ -3892,6 +3939,7 @@
         A20000000000000000000263 /* AgentRemoteApprovalTests.swift */,
         A20000000000000000000264 /* AgentClarificationPolicyTests.swift */,
         A20000000000000000000265 /* AgentSkillCommandParserTests.swift */,
+        D23242000000000000000003 /* GalaxySSIGlassesWifiQRTests.swift */,
         A20000000000000000000266 /* AgentTaskRequirementAnalyzerTests.swift */,
         A20000000000000000000267 /* AgentDynamicTeamCompilerTests.swift */,
         A20000000000000000000493 /* AgentExplicitToolHandlesTests.swift */,
@@ -3911,7 +3959,10 @@
         B20000000000000000000274 /* AgentTeamExecutionTests.swift */,
         B2000000000000000000E352 /* AgentSingleResearchCalibrationTests.swift */,
         D23477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift */,
+        D23470000000000000000001 /* AgentSingleDeliveryCalibrationTests.swift */,
         B2000000000000000000E353 /* AgentInterimPilotArchiveTests.swift */,
+        D23394000000000000000001 /* AgentArtifactAvailabilityProbeTests.swift */,
+        D23382000000000000000001 /* AgentPairedCloudPilotTests.swift */,
         A20000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift */,
         A20000000000000000000279 /* AgentIOSSystemNativeToolTests.swift */,
         A20000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift */,
@@ -4489,6 +4540,7 @@
         A10000000000000000000779 /* CloudModelStreaming.swift in Sources */,
         A10000000000000000000781 /* CloudModelStreamProviderAdapters.swift in Sources */,
         A10000000000000000000783 /* URLSessionCloudModelStreamClient.swift in Sources */,
+        D13381000000000000000001 /* CloudTrialHTTPTransport.swift in Sources */,
         A10000000000000000000785 /* CloudModelClientStreaming.swift in Sources */,
         A10000000000000000000787 /* CloudConversationStreamEngine.swift in Sources */,
         A1000000000000000000E350 /* AgentCollaborationSourceAccess.swift in Sources */,
@@ -4846,6 +4898,8 @@
         A10000000000000000001430 /* GalaxySSIContactDetailView.swift in Sources */,
         A10000000000000000001432 /* GalaxySSIMyContactQRCodeView.swift in Sources */,
         A10000000000000000001441 /* GalaxySSIQRCodeScannerView.swift in Sources */,
+        D13242000000000000000001 /* GalaxySSIGlassesWifiQR.swift in Sources */,
+        D13242000000000000000002 /* GalaxySSIGlassesWifiQRView.swift in Sources */,
         A10000000000000000001434 /* GalaxySSISettingsView.swift in Sources */,
         A10000000000000000009801 /* GalaxySSIHealthRecords.swift in Sources */,
         A10000000000000000009802 /* GalaxySSIHealthCenterView.swift in Sources */,
@@ -4926,6 +4980,7 @@
         A10000000000000000009885 /* GalaxySSIHealthScopedReadTransport.swift in Sources */,
         A10000000000000000009881 /* GalaxySSIHealthCareResearchHandoff.swift in Sources */,
         A10000000000000000009882 /* GalaxySSIHealthCareQuestions.swift in Sources */,
+        A10000000000000000009886 /* GalaxySSIHealthCareAnswerDraft.swift in Sources */,
         A10000000000000000009883 /* GalaxySSIHealthCareQuestionsView.swift in Sources */,
         A10000000000000000009871 /* GalaxySSIHealthCareSeriesView.swift in Sources */,
         E39090000000000000000001 /* GalaxySSIHealthOCRSourceContext.swift in Sources */,
@@ -5076,6 +5131,10 @@
         A10000000000000000001140 /* GalaxySSISystemStatusView.swift in Sources */,
         A10000000000000000001130 /* GalaxySSIProfileIdentityView.swift in Sources */,
         A10000000000000000001120 /* GalaxySSIControlCenterView.swift in Sources */,
+        D13237000000000000000001 /* GalaxySSIGlassesSetupProtocol.swift in Sources */,
+        D13237000000000000000002 /* GalaxySSIGlassesSetupConnection.swift in Sources */,
+        D13237000000000000000003 /* GalaxySSIGlassesSetupView.swift in Sources */,
+        D13244000000000000000001 /* GalaxySSIGlassesCloudConfiguration.swift in Sources */,
         A10000000000000000001110 /* GalaxySSIVoiceAssistantSettingsView.swift in Sources */,
         A10000000000000000001360 /* GalaxySSIVoiceProviderPagesView.swift in Sources */,
         A10000000000000000000A00 /* GalaxySSIRichContentView.swift in Sources */,
@@ -5135,6 +5194,8 @@
         A10000000000000000000015 /* GalaxySSIContactExchangeTests.swift in Sources */,
         F32540000000000000000003 /* GalaxySSIPairingDeliveryTests.swift in Sources */,
         A10000000000000000000006 /* GalaxySSILinkProtocolTests.swift in Sources */,
+        D13237000000000000000004 /* GalaxySSIGlassesSetupTests.swift in Sources */,
+        D13244000000000000000002 /* GalaxySSIGlassesCloudConfigurationTests.swift in Sources */,
         A10000000000000000000009 /* GalaxySSILinkReliabilityTests.swift in Sources */,
         A10000000000000000002707 /* AgentEvalOpsTests.swift in Sources */,
         A10000000000000000002710 /* AgentMemoryTrustAndLabRuntimeTests.swift in Sources */,
@@ -5155,6 +5216,8 @@
         A10000000000000000000674 /* AgentWorkspaceStoreTests.swift in Sources */,
         A10000000000000000000676 /* AgentRunRecoveryCoordinatorTests.swift in Sources */,
         D34950000000000000000001 /* AgentCollaborationPilotIdentityTests.swift in Sources */,
+        D13393000000000000000001 /* AgentFrozenPilotArtifactTests.swift in Sources */,
+        D13398000000000000000001 /* AgentPilotReportRecovery.swift in Sources */,
         A10000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift in Sources */,
         A10000000000000000000680 /* AgentTaskSupervisorTests.swift in Sources */,
         D13280000000000000000001 /* AgentBusinessTimeoutCleanupTests.swift in Sources */,
@@ -5259,6 +5322,7 @@
         A10000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift in Sources */,
         D13281000000000000000001 /* AgentBusinessArtifactEvidence.swift in Sources */,
         D13281000000000000000002 /* AgentBusinessArtifactEvidenceTests.swift in Sources */,
+        D13397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift in Sources */,
         A10000000000000000000225 /* AgentSkillLifecycleTests.swift in Sources */,
         A10000000000000000000226 /* AgentSkillExecutionTests.swift in Sources */,
         A10000000000000000000227 /* AgentSkillPackageInstallerTests.swift in Sources */,
@@ -5334,6 +5398,7 @@
         A10000000000000000000263 /* AgentRemoteApprovalTests.swift in Sources */,
         A10000000000000000000264 /* AgentClarificationPolicyTests.swift in Sources */,
         A10000000000000000000265 /* AgentSkillCommandParserTests.swift in Sources */,
+        D13242000000000000000003 /* GalaxySSIGlassesWifiQRTests.swift in Sources */,
         A10000000000000000000266 /* AgentTaskRequirementAnalyzerTests.swift in Sources */,
         A10000000000000000000267 /* AgentDynamicTeamCompilerTests.swift in Sources */,
         A10000000000000000000493 /* AgentExplicitToolHandlesTests.swift in Sources */,
@@ -5353,7 +5418,10 @@
         B10000000000000000000274 /* AgentTeamExecutionTests.swift in Sources */,
         B1000000000000000000E352 /* AgentSingleResearchCalibrationTests.swift in Sources */,
         D13477000000000000000001 /* AgentAdaptivePilotContinuityTests.swift in Sources */,
+        D13470000000000000000001 /* AgentSingleDeliveryCalibrationTests.swift in Sources */,
         B1000000000000000000E353 /* AgentInterimPilotArchiveTests.swift in Sources */,
+        D13394000000000000000001 /* AgentArtifactAvailabilityProbeTests.swift in Sources */,
+        D13382000000000000000001 /* AgentPairedCloudPilotTests.swift in Sources */,
         A10000000000000000000277 /* AgentPhoneCapabilityCatalogTests.swift in Sources */,
         A10000000000000000000279 /* AgentIOSSystemNativeToolTests.swift in Sources */,
         A10000000000000000000281 /* AgentIOSHardwareNativeToolTests.swift in Sources */,

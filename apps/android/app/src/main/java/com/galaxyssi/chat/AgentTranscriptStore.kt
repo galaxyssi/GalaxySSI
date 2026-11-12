@@ -1804,7 +1804,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
                 updatedAt = timestamp,
                 latestMessageIndexed = true,
                 latestMessageEntryId = entry.id,
-                latestMessagePreview = messagePreview(entry.text),
+                latestMessagePreview = messagePreview(entry),
                 latestMessageTimestampMillis = entry.timestampMillis
             )
         }
@@ -1827,7 +1827,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
             conversation.copy(
                 latestMessageIndexed = true,
                 latestMessageEntryId = entry?.id.orEmpty(),
-                latestMessagePreview = entry?.text?.let(::messagePreview).orEmpty(),
+                latestMessagePreview = entry?.let(::messagePreview).orEmpty(),
                 latestMessageTimestampMillis = entry?.timestampMillis ?: 0L
             )
         }
@@ -1843,7 +1843,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
             updatedAt = entry?.timestampMillis ?: previous.createdAt,
             latestMessageIndexed = true,
             latestMessageEntryId = entry?.id.orEmpty(),
-            latestMessagePreview = entry?.text?.let(::messagePreview).orEmpty(),
+            latestMessagePreview = entry?.let(::messagePreview).orEmpty(),
             latestMessageTimestampMillis = entry?.timestampMillis ?: 0L
         )
         check(conversationDatabase.upsert(current)) { "Agent conversation preview update failed" }
@@ -1864,8 +1864,10 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         return null
     }
 
-    private fun messagePreview(text: String): String =
-        text.replace(Regex("\\s+"), " ")
+    internal fun refreshScheduledMessagePreview(conversationId: String) = refreshLatestMessagePreview(conversationId)
+
+    private fun messagePreview(entry: AgentTranscriptEntry): String =
+        ConversationScheduleProvenance.previewText(appContext, entry).replace(Regex("\\s+"), " ")
             .trim()
             .take(MAX_MESSAGE_PREVIEW_CHARACTERS)
 

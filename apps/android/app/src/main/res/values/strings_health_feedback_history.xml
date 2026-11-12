@@ -1,0 +1,6 @@
+<resources>
+    <string name="health_feedback_history_disclosure">For this request, the selected model may also read this concern\'s saved action feedback in pages, including earlier partial progress and difficulties within the current sharing scope. This does not authorize other concerns, original medical files, new reminders or changes to your plan.</string>
+    <string name="health_research_feedback_consent">Also allow future research on this concern to read its saved action feedback, including earlier progress and difficulties within the current sharing scope. This does not authorize other concerns, original medical files, reminders or plan changes.</string>
+    <string name="health_research_feedback_on">Historical action feedback: authorized for this concern</string>
+    <string name="health_research_feedback_off">Historical action feedback: not authorized</string>
+</resources>

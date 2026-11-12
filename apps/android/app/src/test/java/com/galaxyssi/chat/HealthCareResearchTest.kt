@@ -27,13 +27,25 @@ class HealthCareResearchTest {
         listOf(grant, ongoing.copy(researchAuthorizationId = UUID.randomUUID().toString()),
             ongoing.copy(concernId = UUID.randomUUID().toString()), ongoing.copy(conversationId = UUID.randomUUID().toString()),
             ongoing.copy(settingsVersion = "new"), ongoing.copy(privacyVersion = "new"), ongoing.copy(destination = "c".repeat(64)),
-            ongoing.copy(modelId = "other"), ongoing.copy(targetId = "other"), ongoing.copy(effort = "low"))
+            ongoing.copy(modelId = "other"), ongoing.copy(targetId = "other"), ongoing.copy(effort = "low"),
+            ongoing.copy(feedbackHistoryShared = true))
             .forEach { assertFalse(it.toString(), authorization.permits(it)) }
         assertFalse(authorization.copy(revokedAt = now).permits(ongoing))
     }
     @Test fun newTurnsNeedFreshRevisionGrantButNotNewStandingConsent() {
         assertTrue(authorization.permits(ongoing.copy(turnId = UUID.randomUUID().toString(), revision = 2, approvedAt = now + 1000)))
         assertThrows(IllegalArgumentException::class.java) { authorization.copy(scope = ongoing) }
+    }
+    @Test fun historyAuthorityRoundTripsAndCannotBeAddedToLegacyConsent() {
+        val legacy = authorization.json().apply { getJSONObject("scope").remove("feedback_history_shared") }
+        val restored = HealthCareResearchAuthorization.from(legacy)
+        assertFalse(restored.scope.feedbackHistoryShared)
+        assertFalse(restored.permits(ongoing.copy(feedbackHistoryShared = true)))
+        val shared = authorization.copy(scope = grant.copy(feedbackHistoryShared = true))
+        assertEquals(shared, HealthCareResearchAuthorization.from(shared.json()))
+        assertTrue(shared.permits(ongoing.copy(feedbackHistoryShared = true)))
+        assertFalse(shared.permits(ongoing))
+        assertFalse(shared.copy(revokedAt = now).permits(ongoing.copy(feedbackHistoryShared = true)))
     }
     @Test fun displayChangesAndFuturePlansDoNotCauseSelfTriggeredResearch() {
         assertEquals(key(), key(issue.copy(revision = 2, updatedAt = now + 1, conversationId = UUID.randomUUID().toString(),

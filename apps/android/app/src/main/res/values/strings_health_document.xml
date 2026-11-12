@@ -1,0 +1,22 @@
+<resources>
+    <string name="health_document_title">Visit originals</string>
+    <string name="health_document_notice">Linked originals are sources for review, not verified clinical instructions.</string>
+    <string name="health_document_add">Link an original</string>
+    <string name="health_document_import">Import an original</string>
+    <string name="health_document_empty">No originals linked to this visit.</string>
+    <string name="health_document_library_empty">No saved originals. Import a document first.</string>
+    <string name="health_document_whole">Whole document</string>
+    <string name="health_document_page">Page %1$d of %2$d</string>
+    <string name="health_document_choose_page">Preview and choose a page</string>
+    <string name="health_document_link_whole">Link whole document</string>
+    <string name="health_document_link_page">Link this page</string>
+    <string name="health_document_confirm">Link this source?</string>
+    <string name="health_document_confirm_notice">%1$s\n%2$s\n\nThis does not confirm a diagnosis, prescription or follow-up plan.</string>
+    <string name="health_document_link">Link</string>
+    <string name="health_document_remove">Remove link</string>
+    <string name="health_document_remove_notice">Remove this source from the visit? The original file will remain in Personal Health.</string>
+    <string name="health_document_missing">Original missing or changed</string>
+    <string name="health_document_failed">The original could not be verified or opened. Check that the file is intact. Password-protected PDFs must be opened in the original library.</string>
+    <string name="health_document_changed">The visit, original or permission changed. Reload before continuing.</string>
+    <string name="health_document_preview">Original preview</string>
+</resources>

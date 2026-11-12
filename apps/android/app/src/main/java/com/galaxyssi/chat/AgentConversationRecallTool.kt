@@ -26,6 +26,11 @@ internal object AgentConversationRecallTool {
             val database = AgentTranscriptEntryDatabase.shared(context)
             val transcript = AgentTranscriptStore(context)
             val conversation = call.context.conversationId
+            fun permitted(turn: String): Boolean = !HealthCareDiscussion.bound(context, conversation) ||
+                HealthCareStore(context).use {
+                    val grant = it.discussionGrant(turn)
+                    grant?.instruction == null && grant?.visitFollowUp == null
+                }
             val boundary = database.historyBoundary(conversation, call.context.turnId)
                 ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(
                     "conversation_unavailable", "The current conversation turn is not bound to source records.")
@@ -38,7 +43,7 @@ internal object AgentConversationRecallTool {
                     return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("record_unavailable", "No readable source record in this turn scope.")
                 val entry = database.previewById(id)
                 if (entry == null || entry.role == AgentTranscriptRole.PROCESS || entry.sourceConversationId.isNotBlank() ||
-                    transcript.ownedEntries(listOf(entry)).none { it.id == id && it.conversationId == conversation })
+                    transcript.ownedEntries(listOf(entry)).none { it.id == id && it.conversationId == conversation } || !permitted(entry.turnId))
                     return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("record_unavailable", "No readable dialogue record.")
                 val page = database.textChunkPage(id, (call.input["chunk_offset"] as? Number)?.toInt() ?: 0, 1)
                     ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure("record_unavailable", "Source record was removed.")
@@ -51,7 +56,7 @@ internal object AgentConversationRecallTool {
                 val page = database.listConversationPage(conversation, before, 16)
                 AgentNativeToolExecutionResult.success(mapOf("records" to transcript.ownedEntries(page.entries).filter {
                     it.conversationId == conversation && it.role != AgentTranscriptRole.PROCESS &&
-                        it.sourceConversationId.isBlank() && !AgentVoiceTranscriptPolicy.isPending(it)
+                        it.sourceConversationId.isBlank() && !AgentVoiceTranscriptPolicy.isPending(it) && permitted(it.turnId)
                 }.map { mapOf("entry_id" to it.id, "turn_id" to it.turnId, "role" to it.role.name.lowercase(),
                     "preview" to ConversationContextCompactor.sanitizeReference(it.text).take(240), "characters" to maxOf(it.textLength, it.text.length)) },
                     "next_before_sequence" to page.nextBeforeSequence, "has_more" to page.hasMore,

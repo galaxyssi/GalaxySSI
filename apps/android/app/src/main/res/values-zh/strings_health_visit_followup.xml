@@ -1,0 +1,36 @@
+<resources>
+    <string name="health_visit_followup_title">诊后随访</string>
+    <string name="health_visit_followup_notice">这里保存你的自述记录，不是临床评估；不会改变治疗、确认康复或安排提醒。每次向 Agent 分享本随访记录，都需要你确认本次范围。</string>
+    <string name="health_visit_followup_active">持续跟进</string>
+    <string name="health_visit_followup_review_needed">待复评</string>
+    <string name="health_visit_followup_paused">已暂停</string>
+    <string name="health_visit_followup_archived">记录已归档，不代表康复</string>
+    <string name="health_visit_followup_start">开始随访</string>
+    <string name="health_visit_followup_checkin">记录感受与功能</string>
+    <string name="health_visit_followup_review">记录复评</string>
+    <string name="health_visit_followup_pause">暂停随访</string>
+    <string name="health_visit_followup_resume">继续随访</string>
+    <string name="health_visit_followup_archive">结束本轮记录</string>
+    <string name="health_visit_followup_reopen">重新开启并复评</string>
+    <string name="health_visit_followup_continue">继续当前跟进</string>
+    <string name="health_visit_followup_discuss_change">需要讨论调整</string>
+    <string name="health_visit_followup_discuss_maintenance">拟讨论转入维护</string>
+    <string name="health_visit_followup_goal">跟进目标与内容</string>
+    <string name="health_visit_followup_feelings">身体感受</string>
+    <string name="health_visit_followup_function">活动与日常功能</string>
+    <string name="health_visit_followup_sleep">睡眠</string>
+    <string name="health_visit_followup_barriers">执行困难</string>
+    <string name="health_visit_followup_note">补充说明</string>
+    <string name="health_visit_followup_reason">复评意见或原因</string>
+    <string name="health_visit_followup_needs_review">这次变化需要复评或讨论</string>
+    <string name="health_visit_followup_review_notice">保存前请核对当前就诊记录。拟调整或转入维护不代表已经改变治疗或确认维护计划。</string>
+    <string name="health_visit_followup_archive_notice">我只是结束本轮记录，不表示已经康复，也不停止治疗或既有提醒。</string>
+    <string name="health_visit_followup_invalid">请填写相应的跟进目标、感受或原因；复评时还需选择下一步。</string>
+    <string name="health_visit_followup_save">保存记录</string>
+    <string name="health_visit_followup_attended_required">请先在就诊记录中确认已经就诊，计划预约不等于已完成就诊。</string>
+    <string name="health_visit_followup_source_changed">就诊记录已更新，请先核对，再采用之前的随访意见。</string>
+    <string name="health_visit_followup_history">随访历史</string>
+    <string name="health_visit_followup_empty">尚无随访记录，缺少记录不代表已经好转。</string>
+    <string name="health_visit_followup_delete">删除本轮随访记录</string>
+    <string name="health_visit_followup_delete_notice">删除本轮随访及其历史？就诊记录、原件、医嘱、行动和提醒均会保留。</string>
+</resources>

@@ -1,0 +1,36 @@
+<resources>
+    <string name="health_visit_followup_title">Post-visit follow-up</string>
+    <string name="health_visit_followup_notice">These are your own records, not a clinical assessment. They do not change treatment, confirm recovery or schedule reminders. Sharing this journal with an Agent requires your confirmation for each request.</string>
+    <string name="health_visit_followup_active">Following up</string>
+    <string name="health_visit_followup_review_needed">Review needed</string>
+    <string name="health_visit_followup_paused">Paused</string>
+    <string name="health_visit_followup_archived">Journal archived, not a recovery conclusion</string>
+    <string name="health_visit_followup_start">Start follow-up</string>
+    <string name="health_visit_followup_checkin">Record feelings and function</string>
+    <string name="health_visit_followup_review">Record a review</string>
+    <string name="health_visit_followup_pause">Pause follow-up</string>
+    <string name="health_visit_followup_resume">Resume follow-up</string>
+    <string name="health_visit_followup_archive">Archive this follow-up</string>
+    <string name="health_visit_followup_reopen">Reopen for review</string>
+    <string name="health_visit_followup_continue">Continue the recorded follow-up</string>
+    <string name="health_visit_followup_discuss_change">Discuss a possible adjustment</string>
+    <string name="health_visit_followup_discuss_maintenance">Discuss moving to maintenance</string>
+    <string name="health_visit_followup_goal">What to follow up</string>
+    <string name="health_visit_followup_feelings">Physical feelings</string>
+    <string name="health_visit_followup_function">Activity and daily function</string>
+    <string name="health_visit_followup_sleep">Sleep</string>
+    <string name="health_visit_followup_barriers">Difficulties following the plan</string>
+    <string name="health_visit_followup_note">Notes</string>
+    <string name="health_visit_followup_reason">Review or reason</string>
+    <string name="health_visit_followup_needs_review">I need to review or discuss this change</string>
+    <string name="health_visit_followup_review_notice">Check the current visit record before saving. A proposed adjustment or maintenance transition is not a treatment change or an accepted maintenance plan.</string>
+    <string name="health_visit_followup_archive_notice">I am ending this journal, not confirming recovery or stopping treatment or reminders.</string>
+    <string name="health_visit_followup_invalid">Enter a follow-up goal, an observation or a reason as appropriate, and choose a review decision when reviewing.</string>
+    <string name="health_visit_followup_save">Save record</string>
+    <string name="health_visit_followup_attended_required">First record that this visit took place. A planned appointment is not a completed visit.</string>
+    <string name="health_visit_followup_source_changed">The visit record has changed. Review it before relying on an earlier follow-up decision.</string>
+    <string name="health_visit_followup_history">Follow-up history</string>
+    <string name="health_visit_followup_empty">No follow-up records. Missing records do not establish improvement.</string>
+    <string name="health_visit_followup_delete">Delete this follow-up journal</string>
+    <string name="health_visit_followup_delete_notice">Delete this journal and its history? The visit, original files, instructions, actions and reminders will remain.</string>
+</resources>

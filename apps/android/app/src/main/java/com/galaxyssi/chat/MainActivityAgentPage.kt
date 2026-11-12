@@ -1486,7 +1486,10 @@ internal fun MainActivity.submitAgentGoal(
         } else {
             null
         }
-        val healthHistory = healthCareSubmission?.let { agentTranscriptStore.context(conversation.id, excludeTurnId = turnId) }
+        val healthHistory = healthCareSubmission?.let { approved -> HealthCareStore(applicationContext).use { care ->
+            HealthCareDiscussionPolicy.historyForGrant(agentTranscriptStore.context(conversation.id, excludeTurnId = turnId),
+                approved.grant, care::discussionGrant)
+        } }
         runOnUiThread {
             if (isFinishing || isDestroyed) return@runOnUiThread
             if (isSubmissionCancelled()) return@runOnUiThread

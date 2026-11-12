@@ -5,6 +5,46 @@ to enroll one exact research assignment in the production milestone store.
 The legacy `galaxyssi.single-agent-calibration.v1` format does not enroll.
 There is no new UI setting or remote request that can enroll an assignment.
 
+## Free-running delivery baseline
+
+`AgentSingleDeliveryCalibrationTests` covers Android #3470 separately. The
+test-only `galaxyssi.single-agent-calibration.v1` format uses one responding
+member and one dispatch, with no coordinator, research stage, dependency or
+milestone enrollment. It preserves the raw goal and checks the normalized
+member assignment against the production runtime and prompt builder before
+the synthetic worker can return. The encrypted execution store is reopened
+to check the exact result, then the isolated run is removed.
+
+Run the unit tests without environment variables. To opt into the physical
+device test, supply a synthetic JSON file readable by the XCTest host:
+
+```json
+{
+  "format": "galaxyssi.single-agent-calibration.v1",
+  "deviceModel": "iPhone16,2",
+  "targetID": "fixture:codex",
+  "modelID": "fixture-model",
+  "reasoningEffort": "high",
+  "memberID": "researcher",
+  "objective": "Inspect the synthetic fixture.\nPreserve its original conditions.",
+  "timeoutMillis": 15000,
+  "maximumDispatches": 1
+}
+```
+
+Set `GALAXYSSI_SINGLE_DELIVERY_PLAN` to the file path and
+`GALAXYSSI_SINGLE_DELIVERY_PLAN_SHA256` to its lowercase SHA-256. Set
+`GALAXYSSI_SINGLE_DELIVERY_DEVICE_MODEL`, `GALAXYSSI_SINGLE_DELIVERY_TARGET`,
+`GALAXYSSI_SINGLE_DELIVERY_MODEL` and `GALAXYSSI_SINGLE_DELIVERY_EFFORT` to the
+exact independently selected fixture values. Verify the intended Xcode
+device separately when several devices have the same hardware identifier.
+The attachment contains the synthetic result and its hash, not the goal.
+
+This test does not contact Desktop or a model provider. The verdict is
+delivery-only and cannot attest task acceptance, scientific correctness,
+delegation, equal compute, or capability gain. The fixture never reads or
+modifies the user's conversations or model settings.
+
 The fixture uses the production team runtime with one responding member, no
 dependencies, a frozen test model selection, and the original objective. It
 counts worker invocations, not provider-internal model requests. Its worker
@@ -60,12 +100,19 @@ in the test runtime, not a reason to discard the phase's report.
 
 Provide an XCTest-host-readable JSON file and its SHA-256 as
 `GALAXYSSI_ADAPTIVE_PILOT_PLAN` and `GALAXYSSI_ADAPTIVE_PILOT_PLAN_SHA256`.
+Set `GALAXYSSI_ADAPTIVE_PILOT_DEVICE_MODEL` to the exact authorized physical
+device hardware identifier (for example, `iPhone17,1`). The operator value,
+the hash-bound `device_model` field, and the connected hardware must agree
+before the fixture reserves or opens a workspace. Use the verified device
+destination when running XCTest: a model identifier alone does not identify
+one phone. Simulators and unbound v1 plans cannot run this opt-in fixture.
 Set `GALAXYSSI_ADAPTIVE_PILOT_TOKEN` to a fresh UUID for a new study. Example
 phase one:
 
 ```json
 {
-  "format": "galaxyssi.ios.adaptive-pilot-phase.v1",
+  "format": "galaxyssi.ios.adaptive-pilot-phase.v2",
+  "device_model": "iPhone17,1",
   "index": 1,
   "objective": "Inspect fixture one.",
   "roster": [
@@ -79,7 +126,8 @@ phase one:
 ```
 
 For the next phase, start a new XCTest process on the same installation and
-device with the same token and ordered roster. Use the next sequential index,
+device with the same token, exact hardware model and ordered roster. Changing
+devices requires a new frozen plan and token. Use the next sequential index,
 a newly frozen goal and replies, and the previous printed
 `GALAXYSSI_ADAPTIVE_PILOT_REPORT_SHA256`. Set `retainWorkspace` to false in the
 last phase. The study keeps one group and fresh run, turn, and source IDs for

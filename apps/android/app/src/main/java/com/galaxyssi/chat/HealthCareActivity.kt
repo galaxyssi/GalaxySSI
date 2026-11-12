@@ -145,6 +145,14 @@ class HealthCareActivity : Activity() {
         ui.add(content, ui.text("${value.assessment.value} ${value.assessment.unit}", 22f, bold = true), 8)
         ui.add(content, ui.text(getString(value.stage.titleResource()), 14f, muted = true), 6)
         HealthCarePriorityPresentation.add(this, content, value)
+        ui.add(content, ui.command(R.string.health_care_agent_open) { discuss(value) }
+            .apply { tag = "health-care-discuss" }, 12)
+        if (profile) ui.add(content, ui.profileRow(getString(R.string.health_visit_title), getString(R.string.health_visit_entry)) {
+            startActivity(Intent(this, HealthCareVisitActivity::class.java).putHealthNavigationFixture(names).putExtra("health_care_id", value.id))
+        }.apply { tag = "health-care-visit" }, 8)
+        if (profile) ui.add(content, ui.profileRow(getString(R.string.health_encounter_title), getString(R.string.health_encounter_entry)) {
+            startActivity(Intent(this, HealthCareEncountersActivity::class.java).putHealthNavigationFixture(names).putExtra("health_care_id", value.id))
+        }.apply { tag = "health-care-encounters" }, 8)
         if (profile) ui.add(content, ui.profileRow(getString(R.string.health_question_title), getString(R.string.health_question_summary)) {
             questionReview.show(value.id)
         }.apply { tag = "health-care-questions" }, 8)
@@ -160,8 +168,6 @@ class HealthCareActivity : Activity() {
             .apply { tag = "health-care-profile" }, 8)
         if (profile && value.assessment.series != null) ui.add(content, ui.profileRow(getString(R.string.health_series_title),
             getString(R.string.health_series_summary)) { historyReview.show(value.id) }.apply { tag = "health-care-series" }, 8)
-        ui.add(content, ui.command(R.string.health_care_discussion_title_short) { discuss(value) }
-            .apply { tag = "health-care-discuss" }, 12)
         if (profile) ui.add(content, ui.profileRow(getString(R.string.health_research_title)) { researchReview.show(value.id) }
             .apply { tag = "health-care-research" }, 8)
         proposals.forEach { plan -> ui.add(content, ui.profileRow(HealthCareTargetPresentation.planTitle(this, plan)) {
@@ -207,8 +213,8 @@ class HealthCareActivity : Activity() {
         value.actions.forEach { action ->
             ui.add(content, ui.text(action.description, 16f, bold = true), 12)
             ui.add(content, ui.text(action.rationale, 14f), 4)
-            ui.add(content, ui.text(action.source, 13f, muted = true), 4)
-            ui.add(content, ui.text(getString(action.state.titleResource()), 13f, muted = true), 4)
+            ui.add(content, ui.text(if (action.instruction != null) getString(R.string.health_instruction_action_provenance) else action.source, 13f, muted = true), 4)
+            ui.add(content, ui.text(getString(if (action.instruction?.invalidated == true) R.string.health_instruction_action_stale else action.state.titleResource()), 13f, muted = true), 4)
             action.dueFrom?.let { from -> ui.add(content, ui.text("${date(from)} - ${date(action.dueUntil!!)}", 14f), 4) }
             if (action.state in setOf(HealthCareActionState.CONFIRMED, HealthCareActionState.DONE)) {
                 ui.add(content, ui.profileRow(getString(R.string.health_care_followup_title)) { actionReview.show(value.id, action.id) }
