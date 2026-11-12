@@ -19,8 +19,8 @@ internal object HealthCareResearchRuntime {
             knowledgeStats = AgentKnowledgeStats())
     }
 
-    fun authorize(context: Context, preview: HealthCareDiscussionPreview, expectedId: String?) {
-        val grant = preview.grant
+    fun authorize(context: Context, preview: HealthCareDiscussionPreview, expectedId: String?, feedbackHistoryShared: Boolean = false) {
+        val grant = preview.grant.copy(feedbackHistoryShared = feedbackHistoryShared)
         val fingerprint = HealthCareDiscussion.configurationFingerprint(context, grant.conversationId, grant.targetId)
         check(AgentModelSelectionSettings.selection(context, grant.conversationId) == preview.selection &&
             AgentModelSelectionSettings.configurationForTarget(context, grant.conversationId, grant.targetId) == preview.configuration)
@@ -60,7 +60,8 @@ internal object HealthCareResearchRuntime {
     suspend fun launch(context: Context, job: HealthCareResearchJob, preview: HealthCareDiscussionPreview) {
         HealthCareDiscussion.approve(context, preview)
         val transcripts = AgentTranscriptStore(context)
-        val history = transcripts.context(job.conversationId, excludeTurnId = job.turnId)
+        val history = HealthCareStore(context).use { care -> HealthCareDiscussionPolicy.historyForGrant(
+            transcripts.context(job.conversationId, excludeTurnId = job.turnId), preview.grant, care::discussionGrant) }
         check(history.conversationId == job.conversationId && history.privateMode && history.trackingPaused)
         val goal = HealthCareDiscussionPolicy.prompt(preview.question, preview.snapshot)
         transcripts.append(AgentTranscriptRole.USER, context.getString(R.string.health_research_requested),

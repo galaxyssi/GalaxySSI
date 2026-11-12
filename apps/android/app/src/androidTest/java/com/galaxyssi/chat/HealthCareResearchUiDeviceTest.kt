@@ -9,6 +9,7 @@ import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
+import android.widget.TextView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
@@ -16,6 +17,7 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeFalse
 import org.junit.Test
@@ -75,6 +77,8 @@ class HealthCareResearchUiDeviceTest {
         scenario.onActivity {
             val d = dialog(review(it))!!
             assertNotNull(views(d.window!!.decorView).firstOrNull { view -> view.tag == "health-research-state" })
+            val scope = views(d.window!!.decorView).first { view -> view.tag == "health-research-feedback-scope" } as TextView
+            assertEquals(context.getString(R.string.health_research_feedback_off), scope.text.toString())
             views(d.window!!.decorView).first { view -> view.tag == "health-research-revoke" }.performClick()
         }
         await(scenario) { dialog(review(it))?.isShowing == true &&
@@ -98,7 +102,7 @@ class HealthCareResearchUiDeviceTest {
         val issue = HealthCareStore(context, names.care).use { it.concern(plan.grant.concernId)!! }
         val preview = HealthCareDiscussionPreview(issue, plan.grant,
             AgentCallableTarget("fixture-provider", "Synthetic model", AgentConnectorKind.AGENT, AgentConnectorStatus.AVAILABLE, emptyList()),
-            "合成测试资料，不属于个人档案。", "核对新证据。",
+            HealthCareDiscussionPolicy.snapshot(issue), "核对新证据。",
             AgentAction("fixture", AgentActionKind.CALL_CONNECTOR, "fixture-provider", AgentRisk.LOW, AgentActionStatus.PENDING_CONFIRMATION, "Fixture"),
             AgentModelSelection(), null)
         scenario.onActivity {
@@ -106,13 +110,23 @@ class HealthCareResearchUiDeviceTest {
                 .apply { isAccessible = true }
             method.invoke(review(it), preview, null)
             val d = dialog(review(it))!!
-            val check = views(d.window!!.decorView).filterIsInstance<CheckBox>().single()
+            val check = views(d.window!!.decorView).first { view -> view.tag == "health-research-consent" } as CheckBox
+            val feedback = views(d.window!!.decorView).first { view -> view.tag == "health-research-feedback-history" } as CheckBox
+            val raw = views(d.window!!.decorView).first { view -> view.tag == "health-research-data-preview" } as TextView
+            assertFalse(feedback.isChecked)
+            assertFalse(JSONObject(raw.text.toString()).getJSONObject("feedback_history").getBoolean("authorized"))
+            feedback.performClick()
+            assertTrue(feedback.isChecked)
+            assertTrue(JSONObject(raw.text.toString()).getJSONObject("feedback_history").getBoolean("authorized"))
+            feedback.performClick()
+            assertFalse(JSONObject(raw.text.toString()).getJSONObject("feedback_history").getBoolean("authorized"))
+            feedback.performClick()
             assertFalse(check.isChecked); assertFalse(d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
         }
         capture("health-research-consent-fixture.png")
         scenario.onActivity {
             val d = dialog(review(it))!!
-            val check = views(d.window!!.decorView).filterIsInstance<CheckBox>().single()
+            val check = views(d.window!!.decorView).first { view -> view.tag == "health-research-consent" } as CheckBox
             check.performClick(); assertTrue(d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
             d.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
         }
@@ -120,5 +134,15 @@ class HealthCareResearchUiDeviceTest {
         HealthCareStore(context, names.care).use {
             assertNull(it.researchAuthorization(issue.id)); assertTrue(it.researchJobs(issue.id).isEmpty())
         }
+        scenario.onActivity {
+            HealthCareResearchReview::class.java.getDeclaredMethod("consent", HealthCareDiscussionPreview::class.java, String::class.java)
+                .apply { isAccessible = true }.invoke(review(it), preview, null)
+            val d = dialog(review(it))!!
+            assertTrue(views(d.window!!.decorView).filterIsInstance<CheckBox>().all { check -> !check.isChecked })
+            assertFalse(d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
+        }
+        scenario.moveToState(Lifecycle.State.CREATED)
+        scenario.onActivity { assertNull(dialog(review(it))) }
+        HealthCareStore(context, names.care).use { assertNull(it.researchAuthorization(issue.id)) }
     }
 }

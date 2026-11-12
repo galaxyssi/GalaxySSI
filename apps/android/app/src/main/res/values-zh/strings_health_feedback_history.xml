@@ -1,3 +1,6 @@
 <resources>
     <string name="health_feedback_history_disclosure">本次请求也允许所选模型按页查看此关注事项在当前共享范围内的行动反馈，包括之前的部分完成和执行困难。不包含其他事项、医疗原件，也不授权新增提醒或修改计划。</string>
+    <string name="health_research_feedback_consent">同时允许本事项后续的主动研究读取已保存的历史行动反馈，包括当前分享范围内的进展与困难。不授权读取其他事项、医疗原件，也不授权新建提醒或修改计划。</string>
+    <string name="health_research_feedback_on">历史行动反馈：已授权本事项使用</string>
+    <string name="health_research_feedback_off">历史行动反馈：未授权</string>
 </resources>

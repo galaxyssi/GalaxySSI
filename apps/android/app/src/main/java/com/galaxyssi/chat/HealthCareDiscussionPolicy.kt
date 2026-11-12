@@ -60,7 +60,23 @@ internal object HealthCareDiscussionPolicy {
     fun tools(grant: HealthCareDiscussionGrant) = (if (grant.questionsShared) discussionTools else discussionTools - HealthCareQuestionTools.ids).let {
         if (grant.userInputDigest.isEmpty() || grant.researchAuthorizationId.isNotEmpty()) it - HealthCareAnswerTool.ID else it
     }.let {
-        if (!grant.feedbackHistoryShared || grant.researchAuthorizationId.isNotEmpty()) it - HealthCareFeedbackTool.ID else it
+        if (!grant.feedbackHistoryShared) it - setOf(HealthCareFeedbackTool.ID, AgentConversationRecallTool.ID) else it
+    }
+
+    fun historyForGrant(history: AgentConversationContext, grant: HealthCareDiscussionGrant,
+        previousGrant: (String) -> HealthCareDiscussionGrant?): AgentConversationContext {
+        require(history.conversationId == grant.conversationId && history.privateMode && history.trackingPaused)
+        if (grant.feedbackHistoryShared) return history
+        // Summaries have no turn-level provenance and may contain withdrawn feedback.
+        return history.copy(summary = "", globalContext = "", turns = history.turns.filter { entry ->
+            entry.conversationId == grant.conversationId && entry.sourceConversationId.isBlank() &&
+                (entry.turnId == grant.turnId || previousGrant(entry.turnId)?.let { previous ->
+                    !previous.feedbackHistoryShared && previous.concernId == grant.concernId &&
+                        previous.conversationId == grant.conversationId && previous.destination == grant.destination &&
+                        previous.privacyVersion == grant.privacyVersion && previous.profileLink?.scope == grant.profileLink?.scope &&
+                        (!previous.questionsShared || grant.questionsShared)
+                } == true)
+        })
     }
 
     // This is transport detection only. Actual record access still requires the persisted per-turn grant.

@@ -17,7 +17,62 @@ class HealthCareLiveResearchDeviceTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val report = JSONArray()
     private val historyReads = mutableListOf<String>()
+    private val feedbackNotes = mutableListOf<String>()
+    private val deliveredFeedback = mutableSetOf<String>()
     private val reportFile get() = File(context.filesDir, "health-care-live-research.json")
+
+    @Test fun pairedModelReadsAuthorizedResearchFeedbackAcrossPages(): Unit = runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("health_live_feedback") == "true")
+        val contacts = AppStore.contacts(context)
+        val contact = (0 until contacts.length()).map { contacts.getJSONObject(it) }.firstOrNull {
+            !it.optBoolean("deleted") && AppStore.agentIdForContact(context, it.optString("id")) == "codex" &&
+                !AppStore.isDesktopDeviceContact(context, it.optString("id")) &&
+                GalaxySSILinkProtocol.serverLink(context, it.optString("desktop_id"))?.paired == true
+        } ?: error("No paired Codex contact; preserve pairing and credentials")
+        GalaxySSIMqttClient.connect(context)
+        withTimeout(30_000) { while (!GalaxySSIMqttClient.isRequestReplyReady()) delay(100) }
+        val names = HealthOverviewDatabases(UUID.randomUUID().toString())
+        try {
+            HealthPrivacyStore(context, names.privacy).use { privacy ->
+                privacy.change(HealthPrivacyOption.ONLINE_ANALYSIS, true, privacy.policy().version)
+            }
+            val initial = HealthCareFollowUpTestFixture.confirmed(context, names)
+            HealthCareStore(context, names.care).use { store ->
+                repeat(32) { index ->
+                    val issue = store.concern(initial.id)!!
+                    val note = if (index == 0) "最早的合成反馈：夜班后睡眠不足，希望改在午休行动。"
+                        else "合成反馈第${index + 1}条：今天只完成部分行动。"
+                    feedbackNotes += note
+                    store.recordActionFeedback(issue.id, issue.revision, issue.actions.first().id,
+                        HealthCareFeedbackKind.PARTIAL, note, UUID.randomUUID().toString(), System.currentTimeMillis())
+                }
+                val issue = store.concern(initial.id)!!
+                val selected = AgentModelSelectionSettings.configurationForTarget(context, issue.conversationId, contact.getString("id"))
+                val scope = HealthCareDiscussionGrant(issue.conversationId, UUID.randomUUID().toString(), issue.id,
+                    issue.revision, store.settings().version, HealthPrivacyStore(context, names.privacy).use { it.policy().version },
+                    HealthCareDiscussion.desktopDestination(context, contact.getString("id")), System.currentTimeMillis(),
+                    contact.getString("id"), selected?.modelId.orEmpty(), selected?.reasoningEffort?.wireValue.orEmpty(),
+                    profileLink = issue.profileLink, questionsShared = true, feedbackHistoryShared = true)
+                val authorization = HealthCareResearchAuthorization(UUID.randomUUID().toString(), scope, "b".repeat(64))
+                store.authorizeResearch(authorization, null)
+                val job = store.queueResearch(authorization.id, issue.id, System.currentTimeMillis())
+                val grant = scope.copy(turnId = job.turnId, revision = job.revision, researchAuthorizationId = authorization.id)
+                store.approveDiscussion(grant)
+                val question = "这是隔离的合成测试，不是我的健康数据。请读取此事项全部已授权的历史行动反馈，翻页直到没有下一页。" +
+                    "概括执行困难，并引用最早一条反馈的原话。不要把执行反馈当作健康改善，不要查网页、创建计划、确认计划或安排提醒。"
+                val answer = runTurn(store, issue, grant, contact, question, emptyList(), names)
+                assertEquals("Not all feedback reached a model prompt", feedbackNotes.toSet(), deliveredFeedback)
+                assertTrue("The real model lost the earlier barrier", answer.contains("夜班后睡眠不足"))
+                assertTrue("The real model lost the earlier preference", answer.contains("午休"))
+                assertEquals(issue, store.concern(issue.id)); assertNull(store.plan(grant.turnId)); assertNull(store.nextDue())
+                assertEquals(32, deliveredFeedback.size)
+                println("HEALTH_LIVE feedback_pagination=true standing_consent=true unchanged_plan=true real_provider=true")
+            }
+        } finally {
+            reportFile.writeText(report.toString(2))
+            listOf(names.care, names.records, names.privacy, names.reminders, names.profile).forEach(context::deleteDatabase)
+        }
+    }
 
     @Test fun pairedModelResearchesAndAnswersFollowupWithoutConfirmingPlan(): Unit = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("health_live_research") == "true")
@@ -148,8 +203,12 @@ class HealthCareLiveResearchDeviceTest {
                 for (index in 0 until samples.length()) historyReads += samples.getJSONObject(index).getJSONObject("record").getString("id")
             }
         })
+        if (grant.feedbackHistoryShared) registry.register(HealthCareFeedbackTool.definition { invocation, input ->
+            HealthCareFeedbackTool.read(context, names, invocation, input)
+        })
         val screen = ScreenContext("Synthetic health acceptance", pageTitle = "Synthetic health concern")
-        val goal = HealthCareDiscussionPolicy.prompt(question, HealthCareDiscussionPolicy.snapshot(concern))
+        val goal = HealthCareDiscussionPolicy.prompt(question, HealthCareDiscussionPolicy.snapshot(concern,
+            feedbackHistoryShared = grant.feedbackHistoryShared))
         val runtime = AgentRuntimeContextBuilder.build(sessionId = grant.conversationId, goal = goal, screen = screen,
             permissionMode = PermissionMode.AUTO_LOW_RISK, highRiskGuard = true, memoryCapture = false,
             callableTargets = emptyList(), memories = emptyList(), nativeTools = registry.availableCatalog().descriptors)
@@ -165,6 +224,7 @@ class HealthCareLiveResearchDeviceTest {
                     replanReason = if (round == 0) "" else PHONE_SUPERVISED_PROJECT_REPLAN_REASON)
                 val prompt = repair.ifBlank { if (round == 0) AgentSupervisedProjectLoop.planningPrompt(request)
                     else AgentSupervisedProjectLoop.continuationPrompt(request) }
+                deliveredFeedback += feedbackNotes.filter { prompt.contains(it) }
                 val raw = exchange(contact, grant, prompt)
                 report.put(JSONObject().put("turn", grant.turnId).put("round", round).put("response", raw))
                 reportFile.writeText(report.toString(2))

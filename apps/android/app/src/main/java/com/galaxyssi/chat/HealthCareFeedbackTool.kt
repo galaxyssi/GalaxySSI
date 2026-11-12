@@ -58,7 +58,7 @@ internal object HealthCareFeedbackTool {
             HealthPrivacyStore(context, names.privacy).use { privacy ->
                 val permission = privacy.policy()
                 HealthRecordStore(context, names.records).use { records ->
-                    fun current() = grant.feedbackHistoryShared && grant.researchAuthorizationId.isEmpty() &&
+                    fun current() = grant.feedbackHistoryShared &&
                         (grant.targetId == "local-llm" || permission.online) &&
                         HealthCareDiscussionPolicy.permitted(grant, invocation.conversationId, invocation.turnId, issue,
                             settings, permission, grant.destination, now) && care.discussion(invocation.conversationId) == issue.id &&
