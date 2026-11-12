@@ -26,4 +26,11 @@ internal class HealthCareVisitFollowUpRepository(private val context: Context, p
         it.deleteVisitFollowUp(snapshot.visit.issue.id, snapshot.visit.issue.revision, snapshot.visit.selected!!.id,
             snapshot.followUp?.revision ?: throw HealthCareConflict(), now)
     }
+    fun discuss(snapshot: HealthCareVisitFollowUpSnapshot): String = encounters.commit(snapshot.visit) { care ->
+        check(names.fixture == null)
+        val value = snapshot.followUp ?: throw HealthCareConflict()
+        HealthCareVisitFollowUpTool.selected(care, snapshot.visit.issue.id,
+            HealthCareVisitFollowUpScope.of(value, snapshot.visit.selected!!))
+        HealthCareDiscussion.open(context, value.concernId, names)
+    }
 }

@@ -1,6 +1,6 @@
 <resources>
     <string name="health_visit_followup_title">Post-visit follow-up</string>
-    <string name="health_visit_followup_notice">These are your own records, not a clinical assessment. They do not change treatment, confirm recovery or schedule reminders. This follow-up journal has not been shared with an Agent.</string>
+    <string name="health_visit_followup_notice">These are your own records, not a clinical assessment. They do not change treatment, confirm recovery or schedule reminders. Sharing this journal with an Agent requires your confirmation for each request.</string>
     <string name="health_visit_followup_active">Following up</string>
     <string name="health_visit_followup_review_needed">Review needed</string>
     <string name="health_visit_followup_paused">Paused</string>

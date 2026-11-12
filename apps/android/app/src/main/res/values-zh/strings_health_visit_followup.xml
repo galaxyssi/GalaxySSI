@@ -1,6 +1,6 @@
 <resources>
     <string name="health_visit_followup_title">诊后随访</string>
-    <string name="health_visit_followup_notice">这里保存你的自述记录，不是临床评估；不会改变治疗、确认康复或安排提醒。本随访记录尚未发送给 Agent。</string>
+    <string name="health_visit_followup_notice">这里保存你的自述记录，不是临床评估；不会改变治疗、确认康复或安排提醒。每次向 Agent 分享本随访记录，都需要你确认本次范围。</string>
     <string name="health_visit_followup_active">持续跟进</string>
     <string name="health_visit_followup_review_needed">待复评</string>
     <string name="health_visit_followup_paused">已暂停</string>
