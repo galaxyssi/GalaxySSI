@@ -112,9 +112,9 @@ class HealthCareInstructionProposalDeviceTest {
     }
     @Test fun schemaFifteenMigrationPreservesInstructionsAndDoesNotInventCandidates(): Unit = fixture { f ->
         val value = f.create()
-        context.openOrCreateDatabase(f.documents.names.care, 0, null).use { it.execSQL("DROP TABLE instruction_proposals"); it.version = 15 }
+        context.openOrCreateDatabase(f.documents.names.care, 0, null).use { removeHealthVisitFollowUpTestTables(it); it.execSQL("DROP TABLE instruction_proposals"); it.version = 15 }
         assertEquals(value, f.snapshot(value.id).selected); assertNull(f.snapshot(value.id).proposal)
         stageInstructionProposal(context, f, value)
-        context.openOrCreateDatabase(f.documents.names.care, 0, null).use { assertEquals(16, it.version) }
+        context.openOrCreateDatabase(f.documents.names.care, 0, null).use { assertEquals(17, it.version) }
     }
 }

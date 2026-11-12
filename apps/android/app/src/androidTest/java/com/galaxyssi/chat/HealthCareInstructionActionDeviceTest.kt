@@ -134,9 +134,9 @@ class HealthCareInstructionActionDeviceTest {
     }
     @Test fun schemaFourteenUpgradePreservesReviewedSourcesAndDoesNotInventActions(): Unit = fixture { f ->
         val value = reviewedHealthInstruction(f); val before = f.snapshot(value.id)
-        context.openOrCreateDatabase(f.documents.names.care, 0, null).use { it.execSQL("DROP TABLE instruction_proposals"); it.version = 14 }
+        context.openOrCreateDatabase(f.documents.names.care, 0, null).use { removeHealthVisitFollowUpTestTables(it); it.execSQL("DROP TABLE instruction_proposals"); it.version = 14 }
         assertEquals(before, f.snapshot(value.id))
-        context.openOrCreateDatabase(f.documents.names.care, 0, null).use { assertEquals(16, it.version) }
+        context.openOrCreateDatabase(f.documents.names.care, 0, null).use { assertEquals(17, it.version) }
         confirm(f, value)
     }
     @Test fun ignoredActionWriteRollsBackHistoryAndReturnsNoFalseSuccess(): Unit = fixture { f ->

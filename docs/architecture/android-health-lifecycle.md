@@ -590,3 +590,40 @@ Visit refreshes retain the selected visit identifier while clearing plaintext an
 reloading the source. A delayed write notification cannot send a newly opened
 detail back to the list. Ownership and privacy are still rechecked on reload;
 missing or revoked records fail closed rather than retaining stale details.
+
+## Post-visit follow-up journals
+
+An explicitly recorded attended visit can start its own follow-up journal. It
+retains a goal, subjective physical feelings, daily function, sleep, barriers and
+review notes separately from action completion and laboratory assessments.
+Review can record continuation, a proposed adjustment or a proposed maintenance
+discussion. The latter two remain pending review; they do not change the concern
+stage, treatment, targets or existing reminders. Pause/resume and archive/reopen
+are journal states only. Archiving requires an explicit acknowledgement that it
+does not establish recovery or stop treatment/reminders.
+
+Schema 17 adds encrypted current journals and immutable operation receipts, with
+indexed 30-entry keyset history. Parent concern revisions and journal writes
+commit atomically. Retries preserve the first payload; stale ownership, revisions
+and revoked privacy fail closed. A revised visit remains flagged until an
+explicit journal review, not merely another check-in. Deleting a journal retains
+the visit and instructions; deleting its visit or concern purges dependent
+journals. UI reads/writes use a worker and clear plaintext on background, memory
+pressure and the existing ten-minute expiry. Snapshot reads revalidate the
+concern, source and permission versions after loading history, so a concurrent
+check-in cannot combine different journal revisions on one screen.
+
+The opt-in process-recovery test retains only an isolated synthetic journal
+between its seed and recovery phases. It requires a different process identity,
+checks the same journal and paged history, replays the last operation without a
+duplicate, and verifies an explicit resume returns to review. It also supports
+covering an application upgrade between phases and cleans up only its fixture
+databases after recovery.
+
+This increment stores self-reported post-visit evidence, not an autonomous
+rehabilitation plan. New journal content is not added to existing model grants or
+standing research consent. Dedicated consent and scoped Agent retrieval, review
+reminder integration, diagnosis-specific clinical review and full longitudinal
+acceptance still need implementation and verification. Recording notes is not an
+emergency assessment or a clinical outcome, and no observed change proves an
+effect caused by the application.

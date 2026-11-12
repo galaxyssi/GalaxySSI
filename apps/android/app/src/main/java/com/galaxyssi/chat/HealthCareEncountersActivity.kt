@@ -146,6 +146,10 @@ class HealthCareEncountersActivity : Activity() {
             startActivity(Intent(this, HealthCareInstructionsActivity::class.java).putHealthNavigationFixture(names)
                 .putExtra("health_care_id", concernId).putExtra("health_encounter_id", entry.id))
         }.apply { tag = "encounter-instructions" }, 8)
+        ui.add(content, ui.profileRow(getString(R.string.health_visit_followup_title)) {
+            startActivity(Intent(this, HealthCareVisitFollowUpActivity::class.java).putHealthNavigationFixture(names)
+                .putExtra("health_care_id", concernId).putExtra("health_encounter_id", entry.id))
+        }.apply { tag = "encounter-followup" }, 8)
         ui.add(content, ui.command(R.string.health_encounter_edit) { edit(value, entry) }.apply { tag = "encounter-edit" }, 20)
         ui.add(content, ui.profileRow(getString(R.string.health_encounter_history)) {
             history = true; historyCursor = Int.MAX_VALUE; historyPrevious.clear(); load()
