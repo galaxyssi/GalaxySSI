@@ -37,6 +37,13 @@ internal class MqttChunkThroughput {
         }
     }
     fun pendingBytes(broker: String) = flights.values.filter { it.broker == broker }.sumOf { it.bytes.toLong() }
+    fun canSend(peer: String, broker: String, bytes: Int): Boolean {
+        val pending = pendingBytes(broker)
+        val measured = rates[peer to broker]?.takeIf { it.samples >= MqttBrokerCatalog.CHUNK_MIN_SAMPLES }
+        val window = (measured?.let { it.bytesPerSecond * 2 } ?: 65536.0).toLong().coerceIn(65536, 524288)
+        // Admit one oversized legacy fragment, but do not queue more behind it.
+        return pending == 0L || pending + bytes <= window
+    }
     fun rate(peer: String, broker: String): Double = rates[peer to broker]?.takeIf { it.samples >= MqttBrokerCatalog.CHUNK_MIN_SAMPLES }
         ?.bytesPerSecond ?: MqttBrokerCatalog.UNMEASURED_CHUNK_BYTES_PER_SECOND.toDouble()
     fun forget(peer: String) {

@@ -485,20 +485,21 @@ internal class MqttPeerRoutes(
         send?.invoke()
     }
 
-    private fun sendChunkState(scope: String, frozen: String, identity: List<String>, broker: String) {
-        val peer = synchronized(lock) { peers[scope] } ?: return
-        if (!ready(scope)) return
+    private fun sendChunkState(scope: String, frozen: String, identity: List<String>, broker: String): Boolean {
+        val peer = synchronized(lock) { peers[scope] } ?: return true
+        if (!ready(scope)) return false
         val binding: Binding
         val encoded: ByteArray
         val descriptor: MqttPoolTransport.Publication
         peer.lock.withLock {
             binding = peer.binding
-            if (!peer.active || !binding.enabled || binding.identity != identity) return
+            if (!peer.active || !binding.enabled || binding.identity != identity) return true
             encoded = seal(frozen, binding.secret).toByteArray(Charsets.UTF_8)
             val digest = MqttRouteAdvertisement.sha256(encoded.toString(Charsets.UTF_8))
             descriptor = MqttPoolTransport.Publication(scope, digest, digest, MqttMultipathPolicy.Traffic.RECEIPT,
                 binding.receiveTopics, preferredBroker = broker, authorizedPaths = authorizedPaths(peer))
         }
         transport.publish(binding.sendTopic, org.eclipse.paho.client.mqttv3.MqttMessage(encoded).apply { qos = 1 }, publication = descriptor)
+        return true
     }
 }

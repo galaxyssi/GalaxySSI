@@ -8,6 +8,33 @@ import java.util.concurrent.Executors
 class MqttMultipathPolicyTest {
     private val brokers = MqttBrokerCatalog.brokers.keys
     private val hash = "a".repeat(64)
+    @Test fun peerChunkReceiptsBoundEachPathWithoutBlockingTextOrControls() {
+        val policy = ready()
+        val chunk = MqttChunkThroughput.Chunk("transfer", "request", 0, true)
+        brokers.forEach { broker -> policy.trackChunk("peer", chunk.copy(transfer = broker), broker, 1, 87419, 1000) }
+        assertTrue(plan(policy, MqttMultipathPolicy.Traffic.CHUNK, size = 87419).isEmpty())
+        assertFalse(plan(policy, MqttMultipathPolicy.Traffic.MESSAGE).isEmpty())
+        assertEquals(3, plan(policy, MqttMultipathPolicy.Traffic.CONTROL).size)
+        assertFalse(plan(policy, MqttMultipathPolicy.Traffic.RECEIPT).isEmpty())
+        policy.confirmChunkState("other-peer", "emqx", "request", listOf(0), 1100)
+        assertTrue(plan(policy, MqttMultipathPolicy.Traffic.CHUNK, size = 87419, now = 1100).isEmpty())
+        policy.confirmChunkState("peer", "emqx", "request", listOf(0), 1200)
+        assertEquals("emqx", plan(policy, MqttMultipathPolicy.Traffic.CHUNK, size = 87419, now = 1200).single().brokerId)
+        assertFalse(plan(policy, MqttMultipathPolicy.Traffic.CHUNK, size = 87419, now = 32000).isEmpty())
+    }
+
+    @Test fun brokerAckDoesNotReleaseThePeerChunkWindow() {
+        val policy = ready()
+        val chunk = MqttChunkThroughput.Chunk("transfer", "request", 0, true)
+        val first = attempt(size = 87419, traffic = MqttMultipathPolicy.Traffic.CHUNK)
+        assertTrue(policy.reserve("first", first))
+        policy.trackChunk("peer", chunk, "emqx", 1, 87419, 1000)
+        assertTrue(policy.brokerAck("first", "emqx", 1))
+        assertFalse(policy.reserve("next", first.copy(messageId = "next")))
+        policy.confirmChunkState("peer", "transfer", "request", listOf(0), 1200)
+        assertTrue(policy.reserve("next", first.copy(messageId = "next")))
+    }
+
     private fun ready(): MqttMultipathPolicy = MqttMultipathPolicy("deterministic-test".toByteArray()).apply {
         brokers.forEach { connected(it, 1); subscribed(it, 1, setOf("inbox")) }
         acceptVerifiedResume("peer", route(), 0)

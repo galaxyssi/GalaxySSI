@@ -272,7 +272,10 @@ internal class MqttPoolTransport(
             synchronized(lock) { publications.remove(attempt) }
             policy.discardAttempt(attempt)
         }
-        if (choices.isNotEmpty() && !attemptedPhysicalPublish) throw BackpressureException()
+        val waitingForPeer = descriptor.chunk != null && choices.isEmpty() && policy.plan(
+            descriptor.peer, descriptor.messageId, MqttMultipathPolicy.Traffic.MESSAGE, size.toInt(),
+            descriptor.receiveTopics, at, authorizedPaths = descriptor.authorizedPaths).isNotEmpty()
+        if (!attemptedPhysicalPublish && (choices.isNotEmpty() || waitingForPeer)) throw BackpressureException()
         throw MqttException(MqttException.REASON_CODE_CLIENT_NOT_CONNECTED.toInt())
     }
 

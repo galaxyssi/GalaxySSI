@@ -106,9 +106,9 @@ class ChunkFlowTest(unittest.TestCase):
 
     def test_burst_feedback_uses_latest_revision_without_extending_first_deadline(self):
         feedback, sent = ChunkFeedback(), []
-        feedback.offer("peer", "transfer", "request", 1, lambda: sent.append(1), 0)
-        feedback.offer("peer", "transfer", "request", 3, lambda: sent.append(3), 0.15)
-        feedback.offer("peer", "transfer", "request", 2, lambda: sent.append(2), 0.16)
+        feedback.offer("peer", "transfer", "request", 1, lambda: sent.append(1) or True, 0)
+        feedback.offer("peer", "transfer", "request", 3, lambda: sent.append(3) or True, 0.15)
+        feedback.offer("peer", "transfer", "request", 2, lambda: sent.append(2) or True, 0.16)
         self.assertFalse(feedback.drain(0.19))
         for send in feedback.drain(0.201):
             send()
@@ -116,8 +116,8 @@ class ChunkFlowTest(unittest.TestCase):
 
     def test_terminal_or_probe_is_immediate_and_cancels_queued_state(self):
         feedback, sent = ChunkFeedback(), []
-        feedback.offer("peer", "transfer", "request", 1, lambda: sent.append(1), 0)
-        immediate = feedback.offer("peer", "transfer", "request", 2, lambda: sent.append(2), 0.1, urgent=True)
+        feedback.offer("peer", "transfer", "request", 1, lambda: sent.append(1) or True, 0)
+        immediate = feedback.offer("peer", "transfer", "request", 2, lambda: sent.append(2) or True, 0.1, urgent=True)
         immediate()
         self.assertEqual([2], sent)
         self.assertFalse(feedback.drain(1))
@@ -125,8 +125,8 @@ class ChunkFlowTest(unittest.TestCase):
     def test_feedback_per_peer_bound_leaves_capacity_for_other_pairs(self):
         feedback, sent = ChunkFeedback(), []
         for index in range(CATALOG["limits"]["per_peer_chunk_feedback"] + 1):
-            feedback.offer("peer", str(index), "request", 1, lambda: sent.append("peer"), 0)
-        feedback.offer("other", "transfer", "request", 1, lambda: sent.append("other"), 0)
+            feedback.offer("peer", str(index), "request", 1, lambda: sent.append("peer") or True, 0)
+        feedback.offer("other", "transfer", "request", 1, lambda: sent.append("other") or True, 0)
         feedback.forget("peer")
         for send in feedback.drain(1):
             send()
@@ -135,9 +135,45 @@ class ChunkFlowTest(unittest.TestCase):
     def test_feedback_drain_is_bounded(self):
         feedback = ChunkFeedback()
         for index in range(30):
-            feedback.offer("peer", str(index), "request", 1, lambda: None, 0)
+            feedback.offer("peer", str(index), "request", 1, lambda: True, 0)
         self.assertEqual(16, len(feedback.drain(1)))
         self.assertEqual(14, len(feedback.drain(1)))
+
+    def test_rejected_feedback_retries_latest_revision_until_accepted(self):
+        feedback, sent = ChunkFeedback(), []
+        feedback.offer("peer", "transfer", "request", 1, lambda: sent.append(1) or False, 0)
+        for send in feedback.drain(0.201):
+            send()
+        feedback.offer("peer", "transfer", "request", 2, lambda: sent.append(2) or True, 0.3)
+        self.assertFalse(feedback.drain(0.7))
+        for send in feedback.drain(0.702):
+            send()
+        self.assertEqual([1, 2], sent)
+        self.assertFalse(feedback.drain(2))
+
+    def test_superseded_and_revoked_callbacks_do_not_send(self):
+        feedback, sent = ChunkFeedback(), []
+        feedback.offer("peer", "transfer", "request", 1, lambda: sent.append(1) or True, 0)
+        old = feedback.drain(0.201)[0]
+        feedback.offer("peer", "transfer", "request", 2, lambda: sent.append(2) or True, 0.3, urgent=True)()
+        old()
+        feedback.offer("peer", "transfer", "other", 3, lambda: sent.append(3) or True, 0.4)
+        revoked = feedback.drain(0.601)[0]
+        feedback.forget("peer")
+        revoked()
+        self.assertEqual([2], sent)
+
+    def test_throwing_urgent_feedback_retries_with_finite_lifetime(self):
+        feedback, attempts = ChunkFeedback(), []
+        def fail():
+            attempts.append(1)
+            raise RuntimeError("full")
+        with self.assertRaises(RuntimeError):
+            feedback.offer("peer", "transfer", "request", 1, fail, 0, urgent=True)()
+        with self.assertRaises(RuntimeError):
+            feedback.drain(0.5)[0]()
+        self.assertEqual(2, len(attempts))
+        self.assertFalse(feedback.drain(CATALOG["timing"]["receipt_retry_ttl_seconds"]))
 
 
 if __name__ == "__main__":

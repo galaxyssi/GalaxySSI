@@ -518,15 +518,17 @@ class PeerRoutes:
     def _send_chunk_state(self, scope, frozen, authenticated_identity, broker_id):
         with self._lock:
             peer = self._peers.get(scope)
-        if peer is None or not self.ready(scope):
-            return None
+        if peer is None:
+            return True
+        if not self.ready(scope):
+            return False
         with peer.lock:
             binding = peer.binding
             if not peer.active or binding.identity != authenticated_identity:
-                return None
+                return True
             encoded = seal_wire_packet(frozen, binding.secret)
             digest = hashlib.sha256(encoded.encode()).hexdigest()
             descriptor = Publication(scope, digest, digest, Traffic.RECEIPT, binding.receive_topics,
                                      preferred_broker=broker_id,
                                      authorized_paths=tuple(self._authorized_paths(peer).items()))
-        return self.client.publish(binding.send_topic, encoded, publication=descriptor)
+        return self.client.publish(binding.send_topic, encoded, publication=descriptor).rc == 0

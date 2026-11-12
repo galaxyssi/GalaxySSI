@@ -111,7 +111,8 @@ object GalaxySSILinkDeliveryStore {
         receiptRoutes: GalaxySSILinkProtocol.Routes? = null,
         transportTraffic: String = "message",
         payloadType: String = "",
-        deferredSignalEncryption: Boolean = false
+        deferredSignalEncryption: Boolean = false,
+        attachmentChunkIndex: Int = -1
     ): Boolean {
         MqttTrafficPolicy.parse(transportTraffic)
         require(!deferredSignalEncryption || (blockedByAttachmentTransferIds.isNotEmpty() && recoverableEnvelope.isNotBlank()))
@@ -128,6 +129,7 @@ object GalaxySSILinkDeliveryStore {
             .put("contact_id", contactId)
             .put("transport_traffic", transportTraffic)
             .put("payload_type", payloadType)
+            .put("attachment_chunk_index", attachmentChunkIndex)
             .put(DEFERRED_SIGNAL, deferredSignalEncryption)
             .put(
                 BROKER_ACK_TIMEOUT_MILLIS,
@@ -209,6 +211,11 @@ object GalaxySSILinkDeliveryStore {
     @Synchronized
     internal fun hasPendingAttachmentManifest(context: Context, routes: GalaxySSILinkProtocol.Routes,
         transferId: String): Boolean = outboxDatabase(context).hasAttachmentManifest(receiptBinding(routes), transferId)
+
+    @Synchronized
+    internal fun hasPendingAttachmentChunk(context: Context, routes: GalaxySSILinkProtocol.Routes,
+        transferId: String, index: Int): Boolean =
+        outboxDatabase(context).hasAttachmentChunk(receiptBinding(routes), transferId, index)
 
     @Synchronized
     internal fun holdStaleUncorrelated(context: Context): Int =

@@ -7,6 +7,32 @@ import org.junit.Test
 import java.util.UUID
 
 class AttachmentManifestQueueDeviceTest {
+    @Test fun pendingChunkLookupIsScopedAndSurvivesReopen() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val name = "chunk-queue-test-${UUID.randomUUID()}.db"
+        val transfer = "a".repeat(64)
+        try {
+            GalaxySSILinkOutboxDatabase(context, name).use { db ->
+                assertTrue(db.insert(JSONObject().put("message_id", "part-zero")
+                    .put("status", "queued").put("receipt_binding", "pair-a")
+                    .put("attachment_transfer_id", transfer).put("attachment_chunk_index", 0)
+                    .put("payload_type", "input_attachment_chunk").put("wire_payload", "unchanged")))
+                assertTrue(db.hasAttachmentChunk("pair-a", transfer, 0))
+                assertFalse(db.hasAttachmentChunk("pair-a", transfer, 1))
+                assertFalse(db.hasAttachmentChunk("pair-b", transfer, 0))
+                assertFalse(db.hasAttachmentChunk("pair-a", "b".repeat(64), 0))
+                repeat(20) { assertTrue(db.hasAttachmentChunk("pair-a", transfer, 0)) }
+                assertEquals(1, db.readAll().length())
+            }
+            GalaxySSILinkOutboxDatabase(context, name).use { db ->
+                assertTrue(db.hasAttachmentChunk("pair-a", transfer, 0))
+                assertEquals("unchanged", db.readAll().getJSONObject(0).getString("wire_payload"))
+                db.delete("part-zero")
+                assertFalse(db.hasAttachmentChunk("pair-a", transfer, 0))
+            }
+        } finally { context.deleteDatabase(name) }
+    }
+
     @Test fun reconnectDeclarationsRemainBoundedWithoutRemovingMessagesOrAttemptedRows() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val name = "manifest-queue-test-${UUID.randomUUID()}.db"

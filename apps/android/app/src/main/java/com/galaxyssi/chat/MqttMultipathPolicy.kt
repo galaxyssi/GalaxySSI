@@ -164,6 +164,7 @@ internal class MqttMultipathPolicy(
             (traffic == Traffic.CHUNK && !route.chunkAcks)) return emptyList()
         val common = (readyBrokers(receiveTopics) intersect route.receiveBrokers)
             .filter { wireBytes <= paths.getValue(it).packetBytes &&
+                (traffic != Traffic.CHUNK || chunks.canSend(peer, it, wireBytes)) &&
                 (authorizedPaths == null || authorizedPaths[it] == paths.getValue(it).generation) }
         val unused = common.filterNot(attempted::contains)
         val candidates = (unused.ifEmpty { common }).sortedWith(
@@ -199,6 +200,7 @@ internal class MqttMultipathPolicy(
             !attempt.contentHash.matches(Regex("[0-9a-f]{64}")) ||
             attempt.wireBytes !in 1..MqttBrokerCatalog.PACKET_BYTES) return false
         val path = paths[attempt.brokerId] ?: return false
+        if (attempt.traffic == Traffic.CHUNK && !chunks.canSend(attempt.peer, attempt.brokerId, attempt.wireBytes)) return false
         val priority = attempt.traffic in setOf(Traffic.CONTROL, Traffic.RECEIPT, Traffic.FINAL)
         val trackingLimit = MqttBrokerCatalog.MAX_ATTEMPTS - if (priority) 0 else MqttBrokerCatalog.CONTROL_RESERVE
         if (!path.connected || path.generation != attempt.generation || attempt.wireBytes > path.packetBytes ||

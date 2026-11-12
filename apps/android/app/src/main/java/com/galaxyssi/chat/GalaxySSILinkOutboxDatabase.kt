@@ -34,6 +34,7 @@ internal class GalaxySSILinkOutboxDatabase(
                 attachment_transfer_id TEXT NOT NULL,
                 route_scope TEXT NOT NULL DEFAULT '',
                 payload_type TEXT NOT NULL DEFAULT '',
+                attachment_chunk_index INTEGER NOT NULL DEFAULT -1,
                 encrypted_item TEXT NOT NULL
             )
             """.trimIndent()
@@ -52,6 +53,7 @@ internal class GalaxySSILinkOutboxDatabase(
         )
         createMigrationMetadata(db, complete = true)
         db.execSQL("CREATE INDEX outbox_route_capacity ON outbox_messages(route_scope,status)")
+        createChunkIndex(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -61,7 +63,22 @@ internal class GalaxySSILinkOutboxDatabase(
             db.execSQL("ALTER TABLE outbox_messages ADD COLUMN payload_type TEXT NOT NULL DEFAULT ''")
             db.execSQL("CREATE INDEX outbox_route_capacity ON outbox_messages(route_scope,status)")
         }
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE outbox_messages ADD COLUMN attachment_chunk_index INTEGER NOT NULL DEFAULT -1")
+            createChunkIndex(db)
+        }
     }
+
+    private fun createChunkIndex(db: SQLiteDatabase) = db.execSQL(
+        "CREATE INDEX outbox_attachment_part ON outbox_messages(route_scope,attachment_transfer_id,attachment_chunk_index)")
+
+    @Synchronized
+    fun hasAttachmentChunk(routeScope: String, transferId: String, index: Int): Boolean =
+        index >= 0 && transferId.isNotBlank() && readableDatabase.rawQuery(
+            "SELECT 1 FROM outbox_messages WHERE route_scope=? AND attachment_transfer_id=? " +
+                "AND attachment_chunk_index=? AND payload_type='input_attachment_chunk' " +
+                "AND status <> 'held_unclassified' LIMIT 1", arrayOf(routeScope, transferId, index.toString())
+        ).use(Cursor::moveToFirst)
 
     @Synchronized
     fun holdStaleUncorrelated(nowMillis: Long): Int = writableDatabase.update(
@@ -411,6 +428,7 @@ internal class GalaxySSILinkOutboxDatabase(
             put("attachment_transfer_id", item.optString(KEY_ATTACHMENT_TRANSFER_ID))
             put("route_scope", item.optString("receipt_binding"))
             put("payload_type", item.optString("payload_type"))
+            put("attachment_chunk_index", item.optInt("attachment_chunk_index", -1))
             put("encrypted_item", rowCipher.encrypt(item.toString(), associatedData(messageId)))
         }
     }
@@ -514,7 +532,7 @@ internal class GalaxySSILinkOutboxDatabase(
         const val UNSENT_CAPABILITY = "payload_type = 'artifact_blob_capability' AND client_source_message_id = 0 " +
             "AND attachment_transfer_id = '' AND blocked_dependency_count = 0 AND attempts = 0 AND status = 'queued'"
         const val DATABASE_NAME = "opaque_link_outbox_v3.db"
-        const val DATABASE_VERSION = 3
+        const val DATABASE_VERSION = 4
         const val SQL_BIND_BATCH_SIZE = 500
         const val BULK_DELETE_CHECKPOINT_THRESHOLD = 500
         const val TABLE_OUTBOX = "outbox_messages"

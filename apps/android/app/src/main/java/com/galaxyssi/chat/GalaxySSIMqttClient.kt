@@ -58,28 +58,6 @@ object GalaxySSIMqttClient {
     private const val MAX_OUTBOX_RETRY_DELAY_MILLIS = 30_000L
     private const val ATTACHMENT_REQUEST_RETRY_MILLIS = 15_000L
 
-    private data class PendingPairingClaim(
-        val desktopId: String,
-        val topic: String,
-        val wirePayload: String,
-        val queuedAtMillis: Long
-    )
-
-    private data class OutboundFragmentTransfer(
-        val key: String,
-        val durableMessageId: String?,
-        val topic: String,
-        val packets: List<String>,
-        val purpose: String,
-        val brokerAckTimeoutMillis: Long,
-        val timing: AgentTransportTiming.Attempt? = null,
-        val queuedAtElapsedMillis: Long = SystemClock.elapsedRealtime(),
-        var nextPacketIndex: Int = 0,
-        var outstanding: Int = 0,
-        var failed: Boolean = false,
-        val publications: List<MqttPoolTransport.Publication> = emptyList()
-    )
-
     private val phonePairingFlushRunning = AtomicBoolean(false)
     private val initialOutboxRecoveryPrepared = AtomicBoolean(false)
     private val inboundReplayScheduled = AtomicBoolean(false)
@@ -158,6 +136,9 @@ object GalaxySSIMqttClient {
     private val fragmentTransfers = LinkedHashMap<String, OutboundFragmentTransfer>()
     private val fragmentTransferKeysByMid = HashMap<Int, String>()
     private var fragmentInflight = 0
+    private val fragmentRetry = Runnable { outboxDispatchExecutor.execute {
+        synchronized(fragmentTransferLock) { client?.takeIf { it.isConnected }?.let(::pumpFragmentTransfersLocked) }
+    } }
     private val pairingClaimLock = Any()
     @Volatile private var client: MqttPoolTransport? = null
     @Volatile private var peerRoutes: MqttPeerRoutes? = null
@@ -889,7 +870,7 @@ object GalaxySSIMqttClient {
                     contactId,
                     "outbound",
                     0,
-                    PeerAttachmentTransferProgress.STATE_AVAILABLE
+                    PeerAttachmentTransferProgress.outboundState(transfer.mimeType)
                 )
             )
         }
@@ -1267,6 +1248,7 @@ object GalaxySSIMqttClient {
             GalaxySSILinkProtocol.allServerLinks(context).firstOrNull { topic in it.routes.sendWindow }?.routes
         } else AppStore.phoneRoutesForIdentity(context, contactId)?.takeIf { topic in it.sendWindow }
         if (receiptRoutes == null) return MqttPublishResult.FAILED
+        if (AndroidMqttChunks.pending(context, receiptRoutes, payload)) return MqttPublishResult.QUEUED
         if (!callerRetried && !GalaxySSILinkDeliveryStore.hasCapacity(context, receiptRoutes, MqttTrafficPolicy.classify(payload))) {
             Log.w(TAG, "Message deferred: durable outbox capacity reached")
             return MqttPublishResult.BACKPRESSURE
@@ -1401,6 +1383,7 @@ object GalaxySSIMqttClient {
             receiptRoutes = receiptRoutes,
             transportTraffic = MqttTrafficPolicy.classify(payload),
             payloadType = payload.optString("type"),
+            attachmentChunkIndex = AndroidMqttChunks.attachmentIndex(payload),
             deferredSignalEncryption = deferredSignalEncryption,
             recoverableEnvelope = if (deferredSignalEncryption) applicationEnvelope.toString() else GalaxySSILinkDeliveryStore.recoverablePeerEnvelope(
                 payload,
@@ -1647,7 +1630,9 @@ object GalaxySSIMqttClient {
             Log.w(TAG, "Opaque publish rejected: relationship key not found")
             return false
         }
-        val rawPackets = runCatching { GalaxySSIMqttWireChunking.encode(wirePayload) }
+        val rawPackets = runCatching {
+            AndroidMqttChunks.encode(context, topic, wirePayload, linkSecret, peerRoutes, !durableMessageId.isNullOrBlank())
+        }
             .onFailure { Log.e(TAG, "MQTT wire payload rejected purpose=$purpose", it) }.getOrNull() ?: return false
         var packets = runCatching {
             rawPackets.map { packet ->
@@ -1675,7 +1660,7 @@ object GalaxySSIMqttClient {
                 mqttMessage(packets.first()),
                 purpose,
                 timing,
-                delivery?.takeIf { it.sizeBound <= MqttBrokerCatalog.SMALL_PACKET_BYTES },
+                delivery,
                 publication = transientPublication,
                 raceTransientControl = transientControl,
                 onBackpressure = { durableMessageId?.let { GalaxySSILinkDeliveryStore.deferUnsubmittedAttempt(context, it) } }
@@ -1725,12 +1710,6 @@ object GalaxySSIMqttClient {
         return true
     }
 
-    private fun mqttMessage(payload: String): MqttMessage =
-        MqttMessage(payload.toByteArray(Charsets.UTF_8)).apply {
-            qos = MQTT_QOS
-            isRetained = false
-        }
-
     private fun pumpFragmentTransfersLocked(mqtt: MqttPoolTransport) {
         var madeProgress: Boolean
         do {
@@ -1745,14 +1724,21 @@ object GalaxySSIMqttClient {
                     continue
                 }
                 val packetIndex = transfer.nextPacketIndex
+                var backpressured = false
                 val token = publishSafely(
                     mqtt,
                     transfer.topic,
                     mqttMessage(transfer.packets[packetIndex]),
                     "${transfer.purpose}_fragment_${packetIndex + 1}_of_${transfer.packets.size}",
-                    publication = transfer.publications.getOrNull(packetIndex)
+                    publication = transfer.publications.getOrNull(packetIndex),
+                    onBackpressure = { backpressured = true }
                 )
                 if (token == null) {
+                    if (backpressured) {
+                        retryHandler.removeCallbacks(fragmentRetry)
+                        retryHandler.postDelayed(fragmentRetry, 250L)
+                        continue
+                    }
                     transfer.failed = true
                     AgentLatencyTelemetry.transport.broker(transfer.timing, "failed")
                     if (!transfer.durableMessageId.isNullOrBlank()) {
@@ -1762,6 +1748,8 @@ object GalaxySSIMqttClient {
                     continue
                 }
                 transfer.nextPacketIndex += 1
+                fragmentTransfers.remove(transfer.key)
+                fragmentTransfers[transfer.key] = transfer
                 transfer.outstanding += 1
                 fragmentInflight += 1
                 fragmentTransferKeysByMid[token.messageId] = transfer.key
@@ -2860,14 +2848,14 @@ object GalaxySSIMqttClient {
         val route = desktopLink?.routes ?: AppStore.phoneRoutesForIdentity(context, sourceDesktopId) ?: return
         if (desktopLink != null && !desktopLink.paired) return
         if (route.clientRouteId != transfer.scope.clientRouteId) return
-        requested.forEach { index ->
+        synchronized(outboxDispatchLock) { requested.forEach { index ->
             publishJsonResult(
                 transfer.chunkPayload(index),
                 route.up,
                 transfer.scope.contactId,
                 queueOnly = true
             ).requireAttachmentQueued()
-        }
+        } }
     }
 
     private fun dispatchIncomingAttachmentResult(
@@ -3021,14 +3009,14 @@ object GalaxySSIMqttClient {
         val mqttAttachments = prepared.filterNot { attachment ->
             AndroidBlobTransfers.register(context, attachment, immediate = true)
         }
-        AgentAttachmentPublishOrder.initialSteps(mqttAttachments).forEach { step ->
+        synchronized(outboxDispatchLock) { AgentAttachmentPublishOrder.initialSteps(mqttAttachments).forEach { step ->
             publishJsonResult(
                 step.payload(),
                 link.routes.up,
                 request.contactId,
                 queueOnly = true
             ).requireAttachmentQueued()
-        }
+        } }
     }
 
     private fun scheduleConnectorStatusRequest() {

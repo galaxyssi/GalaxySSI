@@ -3,6 +3,7 @@ import json
 import time
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 import link_delivery
 import mqtt_bridge as bridge
@@ -118,6 +119,24 @@ class ChunkExchangeTest(unittest.TestCase):
         self.base.desktop._packet(Ingress(packet[0], 99, time.monotonic()), "to-desktop",
             seal_wire_packet(json.dumps(state), self.base.desktop_binding.secret).encode())
         self.assertEqual(2, len(self.send_desktop()))
+
+    def test_backpressured_bitmap_retries_without_waiting_for_sender_replay(self):
+        packet = self.send_desktop()[0]
+        query = Query.from_chunk(self.decoded(packet))
+        routes = self.base.phone.peer_routes
+        state = query.response("a" * 32, 1, (0,))
+        with patch.object(routes, "_clock", return_value=0), patch.object(
+                self.base.phone, "publish", return_value=SimpleNamespace(rc=15)) as publish:
+            routes.publish_chunk_state("phone-pair", state,
+                authenticated_identity=self.base.phone_binding.identity, broker_id=packet[0], urgent=True)
+            self.assertEqual(1, publish.call_count)
+            publish.return_value = SimpleNamespace(rc=0)
+            for send in routes._chunk_feedback.drain(0.501):
+                send()
+            self.assertEqual(2, publish.call_count)
+            self.assertFalse(routes._chunk_feedback.drain(1))
+            recovered = json.loads(open_wire_packet(publish.call_args.args[1], self.base.phone_binding.secret))
+            self.assertEqual(state, recovered)
 
 
 if __name__ == "__main__":

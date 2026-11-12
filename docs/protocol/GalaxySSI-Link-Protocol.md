@@ -168,19 +168,48 @@ persists the application `message_id` before side effects and returns an encrypt
 acknowledgement with an explicit `transport_message_id`. v2 does not interpret
 `source_message_id`, `reply_to`, or other earlier fields as transport ACKs.
 
-An inner Signal wire payload of at most `512 KiB - 5 bytes` is sealed and published
+An inner Signal wire payload of at most `512 KiB - 5 bytes` can be sealed and published
 as one MQTT packet. The largest direct payload selects the 512 KiB padding bucket;
 after the nonce, authentication tag, and Base64URL encoding, the resulting MQTT
 packet is approximately 683 KiB and remains below the 1 MiB opaque-packet limit.
 
-Larger inner Signal wire payloads are split into 380 KiB net wire chunks before
-outer encryption. Every chunk includes a transfer UUID, index, count, exact byte
+Larger inner Signal wire payloads can be split into up to 380 KiB net wire chunks before
+outer encryption. Every chunk includes a transfer digest, index, count, exact byte
 length, chunk SHA-256, and whole-message SHA-256. The chunk data is Base64 encoded
 inside that metadata envelope, so each resulting chunk envelope MUST remain at or
 below `512 KiB - 5 bytes` before outer encryption. This reserves space for encoding
 and metadata while keeping every fragment inside the 512 KiB privacy bucket. A
 transfer MUST NOT exceed 2 MiB after reassembly or 96 chunks. Each chunk envelope
 is independently padded, encrypted, published, acknowledged, and retried.
+
+These are protocol ceilings, not a required publication size. Android's public-broker
+profile sends new durable wire payloads directly up to 60 KiB and otherwise uses
+44 KiB net wire fragments. Fragment metadata and authenticated missing-block queries
+fit the 64 KiB privacy bucket (about 87 KiB on the wire). File chunks and image bytes
+are unchanged. Persisted transfers retain their original fragmentation geometry
+across upgrades and process restarts; confirmed fragments are not resent, and
+missing fragments prefer a different authorized broker on the next attempt.
+Broker PUBACK alone never releases an attachment dependency or marks it complete.
+
+Android coalesces repeated requests for a pending attachment chunk by authenticated
+peer, attachment transfer ID, and chunk index before encrypting a new publication.
+Android also limits unconfirmed fragment bytes independently of MQTT PUBACKs.
+Each broker starts with a 64 KiB window (one larger fragment is allowed alone).
+Verified peer bitmap receipts release that window; measured throughput can grow
+it up to 512 KiB. Congestion pauses the existing fragment pump without failing
+the transfer or rebuilding its ciphertext. Active transfers rotate after each
+admitted fragment so older backlogs cannot monopolize the window. Small chat and control messages do
+not consume this fragment window. Disconnected routes still use durable retry.
+Both endpoints retain the latest chunk bitmap when publication is backpressured
+or temporarily unavailable. Feedback retries use the existing maintenance tick,
+with a 500 ms interval and a 30 second lifetime; newer revisions replace older
+pending state, and revoked relationships discard pending feedback. Sender replay
+remains responsible for recovery beyond that short feedback window.
+
+Both receivers allow up to 64 incomplete wire transfers per peer and 128 overall,
+while retaining the existing reserved-byte limits of 16 MiB per peer and 32 MiB
+overall. This accommodates the 16-file-chunk request window alongside earlier
+partial transfers without evicting their stored fragments.
 
 The receiver accepts identical duplicates, rejects conflicting duplicates,
 enforces count and byte budgets, and dispatches only after complete hash
