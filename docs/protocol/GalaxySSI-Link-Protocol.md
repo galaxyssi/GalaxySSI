@@ -205,6 +205,11 @@ or temporarily unavailable. Feedback retries use the existing maintenance tick,
 with a 500 ms interval and a 30 second lifetime; newer revisions replace older
 pending state, and revoked relationships discard pending feedback. Sender replay
 remains responsible for recovery beyond that short feedback window.
+The existing global physical-publication budget also leaves ordinary-message
+headroom for each other ready broker, in addition to reserved control capacity.
+Receipts prefer the ingress broker but fall back to another
+authenticated path on congestion; this is a single successful publication, not
+a receipt broadcast. A lone ready broker can still use the full existing budget.
 
 Both receivers allow up to 64 incomplete wire transfers per peer and 128 overall,
 while retaining the existing reserved-byte limits of 16 MiB per peer and 32 MiB

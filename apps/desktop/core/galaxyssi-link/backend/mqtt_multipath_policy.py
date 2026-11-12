@@ -231,6 +231,16 @@ class MultipathPolicy:
         tie = hashlib.sha256(self._tie_seed + f"{peer}\0{message_id}\0{broker}".encode()).digest()
         return score, tie
 
+    def _path_headroom(self, broker: str, traffic: Traffic) -> bool:
+        priority = traffic in {Traffic.CONTROL, Traffic.RECEIPT, Traffic.FINAL}
+        limit = self.limits.inflight_packets - (0 if priority else self.limits.control_reserve)
+        # Keep a physical slot for each other ready path, without increasing the global budget.
+        others = sum(key != broker and path.connected and bool(path.topics) for key, path in self.paths.items())
+        if others:
+            limit = self.limits.inflight_packets - self.limits.control_reserve
+        held = sum(item.slot_held and item.path == broker for item in self._attempts.values())
+        return held < max(1, limit - others)
+
     def plan(self, peer: str, message_id: str, traffic: Traffic, wire_bytes: int,
              receive_topics: set[str], *, now: float, ingress: str | None = None,
              attempted: frozenset[str] = frozenset(), authorized_paths=None) -> tuple[Dispatch, ...]:
@@ -245,6 +255,7 @@ class MultipathPolicy:
                 return ()
             common = self.ready_brokers(receive_topics) & route.receive_brokers
             candidates = [key for key in common if wire_bytes <= self.paths[key].packet_bytes
+                          and self._path_headroom(key, traffic)
                           and (authorized_paths is None or (key, self.paths[key].generation) in authorized_paths)]
             unused = [key for key in candidates if key not in attempted]
             if unused:
@@ -257,6 +268,9 @@ class MultipathPolicy:
                 candidates.insert(0, ingress)
             small = wire_bytes <= self.limits.small_packet_bytes
             if traffic == Traffic.CONTROL and small:
+                return tuple(Dispatch(key, self.paths[key].generation, 0.0) for key in candidates)
+            if traffic == Traffic.RECEIPT:
+                # Ordered fallbacks, not a race: the adapter stops at the first admitted publish.
                 return tuple(Dispatch(key, self.paths[key].generation, 0.0) for key in candidates)
             first = candidates[0]
             result = [Dispatch(first, self.paths[first].generation, 0.0)]
@@ -308,6 +322,8 @@ class MultipathPolicy:
             peer_byte_limit = self.limits.peer_inflight_bytes - (0 if priority else byte_reserve)
             if len(active) >= packet_limit:
                 return "inflight_packet_limit"
+            if not self._path_headroom(attempt.path, attempt.traffic):
+                return "path_inflight_packet_limit"
             if sum(value.wire_bytes for value in active) + attempt.wire_bytes > byte_limit:
                 return "inflight_byte_limit"
             if (sum(value.wire_bytes for value in active if value.peer == attempt.peer)

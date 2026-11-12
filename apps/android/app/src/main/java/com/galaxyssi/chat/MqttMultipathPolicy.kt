@@ -152,6 +152,14 @@ internal class MqttMultipathPolicy(
         }
     }
 
+    private fun pathHeadroom(broker: String, traffic: Traffic): Boolean {
+        val priority = traffic in setOf(Traffic.CONTROL, Traffic.RECEIPT, Traffic.FINAL)
+        // A slow path must leave a physical slot for every other ready path.
+        val others = paths.count { (id, path) -> id != broker && path.connected && path.topics.isNotEmpty() }
+        val limit = MqttBrokerCatalog.INFLIGHT_PACKETS - if (priority && others == 0) 0 else MqttBrokerCatalog.CONTROL_RESERVE
+        return attempts.values.count { it.slotHeld && it.brokerId == broker } < (limit - others).coerceAtLeast(1)
+    }
+
     @Synchronized fun plan(
         peer: String, messageId: String, traffic: Traffic, wireBytes: Int, receiveTopics: Set<String>,
         now: Long, ingress: String? = null, attempted: Set<String> = emptySet(),
@@ -164,6 +172,7 @@ internal class MqttMultipathPolicy(
             (traffic == Traffic.CHUNK && !route.chunkAcks)) return emptyList()
         val common = (readyBrokers(receiveTopics) intersect route.receiveBrokers)
             .filter { wireBytes <= paths.getValue(it).packetBytes &&
+                pathHeadroom(it, traffic) &&
                 (traffic != Traffic.CHUNK || chunks.canSend(peer, it, wireBytes)) &&
                 (authorizedPaths == null || authorizedPaths[it] == paths.getValue(it).generation) }
         val unused = common.filterNot(attempted::contains)
@@ -177,6 +186,10 @@ internal class MqttMultipathPolicy(
         }
         val small = wireBytes <= MqttBrokerCatalog.SMALL_PACKET_BYTES
         if (traffic == Traffic.CONTROL && small) {
+            return candidates.map { Dispatch(it, paths.getValue(it).generation, 0) }
+        }
+        if (traffic == Traffic.RECEIPT) {
+            // Ordered fallbacks; publish returns after the first admitted path.
             return candidates.map { Dispatch(it, paths.getValue(it).generation, 0) }
         }
         val first = candidates.first()
@@ -213,7 +226,8 @@ internal class MqttMultipathPolicy(
             MqttBrokerCatalog.CONTROL_RESERVE * MqttBrokerCatalog.SMALL_PACKET_BYTES
         val peerByteLimit = MqttBrokerCatalog.PEER_INFLIGHT_BYTES - if (priority) 0 else
             MqttBrokerCatalog.CONTROL_RESERVE * MqttBrokerCatalog.SMALL_PACKET_BYTES
-        if (active.size >= packetLimit || active.sumOf { it.wireBytes.toLong() } + attempt.wireBytes > byteLimit ||
+        if (active.size >= packetLimit || !pathHeadroom(attempt.brokerId, attempt.traffic) ||
+            active.sumOf { it.wireBytes.toLong() } + attempt.wireBytes > byteLimit ||
             active.filter { it.peer == attempt.peer }.sumOf { it.wireBytes.toLong() } + attempt.wireBytes >
             peerByteLimit) return false
         attempts[attemptId] = attempt.copy(brokerAcked = false, slotHeld = true, peerAccepted = false)
