@@ -215,18 +215,17 @@ class HealthCareInstructionsActivity : Activity() {
             .setView(ScrollView(this).apply { addView(content) }).setNegativeButton(R.string.common_cancel, null)
             .setPositiveButton(R.string.health_instruction_action_confirm, null).create().also { d ->
                 d.setOnDismissListener { content.removeAllViews() }
-                d.setOnShowListener {
-                    val button = d.getButton(AlertDialog.BUTTON_POSITIVE)
-                    button.isEnabled = false
-                    checked.setOnCheckedChangeListener { _, enabled -> button.isEnabled = enabled }
-                    button.setOnClickListener {
-                        if (!checked.isChecked || busy) return@setOnClickListener
-                        val cancellation = signal
-                        d.dismiss()
-                        work({ repository.confirmAction(value, cancellation) }) { load() }
-                    }
-                }
                 d.show()
+                // Initialize before yielding to the UI loop; onShow is delivered asynchronously.
+                val button = d.getButton(AlertDialog.BUTTON_POSITIVE)
+                button.isEnabled = false
+                checked.setOnCheckedChangeListener { _, enabled -> button.isEnabled = enabled }
+                button.setOnClickListener {
+                    if (!checked.isChecked || busy) return@setOnClickListener
+                    val cancellation = signal
+                    d.dismiss()
+                    work({ repository.confirmAction(value, cancellation) }) { load() }
+                }
             }
     }
     private fun details(content: LinearLayout, entry: HealthCareInstruction) {

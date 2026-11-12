@@ -193,7 +193,15 @@ class HealthCareInstructionUiDeviceTest {
         scenario.onActivity {
             find(it, "instruction-action-add")!!.performClick()
             val d = field(it, "dialog") as AlertDialog
-            assertFalse(d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
+            val button = d.getButton(AlertDialog.BUTTON_POSITIVE)
+            val checked = find(it, "instruction-action-checked") as CheckBox
+            assertFalse(checked.isChecked); assertFalse(button.isEnabled)
+            button.performClick()
+            assertTrue(d.isShowing)
+            checked.performClick(); assertTrue(button.isEnabled)
+            checked.performClick(); assertFalse(button.isEnabled)
+            button.performClick()
+            assertTrue(d.isShowing)
             d.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
         }
         await(scenario) { (field(it, "dialog") as? AlertDialog)?.isShowing != true }
