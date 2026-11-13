@@ -259,8 +259,9 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val settings = settings()
         if (!settings.enabled || settings.version != expectedSettings) throw HealthCareConflict()
         val prior = forMetric(metric)
-        if (prior?.revision != expectedRevision) throw HealthCareConflict()
+        // Another evaluator may have committed this input; replay never overwrites later user changes.
         if (evaluated(metric, evaluationVersion) == token) return@transaction prior
+        if (prior?.revision != expectedRevision) throw HealthCareConflict()
         val next = HealthCarePolicy.reconcile(prior, metric, assessment, token, now)
         if (next != null && next != prior) persist(next, "measurement_assessed")
         db.insertWithOnConflict("evaluations", null, ContentValues().apply {

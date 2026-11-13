@@ -164,6 +164,14 @@ clocks and settings versions make repeated evaluation idempotent. Deleting an
 issue retains its last evaluation marker so a page refresh does not recreate it.
 New measurements can produce a new issue.
 
+Evaluation commit checks current settings first, then its authenticated input and
+evaluator-version receipt before the optimistic concern revision. Two readers of
+the same source can therefore reuse the committed result instead of reporting a
+false conflict. Replay returns current state without another history revision;
+it does not undo a later pause or recreate a deleted issue. New inputs, changed
+evaluator versions, invalidated measurement context and changed settings still
+require current revisions. Source/privacy clock checks before commit are unchanged.
+
 Suggested actions do not become reminders merely by being proposed. Confirmation
 is explicit, and completion requires a recorded outcome. Maintenance requires
 an explicit review; the evaluator never enters it automatically after an in-range
