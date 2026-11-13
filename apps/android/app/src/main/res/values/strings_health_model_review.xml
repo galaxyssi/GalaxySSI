@@ -1,0 +1,13 @@
+<resources>
+    <string name="health_model_review_title">Model assessment</string>
+    <string name="health_model_review_reason">Reasoning and evidence</string>
+    <string name="health_model_review_uncertainty">Uncertainty</string>
+    <string name="health_model_review_next">Suggested next step</string>
+    <string name="health_model_review_events">Review when: %1$s</string>
+    <string name="health_model_review_source">Source data changes</string>
+    <string name="health_model_review_feedback">New feedback is recorded</string>
+    <string name="health_model_review_due">A confirmed follow-up becomes due</string>
+    <string name="health_model_review_notice">Model assessment, not a diagnosis. Suggestions do not confirm actions, schedule reminders or close this concern.</string>
+    <string name="health_model_review_historical">This assessment predates the current evidence.</string>
+    <string name="health_model_review_missing">The Agent replied but did not save a structured assessment. The reply is retained; this automatic review is incomplete.</string>
+</resources>

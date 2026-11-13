@@ -1,0 +1,13 @@
+<resources>
+    <string name="health_model_review_title">模型评估</string>
+    <string name="health_model_review_reason">判断依据</string>
+    <string name="health_model_review_uncertainty">尚不确定</string>
+    <string name="health_model_review_next">建议下一步</string>
+    <string name="health_model_review_events">复评条件：%1$s</string>
+    <string name="health_model_review_source">来源数据变化</string>
+    <string name="health_model_review_feedback">记录新的反馈</string>
+    <string name="health_model_review_due">已确认的随访到期</string>
+    <string name="health_model_review_notice">这是模型评估，不是诊断。建议不会自动确认行动、安排提醒或关闭关注事项。</string>
+    <string name="health_model_review_historical">这是基于此前资料的评估，当前资料已有变化。</string>
+    <string name="health_model_review_missing">Agent 已回复，但未保存结构化评估。回复已保留，本次自动评估尚未完整完成。</string>
+</resources>

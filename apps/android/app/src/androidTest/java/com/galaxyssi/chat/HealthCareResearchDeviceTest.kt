@@ -116,7 +116,7 @@ class HealthCareResearchDeviceTest {
         authorize(care, value)
         val first = queue(care, value)
         assertNull(care.previousCompletedResearch(first))
-        val completed = care.updateResearchJob(care.updateResearchJob(first, HealthCareResearchState.DISPATCHED), HealthCareResearchState.COMPLETED)
+        val completed = HealthCareModelReviewTestFixture.complete(care, first)
         care.update(value.scope.concernId, value.scope.revision, "fixture_context") {
             it.copy(context = HealthCareContext(it.assessment.record!!, confirmedAt = now))
         }
@@ -147,12 +147,12 @@ class HealthCareResearchDeviceTest {
             "Synthetic source", AgentWebIntelligenceText.citationId(url, hash), hash,
             "Synthetic source body, not medical guidance.", now, now) }
         care.recordEvidence(proofs)
-        care.updateResearchJob(care.updateResearchJob(first, HealthCareResearchState.DISPATCHED), HealthCareResearchState.COMPLETED)
+        HealthCareModelReviewTestFixture.complete(care, first)
         care.update(value.scope.concernId, first.revision, "fixture_context") {
             it.copy(context = HealthCareContext(it.assessment.record!!, confirmedAt = now))
         }
         val second = queue(care, value)
-        care.updateResearchJob(care.updateResearchJob(second, HealthCareResearchState.DISPATCHED), HealthCareResearchState.COMPLETED)
+        HealthCareModelReviewTestFixture.complete(care, second)
         care.update(value.scope.concernId, second.revision, "fixture_context_again") {
             it.copy(context = it.context!!.copy(adult = HealthCareTruth.YES))
         }

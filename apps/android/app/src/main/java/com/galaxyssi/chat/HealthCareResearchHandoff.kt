@@ -15,7 +15,7 @@ internal object HealthCareResearchHandoff {
 
     fun snapshot(issue: HealthCareConcern, job: HealthCareResearchJob,
         previous: HealthCareResearchJob?, before: HealthCareConcern?, sources: List<HealthCareEvidence> = emptyList(),
-        recordedPlanExists: Boolean = false): JSONObject {
+        recordedPlanExists: Boolean = false, modelReview: HealthCareModelReview? = null): JSONObject {
         require(job.concernId == issue.id && job.conversationId == issue.conversationId && job.revision == issue.revision)
         val prior = previous?.takeIf { it.state == HealthCareResearchState.COMPLETED && it.turnId != job.turnId &&
             it.concernId == issue.id && it.conversationId == job.conversationId && it.createdAt <= job.createdAt }
@@ -49,6 +49,13 @@ internal object HealthCareResearchHandoff {
             }
         }
         return JSONObject().put("observed_at", Instant.ofEpochMilli(job.createdAt).toString())
+            .put("structured_review_required", job.reviewRequired)
+            .put("prior_model_assessment", modelReview?.takeIf { it.grant.turnId == prior?.turnId &&
+                it.grant.concernId == issue.id && it.grant.conversationId == job.conversationId }?.let {
+                JSONObject().put("assessment", it.input.json()).put("input_version", it.inputVersion)
+                    .put("created_at", Instant.ofEpochMilli(it.createdAt).toString())
+                    .put("clinical_verification", false).put("actions_executed", false)
+            } ?: JSONObject.NULL)
             .put("reasons", JSONArray(reasons)).put("comparison_available", baseline != null)
             .put("elapsed_time_only", baseline != null && reasons == listOf("review_due"))
             .put("newly_due_action_ids", if (baseline == null) JSONObject.NULL else JSONArray(newlyDue))

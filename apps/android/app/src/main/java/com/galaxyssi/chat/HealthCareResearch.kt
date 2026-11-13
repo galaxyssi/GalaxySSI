@@ -28,7 +28,7 @@ internal enum class HealthCareResearchState { QUEUED, DISPATCHED, COMPLETED, FAI
 internal data class HealthCareResearchJob(val turnId: String, val authorizationId: String, val concernId: String,
     val conversationId: String, val trigger: String, val revision: Int, val createdAt: Long,
     val state: HealthCareResearchState = HealthCareResearchState.QUEUED, val detail: String = "",
-    val cancellationPending: Boolean = false) {
+    val cancellationPending: Boolean = false, val reviewRequired: Boolean = false) {
     init {
         require(listOf(turnId, authorizationId, concernId, conversationId).all(HealthProfilePolicy::uuid))
         require(trigger.matches(Regex("[0-9a-f]{64}")) && revision > 0 && createdAt > 0 && detail.length <= 2000)
@@ -36,10 +36,10 @@ internal data class HealthCareResearchJob(val turnId: String, val authorizationI
     val terminal get() = state !in setOf(HealthCareResearchState.QUEUED, HealthCareResearchState.DISPATCHED)
     fun json() = JSONObject().put("turn", turnId).put("authorization", authorizationId).put("concern", concernId)
         .put("conversation", conversationId).put("trigger", trigger).put("revision", revision).put("created_at", createdAt)
-        .put("state", state.name).put("detail", detail).put("cancel_pending", cancellationPending)
+        .put("state", state.name).put("detail", detail).put("cancel_pending", cancellationPending).put("review_required", reviewRequired)
     companion object { fun from(j: JSONObject) = HealthCareResearchJob(j.getString("turn"), j.getString("authorization"),
         j.getString("concern"), j.getString("conversation"), j.getString("trigger"), j.getInt("revision"), j.getLong("created_at"),
-        HealthCareResearchState.valueOf(j.getString("state")), j.getString("detail"), j.optBoolean("cancel_pending")) }
+        HealthCareResearchState.valueOf(j.getString("state")), j.getString("detail"), j.optBoolean("cancel_pending"), j.optBoolean("review_required")) }
 }
 
 internal object HealthCareResearchPolicy {

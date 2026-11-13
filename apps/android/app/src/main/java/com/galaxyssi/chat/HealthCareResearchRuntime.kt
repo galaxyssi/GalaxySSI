@@ -13,7 +13,7 @@ internal object HealthCareResearchRuntime {
     private fun context(app: Context): AgentRuntimeContext {
         val screen = ScreenContext(app.packageName, pageTitle = "Health research")
         val tools = AgentPhoneNativeToolCatalog.defaultRegistry(app, { screen }).descriptors()
-            .filter { it.id in HealthCareDiscussionPolicy.discussionTools }
+            .filter { it.id in HealthCareDiscussionPolicy.automaticTools }
         return AgentRuntimeContext(UUID.randomUUID().toString(), "", screen, PermissionMode.OBSERVE_ONLY, true, false,
             emptyList(), nativeTools = tools, callableTargets = emptyList(), memories = emptyList(), knowledgeItems = emptyList(),
             knowledgeStats = AgentKnowledgeStats())

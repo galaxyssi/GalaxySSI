@@ -91,7 +91,8 @@ internal object HealthCareDiscussion {
                 val previous = care.previousCompletedResearch(job)
                 HealthCareResearchHandoff.snapshot(concern, job, previous,
                     previous?.let { care.revision(concern.id, it.revision) }, care.priorResearchEvidence(job, grant),
-                    care.hasRecordedPlan(concern.id, job.createdAt))
+                    care.hasRecordedPlan(concern.id, job.createdAt),
+                    previous?.let { care.modelReview(it.turnId) }?.takeIf { it.reusable(grant) })
             }
             val profile = concern.profileLink?.takeIf { instruction == null && journal == null }?.let { link ->
                 try { HealthCareProfileAccess.capture(context, link) }
@@ -230,7 +231,7 @@ internal object HealthCareDiscussion {
                 it.discussionGrant(invocation.turnId)?.let { grant -> tool.id in HealthCareDiscussionPolicy.tools(grant) } == true
             }) context.getString(R.string.health_care_discussion_scope)
             else if (tool.id !in setOf(AgentToolDiscoveryTools.ID, AgentToolInspectionTools.DESCRIBE, AgentConversationRecallTool.ID,
-                    HealthCarePlanTool.ID, HealthCareHistoryTool.ID, HealthCareFeedbackTool.ID, HealthCareInstructionTool.ID,
+                    HealthCarePlanTool.ID, HealthCareModelReviewTool.ID, HealthCareHistoryTool.ID, HealthCareFeedbackTool.ID, HealthCareInstructionTool.ID,
                     HealthCareVisitFollowUpTool.ID) && tool.id !in HealthCareQuestionTools.ids &&
                 !HealthPrivacyStore(context).use { it.policy().online }) context.getString(R.string.health_care_discussion_online)
             else null
