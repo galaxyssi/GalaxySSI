@@ -191,6 +191,11 @@ internal object HealthCareDiscussionPolicy {
         old value from prior conversation. For older evidence call galaxyssi.health.history.read with
         that selected metric and its own input_version; omit metric only for the primary concern.
         Missing or unselected metrics are outside this consent, not proof the user never recorded them.
+        Account for each available selected measurement, including when it has limited relevance or
+        insufficient context for interpretation. In the structured assessment, records must include
+        the current sample record of each available selected metric. These are input provenance,
+        not a claim that every measurement supports the same medical conclusion. Do not invent
+        a reference for unavailable data or silently add unselected measurements.
         Discuss interactions and conflicting recommendations before proposing one coherent next step.
         Do not change another concern's target, plan or reminders through this conversation.
         question_ledger is durable across conversations and providers within this exact sharing scope.

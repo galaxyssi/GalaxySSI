@@ -54,6 +54,10 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             ?.let { it.assessment?.series?.samples.orEmpty().map { sample -> sample.record } + listOfNotNull(it.assessment?.record) }.orEmpty() }
         if (input.records.none { it in primary } || !records.containsAll(input.records) || input.evidenceIds.any { evidence(it)?.grant != grant } ||
             input.planId.isNotEmpty() && plan(input.planId)?.grant != grant) throw HealthCareConflict()
+        val selectedRecords = grant.related.keys.mapNotNull { metric ->
+            relatedMeasurement(metric)?.takeIf { it.available }?.assessment?.record
+        }
+        require(input.records.containsAll(selectedRecords)) { "Account for every available selected measurement" }
         modelReview(grant.turnId)?.let {
             if (it.grant != grant || it.input != input || it.inputVersion != issue.inputVersion || it.trigger != job.trigger) throw HealthCareConflict()
             return@transaction it
