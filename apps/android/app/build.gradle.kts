@@ -168,6 +168,7 @@ android {
         testInstrumentationRunner = when (providers.gradleProperty("healthResearchAcceptance").orNull) {
             "true" -> "com.galaxyssi.chat.HealthResearchAcceptanceRunner"
             "related" -> "com.galaxyssi.chat.HealthRelatedResearchAcceptanceRunner"
+            "revocation" -> "com.galaxyssi.chat.HealthRevocationAcceptanceRunner"
             else -> "androidx.test.runner.AndroidJUnitRunner"
         }
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
