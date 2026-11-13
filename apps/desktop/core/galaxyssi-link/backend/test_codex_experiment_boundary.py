@@ -298,13 +298,25 @@ class BoundaryTests(unittest.TestCase):
             close.assert_called_once()
         self.assertFalse(any(m == "turn/start" for m, _ in self.calls))
 
-    def test_experiment_copies_environment_and_ordinary_server_keeps_existing_behavior(self):
-        env = dict(os.environ)
+    def test_experiment_and_ordinary_server_keep_independent_environment_snapshots(self):
+        env = {"CODEX_HOME": str(self.root / "provider"), "HTTPS_PROXY": "http://127.0.0.1:9999"}
+        expected = dict(env)
         server = codex.CodexAppServer("codex", env, Mock(), experiment_boundary=self.boundary)
         ordinary = codex.CodexAppServer("codex", env, Mock())
+        self.assertIsNot(env, server.env)
+        self.assertIsNot(env, ordinary.env)
+        self.assertIsNot(server.env, ordinary.env)
+        self.assertEqual(expected, server.env)
+        self.assertEqual(expected, ordinary.env)
         env["CODEX_HOME"] = str(self.root / "changed")
-        self.assertNotEqual(env, server.env)
-        self.assertIs(env, ordinary.env)
+        self.assertEqual(expected, server.env)
+        self.assertEqual(expected, ordinary.env)
+        ordinary.env["HTTPS_PROXY"] = "http://127.0.0.1:9998"
+        self.assertEqual(expected["HTTPS_PROXY"], env["HTTPS_PROXY"])
+        self.assertEqual(expected, server.env)
+        server.env["CODEX_HOME"] = str(self.root / "experiment-changed")
+        self.assertEqual(expected["CODEX_HOME"], ordinary.env["CODEX_HOME"])
+        self.assertEqual(str(self.root / "changed"), env["CODEX_HOME"])
 
     def test_future_sensitive_directory_is_protected_before_creation(self):
         future = self.root / "future" / "provider"
