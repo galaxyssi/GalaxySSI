@@ -10,22 +10,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal data class HealthReportImportScreen(val id: String, val name: String, val stage: HealthReportImportStage,
+    val bytes: Int = 0, val failure: Int? = null, val legacy: Boolean = false)
+
 internal class HealthReportVisionUi(private val activity: Activity, private val names: HealthOverviewDatabases,
-    private val completed: (String) -> Unit) {
+    private val progress: (HealthReportImportScreen) -> Unit, private val completed: (String) -> Unit) {
     private val tasks = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var reader = HealthReportVisionReader(activity.applicationContext, names)
-    private val importer = HealthReportQuickImport(activity.applicationContext, names)
-    private val supplementUi = HealthReportSupplementUi(activity)
     private var dialog: AlertDialog? = null
     private var task: Job? = null
     private var generation = 0
 
-    fun clear() { generation++; task?.cancel(); task = null; supplementUi.clear(); dialog?.dismiss(); dialog = null }
+    fun clear() { generation++; task?.cancel(); task = null; dialog?.dismiss(); dialog = null }
     fun destroy() { clear(); tasks.cancel() }
     internal fun useFixtureGateway(value: HealthReportVisionGateway) {
         check(BuildConfig.DEBUG && names.fixture != null)
@@ -38,35 +37,28 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
             confirm(input, target)
         }
     }
-    fun finishImport(id: String) {
+    fun finishImport(id: String, name: String) {
         clear()
-        run({ importer.prepare(id) }) { plan ->
-            if (plan.needsSupplement) supplementUi.show(plan) { save(id, plan, it) } else save(id, plan)
-        }
+        val screen = HealthReportImportScreen(id, name, HealthReportImportStage.SAVING, legacy = true)
+        progress(screen)
+        run({ reader.finishLegacy(id) }, { progress(screen.copy(failure = it)) }) { completed(id) }
     }
     private fun confirm(input: HealthReportVisionInput, target: HealthReportVisionTarget) {
         dialog = AlertDialog.Builder(activity).setTitle(R.string.health_vision_consent)
             .setMessage(activity.getString(R.string.health_vision_disclosure, target.destination))
             .setNegativeButton(android.R.string.cancel, null).setPositiveButton(R.string.health_vision_action) { _, _ ->
-                dialog = AlertDialog.Builder(activity).setTitle(R.string.health_vision_action).setMessage(R.string.health_vision_reading)
-                    .setNegativeButton(android.R.string.cancel) { _, _ -> clear() }.setOnCancelListener { clear() }.show()
-                run({ reader.read(input, target) }) {
-                    dialog?.dismiss(); dialog = null; completed(input.job.id); finishImport(input.job.id)
-                }
+                dialog = null
+                val screen = HealthReportImportScreen(input.job.id, input.source.name, HealthReportImportStage.COMPRESSING)
+                val token = generation
+                var last = screen
+                progress(screen)
+                run({ reader.read(input, target) { stage, bytes ->
+                    val update = screen.copy(stage = stage, bytes = bytes)
+                    activity.runOnUiThread { if (token == generation) { last = update; progress(update) } }
+                } }, { progress(last.copy(failure = it)) }) { completed(input.job.id) }
             }.show()
     }
-    private fun save(id: String, plan: HealthReportImportPlan, supplement: HealthReportSupplement = HealthReportSupplement()) {
-        run({
-            val task = currentCoroutineContext()
-            importer.save(id, plan, supplement, task::ensureActive)
-        }) { outcome ->
-            val text = activity.getString(R.string.health_report_imported, outcome.saved, outcome.duplicates, outcome.pending) +
-                if (outcome.partial) "\n" + activity.getString(R.string.health_report_partial_note) else ""
-            Toast.makeText(activity, text, Toast.LENGTH_LONG).show()
-            completed(id)
-        }
-    }
-    private fun <T> run(work: suspend () -> T, success: (T) -> Unit) {
+    private fun <T> run(work: suspend () -> T, failed: ((Int) -> Unit)? = null, success: (T) -> Unit) {
         val token = generation
         task = tasks.launch {
             try {
@@ -76,16 +68,21 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
                 if (failure is CancellationException) throw failure
                 if (token != generation || activity.isFinishing || activity.isDestroyed) return@launch
                 dialog?.dismiss(); dialog = null
-                when (failure) {
-                    is HealthAccessBlocked, is HealthPrivacyConflict -> privacy()
-                    is HealthReportVisionChanged -> message(R.string.health_vision_changed)
-                    is HealthAnalysisInvalidReply -> message(R.string.health_vision_unreadable)
-                    is HealthReportCodexUnavailable -> message(R.string.health_vision_request_failed)
-                    is HealthImportFailure -> message(R.string.health_vision_image_failed)
-                    else -> message(R.string.health_vision_request_failed)
+                if (failed == null && (failure is HealthAccessBlocked || failure is HealthPrivacyConflict)) {
+                    privacy()
+                } else {
+                    val text = when (failure) {
+                        is HealthAccessBlocked, is HealthPrivacyConflict -> R.string.health_vision_blocked
+                        is HealthReportVisionChanged -> R.string.health_vision_changed
+                        is HealthAnalysisInvalidReply -> R.string.health_vision_unreadable
+                        is HealthReportCodexUnavailable -> R.string.health_vision_request_failed
+                        is HealthImportFailure -> R.string.health_vision_image_failed
+                        else -> R.string.health_report_storage_failed
+                    }
+                    (failed ?: ::message)(text)
                 }
             } catch (_: OutOfMemoryError) {
-                if (token == generation) { dialog?.dismiss(); dialog = null; message(R.string.health_vision_image_failed) }
+                if (token == generation) { dialog?.dismiss(); dialog = null; (failed ?: ::message)(R.string.health_vision_image_failed) }
             }
         }
     }

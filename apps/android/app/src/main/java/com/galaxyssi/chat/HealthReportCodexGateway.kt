@@ -52,7 +52,7 @@ internal data class HealthReportCodexRequest(val target: HealthReportVisionTarge
 
 /** Private foreground transcription: no chat, recovery queue, tool handoff or cross-provider fallback. */
 internal object HealthReportCodexGateway : HealthReportVisionGateway {
-    const val MAX_IMAGE_BYTES = 224 * 1024
+    const val MAX_IMAGE_BYTES = 100_000
     private data class Pending(val request: HealthReportCodexRequest, val reply: CompletableDeferred<AgentConnectorResponse>)
     private val active = ConcurrentHashMap<String, Pending>()
 

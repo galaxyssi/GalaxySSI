@@ -285,35 +285,48 @@ internal class HealthOriginalStore(
     fun page(job: String, page: Int): HealthOcrPage? = helper.readableDatabase.rawQuery(
         "SELECT payload FROM pages WHERE job_id=? AND page_number=?", arrayOf(job, page.toString())
     ).use { if (it.moveToFirst()) HealthOcrPage.from(unpack("page", "$job:$page", it.getBlob(0))) else null }
-    fun <T> withReportVision(id: String, operation: (HealthImportJob, HealthOriginal, HealthReportVisionResult) -> T): T {
+    fun finishLegacyReportVision(id: String,
+        operation: (HealthImportJob, HealthOriginal, HealthReportVisionResult) -> HealthReportImportOutcome
+    ): HealthReportImportOutcome {
         val db = helper.writableDatabase
         db.beginTransactionNonExclusive()
-        return try {
+        val outcome = try {
             val job = job(id)?.takeIf { it.modelRecognized && it.state == HealthImportState.REVIEW }
                 ?: throw HealthReportVisionChanged()
-            val source = original(job.originalId)?.takeIf { present(it) } ?: throw HealthReportVisionChanged()
-            val result = page(id, 1)?.vision ?: throw HealthReportVisionChanged()
-            operation(job, source, result).also { db.setTransactionSuccessful() }
+            val page = page(id, 1) ?: throw HealthReportVisionChanged()
+            val result = page.vision ?: throw HealthReportVisionChanged()
+            (page.visionImport ?: operation(job, original(job.originalId) ?: throw HealthReportVisionChanged(), result).also {
+                writeReportPage(db, id, page.copy(visionImport = it))
+            }).also { db.setTransactionSuccessful() }
         } finally { db.endTransaction() }
+        notifyChanged()
+        return outcome
     }
-    @Synchronized fun saveReportVision(expected: HealthImportJob, source: HealthOriginal, result: HealthReportVisionResult) {
+    @Synchronized fun saveReportVision(expected: HealthImportJob, source: HealthOriginal, result: HealthReportVisionResult,
+        import: (() -> HealthReportImportOutcome)? = null): HealthReportImportOutcome? {
         val db = helper.writableDatabase
         db.beginTransaction()
-        try {
+        val committed = try {
             if (job(expected.id) != expected || original(source.id) != source || !present(source) ||
                 !HealthReportVisionReader.eligible(expected) || expected.originalId != source.id) throw HealthReportVisionChanged()
             val existing = page(expected.id, 1)
             if (existing?.vision != null) throw HealthReportVisionChanged()
-            val value = (existing ?: HealthOcrPage(1, 0, 0, emptyList())).copy(vision = result)
-            db.insertWithOnConflict("pages", null, ContentValues().apply {
-                put("job_id", expected.id); put("page_number", 1); put("payload", pack("page", "${expected.id}:1", value.json()))
-            }, SQLiteDatabase.CONFLICT_REPLACE).also { check(it != -1L) }
+            val outcome = import?.invoke()
+            val value = (existing ?: HealthOcrPage(1, 0, 0, emptyList())).copy(vision = result, visionImport = outcome)
+            writeReportPage(db, expected.id, value)
             check(db.update("jobs", jobValues(expected.copy(state = HealthImportState.REVIEW, nextPage = 1, pageCount = 1,
                 error = "", modelRecognized = true)), "id=?", arrayOf(expected.id)) == 1)
             db.setTransactionSuccessful()
+            outcome
         } finally { db.endTransaction() }
         notifyChanged()
         if (expected.state != HealthImportState.REVIEW) notifyReportReviews(context)
+        return committed
+    }
+    private fun writeReportPage(db: SQLiteDatabase, id: String, page: HealthOcrPage) {
+        check(db.insertWithOnConflict("pages", null, ContentValues().apply {
+            put("job_id", id); put("page_number", 1); put("payload", pack("page", "$id:1", page.json()))
+        }, SQLiteDatabase.CONFLICT_REPLACE) != -1L)
     }
     @Synchronized fun savePage(id: String, page: HealthOcrPage) {
         val db = helper.writableDatabase

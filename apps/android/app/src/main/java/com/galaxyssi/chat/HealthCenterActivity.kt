@@ -102,6 +102,8 @@ class HealthCenterActivity : Activity() {
             route = "manual"
         } else if (savedInstanceState == null && intent.getBooleanExtra("health_metric_records", false)) {
             route = "metric_records"
+        } else if (savedInstanceState == null && intent.getBooleanExtra("health_records", false)) {
+            route = "records"
         } else if (savedInstanceState == null && !intent.getStringExtra("health_record").isNullOrBlank()) {
             recordId = intent.getStringExtra("health_record").orEmpty()
             require(runCatching { java.util.UUID.fromString(recordId).toString() == recordId }.getOrDefault(false))
