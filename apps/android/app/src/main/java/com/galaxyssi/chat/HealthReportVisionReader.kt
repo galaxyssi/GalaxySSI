@@ -23,9 +23,9 @@ internal class HealthReportVisionReader(private val context: Context, private va
             HealthReportVisionInput(job, source, privacy)
         }
     }
-    fun targets() = gateway.targets(context)
+    fun target() = gateway.target(context)
 
-    suspend fun read(input: HealthReportVisionInput, target: HealthAnalysisTarget) {
+    suspend fun read(input: HealthReportVisionInput, target: HealthReportVisionTarget) {
         val task = currentCoroutineContext()
         HealthPrivacyStore(context, names.privacy).use { privacy ->
             val scope = HealthAccessScope(HealthAccessPurpose.HEALTH_REPORT_VISION, count = 1, source = HealthAccessSource.ORIGINAL,

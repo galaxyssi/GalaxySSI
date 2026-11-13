@@ -31,8 +31,8 @@ import org.junit.Test
 class HealthReportVisionDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
-    private val model = HealthAnalysisTarget("fixture", "Synthetic model", "fixture-vision", "https://example.invalid/read",
-        "openai", "example.invalid", "example.invalid")
+    private val model = HealthReportVisionTarget("fixture", "Synthetic Desktop", AgentTargetConfiguration("fixture-vision"),
+        "fixture-desktop", "fixture-route", "fixture-binding")
     private val parsed = HealthReportVisionResult(listOf(
         HealthVisionRow(HealthMetric.CRP, mapOf("crp" to "<0.50"), "mg/L", "0-5", "CRP <0.50 mg/L 0-5"),
         HealthVisionRow(HealthMetric.HBA1C, mapOf("hba1c" to "5.40"), "%", "", "HbA1c 5.40 %")),
@@ -70,8 +70,8 @@ class HealthReportVisionDeviceTest {
     }
 
     private fun gateway(respond: suspend (ByteArray, () -> Unit) -> String) = object : HealthReportVisionGateway {
-        override fun targets(context: Context) = listOf(model)
-        override suspend fun read(context: Context, target: HealthAnalysisTarget, jpeg: ByteArray, validate: () -> Unit): String {
+        override fun target(context: Context) = model
+        override suspend fun read(context: Context, target: HealthReportVisionTarget, jpeg: ByteArray, validate: () -> Unit): String {
             assertEquals(model, target)
             validate()
             return respond(jpeg, validate)
@@ -141,17 +141,10 @@ class HealthReportVisionDeviceTest {
         HealthRecordStore(context, names.records).use { assertEquals(0L, it.count()) }
     }
 
-    @Test fun configuredCloudModelReadsOnlySyntheticReport() {
+    @Test fun pairedCodexReadsOnlySyntheticReport() {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue(args.getString("health_vision_live") == "true")
-        val configured = HealthReportVisionProvider.targets(context)
-        val chosen = args.getString("health_vision_target")
-        if (chosen.isNullOrBlank()) {
-            configured.forEachIndexed { index, target -> println("HEALTH_VISION_TARGET index=$index destination=${target.destination}") }
-            println("HEALTH_VISION_TARGET count=${configured.size} probe_only=true")
-            return
-        }
-        val target = configured.getOrNull(chosen.toInt()) ?: error("Requested synthetic test model is not configured")
+        val target = HealthReportVisionProvider.target(context) ?: error("Paired Codex is unavailable")
         isolated(failed = true) { names, store, job ->
             allow(names)
             val reader = HealthReportVisionReader(context, names)
@@ -197,11 +190,6 @@ class HealthReportVisionDeviceTest {
                 fun selectModel() {
                     await(scenario) { it.window.decorView.findViewWithTag<View>("health-vision-recognize") != null }
                     scenario.onActivity { it.window.decorView.findViewWithTag<View>("health-vision-recognize")!!.performClick() }
-                    await(scenario) { dialog(it)?.listView != null }
-                    scenario.onActivity {
-                        val list = dialog(it)!!.listView
-                        list.performItemClick(list.getChildAt(0), 0, list.adapter.getItemId(0))
-                    }
                     await(scenario) { dialog(it)?.getButton(AlertDialog.BUTTON_POSITIVE) != null }
                 }
                 selectModel()

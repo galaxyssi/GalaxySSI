@@ -28,7 +28,7 @@ from agent_execution_harness import (
 from latency_feature_flags import agent_output_delta_enabled
 from codex_generated_images import capture_run_image, finalize_run_images, is_generated_image
 from codex_notification_batch import CodexNotificationBatcher, QueuedNotification
-from codex_phone_policy import is_phone_planner, permits_host_tool, thread_config, thread_policy, thread_sandbox, thread_tools
+from codex_phone_policy import is_phone_planner, is_private_report, permits_host_tool, thread_config, thread_policy, thread_sandbox, thread_tools
 from model_directed_search import (
     CODEX_DYNAMIC_FETCH_TOOL,
     CODEX_DYNAMIC_SEARCH_TOOL,
@@ -367,6 +367,9 @@ class CodexAppServer:
             [*local_images, *(fresh_thread_image_paths or [])]
         )
         clean_conversation_id = str(conversation_id or "").strip()
+        private_report = is_private_report(clean_conversation_id)
+        if private_report and (len(local_images) != 1 or local_images != restored_images):
+            raise ValueError("Private report recognition requires exactly one current image")
         resolved_policy = execution_policy or execution_policy_for(
             prompt,
             attachments=[*(image_paths or []), *(fresh_thread_image_paths or [])],
@@ -400,7 +403,7 @@ class CodexAppServer:
         phone_planner = clean_conversation_id.startswith("phone-planner-v1:") and (
             run.execution_policy.execution_mode.value == "plan_only"
         )
-        run.host_config_guard = None if fast_chat or phone_planner else self._begin_host_config_guard(run)
+        run.host_config_guard = None if fast_chat or phone_planner or private_report else self._begin_host_config_guard(run)
         reused_thread = False
         try:
             with self._process_start_lock:
@@ -453,13 +456,13 @@ class CodexAppServer:
             raise RuntimeError("Codex App Server did not return a thread id")
         self.on_event(task_id, {"status": "starting", "thread_id": run.thread_id, "current_step": "Starting Codex turn"})
         base_turn_prompt = prompt if reused_thread else (fresh_thread_prompt or prompt)
-        if not reused_thread and self._experiment_boundary is None:
+        if not reused_thread and self._experiment_boundary is None and not private_report:
             store = self._research_store()
             store.bind_task(run.task_id, self._research_scope(run))
             base_turn_prompt = with_handoff(base_turn_prompt, store.handoff(self._research_scope(run)))
         turn_prompt = (
             base_turn_prompt
-            if fast_chat or phone_planner
+            if fast_chat or phone_planner or private_report
             else self._with_execution_contract(base_turn_prompt, run.execution_policy)
         )
         turn_images = local_images if reused_thread else restored_images
@@ -492,7 +495,7 @@ class CodexAppServer:
                     include_task_policy=False,
                 )
             except RuntimeError as exc:
-                if self._experiment_boundary is not None or not run.thread_id or not self._is_thread_not_found_error(exc):
+                if private_report or self._experiment_boundary is not None or not run.thread_id or not self._is_thread_not_found_error(exc):
                     raise
                 if clean_conversation_id:
                     self._conversation_threads.pop(conversation_key, None)
@@ -992,10 +995,11 @@ class CodexAppServer:
                 continue
             # The caller owns bounded retries and provider failover. Steering this
             # silent turn renews its deadline without evidence and hides failure.
-            try:
-                self._emit_research_packet(run, self._research_store().handoff(self._research_scope(run)))
-            except Exception:
-                log.warning("Research handoff replay failed; saved evidence remains available on retry")
+            if not is_private_report(run.conversation_id):
+                try:
+                    self._emit_research_packet(run, self._research_store().handoff(self._research_scope(run)))
+                except Exception:
+                    log.warning("Research handoff replay failed; saved evidence remains available on retry")
             run.finished = True
             self._retire_stalled_thread(run)
             self._finish_host_config_guard(run)
@@ -1330,19 +1334,37 @@ class CodexAppServer:
     ) -> str:
         with self._thread_lifecycle_lock:
             self._make_loaded_thread_room()
+            private_report = is_private_report(conversation_id)
+            config = thread_config(conversation_id, CODEX_THREAD_CONFIG)
+            if private_report:
+                current = self._request("config/read", {"cwd": self._resolved_path(cwd), "includeLayers": False}, timeout=30)
+                servers = (current.get("config") or {}).get("mcp_servers") or {}
+                if not isinstance(servers, dict):
+                    raise RuntimeError("Cannot isolate private report MCP configuration")
+                config = {**config, "mcp_servers": {name: {"enabled": False} for name in servers}}
             response = self._request("thread/start", {
-                "cwd": self._resolved_path(cwd), "model": model, "ephemeral": False,
+                "cwd": self._resolved_path(cwd), "model": model, "ephemeral": private_report,
                 "approvalPolicy": approval_policy, "sandbox": thread_sandbox(conversation_id, sandbox),
-                "config": thread_config(conversation_id, CODEX_THREAD_CONFIG),
+                "config": config,
                 "developerInstructions": thread_policy(conversation_id, CODEX_TASK_POLICY),
                 "dynamicTools": thread_tools(conversation_id, self._dynamic_tools),
+                **({"environments": [], "runtimeWorkspaceRoots": []} if private_report else {}),
             }, timeout=30)
             thread_id = str((response.get("thread") or {}).get("id") or "")
+            if thread_id and private_report:
+                inventory = self._request("mcpServerStatus/list", {"threadId": thread_id}, timeout=30)
+                rows = inventory.get("data")
+                if not isinstance(rows, list) or inventory.get("nextCursor") or any(
+                    not isinstance(row, dict) or row.get("runtimeStatus") != "disabled"
+                    or row.get("tools") or row.get("resources") or row.get("resourceTemplates")
+                    for row in rows
+                ):
+                    raise RuntimeError("Private report thread has external MCP capabilities")
             if thread_id:
                 with self._lock:
                     self._mark_thread_loaded_locked(thread_id)
-                    if conversation_id:
-                        conversation_key = self._conversation_key(conversation_id)
+                    conversation_key = self._conversation_key(conversation_id)
+                    if conversation_key:
                         self._conversation_threads.pop(conversation_key, None)
                         self._conversation_threads[conversation_key] = thread_id
                         self._save_conversation_threads()
@@ -1480,7 +1502,7 @@ class CodexAppServer:
     @staticmethod
     def _conversation_key(conversation_id: str) -> str:
         value = str(conversation_id or "").strip()
-        return f"{CONVERSATION_THREAD_VERSION}:{value}" if value else ""
+        return f"{CONVERSATION_THREAD_VERSION}:{value}" if value and not is_private_report(value) else ""
 
     def _active_run_locked(
         self,
@@ -1585,6 +1607,7 @@ class CodexAppServer:
         reasoning_effort: str,
         include_task_policy: bool = True,
         include_response_policy: bool = True,
+        include_orientation: bool = True,
     ) -> dict:
         return self._request("turn/start", {
             "threadId": thread_id,
@@ -1593,6 +1616,7 @@ class CodexAppServer:
                 image_paths,
                 include_task_policy=include_task_policy and self._experiment_boundary is None,
                 include_response_policy=include_response_policy,
+                include_orientation=include_orientation,
             ),
             "model": model,
             "effort": reasoning_effort,
@@ -1622,9 +1646,10 @@ class CodexAppServer:
                 reasoning_effort=reasoning_effort,
                 include_task_policy=include_task_policy,
                 include_response_policy=not (
-                    run.conversation_id.startswith("phone-planner-v1:")
+                    is_private_report(run.conversation_id) or run.conversation_id.startswith("phone-planner-v1:")
                     and run.execution_policy.execution_mode.value == "plan_only"
                 ),
+                include_orientation=not is_private_report(run.conversation_id),
             )
         except CodexAppServerRequestTimeout as exc:
             if exc.method != "turn/start":
@@ -1647,6 +1672,7 @@ class CodexAppServer:
         *,
         include_task_policy: bool,
         include_response_policy: bool = True,
+        include_orientation: bool = True,
     ) -> list[dict]:
         from response_policy import apply_response_policy
         # The phone supplies the planner contract. Repeating the full answer/research
@@ -1662,7 +1688,7 @@ class CodexAppServer:
             {"type": "localImage", "path": path, "detail": "original"}
             for path in (image_paths or [])
         )
-        if len(image_paths or []) == 1:
+        if include_orientation and len(image_paths or []) == 1:
             try:
                 from vision_orientation import supplementary_input
                 user_input.extend(supplementary_input(image_paths))

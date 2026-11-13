@@ -288,60 +288,15 @@ object GalaxySSIMqttClient {
     fun requestDesktopArtifactDownload(block: AgentRichBlock): Boolean =
         GalaxySSIMqttDesktopControl.requestArtifactDownload(block)
 
-    internal fun publishDesktopControlPayload(
-        desktopId: String,
-        payload: JSONObject,
-        durable: Boolean = true,
-        clientRouteId: String = ""
-    ): Boolean {
-        val context = appContext ?: return false
-        val link = if (clientRouteId.isBlank()) {
-            GalaxySSILinkProtocol.serverLink(context, desktopId)
-        } else {
-            GalaxySSILinkProtocol.serverLink(context, desktopId, clientRouteId)
-        } ?: return false
-        val mqtt = client ?: return false
-        if (!mqtt.isConnected || !link.paired || !GalaxySSICrypto.hasDesktopSession(context, desktopId)) return false
-        val transientQuery = MqttQueryDeliveryPolicy.isTransient(payload.optString("type"))
-        if (transientQuery && peerRoutes?.readyForTopic(link.routes.control) != true) return false
-        val durableDelivery = durable && !transientQuery
-        if (durableDelivery && !GalaxySSILinkDeliveryStore.hasCapacity(context, link.routes,
-                MqttTrafficPolicy.classify(payload), payload.optString("type"))) {
-            Log.w(TAG, "Desktop control deferred: durable outbox capacity reached")
-            return false
+    internal fun publishDesktopControlPayload(desktopId: String, payload: JSONObject, durable: Boolean = true,
+        clientRouteId: String = "", transient: Boolean = false): Boolean {
+        return DesktopControlPacketPublisher.publish(appContext ?: return false, client?.isConnected == true, desktopId,
+            payload, durable, clientRouteId, transient, { peerRoutes?.readyForTopic(it) == true }, ::scheduleOutboxRetries) {
+                topic, wire, messageId, traffic, transientControl ->
+            val mqtt = client?.takeIf { it.isConnected } ?: return@publish false
+            publishWirePayload(mqtt, topic, wire, "desktop_control", messageId,
+                transportTraffic = traffic, transientControl = transientControl)
         }
-        payload.put("desktop_id", desktopId)
-        val envelope = runCatching {
-            GalaxySSILinkProtocol.makeEnvelope(payload, GalaxySSICrypto.localGalaxySSIId(), desktopId)
-        }.getOrNull() ?: return false
-        val encrypted = GalaxySSICrypto.encryptPayloadForDesktop(desktopId, envelope) ?: return false
-        val messageId = envelope.getString("message_id")
-        val wirePayload = encrypted.toString()
-        if (durableDelivery) {
-            if (!GalaxySSILinkDeliveryStore.enqueue(context, messageId, link.routes.control, wirePayload,
-                receiptRoutes = link.routes, transportTraffic = MqttTrafficPolicy.classify(payload),
-                payloadType = payload.optString("type"))) return false
-            if (peerRoutes?.readyForTopic(link.routes.control) != true) {
-                scheduleOutboxRetries()
-                return true
-            }
-            GalaxySSILinkDeliveryStore.markAttempt(context, messageId)
-        }
-        if (!publishWirePayload(
-            mqtt,
-            link.routes.control,
-            wirePayload,
-            "desktop_control",
-            messageId.takeIf { durableDelivery }, transportTraffic = MqttTrafficPolicy.classify(payload),
-            transientControl = transientQuery
-        )) {
-            if (durableDelivery) {
-                scheduleOutboxRetries()
-                return true
-            }
-            return false
-        }
-        return true
     }
 
     fun verifyPcIdentityFromQr(contents: String): Boolean =
@@ -2350,6 +2305,10 @@ object GalaxySSIMqttClient {
         }
         val link = GalaxySSILinkProtocol.serverLink(context, sourceDesktopId)
             ?.takeIf { it.paired } ?: run { retryStoredIncoming(payload); return }
+        if (HealthReportCodexGateway.receive(context, payload, sourceDesktopId)) {
+            GalaxySSILinkDeliveryStore.completeIncoming(context, payload)
+            return
+        }
         if (ContactReminders.receive(context, sourceDesktopId, payload)) return
         if (payload.optString("type") == "artifact_blob_offer") {
             AndroidBlobArtifactReceives.receive(context, sourceDesktopId, payload.optString("conversation_id"), payload) { result ->

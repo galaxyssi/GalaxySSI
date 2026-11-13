@@ -28,6 +28,10 @@ class PhonePlannerThreadTests(unittest.TestCase):
 
     def request(self, method, params, timeout):
         self.calls.append((method, params))
+        if method == "config/read":
+            return {"config": {"mcp_servers": {"fixture": {"enabled": True}}}}
+        if method == "mcpServerStatus/list":
+            return {"data": [{"runtimeStatus": "disabled", "tools": {}, "resources": [], "resourceTemplates": []}]}
         if method == "thread/start":
             return {"thread": {"id": f"thread-{len(self.calls)}"}}
         if method == "turn/start" and self.fail_turn:
@@ -141,6 +145,41 @@ class PhonePlannerThreadTests(unittest.TestCase):
         self.start(1, scope="ordinary-chat")
         initial = next(params for method, params in self.calls if method == "thread/start")
         self.assertEqual(codex_app_server.CODEX_TASK_POLICY, initial["developerInstructions"])
+
+    def test_private_report_has_one_image_no_history_tools_or_persistent_thread(self):
+        from codex_phone_policy import HEALTH_REPORT_POLICY, PRIVATE_REPORT_PREFIX, permits_host_tool
+        scope = PRIVATE_REPORT_PREFIX + "fixture"
+        policy = execution_policy_for("Transcribe this image", request_kind="screen_analysis")
+        first = self.server.start_task("report", "Transcribe this image", self.directory, conversation_id=scope,
+            image_paths=[str(self.image)], execution_policy=policy)
+        initial = next(params for method, params in self.calls if method == "thread/start")
+        self.assertTrue(initial["ephemeral"])
+        self.assertEqual(HEALTH_REPORT_POLICY, initial["developerInstructions"])
+        self.assertEqual([], initial["dynamicTools"])
+        self.assertEqual("read-only", initial["sandbox"])
+        self.assertEqual("disabled", initial["config"]["web_search"])
+        self.assertEqual({"fixture": {"enabled": False}}, initial["config"]["mcp_servers"])
+        self.assertFalse(permits_host_tool(scope, "galaxyssi_parallel_web_search"))
+        self.assertEqual({}, self.server._conversation_threads)
+        self.assertEqual("Transcribe this image", self.turns()[0]["input"][0]["text"])
+        self.assertEqual(1, sum(item["type"] == "localImage" for item in self.turns()[0]["input"]))
+        first.finished = True
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            self.server.start_task("no-image", "Transcribe this image", self.directory, conversation_id=scope,
+                execution_policy=policy)
+
+    def test_private_report_rejects_active_mcp_before_submitting_an_image(self):
+        from codex_phone_policy import PRIVATE_REPORT_PREFIX
+
+        def unisolated(method, params, timeout):
+            if method == "mcpServerStatus/list":
+                return {"data": [{"runtimeStatus": "ready", "tools": {"fixture": {}}}]}
+            return self.request(method, params, timeout)
+
+        self.server._request = unisolated
+        with self.assertRaisesRegex(RuntimeError, "external MCP capabilities"):
+            self.start(1, scope=PRIVATE_REPORT_PREFIX + "fixture")
+        self.assertEqual([], self.turns())
 
 
 if __name__ == "__main__":
