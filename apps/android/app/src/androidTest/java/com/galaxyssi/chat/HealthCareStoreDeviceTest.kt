@@ -3,6 +3,9 @@ package com.galaxyssi.chat
 import android.content.ContentValues
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -123,6 +126,88 @@ class HealthCareStoreDeviceTest {
         repeat(10) { assertEquals(issue, store.applyEvaluation(issue.metric, "same-input", store.settings().version,
             issue.revision, issue.assessment, now + 1000)) }
         assertEquals(1, store.page().items.size); assertEquals(1, store.history(issue.id).size)
+    }
+    @Test fun duplicateFirstEvaluationReturnsTheCommittedConcern(): Unit = fixture { names, store ->
+        val issue = add(store, stamp = "same-input")
+        HealthCareStore(context, names.care).use { second ->
+            assertEquals(issue, second.applyEvaluation(issue.metric, "same-input", store.settings().version,
+                null, issue.assessment, now + 1000))
+        }
+        assertEquals(listOf(issue), store.history(issue.id))
+    }
+    @Test fun duplicateUpdatedEvaluationReturnsTheCurrentRevision(): Unit = fixture { names, store ->
+        val first = add(store)
+        val updated = store.applyEvaluation(first.metric, "updated-input", store.settings().version,
+            first.revision, first.assessment, first.updatedAt + 1000)!!
+        assertNotEquals(first.revision, updated.revision)
+        HealthCareStore(context, names.care).use { second ->
+            assertEquals(updated, second.applyEvaluation(first.metric, "updated-input", store.settings().version,
+                first.revision, first.assessment, first.updatedAt + 2000))
+        }
+        assertEquals(listOf(updated, first), store.history(first.id))
+    }
+    @Test fun duplicateEvaluationPreservesLaterUserPauseAndDeletion(): Unit = fixture { _, store ->
+        val issue = add(store, stamp = "same-input")
+        val paused = store.update(issue.id, issue.revision, "user_pause") { it.copy(stage = HealthCareStage.PAUSED) }
+        assertEquals(paused, store.applyEvaluation(issue.metric, "same-input", store.settings().version,
+            issue.revision, issue.assessment, now + 1000))
+        assertEquals(listOf(paused, issue), store.history(issue.id))
+        store.delete(issue.id, paused.revision)
+        assertNull(store.applyEvaluation(issue.metric, "same-input", store.settings().version,
+            issue.revision, issue.assessment, now + 2000))
+        assertNull(store.forMetric(issue.metric))
+    }
+    @Test fun matchingTokenDoesNotBypassContextInvalidation(): Unit = fixture { _, store ->
+        val issue = add(store, stamp = "same-input")
+        val confirmed = store.confirmContext(issue.id, issue.revision,
+            HealthCareContext(issue.assessment.record!!, adult = HealthCareTruth.YES, confirmedAt = now))
+        assertThrows(HealthCareConflict::class.java) {
+            store.applyEvaluation(issue.metric, "same-input", store.settings().version, issue.revision, issue.assessment, now + 1000)
+        }
+        assertEquals(confirmed, store.concern(issue.id))
+    }
+    @Test fun matchingTokenDoesNotBypassConsentOrEvaluatorVersion(): Unit = fixture { _, store ->
+        val issue = add(store, stamp = "same-input")
+        val settings = store.settings()
+        assertThrows(HealthCareConflict::class.java) {
+            store.applyEvaluation(issue.metric, "same-input", settings.version, null, issue.assessment, now + 1000, "new-evaluator")
+        }
+        store.configure(false, settings.version)
+        assertThrows(HealthCareConflict::class.java) {
+            store.applyEvaluation(issue.metric, "same-input", settings.version, issue.revision, issue.assessment, now + 1000)
+        }
+        store.configure(true, store.settings().version)
+        assertThrows(HealthCareConflict::class.java) {
+            store.applyEvaluation(issue.metric, "same-input", settings.version, issue.revision, issue.assessment, now + 1000)
+        }
+        assertEquals(issue, store.concern(issue.id))
+    }
+    @Test fun concurrentConnectionsCommitAnEvaluationOnlyOnce(): Unit = fixture { names, store ->
+        val settings = store.configure(true, store.settings().version)
+        val reading = reading()
+        val assessment = HealthCareAssessment(HealthCareRecordRef(reading.id, 1), reading.draft.measuredAt,
+            "6.3", "mmol/L", "4-6", setOf(HealthCareSignal.REPORT_HIGH))
+        val ready = CountDownLatch(2); val start = CountDownLatch(1)
+        val workers = Executors.newFixedThreadPool(2)
+        try {
+            val calls = List(2) {
+                workers.submit<HealthCareConcern?> {
+                    HealthCareStore(context, names.care).use { other ->
+                        assertEquals(settings, other.settings())
+                        assertNull(other.forMetric(HealthMetric.GLUCOSE))
+                        ready.countDown(); check(start.await(10, TimeUnit.SECONDS))
+                        other.applyEvaluation(HealthMetric.GLUCOSE, "same-input", settings.version, null, assessment, now)
+                    }
+                }
+            }
+            assertTrue(ready.await(10, TimeUnit.SECONDS)); start.countDown()
+            val values = calls.map { it.get(20, TimeUnit.SECONDS) }
+            assertNotNull(values.first()); assertEquals(values.first(), values.last())
+            assertEquals(1, store.page().items.size)
+            assertEquals(listOf(values.first()), store.history(values.first()!!.id))
+        } finally {
+            start.countDown(); workers.shutdownNow(); assertTrue(workers.awaitTermination(10, TimeUnit.SECONDS))
+        }
     }
     @Test fun staleWorkersCannotOverwriteConfirmedContextOrUserActions(): Unit = fixture { _, store ->
         val issue = add(store)
