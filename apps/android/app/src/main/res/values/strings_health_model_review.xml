@@ -3,6 +3,7 @@
     <string name="health_model_review_reason">Reasoning and evidence</string>
     <string name="health_model_review_uncertainty">Uncertainty</string>
     <string name="health_model_review_next">Suggested next step</string>
+    <string name="health_model_review_questions">Review questions from this assessment (%1$d)</string>
     <string name="health_model_review_events">Review when: %1$s</string>
     <string name="health_model_review_source">Source data changes</string>
     <string name="health_model_review_feedback">New feedback is recorded</string>

@@ -331,7 +331,8 @@ class HealthCareLiveResearchDeviceTest {
         })
         if (grant.researchAuthorizationId.isNotEmpty()) registry.register(HealthCareModelReviewTool.definition { invocation, input ->
             check(invocation.conversationId == grant.conversationId && invocation.turnId == grant.turnId)
-            store.recordModelReview(grant, input, System.currentTimeMillis())
+            val profile = if (input.questions.isEmpty()) null else grant.profileLink?.let { HealthCareProfileAccess.capture(context, it, names) }
+            store.recordModelReview(grant, input, System.currentTimeMillis(), profile)
         })
         registry.register(HealthCareHistoryTool.definition { invocation, input ->
             HealthCareHistoryTool.read(context, names, invocation, input).also { output ->

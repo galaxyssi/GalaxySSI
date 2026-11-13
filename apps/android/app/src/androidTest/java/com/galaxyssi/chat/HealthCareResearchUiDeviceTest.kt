@@ -47,14 +47,15 @@ class HealthCareResearchUiDeviceTest {
             File(context.getExternalFilesDir(null), name).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         } finally { bitmap.recycle() } }
     }
-    private fun fixture(authorized: Boolean = false, block: (ActivityScenario<HealthCareActivity>, HealthOverviewDatabases, HealthCarePlan) -> Unit) {
+    private fun fixture(authorized: Boolean = false, questionsShared: Boolean = false,
+        block: (ActivityScenario<HealthCareActivity>, HealthOverviewDatabases, HealthCarePlan) -> Unit) {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
         var worker: ExecutorService? = null
         try {
             val plan = HealthCareMaintenanceTestFixture.propose(context, names)
             if (authorized) HealthCareStore(context, names.care).use { store ->
-                val consent = HealthCareResearchAuthorization(UUID.randomUUID().toString(), plan.grant, "b".repeat(64))
+                val consent = HealthCareResearchAuthorization(UUID.randomUUID().toString(), plan.grant.copy(questionsShared = questionsShared), "b".repeat(64))
                 store.authorizeResearch(consent, null)
                 store.queueResearch(consent.id, plan.grant.concernId, System.currentTimeMillis())
             }
@@ -88,6 +89,57 @@ class HealthCareResearchUiDeviceTest {
         scenario.moveToState(Lifecycle.State.CREATED)
         scenario.onActivity { assertNull(dialog(review(it))) }
         assertFalse(HealthCareModelReviewVisibility.contains(names.care, saved.grant.conversationId))
+        HealthCareStore(context, names.care).use { assertEquals(saved, it.modelReview(saved.grant.turnId)) }
+    }
+    @Test fun clarificationOpensOnlyItsReferencedQuestionsAndClearsInBackground() = fixture(true, true) { scenario, names, plan ->
+        val saved = HealthCareStore(context, names.care).use { care ->
+            val job = care.latestResearchJob(plan.grant.concernId)!!
+            val grant = care.researchAuthorization(job.concernId)!!.scope.copy(turnId = job.turnId,
+                researchAuthorizationId = job.authorizationId, approvedAt = System.currentTimeMillis())
+            care.approveDiscussion(grant)
+            val q = care.proposeQuestion(grant, "measurement.timing", "本次测量前的活动是什么？", "核对可比性。", System.currentTimeMillis())
+            care.proposeQuestion(grant, "measurement.other", "另一个合成问题", "只用于验证范围。", System.currentTimeMillis())
+            care.recordModelReview(grant, HealthCareModelReviewTestFixture.input(care, job.concernId).copy(
+                decision = HealthCareReviewDecision.CLARIFY, questions = listOf(HealthCareQuestionRef(q.id, q.revision))), System.currentTimeMillis())
+        }
+        fun questionDialog(activity: HealthCareActivity): AlertDialog? {
+            val owner = HealthCareResearchReview::class.java.getDeclaredField("questionReview").apply { isAccessible = true }
+                .get(review(activity)) ?: return null
+            return HealthCareQuestionReview::class.java.getDeclaredField("dialog").apply { isAccessible = true }.get(owner) as? AlertDialog
+        }
+        scenario.onActivity { find(it, "health-care-research")!!.performClick() }
+        await(scenario) { dialog(review(it))?.isShowing == true }
+        scenario.onActivity {
+            views(dialog(review(it))!!.window!!.decorView).first { view -> view.tag == "health-model-review-questions" }.performClick()
+        }
+        await(scenario) { questionDialog(it)?.isShowing == true }
+        scenario.onActivity {
+            val rows = views(questionDialog(it)!!.window!!.decorView).filter { view -> view.tag?.toString()?.startsWith("health-question-row-") == true }
+            assertEquals(listOf("health-question-row-${saved.input.questions.single().id}"), rows.map { view -> view.tag })
+        }
+        capture("health-model-clarification-fixture.png")
+        scenario.moveToState(Lifecycle.State.CREATED)
+        scenario.onActivity { assertNull(questionDialog(it)) }
+        HealthCareStore(context, names.care).use {
+            assertEquals(saved, it.modelReview(saved.grant.turnId))
+            assertEquals(2, it.questions(it.concern(saved.grant.concernId)!!).items.size)
+            val issue = it.concern(saved.grant.concernId)!!
+            val q = it.question(saved.input.questions.single().id)!!
+            it.reviewQuestion(issue.id, issue.revision, q.id, q.revision, HealthCareQuestionState.ANSWERED,
+                "\u6d4b\u91cf\u524d\u5b89\u9759\u4f11\u606f", System.currentTimeMillis())
+        }
+        scenario.moveToState(Lifecycle.State.RESUMED)
+        scenario.onActivity { review(it).show(saved.grant.concernId) }
+        await(scenario) { dialog(review(it))?.isShowing == true }
+        scenario.onActivity {
+            views(dialog(review(it))!!.window!!.decorView).first { view -> view.tag == "health-model-review-questions" }.performClick()
+        }
+        await(scenario) { questionDialog(it)?.isShowing == true }
+        scenario.onActivity { activity ->
+            val texts = views(questionDialog(activity)!!.window!!.decorView).filterIsInstance<TextView>().map { it.text.toString() }
+            assertTrue(texts.any { it.contains(activity.getString(R.string.health_question_answered)) })
+            assertFalse(texts.any { it.contains(activity.getString(R.string.health_question_open)) })
+        }
         HealthCareStore(context, names.care).use { assertEquals(saved, it.modelReview(saved.grant.turnId)) }
     }
     @Test fun stopActionRevokesConsentAndKeepsDurableCancellation() = fixture(true) { scenario, names, plan ->

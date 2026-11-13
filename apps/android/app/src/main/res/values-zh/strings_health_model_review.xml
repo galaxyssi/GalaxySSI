@@ -3,6 +3,7 @@
     <string name="health_model_review_reason">判断依据</string>
     <string name="health_model_review_uncertainty">尚不确定</string>
     <string name="health_model_review_next">建议下一步</string>
+    <string name="health_model_review_questions">查看本次评估的问题（%1$d）</string>
     <string name="health_model_review_events">复评条件：%1$s</string>
     <string name="health_model_review_source">来源数据变化</string>
     <string name="health_model_review_feedback">记录新的反馈</string>

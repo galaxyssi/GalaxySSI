@@ -10,12 +10,29 @@ class HealthCareModelReviewTest {
         1000, "fixture-provider", "fixture-model", "high", researchAuthorizationId = id())
     private val input = HealthCareModelReviewInput("Review summary", "Observed change", "No retrieved evidence yet",
         "Clarify measurement context", HealthCareReviewDecision.CLARIFY, listOf(HealthCareReviewEvent.SOURCE_CHANGE),
-        listOf(HealthCareRecordRef(id(), 1)), emptyList(), "", false, "No newly verified finding")
+        listOf(HealthCareRecordRef(id(), 1)), emptyList(), "", false, "No newly verified finding", listOf(HealthCareQuestionRef(id(), 1)))
     private val value = HealthCareModelReview(grant, "b".repeat(64), "input-v1", 1001, input)
 
     @Test fun structuredAssessmentRoundTripsWithActualGrant() {
         assertEquals(value, HealthCareModelReview.from(value.json()))
         assertEquals(input, HealthCareModelReviewInput.parse(input.json().toNativeObject()))
+    }
+    @Test fun legacyAssessmentStaysReadableWithoutInventingRetainedQuestions() {
+        val legacy = value.json().also { it.getJSONObject("assessment").remove("questions") }
+        val saved = HealthCareModelReview.from(legacy)
+        assertEquals(HealthCareReviewDecision.CLARIFY, saved.input.decision)
+        assertTrue(saved.input.questions.isEmpty())
+        assertThrows(IllegalArgumentException::class.java) { HealthCareModelReviewInput.parse(saved.input.json().toNativeObject()) }
+        val observation = saved.input.copy(decision = HealthCareReviewDecision.OBSERVE)
+        assertEquals(observation, HealthCareModelReviewInput.parse(observation.json().toNativeObject()))
+    }
+    @Test fun clarificationRequiresUniqueExactQuestionReferences() {
+        val base = input.json().toNativeObject()
+        listOf(base - "questions", base + ("questions" to emptyList<Any>()),
+            base + ("questions" to listOf(mapOf("id" to input.questions.single().id, "revision" to 1.2))),
+            base + ("questions" to listOf(mapOf("id" to "invented", "revision" to 1))),
+            base + ("questions" to List(2) { mapOf("id" to input.questions.single().id, "revision" to it + 1) }))
+            .forEach { assertThrows(IllegalArgumentException::class.java) { HealthCareModelReviewInput.parse(it) } }
     }
     @Test fun unknownExecutionFlagsAndInvalidShapesAreRejected() {
         val base = input.json().toNativeObject()
@@ -62,6 +79,8 @@ class HealthCareModelReviewTest {
         val repaired = registry.invoke(HealthCareModelReviewTool.ID, input.json().toNativeObject())
         assertTrue(repaired.isSuccess)
         assertEquals(true, repaired.output["stored"])
+        assertEquals(false, repaired.output["questions_created"])
+        assertEquals(listOf(mapOf("id" to input.questions.single().id, "revision" to 1)), repaired.output["question_references"])
     }
     @Test fun legacyJobsDoNotAcquireNewCompletionRequirements() {
         val job = HealthCareResearchJob(grant.turnId, grant.researchAuthorizationId, grant.concernId, grant.conversationId,

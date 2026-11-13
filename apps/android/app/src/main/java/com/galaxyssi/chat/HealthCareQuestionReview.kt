@@ -32,7 +32,8 @@ internal class HealthCareQuestionReview(private val activity: Activity, private 
         val page: HealthCareQuestionPage, val known: Map<String, String>)
     fun clear() { generation++; tasks.coroutineContext.cancelChildren(); dialog?.dismiss(); dialog = null }
     fun destroy() { clear(); tasks.cancel() }
-    fun show(id: String, after: String = "") {
+    fun show(id: String, after: String = "", selected: Set<String>? = null) {
+        require(selected == null || selected.isNotEmpty() && selected.size <= 30 && selected.all(HealthProfilePolicy::uuid))
         clear()
         work {
             HealthCareEngine.evaluate(activity, names)
@@ -41,7 +42,12 @@ internal class HealthCareQuestionReview(private val activity: Activity, private 
             val snapshot = HealthCareStore(activity, names.care).use { store ->
                 val issue = store.concern(id) ?: throw HealthCareConflict()
                 val profile = issue.profileLink?.let { HealthCareProfileAccess.capture(activity, it, names) }
-                Snapshot(issue, privacy, store.questions(issue, after), HealthCareQuestionPolicy.known(issue, profile))
+                val page = if (selected == null) store.questions(issue, after) else HealthCareQuestionPage(selected.map { questionId ->
+                    val question = store.question(questionId) ?: throw HealthCareConflict()
+                    if (question.concernId != issue.id || question.scope != HealthCareQuestionPolicy.scope(issue)) throw HealthCareConflict()
+                    question
+                }, null)
+                Snapshot(issue, privacy, page, HealthCareQuestionPolicy.known(issue, profile))
             }
             val done: () -> Unit = { list(snapshot, after.isNotEmpty()) }; done
         }

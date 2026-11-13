@@ -6,12 +6,21 @@ import org.json.JSONObject
 internal enum class HealthCareReviewDecision { OBSERVE, CLARIFY, RESEARCH, PROPOSE_PLAN, CLINICIAN_REVIEW }
 internal enum class HealthCareReviewEvent { SOURCE_CHANGE, USER_FEEDBACK, CONFIRMED_ACTION_DUE }
 
+internal data class HealthCareQuestionRef(val id: String, val revision: Int) {
+    init { require(HealthProfilePolicy.uuid(id) && revision > 0) }
+    fun json() = JSONObject().put("id", id).put("revision", revision)
+    companion object {
+        fun from(value: JSONObject) = HealthCareQuestionRef(value.getString("id"), value.getInt("revision"))
+    }
+}
+
 /** Model reasoning is an assessment, never a confirmed clinical action or a diagnosis. */
 internal data class HealthCareModelReviewInput(
     val summary: String, val rationale: String, val uncertainty: String, val nextStep: String,
     val decision: HealthCareReviewDecision, val events: List<HealthCareReviewEvent>,
     val records: List<HealthCareRecordRef>, val evidenceIds: List<String>, val planId: String,
-    val attentionRequested: Boolean, val attentionReason: String
+    val attentionRequested: Boolean, val attentionReason: String,
+    val questions: List<HealthCareQuestionRef> = emptyList()
 ) {
     init {
         require(summary.isNotBlank() && summary.length <= 1000)
@@ -21,30 +30,39 @@ internal data class HealthCareModelReviewInput(
         require(evidenceIds.size <= 8 && evidenceIds.distinct() == evidenceIds && evidenceIds.all(HealthProfilePolicy::uuid))
         require(planId.isEmpty() || HealthProfilePolicy.uuid(planId))
         require(decision != HealthCareReviewDecision.PROPOSE_PLAN || planId.isNotEmpty())
+        require(questions.size <= 30 && questions.map { it.id }.distinct().size == questions.size)
+    }
+    fun requireSubmission() {
+        require(decision != HealthCareReviewDecision.CLARIFY || questions.isNotEmpty()) {
+            "A clarification must reference retained questions"
+        }
     }
     fun json() = JSONObject().put("summary", summary).put("rationale", rationale).put("uncertainty", uncertainty)
         .put("next_step", nextStep).put("decision", decision.name).put("review_events", JSONArray(events.map { it.name }))
         .put("records", JSONArray(records.map { it.json() })).put("evidence_ids", JSONArray(evidenceIds))
         .put("plan_id", planId).put("attention_requested", attentionRequested).put("attention_reason", attentionReason)
+        .put("questions", JSONArray(questions.map { it.json() }))
     companion object {
         private val keys = setOf("summary", "rationale", "uncertainty", "next_step", "decision", "review_events",
-            "records", "evidence_ids", "plan_id", "attention_requested", "attention_reason")
+            "records", "evidence_ids", "plan_id", "attention_requested", "attention_reason", "questions")
         fun parse(input: AgentNativeJsonObject): HealthCareModelReviewInput {
             require(input.keys == keys)
             require(input["attention_requested"] is Boolean)
             require(listOf("summary", "rationale", "uncertainty", "next_step", "decision", "plan_id", "attention_reason")
                 .all { input[it] is String })
-            val records = input["records"] as? List<*> ?: throw IllegalArgumentException()
-            records.forEach {
-                val row = it as? Map<*, *> ?: throw IllegalArgumentException()
-                require(row.keys == setOf("id", "revision") && row["id"] is String)
-                val revision = row["revision"] as? Number ?: throw IllegalArgumentException()
-                require(revision.toDouble() == revision.toInt().toDouble())
+            listOf("records", "questions").forEach { key ->
+                val rows = input[key] as? List<*> ?: throw IllegalArgumentException()
+                rows.forEach {
+                    val row = it as? Map<*, *> ?: throw IllegalArgumentException()
+                    require(row.keys == setOf("id", "revision") && row["id"] is String)
+                    val revision = row["revision"] as? Number ?: throw IllegalArgumentException()
+                    require(revision.toDouble() == revision.toInt().toDouble())
+                }
             }
             listOf("review_events", "evidence_ids").forEach { key ->
                 require((input[key] as? List<*>)?.all { it is String } == true)
             }
-            return from(JSONObject(input))
+            return from(JSONObject(input)).also { it.requireSubmission() }
         }
         fun from(j: JSONObject): HealthCareModelReviewInput {
             val events = j.getJSONArray("review_events")
@@ -55,7 +73,8 @@ internal data class HealthCareModelReviewInput(
                 List(events.length()) { HealthCareReviewEvent.valueOf(events.getString(it)) },
                 List(records.length()) { HealthCareRecordRef.from(records.getJSONObject(it)) },
                 List(evidence.length()) { evidence.getString(it) }, j.getString("plan_id"),
-                j.getBoolean("attention_requested"), j.getString("attention_reason"))
+                j.getBoolean("attention_requested"), j.getString("attention_reason"),
+                j.optJSONArray("questions")?.let { rows -> List(rows.length()) { HealthCareQuestionRef.from(rows.getJSONObject(it)) } }.orEmpty())
         }
     }
 }
