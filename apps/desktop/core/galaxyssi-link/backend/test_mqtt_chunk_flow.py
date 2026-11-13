@@ -7,6 +7,29 @@ from mqtt_multipath_policy import MultipathPolicy, PeerRoute, Traffic
 
 
 class ChunkFlowTest(unittest.TestCase):
+    def test_cold_path_pipelines_buckets_and_slow_receipt_keeps_window(self):
+        flow = ChunkThroughput()
+        for index in range(2):
+            self.assertTrue(flow.can_send("peer", "emqx", 87419))
+            flow.track("peer", ChunkAttempt("t", "r", index, True), "emqx", 1, 87419, 0)
+        self.assertFalse(flow.can_send("peer", "emqx", 87419))
+        flow.confirmed("peer", "t", "r", [0], {"emqx": 1}, 15)
+        self.assertTrue(flow.can_send("peer", "emqx", 2 * 87419))
+        self.assertFalse(flow.can_send("peer", "emqx", 524288))
+
+    def test_timeout_backs_off_and_reset_restores_cold_window(self):
+        flow = ChunkThroughput()
+        flow.track("peer", ChunkAttempt("old", "r", 0, True), "emqx", 1, 87419, 0)
+        flow.expire(30.001)
+        flow.track("peer", ChunkAttempt("new", "r", 0, True), "emqx", 1, 87419, 30.002)
+        self.assertFalse(flow.can_send("peer", "emqx", 87419))
+        flow.forget("peer")
+        flow.track("peer", ChunkAttempt("next", "r", 0, True), "emqx", 1, 87419, 30.003)
+        self.assertTrue(flow.can_send("peer", "emqx", 87419))
+        flow.reset()
+        self.assertFalse(flow.flights)
+        self.assertFalse(flow.windows)
+
     def test_sparse_samples_keep_bootstrap_rate_and_batch_counts_bytes_once(self):
         flow = ChunkThroughput()
         for number in range(3):
@@ -83,6 +106,31 @@ class ChunkFlowTest(unittest.TestCase):
         self.assertEqual(0, policy.diagnostics()["inflight_packets"])
         self.assertEqual(524288, policy.chunks.pending_bytes(first))
 
+    def test_text_final_and_receipts_avoid_unconfirmed_image_backlog(self):
+        policy = self.policy()
+        for traffic in (Traffic.MESSAGE, Traffic.FINAL, Traffic.RECEIPT):
+            with self.subTest(traffic=traffic):
+                policy.chunks.reset()
+                preferred = policy.plan("peer", "chat", traffic, 1403, {"inbox"}, now=1)[0].broker_id
+                policy.track_chunk("peer", ChunkAttempt("image", "request", 0, True), preferred, 1, 87419, 1)
+                result = policy.plan("peer", "chat", traffic, 1403, {"inbox"}, now=2, ingress=preferred)
+                self.assertNotEqual(preferred, result[0].broker_id)
+                self.assertEqual(set(BROKER_IDS), {item.broker_id for item in result})
+                self.assertEqual(preferred, result[-1].broker_id)
+                # A publication ACK is not a stored-chunk receipt. Keep this
+                # cost until verified delivery or observation expiry.
+                self.assertEqual(0, policy.diagnostics()["inflight_packets"])
+                policy.confirm_chunk_state("peer", "image", "request", [0], 3)
+                restored = policy.plan("peer", "chat", traffic, 1403, {"inbox"}, now=4, ingress=preferred)
+                self.assertEqual(preferred, restored[0].broker_id)
+
+    def test_backlog_preference_never_bypasses_single_authorized_path(self):
+        policy = self.policy()
+        policy.track_chunk("peer", ChunkAttempt("image", "request", 0, True), "emqx", 1, 87419, 1)
+        result = policy.plan("peer", "chat", Traffic.MESSAGE, 1403, {"inbox"}, now=2,
+                             authorized_paths=(("emqx", 1),))
+        self.assertEqual(["emqx"], [item.broker_id for item in result])
+
     def test_metric_retention_and_pair_revocation(self):
         flow = ChunkThroughput()
         for peer in ("a", "b"):
@@ -106,9 +154,9 @@ class ChunkFlowTest(unittest.TestCase):
 
     def test_burst_feedback_uses_latest_revision_without_extending_first_deadline(self):
         feedback, sent = ChunkFeedback(), []
-        feedback.offer("peer", "transfer", "request", 1, lambda: sent.append(1), 0)
-        feedback.offer("peer", "transfer", "request", 3, lambda: sent.append(3), 0.15)
-        feedback.offer("peer", "transfer", "request", 2, lambda: sent.append(2), 0.16)
+        feedback.offer("peer", "transfer", "request", 1, lambda: sent.append(1) or True, 0)
+        feedback.offer("peer", "transfer", "request", 3, lambda: sent.append(3) or True, 0.15)
+        feedback.offer("peer", "transfer", "request", 2, lambda: sent.append(2) or True, 0.16)
         self.assertFalse(feedback.drain(0.19))
         for send in feedback.drain(0.201):
             send()
@@ -116,8 +164,8 @@ class ChunkFlowTest(unittest.TestCase):
 
     def test_terminal_or_probe_is_immediate_and_cancels_queued_state(self):
         feedback, sent = ChunkFeedback(), []
-        feedback.offer("peer", "transfer", "request", 1, lambda: sent.append(1), 0)
-        immediate = feedback.offer("peer", "transfer", "request", 2, lambda: sent.append(2), 0.1, urgent=True)
+        feedback.offer("peer", "transfer", "request", 1, lambda: sent.append(1) or True, 0)
+        immediate = feedback.offer("peer", "transfer", "request", 2, lambda: sent.append(2) or True, 0.1, urgent=True)
         immediate()
         self.assertEqual([2], sent)
         self.assertFalse(feedback.drain(1))
@@ -125,8 +173,8 @@ class ChunkFlowTest(unittest.TestCase):
     def test_feedback_per_peer_bound_leaves_capacity_for_other_pairs(self):
         feedback, sent = ChunkFeedback(), []
         for index in range(CATALOG["limits"]["per_peer_chunk_feedback"] + 1):
-            feedback.offer("peer", str(index), "request", 1, lambda: sent.append("peer"), 0)
-        feedback.offer("other", "transfer", "request", 1, lambda: sent.append("other"), 0)
+            feedback.offer("peer", str(index), "request", 1, lambda: sent.append("peer") or True, 0)
+        feedback.offer("other", "transfer", "request", 1, lambda: sent.append("other") or True, 0)
         feedback.forget("peer")
         for send in feedback.drain(1):
             send()
@@ -135,9 +183,45 @@ class ChunkFlowTest(unittest.TestCase):
     def test_feedback_drain_is_bounded(self):
         feedback = ChunkFeedback()
         for index in range(30):
-            feedback.offer("peer", str(index), "request", 1, lambda: None, 0)
+            feedback.offer("peer", str(index), "request", 1, lambda: True, 0)
         self.assertEqual(16, len(feedback.drain(1)))
         self.assertEqual(14, len(feedback.drain(1)))
+
+    def test_rejected_feedback_retries_latest_revision_until_accepted(self):
+        feedback, sent = ChunkFeedback(), []
+        feedback.offer("peer", "transfer", "request", 1, lambda: sent.append(1) or False, 0)
+        for send in feedback.drain(0.201):
+            send()
+        feedback.offer("peer", "transfer", "request", 2, lambda: sent.append(2) or True, 0.3)
+        self.assertFalse(feedback.drain(0.7))
+        for send in feedback.drain(0.702):
+            send()
+        self.assertEqual([1, 2], sent)
+        self.assertFalse(feedback.drain(2))
+
+    def test_superseded_and_revoked_callbacks_do_not_send(self):
+        feedback, sent = ChunkFeedback(), []
+        feedback.offer("peer", "transfer", "request", 1, lambda: sent.append(1) or True, 0)
+        old = feedback.drain(0.201)[0]
+        feedback.offer("peer", "transfer", "request", 2, lambda: sent.append(2) or True, 0.3, urgent=True)()
+        old()
+        feedback.offer("peer", "transfer", "other", 3, lambda: sent.append(3) or True, 0.4)
+        revoked = feedback.drain(0.601)[0]
+        feedback.forget("peer")
+        revoked()
+        self.assertEqual([2], sent)
+
+    def test_throwing_urgent_feedback_retries_with_finite_lifetime(self):
+        feedback, attempts = ChunkFeedback(), []
+        def fail():
+            attempts.append(1)
+            raise RuntimeError("full")
+        with self.assertRaises(RuntimeError):
+            feedback.offer("peer", "transfer", "request", 1, fail, 0, urgent=True)()
+        with self.assertRaises(RuntimeError):
+            feedback.drain(0.5)[0]()
+        self.assertEqual(2, len(attempts))
+        self.assertFalse(feedback.drain(CATALOG["timing"]["receipt_retry_ttl_seconds"]))
 
 
 if __name__ == "__main__":

@@ -8,6 +8,62 @@ import java.util.concurrent.Executors
 class MqttMultipathPolicyTest {
     private val brokers = MqttBrokerCatalog.brokers.keys
     private val hash = "a".repeat(64)
+    @Test fun peerChunkReceiptsBoundEachPathWithoutBlockingTextOrControls() {
+        val policy = ready()
+        val chunk = MqttChunkThroughput.Chunk("transfer", "request", 0, true)
+        brokers.forEach { broker -> repeat(2) { index ->
+            policy.trackChunk("peer", chunk.copy(transfer = broker, index = index), broker, 1, 87419, 1000)
+        } }
+        assertTrue(plan(policy, MqttMultipathPolicy.Traffic.CHUNK, size = 87419).isEmpty())
+        assertFalse(plan(policy, MqttMultipathPolicy.Traffic.MESSAGE).isEmpty())
+        assertEquals(3, plan(policy, MqttMultipathPolicy.Traffic.CONTROL).size)
+        assertFalse(plan(policy, MqttMultipathPolicy.Traffic.RECEIPT).isEmpty())
+        policy.confirmChunkState("other-peer", "emqx", "request", listOf(0), 1100)
+        assertTrue(plan(policy, MqttMultipathPolicy.Traffic.CHUNK, size = 87419, now = 1100).isEmpty())
+        policy.confirmChunkState("peer", "emqx", "request", listOf(0), 1200)
+        assertEquals("emqx", plan(policy, MqttMultipathPolicy.Traffic.CHUNK, size = 87419, now = 1200).single().brokerId)
+        assertFalse(plan(policy, MqttMultipathPolicy.Traffic.CHUNK, size = 87419, now = 32000).isEmpty())
+    }
+
+    @Test fun brokerAckDoesNotReleaseThePeerChunkWindow() {
+        val policy = ready()
+        val chunk = MqttChunkThroughput.Chunk("transfer", "request", 0, true)
+        val first = attempt(size = 87419, traffic = MqttMultipathPolicy.Traffic.CHUNK)
+        repeat(2) { index ->
+            assertTrue(policy.reserve("first-$index", first.copy(messageId = "first-$index")))
+            policy.trackChunk("peer", chunk.copy(index = index), "emqx", 1, 87419, 1000)
+            assertTrue(policy.brokerAck("first-$index", "emqx", 1))
+        }
+        assertFalse(policy.reserve("next", first.copy(messageId = "next")))
+        policy.confirmChunkState("peer", "transfer", "request", listOf(0), 1200)
+        assertTrue(policy.reserve("next", first.copy(messageId = "next")))
+    }
+
+    @Test fun textFinalAndReceiptsAvoidUnconfirmedImageBacklog() {
+        listOf(MqttMultipathPolicy.Traffic.MESSAGE, MqttMultipathPolicy.Traffic.FINAL,
+            MqttMultipathPolicy.Traffic.RECEIPT).forEach { traffic ->
+            val policy = ready()
+            val preferred = plan(policy, traffic).first().brokerId
+            policy.trackChunk("peer", MqttChunkThroughput.Chunk("image", "request", 0, true),
+                preferred, 1, 87419, 1000)
+            val result = plan(policy, traffic, now = 2000, ingress = preferred)
+            assertNotEquals(preferred, result.first().brokerId)
+            assertEquals(brokers, result.map { it.brokerId }.toSet())
+            assertEquals(preferred, result.last().brokerId)
+            assertEquals(0, policy.diagnostics(2000).inflightPackets)
+            policy.confirmChunkState("peer", "image", "request", listOf(0), 3000)
+            assertEquals(preferred, plan(policy, traffic, now = 4000, ingress = preferred).first().brokerId)
+        }
+    }
+
+    @Test fun backlogPreferenceNeverBypassesSingleAuthorizedPath() {
+        val policy = ready()
+        policy.trackChunk("peer", MqttChunkThroughput.Chunk("image", "request", 0, true), "emqx", 1, 87419, 1000)
+        val result = policy.plan("peer", "chat", MqttMultipathPolicy.Traffic.MESSAGE, 1403,
+            setOf("inbox"), 2000, authorizedPaths = mapOf("emqx" to 1L))
+        assertEquals(listOf("emqx"), result.map { it.brokerId })
+    }
+
     private fun ready(): MqttMultipathPolicy = MqttMultipathPolicy("deterministic-test".toByteArray()).apply {
         brokers.forEach { connected(it, 1); subscribed(it, 1, setOf("inbox")) }
         acceptVerifiedResume("peer", route(), 0)
@@ -115,10 +171,14 @@ class MqttMultipathPolicyTest {
         assertEquals(1, plan(policy, MqttMultipathPolicy.Traffic.CHUNK).size)
     }
 
-    @Test fun receiptsPreferIngressAndDoNotRace() {
+    @Test fun receiptsPreferIngressWithOrderedFallbacks() {
         val policy = ready()
-        brokers.forEach { broker -> assertEquals(listOf(broker), plan(policy,
-            MqttMultipathPolicy.Traffic.RECEIPT, ingress = broker).map { it.brokerId }) }
+        brokers.forEach { broker ->
+            val result = plan(policy, MqttMultipathPolicy.Traffic.RECEIPT, ingress = broker)
+            assertEquals(broker, result.first().brokerId)
+            assertEquals(brokers, result.map { it.brokerId }.toSet())
+            assertTrue(result.all { it.delayMs == 0L })
+        }
     }
 
     @Test fun oneDisconnectDoesNotInvalidateOtherPaths() {
@@ -292,7 +352,8 @@ class MqttMultipathPolicyTest {
 
     @Test fun capacityIsGlobalAndReservesControlSlots() {
         val policy = ready()
-        repeat(10) { assertTrue(policy.reserve("$it", attempt(peer = "$it", traffic = MqttMultipathPolicy.Traffic.CHUNK))) }
+        repeat(10) { assertTrue(policy.reserve("$it", attempt(peer = "$it", path = brokers.sorted()[it % 3],
+            traffic = MqttMultipathPolicy.Traffic.CHUNK))) }
         assertFalse(policy.reserve("ordinary", attempt()))
         assertTrue(policy.reserve("stop", attempt(traffic = MqttMultipathPolicy.Traffic.CONTROL)))
         assertTrue(policy.reserve("final", attempt(traffic = MqttMultipathPolicy.Traffic.FINAL)))
@@ -305,7 +366,8 @@ class MqttMultipathPolicyTest {
         val executor = Executors.newFixedThreadPool(20)
         try {
             val results = executor.invokeAll((0 until 200).map { index -> Callable {
-                policy.reserve("$index", attempt(peer = "$index", traffic = MqttMultipathPolicy.Traffic.CHUNK))
+                policy.reserve("$index", attempt(peer = "$index", path = brokers.sorted()[index % 3],
+                    traffic = MqttMultipathPolicy.Traffic.CHUNK))
             } })
             assertEquals(10, results.count { it.get() })
         } finally { executor.shutdownNow() }
@@ -318,6 +380,24 @@ class MqttMultipathPolicyTest {
         assertFalse(policy.reserve("three", attempt()))
         assertEquals(setOf("one", "two"), policy.expireAttempts(1))
         assertEquals(0L, policy.diagnostics().inflightBytes)
+    }
+
+    @Test fun slowIngressLeavesSlotsForOtherReadyPaths() {
+        val policy = ready()
+        repeat(8) { assertTrue(policy.reserve("$it", attempt(message = "$it", traffic = MqttMultipathPolicy.Traffic.RECEIPT))) }
+        assertFalse(policy.reserve("blocked", attempt(traffic = MqttMultipathPolicy.Traffic.RECEIPT)))
+        val result = plan(policy, MqttMultipathPolicy.Traffic.RECEIPT, ingress = "emqx")
+        assertEquals(setOf("hivemq", "mosquitto"), result.map { it.brokerId }.toSet())
+        result.forEach { assertTrue(policy.reserve("chat-${it.brokerId}", attempt(path = it.brokerId))) }
+        result.forEach { assertTrue(policy.reserve(it.brokerId, attempt(path = it.brokerId, traffic = MqttMultipathPolicy.Traffic.RECEIPT))) }
+        assertFalse(policy.reserve("full", attempt(path = "hivemq", traffic = MqttMultipathPolicy.Traffic.RECEIPT)))
+    }
+
+    @Test fun loneReadyPathCanStillUseFullExistingBudget() {
+        val policy = ready()
+        listOf("hivemq", "mosquitto").forEach { policy.disconnected(it, 1) }
+        repeat(12) { assertTrue(policy.reserve("$it", attempt(message = "$it", traffic = MqttMultipathPolicy.Traffic.RECEIPT))) }
+        assertFalse(policy.reserve("full", attempt(traffic = MqttMultipathPolicy.Traffic.RECEIPT)))
     }
 
     @Test fun fastestPeerReceiptDoesNotReleaseInFlightCopies() {

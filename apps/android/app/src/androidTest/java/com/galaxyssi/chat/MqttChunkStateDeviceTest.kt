@@ -153,7 +153,7 @@ class MqttChunkStateDeviceTest {
         database.indexedTransaction { db ->
             repeat(300) { index ->
                 val dummy = index.toString(16).padStart(64, '0')
-                db.execSQL("INSERT INTO mqtt_outgoing_chunks SELECT scope_digest,?,manifest_hash,chunk_count,request_id,store_epoch,revision,stored_bitmap,path_bits,0 FROM mqtt_outgoing_chunks WHERE transfer_id=?",
+                db.execSQL("INSERT INTO mqtt_outgoing_chunks SELECT scope_digest,?,manifest_hash,chunk_count,request_id,store_epoch,revision,stored_bitmap,path_bits,0,chunk_data_bytes FROM mqtt_outgoing_chunks WHERE transfer_id=?",
                     arrayOf(dummy, batch.query.transfer))
                 db.execSQL("INSERT INTO mqtt_wire_transfers SELECT scope_digest,?,manifest_hash,chunk_count,total_bytes,stored_bytes,0,wire_hash,source,target,store_epoch,revision,'completed' FROM mqtt_wire_transfers WHERE transfer_id=?",
                     arrayOf(dummy, batch.query.transfer))

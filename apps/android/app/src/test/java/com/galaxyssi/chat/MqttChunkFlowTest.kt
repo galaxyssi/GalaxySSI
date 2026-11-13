@@ -134,8 +134,44 @@ class MqttChunkFlowTest {
     }
     @Test fun feedbackDrainIsBounded() {
         val feedback = MqttChunkFeedback()
-        repeat(30) { feedback.offer("peer", "$it", "request", 1, {}, 0) }
+        repeat(30) { feedback.offer("peer", "$it", "request", 1, { true }, 0) }
         assertEquals(16, feedback.drain(1000).size)
         assertEquals(14, feedback.drain(1000).size)
+    }
+
+    @Test fun rejectedFeedbackRetriesLatestRevisionAndStopsAfterAcceptance() {
+        val feedback = MqttChunkFeedback()
+        val sent = mutableListOf<Int>()
+        feedback.offer("peer", "transfer", "request", 1, { sent.add(1); false }, 0)
+        feedback.drain(201).forEach { it() }
+        feedback.offer("peer", "transfer", "request", 2, { sent.add(2) }, 300)
+        assertTrue(feedback.drain(700).isEmpty())
+        feedback.drain(701).forEach { it() }
+        assertEquals(listOf(1, 2), sent)
+        assertTrue(feedback.drain(2000).isEmpty())
+    }
+
+    @Test fun supersededOrRevokedQueuedFeedbackNeverRuns() {
+        val feedback = MqttChunkFeedback()
+        val sent = mutableListOf<Int>()
+        feedback.offer("peer", "transfer", "request", 1, { sent.add(1) }, 0)
+        val old = feedback.drain(201).single()
+        feedback.offer("peer", "transfer", "request", 2, { sent.add(2) }, 300, urgent = true)!!.invoke()
+        old()
+        feedback.offer("peer", "transfer", "other", 3, { sent.add(3) }, 400)
+        val revoked = feedback.drain(601).single()
+        feedback.forget("peer")
+        revoked()
+        assertEquals(listOf(2), sent)
+    }
+
+    @Test fun throwingUrgentFeedbackRetriesButExpires() {
+        val feedback = MqttChunkFeedback()
+        var attempts = 0
+        val send: () -> Boolean = { attempts++; throw IllegalStateException("full") }
+        runCatching { feedback.offer("peer", "transfer", "request", 1, send, 0, urgent = true)!!.invoke() }
+        feedback.drain(500).forEach { runCatching(it) }
+        assertEquals(2, attempts)
+        assertTrue(feedback.drain(MqttBrokerCatalog.RECEIPT_RETRY_TTL_MS).isEmpty())
     }
 }

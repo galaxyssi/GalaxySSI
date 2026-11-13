@@ -219,21 +219,39 @@ class MultipathPolicy:
             samples.popleft()
         return [value for _, value in samples]
 
+    def _path_backlog(self, broker: str) -> int:
+        held = sum(value.wire_bytes for value in self._attempts.values()
+                   if value.path == broker and value.slot_held)
+        return max(held, self.chunks.pending_bytes(broker))
+
     def _rank(self, peer: str, broker: str, message_id: str, now: float, traffic=None, wire_bytes=0) -> tuple[float, bytes]:
         samples = self._samples(peer, broker, now)
         latency = sum(samples) / len(samples) if samples else self.limits.unmeasured_path_rtt
-        load = sum(value.wire_bytes for value in self._attempts.values()
-                   if value.path == broker and value.slot_held)
-        score = latency * (1 + load / self.limits.peer_inflight_bytes)
+        # PUBACK frees a local slot, not the broker-to-peer byte stream. Small
+        # messages must account for image bytes still waiting for peer receipts.
+        score = latency + self._path_backlog(broker) / self.chunks.rate(peer, broker)
         if traffic == Traffic.CHUNK:
-            score = latency + (wire_bytes + max(load, self.chunks.pending_bytes(broker))) / self.chunks.rate(peer, broker)
+            score += wire_bytes / self.chunks.rate(peer, broker)
         # An unpredictable per-process tie-break avoids a permanently preferred provider.
         tie = hashlib.sha256(self._tie_seed + f"{peer}\0{message_id}\0{broker}".encode()).digest()
         return score, tie
 
+    def _path_headroom(self, broker: str, traffic: Traffic) -> bool:
+        priority = traffic in {Traffic.CONTROL, Traffic.RECEIPT, Traffic.FINAL}
+        limit = self.limits.inflight_packets - (0 if priority else self.limits.control_reserve)
+        # Keep a physical slot for each other ready path, without increasing the global budget.
+        others = sum(key != broker and path.connected and bool(path.topics) for key, path in self.paths.items())
+        if others:
+            limit = self.limits.inflight_packets - self.limits.control_reserve
+        held = sum(item.slot_held and item.path == broker for item in self._attempts.values())
+        # Priority must still reach reserved capacity when the global budget is small.
+        fair_share = math.ceil(self.limits.inflight_packets / (others + 1)) if priority else 1
+        return held < max(fair_share, limit - others)
+
     def plan(self, peer: str, message_id: str, traffic: Traffic, wire_bytes: int,
              receive_topics: set[str], *, now: float, ingress: str | None = None,
-             attempted: frozenset[str] = frozenset(), authorized_paths=None) -> tuple[Dispatch, ...]:
+             attempted: frozenset[str] = frozenset(), authorized_paths=None,
+             include_congested=False) -> tuple[Dispatch, ...]:
         if not message_id or wire_bytes <= 0 or wire_bytes > self.limits.packet_bytes:
             return ()
         with self._lock:
@@ -244,19 +262,25 @@ class MultipathPolicy:
             if traffic == Traffic.CHUNK and not route.chunk_acks:
                 return ()
             common = self.ready_brokers(receive_topics) & route.receive_brokers
-            candidates = [key for key in common if wire_bytes <= self.paths[key].packet_bytes
-                          and (authorized_paths is None or (key, self.paths[key].generation) in authorized_paths)]
+            eligible = [key for key in common if wire_bytes <= self.paths[key].packet_bytes
+                        and (authorized_paths is None or (key, self.paths[key].generation) in authorized_paths)]
+            candidates = [key for key in eligible if include_congested or (self._path_headroom(key, traffic)
+                          and (traffic != Traffic.CHUNK or self.chunks.can_send(peer, key, wire_bytes)))]
             unused = [key for key in candidates if key not in attempted]
             if unused:
                 candidates = unused
             candidates.sort(key=lambda key: self._rank(peer, key, message_id, now, traffic, wire_bytes))
             if not candidates:
                 return ()
-            if traffic == Traffic.RECEIPT and ingress in candidates:
+            if (traffic == Traffic.RECEIPT and ingress in candidates
+                    and self._path_backlog(ingress) <= self._path_backlog(candidates[0])):
                 candidates.remove(ingress)
                 candidates.insert(0, ingress)
             small = wire_bytes <= self.limits.small_packet_bytes
             if traffic == Traffic.CONTROL and small:
+                return tuple(Dispatch(key, self.paths[key].generation, 0.0) for key in candidates)
+            if traffic == Traffic.RECEIPT:
+                # Ordered fallbacks, not a race: the adapter stops at the first admitted publish.
                 return tuple(Dispatch(key, self.paths[key].generation, 0.0) for key in candidates)
             first = candidates[0]
             result = [Dispatch(first, self.paths[first].generation, 0.0)]
@@ -293,6 +317,8 @@ class MultipathPolicy:
                 return "path_unavailable"
             if attempt.wire_bytes > path.packet_bytes:
                 return "path_packet_limit"
+            if attempt.traffic == Traffic.CHUNK and not self.chunks.can_send(attempt.peer, attempt.path, attempt.wire_bytes):
+                return "chunk_window_full"
             if attempt_id in self._attempts:
                 return "duplicate_attempt"
             if len(self._attempts) >= tracking_limit:
@@ -308,6 +334,8 @@ class MultipathPolicy:
             peer_byte_limit = self.limits.peer_inflight_bytes - (0 if priority else byte_reserve)
             if len(active) >= packet_limit:
                 return "inflight_packet_limit"
+            if not self._path_headroom(attempt.path, attempt.traffic):
+                return "path_inflight_packet_limit"
             if sum(value.wire_bytes for value in active) + attempt.wire_bytes > byte_limit:
                 return "inflight_byte_limit"
             if (sum(value.wire_bytes for value in active if value.peer == attempt.peer)

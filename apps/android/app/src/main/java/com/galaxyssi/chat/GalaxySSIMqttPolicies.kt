@@ -1,6 +1,13 @@
 package com.galaxyssi.chat
 
 import java.util.LinkedHashMap
+import org.eclipse.paho.client.mqttv3.MqttMessage
+
+internal fun mqttMessage(payload: String): MqttMessage =
+    MqttMessage(payload.toByteArray(Charsets.UTF_8)).apply {
+        qos = 1
+        isRetained = false
+    }
 
 internal object MqttPublishGuard {
     inline fun <T> attempt(operation: () -> T): Result<T> = runCatching(operation)
