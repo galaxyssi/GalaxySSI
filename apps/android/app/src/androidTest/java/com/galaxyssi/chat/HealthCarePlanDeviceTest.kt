@@ -9,6 +9,7 @@ import org.junit.Test
 internal object HealthCarePlanTestFixture {
     fun propose(context: android.content.Context, names: HealthOverviewDatabases,
         conversation: (String) -> String = { UUID.randomUUID().toString() },
+        transformGrant: (HealthCareStore, HealthCareDiscussionGrant) -> HealthCareDiscussionGrant = { _, grant -> grant },
         transform: (AgentNativeJsonObject) -> AgentNativeJsonObject = { it }): HealthCarePlan {
         val now = System.currentTimeMillis()
         HealthRecordStore(context, names.records).use { it.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "6.3"),
@@ -19,8 +20,8 @@ internal object HealthCarePlanTestFixture {
         return HealthCareStore(context, names.care).use { store ->
             val concern = store.forMetric(HealthMetric.GLUCOSE)!!
             val bound = store.bindDiscussion(concern.id, concern.revision, conversation(concern.id))
-            val grant = HealthCareDiscussionGrant(bound.conversationId, UUID.randomUUID().toString(), bound.id, bound.revision,
-                store.settings().version, privacy.version, "a".repeat(64), now, "fixture-provider", "fixture-model", "high")
+            val grant = transformGrant(store, HealthCareDiscussionGrant(bound.conversationId, UUID.randomUUID().toString(), bound.id, bound.revision,
+                store.settings().version, privacy.version, "a".repeat(64), now, "fixture-provider", "fixture-model", "high"))
             store.approveDiscussion(grant)
             val url = "https://example.test/health"
             val quote = "Synthetic source: confirm the report conditions and discuss uncertain results with a clinician."

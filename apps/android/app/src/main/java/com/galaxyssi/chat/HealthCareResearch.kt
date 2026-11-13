@@ -16,7 +16,7 @@ internal data class HealthCareResearchAuthorization(val id: String, val scope: H
         scope.settingsVersion == grant.settingsVersion && scope.privacyVersion == grant.privacyVersion &&
         scope.targetId == grant.targetId && scope.modelId == grant.modelId && scope.effort == grant.effort &&
         scope.destination == grant.destination && scope.profileLink?.scope == grant.profileLink?.scope && scope.questionsShared == grant.questionsShared &&
-        scope.feedbackHistoryShared == grant.feedbackHistoryShared
+        scope.feedbackHistoryShared == grant.feedbackHistoryShared && scope.related.keys == grant.related.keys
     fun json() = JSONObject().put("id", id).put("scope", scope.json()).put("configuration", configuration).put("revoked_at", revokedAt)
     companion object { fun from(j: JSONObject) = HealthCareResearchAuthorization(j.getString("id"),
         HealthCareDiscussionGrant.from(j.getJSONObject("scope")), j.getString("configuration"), j.getLong("revoked_at")) }
@@ -43,11 +43,12 @@ internal data class HealthCareResearchJob(val turnId: String, val authorizationI
 }
 
 internal object HealthCareResearchPolicy {
-    fun displayState(issue: HealthCareConcern, authorization: HealthCareResearchAuthorization?, job: HealthCareResearchJob?, now: Long): HealthCareResearchState? =
+    fun displayState(issue: HealthCareConcern, authorization: HealthCareResearchAuthorization?, job: HealthCareResearchJob?, now: Long,
+        related: Map<HealthMetric, String> = emptyMap()): HealthCareResearchState? =
         job?.state?.takeIf {
             eligible(issue) && authorization?.active == true && job.authorizationId == authorization.id && job.concernId == issue.id &&
                 authorization.scope.concernId == issue.id && authorization.scope.conversationId == issue.conversationId &&
-                job.conversationId == issue.conversationId && job.trigger == trigger(issue, now)
+                job.conversationId == issue.conversationId && job.trigger == trigger(issue, now, related)
         }
 
     fun nextDisplayChange(issue: HealthCareConcern, now: Long): Long? = if (!eligible(issue)) null else issue.actions
@@ -58,8 +59,11 @@ internal object HealthCareResearchPolicy {
 
     // Display revisions, conversation binding and pending proposals are not new evidence.
     // A due action enters this key once, not on every scheduler wakeup after its deadline.
-    fun trigger(issue: HealthCareConcern, now: Long): String = AgentNativeJsonCodec.sha256(JSONObject()
+    fun trigger(issue: HealthCareConcern, now: Long, related: Map<HealthMetric, String> = emptyMap()): String = AgentNativeJsonCodec.sha256(JSONObject()
         .put("basis", HealthCareFollowUpPolicy.basis(issue))
+        .apply { if (related.isNotEmpty()) put("related", JSONArray(related.keys.sortedBy { it.name }.map {
+            JSONObject().put("metric", it.name).put("basis", related.getValue(it))
+        })) }
         .apply { issue.actions.filter { it.feedback != null }.takeIf { it.isNotEmpty() }?.let { actions ->
             put("action_feedback", JSONArray(actions.sortedBy { it.id }.map { it.feedback!!.id }))
         } }

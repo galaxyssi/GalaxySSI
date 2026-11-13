@@ -97,7 +97,7 @@ class HealthCareDiscussionPolicyTest {
         val filtered = HealthCareDiscussionPolicy.historyForGrant(history, grant, approvals::get)
         assertEquals(listOf(entries.first(), entries.last()), filtered.turns)
         assertEquals("", filtered.summary); assertEquals("", filtered.globalContext)
-        assertEquals(history.copy(summary = "", globalContext = ""),
+        assertEquals(history.copy(summary = "", globalContext = "", turns = listOf(entries[0], entries[1], entries[3])),
             HealthCareDiscussionPolicy.historyForGrant(history, grant.copy(feedbackHistoryShared = true), approvals::get))
     }
 

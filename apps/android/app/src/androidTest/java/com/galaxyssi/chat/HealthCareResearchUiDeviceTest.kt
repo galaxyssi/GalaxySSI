@@ -119,12 +119,16 @@ class HealthCareResearchUiDeviceTest {
         await(scenario) { find(it, "health-care-research") != null }
     }
     @Test fun consentIsUncheckedAndCancelNeverStartsResearch() = fixture { scenario, names, plan ->
+        HealthRecordStore(context, names.records).use { it.save(HealthDraft(HealthMetric.WEIGHT,
+            mapOf("weight" to "70"), "kg", System.currentTimeMillis() - 1000)) }
+        HealthCareEngine.evaluate(context, names)
         val issue = HealthCareStore(context, names.care).use { it.concern(plan.grant.concernId)!! }
+        val options = HealthCareStore(context, names.care).use { HealthCareRelatedContext.options(it, issue.metric) }
         val preview = HealthCareDiscussionPreview(issue, plan.grant,
             AgentCallableTarget("fixture-provider", "Synthetic model", AgentConnectorKind.AGENT, AgentConnectorStatus.AVAILABLE, emptyList()),
             HealthCareDiscussionPolicy.snapshot(issue), "核对新证据。",
             AgentAction("fixture", AgentActionKind.CALL_CONNECTOR, "fixture-provider", AgentRisk.LOW, AgentActionStatus.PENDING_CONFIRMATION, "Fixture"),
-            AgentModelSelection(), null)
+            AgentModelSelection(), null, options)
         scenario.onActivity {
             val method = HealthCareResearchReview::class.java.getDeclaredMethod("consent", HealthCareDiscussionPreview::class.java, String::class.java)
                 .apply { isAccessible = true }
@@ -133,10 +137,20 @@ class HealthCareResearchUiDeviceTest {
             val check = views(d.window!!.decorView).first { view -> view.tag == "health-research-consent" } as CheckBox
             val feedback = views(d.window!!.decorView).first { view -> view.tag == "health-research-feedback-history" } as CheckBox
             val raw = views(d.window!!.decorView).first { view -> view.tag == "health-research-data-preview" } as TextView
+            val weight = views(d.window!!.decorView).first { view -> view.tag == "health-research-related-WEIGHT" } as CheckBox
+            assertFalse(weight.isChecked)
+            assertFalse(JSONObject(raw.text.toString()).has("related_measurements"))
+            weight.performClick()
+            assertEquals("WEIGHT", JSONObject(raw.text.toString()).getJSONObject("related_measurements")
+                .getJSONArray("selected").getJSONObject(0).getString("metric"))
             assertFalse(feedback.isChecked)
             assertFalse(JSONObject(raw.text.toString()).getJSONObject("feedback_history").getBoolean("authorized"))
             feedback.performClick()
             assertTrue(feedback.isChecked)
+            assertTrue(JSONObject(raw.text.toString()).getJSONObject("feedback_history").getBoolean("authorized"))
+            assertTrue(JSONObject(raw.text.toString()).has("related_measurements"))
+            weight.performClick()
+            assertFalse(JSONObject(raw.text.toString()).has("related_measurements"))
             assertTrue(JSONObject(raw.text.toString()).getJSONObject("feedback_history").getBoolean("authorized"))
             feedback.performClick()
             assertFalse(JSONObject(raw.text.toString()).getJSONObject("feedback_history").getBoolean("authorized"))

@@ -8,7 +8,8 @@ internal data class HealthCareDiscussionGrant(
     val targetId: String, val modelId: String, val effort: String, val researchAuthorizationId: String = "",
     val profileLink: HealthCareProfileLink? = null, val questionsShared: Boolean = false, val userInputDigest: String = "",
     val feedbackHistoryShared: Boolean = false, val instruction: HealthCareInstructionScope? = null,
-    val visitFollowUp: HealthCareVisitFollowUpScope? = null
+    val visitFollowUp: HealthCareVisitFollowUpScope? = null,
+    val related: Map<HealthMetric, String> = emptyMap()
 ) {
     init {
         require(listOf(conversationId, turnId, concernId).all(HealthProfilePolicy::uuid))
@@ -19,6 +20,8 @@ internal data class HealthCareDiscussionGrant(
         require(userInputDigest.isEmpty() || userInputDigest.matches(Regex("[0-9a-f]{64}")))
         require(instruction == null || researchAuthorizationId.isEmpty() && !feedbackHistoryShared && !questionsShared)
         require(visitFollowUp == null || instruction == null && researchAuthorizationId.isEmpty() && !feedbackHistoryShared && !questionsShared)
+        require(related.values.all { it.matches(Regex("[0-9a-f]{64}")) })
+        require(related.isEmpty() || instruction == null && visitFollowUp == null)
     }
     fun json() = JSONObject().put("conversation", conversationId).put("turn", turnId).put("concern", concernId)
         .put("revision", revision).put("settings", settingsVersion).put("privacy", privacyVersion)
@@ -31,6 +34,7 @@ internal data class HealthCareDiscussionGrant(
             profileLink?.let { put("profile_link", it.json()) }
             instruction?.let { put("instruction_scope", it.json()) }
             visitFollowUp?.let { put("visit_followup_scope", it.json()) }
+            if (related.isNotEmpty()) put("related_measurements", JSONObject(related.mapKeys { it.key.name }))
         }
     companion object {
         fun from(j: JSONObject) = HealthCareDiscussionGrant(j.getString("conversation"), j.getString("turn"),
@@ -39,7 +43,8 @@ internal data class HealthCareDiscussionGrant(
             j.optString("research_authorization"), j.optJSONObject("profile_link")?.let(HealthCareProfileLink::from), j.optBoolean("questions_shared"),
             j.optString("user_input_digest"), j.optBoolean("feedback_history_shared"),
             j.optJSONObject("instruction_scope")?.let(HealthCareInstructionScope::from),
-            j.optJSONObject("visit_followup_scope")?.let(HealthCareVisitFollowUpScope::from))
+            j.optJSONObject("visit_followup_scope")?.let(HealthCareVisitFollowUpScope::from),
+            j.optJSONObject("related_measurements")?.let { rows -> rows.keys().asSequence().associate { HealthMetric.valueOf(it) to rows.getString(it) } }.orEmpty())
     }
 }
 
@@ -89,23 +94,19 @@ internal object HealthCareDiscussionPolicy {
                         previous.privacyVersion == grant.privacyVersion && previous.profileLink == grant.profileLink
                 } == true)
         })
-        // Source-extraction turns need a fresh explicit source selection, even in a later broad discussion.
-        val withoutInstructions = history.copy(summary = "", globalContext = "", turns = history.turns.filter {
-            val previous = previousGrant(it.turnId)
-            previous?.instruction == null && previous?.visitFollowUp == null
-        })
-        if (grant.feedbackHistoryShared) return withoutInstructions
-        // Summaries have no turn-level provenance and may contain withdrawn feedback.
+        // Summaries and unbound turns cannot prove which measurements or feedback they contain.
         return history.copy(summary = "", globalContext = "", turns = history.turns.filter { entry ->
             entry.conversationId == grant.conversationId && entry.sourceConversationId.isBlank() &&
-                (entry.turnId == grant.turnId || previousGrant(entry.turnId)?.let { previous ->
-                    previous.instruction == null && previous.visitFollowUp == null && !previous.feedbackHistoryShared && previous.concernId == grant.concernId &&
-                        previous.conversationId == grant.conversationId && previous.destination == grant.destination &&
-                        previous.privacyVersion == grant.privacyVersion && previous.profileLink?.scope == grant.profileLink?.scope &&
-                        (!previous.questionsShared || grant.questionsShared)
-                } == true)
+                (entry.turnId == grant.turnId || historyScopePermitted(previousGrant(entry.turnId), grant))
         })
     }
+
+    fun historyScopePermitted(previous: HealthCareDiscussionGrant?, grant: HealthCareDiscussionGrant): Boolean =
+        previous != null && previous.instruction == null && previous.visitFollowUp == null &&
+            (!previous.feedbackHistoryShared || grant.feedbackHistoryShared) && previous.concernId == grant.concernId &&
+            previous.conversationId == grant.conversationId && previous.destination == grant.destination &&
+            previous.privacyVersion == grant.privacyVersion && previous.profileLink?.scope == grant.profileLink?.scope &&
+            (!previous.questionsShared || grant.questionsShared) && grant.related.keys.containsAll(previous.related.keys)
 
     // This is transport detection only. Actual record access still requires the persisted per-turn grant.
     fun hasStructuredContext(prompt: String): Boolean {
@@ -183,6 +184,15 @@ internal object HealthCareDiscussionPolicy {
         Age is derived for the measurement date, not a proof of current symptoms or pregnancy status.
         New profile information may conflict with measurement-time context; explain the difference
         and clarify only when it affects the decision. Never silently overwrite either source.
+        When related_measurements is present, integrate the explicitly selected measurements when relevant,
+        preserving each record's date, units, reference and measurement conditions. They may be from
+        different dates; do not claim simultaneous measurements, causation, a diagnosis or a complete
+        health archive. An unavailable selected measurement is not a normal result. Never reuse its
+        old value from prior conversation. For older evidence call galaxyssi.health.history.read with
+        that selected metric and its own input_version; omit metric only for the primary concern.
+        Missing or unselected metrics are outside this consent, not proof the user never recorded them.
+        Discuss interactions and conflicting recommendations before proposing one coherent next step.
+        Do not change another concern's target, plan or reminders through this conversation.
         question_ledger is durable across conversations and providers within this exact sharing scope.
         Read further pages with galaxyssi.health.questions.read when next is present; a page is not the full ledger.
         Reuse saved facts and current reviewed answers. DEFERRED and DECLINED require the user to reopen;

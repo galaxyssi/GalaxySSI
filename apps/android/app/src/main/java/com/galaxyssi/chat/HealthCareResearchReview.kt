@@ -9,6 +9,7 @@ import android.widget.CheckBox
 import android.widget.ScrollView
 import android.widget.Toast
 import org.json.JSONObject
+import org.json.JSONArray
 import java.util.concurrent.Executors
 
 /** Separate consent for future model calls; a local tracking switch never grants network access. */
@@ -34,19 +35,24 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
                 val job = care.latestResearchJob(id)
                 val enabled = care.settings().enabled && HealthCareResearchPolicy.eligible(issue)
                 val review = job?.let { care.modelReview(it.turnId) }
-                val done: () -> Unit = { render(issue, authorization, job, enabled, review) }
+                val related = HealthCareRelatedContext.capture(care, authorization?.scope?.related?.keys.orEmpty())
+                val done: () -> Unit = { render(issue, authorization, job, enabled, review, related) }
                 done
             }
         }
     }
 
     private fun render(issue: HealthCareConcern, authorization: HealthCareResearchAuthorization?, job: HealthCareResearchJob?, enabled: Boolean,
-        review: HealthCareModelReview?) {
+        review: HealthCareModelReview?, related: Map<HealthMetric, String>) {
         val content = ui.column().apply { setPadding(ui.dp(20), ui.dp(8), ui.dp(20), ui.dp(16)) }
         content.addView(ui.text(activity.getString(issue.metric.titleResource()), 17f, bold = true))
         ui.add(content, ui.text(activity.getString(if (authorization?.active == true) R.string.health_research_on else R.string.health_research_off), 14f)
             .apply { tag = "health-research-authorization" }, 8)
         authorization?.scope?.let { scope -> ui.add(content, ui.text(destination(scope), 14f), 8) }
+        if (authorization?.active == true && authorization.scope.related.isNotEmpty())
+            ui.add(content, ui.text(activity.getString(R.string.health_related_selected,
+                authorization.scope.related.keys.sortedBy { it.name }.joinToString(" / ") { activity.getString(it.titleResource()) }), 14f)
+                .apply { tag = "health-research-related-scope" }, 8)
         if (authorization?.active == true) ui.add(content, ui.text(activity.getString(
             if (authorization.scope.feedbackHistoryShared) R.string.health_research_feedback_on else R.string.health_research_feedback_off), 14f)
             .apply { tag = "health-research-feedback-scope" }, 8)
@@ -56,7 +62,7 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
         }
         review?.let { value ->
             ui.add(content, ui.text(activity.getString(R.string.health_model_review_title), 16f, bold = true), 16)
-            if (value.inputVersion != issue.inputVersion || value.trigger != HealthCareResearchPolicy.trigger(issue, System.currentTimeMillis()))
+            if (value.inputVersion != issue.inputVersion || value.trigger != HealthCareResearchPolicy.trigger(issue, System.currentTimeMillis(), related))
                 ui.add(content, ui.text(activity.getString(R.string.health_model_review_historical), 14f), 6)
             ui.add(content, ui.text(value.input.summary, 15f).apply { tag = "health-model-review-summary" }, 8)
             listOf(R.string.health_model_review_reason to value.input.rationale,
@@ -125,15 +131,40 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
             raw.visibility = if (raw.visibility == android.view.View.GONE) android.view.View.VISIBLE else android.view.View.GONE
         }, 8)
         ui.add(content, raw, 8)
+        val selected = linkedSetOf<HealthMetric>()
+        var shareHistory = false
+        fun refreshPreview() {
+            raw.text = JSONObject(preview.snapshot).apply {
+                put("feedback_history", JSONObject().put("authorized", shareHistory).put("included", false)
+                    .put("read_tool", if (shareHistory) HealthCareFeedbackTool.ID else JSONObject.NULL))
+                if (selected.isEmpty()) remove("related_measurements") else put("related_measurements", JSONObject()
+                    .put("selected", JSONArray(preview.relatedOptions.filter { it.metric in selected }.map { JSONObject(it.snapshot) }))
+                    .put("history_tool", HealthCareHistoryTool.ID).put("complete_health_archive", false))
+            }.toString(2)
+        }
+        if (preview.relatedOptions.isNotEmpty()) {
+            ui.add(content, ui.text(activity.getString(R.string.health_related_title), 16f, bold = true), 12)
+            ui.add(content, ui.text(activity.getString(R.string.health_related_consent), 14f), 6)
+            preview.relatedOptions.forEach { option ->
+                ui.add(content, CheckBox(activity).apply {
+                    text = activity.getString(option.metric.titleResource())
+                    tag = "health-research-related-${option.metric.name}"
+                    minimumHeight = ui.dp(48)
+                    isChecked = false
+                    setOnCheckedChangeListener { _, value ->
+                        if (value) selected += option.metric else selected -= option.metric
+                        refreshPreview()
+                    }
+                }, 4)
+            }
+        }
         val feedback = CheckBox(activity).apply {
             text = activity.getString(R.string.health_research_feedback_consent)
             tag = "health-research-feedback-history"
             isChecked = false
             setOnCheckedChangeListener { _, value ->
-                raw.text = JSONObject(preview.snapshot).apply {
-                    put("feedback_history", JSONObject().put("authorized", value).put("included", false)
-                        .put("read_tool", if (value) HealthCareFeedbackTool.ID else JSONObject.NULL))
-                }.toString(2)
+                shareHistory = value
+                refreshPreview()
             }
         }
         ui.add(content, feedback, 12)
@@ -149,9 +180,10 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
             setOnClickListener {
                 if (!checked.isChecked || busy) return@setOnClickListener
                 val shareFeedback = feedback.isChecked
+                val related = selected.toSet()
                 next.dismiss()
                 work {
-                    HealthCareResearchRuntime.authorize(activity.applicationContext, preview, expectedId, shareFeedback)
+                    HealthCareResearchRuntime.authorize(activity.applicationContext, preview, expectedId, shareFeedback, related)
                     val done: () -> Unit = { show(preview.concern.id) }
                     done
                 }

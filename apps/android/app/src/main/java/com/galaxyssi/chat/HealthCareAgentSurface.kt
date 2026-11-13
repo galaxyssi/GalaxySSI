@@ -66,7 +66,8 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
     fun destroy() { pause(); planReview.destroy(); actionReview.destroy(); targetReview.destroy(); historyReview.destroy(); researchReview.destroy(); answerReview.destroy(); worker.shutdown() }
     private data class Snapshot(val concerns: List<HealthCareConcern>, val plans: List<HealthCarePlan> = emptyList(),
         val action: HealthCareAction? = null, val reminder: HealthCareReminder? = null, val profile: Boolean = false,
-        val authorization: HealthCareResearchAuthorization? = null, val research: HealthCareResearchJob? = null, val answers: Boolean = false)
+        val authorization: HealthCareResearchAuthorization? = null, val research: HealthCareResearchJob? = null, val answers: Boolean = false,
+        val related: Map<HealthMetric, String> = emptyMap())
     private fun reload() {
         if (!active || !agentPage) return
         val conversation = activity.agentTranscriptStore.activeConversation()
@@ -94,13 +95,16 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                                 ?.minByOrNull { item -> reminders.firstOrNull { it.actionId == item.id && it.state != HealthCareReminderState.CANCELLED }?.dueAt ?: Long.MAX_VALUE }
                                 else null
                             val plans = if (profile && issue != null) store.pendingPlans(issue.id).filter {
-                                HealthCarePlanPolicy.current(it, issue, store.settings(), privacy.policy(), issue.inputVersion)
+                                HealthCarePlanPolicy.current(it, issue, store.settings(), privacy.policy(), issue.inputVersion) &&
+                                    HealthCareRelatedContext.current(store, it.grant)
                             } else emptyList()
+                            val authorization = if (profile && issue != null) store.researchAuthorization(issue.id) else null
                             Snapshot(concerns, plans,
                                 action, reminders.firstOrNull { it.actionId == action?.id }, profile,
-                                if (profile && issue != null) store.researchAuthorization(issue.id) else null,
+                                authorization,
                                 if (profile && issue != null) store.latestResearchJob(issue.id) else null,
-                                profile && issue != null && store.answers(issue, limit = 1).items.isNotEmpty())
+                                profile && issue != null && store.answers(issue, limit = 1).items.isNotEmpty(),
+                                HealthCareRelatedContext.capture(store, authorization?.scope?.related?.keys.orEmpty()))
                         }
                     }
                 }
@@ -154,7 +158,7 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                         })
                         if (snapshot.profile) content.addView(ui.text(activity.getString(R.string.health_agent_research_state, activity.getString(
                             if (snapshot.authorization?.active != true) R.string.health_research_off else
-                                HealthCareResearchPolicy.displayState(item, snapshot.authorization, snapshot.research, System.currentTimeMillis())
+                                HealthCareResearchPolicy.displayState(item, snapshot.authorization, snapshot.research, System.currentTimeMillis(), snapshot.related)
                                     ?.titleResource() ?: R.string.health_research_queued)), 13f, muted = true).apply { tag = "agent-health-care-state" })
                         content.addView(details)
                         details.addView(ui.profileRow(activity.getString(R.string.health_agent_open_record)) {

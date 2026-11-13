@@ -1,0 +1,5 @@
+<resources>
+    <string name="health_related_title">Other measurements for this assessment</string>
+    <string name="health_related_consent">Optional. Share only the selected measurements and their measurement context with this model for future reviews. History is read in pages; other conversations and care plans are not shared. Changes to selected records trigger a new assessment. Suggestions do not change your records or care plan automatically.</string>
+    <string name="health_related_selected">Also shared: %1$s</string>
+</resources>

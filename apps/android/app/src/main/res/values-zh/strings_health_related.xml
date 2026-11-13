@@ -1,0 +1,5 @@
+<resources>
+    <string name="health_related_title">一起分析的其他指标</string>
+    <string name="health_related_consent">可选。后续评估只向此模型共享勾选指标及其测量条件，历史按页读取，不共享其他会话和健康计划。所选记录变化后会重新评估。模型建议不会自动修改档案或健康计划。</string>
+    <string name="health_related_selected">同时共享：%1$s</string>
+</resources>

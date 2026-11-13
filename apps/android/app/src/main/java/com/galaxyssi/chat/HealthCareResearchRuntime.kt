@@ -7,7 +7,8 @@ import java.util.UUID
 internal object HealthCareResearchRuntime {
     fun preview(context: Context, concernId: String): HealthCareDiscussionPreview {
         val conversation = HealthCareDiscussion.open(context, concernId)
-        return HealthCareDiscussion.prepare(context, conversation, context.getString(R.string.health_research_question), context(context))
+        val preview = HealthCareDiscussion.prepare(context, conversation, context.getString(R.string.health_research_question), context(context))
+        return preview.copy(relatedOptions = HealthCareStore(context).use { HealthCareRelatedContext.options(it, preview.concern.metric) })
     }
 
     private fun context(app: Context): AgentRuntimeContext {
@@ -19,13 +20,17 @@ internal object HealthCareResearchRuntime {
             knowledgeStats = AgentKnowledgeStats())
     }
 
-    fun authorize(context: Context, preview: HealthCareDiscussionPreview, expectedId: String?, feedbackHistoryShared: Boolean = false) {
-        val grant = preview.grant.copy(feedbackHistoryShared = feedbackHistoryShared)
+    fun authorize(context: Context, preview: HealthCareDiscussionPreview, expectedId: String?, feedbackHistoryShared: Boolean = false,
+        related: Set<HealthMetric> = emptySet()) {
+        require(preview.relatedOptions.map { it.metric }.containsAll(related))
+        val grant = preview.grant.copy(feedbackHistoryShared = feedbackHistoryShared,
+            related = preview.relatedOptions.filter { it.metric in related }.associate { it.metric to it.basis })
         val fingerprint = HealthCareDiscussion.configurationFingerprint(context, grant.conversationId, grant.targetId)
         check(AgentModelSelectionSettings.selection(context, grant.conversationId) == preview.selection &&
             AgentModelSelectionSettings.configurationForTarget(context, grant.conversationId, grant.targetId) == preview.configuration)
         val authorization = HealthCareResearchAuthorization(UUID.randomUUID().toString(), grant, fingerprint)
         check(HealthCareProfileAccess.current(context, grant.profileLink)) { context.getString(R.string.health_care_profile_changed) }
+        check(HealthCareRelatedContext.sourceCurrent(context, HealthOverviewDatabases(), grant)) { context.getString(R.string.health_care_changed) }
         check(bindingCurrent(context, authorization)) { context.getString(R.string.health_care_changed) }
         HealthCareStore(context).use { it.authorizeResearch(authorization, expectedId) }
         HealthCareResearchWork.changed(context)

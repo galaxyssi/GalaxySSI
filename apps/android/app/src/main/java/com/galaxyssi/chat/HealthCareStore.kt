@@ -40,7 +40,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             discussionGrant(value.turnId) == review.grant && review.input.attentionRequested && auth.permits(review.grant) &&
             HealthCareDiscussionPolicy.questionScopeCurrent(review.grant, issue) && job.state == HealthCareResearchState.COMPLETED &&
             job.authorizationId == auth.id && job.concernId == issue.id && job.conversationId == issue.conversationId &&
-            job.trigger == review.trigger && review.trigger == HealthCareResearchPolicy.trigger(issue, now)
+            HealthCareRelatedContext.current(this, review.grant) && job.trigger == review.trigger && review.trigger == researchTrigger(issue, auth.scope, now)
     }
     fun modelReview(turnId: String) = modelReviewRows().get(turnId)
     fun recordModelReview(grant: HealthCareDiscussionGrant, input: HealthCareModelReviewInput, now: Long): HealthCareModelReview = transaction(true) {
@@ -49,8 +49,10 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         if (discussionGrant(grant.turnId) != grant || !researchGrantCurrent(grant) ||
             discussion(grant.conversationId) != issue.id || issue.revision != grant.revision ||
             !settings().enabled || settings().version != grant.settingsVersion || !HealthCareResearchPolicy.eligible(issue)) throw HealthCareConflict()
-        val records = issue.assessment.series?.samples.orEmpty().map { it.record }.toSet() + listOfNotNull(issue.assessment.record)
-        if (!records.containsAll(input.records) || input.evidenceIds.any { evidence(it)?.grant != grant } ||
+        val primary = issue.assessment.series?.samples.orEmpty().map { it.record }.toSet() + listOfNotNull(issue.assessment.record)
+        val records = primary + grant.related.keys.flatMap { metric -> relatedMeasurement(metric)?.takeIf { it.available }
+            ?.let { it.assessment?.series?.samples.orEmpty().map { sample -> sample.record } + listOfNotNull(it.assessment?.record) }.orEmpty() }
+        if (input.records.none { it in primary } || !records.containsAll(input.records) || input.evidenceIds.any { evidence(it)?.grant != grant } ||
             input.planId.isNotEmpty() && plan(input.planId)?.grant != grant) throw HealthCareConflict()
         modelReview(grant.turnId)?.let {
             if (it.grant != grant || it.input != input || it.inputVersion != issue.inputVersion || it.trigger != job.trigger) throw HealthCareConflict()
@@ -208,6 +210,13 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     }
     fun forMetric(metric: HealthMetric): HealthCareConcern? = db.rawQuery("SELECT $COLUMNS FROM concerns WHERE metric_key=?",
         arrayOf(metricKey(metric))).use { if (it.moveToFirst()) decode(it) else null }
+    fun relatedMeasurement(metric: HealthMetric): HealthCareRelatedMeasurement? {
+        forMetric(metric)?.let { return HealthCareRelatedMeasurement.of(it) }
+        val value = evaluation(metric) ?: return null
+        val assessment = value.optJSONObject("assessment")?.let(HealthCareAssessment::from)
+        return HealthCareRelatedMeasurement(metric, value.getString("token"), assessment, null,
+            !value.optBoolean("dismissed") && assessment?.sample != null)
+    }
     fun evaluated(metric: HealthMetric, evaluationVersion: String = ""): String? = evaluation(metric)?.let {
         if (it.optBoolean("dismissed") || it.optString("assessment_version") == evaluationVersion) it.getString("token") else null
     }
@@ -253,7 +262,10 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         db.insertWithOnConflict("evaluations", null, ContentValues().apply {
             put("metric_key", metricKey(metric)); put("token", token)
             put("payload", pack("evaluation", "${metricKey(metric)}:$token", JSONObject().put("metric", metric.name).put("token", token)
-                .put("assessment_version", evaluationVersion)))
+                .put("assessment_version", evaluationVersion).apply {
+                    // Normal results remain available for selected context without creating an abnormal concern.
+                    if (next == null && assessment != null) put("assessment", assessment.json())
+                }))
         }, SQLiteDatabase.CONFLICT_REPLACE)
         next
     }
@@ -272,6 +284,11 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         it.copy(context = context)
     }
     fun questions(issue: HealthCareConcern, after: String = "", limit: Int = 30) = questionRows().page(issue, after, limit)
+    fun questionsForGrant(issue: HealthCareConcern, grant: HealthCareDiscussionGrant, after: String = "", limit: Int = 30): HealthCareQuestionPage {
+        if (grant.concernId != issue.id || !grant.questionsShared) throw HealthCareConflict()
+        val page = questions(issue, after, limit)
+        return page.copy(items = page.items.filter { grant.related.keys.containsAll(it.related) })
+    }
     fun question(id: String) = questionRows().get(id)
     fun answers(issue: HealthCareConcern, after: String = "", limit: Int = 30) = answerRows().page(issue, after, limit)
     fun answer(id: String) = answerRows().get(id)
@@ -279,6 +296,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         source: AgentTranscriptEntry, quote: String, answer: String, now: Long): HealthCareAnswerDraft = transaction(true) {
         val issue = concern(grant.concernId) ?: throw HealthCareConflict()
         val question = question(questionId) ?: throw HealthCareConflict()
+        if (!grant.related.keys.containsAll(question.related)) throw HealthCareConflict()
         if (discussionGrant(grant.turnId) != grant || discussion(grant.conversationId) != issue.id ||
             issue.revision != grant.revision || issue.profileLink != grant.profileLink ||
             !settings().enabled || settings().version != grant.settingsVersion ||
@@ -400,7 +418,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val current = concern(grant.concernId) ?: throw HealthCareConflict()
         grant.visitFollowUp?.let { HealthCareVisitFollowUpTool.selected(this, current.id, it) }
         if (discussion(grant.conversationId) != current.id || current.revision != grant.revision || current.profileLink != grant.profileLink ||
-            !HealthCareDiscussionPolicy.questionScopeCurrent(grant, current) ||
+            !HealthCareDiscussionPolicy.questionScopeCurrent(grant, current) || !HealthCareRelatedContext.current(this, grant) ||
             !settings().enabled || settings().version != grant.settingsVersion || !researchGrantCurrent(grant)) throw HealthCareConflict()
         discussionGrant(grant.turnId)?.let {
             if (it != grant) throw HealthCareConflict()
@@ -438,7 +456,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val scope = value.scope
         val issue = concern(scope.concernId) ?: throw HealthCareConflict()
         if (!value.active || researchAuthorization(issue.id)?.id != expectedAuthorization ||
-            !HealthCareDiscussionPolicy.questionScopeCurrent(scope, issue) ||
+            !HealthCareDiscussionPolicy.questionScopeCurrent(scope, issue) || !HealthCareRelatedContext.current(this, scope) ||
             !settings().enabled || settings().version != scope.settingsVersion || issue.revision != scope.revision ||
             discussion(scope.conversationId) != issue.id || issue.conversationId != scope.conversationId ||
             !HealthCareResearchPolicy.eligible(issue) || issue.profileLink != scope.profileLink) throw HealthCareConflict()
@@ -510,13 +528,15 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             put("created_at", value.createdAt); put("cancel_pending", if (value.cancellationPending) 1 else 0)
         }, SQLiteDatabase.CONFLICT_REPLACE)
     }
+    fun researchTrigger(issue: HealthCareConcern, scope: HealthCareDiscussionGrant, now: Long) =
+        HealthCareResearchPolicy.trigger(issue, now, HealthCareRelatedContext.capture(this, scope.related.keys))
     fun queueResearch(authorizationId: String, concernId: String, now: Long): HealthCareResearchJob = transaction {
         val authorization = researchAuthorization(concernId) ?: throw HealthCareConflict()
         val issue = concern(concernId) ?: throw HealthCareConflict()
         if (authorization.id != authorizationId || !authorization.active || !HealthCareResearchPolicy.eligible(issue) ||
             issue.conversationId != authorization.scope.conversationId || !settings().enabled ||
             settings().version != authorization.scope.settingsVersion || issue.profileLink?.scope != authorization.scope.profileLink?.scope) throw HealthCareConflict()
-        val trigger = HealthCareResearchPolicy.trigger(issue, now)
+        val trigger = researchTrigger(issue, authorization.scope, now)
         db.rawQuery("SELECT $RESEARCH_COLUMNS FROM research_jobs WHERE authorization_id=? AND trigger=?",
             arrayOf(authorizationId, trigger)).use { if (it.moveToFirst()) {
                 val existing = decodeResearchJob(it)
@@ -553,13 +573,14 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         }
     }
     fun researchGrantCurrent(grant: HealthCareDiscussionGrant): Boolean {
+        if (!HealthCareRelatedContext.current(this, grant)) return false
         if (grant.researchAuthorizationId.isEmpty()) return true
         val authorization = researchAuthorization(grant.concernId) ?: return false
         val job = researchJob(grant.turnId) ?: return false
         val issue = concern(grant.concernId) ?: return false
         return authorization.permits(grant) && HealthCareDiscussionPolicy.questionScopeCurrent(grant, issue) && !job.terminal && job.authorizationId == authorization.id &&
             job.concernId == grant.concernId && job.conversationId == grant.conversationId && job.revision == grant.revision &&
-            job.trigger == HealthCareResearchPolicy.trigger(issue, System.currentTimeMillis())
+            job.trigger == researchTrigger(issue, grant, System.currentTimeMillis())
     }
     private fun decodePlan(row: Cursor): HealthCarePlan = HealthCarePlan.from(unpack("plan", row.getString(0), row.getBlob(4))).also {
         check(it.id == row.getString(0) && it.grant.concernId == row.getString(1) && it.createdAt == row.getLong(2) && it.state.name == row.getString(3))
@@ -621,7 +642,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         val proposed = plan(id) ?: throw HealthCareConflict()
         val issue = concern(proposed.grant.concernId) ?: throw HealthCareConflict()
         if (proposed.state != HealthCarePlanState.PENDING || issue.revision != expectedRevision ||
-            !HealthCarePlanPolicy.current(proposed, issue, settings(), privacy, sourceVersion)) throw HealthCareConflict()
+            !HealthCarePlanPolicy.current(proposed, issue, settings(), privacy, sourceVersion) ||
+            !HealthCareRelatedContext.current(this, proposed.grant)) throw HealthCareConflict()
         if (proposed.sources.any { source -> source.evidence?.let {
             HealthCareEvidencePolicy.supports(it, proposed.grant, source.url, source.quote)
         } != true }) throw HealthCareEvidenceMissing()

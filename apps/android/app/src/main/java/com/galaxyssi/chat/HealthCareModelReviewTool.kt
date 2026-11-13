@@ -8,7 +8,8 @@ internal object HealthCareModelReviewTool {
     fun definition(record: (AgentNativeToolInvocationContext, HealthCareModelReviewInput) -> HealthCareModelReview) = AgentNativeToolDefinition(
         descriptor = AgentNativeToolDescriptor(ID, "1.0.0", "Record this automatic health assessment",
             "Finish an authorized automatic review with one durable structured assessment before the final answer. " +
-                "Use exact record IDs/revisions from this concern's supplied snapshot and current-turn evidence receipts. " +
+                "Use exact record IDs/revisions from the primary snapshot and explicitly selected related measurements; " +
+                "include at least one primary record. Use only current-turn evidence receipts. " +
                 "Separate facts, reasoning and uncertainty; do not invent evidence. An empty evidence list means no retrieved support. " +
                 "A PROPOSE_PLAN decision requires plan_id from health.plan.propose in this turn. " +
                 "Review events are conditions, not scheduled checks. Attention is a recommendation, not a sent notification. " +

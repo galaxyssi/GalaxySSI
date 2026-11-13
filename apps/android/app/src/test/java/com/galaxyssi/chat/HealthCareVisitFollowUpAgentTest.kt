@@ -36,10 +36,12 @@ class HealthCareVisitFollowUpAgentTest {
             grant.copy(visitFollowUp = scope.copy(revision = scope.revision + 1))).forEach { changed ->
             assertTrue(HealthCareDiscussionPolicy.historyForGrant(history, changed.copy(turnId = id())) { grant }.turns.isEmpty())
         }
-        val broad = HealthCareDiscussionPolicy.historyForGrant(history, grant.copy(turnId = id(), visitFollowUp = null, feedbackHistoryShared = true)) {
-            if (it == grant.turnId) grant else null
+        val ordinary = grant.copy(turnId = other.turnId, visitFollowUp = null, feedbackHistoryShared = true)
+        val broad = HealthCareDiscussionPolicy.historyForGrant(history, ordinary.copy(turnId = id())) {
+            if (it == grant.turnId) grant else ordinary
         }
         assertEquals(listOf(other), broad.turns); assertEquals("", broad.summary)
+        assertTrue(HealthCareDiscussionPolicy.historyForGrant(history, ordinary.copy(turnId = id())) { null }.turns.isEmpty())
     }
     @Test fun onlyExactPositiveCursorsAndSelectedEntryFieldsAreAccepted() {
         assertNull(HealthCareVisitFollowUpTool.cursor(mapOf("revision" to 5)))

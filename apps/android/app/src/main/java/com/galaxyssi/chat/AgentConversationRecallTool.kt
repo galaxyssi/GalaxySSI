@@ -5,6 +5,9 @@ import android.content.Context
 /** Only the host-bound conversation, strictly before the invoking turn. */
 internal object AgentConversationRecallTool {
     const val ID = "galaxyssi.phone.conversation.recall"
+    internal fun permittedHealthTurn(current: HealthCareDiscussionGrant?, previous: HealthCareDiscussionGrant?) =
+        current != null && current.instruction == null && current.visitFollowUp == null && current.feedbackHistoryShared &&
+            HealthCareDiscussionPolicy.historyScopePermitted(previous, current)
 
     fun definitions(context: Context) = listOf(AgentNativeToolDefinition(
         descriptor = AgentNativeToolDescriptor(
@@ -28,8 +31,7 @@ internal object AgentConversationRecallTool {
             val conversation = call.context.conversationId
             fun permitted(turn: String): Boolean = !HealthCareDiscussion.bound(context, conversation) ||
                 HealthCareStore(context).use {
-                    val grant = it.discussionGrant(turn)
-                    grant?.instruction == null && grant?.visitFollowUp == null
+                    permittedHealthTurn(it.discussionGrant(call.context.turnId), it.discussionGrant(turn))
                 }
             val boundary = database.historyBoundary(conversation, call.context.turnId)
                 ?: return@AgentNativeToolExecutor AgentNativeToolExecutionResult.failure(

@@ -6,7 +6,8 @@ import java.util.UUID
 
 internal data class HealthCareDiscussionPreview(val concern: HealthCareConcern, val grant: HealthCareDiscussionGrant,
     val target: AgentCallableTarget, val snapshot: String, val question: String, val action: AgentAction,
-    val selection: AgentModelSelection, val configuration: AgentTargetConfiguration?)
+    val selection: AgentModelSelection, val configuration: AgentTargetConfiguration?,
+    val relatedOptions: List<HealthCareRelatedOption> = emptyList())
 
 /** A discussion grants one provider one turn, not access to the user's complete health archive. */
 internal object HealthCareDiscussion {
@@ -81,7 +82,8 @@ internal object HealthCareDiscussion {
                 research?.id.orEmpty(), concern.profileLink, questionsShared = instruction == null && journal == null && (research?.scope?.questionsShared ?: true),
                 userInputDigest = if (research == null) AgentNativeJsonCodec.sha256(question.trim()) else "",
                 feedbackHistoryShared = instruction == null && journal == null && (research?.scope?.feedbackHistoryShared ?: feedbackHistoryShared),
-                instruction = instruction?.let(HealthCareInstructionScope::of), visitFollowUp = visitFollowUpScope)
+                instruction = instruction?.let(HealthCareInstructionScope::of), visitFollowUp = visitFollowUpScope,
+                related = HealthCareRelatedContext.capture(care, research?.scope?.related?.keys.orEmpty()))
             check(HealthCareDiscussionPolicy.questionScopeCurrent(grant, concern)) { context.getString(R.string.health_care_changed) }
             if (research != null) check(research.permits(grant) && care.researchGrantCurrent(grant)) {
                 context.getString(R.string.health_care_changed)
@@ -92,16 +94,18 @@ internal object HealthCareDiscussion {
                 HealthCareResearchHandoff.snapshot(concern, job, previous,
                     previous?.let { care.revision(concern.id, it.revision) }, care.priorResearchEvidence(job, grant),
                     care.hasRecordedPlan(concern.id, job.createdAt),
-                    previous?.let { care.modelReview(it.turnId) }?.takeIf { it.reusable(grant) })
+                    previous?.let { care.modelReview(it.turnId) }?.takeIf { it.reusable(grant) }, grant.related)
             }
             val profile = concern.profileLink?.takeIf { instruction == null && journal == null }?.let { link ->
                 try { HealthCareProfileAccess.capture(context, link) }
                 catch (_: HealthProfileConflict) { error(context.getString(R.string.health_care_profile_changed)) }
             }
-            val snapshot = if (instruction != null) HealthCareInstructionTool.snapshot(instruction)
+            val baseSnapshot = if (instruction != null) HealthCareInstructionTool.snapshot(instruction)
             else if (journal != null) HealthCareVisitFollowUpTool.snapshot(journal, care.encounter(journal.encounterId)!!, concern.revision)
             else HealthCareDiscussionPolicy.snapshot(concern, followUp, profile,
-                if (grant.questionsShared) care.questions(concern, limit = 8) else null, grant.feedbackHistoryShared)
+                if (grant.questionsShared) care.questionsForGrant(concern, grant, limit = 8) else null, grant.feedbackHistoryShared)
+            val snapshot = if (grant.related.isEmpty()) baseSnapshot else JSONObject(baseSnapshot)
+                .put("related_measurements", HealthCareRelatedContext.snapshot(care, grant.related)).toString(2)
             val goal = HealthCareDiscussionPolicy.prompt(question, snapshot)
             val history = HealthCareDiscussionPolicy.historyForGrant(AgentTranscriptStore(context).context(conversationId),
                 grant, care::discussionGrant)
@@ -133,6 +137,7 @@ internal object HealthCareDiscussion {
         }
         check(destination(context, grant.targetId, grant.modelId) == grant.destination) { context.getString(R.string.health_care_changed) }
         check(HealthCareProfileAccess.current(context, grant.profileLink)) { context.getString(R.string.health_care_profile_changed) }
+        check(HealthCareRelatedContext.sourceCurrent(context, HealthOverviewDatabases(), grant)) { context.getString(R.string.health_care_changed) }
         HealthPrivacyStore(context).use { privacy ->
             val policy = privacy.policy()
             check(policy.version == grant.privacyVersion && policy.metrics && policy.profile &&
@@ -197,6 +202,7 @@ internal object HealthCareDiscussion {
                 HealthCareDiscussionPolicy.permitted(grant, conversationId, turnId, concern, settings, privacy,
                     actualDestination ?: destination(context, grant.targetId, grant.modelId), System.currentTimeMillis()) &&
                     sourceCurrent && HealthCareProfileAccess.current(context, grant.profileLink) &&
+                    HealthCareRelatedContext.sourceCurrent(context, HealthOverviewDatabases(), grant) &&
                     (grant.targetId == "local-llm" || privacy.online) && care.researchGrantCurrent(grant) &&
                     (grant.researchAuthorizationId.isEmpty() || care.researchAuthorization(grant.concernId)?.let {
                         it.configuration == configurationFingerprint(context, conversationId, grant.targetId)
