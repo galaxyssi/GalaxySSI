@@ -169,6 +169,7 @@ android {
             "true" -> "com.galaxyssi.chat.HealthResearchAcceptanceRunner"
             "related" -> "com.galaxyssi.chat.HealthRelatedResearchAcceptanceRunner"
             "revocation" -> "com.galaxyssi.chat.HealthRevocationAcceptanceRunner"
+            "clarification" -> "com.galaxyssi.chat.HealthClarificationAcceptanceRunner"
             else -> "androidx.test.runner.AndroidJUnitRunner"
         }
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
