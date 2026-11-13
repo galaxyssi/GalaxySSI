@@ -663,6 +663,25 @@ remains separate from the isolated storage, policy and UI regression suite.
 
 ### Production-path acceptance runner
 
+`HealthCareClarificationLoopDeviceTest` exercises the question/answer continuation
+with a real paired model and production workers. Select
+`-PhealthResearchAcceptance=clarification`, `HealthClarificationAcceptanceRunner`
+and `health_clarification_loop=true`. Its isolated synthetic glucose reading has
+reviewed measurement context except fasting duration. The `answer` phase requires
+the model itself to retain the missing-duration question, then submits a synthetic
+reviewed answer through the ordinary question-review store. It must not directly
+launch the next research task or overwrite the measurement's structured context.
+
+After saving the follow-up's waiting-response checkpoint, `resume` requires a new
+process and continuation in the original private conversation. The reviewed answer
+must remain current and not be offered as an open question. Repeating the same
+reviewed answer must not create a third research turn. Original measurements,
+negative answers and earlier assessments are retained; no action, target or reminder
+is accepted automatically. The `inspect` phase exports only this isolated synthetic
+scenario for local response inspection. Programmatic identity/state checks are not
+semantic or clinical validation; the actual model replies must also be inspected.
+This store-path acceptance does not replace the locked device's pending UI tests.
+
 `HealthCareActiveRevocationDeviceTest` tests withdrawal during real paired-provider
 execution. Build the test APK with `-PhealthResearchAcceptance=revocation` and use
 `HealthRevocationAcceptanceRunner` with `health_active_revocation=true`. Its
