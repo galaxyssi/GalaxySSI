@@ -285,6 +285,25 @@ internal class HealthOriginalStore(
     fun page(job: String, page: Int): HealthOcrPage? = helper.readableDatabase.rawQuery(
         "SELECT payload FROM pages WHERE job_id=? AND page_number=?", arrayOf(job, page.toString())
     ).use { if (it.moveToFirst()) HealthOcrPage.from(unpack("page", "$job:$page", it.getBlob(0))) else null }
+    @Synchronized fun saveReportVision(expected: HealthImportJob, source: HealthOriginal, result: HealthReportVisionResult) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            if (job(expected.id) != expected || original(source.id) != source || !present(source) ||
+                !HealthReportVisionReader.eligible(expected) || expected.originalId != source.id) throw HealthReportVisionChanged()
+            val existing = page(expected.id, 1)
+            if (existing?.vision != null) throw HealthReportVisionChanged()
+            val value = (existing ?: HealthOcrPage(1, 0, 0, emptyList())).copy(vision = result)
+            db.insertWithOnConflict("pages", null, ContentValues().apply {
+                put("job_id", expected.id); put("page_number", 1); put("payload", pack("page", "${expected.id}:1", value.json()))
+            }, SQLiteDatabase.CONFLICT_REPLACE).also { check(it != -1L) }
+            check(db.update("jobs", jobValues(expected.copy(state = HealthImportState.REVIEW, nextPage = 1, pageCount = 1,
+                error = "", modelRecognized = true)), "id=?", arrayOf(expected.id)) == 1)
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        notifyChanged()
+        if (expected.state != HealthImportState.REVIEW) notifyReportReviews(context)
+    }
     @Synchronized fun savePage(id: String, page: HealthOcrPage) {
         val db = helper.writableDatabase
         db.beginTransaction()

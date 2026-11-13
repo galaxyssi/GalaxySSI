@@ -55,7 +55,7 @@ internal class HealthPrivacyStore(private val context: Context, private val name
     private fun begin(scope: HealthAccessScope, expected: String? = null): HealthAccessEvent = transaction {
         val policy = policy()
         val allowed = scope.purpose.permission?.let(policy::enabled) != false &&
-            (scope.purpose != HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE || policy.metrics) &&
+            (scope.purpose !in setOf(HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE, HealthAccessPurpose.HEALTH_REPORT_VISION) || policy.metrics) &&
             (expected == null || expected == policy.version)
         val event = HealthAccessEvent(UUID.randomUUID().toString(), System.currentTimeMillis(), scope,
             if (allowed) HealthAccessOutcome.STARTED else HealthAccessOutcome.BLOCKED, policy.version)
@@ -83,7 +83,7 @@ internal class HealthPrivacyStore(private val context: Context, private val name
         return result
     }
     suspend fun <T> trackOnlineAnalysis(scope: HealthAccessScope, expected: String, operation: suspend () -> T): T {
-        require(scope.purpose == HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE && expected.isNotBlank())
+        require(scope.purpose in setOf(HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE, HealthAccessPurpose.HEALTH_REPORT_VISION) && expected.isNotBlank())
         val event = begin(scope, expected)
         if (event.outcome == HealthAccessOutcome.BLOCKED) throw HealthAccessBlocked()
         val result = try { operation() } catch (failure: Exception) {

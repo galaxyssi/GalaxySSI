@@ -102,6 +102,23 @@ system camera application rather than claiming the complete h06 design.
 
 ## Increment 3: Native Camera And Ordered Photo Drafts
 
+Report images also support an explicitly authorized vision-model transcription
+from the import task or review page, including recovery from a failed local
+recognition attempt. This path requires online analysis and report-image
+permission, a selected cloud endpoint/model, and confirmation for each image.
+The request sends one upright JPEG derived in memory from the encrypted
+original, without original metadata, other health records, chat history,
+tools, automatic retries or provider fallback.
+
+The response uses the supported metric catalog, preserves reported bounds
+and labels, and is schema-validated before it is retained in the encrypted
+page. Local OCR and its drafts remain separately available. The original
+identity, job state and consent version are checked before transmission and
+before accepting the result. Leaving the screen cancels the request. Unknown
+units and incomplete or ambiguous collection times remain unset; a model
+transcription is not independently verified. The standard per-item review,
+duplicate handling and explicit batch save are still required.
+
 `HealthCameraActivity` implements a foreground-only rear Camera2 preview, an
 explicit shutter, optional device-supported fill light, report/device modes and
 an ordered native photo-collection page without bottom tabs. Gallery images can

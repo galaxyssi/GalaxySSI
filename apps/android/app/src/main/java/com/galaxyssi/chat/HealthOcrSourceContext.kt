@@ -34,7 +34,7 @@ internal data class HealthOcrSourceContext(
             return HealthOcrSourceContext(owners, times, sample)
         }
 
-        private fun readTimestamp(value: String, localZone: ZoneId): HealthOcrSampleTime? {
+        internal fun readTimestamp(value: String, localZone: ZoneId): HealthOcrSampleTime? {
             val fields = timestamp.matchEntire(value)?.groupValues ?: return null
             return runCatching {
                 val date = LocalDateTime.of(fields[1].toInt(), fields[2].toInt(), fields[3].toInt(),

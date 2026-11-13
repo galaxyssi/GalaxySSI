@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_vision_action">用大模型识别</string>
+    <string name="health_vision_model">选择视觉模型</string>
+    <string name="health_vision_consent">发送这张报告图片？</string>
+    <string name="health_vision_disclosure">接收方：%1$s\n\n仅发送这张报告图片。图片中可见的姓名等信息也可能被发送，不会发送其他健康记录或聊天内容。识别结果只填入草稿，核对并保存后才入档。</string>
+    <string name="health_vision_reading">正在识别报告字段…</string>
+    <string name="health_vision_source_method">大模型识别 · 第 %1$d 页</string>
+    <string name="health_vision_review">请对照原图核对预填字段，再确认保存。</string>
+    <string name="health_vision_partial">部分字段不清晰或暂不支持。请对照原图核对草稿并手动补充。</string>
+    <string name="health_vision_show_local">查看本机识别草稿</string>
+    <string name="health_vision_show_model">查看大模型识别草稿</string>
+    <string name="health_vision_no_model">没有可用的云模型。请添加支持图片的云模型，或使用本机核对。</string>
+    <string name="health_vision_blocked">请在「个人健康 → 健康中心功能 → 隐私与数据」开启「在线健康分析」和「报告原始图片」。发送前仍需逐次确认。</string>
+    <string name="health_vision_changed">报告已变化、已完成识别，或原图不可用。请重新打开核对当前状态。</string>
+    <string name="health_vision_unreadable">模型未返回可用的报告字段。原图和本机识别草稿未改动。</string>
+    <string name="health_vision_image_failed">无法准备图片，请尝试清晰、裁剪后的图片。</string>
+    <string name="health_vision_request_failed">所选模型未能识别此图，请检查模型是否支持图片以及 API 是否可用。本机识别草稿未改动。</string>
+</resources>

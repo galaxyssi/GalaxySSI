@@ -23,14 +23,18 @@ private fun validReviewBox(box: List<Int>) =
     box.size == 4 && box.all { it in 0..1000 } && box[0] < box[2] && box[1] < box[3]
 
 internal fun HealthEvidence.hasReviewRegion() = boxes.any(::validReviewBox)
-internal fun HealthRecognition.label() =
-    if (this == HealthRecognition.PDF_TEXT) R.string.health_review_pdf_text_method else R.string.health_review_source_method
+internal fun HealthRecognition.label() = when (this) {
+    HealthRecognition.OCR -> R.string.health_review_source_method
+    HealthRecognition.PDF_TEXT -> R.string.health_review_pdf_text_method
+    HealthRecognition.MODEL -> R.string.health_vision_source_method
+}
 
 internal object HealthReviewRaster {
     private const val MAX_EDGE = 1600
     private const val MAX_PIXELS = 2_000_000.0
 
-    fun load(store: HealthOriginalStore, original: HealthOriginal, page: Int): Bitmap {
+    fun load(store: HealthOriginalStore, original: HealthOriginal, page: Int,
+        maxEdge: Int = MAX_EDGE, maxPixels: Double = MAX_PIXELS): Bitmap {
         require(page > 0)
         if (original.mime == "application/pdf") {
             val descriptor = store.descriptor(original)
@@ -38,8 +42,8 @@ internal object HealthReviewRaster {
             return renderer.use {
                 require(page <= it.pageCount)
                 it.openPage(page - 1).use { pdf ->
-                    val scale = minOf(3.0, MAX_EDGE.toDouble() / maxOf(pdf.width, pdf.height),
-                        sqrt(MAX_PIXELS / (pdf.width.toDouble() * pdf.height)))
+                    val scale = minOf(3.0, maxEdge.toDouble() / maxOf(pdf.width, pdf.height),
+                        sqrt(maxPixels / (pdf.width.toDouble() * pdf.height)))
                     val bitmap = Bitmap.createBitmap((pdf.width * scale).toInt().coerceAtLeast(1),
                         (pdf.height * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
                     try {
@@ -55,8 +59,8 @@ internal object HealthReviewRaster {
         store.input(original).use { BitmapFactory.decodeStream(it, null, options) }
         require(options.outWidth > 0 && options.outHeight > 0)
         var sample = 1
-        while (options.outWidth.toLong() * options.outHeight / sample / sample > MAX_PIXELS ||
-            maxOf(options.outWidth, options.outHeight) / sample > MAX_EDGE) sample *= 2
+        while (options.outWidth.toLong() * options.outHeight / sample / sample > maxPixels ||
+            maxOf(options.outWidth, options.outHeight) / sample > maxEdge) sample *= 2
         val orientation = store.input(original).use {
             ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
         }
