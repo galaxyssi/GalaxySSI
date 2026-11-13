@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -17,11 +19,13 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
     private val completed: (String) -> Unit) {
     private val tasks = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var reader = HealthReportVisionReader(activity.applicationContext, names)
+    private val importer = HealthReportQuickImport(activity.applicationContext, names)
+    private val supplementUi = HealthReportSupplementUi(activity)
     private var dialog: AlertDialog? = null
     private var task: Job? = null
     private var generation = 0
 
-    fun clear() { generation++; task?.cancel(); task = null; dialog?.dismiss(); dialog = null }
+    fun clear() { generation++; task?.cancel(); task = null; supplementUi.clear(); dialog?.dismiss(); dialog = null }
     fun destroy() { clear(); tasks.cancel() }
     internal fun useFixtureGateway(value: HealthReportVisionGateway) {
         check(BuildConfig.DEBUG && names.fixture != null)
@@ -34,16 +38,33 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
             confirm(input, target)
         }
     }
+    fun finishImport(id: String) {
+        clear()
+        run({ importer.prepare(id) }) { plan ->
+            if (plan.needsSupplement) supplementUi.show(plan) { save(id, plan, it) } else save(id, plan)
+        }
+    }
     private fun confirm(input: HealthReportVisionInput, target: HealthReportVisionTarget) {
         dialog = AlertDialog.Builder(activity).setTitle(R.string.health_vision_consent)
             .setMessage(activity.getString(R.string.health_vision_disclosure, target.destination))
-            .setNegativeButton(android.R.string.cancel, null).setPositiveButton(R.string.health_assistant_send) { _, _ ->
+            .setNegativeButton(android.R.string.cancel, null).setPositiveButton(R.string.health_vision_action) { _, _ ->
                 dialog = AlertDialog.Builder(activity).setTitle(R.string.health_vision_action).setMessage(R.string.health_vision_reading)
                     .setNegativeButton(android.R.string.cancel) { _, _ -> clear() }.setOnCancelListener { clear() }.show()
                 run({ reader.read(input, target) }) {
-                    dialog?.dismiss(); dialog = null; completed(input.job.id)
+                    dialog?.dismiss(); dialog = null; completed(input.job.id); finishImport(input.job.id)
                 }
             }.show()
+    }
+    private fun save(id: String, plan: HealthReportImportPlan, supplement: HealthReportSupplement = HealthReportSupplement()) {
+        run({
+            val task = currentCoroutineContext()
+            importer.save(id, plan, supplement, task::ensureActive)
+        }) { outcome ->
+            val text = activity.getString(R.string.health_report_imported, outcome.saved, outcome.duplicates, outcome.pending) +
+                if (outcome.partial) "\n" + activity.getString(R.string.health_report_partial_note) else ""
+            Toast.makeText(activity, text, Toast.LENGTH_LONG).show()
+            completed(id)
+        }
     }
     private fun <T> run(work: suspend () -> T, success: (T) -> Unit) {
         val token = generation

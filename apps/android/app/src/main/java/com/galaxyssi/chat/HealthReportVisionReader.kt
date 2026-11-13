@@ -14,7 +14,7 @@ internal class HealthReportVisionReader(private val context: Context, private va
 
     fun prepare(id: String): HealthReportVisionInput {
         val privacy = HealthPrivacyStore(context, names.privacy).use { it.policy() }
-        if (!privacy.online || !privacy.images || !privacy.metrics) throw HealthAccessBlocked()
+        if (!privacy.online || !privacy.metrics) throw HealthAccessBlocked()
         return originals().use { store ->
             val job = store.job(id)?.takeIf(::eligible) ?: throw HealthReportVisionChanged()
             val source = store.original(job.originalId)?.takeIf { it.mime.startsWith("image/") && store.present(it) }
@@ -34,7 +34,7 @@ internal class HealthReportVisionReader(private val context: Context, private va
                 originals().use { store ->
                     fun checkCurrent() {
                         task.ensureActive()
-                        if (privacy.policy() != input.privacy || !input.privacy.online || !input.privacy.images || !input.privacy.metrics)
+                        if (privacy.policy() != input.privacy || !input.privacy.online || !input.privacy.metrics)
                             throw HealthAccessBlocked()
                         if (store.job(input.job.id) != input.job || store.original(input.source.id) != input.source ||
                             !store.present(input.source) || store.page(input.job.id, 1)?.vision != null) throw HealthReportVisionChanged()

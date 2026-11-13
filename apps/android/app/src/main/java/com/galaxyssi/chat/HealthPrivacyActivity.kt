@@ -69,7 +69,6 @@ class HealthPrivacyActivity : Activity() {
         setting(content, policy, HealthPrivacyOption.CONFIRMED_METRICS, R.string.health_privacy_metrics, R.string.health_privacy_metrics_detail)
         setting(content, policy, HealthPrivacyOption.PROFILE_CONTEXT, R.string.health_privacy_profile, R.string.health_privacy_profile_detail)
         setting(content, policy, HealthPrivacyOption.ONLINE_ANALYSIS, R.string.health_privacy_online, R.string.health_privacy_online_detail)
-        setting(content, policy, HealthPrivacyOption.ORIGINAL_IMAGES, R.string.health_privacy_images, R.string.health_privacy_images_detail, policy.online)
         ui.add(content, ui.text(getString(R.string.health_privacy_storage), 17f, bold = true), 24)
         setting(content, policy, HealthPrivacyOption.RETAIN_IMPORT_ORIGINALS, R.string.health_privacy_retain_originals,
             R.string.health_privacy_retain_originals_detail)

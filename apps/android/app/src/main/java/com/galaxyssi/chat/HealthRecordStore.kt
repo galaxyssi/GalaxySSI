@@ -463,7 +463,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         } finally { plain.fill(0) }
     }
 
-    private fun recordForOcrLink(draft: HealthDraft): HealthObservation? {
+    internal fun recordForOcrLink(draft: HealthDraft): HealthObservation? {
         val source = draft.evidence?.takeIf { it.kind == "ocr" } ?: return null
         return linkedOcrRecord(source)
     }
@@ -758,6 +758,47 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             }
             db.setTransactionSuccessful()
             return HealthOcrBatchResult.Saved(items.size - linked, linked)
+        } finally { db.endTransaction(); publishCommittedChanges() }
+    }
+    @Synchronized fun saveVisionReport(drafts: List<HealthDraft>, partial: Boolean,
+        checkActive: () -> Unit): HealthReportImportOutcome {
+        require(drafts.size <= HealthReportVisionResult.MAX_ROWS)
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            var saved = 0; var duplicates = 0; var pending = 0
+            val ambiguous = drafts.groupBy { it.metric }.filterValues { rows ->
+                rows.distinctBy { row ->
+                    row.values.mapValues { HealthResult.parse(it.value, row.metric.form)?.canonical } to row.unit
+                }.size > 1
+            }.keys
+            for (draft in drafts) {
+                checkActive()
+                val evidence = requireNotNull(draft.evidence)
+                require(evidence.recognition == HealthRecognition.MODEL && evidence.kind == "ocr" &&
+                    draft.recordId.isBlank() && draft.revision == 0)
+                val confirmed = draft.copy(evidence = evidence.copy(confirmed = true))
+                if (draft.metric in ambiguous || HealthObservationPolicy.validate(confirmed) != null) {
+                    saveDraft(draft.copy(evidence = evidence.copy(confirmed = false)))
+                    pending++
+                    continue
+                }
+                when (val result = saveWithinTransaction(confirmed)) {
+                    is HealthSaveResult.Saved -> saved++
+                    is HealthSaveResult.Duplicate -> {
+                        val existing = record(result.id)
+                        if (existing == null) throw HealthReportVisionChanged()
+                        if (recordForEvidence(draft) == null && recordForOcrLink(draft) == null &&
+                            !insertSourceLink(existing, confirmed.evidence!!, ocrLinkKey(evidence))) throw HealthReportVisionChanged()
+                        clearDraft(draftKey(draft))
+                        duplicates++
+                    }
+                    HealthSaveResult.Conflict -> throw HealthReportVisionChanged()
+                }
+            }
+            checkActive()
+            db.setTransactionSuccessful()
+            return HealthReportImportOutcome(saved, duplicates, pending, partial)
         } finally { db.endTransaction(); publishCommittedChanges() }
     }
     @Synchronized fun importHealthConnect(rows: List<HealthConnectMeasurement>, ensureActive: () -> Unit): Int {

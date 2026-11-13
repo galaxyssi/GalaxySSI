@@ -395,8 +395,18 @@ class HealthCameraActivity : Activity() {
     }
     private fun submit() {
         io.execute {
-            val result = runCatching { store.submitCaptureBatch(batchId).forEach { HealthImportScheduler.enqueue(applicationContext, it) } }
-            main.post { if (active) result.fold({ setResult(RESULT_OK, Intent().putExtra("capture_batch", batchId)); finish() }, { message(R.string.health_photo_not_ready); load() }) }
+            val result = runCatching {
+                store.submitCaptureBatch(batchId).also { ids -> ids.forEach { HealthImportScheduler.enqueue(applicationContext, it) } }
+                    .singleOrNull()?.takeIf { store.job(it)?.mode == "report" }
+            }
+            main.post {
+                if (active) result.fold({ reportId ->
+                    setResult(RESULT_OK, Intent().putExtra("capture_batch", batchId).apply {
+                        reportId?.let { putExtra(HEALTH_SINGLE_REPORT_JOB, it) }
+                    })
+                    finish()
+                }, { message(R.string.health_photo_not_ready); load() })
+            }
         }
     }
     private fun clearThumbnails() { thumbnails.forEach { (view, bitmap) -> view.setImageDrawable(null); bitmap.recycle() }; thumbnails.clear() }
@@ -406,3 +416,4 @@ class HealthCameraActivity : Activity() {
 }
 
 internal const val HEALTH_REPORT_CROP = "health_report_crop"
+internal const val HEALTH_SINGLE_REPORT_JOB = "health_single_report_job"

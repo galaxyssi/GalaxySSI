@@ -50,7 +50,7 @@ internal object HealthCareApplicabilityPresentation {
     private fun display(context: Context, field: HealthCareApplicabilityField, value: String?): String {
         if (value == null) return context.getString(R.string.health_care_unknown)
         if (field == HealthCareApplicabilityField.metric) return context.getString(HealthMetric.valueOf(value).titleResource())
-        if (field == HealthCareApplicabilityField.collection_condition && value in setOf("resting", "after_exercise", "fasting", "after_meal", "other"))
+        if (field == HealthCareApplicabilityField.collection_condition && value in setOf("resting", "after_exercise", "fasting", "non_fasting", "after_meal", "other"))
             return context.getString(healthContextResource(value))
         val resource = when (value) {
             "YES" -> R.string.health_care_yes
