@@ -16,8 +16,8 @@ class HealthReportVisionTest {
     private val row = HealthVisionRow(HealthMetric.CRP, mapOf("crp" to "<0.50"), "mg/L", "0-5", "CRP <0.50 mg/L 0-5")
     private val report = HealthReportVisionResult(listOf(row), "2026-11-12 08:30+08:00", false)
     private fun parse(value: JSONObject) = HealthReportVisionResult.parse(value.toString())
-    private fun target(style: String, host: String = "example.invalid") =
-        HealthAnalysisTarget("fixture", "Fixture", "vision", "https://$host/model", style, host, host)
+    private val target = HealthReportVisionTarget("desktop_fixture:codex", "Fixture Desktop",
+        AgentTargetConfiguration("gpt-6-astra", AgentModelReasoningEffort.HIGH), "fixture-desktop", "fixture-route", "fixture-pair")
 
     @Test fun typedValuesAndOriginalEvidenceRemainUnconfirmed() {
         val draft = parse(report.json()).drafts(job, original, ZoneId.of("UTC"), now).single()
@@ -64,20 +64,31 @@ class HealthReportVisionTest {
         assertTrue(HealthImportJob.from(job.copy(modelRecognized = true).json()).modelRecognized)
     }
 
-    @Test fun allSupportedApiStylesCarryOneImageAndNoToolsOrChatHistory() {
-        val image = byteArrayOf(1, 2, 3)
-        val openAi = HealthReportVisionProvider.body(target("openai", "api.openai.com"), image)
-        assertFalse(openAi.getBoolean("store")); assertFalse(openAi.getBoolean("stream"))
-        val messages = openAi.getJSONArray("messages")
-        assertEquals(2, messages.length())
-        assertEquals("data:image/jpeg;base64,AQID", messages.getJSONObject(1).getJSONArray("content").getJSONObject(0)
-            .getJSONObject("image_url").getString("url"))
-        val anthropic = HealthReportVisionProvider.body(target("anthropic"), image)
-        assertEquals("AQID", anthropic.getJSONArray("messages").getJSONObject(0).getJSONArray("content").getJSONObject(0)
-            .getJSONObject("source").getString("data"))
-        val gemini = HealthReportVisionProvider.body(target("gemini"), image)
-        assertEquals("AQID", gemini.getJSONArray("contents").getJSONObject(0).getJSONArray("parts").getJSONObject(0)
-            .getJSONObject("inline_data").getString("data"))
-        listOf(openAi, anthropic, gemini).forEach { assertFalse(it.has("tools")); assertFalse(it.has("history")) }
+    @Test fun pairedCodexReceivesOneImageWithConfiguredModelAndNoToolsOrChatHistory() {
+        val request = HealthReportCodexRequest(target)
+        val payload = request.payload(byteArrayOf(1, 2, 3))
+        assertEquals("codex", payload.getString("agent_id"))
+        assertEquals("screen_analysis", payload.getString("request_kind"))
+        assertEquals("gpt-6-astra", payload.getJSONObject("agent_invocation").getString("model_id"))
+        assertEquals("high", payload.getJSONObject("agent_invocation").getString("reasoning_effort"))
+        val images = payload.getJSONArray("attachments")
+        assertEquals(1, images.length())
+        assertEquals("report.jpg", images.getJSONObject(0).getString("name"))
+        assertEquals("AQID", images.getJSONObject(0).getString("data_b64"))
+        assertFalse(payload.has("tools")); assertFalse(payload.has("history"))
+        assertFalse(payload.toString().contains(original.name))
+        assertThrows(IllegalArgumentException::class.java) {
+            request.payload(ByteArray(HealthReportCodexGateway.MAX_IMAGE_BYTES + 1))
+        }
+    }
+
+    @Test fun repliesMustMatchTheExactPairedDesktopAndRequest() {
+        val request = HealthReportCodexRequest(target)
+        val reply = request.payload(byteArrayOf(1)).put("source_message_id", request.source)
+        assertTrue(request.matches(reply, target.desktopId))
+        assertFalse(request.matches(reply, "other-desktop"))
+        listOf("client_route_id", "conversation_id", "task_id", "turn_id", "contact_id", "source_message_id").forEach {
+            assertFalse(request.matches(JSONObject(reply.toString()).put(it, "other"), target.desktopId))
+        }
     }
 }

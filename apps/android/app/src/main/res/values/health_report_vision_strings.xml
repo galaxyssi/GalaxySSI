@@ -1,19 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="health_vision_action">Read with a vision model</string>
-    <string name="health_vision_model">Choose a vision model</string>
     <string name="health_vision_consent">Send this report image?</string>
-    <string name="health_vision_disclosure">Recipient: %1$s\n\nThis sends only this report image to the selected provider. Names and other details visible in the image may be included. Your other records and chats are not sent. Results remain drafts until you review and save them.</string>
+    <string name="health_vision_disclosure">Recipient: %1$s\n\nYour paired Desktop passes only this report image to Codex. Names and other details visible in the image may be included. Your other records and chats are not sent. Results remain drafts until you review and save them.</string>
     <string name="health_vision_reading">Reading report fields…</string>
     <string name="health_vision_source_method">Vision model transcription · Page %1$d</string>
     <string name="health_vision_review">Check the filled fields against the original before saving.</string>
     <string name="health_vision_partial">Some fields could not be read or are unsupported. Check these drafts against the original and fill any gaps manually.</string>
     <string name="health_vision_show_local">Show local OCR drafts</string>
     <string name="health_vision_show_model">Show vision model drafts</string>
-    <string name="health_vision_no_model">No configured cloud model is available. Add an image-capable cloud model or use local review.</string>
+    <string name="health_vision_no_model">Auto · Codex is unavailable. Start or update your paired Desktop and check Codex, or use local review.</string>
     <string name="health_vision_blocked">In Personal Health → Health Center functions → Privacy and data, enable online analysis and report images. Each upload still requires confirmation.</string>
     <string name="health_vision_changed">This report has changed, was already read, or its original is unavailable. Reopen it to review the current state.</string>
     <string name="health_vision_unreadable">The model did not return readable report fields. The original and local drafts are unchanged.</string>
     <string name="health_vision_image_failed">The image could not be prepared. Try a clear, cropped copy.</string>
-    <string name="health_vision_request_failed">The selected model could not read this image. Check that it supports images and that its API is available. Local drafts are unchanged.</string>
+    <string name="health_vision_request_failed">Auto · Codex did not return a result. Check your paired Desktop and Codex connection. Local drafts are unchanged.</string>
 </resources>

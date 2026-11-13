@@ -29,14 +29,12 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
     }
     fun show(id: String) {
         clear()
-        run({ reader.prepare(id) to reader.targets() }) { (input, targets) ->
-            if (targets.isEmpty()) { message(R.string.health_vision_no_model); return@run }
-            dialog = AlertDialog.Builder(activity).setTitle(R.string.health_vision_model)
-                .setItems(targets.map { "${it.label}\n${it.destination}" }.toTypedArray()) { _, index -> confirm(input, targets[index]) }
-                .setNegativeButton(android.R.string.cancel, null).show()
+        run({ reader.prepare(id) to reader.target() }) { (input, target) ->
+            if (target == null) { message(R.string.health_vision_no_model); return@run }
+            confirm(input, target)
         }
     }
-    private fun confirm(input: HealthReportVisionInput, target: HealthAnalysisTarget) {
+    private fun confirm(input: HealthReportVisionInput, target: HealthReportVisionTarget) {
         dialog = AlertDialog.Builder(activity).setTitle(R.string.health_vision_consent)
             .setMessage(activity.getString(R.string.health_vision_disclosure, target.destination))
             .setNegativeButton(android.R.string.cancel, null).setPositiveButton(R.string.health_assistant_send) { _, _ ->
@@ -61,6 +59,7 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
                     is HealthAccessBlocked, is HealthPrivacyConflict -> privacy()
                     is HealthReportVisionChanged -> message(R.string.health_vision_changed)
                     is HealthAnalysisInvalidReply -> message(R.string.health_vision_unreadable)
+                    is HealthReportCodexUnavailable -> message(R.string.health_vision_request_failed)
                     is HealthImportFailure -> message(R.string.health_vision_image_failed)
                     else -> message(R.string.health_vision_request_failed)
                 }

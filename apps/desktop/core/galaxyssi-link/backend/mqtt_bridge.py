@@ -4573,6 +4573,10 @@ def _interrupt_agent_runtime(task, on_event=None) -> None:
                 exc,
             )
     agent_task_manager.cancel(task_id, on_event=on_event)
+    from codex_phone_policy import HEALTH_REPORT_PREFIX
+    if str(getattr(task, "client_conversation_id", "")).startswith(HEALTH_REPORT_PREFIX):
+        from task_workspace import cleanup_task_workspace
+        cleanup_task_workspace(task_id, missing_ok=True)
 
 
 @command_lookup_scope()
@@ -4605,6 +4609,16 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     paired_client = get_client(client_route_id)
     full_desktop_executor = has_full_executor(paired_client)
     client_conversation_id = task_identity["conversation_id"]
+    from codex_phone_policy import HEALTH_REPORT_PREFIX, PRIVATE_REPORT_PREFIX
+    private_report = client_conversation_id.startswith(HEALTH_REPORT_PREFIX)
+    if private_report:
+        images = payload.get("attachments")
+        if (agent_id != "codex" or payload.get("request_kind") != "screen_analysis"
+                or payload.get("_recovered_task") is True or not isinstance(images, list) or len(images) != 1
+                or not isinstance(images[0], dict) or images[0].get("name") != "report.jpg"
+                or images[0].get("mime_type") != "image/jpeg" or not images[0].get("data_b64")
+                or images[0].get("transfer_id")):
+            raise ValueError("Invalid private health report request")
     preferred_response_language = str(
         payload.get("response_language")
         or payload.get("response_language_preference")
@@ -4663,6 +4677,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         superseding_prompt,
     )
     mobile_context = embedded_mobile_context(content)
+    if private_report and (mobile_context.attachments or mobile_context.messages or mobile_context.reference_summary
+                           or _agent_instance_id(payload)):
+        raise ValueError("Private health report recognition cannot include historical context")
     current_user_request = current_request(content)
     raw_execution_policy_prompt = payload.get("execution_policy_prompt")
     execution_policy_prompt = current_user_request
@@ -4775,7 +4792,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         )
     selected_agent_model = turn_agent_invocation.model_id
     recovery_snapshot = build_request_snapshot(
-        payload, model_id=selected_agent_model or ("gpt-5.6-sol" if agent_id == "codex" else ""),
+        {**payload, "attachments": []} if private_report else payload,
+        model_id=selected_agent_model or ("gpt-5.6-sol" if agent_id == "codex" else ""),
         reasoning_effort=turn_agent_invocation.reasoning_effort,
         policy=execution_policy.public(),
     )
@@ -5101,6 +5119,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         # Android merges these events into one task row by task_id/status_seq.
         # Publish changed steps immediately and same-step liveness every 15 s.
         status = str(task.get("status") or "").strip().lower()
+        if private_report and status not in TERMINAL_STATES:
+            return
         from agent_task_terminal_outcome import persist_terminal_outcome
         from agent_task_result_archive import archive
 
@@ -5410,6 +5430,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         if outcome is not None:
             _drop_queued_task_progress(str(task.get("task_id") or ""))
             _publish_or_queue_task_result(mqttc, wire_payload, outcome)
+            if private_report:
+                from task_workspace import cleanup_task_workspace
+                cleanup_task_workspace(str(task.get("task_id") or ""), missing_ok=True)
             return
         from agent_execution_harness import ArtifactFinalization, finalize_task_artifacts
         from artifact_delivery import (
@@ -5518,7 +5541,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             and full_desktop_executor
             and _requests_desktop_artifact_retention(current_user_request)
         )
-        if structured_connector_response or research_publication:
+        if structured_connector_response or research_publication or private_report:
             reply = raw_result.strip()
             rich_output = None
         else:
@@ -5772,7 +5795,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             model=selected_agent_model or "gpt-5.6-sol",
         ) if plan_only and not read_only_screen_analysis and codex_experiment is None else ""
         codex_run_conversation_id = (
-            codex_conversation_id if codex_experiment is not None
+            PRIVATE_REPORT_PREFIX + requested_task_id if private_report
+            else codex_conversation_id if codex_experiment is not None
             else planner_session if planner_session
             else "" if plan_only or read_only_screen_analysis else codex_conversation_id
         )
@@ -6149,7 +6173,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 thread_id = str(event.get("thread_id") or "")
                 if thread_id:
                     sessions.put("codex", codex_conversation_id, thread_id)
-            if event_status == "completed" and str(event_result or "").strip() and codex_experiment is None:
+            if event_status == "completed" and str(event_result or "").strip() and codex_experiment is None and not private_report:
                 parsed_recovery = parse_model_recovery(
                     str(event_result),
                     mobile_context.attachments,
@@ -6315,7 +6339,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                             else "One required detail could not be recovered automatically. Provide it to continue."
                         )
                     )
-            if event_status == "completed" and str(event_result or "").strip() and codex_experiment is None:
+            if event_status == "completed" and str(event_result or "").strip() and codex_experiment is None and not private_report:
                 from task_workspace import (
                     import_referenced_task_artifacts,
                     referenced_relative_artifact_paths,
@@ -6391,7 +6415,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         event_status = "failed"
                         event_result = _missing_returned_image_message(content)
                         event["error"] = "Requested image artifact was not generated"
-            if event_status == "completed" and not structured_connector_response:
+            if event_status == "completed" and not structured_connector_response and not private_report:
                 from task_workspace import task_artifacts
 
                 generated_artifacts = task_artifacts(task_id)
@@ -6470,6 +6494,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             publish_result(snapshot)
 
         def bind_codex_stall_recovery(server: CodexAppServer) -> None:
+            if private_report:
+                return
             agent_task_manager.register_external_recovery(
                 task.task_id,
                 lambda _snapshot, reason: server.recover_stalled_task(
@@ -6596,7 +6622,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         and str(candidate.get("agent_id") or "") == "codex"
                         and str(candidate.get("conversation_id") or "") == codex_conversation_id
                     ]
-                    if codex_experiment is None and (not fast_chat_delivery or mobile_context.attachments)
+                    if not private_report and codex_experiment is None and (not fast_chat_delivery or mobile_context.attachments)
                     else []
                 )
                 prior_sources: list[Path] = []
@@ -6697,7 +6723,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 if restored_context_note and not structured_connector_response:
                     task_prompt += restored_context_note
                 fresh_task_prompt = full_turn
-                if (not fast_chat_delivery or read_only_screen_analysis) and not structured_connector_response:
+                if private_report:
+                    # The file is already staged above; the model receives only the schema prompt and one image.
+                    task_prompt = fresh_task_prompt = content
+                if (not fast_chat_delivery or read_only_screen_analysis) and not structured_connector_response and not private_report:
                     task_prompt += f"\n\n{execution_contract(execution_policy)}"
                     fresh_task_prompt += f"\n\n{execution_contract(execution_policy)}"
                 input_paths = (
@@ -6871,6 +6900,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 )
                 with codex_task_callbacks_lock:
                     codex_task_callbacks.pop(task.task_id, None)
+                if private_report:
+                    from task_workspace import cleanup_task_workspace
+                    cleanup_task_workspace(task.task_id, missing_ok=True)
 
         agent_task_manager.schedule_external(
             task.task_id, start_codex, publish_event,
@@ -8314,6 +8346,9 @@ def mobile_connector_agents(
         }
         if isinstance(agent.get("invocation_profile"), dict):
             entry["invocation_profile"] = dict(agent["invocation_profile"])
+        if agent_id == "codex":
+            from codex_phone_policy import HEALTH_REPORT_FEATURE
+            entry[HEALTH_REPORT_FEATURE] = True
         if detailed:
             entry.update({
                 "adapter": agent.get("adapter") or {},
