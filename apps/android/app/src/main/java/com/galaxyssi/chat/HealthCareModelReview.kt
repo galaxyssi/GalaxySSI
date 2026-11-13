@@ -73,7 +73,7 @@ internal data class HealthCareModelReview(val grant: HealthCareDiscussionGrant, 
         grant.privacyVersion == next.privacyVersion && grant.settingsVersion == next.settingsVersion &&
         grant.targetId == next.targetId && grant.modelId == next.modelId && grant.effort == next.effort &&
         grant.profileLink == next.profileLink && (!grant.questionsShared || next.questionsShared) &&
-        (!grant.feedbackHistoryShared || next.feedbackHistoryShared) && createdAt <= next.approvedAt
+        (!grant.feedbackHistoryShared || next.feedbackHistoryShared) && next.related.keys.containsAll(grant.related.keys) && createdAt <= next.approvedAt
     companion object {
         fun from(j: JSONObject) = HealthCareModelReview(HealthCareDiscussionGrant.from(j.getJSONObject("grant")),
             j.getString("trigger"), j.getString("input_version"), j.getLong("created_at"),

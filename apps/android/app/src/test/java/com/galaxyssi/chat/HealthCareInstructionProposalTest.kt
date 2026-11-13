@@ -99,8 +99,10 @@ class HealthCareInstructionProposalTest {
         val extract = grant.copy(turnId = id())
         assertTrue(HealthCareDiscussionPolicy.historyForGrant(history, extract) { grant }.turns.isEmpty())
         val broad = grant.copy(turnId = id(), instruction = null, feedbackHistoryShared = true)
-        val filtered = HealthCareDiscussionPolicy.historyForGrant(history, broad) { if (it == grant.turnId) grant else null }
+        val ordinary = broad.copy(turnId = plain.turnId)
+        val filtered = HealthCareDiscussionPolicy.historyForGrant(history, broad) { if (it == grant.turnId) grant else ordinary }
         assertEquals(listOf(plain), filtered.turns); assertEquals("", filtered.summary); assertEquals("", filtered.globalContext)
-        assertEquals("", HealthCareDiscussionPolicy.historyForGrant(history.copy(turns = listOf(plain)), broad) { null }.summary)
+        val unbound = HealthCareDiscussionPolicy.historyForGrant(history.copy(turns = listOf(plain)), broad) { null }
+        assertEquals("", unbound.summary); assertTrue(unbound.turns.isEmpty())
     }
 }

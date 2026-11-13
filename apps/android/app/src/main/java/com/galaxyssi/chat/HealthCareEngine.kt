@@ -43,7 +43,7 @@ internal object HealthCareEngine {
                         val stamp = versions.getValue(metric)
                         if (stamp.isBlank() && prior == null) continue
                         val key = inputVersion(settings.version, permission.version, stamp)
-                        val evaluationVersion = HealthCarePriority.evaluationVersion(metric) + ":" + HealthCareSeries.VERSION
+                        val evaluationVersion = HealthCarePriority.evaluationVersion(metric) + ":" + HealthCareSeries.VERSION + ":related-1"
                         if (care.evaluated(metric, evaluationVersion) == key) continue
                         val assessment = privacy.track(HealthAccessScope(HealthAccessPurpose.PROACTIVE_CARE, setOf(metric))) {
                             val page = records.careHistory(now, metric)

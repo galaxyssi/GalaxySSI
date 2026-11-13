@@ -10,7 +10,8 @@ internal data class HealthCareQuestion(val id: String, val concernId: String, va
     val question: String, val purpose: String, val basis: String, val scope: String,
     val record: HealthCareRecordRef?, val measuredAt: Long, val turnId: String,
     val revision: Int, val createdAt: Long, val updatedAt: Long,
-    val state: HealthCareQuestionState = HealthCareQuestionState.OPEN, val answer: String = "") {
+    val state: HealthCareQuestionState = HealthCareQuestionState.OPEN, val answer: String = "",
+    val related: Set<HealthMetric> = emptySet()) {
     init {
         require(listOf(id, concernId, turnId).all(HealthProfilePolicy::uuid))
         require(key.matches(Regex("[a-z][a-z0-9_.]{0,79}")))
@@ -23,12 +24,14 @@ internal data class HealthCareQuestion(val id: String, val concernId: String, va
         .put("purpose", purpose).put("basis", basis).put("scope", scope).put("record", record?.json() ?: JSONObject.NULL)
         .put("measured_at", measuredAt).put("turn", turnId).put("revision", revision).put("created_at", createdAt)
         .put("updated_at", updatedAt).put("state", state.name).put("answer", answer)
+        .apply { if (related.isNotEmpty()) put("related_measurements", JSONArray(related.sortedBy { it.name }.map { it.name })) }
     companion object {
         fun from(j: JSONObject) = HealthCareQuestion(j.getString("id"), j.getString("concern"), j.getString("key"),
             j.getString("question"), j.getString("purpose"), j.getString("basis"), j.getString("scope"),
             j.optJSONObject("record")?.let(HealthCareRecordRef::from), j.getLong("measured_at"), j.getString("turn"),
             j.getInt("revision"), j.getLong("created_at"), j.getLong("updated_at"),
-            HealthCareQuestionState.valueOf(j.getString("state")), j.getString("answer"))
+            HealthCareQuestionState.valueOf(j.getString("state")), j.getString("answer"),
+            j.optJSONArray("related_measurements")?.let { rows -> List(rows.length()) { HealthMetric.valueOf(rows.getString(it)) }.toSet() }.orEmpty())
     }
 }
 

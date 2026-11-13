@@ -23,7 +23,8 @@ class HealthCareLiveResearchDeviceTest {
     private val reportFile get() = File(context.filesDir, "health-care-live-research.json")
 
     @Test fun pairedModelPersistsStructuredAssessmentBeforeCompleting(): Unit = runBlocking {
-        assumeTrue(InstrumentationRegistry.getArguments().getString("health_live_model_review") == "true")
+        val related = InstrumentationRegistry.getArguments().getString("health_live_related") == "true"
+        assumeTrue(related || InstrumentationRegistry.getArguments().getString("health_live_model_review") == "true")
         val contacts = AppStore.contacts(context)
         val contact = (0 until contacts.length()).map { contacts.getJSONObject(it) }.firstOrNull {
             !it.optBoolean("deleted") && AppStore.agentIdForContact(context, it.optString("id")) == "codex" &&
@@ -37,15 +38,20 @@ class HealthCareLiveResearchDeviceTest {
             HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.ONLINE_ANALYSIS, true, it.policy().version) }
             HealthRecordStore(context, names.records).use { it.save(HealthDraft(HealthMetric.GLUCOSE,
                 mapOf("glucose" to "6.3"), "mmol/L", System.currentTimeMillis() - 1000, reference = "4-6")) }
+            if (related) HealthRecordStore(context, names.records).use {
+                it.save(HealthDraft(HealthMetric.WEIGHT, mapOf("weight" to "70"), "kg", System.currentTimeMillis() - 2000))
+                it.save(HealthDraft(HealthMetric.BLOOD_PRESSURE, mapOf("systolic" to "121", "diastolic" to "79"), "mmHg", System.currentTimeMillis() - 3000))
+            }
             HealthCareStore(context, names.care).use { store ->
                 store.configure(true, ""); HealthCareEngine.evaluate(context, names)
-                val raw = store.page().items.single()
+                val raw = store.forMetric(HealthMetric.GLUCOSE)!!
                 val issue = store.bindDiscussion(raw.id, raw.revision, UUID.randomUUID().toString())
                 val config = AgentModelSelectionSettings.configurationForTarget(context, issue.conversationId, contact.getString("id"))
                 val scope = HealthCareDiscussionGrant(issue.conversationId, UUID.randomUUID().toString(), issue.id, issue.revision,
                     store.settings().version, HealthPrivacyStore(context, names.privacy).use { it.policy().version },
                     HealthCareDiscussion.desktopDestination(context, contact.getString("id")), System.currentTimeMillis(),
-                    contact.getString("id"), config?.modelId.orEmpty(), config?.reasoningEffort?.wireValue.orEmpty())
+                    contact.getString("id"), config?.modelId.orEmpty(), config?.reasoningEffort?.wireValue.orEmpty(),
+                    related = HealthCareRelatedContext.capture(store, if (related) setOf(HealthMetric.WEIGHT, HealthMetric.BLOOD_PRESSURE) else emptySet()))
                 val authorization = HealthCareResearchAuthorization(UUID.randomUUID().toString(), scope, "b".repeat(64))
                 store.authorizeResearch(authorization, null)
                 val job = store.queueResearch(authorization.id, issue.id, System.currentTimeMillis())
@@ -53,17 +59,24 @@ class HealthCareLiveResearchDeviceTest {
                 store.approveDiscussion(grant)
                 val answer = runTurn(store, issue, grant, contact,
                     "这是隔离合成测试，不是我的健康资料。请核对现有资料质量，说明还缺什么关键测量情境，并保存结构化评估。" +
-                        "本轮不查网页，不建议治疗，不创建计划或提醒。请用中文回复，不要假设已经确诊。", emptyList(), names)
+                        "本轮不查网页，不建议治疗，不创建计划或提醒。请用中文回复，不要假设已经确诊。" +
+                        if (related) "请通过历史工具读取授权的体重和血压，连同血糖综合核对，在结构化评估中引用三项记录，区分各自单位和时间，不推断因果或同期测量。" else "", emptyList(), names)
                 assertTrue(answer.isNotBlank())
                 val review = store.modelReview(job.turnId) ?: error("The real provider did not persist a structured assessment")
                 assertEquals(grant, review.grant); assertTrue(review.input.evidenceIds.isEmpty())
+                if (related) {
+                    val expected = grant.related.keys.map { store.relatedMeasurement(it)!!.assessment!!.record!! }
+                    assertTrue(historyReads.containsAll(expected.map { it.id }))
+                    assertTrue(review.input.records.containsAll(expected))
+                    assertTrue(answer.contains("血压") && answer.contains("体重"))
+                }
                 assertEquals(issue, store.concern(issue.id)); assertNull(store.nextReminder())
                 val running = store.updateResearchJob(job, HealthCareResearchState.DISPATCHED)
                 assertEquals(HealthCareResearchState.COMPLETED, store.updateResearchJob(running, HealthCareResearchState.COMPLETED).state)
                 val notice = store.modelAttention(issue.id)
                 assertEquals(review.input.attentionRequested, notice != null)
                 notice?.let { assertEquals(job.turnId, it.turnId); assertEquals(job.conversationId, it.conversationId) }
-                println("HEALTH_LIVE structured_assessment=true real_provider=true no_plan_or_reminder=true")
+                println("HEALTH_LIVE structured_assessment=true related_measurements=$related real_provider=true no_plan_or_reminder=true")
             }
         } finally {
             reportFile.writeText(report.toString(2))
@@ -340,13 +353,15 @@ class HealthCareLiveResearchDeviceTest {
             }
         })
         val screen = ScreenContext("Synthetic health acceptance", pageTitle = "Synthetic health concern")
-        val goal = HealthCareDiscussionPolicy.prompt(question, if (grant.instruction != null)
+        val snapshot = if (grant.instruction != null)
             HealthCareInstructionTool.snapshot(store.instruction(grant.instruction.id)!!)
             else if (grant.visitFollowUp != null) HealthCareVisitFollowUpTool.snapshot(
                 HealthCareVisitFollowUpTool.selected(store, concern.id, grant.visitFollowUp), store.encounter(grant.visitFollowUp.encounter)!!, concern.revision)
             else HealthCareDiscussionPolicy.snapshot(concern, followUp = if (grant.researchAuthorizationId.isEmpty()) null else
                 HealthCareResearchHandoff.snapshot(concern, store.researchJob(grant.turnId)!!, null, null),
-                feedbackHistoryShared = grant.feedbackHistoryShared))
+                feedbackHistoryShared = grant.feedbackHistoryShared)
+        val goal = HealthCareDiscussionPolicy.prompt(question, if (grant.related.isEmpty()) snapshot else
+            JSONObject(snapshot).put("related_measurements", HealthCareRelatedContext.snapshot(store, grant.related)).toString(2))
         val runtime = AgentRuntimeContextBuilder.build(sessionId = grant.conversationId, goal = goal, screen = screen,
             permissionMode = PermissionMode.AUTO_LOW_RISK, highRiskGuard = true, memoryCapture = false,
             callableTargets = emptyList(), memories = emptyList(), nativeTools = registry.availableCatalog().descriptors.filter {

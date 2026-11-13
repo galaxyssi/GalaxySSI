@@ -34,9 +34,11 @@ internal class HealthCareQuestionRows(private val db: SQLiteDatabase,
         db.rawQuery("SELECT id,revision,payload FROM questions WHERE concern_id=? AND scope_key=? AND question_key=?",
             arrayOf(issue.id, scoped, keyed)).use { row -> if (row.moveToFirst()) return decode(row.getString(0), row.getInt(1), row.getBlob(2)).also {
                 check(it.concernId == issue.id && it.scope == scope && it.key == key)
+                if (!grant.related.keys.containsAll(it.related)) throw HealthCareConflict()
             } }
         return HealthCareQuestion(UUID.randomUUID().toString(), issue.id, key, question, purpose, HealthCareQuestionPolicy.basis(issue),
-            scope, issue.assessment.record, issue.assessment.measuredAt, grant.turnId, 1, now, now).also(::write)
+            scope, issue.assessment.record, issue.assessment.measuredAt, grant.turnId, 1, now, now,
+            related = grant.related.keys).also(::write)
     }
     fun review(issue: HealthCareConcern, id: String, expected: Int, state: HealthCareQuestionState, answer: String, now: Long): HealthCareQuestion {
         val before = get(id) ?: throw HealthCareConflict()

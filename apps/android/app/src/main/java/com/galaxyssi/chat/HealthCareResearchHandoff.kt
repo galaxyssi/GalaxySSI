@@ -11,11 +11,13 @@ internal object HealthCareResearchHandoff {
             value.grant.turnId != grant.turnId && value.grant.destination == grant.destination &&
             value.grant.privacyVersion == grant.privacyVersion && value.grant.settingsVersion == grant.settingsVersion &&
             value.grant.profileLink == grant.profileLink &&
+            grant.related.keys.containsAll(value.grant.related.keys) &&
             value.observedAt <= grant.approvedAt
 
     fun snapshot(issue: HealthCareConcern, job: HealthCareResearchJob,
         previous: HealthCareResearchJob?, before: HealthCareConcern?, sources: List<HealthCareEvidence> = emptyList(),
-        recordedPlanExists: Boolean = false, modelReview: HealthCareModelReview? = null): JSONObject {
+        recordedPlanExists: Boolean = false, modelReview: HealthCareModelReview? = null,
+        related: Map<HealthMetric, String> = emptyMap()): JSONObject {
         require(job.concernId == issue.id && job.conversationId == issue.conversationId && job.revision == issue.revision)
         val prior = previous?.takeIf { it.state == HealthCareResearchState.COMPLETED && it.turnId != job.turnId &&
             it.concernId == issue.id && it.conversationId == job.conversationId && it.createdAt <= job.createdAt }
@@ -45,6 +47,7 @@ internal object HealthCareResearchHandoff {
                 if (issue.target != baseline.target || issue.targetRevision != baseline.targetRevision) add("reviewed_target_changed")
                 if (outcomes.isNotEmpty() || feedback.isNotEmpty()) add("action_feedback")
                 if (newlyDue.isNotEmpty()) add("review_due")
+                if (modelReview != null && modelReview.grant.related != related) add("related_measurements_changed")
                 if (isEmpty()) add("authorization_review")
             }
         }

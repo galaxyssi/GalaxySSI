@@ -59,12 +59,13 @@ internal object HealthCareQuestionTools {
                 care.researchGrantCurrent(grant) && care.concern(issue.id)?.revision == issue.revision && care.settings() == settings &&
                 HealthPrivacyStore(context, names.privacy).use { it.policy() } == permission &&
                 HealthCareProfileAccess.current(context, issue.profileLink, names) &&
+                HealthCareRelatedContext.sourceCurrent(context, names, grant) &&
                 HealthRecordStore(context, names.records).use { issue.inputVersion == HealthCareEngine.inputVersion(settings.version, permission.version, it.metricVersion(issue.metric)) }
             if (!current()) throw HealthCareConflict()
             val profile = issue.profileLink?.let { HealthCareProfileAccess.capture(context, it, names) }
             val result = if (id == READ) {
                 require(input.keys.all { it == "after_id" })
-                HealthCareQuestionPolicy.snapshot(care.questions(issue, input["after_id"] as? String ?: ""), issue, profile)
+                HealthCareQuestionPolicy.snapshot(care.questionsForGrant(issue, grant, input["after_id"] as? String ?: ""), issue, profile)
                     .put("protocol", HealthCareQuestionObservation.PROTOCOL).put("page_start", input["after_id"] ?: JSONObject.NULL)
             } else if (id == PROPOSE) {
                 require(input.keys == setOf("key", "question", "purpose"))

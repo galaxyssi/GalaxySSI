@@ -28,7 +28,8 @@ internal object HealthCareModelAttentionRuntime {
                             val permission = privacy.policy()
                             return permission.metrics && permission.profile && permission.version == auth.scope.privacyVersion &&
                                 issue.inputVersion == HealthCareEngine.inputVersion(care.settings().version, permission.version, records.metricVersion(issue.metric)) &&
-                                HealthCareProfileAccess.current(context, issue.profileLink, names) && binding(auth)
+                                HealthCareProfileAccess.current(context, issue.profileLink, names) &&
+                                care.discussionGrant(value.turnId)?.let { HealthCareRelatedContext.sourceCurrent(context, names, it) } == true && binding(auth)
                         }
                         HealthCareModelAttentionDelivery.reconcile(care, settings, now, zone, allowed, visible, ::valid,
                             post = { valid(it) && post(it) }, cancel = cancel, foreground = {
