@@ -11,6 +11,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 internal fun removeHealthVisitFollowUpTestTables(db: SQLiteDatabase) {
+    db.execSQL("DROP TABLE model_attention")
     db.execSQL("DROP TABLE model_reviews")
     db.execSQL("DROP TABLE visit_followups"); db.execSQL("DROP TABLE visit_followup_events")
 }
@@ -124,7 +125,7 @@ class HealthCareVisitFollowUpDeviceTest {
         val before = f.snapshot()
         context.openOrCreateDatabase(f.names.care, 0, null).use { removeHealthVisitFollowUpTestTables(it); it.version = 16 }
         assertEquals(before, f.snapshot()); f.start()
-        context.openOrCreateDatabase(f.names.care, 0, null).use { assertEquals(18, it.version) }
+        context.openOrCreateDatabase(f.names.care, 0, null).use { assertEquals(19, it.version) }
     }
     @Test fun concurrentCheckinsNeverReturnMixedSnapshotRevisions(): Unit = fixture { f ->
         f.start()

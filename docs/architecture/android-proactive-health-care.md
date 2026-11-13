@@ -1,5 +1,41 @@
 # Proactive health care
 
+## Structured model reviews and attention delivery
+
+New authorized automatic reviews record a typed assessment through
+`galaxyssi.health.review.record` before completing. The encrypted per-turn row
+retains the actual grant, source version, reasoning summary, uncertainty, next
+step, evidence references and review conditions. A model opinion is neither a
+diagnosis nor a confirmed plan. Earlier assessments can inform a subsequent
+authorized turn without replacing the new source snapshot.
+
+Schema 19 adds an encrypted attention outbox. Only a successfully completed
+review that requests attention admits an update, in the same database transaction
+as completion. Earlier reviews are not backfilled as notifications on upgrade.
+There is one current receipt and one stable notification identity per concern;
+all assessment history remains separate. Waiting rows are read in pages of 30.
+
+Delivery rechecks the source clock, concern, conversation, standing consent,
+privacy, model destination and settings. It respects the existing global health
+notification opt-in, the separate Agent-assessment update toggle, pause and quiet
+hours, and Android notification permission. A failed OS post retains the same
+receipt and backs off. A notification still visible after interruption is
+acknowledged without ringing again; a committed receipt is not replayed after
+the user dismisses it. OS posting and SQLite cannot be one atomic transaction,
+so an interruption followed by dismissal before receipt persistence remains a
+small replay window, not an exactly-once guarantee.
+
+The notification contains no measurement, condition or model-generated health
+text. It opens the already-bound health Agent conversation. Viewing that exact
+conversation or its assessment suppresses the system notification, without
+affecting ordinary Agent pages. Revoked or stale updates are cancelled; the
+underlying messages and assessments are not deleted. Disabled delivery keeps the
+review available in-app and does not later flood the user with old notices.
+
+This routine update channel is not a clinical alarm, and does not bypass quiet
+hours, change medication, confirm targets or schedule a clinical follow-up.
+Multi-metric coordination and clinical outcome validation remain separate work.
+
 ## Longitudinal evidence window
 
 Assessments retain a contiguous recent page of up to 30 self-profile measurements,

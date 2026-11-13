@@ -102,7 +102,7 @@ class HealthCareFeedbackDeviceTest {
             save(it, legacy, actionId = legacy.actions.last().id)
             assertEquals(1, it.feedback(issue.id).items.size)
         }
-        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(18, it.version) }
+        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(19, it.version) }
     }
     @Test fun deletionRemovesFeedbackAndOldOperationCannotReviveConcern(): Unit = fixture { _, store, issue ->
         val receipt = save(store, issue); store.delete(issue.id, receipt.revision)

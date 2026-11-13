@@ -514,6 +514,9 @@ class HealthReminderActivity : Activity() {
             toggle(this, R.string.health_report_review_setting, "health-report-review-enabled", value.reportReviews) {
                 draft = draft?.copy(reportReviews = it)
             }
+            toggle(this, R.string.health_model_attention_setting, "health-model-review-enabled", value.modelReviews) {
+                draft = draft?.copy(modelReviews = it)
+            }
         }
         preferenceGroup(content, R.string.health_reminder_delivery) {
             toggle(this, R.string.health_reminder_notifications, "health-reminder-notifications", value.notifications) {

@@ -82,10 +82,12 @@ class HealthCareResearchUiDeviceTest {
             assertEquals(saved.input.summary, text.single { view -> view.tag == "health-model-review-summary" }.text.toString())
             assertTrue(text.any { view -> view.text.toString() == saved.input.nextStep })
             assertTrue(text.any { view -> view.text.toString() == context.getString(R.string.health_model_review_notice) })
+            assertTrue(HealthCareModelReviewVisibility.contains(names.care, saved.grant.conversationId))
         }
         capture("health-model-review-fixture.png")
         scenario.moveToState(Lifecycle.State.CREATED)
         scenario.onActivity { assertNull(dialog(review(it))) }
+        assertFalse(HealthCareModelReviewVisibility.contains(names.care, saved.grant.conversationId))
         HealthCareStore(context, names.care).use { assertEquals(saved, it.modelReview(saved.grant.turnId)) }
     }
     @Test fun stopActionRevokesConsentAndKeepsDurableCancellation() = fixture(true) { scenario, names, plan ->

@@ -26,6 +26,7 @@ internal object HealthReminderWork {
     private const val REPORT_TAG = "health-report-review:"
     private const val SYNC_TAG = "health-sync-incident:"
     private const val CARE_TAG = "health-care-action:"
+    private const val MODEL_TAG = "health-model-review:"
     private const val ID = 1
     @Volatile private var sleepEnabled: Boolean? = null
 
@@ -138,7 +139,12 @@ internal object HealthReminderWork {
                     if (intent.hasExtra("health_encounter_id")) R.string.health_visit_review_notice_private
                     else R.string.health_care_followup_notice, settings)
             }, cancel = { alerts.cancel(CARE_TAG + it, ID) })
-        val next = listOfNotNull(nextDaily, nextSnooze, dailyDelivery, sleepWake, sleepDelivery, nextSleepDay, reportNext, syncNext, careNext).minOrNull()
+        val modelNext = HealthCareModelAttentionRuntime.reconcile(context, settings, now, zone, systemAllowed,
+            activeSourceNotices(alerts, MODEL_TAG), post = { notice ->
+                postSourceNotice(context, alerts, MODEL_TAG + notice.concernId, HealthCareModelAttentionRuntime.openIntent(context, notice),
+                    R.string.health_model_attention_notice, settings)
+            }, cancel = { alerts.cancel(MODEL_TAG + it, ID) })
+        val next = listOfNotNull(nextDaily, nextSnooze, dailyDelivery, sleepWake, sleepDelivery, nextSleepDay, reportNext, syncNext, careNext, modelNext).minOrNull()
         if (next == null) scheduler.cancel(alarm(context))
         else scheduler.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, alarm(context))
         return sleepAllowed

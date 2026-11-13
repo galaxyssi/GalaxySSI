@@ -74,6 +74,8 @@ class HealthCareAgentSurfaceUiDeviceTest {
                         it.getString(R.string.health_agent_research_state, it.getString(label))
                 }
                 state(R.string.health_research_queued)
+                assertTrue(HealthCareModelReviewVisibility.contains(names.care, temporaryId))
+                assertFalse(HealthCareModelReviewVisibility.contains(names.care, previous))
                 await(scenario) { !it.findViewById<View>(R.id.startupConnectingView).isShown }
                 scenario.onActivity {
                     assertFalse(find(it, "agent-health-care-why")!!.isShown)
@@ -124,6 +126,7 @@ class HealthCareAgentSurfaceUiDeviceTest {
                 await(scenario) { find(it, "agent-health-care-state") == null && find(it, "agent-health-care-discuss") == null }
                 scenario.onActivity {
                     it.healthCareSurface!!.pause()
+                    assertFalse(HealthCareModelReviewVisibility.contains(names.care, temporaryId))
                     assertEquals(View.GONE, it.findViewById<View>(R.id.agentHealthCareSurface).visibility)
                     assertNull(find(it, "agent-health-care-why"))
                 }
