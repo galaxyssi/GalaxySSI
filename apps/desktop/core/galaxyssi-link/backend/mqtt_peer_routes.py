@@ -18,6 +18,7 @@ from mqtt_delivery_envelope import (Attempt, Frame, Message, MAX_SAFE_INTEGER, c
                                     parse_verified_receipt, RECEIPT_TYPE)
 from mqtt_pool_client import Publication
 from mqtt_receipt_retry import ReceiptRetry
+from mqtt_receipt_publication import ReceiptPublication
 from mqtt_route_state import (FINGERPRINT, RESUME_ID, TTL_MS, RouteAdvertisement, ResumeResult, issue_local_resume,
                               forget_route, parse_verified_resume, record_verified_resume)
 
@@ -316,7 +317,8 @@ class PeerRoutes:
             if not authorized:
                 return "changed_broker_generation"
         if not any(authorized.get(item.broker_id) == item.generation for item in self.client.policy.plan(
-                scope, "route-readiness", Traffic.MESSAGE, 1, set(binding.receive_topics), now=self._clock())):
+                scope, "route-readiness", Traffic.MESSAGE, 1, set(binding.receive_topics), now=self._clock(),
+                include_congested=True)):
             return "no_verified_common_route"
         return "ready"
 
@@ -420,10 +422,11 @@ class PeerRoutes:
                     or (frame.message.sender, frame.message.receiver) != (binding.receiver, binding.sender)):
                 return None
             frame.receipt_after_store(stored_message_id=message_id, stored_content_hash=wire_hash)
-        self._receipt_retry.offer(scope, message_id, frame.attempt.attempt_id,
-            lambda: self._send_stored_receipt(scope, frame, message_id, wire_hash, authenticated_identity), self._clock())
+        publication = ReceiptPublication(lambda attempted: self._send_stored_receipt(
+            scope, frame, message_id, wire_hash, authenticated_identity, attempted), self._clock)
+        self._receipt_retry.offer(scope, message_id, frame.attempt.attempt_id, publication.send, self._clock())
 
-    def _send_stored_receipt(self, scope, frame, message_id, wire_hash, authenticated_identity):
+    def _send_stored_receipt(self, scope, frame, message_id, wire_hash, authenticated_identity, attempted):
         with self._lock:
             peer = self._peers.get(scope)
         if peer is None or not self.ready(scope):
@@ -433,6 +436,10 @@ class PeerRoutes:
             if (not peer.active or binding.identity != authenticated_identity
                     or not self._authorized_paths(peer)
                     or (frame.message.sender, frame.message.receiver) != (binding.receiver, binding.sender)):
+                return None
+            paths = tuple((broker, generation) for broker, generation in self._authorized_paths(peer).items()
+                          if broker not in attempted)
+            if not paths:
                 return None
             receipt = frame.receipt_after_store(stored_message_id=message_id, stored_content_hash=wire_hash)
             encoded = seal_wire_packet(json.dumps(receipt, separators=(",", ":")), binding.secret)
@@ -445,8 +452,8 @@ class PeerRoutes:
 
             descriptor = Publication(scope, digest, digest, Traffic.RECEIPT, binding.receive_topics,
                                      preferred_broker=frame.attempt.broker_id,
-                                     authorized_paths=tuple(self._authorized_paths(peer).items()), on_path=authorize)
-        return self.client.publish(binding.send_topic, encoded, publication=descriptor).rc == 0
+                                     authorized_paths=paths, on_path=authorize)
+        return self.client.publish(binding.send_topic, encoded, publication=descriptor)
 
     def status(self):
         with self._lock:
@@ -503,6 +510,8 @@ class PeerRoutes:
         query, _, revision, bitmap = parse_state(payload)
         complete = all(bitmap[index // 8] & (1 << (index % 8)) for index in range(query.count))
         frozen = json.dumps(payload, separators=(",", ":"))
+        publication = ReceiptPublication(lambda attempted: self._send_chunk_state(
+            scope, frozen, authenticated_identity, broker_id, attempted), self._clock)
         with self._lock:
             peer = self._peers.get(scope)
         if peer is None:
@@ -511,22 +520,32 @@ class PeerRoutes:
             if not peer.active or peer.binding.identity != authenticated_identity:
                 return
             send = self._chunk_feedback.offer(scope, query.transfer, query.request, revision,
-                lambda: self._send_chunk_state(scope, frozen, authenticated_identity, broker_id), self._clock(), urgent or complete)
+                publication.send, self._clock(), urgent or complete)
         if send:
             return send()
 
-    def _send_chunk_state(self, scope, frozen, authenticated_identity, broker_id):
+    def _send_chunk_state(self, scope, frozen, authenticated_identity, broker_id, attempted):
         with self._lock:
             peer = self._peers.get(scope)
-        if peer is None or not self.ready(scope):
+        if peer is None:
+            return None
+        if not self.ready(scope):
             return None
         with peer.lock:
             binding = peer.binding
             if not peer.active or binding.identity != authenticated_identity:
                 return None
+            paths = tuple((broker, generation) for broker, generation in self._authorized_paths(peer).items()
+                          if broker not in attempted)
+            if not paths:
+                return None
             encoded = seal_wire_packet(frozen, binding.secret)
             digest = hashlib.sha256(encoded.encode()).hexdigest()
+            def authorize(broker, generation):
+                with peer.lock:
+                    if peer.binding != binding or self._authorized_paths(peer).get(broker) != generation:
+                        raise ValueError("Chunk receipt route changed before publication")
             descriptor = Publication(scope, digest, digest, Traffic.RECEIPT, binding.receive_topics,
                                      preferred_broker=broker_id,
-                                     authorized_paths=tuple(self._authorized_paths(peer).items()))
+                                     authorized_paths=paths, on_path=authorize)
         return self.client.publish(binding.send_topic, encoded, publication=descriptor)

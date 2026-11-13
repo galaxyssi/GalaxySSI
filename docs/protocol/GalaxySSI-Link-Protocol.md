@@ -168,19 +168,62 @@ persists the application `message_id` before side effects and returns an encrypt
 acknowledgement with an explicit `transport_message_id`. v2 does not interpret
 `source_message_id`, `reply_to`, or other earlier fields as transport ACKs.
 
-An inner Signal wire payload of at most `512 KiB - 5 bytes` is sealed and published
+An inner Signal wire payload of at most `512 KiB - 5 bytes` can be sealed and published
 as one MQTT packet. The largest direct payload selects the 512 KiB padding bucket;
 after the nonce, authentication tag, and Base64URL encoding, the resulting MQTT
 packet is approximately 683 KiB and remains below the 1 MiB opaque-packet limit.
 
-Larger inner Signal wire payloads are split into 380 KiB net wire chunks before
-outer encryption. Every chunk includes a transfer UUID, index, count, exact byte
+Larger inner Signal wire payloads can be split into up to 380 KiB net wire chunks before
+outer encryption. Every chunk includes a transfer digest, index, count, exact byte
 length, chunk SHA-256, and whole-message SHA-256. The chunk data is Base64 encoded
 inside that metadata envelope, so each resulting chunk envelope MUST remain at or
 below `512 KiB - 5 bytes` before outer encryption. This reserves space for encoding
 and metadata while keeping every fragment inside the 512 KiB privacy bucket. A
 transfer MUST NOT exceed 2 MiB after reassembly or 96 chunks. Each chunk envelope
 is independently padded, encrypted, published, acknowledged, and retried.
+
+These are protocol ceilings, not a required publication size. Android's public-broker
+profile sends new durable wire payloads directly up to 60 KiB and otherwise uses
+44 KiB net wire fragments. Fragment metadata and authenticated missing-block queries
+fit the 64 KiB privacy bucket (about 87 KiB on the wire). File chunks and image bytes
+are unchanged. Persisted transfers retain their original fragmentation geometry
+across upgrades and process restarts; confirmed fragments are not resent, and
+missing fragments prefer a different authorized broker on the next attempt.
+Broker PUBACK alone never releases an attachment dependency or marks it complete.
+
+Android coalesces repeated requests for a pending attachment chunk by authenticated
+peer, attachment transfer ID, and chunk index before encrypting a new publication.
+Android and Desktop limit unconfirmed fragment bytes independently of MQTT PUBACKs.
+Each broker starts with a 256 KiB window (one larger legacy fragment is allowed alone).
+Verified peer bitmap receipts release bytes and grow the window up to 512 KiB;
+expired observations halve it to a 128 KiB floor. Latency samples rank paths, but
+do not shrink a cold window below one normal privacy bucket. Congestion pauses the existing fragment pump without failing
+the transfer or rebuilding its ciphertext. Active transfers rotate after each
+admitted fragment so older backlogs cannot monopolize the window. Small chat and control messages do
+not consume this fragment window. Their path ranking nevertheless includes image
+bytes not yet confirmed by the peer: a broker PUBACK alone cannot make a busy
+downstream path appear empty. Receipts prefer their ingress path only when it has
+no greater backlog than the best eligible alternative. These preferences never
+expand the pair-authenticated route set. Disconnected routes still use durable retry.
+
+Both endpoints retain the latest chunk bitmap when publication is backpressured
+or temporarily unavailable. Feedback retries use the existing maintenance tick,
+with a 500 ms interval and a 30 second lifetime; newer revisions replace older
+pending state, and revoked relationships discard pending feedback. Sender replay
+remains responsible for recovery beyond that short feedback window.
+The existing global physical-publication budget also leaves ordinary-message
+headroom for each other ready broker, in addition to reserved control capacity.
+Receipts prefer the ingress broker. Queue admission is not completion: maintenance
+retains publication tokens until actual PUBACK and tries another authenticated path
+after failure or one second without PUBACK. At most one pending copy per authorized
+path is admitted; any successful token stops further copies. This delayed fallback
+does not broadcast every receipt and remains inside existing physical budgets and
+the 30 second feedback lifetime. A lone ready broker can still use the full existing budget.
+
+Both receivers allow up to 64 incomplete wire transfers per peer and 128 overall,
+while retaining the existing reserved-byte limits of 16 MiB per peer and 32 MiB
+overall. This accommodates the 16-file-chunk request window alongside earlier
+partial transfers without evicting their stored fragments.
 
 The receiver accepts identical duplicates, rejects conflicting duplicates,
 enforces count and byte budgets, and dispatches only after complete hash

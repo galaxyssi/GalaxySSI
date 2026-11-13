@@ -89,7 +89,7 @@ class PeerOriginalAttachmentInstrumentedTest {
     }
 
     @Test
-    fun receivedImageCreatesBoundedPlainThumbnail() {
+    fun receivedImageCreatesBoundedEncryptedThumbnail() {
         val directory = File(context.filesDir, "peer-incoming-attachments-v2/thumbnail-test-${UUID.randomUUID()}")
         val encryptedSource = File(directory, "data.sasie")
         val sourceBitmap = Bitmap.createBitmap(900, 1_200, Bitmap.Config.ARGB_8888)
@@ -141,12 +141,11 @@ class PeerOriginalAttachmentInstrumentedTest {
             assertTrue(latch.await(20, TimeUnit.SECONDS))
             assertNotNull(loaded[0])
             assertNotNull(loaded[1])
-            val thumbnail = directory.listFiles()?.singleOrNull {
-                it.name == ".peer-image-thumbnail-v1.sasie"
-            }
-            assertNotNull(thumbnail)
-            assertTrue(AttachmentLocalStore.isStored(requireNotNull(thumbnail)))
+            val thumbnail = PeerImageThumbnailPolicy.storedFile(encryptedSource, attachment)
+            assertTrue(thumbnail.isFile)
+            assertTrue(AttachmentLocalStore.isStored(thumbnail))
             assertTrue(AttachmentLocalStore.metadata(thumbnail).plaintextLength <= 100_000L)
+            assertFalse(File(directory, PeerImageThumbnailPolicy.LEGACY_FILE_NAME).exists())
         } finally {
             PeerImageThumbnailRepository.clearRuntimeCache()
             directory.deleteRecursively()

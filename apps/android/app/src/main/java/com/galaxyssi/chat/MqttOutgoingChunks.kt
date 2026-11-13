@@ -19,6 +19,19 @@ internal class MqttOutgoingChunks(private val database: AgentEncryptedDatabase, 
                 revision INTEGER NOT NULL, stored_bitmap BLOB NOT NULL, path_bits BLOB NOT NULL,
                 expires_at INTEGER NOT NULL, PRIMARY KEY(scope_digest,transfer_id))""")
             db.execSQL("CREATE INDEX IF NOT EXISTS mqtt_outgoing_chunk_expiry ON mqtt_outgoing_chunks(expires_at)")
+            val hasLayout = db.rawQuery("PRAGMA table_info(mqtt_outgoing_chunks)", null).use { cursor ->
+                var found = false
+                while (cursor.moveToNext()) if (cursor.getString(1) == "chunk_data_bytes") found = true
+                found
+            }
+            if (!hasLayout) db.execSQL("ALTER TABLE mqtt_outgoing_chunks ADD COLUMN chunk_data_bytes INTEGER NOT NULL DEFAULT ${MqttChunkManifest.DATA_BYTES}")
+        }
+    }
+
+    fun chunkDataBytes(scope: String, transfer: String): Int? = database.indexedTransaction { db ->
+        db.rawQuery("SELECT chunk_data_bytes FROM mqtt_outgoing_chunks WHERE scope_digest=? AND transfer_id=? AND expires_at>?",
+            arrayOf(MqttDurableChunks.scopeKey(scope), transfer, now().toString())).use {
+            if (it.moveToFirst()) it.getInt(0).also { value -> require(value in 1..MqttChunkManifest.DATA_BYTES) } else null
         }
     }
 
@@ -39,8 +52,9 @@ internal class MqttOutgoingChunks(private val database: AgentEncryptedDatabase, 
                 }
                 val stored = ByteArray((chunk.count + 7) / 8)
                 val paths = ByteArray(chunk.count)
-                db.execSQL("INSERT INTO mqtt_outgoing_chunks VALUES(?,?,?,?,?,'',-1,?,?,?)",
-                    arrayOf(key[0], key[1], chunk.manifestHash, chunk.count, request, stored, paths, now() + 7L * 86400 * 1000))
+                db.execSQL("INSERT INTO mqtt_outgoing_chunks VALUES(?,?,?,?,?,'',-1,?,?,?,?)",
+                    arrayOf(key[0], key[1], chunk.manifestHash, chunk.count, request, stored, paths,
+                        now() + 7L * 86400 * 1000, chunk.data.size))
                 stored to paths
             } else {
                 require(row.manifest == chunk.manifestHash && row.count == chunk.count) { "Outgoing chunk manifest changed" }

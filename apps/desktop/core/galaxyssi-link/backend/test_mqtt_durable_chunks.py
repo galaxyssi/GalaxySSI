@@ -33,6 +33,30 @@ class DurableChunksTest(unittest.TestCase):
     def reopen(self, **kwargs):
         return DurableChunkAssembler(self.connect, clock=lambda: self.now, **kwargs)
 
+    def test_file_window_coexists_with_previous_partial_transfers(self):
+        windows = []
+        for index in range(24):
+            wire = json.dumps({"scheme": "signal", "from": "phone", "to": "desktop",
+                               "body": "x" * 470000, "sequence": index}, separators=(",", ":"))
+            parts = [json.loads(part) for part in encode_wire_payload(
+                wire, direct_limit_bytes=60 * 1024, chunk_data_bytes=44 * 1024)]
+            windows.append((wire, parts))
+            self.assertIsNone(self.store.accept("pair", parts[0]))
+        for _, parts in windows:
+            self.assertEqual((0,), self.store.stored_indices("pair", parts[0]["transfer_id"]))
+        wire, parts = windows[-1]
+        for part in parts[1:]:
+            completed = self.store.accept("pair", part)
+        self.assertEqual(wire, completed)
+
+    def test_file_window_still_respects_reserved_byte_limit(self):
+        store = self.reopen(max_peer_bytes=1_000_000)
+        store.accept("pair", self.parts[0])
+        other = json.dumps({"scheme": "signal", "from": "phone", "to": "desktop", "body": "y" * 700000})
+        with self.assertRaisesRegex(ValueError, "capacity"):
+            store.accept("pair", json.loads(encode_wire_payload(other)[0]))
+        self.assertEqual((0,), store.stored_indices("pair", self.transfer))
+
     def test_reopen_preserves_out_of_order_partial_and_complete_wire_until_handoff(self):
         self.assertIsNone(self.store.accept("pair", self.parts[1]))
         resumed = self.reopen()

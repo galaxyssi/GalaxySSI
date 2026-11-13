@@ -327,6 +327,8 @@ class GalaxySSILinkOutboxDatabaseTest {
         ).use { database ->
               database.execSQL("DROP TABLE IF EXISTS row_storage_metadata")
               database.execSQL("DROP INDEX IF EXISTS outbox_route_capacity")
+              database.execSQL("DROP INDEX IF EXISTS outbox_attachment_part")
+              database.execSQL("ALTER TABLE outbox_messages DROP COLUMN attachment_chunk_index")
               database.execSQL("ALTER TABLE outbox_messages DROP COLUMN route_scope")
               database.execSQL("ALTER TABLE outbox_messages DROP COLUMN payload_type")
             database.execSQL("PRAGMA user_version = 1")
@@ -341,6 +343,38 @@ class GalaxySSILinkOutboxDatabaseTest {
             }
         } finally {
             context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun versionThreeUpgradePreservesPendingCiphertext() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "galaxyssi_outbox_v3_test_${System.nanoTime()}.db"
+        try {
+            GalaxySSILinkOutboxDatabase(context, name).use { database ->
+                assertTrue(database.insert(item(9, System.currentTimeMillis())
+                    .put("receipt_binding", "pair")
+                    .put("attachment_transfer_id", "transfer")
+                    .put("payload_type", "input_attachment_chunk")))
+            }
+            SQLiteDatabase.openDatabase(context.getDatabasePath(name).absolutePath, null,
+                SQLiteDatabase.OPEN_READWRITE).use { database ->
+                database.execSQL("DROP INDEX outbox_attachment_part")
+                database.execSQL("ALTER TABLE outbox_messages DROP COLUMN attachment_chunk_index")
+                database.execSQL("PRAGMA user_version = 3")
+            }
+            GalaxySSILinkOutboxDatabase(context, name).use { upgraded ->
+                assertEquals(1, upgraded.count())
+                assertEquals("encrypted-wire-9", upgraded.readAll().getJSONObject(0).getString("wire_payload"))
+                assertFalse(upgraded.hasAttachmentChunk("pair", "transfer", 0))
+                assertTrue(upgraded.insert(item(10, System.currentTimeMillis())
+                    .put("receipt_binding", "pair").put("attachment_transfer_id", "transfer")
+                    .put("payload_type", "input_attachment_chunk").put("attachment_chunk_index", 0)))
+                assertTrue(upgraded.hasAttachmentChunk("pair", "transfer", 0))
+                assertEquals(2, upgraded.count())
+            }
+        } finally {
+            context.deleteDatabase(name)
         }
     }
 

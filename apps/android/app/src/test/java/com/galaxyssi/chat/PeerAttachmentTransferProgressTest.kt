@@ -6,6 +6,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PeerAttachmentTransferProgressTest {
+    @Test fun outboundMediaRemainsUploadingUntilTheReceiverConfirmsIt() {
+        for (mime in listOf("image/jpeg", "image/heif", "audio/ogg")) {
+            val state = PeerAttachmentTransferProgress.outboundState(mime)
+            assertEquals("uploading", state)
+            assertTrue(PeerAttachmentTransferProgress.isActive(0, state))
+        }
+        assertEquals("available", PeerAttachmentTransferProgress.outboundState("application/pdf"))
+    }
+
     @Test
     fun progressUsesVerifiedBytesAndNeverCompletesEarly() {
         assertEquals(0, PeerAttachmentTransferProgress.percent(0, 100))

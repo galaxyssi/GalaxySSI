@@ -34,6 +34,7 @@ internal class MqttPoolTestRig : AutoCloseable {
     inner class Fake(val broker: String, val endpoint: MqttBrokerCatalog.Endpoint) {
         lateinit var callback: MqttCallbackExtended
         var connected = false
+        var rejectPublish = false
         private var nextId = 0
         val sent = CopyOnWriteArrayList<Sent>()
         val subscriptions = CopyOnWriteArrayList<Subscription>()
@@ -58,6 +59,7 @@ internal class MqttPoolTestRig : AutoCloseable {
                 }
                 "unsubscribe" -> token(200)
                 "publish" -> {
+                    if (rejectPublish) throw MqttException(MqttException.REASON_CODE_MAX_INFLIGHT.toInt())
                     val result = token(++nextId)
                     val listener = args.last() as IMqttActionListener
                     sent.add(Sent(args[0] as String, args[1] as MqttMessage, result, listener))
