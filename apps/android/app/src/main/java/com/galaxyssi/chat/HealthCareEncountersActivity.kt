@@ -16,6 +16,7 @@ class HealthCareEncountersActivity : Activity() {
     private val names by lazy { intent.healthNavigationDatabases() }
     private val repository by lazy { HealthCareEncounterRepository(applicationContext, names) }
     private val editor by lazy { HealthCareEncounterEditor(this) }
+    private val reminderEditor by lazy { HealthCareAppointmentReminderEditor(this) }
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private lateinit var body: LinearLayout
@@ -40,36 +41,42 @@ class HealthCareEncountersActivity : Activity() {
         super.onCreate(state)
         concernId = intent.getStringExtra("health_care_id").orEmpty()
         if (!HealthProfilePolicy.uuid(concernId)) { finish(); return }
+        selectedId = intent.getStringExtra("health_encounter_id")?.takeIf(HealthProfilePolicy::uuid)
         body = healthProfileBody(R.string.health_encounter_title) { back() }
     }
     override fun onStart() {
         super.onStart(); if (!::body.isInitialized) return
         active = true
         listOf(HealthCareStore.changes(this, names.care), HealthRecordStore.changes(this, names.records),
-            HealthPrivacyStore.changes(this, names.privacy)).forEach { contentResolver.registerContentObserver(it, false, observer) }
+            HealthPrivacyStore.changes(this, names.privacy), HealthReminderStore.changes(this, names.reminders))
+            .forEach { contentResolver.registerContentObserver(it, false, observer) }
         load()
     }
     override fun onStop() {
         if (::body.isInitialized) {
-            active = false; clear(); reset(); contentResolver.unregisterContentObserver(observer)
+            val selected = selectedId
+            active = false; clear(); reset(); selectedId = selected; contentResolver.unregisterContentObserver(observer)
         }
         super.onStop()
     }
-    override fun onDestroy() { editor.clear(); worker.shutdown(); super.onDestroy() }
+    override fun onDestroy() { editor.clear(); reminderEditor.clear(); worker.shutdown(); super.onDestroy() }
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (::body.isInitialized && level >= TRIM_MEMORY_RUNNING_LOW) { clear(); reset(); if (active) load() }
+        if (::body.isInitialized && level >= TRIM_MEMORY_RUNNING_LOW) {
+            val selected = selectedId
+            clear(); reset(); selectedId = selected; if (active) load()
+        }
     }
     @Deprecated("Native activity navigation")
     override fun onBackPressed() { back() }
     private fun back() {
-        editor.clear(); dialog?.dismiss(); dialog = null
+        editor.clear(); reminderEditor.clear(); dialog?.dismiss(); dialog = null
         if (history) { history = false; historyCursor = Int.MAX_VALUE; historyPrevious.clear(); load() }
         else if (selectedId != null) { selectedId = null; load() }
         else finish()
     }
     private fun clear() {
-        generation++; snapshot = null; editor.clear(); dialog?.dismiss(); dialog = null
+        generation++; snapshot = null; editor.clear(); reminderEditor.clear(); dialog?.dismiss(); dialog = null
         main.removeCallbacks(expiry); body.removeAllViews()
     }
     private fun reset() {
@@ -138,6 +145,12 @@ class HealthCareEncountersActivity : Activity() {
     private fun showDetail(content: LinearLayout, value: HealthCareEncounterSnapshot) {
         val entry = value.selected!!
         details(content, entry)
+        appointmentReminder(content, value, entry)
+        if (entry.details.state in setOf(HealthCareEncounterState.PLANNED, HealthCareEncounterState.BOOKING_RECORDED))
+            ui.add(content, ui.profileRow(getString(R.string.health_visit_title)) {
+                startActivity(Intent(this, HealthCareVisitActivity::class.java).putHealthNavigationFixture(names)
+                    .putExtra("health_care_id", concernId))
+            }.apply { tag = "encounter-preparation" }, 8)
         ui.add(content, ui.profileRow(getString(R.string.health_document_title)) {
             startActivity(Intent(this, HealthCareDocumentsActivity::class.java).putHealthNavigationFixture(names)
                 .putExtra("health_care_id", concernId).putExtra("health_encounter_id", entry.id))
@@ -160,6 +173,29 @@ class HealthCareEncountersActivity : Activity() {
                     clear(); reset(); work({ repository.delete(value, entry) }) { load() }
                 }.show()
         }.apply { tag = "encounter-delete" }, 8)
+    }
+    private fun appointmentReminder(content: LinearLayout, value: HealthCareEncounterSnapshot, visit: HealthCareEncounter) {
+        if (value.canRemind) {
+            ui.add(content, ui.profileRow(getString(R.string.health_appointment_reminder)) {
+                if (!busy) reminderEditor.show(visit, value.reminder) { at -> work({ repository.scheduleAppointment(value, at) }) { load() } }
+            }.apply { tag = "encounter-reminder-schedule" }, 12)
+        }
+        value.reminder?.let { reminder ->
+            val time = if (reminder.state == HealthCareReminderState.DELIVERED) reminder.updatedAt else reminder.dueAt
+            val pending = reminder.state == HealthCareReminderState.SCHEDULED
+            val status = if (pending && !HealthCareAppointmentPolicy.available(visit, System.currentTimeMillis()))
+                getString(R.string.health_appointment_expired) else getString(reminder.state.label(), encounterTime(this, time, visit.details.zone))
+            ui.add(content, ui.text(status, 14f)
+                .apply { tag = "encounter-reminder-status" }, 6)
+            if (pending && value.canRemind && !value.notifications) ui.add(content,
+                ui.profileRow(getString(R.string.health_care_followup_in_app)) {
+                    if (names.fixture == null) startActivity(Intent(this, HealthReminderActivity::class.java))
+                }, 4)
+            if (reminder.state != HealthCareReminderState.CANCELLED) ui.add(content,
+                ui.profileRow(getString(R.string.health_care_followup_cancel)) {
+                    work({ repository.cancelAppointment(value) }) { load() }
+                }.apply { tag = "encounter-reminder-cancel" }, 4)
+        }
     }
     private fun showHistory(content: LinearLayout, value: HealthCareEncounterSnapshot) {
         ui.add(content, ui.text(getString(R.string.health_encounter_history), 18f, bold = true), 16)

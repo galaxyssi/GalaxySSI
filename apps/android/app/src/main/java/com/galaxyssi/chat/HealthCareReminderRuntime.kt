@@ -6,6 +6,9 @@ import java.time.ZoneId
 
 internal object HealthCareReminderRuntime {
     fun openIntent(context: Context, reminder: HealthCareReminder, names: HealthOverviewDatabases = HealthOverviewDatabases()): Intent {
+        reminder.appointment?.let { return Intent(context, HealthCareEncountersActivity::class.java).putHealthNavigationFixture(names)
+            .putExtra("health_care_id", reminder.concernId).putExtra("health_encounter_id", it.encounter)
+            .setData(android.net.Uri.parse("galaxyssi://health/appointment/${reminder.concernId}/${reminder.actionId}")) }
         val ref = HealthCareStore(context, names.care).use { care ->
             care.concern(reminder.concernId)?.actions?.firstOrNull { it.id == reminder.actionId }?.visitReview
         }
@@ -36,10 +39,18 @@ internal object HealthCareReminderRuntime {
                     val permission = privacy.policy()
                     val enabled = care.settings().enabled && permission.metrics && permission.profile
                     care.cancelReminders(now, if (enabled) permission.version else null)
+                    var appointmentExpiry: Long? = null
                     fun valid(value: HealthCareReminder): Boolean {
                         val issue = care.concern(value.concernId) ?: return false
                         val currentPermission = privacy.policy()
                         val currentSettings = care.settings()
+                        value.appointment?.let {
+                            val visit = care.encounter(it.encounter)
+                            if (!HealthCareAppointmentPolicy.current(value, issue, visit, currentSettings, currentPermission, now)) return false
+                            val expires = visit!!.details.plannedAt!!
+                            appointmentExpiry = minOf(appointmentExpiry ?: expires, expires)
+                            return true
+                        }
                         val action = issue.actions.firstOrNull { it.id == value.actionId } ?: return false
                         val source = HealthCareEngine.inputVersion(currentSettings.version, currentPermission.version, records.metricVersion(issue.metric))
                         return HealthCareFollowUpPolicy.current(value, issue, currentSettings, currentPermission, source) &&
@@ -51,7 +62,8 @@ internal object HealthCareReminderRuntime {
                         foreground = { value -> care.concern(value.concernId)?.actions?.firstOrNull { it.id == value.actionId }
                             ?.visitReview?.let { HealthCareVisitReviewVisibility.contains(names.care, it.encounter) } == true })
                     // Reopen due reviews even without notification permission; this does not post or authorize an alert.
-                    listOfNotNull(delivery, care.nextMaintenanceReview()?.takeIf { enabled }?.coerceAtLeast(now + 1000)).minOrNull()
+                    listOfNotNull(delivery, appointmentExpiry,
+                        care.nextMaintenanceReview()?.takeIf { enabled }?.coerceAtLeast(now + 1000)).minOrNull()
                 }
             }
         }

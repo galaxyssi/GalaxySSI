@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_appointment_reminder">就诊提醒</string>
+    <string name="health_appointment_confirm">在 %1$s 提醒我，已记录的就诊时间为 %2$s。此操作不会预约或更改就诊安排。</string>
+    <string name="health_appointment_invalid_time">请选择晚于现在、早于就诊的提醒时间。</string>
+    <string name="health_appointment_notification">你有一项就诊提醒。</string>
+    <string name="health_appointment_expired">已过就诊时间，不会补发提醒。</string>
+</resources>
