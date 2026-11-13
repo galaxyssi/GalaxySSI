@@ -1,0 +1,4 @@
+<resources>
+    <string name="health_model_attention_setting">Agent 健康评估更新提醒</string>
+    <string name="health_model_attention_notice">有一项健康评估需要你关注，请进入对应会话查看。</string>
+</resources>

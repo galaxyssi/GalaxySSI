@@ -27,7 +27,8 @@ internal data class HealthReminderSettings(
     val sleepChanges: Boolean = false,
     val sleepDecrease: Int = 45,
     val mergeSleepChanges: Boolean = true,
-    val reportReviews: Boolean = true
+    val reportReviews: Boolean = true,
+    val modelReviews: Boolean = true
 ) {
     init {
         require(minute in 0..1439 && quietStart in 0..1439 && quietEnd in 0..1439 && quietStart != quietEnd)
@@ -39,14 +40,15 @@ internal data class HealthReminderSettings(
         .put("notifications", notifications).put("quiet", quiet).put("quietStart", quietStart).put("quietEnd", quietEnd)
         .put("hideOnLock", hideOnLock).put("pauseUntil", pauseUntil).put("effectiveAt", effectiveAt).put("revision", revision)
         .put("sleepChanges", sleepChanges).put("sleepDecrease", sleepDecrease).put("mergeSleepChanges", mergeSleepChanges)
-        .put("reportReviews", reportReviews)
+        .put("reportReviews", reportReviews).put("modelReviews", modelReviews)
 
     companion object {
         fun from(j: JSONObject) = HealthReminderSettings(j.getBoolean("enabled"), j.getInt("minute"),
             HealthReminderTarget.valueOf(j.getString("target")), j.getBoolean("notifications"), j.getBoolean("quiet"),
             j.getInt("quietStart"), j.getInt("quietEnd"), j.getBoolean("hideOnLock"), j.getLong("pauseUntil"),
             j.getLong("effectiveAt"), j.getString("revision"), j.optBoolean("sleepChanges", false),
-            j.optInt("sleepDecrease", 45), j.optBoolean("mergeSleepChanges", true), j.optBoolean("reportReviews", true))
+            j.optInt("sleepDecrease", 45), j.optBoolean("mergeSleepChanges", true), j.optBoolean("reportReviews", true),
+            j.optBoolean("modelReviews", true))
     }
 }
 

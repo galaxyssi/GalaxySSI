@@ -101,6 +101,8 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
         }, 8)
         display(AlertDialog.Builder(activity).setTitle(R.string.health_research_title)
             .setView(ScrollView(activity).apply { addView(content) }).setNegativeButton(R.string.common_cancel, null).create(), content::removeAllViews)
+        if (review != null && HealthCareModelReviewVisibility.show(this, names.care, review.grant.conversationId) && names.fixture == null)
+            HealthReminderWork.sourceRemindersChanged(activity.applicationContext)
     }
 
     private fun consent(preview: HealthCareDiscussionPreview, expectedId: String?) {
@@ -163,7 +165,11 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
 
     private fun display(value: AlertDialog, release: () -> Unit) {
         dialog = value
-        value.setOnDismissListener { release(); if (dialog === value) dialog = null }
+        value.setOnDismissListener {
+            release(); if (dialog === value) dialog = null
+            if (HealthCareModelReviewVisibility.hide(this) && names.fixture == null)
+                HealthReminderWork.sourceRemindersChanged(activity.applicationContext)
+        }
         value.show()
     }
 

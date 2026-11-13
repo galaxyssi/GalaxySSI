@@ -109,7 +109,7 @@ class HealthCareAgendaDeviceTest {
             assertEquals(second.actions.map { a -> a.id }.toSet(), it.agenda(HealthCareAgendaFilter.TODAY, end).items.map { a -> a.action.id }.toSet())
             assertEquals(2, it.agenda(HealthCareAgendaFilter.REVIEW, end).items.size)
         }
-        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(18, it.version) }
+        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(19, it.version) }
     }
     @Test fun indexTamperingIsRejectedAndTransactionRollsBack(): Unit = fixture { names, store ->
         val issue = add(store); prepare(store)

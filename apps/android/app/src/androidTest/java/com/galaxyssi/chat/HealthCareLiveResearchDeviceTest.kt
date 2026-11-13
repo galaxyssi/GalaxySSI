@@ -60,6 +60,9 @@ class HealthCareLiveResearchDeviceTest {
                 assertEquals(issue, store.concern(issue.id)); assertNull(store.nextReminder())
                 val running = store.updateResearchJob(job, HealthCareResearchState.DISPATCHED)
                 assertEquals(HealthCareResearchState.COMPLETED, store.updateResearchJob(running, HealthCareResearchState.COMPLETED).state)
+                val notice = store.modelAttention(issue.id)
+                assertEquals(review.input.attentionRequested, notice != null)
+                notice?.let { assertEquals(job.turnId, it.turnId); assertEquals(job.conversationId, it.conversationId) }
                 println("HEALTH_LIVE structured_assessment=true real_provider=true no_plan_or_reminder=true")
             }
         } finally {

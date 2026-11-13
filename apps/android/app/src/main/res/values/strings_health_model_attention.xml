@@ -1,0 +1,4 @@
+<resources>
+    <string name="health_model_attention_setting">Agent health assessment updates</string>
+    <string name="health_model_attention_notice">A health assessment needs your attention. Open its conversation to review it.</string>
+</resources>

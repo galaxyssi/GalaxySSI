@@ -71,16 +71,23 @@ class HealthReminderUiDeviceTest {
             assertFalse((find(it.window.decorView, "health-reminder-enabled") as Switch).isChecked)
             assertFalse((find(it.window.decorView, "health-reminder-notifications") as Switch).isChecked)
             assertTrue((find(it.window.decorView, "health-reminder-hide-lock") as Switch).isChecked)
+            assertTrue((find(it.window.decorView, "health-model-review-enabled") as Switch).isChecked)
         }
         click(scenario, "health-reminder-enabled")
+        click(scenario, "health-model-review-enabled")
         assertFalse(store.settings().enabled)
+        assertTrue(store.settings().modelReviews)
         click(scenario, "health-reminder-save")
         wait(scenario, "health-reminder-settings")
         assertTrue(store.settings().enabled)
+        assertFalse(store.settings().modelReviews)
         scenario.recreate()
         click(scenario, "health-reminder-settings")
         wait(scenario, "health-reminder-enabled")
-        scenario.onActivity { assertTrue((find(it.window.decorView, "health-reminder-enabled") as Switch).isChecked) }
+        scenario.onActivity {
+            assertTrue((find(it.window.decorView, "health-reminder-enabled") as Switch).isChecked)
+            assertFalse((find(it.window.decorView, "health-model-review-enabled") as Switch).isChecked)
+        }
     }
     @Test fun nativeDetailSnoozesThenCompletesAndRetainsHandledHistory() = screen(seed = true) { scenario, store ->
         click(scenario, "health-reminder-event")

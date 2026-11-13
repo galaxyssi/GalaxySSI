@@ -53,7 +53,12 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
         if (active) activity.contentResolver.unregisterContentObserver(observer)
         active = false; clear()
     }
-    fun clear() { generation++; navigationGeneration++; main.removeCallbacks(deadlineRefresh); expanded = false; visibleConcern = ""; planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); researchReview.clear(); answerReview.clear(); host.removeAllViews(); host.visibility = View.GONE }
+    fun clear() { modelReviewVisibility(null); generation++; navigationGeneration++; main.removeCallbacks(deadlineRefresh); expanded = false; visibleConcern = ""; planReview.clear(); actionReview.clear(); targetReview.clear(); historyReview.clear(); researchReview.clear(); answerReview.clear(); host.removeAllViews(); host.visibility = View.GONE }
+    private fun modelReviewVisibility(conversation: String?) {
+        val changed = if (conversation == null) HealthCareModelReviewVisibility.hide(this)
+            else HealthCareModelReviewVisibility.show(this, names.care, conversation)
+        if (changed && names.fixture == null) HealthReminderWork.sourceRemindersChanged(activity.applicationContext)
+    }
     fun showForAgent(value: Boolean) {
         agentPage = value
         if (value) reload() else clear()
@@ -108,6 +113,7 @@ internal class HealthCareAgentSurface(private val activity: MainActivity, privat
                     host.removeAllViews()
                     val snapshot = result.getOrDefault(Snapshot(emptyList()))
                     val concerns = snapshot.concerns
+                    modelReviewVisibility(conversation.id.takeIf { concerns.isNotEmpty() && result.isSuccess })
                     host.visibility = if (concerns.isEmpty() && result.isSuccess) View.GONE else View.VISIBLE
                     if (result.isFailure) host.addView(ui.profileRow(activity.getString(R.string.health_care_partial)) { reload() })
                     else concerns.firstOrNull()?.let { item ->

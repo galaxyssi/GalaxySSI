@@ -116,13 +116,13 @@ class HealthCareModelReviewDeviceTest {
         val issue = care.concern(job.concernId)
         care.close()
         context.openOrCreateDatabase(names.care, 0, null).use { db ->
-            db.execSQL("DROP TABLE model_reviews"); db.version = 17
+            db.execSQL("DROP TABLE model_attention"); db.execSQL("DROP TABLE model_reviews"); db.version = 17
         }
         HealthCareStore(context, names.care).use {
             assertEquals(issue, it.concern(job.concernId)); assertEquals(job, it.researchJob(job.turnId))
             assertNull(it.modelReview(job.turnId))
         }
-        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(18, it.version) }
+        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(19, it.version) }
     }
     @Test fun ignoredWriteCannotReturnSuccessfulReceiptOrChangeTheConcern() = fixture { names, care, job, grant ->
         val issue = care.concern(job.concernId)
