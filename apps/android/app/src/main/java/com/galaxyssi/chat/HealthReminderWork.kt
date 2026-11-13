@@ -133,11 +133,14 @@ internal object HealthReminderWork {
             .onFailure { android.util.Log.w("HealthReminder", "Sync reconciliation failed: ${it.javaClass.simpleName}") }
             .getOrNull()
         val careNext = HealthCareReminderRuntime.reconcile(context, settings, now, zone, systemAllowed,
-            activeSourceNotices(alerts, CARE_TAG).keys, post = { reminder ->
+            activeSourceNotices(alerts, CARE_TAG) { HealthCareReminder.validStorageKey(it) }.keys, post = { reminder ->
                 val intent = HealthCareReminderRuntime.openIntent(context, reminder)
-                postSourceNotice(context, alerts, CARE_TAG + reminder.actionId, intent,
-                    if (intent.hasExtra("health_encounter_id")) R.string.health_visit_review_notice_private
-                    else R.string.health_care_followup_notice, settings)
+                postSourceNotice(context, alerts, CARE_TAG + reminder.storageKey, intent,
+                    when {
+                        reminder.appointment != null -> R.string.health_appointment_notification
+                        intent.hasExtra("health_encounter_id") -> R.string.health_visit_review_notice_private
+                        else -> R.string.health_care_followup_notice
+                    }, settings)
             }, cancel = { alerts.cancel(CARE_TAG + it, ID) })
         val modelNext = HealthCareModelAttentionRuntime.reconcile(context, settings, now, zone, systemAllowed,
             activeSourceNotices(alerts, MODEL_TAG), post = { notice ->
@@ -177,12 +180,13 @@ internal object HealthReminderWork {
         }
     }
 
-    private fun activeSourceNotices(manager: NotificationManager, prefix: String): Map<String, Boolean> =
+    private fun activeSourceNotices(manager: NotificationManager, prefix: String,
+        validId: (String) -> Boolean = HealthProfilePolicy::uuid): Map<String, Boolean> =
         manager.activeNotifications.mapNotNull {
             val tag = it.tag ?: return@mapNotNull null
             if (!tag.startsWith(prefix)) return@mapNotNull null
             val id = tag.removePrefix(prefix)
-            if (!HealthProfilePolicy.uuid(id)) return@mapNotNull null
+            if (!validId(id)) return@mapNotNull null
             id to (it.notification.visibility == Notification.VISIBILITY_PRIVATE)
         }.toMap()
 

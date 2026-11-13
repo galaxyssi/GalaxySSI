@@ -254,6 +254,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
                 value.stage in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) ||
                 reminder.anchor != HealthCareFollowUpPolicy.anchor(value, action)
         }.forEach { writeReminder(it.copy(state = HealthCareReminderState.CANCELLED, updatedAt = value.updatedAt), false) }
+        if (!value.open || value.stage == HealthCareStage.PAUSED) invalidateReminders(value.updatedAt, null, value.id)
         agendaRows().replace(value)
     }
     fun applyEvaluation(metric: HealthMetric, token: String, expectedSettings: String, expectedRevision: Int?,
@@ -677,21 +678,22 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
     }
     private fun decodeReminder(row: Cursor): HealthCareReminder = HealthCareReminder.from(
         unpack("reminder", row.getString(0), row.getBlob(5))).also {
-        check(it.actionId == row.getString(0) && it.concernId == row.getString(1) && it.token == row.getString(2) &&
+        check(it.storageKey == row.getString(0) && it.concernId == row.getString(1) && it.token == row.getString(2) &&
             it.dueAt == row.getLong(3) && it.state.name == row.getString(4))
     }
     fun reminder(actionId: String): HealthCareReminder? = db.rawQuery(
         "SELECT $REMINDER_COLUMNS FROM action_reminders WHERE action_id=?", arrayOf(actionId)
     ).use { if (it.moveToFirst()) decodeReminder(it) else null }
     fun reminders(concernId: String): List<HealthCareReminder> = db.rawQuery(
-        "SELECT $REMINDER_COLUMNS FROM action_reminders WHERE concern_id=? ORDER BY due,action_id LIMIT 30", arrayOf(concernId)
+        "SELECT $REMINDER_COLUMNS FROM action_reminders WHERE concern_id=? AND action_id NOT LIKE 'appointment:%' ORDER BY due,action_id LIMIT 30",
+        arrayOf(concernId)
     ).use { rows -> buildList { while (rows.moveToNext()) add(decodeReminder(rows)) } }
     private fun writeReminder(value: HealthCareReminder, syncAgenda: Boolean = true) {
         db.insertWithOnConflict("action_reminders", null, ContentValues().apply {
-            put("action_id", value.actionId); put("concern_id", value.concernId); put("token", value.token)
-            put("due", value.dueAt); put("state", value.state.name); put("payload", pack("reminder", value.actionId, value.json()))
+            put("action_id", value.storageKey); put("concern_id", value.concernId); put("token", value.token)
+            put("due", value.dueAt); put("state", value.state.name); put("payload", pack("reminder", value.storageKey, value.json()))
         }, SQLiteDatabase.CONFLICT_REPLACE)
-        if (syncAgenda) {
+        if (syncAgenda && value.appointment == null) {
             val issue = try { concern(value.concernId) } catch (error: Exception) {
                 // Corruption must not prevent cancellation of an already posted reminder.
                 if (value.state != HealthCareReminderState.CANCELLED) throw error
@@ -720,21 +722,37 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         if (value.token != expectedToken || value.state != HealthCareReminderState.SCHEDULED) throw HealthCareConflict()
         writeReminder(value.copy(state = HealthCareReminderState.DELIVERED, updatedAt = now))
     }
+    fun scheduleAppointment(id: String, expectedRevision: Int, encounterId: String, expectedEncounter: Int, expectedToken: String?,
+        privacy: HealthPrivacyPolicy, at: Long, now: Long): HealthCareReminder = transaction(true) {
+        val issue = concern(id) ?: throw HealthCareConflict()
+        val visit = encounter(encounterId) ?: throw HealthCareConflict()
+        val previous = appointmentReminder(encounterId)
+        if (issue.revision != expectedRevision || visit.revision != expectedEncounter || previous?.token != expectedToken ||
+            previous != null && previous.appointment?.encounter != encounterId) throw HealthCareConflict()
+        HealthCareAppointmentPolicy.schedule(issue, visit, settings(), privacy, at, now).also { writeReminder(it) }
+    }
+    fun appointmentReminder(encounterId: String) = reminder(HealthCareReminder.appointmentKey(HealthCareAppointmentRef.id(encounterId)))
+    private fun invalidateAppointment(encounterId: String, now: Long) {
+        val value = appointmentReminder(encounterId) ?: return
+        if (value.appointment?.encounter == encounterId && value.state != HealthCareReminderState.CANCELLED)
+            writeReminder(value.copy(state = HealthCareReminderState.CANCELLED, updatedAt = now))
+    }
     fun cancelReminders(now: Long, keepPrivacyVersion: String? = null): Int = transaction {
         invalidateReminders(now, keepPrivacyVersion)
     }.also { if (it > 0) app.contentResolver.notifyChange(changes(app, name), null) }
-    private fun invalidateReminders(now: Long, keepPrivacyVersion: String?): Int {
+    private fun invalidateReminders(now: Long, keepPrivacyVersion: String?, appointmentConcern: String? = null): Int {
         var changed = 0
         var after = ""
         while (true) {
-            val page = db.rawQuery("SELECT $REMINDER_COLUMNS FROM action_reminders WHERE action_id>? AND state!='CANCELLED' ORDER BY action_id LIMIT 30",
-                arrayOf(after)).use { rows -> buildList { while (rows.moveToNext()) add(decodeReminder(rows)) } }
+            val scope = if (appointmentConcern == null) "" else " AND concern_id=? AND action_id LIKE 'appointment:%'"
+            val page = db.rawQuery("SELECT $REMINDER_COLUMNS FROM action_reminders WHERE action_id>? AND state!='CANCELLED'$scope ORDER BY action_id LIMIT 30",
+                listOfNotNull(after, appointmentConcern).toTypedArray()).use { rows -> buildList { while (rows.moveToNext()) add(decodeReminder(rows)) } }
             if (page.isEmpty()) break
             page.filter { keepPrivacyVersion == null || it.privacyVersion != keepPrivacyVersion }.forEach {
                 writeReminder(it.copy(state = HealthCareReminderState.CANCELLED, updatedAt = now))
                 changed++
             }
-            after = page.last().actionId
+            after = page.last().storageKey
         }
         return changed
     }
@@ -785,6 +803,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         persist(HealthCareVisitReviewPolicy.invalidate(issue) { it.encounter == encounterId }
             .copy(revision = value.revision, updatedAt = value.updatedAt), "encounter_recorded")
         encounterRows().write(receipt)
+        if (before != null) invalidateAppointment(encounterId, value.updatedAt)
         receipt
     }
     fun deleteEncounter(id: String, expectedRevision: Int, encounterId: String, expectedEncounterRevision: Int, now: Long) = transaction(true) {
@@ -796,6 +815,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             HealthCareInstructionActionPolicy.invalidate(issue) { it.encounterId == encounterId }) { it.encounter == encounterId }
             .copy(revision = issue.revision + 1, updatedAt = maxOf(now, issue.updatedAt)), "encounter_deleted")
         encounterRows().delete(id, encounterId)
+        invalidateAppointment(encounterId, now)
         visitFollowUpRows().purge(id, encounterId)
         documentRows().purge(id, encounterId)
         instructionRows().purge(id, encounterId)

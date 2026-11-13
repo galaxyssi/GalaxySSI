@@ -381,8 +381,9 @@ rejected, not truncated. No new database or persisted plaintext snapshot is adde
 
 This increment provides a selected text summary, not a PDF report, symptom intake,
 hospital booking, medical record transmission or post-visit instruction review.
-Agent-triggered preparation, appointment reminders, reviewed prescriptions and
-rehabilitation follow-up remain separate work in the full lifecycle goal.
+The encounter detail below links this preparation workflow to an appointment
+reminder. Agent-triggered preparation and full rehabilitation follow-up remain
+separate work in the lifecycle goal.
 
 ## Local encounter records
 
@@ -423,10 +424,27 @@ TTL clear the editor and loaded plaintext; resuming reloads from encrypted stora
 Invalidated worker results never render into a newer screen, and current failures
 offer an explicit retry instead of looping.
 
-Appointment reminders, post-visit original import and reviewed clinical
-instructions remain separate increments. This implementation has no external
-booking or clinical execution tool. Device UI, storage migration and privacy
-regression acceptance must pass before it is considered ready for delivery.
+This implementation has no external booking or clinical execution tool.
+
+### Appointment reminders
+
+The selected encounter detail links to visit preparation and, for a future
+planned or user-recorded booking, offers an explicit appointment reminder.
+The date and time are chosen in the recorded visit's time zone and confirmed
+separately. A reminder neither books a visit nor asserts attendance.
+
+The encrypted reminder binds the exact encounter revision and uses the shared
+notification scheduler. Its namespaced storage key keeps it separate from
+clinical action reminders and out of the model handoff. Scheduling or cancelling
+it does not change the care concern, plan, source data, or research trigger.
+Changing, cancelling, attending, or deleting the visit invalidates the old
+reminder; a stale confirmation cannot overwrite a newer reminder. A paused
+concern or revoked permission cannot authorize delivery.
+
+Notification content is generic and opens the exact encounter, with no facility,
+purpose or notes. Quiet hours and notification permissions follow the existing
+settings. A delayed notice is not posted after the appointment time. This is an
+inexact local reminder, not a guaranteed alarm or a hospital notification.
 
 ## Encounter source documents
 

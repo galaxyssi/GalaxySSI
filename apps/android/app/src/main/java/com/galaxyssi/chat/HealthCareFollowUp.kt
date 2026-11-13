@@ -9,16 +9,23 @@ internal enum class HealthCareReminderState { SCHEDULED, DELIVERED, CANCELLED }
 /** The reminder time is a user choice, not a replacement for the clinical review window. */
 internal data class HealthCareReminder(val actionId: String, val concernId: String, val token: String,
     val anchor: String, val privacyVersion: String, val dueAt: Long, val updatedAt: Long,
-    val state: HealthCareReminderState = HealthCareReminderState.SCHEDULED) {
+    val state: HealthCareReminderState = HealthCareReminderState.SCHEDULED, val appointment: HealthCareAppointmentRef? = null) {
     init {
         require(listOf(actionId, concernId, token).all(HealthProfilePolicy::uuid))
         require(anchor.matches(Regex("[0-9a-f]{64}")) && privacyVersion.isNotBlank() && dueAt > 0 && updatedAt > 0)
+        require(appointment == null || appointment.reminderId == actionId)
     }
+    val storageKey get() = if (appointment == null) actionId else appointmentKey(actionId)
     fun json() = JSONObject().put("action", actionId).put("concern", concernId).put("token", token)
         .put("anchor", anchor).put("privacy", privacyVersion).put("due", dueAt).put("updated", updatedAt).put("state", state.name)
-    companion object { fun from(j: JSONObject) = HealthCareReminder(j.getString("action"), j.getString("concern"),
+        .apply { appointment?.let { put("appointment", it.json()) } }
+    companion object {
+        fun appointmentKey(id: String) = "appointment:$id"
+        fun validStorageKey(key: String) = HealthProfilePolicy.uuid(key.removePrefix("appointment:"))
+        fun from(j: JSONObject) = HealthCareReminder(j.getString("action"), j.getString("concern"),
         j.getString("token"), j.getString("anchor"), j.getString("privacy"), j.getLong("due"), j.getLong("updated"),
-        HealthCareReminderState.valueOf(j.getString("state"))) }
+        HealthCareReminderState.valueOf(j.getString("state")), j.optJSONObject("appointment")?.let(HealthCareAppointmentRef::from))
+    }
 }
 
 internal object HealthCareFollowUpPolicy {
@@ -88,10 +95,13 @@ internal object HealthCareReminderDelivery {
         if (deferred != null) return store.nextReminder()?.let { maxOf(it, deferred) }
         var failed = false
         store.dueReminders(now).forEach { value ->
-            if (!valid(value)) store.cancelReminder(value.actionId, value.token, now)
+            if (!valid(value)) {
+                try { store.cancelReminder(value.storageKey, value.token, now) }
+                catch (_: HealthCareConflict) { /* A newer confirmation owns the slot. */ }
+            }
             else if (foreground(value) || post(value)) {
-                try { store.markReminderDelivered(value.actionId, value.token, now) }
-                catch (_: HealthCareConflict) { cancel(value.actionId) }
+                try { store.markReminderDelivered(value.storageKey, value.token, now) }
+                catch (_: HealthCareConflict) { cancel(value.storageKey) }
             }
             else failed = true
         }

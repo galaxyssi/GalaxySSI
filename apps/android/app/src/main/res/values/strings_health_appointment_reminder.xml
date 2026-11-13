@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_appointment_reminder">Appointment reminder</string>
+    <string name="health_appointment_confirm">Remind me at %1$s for the visit recorded at %2$s. This does not book or change an appointment.</string>
+    <string name="health_appointment_invalid_time">Choose a future reminder time before the recorded visit.</string>
+    <string name="health_appointment_notification">You have an appointment reminder.</string>
+    <string name="health_appointment_expired">The appointment time has passed. No late reminder will be sent.</string>
+</resources>
