@@ -18,6 +18,7 @@ open class HealthResearchAcceptanceRunner(private val prefix: String = "health-r
 }
 
 class HealthRelatedResearchAcceptanceRunner : HealthResearchAcceptanceRunner("health-related-acceptance-")
+class HealthRevocationAcceptanceRunner : HealthResearchAcceptanceRunner("health-revocation-acceptance-")
 
 private class HealthResearchAcceptanceContext(base: Context, private val prefix: String) : ContextWrapper(base) {
     override fun getDatabasePath(name: String): File {

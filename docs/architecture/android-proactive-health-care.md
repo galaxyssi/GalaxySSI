@@ -663,6 +663,28 @@ remains separate from the isolated storage, policy and UI regression suite.
 
 ### Production-path acceptance runner
 
+`HealthCareActiveRevocationDeviceTest` tests withdrawal during real paired-provider
+execution. Build the test APK with `-PhealthResearchAcceptance=revocation` and use
+`HealthRevocationAcceptanceRunner` with `health_active_revocation=true`. Its
+`health-revocation-acceptance-` storage also isolates the connector inbox. The
+`revoke` phase waits for a real durable request receipt, disables online analysis
+through the ordinary privacy store, and observes production cancellation rather
+than cancelling the workspace directly. It requires a persisted cancellation,
+retired outbox, terminal delivery marker and preserved synthetic source/conversation.
+
+The `resume` phase requires a new process identity, restores the same cancellation,
+reenables the isolated online setting and observes the resulting reconciliation.
+The old standing authorization must remain revoked and must not create another
+research turn. Both phases inject a clearly synthetic late final reply using the
+original request identity through the encrypted inbox and background delivery
+path. That reply must be retired without rebuilding a model runtime, writing a
+model assessment, adding plan actions, committing reply text or creating attention.
+This fault injection is not a claim that a real provider returned after cancellation
+or that the remote provider erased already transmitted data. An outbox receipt
+only proves local transport acceptance, not remote-provider termination.
+The `inspect` phase only reads state. Interrupted attempts retain records and
+markers; they do not clear data or silently replace a completed/failed request.
+
 `HealthCareAutomaticRelatedDeviceTest` adds an independent, opt-in production
 acceptance scenario. Build its test APK with
 `-PhealthResearchAcceptance=related`, then run the
