@@ -92,7 +92,7 @@ internal object HealthAnalysisProvider : HealthAnalysisGateway {
         val disclosureId = contact.optString("id").ifBlank { contact.optString("galaxyssi_id") }
             .ifBlank { "cloud:${contact.optString("cloud_provider").ifBlank { "custom" }}:${expected.model}" }
         return try {
-            val result = execute(actual, contact.getString("cloud_api_key"), text, mode) {
+            val result = execute(actual, contact.getString("cloud_api_key"), body(actual, text, mode)) {
                 validate()
                 val current = AppStore.selectedCloudModelContact(context, expected.id)?.let(::target)
                 if (current != expected) throw HealthAnalysisNoModel()
@@ -127,8 +127,8 @@ internal object HealthAnalysisProvider : HealthAnalysisGateway {
         }
     }
 
-    private suspend fun execute(target: HealthAnalysisTarget, key: String, data: String, mode: HealthAnalysisRequest, guard: () -> Unit): String {
-        val bytes = body(target, data, mode).toString().toByteArray(Charsets.UTF_8)
+    internal suspend fun execute(target: HealthAnalysisTarget, key: String, body: JSONObject, guard: () -> Unit): String {
+        val bytes = body.toString().toByteArray(Charsets.UTF_8)
         val size = bytes.size.toLong()
         var pending: ByteArray? = bytes
         val lock = Any()
@@ -157,7 +157,7 @@ internal object HealthAnalysisProvider : HealthAnalysisGateway {
                     override fun onFailure(call: Call, error: IOException) {
                         continuation.resumeWithException(error.cause?.takeIf {
                             it is HealthAccessBlocked || it is HealthWeeklyChanged || it is HealthTrendChangedException || it is HealthAnalysisNoModel ||
-                                it is HealthAnalysisProfileChanged || it is HealthAnalysisProfileBlocked
+                                it is HealthAnalysisProfileChanged || it is HealthAnalysisProfileBlocked || it is HealthReportVisionChanged
                         } ?: error)
                     }
                     override fun onResponse(call: Call, response: Response) {

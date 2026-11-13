@@ -15,7 +15,7 @@ internal data class HealthImportJob(
     val copiedBytes: Long = 0, val originalId: String = "", val nextPage: Int = 0,
     val pageCount: Int = 0, val state: HealthImportState = HealthImportState.QUEUED, val error: String = "",
     val captureBatch: String = "", val captureSubmitted: Boolean = false, val documentPage: Int = 0, val originalOnly: Boolean = false,
-    val keepOriginal: Boolean = true, val protectedPdf: Boolean = false,
+    val keepOriginal: Boolean = true, val protectedPdf: Boolean = false, val modelRecognized: Boolean = false,
 ) {
     fun json() = JSONObject().put("id", id).put("uri", sourceUri).put("created", createdAt).put("mode", mode)
         .put("camera", cameraToken).put("name", name).put("mime", mime).put("total", totalBytes).put("copied", copiedBytes)
@@ -23,12 +23,13 @@ internal data class HealthImportJob(
         .put("capture_batch", captureBatch).put("capture_submitted", captureSubmitted)
         .put("document_page", documentPage).put("original_only", originalOnly).put("keep_original", keepOriginal)
         .apply { if (protectedPdf) put("protected_pdf", true) }
+        .apply { if (modelRecognized) put("model_recognized", true) }
     companion object {
         fun from(j: JSONObject) = HealthImportJob(j.getString("id"), j.getString("uri"), j.getLong("created"), j.getString("mode"),
             j.getString("camera"), j.getString("name"), j.getString("mime"), j.getLong("total"), j.getLong("copied"),
             j.getString("original"), j.getInt("next_page"), j.getInt("page_count"), HealthImportState.valueOf(j.getString("state")), j.getString("error"),
             j.optString("capture_batch"), j.optBoolean("capture_submitted"), j.optInt("document_page"), j.optBoolean("original_only"),
-            j.optBoolean("keep_original", true), j.optBoolean("protected_pdf"))
+            j.optBoolean("keep_original", true), j.optBoolean("protected_pdf"), j.optBoolean("model_recognized"))
     }
 }
 internal data class HealthOriginal(
@@ -49,16 +50,18 @@ internal data class HealthOcrLine(val text: String, val box: List<Int> = emptyLi
         fun from(j: JSONObject) = HealthOcrLine(j.getString("text"), j.getJSONArray("box").let { a -> (0 until a.length()).map(a::getInt) })
     }
 }
-internal enum class HealthRecognition { OCR, PDF_TEXT }
+internal enum class HealthRecognition { OCR, PDF_TEXT, MODEL }
 
 internal data class HealthOcrPage(val page: Int, val width: Int, val height: Int, val lines: List<HealthOcrLine>,
-    val blurry: Boolean = false, val recognition: HealthRecognition = HealthRecognition.OCR) {
+    val blurry: Boolean = false, val recognition: HealthRecognition = HealthRecognition.OCR,
+    val vision: HealthReportVisionResult? = null) {
     fun json() = JSONObject().put("page", page).put("width", width).put("height", height).put("lines", JSONArray(lines.map { it.json() }))
         .put("blurry", blurry).put("recognition", recognition.name)
+        .apply { vision?.let { put("vision", it.json()) } }
     companion object {
         fun from(j: JSONObject) = HealthOcrPage(j.getInt("page"), j.getInt("width"), j.getInt("height"),
             j.getJSONArray("lines").let { a -> (0 until a.length()).map { HealthOcrLine.from(a.getJSONObject(it)) } }, j.getBoolean("blurry"),
-            HealthRecognition.valueOf(j.optString("recognition", "OCR")))
+            HealthRecognition.valueOf(j.optString("recognition", "OCR")), j.optJSONObject("vision")?.let(HealthReportVisionResult::from))
     }
 }
 

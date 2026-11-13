@@ -130,7 +130,8 @@ class HealthPrivacyActivity : Activity() {
             HealthAccessPurpose.SAVE_RECORDS, HealthAccessPurpose.GENERATE_BACKUP, HealthAccessPurpose.DELETE_BLUETOOTH_HISTORY,
             HealthAccessPurpose.DELETE_HEALTH_CONNECT_HISTORY, HealthAccessPurpose.DELETE_MEASUREMENT_HISTORY ->
                 getString(R.string.health_privacy_scope_records, count)
-            HealthAccessPurpose.SAVE_ORIGINALS, HealthAccessPurpose.DELETE_ORIGINAL_BYTES -> getString(R.string.health_privacy_scope_originals, count)
+            HealthAccessPurpose.SAVE_ORIGINALS, HealthAccessPurpose.DELETE_ORIGINAL_BYTES, HealthAccessPurpose.HEALTH_REPORT_VISION ->
+                getString(R.string.health_privacy_scope_originals, count)
             HealthAccessPurpose.DELETE_PROFILE -> getString(R.string.health_privacy_scope_delete, scope.basicCount, count, scope.drafts)
             else -> getString(R.string.health_privacy_scope_entries, count)
         }) }
@@ -166,6 +167,7 @@ private fun HealthAccessPurpose.title() = when (this) {
     HealthAccessPurpose.HEALTH_ANALYSIS -> R.string.health_assistant_title
     HealthAccessPurpose.PROACTIVE_CARE -> R.string.health_care_title
     HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE -> R.string.health_assistant_online_audit
+    HealthAccessPurpose.HEALTH_REPORT_VISION -> R.string.health_vision_action
     HealthAccessPurpose.SAVE_RECORDS -> R.string.health_privacy_save_records
     HealthAccessPurpose.SAVE_ORIGINALS -> R.string.health_privacy_save_originals
     HealthAccessPurpose.GENERATE_BACKUP -> R.string.health_backup_create

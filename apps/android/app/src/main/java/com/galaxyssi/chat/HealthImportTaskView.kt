@@ -12,7 +12,8 @@ internal class HealthImportTaskView(
     private val cancel: (HealthImportJob) -> Unit, private val retry: (HealthImportJob) -> Unit,
     private val review: (HealthImportJob) -> Unit, private val original: (HealthImportJob) -> Unit,
     private val capture: (HealthImportJob) -> Unit = {},
-    private val manual: () -> Unit = {}
+    private val manual: () -> Unit = {},
+    private val vision: (HealthImportJob) -> Unit = {}
 ) : LinearLayout(context) {
     private val name: TextView
     private val status: TextView
@@ -43,13 +44,15 @@ internal class HealthImportTaskView(
             progress.max = job.pageCount
             progress.progress = job.nextPage.coerceIn(0, job.pageCount)
         }
-        val nextKey = "${job.state}|${job.nextPage > 0}|${job.originalId}|${job.needsPdfPassword()}"
+        val nextKey = "${job.state}|${job.nextPage > 0}|${job.originalId}|${job.needsPdfPassword()}|${job.mime}|${job.modelRecognized}"
         if (nextKey == actionKey) return
         actionKey = nextKey; actions.removeAllViews()
         if (running) actions.addView(ui.row(context.getString(R.string.common_cancel)) { cancel(job) })
         if (job.state in listOf(HealthImportState.CANCELLED, HealthImportState.FAILED))
             actions.addView(ui.row(context.getString(if (job.needsPdfPassword()) R.string.health_pdf_unlock else R.string.common_retry)) { retry(job) })
         if (job.needsPdfPassword()) actions.addView(ui.row(context.getString(R.string.health_manual), action = manual))
+        if (HealthReportVisionReader.eligible(job))
+            actions.addView(ui.row(context.getString(R.string.health_vision_action)) { vision(job) })
         if (job.nextPage > 0 && !job.protectedReviewPending()) actions.addView(ui.row(context.getString(R.string.health_review_title)) { review(job) })
         if (job.state == HealthImportState.TABLE_REVIEW) actions.addView(ui.row(context.getString(R.string.health_table_title)) { review(job) })
         if (job.originalId.isNotBlank()) actions.addView(ui.row(context.getString(R.string.health_view_original)) { original(job) })

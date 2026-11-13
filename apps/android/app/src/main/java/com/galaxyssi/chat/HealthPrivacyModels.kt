@@ -45,6 +45,7 @@ internal enum class HealthAccessPurpose(val permission: HealthPrivacyOption? = n
     HEALTH_ANALYSIS(HealthPrivacyOption.CONFIRMED_METRICS),
     PROACTIVE_CARE(HealthPrivacyOption.CONFIRMED_METRICS),
     HEALTH_ANALYSIS_ONLINE(HealthPrivacyOption.ONLINE_ANALYSIS),
+    HEALTH_REPORT_VISION(HealthPrivacyOption.ORIGINAL_IMAGES),
     SAVE_RECORDS, SAVE_ORIGINALS, GENERATE_BACKUP, DELETE_PROFILE, DELETE_BLUETOOTH_HISTORY, DELETE_HEALTH_CONNECT_HISTORY,
     DELETE_MEASUREMENT_HISTORY, DELETE_ORIGINAL_BYTES
 }
@@ -64,7 +65,7 @@ internal data class HealthAccessScope(
         require(basicCount == null || basicCount in 0..HealthProfileField.entries.size)
         require(baselineFrom == null || baselineFrom in 0 until from)
         require(destination.length <= 384 && destination.none(Char::isISOControl))
-        require((purpose == HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE) == destination.isNotEmpty())
+        require((purpose in setOf(HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE, HealthAccessPurpose.HEALTH_REPORT_VISION)) == destination.isNotEmpty())
         ZoneId.of(zone)
         when (purpose) {
             HealthAccessPurpose.TREND, HealthAccessPurpose.TREND_RECORDS, HealthAccessPurpose.TREND_SOURCES ->
@@ -76,6 +77,8 @@ internal data class HealthAccessScope(
                 require(metrics.isNotEmpty() && fields.isEmpty() && !annotations && format == if (purpose == HealthAccessPurpose.SAVE_WEEKLY_REPORT) HealthAccessFormat.PDF else null)
             HealthAccessPurpose.HEALTH_ANALYSIS, HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE, HealthAccessPurpose.PROACTIVE_CARE ->
                 require(metrics.isNotEmpty() && fields.isEmpty() && !annotations && !reportRecords && format == null)
+            HealthAccessPurpose.HEALTH_REPORT_VISION -> require(metrics.isEmpty() && fields.isEmpty() && !annotations &&
+                !reportRecords && source == HealthAccessSource.ORIGINAL && count == 1L && format == null)
             HealthAccessPurpose.SAVE_RECORDS -> require(metrics.isNotEmpty() && count != null && format in listOf(HealthAccessFormat.CSV, HealthAccessFormat.JSON, HealthAccessFormat.XLSX, HealthAccessFormat.ZIP))
             HealthAccessPurpose.SAVE_ORIGINALS -> require(count != null && format in listOf(HealthAccessFormat.ZIP, HealthAccessFormat.ORIGINAL))
             HealthAccessPurpose.GENERATE_BACKUP -> require(count != null && format == HealthAccessFormat.GHBACKUP && fields.isEmpty())
