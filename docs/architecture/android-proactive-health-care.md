@@ -34,7 +34,38 @@ review available in-app and does not later flood the user with old notices.
 
 This routine update channel is not a clinical alarm, and does not bypass quiet
 hours, change medication, confirm targets or schedule a clinical follow-up.
-Multi-metric coordination and clinical outcome validation remain separate work.
+Cross-concern plan coordination and clinical outcome validation remain separate work.
+
+## Consent-scoped related measurements
+
+Standing research consent can include explicitly selected additional self-profile
+measurement types. The options start unchecked and the disclosure preview follows
+the selection. Normal measurements are retained in the encrypted evaluation cache
+without manufacturing abnormal concerns. Existing grants share no additional
+metrics, and manual conversations do not silently inherit standing consent.
+
+Each automatic turn binds the current version of every selected metric, including
+its own units, measurement time, record revision and confirmed collection context.
+Missing or withdrawn evidence is not a normal result. The model may request older
+pages only for the primary or explicitly selected metrics, using that metric's own
+input version. A selected source change invalidates the prior assessment and
+creates one new research trigger; unrelated changes do not create another review.
+The structured assessment must reference at least one primary record and the
+current sample of every available selected metric. These are reviewed-input
+references, not proof of relevance, causation or a diagnosis. The model explains
+insufficient context or limited relevance; missing references return a correctable
+tool error instead of being silently added by the host or accepted as complete.
+
+History handoff, conversation recall, stored questions, prior evidence and model
+assessments respect the current selection. A narrower grant cannot reintroduce
+withdrawn measurements through derived prose. Source changes are checked before
+tool reads, plan confirmation and notification delivery. Revocation does not
+delete the user's records, questions, messages or historical assessments.
+
+This supports source-aware joint assessment, not a complete health archive or
+automatic cross-concern clinical management. Different measurement dates are not
+simultaneous observations, correlation is not causation, and no second concern's
+target, accepted actions or reminders can be changed through this grant.
 
 ## Longitudinal evidence window
 
@@ -48,8 +79,9 @@ changing the source clock or silently changing an individual target.
 The Agent main page and concern details expose the same paginated history review.
 Pages are released on background, conversation changes, source updates or privacy
 revocation. `galaxyssi.health.history.read` lets the authorized model read older
-pages on the phone. The host, not model parameters, supplies the concern, metric,
-self profile and granted turn. Every page checks source clock, concern revision,
+pages on the phone. The host binds the concern, allowed metric selection,
+self profile and granted turn; an optional model-supplied metric must belong to
+that selection. Every page checks source clock, concern revision,
 privacy and approval. Changed data requires a new review, not mixing stale pages.
 Storage is not limited to 30 records. No unrelated profile, private device/source
 identifier, free-form note or original attachment is included in the model page.
@@ -630,6 +662,30 @@ end-to-end acceptance, including device restart during an automatic review,
 remains separate from the isolated storage, policy and UI regression suite.
 
 ### Production-path acceptance runner
+
+`HealthCareAutomaticRelatedDeviceTest` adds an independent, opt-in production
+acceptance scenario. Build its test APK with
+`-PhealthResearchAcceptance=related`, then run the
+`HealthRelatedResearchAcceptanceRunner` with `health_automatic_related=true`.
+Its `health-related-acceptance-` namespace isolates application, WorkManager,
+health records, conversations and task storage from both real user data and the
+older acceptance scenario. Only the existing pairing and live Signal ratchet are
+shared; they are never copied or rolled back.
+
+The `start` phase saves a real waiting-response checkpoint. A subsequent `resume`
+phase requires a different process identity and continues that original turn.
+It then saves a changed, authorized measurement through the normal record store,
+without manually launching another research job. The normal workers must deliver
+a new structured review in the same conversation. An unselected metric is then
+saved and fully reconciled; the existing authorization must still have exactly
+two research turns. Neither review may accept actions, targets or reminders.
+The `inspect` phase only diagnoses saved state. Durable markers retain the same
+records and turns across interrupted attempts; failures do not reset the probe.
+After an initial review has actually terminated, `recheck_start` explicitly renews
+the synthetic consent once per App version and retains previous reviews. It is
+not an automatic retry of a running or unobserved task.
+This is a process-recovery and integration test, not proof of physical reboot,
+long-term clinical outcomes or complete UI acceptance.
 
 The Agent landing surface shows a compact reason, workflow next step and direct
 discussion entry. Detailed plan, reminder, target and history controls expand

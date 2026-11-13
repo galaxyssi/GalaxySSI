@@ -47,6 +47,22 @@ class HealthCareModelReviewTest {
         assertTrue(HealthCareModelReviewTool.ID in HealthCareDiscussionPolicy.tools(grant))
         assertFalse(HealthCareModelReviewTool.ID in HealthCareDiscussionPolicy.tools(grant.copy(researchAuthorizationId = "")))
     }
+    @Test fun incompleteInputIsCorrectableWithoutBeingReportedAsRevokedConsent() {
+        var incomplete = true
+        val registry = AgentNativeToolRegistry()
+        registry.register(HealthCareModelReviewTool.definition { _, supplied ->
+            require(!incomplete) { "Missing selected inputs" }
+            value.copy(input = supplied)
+        })
+        val failed = registry.invoke(HealthCareModelReviewTool.ID, input.json().toNativeObject())
+        assertEquals("invalid_health_review", failed.error?.code)
+        assertTrue(failed.error!!.message.contains("every available selected"))
+        assertFalse(failed.error.retryable)
+        incomplete = false
+        val repaired = registry.invoke(HealthCareModelReviewTool.ID, input.json().toNativeObject())
+        assertTrue(repaired.isSuccess)
+        assertEquals(true, repaired.output["stored"])
+    }
     @Test fun legacyJobsDoNotAcquireNewCompletionRequirements() {
         val job = HealthCareResearchJob(grant.turnId, grant.researchAuthorizationId, grant.concernId, grant.conversationId,
             "b".repeat(64), 1, 1000, reviewRequired = true)

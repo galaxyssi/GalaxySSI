@@ -85,10 +85,17 @@ class HealthCareRelatedDeviceTest {
         val (job, turn) = authorize(care, grant)
         val input = HealthCareModelReviewTestFixture.input(care, grant.concernId)
         val related = care.relatedMeasurement(HealthMetric.WEIGHT)!!.assessment!!.record!!
+        val pressure = care.relatedMeasurement(HealthMetric.BLOOD_PRESSURE)!!.assessment!!.record!!
         val foreign = care.relatedMeasurement(HealthMetric.HEART_RATE)!!.assessment!!.record!!
         assertTrue(runCatching { care.recordModelReview(turn, input.copy(records = listOf(related)), System.currentTimeMillis()) }.isFailure)
         assertTrue(runCatching { care.recordModelReview(turn, input.copy(records = input.records + foreign), System.currentTimeMillis()) }.isFailure)
-        val saved = care.recordModelReview(turn, input.copy(records = input.records + related, attentionRequested = true), System.currentTimeMillis())
+        assertThrows(IllegalArgumentException::class.java) { care.recordModelReview(turn, input, System.currentTimeMillis()) }
+        assertThrows(IllegalArgumentException::class.java) {
+            care.recordModelReview(turn, input.copy(records = input.records + related), System.currentTimeMillis())
+        }
+        assertNull(care.modelReview(turn.turnId))
+        assertEquals(HealthCareResearchState.QUEUED, care.researchJob(turn.turnId)!!.state)
+        val saved = care.recordModelReview(turn, input.copy(records = input.records + related + pressure, attentionRequested = true), System.currentTimeMillis())
         val running = care.updateResearchJob(job, HealthCareResearchState.DISPATCHED)
         care.updateResearchJob(running, HealthCareResearchState.COMPLETED)
         val notice = care.modelAttention(grant.concernId)!!
@@ -117,6 +124,21 @@ class HealthCareRelatedDeviceTest {
             cursor = page.optJSONObject("next")?.let { mapOf("before_time" to it.getLong("before_time"), "before_id" to it.getString("before_id")) }.orEmpty()
         } while (cursor.isNotEmpty())
         assertEquals(62, ids.size); assertEquals(62, ids.distinct().size)
+    }
+    @Test fun unavailableSelectedMeasurementDoesNotRequireAnInventedReference(): Unit = fixture { names, records, care, grant ->
+        val removed = care.relatedMeasurement(HealthMetric.WEIGHT)!!.assessment!!.record!!
+        records.delete(removed.id, removed.revision)
+        HealthCareEngine.evaluate(context, names)
+        val refreshed = grant.copy(turnId = UUID.randomUUID().toString(),
+            related = HealthCareRelatedContext.capture(care, grant.related.keys))
+        val (_, turn) = authorize(care, refreshed)
+        val input = HealthCareModelReviewTestFixture.input(care, grant.concernId)
+        val pressure = care.relatedMeasurement(HealthMetric.BLOOD_PRESSURE)!!.assessment!!.record!!
+        assertThrows(HealthCareConflict::class.java) {
+            care.recordModelReview(turn, input.copy(records = input.records + pressure + removed), System.currentTimeMillis())
+        }
+        val saved = care.recordModelReview(turn, input.copy(records = input.records + pressure), System.currentTimeMillis())
+        assertEquals(input.records + pressure, saved.input.records)
     }
     @Test fun revocationAndPrimaryMetricInjectionAreRejected(): Unit = fixture { names, _, care, grant ->
         assertTrue(runCatching { care.approveDiscussion(grant.copy(turnId = UUID.randomUUID().toString(),

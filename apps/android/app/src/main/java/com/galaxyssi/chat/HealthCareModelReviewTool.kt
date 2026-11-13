@@ -6,10 +6,13 @@ internal object HealthCareModelReviewTool {
     const val ID = "galaxyssi.health.review.record"
     private fun text(max: Int) = AgentNativeJsonSchema.string(minLength = 1, maxLength = max)
     fun definition(record: (AgentNativeToolInvocationContext, HealthCareModelReviewInput) -> HealthCareModelReview) = AgentNativeToolDefinition(
-        descriptor = AgentNativeToolDescriptor(ID, "1.0.0", "Record this automatic health assessment",
+        descriptor = AgentNativeToolDescriptor(ID, "1.1.0", "Record this automatic health assessment",
             "Finish an authorized automatic review with one durable structured assessment before the final answer. " +
                 "Use exact record IDs/revisions from the primary snapshot and explicitly selected related measurements; " +
-                "include at least one primary record. Use only current-turn evidence receipts. " +
+                "include at least one primary record and the current sample record of EVERY available selected related measurement. " +
+                "These references identify the inputs reviewed, not proof of clinical relevance or causation. " +
+                "Explain limited relevance or missing context instead of silently ignoring a selected input. " +
+                "Do not cite an unavailable or unselected measurement. Use only current-turn evidence receipts. " +
                 "Separate facts, reasoning and uncertainty; do not invent evidence. An empty evidence list means no retrieved support. " +
                 "A PROPOSE_PLAN decision requires plan_id from health.plan.propose in this turn. " +
                 "Review events are conditions, not scheduled checks. Attention is a recommendation, not a sent notification. " +
@@ -40,7 +43,9 @@ internal object HealthCareModelReviewTool {
                     "The approved concern, evidence, plan or authorization changed. Do not reuse another turn's data or overwrite a recorded assessment.")
             } catch (_: IllegalArgumentException) {
                 AgentNativeToolExecutionResult.failure("invalid_health_review",
-                    "Supply all structured fields, exact current snapshot record references, unique review_events and evidence_ids. Do not supply approval or execution flags.")
+                    "Supply all structured fields, at least one primary record and every available selected related sample's exact record ID/revision, " +
+                        "unique review_events and evidence_ids. Explain uncertainty or limited relevance; a reference is not a clinical conclusion. " +
+                        "Correct the request within this turn; do not supply approval or execution flags.")
             }
         })
     fun definitions(context: Context) = listOf(definition { invocation, input ->
