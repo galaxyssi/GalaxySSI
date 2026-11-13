@@ -1,16 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="health_vision_action">用大模型识别</string>
+    <string name="health_vision_action">识别并导入</string>
+    <string name="health_report_import_hint">确认发送报告照片后，Auto · Codex 会识别并导入检查结果。</string>
     <string name="health_vision_consent">发送这张报告图片？</string>
-    <string name="health_vision_disclosure">接收方：%1$s\n\n已配对的 Desktop 只将这张报告图片交给 Codex。图片中可见的姓名等信息也可能被发送，不会发送其他健康记录或聊天内容。识别结果只填入草稿，核对并保存后才入档。</string>
+    <string name="health_vision_disclosure">接收方：%1$s\n\n仅发送这张图片给 Codex，可能包含图中的姓名等信息。请确认是本人的报告。可用结果会自动入档；缺少采样信息时只需补填一次。</string>
     <string name="health_vision_reading">正在识别报告字段…</string>
     <string name="health_vision_source_method">大模型识别 · 第 %1$d 页</string>
-    <string name="health_vision_review">请对照原图核对预填字段，再确认保存。</string>
+    <string name="health_vision_review">以下为 Codex 识别的结果，可对照原图修改。</string>
     <string name="health_vision_partial">部分字段不清晰或暂不支持。请对照原图核对草稿并手动补充。</string>
     <string name="health_vision_show_local">查看本机识别草稿</string>
     <string name="health_vision_show_model">查看大模型识别草稿</string>
     <string name="health_vision_no_model">Auto · Codex 不可用。请启动或更新已配对的 Desktop，并检查 Codex；也可使用本机核对。</string>
-    <string name="health_vision_blocked">请在「个人健康 → 健康中心功能 → 隐私与数据」开启「在线健康分析」和「报告原始图片」。发送前仍需逐次确认。</string>
+    <string name="health_vision_blocked">请在「个人健康 → 健康中心功能 → 隐私与数据」开启「在线健康分析」。发送前仍需逐张确认。</string>
+    <string name="health_report_save_all">批量保存</string>
+    <string name="health_report_supplement">补充报告信息</string>
+    <string name="health_report_pick_time">选择采样日期和时间</string>
+    <string name="health_report_pick_time_for_date">选择 %1$s 的采样时间</string>
+    <string name="health_report_invalid_time">请选择有效且不晚于现在的采样时间。</string>
+    <string name="health_report_fasting_prompt">采样时是否空腹？</string>
+    <string name="health_report_non_fasting">非空腹</string>
+    <string name="health_report_fasting_unknown">不确定</string>
+    <string name="health_report_imported">已保存 %1$d 项，合并重复 %2$d 项，保留草稿 %3$d 项</string>
+    <string name="health_report_partial_note">原图中部分结果未能可靠识别。</string>
     <string name="health_vision_changed">报告已变化、已完成识别，或原图不可用。请重新打开核对当前状态。</string>
     <string name="health_vision_unreadable">模型未返回可用的报告字段。原图和本机识别草稿未改动。</string>
     <string name="health_vision_image_failed">无法准备图片，请尝试清晰、裁剪后的图片。</string>

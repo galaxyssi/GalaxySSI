@@ -106,7 +106,7 @@ Report images also support an explicitly authorized vision-model transcription
 from the import task or review page, including recovery from a failed local
 recognition attempt. Auto selects an available Codex on a verified paired
 Desktop and applies the saved Codex configuration. This path requires online
-analysis and report-image permission, and confirmation for each image. The
+analysis and one explicit import confirmation for each image. The
 request sends one upright JPEG derived in memory from the encrypted original
 through a private, ephemeral Codex thread with search and Desktop tools disabled.
 The paired Desktop must advertise this capability before the phone can send an
@@ -120,9 +120,11 @@ page. Local OCR and its drafts remain separately available. The original
 identity, job state and consent version are checked before transmission and
 before accepting the result. Leaving the screen abandons the request locally
 and attempts to stop Codex on the same paired Desktop. Unknown
-units and incomplete or ambiguous collection times remain unset; a model
-transcription is not independently verified. The standard per-item review,
-duplicate handling and explicit batch save are still required.
+units remain unset. If the model cannot read the collection date/time or a
+glucose sample's fasting status, one shared form fills the missing fields.
+Validated rows save in one local transaction; duplicate observations are linked
+without being overwritten. Ambiguous or incomplete rows remain editable
+drafts. Local OCR retains its separate review flow.
 
 `HealthCameraActivity` implements a foreground-only rear Camera2 preview, an
 explicit shutter, optional device-supported fill light, report/device modes and

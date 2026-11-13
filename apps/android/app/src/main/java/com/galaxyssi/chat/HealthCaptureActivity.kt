@@ -26,7 +26,7 @@ import java.util.concurrent.Executors
 
 internal enum class HealthCaptureEntry { CAMERA, REPORT, TABLE }
 
-/** Collects originals and review suggestions; only the separate confirmed editor writes observations. */
+/** Collects originals and coordinates local review or confirmed model imports. */
 class HealthCaptureActivity : Activity() {
     private val ui by lazy { HealthCenterViews(this) }
     private val worker = Executors.newSingleThreadExecutor()
@@ -55,6 +55,7 @@ class HealthCaptureActivity : Activity() {
     private var retentionRequest: Any? = null
     private var retentionOverride: Boolean? = null
     private var pendingPickRetention: Boolean? = null
+    private var quickReportId = ""
     private var firstEntry: HealthCaptureEntry? = null
     private var active = false
     private var generation = 0
@@ -159,6 +160,7 @@ class HealthCaptureActivity : Activity() {
     }
     override fun onPause() {
         visionUi.clear()
+        quickReportId = ""
         originalRemovalRequest++
         originalRemovalDialog?.dismiss(); originalRemovalDialog = null
         originalSaveDialog?.dismiss(); originalSaveDialog = null
@@ -220,6 +222,7 @@ class HealthCaptureActivity : Activity() {
         val token = generation
         val currentRoute = route; val id = selectedId; val number = page; val offset = candidateOffset
         val useLocal = localReview
+        val quickId = quickReportId
         val cameraToken = pendingCamera
         val taskCursor = jobPages.lastOrNull(); val recordCursor = recordPages.lastOrNull()
         worker.execute {
@@ -253,7 +256,8 @@ class HealthCaptureActivity : Activity() {
                         val batches = if (structured.isEmpty()) emptyMap() else HealthTableStore(applicationContext).use { tables ->
                             structured.mapNotNull { job -> tables.batch(job.id)?.let { job.id to it } }.toMap()
                         }
-                        CaptureSnapshot(jobs = jobs, tableJobs = batches, pendingPhoto = cameraToken.isNotBlank() && HealthCaptureFiles.file(applicationContext, cameraToken).let { it.isFile && it.length() > 0 })
+                        CaptureSnapshot(jobs = jobs, tableJobs = batches, pendingPhoto = cameraToken.isNotBlank() && HealthCaptureFiles.file(applicationContext, cameraToken).let { it.isFile && it.length() > 0 },
+                            quickReport = quickId.takeIf(String::isNotBlank)?.let(originals::job))
                     }
                 }
             }
@@ -267,6 +271,12 @@ class HealthCaptureActivity : Activity() {
     private fun render(screen: String, data: CaptureSnapshot) {
         if (screen == "review" && data.job?.state == HealthImportState.TABLE_REVIEW) {
             startActivity(Intent(this, HealthTableActivity::class.java).putExtra("health_table", data.job.id).putHealthNavigationFixture(names)); back(); return
+        }
+        data.quickReport?.takeIf { it.id == quickReportId }?.let { pending ->
+            if (HealthReportVisionReader.eligible(pending)) {
+                quickReportId = ""; visionUi.show(pending.id)
+            } else if (pending.state in setOf(HealthImportState.FAILED, HealthImportState.ORIGINAL_ONLY,
+                    HealthImportState.TABLE_REVIEW, HealthImportState.CANCELLED, HealthImportState.REVIEW)) quickReportId = ""
         }
         val key = when (screen) {
             "capture" -> "capture|$mode|${data.pendingPhoto}|${data.jobs.joinToString { it.id }}"
@@ -325,7 +335,8 @@ class HealthCaptureActivity : Activity() {
                 importSource(FileProvider.getUriForFile(this, "$packageName.files", HealthCaptureFiles.file(this, token)), token)
             }, 14)
         }
-        ui.add(content, ui.text(getString(R.string.health_local_recognition), 12f, muted = true), 16)
+        ui.add(content, ui.text(getString(if (mode == "report" && !originalOnly) R.string.health_report_import_hint
+            else R.string.health_local_recognition), 12f, muted = true), 16)
         ui.add(content, ui.text(getString(R.string.health_import_tasks), 19f, bold = true), 20)
         if (jobs.isEmpty()) ui.add(content, ui.text(getString(R.string.health_no_import_tasks), 14f, muted = true), 12)
         jobs.forEach { job ->
@@ -452,13 +463,16 @@ class HealthCaptureActivity : Activity() {
             val key = HealthRecordStore.draftKey(row.draft)
             if (key in reviewSelection && reviewSelection[key] != row.selection) reviewSelection.remove(key)
         }
-        val updateFooter: () -> Unit = if (rows.any { it.saved == null } || reviewSelection.isNotEmpty())
-            reviewFooter(job, original) else ({})
         val model = scanned.vision?.takeUnless { localReview }
+        val updateFooter: () -> Unit = if (model == null && (rows.any { it.saved == null } || reviewSelection.isNotEmpty()))
+            reviewFooter(job, original) else ({})
         content.addView(ui.text(getString((if (model != null) HealthRecognition.MODEL else scanned.recognition).label(), displayedPage), 14f, muted = true))
         if (scanned.vision != null) {
             if (model != null) ui.add(content, ui.text(getString(if (model.partial) R.string.health_vision_partial else
                 R.string.health_vision_review), 14f), 6)
+            if (model != null && data.available && (data.hasMore || candidateOffset > 0 || rows.any { it.saved == null }))
+                ui.add(content, ui.command(R.string.health_report_save_all) { visionUi.finishImport(job.id) }
+                    .apply { tag = "health-report-save-all" }, 8)
             if (scanned.lines.isNotEmpty()) ui.add(content, ui.row(getString(if (localReview) R.string.health_vision_show_model else
                 R.string.health_vision_show_local)) {
                 if (!savingReview) {
@@ -475,7 +489,8 @@ class HealthCaptureActivity : Activity() {
             candidates.firstOrNull { it.candidateId == selectedCandidate } ?: candidates.firstOrNull()
         }
         selectedCandidate = selected?.candidateId.orEmpty()
-        val source = if (selected != null && data.available) reviewSource(content, original, selected, displayedPage) else null
+        val source = if (model == null && selected != null && data.available)
+            reviewSource(content, original, selected, displayedPage) else null
         if (!data.available) ui.add(content, ui.text(getString(if (original.reviewOnly)
             R.string.health_retention_released else R.string.health_original_preview_failed), 14f, muted = true), 8)
         ui.add(content, ui.row(getString(R.string.health_view_original), original.name) { open("original", original.id) }, 8)
@@ -513,14 +528,14 @@ class HealthCaptureActivity : Activity() {
                     else -> R.string.health_review_saved_item
                 })) {
                     if (previous != null) startActivity(Intent(this@HealthCaptureActivity, HealthCenterActivity::class.java).putExtra("health_record", previous.id))
-                    else editSuggestion(draft, stage = true)
+                    else editSuggestion(draft, stage = model == null)
                 }.apply { tag = "health-review-edit-${evidence.candidateId}" }, 8)
                 row.link?.let { target ->
                     ui.add(this, ui.row(getString(R.string.health_review_view_duplicate)) {
                         startActivity(Intent(this@HealthCaptureActivity, HealthCenterActivity::class.java).putExtra("health_record", target.id))
                     }, 8)
                 }
-                if (selection != null) ui.add(this, CheckBox(this@HealthCaptureActivity).apply {
+                if (selection != null && model == null) ui.add(this, CheckBox(this@HealthCaptureActivity).apply {
                     tag = "health-review-pick-${evidence.candidateId}"
                     text = getString(if (selection.link == null) R.string.health_review_select_item else R.string.health_review_select_link,
                         getString(draft.metric.titleResource()))
@@ -605,8 +620,12 @@ class HealthCaptureActivity : Activity() {
         body.findViewWithTag<View>("health-review-batch-save")?.apply { isEnabled = false; alpha = .5f }
         body.findViewWithTag<View>("health-review-batch-consent")?.isEnabled = false
         worker.execute {
-            val result = runCatching { HealthRecordStore(applicationContext, names.records).use { it.saveOcrReviewBatch(job, original, selected) } }
-            if (result.getOrNull() is HealthOcrBatchResult.Saved) runCatching { originals.releaseReviewOriginal(job) }
+            val result = runCatching { HealthRecordStore(applicationContext, names.records).use { records ->
+                records.saveOcrReviewBatch(job, original, selected).also {
+                    if (it is HealthOcrBatchResult.Saved)
+                        runCatching { HealthOriginalRetention.releaseAfterReview(originals, records, job) }
+                }
+            } }
             main.post {
                 savingReview = false
                 if (isDestroyed) return@post
@@ -790,7 +809,10 @@ class HealthCaptureActivity : Activity() {
             refresh()
         } else if (requestCode == NATIVE_CAMERA) {
             if (intent.getBooleanExtra("health_capture_return_to_record_center", false)) { finish(); return }
-            if (resultCode == RESULT_OK) { jobPages.clear(); route = "capture"; generation++; refresh() }
+            if (resultCode == RESULT_OK) {
+                quickReportId = data?.getStringExtra(HEALTH_SINGLE_REPORT_JOB)?.takeIf(HealthProfilePolicy::uuid).orEmpty()
+                jobPages.clear(); route = "capture"; generation++; refresh()
+            }
         } else if (requestCode == CAMERA) {
             val token = pendingCamera
             if (token.isBlank()) return
@@ -806,7 +828,8 @@ class HealthCaptureActivity : Activity() {
             if (resultCode == RESULT_OK) {
                 val uris = data?.clipData?.let { clip -> (0 until clip.itemCount).map { clip.getItemAt(it).uri } }
                     ?: listOfNotNull(data?.data)
-                uris.distinct().forEach { importSource(it, retained = retention) }
+                val picked = uris.distinct()
+                picked.forEach { importSource(it, retained = retention, quick = picked.size == 1) }
             }
         } else if (requestCode == EXPORT) {
             val scope = pendingOriginalSave ?: return
@@ -843,7 +866,8 @@ class HealthCaptureActivity : Activity() {
             jobPages.clear(); route = "capture"; generation++; refresh()
         }
     }
-    private fun importSource(uri: Uri, cameraToken: String = "", originalOnly: Boolean = this.originalOnly, retained: Boolean? = null) {
+    private fun importSource(uri: Uri, cameraToken: String = "", originalOnly: Boolean = this.originalOnly,
+        retained: Boolean? = null, quick: Boolean = true) {
         val selectedMode = mode
         worker.execute {
             runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -856,6 +880,7 @@ class HealthCaptureActivity : Activity() {
             }
             main.post { if (active) result.fold({
                 if (pendingCamera == cameraToken) pendingCamera = ""
+                if (quick && selectedMode == "report" && !originalOnly) quickReportId = id
                 jobPages.clear(); route = "capture"; generation++; refresh()
             }, { showFailure("source_permission") }) }
         }
@@ -977,6 +1002,6 @@ class HealthCaptureActivity : Activity() {
         val job: HealthImportJob? = null, val original: HealthOriginal? = null, val page: HealthOcrPage? = null, val saved: List<HealthObservation> = emptyList(),
         val review: List<HealthOcrReviewRow> = emptyList(), val hasMore: Boolean = false, val available: Boolean = true, val pendingPhoto: Boolean = false,
         val recordsNext: HealthPageCursor? = null, val tableJobs: Map<String, HealthTableBatch> = emptyMap(),
-        val sourceContext: HealthOcrSourceContext? = null)
+        val sourceContext: HealthOcrSourceContext? = null, val quickReport: HealthImportJob? = null)
     companion object { private const val PICK = 81; private const val CAMERA = 82; private const val EXPORT = 83; private const val CROP = 84; private const val CAMERA_PERMISSION = 85; private const val NATIVE_CAMERA = 86; private const val OCR_EDITOR = 87 }
 }

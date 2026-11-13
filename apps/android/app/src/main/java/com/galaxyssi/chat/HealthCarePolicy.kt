@@ -46,7 +46,7 @@ internal object HealthCarePolicy {
         if (metric == HealthMetric.GLUCOSE && value != null) {
             // Compare each supported unit to its published threshold; conversion rounding must not decide eligibility.
             val threshold = if (draft.unit == "mg/dL") BigDecimal("100") else BigDecimal("5.6")
-            if (value >= threshold && (draft.condition != "after_meal" || context?.record == ref)) {
+            if (value >= threshold && (draft.condition !in setOf("after_meal", "non_fasting") || context?.record == ref)) {
                 if (context?.record == ref && context.excludesScreeningFpg) signals += HealthCareSignal.GUIDELINE_SCOPE
                 else if (context?.record != ref || !context.screeningFpgApplicable) signals += HealthCareSignal.GLUCOSE_CONTEXT
                 else {

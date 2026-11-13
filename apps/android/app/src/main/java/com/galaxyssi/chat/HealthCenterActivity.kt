@@ -519,7 +519,7 @@ class HealthCenterActivity : Activity() {
             if (result.getOrNull() is HealthSaveResult.Saved) draft.evidence?.let { evidence ->
                 runCatching {
                     HealthOriginalStore(applicationContext, overviewNames.originals, overviewNames.originalRoot(applicationContext)).use {
-                        it.releaseReviewOriginal(evidence.jobId)
+                        HealthOriginalRetention.releaseAfterReview(it, records, evidence.jobId)
                     }
                 }
             }

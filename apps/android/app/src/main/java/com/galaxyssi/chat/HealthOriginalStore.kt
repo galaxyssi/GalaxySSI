@@ -285,6 +285,17 @@ internal class HealthOriginalStore(
     fun page(job: String, page: Int): HealthOcrPage? = helper.readableDatabase.rawQuery(
         "SELECT payload FROM pages WHERE job_id=? AND page_number=?", arrayOf(job, page.toString())
     ).use { if (it.moveToFirst()) HealthOcrPage.from(unpack("page", "$job:$page", it.getBlob(0))) else null }
+    fun <T> withReportVision(id: String, operation: (HealthImportJob, HealthOriginal, HealthReportVisionResult) -> T): T {
+        val db = helper.writableDatabase
+        db.beginTransactionNonExclusive()
+        return try {
+            val job = job(id)?.takeIf { it.modelRecognized && it.state == HealthImportState.REVIEW }
+                ?: throw HealthReportVisionChanged()
+            val source = original(job.originalId)?.takeIf { present(it) } ?: throw HealthReportVisionChanged()
+            val result = page(id, 1)?.vision ?: throw HealthReportVisionChanged()
+            operation(job, source, result).also { db.setTransactionSuccessful() }
+        } finally { db.endTransaction() }
+    }
     @Synchronized fun saveReportVision(expected: HealthImportJob, source: HealthOriginal, result: HealthReportVisionResult) {
         val db = helper.writableDatabase
         db.beginTransaction()

@@ -27,12 +27,15 @@ internal data class HealthVisionRow(val metric: HealthMetric, val values: Map<St
     }
 }
 
-internal data class HealthReportVisionResult(val rows: List<HealthVisionRow>, val collected: String, val partial: Boolean) {
+internal data class HealthReportVisionResult(val rows: List<HealthVisionRow>, val collected: String, val partial: Boolean,
+    val fasting: String = "") {
     init {
         require(rows.size in 1..MAX_ROWS && rows.distinct() == rows)
         require(collected.length <= 80 && collected.none(Char::isISOControl))
+        require(fasting in setOf("", "fasting", "non_fasting", "after_meal"))
     }
     fun json() = JSONObject().put("rows", JSONArray(rows.map { it.json() })).put("collected", collected).put("partial", partial)
+        .apply { if (fasting.isNotEmpty()) put("fasting", fasting) }
 
     fun drafts(job: HealthImportJob, original: HealthOriginal, zone: ZoneId, now: Long): List<HealthDraft> {
         val measuredAt = HealthOcrSourceContext.readTimestamp(collected, zone)?.millis?.takeIf { it in 1..now } ?: 0L
@@ -42,7 +45,9 @@ internal data class HealthReportVisionResult(val rows: List<HealthVisionRow>, va
             } }
             val key = AgentNativeJsonCodec.sha256(mapOf("metric" to row.metric.name, "values" to row.values,
                 "unit" to row.unit, "reference" to row.reference, "source" to row.source, "collected" to collected))
-            HealthDraft(row.metric, values, row.unit, measuredAt, evidence = HealthEvidence(original.id, job.id,
+            HealthDraft(row.metric, values, row.unit, measuredAt,
+                condition = fasting.takeIf { row.metric == HealthMetric.GLUCOSE && it.isNotEmpty() } ?: "unspecified",
+                evidence = HealthEvidence(original.id, job.id,
                 "model-$key", original.sha256, 1, row.source, documentPage = job.documentPage, recognition = HealthRecognition.MODEL),
                 reference = row.reference, reportedValues = row.values.filter { (field, raw) -> raw != values[field] })
         }
@@ -51,11 +56,12 @@ internal data class HealthReportVisionResult(val rows: List<HealthVisionRow>, va
     companion object {
         const val MAX_ROWS = 80
         fun from(j: JSONObject): HealthReportVisionResult {
-            require(j.keys().asSequence().toSet() == setOf("rows", "collected", "partial"))
+            require(j.keys().asSequence().filterNot { it == "fasting" }.toSet() == setOf("rows", "collected", "partial"))
             val rows = j.getJSONArray("rows")
             require(rows.length() in 1..MAX_ROWS)
             return HealthReportVisionResult(List(rows.length()) { HealthVisionRow.from(rows.getJSONObject(it)) },
-                j.text("collected"), j.opt("partial") as? Boolean ?: throw HealthAnalysisInvalidReply())
+                j.text("collected"), j.opt("partial") as? Boolean ?: throw HealthAnalysisInvalidReply(),
+                if (j.has("fasting")) j.text("fasting") else "")
         }
         fun parse(response: String): HealthReportVisionResult = try {
             val text = response.trim().let {
