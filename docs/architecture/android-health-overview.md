@@ -34,6 +34,18 @@ profile, synthetic result, or health score.
 
 ## Presentation And Refresh
 
+The longitudinal preview shows up to three confirmed due or overdue actions, or
+the next scheduled action when none are due, and links to the existing review
+and full agenda. It also previews up to three open concerns and their latest
+recorded visit, if not cancelled. Follow-up rows open the exact journal rather
+than another concern's journal. These are bounded previews, not total counts.
+If an index is still being prepared or a bounded page cannot establish absence,
+the overview points to the full list rather than claiming there are no actions.
+
+Reads respect confirmed-measurement and profile permissions. The overview
+checks source versions and ownership, and does not evaluate a concern, send
+health information to a model, modify its plan or deliver a reminder.
+
 The preference can put health changes first, review first, or sort by
 recency. The stored value is only an ordering choice, not a clinical
 severity assignment. Unknown/failed sections are separate from an empty

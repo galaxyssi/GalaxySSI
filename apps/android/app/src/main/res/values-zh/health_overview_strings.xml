@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_overview_today_actions">今日行动</string>
+    <string name="health_overview_no_due_actions">今天没有到期的已确认行动。</string>
+    <string name="health_overview_care_pending">打开健康行动，查看最新列表。</string>
+    <string name="health_overview_next_action">下一项已安排的行动：%1$s</string>
+    <string name="health_overview_due_action">计划开始：%1$s</string>
+    <string name="health_overview_overdue_action">已逾期，原定 %1$s</string>
+    <string name="health_overview_ongoing_care">持续关注</string>
+    <string name="health_overview_care_unavailable">暂时无法加载健康跟进信息。</string>
+    <string name="health_overview_care_permission">健康跟进信息已按隐私设置隐藏。</string>
+    <string name="health_overview_care_changed">来源已变更，待复评</string>
+    <string name="health_overview_visits">就医与随访</string>
     <string name="health_overview_title">我的健康</string>
     <string name="health_overview_attention">待关注</string>
     <string name="health_overview_no_attention">暂无待关注事项</string>

@@ -29,7 +29,7 @@ internal data class HealthOverviewDerived(val sleep: HealthWeeklyStat? = null, v
     val permitted: Boolean = true, val unavailable: Boolean = false)
 internal data class HealthOverviewSnapshot(val time: Long, val zone: ZoneId, val hasRecords: Boolean, val metrics: List<HealthOverviewMetric>,
     val derived: HealthOverviewDerived, val attention: List<HealthOverviewAttention>, val reviewUnavailable: Boolean,
-    val connectionsUnavailable: Boolean = false)
+    val connectionsUnavailable: Boolean = false, val care: HealthOverviewCare = HealthOverviewCare())
 
 internal object HealthOverviewRepository {
     fun load(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, now: Long, zone: ZoneId): HealthOverviewSnapshot {
@@ -49,10 +49,12 @@ internal object HealthOverviewRepository {
             metrics.any { it.metric == HealthMetric.SLEEP_DURATION && it.record != null }) }.getOrElse {
             if (it is HealthAccessBlocked) HealthOverviewDerived(permitted = false) else HealthOverviewDerived(unavailable = true)
         }
+        val care = runCatching { HealthOverviewCare.load(context, records, names, now, zone) }
+            .getOrElse { HealthOverviewCare(unavailable = true) }
         if (records.metricVersions(selected) != versions) throw HealthWeeklyChanged()
         return HealthOverviewSnapshot(now, zone, hasRecords, metrics, derived,
             listOfNotNull(derived.alert?.let { HealthOverviewAttention.Change(it) }) + reviews.getOrDefault(emptyList()) +
-                connections.getOrDefault(emptyList()), reviews.isFailure, connections.isFailure)
+                connections.getOrDefault(emptyList()), reviews.isFailure, connections.isFailure, care)
     }
 
     fun pendingReviews(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, limit: Int,
