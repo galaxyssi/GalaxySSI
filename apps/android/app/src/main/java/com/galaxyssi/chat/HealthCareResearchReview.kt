@@ -20,8 +20,9 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
     private var generation = 0
     private var busy = false
     private var dialog: AlertDialog? = null
-    fun clear() { generation++; dialog?.dismiss(); dialog = null }
-    fun destroy() { clear(); worker.shutdown() }
+    private var questionReview: HealthCareQuestionReview? = null
+    fun clear() { generation++; dialog?.dismiss(); dialog = null; questionReview?.clear() }
+    fun destroy() { clear(); questionReview?.destroy(); worker.shutdown() }
 
     fun show(id: String) {
         if (busy) return
@@ -71,6 +72,12 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
                 ui.add(content, ui.text(activity.getString(label), 14f, bold = true), 10)
                 ui.add(content, ui.text(text, 14f), 4)
             }
+            if (value.input.questions.isNotEmpty()) ui.add(content, ui.profileRow(
+                activity.getString(R.string.health_model_review_questions, value.input.questions.size)) {
+                dialog?.dismiss()
+                val questions = questionReview ?: HealthCareQuestionReview(activity, names).also { questionReview = it }
+                questions.show(issue.id, selected = value.input.questions.map { it.id }.toSet())
+            }.apply { tag = "health-model-review-questions" }, 10)
             val events = value.input.events.joinToString(" / ") { event -> activity.getString(when (event) {
                 HealthCareReviewEvent.SOURCE_CHANGE -> R.string.health_model_review_source
                 HealthCareReviewEvent.USER_FEEDBACK -> R.string.health_model_review_feedback

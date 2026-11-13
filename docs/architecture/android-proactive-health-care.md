@@ -9,6 +9,20 @@ step, evidence references and review conditions. A model opinion is neither a
 diagnosis nor a confirmed plan. Earlier assessments can inform a subsequent
 authorized turn without replacing the new source snapshot.
 
+New `CLARIFY` assessments must cite exact retained question IDs and revisions in
+`questions`. Validation reads only those indexed rows, checks the concern, current
+sharing scope, source basis and saved facts, and permits current open questions or
+explicitly conflicting answers. Resolved, stale, deferred and declined questions
+cannot be reported as pending clarifications. Missing references are correctable
+tool errors; the host does not invent questions or answers. A missing question
+permission is reported as a limitation, not as a completed clarification.
+
+The assessment links to only its referenced questions in the existing native
+review UI. Opening it reads current states, so an answered question is not shown
+as still pending. Backgrounding clears both surfaces. Old encrypted assessments
+without question references remain readable without fabricated receipts or data
+migration; new submissions must satisfy the receipt contract.
+
 Schema 19 adds an encrypted attention outbox. Only a successfully completed
 review that requests attention admits an update, in the same database transaction
 as completion. Earlier reviews are not backfilled as notifications on upgrade.
@@ -688,7 +702,18 @@ negative answers and earlier assessments are retained; no action, target or remi
 is accepted automatically. The `inspect` phase exports only this isolated synthetic
 scenario for local response inspection. Programmatic identity/state checks are not
 semantic or clinical validation; the actual model replies must also be inspected.
-This store-path acceptance does not replace the locked device's pending UI tests.
+This store-path acceptance does not replace unlocked-device UI tests.
+
+For the clarification-receipt contract, use
+`-PhealthResearchAcceptance=clarification-receipts` and
+`HealthClarificationReceiptAcceptanceRunner` with the same two-phase test. Its
+separate `health-clarification-acceptance-receipts-` namespace preserves the earlier
+acceptance records. The initial model assessment must select `CLARIFY` and reference
+the real question receipt. The follow-up must no longer cite the answered question
+as awaiting clarification. The controlled scenario locates its one question through
+the assessment receipt, not an assumed model-generated key; inspect the question
+and responses locally to verify their meaning. Neither phase substitutes a
+host-authored assessment.
 
 `HealthCareActiveRevocationDeviceTest` tests withdrawal during real paired-provider
 execution. Build the test APK with `-PhealthResearchAcceptance=revocation` and use

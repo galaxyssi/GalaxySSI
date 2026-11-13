@@ -6,7 +6,7 @@ internal object HealthCareModelReviewTool {
     const val ID = "galaxyssi.health.review.record"
     private fun text(max: Int) = AgentNativeJsonSchema.string(minLength = 1, maxLength = max)
     fun definition(record: (AgentNativeToolInvocationContext, HealthCareModelReviewInput) -> HealthCareModelReview) = AgentNativeToolDefinition(
-        descriptor = AgentNativeToolDescriptor(ID, "1.1.0", "Record this automatic health assessment",
+        descriptor = AgentNativeToolDescriptor(ID, "1.2.0", "Record this automatic health assessment",
             "Finish an authorized automatic review with one durable structured assessment before the final answer. " +
                 "Use exact record IDs/revisions from the primary snapshot and explicitly selected related measurements; " +
                 "include at least one primary record and the current sample record of EVERY available selected related measurement. " +
@@ -15,6 +15,12 @@ internal object HealthCareModelReviewTool {
                 "Do not cite an unavailable or unselected measurement. Use only current-turn evidence receipts. " +
                 "Separate facts, reasoning and uncertainty; do not invent evidence. An empty evidence list means no retrieved support. " +
                 "A PROPOSE_PLAN decision requires plan_id from health.plan.propose in this turn. " +
+                "A CLARIFY decision requires questions with exact IDs/revisions from health.questions.read or health.questions.propose. " +
+                "Reference only current OPEN or CONFLICT questions in this scope. Explain conflicts rather than re-asking known facts; " +
+                "never cite resolved, deferred, declined or stale questions as awaiting clarification. " +
+                "Without question sharing, explain the limitation and choose another applicable decision; do not claim to have retained questions. " +
+                "Missing answers or authorization must not delay urgent clinician review. " +
+                "For other decisions questions may be empty. This records references, not questions or user answers. " +
                 "Review events are conditions, not scheduled checks. Attention is a recommendation, not a sent notification. " +
                 "No diagnosis, medication change, target confirmation, reminder or concern closure is performed. " +
                 "Submit the final assessment only once; identical retries return the same receipt.",
@@ -27,9 +33,12 @@ internal object HealthCareModelReviewTool {
                     required = setOf("id", "revision"), additionalProperties = false), minItems = 1, maxItems = 30),
                 "evidence_ids" to AgentNativeJsonSchema.array(text(36), minItems = 0, maxItems = 8),
                 "plan_id" to AgentNativeJsonSchema.string(maxLength = 36),
+                "questions" to AgentNativeJsonSchema.array(AgentNativeJsonSchema.objectSchema(properties = mapOf(
+                    "id" to text(36), "revision" to AgentNativeJsonSchema.integer(minimum = 1)),
+                    required = setOf("id", "revision"), additionalProperties = false), minItems = 0, maxItems = 30),
                 "attention_requested" to AgentNativeJsonSchema.boolean(), "attention_reason" to text(2000)
             ), required = setOf("summary", "rationale", "uncertainty", "next_step", "decision", "review_events", "records",
-                "evidence_ids", "plan_id", "attention_requested", "attention_reason"), additionalProperties = false),
+                "evidence_ids", "plan_id", "attention_requested", "attention_reason", "questions"), additionalProperties = false),
             AgentNativeJsonSchema.objectSchema(additionalProperties = true), AgentNativeToolRisk.MEDIUM,
             capabilities = setOf("health.review.record"), effect = AgentNativeToolEffect.MUTATION,
             idempotency = AgentNativeToolIdempotency.IDEMPOTENT),
@@ -37,6 +46,8 @@ internal object HealthCareModelReviewTool {
             try {
                 val value = record(call.context, HealthCareModelReviewInput.parse(call.input))
                 AgentNativeToolExecutionResult.success(mapOf("review_id" to value.grant.turnId, "stored" to true,
+                    "question_references" to value.input.questions.map { mapOf("id" to it.id, "revision" to it.revision) },
+                    "questions_created" to false,
                     "clinical_verification" to false, "scheduled" to false, "notification_sent" to false, "concern_closed" to false))
             } catch (_: HealthCareConflict) {
                 AgentNativeToolExecutionResult.failure("health_review_scope_changed",
@@ -45,6 +56,7 @@ internal object HealthCareModelReviewTool {
                 AgentNativeToolExecutionResult.failure("invalid_health_review",
                     "Supply all structured fields, at least one primary record and every available selected related sample's exact record ID/revision, " +
                         "unique review_events and evidence_ids. Explain uncertainty or limited relevance; a reference is not a clinical conclusion. " +
+                        "For CLARIFY, retain necessary questions first and cite their exact current IDs/revisions; do not re-ask answered or deferred questions. " +
                         "Correct the request within this turn; do not supply approval or execution flags.")
             }
         })
@@ -53,7 +65,11 @@ internal object HealthCareModelReviewTool {
             HealthCareDiscussion.rejection(context, invocation.conversationId, invocation.turnId) != null) throw HealthCareConflict()
         HealthCareStore(context).use { store ->
             val grant = store.discussionGrant(invocation.turnId) ?: throw HealthCareConflict()
-            store.recordModelReview(grant, input, System.currentTimeMillis())
+            val profile = try { if (input.questions.isEmpty()) null else grant.profileLink?.let { HealthCareProfileAccess.capture(context, it) } }
+                catch (_: HealthProfileConflict) { throw HealthCareConflict() }
+            store.recordModelReview(grant, input, System.currentTimeMillis(), profile).also {
+                if (HealthCareDiscussion.rejection(context, invocation.conversationId, invocation.turnId) != null) throw HealthCareConflict()
+            }
         }
     })
 }

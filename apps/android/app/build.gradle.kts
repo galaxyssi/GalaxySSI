@@ -163,13 +163,14 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1585
-        versionName = "0.18.24"
+        versionCode = 1586
+        versionName = "0.18.25"
         testInstrumentationRunner = when (providers.gradleProperty("healthResearchAcceptance").orNull) {
             "true" -> "com.galaxyssi.chat.HealthResearchAcceptanceRunner"
             "related" -> "com.galaxyssi.chat.HealthRelatedResearchAcceptanceRunner"
             "revocation" -> "com.galaxyssi.chat.HealthRevocationAcceptanceRunner"
             "clarification" -> "com.galaxyssi.chat.HealthClarificationAcceptanceRunner"
+            "clarification-receipts" -> "com.galaxyssi.chat.HealthClarificationReceiptAcceptanceRunner"
             else -> "androidx.test.runner.AndroidJUnitRunner"
         }
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")

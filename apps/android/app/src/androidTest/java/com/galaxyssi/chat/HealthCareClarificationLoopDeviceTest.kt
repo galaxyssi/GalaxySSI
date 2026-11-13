@@ -42,15 +42,20 @@ class HealthCareClarificationLoopDeviceTest {
         await(600_000, "Initial model assessment and durable clarification") { healthy(initial).state == HealthCareResearchState.COMPLETED }
         val questionId = HealthCareStore(context).use { care ->
             val issue = care.concern(concern)!!
-            val question = questions(care, issue).singleOrNull { it.key == "context.fasting_hours" }
-                ?: error("The real model did not retain the missing fasting-duration question")
+            val assessment = checkNotNull(care.modelReview(initial))
+            assertEquals(HealthCareReviewDecision.CLARIFY, assessment.input.decision)
+            val reference = assessment.input.questions.singleOrNull()
+                ?: error("The controlled clarification scenario needs one retained question receipt")
+            val question = checkNotNull(care.question(reference.id))
+            assertEquals(issue.id, question.concernId)
+            assertEquals(markers.getString("record", ""), question.record?.id)
             assertEquals(initial, question.turnId)
             if (!markers.contains("question")) {
                 assertEquals(HealthCareQuestionState.OPEN, question.state)
                 check(markers.edit().putString("question", question.id).putInt("question_revision", question.revision).commit())
             }
             assertEquals(markers.getString("question", ""), question.id)
-            assertNotNull(care.modelReview(initial))
+            assertTrue(assessment.input.questions.contains(HealthCareQuestionRef(question.id, markers.getInt("question_revision", 0))))
             question.id
         }
         if (!markers.getBoolean("answered", false)) {
@@ -101,6 +106,7 @@ class HealthCareClarificationLoopDeviceTest {
             val review = checkNotNull(care.modelReview(next))
             assertEquals(conversation, review.grant.conversationId)
             assertTrue(review.input.records.any { it.id == markers.getString("record", "") })
+            assertTrue(review.input.questions.none { it.id == questionId })
             assertNotNull(care.modelReview(initial))
         }
         await(90_000, "Repeated answer reconciled without a duplicate research turn") {

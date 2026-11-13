@@ -43,7 +43,8 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             HealthCareRelatedContext.current(this, review.grant) && job.trigger == review.trigger && review.trigger == researchTrigger(issue, auth.scope, now)
     }
     fun modelReview(turnId: String) = modelReviewRows().get(turnId)
-    fun recordModelReview(grant: HealthCareDiscussionGrant, input: HealthCareModelReviewInput, now: Long): HealthCareModelReview = transaction(true) {
+    fun recordModelReview(grant: HealthCareDiscussionGrant, input: HealthCareModelReviewInput, now: Long,
+        profile: HealthProfileContext? = null): HealthCareModelReview = transaction(true) {
         val issue = concern(grant.concernId) ?: throw HealthCareConflict()
         val job = researchJob(grant.turnId) ?: throw HealthCareConflict()
         if (discussionGrant(grant.turnId) != grant || !researchGrantCurrent(grant) ||
@@ -62,6 +63,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             if (it.grant != grant || it.input != input || it.inputVersion != issue.inputVersion || it.trigger != job.trigger) throw HealthCareConflict()
             return@transaction it
         }
+        HealthCareReviewQuestions.validate(issue, grant, input, profile, ::question)
         HealthCareModelReview(grant, job.trigger, issue.inputVersion, now, input).also {
             modelReviewRows().insert(it)
             check(modelReview(grant.turnId) == it) { "The health assessment write was not retained" }
