@@ -115,6 +115,6 @@ class HealthCareInstructionProposalDeviceTest {
         context.openOrCreateDatabase(f.documents.names.care, 0, null).use { removeHealthVisitFollowUpTestTables(it); it.execSQL("DROP TABLE instruction_proposals"); it.version = 15 }
         assertEquals(value, f.snapshot(value.id).selected); assertNull(f.snapshot(value.id).proposal)
         stageInstructionProposal(context, f, value)
-        context.openOrCreateDatabase(f.documents.names.care, 0, null).use { assertEquals(17, it.version) }
+        context.openOrCreateDatabase(f.documents.names.care, 0, null).use { assertEquals(18, it.version) }
     }
 }

@@ -22,7 +22,10 @@ class HealthCareProfileTest {
     @Test fun selectionAndGrantsRoundTripWithoutCopyingProfileValues() {
         assertEquals(issue, HealthCareConcern.from(issue.json()))
         assertEquals(grant, HealthCareDiscussionGrant.from(grant.json()))
-        assertFalse(issue.json().toString().contains("170"))
+        val expectedLink = JSONObject("""{"scope":{"generation":"","fields":["HEIGHT"],"entries":[]},"stamp":{"generation":"","versions":{"field:HEIGHT":"v1"}}}""")
+        val serialized = issue.copy(id = "17000000-0000-4000-8000-000000000001").json()
+        assertTrue(expectedLink.similar(serialized.getJSONObject("profile_link")))
+        assertTrue(expectedLink.similar(grant.json().getJSONObject("profile_link")))
         assertEquals(issue.copy(profileLink = null), HealthCareConcern.from(issue.copy(profileLink = null).json()))
     }
     @Test fun identityEmptyScopeInvalidIdsAndOversizedSelectionsAreRejected() {

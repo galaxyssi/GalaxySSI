@@ -33,13 +33,15 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
                 val authorization = care.researchAuthorization(id)
                 val job = care.latestResearchJob(id)
                 val enabled = care.settings().enabled && HealthCareResearchPolicy.eligible(issue)
-                val done: () -> Unit = { render(issue, authorization, job, enabled) }
+                val review = job?.let { care.modelReview(it.turnId) }
+                val done: () -> Unit = { render(issue, authorization, job, enabled, review) }
                 done
             }
         }
     }
 
-    private fun render(issue: HealthCareConcern, authorization: HealthCareResearchAuthorization?, job: HealthCareResearchJob?, enabled: Boolean) {
+    private fun render(issue: HealthCareConcern, authorization: HealthCareResearchAuthorization?, job: HealthCareResearchJob?, enabled: Boolean,
+        review: HealthCareModelReview?) {
         val content = ui.column().apply { setPadding(ui.dp(20), ui.dp(8), ui.dp(20), ui.dp(16)) }
         content.addView(ui.text(activity.getString(issue.metric.titleResource()), 17f, bold = true))
         ui.add(content, ui.text(activity.getString(if (authorization?.active == true) R.string.health_research_on else R.string.health_research_off), 14f)
@@ -51,6 +53,25 @@ internal class HealthCareResearchReview(private val activity: Activity, private 
         job?.let {
             ui.add(content, ui.text(activity.getString(it.state.titleResource()), 15f, bold = true).apply { tag = "health-research-state" }, 12)
             if (it.detail.isNotBlank()) ui.add(content, ui.text(it.detail, 14f), 6)
+        }
+        review?.let { value ->
+            ui.add(content, ui.text(activity.getString(R.string.health_model_review_title), 16f, bold = true), 16)
+            if (value.inputVersion != issue.inputVersion || value.trigger != HealthCareResearchPolicy.trigger(issue, System.currentTimeMillis()))
+                ui.add(content, ui.text(activity.getString(R.string.health_model_review_historical), 14f), 6)
+            ui.add(content, ui.text(value.input.summary, 15f).apply { tag = "health-model-review-summary" }, 8)
+            listOf(R.string.health_model_review_reason to value.input.rationale,
+                R.string.health_model_review_uncertainty to value.input.uncertainty,
+                R.string.health_model_review_next to value.input.nextStep).forEach { (label, text) ->
+                ui.add(content, ui.text(activity.getString(label), 14f, bold = true), 10)
+                ui.add(content, ui.text(text, 14f), 4)
+            }
+            val events = value.input.events.joinToString(" / ") { event -> activity.getString(when (event) {
+                HealthCareReviewEvent.SOURCE_CHANGE -> R.string.health_model_review_source
+                HealthCareReviewEvent.USER_FEEDBACK -> R.string.health_model_review_feedback
+                HealthCareReviewEvent.CONFIRMED_ACTION_DUE -> R.string.health_model_review_due
+            }) }
+            ui.add(content, ui.text(activity.getString(R.string.health_model_review_events, events), 14f), 10)
+            ui.add(content, ui.text(activity.getString(R.string.health_model_review_notice), 13f), 10)
         }
         if (authorization?.active == true) ui.add(content, ui.profileRow(activity.getString(R.string.health_research_revoke)) {
             dialog?.dismiss()

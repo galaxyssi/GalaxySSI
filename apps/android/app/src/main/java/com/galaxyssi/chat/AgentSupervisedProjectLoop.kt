@@ -611,7 +611,7 @@ internal object AgentSupervisedProjectToolInventory {
                         append("- ").append(tool.id)
                         append(" | risk=").append(tool.risk.wireValue)
                         if (tool.id in PhoneAssistantToolPolicy.directActionToolIds || tool.id == AgentConversationRecallTool.ID ||
-                            tool.id == HealthCarePlanTool.ID && tools.all { it.id in HealthCareDiscussionPolicy.discussionTools }) {
+                            tool.id in setOf(HealthCarePlanTool.ID, HealthCareModelReviewTool.ID) && tools.all { it.id in HealthCareDiscussionPolicy.automaticTools }) {
                             append(" | description=").append(tool.description)
                         }
                         if (phoneControl && !tool.requiresEffectClaim) append(" | effect=read_only")
@@ -623,7 +623,7 @@ internal object AgentSupervisedProjectToolInventory {
                         append(
                             if (tool.id in AgentWebIntelligenceNativeTools.directSearchToolIds ||
                                 tool.id in PhoneAssistantToolPolicy.directActionToolIds || tool.id == AgentConversationRecallTool.ID ||
-                                tool.id == HealthCarePlanTool.ID && tools.all { it.id in HealthCareDiscussionPolicy.discussionTools }) {
+                                tool.id in setOf(HealthCarePlanTool.ID, HealthCareModelReviewTool.ID) && tools.all { it.id in HealthCareDiscussionPolicy.automaticTools }) {
                                 AgentNativeJsonCodec.stringify(tool.inputSchema.document)
                             } else AgentSupervisedProjectPromptCodec.compactInputSchema(
                                 tool.inputSchema.document,

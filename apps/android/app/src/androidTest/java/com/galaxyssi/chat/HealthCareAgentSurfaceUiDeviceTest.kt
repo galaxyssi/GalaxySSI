@@ -98,7 +98,7 @@ class HealthCareAgentSurfaceUiDeviceTest {
                 job = HealthCareStore(context, names.care).use { it.updateResearchJob(job, HealthCareResearchState.DISPATCHED) }
                 state(R.string.health_research_running)
                 scenario.onActivity { assertTrue(find(it, "agent-health-care-plan")!!.isShown) }
-                job = HealthCareStore(context, names.care).use { it.updateResearchJob(job, HealthCareResearchState.COMPLETED) }
+                job = HealthCareStore(context, names.care).use { HealthCareModelReviewTestFixture.complete(it, job) }
                 state(R.string.health_research_completed)
                 HealthCareStore(context, names.care).use { care ->
                     val issue = care.concern(plan.grant.concernId)!!

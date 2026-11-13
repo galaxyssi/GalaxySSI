@@ -112,6 +112,6 @@ class HealthCareDocumentDeviceTest {
             assertEquals(visit, it.encounter(visit.id)); assertEquals(issue, it.concern(issue.id))
             assertTrue(it.encounterDocuments(issue.id, visit.id).items.isEmpty()); save(it, visit)
         }
-        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(17, it.version) }
+        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(18, it.version) }
     }
 }

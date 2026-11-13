@@ -70,6 +70,24 @@ class HealthCareResearchUiDeviceTest {
             listOf(names.care, names.records, names.privacy, names.reminders).forEach(context::deleteDatabase)
         }
     }
+    @Test fun structuredAssessmentIsReadableAndClearedWhenBackgrounded() = fixture(true) { scenario, names, plan ->
+        val saved = HealthCareStore(context, names.care).use { store ->
+            val job = store.latestResearchJob(plan.grant.concernId)!!
+            HealthCareModelReviewTestFixture.record(store, job)
+        }
+        scenario.onActivity { find(it, "health-care-research")!!.performClick() }
+        await(scenario) { dialog(review(it))?.isShowing == true }
+        scenario.onActivity {
+            val text = views(dialog(review(it))!!.window!!.decorView).filterIsInstance<TextView>()
+            assertEquals(saved.input.summary, text.single { view -> view.tag == "health-model-review-summary" }.text.toString())
+            assertTrue(text.any { view -> view.text.toString() == saved.input.nextStep })
+            assertTrue(text.any { view -> view.text.toString() == context.getString(R.string.health_model_review_notice) })
+        }
+        capture("health-model-review-fixture.png")
+        scenario.moveToState(Lifecycle.State.CREATED)
+        scenario.onActivity { assertNull(dialog(review(it))) }
+        HealthCareStore(context, names.care).use { assertEquals(saved, it.modelReview(saved.grant.turnId)) }
+    }
     @Test fun stopActionRevokesConsentAndKeepsDurableCancellation() = fixture(true) { scenario, names, plan ->
         scenario.onActivity { find(it, "health-care-research")!!.performClick() }
         await(scenario) { dialog(review(it))?.isShowing == true }

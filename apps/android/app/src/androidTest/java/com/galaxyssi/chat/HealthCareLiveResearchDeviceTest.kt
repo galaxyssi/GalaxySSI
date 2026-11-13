@@ -22,6 +22,52 @@ class HealthCareLiveResearchDeviceTest {
     private val journalReads = mutableSetOf<Int>()
     private val reportFile get() = File(context.filesDir, "health-care-live-research.json")
 
+    @Test fun pairedModelPersistsStructuredAssessmentBeforeCompleting(): Unit = runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("health_live_model_review") == "true")
+        val contacts = AppStore.contacts(context)
+        val contact = (0 until contacts.length()).map { contacts.getJSONObject(it) }.firstOrNull {
+            !it.optBoolean("deleted") && AppStore.agentIdForContact(context, it.optString("id")) == "codex" &&
+                !AppStore.isDesktopDeviceContact(context, it.optString("id")) &&
+                GalaxySSILinkProtocol.serverLink(context, it.optString("desktop_id"))?.paired == true
+        } ?: error("No paired Codex contact; preserve pairing and credentials")
+        GalaxySSIMqttClient.connect(context)
+        withTimeout(30_000) { while (!GalaxySSIMqttClient.isRequestReplyReady()) delay(100) }
+        val names = HealthOverviewDatabases(UUID.randomUUID().toString())
+        try {
+            HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.ONLINE_ANALYSIS, true, it.policy().version) }
+            HealthRecordStore(context, names.records).use { it.save(HealthDraft(HealthMetric.GLUCOSE,
+                mapOf("glucose" to "6.3"), "mmol/L", System.currentTimeMillis() - 1000, reference = "4-6")) }
+            HealthCareStore(context, names.care).use { store ->
+                store.configure(true, ""); HealthCareEngine.evaluate(context, names)
+                val raw = store.page().items.single()
+                val issue = store.bindDiscussion(raw.id, raw.revision, UUID.randomUUID().toString())
+                val config = AgentModelSelectionSettings.configurationForTarget(context, issue.conversationId, contact.getString("id"))
+                val scope = HealthCareDiscussionGrant(issue.conversationId, UUID.randomUUID().toString(), issue.id, issue.revision,
+                    store.settings().version, HealthPrivacyStore(context, names.privacy).use { it.policy().version },
+                    HealthCareDiscussion.desktopDestination(context, contact.getString("id")), System.currentTimeMillis(),
+                    contact.getString("id"), config?.modelId.orEmpty(), config?.reasoningEffort?.wireValue.orEmpty())
+                val authorization = HealthCareResearchAuthorization(UUID.randomUUID().toString(), scope, "b".repeat(64))
+                store.authorizeResearch(authorization, null)
+                val job = store.queueResearch(authorization.id, issue.id, System.currentTimeMillis())
+                val grant = scope.copy(turnId = job.turnId, researchAuthorizationId = authorization.id)
+                store.approveDiscussion(grant)
+                val answer = runTurn(store, issue, grant, contact,
+                    "这是隔离合成测试，不是我的健康资料。请核对现有资料质量，说明还缺什么关键测量情境，并保存结构化评估。" +
+                        "本轮不查网页，不建议治疗，不创建计划或提醒。请用中文回复，不要假设已经确诊。", emptyList(), names)
+                assertTrue(answer.isNotBlank())
+                val review = store.modelReview(job.turnId) ?: error("The real provider did not persist a structured assessment")
+                assertEquals(grant, review.grant); assertTrue(review.input.evidenceIds.isEmpty())
+                assertEquals(issue, store.concern(issue.id)); assertNull(store.nextReminder())
+                val running = store.updateResearchJob(job, HealthCareResearchState.DISPATCHED)
+                assertEquals(HealthCareResearchState.COMPLETED, store.updateResearchJob(running, HealthCareResearchState.COMPLETED).state)
+                println("HEALTH_LIVE structured_assessment=true real_provider=true no_plan_or_reminder=true")
+            }
+        } finally {
+            reportFile.writeText(report.toString(2))
+            listOf(names.care, names.records, names.privacy, names.reminders).forEach(context::deleteDatabase)
+        }
+    }
+
     @Test fun pairedModelReadsOnlyApprovedVisitJournal(): Unit = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("health_live_visit_followup") == "true")
         val contacts = AppStore.contacts(context)
@@ -267,6 +313,10 @@ class HealthCareLiveResearchDeviceTest {
             check(invocation.conversationId == grant.conversationId && invocation.turnId == grant.turnId)
             store.proposePlan(HealthCarePlanPolicy.parse(input, grant, concern, System.currentTimeMillis()))
         })
+        if (grant.researchAuthorizationId.isNotEmpty()) registry.register(HealthCareModelReviewTool.definition { invocation, input ->
+            check(invocation.conversationId == grant.conversationId && invocation.turnId == grant.turnId)
+            store.recordModelReview(grant, input, System.currentTimeMillis())
+        })
         registry.register(HealthCareHistoryTool.definition { invocation, input ->
             HealthCareHistoryTool.read(context, names, invocation, input).also { output ->
                 val samples = output.optJSONObject("history")?.optJSONArray("samples") ?: JSONArray()
@@ -291,7 +341,9 @@ class HealthCareLiveResearchDeviceTest {
             HealthCareInstructionTool.snapshot(store.instruction(grant.instruction.id)!!)
             else if (grant.visitFollowUp != null) HealthCareVisitFollowUpTool.snapshot(
                 HealthCareVisitFollowUpTool.selected(store, concern.id, grant.visitFollowUp), store.encounter(grant.visitFollowUp.encounter)!!, concern.revision)
-            else HealthCareDiscussionPolicy.snapshot(concern, feedbackHistoryShared = grant.feedbackHistoryShared))
+            else HealthCareDiscussionPolicy.snapshot(concern, followUp = if (grant.researchAuthorizationId.isEmpty()) null else
+                HealthCareResearchHandoff.snapshot(concern, store.researchJob(grant.turnId)!!, null, null),
+                feedbackHistoryShared = grant.feedbackHistoryShared))
         val runtime = AgentRuntimeContextBuilder.build(sessionId = grant.conversationId, goal = goal, screen = screen,
             permissionMode = PermissionMode.AUTO_LOW_RISK, highRiskGuard = true, memoryCapture = false,
             callableTargets = emptyList(), memories = emptyList(), nativeTools = registry.availableCatalog().descriptors.filter {

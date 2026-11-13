@@ -1014,6 +1014,20 @@ class AgentSupervisedProjectPromptTest {
     }
 
     @Test
+    fun `automatic health assessment retains full review and plan contracts`() {
+        val tools = listOf(
+            HealthCarePlanTool.definition { _, _ -> error("No execution") }.descriptor,
+            HealthCareModelReviewTool.definition { _, _ -> error("No execution") }.descriptor)
+        val context = request("Review authorized evidence").runtimeContext.copy(nativeTools = tools,
+            capabilityMatrix = AgentRuntimeCapabilitySnapshot.EMPTY)
+        listOf(false, true).forEach { phone ->
+            val manifest = AgentSupervisedProjectToolInventory.render(context, maximumSchemaCharacters = 80, phoneControl = phone)
+            tools.forEach { assertTrue(manifest.contains(AgentNativeJsonCodec.stringify(it.inputSchema.document))) }
+            assertTrue(manifest.contains("attention_requested"))
+        }
+    }
+
+    @Test
     fun `initial lifecycle working set reduces schemas without hiding implementation tools`() {
         val toolIds = AgentMobileProjectNativeTools.toolIds + setOf(
             AgentPhoneNativeToolCatalog.WORKSPACE_READ_TEXT,

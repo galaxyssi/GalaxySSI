@@ -109,7 +109,7 @@ class HealthCareFeedbackToolDeviceTest {
         val job = care.researchJob(approval.turnId)!!
         val running = care.updateResearchJob(job, HealthCareResearchState.DISPATCHED)
         read(names, issue, approval)
-        care.updateResearchJob(running, HealthCareResearchState.COMPLETED)
+        HealthCareModelReviewTestFixture.complete(care, running)
         assertThrows(HealthCareConflict::class.java) { read(names, issue, approval) }
     }
 

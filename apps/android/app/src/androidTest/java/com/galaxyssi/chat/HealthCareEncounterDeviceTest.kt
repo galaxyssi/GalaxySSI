@@ -132,6 +132,6 @@ class HealthCareEncounterDeviceTest {
             assertEquals(before, it.concern(issue.id)); assertEquals(listOf(feedback), it.feedback(issue.id).items)
             assertTrue(it.encounters(issue.id).items.isEmpty()); save(it, before)
         }
-        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(17, it.version) }
+        context.openOrCreateDatabase(names.care, 0, null).use { assertEquals(18, it.version) }
     }
 }
