@@ -54,14 +54,18 @@ internal enum class HealthRecognition { OCR, PDF_TEXT, MODEL }
 
 internal data class HealthOcrPage(val page: Int, val width: Int, val height: Int, val lines: List<HealthOcrLine>,
     val blurry: Boolean = false, val recognition: HealthRecognition = HealthRecognition.OCR,
-    val vision: HealthReportVisionResult? = null) {
+    val vision: HealthReportVisionResult? = null, val visionImport: HealthReportImportOutcome? = null) {
     fun json() = JSONObject().put("page", page).put("width", width).put("height", height).put("lines", JSONArray(lines.map { it.json() }))
         .put("blurry", blurry).put("recognition", recognition.name)
-        .apply { vision?.let { put("vision", it.json()) } }
+        .apply {
+            vision?.let { put("vision", it.json()) }
+            visionImport?.let { put("vision_import", it.json()) }
+        }
     companion object {
         fun from(j: JSONObject) = HealthOcrPage(j.getInt("page"), j.getInt("width"), j.getInt("height"),
             j.getJSONArray("lines").let { a -> (0 until a.length()).map { HealthOcrLine.from(a.getJSONObject(it)) } }, j.getBoolean("blurry"),
-            HealthRecognition.valueOf(j.optString("recognition", "OCR")), j.optJSONObject("vision")?.let(HealthReportVisionResult::from))
+            HealthRecognition.valueOf(j.optString("recognition", "OCR")), j.optJSONObject("vision")?.let(HealthReportVisionResult::from),
+            j.optJSONObject("vision_import")?.let(HealthReportImportOutcome::from))
     }
 }
 

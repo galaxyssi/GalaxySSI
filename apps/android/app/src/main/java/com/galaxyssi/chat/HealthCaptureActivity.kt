@@ -37,19 +37,20 @@ class HealthCaptureActivity : Activity() {
     }
     private val originals by lazy { HealthOriginalStore(applicationContext, names.originals, names.originalRoot(applicationContext)) }
     private val pdfPasswords by lazy { HealthPdfPasswordUi(this) }
-    private val visionUi by lazy { HealthReportVisionUi(this, names) { id ->
-        localReview = false
-        if (route == "review" && selectedId == id) {
-            candidateOffset = 0; selectedCandidate = ""; renderedKey = ""; generation++; refresh()
-        } else open("review", id)
+    private val visionUi by lazy { HealthReportVisionUi(this, names, ::showReportProgress) { id ->
+        reportProgress = null
+        if (route == "report_import" && selectedId == id) { generation++; refresh() }
     } }
+    private var reportProgress: HealthReportImportScreen? = null
+    private var legacyReportStarted = ""
+    private val reportView by lazy { HealthReportImportView(this, ui) }
     private lateinit var body: LinearLayout
     private lateinit var title: TextView
+    private lateinit var healthFunctions: View
     private var route = "capture"
     private var selectedId = ""
     private var page = 1
     private var candidateOffset = 0
-    private var localReview = false
     private var mode = "report"
     private var originalOnly = false; private var pickOnStart = false
     private var retentionRequest: Any? = null
@@ -90,7 +91,7 @@ class HealthCaptureActivity : Activity() {
         override fun onChange(selfChange: Boolean) { refresh() }
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             if (uri?.pathSegments?.getOrNull(1)?.let { it !in listOf("jobs", "originals", "capture", "observations") } == true) return
-            if (uri?.lastPathSegment != "jobs" || route in listOf("capture", "review")) refresh()
+            if (uri?.lastPathSegment != "jobs" || route in listOf("capture", "review", "report_import")) refresh()
         }
     }
     override fun onCreate(state: Bundle?) {
@@ -106,7 +107,6 @@ class HealthCaptureActivity : Activity() {
         }
         page = state?.getInt("page", 1) ?: 1
         candidateOffset = state?.getInt("candidate_offset", 0) ?: 0
-        localReview = state?.getBoolean("local_review") == true
         selectedCandidate = state?.getString("selected_candidate").orEmpty()
         reviewSelectionJob = state?.getString("review_selection_job").orEmpty()
         state?.getStringArrayList("review_selection")?.take(HEALTH_OCR_REVIEW_SELECTION_LIMIT)
@@ -137,9 +137,10 @@ class HealthCaptureActivity : Activity() {
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { back() })
             title = ui.text("", 19f, bold = true).apply { gravity = Gravity.CENTER }
             addView(title, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(ui.icon(R.drawable.ic_health_grid, R.string.health_functions) {
+            healthFunctions = ui.icon(R.drawable.ic_health_grid, R.string.health_functions) {
                 startActivity(Intent(this@HealthCaptureActivity, HealthCenterActivity::class.java).putExtra("health_functions", true))
-            })
+            }
+            addView(healthFunctions)
         }, LinearLayout.LayoutParams(-1, ui.dp(56)))
         body = ui.column(); root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f)); setContentView(root)
     }
@@ -160,6 +161,8 @@ class HealthCaptureActivity : Activity() {
     }
     override fun onPause() {
         visionUi.clear()
+        reportProgress = null
+        legacyReportStarted = ""
         quickReportId = ""
         originalRemovalRequest++
         originalRemovalDialog?.dismiss(); originalRemovalDialog = null
@@ -179,7 +182,6 @@ class HealthCaptureActivity : Activity() {
     override fun onSaveInstanceState(out: Bundle) {
         out.putString("route", route); out.putString("selected", selectedId); out.putInt("page", page); out.putString("mode", mode)
         out.putInt("candidate_offset", candidateOffset)
-        out.putBoolean("local_review", localReview)
         out.putString("selected_candidate", selectedCandidate)
         out.putString("review_selection_job", reviewSelectionJob)
         out.putStringArrayList("review_selection", ArrayList(reviewSelection.values.map { it.encode() }))
@@ -196,16 +198,17 @@ class HealthCaptureActivity : Activity() {
     @Deprecated("Native activity back callback") override fun onBackPressed() = back()
     private fun back() {
         if (savingReview) return
+        if (route == "report_import") { visionUi.clear(); reportProgress = null; legacyReportStarted = "" }
         if (stack.isEmpty()) { finish(); return }
         val previous = stack.removeLast(); route = previous.first; selectedId = previous.second; page = previous.third
-        localReview = false; generation++; refresh()
+        generation++; refresh()
     }
     private fun open(next: String, id: String = "", number: Int = 1) {
         if (savingReview) return
         if (next == "library") { startActivity(Intent(this, HealthOriginalLibraryActivity::class.java)); return }
         if (next == "original" && selectedId != id) recordPages.clear()
         stack.addLast(Triple(route, selectedId, page)); route = next; selectedId = id; page = number; candidateOffset = 0
-        localReview = false; generation++; refresh()
+        generation++; refresh()
     }
     private fun content(): LinearLayout {
         clearReviewSource()
@@ -214,6 +217,19 @@ class HealthCaptureActivity : Activity() {
         body.addView(ScrollView(this).apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f))
         return content
     }
+    private fun showReportProgress(status: HealthReportImportScreen) {
+        if (!active) return
+        reportProgress = status
+        if (route != "report_import" || selectedId != status.id) {
+            if (route != "review" || selectedId != status.id) stack.addLast(Triple(route, selectedId, page))
+            route = "report_import"; selectedId = status.id; page = 1; generation++
+        }
+        title.text = getString(R.string.health_report_import_title)
+        healthFunctions.visibility = View.INVISIBLE
+        reportView.progress(content(), status) {
+            if (status.legacy) visionUi.finishImport(status.id, status.name) else visionUi.show(status.id)
+        }
+    }
     private fun refresh() {
         if (!active) return
         if (route == "library") { route = "capture"; startActivity(Intent(this, HealthOriginalLibraryActivity::class.java)); return }
@@ -221,7 +237,6 @@ class HealthCaptureActivity : Activity() {
         querying = true
         val token = generation
         val currentRoute = route; val id = selectedId; val number = page; val offset = candidateOffset
-        val useLocal = localReview
         val quickId = quickReportId
         val cameraToken = pendingCamera
         val taskCursor = jobPages.lastOrNull(); val recordCursor = recordPages.lastOrNull()
@@ -234,21 +249,26 @@ class HealthCaptureActivity : Activity() {
                         CaptureSnapshot(original = original, available = original?.let(originals::present) == true,
                             saved = records.records, recordsNext = records.next)
                     }
-                    "review" -> {
+                    "review", "report_import" -> {
                         val job = originals.job(id)
                         val original = job?.originalId?.takeIf(String::isNotBlank)?.let(originals::original)
                         val scanned = if (job == null || job.protectedReviewPending()) null else originals.page(id, number)
-                        val model = scanned?.vision?.takeUnless { useLocal }
-                        val zone = java.time.ZoneId.systemDefault()
-                        val suggestions = if (job == null || original == null || scanned == null) emptyList()
-                            else model?.drafts(job, original, zone, System.currentTimeMillis()) ?: HealthOcrCandidates.suggest(job, original, scanned)
-                        val visible = suggestions.drop(offset).take(HEALTH_OCR_REVIEW_PAGE_SIZE)
-                        val review = HealthRecordStore(applicationContext, names.records).use { it.prepareOcrReviewPage(visible) }
-                        CaptureSnapshot(job = job, original = original, available = original?.let(originals::present) == true,
-                            page = scanned, review = review, hasMore = suggestions.size > offset + visible.size,
-                            sourceContext = if (model != null) HealthOcrSourceContext(
-                                times = listOf(model.collected).filter(String::isNotBlank))
-                            else scanned?.let { HealthOcrSourceContext.inspect(it, zone) })
+                        if (currentRoute == "report_import" || scanned?.vision != null) {
+                            val outcome = scanned?.visionImport
+                            val saved = if (outcome == null) emptyList() else HealthRecordStore(applicationContext, names.records).use {
+                                outcome.recordIds.mapNotNull(it::record)
+                            }
+                            CaptureSnapshot(job = job, original = original, page = scanned, saved = saved)
+                        } else {
+                            val zone = java.time.ZoneId.systemDefault()
+                            val suggestions = if (job == null || original == null || scanned == null) emptyList()
+                                else HealthOcrCandidates.suggest(job, original, scanned)
+                            val visible = suggestions.drop(offset).take(HEALTH_OCR_REVIEW_PAGE_SIZE)
+                            val review = HealthRecordStore(applicationContext, names.records).use { it.prepareOcrReviewPage(visible) }
+                            CaptureSnapshot(job = job, original = original, available = original?.let(originals::present) == true,
+                                page = scanned, review = review, hasMore = suggestions.size > offset + visible.size,
+                                sourceContext = scanned?.let { HealthOcrSourceContext.inspect(it, zone) })
+                        }
                     }
                     else -> {
                         val jobs = originals.jobs(taskCursor)
@@ -269,6 +289,11 @@ class HealthCaptureActivity : Activity() {
         }
     }
     private fun render(screen: String, data: CaptureSnapshot) {
+        healthFunctions.visibility = View.VISIBLE
+        if (screen == "report_import" || screen == "review" && data.page?.vision != null) {
+            renderReportImport(data)
+            return
+        }
         if (screen == "review" && data.job?.state == HealthImportState.TABLE_REVIEW) {
             startActivity(Intent(this, HealthTableActivity::class.java).putExtra("health_table", data.job.id).putHealthNavigationFixture(names)); back(); return
         }
@@ -280,7 +305,7 @@ class HealthCaptureActivity : Activity() {
         }
         val key = when (screen) {
             "capture" -> "capture|$mode|${data.pendingPhoto}|${data.jobs.joinToString { it.id }}"
-            "review" -> "review|$selectedId|$page|$candidateOffset|$localReview|${data.job?.state}|${data.job?.error}|${data.page?.page}|${data.page?.vision != null}|${data.available}|${data.sourceContext.hashCode()}|" +
+            "review" -> "review|$selectedId|$page|$candidateOffset|${data.job?.state}|${data.job?.error}|${data.page?.page}|${data.available}|${data.sourceContext.hashCode()}|" +
                 data.review.joinToString { row -> row.saved?.let { "${it.id}:${it.revision}:${row.linked}" } ?:
                     "${row.version}:${row.link?.id}:${row.link?.revision}" }
             else -> ""
@@ -308,6 +333,34 @@ class HealthCaptureActivity : Activity() {
             else -> renderCapture(content, data.jobs, data.pendingPhoto, data.tableJobs)
         }
         if (previousScroll > 0) (body.getChildAt(0) as? ScrollView)?.let { scroll -> scroll.post { if (active) scroll.scrollTo(0, previousScroll) } }
+    }
+    private fun renderReportImport(data: CaptureSnapshot) {
+        if (route != "report_import") route = "report_import"
+        title.text = getString(R.string.health_report_import_title)
+        healthFunctions.visibility = View.INVISIBLE
+        renderedKey = ""
+        val name = data.original?.name.orEmpty().ifBlank { data.job?.name.orEmpty() }
+        val outcome = data.page?.visionImport
+        when {
+            outcome != null -> {
+                reportProgress = null
+                reportView.result(content(), name, outcome, data.saved) {
+                    startActivity(Intent(this, HealthCenterActivity::class.java)
+                        .putExtra("health_records", true).putHealthNavigationFixture(names))
+                }
+            }
+            reportProgress?.id == selectedId -> Unit
+            data.page?.vision != null && legacyReportStarted != selectedId -> {
+                legacyReportStarted = selectedId
+                visionUi.finishImport(selectedId, name)
+            }
+            data.job != null && HealthReportVisionReader.eligible(data.job) -> {
+                val status = HealthReportImportScreen(selectedId, name, HealthReportImportStage.COMPRESSING,
+                    failure = R.string.health_report_interrupted)
+                reportView.progress(content(), status) { visionUi.show(status.id) }
+            }
+            else -> content().addView(ui.text(getString(R.string.health_vision_changed)))
+        }
     }
     private fun renderCapture(content: LinearLayout, jobs: List<HealthImportJob>, pendingPhoto: Boolean, batches: Map<String, HealthTableBatch>) {
         content.addView(ui.text(getString(R.string.health_capture_heading), 23f, bold = true))
@@ -463,24 +516,10 @@ class HealthCaptureActivity : Activity() {
             val key = HealthRecordStore.draftKey(row.draft)
             if (key in reviewSelection && reviewSelection[key] != row.selection) reviewSelection.remove(key)
         }
-        val model = scanned.vision?.takeUnless { localReview }
-        val updateFooter: () -> Unit = if (model == null && (rows.any { it.saved == null } || reviewSelection.isNotEmpty()))
+        val updateFooter: () -> Unit = if (rows.any { it.saved == null } || reviewSelection.isNotEmpty())
             reviewFooter(job, original) else ({})
-        content.addView(ui.text(getString((if (model != null) HealthRecognition.MODEL else scanned.recognition).label(), displayedPage), 14f, muted = true))
-        if (scanned.vision != null) {
-            if (model != null) ui.add(content, ui.text(getString(if (model.partial) R.string.health_vision_partial else
-                R.string.health_vision_review), 14f), 6)
-            if (model != null && data.available && (data.hasMore || candidateOffset > 0 || rows.any { it.saved == null }))
-                ui.add(content, ui.command(R.string.health_report_save_all) { visionUi.finishImport(job.id) }
-                    .apply { tag = "health-report-save-all" }, 8)
-            if (scanned.lines.isNotEmpty()) ui.add(content, ui.row(getString(if (localReview) R.string.health_vision_show_model else
-                R.string.health_vision_show_local)) {
-                if (!savingReview) {
-                    localReview = !localReview; reviewSelection.clear(); candidateOffset = 0; selectedCandidate = ""
-                    generation++; refresh()
-                }
-            }, 6)
-        } else if (data.available && HealthReportVisionReader.eligible(job)) {
+        content.addView(ui.text(getString(scanned.recognition.label(), displayedPage), 14f, muted = true))
+        if (data.available && HealthReportVisionReader.eligible(job)) {
             ui.add(content, ui.row(getString(R.string.health_vision_action)) { if (!savingReview) visionUi.show(job.id) }
                 .apply { tag = "health-vision-recognize" }, 8)
         }
@@ -489,12 +528,12 @@ class HealthCaptureActivity : Activity() {
             candidates.firstOrNull { it.candidateId == selectedCandidate } ?: candidates.firstOrNull()
         }
         selectedCandidate = selected?.candidateId.orEmpty()
-        val source = if (model == null && selected != null && data.available)
+        val source = if (selected != null && data.available)
             reviewSource(content, original, selected, displayedPage) else null
         if (!data.available) ui.add(content, ui.text(getString(if (original.reviewOnly)
             R.string.health_retention_released else R.string.health_original_preview_failed), 14f, muted = true), 8)
         ui.add(content, ui.row(getString(R.string.health_view_original), original.name) { open("original", original.id) }, 8)
-        if (scanned.blurry && model == null) ui.add(content, ui.text(getString(R.string.health_ocr_quality_warning), 14f), 12)
+        if (scanned.blurry) ui.add(content, ui.text(getString(R.string.health_ocr_quality_warning), 14f), 12)
         if (rows.isEmpty()) ui.add(content, ui.text(getString(R.string.health_no_matched_fields), 15f), 12)
         rows.forEach { row ->
             val draft = row.draft
@@ -528,14 +567,14 @@ class HealthCaptureActivity : Activity() {
                     else -> R.string.health_review_saved_item
                 })) {
                     if (previous != null) startActivity(Intent(this@HealthCaptureActivity, HealthCenterActivity::class.java).putExtra("health_record", previous.id))
-                    else editSuggestion(draft, stage = model == null)
+                    else editSuggestion(draft, stage = true)
                 }.apply { tag = "health-review-edit-${evidence.candidateId}" }, 8)
                 row.link?.let { target ->
                     ui.add(this, ui.row(getString(R.string.health_review_view_duplicate)) {
                         startActivity(Intent(this@HealthCaptureActivity, HealthCenterActivity::class.java).putExtra("health_record", target.id))
                     }, 8)
                 }
-                if (selection != null && model == null) ui.add(this, CheckBox(this@HealthCaptureActivity).apply {
+                if (selection != null) ui.add(this, CheckBox(this@HealthCaptureActivity).apply {
                     tag = "health-review-pick-${evidence.candidateId}"
                     text = getString(if (selection.link == null) R.string.health_review_select_item else R.string.health_review_select_link,
                         getString(draft.metric.titleResource()))
@@ -943,6 +982,7 @@ class HealthCaptureActivity : Activity() {
             .putExtra(HEALTH_CROP_MODE, mode).putExtra(HEALTH_KEEP_ORIGINAL, keepOriginal), CROP)
     }
     private fun jobState(job: HealthImportJob, table: HealthTableBatch? = null): String = when {
+        job.modelRecognized -> getString(R.string.health_report_view_result)
         job.state == HealthImportState.TABLE_REVIEW && table != null -> healthTableTaskLabel(this, table)
         job.captureBatch.isNotBlank() && !job.captureSubmitted && job.state == HealthImportState.RECOGNIZING -> getString(R.string.health_photo_inspecting)
         job.state == HealthImportState.RECOGNIZING && HealthTableParser.format(job.name, job.mime) != null -> getString(R.string.health_import_preparing)
