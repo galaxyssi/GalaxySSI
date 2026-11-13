@@ -28,6 +28,7 @@ class HealthCenterActivity : Activity() {
     private val overviewNames by lazy { intent.healthNavigationDatabases() }
     private val records by lazy { HealthRecordStore(applicationContext, overviewNames.records) }
     private val overview by lazy { HealthOverviewView(this, overviewNames) }
+    private val overviewAction = lazy { HealthCareActionReview(this, overviewNames) }
     private val firstUse by lazy { HealthFirstUseView(this, overviewNames.fixture == null) }
     private val recordCenter by lazy { HealthRecordCenterView(this, overviewNames) }
     private var overviewHasRecords = false
@@ -42,9 +43,19 @@ class HealthCenterActivity : Activity() {
             }
         }
     }
+    private val overviewCareChanges = object : android.database.ContentObserver(main) {
+        override fun onChange(selfChange: Boolean) {
+            if (active && route == "overview") {
+                if (overviewAction.isInitialized()) overviewAction.value.clear()
+                main.removeCallbacks(reloadOverview)
+                main.postDelayed(reloadOverview, 120)
+            }
+        }
+    }
     private val overviewPrivacy = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
             if (active && route in listOf("overview", "import")) {
+                if (overviewAction.isInitialized()) overviewAction.value.clear()
                 sensitiveDialogs.toList().forEach { it.dismiss() }
                 main.removeCallbacks(reloadOverview)
                 render()
@@ -132,6 +143,9 @@ class HealthCenterActivity : Activity() {
         contentResolver.registerContentObserver(HealthOriginalStore.changesUri(this).buildUpon().appendPath("jobs").build(), false, overviewChanges)
         contentResolver.registerContentObserver(HealthTableScheduler.changes(this), false, overviewChanges)
         contentResolver.registerContentObserver(HealthReminderStore.changes(this, overviewNames.reminders), false, overviewChanges)
+        contentResolver.registerContentObserver(HealthCareStore.changes(this, overviewNames.care), false, overviewCareChanges)
+        contentResolver.registerContentObserver(HealthProfileStore.changes(this, overviewNames.profile), false, overviewCareChanges)
+        contentResolver.registerContentObserver(HealthOriginalStore.changesUri(this).buildUpon().appendPath("originals").build(), false, overviewCareChanges)
         contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, overviewNames.privacy), false, overviewPrivacy)
         render()
     }
@@ -140,12 +154,15 @@ class HealthCenterActivity : Activity() {
         active = false; generation++
         main.removeCallbacks(savePendingDraft); main.removeCallbacks(reloadOverview)
         contentResolver.unregisterContentObserver(overviewChanges); contentResolver.unregisterContentObserver(overviewPrivacy)
+        contentResolver.unregisterContentObserver(overviewCareChanges)
+        if (overviewAction.isInitialized()) overviewAction.value.clear()
         retainOverviewScroll()
         editor = null; body.removeAllViews()
         sensitiveDialogs.toList().forEach { it.dismiss() }; sensitiveDialogs.clear()
         super.onStop()
     }
     override fun onDestroy() {
+        if (overviewAction.isInitialized()) overviewAction.value.destroy()
         worker.execute { records.close() }; worker.shutdown()
         super.onDestroy()
     }
@@ -271,6 +288,9 @@ class HealthCenterActivity : Activity() {
         return content
     }
     internal fun date(time: Long): String = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(time))
+    internal fun openOverviewAction(concern: String, action: String) {
+        if (active && route == "overview") overviewAction.value.show(concern, action)
+    }
     private fun retainOverviewScroll() {
         (body.getChildAt(0) as? ScrollView)?.let {
             when (it.tag) {

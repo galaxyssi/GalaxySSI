@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_overview_today_actions">Actions for today</string>
+    <string name="health_overview_no_due_actions">No confirmed actions due today.</string>
+    <string name="health_overview_care_pending">Open Health actions to see the latest list.</string>
+    <string name="health_overview_next_action">Next scheduled action: %1$s</string>
+    <string name="health_overview_due_action">Planned from %1$s</string>
+    <string name="health_overview_overdue_action">Overdue since %1$s</string>
+    <string name="health_overview_ongoing_care">Ongoing concerns</string>
+    <string name="health_overview_care_unavailable">Health follow-up could not be loaded.</string>
+    <string name="health_overview_care_permission">Health follow-up is hidden by your privacy settings.</string>
+    <string name="health_overview_care_changed">Source data changed. Review needed.</string>
+    <string name="health_overview_visits">Visits and follow-up</string>
     <string name="health_overview_title">My health</string>
     <string name="health_overview_attention">Worth reviewing</string>
     <string name="health_overview_no_attention">No current items to review</string>

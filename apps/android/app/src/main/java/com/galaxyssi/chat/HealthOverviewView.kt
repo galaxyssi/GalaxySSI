@@ -18,6 +18,12 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
     private fun start(type: Class<*>, extras: Intent.() -> Unit = {}) {
         if (names.fixture == null) activity.startActivity(Intent(activity, type).apply(extras))
     }
+    private fun openCare(type: Class<*>, concern: String? = null, visit: String? = null) {
+        activity.startActivity(Intent(activity, type).putHealthNavigationFixture(names).apply {
+            concern?.let { putExtra("health_care_id", it) }
+            visit?.let { putExtra("health_encounter_id", it) }
+        })
+    }
 
     fun show(content: LinearLayout, snapshot: HealthOverviewSnapshot, firstUse: HealthFirstUseView) {
         content.removeAllViews()
@@ -26,12 +32,7 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
             addView(ui.icon(R.drawable.ic_chat_shortcut_list, R.string.health_overview_sort) { chooseOrder(content, snapshot, firstUse) })
         }
         if (snapshot.hasRecords) content.addView(heading) else firstUse.showIntro(content)
-        ui.add(content, ui.profileRow(label(R.string.health_care_title), label(R.string.health_care_attention)) {
-            activity.startActivity(Intent(activity, HealthCareActivity::class.java).putHealthNavigationFixture(names))
-        }.apply { tag = "health-overview-proactive-care" }, 12)
-        ui.add(content, ui.profileRow(label(R.string.health_agenda_title), label(R.string.health_agenda_summary)) {
-            activity.startActivity(Intent(activity, HealthCareActionsActivity::class.java).putHealthNavigationFixture(names))
-        }.apply { tag = "health-overview-action-agenda" }, 8)
+        showCare(content, snapshot.care)
         if (snapshot.hasRecords || snapshot.attention.isNotEmpty() || snapshot.reviewUnavailable ||
             snapshot.connectionsUnavailable || !snapshot.derived.permitted) {
             val section = ui.column().apply { tag = "health-overview-attention" }
@@ -81,6 +82,63 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
         ui.add(content, ui.profileRow(label(R.string.health_weekly_title)) { start(HealthWeeklyActivity::class.java) }, 12)
         ui.add(content, ui.profileRow(label(R.string.health_assistant_title)) { start(HealthAssistantActivity::class.java) })
         ui.add(content, ui.profileRow(label(R.string.health_export_data_files)) { start(HealthDataFilesActivity::class.java) })
+    }
+
+    private fun showCare(content: LinearLayout, care: HealthOverviewCare) {
+        if (care.enabled && care.permitted && !care.unavailable) {
+            ui.add(content, ui.text(label(R.string.health_overview_today_actions), 18f, bold = true), 16)
+            if (!care.actionsReady) {
+                ui.add(content, ui.text(label(R.string.health_overview_care_pending), 14f, muted = true), 6)
+            } else if (care.actions.isEmpty()) {
+                ui.add(content, ui.text(label(R.string.health_overview_no_due_actions), 14f, muted = true), 6)
+            }
+            (care.actions + listOfNotNull(care.upcoming)).forEach { action ->
+                val timing = when {
+                    action == care.upcoming -> R.string.health_overview_next_action
+                    action.overdue -> R.string.health_overview_overdue_action
+                    else -> R.string.health_overview_due_action
+                }
+                ui.add(content, ui.profileRow(action.title, label(timing, activity.date(action.dueAt))) {
+                    activity.openOverviewAction(action.concernId, action.id)
+                }.apply { tag = "health-overview-action-${action.id}" }, 4)
+            }
+        }
+        ui.add(content, ui.profileRow(label(R.string.health_agenda_title), label(R.string.health_agenda_summary)) {
+            openCare(HealthCareActionsActivity::class.java)
+        }.apply { tag = "health-overview-action-agenda" }, 8)
+        if (care.unavailable || !care.permitted || care.concerns.isNotEmpty()) {
+            ui.add(content, ui.text(label(R.string.health_overview_ongoing_care), 18f, bold = true), 16)
+            val status = when {
+                care.unavailable -> R.string.health_overview_care_unavailable
+                !care.permitted -> R.string.health_overview_care_permission
+                !care.enabled -> R.string.health_care_disabled
+                else -> null
+            }
+            status?.let { ui.add(content, ui.text(label(it), 14f, muted = true)
+                .apply { tag = "health-overview-care-status" }, 6) }
+            care.concerns.forEach { concern ->
+                val statusText = if (concern.sourceChanged && concern.stage != HealthCareStage.PAUSED)
+                    R.string.health_overview_care_changed else concern.stage.titleResource()
+                ui.add(content, ui.profileRow(label(concern.metric.titleResource()), label(statusText)) {
+                    openCare(HealthCareActivity::class.java, concern.id)
+                }.apply { tag = "health-overview-concern-${concern.id}" }, 4)
+            }
+        }
+        ui.add(content, ui.profileRow(label(R.string.health_care_title), label(R.string.health_care_attention)) {
+            openCare(HealthCareActivity::class.java)
+        }.apply { tag = "health-overview-proactive-care" }, 8)
+        if (care.visits.isNotEmpty()) {
+            ui.add(content, ui.text(label(R.string.health_overview_visits), 18f, bold = true), 16)
+            care.visits.forEach { visit ->
+                val detail = listOfNotNull(label(visit.state.label()),
+                    visit.at?.let { encounterTime(activity, it, visit.zone) },
+                    visit.journal?.let { label(it.label()) }).joinToString(" \u00b7 ")
+                ui.add(content, ui.profileRow(visit.purpose, detail) {
+                    openCare(if (visit.journal != null) HealthCareVisitFollowUpActivity::class.java
+                        else HealthCareEncountersActivity::class.java, visit.concernId, visit.id)
+                }.apply { tag = "health-overview-visit-${visit.id}" }, 4)
+            }
+        }
     }
 
     private fun attention(item: HealthOverviewAttention) = when (item) {

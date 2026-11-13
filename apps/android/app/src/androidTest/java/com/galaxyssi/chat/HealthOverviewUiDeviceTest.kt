@@ -56,6 +56,41 @@ class HealthOverviewUiDeviceTest {
         }
     }
 
+    @Test fun careSectionsShowPersistedItemsAndOpenTheExactFollowUp() = screen(seed = { names, now ->
+        seedHealthOverviewCare(context, names, now, zone)
+    }) { scenario, names ->
+        val (issue, visit) = HealthCareStore(context, names.care).use { care ->
+            val issue = care.page().items.single()
+            issue to care.encounters(issue.id).items.single()
+        }
+        val due = issue.actions.single { it.description == "Synthetic overdue" }
+        val key = "health-overview-action-${due.id}"
+        await(scenario, key)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val monitor = instrumentation.addMonitor(HealthCareVisitFollowUpActivity::class.java.name, null, false)
+        try {
+            scenario.onActivity {
+                assertTrue(requireNotNull(find(it, key)).isClickable)
+                assertTrue(requireNotNull(find(it, "health-overview-concern-${issue.id}")).isClickable)
+                assertTrue(requireNotNull(find(it, "health-overview-visit-${visit.id}")).performClick())
+            }
+            val screen = requireNotNull(instrumentation.waitForMonitorWithTimeout(monitor, 5_000))
+            assertEquals(issue.id, screen.intent.getStringExtra("health_care_id"))
+            assertEquals(visit.id, screen.intent.getStringExtra("health_encounter_id"))
+            assertEquals(names, screen.intent.healthNavigationDatabases())
+            instrumentation.runOnMainSync { screen.finish() }
+        } finally { instrumentation.removeMonitor(monitor) }
+        await(scenario, key)
+        HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.PROFILE_CONTEXT, false, it.policy().version) }
+        await(scenario, "health-overview-care-status")
+        scenario.onActivity {
+            assertNull(find(it, key))
+            assertNull(find(it, "health-overview-visit-${visit.id}"))
+            assertNull(find(it, "health-overview-concern-${issue.id}"))
+            assertNotNull(find(it, "health-overview-missing"))
+        }
+    }
+
     @Test fun populatedDashboardSeparatesRecentOlderAndMissingRecords() = screen(seed = { names, now ->
         HealthRecordStore(context, names.records).use {
             it.save(HealthDraft(values = mapOf("systolic" to "120", "diastolic" to "80"), measuredAt = now - 1000))

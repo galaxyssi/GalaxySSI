@@ -22,9 +22,36 @@ internal fun overviewOcrJob(context: Context, names: HealthOverviewDatabases, ti
 
 internal fun clearHealthOverviewFixture(context: Context, names: HealthOverviewDatabases) {
     check(names.fixture != null)
-    listOf(names.records, names.originals, names.reminders, names.privacy, names.profile, names.backups).forEach(context::deleteDatabase)
+    listOf(names.records, names.originals, names.reminders, names.privacy, names.profile, names.backups, names.care).forEach(context::deleteDatabase)
     context.deleteSharedPreferences(names.prefs)
     names.originalRoot(context).deleteRecursively()
+}
+
+internal fun seedHealthOverviewCare(context: Context, names: HealthOverviewDatabases, now: Long, zone: ZoneId): Pair<String, String> {
+    val metric = HealthMetric.GLUCOSE
+    HealthRecordStore(context, names.records).use {
+        it.save(HealthDraft(metric, mapOf("glucose" to "6.3"), "mmol/L", now - 1_000, reference = "4-6"))
+    }
+    HealthCareStore(context, names.care).use { it.configure(true, "") }
+    HealthCareEngine.evaluate(context, names, now)
+    return HealthCareStore(context, names.care).use { care ->
+        val issue = requireNotNull(care.forMetric(metric))
+        val yesterday = HealthOverviewPolicy.localDay(now, zone).minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val later = HealthCareAgenda.dayEnd(now, zone) + 3_600_000
+        fun action(title: String, due: Long?, state: HealthCareActionState = HealthCareActionState.CONFIRMED) =
+            HealthCareAction(UUID.randomUUID().toString(), HealthCareActionKind.CONTEXT, title, "Synthetic reason", "Synthetic source",
+                state, due, due?.plus(3_600_000), now, basis = HealthCareFollowUpPolicy.basis(issue))
+        val updated = care.update(issue.id, issue.revision, "overview_fixture") {
+            it.copy(actions = listOf(action("Synthetic overdue", yesterday), action("Synthetic upcoming", later),
+                action("Synthetic unscheduled", null), action("Synthetic draft", now, HealthCareActionState.PROPOSED)))
+        }
+        val visit = care.saveEncounter(issue.id, updated.revision, UUID.randomUUID().toString(), null,
+            HealthCareEncounterDraft("Synthetic visit", state = HealthCareEncounterState.ATTENDED,
+                attendedAt = now - 2_000, zone = zone.id), UUID.randomUUID().toString(), now).encounter
+        care.recordVisitFollowUp(issue.id, visit.revision, visit.id, visit.revision, null,
+            HealthCareVisitFollowUpInput(HealthCareVisitFollowUpKind.START, goal = "Synthetic follow-up"), UUID.randomUUID().toString(), now)
+        issue.id to visit.id
+    }
 }
 
 class HealthOverviewDeviceTest {
@@ -39,6 +66,43 @@ class HealthOverviewDeviceTest {
     private fun load(names: HealthOverviewDatabases, store: HealthRecordStore) = HealthOverviewRepository.load(context, store, names, now, zone)
     private fun steps(store: HealthRecordStore, time: Long, value: String) =
         (store.save(HealthDraft(HealthMetric.STEPS, mapOf("steps" to value), "steps", time)) as HealthSaveResult.Saved).record
+    @Test fun carePreviewUsesConfirmedActionsAndExactVisitWithoutChangingThePlan() = fixture { names, store ->
+        val (concern, visit) = seedHealthOverviewCare(context, names, now, zone)
+        HealthCareStore(context, names.care).use { care ->
+            val before = care.concern(concern)!!
+            val first = load(names, store).care
+            assertTrue(first.enabled && first.actionsReady && !first.unavailable)
+            assertEquals("Synthetic overdue", first.actions.single().title)
+            assertTrue(first.actions.single().overdue)
+            assertNull(first.upcoming)
+            assertEquals(concern, first.concerns.single().id)
+            assertEquals(visit, first.visits.single().id)
+            assertEquals(HealthCareVisitFollowUpState.ACTIVE, first.visits.single().journal)
+            assertEquals(before, care.concern(concern)); assertNull(care.nextReminder())
+            val updated = care.finishAction(concern, before.revision, first.actions.single().id, "Synthetic outcome", now)
+            val next = load(names, store).care
+            assertTrue(next.actions.isEmpty())
+            assertEquals("Synthetic upcoming", next.upcoming!!.title)
+            care.update(concern, updated.revision, "overview_pause_fixture") { it.copy(stage = HealthCareStage.PAUSED) }
+            val paused = load(names, store).care
+            assertTrue(paused.actions.isEmpty()); assertNull(paused.upcoming)
+            assertEquals(HealthCareStage.PAUSED, paused.concerns.single().stage)
+        }
+    }
+    @Test fun revokedOrChangedDataDoesNotPresentAnOldActionAsCurrent() = fixture { names, store ->
+        val (concern, _) = seedHealthOverviewCare(context, names, now, zone)
+        assertEquals(1, load(names, store).care.actions.size)
+        store.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "6.4"), "mmol/L", now, reference = "4-6"))
+        val stale = load(names, store).care
+        assertTrue(stale.actions.isEmpty()); assertNull(stale.upcoming)
+        assertEquals(concern, stale.concerns.single().id)
+        assertTrue(stale.concerns.single().sourceChanged)
+        HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.PROFILE_CONTEXT, false, it.policy().version) }
+        val hidden = load(names, store).care
+        assertFalse(hidden.permitted)
+        assertTrue(hidden.concerns.isEmpty() && hidden.visits.isEmpty() && hidden.actions.isEmpty())
+        assertTrue(load(names, store).hasRecords)
+    }
     @Test fun latestConfirmedMetricExcludesOtherProfilesFutureValuesAndDeletedRows() = fixture { names, store ->
         val expected = steps(store, now - HealthReminderPolicy.DAY, "4000")
         val foreign = steps(store, now - 1000, "9000")
