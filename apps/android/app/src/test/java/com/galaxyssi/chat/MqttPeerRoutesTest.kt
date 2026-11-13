@@ -416,6 +416,39 @@ class MqttPeerRoutesTest {
         assertEquals(frame, MqttDeliveryEnvelope.parseVerifiedReceipt(receipt, binding.receiver, binding.sender))
     }
 
+    @Test fun congestedAuthenticatedRouteRemainsReady() {
+        start()
+        receive(ack(advertisement = remote(brokers = setOf("emqx"))))
+        rig.earlyAck = false
+        repeat(8) { rig.publish("emqx") }
+        assertTrue(routes.ready(binding.scope))
+        assertNotNull(routes.classify("outbox", byteArrayOf(1)))
+        assertFalse(routes.recoverBlockedSend("outbox"))
+    }
+
+    @Test fun storedReceiptPendingPubackUsesAnotherAuthenticatedPath() {
+        start()
+        receive(ack(advertisement = remote(brokers = MqttBrokerCatalog.brokers.keys)))
+        rig.earlyAck = false
+        val message = MqttDeliveryEnvelope.Message("inbound", MqttDeliveryEnvelope.contentHash(wire()),
+            binding.receiver, binding.sender, "message")
+        val frame = MqttDeliveryEnvelope.Frame(message, MqttDeliveryEnvelope.Attempt("d".repeat(32), "mosquitto", 1))
+        val before = sentCount()
+        routes.publishStoredReceipt(binding.scope, frame, "inbound", message.contentHash, binding.identity)
+        rig.clock.addAndGet(500)
+        routes.maintenance()
+        assertEquals(before + 1, sentCount())
+        rig.clock.addAndGet(500)
+        routes.maintenance()
+        assertEquals(before + 2, sentCount())
+        assertEquals(2, rig.client("mosquitto").sent.size)
+        val first = rig.client("mosquitto").sent.last()
+        first.listener.onSuccess(first.token)
+        rig.clock.addAndGet(1000)
+        routes.maintenance()
+        assertEquals(before + 2, sentCount())
+    }
+
     @Test fun resumeUsesEveryReadyBootstrapPathButBusinessWaitsForAck() {
         start()
         assertTrue(rig.clients.values.all { it.first().sent.size == 1 })

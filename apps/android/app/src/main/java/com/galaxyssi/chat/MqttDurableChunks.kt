@@ -11,9 +11,9 @@ import java.util.Base64
 internal class MqttDurableChunks(
     private val database: AgentEncryptedDatabase,
     private val now: () -> Long = System::currentTimeMillis,
-    private val maxTransfers: Int = 16,
+    private val maxTransfers: Int = 128,
     private val maxBytes: Long = 32L * 1024 * 1024,
-    private val maxPeerTransfers: Int = 8,
+    private val maxPeerTransfers: Int = 64,
     private val maxPeerBytes: Long = 16L * 1024 * 1024
 ) {
     init {

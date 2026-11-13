@@ -78,8 +78,8 @@ class Chunk:
 class DurableChunkAssembler:
     RETENTION_SECONDS = 8 * 24 * 60 * 60
 
-    def __init__(self, connect, *, clock=time.time, max_transfers=16, max_bytes=32 * 1024 * 1024,
-                 max_peer_transfers=8, max_peer_bytes=16 * 1024 * 1024):
+    def __init__(self, connect, *, clock=time.time, max_transfers=128, max_bytes=32 * 1024 * 1024,
+                 max_peer_transfers=64, max_peer_bytes=16 * 1024 * 1024):
         if min(max_transfers, max_bytes, max_peer_transfers, max_peer_bytes) <= 0:
             raise ValueError("Invalid MQTT fragment quota")
         self.connect, self.clock = connect, clock

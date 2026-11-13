@@ -43,7 +43,7 @@ class MultipathPolicyTests(unittest.TestCase):
         self.assertEqual("duplicate_attempt", reserve("first", attempt))
         self.assertEqual("message_content_conflict", reserve("changed", replace(attempt, content_hash="b" * 64)))
         for index in range(1, self.policy.limits.inflight_packets):
-            self.assertEqual("", reserve(str(index), attempt))
+            self.assertEqual("", reserve(str(index), replace(attempt, path=sorted(BROKER_IDS)[index % 3])))
         self.assertEqual("inflight_packet_limit", reserve("excess", attempt))
         self.assertEqual(self.policy.limits.inflight_packets, self.policy.diagnostics()["pending_attempts"])
 
@@ -55,7 +55,7 @@ class MultipathPolicyTests(unittest.TestCase):
         self.assertEqual("peer_byte_limit", reserve("third", attempt))
         for index in range(6):
             self.assertEqual("", reserve(str(index), replace(attempt, peer=str(index))))
-        self.assertEqual("inflight_byte_limit", reserve("global-full", replace(attempt, peer="new")))
+        self.assertEqual("inflight_byte_limit", reserve("global-full", replace(attempt, peer="new", path="hivemq")))
         self.policy.limits = replace(self.policy.limits, max_attempts=self.policy.limits.inflight_packets)
         for key in list(self.policy._attempts):
             self.policy.broker_ack(key, "emqx", 1)
@@ -147,10 +147,12 @@ class MultipathPolicyTests(unittest.TestCase):
             with self.subTest(traffic=traffic, size=size):
                 self.assertEqual(1, len(self.plan(traffic, size=size)))
 
-    def test_receipt_prefers_ingress_without_ack_storm(self):
+    def test_receipt_prefers_ingress_with_ordered_fallbacks(self):
         for broker in BROKER_IDS:
             plan = self.plan(Traffic.RECEIPT, ingress=broker)
-            self.assertEqual([broker], [item.broker_id for item in plan])
+            self.assertEqual(broker, plan[0].broker_id)
+            self.assertEqual(BROKER_IDS, {item.broker_id for item in plan})
+            self.assertTrue(all(item.delay == 0 for item in plan))
 
     def test_down_path_does_not_clear_other_subscriptions(self):
         self.policy.disconnected("emqx", 1)
@@ -320,7 +322,8 @@ class MultipathPolicyTests(unittest.TestCase):
 
     def test_global_capacity_reserves_control_slots_across_brokers(self):
         for index in range(10):
-            self.assertTrue(self.reserve(str(index), peer=str(index), message=str(index), traffic=Traffic.CHUNK))
+            self.assertTrue(self.reserve(str(index), peer=str(index), message=str(index),
+                                         path=sorted(BROKER_IDS)[index % 3], traffic=Traffic.CHUNK))
         self.assertFalse(self.reserve("ordinary", peer="ordinary"))
         self.assertTrue(self.reserve("control", traffic=Traffic.CONTROL))
         self.assertTrue(self.reserve("final", traffic=Traffic.FINAL))
@@ -330,8 +333,27 @@ class MultipathPolicyTests(unittest.TestCase):
     def test_concurrent_reservations_never_exceed_global_limit(self):
         with ThreadPoolExecutor(max_workers=20) as executor:
             results = list(executor.map(lambda index: self.reserve(
-                str(index), peer=str(index), traffic=Traffic.CHUNK), range(200)))
+                str(index), peer=str(index), path=sorted(BROKER_IDS)[index % 3], traffic=Traffic.CHUNK), range(200)))
         self.assertEqual(10, sum(results))
+
+    def test_slow_ingress_cannot_consume_other_ready_path_slots(self):
+        for index in range(8):
+            self.assertTrue(self.reserve(str(index), message=str(index), traffic=Traffic.RECEIPT))
+        self.assertFalse(self.reserve("blocked", traffic=Traffic.RECEIPT))
+        plan = self.plan(Traffic.RECEIPT, ingress="emqx")
+        self.assertEqual({"hivemq", "mosquitto"}, {item.broker_id for item in plan})
+        self.assertTrue(self.reserve("chat", path=plan[0].broker_id))
+        self.assertTrue(self.reserve("chat2", message="m2", path=plan[1].broker_id))
+        self.assertTrue(self.reserve("other", path=plan[0].broker_id, traffic=Traffic.RECEIPT))
+        self.assertTrue(self.reserve("last", path=plan[1].broker_id, traffic=Traffic.RECEIPT))
+        self.assertFalse(self.reserve("full", path=plan[0].broker_id, traffic=Traffic.RECEIPT))
+
+    def test_lone_ready_path_retains_full_existing_budget(self):
+        for broker in ("hivemq", "mosquitto"):
+            self.policy.disconnected(broker, 1)
+        for index in range(12):
+            self.assertTrue(self.reserve(str(index), message=str(index), traffic=Traffic.RECEIPT))
+        self.assertFalse(self.reserve("full", traffic=Traffic.RECEIPT))
 
     def test_peer_quota_and_attempt_expiry_are_bounded(self):
         self.assertTrue(self.reserve("one", size=1_048_576, traffic=Traffic.CHUNK))

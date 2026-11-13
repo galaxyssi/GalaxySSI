@@ -272,7 +272,11 @@ internal class MqttPoolTransport(
             synchronized(lock) { publications.remove(attempt) }
             policy.discardAttempt(attempt)
         }
-        if (choices.isNotEmpty() && !attemptedPhysicalPublish) throw BackpressureException()
+        val congested = !descriptor.bootstrap && choices.isEmpty() && policy.plan(
+            descriptor.peer, descriptor.messageId, descriptor.traffic, size.toInt(),
+            descriptor.receiveTopics, at, authorizedPaths = descriptor.authorizedPaths,
+            includeCongested = true).isNotEmpty()
+        if (!attemptedPhysicalPublish && (choices.isNotEmpty() || congested)) throw BackpressureException()
         throw MqttException(MqttException.REASON_CODE_CLIENT_NOT_CONNECTED.toInt())
     }
 

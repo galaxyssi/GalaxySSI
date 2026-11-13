@@ -77,6 +77,20 @@ class MqttPoolClientTest(unittest.TestCase):
         self.pool.lose(broker)
         self.assertEqual("broker_ack_failed", result.reason_code)
 
+    def test_receipt_uses_another_path_when_ingress_physical_queue_is_full(self):
+        self.ready()
+        self.publication = Publication("pair", "receipt", "a" * 64, Traffic.RECEIPT,
+                                       frozenset({"inbox"}), preferred_broker="emqx")
+        original = self.pool.publish
+        def publish(broker, *args, **kwargs):
+            return None if broker == "emqx" else original(broker, *args, **kwargs)
+        with patch.object(self.pool, "publish", side_effect=publish) as physical:
+            result = self.client.publish("outbox", b"receipt")
+        self.assertEqual(0, result.rc)
+        self.assertEqual(2, physical.call_count)
+        self.assertEqual(1, len(self.pool.sent))
+        self.assertNotEqual("emqx", self.pool.sent[0][0])
+
     def test_missing_suback_cannot_be_used_for_business(self):
         self.pool.auto_suback = False
         self.ready()

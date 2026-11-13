@@ -5,6 +5,13 @@ import android.util.Log
 import org.json.JSONObject
 
 internal object AndroidMqttChunks {
+    fun attachmentIndex(payload: JSONObject): Int =
+        if (payload.optString("type") == "input_attachment_chunk") payload.optInt("chunk_index", -1) else -1
+
+    fun pending(context: Context, routes: GalaxySSILinkProtocol.Routes, payload: JSONObject): Boolean =
+        attachmentIndex(payload).let { index -> index >= 0 &&
+            GalaxySSILinkDeliveryStore.hasPendingAttachmentChunk(context, routes, payload.optString("transfer_id"), index) }
+
     @Volatile private var instance: MqttDurableChunks? = null
     @Volatile private var outgoing: MqttOutgoingChunks? = null
     private fun store(context: Context) = instance ?: synchronized(this) {
@@ -29,6 +36,18 @@ internal object AndroidMqttChunks {
 
     private fun identity(routes: GalaxySSILinkProtocol.Routes) = listOf(GalaxySSILinkDeliveryStore.peerScope(routes),
         routes.localFingerprint.lowercase(), routes.remoteFingerprint.lowercase(), routes.linkSecret)
+
+    fun encode(context: Context, topic: String, wire: String, secret: String, peers: MqttPeerRoutes?, durable: Boolean = true): List<String>? {
+        if (!durable) return GalaxySSIMqttWireChunking.encode(wire)
+        // Direct delivery owns readiness probing; only fragments need a persisted layout.
+        if (wire.toByteArray(Charsets.UTF_8).size <= MqttWireSizingPolicy.DIRECT_BYTES)
+            return MqttWireSizingPolicy.encode(wire)
+        val binding = peers?.chunkBinding(topic) ?: return null
+        if (binding.secret != secret) return null
+        val key = MqttDeliveryEnvelope.receiptBinding(binding.scope, binding.sender, binding.receiver, binding.secret)
+        val transfer = GalaxySSIMqttWireChunking.sha256(wire.toByteArray(Charsets.UTF_8))
+        return MqttWireSizingPolicy.encode(wire, sender(context).chunkDataBytes(key, transfer))
+    }
 
     fun prepare(context: Context, topic: String, rawParts: List<String>, secret: String,
                 peers: MqttPeerRoutes?): List<Pair<String, MqttPoolTransport.Publication>>? {
