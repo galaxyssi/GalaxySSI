@@ -41,7 +41,7 @@ internal object HealthMetricCatalog {
         entry(HealthMetric.RED_BLOOD_CELLS, HealthMetricGroup.BLOOD, true, "Red blood cell count", "\u7ea2\u7ec6\u80de\u8ba1\u6570", "RBC", "erythrocytes", "\u7ea2\u7ec6\u80de"),
         entry(HealthMetric.HEMATOCRIT, HealthMetricGroup.BLOOD, true, "Hematocrit", "\u7ea2\u7ec6\u80de\u538b\u79ef", "HCT", "hematocrit fraction", "\u7ea2\u7ec6\u80de\u6bd4\u5bb9"),
         entry(HealthMetric.MEAN_CORPUSCULAR_VOLUME, HealthMetricGroup.BLOOD, true, "Mean corpuscular volume", "\u5e73\u5747\u7ea2\u7ec6\u80de\u4f53\u79ef", "MCV"),
-        entry(HealthMetric.MEAN_CORPUSCULAR_HEMOGLOBIN, HealthMetricGroup.BLOOD, true, "Mean corpuscular hemoglobin", "\u5e73\u5747\u7ea2\u7ec6\u80de\u8840\u7ea2\u86cb\u767d\u91cf", "MCH"),
+        entry(HealthMetric.MEAN_CORPUSCULAR_HEMOGLOBIN, HealthMetricGroup.BLOOD, true, "Mean corpuscular hemoglobin", "\u5e73\u5747\u7ea2\u7ec6\u80de\u8840\u7ea2\u86cb\u767d\u91cf", "MCH", "\u5e73\u5747\u7ea2\u7ec6\u80de\u8840\u7ea2\u86cb\u767d\u542b\u91cf"),
         entry(HealthMetric.MEAN_CORPUSCULAR_HEMOGLOBIN_CONCENTRATION, HealthMetricGroup.BLOOD, true, "Mean corpuscular hemoglobin concentration", "\u5e73\u5747\u7ea2\u7ec6\u80de\u8840\u7ea2\u86cb\u767d\u6d53\u5ea6", "MCHC"),
         entry(HealthMetric.RED_CELL_DISTRIBUTION_WIDTH_CV, HealthMetricGroup.BLOOD, true, "Red cell distribution width CV", "\u7ea2\u7ec6\u80de\u5206\u5e03\u5bbd\u5ea6\u53d8\u5f02\u7cfb\u6570", "RDW-CV"),
         entry(HealthMetric.RED_CELL_DISTRIBUTION_WIDTH_SD, HealthMetricGroup.BLOOD, true, "Red cell distribution width SD", "\u7ea2\u7ec6\u80de\u5206\u5e03\u5bbd\u5ea6\u6807\u51c6\u5dee", "RDW-SD"),
