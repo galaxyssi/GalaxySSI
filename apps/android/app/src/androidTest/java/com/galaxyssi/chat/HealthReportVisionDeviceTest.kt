@@ -75,10 +75,12 @@ class HealthReportVisionDeviceTest {
     @Test fun fileSelectionStartsRecognitionWithoutAnotherButton() = directSelection(revoke = false)
     @Test fun aRevokedPickerApprovalCannotDiscloseTheSelectedImage() = directSelection(revoke = true)
     @Test fun multipleSelectedReportsContinueAfterAFileFails() = directSelection(revoke = false, batch = true)
+    @Test fun clickingFailedReportRetriesOnlyThatReportAndPreservesTheOtherReceipt() =
+        directSelection(revoke = false, batch = true, retryFailed = true)
     @Test fun batchHoldsAllMeasurementsUntilOneGlucoseConfirmation() =
         directSelection(revoke = false, batch = true, confirm = true)
 
-    private fun directSelection(revoke: Boolean, batch: Boolean = false, confirm: Boolean = false) {
+    private fun directSelection(revoke: Boolean, batch: Boolean = false, confirm: Boolean = false, retryFailed: Boolean = false) {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         assumeTrue(android.os.Build.VERSION.SDK_INT >= 29)
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
@@ -175,8 +177,26 @@ class HealthReportVisionDeviceTest {
                             HealthRecordStore(context, names.records).use { assertEquals(2L, it.count()) }
                             scenario.onActivity { activity ->
                                 val labels = views(activity.window.decorView).filterIsInstance<android.widget.TextView>()
-                                assertTrue(labels.any { it.text.toString() == activity.getString(R.string.health_vision_request_failed) })
+                                assertTrue(labels.any {
+                                    it.text.startsWith(activity.getString(R.string.health_vision_request_failed))
+                                })
                                 assertTrue(labels.any { it.text.toString() == activity.getString(R.string.health_report_batch_ready) })
+                            }
+                            if (retryFailed) {
+                                val failed = jobs.single { store.page(it.id, 1)?.visionImport == null }
+                                val other = jobs.single { it.id != failed.id }
+                                val before = store.page(other.id, 1)?.visionImport
+                                scenario.onActivity { activity ->
+                                    val action = activity.window.decorView.findViewWithTag<View>("health-batch-file-${failed.id}")
+                                    assertTrue(views(action).filterIsInstance<android.widget.TextView>().any {
+                                        it.text.contains(activity.getString(R.string.health_vision_continue))
+                                    })
+                                    assertTrue(action.performClick())
+                                }
+                                await(scenario) { store.page(failed.id, 1)?.visionImport?.contextConfirmed == true }
+                                assertEquals(3, calls.get())
+                                assertEquals(before, store.page(other.id, 1)?.visionImport)
+                                HealthRecordStore(context, names.records).use { assertEquals(2L, it.count()) }
                             }
                             return@use
                         }

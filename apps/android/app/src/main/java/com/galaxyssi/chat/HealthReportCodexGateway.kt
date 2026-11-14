@@ -6,7 +6,10 @@ import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
@@ -19,12 +22,49 @@ internal data class HealthReportVisionTarget(
         configuration.modelId.takeIf(String::isNotBlank)?.let { " / $it" }.orEmpty()
 }
 
-internal class HealthReportCodexUnavailable : IllegalStateException()
+internal enum class HealthReportDeliveryProblem { NOT_SENT, NOT_ACCEPTED, REPLY_TIMEOUT, REMOTE_FAILURE }
+internal class HealthReportCodexUnavailable(val problem: HealthReportDeliveryProblem = HealthReportDeliveryProblem.REMOTE_FAILURE) :
+    IllegalStateException()
+
+internal enum class HealthReportAdmission { MISSING, ACTIVE, TERMINAL_FAILURE, UNKNOWN }
+internal object HealthReportDelivery {
+    suspend fun <T> receive(reply: CompletableDeferred<T>, publish: suspend () -> Boolean,
+        probe: suspend () -> HealthReportAdmission, earlyWait: Long = 20_000, responseWait: Long = 160_000,
+        retryDelay: Long = 500): T {
+        var published = false
+        repeat(2) { attempt ->
+            if (reply.isCompleted) return reply.await()
+            if (publish()) {
+                published = true
+                withTimeoutOrNull(earlyWait) { reply.await() }?.let { return it }
+                val admission = coroutineScope {
+                    val observed = async { probe() }
+                    try { select { reply.onAwait { null }; observed.onAwait { it } } }
+                    finally { observed.cancel() }
+                }
+                if (reply.isCompleted) return reply.await()
+                when (admission) {
+                    HealthReportAdmission.MISSING -> if (attempt == 1)
+                        throw HealthReportCodexUnavailable(HealthReportDeliveryProblem.NOT_ACCEPTED)
+                    HealthReportAdmission.TERMINAL_FAILURE -> throw HealthReportCodexUnavailable(HealthReportDeliveryProblem.REMOTE_FAILURE)
+                    else -> return withTimeoutOrNull(responseWait) { reply.await() }
+                        ?: throw HealthReportCodexUnavailable(HealthReportDeliveryProblem.REPLY_TIMEOUT)
+                }
+            } else if (attempt == 1) throw HealthReportCodexUnavailable(
+                if (published) HealthReportDeliveryProblem.NOT_ACCEPTED else HealthReportDeliveryProblem.NOT_SENT)
+            delay(retryDelay)
+        }
+        throw HealthReportCodexUnavailable(HealthReportDeliveryProblem.NOT_SENT)
+    }
+}
 
 internal data class HealthReportCodexRequest(val target: HealthReportVisionTarget, val id: UUID = UUID.randomUUID()) {
     val conversation = PREFIX + id
     val source = (id.mostSignificantBits and 0x1FFFFFFFFFFFFFL).coerceAtLeast(1L)
     val identity = AgentTaskIdentity(target.routeId, conversation, id.toString(), id.toString())
+    fun recoveryIdentity() = JSONObject().put("client_route_id", target.routeId).put("conversation_id", conversation)
+        .put("task_id", identity.taskId).put("turn_id", identity.turnId).put("contact_id", target.id)
+        .put("source_message_id", source.toString()).put("agent_id", "codex")
 
     fun matches(payload: JSONObject, desktop: String): Boolean =
         desktop == target.desktopId && payload.optString("client_route_id") == identity.clientRouteId &&
@@ -55,6 +95,7 @@ internal object HealthReportCodexGateway : HealthReportVisionGateway {
     const val MAX_IMAGE_BYTES = 100_000
     private data class Pending(val request: HealthReportCodexRequest, val reply: CompletableDeferred<AgentConnectorResponse>)
     private val active = ConcurrentHashMap<String, Pending>()
+    private val recovery = AgentRemoteRecoveryClient()
 
     override fun target(context: Context): HealthReportVisionTarget? {
         val registry = AppStoreAgentConnectorRegistry(context)
@@ -83,16 +124,10 @@ internal object HealthReportCodexGateway : HealthReportVisionGateway {
         val request = HealthReportCodexRequest(target)
         fun checkRoute() {
             validate()
-            if (target(context) != target) throw HealthReportCodexUnavailable()
+            if (target(context) != target) throw HealthReportCodexUnavailable(HealthReportDeliveryProblem.NOT_SENT)
             if (target.id in EncryptedAgentDataDisclosureStore(context).blockedDestinationIds()) throw HealthAccessBlocked()
         }
-        checkRoute()
-        GalaxySSIMqttClient.connect(context)
-        if (withTimeoutOrNull(12_000L) {
-                while (GalaxySSIMqttClient.transportQueryReadiness(target.id) != "ready") delay(200L)
-                true
-            } != true) throw HealthReportCodexUnavailable()
-
+        validate()
         val ticket = AgentDataDisclosureLedger.beginDesktopRequest(context, target.id, HealthReportVisionProvider.instructions,
             listOf(AgentInputAttachment(request.id.toString(), Uri.EMPTY, "report.jpg", "image/jpeg", jpeg.size.toLong())),
             request.conversation, request.identity.taskId, request.identity.turnId)
@@ -102,13 +137,34 @@ internal object HealthReportCodexGateway : HealthReportVisionGateway {
         var sent = false
         var finished = false
         try {
-            val payload = request.payload(jpeg)
-            checkRoute()
-            sent = GalaxySSIMqttClient.publishDesktopControlPayload(target.desktopId, payload, durable = false,
-                clientRouteId = target.routeId, transient = true)
-            if (!sent) throw HealthReportCodexUnavailable()
-            AgentDataDisclosureLedger.update(context, ticket, AgentDisclosureStatus.SENT)
-            val reply = withTimeoutOrNull(180_000L) { pending.reply.await() } ?: throw HealthReportCodexUnavailable()
+            val reply = HealthReportDelivery.receive(pending.reply, publish = {
+                validate()
+                GalaxySSIMqttClient.connect(context)
+                if (withTimeoutOrNull(12_000L) {
+                        while (GalaxySSIMqttClient.transportQueryReadiness(target.id) != "ready") { validate(); delay(200L) }
+                        true
+                    } != true) false
+                else {
+                    checkRoute()
+                    GalaxySSIMqttClient.publishDesktopControlPayload(target.desktopId, request.payload(jpeg), durable = false,
+                        clientRouteId = target.routeId, transient = true).also {
+                        if (it && !sent) { sent = true; AgentDataDisclosureLedger.update(context, ticket, AgentDisclosureStatus.SENT) }
+                    }
+                }
+            }, probe = {
+                validate()
+                val observation = recovery.query(target.desktopId, target.routeId, listOf(request.recoveryIdentity()),
+                    timeoutMillis = 8_000) { query ->
+                    GalaxySSIMqttClient.publishDesktopControlPayload(target.desktopId, query, durable = false,
+                        clientRouteId = target.routeId, transient = true)
+                }.singleOrNull()
+                when (observation?.optString("status")) {
+                    "unavailable" -> HealthReportAdmission.MISSING
+                    "failed", "cancelled", "timed_out" -> HealthReportAdmission.TERMINAL_FAILURE
+                    null, "" -> HealthReportAdmission.UNKNOWN
+                    else -> HealthReportAdmission.ACTIVE
+                }
+            })
             finished = true
             checkRoute()
             if (!reply.success || reply.remoteFailure) throw HealthReportCodexUnavailable()
@@ -131,6 +187,14 @@ internal object HealthReportCodexGateway : HealthReportVisionGateway {
 
     fun receive(context: Context, payload: JSONObject, desktop: String): Boolean {
         val conversation = payload.optString("conversation_id")
+        if (payload.optString("type") == "agent_task_recovery_result" && !payload.optBoolean("peer_chat")) {
+            val items = payload.optJSONArray("items")
+            if (items != null && items.length() == 1 &&
+                items.optJSONObject(0)?.optString("conversation_id")?.startsWith(HealthReportCodexRequest.PREFIX) == true) {
+                recovery.receive(payload, desktop)
+                return true
+            }
+        }
         if (!conversation.startsWith(HealthReportCodexRequest.PREFIX) || payload.optBoolean("peer_chat")) return false
         if (payload.optString("type") == "agent_task_result_receipt_confirmed") return false
         val pending = active[conversation] ?: return true

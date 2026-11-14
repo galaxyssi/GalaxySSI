@@ -60,7 +60,7 @@ internal class HealthReportImportView(private val activity: Activity, private va
         file(content, state.name, state.bytes)
         if (state.failure != null) {
             summary(content, R.drawable.ic_agent_progress_close, label(R.string.health_report_not_imported), label(state.failure), failed = true)
-            command(content, R.string.common_retry, "health-report-import-retry", retry)
+            command(content, if (state.legacy) R.string.common_retry else R.string.health_vision_continue, "health-report-import-retry", retry)
             return
         }
         val active = when (state.stage) {
@@ -94,7 +94,7 @@ internal class HealthReportImportView(private val activity: Activity, private va
         divider(content)
     }
     fun result(content: LinearLayout, name: String, outcome: HealthReportImportOutcome, records: List<HealthObservation>,
-        deferred: List<Pair<HealthVisionRow, HealthReportDeferred>>,
+        deferred: List<Pair<HealthVisionRow, HealthReportDeferred>>, rejected: Map<HealthReportRowIssue, Int>,
         openRecords: () -> Unit) {
         file(content, name, outcome.imageBytes)
         val imported = outcome.saved > 0
@@ -132,7 +132,15 @@ internal class HealthReportImportView(private val activity: Activity, private va
         val unclassified = (outcome.skipped - deferred.size).coerceAtLeast(0)
         if (unclassified > 0) ui.add(content,
             ui.text(label(R.string.health_report_skipped_note, unclassified), 13f, muted = true), 12)
-        if (outcome.partial) ui.add(content, ui.text(label(R.string.health_report_partial_note), 13f, muted = true), 8)
+        if (outcome.partial && rejected.isEmpty()) ui.add(content, ui.text(label(R.string.health_report_partial_note), 13f, muted = true), 8)
+        rejected.forEach { (issue, count) ->
+            ui.add(content, ui.text(label(when (issue) {
+                HealthReportRowIssue.UNSUPPORTED_METRIC -> R.string.health_vision_rejected_metric
+                HealthReportRowIssue.INVALID_UNIT -> R.string.health_vision_rejected_unit
+                HealthReportRowIssue.INVALID_FIELDS -> R.string.health_vision_rejected_fields
+                HealthReportRowIssue.DUPLICATE -> R.string.health_vision_rejected_duplicate
+            }, count), 13f, muted = true), 8)
+        }
         if (imported && matched) ui.add(content, ui.text(label(R.string.health_report_existing_note, outcome.duplicates), 13f, muted = true), 8)
         if (records.isNotEmpty()) command(content, R.string.health_report_open_records, "health-report-open-records", openRecords)
     }

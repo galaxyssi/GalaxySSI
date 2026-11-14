@@ -29,7 +29,7 @@ internal data class HealthAnalysisPreview(val weekly: HealthWeeklySnapshot, val 
     override val allowedActions get() = HealthAnalysisAction.entries
 }
 internal data class HealthAnalysisPlan(val factKeys: List<String>, val actions: List<HealthAnalysisAction>)
-internal class HealthAnalysisInvalidReply : IllegalStateException()
+internal open class HealthAnalysisInvalidReply : IllegalStateException()
 internal class HealthAnalysisNoModel : IllegalStateException()
 internal class HealthAnalysisProfileChanged : IllegalStateException("Health analysis profile context changed")
 internal class HealthAnalysisProfileBlocked : IllegalStateException("Health analysis profile context is disabled")

@@ -63,6 +63,30 @@ class HealthReportVisionTest {
         assertEquals(job, HealthImportJob.from(job.json()))
         assertTrue(HealthImportJob.from(job.copy(modelRecognized = true).json()).modelRecognized)
     }
+    @Test fun keepsValidRowsAndTracksWhyOtherRowsWereRejected() {
+        val mixed = JSONArray().put(row.json()).put(row.json())
+            .put(row.json().put("unit", "mmol/L"))
+            .put(row.json().put("metric", "UNKNOWN"))
+            .put(row.json().put("values", JSONObject().put("crp", "unclear")))
+        val decoded = parse(report.json().put("rows", mixed))
+        assertEquals(listOf(row), decoded.rows)
+        assertTrue(decoded.partial)
+        assertEquals(HealthReportRowIssue.entries.associateWith { 1 }, decoded.rejected)
+        assertEquals(decoded, HealthReportVisionResult.from(decoded.json()))
+    }
+
+    @Test fun distinguishesEmptyOrUnsupportedReportsFromMalformedReplies() {
+        assertEquals(HealthReportReplyProblem.NO_SUPPORTED_ROWS, assertThrows(HealthReportInvalidReply::class.java) {
+            parse(report.json().put("rows", JSONArray()))
+        }.problem)
+        assertEquals(HealthReportReplyProblem.INVALID_ROWS, assertThrows(HealthReportInvalidReply::class.java) {
+            parse(report.json().put("rows", JSONArray().put(row.json().put("unit", "mmol/L"))))
+        }.problem)
+        assertEquals(HealthReportReplyProblem.FORMAT, assertThrows(HealthReportInvalidReply::class.java) {
+            HealthReportVisionResult.parse("{")
+        }.problem)
+        assertEquals(report, HealthReportVisionResult.parse("```JSON\r\n${report.json()}\r\n```"))
+    }
 
     @Test fun pairedCodexReceivesOneImageWithConfiguredModelAndNoToolsOrChatHistory() {
         val request = HealthReportCodexRequest(target)

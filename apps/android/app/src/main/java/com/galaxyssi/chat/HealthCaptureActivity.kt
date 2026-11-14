@@ -69,6 +69,7 @@ class HealthCaptureActivity : Activity() {
     private val batchFailures = mutableMapOf<String, Int>()
     private val batchSourceFailures = mutableSetOf<String>()
     private val promptedReportGroups = mutableSetOf<String>()
+    private val failedReportConfirmations = mutableSetOf<List<String>>()
     private var confirmingReports = false
     private var batchRefreshQueued = false
     private val refreshBatch = Runnable { batchRefreshQueued = false; refresh() }
@@ -457,12 +458,13 @@ class HealthCaptureActivity : Activity() {
     private fun confirmReports(key: String, reports: List<ReportConfirmation>, force: Boolean = false) {
         if (reports.isEmpty() || confirmingReports) return
         val scope = reports.fold(HealthReportSupplementScope()) { combined, report -> combined + report.scope }
-        if (!force && key in promptedReportGroups) return
+        val ids = reports.map { it.id }
+        if (!force && (scope.needed && key in promptedReportGroups || ids in failedReportConfirmations)) return
         if (scope.needed) promptedReportGroups += key
         confirmingReports = true
-        visionUi.completeReports(reports.map { it.id }, scope) { success ->
+        visionUi.completeReports(ids, scope) { success ->
             confirmingReports = false
-            if (!success) promptedReportGroups += key
+            if (!success) failedReportConfirmations += ids else failedReportConfirmations -= ids
             generation++; refresh()
         }
     }
@@ -527,6 +529,8 @@ class HealthCaptureActivity : Activity() {
                     else -> jobState(job)
                 }
                 val name = job?.name?.takeIf(String::isNotBlank) ?: getString(R.string.health_import_preparing)
+                val canContinue = job != null && HealthReportVisionReader.eligible(job) &&
+                    (id in batchFailures || job.modelFirst && approval == null)
                 val action: (() -> Unit)? = if (job == null || !ready || byReport[id]?.receipt?.pendingConfirmation == true) null else when {
                     job.needsPdfPassword() -> ({ retry(job) })
                     job.state == HealthImportState.TABLE_REVIEW -> ({
@@ -534,6 +538,19 @@ class HealthCaptureActivity : Activity() {
                             .putExtra("health_table", job.id).putHealthNavigationFixture(names))
                     })
                     job.state == HealthImportState.ORIGINAL_ONLY -> ({ open("original", job.originalId) })
+                    canContinue -> ({
+                        if (batchRunning.isEmpty() && !confirmingReports) {
+                            fun started() {
+                                batchFailures.remove(id); batchRunning = id; generation++
+                            }
+                            if (approval == null || batchFailures[id] == R.string.health_vision_blocked)
+                                visionUi.show(id, holdForBatch = true, started = ::started)
+                            else {
+                                started()
+                                visionUi.importSelected(job, approval, holdForBatch = true)
+                            }
+                        }
+                    })
                     job.state == HealthImportState.REVIEW -> ({
                         open(if (job.modelFirst) "report_import" else "review", id)
                         batchFailures[id]?.let { showReportProgress(HealthReportImportScreen(id, name,
@@ -546,7 +563,9 @@ class HealthCaptureActivity : Activity() {
                     addView(ui.text(name, 15f, bold = true))
                     ui.add(this, ui.text(description, 13f, muted = true), 2)
                     if (ready) showRecognizedFields(this, byReport[id]?.rows.orEmpty())
-                } else ui.row(name, description, action), 12)
+                } else ui.row(name, if (canContinue)
+                    "$description\n${getString(R.string.health_vision_continue)}" else description, action)
+                    .apply { tag = "health-batch-file-$id" }, 12)
             }
         }
         if (previous > 0) (body.getChildAt(0) as? ScrollView)?.let { scroll ->
@@ -569,7 +588,7 @@ class HealthCaptureActivity : Activity() {
                     result.addView(ui.text(name, 18f, bold = true))
                     ui.add(result, ui.text(getString(R.string.health_report_confirm_pending), 14f, muted = true), 8)
                     showRecognizedFields(result, data.confirmations.singleOrNull()?.rows.orEmpty())
-                } else reportView.result(result, name, outcome, data.saved, data.deferred) {
+                } else reportView.result(result, name, outcome, data.saved, data.deferred, data.page?.vision?.rejected.orEmpty()) {
                     startActivity(Intent(this, HealthCenterActivity::class.java)
                         .putExtra("health_records", true).putHealthNavigationFixture(names))
                 }
