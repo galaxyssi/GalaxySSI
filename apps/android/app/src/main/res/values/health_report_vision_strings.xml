@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_vision_continue">Continue recognition</string>
+    <string name="health_vision_reply_format">Codex returned a result in an unreadable format.</string>
+    <string name="health_vision_no_supported_rows">Codex found no readable measurement supported by Health.</string>
+    <string name="health_vision_bad_rows">All returned rows had invalid fields or unsupported units.</string>
+    <string name="health_vision_not_sent">The image was not sent. Check the paired Desktop connection.</string>
+    <string name="health_vision_not_accepted">Desktop did not accept this image after retrying.</string>
+    <string name="health_vision_reply_timeout">No recognition result arrived before the deadline.</string>
+    <string name="health_vision_rejected_metric">%1$d unsupported indicators skipped.</string>
+    <string name="health_vision_rejected_unit">%1$d rows with incompatible units skipped.</string>
+    <string name="health_vision_rejected_fields">%1$d rows with invalid results or fields skipped.</string>
+    <string name="health_vision_rejected_duplicate">%1$d identical rows skipped.</string>
     <string name="health_report_confirm_title">Complete report details</string>
     <string name="health_report_confirm_note">Applies only to missing details in %1$d reports. Existing dates, times, and conditions are kept.</string>
     <string name="health_report_confirm_later">Later</string>

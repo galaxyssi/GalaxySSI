@@ -6,6 +6,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 
+internal enum class HealthReportRowIssue { UNSUPPORTED_METRIC, INVALID_UNIT, INVALID_FIELDS, DUPLICATE }
+internal enum class HealthReportReplyProblem { FORMAT, NO_SUPPORTED_ROWS, INVALID_ROWS }
+internal class HealthReportInvalidReply(val problem: HealthReportReplyProblem) : HealthAnalysisInvalidReply()
+
 internal data class HealthVisionRow(val metric: HealthMetric, val values: Map<String, String>,
     val unit: String, val reference: String, val source: String) {
     init {
@@ -29,14 +33,16 @@ internal data class HealthVisionRow(val metric: HealthMetric, val values: Map<St
 }
 
 internal data class HealthReportVisionResult(val rows: List<HealthVisionRow>, val collected: String, val partial: Boolean,
-    val fasting: String = "") {
+    val fasting: String = "", val rejected: Map<HealthReportRowIssue, Int> = emptyMap()) {
     init {
         require(rows.size in 1..MAX_ROWS && rows.distinct() == rows)
         require(collected.length <= 80 && collected.none(Char::isISOControl))
         require(fasting.isEmpty() || fasting in healthGlucoseConditions)
+        require(rejected.values.all { it in 1..MAX_ROWS } && rows.size + rejected.values.sum() <= MAX_ROWS)
     }
     fun json() = JSONObject().put("rows", JSONArray(rows.map { it.json() })).put("collected", collected).put("partial", partial)
         .apply { if (fasting.isNotEmpty()) put("fasting", fasting) }
+        .apply { if (rejected.isNotEmpty()) put("rejected_rows", JSONObject(rejected.mapKeys { it.key.name })) }
 
     private fun dateOnly(): LocalDate? = runCatching { LocalDate.parse(collected) }.getOrNull()
 
@@ -95,22 +101,70 @@ internal data class HealthReportVisionResult(val rows: List<HealthVisionRow>, va
     companion object {
         const val MAX_ROWS = 80
         fun from(j: JSONObject): HealthReportVisionResult {
-            require(j.keys().asSequence().filterNot { it == "fasting" }.toSet() == setOf("rows", "collected", "partial"))
+            require(j.keys().asSequence().filterNot { it == "fasting" || it == "rejected_rows" }.toSet() == setOf("rows", "collected", "partial"))
             val rows = j.getJSONArray("rows")
             require(rows.length() in 1..MAX_ROWS)
             return HealthReportVisionResult(List(rows.length()) { HealthVisionRow.from(rows.getJSONObject(it)) },
                 j.text("collected"), j.opt("partial") as? Boolean ?: throw HealthAnalysisInvalidReply(),
-                if (j.has("fasting")) j.text("fasting") else "")
+                if (j.has("fasting")) j.text("fasting") else "",
+                j.optJSONObject("rejected_rows")?.let { obj ->
+                    obj.keys().asSequence().associate { HealthReportRowIssue.valueOf(it) to obj.getInt(it) }
+                }.orEmpty())
         }
-        fun parse(response: String): HealthReportVisionResult = try {
-            val text = response.trim().let {
-                if (it.startsWith("```json\n") && it.endsWith("\n```")) it.substring(8, it.length - 4) else it
+        fun parse(response: String): HealthReportVisionResult {
+            val envelope = try {
+                require(response.length <= 100_000)
+                val trimmed = response.trim()
+                val text = if (trimmed.startsWith("```") && trimmed.endsWith("```")) {
+                    val header = trimmed.substringBefore('\n').trimEnd()
+                    require(header.equals("```json", true) || header == "```")
+                    trimmed.substringAfter('\n').dropLast(3).trim()
+                } else trimmed
+                val reader = JSONTokener(text)
+                val value = reader.nextValue() as? JSONObject ?: throw HealthAnalysisInvalidReply()
+                require(reader.nextClean() == '\u0000')
+                require(value.keys().asSequence().filterNot { it == "fasting" }.toSet() == setOf("rows", "collected", "partial"))
+                value
+            } catch (_: Exception) { throw HealthReportInvalidReply(HealthReportReplyProblem.FORMAT) }
+            val collected: String
+            val fasting: String
+            val partial: Boolean
+            val rows: JSONArray
+            try {
+                collected = envelope.text("collected")
+                fasting = if (envelope.has("fasting")) envelope.text("fasting") else ""
+                partial = envelope.opt("partial") as? Boolean ?: throw HealthAnalysisInvalidReply()
+                rows = envelope.getJSONArray("rows")
+                require(rows.length() <= MAX_ROWS && collected.length <= 80 && collected.none(Char::isISOControl))
+                require(fasting.isEmpty() || fasting in healthGlucoseConditions)
+            } catch (_: Exception) { throw HealthReportInvalidReply(HealthReportReplyProblem.FORMAT) }
+            val accepted = linkedSetOf<HealthVisionRow>()
+            val rejected = linkedMapOf<HealthReportRowIssue, Int>()
+            for (index in 0 until rows.length()) {
+                val item = rows.optJSONObject(index)
+                val metricId = item?.opt("metric") as? String
+                val metric = HealthMetric.entries.firstOrNull { it.name == metricId }
+                val unit = item?.opt("unit") as? String
+                val issue = when {
+                    item == null || metricId.isNullOrBlank() || unit == null -> HealthReportRowIssue.INVALID_FIELDS
+                    metric == null -> HealthReportRowIssue.UNSUPPORTED_METRIC
+                    unit.isNotEmpty() && unit !in metric.units -> HealthReportRowIssue.INVALID_UNIT
+                    else -> {
+                        val row = runCatching { HealthVisionRow.from(item) }.getOrNull()
+                        when {
+                            row == null -> HealthReportRowIssue.INVALID_FIELDS
+                            !accepted.add(row) -> HealthReportRowIssue.DUPLICATE
+                            else -> null
+                        }
+                    }
+                }
+                if (issue != null) rejected[issue] = (rejected[issue] ?: 0) + 1
             }
-            val reader = JSONTokener(text)
-            val value = reader.nextValue() as? JSONObject ?: throw HealthAnalysisInvalidReply()
-            require(reader.nextClean() == '\u0000')
-            from(value)
-        } catch (_: Exception) { throw HealthAnalysisInvalidReply() }
+            if (accepted.isEmpty()) throw HealthReportInvalidReply(if (rows.length() == 0 ||
+                rejected.keys == setOf(HealthReportRowIssue.UNSUPPORTED_METRIC)) HealthReportReplyProblem.NO_SUPPORTED_ROWS
+                else HealthReportReplyProblem.INVALID_ROWS)
+            return HealthReportVisionResult(accepted.toList(), collected, partial || rejected.isNotEmpty(), fasting, rejected)
+        }
     }
 }
 

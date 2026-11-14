@@ -32,11 +32,11 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
         check(BuildConfig.DEBUG && names.fixture != null)
         clear(); reader = HealthReportVisionReader(activity.applicationContext, names, value)
     }
-    fun show(id: String) {
+    fun show(id: String, holdForBatch: Boolean = false, started: () -> Unit = {}) {
         clear()
         run({ reader.prepare(id) to reader.target() }) { (input, target) ->
             if (target == null) { message(R.string.health_vision_no_model); return@run }
-            confirm(input, target)
+            confirm(input, target, holdForBatch, started)
         }
     }
     fun chooseFile(cancel: () -> Unit, pick: (HealthReportPickerApproval?) -> Unit) {
@@ -77,12 +77,13 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
         progress(screen)
         run({ reader.finishLegacy(id) }, { progress(screen.copy(failure = it)) }) { completed(id) }
     }
-    private fun confirm(input: HealthReportVisionInput, target: HealthReportVisionTarget) {
+    private fun confirm(input: HealthReportVisionInput, target: HealthReportVisionTarget, holdForBatch: Boolean, started: () -> Unit) {
         dialog = AlertDialog.Builder(activity).setTitle(R.string.health_vision_consent)
             .setMessage(activity.getString(R.string.health_vision_disclosure, target.destination))
             .setNegativeButton(android.R.string.cancel, null).setPositiveButton(R.string.health_vision_action) { _, _ ->
                 dialog = null
-                start(input, target)
+                started()
+                start(input, target, holdForBatch)
             }.show()
     }
     private fun start(input: HealthReportVisionInput, target: HealthReportVisionTarget, holdForBatch: Boolean = false) {
@@ -111,8 +112,18 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
                     val text = when (failure) {
                         is HealthAccessBlocked, is HealthPrivacyConflict -> R.string.health_vision_blocked
                         is HealthReportVisionChanged -> R.string.health_vision_changed
+                        is HealthReportInvalidReply -> when (failure.problem) {
+                            HealthReportReplyProblem.FORMAT -> R.string.health_vision_reply_format
+                            HealthReportReplyProblem.NO_SUPPORTED_ROWS -> R.string.health_vision_no_supported_rows
+                            HealthReportReplyProblem.INVALID_ROWS -> R.string.health_vision_bad_rows
+                        }
                         is HealthAnalysisInvalidReply -> R.string.health_vision_unreadable
-                        is HealthReportCodexUnavailable -> R.string.health_vision_request_failed
+                        is HealthReportCodexUnavailable -> when (failure.problem) {
+                            HealthReportDeliveryProblem.NOT_SENT -> R.string.health_vision_not_sent
+                            HealthReportDeliveryProblem.NOT_ACCEPTED -> R.string.health_vision_not_accepted
+                            HealthReportDeliveryProblem.REPLY_TIMEOUT -> R.string.health_vision_reply_timeout
+                            HealthReportDeliveryProblem.REMOTE_FAILURE -> R.string.health_vision_request_failed
+                        }
                         is HealthImportFailure -> R.string.health_vision_image_failed
                         is HealthReportTimeInvalid -> R.string.health_report_invalid_time
                         else -> R.string.health_report_storage_failed

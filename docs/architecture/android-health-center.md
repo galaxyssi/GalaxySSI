@@ -114,7 +114,9 @@ Existing local OCR tasks can still request explicitly authorized transcription. 
 request sends one upright JPEG of at most 100,000 bytes derived in memory from the encrypted original
 through a private, ephemeral Codex thread with search and Desktop tools disabled.
 The paired Desktop must advertise this capability before the phone can send an
-image. The request does not include other health
+image. If publication fails or an authenticated status query shows the request
+has not been admitted, the phone can resend once using the same task identity.
+An accepted task is not automatically resubmitted. The request does not include other health
 records, original metadata, or chat history, does not enter the offline
 outbox, and does not fall back to another provider.
 
@@ -131,7 +133,10 @@ on each report. Complete reports need no form. Confirmed measurements and
 receipts commit together. A same-profile report observation of the same metric,
 unit, collection condition, and side within one hour can update the existing
 measurement, preserving its revision history and report sources. Unusable rows
-stay in the encrypted report with a reason. Local OCR retains its review flow.
+stay in the encrypted report with a reason. Invalid model rows do not discard
+valid ones; counts by rejection reason are stored without rejected model text.
+A failed report can be selected again without rerunning the batch. Local OCR
+retains its review flow.
 
 `HealthCameraActivity` implements a foreground-only rear Camera2 preview, an
 explicit shutter, optional device-supported fill light, report/device modes and

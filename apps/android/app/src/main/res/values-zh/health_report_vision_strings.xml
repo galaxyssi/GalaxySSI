@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_vision_continue">继续识别</string>
+    <string name="health_vision_reply_format">Codex 返回了结果，但格式无法解析。</string>
+    <string name="health_vision_no_supported_rows">Codex 未读到健康中心支持的可用指标。</string>
+    <string name="health_vision_bad_rows">返回的项目均存在字段错误或不支持的单位。</string>
+    <string name="health_vision_not_sent">图片未发送，请检查已配对的 Desktop 连接。</string>
+    <string name="health_vision_not_accepted">重试后，Desktop 仍未受理这张图片。</string>
+    <string name="health_vision_reply_timeout">在等待时限内未收到识别结果。</string>
+    <string name="health_vision_rejected_metric">已跳过 %1$d 项不支持的指标。</string>
+    <string name="health_vision_rejected_unit">已跳过 %1$d 项单位不匹配的结果。</string>
+    <string name="health_vision_rejected_fields">已跳过 %1$d 项数值或字段无效的结果。</string>
+    <string name="health_vision_rejected_duplicate">已忽略 %1$d 个完全重复的项目。</string>
     <string name="health_report_confirm_title">补充采样信息</string>
     <string name="health_report_confirm_note">只补充这 %1$d 份报告的缺失信息，已有的日期、时间和血糖状态不变。</string>
     <string name="health_report_confirm_later">稍后再填</string>
