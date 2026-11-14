@@ -53,6 +53,21 @@ internal data class HealthReportVisionResult(val rows: List<HealthVisionRow>, va
         }
     }
 
+    fun deferredRows(outcome: HealthReportImportOutcome, job: HealthImportJob, original: HealthOriginal?): List<Pair<HealthVisionRow, HealthReportDeferred>> {
+        if (outcome.skipped == 0) return emptyList()
+        // Older receipts kept the transcribed rows, but not the reason individual rows were skipped.
+        val issues = outcome.deferred.ifEmpty {
+            if (original == null) emptyMap() else {
+                val drafts = drafts(job, original, ZoneId.systemDefault(), job.createdAt)
+                val conflicts = HealthReportDeferred.conflicts(drafts)
+                drafts.mapIndexedNotNull { index, draft ->
+                    HealthReportDeferred.reason(draft, draft.metric in conflicts)?.let { index to it }
+                }.take(outcome.skipped).toMap()
+            }
+        }
+        return issues.mapNotNull { (index, reason) -> rows.getOrNull(index)?.let { it to reason } }
+    }
+
     companion object {
         const val MAX_ROWS = 80
         fun from(j: JSONObject): HealthReportVisionResult {

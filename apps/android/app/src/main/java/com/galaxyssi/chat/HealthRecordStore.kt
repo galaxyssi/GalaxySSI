@@ -768,12 +768,9 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         try {
             var saved = 0; var duplicates = 0; var skipped = 0
             val records = linkedSetOf<String>()
-            val ambiguous = drafts.groupBy { it.metric }.filterValues { rows ->
-                rows.distinctBy { row ->
-                    row.values.mapValues { HealthResult.parse(it.value, row.metric.form)?.canonical } to row.unit
-                }.size > 1
-            }.keys
-            for (draft in drafts) {
+            val deferred = linkedMapOf<Int, HealthReportDeferred>()
+            val ambiguous = HealthReportDeferred.conflicts(drafts)
+            for ((index, draft) in drafts.withIndex()) {
                 checkActive()
                 val evidence = requireNotNull(draft.evidence)
                 require(evidence.recognition == HealthRecognition.MODEL && evidence.kind == "ocr" &&
@@ -785,7 +782,9 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                     continue
                 }
                 val confirmed = draft.copy(evidence = evidence.copy(confirmed = true))
-                if (draft.metric in ambiguous || HealthObservationPolicy.validate(confirmed) != null) {
+                val problem = HealthReportDeferred.reason(draft, draft.metric in ambiguous)
+                if (problem != null) {
+                    deferred[index] = problem
                     skipped++
                     continue
                 }
@@ -805,7 +804,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             }
             checkActive()
             db.setTransactionSuccessful()
-            return HealthReportImportOutcome(saved, duplicates, skipped, partial, imageBytes, records.toList())
+            return HealthReportImportOutcome(saved, duplicates, skipped, partial, imageBytes, records.toList(), deferred)
         } finally { db.endTransaction(); publishCommittedChanges() }
     }
     @Synchronized fun importHealthConnect(rows: List<HealthConnectMeasurement>, ensureActive: () -> Unit): Int {

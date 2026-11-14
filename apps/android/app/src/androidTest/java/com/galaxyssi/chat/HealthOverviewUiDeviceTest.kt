@@ -164,7 +164,7 @@ class HealthOverviewUiDeviceTest {
             val until = android.os.SystemClock.elapsedRealtime() + 10_000
             while (launched.get() == null && android.os.SystemClock.elapsedRealtime() < until) android.os.SystemClock.sleep(40)
             val picker = requireNotNull(launched.get())
-            assertFalse(picker.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, true))
+            assertTrue(picker.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false))
             assertTrue("application/pdf" in requireNotNull(picker.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)))
         } finally { instrumentation.removeMonitor(monitor) }
     }

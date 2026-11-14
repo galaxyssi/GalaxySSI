@@ -1,7 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="health_vision_action">Recognize and import</string>
-    <string name="health_report_picker_disclosure">Recipient: %1$s\n\nIf you select a report image, a compressed copy of up to 100 KB will be sent for automatic analysis. It may include visible names. PDF and table files are processed on this device.</string>
+    <string name="health_report_picker_disclosure">Recipient: %1$s\n\nA compressed copy of each report image you select (up to 100 KB each) will be sent for automatic analysis. Images may include visible names. PDF and table files are processed on this device.</string>
+    <string name="health_report_batch_heading">%1$d of %2$d files processed</string>
+    <string name="health_report_batch_ready">Ready to view</string>
+    <string name="health_report_batch_waiting">Waiting to analyze</string>
+    <string name="health_report_recognized_only">%1$d items recognized</string>
+    <string name="health_report_recognized_note">Kept in this report, not added to measurements.</string>
+    <string name="health_report_reason_time">Collection time is missing or could not be verified.</string>
+    <string name="health_report_reason_unit">The unit is missing or could not be verified.</string>
+    <string name="health_report_reason_conflict">This indicator has conflicting results in the report.</string>
+    <string name="health_report_reason_invalid">This result could not be validated.</string>
     <string name="health_report_picker_select">Choose file</string>
     <string name="health_report_picker_local">Import on this device only</string>
     <string name="health_vision_consent">Send this report image?</string>

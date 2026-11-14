@@ -94,6 +94,7 @@ internal class HealthReportImportView(private val activity: Activity, private va
         divider(content)
     }
     fun result(content: LinearLayout, name: String, outcome: HealthReportImportOutcome, records: List<HealthObservation>,
+        deferred: List<Pair<HealthVisionRow, HealthReportDeferred>>,
         openRecords: () -> Unit) {
         file(content, name, outcome.imageBytes)
         val imported = outcome.saved > 0
@@ -106,15 +107,31 @@ internal class HealthReportImportView(private val activity: Activity, private va
         }, when {
             imported -> label(R.string.health_report_import_count, outcome.saved)
             matched -> label(R.string.health_report_existing)
+            deferred.isNotEmpty() -> label(R.string.health_report_recognized_only, deferred.size)
             else -> label(R.string.health_report_not_imported)
         }, when {
             imported -> label(R.string.health_report_saved_note)
             matched -> label(R.string.health_report_existing_note, outcome.duplicates)
+            deferred.isNotEmpty() -> label(R.string.health_report_recognized_note)
             else -> label(R.string.health_report_no_usable_fields)
-        }, failed = !imported && !matched)
+        }, failed = !imported && !matched && deferred.isEmpty())
         records.forEach { line(content, label(it.draft.metric.titleResource()), healthDisplayValue(it.draft), bold = true) }
-        if (outcome.skipped > 0) ui.add(content,
-            ui.text(label(R.string.health_report_skipped_note, outcome.skipped), 13f, muted = true), 12)
+        if (deferred.isNotEmpty()) {
+            if (imported || matched) ui.add(content, ui.text(label(R.string.health_report_recognized_note), 14f, bold = true), 14)
+            deferred.forEach { (row, reason) ->
+                val value = row.metric.fields.mapNotNull(row.values::get).joinToString(" / ")
+                line(content, label(row.metric.titleResource()), listOf(value, row.unit).filter(String::isNotBlank).joinToString(" "), bold = false)
+                ui.add(content, ui.text(label(when (reason) {
+                    HealthReportDeferred.SAMPLE_TIME -> R.string.health_report_reason_time
+                    HealthReportDeferred.UNIT -> R.string.health_report_reason_unit
+                    HealthReportDeferred.CONFLICT -> R.string.health_report_reason_conflict
+                    HealthReportDeferred.INVALID -> R.string.health_report_reason_invalid
+                }), 13f, muted = true), 4)
+            }
+        }
+        val unclassified = (outcome.skipped - deferred.size).coerceAtLeast(0)
+        if (unclassified > 0) ui.add(content,
+            ui.text(label(R.string.health_report_skipped_note, unclassified), 13f, muted = true), 12)
         if (outcome.partial) ui.add(content, ui.text(label(R.string.health_report_partial_note), 13f, muted = true), 8)
         if (imported && matched) ui.add(content, ui.text(label(R.string.health_report_existing_note, outcome.duplicates), 13f, muted = true), 8)
         if (records.isNotEmpty()) command(content, R.string.health_report_open_records, "health-report-open-records", openRecords)

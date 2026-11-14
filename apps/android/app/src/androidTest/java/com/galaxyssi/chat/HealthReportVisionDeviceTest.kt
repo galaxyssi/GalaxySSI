@@ -74,17 +74,24 @@ class HealthReportVisionDeviceTest {
 
     @Test fun fileSelectionStartsRecognitionWithoutAnotherButton() = directSelection(revoke = false)
     @Test fun aRevokedPickerApprovalCannotDiscloseTheSelectedImage() = directSelection(revoke = true)
+    @Test fun multipleSelectedReportsContinueAfterAFileFails() = directSelection(revoke = false, batch = true)
 
-    private fun directSelection(revoke: Boolean) {
+    private fun directSelection(revoke: Boolean, batch: Boolean = false) {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         assumeTrue(android.os.Build.VERSION.SDK_INT >= 29)
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
         val file = File(context.cacheDir, "health-capture/synthetic-${names.fixture}.png")
+        val second = File(context.cacheDir, "health-capture/synthetic-second-${names.fixture}.png")
         try {
             file.parentFile!!.mkdirs()
             file.writeBytes(syntheticPng())
+            if (batch) second.writeBytes(syntheticPng())
             allow(names)
             val picked = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+            val result = Intent().setData(picked)
+            if (batch) result.clipData = android.content.ClipData.newRawUri("", picked).apply {
+                addItem(android.content.ClipData.Item(FileProvider.getUriForFile(context, "${context.packageName}.files", second)))
+            }
             val calls = java.util.concurrent.atomic.AtomicInteger()
             val pickerCalls = java.util.concurrent.atomic.AtomicInteger()
             val app = context.applicationContext as Application
@@ -92,8 +99,9 @@ class HealthReportVisionDeviceTest {
                 override fun onActivityPostCreated(activity: Activity, state: Bundle?) {
                     if (activity is HealthCaptureActivity && activity.intent.healthNavigationDatabases() == names)
                         owner(activity).useFixtureGateway(gateway { bytes, _ ->
-                            calls.incrementAndGet()
+                            val index = calls.incrementAndGet()
                             assertTrue(bytes.size in 1..100_000)
+                            if (batch && index == 1) throw HealthReportCodexUnavailable()
                             parsed.json().toString()
                         })
                 }
@@ -109,7 +117,8 @@ class HealthReportVisionDeviceTest {
                 override fun onStartActivity(intent: Intent): Instrumentation.ActivityResult? {
                     if (intent.action != Intent.ACTION_OPEN_DOCUMENT) return null
                     pickerCalls.incrementAndGet()
-                    return Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(picked))
+                    assertTrue(intent.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false))
+                    return Instrumentation.ActivityResult(Activity.RESULT_OK, result)
                 }
             }
             app.registerActivityLifecycleCallbacks(callbacks)
@@ -121,6 +130,26 @@ class HealthReportVisionDeviceTest {
                     assertEquals(0, calls.get())
                     scenario.onActivity { dialog(it)!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
                     HealthOriginalStore(context, names.originals, names.originalRoot(context)).use { store ->
+                        if (batch) {
+                            await(scenario) { store.jobs().size == 2 }
+                            val jobs = store.jobs()
+                            assertTrue(jobs.all { it.modelFirst })
+                            jobs.forEach { assertEquals(HealthImportOutcome.COMPLETE,
+                                HealthImportPipeline(context, names.records).run(store, it.id)) }
+                            await(scenario) { activity ->
+                                activity.window.decorView.findViewWithTag<android.widget.TextView>("health-import-batch-count")
+                                    ?.text?.toString() == activity.getString(R.string.health_report_batch_heading, 2, 2)
+                            }
+                            assertEquals(2, calls.get())
+                            assertEquals(1, jobs.count { store.page(it.id, 1)?.visionImport?.saved == 2 })
+                            HealthRecordStore(context, names.records).use { assertEquals(2L, it.count()) }
+                            scenario.onActivity { activity ->
+                                val labels = views(activity.window.decorView).filterIsInstance<android.widget.TextView>()
+                                assertTrue(labels.any { it.text.toString() == activity.getString(R.string.health_vision_request_failed) })
+                                assertTrue(labels.any { it.text.toString() == activity.getString(R.string.health_report_batch_ready) })
+                            }
+                            return@use
+                        }
                         var selected: HealthImportJob? = null
                         await(scenario) { store.jobs().singleOrNull().also { selected = it } != null }
                         val job = requireNotNull(selected)
@@ -144,6 +173,7 @@ class HealthReportVisionDeviceTest {
             }
         } finally {
             file.delete()
+            second.delete()
             clearHealthOverviewFixture(context, names)
         }
     }
@@ -400,10 +430,37 @@ class HealthReportVisionDeviceTest {
             ActivityScenario.launch<HealthCaptureActivity>(intent).use { scenario ->
                 scenario.onActivity { worker = field(it, "worker") as ExecutorService }
                 await(scenario) { it.window.decorView.findViewWithTag<View>("health-report-import-summary") != null }
-                scenario.onActivity { assertNull(dialog(it)); assertNull(it.window.decorView.findViewWithTag<View>("health-report-open-records")) }
+                scenario.onActivity { activity ->
+                    assertNull(dialog(activity))
+                    assertNull(activity.window.decorView.findViewWithTag<View>("health-report-open-records"))
+                    val labels = views(activity.window.decorView).filterIsInstance<android.widget.TextView>().map { it.text.toString() }
+                    assertTrue(activity.getString(R.string.health_report_recognized_only, 2) in labels)
+                    assertTrue(activity.getString(R.string.health_report_reason_time) in labels)
+                    assertTrue(labels.any { it.contains("<0.50 mg/L") })
+                }
                 HealthRecordStore(context, names.records).use { assertEquals(0L, it.count()) }
                 assertEquals(2, store.page(job.id, 1)!!.visionImport!!.skipped)
             }
         } finally { worker?.let { assertTrue(it.awaitTermination(20, TimeUnit.SECONDS)) } }
+    }
+
+    @Test fun previouslySkippedResultsShowTheirValuesWithoutAnotherRequest() = isolated { names, store, job ->
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val report = parsed.copy(collected = "")
+        store.saveReportVision(job, store.original(job.originalId)!!, report) {
+            HealthReportImportOutcome(0, 0, 2, true, 77_400, emptyList())
+        }
+        val intent = Intent(context, HealthCaptureActivity::class.java).putExtra("health_job", job.id).putHealthNavigationFixture(names)
+        ActivityScenario.launch<HealthCaptureActivity>(intent).use { scenario ->
+            await(scenario) { it.window.decorView.findViewWithTag<View>("health-report-import-summary") != null }
+            scenario.onActivity { activity ->
+                val labels = views(activity.window.decorView).filterIsInstance<android.widget.TextView>().map { it.text.toString() }
+                assertTrue(activity.getString(R.string.health_report_recognized_only, 2) in labels)
+                assertTrue(activity.getString(R.string.health_report_reason_time) in labels)
+                assertNull(dialog(activity))
+            }
+        }
+        HealthPrivacyStore(context, names.privacy).use { assertTrue(it.page().entries.isEmpty()) }
+        HealthRecordStore(context, names.records).use { assertEquals(0L, it.count()) }
     }
 }
