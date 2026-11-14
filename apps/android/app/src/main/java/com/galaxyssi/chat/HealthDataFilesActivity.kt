@@ -298,7 +298,7 @@ class HealthDataFilesActivity : Activity() {
     }
 
     private fun importMenu() = choose(R.string.common_import,
-        R.string.health_first_import_title to { open(HealthCenterActivity::class.java) { putExtra("health_import_center", true) } },
+        R.string.health_overview_import to { startActivity(healthCaptureIntent(this, names, HealthCaptureEntry.FILE)) },
         R.string.health_export_import_originals to { open(HealthCaptureActivity::class.java) {
             putExtra("health_pick_files", true); putExtra("health_original_only", true)
         } })
@@ -308,7 +308,7 @@ class HealthDataFilesActivity : Activity() {
         R.string.health_library_export to ::library)
 
     private fun tasksMenu() = choose(R.string.health_data_tasks,
-        R.string.health_import_queue_title to { open(HealthCaptureActivity::class.java) },
+        R.string.health_import_tasks to { open(HealthCaptureActivity::class.java) },
         R.string.health_export_history to { exportRecords(history = true) },
         R.string.health_library_export_history to { open(HealthOriginalExportHistoryActivity::class.java) {
             putExtra("health_original_export_test_id", names.fixture)

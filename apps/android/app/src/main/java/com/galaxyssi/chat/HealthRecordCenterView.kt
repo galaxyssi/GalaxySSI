@@ -31,7 +31,7 @@ internal class HealthRecordCenterView(
         val manual = tile(R.drawable.ic_hub_compose, Accent.GREEN, R.string.health_record_center_manual,
             R.string.health_measurement_context, "manual") { activity.open("manual") }
         val upload = tile(R.drawable.ic_settings_upload, Accent.BLUE, R.string.health_record_center_upload,
-            R.string.health_record_center_import_note, "import") { activity.open("import") }
+            R.string.health_record_center_import_note, "import", activity::pickHealthFile)
         val sources = tile(R.drawable.ic_settings_devices, Accent.VIOLET, R.string.health_record_center_devices,
             R.string.health_record_center_sources_note, "sources") {
             start(HealthSourcesActivity::class.java) { names.fixture?.let { putExtra("health_sources_test_id", it) } }

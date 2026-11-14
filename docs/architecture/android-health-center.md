@@ -102,11 +102,15 @@ system camera application rather than claiming the complete h06 design.
 
 ## Increment 3: Native Camera And Ordered Photo Drafts
 
-Report images also support an explicitly authorized vision-model transcription
-from the import task or review page, including recovery from a failed local
-recognition attempt. Auto selects an available Codex on a verified paired
-Desktop and applies the saved Codex configuration. This path requires online
-analysis and one explicit import confirmation for each image. The
+Health Center file entry points open the system document picker without an
+import hub. Local PDF and table parsing starts after selection. For report
+images, Auto selects an available Codex on a verified paired Desktop and
+applies the saved Codex configuration. With online analysis enabled, users
+can authorize the selected batch of images before opening the picker, or choose
+local import. Each authorized image goes directly to model transcription without
+waiting for local OCR or requiring a second tap. A changed privacy policy,
+disconnected target or interrupted Activity cannot authorize another upload.
+Existing local OCR tasks can still request explicitly authorized transcription. The
 request sends one upright JPEG of at most 100,000 bytes derived in memory from the encrypted original
 through a private, ephemeral Codex thread with search and Desktop tools disabled.
 The paired Desktop must advertise this capability before the phone can send an
@@ -119,12 +123,15 @@ and labels, and is schema-validated before it is retained in the encrypted
 page. Local OCR and its drafts remain separately available. The original
 identity, job state and consent version are checked before transmission and
 before accepting the result. Leaving the screen abandons the request locally
-and attempts to stop Codex on the same paired Desktop. Validated rows and
-their import receipt commit together; duplicate observations are linked without
-being overwritten. Unspecified fasting status is preserved. Rows without a
-valid unit, value, or collection timestamp are skipped rather than guessed.
-The result shows saved, duplicate, and skipped counts without a manual
-review step. Local OCR retains its separate review flow.
+and attempts to stop Codex on the same paired Desktop. Selected files are
+tracked separately; one failed image does not stop later items. A batch holds
+recognized results until all files have finished. One local form supplies only
+missing sampling dates, times, and glucose timing, preserving any values printed
+on each report. Complete reports need no form. Confirmed measurements and
+receipts commit together. A same-profile report observation of the same metric,
+unit, collection condition, and side within one hour can update the existing
+measurement, preserving its revision history and report sources. Unusable rows
+stay in the encrypted report with a reason. Local OCR retains its review flow.
 
 `HealthCameraActivity` implements a foreground-only rear Camera2 preview, an
 explicit shutter, optional device-supported fill light, report/device modes and

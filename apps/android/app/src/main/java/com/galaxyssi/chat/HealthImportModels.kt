@@ -16,6 +16,7 @@ internal data class HealthImportJob(
     val pageCount: Int = 0, val state: HealthImportState = HealthImportState.QUEUED, val error: String = "",
     val captureBatch: String = "", val captureSubmitted: Boolean = false, val documentPage: Int = 0, val originalOnly: Boolean = false,
     val keepOriginal: Boolean = true, val protectedPdf: Boolean = false, val modelRecognized: Boolean = false,
+    val modelFirst: Boolean = false,
 ) {
     fun json() = JSONObject().put("id", id).put("uri", sourceUri).put("created", createdAt).put("mode", mode)
         .put("camera", cameraToken).put("name", name).put("mime", mime).put("total", totalBytes).put("copied", copiedBytes)
@@ -24,12 +25,13 @@ internal data class HealthImportJob(
         .put("document_page", documentPage).put("original_only", originalOnly).put("keep_original", keepOriginal)
         .apply { if (protectedPdf) put("protected_pdf", true) }
         .apply { if (modelRecognized) put("model_recognized", true) }
+        .apply { if (modelFirst) put("model_first", true) }
     companion object {
         fun from(j: JSONObject) = HealthImportJob(j.getString("id"), j.getString("uri"), j.getLong("created"), j.getString("mode"),
             j.getString("camera"), j.getString("name"), j.getString("mime"), j.getLong("total"), j.getLong("copied"),
             j.getString("original"), j.getInt("next_page"), j.getInt("page_count"), HealthImportState.valueOf(j.getString("state")), j.getString("error"),
             j.optString("capture_batch"), j.optBoolean("capture_submitted"), j.optInt("document_page"), j.optBoolean("original_only"),
-            j.optBoolean("keep_original", true), j.optBoolean("protected_pdf"), j.optBoolean("model_recognized"))
+            j.optBoolean("keep_original", true), j.optBoolean("protected_pdf"), j.optBoolean("model_recognized"), j.optBoolean("model_first"))
     }
 }
 internal data class HealthOriginal(

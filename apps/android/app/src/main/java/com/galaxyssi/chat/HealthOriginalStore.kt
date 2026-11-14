@@ -302,6 +302,30 @@ internal class HealthOriginalStore(
         notifyChanged()
         return outcome
     }
+    fun completeReportVision(ids: List<String>,
+        operation: (List<Triple<HealthImportJob, HealthOriginal, HealthOcrPage>>) -> List<HealthReportImportOutcome>
+    ): List<HealthReportImportOutcome> {
+        val db = helper.writableDatabase
+        db.beginTransactionNonExclusive()
+        val outcomes = try {
+            val pages = ids.distinct().map { id ->
+                val job = job(id)?.takeIf { it.modelRecognized && it.state == HealthImportState.REVIEW }
+                    ?: throw HealthReportVisionChanged()
+                val source = original(job.originalId) ?: throw HealthReportVisionChanged()
+                val page = page(id, 1)?.takeIf { it.vision != null } ?: throw HealthReportVisionChanged()
+                Triple(job, source, page)
+            }
+            operation(pages).also { result ->
+                check(result.size == pages.size)
+                pages.zip(result).forEach { (entry, receipt) ->
+                    if (entry.third.visionImport != receipt) writeReportPage(db, entry.first.id, entry.third.copy(visionImport = receipt))
+                }
+                db.setTransactionSuccessful()
+            }
+        } finally { db.endTransaction() }
+        notifyChanged()
+        return outcomes
+    }
     @Synchronized fun saveReportVision(expected: HealthImportJob, source: HealthOriginal, result: HealthReportVisionResult,
         import: (() -> HealthReportImportOutcome)? = null): HealthReportImportOutcome? {
         val db = helper.writableDatabase

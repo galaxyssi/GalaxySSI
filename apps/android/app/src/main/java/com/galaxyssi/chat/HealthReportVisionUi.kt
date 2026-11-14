@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 
 internal data class HealthReportImportScreen(val id: String, val name: String, val stage: HealthReportImportStage,
     val bytes: Int = 0, val failure: Int? = null, val legacy: Boolean = false)
+internal data class HealthReportPickerApproval(val policy: HealthPrivacyPolicy, val target: HealthReportVisionTarget)
 
 internal class HealthReportVisionUi(private val activity: Activity, private val names: HealthOverviewDatabases,
     private val progress: (HealthReportImportScreen) -> Unit, private val completed: (String) -> Unit) {
@@ -23,8 +24,9 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
     private var dialog: AlertDialog? = null
     private var task: Job? = null
     private var generation = 0
+    private val supplementUi = HealthReportSupplementUi(activity)
 
-    fun clear() { generation++; task?.cancel(); task = null; dialog?.dismiss(); dialog = null }
+    fun clear() { generation++; task?.cancel(); task = null; dialog?.dismiss(); dialog = null; supplementUi.clear() }
     fun destroy() { clear(); tasks.cancel() }
     internal fun useFixtureGateway(value: HealthReportVisionGateway) {
         check(BuildConfig.DEBUG && names.fixture != null)
@@ -37,6 +39,38 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
             confirm(input, target)
         }
     }
+    fun chooseFile(cancel: () -> Unit, pick: (HealthReportPickerApproval?) -> Unit) {
+        clear()
+        run({
+            val policy = HealthPrivacyStore(activity.applicationContext, names.privacy).use { it.policy() }
+            if (!policy.online || !policy.metrics) null else reader.target()?.let { HealthReportPickerApproval(policy, it) }
+        }, { cancel() }) { approval ->
+            if (approval == null) { pick(null); return@run }
+            dialog = AlertDialog.Builder(activity).setTitle(R.string.health_choose_files)
+                .setMessage(activity.getString(R.string.health_report_picker_disclosure, approval.target.destination))
+                .setNegativeButton(R.string.health_report_picker_local) { _, _ -> dialog = null; pick(null) }
+                .setPositiveButton(R.string.health_report_picker_select) { _, _ -> dialog = null; pick(approval) }
+                .setOnCancelListener { dialog = null; cancel() }.show()
+        }
+    }
+    fun importSelected(job: HealthImportJob, approval: HealthReportPickerApproval, holdForBatch: Boolean = false) {
+        clear()
+        val screen = HealthReportImportScreen(job.id, job.name, HealthReportImportStage.COMPRESSING)
+        progress(screen)
+        run({
+            val input = reader.prepare(job.id)
+            if (input.privacy != approval.policy) throw HealthAccessBlocked()
+            input
+        }, { progress(screen.copy(failure = it)) }) { input -> start(input, approval.target, holdForBatch) }
+    }
+    fun completeReports(ids: List<String>, scope: HealthReportSupplementScope, finished: (Boolean) -> Unit) {
+        fun save(supplement: HealthReportSupplement) {
+            run({ reader.complete(ids, supplement) }, {
+                message(it); finished(false)
+            }) { finished(true) }
+        }
+        if (scope.needed) supplementUi.show(scope, ids.size, ::save) { finished(false) } else save(HealthReportSupplement())
+    }
     fun finishImport(id: String, name: String) {
         clear()
         val screen = HealthReportImportScreen(id, name, HealthReportImportStage.SAVING, legacy = true)
@@ -48,15 +82,18 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
             .setMessage(activity.getString(R.string.health_vision_disclosure, target.destination))
             .setNegativeButton(android.R.string.cancel, null).setPositiveButton(R.string.health_vision_action) { _, _ ->
                 dialog = null
-                val screen = HealthReportImportScreen(input.job.id, input.source.name, HealthReportImportStage.COMPRESSING)
-                val token = generation
-                var last = screen
-                progress(screen)
-                run({ reader.read(input, target) { stage, bytes ->
-                    val update = screen.copy(stage = stage, bytes = bytes)
-                    activity.runOnUiThread { if (token == generation) { last = update; progress(update) } }
-                } }, { progress(last.copy(failure = it)) }) { completed(input.job.id) }
+                start(input, target)
             }.show()
+    }
+    private fun start(input: HealthReportVisionInput, target: HealthReportVisionTarget, holdForBatch: Boolean = false) {
+        val screen = HealthReportImportScreen(input.job.id, input.source.name, HealthReportImportStage.COMPRESSING)
+        val token = generation
+        var last = screen
+        progress(screen)
+        run({ reader.read(input, target, holdForBatch) { stage, bytes ->
+            val update = screen.copy(stage = stage, bytes = bytes)
+            activity.runOnUiThread { if (token == generation) { last = update; progress(update) } }
+        } }, { progress(last.copy(failure = it)) }) { completed(input.job.id) }
     }
     private fun <T> run(work: suspend () -> T, failed: ((Int) -> Unit)? = null, success: (T) -> Unit) {
         val token = generation
@@ -77,6 +114,7 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
                         is HealthAnalysisInvalidReply -> R.string.health_vision_unreadable
                         is HealthReportCodexUnavailable -> R.string.health_vision_request_failed
                         is HealthImportFailure -> R.string.health_vision_image_failed
+                        is HealthReportTimeInvalid -> R.string.health_report_invalid_time
                         else -> R.string.health_report_storage_failed
                     }
                     (failed ?: ::message)(text)

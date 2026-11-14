@@ -266,7 +266,10 @@ class HealthOriginalLibraryActivity : Activity() {
         footer.addView(selectedCount)
         ui.add(footer, ui.line().apply {
             addView(ui.command(R.string.health_library_continue_import) {
-                open(HealthCenterActivity::class.java) { putExtra("health_import_center", true) }
+                if (!preparing) {
+                    openedChild = true
+                    startActivity(healthCaptureIntent(this@HealthOriginalLibraryActivity, names, HealthCaptureEntry.FILE))
+                }
             }.apply {
                 background = ui.background(stroke = getColor(R.color.separator), radius = 10)
                 setTextColor(getColor(R.color.text_primary)); tag = "health-library-import"

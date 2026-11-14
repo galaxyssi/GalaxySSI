@@ -17,7 +17,6 @@
     <string name="health_record_center_sources_note">健康平台与蓝牙设备</string>
     <string name="health_record_center_review">待核对</string>
     <string name="health_record_center_no_review">近期没有待核对的导入</string>
-    <string name="health_import_queue_title">上传与导入</string>
     <string name="health_capture_heading">每条记录，都有来源</string>
     <string name="health_capture_report">检验报告</string>
     <string name="health_capture_device">仪器读数</string>

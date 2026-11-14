@@ -4,6 +4,8 @@ import android.content.Context
 import java.time.ZoneId
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 internal class HealthReportVisionChanged : IllegalStateException()
 
@@ -27,7 +29,7 @@ internal class HealthReportVisionReader(private val context: Context, private va
     }
     fun target() = gateway.target(context)
 
-    suspend fun read(input: HealthReportVisionInput, target: HealthReportVisionTarget,
+    suspend fun read(input: HealthReportVisionInput, target: HealthReportVisionTarget, holdForBatch: Boolean = false,
         progress: (HealthReportImportStage, Int) -> Unit = { _, _ -> }): HealthReportImportOutcome {
         val task = currentCoroutineContext()
         return HealthPrivacyStore(context, names.privacy).use { privacy ->
@@ -62,12 +64,48 @@ internal class HealthReportVisionReader(private val context: Context, private va
                     HealthOriginalStore(context, names.originals, names.originalRoot(context),
                         records.takeIf { names.fixture == null }).use { store ->
                         val outcome = checkNotNull(store.saveReportVision(input.job, input.source, report) {
-                            save(records, input.job, input.source, report, bytes, task::ensureActive)
+                            saveOrStage(records, input.job, input.source, report, bytes, holdForBatch, task::ensureActive)
                         })
                         records.publishCommittedChanges()
                         releaseIfComplete(store, input.job.id, outcome)
                         outcome
                     }
+                }
+            }
+        }
+    }
+
+    suspend fun complete(ids: List<String>, supplement: HealthReportSupplement): List<HealthReportImportOutcome> {
+        currentCoroutineContext().ensureActive()
+        // Once the user confirms, finish the local transaction even if the Activity leaves the foreground.
+        return withContext(NonCancellable) {
+            val zone = ZoneId.systemDefault()
+            val now = System.currentTimeMillis()
+            HealthRecordStore(context, names.records).use { records ->
+                HealthOriginalStore(context, names.originals, names.originalRoot(context), records.takeIf { names.fixture == null }).use { store ->
+                    val outcomes = store.completeReportVision(ids) { pages ->
+                        val prepared = pages.map { (job, source, page) ->
+                            val report = requireNotNull(page.vision)
+                            val scope = report.supplementScope(job, source, page.visionImport, zone, now)
+                            val drafts = report.drafts(job, source, zone, now, supplement)
+                            if (scope.needsTime && drafts.any { it.measuredAt == 0L })
+                                throw HealthReportTimeInvalid()
+                            drafts to (page.visionImport to report.partial)
+                        }
+                        prepared.map { (drafts, info) ->
+                            val (receipt, partial) = info
+                            if (receipt != null && (receipt.contextConfirmed || !receipt.pendingConfirmation && receipt.skipped == 0)) receipt
+                            else records.saveVisionReport(drafts, partial, receipt?.imageBytes ?: 0, replaceNearby = true) {}.let { saved ->
+                                if (receipt == null || receipt.pendingConfirmation) saved.copy(contextConfirmed = true)
+                                else if (saved.saved == 0) receipt.copy(contextConfirmed = true)
+                                else saved.copy(saved = saved.saved + receipt.saved,
+                                    duplicates = (saved.duplicates - receipt.saved).coerceAtLeast(0), contextConfirmed = true)
+                            }
+                        }
+                    }
+                    records.publishCommittedChanges()
+                    ids.distinct().zip(outcomes).forEach { (id, result) -> releaseIfComplete(store, id, result) }
+                    outcomes
                 }
             }
         }
@@ -79,7 +117,7 @@ internal class HealthReportVisionReader(private val context: Context, private va
             HealthOriginalStore(context, names.originals, names.originalRoot(context),
                 records.takeIf { names.fixture == null }).use { store ->
                 val outcome = store.finishLegacyReportVision(id) { job, source, report ->
-                    save(records, job, source, report, 0, task::ensureActive)
+                    saveOrStage(records, job, source, report, 0, false, task::ensureActive)
                 }
                 records.publishCommittedChanges()
                 releaseIfComplete(store, id, outcome)
@@ -88,13 +126,19 @@ internal class HealthReportVisionReader(private val context: Context, private va
         }
     }
 
-    private fun save(records: HealthRecordStore, job: HealthImportJob, source: HealthOriginal,
-        report: HealthReportVisionResult, bytes: Int, checkActive: () -> Unit): HealthReportImportOutcome =
-        records.saveVisionReport(report.drafts(job, source, ZoneId.systemDefault(), System.currentTimeMillis()),
-            report.partial, bytes, checkActive)
+    private fun saveOrStage(records: HealthRecordStore, job: HealthImportJob, source: HealthOriginal,
+        report: HealthReportVisionResult, bytes: Int, holdForBatch: Boolean, checkActive: () -> Unit): HealthReportImportOutcome {
+        val zone = ZoneId.systemDefault()
+        val now = System.currentTimeMillis()
+        checkActive()
+        return if (holdForBatch || report.supplementScope(job, source, null, zone, now).needed)
+            HealthReportImportOutcome(0, 0, 0, report.partial, bytes, emptyList(), pendingConfirmation = true)
+        else records.saveVisionReport(report.drafts(job, source, zone, now),
+            report.partial, bytes, replaceNearby = true, checkActive = checkActive)
+    }
 
     private fun releaseIfComplete(store: HealthOriginalStore, id: String, outcome: HealthReportImportOutcome) {
-        if (outcome.skipped == 0 && !outcome.partial) runCatching { store.releaseReviewOriginal(id) }
+        if (!outcome.pendingConfirmation && outcome.skipped == 0 && !outcome.partial) runCatching { store.releaseReviewOriginal(id) }
     }
 
     companion object {

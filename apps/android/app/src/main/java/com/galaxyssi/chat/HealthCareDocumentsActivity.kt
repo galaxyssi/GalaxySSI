@@ -118,7 +118,7 @@ class HealthCareDocumentsActivity : Activity() {
     }
     private fun originals(content: LinearLayout, value: HealthCareDocumentSnapshot, files: HealthLibraryPage) {
         ui.add(content, ui.profileRow(getString(R.string.health_document_import)) {
-            startActivity(Intent(this, HealthCenterActivity::class.java).putHealthNavigationFixture(names).putExtra("health_import_center", true))
+            startActivity(healthCaptureIntent(this, names, HealthCaptureEntry.FILE))
         }.apply { tag = "document-import" }, 12)
         if (files.originals.isEmpty()) ui.add(content, ui.text(getString(R.string.health_document_library_empty), 15f, muted = true), 16)
         files.originals.forEach { original -> ui.add(content, ui.profileRow(original.name, original.mime) { choose(value, original, null) }

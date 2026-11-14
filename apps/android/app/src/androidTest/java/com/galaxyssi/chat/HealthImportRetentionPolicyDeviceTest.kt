@@ -21,7 +21,7 @@ class HealthImportRetentionPolicyDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
-    @Test fun privacyDefaultPersistsAndImportOverrideAppliesOnlyOnce() = fixture { names ->
+    @Test fun directFileImportFollowsThePersistentPrivacyDefault() = fixture { names ->
         val privacyIntent = Intent(context, HealthPrivacyActivity::class.java).putExtra("health_privacy_test_db", names.privacy)
         ActivityScenario.launch<HealthPrivacyActivity>(privacyIntent).use { scenario ->
             val tag = "health-privacy-RETAIN_IMPORT_ORIGINALS"
@@ -37,31 +37,16 @@ class HealthImportRetentionPolicyDeviceTest {
             await(scenario, tag) { !(it as Switch).isChecked && it.isEnabled }
         }
         assertFalse(policy(names).online)
-        val centerIntent = Intent(context, HealthCenterActivity::class.java).putExtra("health_import_center", true)
-            .putHealthNavigationFixture(names)
+        val centerIntent = Intent(context, HealthCenterActivity::class.java).putHealthNavigationFixture(names)
         ActivityScenario.launch<HealthCenterActivity>(centerIntent).use { center ->
-            val retention = "health-import-keep-original"
-            await(center, retention) { !(it as Switch).isChecked }
-            val first = importFile(center, names, "health-import-report", "report.pdf")
+            val first = importFile(center, names, "health-overview-import", "report.pdf")
             assertFalse(first.keepOriginal)
-            await(center, retention) { !(it as Switch).isChecked }
-            center.onActivity {
-                val control = it.window.decorView.findViewWithTag<Switch>(retention)
-                control.performClick()
-                assertTrue(control.isChecked)
-            }
-            center.recreate()
-            await(center, retention) { (it as Switch).isChecked }
-            val table = importFile(center, names, "health-import-table", "table.csv")
-            assertTrue(table.keepOriginal)
-            await(center, retention) { !(it as Switch).isChecked }
-            assertFalse(policy(names).retainImportOriginals)
-            val third = importFile(center, names, "health-import-report", "next.pdf")
-            assertFalse(third.keepOriginal)
             HealthPrivacyStore(context, names.privacy).use {
                 it.change(HealthPrivacyOption.RETAIN_IMPORT_ORIGINALS, true, it.policy().version)
             }
-            await(center, retention) { (it as Switch).isChecked }
+            center.recreate()
+            val table = importFile(center, names, "health-overview-import", "table.csv")
+            assertTrue(table.keepOriginal)
             HealthOriginalStore(context, names.originals, names.originalRoot(context)).use {
                 assertFalse(requireNotNull(it.job(first.id)).keepOriginal)
                 assertTrue(requireNotNull(it.job(table.id)).keepOriginal)

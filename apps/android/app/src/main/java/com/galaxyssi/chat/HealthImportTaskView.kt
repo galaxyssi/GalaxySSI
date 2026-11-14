@@ -51,10 +51,11 @@ internal class HealthImportTaskView(
         if (job.state in listOf(HealthImportState.CANCELLED, HealthImportState.FAILED))
             actions.addView(ui.row(context.getString(if (job.needsPdfPassword()) R.string.health_pdf_unlock else R.string.common_retry)) { retry(job) })
         if (job.needsPdfPassword()) actions.addView(ui.row(context.getString(R.string.health_manual), action = manual))
-        if (HealthReportVisionReader.eligible(job))
+        if (HealthReportVisionReader.eligible(job) && !job.modelFirst)
             actions.addView(ui.row(context.getString(R.string.health_vision_action)) { vision(job) })
-        if (job.nextPage > 0 && !job.protectedReviewPending()) actions.addView(ui.row(context.getString(
-            if (job.modelRecognized) R.string.health_report_view_result else R.string.health_review_title)) { review(job) })
+        if ((job.nextPage > 0 || job.modelFirst && job.state == HealthImportState.REVIEW) && !job.protectedReviewPending())
+            actions.addView(ui.row(context.getString(
+                if (job.modelRecognized || job.modelFirst) R.string.health_report_view_result else R.string.health_review_title)) { review(job) })
         if (job.state == HealthImportState.TABLE_REVIEW) actions.addView(ui.row(context.getString(R.string.health_table_title)) { review(job) })
         if (job.originalId.isNotBlank() && !job.modelRecognized)
             actions.addView(ui.row(context.getString(R.string.health_view_original)) { original(job) })

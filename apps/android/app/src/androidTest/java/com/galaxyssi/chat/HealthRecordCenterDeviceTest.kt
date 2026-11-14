@@ -45,9 +45,9 @@ class HealthRecordCenterDeviceTest {
             click(scenario, "health-record-center-manual")
             awaitTag(scenario, "health-field-systolic")
             back(scenario)
-            click(scenario, "health-record-center-import")
-            awaitTag(scenario, "health-import-center")
-            back(scenario)
+            val file = capture(HealthCaptureActivity::class.java) { click(scenario, "health-record-center-import") }
+            assertEquals(HealthCaptureEntry.FILE.name, file.getStringExtra("health_capture_entry"))
+            assertEquals(names, file.healthNavigationDatabases())
             val camera = capture(HealthCameraActivity::class.java) { click(scenario, "health-record-center-camera") }
             assertEquals("report", camera.getStringExtra("capture_mode"))
             assertFalse(camera.getBooleanExtra(HEALTH_KEEP_ORIGINAL, true))

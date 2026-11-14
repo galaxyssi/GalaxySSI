@@ -116,6 +116,8 @@ internal fun healthContextResource(value: String): Int = when (value) {
     "fasting" -> R.string.health_fasting
     "non_fasting" -> R.string.health_report_non_fasting
     "after_meal" -> R.string.health_after_meal
+    "after_meal_1h" -> R.string.health_report_after_meal_1h
+    "after_meal_2h" -> R.string.health_report_after_meal_2h
     "other" -> R.string.health_other
     "left" -> R.string.health_left
     "right" -> R.string.health_right

@@ -54,7 +54,7 @@ class HealthCenterActivity : Activity() {
     }
     private val overviewPrivacy = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
-            if (active && route in listOf("overview", "import")) {
+            if (active && route == "overview") {
                 if (overviewAction.isInitialized()) overviewAction.value.clear()
                 sensitiveDialogs.toList().forEach { it.dismiss() }
                 main.removeCallbacks(reloadOverview)
@@ -72,12 +72,7 @@ class HealthCenterActivity : Activity() {
     private val backStack = ArrayDeque<Triple<String, HealthMetric, String>>()
     internal var editor: HealthManualEditor? = null
     internal var saving = false
-    internal var keepImportedOriginal: Boolean? = null
-    internal fun clearImportRetentionChoice() {
-        if (keepImportedOriginal == null) return
-        keepImportedOriginal = null
-        if (active && route == "import") render()
-    }
+    internal fun pickHealthFile() = startActivity(healthCaptureIntent(this, overviewNames, HealthCaptureEntry.FILE))
     internal val stagingOcrReview get() = route == "review" && intent.getBooleanExtra("health_stage_ocr_review", false)
     private val sensitiveDialogs = mutableSetOf<android.app.Dialog>()
     private var nextPage: HealthPageCursor? = null
@@ -96,8 +91,6 @@ class HealthCenterActivity : Activity() {
             route = "review"
         } else if (savedInstanceState == null && intent.getBooleanExtra("health_functions", false)) {
             route = "functions"
-        } else if (savedInstanceState == null && intent.getBooleanExtra("health_import_center", false)) {
-            route = "import"
         } else if (savedInstanceState == null && intent.getBooleanExtra("health_manual", false)) {
             route = "manual"
         } else if (savedInstanceState == null && intent.getBooleanExtra("health_metric_records", false)) {
@@ -110,8 +103,7 @@ class HealthCenterActivity : Activity() {
             route = if (intent.getBooleanExtra("health_history", false)) "history" else "detail"
         }
         savedInstanceState?.let { state ->
-            keepImportedOriginal = state.getBoolean(HEALTH_KEEP_ORIGINAL).takeIf { state.containsKey(HEALTH_KEEP_ORIGINAL) }
-            route = state.getString("route", "overview").orEmpty().ifBlank { "overview" }
+            route = state.getString("route", "overview").orEmpty().ifBlank { "overview" }.let { if (it == "import") "overview" else it }
             selected = HealthMetric.entries.getOrElse(state.getInt("metric")) { HealthMetric.BLOOD_PRESSURE }
             recordId = state.getString("record", "").orEmpty()
             undoDeletionRevision = state.getInt("undoDeletionRevision").takeIf { route == "detail" } ?: 0
@@ -119,7 +111,7 @@ class HealthCenterActivity : Activity() {
             recordCenterScroll = state.getInt("recordCenterScroll")
             state.getStringArrayList("stack")?.forEach { encoded ->
                 val parts = encoded.split('|')
-                if (parts.size == 3) backStack.addLast(Triple(parts[0], HealthMetric.valueOf(parts[1]), parts[2]))
+                if (parts.size == 3 && parts[0] != "import") backStack.addLast(Triple(parts[0], HealthMetric.valueOf(parts[1]), parts[2]))
             }
         }
         root = ui.column().apply { setBackgroundColor(getColor(R.color.page_bg)) }
@@ -172,7 +164,6 @@ class HealthCenterActivity : Activity() {
         saveDraft()
         out.putString("route", route); out.putInt("metric", selected.ordinal); out.putString("record", recordId)
         if (route == "detail" && undoDeletionRevision > 0) out.putInt("undoDeletionRevision", undoDeletionRevision)
-        keepImportedOriginal?.let { out.putBoolean(HEALTH_KEEP_ORIGINAL, it) }
         out.putString("review", reviewKey)
         retainOverviewScroll(); out.putInt("overviewScroll", overviewScroll)
         out.putInt("recordCenterScroll", recordCenterScroll)
@@ -254,7 +245,6 @@ class HealthCenterActivity : Activity() {
             "detail" -> selected.titleResource()
             "history" -> R.string.health_revision_history
             "functions" -> R.string.health_functions
-            "import" -> R.string.health_first_import_title
             else -> R.string.health_title
         })
         when (route) {
@@ -271,16 +261,6 @@ class HealthCenterActivity : Activity() {
             "detail" -> renderDetail()
             "history" -> renderHistory()
             "functions" -> renderFunctions()
-            "import" -> {
-                val content = scrolling()
-                content.addView(ui.text(getString(R.string.health_loading), 14f, muted = true))
-                query({
-                    HealthPrivacyStore(applicationContext, overviewNames.privacy).use { it.policy().retainImportOriginals }
-                }) { retain ->
-                    content.removeAllViews()
-                    firstUse.showImport(content, retain)
-                }
-            }
             else -> renderOverview()
         }
     }

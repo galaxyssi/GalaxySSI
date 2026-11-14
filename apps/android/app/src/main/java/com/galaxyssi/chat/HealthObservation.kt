@@ -129,7 +129,7 @@ internal object HealthObservationPolicy {
         val unitlessLabel = draft.unit.isBlank() && recorded.isNotEmpty() && recorded.all { HealthResult.parse(it, draft.metric.form)?.kind == HealthResultKind.QUALITATIVE }
         if (draft.unit !in draft.metric.units && !unitlessLabel) return HealthValidationError(HealthValidationIssue.INVALID_UNIT)
         if (draft.measuredAt <= 0 || draft.measuredAt > now + 60_000) return HealthValidationError(HealthValidationIssue.INVALID_TIME)
-        if (draft.condition !in listOf("unspecified", "resting", "after_exercise", "fasting", "non_fasting", "after_meal", "other") ||
+        if (draft.condition !in healthGlucoseConditions && draft.condition !in setOf("resting", "after_exercise", "other") ||
             draft.side !in listOf("unspecified", "left", "right") || draft.note.length > 2000 ||
             draft.values.keys.any { it !in draft.metric.fields } || draft.reference.length > 200 || draft.reference.any(Char::isISOControl) ||
             draft.reportedValues.any { (field, raw) -> field !in draft.metric.fields || raw.length > HealthResult.MAX_LENGTH || raw.any(Char::isISOControl) })

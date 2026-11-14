@@ -23,11 +23,14 @@ internal object HealthReportVisionProvider : HealthReportVisionGateway by Health
         Omit unsupported or unreadable results. Use an empty string for any uncertain unit or reference.
         "collected" is a clearly labeled, unambiguous specimen collection or measurement timestamp as YYYY-MM-DD HH:mm[:ss]
         with its printed offset if present. If only a clearly labeled collection date is printed use YYYY-MM-DD.
-        Otherwise use "". Do not use the report date or date of birth.
+        Otherwise use "". Also check specimen/time headers, including Chinese labels such as sample collection time,
+        sampling time, and test/measurement time when they explicitly describe collection or measurement.
+        Do not use the report date, validation time, registration time, or date of birth.
         If the image contains results for multiple people or multiple sample times and the current sample
         cannot be isolated unambiguously, return no rows. Never mix rows from different samples.
         "partial" is true when any rows are omitted, unreadable, or unsupported. Return at most ${HealthReportVisionResult.MAX_ROWS} rows.
-        "fasting" is "fasting", "non_fasting", or "after_meal" only when that glucose sample is explicitly labeled as such.
+        "fasting" is "fasting", "non_fasting", "after_meal", "after_meal_1h", or "after_meal_2h"
+        only when that glucose sample is explicitly labeled as such.
         Otherwise use "". Do not infer fasting status from the collection time, values, or a reference interval.
         If no supported results are legible return {"rows":[],"collected":"","fasting":"","partial":true}. Do not return personal details.
         Use only the attached image. Do not use tools or create files. Return raw JSON, not Markdown.

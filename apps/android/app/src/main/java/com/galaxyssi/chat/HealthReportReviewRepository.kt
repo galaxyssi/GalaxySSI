@@ -71,7 +71,7 @@ internal class HealthReportReviewRepository(private val context: Context, privat
 
     private fun review(job: HealthImportJob, originals: HealthOriginalStore, tables: HealthTableStore,
         store: HealthReminderStore): HealthReportReview? {
-        if (job.modelRecognized) return null
+        if (job.modelRecognized || job.modelFirst) return null
         val original = originals.originalForJob(job.id)?.takeIf { it.id == job.originalId } ?: return null
         val disposition = store.reportDisposition(job.id)
         return when (job.state) {

@@ -120,39 +120,15 @@ class HealthOverviewUiDeviceTest {
             assertNull(find(it, "health-overview-BLOOD_PRESSURE-RECENT"))
         }
     }
-    @Test fun firstUseOffersOptionalSourcesAndReturnsFromTheImportCenterAfterRecreation() = screen { scenario, _ ->
+    @Test fun firstUseOffersOptionalSourcesAndAFilePickerWithoutAnImportHub() = screen { scenario, _ ->
         await(scenario, "health-first-existing")
         scenario.onActivity {
             listOf("health-overview-photo", "health-overview-manual", "health-overview-import", "health-overview-sources",
                 "health-first-add", "health-first-existing").forEach { key -> assertTrue(requireNotNull(find(it, key)).isClickable) }
             assertEquals(View.GONE, views(it.window.decorView).single { view -> view.tag == "health-reminders" }.visibility)
-            assertTrue(requireNotNull(find(it, "health-first-existing")).performClick())
         }
-        await(scenario, "health-import-keep-original")
-        scenario.onActivity {
-            assertNotNull(find(it, "health-import-center"))
-            listOf("health-import-camera", "health-import-report", "health-import-table", "health-import-restore")
-                .forEach { key -> assertTrue(requireNotNull(find(it, key)).isClickable) }
-            val retention = find(it, "health-import-keep-original") as android.widget.Switch
-            assertTrue(retention.isChecked)
-            retention.performClick()
-            assertFalse(retention.isChecked)
-        }
+        cancelPicker(scenario, "health-first-existing")
         scenario.recreate()
-        await(scenario, "health-import-restore")
-        scenario.onActivity { assertFalse((find(it, "health-import-keep-original") as android.widget.Switch).isChecked) }
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        if (InstrumentationRegistry.getArguments().getString("health_retention_screenshot") == "true") {
-            instrumentation.waitForIdleSync()
-            instrumentation.uiAutomation.takeScreenshot()?.let { image ->
-                try {
-                    java.io.File(context.getExternalFilesDir(null), "health-original-retention.png").outputStream().use {
-                        image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
-                    }
-                } finally { image.recycle() }
-            }
-        }
-        scenario.onActivity { it.onBackPressed() }
         await(scenario, "health-overview-first")
         scenario.onActivity {
             assertNotNull(find(it, "health-first-no-analysis"))
@@ -168,9 +144,29 @@ class HealthOverviewUiDeviceTest {
         scenario.onActivity {
             assertNull(find(it, "health-overview-first"))
             assertEquals(View.VISIBLE, views(it.window.decorView).single { view -> view.tag == "health-reminders" }.visibility)
-            assertTrue(requireNotNull(find(it, "health-overview-import")).performClick())
         }
-        await(scenario, "health-import-restore")
+        cancelPicker(scenario, "health-overview-import")
+        await(scenario, "health-overview-BLOOD_PRESSURE-RECENT")
+    }
+    private fun cancelPicker(scenario: ActivityScenario<HealthCenterActivity>, tag: String) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val launched = java.util.concurrent.atomic.AtomicReference<Intent>()
+        val monitor = object : android.app.Instrumentation.ActivityMonitor() {
+            override fun onStartActivity(intent: Intent): android.app.Instrumentation.ActivityResult? {
+                if (intent.action != Intent.ACTION_OPEN_DOCUMENT) return null
+                launched.set(Intent(intent))
+                return android.app.Instrumentation.ActivityResult(android.app.Activity.RESULT_CANCELED, null)
+            }
+        }
+        instrumentation.addMonitor(monitor)
+        try {
+            scenario.onActivity { assertTrue(requireNotNull(find(it, tag)).performClick()) }
+            val until = android.os.SystemClock.elapsedRealtime() + 10_000
+            while (launched.get() == null && android.os.SystemClock.elapsedRealtime() < until) android.os.SystemClock.sleep(40)
+            val picker = requireNotNull(launched.get())
+            assertTrue(picker.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false))
+            assertTrue("application/pdf" in requireNotNull(picker.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)))
+        } finally { instrumentation.removeMonitor(monitor) }
     }
     @Test fun revocationClearsVisibleDerivedAlertButKeepsRawRecordCard() = screen(seed = ::seedSleep) { scenario, names ->
         await(scenario, "health-overview-change")

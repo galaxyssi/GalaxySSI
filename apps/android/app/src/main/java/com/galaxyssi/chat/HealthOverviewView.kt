@@ -192,10 +192,12 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
                 setOnClickListener { action() }
             }, LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = ui.dp(if (childCount < 3) 4 else 0) })
         }
-        item(R.drawable.ic_agent_camera, R.string.health_overview_photo, "health-overview-photo") { start(HealthCaptureActivity::class.java) }
+        item(R.drawable.ic_agent_camera, R.string.health_overview_photo, "health-overview-photo") {
+            if (names.fixture == null) activity.startActivity(healthCaptureIntent(activity, names, HealthCaptureEntry.CAMERA))
+        }
         item(R.drawable.ic_health_heart, R.string.health_manual, "health-overview-manual") { activity.open("manual") }
         item(R.drawable.ic_chat_shortcut_file, R.string.health_overview_import, "health-overview-import") {
-            activity.open("import")
+            activity.pickHealthFile()
         }
         item(R.drawable.ic_protocol_link, R.string.health_sources_quick, "health-overview-sources") { start(HealthSourcesActivity::class.java) }
     }

@@ -36,7 +36,8 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
     private var ready = false
     var hasChanges = false
         private set
-    private val conditions = listOf("unspecified", "resting", "after_exercise", "fasting", "after_meal", "other", "non_fasting")
+    private val conditions = (listOf("unspecified", "resting", "after_exercise", "fasting", "after_meal", "other", "non_fasting") +
+        if (draft.metric == HealthMetric.GLUCOSE) listOf("after_meal_1h", "after_meal_2h") else listOf(draft.condition)).distinct()
     private val sides = listOf("unspecified", "left", "right")
 
     fun render() {
