@@ -83,7 +83,9 @@ class HealthOcrCandidatesTest {
         assertTrue(HealthOcrCandidates.suggest(job.copy(mode = "device"), original, HealthOcrPage(1, 1000, 1000, lines)).isEmpty())
     }
     @Test fun unrelatedHemoglobinTestsAreNeverRelabeledAsHemoglobin() {
-        assertTrue(suggest("Mean corpuscular hemoglobin 30 pg", "平均红细胞血红蛋白含量 30 pg", "MCH 30 pg").isEmpty())
+        val mch = suggest("Mean corpuscular hemoglobin 30 pg", "平均红细胞血红蛋白含量 30 pg", "MCH 30 pg")
+        assertEquals(List(3) { HealthMetric.MEAN_CORPUSCULAR_HEMOGLOBIN }, mch.map { it.metric })
+        assertTrue(mch.all { it.unit == "pg" && it.values["mch"] == "30" })
         assertEquals(listOf(HealthMetric.HBA1C, HealthMetric.HBA1C),
             suggest("Hemoglobin A1c 5.6 %", "糖化血红蛋白 5.6 %").map { it.metric })
     }
