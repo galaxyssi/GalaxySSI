@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_report_confirm_title">Complete report details</string>
+    <string name="health_report_confirm_note">Applies only to missing details in %1$d reports. Existing dates, times, and conditions are kept.</string>
+    <string name="health_report_confirm_later">Later</string>
+    <string name="health_report_confirm_save">Save measurements</string>
+    <string name="health_report_confirm_pending">Recognized · waiting for details</string>
+    <string name="health_report_pick_date_time">Select sampling date and time</string>
+    <string name="health_report_pick_time">Select sampling time</string>
+    <string name="health_report_invalid_time">Select a valid sampling time that is not in the future.</string>
+    <string name="health_report_glucose_condition">Blood glucose timing</string>
+    <string name="health_report_after_meal_1h">1 hour after a meal</string>
+    <string name="health_report_after_meal_2h">2 hours after a meal</string>
     <string name="health_vision_action">Recognize and import</string>
     <string name="health_report_picker_disclosure">Recipient: %1$s\n\nA compressed copy of each report image you select (up to 100 KB each) will be sent for automatic analysis. Images may include visible names. PDF and table files are processed on this device.</string>
     <string name="health_report_batch_heading">%1$d of %2$d files processed</string>

@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_report_confirm_title">补充采样信息</string>
+    <string name="health_report_confirm_note">只补充这 %1$d 份报告的缺失信息，已有的日期、时间和血糖状态不变。</string>
+    <string name="health_report_confirm_later">稍后再填</string>
+    <string name="health_report_confirm_save">写入测量记录</string>
+    <string name="health_report_confirm_pending">已识别，待补充采样信息</string>
+    <string name="health_report_pick_date_time">设置采样日期和时间</string>
+    <string name="health_report_pick_time">设置采样时间</string>
+    <string name="health_report_invalid_time">请选择有效的采样时间，不能晚于现在。</string>
+    <string name="health_report_glucose_condition">血糖采样状态</string>
+    <string name="health_report_after_meal_1h">餐后 1 小时</string>
+    <string name="health_report_after_meal_2h">餐后 2 小时</string>
     <string name="health_vision_action">识别并导入</string>
     <string name="health_report_picker_disclosure">接收方：%1$s\n\n选中的报告图片将逐张压缩至 100 KB 以内后发送并自动分析，副本可能包含图片上可见的姓名。PDF 和表格只在本机处理。</string>
     <string name="health_report_batch_heading">已处理 %1$d / %2$d 个文件</string>

@@ -124,13 +124,14 @@ page. Local OCR and its drafts remain separately available. The original
 identity, job state and consent version are checked before transmission and
 before accepting the result. Leaving the screen abandons the request locally
 and attempts to stop Codex on the same paired Desktop. Selected files are
-tracked separately; one failed image does not stop later items. Validated rows and
-their import receipt commit together; duplicate observations are linked without
-being overwritten. Unspecified fasting status is preserved. Rows without a
-valid unit, value, or collection timestamp stay in the encrypted report, with
-a per-row reason; they are not written to the measurement timeline.
-The result shows saved, duplicate, and report-only items without a manual
-review step. Local OCR retains its separate review flow.
+tracked separately; one failed image does not stop later items. A batch holds
+recognized results until all files have finished. One local form supplies only
+missing sampling dates, times, and glucose timing, preserving any values printed
+on each report. Complete reports need no form. Confirmed measurements and
+receipts commit together. A same-profile report observation of the same metric,
+unit, collection condition, and side within one hour can update the existing
+measurement, preserving its revision history and report sources. Unusable rows
+stay in the encrypted report with a reason. Local OCR retains its review flow.
 
 `HealthCameraActivity` implements a foreground-only rear Camera2 preview, an
 explicit shutter, optional device-supported fill light, report/device modes and

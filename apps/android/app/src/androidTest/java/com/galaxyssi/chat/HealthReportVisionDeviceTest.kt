@@ -75,8 +75,10 @@ class HealthReportVisionDeviceTest {
     @Test fun fileSelectionStartsRecognitionWithoutAnotherButton() = directSelection(revoke = false)
     @Test fun aRevokedPickerApprovalCannotDiscloseTheSelectedImage() = directSelection(revoke = true)
     @Test fun multipleSelectedReportsContinueAfterAFileFails() = directSelection(revoke = false, batch = true)
+    @Test fun batchHoldsAllMeasurementsUntilOneGlucoseConfirmation() =
+        directSelection(revoke = false, batch = true, confirm = true)
 
-    private fun directSelection(revoke: Boolean, batch: Boolean = false) {
+    private fun directSelection(revoke: Boolean, batch: Boolean = false, confirm: Boolean = false) {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         assumeTrue(android.os.Build.VERSION.SDK_INT >= 29)
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
@@ -101,8 +103,10 @@ class HealthReportVisionDeviceTest {
                         owner(activity).useFixtureGateway(gateway { bytes, _ ->
                             val index = calls.incrementAndGet()
                             assertTrue(bytes.size in 1..100_000)
-                            if (batch && index == 1) throw HealthReportCodexUnavailable()
-                            parsed.json().toString()
+                            if (batch && !confirm && index == 1) throw HealthReportCodexUnavailable()
+                            if (confirm && index == 1) parsed.copy(rows = listOf(
+                                HealthVisionRow(HealthMetric.GLUCOSE, mapOf("glucose" to "5.1"), "mmol/L", "", "Glucose 5.1 mmol/L")
+                            )).json().toString() else parsed.json().toString()
                         })
                 }
                 override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
@@ -134,11 +138,37 @@ class HealthReportVisionDeviceTest {
                             await(scenario) { store.jobs().size == 2 }
                             val jobs = store.jobs()
                             assertTrue(jobs.all { it.modelFirst })
+                            if (confirm) {
+                                assertEquals(HealthImportOutcome.COMPLETE, HealthImportPipeline(context, names.records).run(store, jobs.first().id))
+                                await(scenario) { calls.get() == 1 && store.page(jobs.first().id, 1)?.visionImport?.pendingConfirmation == true }
+                                scenario.onActivity { assertNull(supplement(it)) }
+                                HealthRecordStore(context, names.records).use { assertEquals(0L, it.count()) }
+                                assertEquals(HealthImportOutcome.COMPLETE, HealthImportPipeline(context, names.records).run(store, jobs.last().id))
+                                await(scenario) { supplement(it)?.window?.decorView?.findViewWithTag<View>("health-report-condition") != null }
+                                HealthRecordStore(context, names.records).use { assertEquals(0L, it.count()) }
+                                scenario.onActivity {
+                                    val sheet = supplement(it)!!
+                                    assertNull(sheet.window!!.decorView.findViewWithTag<View>("health-report-pick-time"))
+                                    sheet.window!!.decorView.findViewWithTag<android.widget.Spinner>("health-report-condition")!!.setSelection(3)
+                                    sheet.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+                                }
+                                await(scenario) { jobs.all { store.page(it.id, 1)?.visionImport?.contextConfirmed == true } }
+                                scenario.onActivity { assertFalse(supplement(it)?.isShowing == true) }
+                                HealthRecordStore(context, names.records).use {
+                                    assertEquals(3L, it.count())
+                                    assertEquals("after_meal_2h", it.recentSelf(System.currentTimeMillis(), 1, HealthMetric.GLUCOSE)
+                                        .single().draft.condition)
+                                }
+                                return@use
+                            }
                             jobs.forEach { assertEquals(HealthImportOutcome.COMPLETE,
                                 HealthImportPipeline(context, names.records).run(store, it.id)) }
                             await(scenario) { activity ->
                                 activity.window.decorView.findViewWithTag<android.widget.TextView>("health-import-batch-count")
-                                    ?.text?.toString() == activity.getString(R.string.health_report_batch_heading, 2, 2)
+                                    ?.text?.toString() == activity.getString(R.string.health_report_batch_heading, 2, 2) &&
+                                    views(activity.window.decorView).filterIsInstance<android.widget.TextView>().any {
+                                        it.text.toString() == activity.getString(R.string.health_report_batch_ready)
+                                    }
                             }
                             assertEquals(2, calls.get())
                             assertEquals(1, jobs.count { store.page(it.id, 1)?.visionImport?.saved == 2 })
@@ -375,7 +405,7 @@ class HealthReportVisionDeviceTest {
         } finally { worker?.let { assertTrue(it.awaitTermination(20, TimeUnit.SECONDS)) } }
     }
 
-    @Test fun unknownFastingDoesNotBlockSaveAndUnknownUnitsAreSkipped() = isolated { names, store, job ->
+    @Test fun knownTimeAndUnknownGlucoseConditionWaitForConfirmation() = isolated { names, store, job ->
         val result = parsed.copy(partial = true, rows = parsed.rows + listOf(
             HealthVisionRow(HealthMetric.GLUCOSE, mapOf("glucose" to "5.1"), "mmol/L", "", "Glucose 5.1 mmol/L"),
             HealthVisionRow(HealthMetric.ALT, mapOf("alt" to "20"), "", "", "ALT 20")))
@@ -389,11 +419,13 @@ class HealthReportVisionDeviceTest {
             }
         }
         HealthRecordStore(context, names.records).use { assertEquals(0L, it.count()) }
-        val outcome = runBlocking { reader.finishLegacy(job.id) }
+        assertTrue(runBlocking { reader.finishLegacy(job.id) }.pendingConfirmation)
+        HealthRecordStore(context, names.records).use { assertEquals(0L, it.count()) }
+        val outcome = runBlocking { reader.complete(listOf(job.id), HealthReportSupplement(condition = "after_meal_1h")).single() }
         assertEquals(3, outcome.saved); assertEquals(1, outcome.skipped); assertTrue(outcome.partial)
         HealthRecordStore(context, names.records).use { records ->
             val glucose = records.recordForEvidence(drafts.single { it.metric == HealthMetric.GLUCOSE })!!
-            assertEquals("unspecified", glucose.draft.condition)
+            assertEquals("after_meal_1h", glucose.draft.condition)
             assertEquals(java.time.Instant.parse("2026-01-12T00:30:00Z").toEpochMilli(), glucose.draft.measuredAt)
             assertNull(records.draft(HealthRecordStore.draftKey(drafts.single { it.metric == HealthMetric.ALT })))
             assertEquals(3L, records.count())
@@ -420,7 +452,7 @@ class HealthReportVisionDeviceTest {
         assertEquals(outcome, runBlocking { reader.finishLegacy(job.id) })
     }
 
-    @Test fun missingCollectionTimeDoesNotPromptOrInventATimestamp() = isolated { names, store, job ->
+    @Test fun reportDateIsKeptAndOnlyTheMissingTimeIsRequested() = isolated { names, store, job ->
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val report = parsed.copy(collected = "2026-01-12")
         store.saveReportVision(job, store.original(job.originalId)!!, report)
@@ -429,17 +461,24 @@ class HealthReportVisionDeviceTest {
         try {
             ActivityScenario.launch<HealthCaptureActivity>(intent).use { scenario ->
                 scenario.onActivity { worker = field(it, "worker") as ExecutorService }
-                await(scenario) { it.window.decorView.findViewWithTag<View>("health-report-import-summary") != null }
+                await(scenario) { supplement(it)?.window?.decorView?.findViewWithTag<View>("health-report-pick-time") != null }
                 scenario.onActivity { activity ->
                     assertNull(dialog(activity))
                     assertNull(activity.window.decorView.findViewWithTag<View>("health-report-open-records"))
-                    val labels = views(activity.window.decorView).filterIsInstance<android.widget.TextView>().map { it.text.toString() }
-                    assertTrue(activity.getString(R.string.health_report_recognized_only, 2) in labels)
-                    assertTrue(activity.getString(R.string.health_report_reason_time) in labels)
-                    assertTrue(labels.any { it.contains("<0.50 mg/L") })
+                    assertNull(supplement(activity)?.window?.decorView?.findViewWithTag<View>("health-report-condition"))
+                    assertFalse(supplement(activity)!!.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled)
+                    supplement(activity)!!.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
                 }
                 HealthRecordStore(context, names.records).use { assertEquals(0L, it.count()) }
-                assertEquals(2, store.page(job.id, 1)!!.visionImport!!.skipped)
+                assertTrue(store.page(job.id, 1)!!.visionImport!!.pendingConfirmation)
+                val result = runBlocking { HealthReportVisionReader(context, names).complete(listOf(job.id),
+                    HealthReportSupplement(time = java.time.LocalTime.of(8, 30))).single() }
+                HealthRecordStore(context, names.records).use { records ->
+                    val date = java.time.Instant.ofEpochMilli(records.record(result.recordIds.first())!!.draft.measuredAt)
+                        .atZone(ZoneId.systemDefault())
+                    assertEquals(java.time.LocalDate.of(2026, 1, 12), date.toLocalDate())
+                    assertEquals(java.time.LocalTime.of(8, 30), date.toLocalTime())
+                }
             }
         } finally { worker?.let { assertTrue(it.awaitTermination(20, TimeUnit.SECONDS)) } }
     }
@@ -453,14 +492,42 @@ class HealthReportVisionDeviceTest {
         val intent = Intent(context, HealthCaptureActivity::class.java).putExtra("health_job", job.id).putHealthNavigationFixture(names)
         ActivityScenario.launch<HealthCaptureActivity>(intent).use { scenario ->
             await(scenario) { it.window.decorView.findViewWithTag<View>("health-report-import-summary") != null }
+            await(scenario) { supplement(it)?.isShowing == true }
             scenario.onActivity { activity ->
                 val labels = views(activity.window.decorView).filterIsInstance<android.widget.TextView>().map { it.text.toString() }
                 assertTrue(activity.getString(R.string.health_report_recognized_only, 2) in labels)
                 assertTrue(activity.getString(R.string.health_report_reason_time) in labels)
                 assertNull(dialog(activity))
+                supplement(activity)!!.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
             }
         }
         HealthPrivacyStore(context, names.privacy).use { assertTrue(it.page().entries.isEmpty()) }
         HealthRecordStore(context, names.records).use { assertEquals(0L, it.count()) }
+    }
+
+    private fun supplement(activity: HealthCaptureActivity) =
+        field(field(owner(activity), "supplementUi")!!, "dialog") as? AlertDialog
+
+    @Test fun nearbyReportReplacesAtOneHourButPreservesOtherConditionsAndProvenance() = isolated { names, store, job ->
+        val firstAt = System.currentTimeMillis() - 15_000_000L
+        val original = store.original(job.originalId)!!
+        fun draft(id: String, at: Long, condition: String, value: String): HealthDraft =
+            HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to value), "mmol/L", at, condition,
+                evidence = HealthEvidence(original.id, job.id, id, original.sha256, 1, "Glucose $value", recognition = HealthRecognition.MODEL))
+        val first = draft("first", firstAt, "fasting", "5.1")
+        val revised = draft("second", firstAt + 3_600_000, "fasting", "5.3")
+        val afterMeal = draft("third", revised.measuredAt, "after_meal_1h", "5.6")
+        val outside = draft("fourth", revised.measuredAt + 3_600_001, "fasting", "5.4")
+        HealthRecordStore(context, names.records).use { records ->
+            fun save(draft: HealthDraft) = records.saveVisionReport(listOf(draft), false, 0, replaceNearby = true) {}.recordIds.single()
+            val id = save(first)
+            assertEquals(id, save(revised))
+            assertEquals("5.3", records.record(id)!!.draft.values["glucose"])
+            assertEquals(2, records.record(id)!!.revision)
+            assertEquals(id, records.recordForOcrLink(first)?.id)
+            assertNotEquals(id, save(afterMeal))
+            assertNotEquals(id, save(outside))
+            assertEquals(3L, records.count())
+        }
     }
 }

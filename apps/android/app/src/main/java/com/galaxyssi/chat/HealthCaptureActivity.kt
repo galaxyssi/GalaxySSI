@@ -68,6 +68,8 @@ class HealthCaptureActivity : Activity() {
     private var batchStage: HealthReportImportScreen? = null
     private val batchFailures = mutableMapOf<String, Int>()
     private val batchSourceFailures = mutableSetOf<String>()
+    private val promptedReportGroups = mutableSetOf<String>()
+    private var confirmingReports = false
     private var batchRefreshQueued = false
     private val refreshBatch = Runnable { batchRefreshQueued = false; refresh() }
     private var choosingDocument = false
@@ -126,6 +128,7 @@ class HealthCaptureActivity : Activity() {
         page = state?.getInt("page", 1) ?: 1
         batchIds = state?.getStringArrayList("file_batch").orEmpty().filter(HealthProfilePolicy::uuid)
         batchSourceFailures.addAll(state?.getStringArrayList("batch_source_failures").orEmpty().filter { it in batchIds })
+        promptedReportGroups.addAll(state?.getStringArrayList("report_prompts").orEmpty())
         candidateOffset = state?.getInt("candidate_offset", 0) ?: 0
         selectedCandidate = state?.getString("selected_candidate").orEmpty()
         reviewSelectionJob = state?.getString("review_selection_job").orEmpty()
@@ -188,6 +191,7 @@ class HealthCaptureActivity : Activity() {
         visionUi.clear()
         reportProgress = null
         batchRunning = ""; batchStage = null
+        confirmingReports = false
         legacyReportStarted = ""
         quickReportId = ""
         if (!choosingDocument) {
@@ -217,6 +221,7 @@ class HealthCaptureActivity : Activity() {
         out.putInt("candidate_offset", candidateOffset)
         if (batchIds.isNotEmpty()) out.putStringArrayList("file_batch", ArrayList(batchIds))
         if (batchSourceFailures.isNotEmpty()) out.putStringArrayList("batch_source_failures", ArrayList(batchSourceFailures))
+        if (promptedReportGroups.isNotEmpty()) out.putStringArrayList("report_prompts", ArrayList(promptedReportGroups))
         out.putString("selected_candidate", selectedCandidate)
         out.putString("review_selection_job", reviewSelectionJob)
         out.putStringArrayList("review_selection", ArrayList(reviewSelection.values.map { it.encode() }))
@@ -233,7 +238,7 @@ class HealthCaptureActivity : Activity() {
     }
     @Deprecated("Native activity back callback") override fun onBackPressed() = back()
     private fun back() {
-        if (savingReview) return
+        if (savingReview || confirmingReports) return
         if (route == "report_import") { visionUi.clear(); reportProgress = null; legacyReportStarted = "" }
         if (stack.isEmpty()) { finish(); return }
         val previous = stack.removeLast(); route = previous.first; selectedId = previous.second; page = previous.third
@@ -290,7 +295,18 @@ class HealthCaptureActivity : Activity() {
             val result = runCatching {
                 when (currentRoute) {
                     "direct_file" -> CaptureSnapshot(job = id.takeIf(String::isNotBlank)?.let(originals::job))
-                    "file_batch" -> CaptureSnapshot(jobs = picks.mapNotNull(originals::job))
+                    "file_batch" -> {
+                        val jobs = picks.mapNotNull(originals::job)
+                        CaptureSnapshot(jobs = jobs, confirmations = jobs.filter { it.modelRecognized }.mapNotNull { job ->
+                            val page = originals.page(job.id, 1) ?: return@mapNotNull null
+                            val source = originals.original(job.originalId) ?: return@mapNotNull null
+                            val receipt = page.visionImport ?: return@mapNotNull null
+                            val vision = page.vision ?: return@mapNotNull null
+                            ReportConfirmation(job.id, receipt, vision.supplementScope(job, source, receipt,
+                                java.time.ZoneId.systemDefault(), System.currentTimeMillis()),
+                                vision.rows.takeIf { receipt.pendingConfirmation }.orEmpty())
+                        })
+                    }
                     "original" -> {
                         val original = originals.original(id)
                         val records = HealthRecordStore(applicationContext, names.records).use { it.originalPage(id, after = recordCursor) }
@@ -308,7 +324,11 @@ class HealthCaptureActivity : Activity() {
                             }
                             val deferred = if (outcome == null || job == null) emptyList() else
                                 scanned?.vision?.deferredRows(outcome, job, original).orEmpty()
-                            CaptureSnapshot(job = job, original = original, page = scanned, saved = saved, deferred = deferred)
+                            val scope = if (job == null || original == null || outcome == null) null else scanned.vision
+                                ?.supplementScope(job, original, outcome, java.time.ZoneId.systemDefault(), System.currentTimeMillis())
+                            CaptureSnapshot(job = job, original = original, page = scanned, saved = saved, deferred = deferred,
+                                confirmations = if (job != null && outcome != null && scope != null)
+                                    listOf(ReportConfirmation(job.id, outcome, scope, scanned?.vision?.rows.orEmpty())) else emptyList())
                         } else {
                             val zone = java.time.ZoneId.systemDefault()
                             val suggestions = if (job == null || original == null || scanned == null) emptyList()
@@ -341,7 +361,7 @@ class HealthCaptureActivity : Activity() {
     private fun render(screen: String, data: CaptureSnapshot) {
         healthFunctions.visibility = View.VISIBLE
         if (screen == "file_batch") {
-            renderFileBatch(data.jobs)
+            renderFileBatch(data.jobs, data.confirmations)
             return
         }
         if (screen == "direct_file") {
@@ -434,7 +454,26 @@ class HealthCaptureActivity : Activity() {
             }
         }
     }
-    private fun renderFileBatch(jobs: List<HealthImportJob>) {
+    private fun confirmReports(key: String, reports: List<ReportConfirmation>, force: Boolean = false) {
+        if (reports.isEmpty() || confirmingReports) return
+        val scope = reports.fold(HealthReportSupplementScope()) { combined, report -> combined + report.scope }
+        if (!force && key in promptedReportGroups) return
+        if (scope.needed) promptedReportGroups += key
+        confirmingReports = true
+        visionUi.completeReports(reports.map { it.id }, scope) { success ->
+            confirmingReports = false
+            if (!success) promptedReportGroups += key
+            generation++; refresh()
+        }
+    }
+    private fun showRecognizedFields(content: LinearLayout, rows: List<HealthVisionRow>) {
+        rows.forEach { row ->
+            val value = row.metric.fields.mapNotNull(row.values::get).joinToString(" / ")
+            ui.add(content, ui.text("${getString(row.metric.titleResource())}: ${listOf(value, row.unit).filter(String::isNotBlank).joinToString(" ")}",
+                13f, muted = true), 2)
+        }
+    }
+    private fun renderFileBatch(jobs: List<HealthImportJob>, reports: List<ReportConfirmation>) {
         healthFunctions.visibility = View.INVISIBLE
         title.text = getString(R.string.health_choose_files)
         val approval = selectedApproval
@@ -443,7 +482,7 @@ class HealthCaptureActivity : Activity() {
                 HealthReportVisionReader.eligible(it) && it.id !in batchFailures }
             if (next != null) {
                 batchRunning = next.id
-                visionUi.importSelected(next, approval)
+                visionUi.importSelected(next, approval, holdForBatch = true)
                 return
             }
         }
@@ -457,10 +496,17 @@ class HealthCaptureActivity : Activity() {
             }
         }
         val finished = batchIds.count { done(it, byId[it]) }
+        val ready = finished == batchIds.size && batchRunning.isEmpty()
+        val pending = reports.filter { it.receipt.pendingConfirmation || it.scope.needed }
+        val key = "batch:${batchIds.firstOrNull().orEmpty()}"
+        val byReport = reports.associateBy { it.id }
         val previous = (body.getChildAt(0) as? ScrollView)?.scrollY ?: 0
         content().apply {
             addView(ui.text(getString(R.string.health_report_batch_heading, finished, batchIds.size), 18f, bold = true)
                 .apply { tag = "health-import-batch-count" })
+            if (ready && pending.isNotEmpty()) ui.add(this, ui.command(R.string.health_report_confirm_title) {
+                confirmReports(key, pending, force = true)
+            }.apply { tag = "health-report-complete-batch" }, 10)
             batchIds.forEach { id ->
                 val job = byId[id]
                 val stage = batchStage?.takeIf { it.id == id }
@@ -473,6 +519,7 @@ class HealthCaptureActivity : Activity() {
                         HealthReportImportStage.SAVING -> R.string.health_report_saving
                     })
                     job == null -> getString(R.string.health_import_preparing)
+                    ready && byReport[id]?.receipt?.pendingConfirmation == true -> getString(R.string.health_report_confirm_pending)
                     job.modelRecognized || job.state in setOf(HealthImportState.TABLE_REVIEW, HealthImportState.ORIGINAL_ONLY) ->
                         getString(R.string.health_report_batch_ready)
                     job.modelFirst && job.state == HealthImportState.REVIEW ->
@@ -480,7 +527,7 @@ class HealthCaptureActivity : Activity() {
                     else -> jobState(job)
                 }
                 val name = job?.name?.takeIf(String::isNotBlank) ?: getString(R.string.health_import_preparing)
-                val action: (() -> Unit)? = if (job == null || finished < batchIds.size) null else when {
+                val action: (() -> Unit)? = if (job == null || !ready || byReport[id]?.receipt?.pendingConfirmation == true) null else when {
                     job.needsPdfPassword() -> ({ retry(job) })
                     job.state == HealthImportState.TABLE_REVIEW -> ({
                         startActivity(Intent(this@HealthCaptureActivity, HealthTableActivity::class.java)
@@ -498,12 +545,14 @@ class HealthCaptureActivity : Activity() {
                 ui.add(this, if (action == null) ui.column().apply {
                     addView(ui.text(name, 15f, bold = true))
                     ui.add(this, ui.text(description, 13f, muted = true), 2)
+                    if (ready) showRecognizedFields(this, byReport[id]?.rows.orEmpty())
                 } else ui.row(name, description, action), 12)
             }
         }
         if (previous > 0) (body.getChildAt(0) as? ScrollView)?.let { scroll ->
             scroll.post { if (scroll.parent === body) scroll.scrollTo(0, previous) }
         }
+        if (ready) confirmReports(key, pending)
     }
     private fun renderReportImport(data: CaptureSnapshot) {
         if (route != "report_import") route = "report_import"
@@ -515,9 +564,21 @@ class HealthCaptureActivity : Activity() {
         when {
             outcome != null -> {
                 reportProgress = null
-                reportView.result(content(), name, outcome, data.saved, data.deferred) {
+                val result = content()
+                if (outcome.pendingConfirmation) {
+                    result.addView(ui.text(name, 18f, bold = true))
+                    ui.add(result, ui.text(getString(R.string.health_report_confirm_pending), 14f, muted = true), 8)
+                    showRecognizedFields(result, data.confirmations.singleOrNull()?.rows.orEmpty())
+                } else reportView.result(result, name, outcome, data.saved, data.deferred) {
                     startActivity(Intent(this, HealthCenterActivity::class.java)
                         .putExtra("health_records", true).putHealthNavigationFixture(names))
+                }
+                val pending = data.confirmations.filter { it.receipt.pendingConfirmation || it.scope.needed }
+                if (pending.isNotEmpty()) {
+                    ui.add(result, ui.command(R.string.health_report_confirm_title) {
+                        confirmReports(selectedId, pending, force = true)
+                    }.apply { tag = "health-report-complete-single" }, 12)
+                    confirmReports(selectedId, pending)
                 }
             }
             reportProgress?.id == selectedId -> Unit
@@ -1229,6 +1290,9 @@ class HealthCaptureActivity : Activity() {
         val review: List<HealthOcrReviewRow> = emptyList(), val hasMore: Boolean = false, val available: Boolean = true, val pendingPhoto: Boolean = false,
         val recordsNext: HealthPageCursor? = null, val tableJobs: Map<String, HealthTableBatch> = emptyMap(),
         val sourceContext: HealthOcrSourceContext? = null, val quickReport: HealthImportJob? = null,
-        val deferred: List<Pair<HealthVisionRow, HealthReportDeferred>> = emptyList())
+        val deferred: List<Pair<HealthVisionRow, HealthReportDeferred>> = emptyList(),
+        val confirmations: List<ReportConfirmation> = emptyList())
+    private data class ReportConfirmation(val id: String, val receipt: HealthReportImportOutcome, val scope: HealthReportSupplementScope,
+        val rows: List<HealthVisionRow>)
     companion object { private const val PICK = 81; private const val CAMERA = 82; private const val EXPORT = 83; private const val CROP = 84; private const val CAMERA_PERMISSION = 85; private const val NATIVE_CAMERA = 86; private const val OCR_EDITOR = 87 }
 }

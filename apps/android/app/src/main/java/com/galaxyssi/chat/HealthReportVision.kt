@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import java.time.ZoneId
+import java.time.LocalDate
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -32,25 +33,48 @@ internal data class HealthReportVisionResult(val rows: List<HealthVisionRow>, va
     init {
         require(rows.size in 1..MAX_ROWS && rows.distinct() == rows)
         require(collected.length <= 80 && collected.none(Char::isISOControl))
-        require(fasting in setOf("", "fasting", "non_fasting", "after_meal"))
+        require(fasting.isEmpty() || fasting in healthGlucoseConditions)
     }
     fun json() = JSONObject().put("rows", JSONArray(rows.map { it.json() })).put("collected", collected).put("partial", partial)
         .apply { if (fasting.isNotEmpty()) put("fasting", fasting) }
 
-    fun drafts(job: HealthImportJob, original: HealthOriginal, zone: ZoneId, now: Long): List<HealthDraft> {
+    private fun dateOnly(): LocalDate? = runCatching { LocalDate.parse(collected) }.getOrNull()
+
+    fun drafts(job: HealthImportJob, original: HealthOriginal, zone: ZoneId, now: Long,
+        supplement: HealthReportSupplement? = null): List<HealthDraft> {
         val measuredAt = HealthOcrSourceContext.readTimestamp(collected, zone)?.millis?.takeIf { it in 1..now } ?: 0L
+        val timestamp = measuredAt.takeIf { it > 0 } ?: supplement?.let {
+            val date = dateOnly() ?: it.date
+            if (date == null || it.time == null) null else healthReportSupplementTime(date, it.time, zone, now)
+        } ?: 0L
         return rows.map { row ->
             val values = row.values.mapValues { (_, raw) -> HealthResult.parse(raw, row.metric.form)!!.let {
                 if (it.kind == HealthResultKind.NUMBER) it.number else it.raw
             } }
             val key = AgentNativeJsonCodec.sha256(mapOf("metric" to row.metric.name, "values" to row.values,
                 "unit" to row.unit, "reference" to row.reference, "source" to row.source, "collected" to collected))
-            HealthDraft(row.metric, values, row.unit, measuredAt,
-                condition = fasting.takeIf { row.metric == HealthMetric.GLUCOSE && it.isNotEmpty() } ?: "unspecified",
+            HealthDraft(row.metric, values, row.unit, timestamp,
+                condition = if (row.metric == HealthMetric.GLUCOSE) fasting.takeUnless { it.isBlank() || it == "unspecified" }
+                    ?: supplement?.condition ?: "unspecified" else "unspecified",
                 evidence = HealthEvidence(original.id, job.id,
                 "model-$key", original.sha256, 1, row.source, documentPage = job.documentPage, recognition = HealthRecognition.MODEL),
                 reference = row.reference, reportedValues = row.values.filter { (field, raw) -> raw != values[field] })
         }
+    }
+
+    fun supplementScope(job: HealthImportJob, source: HealthOriginal, receipt: HealthReportImportOutcome?,
+        zone: ZoneId, now: Long): HealthReportSupplementScope {
+        if (receipt?.contextConfirmed == true || receipt != null && !receipt.pendingConfirmation && receipt.skipped == 0)
+            return HealthReportSupplementScope()
+        val drafts = drafts(job, source, zone, now)
+        val conflicts = HealthReportDeferred.conflicts(drafts)
+        val repairable = drafts.filter { draft ->
+            HealthReportDeferred.reason(draft, draft.metric in conflicts) in setOf(null, HealthReportDeferred.SAMPLE_TIME) &&
+                (receipt == null || receipt.pendingConfirmation || draft.measuredAt == 0L)
+        }
+        val time = repairable.any { it.measuredAt == 0L }
+        return HealthReportSupplementScope(time, time && dateOnly() == null,
+            repairable.any { it.metric == HealthMetric.GLUCOSE && it.condition == "unspecified" })
     }
 
     fun deferredRows(outcome: HealthReportImportOutcome, job: HealthImportJob, original: HealthOriginal?): List<Pair<HealthVisionRow, HealthReportDeferred>> {

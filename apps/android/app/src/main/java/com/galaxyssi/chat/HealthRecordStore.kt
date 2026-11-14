@@ -760,7 +760,7 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             return HealthOcrBatchResult.Saved(items.size - linked, linked)
         } finally { db.endTransaction(); publishCommittedChanges() }
     }
-    @Synchronized fun saveVisionReport(drafts: List<HealthDraft>, partial: Boolean, imageBytes: Int,
+    @Synchronized fun saveVisionReport(drafts: List<HealthDraft>, partial: Boolean, imageBytes: Int, replaceNearby: Boolean = false,
         checkActive: () -> Unit): HealthReportImportOutcome {
         require(drafts.size <= HealthReportVisionResult.MAX_ROWS)
         val db = helper.writableDatabase
@@ -788,8 +788,16 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                     skipped++
                     continue
                 }
-                when (val result = saveWithinTransaction(confirmed)) {
-                    is HealthSaveResult.Saved -> { saved++; records += result.record.id }
+                val nearby = if (replaceNearby) nearbyReportMeasurement(db, confirmed) else null
+                val replacement = nearby?.takeUnless {
+                    HealthObservationPolicy.duplicateKey(it) == HealthObservationPolicy.duplicateKey(HealthObservationPolicy.observation(confirmed))
+                }
+                val next = replacement?.let { confirmed.copy(recordId = it.id, revision = it.revision) } ?: confirmed
+                when (val result = saveWithinTransaction(next)) {
+                    is HealthSaveResult.Saved -> {
+                        if (replacement != null) retainReportSources(db, replacement, result.record)
+                        saved++; records += result.record.id
+                    }
                     is HealthSaveResult.Duplicate -> {
                         val existing = record(result.id)
                         if (existing == null) throw HealthReportVisionChanged()
@@ -806,6 +814,36 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
             db.setTransactionSuccessful()
             return HealthReportImportOutcome(saved, duplicates, skipped, partial, imageBytes, records.toList(), deferred)
         } finally { db.endTransaction(); publishCommittedChanges() }
+    }
+    private fun nearbyReportMeasurement(db: SQLiteDatabase, draft: HealthDraft): HealthObservation? {
+        val hour = 3_600_000L
+        val low = (draft.measuredAt - hour).coerceAtLeast(1L)
+        val high = draft.measuredAt + hour
+        return db.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations " +
+            "WHERE metric=? AND deleted=0 AND measured_at BETWEEN ? AND ? AND original_id IS NOT NULL AND external_key IS NULL " +
+            "ORDER BY ABS(measured_at-?), measured_at DESC, id DESC",
+            arrayOf(draft.metric.name, low.toString(), high.toString(), draft.measuredAt.toString())).use { rows ->
+            while (rows.moveToNext()) {
+                val record = decode(rows)
+                val prior = record.draft
+                if (record.profileId == "self" && record.source == "ocr" && prior.unit == draft.unit &&
+                    prior.condition == draft.condition && prior.side == draft.side) return@use record
+            }
+            null
+        }
+    }
+    private fun retainReportSources(db: SQLiteDatabase, previous: HealthObservation, updated: HealthObservation) {
+        previous.draft.evidence?.takeIf { it.kind == "ocr" }?.let {
+            if (ocrLinkKey(it) != updated.draft.evidence?.let(::ocrLinkKey)) insertSourceLink(updated, it, ocrLinkKey(it))
+        }
+        db.rawQuery("SELECT original_id,job_id,evidence_key,payload FROM health_source_links " +
+            "WHERE record_id=? AND revision=? AND evidence_key<>''",
+            arrayOf(previous.id, previous.revision.toString())).use { rows ->
+            while (rows.moveToNext()) {
+                val key = rows.getString(2)
+                insertSourceLink(updated, readSourceLink(previous, rows.getString(0), rows.getString(1), key, rows.getBlob(3)), key)
+            }
+        }
     }
     @Synchronized fun importHealthConnect(rows: List<HealthConnectMeasurement>, ensureActive: () -> Unit): Int {
         require(rows.size <= HealthConnectImport.MAX_ROWS)

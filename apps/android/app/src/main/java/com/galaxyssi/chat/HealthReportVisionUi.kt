@@ -24,8 +24,9 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
     private var dialog: AlertDialog? = null
     private var task: Job? = null
     private var generation = 0
+    private val supplementUi = HealthReportSupplementUi(activity)
 
-    fun clear() { generation++; task?.cancel(); task = null; dialog?.dismiss(); dialog = null }
+    fun clear() { generation++; task?.cancel(); task = null; dialog?.dismiss(); dialog = null; supplementUi.clear() }
     fun destroy() { clear(); tasks.cancel() }
     internal fun useFixtureGateway(value: HealthReportVisionGateway) {
         check(BuildConfig.DEBUG && names.fixture != null)
@@ -52,7 +53,7 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
                 .setOnCancelListener { dialog = null; cancel() }.show()
         }
     }
-    fun importSelected(job: HealthImportJob, approval: HealthReportPickerApproval) {
+    fun importSelected(job: HealthImportJob, approval: HealthReportPickerApproval, holdForBatch: Boolean = false) {
         clear()
         val screen = HealthReportImportScreen(job.id, job.name, HealthReportImportStage.COMPRESSING)
         progress(screen)
@@ -60,7 +61,15 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
             val input = reader.prepare(job.id)
             if (input.privacy != approval.policy) throw HealthAccessBlocked()
             input
-        }, { progress(screen.copy(failure = it)) }) { input -> start(input, approval.target) }
+        }, { progress(screen.copy(failure = it)) }) { input -> start(input, approval.target, holdForBatch) }
+    }
+    fun completeReports(ids: List<String>, scope: HealthReportSupplementScope, finished: (Boolean) -> Unit) {
+        fun save(supplement: HealthReportSupplement) {
+            run({ reader.complete(ids, supplement) }, {
+                message(it); finished(false)
+            }) { finished(true) }
+        }
+        if (scope.needed) supplementUi.show(scope, ids.size, ::save) { finished(false) } else save(HealthReportSupplement())
     }
     fun finishImport(id: String, name: String) {
         clear()
@@ -76,12 +85,12 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
                 start(input, target)
             }.show()
     }
-    private fun start(input: HealthReportVisionInput, target: HealthReportVisionTarget) {
+    private fun start(input: HealthReportVisionInput, target: HealthReportVisionTarget, holdForBatch: Boolean = false) {
         val screen = HealthReportImportScreen(input.job.id, input.source.name, HealthReportImportStage.COMPRESSING)
         val token = generation
         var last = screen
         progress(screen)
-        run({ reader.read(input, target) { stage, bytes ->
+        run({ reader.read(input, target, holdForBatch) { stage, bytes ->
             val update = screen.copy(stage = stage, bytes = bytes)
             activity.runOnUiThread { if (token == generation) { last = update; progress(update) } }
         } }, { progress(last.copy(failure = it)) }) { completed(input.job.id) }
@@ -105,6 +114,7 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
                         is HealthAnalysisInvalidReply -> R.string.health_vision_unreadable
                         is HealthReportCodexUnavailable -> R.string.health_vision_request_failed
                         is HealthImportFailure -> R.string.health_vision_image_failed
+                        is HealthReportTimeInvalid -> R.string.health_report_invalid_time
                         else -> R.string.health_report_storage_failed
                     }
                     (failed ?: ::message)(text)

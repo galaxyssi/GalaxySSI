@@ -29,7 +29,8 @@ internal object HealthReportVisionProvider : HealthReportVisionGateway by Health
         If the image contains results for multiple people or multiple sample times and the current sample
         cannot be isolated unambiguously, return no rows. Never mix rows from different samples.
         "partial" is true when any rows are omitted, unreadable, or unsupported. Return at most ${HealthReportVisionResult.MAX_ROWS} rows.
-        "fasting" is "fasting", "non_fasting", or "after_meal" only when that glucose sample is explicitly labeled as such.
+        "fasting" is "fasting", "non_fasting", "after_meal", "after_meal_1h", or "after_meal_2h"
+        only when that glucose sample is explicitly labeled as such.
         Otherwise use "". Do not infer fasting status from the collection time, values, or a reference interval.
         If no supported results are legible return {"rows":[],"collected":"","fasting":"","partial":true}. Do not return personal details.
         Use only the attached image. Do not use tools or create files. Return raw JSON, not Markdown.
