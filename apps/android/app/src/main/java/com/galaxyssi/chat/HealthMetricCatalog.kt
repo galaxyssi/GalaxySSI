@@ -37,7 +37,27 @@ internal object HealthMetricCatalog {
         entry(HealthMetric.URIC_ACID, HealthMetricGroup.KIDNEY, true, "Uric acid", "\u5c3f\u9178", "UA", "urate"),
         entry(HealthMetric.CRP, HealthMetricGroup.BLOOD, true, "C-reactive protein", "C\u53cd\u5e94\u86cb\u767d", "CRP", "hs-CRP"),
         entry(HealthMetric.TSH, HealthMetricGroup.THYROID, true, "Thyroid stimulating hormone", "\u4fc3\u7532\u72b6\u817a\u6fc0\u7d20", "TSH", "thyrotropin"),
-        entry(HealthMetric.URINE_PROTEIN, HealthMetricGroup.URINE, true, "Urine protein screen", "\u5c3f\u86cb\u767d\u5b9a\u6027", "PRO", "urine protein", "\u5c3f\u86cb\u767d")
+        entry(HealthMetric.URINE_PROTEIN, HealthMetricGroup.URINE, true, "Urine protein screen", "\u5c3f\u86cb\u767d\u5b9a\u6027", "PRO", "urine protein", "\u5c3f\u86cb\u767d"),
+        entry(HealthMetric.RED_BLOOD_CELLS, HealthMetricGroup.BLOOD, true, "Red blood cell count", "\u7ea2\u7ec6\u80de\u8ba1\u6570", "RBC", "erythrocytes", "\u7ea2\u7ec6\u80de"),
+        entry(HealthMetric.HEMATOCRIT, HealthMetricGroup.BLOOD, true, "Hematocrit", "\u7ea2\u7ec6\u80de\u538b\u79ef", "HCT", "hematocrit fraction", "\u7ea2\u7ec6\u80de\u6bd4\u5bb9"),
+        entry(HealthMetric.MEAN_CORPUSCULAR_VOLUME, HealthMetricGroup.BLOOD, true, "Mean corpuscular volume", "\u5e73\u5747\u7ea2\u7ec6\u80de\u4f53\u79ef", "MCV"),
+        entry(HealthMetric.MEAN_CORPUSCULAR_HEMOGLOBIN, HealthMetricGroup.BLOOD, true, "Mean corpuscular hemoglobin", "\u5e73\u5747\u7ea2\u7ec6\u80de\u8840\u7ea2\u86cb\u767d\u91cf", "MCH"),
+        entry(HealthMetric.MEAN_CORPUSCULAR_HEMOGLOBIN_CONCENTRATION, HealthMetricGroup.BLOOD, true, "Mean corpuscular hemoglobin concentration", "\u5e73\u5747\u7ea2\u7ec6\u80de\u8840\u7ea2\u86cb\u767d\u6d53\u5ea6", "MCHC"),
+        entry(HealthMetric.RED_CELL_DISTRIBUTION_WIDTH_CV, HealthMetricGroup.BLOOD, true, "Red cell distribution width CV", "\u7ea2\u7ec6\u80de\u5206\u5e03\u5bbd\u5ea6\u53d8\u5f02\u7cfb\u6570", "RDW-CV"),
+        entry(HealthMetric.RED_CELL_DISTRIBUTION_WIDTH_SD, HealthMetricGroup.BLOOD, true, "Red cell distribution width SD", "\u7ea2\u7ec6\u80de\u5206\u5e03\u5bbd\u5ea6\u6807\u51c6\u5dee", "RDW-SD"),
+        entry(HealthMetric.MEAN_PLATELET_VOLUME, HealthMetricGroup.BLOOD, true, "Mean platelet volume", "\u5e73\u5747\u8840\u5c0f\u677f\u4f53\u79ef", "MPV"),
+        entry(HealthMetric.NEUTROPHIL_COUNT, HealthMetricGroup.BLOOD, true, "Absolute neutrophil count", "\u4e2d\u6027\u7c92\u7ec6\u80de\u8ba1\u6570", "NEUT#", "ANC", "\u4e2d\u6027\u7c92\u7ec6\u80de\u7edd\u5bf9\u503c"),
+        entry(HealthMetric.NEUTROPHIL_PERCENT, HealthMetricGroup.BLOOD, true, "Neutrophil percentage", "\u4e2d\u6027\u7c92\u7ec6\u80de\u767e\u5206\u6bd4", "NEUT%"),
+        entry(HealthMetric.LYMPHOCYTE_COUNT, HealthMetricGroup.BLOOD, true, "Absolute lymphocyte count", "\u6dcb\u5df4\u7ec6\u80de\u8ba1\u6570", "LYM#", "LYMPH#", "\u6dcb\u5df4\u7ec6\u80de\u7edd\u5bf9\u503c"),
+        entry(HealthMetric.LYMPHOCYTE_PERCENT, HealthMetricGroup.BLOOD, true, "Lymphocyte percentage", "\u6dcb\u5df4\u7ec6\u80de\u767e\u5206\u6bd4", "LYM%", "LYMPH%"),
+        entry(HealthMetric.ALBUMIN, HealthMetricGroup.LIVER, true, "Serum or plasma albumin", "\u8840\u6e05\uff0f\u8840\u6d46\u767d\u86cb\u767d", "serum albumin", "plasma albumin", "ALB", "\u767d\u86cb\u767d"),
+        entry(HealthMetric.TOTAL_PROTEIN, HealthMetricGroup.LIVER, true, "Serum or plasma total protein", "\u8840\u6e05\uff0f\u8840\u6d46\u603b\u86cb\u767d", "serum total protein", "plasma total protein", "TP", "\u603b\u86cb\u767d"),
+        entry(HealthMetric.TOTAL_BILIRUBIN, HealthMetricGroup.LIVER, true, "Total bilirubin", "\u603b\u80c6\u7ea2\u7d20", "TBIL", "TBili"),
+        entry(HealthMetric.DIRECT_BILIRUBIN, HealthMetricGroup.LIVER, true, "Direct bilirubin", "\u76f4\u63a5\u80c6\u7ea2\u7d20", "DBIL", "DBili"),
+        entry(HealthMetric.ALKALINE_PHOSPHATASE, HealthMetricGroup.LIVER, true, "Alkaline phosphatase", "\u78b1\u6027\u78f7\u9178\u9176", "ALP"),
+        entry(HealthMetric.GAMMA_GLUTAMYL_TRANSFERASE, HealthMetricGroup.LIVER, true, "Gamma-glutamyl transferase", "\u03b3-\u8c37\u6c28\u9170\u8f6c\u79fb\u9176", "GGT", "gamma-GT", "\u8c37\u6c28\u9170\u8f6c\u80bd\u9176"),
+        entry(HealthMetric.UREA, HealthMetricGroup.KIDNEY, true, "Serum or plasma urea", "\u8840\u6e05\uff0f\u8840\u6d46\u5c3f\u7d20", "serum urea", "plasma urea", "\u5c3f\u7d20"),
+        entry(HealthMetric.BLOOD_UREA_NITROGEN, HealthMetricGroup.KIDNEY, true, "Blood urea nitrogen", "\u5c3f\u7d20\u6c2e", "BUN", "\u8840\u5c3f\u7d20\u6c2e")
     )
     private fun normalized(value: String) = Normalizer.normalize(value, Normalizer.Form.NFKC).lowercase(Locale.ROOT).filter(Char::isLetterOrDigit)
     fun search(query: String, laboratory: Boolean? = null, group: HealthMetricGroup? = null): List<HealthMetricEntry> {

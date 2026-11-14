@@ -2,7 +2,10 @@
 <resources>
     <string name="health_vision_continue">Continue recognition</string>
     <string name="health_vision_reply_format">Codex returned a result in an unreadable format.</string>
-    <string name="health_vision_no_supported_rows">Codex found no readable measurement supported by Health.</string>
+    <string name="health_vision_no_supported_rows">Codex returned no measurements for this image.</string>
+    <string name="health_vision_unsupported_only">Codex read results, but those tests are not in the Health measurement catalog.</string>
+    <string name="health_vision_image_unclear">Some results were not clear enough to read, and no supported result could be imported. Try a clearer image.</string>
+    <string name="health_vision_ambiguous_sample">The results could not be assigned to one sample. Try a separate image for each sample.</string>
     <string name="health_vision_bad_rows">All returned rows had invalid fields or unsupported units.</string>
     <string name="health_vision_not_sent">The image was not sent. Check the paired Desktop connection.</string>
     <string name="health_vision_not_accepted">Desktop did not accept this image after retrying.</string>
@@ -11,6 +14,7 @@
     <string name="health_vision_rejected_unit">%1$d rows with incompatible units skipped.</string>
     <string name="health_vision_rejected_fields">%1$d rows with invalid results or fields skipped.</string>
     <string name="health_vision_rejected_duplicate">%1$d identical rows skipped.</string>
+    <string name="health_vision_rejected_unreadable">%1$d unreadable results skipped.</string>
     <string name="health_report_confirm_title">Complete report details</string>
     <string name="health_report_confirm_note">Applies only to missing details in %1$d reports. Existing dates, times, and conditions are kept.</string>
     <string name="health_report_confirm_later">Later</string>

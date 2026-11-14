@@ -42,12 +42,13 @@ class HealthReportVisionDeviceTest {
         HealthVisionRow(HealthMetric.HBA1C, mapOf("hba1c" to "5.40"), "%", "", "HbA1c 5.40 %")),
         "2026-01-12 08:30+08:00", true)
 
-    private fun isolated(failed: Boolean = false, block: (HealthOverviewDatabases, HealthOriginalStore, HealthImportJob) -> Unit) {
+    private fun isolated(failed: Boolean = false, lines: List<String> = emptyList(),
+        block: (HealthOverviewDatabases, HealthOriginalStore, HealthImportJob) -> Unit) {
         val id = UUID.randomUUID().toString()
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
         try { HealthOriginalStore(context, names.originals, names.originalRoot(context)).use { store ->
             store.createJob(HealthImportJob(id, "content://fixture/report", System.currentTimeMillis()))
-            val original = store.importOriginal(id, syntheticPng().inputStream(), "synthetic.png", "image/png", "file")
+            val original = store.importOriginal(id, syntheticPng(lines).inputStream(), "synthetic.png", "image/png", "file")
             if (!failed) store.savePage(id, HealthOcrPage(1, 960, 600, listOf(HealthOcrLine("Glucose: 5.4 mmol/L"))))
             val job = store.updateJob(id) {
                 it.copy(originalId = original.id, mime = original.mime, pageCount = 1,
@@ -57,14 +58,14 @@ class HealthReportVisionDeviceTest {
         } } finally { clearHealthOverviewFixture(context, names) }
     }
 
-    private fun syntheticPng(): ByteArray {
+    private fun syntheticPng(extra: List<String> = emptyList()): ByteArray {
         val bytes = ByteArrayOutputStream()
         val bitmap = Bitmap.createBitmap(960, 600, Bitmap.Config.ARGB_8888)
         try {
             Canvas(bitmap).apply {
                 drawColor(Color.WHITE)
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 34f }
-                listOf("SYNTHETIC REPORT", "Collected at: 2026-01-12 08:30+08:00", "CRP <0.50 mg/L 0-5", "HbA1c 5.40 %")
+                (listOf("SYNTHETIC REPORT", "Collected at: 2026-01-12 08:30+08:00", "CRP <0.50 mg/L 0-5", "HbA1c 5.40 %") + extra)
                     .forEachIndexed { i, line -> drawText(line, 40f, 90f + i * 85f, paint) }
             }
             assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes))
@@ -342,22 +343,25 @@ class HealthReportVisionDeviceTest {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue(args.getString("health_vision_live") == "true")
         val target = HealthReportVisionProvider.target(context) ?: error("Paired Codex is unavailable")
-        isolated(failed = true) { names, store, job ->
+        isolated(failed = true, lines = listOf("RBC 4.75 x10^12/L", "MCV 89.2 fL", "TBIL 14 umol/L")) { names, store, job ->
             allow(names)
             val reader = HealthReportVisionReader(context, names)
             val outcome = runBlocking { reader.read(reader.prepare(job.id), target) }
             val rows = checkNotNull(store.page(job.id, 1)?.vision).rows.associateBy { it.metric }
-            assertEquals(setOf(HealthMetric.CRP, HealthMetric.HBA1C), rows.keys)
+            assertEquals(setOf(HealthMetric.CRP, HealthMetric.HBA1C, HealthMetric.RED_BLOOD_CELLS,
+                HealthMetric.MEAN_CORPUSCULAR_VOLUME, HealthMetric.TOTAL_BILIRUBIN), rows.keys)
             val crp = rows.getValue(HealthMetric.CRP)
             assertEquals("<0.5", HealthResult.parse(crp.values.getValue("crp"), crp.metric.form)?.canonical)
             assertEquals("mg/L", crp.unit)
             val hba1c = rows.getValue(HealthMetric.HBA1C)
             assertEquals("5.4", HealthResult.parse(hba1c.values.getValue("hba1c"), hba1c.metric.form)?.canonical)
             assertEquals("%", hba1c.unit)
-            assertEquals(2, outcome.saved)
+            assertEquals("4.75", rows.getValue(HealthMetric.RED_BLOOD_CELLS).values["rbc"])
+            assertEquals("10^12/L", rows.getValue(HealthMetric.RED_BLOOD_CELLS).unit)
+            assertEquals("fL", rows.getValue(HealthMetric.MEAN_CORPUSCULAR_VOLUME).unit)
+            assertEquals(5, outcome.saved)
             assertTrue(outcome.imageBytes in 1..100_000)
-            HealthRecordStore(context, names.records).use { assertEquals(2L, it.count()) }
-            println("HEALTH_VISION_LIVE destination=${target.destination} saved=2")
+            HealthRecordStore(context, names.records).use { assertEquals(5L, it.count()) }
         }
     }
 

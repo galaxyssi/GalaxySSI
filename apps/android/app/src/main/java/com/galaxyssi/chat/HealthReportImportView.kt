@@ -139,6 +139,7 @@ internal class HealthReportImportView(private val activity: Activity, private va
                 HealthReportRowIssue.INVALID_UNIT -> R.string.health_vision_rejected_unit
                 HealthReportRowIssue.INVALID_FIELDS -> R.string.health_vision_rejected_fields
                 HealthReportRowIssue.DUPLICATE -> R.string.health_vision_rejected_duplicate
+                HealthReportRowIssue.UNREADABLE -> R.string.health_vision_rejected_unreadable
             }, count), 13f, muted = true), 8)
         }
         if (imported && matched) ui.add(content, ui.text(label(R.string.health_report_existing_note, outcome.duplicates), 13f, muted = true), 8)

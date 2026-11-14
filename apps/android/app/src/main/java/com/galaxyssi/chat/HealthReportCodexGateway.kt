@@ -26,29 +26,44 @@ internal enum class HealthReportDeliveryProblem { NOT_SENT, NOT_ACCEPTED, REPLY_
 internal class HealthReportCodexUnavailable(val problem: HealthReportDeliveryProblem = HealthReportDeliveryProblem.REMOTE_FAILURE) :
     IllegalStateException()
 
-internal enum class HealthReportAdmission { MISSING, ACTIVE, TERMINAL_FAILURE, UNKNOWN }
+internal enum class HealthReportAdmission { MISSING, ACTIVE, COMPLETED, TERMINAL_FAILURE, UNKNOWN }
 internal object HealthReportDelivery {
     suspend fun <T> receive(reply: CompletableDeferred<T>, publish: suspend () -> Boolean,
         probe: suspend () -> HealthReportAdmission, earlyWait: Long = 20_000, responseWait: Long = 160_000,
-        retryDelay: Long = 500): T {
+        retryDelay: Long = 500, activeGrace: Long = 90_000, completedGrace: Long = 30_000): T {
+        suspend fun observe(): HealthReportAdmission? = coroutineScope {
+            val observed = async { probe() }
+            try { select { reply.onAwait { null }; observed.onAwait { it } } }
+            finally { observed.cancel() }
+        }
+        suspend fun awaitFor(wait: Long): T? = withTimeoutOrNull(wait) { reply.await() }
+        fun failure(problem: HealthReportDeliveryProblem): Nothing = throw HealthReportCodexUnavailable(problem)
+        suspend fun awaitAdmitted(): T {
+            awaitFor(responseWait)?.let { return it }
+            val admission = observe()
+            if (reply.isCompleted) return reply.await()
+            val grace = when (admission) {
+                HealthReportAdmission.ACTIVE -> activeGrace
+                HealthReportAdmission.COMPLETED -> completedGrace
+                HealthReportAdmission.TERMINAL_FAILURE -> failure(HealthReportDeliveryProblem.REMOTE_FAILURE)
+                else -> 0L
+            }
+            return awaitFor(grace) ?: failure(HealthReportDeliveryProblem.REPLY_TIMEOUT)
+        }
         var published = false
         repeat(2) { attempt ->
             if (reply.isCompleted) return reply.await()
             if (publish()) {
                 published = true
-                withTimeoutOrNull(earlyWait) { reply.await() }?.let { return it }
-                val admission = coroutineScope {
-                    val observed = async { probe() }
-                    try { select { reply.onAwait { null }; observed.onAwait { it } } }
-                    finally { observed.cancel() }
-                }
+                awaitFor(earlyWait)?.let { return it }
+                val admission = observe()
                 if (reply.isCompleted) return reply.await()
                 when (admission) {
                     HealthReportAdmission.MISSING -> if (attempt == 1)
-                        throw HealthReportCodexUnavailable(HealthReportDeliveryProblem.NOT_ACCEPTED)
-                    HealthReportAdmission.TERMINAL_FAILURE -> throw HealthReportCodexUnavailable(HealthReportDeliveryProblem.REMOTE_FAILURE)
-                    else -> return withTimeoutOrNull(responseWait) { reply.await() }
-                        ?: throw HealthReportCodexUnavailable(HealthReportDeliveryProblem.REPLY_TIMEOUT)
+                        failure(HealthReportDeliveryProblem.NOT_ACCEPTED)
+                    HealthReportAdmission.TERMINAL_FAILURE -> failure(HealthReportDeliveryProblem.REMOTE_FAILURE)
+                    null -> return reply.await()
+                    else -> return awaitAdmitted()
                 }
             } else if (attempt == 1) throw HealthReportCodexUnavailable(
                 if (published) HealthReportDeliveryProblem.NOT_ACCEPTED else HealthReportDeliveryProblem.NOT_SENT)
@@ -161,8 +176,9 @@ internal object HealthReportCodexGateway : HealthReportVisionGateway {
                 when (observation?.optString("status")) {
                     "unavailable" -> HealthReportAdmission.MISSING
                     "failed", "cancelled", "timed_out" -> HealthReportAdmission.TERMINAL_FAILURE
-                    null, "" -> HealthReportAdmission.UNKNOWN
-                    else -> HealthReportAdmission.ACTIVE
+                    "completed" -> HealthReportAdmission.COMPLETED
+                    "accepted", "queued", "starting", "running", "recovering" -> HealthReportAdmission.ACTIVE
+                    else -> HealthReportAdmission.UNKNOWN
                 }
             })
             finished = true
