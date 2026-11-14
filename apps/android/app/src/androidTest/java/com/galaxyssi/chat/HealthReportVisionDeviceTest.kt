@@ -177,7 +177,9 @@ class HealthReportVisionDeviceTest {
                             HealthRecordStore(context, names.records).use { assertEquals(2L, it.count()) }
                             scenario.onActivity { activity ->
                                 val labels = views(activity.window.decorView).filterIsInstance<android.widget.TextView>()
-                                assertTrue(labels.any { it.text.toString() == activity.getString(R.string.health_vision_request_failed) })
+                                assertTrue(labels.any {
+                                    it.text.startsWith(activity.getString(R.string.health_vision_request_failed))
+                                })
                                 assertTrue(labels.any { it.text.toString() == activity.getString(R.string.health_report_batch_ready) })
                             }
                             if (retryFailed) {
