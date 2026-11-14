@@ -1,6 +1,9 @@
 package com.galaxyssi.chat
 
 import android.app.AlertDialog
+import android.app.Activity
+import android.app.Application
+import android.app.Instrumentation
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
@@ -9,9 +12,11 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.os.SystemClock
+import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import androidx.lifecycle.Lifecycle
+import androidx.core.content.FileProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayOutputStream
@@ -42,18 +47,7 @@ class HealthReportVisionDeviceTest {
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
         try { HealthOriginalStore(context, names.originals, names.originalRoot(context)).use { store ->
             store.createJob(HealthImportJob(id, "content://fixture/report", System.currentTimeMillis()))
-            val bytes = ByteArrayOutputStream()
-            val bitmap = Bitmap.createBitmap(960, 600, Bitmap.Config.ARGB_8888)
-            try {
-                Canvas(bitmap).apply {
-                    drawColor(Color.WHITE)
-                    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 34f }
-                    listOf("SYNTHETIC REPORT", "Collected at: 2026-01-12 08:30+08:00", "CRP <0.50 mg/L 0-5", "HbA1c 5.40 %")
-                        .forEachIndexed { i, line -> drawText(line, 40f, 90f + i * 85f, paint) }
-                }
-                assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes))
-            } finally { bitmap.recycle() }
-            val original = store.importOriginal(id, bytes.toByteArray().inputStream(), "synthetic.png", "image/png", "file")
+            val original = store.importOriginal(id, syntheticPng().inputStream(), "synthetic.png", "image/png", "file")
             if (!failed) store.savePage(id, HealthOcrPage(1, 960, 600, listOf(HealthOcrLine("Glucose: 5.4 mmol/L"))))
             val job = store.updateJob(id) {
                 it.copy(originalId = original.id, mime = original.mime, pageCount = 1,
@@ -61,6 +55,97 @@ class HealthReportVisionDeviceTest {
             }!!
             block(names, store, job)
         } } finally { clearHealthOverviewFixture(context, names) }
+    }
+
+    private fun syntheticPng(): ByteArray {
+        val bytes = ByteArrayOutputStream()
+        val bitmap = Bitmap.createBitmap(960, 600, Bitmap.Config.ARGB_8888)
+        try {
+            Canvas(bitmap).apply {
+                drawColor(Color.WHITE)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 34f }
+                listOf("SYNTHETIC REPORT", "Collected at: 2026-01-12 08:30+08:00", "CRP <0.50 mg/L 0-5", "HbA1c 5.40 %")
+                    .forEachIndexed { i, line -> drawText(line, 40f, 90f + i * 85f, paint) }
+            }
+            assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes))
+        } finally { bitmap.recycle() }
+        return bytes.toByteArray()
+    }
+
+    @Test fun fileSelectionStartsRecognitionWithoutAnotherButton() = directSelection(revoke = false)
+    @Test fun aRevokedPickerApprovalCannotDiscloseTheSelectedImage() = directSelection(revoke = true)
+
+    private fun directSelection(revoke: Boolean) {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        assumeTrue(android.os.Build.VERSION.SDK_INT >= 29)
+        val names = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val file = File(context.cacheDir, "health-capture/synthetic-${names.fixture}.png")
+        try {
+            file.parentFile!!.mkdirs()
+            file.writeBytes(syntheticPng())
+            allow(names)
+            val picked = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+            val calls = java.util.concurrent.atomic.AtomicInteger()
+            val pickerCalls = java.util.concurrent.atomic.AtomicInteger()
+            val app = context.applicationContext as Application
+            val callbacks = object : Application.ActivityLifecycleCallbacks {
+                override fun onActivityPostCreated(activity: Activity, state: Bundle?) {
+                    if (activity is HealthCaptureActivity && activity.intent.healthNavigationDatabases() == names)
+                        owner(activity).useFixtureGateway(gateway { bytes, _ ->
+                            calls.incrementAndGet()
+                            assertTrue(bytes.size in 1..100_000)
+                            parsed.json().toString()
+                        })
+                }
+                override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
+                override fun onActivityStarted(activity: Activity) = Unit
+                override fun onActivityResumed(activity: Activity) = Unit
+                override fun onActivityPaused(activity: Activity) = Unit
+                override fun onActivityStopped(activity: Activity) = Unit
+                override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
+                override fun onActivityDestroyed(activity: Activity) = Unit
+            }
+            val monitor = object : Instrumentation.ActivityMonitor() {
+                override fun onStartActivity(intent: Intent): Instrumentation.ActivityResult? {
+                    if (intent.action != Intent.ACTION_OPEN_DOCUMENT) return null
+                    pickerCalls.incrementAndGet()
+                    return Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(picked))
+                }
+            }
+            app.registerActivityLifecycleCallbacks(callbacks)
+            instrumentation.addMonitor(monitor)
+            try {
+                ActivityScenario.launch<HealthCaptureActivity>(healthCaptureIntent(context, names, HealthCaptureEntry.FILE)).use { scenario ->
+                    await(scenario) { dialog(it)?.getButton(AlertDialog.BUTTON_POSITIVE) != null }
+                    assertEquals(0, pickerCalls.get())
+                    assertEquals(0, calls.get())
+                    scenario.onActivity { dialog(it)!!.getButton(AlertDialog.BUTTON_POSITIVE).performClick() }
+                    HealthOriginalStore(context, names.originals, names.originalRoot(context)).use { store ->
+                        var selected: HealthImportJob? = null
+                        await(scenario) { store.jobs().singleOrNull().also { selected = it } != null }
+                        val job = requireNotNull(selected)
+                        assertTrue(job.modelFirst)
+                        if (revoke) HealthPrivacyStore(context, names.privacy).use {
+                            it.change(HealthPrivacyOption.ONLINE_ANALYSIS, false, it.policy().version)
+                        }
+                        assertEquals(HealthImportOutcome.COMPLETE, HealthImportPipeline(context, names.records).run(store, job.id))
+                        await(scenario) { it.window.decorView.findViewWithTag<View>(
+                            if (revoke) "health-report-import-retry" else "health-report-open-records") != null }
+                        scenario.onActivity { assertNull(dialog(it)) }
+                        assertEquals(1, pickerCalls.get())
+                        assertEquals(if (revoke) 0 else 1, calls.get())
+                        assertEquals(if (revoke) null else 2, store.page(job.id, 1)?.visionImport?.saved)
+                        HealthRecordStore(context, names.records).use { assertEquals(if (revoke) 0L else 2L, it.count()) }
+                    }
+                }
+            } finally {
+                instrumentation.removeMonitor(monitor)
+                app.unregisterActivityLifecycleCallbacks(callbacks)
+            }
+        } finally {
+            file.delete()
+            clearHealthOverviewFixture(context, names)
+        }
     }
 
     private fun allow(names: HealthOverviewDatabases) = HealthPrivacyStore(context, names.privacy).use {

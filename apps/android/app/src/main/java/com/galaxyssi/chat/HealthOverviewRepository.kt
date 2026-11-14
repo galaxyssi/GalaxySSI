@@ -69,7 +69,7 @@ internal object HealthOverviewRepository {
                     val kind = when (job.state) {
                         HealthImportState.TABLE_REVIEW -> tables.batch(job.id)?.takeIf { it.originalId == job.originalId && it.state in setOf(
                             HealthTableState.SHEET_SELECTION, HealthTableState.MAPPING, HealthTableState.READY) }?.let { HealthOverviewReviewKind.TABLE }
-                        HealthImportState.REVIEW -> if (!job.modelRecognized && job.nextPage > 0 && job.originalId.isNotBlank() &&
+                        HealthImportState.REVIEW -> if (!job.modelRecognized && !job.modelFirst && job.nextPage > 0 && job.originalId.isNotBlank() &&
                             (records.overviewHasOcrDraft(job.id) || !records.overviewHasOriginalHistory(job.originalId))) HealthOverviewReviewKind.OCR else null
                         else -> null
                     }

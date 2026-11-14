@@ -102,11 +102,15 @@ system camera application rather than claiming the complete h06 design.
 
 ## Increment 3: Native Camera And Ordered Photo Drafts
 
-Report images also support an explicitly authorized vision-model transcription
-from the import task or review page, including recovery from a failed local
-recognition attempt. Auto selects an available Codex on a verified paired
-Desktop and applies the saved Codex configuration. This path requires online
-analysis and one explicit import confirmation for each image. The
+Health Center file entry points open the system document picker without an
+import hub. Local PDF and table parsing starts after selection. For report
+images, Auto selects an available Codex on a verified paired Desktop and
+applies the saved Codex configuration. With online analysis enabled, users
+can authorize the next selected image before opening the picker, or choose
+local import. An authorized image goes directly to model transcription without
+waiting for local OCR or requiring a second tap. A changed privacy policy,
+disconnected target or interrupted Activity cannot authorize another upload.
+Existing local OCR tasks can still request explicitly authorized transcription. The
 request sends one upright JPEG of at most 100,000 bytes derived in memory from the encrypted original
 through a private, ephemeral Codex thread with search and Desktop tools disabled.
 The paired Desktop must advertise this capability before the phone can send an

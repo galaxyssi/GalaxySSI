@@ -7,7 +7,6 @@ import android.view.Gravity
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.Switch
 
 internal class HealthFirstUseView(private val activity: HealthCenterActivity, private val externalRoutes: Boolean) {
     private val ui get() = activity.ui
@@ -24,13 +23,6 @@ internal class HealthFirstUseView(private val activity: HealthCenterActivity, pr
     private fun label(id: Int) = activity.getString(id)
     private fun open(target: Class<*>, extras: Intent.() -> Unit = {}) {
         if (externalRoutes) activity.startActivity(Intent(activity, target).apply(extras))
-    }
-    private fun capture(entry: HealthCaptureEntry, choice: Boolean? = null) {
-        if (!externalRoutes && entry == HealthCaptureEntry.CAMERA) return
-        activity.startActivity(Intent(activity, HealthCaptureActivity::class.java)
-            .putHealthNavigationFixture(activity.intent.healthNavigationDatabases())
-            .putExtra("health_capture_entry", entry.name).apply { choice?.let { putExtra(HEALTH_KEEP_ORIGINAL, it) } })
-        if (choice != null) activity.clearImportRetentionChoice()
     }
     private fun sources() = open(HealthSourcesActivity::class.java)
 
@@ -49,9 +41,11 @@ internal class HealthFirstUseView(private val activity: HealthCenterActivity, pr
 
     fun showActions(content: LinearLayout) {
         val quick = listOf(
-            Entry(R.drawable.ic_agent_camera, Accent.ORANGE, R.string.health_take_photo, "health-overview-photo") { capture(HealthCaptureEntry.CAMERA) },
+            Entry(R.drawable.ic_agent_camera, Accent.ORANGE, R.string.health_take_photo, "health-overview-photo") {
+                if (externalRoutes) activity.startActivity(healthCaptureIntent(activity, activity.intent.healthNavigationDatabases(), HealthCaptureEntry.CAMERA))
+            },
             Entry(R.drawable.ic_agent_new_session, Accent.GREEN, R.string.health_manual, "health-overview-manual") { activity.open("manual") },
-            Entry(R.drawable.ic_settings_upload, Accent.BLUE, R.string.health_overview_import, "health-overview-import") { activity.open("import") },
+            Entry(R.drawable.ic_settings_upload, Accent.BLUE, R.string.health_overview_import, "health-overview-import", activity::pickHealthFile),
             Entry(R.drawable.ic_protocol_link, Accent.VIOLET, R.string.health_sources_quick, "health-overview-sources") { sources() }
         )
         val config = activity.resources.configuration
@@ -101,42 +95,12 @@ internal class HealthFirstUseView(private val activity: HealthCenterActivity, pr
         ui.add(content, ui.row(label(R.string.health_first_privacy)) {
             if (externalRoutes) activity.startActivity(activity.healthPrivacyIntent())
         }.apply { minimumHeight = ui.dp(48) }, 4)
-        ui.add(content, ui.command(R.string.health_first_existing) { activity.open("import") }.apply {
+        ui.add(content, ui.command(R.string.health_first_existing, activity::pickHealthFile).apply {
             tag = "health-first-existing"
             background = ui.background(stroke = divider, radius = 8)
             setTextColor(activity.getColor(R.color.text_primary))
             setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(8))
         })
-    }
-
-    fun showImport(content: LinearLayout, retainByDefault: Boolean) {
-        content.addView(ui.text(label(R.string.health_first_import_intro), 23f, bold = true).apply { tag = "health-import-center" })
-        ui.add(content, ui.text(label(R.string.health_first_import_note), 15f, muted = true), 6)
-        ui.add(content, panel().apply {
-            addView(iconRow(R.drawable.ic_agent_camera, Accent.ORANGE, R.string.health_take_photo, R.string.health_first_capture_note,
-                "health-import-camera") { capture(HealthCaptureEntry.CAMERA, activity.keepImportedOriginal) })
-            addView(rule())
-            addView(iconRow(R.drawable.ic_chat_shortcut_file, Accent.BLUE, R.string.health_first_report, R.string.health_first_report_note,
-                "health-import-report") { capture(HealthCaptureEntry.REPORT, activity.keepImportedOriginal) })
-            addView(rule())
-            addView(iconRow(R.drawable.ic_settings_upload, Accent.GREEN, R.string.health_first_table, R.string.health_first_table_note,
-                "health-import-table") { capture(HealthCaptureEntry.TABLE, activity.keepImportedOriginal) })
-            addView(rule())
-            addView(iconRow(R.drawable.ic_security_shield, Accent.VIOLET, R.string.health_restore_title, R.string.health_first_backup_note,
-                "health-import-restore") { open(HealthRestoreActivity::class.java) })
-        }, 16)
-        ui.add(content, ui.text(label(R.string.health_retention_title), 18f, bold = true), 18)
-        ui.add(content, panel().apply {
-            addView(Switch(activity).apply {
-                tag = "health-import-keep-original"
-                text = label(R.string.health_retention_switch)
-                setTextColor(activity.getColor(R.color.text_primary))
-                minimumHeight = ui.dp(48)
-                isChecked = activity.keepImportedOriginal ?: retainByDefault
-                setOnCheckedChangeListener { _, checked -> activity.keepImportedOriginal = checked }
-            })
-            ui.add(this, ui.text(label(R.string.health_retention_note), 14f, muted = true), 6)
-        }, 8)
     }
 
     private fun chooseFirstRecord() = activity.open("record_center")
@@ -160,18 +124,6 @@ internal class HealthFirstUseView(private val activity: HealthCenterActivity, pr
         }
         addView(badge, LinearLayout.LayoutParams(ui.dp(27), ui.dp(27)))
         addView(ui.row(label(title), label(note), action), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(8) })
-    }
-
-    private fun iconRow(icon: Int, accent: Accent, title: Int, note: Int, key: String, action: () -> Unit) = ui.line().apply {
-        tag = key
-        addView(glyph(icon, accent), LinearLayout.LayoutParams(ui.dp(42), ui.dp(42)))
-        addView(ui.row(label(title), label(note), action).apply {
-            setOnClickListener(null)
-            isClickable = false
-            isFocusable = false
-        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(8) })
-        isFocusable = true
-        setOnClickListener { action() }
     }
 
     private fun tint(accent: Accent) = if (dark) accent.night else accent.light

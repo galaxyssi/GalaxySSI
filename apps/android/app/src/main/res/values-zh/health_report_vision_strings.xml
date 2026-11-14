@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="health_vision_action">识别并导入</string>
-    <string name="health_report_import_hint">确认发送报告照片后，Auto · Codex 会识别并导入检查结果。</string>
+    <string name="health_report_picker_disclosure">接收方：%1$s\n\n若选中报告图片，将发送不超过 100 KB 的压缩副本并自动分析，副本可能包含图片上可见的姓名。PDF 和表格只在本机处理。</string>
+    <string name="health_report_picker_select">选择文件</string>
+    <string name="health_report_picker_local">仅在本机导入</string>
     <string name="health_vision_consent">发送这张报告图片？</string>
     <string name="health_vision_disclosure">接收方：%1$s\n\n仅发送这张图片的压缩副本，可能包含图中的姓名等信息。请确认是本人的报告。可用结果会自动入档。</string>
     <string name="health_vision_source_method">大模型识别 · 第 %1$d 页</string>

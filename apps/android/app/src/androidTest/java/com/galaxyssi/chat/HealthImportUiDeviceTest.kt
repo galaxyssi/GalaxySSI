@@ -24,12 +24,14 @@ class HealthImportUiDeviceTest {
             children.indices.forEach { assertSame(children[it], after[it]) }
         } }
     }
-    @Test fun nativeImportPageClearsItsDecryptedViewsInBackgroundAndRestoresWithoutBottomTabs() {
+    @Test fun taskHistoryClearsItsDecryptedViewsInBackgroundAndRestoresWithoutAnImportMenu() {
         ActivityScenario.launch(HealthCaptureActivity::class.java).use { scenario ->
             awaitCapture(scenario)
             scenario.onActivity { activity ->
                 val root = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as LinearLayout
                 assertEquals(2, root.childCount)
+                assertFalse(descendants(root).filterIsInstance<android.widget.TextView>()
+                    .any { it.text.toString() == activity.getString(R.string.health_choose_files) })
             }
             scenario.moveToState(Lifecycle.State.CREATED)
             scenario.onActivity { activity ->
@@ -47,7 +49,7 @@ class HealthImportUiDeviceTest {
         do {
             var ready = false
             scenario.onActivity { activity -> ready = descendants(activity.window.decorView).filterIsInstance<android.widget.TextView>()
-                .any { it.text.toString() == activity.getString(R.string.health_take_photo) } }
+                .any { it.text.toString() == activity.getString(R.string.health_import_tasks) } }
             if (ready) return
             android.os.SystemClock.sleep(50)
         } while (android.os.SystemClock.elapsedRealtime() < deadline)

@@ -123,9 +123,9 @@ class HealthDataFilesDeviceTest {
             }
             assertEquals(names, capture(HealthCatalogActivity::class.java) { click(scenario, R.string.health_data_measurements) }.healthNavigationDatabases())
             assertEquals(names, capture(HealthOriginalLibraryActivity::class.java) { click(scenario, R.string.health_data_view_all) }.healthNavigationDatabases())
-            assertTrue(capture(HealthCenterActivity::class.java) {
-                menu(scenario, R.string.common_import, R.string.health_first_import_title)
-            }.getBooleanExtra("health_import_center", false))
+            assertEquals(HealthCaptureEntry.FILE.name, capture(HealthCaptureActivity::class.java) {
+                menu(scenario, R.string.common_import, R.string.health_overview_import)
+            }.getStringExtra("health_capture_entry"))
             val originalImport = capture(HealthCaptureActivity::class.java) {
                 menu(scenario, R.string.common_import, R.string.health_export_import_originals)
             }
@@ -135,7 +135,7 @@ class HealthDataFilesDeviceTest {
                 menu(scenario, R.string.common_export, R.string.health_export_records)
             }.getBooleanExtra("export_history", true))
             assertFalse(capture(HealthCaptureActivity::class.java) {
-                menu(scenario, R.string.health_data_tasks, R.string.health_import_queue_title)
+                menu(scenario, R.string.health_data_tasks, R.string.health_import_tasks)
             }.getBooleanExtra("health_pick_files", false))
             assertTrue(capture(HealthRecordExportActivity::class.java) {
                 menu(scenario, R.string.health_data_tasks, R.string.health_export_history)

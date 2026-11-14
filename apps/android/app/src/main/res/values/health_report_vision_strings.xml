@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="health_vision_action">Recognize and import</string>
-    <string name="health_report_import_hint">Auto · Codex can import results from a report photo after you confirm sending it.</string>
+    <string name="health_report_picker_disclosure">Recipient: %1$s\n\nIf you select a report image, a compressed copy of up to 100 KB will be sent for automatic analysis. It may include visible names. PDF and table files are processed on this device.</string>
+    <string name="health_report_picker_select">Choose file</string>
+    <string name="health_report_picker_local">Import on this device only</string>
     <string name="health_vision_consent">Send this report image?</string>
     <string name="health_vision_disclosure">Recipient: %1$s\n\nOnly a compressed copy of this image is sent, including any visible names. Confirm that this is your report. Usable results are saved automatically.</string>
     <string name="health_vision_source_method">Vision model transcription · Page %1$d</string>

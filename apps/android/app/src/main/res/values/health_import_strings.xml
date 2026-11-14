@@ -27,7 +27,6 @@
     <string name="health_camera_recover">Resume the unfinished photo import</string>
     <string name="health_local_recognition">Recognition stays on this device. Extracted fields are drafts until you verify and save them.</string>
     <string name="health_import_tasks">Import Tasks</string>
-    <string name="health_import_queue_title">Upload and Import</string>
     <string name="health_no_import_tasks">No import tasks yet</string>
     <string name="health_original_library">Photos and Original Files</string>
     <string name="health_no_originals">No originals saved yet</string>

@@ -57,7 +57,7 @@ class HealthImportWorker(context: Context, params: WorkerParameters) : Worker(co
         HealthOriginalStore(applicationContext).use { store ->
             return when (HealthImportPipeline(applicationContext).run(store, id, inputData.getBoolean("capture_stage", false)) { isStopped }) {
                 HealthImportOutcome.COMPLETE -> {
-                    val ready = store.job(id)?.state in setOf(HealthImportState.REVIEW, HealthImportState.TABLE_REVIEW)
+                    val ready = store.job(id)?.let { !it.modelFirst && it.state in setOf(HealthImportState.REVIEW, HealthImportState.TABLE_REVIEW) } == true
                     if (ready && runCatching { HealthReminderWork.reportReady(applicationContext, id) }.isFailure) Result.retry()
                     else Result.success()
                 }
@@ -110,6 +110,11 @@ internal class HealthImportPipeline(private val context: Context, private val re
                     if (!mime.startsWith("image/")) throw HealthImportFailure("image_unsupported")
                     val quality = HealthPhotoInspector.inspect(store, original, report = initial.mode == "report")
                     cancelled(); store.inspectCapture(id, quality)
+                    return HealthImportOutcome.COMPLETE
+                }
+                if (initial.modelFirst && mime.startsWith("image/")) {
+                    // Do not wait for local OCR before an approved vision request.
+                    store.updateJob(id) { it.copy(state = HealthImportState.REVIEW, pageCount = 1) }
                     return HealthImportOutcome.COMPLETE
                 }
                 if (HealthTableParser.format(original.name, original.mime) != null) {
