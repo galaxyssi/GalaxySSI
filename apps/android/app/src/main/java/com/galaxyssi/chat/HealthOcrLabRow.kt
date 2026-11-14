@@ -5,7 +5,8 @@ import java.util.Locale
 /** Only complete, labeled report rows become suggestions. The original line remains evidence. */
 internal data class HealthOcrLabRow(val metric: HealthMetric, val result: HealthResult, val unit: String, val reference: String = "") {
     companion object {
-        private val ambiguous = setOf("cr", "ua", "pro", "chol", "gpt", "got", "hb")
+        private val ambiguous = setOf("cr", "ua", "pro", "chol", "gpt", "got", "hb", "rbc", "alb", "tp",
+            "\u7ea2\u7ec6\u80de", "\u767d\u86cb\u767d", "\u603b\u86cb\u767d")
         private val space = Regex("\\s+")
         private val labels = buildMap {
             HealthMetricCatalog.entries.filter { it.laboratory }.forEach { entry ->
@@ -37,6 +38,11 @@ internal data class HealthOcrLabRow(val metric: HealthMetric, val result: Health
             "mmol/mol" to "mmol\\s*/\\s*mol",
             "10^9/L" to "(?:[x\\u00d7]\\s*)?10(?:\\^\\s*9|\\u2079)\\s*/\\s*l",
             "10^3/uL" to "(?:[x\\u00d7]\\s*)?10(?:\\^\\s*3|\\u00b3)\\s*/\\s*[u\\u00b5\\u03bc]l",
+            "10^12/L" to "(?:[x\\u00d7]\\s*)?10(?:\\^\\s*12|\\u00b9\\u00b2)\\s*/\\s*l",
+            "10^6/uL" to "(?:[x\\u00d7]\\s*)?10(?:\\^\\s*6|\\u2076)\\s*/\\s*[u\\u00b5\\u03bc]l",
+            "L/L" to "l\\s*/\\s*l",
+            "fL" to "fl",
+            "pg" to "pg",
             "U/L" to "u\\s*/\\s*l",
             "umol/L" to "[u\\u00b5\\u03bc]mol\\s*/\\s*l",
             "mg/L" to "mg\\s*/\\s*l",

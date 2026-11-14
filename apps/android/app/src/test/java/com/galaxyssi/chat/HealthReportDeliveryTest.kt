@@ -24,7 +24,7 @@ class HealthReportDeliveryTest {
                 HealthReportDelivery.receive(reply, {
                     if (++attempts == 2) reply.complete("recovered")
                     true
-                }, { admission }, earlyWait = 1, responseWait = 1, retryDelay = 0)
+                }, { admission }, earlyWait = 1, responseWait = 1, retryDelay = 0, activeGrace = 1, completedGrace = 1)
             }
             if (admission == HealthReportAdmission.MISSING) {
                 assertEquals("recovered", result.getOrThrow())
@@ -36,6 +36,34 @@ class HealthReportDeliveryTest {
                 assertEquals(expected, (result.exceptionOrNull() as HealthReportCodexUnavailable).problem)
             }
         }
+    }
+
+    @Test fun activeOrCompletedTaskAtDeadlineGetsOneBoundedGraceWithoutRepublishing() = runBlocking {
+        for (status in listOf(HealthReportAdmission.ACTIVE, HealthReportAdmission.COMPLETED)) {
+            val reply = CompletableDeferred<String>()
+            var publishes = 0
+            var probes = 0
+            val failure = runCatching {
+                HealthReportDelivery.receive(reply, { publishes++; true }, {
+                    if (++probes == 1) HealthReportAdmission.UNKNOWN else status
+                }, earlyWait = 1, responseWait = 1, activeGrace = 1, completedGrace = 1)
+            }.exceptionOrNull() as HealthReportCodexUnavailable
+            assertEquals(HealthReportDeliveryProblem.REPLY_TIMEOUT, failure.problem)
+            assertEquals(1, publishes)
+            assertEquals(2, probes)
+        }
+    }
+
+    @Test fun terminalFailureObservedAtDeadlineIsNotReportedAsPhoneTimeout() = runBlocking {
+        var probes = 0
+        val reply = CompletableDeferred<String>()
+        val failure = runCatching {
+            HealthReportDelivery.receive(reply, { true }, {
+                if (++probes == 1) HealthReportAdmission.ACTIVE else HealthReportAdmission.TERMINAL_FAILURE
+            }, earlyWait = 1, responseWait = 1)
+        }.exceptionOrNull() as HealthReportCodexUnavailable
+        assertEquals(HealthReportDeliveryProblem.REMOTE_FAILURE, failure.problem)
+        assertEquals(2, probes)
     }
 
     @Test fun lateResultWinsWhileCheckingAdmission() = runBlocking {

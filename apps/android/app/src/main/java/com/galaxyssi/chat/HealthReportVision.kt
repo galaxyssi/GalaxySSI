@@ -6,8 +6,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 
-internal enum class HealthReportRowIssue { UNSUPPORTED_METRIC, INVALID_UNIT, INVALID_FIELDS, DUPLICATE }
-internal enum class HealthReportReplyProblem { FORMAT, NO_SUPPORTED_ROWS, INVALID_ROWS }
+internal enum class HealthReportRowIssue { UNSUPPORTED_METRIC, INVALID_UNIT, INVALID_FIELDS, DUPLICATE, UNREADABLE }
+internal enum class HealthReportReplyProblem { FORMAT, NO_SUPPORTED_ROWS, UNSUPPORTED_METRICS, UNREADABLE_IMAGE, AMBIGUOUS_SAMPLE, INVALID_ROWS }
 internal class HealthReportInvalidReply(val problem: HealthReportReplyProblem) : HealthAnalysisInvalidReply()
 
 internal data class HealthVisionRow(val metric: HealthMetric, val values: Map<String, String>,
@@ -38,7 +38,7 @@ internal data class HealthReportVisionResult(val rows: List<HealthVisionRow>, va
         require(rows.size in 1..MAX_ROWS && rows.distinct() == rows)
         require(collected.length <= 80 && collected.none(Char::isISOControl))
         require(fasting.isEmpty() || fasting in healthGlucoseConditions)
-        require(rejected.values.all { it in 1..MAX_ROWS } && rows.size + rejected.values.sum() <= MAX_ROWS)
+        require(rejected.values.all { it in 1..MAX_ROWS * 2 } && rows.size + rejected.values.sum() <= MAX_ROWS * 2)
     }
     fun json() = JSONObject().put("rows", JSONArray(rows.map { it.json() })).put("collected", collected).put("partial", partial)
         .apply { if (fasting.isNotEmpty()) put("fasting", fasting) }
@@ -123,13 +123,16 @@ internal data class HealthReportVisionResult(val rows: List<HealthVisionRow>, va
                 val reader = JSONTokener(text)
                 val value = reader.nextValue() as? JSONObject ?: throw HealthAnalysisInvalidReply()
                 require(reader.nextClean() == '\u0000')
-                require(value.keys().asSequence().filterNot { it == "fasting" }.toSet() == setOf("rows", "collected", "partial"))
+                require(value.keys().asSequence().filterNot { it in setOf("fasting", "omitted", "ambiguous_sample") }.toSet() ==
+                    setOf("rows", "collected", "partial"))
                 value
             } catch (_: Exception) { throw HealthReportInvalidReply(HealthReportReplyProblem.FORMAT) }
             val collected: String
             val fasting: String
             val partial: Boolean
             val rows: JSONArray
+            val ambiguous: Boolean
+            val omitted: Map<HealthReportRowIssue, Int>
             try {
                 collected = envelope.text("collected")
                 fasting = if (envelope.has("fasting")) envelope.text("fasting") else ""
@@ -137,20 +140,25 @@ internal data class HealthReportVisionResult(val rows: List<HealthVisionRow>, va
                 rows = envelope.getJSONArray("rows")
                 require(rows.length() <= MAX_ROWS && collected.length <= 80 && collected.none(Char::isISOControl))
                 require(fasting.isEmpty() || fasting in healthGlucoseConditions)
+                ambiguous = if (envelope.has("ambiguous_sample")) envelope.opt("ambiguous_sample") as Boolean else false
+                require(!ambiguous || rows.length() == 0)
+                omitted = if (envelope.has("omitted")) readOmitted(envelope.getJSONObject("omitted")) else emptyMap()
             } catch (_: Exception) { throw HealthReportInvalidReply(HealthReportReplyProblem.FORMAT) }
+            if (ambiguous) throw HealthReportInvalidReply(HealthReportReplyProblem.AMBIGUOUS_SAMPLE)
             val accepted = linkedSetOf<HealthVisionRow>()
-            val rejected = linkedMapOf<HealthReportRowIssue, Int>()
+            val rejected = omitted.toMutableMap()
             for (index in 0 until rows.length()) {
                 val item = rows.optJSONObject(index)
                 val metricId = item?.opt("metric") as? String
                 val metric = HealthMetric.entries.firstOrNull { it.name == metricId }
                 val unit = item?.opt("unit") as? String
+                val canonicalUnit = if (unit == "") "" else unit?.let { metric?.let { m -> healthReportCanonicalUnit(m, unit) } }
                 val issue = when {
                     item == null || metricId.isNullOrBlank() || unit == null -> HealthReportRowIssue.INVALID_FIELDS
                     metric == null -> HealthReportRowIssue.UNSUPPORTED_METRIC
-                    unit.isNotEmpty() && unit !in metric.units -> HealthReportRowIssue.INVALID_UNIT
+                    canonicalUnit == null -> HealthReportRowIssue.INVALID_UNIT
                     else -> {
-                        val row = runCatching { HealthVisionRow.from(item) }.getOrNull()
+                        val row = runCatching { HealthVisionRow.from(item.put("unit", canonicalUnit)) }.getOrNull()
                         when {
                             row == null -> HealthReportRowIssue.INVALID_FIELDS
                             !accepted.add(row) -> HealthReportRowIssue.DUPLICATE
@@ -160,12 +168,35 @@ internal data class HealthReportVisionResult(val rows: List<HealthVisionRow>, va
                 }
                 if (issue != null) rejected[issue] = (rejected[issue] ?: 0) + 1
             }
-            if (accepted.isEmpty()) throw HealthReportInvalidReply(if (rows.length() == 0 ||
-                rejected.keys == setOf(HealthReportRowIssue.UNSUPPORTED_METRIC)) HealthReportReplyProblem.NO_SUPPORTED_ROWS
-                else HealthReportReplyProblem.INVALID_ROWS)
+            if (accepted.isEmpty()) throw HealthReportInvalidReply(when {
+                HealthReportRowIssue.INVALID_FIELDS in rejected || HealthReportRowIssue.INVALID_UNIT in rejected ->
+                    HealthReportReplyProblem.INVALID_ROWS
+                HealthReportRowIssue.UNREADABLE in rejected -> HealthReportReplyProblem.UNREADABLE_IMAGE
+                HealthReportRowIssue.UNSUPPORTED_METRIC in rejected -> HealthReportReplyProblem.UNSUPPORTED_METRICS
+                else -> HealthReportReplyProblem.NO_SUPPORTED_ROWS
+            })
             return HealthReportVisionResult(accepted.toList(), collected, partial || rejected.isNotEmpty(), fasting, rejected)
         }
+
+        private fun readOmitted(value: JSONObject): Map<HealthReportRowIssue, Int> {
+            require(value.keys().asSequence().toSet() == setOf("unsupported_metric", "unreadable"))
+            val unsupported = value.opt("unsupported_metric") as Int
+            val unreadable = value.opt("unreadable") as Int
+            require(unsupported in 0..MAX_ROWS && unreadable in 0..MAX_ROWS && unsupported + unreadable <= MAX_ROWS)
+            return mapOf(HealthReportRowIssue.UNSUPPORTED_METRIC to unsupported, HealthReportRowIssue.UNREADABLE to unreadable)
+                .filterValues { it > 0 }
+        }
     }
+}
+
+private fun healthReportCanonicalUnit(metric: HealthMetric, raw: String): String? {
+    if (raw.length > 40 || raw.any(Char::isISOControl)) return null
+    fun key(unit: String) = java.text.Normalizer.normalize(unit.replace(Regex("[\\u00b9\\u00b2\\u00b3\\u2070\\u2074-\\u2079]+"), "^$0"),
+        java.text.Normalizer.Form.NFKC)
+        .filterNot(Char::isWhitespace).replace('\u03bc', 'u').replace('\u00b5', 'u')
+        .replace(Regex("^(?:[x\\u00d7])(?=10\\^)"), "").replace(Regex("(?<=10)[*](?=[0-9])"), "^")
+        .replace(Regex("/([dmu]?)l$"), "/$1L")
+    return metric.units.singleOrNull { it.isNotEmpty() && key(it) == key(raw) }
 }
 
 private fun JSONObject.text(key: String): String = opt(key) as? String ?: throw HealthAnalysisInvalidReply()

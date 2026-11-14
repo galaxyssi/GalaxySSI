@@ -115,6 +115,9 @@ internal class HealthReportVisionUi(private val activity: Activity, private val 
                         is HealthReportInvalidReply -> when (failure.problem) {
                             HealthReportReplyProblem.FORMAT -> R.string.health_vision_reply_format
                             HealthReportReplyProblem.NO_SUPPORTED_ROWS -> R.string.health_vision_no_supported_rows
+                            HealthReportReplyProblem.UNSUPPORTED_METRICS -> R.string.health_vision_unsupported_only
+                            HealthReportReplyProblem.UNREADABLE_IMAGE -> R.string.health_vision_image_unclear
+                            HealthReportReplyProblem.AMBIGUOUS_SAMPLE -> R.string.health_vision_ambiguous_sample
                             HealthReportReplyProblem.INVALID_ROWS -> R.string.health_vision_bad_rows
                         }
                         is HealthAnalysisInvalidReply -> R.string.health_vision_unreadable

@@ -71,8 +71,50 @@ class HealthReportVisionTest {
         val decoded = parse(report.json().put("rows", mixed))
         assertEquals(listOf(row), decoded.rows)
         assertTrue(decoded.partial)
-        assertEquals(HealthReportRowIssue.entries.associateWith { 1 }, decoded.rejected)
+        assertEquals(HealthReportRowIssue.entries.filterNot { it == HealthReportRowIssue.UNREADABLE }.associateWith { 1 }, decoded.rejected)
         assertEquals(decoded, HealthReportVisionResult.from(decoded.json()))
+    }
+
+    @Test fun separatesUnsupportedUnreadableAndAmbiguousResultsWithoutSavingUnknownRows() {
+        fun empty(unsupported: Int, unreadable: Int, ambiguous: Boolean = false) =
+            report.json().put("rows", JSONArray()).put("ambiguous_sample", ambiguous)
+                .put("omitted", JSONObject().put("unsupported_metric", unsupported).put("unreadable", unreadable))
+        for ((payload, problem) in listOf(
+            empty(2, 0) to HealthReportReplyProblem.UNSUPPORTED_METRICS,
+            empty(0, 2) to HealthReportReplyProblem.UNREADABLE_IMAGE,
+            empty(0, 0, true) to HealthReportReplyProblem.AMBIGUOUS_SAMPLE,
+            empty(81, 0) to HealthReportReplyProblem.FORMAT,
+            report.json().put("ambiguous_sample", true) to HealthReportReplyProblem.FORMAT
+        )) {
+            assertEquals(problem, assertThrows(HealthReportInvalidReply::class.java) { parse(payload) }.problem)
+        }
+        val usable = parse(report.json().put("omitted", JSONObject().put("unsupported_metric", 3).put("unreadable", 2)))
+        assertEquals(listOf(row), usable.rows)
+        assertEquals(mapOf(HealthReportRowIssue.UNSUPPORTED_METRIC to 3, HealthReportRowIssue.UNREADABLE to 2), usable.rejected)
+        assertEquals(usable, HealthReportVisionResult.from(usable.json()))
+    }
+
+    @Test fun expandedLabMetricsAcceptOnlyEquivalentUnitSpellingAndKeepDifferentObservationsSeparate() {
+        val values = JSONArray()
+        fun add(metric: HealthMetric, value: String, unit: String) {
+            values.put(row.json().put("metric", metric.name)
+                .put("values", JSONObject().put(metric.fields.single(), value)).put("unit", unit))
+        }
+        add(HealthMetric.RED_BLOOD_CELLS, "4.7", "\u00d710\u00b9\u00b2/l")
+        add(HealthMetric.NEUTROPHIL_COUNT, "3.2", "10*3/\u03bcL")
+        add(HealthMetric.NEUTROPHIL_PERCENT, "60", "%")
+        add(HealthMetric.NEUTROPHIL_COUNT, "60", "%")
+        add(HealthMetric.TOTAL_BILIRUBIN, "14", "\u00b5mol/l")
+        add(HealthMetric.DIRECT_BILIRUBIN, "5", "umol/L")
+        add(HealthMetric.UREA, "4.0", "mmol/L")
+        add(HealthMetric.BLOOD_UREA_NITROGEN, "12", "mg/dl")
+        val decoded = parse(report.json().put("rows", values))
+        assertEquals(listOf("10^12/L", "10^3/uL", "%", "umol/L", "umol/L", "mmol/L", "mg/dL"), decoded.rows.map { it.unit })
+        assertEquals(7, decoded.rows.map { it.metric }.toSet().size)
+        assertEquals(mapOf(HealthReportRowIssue.INVALID_UNIT to 1), decoded.rejected)
+        assertTrue(decoded.drafts(job, original, ZoneId.of("UTC"), now).all {
+            HealthObservationPolicy.validate(it.copy(evidence = it.evidence!!.copy(confirmed = true)), now) == null
+        })
     }
 
     @Test fun distinguishesEmptyOrUnsupportedReportsFromMalformedReplies() {

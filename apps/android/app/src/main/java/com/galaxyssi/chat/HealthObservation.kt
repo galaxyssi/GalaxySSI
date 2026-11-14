@@ -33,7 +33,27 @@ internal enum class HealthMetric(val fields: List<String>, val units: List<Strin
     URIC_ACID(listOf("uric_acid"), listOf("umol/L", "mg/dL"), HealthResultForm.LABORATORY),
     CRP(listOf("crp"), listOf("mg/L", "mg/dL"), HealthResultForm.LABORATORY),
     TSH(listOf("tsh"), listOf("mIU/L", "uIU/mL"), HealthResultForm.LABORATORY),
-    URINE_PROTEIN(listOf("urine_protein"), listOf(""), HealthResultForm.QUALITATIVE);
+    URINE_PROTEIN(listOf("urine_protein"), listOf(""), HealthResultForm.QUALITATIVE),
+    RED_BLOOD_CELLS(listOf("rbc"), listOf("10^12/L", "10^6/uL"), HealthResultForm.LABORATORY),
+    HEMATOCRIT(listOf("hct"), listOf("%", "L/L"), HealthResultForm.LABORATORY),
+    MEAN_CORPUSCULAR_VOLUME(listOf("mcv"), listOf("fL"), HealthResultForm.LABORATORY),
+    MEAN_CORPUSCULAR_HEMOGLOBIN(listOf("mch"), listOf("pg"), HealthResultForm.LABORATORY),
+    MEAN_CORPUSCULAR_HEMOGLOBIN_CONCENTRATION(listOf("mchc"), listOf("g/L", "g/dL"), HealthResultForm.LABORATORY),
+    RED_CELL_DISTRIBUTION_WIDTH_CV(listOf("rdw_cv"), listOf("%"), HealthResultForm.LABORATORY),
+    RED_CELL_DISTRIBUTION_WIDTH_SD(listOf("rdw_sd"), listOf("fL"), HealthResultForm.LABORATORY),
+    MEAN_PLATELET_VOLUME(listOf("mpv"), listOf("fL"), HealthResultForm.LABORATORY),
+    NEUTROPHIL_COUNT(listOf("neut_count"), listOf("10^9/L", "10^3/uL"), HealthResultForm.LABORATORY),
+    NEUTROPHIL_PERCENT(listOf("neut_percent"), listOf("%"), HealthResultForm.LABORATORY),
+    LYMPHOCYTE_COUNT(listOf("lym_count"), listOf("10^9/L", "10^3/uL"), HealthResultForm.LABORATORY),
+    LYMPHOCYTE_PERCENT(listOf("lym_percent"), listOf("%"), HealthResultForm.LABORATORY),
+    ALBUMIN(listOf("albumin"), listOf("g/L", "g/dL"), HealthResultForm.LABORATORY),
+    TOTAL_PROTEIN(listOf("total_protein"), listOf("g/L", "g/dL"), HealthResultForm.LABORATORY),
+    TOTAL_BILIRUBIN(listOf("tbil"), listOf("umol/L", "mg/dL"), HealthResultForm.LABORATORY),
+    DIRECT_BILIRUBIN(listOf("dbil"), listOf("umol/L", "mg/dL"), HealthResultForm.LABORATORY),
+    ALKALINE_PHOSPHATASE(listOf("alp"), listOf("U/L"), HealthResultForm.LABORATORY),
+    GAMMA_GLUTAMYL_TRANSFERASE(listOf("ggt"), listOf("U/L"), HealthResultForm.LABORATORY),
+    UREA(listOf("urea"), listOf("mmol/L", "mg/dL"), HealthResultForm.LABORATORY),
+    BLOOD_UREA_NITROGEN(listOf("bun"), listOf("mmol/L", "mg/dL"), HealthResultForm.LABORATORY);
     val requiredFields get() = if (this == BLOOD_PRESSURE) fields.take(2) else fields
     val selectableUnits get() = if (form == HealthResultForm.LABORATORY) listOf("") + units else units
 }

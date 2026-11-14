@@ -135,6 +135,13 @@ unit, collection condition, and side within one hour can update the existing
 measurement, preserving its revision history and report sources. Unusable rows
 stay in the encrypted report with a reason. Invalid model rows do not discard
 valid ones; counts by rejection reason are stored without rejected model text.
+The current catalog has 47 metrics, including additional complete blood count
+and liver/kidney measurements. Recognizable non-catalog tests, unreadable
+values, and ambiguous samples are distinct outcomes. Only equivalent unit
+spellings are normalized; samples and numeric units are never guessed.
+A final metadata-only query can extend the original wait by up to 90 seconds
+for an active task, or 30 seconds for a completed task with a pending result.
+An unknown status cannot extend the wait or cause another upload.
 A failed report can be selected again without rerunning the batch. Local OCR
 retains its review flow.
 

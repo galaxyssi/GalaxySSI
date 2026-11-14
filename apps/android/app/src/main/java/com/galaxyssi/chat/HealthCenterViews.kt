@@ -84,6 +84,26 @@ internal fun HealthMetric.titleResource(): Int = when (this) {
     HealthMetric.CRP -> R.string.health_metric_crp
     HealthMetric.TSH -> R.string.health_metric_tsh
     HealthMetric.URINE_PROTEIN -> R.string.health_metric_urine_protein
+    HealthMetric.RED_BLOOD_CELLS -> R.string.health_metric_rbc
+    HealthMetric.HEMATOCRIT -> R.string.health_metric_hct
+    HealthMetric.MEAN_CORPUSCULAR_VOLUME -> R.string.health_metric_mcv
+    HealthMetric.MEAN_CORPUSCULAR_HEMOGLOBIN -> R.string.health_metric_mch
+    HealthMetric.MEAN_CORPUSCULAR_HEMOGLOBIN_CONCENTRATION -> R.string.health_metric_mchc
+    HealthMetric.RED_CELL_DISTRIBUTION_WIDTH_CV -> R.string.health_metric_rdw_cv
+    HealthMetric.RED_CELL_DISTRIBUTION_WIDTH_SD -> R.string.health_metric_rdw_sd
+    HealthMetric.MEAN_PLATELET_VOLUME -> R.string.health_metric_mpv
+    HealthMetric.NEUTROPHIL_COUNT -> R.string.health_metric_neut_count
+    HealthMetric.NEUTROPHIL_PERCENT -> R.string.health_metric_neut_percent
+    HealthMetric.LYMPHOCYTE_COUNT -> R.string.health_metric_lym_count
+    HealthMetric.LYMPHOCYTE_PERCENT -> R.string.health_metric_lym_percent
+    HealthMetric.ALBUMIN -> R.string.health_metric_albumin
+    HealthMetric.TOTAL_PROTEIN -> R.string.health_metric_total_protein
+    HealthMetric.TOTAL_BILIRUBIN -> R.string.health_metric_tbil
+    HealthMetric.DIRECT_BILIRUBIN -> R.string.health_metric_dbil
+    HealthMetric.ALKALINE_PHOSPHATASE -> R.string.health_metric_alp
+    HealthMetric.GAMMA_GLUTAMYL_TRANSFERASE -> R.string.health_metric_ggt
+    HealthMetric.UREA -> R.string.health_metric_urea
+    HealthMetric.BLOOD_UREA_NITROGEN -> R.string.health_metric_bun
 }
 
 internal fun healthFieldResource(field: String): Int = when (field) {
