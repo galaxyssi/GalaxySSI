@@ -27,7 +27,6 @@
     <string name="health_overview_recent">近期记录</string>
     <string name="health_overview_stale">较早记录</string>
     <string name="health_overview_unrecorded">未记录</string>
-    <string name="health_overview_missing_metrics">尚未记录：%1$s</string>
     <string name="health_overview_no_data_warning">缺少数据或提醒不代表结果正常。</string>
     <string name="health_overview_ocr_review">识别结果待核对</string>
     <string name="health_overview_table_review">表格导入待核对</string>

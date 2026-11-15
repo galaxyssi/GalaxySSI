@@ -87,7 +87,6 @@ class HealthOverviewUiDeviceTest {
             assertNull(find(it, key))
             assertNull(find(it, "health-overview-visit-${visit.id}"))
             assertNull(find(it, "health-overview-concern-${issue.id}"))
-            assertNotNull(find(it, "health-overview-missing"))
         }
     }
 
@@ -95,13 +94,29 @@ class HealthOverviewUiDeviceTest {
         HealthRecordStore(context, names.records).use {
             it.save(HealthDraft(values = mapOf("systolic" to "120", "diastolic" to "80"), measuredAt = now - 1000))
             it.save(HealthDraft(HealthMetric.STEPS, mapOf("steps" to "1000"), "steps", now - 2 * HealthReminderPolicy.DAY))
+            assertTrue(it.save(HealthDraft(HealthMetric.TEMPERATURE, mapOf("temperature" to "36.5"),
+                measuredAt = now - 1000)) is HealthSaveResult.Saved)
+            assertTrue(it.save(HealthDraft(HealthMetric.OXYGEN_SATURATION, mapOf("spo2" to "98"),
+                measuredAt = now - 1000)) is HealthSaveResult.Saved)
         }
     }) { scenario, _ ->
         await(scenario, "health-overview-BLOOD_PRESSURE-RECENT")
         scenario.onActivity {
+            val overviewLabels = views(it.body).filterIsInstance<android.widget.TextView>().map { view -> view.text.toString() }
+            listOf(R.string.health_overview_title, R.string.health_weekly_title,
+                R.string.health_assistant_title, R.string.health_export_data_files,
+                R.string.health_metric_temperature, R.string.health_metric_spo2).forEach { resource ->
+                val label = it.getString(resource)
+                assertFalse("Overview should not show $label", overviewLabels.any { text -> label in text })
+            }
+            val attention = requireNotNull(find(it, "health-overview-attention"))
+            assertTrue(views(attention).single { view ->
+                view.contentDescription?.toString() == it.getString(R.string.health_overview_sort)
+            }.isClickable)
             assertNotNull(find(it, "health-overview-STEPS-STALE"))
             assertNotNull(find(it, "health-overview-RESTING_HEART_RATE-MISSING"))
-            assertNotNull(find(it, "health-overview-missing"))
+            assertNull(find(it, "health-overview-extra-TEMPERATURE"))
+            assertNull(find(it, "health-overview-extra-OXYGEN_SATURATION"))
             assertNull(find(it, "health-overview-first"))
         }
         scenario.moveToState(Lifecycle.State.CREATED)

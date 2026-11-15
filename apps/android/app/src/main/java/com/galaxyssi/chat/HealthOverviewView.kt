@@ -27,18 +27,22 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
 
     fun show(content: LinearLayout, snapshot: HealthOverviewSnapshot, firstUse: HealthFirstUseView) {
         content.removeAllViews()
-        val heading = ui.line().apply {
-            addView(ui.text(label(R.string.health_overview_title), 23f, bold = true), LinearLayout.LayoutParams(0, -2, 1f))
-            addView(ui.icon(R.drawable.ic_chat_shortcut_list, R.string.health_overview_sort) { chooseOrder(content, snapshot, firstUse) })
-        }
-        if (snapshot.hasRecords) content.addView(heading) else firstUse.showIntro(content)
+        if (!snapshot.hasRecords) firstUse.showIntro(content)
         showCare(content, snapshot.care)
         if (snapshot.hasRecords || snapshot.attention.isNotEmpty() || snapshot.reviewUnavailable ||
             snapshot.connectionsUnavailable || !snapshot.derived.permitted) {
             val section = ui.column().apply { tag = "health-overview-attention" }
             val order = runCatching { HealthOverviewOrder.valueOf(prefs.getString("order", "")!!) }.getOrDefault(HealthOverviewOrder.CHANGES_FIRST)
             val ordered = HealthOverviewPolicy.sort(snapshot.attention, order)
-            section.addView(ui.text(label(R.string.health_overview_attention), 18f, bold = true))
+            if (snapshot.hasRecords) {
+                section.addView(ui.line().apply {
+                    addView(ui.text(label(R.string.health_overview_attention), 18f, bold = true),
+                        LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(ui.icon(R.drawable.ic_chat_shortcut_list, R.string.health_overview_sort) {
+                        chooseOrder(content, snapshot, firstUse)
+                    })
+                })
+            } else section.addView(ui.text(label(R.string.health_overview_attention), 18f, bold = true))
             if (ordered.isEmpty()) ui.add(section, ui.text(label(if (snapshot.reviewUnavailable || snapshot.connectionsUnavailable || snapshot.derived.unavailable)
                 R.string.health_overview_partial else R.string.health_overview_no_attention), 14f, muted = true), 8)
             ordered.forEach { ui.add(section, attention(it), 8) }
@@ -61,27 +65,14 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
         ui.add(content, ui.profileRow(label(R.string.health_key_metrics), label(R.string.health_catalog_title)) {
             start(HealthCatalogActivity::class.java)
         }, 12)
-        snapshot.metrics.take(4).chunked(2).forEach { pair ->
+        snapshot.metrics.chunked(2).forEach { pair ->
             val line = ui.line().apply { gravity = Gravity.TOP }
             pair.forEachIndexed { i, metric -> line.addView(card(metric, snapshot), LinearLayout.LayoutParams(0, -1, 1f).apply {
                 if (i == 0) marginEnd = ui.dp(4) else marginStart = ui.dp(4)
             }) }
             ui.add(content, line, 8)
         }
-        val extras = snapshot.metrics.drop(4)
-        extras.filter { it.record != null }.forEach { item ->
-            val record = requireNotNull(item.record)
-            ui.add(content, ui.profileRow("${label(item.metric.titleResource())} \u00b7 ${healthDisplayValue(record.draft)}",
-                "${label(freshness(item.freshness))} \u00b7 ${source(record)}") { openRecord(record) }
-                .apply { tag = "health-overview-extra-${item.metric.name}" }, 4)
-        }
-        val missing = extras.filter { it.freshness == HealthOverviewFreshness.MISSING }
-        if (missing.isNotEmpty()) ui.add(content, ui.text(label(R.string.health_overview_missing_metrics,
-            missing.joinToString(", ") { label(it.metric.titleResource()) }), 14f, muted = true).apply { tag = "health-overview-missing" }, 12)
         ui.add(content, ui.text(label(R.string.health_overview_no_data_warning), 13f, muted = true), 6)
-        ui.add(content, ui.profileRow(label(R.string.health_weekly_title)) { start(HealthWeeklyActivity::class.java) }, 12)
-        ui.add(content, ui.profileRow(label(R.string.health_assistant_title)) { start(HealthAssistantActivity::class.java) })
-        ui.add(content, ui.profileRow(label(R.string.health_export_data_files)) { start(HealthDataFilesActivity::class.java) })
     }
 
     private fun showCare(content: LinearLayout, care: HealthOverviewCare) {
