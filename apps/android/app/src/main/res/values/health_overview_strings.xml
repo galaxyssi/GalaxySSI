@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_overview_metrics_heading">Key measurements</string>
+    <string name="health_overview_view_all">View all</string>
+    <string name="health_overview_fasting_glucose">Fasting glucose</string>
+    <string name="health_overview_no_value">—</string>
+    <string name="health_overview_no_range">No comparison range</string>
+    <string name="health_overview_report_range">Report reference range</string>
+    <string name="health_overview_record_range">Recorded reference range</string>
+    <string name="health_overview_confirmed_target">Confirmed target</string>
+    <string name="health_overview_range_line">%1$s · %2$s</string>
+    <string name="health_overview_range_below">Below %1$s</string>
+    <string name="health_overview_range_within">Within %1$s</string>
+    <string name="health_overview_range_above">Above %1$s</string>
+    <string name="health_overview_range_not_comparable">Cannot compare with range</string>
+    <string name="health_overview_record_detail">Measurement details</string>
+    <string name="health_overview_metric_history">Measurement history</string>
+    <string name="health_overview_steps_unit">steps</string>
     <string name="health_overview_today_actions">Actions for today</string>
     <string name="health_overview_no_due_actions">No confirmed actions due today.</string>
     <string name="health_overview_care_pending">Open Health actions to see the latest list.</string>

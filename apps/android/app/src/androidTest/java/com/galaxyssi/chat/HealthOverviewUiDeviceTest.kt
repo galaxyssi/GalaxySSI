@@ -1,7 +1,6 @@
 package com.galaxyssi.chat
 
 import android.app.KeyguardManager
-import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import android.view.View
@@ -105,14 +104,14 @@ class HealthOverviewUiDeviceTest {
             val overviewLabels = views(it.body).filterIsInstance<android.widget.TextView>().map { view -> view.text.toString() }
             listOf(R.string.health_overview_title, R.string.health_weekly_title,
                 R.string.health_assistant_title, R.string.health_export_data_files,
-                R.string.health_metric_temperature, R.string.health_metric_spo2).forEach { resource ->
+                R.string.health_metric_temperature, R.string.health_metric_spo2,
+                R.string.health_care_title, R.string.health_overview_attention).forEach { resource ->
                 val label = it.getString(resource)
                 assertFalse("Overview should not show $label", overviewLabels.any { text -> label in text })
             }
-            val attention = requireNotNull(find(it, "health-overview-attention"))
-            assertTrue(views(attention).single { view ->
-                view.contentDescription?.toString() == it.getString(R.string.health_overview_sort)
-            }.isClickable)
+            assertNull(find(it, "health-overview-attention"))
+            assertNull(find(it, "health-overview-proactive-care"))
+            assertTrue(requireNotNull(it.window.decorView.findViewWithTag<View>("health-functions")).isClickable)
             assertNotNull(find(it, "health-overview-STEPS-STALE"))
             assertNotNull(find(it, "health-overview-RESTING_HEART_RATE-MISSING"))
             assertNull(find(it, "health-overview-extra-TEMPERATURE"))
@@ -124,15 +123,57 @@ class HealthOverviewUiDeviceTest {
         scenario.moveToState(Lifecycle.State.RESUMED)
         await(scenario, "health-overview-BLOOD_PRESSURE-RECENT")
     }
-    @Test fun firstUseCanShowPendingRecognitionWithoutInventingAReading() = screen(seed = { names, now ->
+    @Test fun abnormalReportRowsUseInlineValuesAndKeepNativeShortcutsBelowTheScrollArea() = screen(seed = { names, now ->
+        HealthRecordStore(context, names.records).use { store ->
+            val id = UUID.randomUUID().toString()
+            val evidence = HealthEvidence(id, id, "glucose", "a".repeat(64), 1, "synthetic", confirmed = true)
+            assertTrue(store.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "6.3"), "mmol/L",
+                now - 1000, condition = "fasting", reference = "3.9-6.1", evidence = evidence)) is HealthSaveResult.Saved)
+            assertTrue(store.save(HealthDraft(HealthMetric.CHOLESTEROL, mapOf("cholesterol" to "6.2"), "mmol/L",
+                now - 2000, reference = "3-5")) is HealthSaveResult.Saved)
+            assertTrue(store.save(HealthDraft(HealthMetric.CHOLESTEROL, mapOf("cholesterol" to "4.5"), "mmol/L",
+                now - 1500, reference = "3-5")) is HealthSaveResult.Saved)
+        }
+    }) { scenario, names ->
+        await(scenario, "health-overview-GLUCOSE-RECENT")
+        scenario.onActivity { activity ->
+            val list = requireNotNull(find(activity, "health-overview-metrics")) as ViewGroup
+            assertNotNull(list.getChildAt(0).findViewWithTag<View>("health-overview-GLUCOSE-RECENT"))
+            assertNull(find(activity, "health-overview-CHOLESTEROL-RECENT"))
+            val range = requireNotNull(find(activity, "health-overview-range-GLUCOSE")) as android.widget.TextView
+            assertTrue(range.text.contains(activity.getString(R.string.health_overview_report_range)))
+            assertTrue(range.text.contains("3.9-6.1 mmol/L"))
+            val value = (requireNotNull(find(activity, "health-overview-value-GLUCOSE")) as android.widget.TextView).text as android.text.Spanned
+            assertEquals(activity.getColor(R.color.health_overview_orange),
+                value.getSpans(0, 3, android.text.style.ForegroundColorSpan::class.java).single().foregroundColor)
+            val footer = requireNotNull(find(activity, "health-overview-bottom-actions"))
+            assertSame(footer, activity.body.getChildAt(activity.body.childCount - 1))
+            assertNotNull(activity.body.getChildAt(0) as? android.widget.ScrollView)
+            val shortcuts = views(footer).filter { it.isClickable }.map { it.tag }
+            assertEquals(listOf("health-overview-photo", "health-overview-manual", "health-overview-import", "health-overview-sources"), shortcuts)
+            assertTrue(requireNotNull(find(activity, "health-overview-GLUCOSE-RECENT")).performClick())
+            assertEquals(View.VISIBLE, requireNotNull(find(activity, "health-overview-detail-GLUCOSE")).visibility)
+        }
+        HealthPrivacyStore(context, names.privacy).use {
+            it.change(HealthPrivacyOption.CONFIRMED_METRICS, false, it.policy().version)
+        }
+        await(scenario, "health-overview-BLOOD_PRESSURE-MISSING")
+        scenario.onActivity { assertNull(find(it, "health-overview-GLUCOSE-RECENT")) }
+    }
+    @Test fun firstUseKeepsPendingRecognitionOutOfTheOverview() = screen(seed = { names, now ->
         overviewOcrJob(context, names, now - 1000)
-    }) { scenario, _ ->
-        await(scenario, "health-overview-review-OCR")
+    }) { scenario, names ->
+        await(scenario, "health-first-existing")
         scenario.onActivity {
             assertNotNull(find(it, "health-overview-first"))
             assertNotNull(find(it, "health-first-no-analysis"))
+            assertNull(find(it, "health-overview-attention"))
+            assertNull(find(it, "health-overview-review-OCR"))
             assertNull(find(it, "health-overview-BLOOD_PRESSURE-MISSING"))
             assertNull(find(it, "health-overview-BLOOD_PRESSURE-RECENT"))
+        }
+        HealthRecordStore(context, names.records).use {
+            assertEquals(HealthOverviewReviewKind.OCR, HealthOverviewRepository.pendingReviews(context, it, names, limit = 4).single().kind)
         }
     }
     @Test fun firstUseOffersOptionalSourcesAndAFilePickerWithoutAnImportHub() = screen { scenario, _ ->
@@ -183,28 +224,18 @@ class HealthOverviewUiDeviceTest {
             assertTrue("application/pdf" in requireNotNull(picker.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)))
         } finally { instrumentation.removeMonitor(monitor) }
     }
-    @Test fun revocationClearsVisibleDerivedAlertButKeepsRawRecordCard() = screen(seed = ::seedSleep) { scenario, names ->
-        await(scenario, "health-overview-change")
+    @Test fun revocationKeepsTheRawSleepRecordCard() = screen(seed = { names, now ->
+        seedSleep(names, now)
+        HealthCareStore(context, names.care).use { it.settings() }
+    }) { scenario, names ->
+        await(scenario, "health-overview-SLEEP_DURATION-RECENT")
         HealthPrivacyStore(context, names.privacy).use {
             it.change(HealthPrivacyOption.CONFIRMED_METRICS, false, it.policy().version)
         }
-        await(scenario, "health-overview-privacy-blocked")
+        await(scenario, "health-overview-care-status")
         scenario.onActivity {
             assertNull(find(it, "health-overview-change"))
             assertNotNull(find(it, "health-overview-SLEEP_DURATION-RECENT"))
         }
-    }
-    @Test fun attentionOrderPreferencePersistsAcrossRecreation() = screen(seed = { names, now ->
-        seedSleep(names, now); overviewOcrJob(context, names, now - 2000)
-    }) { scenario, names ->
-        await(scenario, "health-overview-change")
-        fun index(activity: HealthCenterActivity, tag: String) = views(activity.body).indexOfFirst { it.tag == tag }
-        scenario.onActivity {
-            assertTrue(index(it, "health-overview-change") < index(it, "health-overview-review-OCR"))
-            it.getSharedPreferences(names.prefs, Context.MODE_PRIVATE).edit().putString("order", HealthOverviewOrder.REVIEW_FIRST.name).commit()
-        }
-        scenario.recreate()
-        await(scenario, "health-overview-review-OCR")
-        scenario.onActivity { assertTrue(index(it, "health-overview-review-OCR") < index(it, "health-overview-change")) }
     }
 }

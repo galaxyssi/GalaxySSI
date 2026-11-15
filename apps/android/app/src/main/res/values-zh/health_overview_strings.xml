@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_overview_metrics_heading">关键指标</string>
+    <string name="health_overview_view_all">查看全部</string>
+    <string name="health_overview_fasting_glucose">空腹血糖</string>
+    <string name="health_overview_no_value">—</string>
+    <string name="health_overview_no_range">无可比较范围</string>
+    <string name="health_overview_report_range">报告参考范围</string>
+    <string name="health_overview_record_range">记录参考范围</string>
+    <string name="health_overview_confirmed_target">已确认目标</string>
+    <string name="health_overview_range_line">%1$s · %2$s</string>
+    <string name="health_overview_range_below">低于%1$s</string>
+    <string name="health_overview_range_within">在%1$s内</string>
+    <string name="health_overview_range_above">高于%1$s</string>
+    <string name="health_overview_range_not_comparable">无法与范围比较</string>
+    <string name="health_overview_record_detail">测量详情</string>
+    <string name="health_overview_metric_history">历史记录</string>
+    <string name="health_overview_steps_unit">步</string>
     <string name="health_overview_today_actions">今日行动</string>
     <string name="health_overview_no_due_actions">今天没有到期的已确认行动。</string>
     <string name="health_overview_care_pending">打开健康行动，查看最新列表。</string>

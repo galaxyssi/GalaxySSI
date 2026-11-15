@@ -14,12 +14,8 @@ internal class HealthFirstUseView(private val activity: HealthCenterActivity, pr
         Configuration.UI_MODE_NIGHT_YES
     private val divider get() = activity.getColor(R.color.separator)
     private enum class Accent(val light: Int, val ink: Int, val night: Int, val nightInk: Int) {
-        GREEN(0xffe4f5ec.toInt(), 0xff147d54.toInt(), 0xff213e34.toInt(), 0xff9de8bd.toInt()),
-        ORANGE(0xfffbede0.toInt(), 0xff985617.toInt(), 0xff483427.toInt(), 0xffffc18a.toInt()),
-        BLUE(0xffeaf0ff.toInt(), 0xff4265ad.toInt(), 0xff263650.toInt(), 0xffb7cdff.toInt()),
-        VIOLET(0xfff0e9fa.toInt(), 0xff76579b.toInt(), 0xff3d304c.toInt(), 0xffdac5f9.toInt())
+        GREEN(0xffe4f5ec.toInt(), 0xff147d54.toInt(), 0xff213e34.toInt(), 0xff9de8bd.toInt())
     }
-    private data class Entry(val icon: Int, val accent: Accent, val title: Int, val tag: String, val action: () -> Unit)
     private fun label(id: Int) = activity.getString(id)
     private fun open(target: Class<*>, extras: Intent.() -> Unit = {}) {
         if (externalRoutes) activity.startActivity(Intent(activity, target).apply(extras))
@@ -40,35 +36,6 @@ internal class HealthFirstUseView(private val activity: HealthCenterActivity, pr
     }
 
     fun showActions(content: LinearLayout) {
-        val quick = listOf(
-            Entry(R.drawable.ic_agent_camera, Accent.ORANGE, R.string.health_take_photo, "health-overview-photo") {
-                if (externalRoutes) activity.startActivity(healthCaptureIntent(activity, activity.intent.healthNavigationDatabases(), HealthCaptureEntry.CAMERA))
-            },
-            Entry(R.drawable.ic_agent_new_session, Accent.GREEN, R.string.health_manual, "health-overview-manual") { activity.open("manual") },
-            Entry(R.drawable.ic_settings_upload, Accent.BLUE, R.string.health_overview_import, "health-overview-import", activity::pickHealthFile),
-            Entry(R.drawable.ic_protocol_link, Accent.VIOLET, R.string.health_sources_quick, "health-overview-sources") { sources() }
-        )
-        val config = activity.resources.configuration
-        val columns = if (config.screenWidthDp < 350 || config.fontScale > 1.3f) 2 else 4
-        ui.add(content, panel().apply {
-            quick.chunked(columns).forEach { entries ->
-                addView(ui.line().apply {
-                    gravity = Gravity.TOP
-                    entries.forEach { entry ->
-                        addView(ui.column().apply {
-                            tag = entry.tag
-                            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                            minimumHeight = ui.dp(80)
-                            setPadding(ui.dp(4), ui.dp(5), ui.dp(4), ui.dp(8))
-                            isFocusable = true
-                            setOnClickListener { entry.action() }
-                            addView(glyph(entry.icon, entry.accent), LinearLayout.LayoutParams(ui.dp(42), ui.dp(42)))
-                            ui.add(this, ui.text(label(entry.title), 13f).apply { gravity = Gravity.CENTER }, 5)
-                        }, LinearLayout.LayoutParams(0, -1, 1f))
-                    }
-                })
-            }
-        }, 16)
         ui.add(content, panel().apply {
             addView(ui.text(label(R.string.health_first_steps), 18f, bold = true))
             addView(numbered(1, R.string.health_first_profile, R.string.health_first_profile_note) {

@@ -1,32 +1,28 @@
 # Android Health Overview
 
-The Health Center overview shows four key metrics, record freshness, and
-real attention items. The first-use state offers photo, manual entry, and
-file import without requiring a device or a provider. There is no sample
-profile, synthetic result, or health score.
+The Health Center uses one compact measurement list and a fixed bottom row
+for photo, manual entry, file import, and device connection. The production
+view does not include mock values or a health score.
 
 ## Read Contract
 
-- The key metrics are blood pressure, sleep duration, resting pulse, and
-  steps. Temperature and oxygen saturation also contribute to the coverage
-  count and are labeled explicitly when missing.
+- The four pinned metrics are blood pressure, sleep duration, resting pulse,
+  and steps. Other metrics join the list when their latest record compares
+  outside an applicable range. Temperature and oxygen saturation remain in
+  the catalog, not in the overview.
 - Indexed latest-record queries exclude deleted rows, future measurements,
   and non-self observations. Recent means the last seven local calendar
   dates for most metrics and today for steps. A prior count is not shown as
-  today's count. Each observed value includes time and source and opens its
-  saved revision.
-- With confirmed-metric authorization, the sleep card can show the average
-  of usable daily values across the last seven completed dates. The read
-  shares the weekly report calculation and is recorded in encrypted access
-  history. Revoking authorization clears derived views, not the person's
-  right to view their own underlying measurements.
-- The overview consumes existing pending sleep reminders only if their
-  date, zone, current threshold, rule version, and metric revision match.
-  It never creates, delivers, or reopens an alert. Snoozed or handled
-  episodes are not presented as new attention items.
-- The most recent actionable OCR and table-review items are shown separately
-  from measurements. At most 30 ready-state import candidates are inspected
-  by index. OCR links require a recognized page and either an unfinished
+  today's count. Each observed value includes time and source. Expanding the
+  row exposes its saved revision and measurement history.
+- Inline comparisons use the same record's reference or an applicable,
+  confirmed target bound to that exact record revision. Each range shows
+  its source and units. Color is paired with explicit text, and components
+  such as systolic and diastolic pressure are compared separately. No
+  ranges or goals are invented when none can be used.
+- The measurement record center still exposes actionable OCR and table
+  reviews. At most 30 ready-state import candidates are inspected by
+  index. OCR links require a recognized page and either an unfinished
   review draft or no previously recorded observation for the original;
   deleting a saved measurement does not recreate a review. Table links
   require the current batch to be selecting a sheet, mapping, or ready for
@@ -46,13 +42,12 @@ Reads respect confirmed-measurement and profile permissions. The overview
 checks source versions and ownership, and does not evaluate a concern, send
 health information to a model, modify its plan or deliver a reminder.
 
-The preference can put health changes first, review first, or sort by
-recency. The stored value is only an ordering choice, not a clinical
-severity assignment. Unknown/failed sections are separate from an empty
-result. Observations, reminder changes, import states, privacy changes, and
-local day rollover refresh the visible overview. The activity clears
-visible data on stop and reloads after returning, preserving scroll when
-possible. Summary reads and decryption stay off the UI thread.
+Out-of-range rows appear first, newest first. That order is not a clinical
+severity assignment. Revoking confirmed-measurement authorization clears
+comparisons without deleting readings. Observations, privacy changes, and
+local day rollover refresh the visible overview. The activity clears visible
+data on stop and reloads after returning, preserving scroll when possible.
+Summary reads and decryption stay off the UI thread.
 
 ## Verification
 

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="health_overview_green">#006C56</color>
+    <color name="health_overview_orange">#8D4D00</color>
+    <color name="health_overview_muted">#52625E</color>
+</resources>
