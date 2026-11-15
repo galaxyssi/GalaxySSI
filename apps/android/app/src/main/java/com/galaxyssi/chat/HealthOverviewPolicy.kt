@@ -16,8 +16,7 @@ internal sealed interface HealthOverviewAttention {
 }
 
 internal object HealthOverviewPolicy {
-    val keyMetrics = listOf(HealthMetric.BLOOD_PRESSURE, HealthMetric.SLEEP_DURATION, HealthMetric.RESTING_HEART_RATE, HealthMetric.STEPS)
-    val metrics = keyMetrics + listOf(HealthMetric.TEMPERATURE, HealthMetric.OXYGEN_SATURATION)
+    val metrics = listOf(HealthMetric.BLOOD_PRESSURE, HealthMetric.SLEEP_DURATION, HealthMetric.RESTING_HEART_RATE, HealthMetric.STEPS)
     const val REVIEW_LIMIT = 30
 
     fun freshness(metric: HealthMetric, time: Long?, now: Long, zone: ZoneId): HealthOverviewFreshness {

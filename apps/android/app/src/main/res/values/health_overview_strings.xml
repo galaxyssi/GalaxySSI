@@ -27,7 +27,6 @@
     <string name="health_overview_recent">Recent</string>
     <string name="health_overview_stale">Older record</string>
     <string name="health_overview_unrecorded">Not recorded</string>
-    <string name="health_overview_missing_metrics">Not recorded: %1$s</string>
     <string name="health_overview_no_data_warning">Missing data or reminders do not indicate a normal result.</string>
     <string name="health_overview_ocr_review">Recognition results to review</string>
     <string name="health_overview_table_review">Table import to review</string>
