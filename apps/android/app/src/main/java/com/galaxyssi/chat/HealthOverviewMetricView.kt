@@ -11,6 +11,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import java.text.NumberFormat
 import java.time.LocalDate
@@ -31,8 +32,11 @@ internal class HealthOverviewMetricView(private val activity: HealthCenterActivi
         val status = item.ranges.firstOrNull { it.outside }
             ?: item.ranges.firstOrNull { it.position == HealthOverviewRangePosition.NOT_COMPARABLE }
             ?: item.ranges.firstOrNull()
-        val title = label(if (metric == HealthMetric.GLUCOSE && draft?.condition == "fasting")
-            R.string.health_overview_fasting_glucose else metric.titleResource())
+        val title = label(when {
+            metric == HealthMetric.STEPS -> R.string.health_overview_today_steps
+            metric == HealthMetric.GLUCOSE && draft?.condition == "fasting" -> R.string.health_overview_fasting_glucose
+            else -> metric.titleResource()
+        })
         val spacious = activity.resources.configuration.fontScale >= 1.25f
         val icon = when (metric) {
             HealthMetric.BLOOD_PRESSURE, HealthMetric.HEART_RATE, HealthMetric.RESTING_HEART_RATE -> R.drawable.ic_health_heart
@@ -63,7 +67,8 @@ internal class HealthOverviewMetricView(private val activity: HealthCenterActivi
             imageTintList = ColorStateList.valueOf(color(R.color.text_secondary))
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
-        val storedValue = draft?.let { reading(it, item.ranges) } ?: label(R.string.health_overview_no_value)
+        val staleSteps = metric == HealthMetric.STEPS && item.freshness != HealthOverviewFreshness.RECENT
+        val storedValue = draft?.takeUnless { staleSteps }?.let { reading(it, item.ranges) } ?: label(R.string.health_overview_no_value)
         val value = ui.text("", 22f, bold = true).apply {
             text = storedValue
             tag = "health-overview-value-${metric.name}"
@@ -83,21 +88,8 @@ internal class HealthOverviewMetricView(private val activity: HealthCenterActivi
                     arrow.rotation = if (expanded) 180f else 0f
                 }
             }
-            val name = ui.line().apply {
-                addView(ImageView(activity).apply {
-                    setImageResource(icon)
-                    imageTintList = ColorStateList.valueOf(color(R.color.health_overview_green))
-                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                }, LinearLayout.LayoutParams(ui.dp(18), ui.dp(18)).apply { marginEnd = ui.dp(7) })
-                addView(ui.text(title, 15f, bold = true), LinearLayout.LayoutParams(0, -2, 1f))
-            }
-            addView(ui.line().apply {
-                addView(name, LinearLayout.LayoutParams(0, -2, 1f))
-                if (!spacious) addView(value, LinearLayout.LayoutParams(0, -2, 1f))
-                addView(arrow, LinearLayout.LayoutParams(ui.dp(14), ui.dp(14)))
-            })
-            if (spacious) addView(value, LinearLayout.LayoutParams(-1, -2))
-            if (record != null) {
+            addHealthOverviewHeadline(activity, title, icon, value, arrow)
+            if (record != null && !staleSteps) {
                 val timing = label(R.string.health_overview_source, activity.date(record.draft.measuredAt),
                     label(healthRecordSourceResource(record.source)))
                 val source = ui.text(timing, 12f).apply { setTextColor(color(R.color.health_overview_muted)) }
@@ -119,7 +111,8 @@ internal class HealthOverviewMetricView(private val activity: HealthCenterActivi
                     ui.add(recordMetadata, ui.text(label(R.string.health_overview_range_line, label(bound.source.title()),
                         "$field${bound.bounds} ${bound.unit}"), 13f).apply { tag = "health-overview-range-${metric.name}" }, 6)
                 }
-            } else ui.add(recordMetadata, ui.text(label(R.string.health_overview_unrecorded), 12f, muted = true), 4)
+            } else ui.add(recordMetadata, ui.text(label(if (staleSteps) R.string.health_overview_no_today_steps
+                else R.string.health_overview_unrecorded), 12f, muted = true), 4)
             addView(recordMetadata)
             if (reference != null) ui.add(this, ui.text(reference.lines.joinToString("\n") { label(it) }, 13f, muted = true)
                 .apply { tag = "health-overview-reference-${metric.name}" }, 6)
@@ -264,4 +257,23 @@ internal class HealthOverviewMetricView(private val activity: HealthCenterActivi
         HealthOverviewRangeSource.RECORD -> R.string.health_overview_record_range
         HealthOverviewRangeSource.CONFIRMED_TARGET -> R.string.health_overview_confirmed_target
     }
+}
+
+internal fun LinearLayout.addHealthOverviewHeadline(activity: HealthCenterActivity, title: String, icon: Int,
+    amount: TextView, arrow: ImageView) {
+    val ui = activity.ui
+    val spacious = activity.resources.configuration.fontScale >= 1.25f
+    addView(ui.line().apply {
+        addView(ui.line().apply {
+            addView(ImageView(activity).apply {
+                setImageResource(icon)
+                imageTintList = ColorStateList.valueOf(activity.getColor(R.color.health_overview_green))
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, LinearLayout.LayoutParams(ui.dp(18), ui.dp(18)).apply { marginEnd = ui.dp(7) })
+            addView(ui.text(title, 15f, bold = true), LinearLayout.LayoutParams(0, -2, 1f))
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        if (!spacious) addView(amount, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(arrow, LinearLayout.LayoutParams(ui.dp(14), ui.dp(14)))
+    })
+    if (spacious) addView(amount, LinearLayout.LayoutParams(-1, -2))
 }

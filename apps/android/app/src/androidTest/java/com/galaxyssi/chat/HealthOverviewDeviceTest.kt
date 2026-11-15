@@ -66,42 +66,27 @@ class HealthOverviewDeviceTest {
     private fun load(names: HealthOverviewDatabases, store: HealthRecordStore) = HealthOverviewRepository.load(context, store, names, now, zone)
     private fun steps(store: HealthRecordStore, time: Long, value: String) =
         (store.save(HealthDraft(HealthMetric.STEPS, mapOf("steps" to value), "steps", time)) as HealthSaveResult.Saved).record
-    @Test fun carePreviewUsesConfirmedActionsAndExactVisitWithoutChangingThePlan() = fixture { names, store ->
+    @Test fun overviewLeavesStoredCarePlansAndVisitFollowUpIntact() = fixture { names, store ->
         val (concern, visit) = seedHealthOverviewCare(context, names, now, zone)
         HealthCareStore(context, names.care).use { care ->
             val before = care.concern(concern)!!
-            val first = load(names, store).care
-            assertTrue(first.enabled && first.actionsReady && !first.unavailable)
-            assertEquals("Synthetic overdue", first.actions.single().title)
-            assertTrue(first.actions.single().overdue)
-            assertNull(first.upcoming)
-            assertEquals(concern, first.concerns.single().id)
-            assertEquals(visit, first.visits.single().id)
-            assertEquals(HealthCareVisitFollowUpState.ACTIVE, first.visits.single().journal)
+            val beforeVisit = requireNotNull(care.encounter(visit))
+            assertTrue(load(names, store).hasRecords)
             assertEquals(before, care.concern(concern)); assertNull(care.nextReminder())
-            val updated = care.finishAction(concern, before.revision, first.actions.single().id, "Synthetic outcome", now)
-            val next = load(names, store).care
-            assertTrue(next.actions.isEmpty())
-            assertEquals("Synthetic upcoming", next.upcoming!!.title)
-            care.update(concern, updated.revision, "overview_pause_fixture") { it.copy(stage = HealthCareStage.PAUSED) }
-            val paused = load(names, store).care
-            assertTrue(paused.actions.isEmpty()); assertNull(paused.upcoming)
-            assertEquals(HealthCareStage.PAUSED, paused.concerns.single().stage)
+            assertEquals(beforeVisit, care.encounter(visit))
+            assertTrue(before.actions.any { it.description == "Synthetic overdue" })
         }
     }
-    @Test fun revokedOrChangedDataDoesNotPresentAnOldActionAsCurrent() = fixture { names, store ->
+    @Test fun privacyRevocationKeepsCareRecordsWithoutChangingOverviewAccessRules() = fixture { names, store ->
         val (concern, _) = seedHealthOverviewCare(context, names, now, zone)
-        assertEquals(1, load(names, store).care.actions.size)
+        val before = HealthCareStore(context, names.care).use { it.concern(concern) }
         store.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "6.4"), "mmol/L", now, reference = "4-6"))
-        val stale = load(names, store).care
-        assertTrue(stale.actions.isEmpty()); assertNull(stale.upcoming)
-        assertEquals(concern, stale.concerns.single().id)
-        assertTrue(stale.concerns.single().sourceChanged)
-        HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.PROFILE_CONTEXT, false, it.policy().version) }
-        val hidden = load(names, store).care
-        assertFalse(hidden.permitted)
-        assertTrue(hidden.concerns.isEmpty() && hidden.visits.isEmpty() && hidden.actions.isEmpty())
-        assertTrue(load(names, store).hasRecords)
+        assertTrue(load(names, store).metrics.any { it.metric == HealthMetric.GLUCOSE })
+        HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.CONFIRMED_METRICS, false, it.policy().version) }
+        val restricted = load(names, store)
+        assertTrue(restricted.hasRecords)
+        assertFalse(restricted.metrics.any { it.metric == HealthMetric.GLUCOSE })
+        HealthCareStore(context, names.care).use { assertEquals(before, it.concern(concern)) }
     }
     @Test fun latestConfirmedMetricExcludesOtherProfilesFutureValuesAndDeletedRows() = fixture { names, store ->
         val expected = steps(store, now - HealthReminderPolicy.DAY, "4000")

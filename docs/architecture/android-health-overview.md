@@ -30,13 +30,8 @@ view does not include mock values or a health score.
 
 ## Presentation And Refresh
 
-The longitudinal preview shows up to three confirmed due or overdue actions, or
-the next scheduled action when none are due, and links to the existing review
-and full agenda. It also previews up to three open concerns and their latest
-recorded visit, if not cancelled. Follow-up rows open the exact journal rather
-than another concern's journal. These are bounded previews, not total counts.
-If an index is still being prepared or a bounded page cannot establish absence,
-the overview points to the full list rather than claiming there are no actions.
+The overview ends with the measurement list. Existing health actions, concerns,
+and follow-ups remain accessible from their own pages without overview previews.
 
 Reads respect confirmed-measurement and profile permissions. The overview
 checks source versions and ownership, and does not evaluate a concern, send
@@ -59,11 +54,12 @@ Summary reads and decryption stay off the UI thread.
   step counter supplies today's total without adding imported or manual
   counts. An ongoing notification allows the user to stop background
   counting. The local checkpoint and goal are encrypted.
-- The cycling row shows completed time from Google Play services' cycling
-  transitions. Detection is opt-in and uses the physical activity
-  permission, without requesting location or saving a route. Duplicate
-  transitions do not add time twice. Completed intervals spanning midnight
-  are split by local date. There are no manual ride timers.
+- The cycling row shows one daily total and the current riding status.
+  Opt-in detection combines Google Play services transitions with periodic
+  activity classifications. Brief gaps do not end a ride. Sustained walking,
+  motor vehicle travel, or longer inactivity closes it without counting
+  unobserved time after the last evidence. Rides crossing midnight are split
+  by local date. Only the local timing checkpoint is retained, not a route.
 
 ## Verification
 

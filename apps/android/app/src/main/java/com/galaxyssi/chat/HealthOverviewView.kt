@@ -19,13 +19,6 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
     private fun start(type: Class<*>, extras: Intent.() -> Unit = {}) {
         if (names.fixture == null) activity.startActivity(Intent(activity, type).apply(extras))
     }
-    private fun openCare(type: Class<*>, concern: String? = null, visit: String? = null) {
-        activity.startActivity(Intent(activity, type).putHealthNavigationFixture(names).apply {
-            concern?.let { putExtra("health_care_id", it) }
-            visit?.let { putExtra("health_encounter_id", it) }
-        })
-    }
-
     fun show(content: LinearLayout, snapshot: HealthOverviewSnapshot, firstUse: HealthFirstUseView) {
         content.removeAllViews()
         if (!snapshot.hasRecords) {
@@ -51,61 +44,6 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
                 if (it.metric == HealthMetric.STEPS) addView(activity.cyclingRow())
             }
         })
-        showCare(content, snapshot.care)
-    }
-
-    private fun showCare(content: LinearLayout, care: HealthOverviewCare) {
-        if (care.enabled && care.permitted && !care.unavailable) {
-            ui.add(content, ui.text(label(R.string.health_overview_today_actions), 18f, bold = true), 16)
-            if (!care.actionsReady) {
-                ui.add(content, ui.text(label(R.string.health_overview_care_pending), 14f, muted = true), 6)
-            } else if (care.actions.isEmpty()) {
-                ui.add(content, ui.text(label(R.string.health_overview_no_due_actions), 14f, muted = true), 6)
-            }
-            (care.actions + listOfNotNull(care.upcoming)).forEach { action ->
-                val timing = when {
-                    action == care.upcoming -> R.string.health_overview_next_action
-                    action.overdue -> R.string.health_overview_overdue_action
-                    else -> R.string.health_overview_due_action
-                }
-                ui.add(content, ui.profileRow(action.title, label(timing, activity.date(action.dueAt))) {
-                    activity.openOverviewAction(action.concernId, action.id)
-                }.apply { tag = "health-overview-action-${action.id}" }, 4)
-            }
-        }
-        if (care.enabled) ui.add(content, ui.profileRow(label(R.string.health_agenda_title), label(R.string.health_agenda_summary)) {
-            openCare(HealthCareActionsActivity::class.java)
-        }.apply { tag = "health-overview-action-agenda" }, 8)
-        if (care.unavailable || !care.permitted || care.concerns.isNotEmpty()) {
-            ui.add(content, ui.text(label(R.string.health_overview_ongoing_care), 18f, bold = true), 16)
-            val status = when {
-                care.unavailable -> R.string.health_overview_care_unavailable
-                !care.permitted -> R.string.health_overview_care_permission
-                !care.enabled -> R.string.health_care_disabled
-                else -> null
-            }
-            status?.let { ui.add(content, ui.text(label(it), 14f, muted = true)
-                .apply { tag = "health-overview-care-status" }, 6) }
-            care.concerns.forEach { concern ->
-                val statusText = if (concern.sourceChanged && concern.stage != HealthCareStage.PAUSED)
-                    R.string.health_overview_care_changed else concern.stage.titleResource()
-                ui.add(content, ui.profileRow(label(concern.metric.titleResource()), label(statusText)) {
-                    openCare(HealthCareActivity::class.java, concern.id)
-                }.apply { tag = "health-overview-concern-${concern.id}" }, 4)
-            }
-        }
-        if (care.visits.isNotEmpty()) {
-            ui.add(content, ui.text(label(R.string.health_overview_visits), 18f, bold = true), 16)
-            care.visits.forEach { visit ->
-                val detail = listOfNotNull(label(visit.state.label()),
-                    visit.at?.let { encounterTime(activity, it, visit.zone) },
-                    visit.journal?.let { label(it.label()) }).joinToString(" \u00b7 ")
-                ui.add(content, ui.profileRow(visit.purpose, detail) {
-                    openCare(if (visit.journal != null) HealthCareVisitFollowUpActivity::class.java
-                        else HealthCareEncountersActivity::class.java, visit.concernId, visit.id)
-                }.apply { tag = "health-overview-visit-${visit.id}" }, 4)
-            }
-        }
     }
 
     private data class Shortcut(val icon: Int, val title: Int, val tag: String, val action: () -> Unit)

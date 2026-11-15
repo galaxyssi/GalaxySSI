@@ -62,7 +62,7 @@ class HealthOverviewUiDeviceTest {
         }
     }
 
-    @Test fun careSectionsShowPersistedItemsAndOpenTheExactFollowUp() = screen(seed = { names, now ->
+    @Test fun careSectionsAreNotDisplayedEvenWhenRecordsExist() = screen(seed = { names, now ->
         seedHealthOverviewCare(context, names, now, zone)
     }) { scenario, names ->
         val (issue, visit) = HealthCareStore(context, names.care).use { care ->
@@ -71,28 +71,12 @@ class HealthOverviewUiDeviceTest {
         }
         val due = issue.actions.single { it.description == "Synthetic overdue" }
         val key = "health-overview-action-${due.id}"
-        await(scenario, key)
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val monitor = instrumentation.addMonitor(HealthCareVisitFollowUpActivity::class.java.name, null, false)
-        try {
-            scenario.onActivity {
-                assertTrue(requireNotNull(find(it, key)).isClickable)
-                assertTrue(requireNotNull(find(it, "health-overview-concern-${issue.id}")).isClickable)
-                assertTrue(requireNotNull(find(it, "health-overview-visit-${visit.id}")).performClick())
-            }
-            val screen = requireNotNull(instrumentation.waitForMonitorWithTimeout(monitor, 5_000))
-            assertEquals(issue.id, screen.intent.getStringExtra("health_care_id"))
-            assertEquals(visit.id, screen.intent.getStringExtra("health_encounter_id"))
-            assertEquals(names, screen.intent.healthNavigationDatabases())
-            instrumentation.runOnMainSync { screen.finish() }
-        } finally { instrumentation.removeMonitor(monitor) }
-        await(scenario, key)
-        HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.PROFILE_CONTEXT, false, it.policy().version) }
-        await(scenario, "health-overview-care-status")
+        await(scenario, "health-overview-cycling")
         scenario.onActivity {
             assertNull(find(it, key))
             assertNull(find(it, "health-overview-visit-${visit.id}"))
             assertNull(find(it, "health-overview-concern-${issue.id}"))
+            assertNull(find(it, "health-overview-action-agenda"))
         }
     }
 
@@ -120,6 +104,9 @@ class HealthOverviewUiDeviceTest {
             assertNull(find(it, "health-overview-proactive-care"))
             assertTrue(requireNotNull(it.window.decorView.findViewWithTag<View>("health-functions")).isClickable)
             assertNotNull(find(it, "health-overview-STEPS-STALE"))
+            assertEquals(it.getString(R.string.health_overview_no_value), (find(it, "health-overview-value-STEPS") as TextView).text)
+            assertTrue(overviewLabels.contains(it.getString(R.string.health_overview_today_steps)))
+            assertTrue(overviewLabels.contains(it.getString(R.string.health_cycling_today)))
             assertNotNull(find(it, "health-overview-RESTING_HEART_RATE-MISSING"))
             assertNull(find(it, "health-overview-extra-TEMPERATURE"))
             assertNull(find(it, "health-overview-extra-OXYGEN_SATURATION"))
@@ -308,13 +295,14 @@ class HealthOverviewUiDeviceTest {
     }
     @Test fun revocationKeepsTheRawSleepRecordCard() = screen(seed = { names, now ->
         seedSleep(names, now)
-        HealthCareStore(context, names.care).use { it.settings() }
     }) { scenario, names ->
         await(scenario, "health-overview-SLEEP_DURATION-RECENT")
+        scenario.moveToState(Lifecycle.State.CREATED)
         HealthPrivacyStore(context, names.privacy).use {
             it.change(HealthPrivacyOption.CONFIRMED_METRICS, false, it.policy().version)
         }
-        await(scenario, "health-overview-care-status")
+        scenario.moveToState(Lifecycle.State.RESUMED)
+        await(scenario, "health-overview-SLEEP_DURATION-RECENT")
         scenario.onActivity {
             assertNull(find(it, "health-overview-change"))
             assertNotNull(find(it, "health-overview-SLEEP_DURATION-RECENT"))
