@@ -284,6 +284,7 @@ class HealthCenterActivity : Activity() {
     private fun renderOverview() {
         val content = scrolling()
         val scroll = (content.parent as ScrollView).apply { tag = "health-overview-scroll" }
+        body.addView(overview.quicks(), LinearLayout.LayoutParams(-1, -2))
         content.addView(ui.text(getString(R.string.health_loading), 14f, muted = true))
         val now = System.currentTimeMillis()
         val zone = java.time.ZoneId.systemDefault()

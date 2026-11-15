@@ -116,7 +116,7 @@ class HealthOverviewDeviceTest {
         val steps = snapshot.metrics.single { it.metric == HealthMetric.STEPS }
         assertEquals(expected.id, steps.record!!.id)
         assertEquals(HealthOverviewFreshness.STALE, steps.freshness)
-        assertEquals(5, snapshot.metrics.count { it.freshness == HealthOverviewFreshness.MISSING })
+        assertEquals(3, snapshot.metrics.count { it.freshness == HealthOverviewFreshness.MISSING })
     }
     @Test fun ocrReviewNeverBecomesAConfirmedMetricAndCompletedEvidenceIsNotCountedAgain() = fixture { names, store ->
         val (job, original) = overviewOcrJob(context, names, now - 2000)

@@ -72,7 +72,7 @@ internal data class HealthAccessScope(
                 require(metrics.size == 1 && fields.isEmpty() && count == null && format == null)
             HealthAccessPurpose.PROFILE_CONTEXT -> require(metrics.isEmpty() && count != null && format == null)
             HealthAccessPurpose.SLEEP_CHANGE -> require(metrics == setOf(HealthMetric.SLEEP_DURATION) && baselineFrom != null && format == null)
-            HealthAccessPurpose.OVERVIEW -> require(metrics == setOf(HealthMetric.SLEEP_DURATION) && baselineFrom == null && format == null)
+            HealthAccessPurpose.OVERVIEW -> require(metrics.isNotEmpty() && fields.isEmpty() && baselineFrom == null && format == null)
             HealthAccessPurpose.WEEKLY_REPORT, HealthAccessPurpose.SAVE_WEEKLY_REPORT ->
                 require(metrics.isNotEmpty() && fields.isEmpty() && !annotations && format == if (purpose == HealthAccessPurpose.SAVE_WEEKLY_REPORT) HealthAccessFormat.PDF else null)
             HealthAccessPurpose.HEALTH_ANALYSIS, HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE, HealthAccessPurpose.PROACTIVE_CARE ->

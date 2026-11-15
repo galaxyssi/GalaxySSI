@@ -24,7 +24,10 @@ internal fun Intent.putHealthNavigationFixture(names: HealthOverviewDatabases) =
     if (BuildConfig.DEBUG && names.fixture != null) putExtra("health_overview_test_id", names.fixture)
 }
 
-internal data class HealthOverviewMetric(val metric: HealthMetric, val record: HealthObservation?, val freshness: HealthOverviewFreshness)
+internal data class HealthOverviewMetric(val metric: HealthMetric, val record: HealthObservation?, val freshness: HealthOverviewFreshness,
+    val ranges: List<HealthOverviewRange> = emptyList()) {
+    val outsideRange get() = ranges.any { it.outside }
+}
 internal data class HealthOverviewDerived(val sleep: HealthWeeklyStat? = null, val alert: HealthSleepAlert? = null,
     val permitted: Boolean = true, val unavailable: Boolean = false)
 internal data class HealthOverviewSnapshot(val time: Long, val zone: ZoneId, val hasRecords: Boolean, val metrics: List<HealthOverviewMetric>,
@@ -32,14 +35,21 @@ internal data class HealthOverviewSnapshot(val time: Long, val zone: ZoneId, val
     val connectionsUnavailable: Boolean = false, val care: HealthOverviewCare = HealthOverviewCare())
 
 internal object HealthOverviewRepository {
+    private val candidates = HealthMetric.entries.toSet() - setOf(HealthMetric.TEMPERATURE, HealthMetric.OXYGEN_SATURATION)
+
     fun load(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, now: Long, zone: ZoneId): HealthOverviewSnapshot {
-        val selected = HealthOverviewPolicy.metrics.toSet()
+        val selected = candidates
         val versions = records.metricVersions(selected)
-        val metrics = HealthOverviewPolicy.metrics.map { metric ->
-            val observation = records.overviewLatestSelf(metric, now)
-            HealthOverviewMetric(metric, observation, HealthOverviewPolicy.freshness(metric, observation?.draft?.measuredAt, now, zone))
-        }
-        val hasRecords = metrics.any { it.record != null } || records.overviewLatestSelf(null, now) != null
+        val latest = (HealthOverviewPolicy.metrics + selected.filter { versions.getValue(it).isNotBlank() }).distinct()
+            .associateWith { records.overviewLatestSelf(it, now) }
+        val comparisons = runCatching { ranges(context, names, latest, versions, now, zone) }.getOrDefault(emptyMap())
+        val metrics = latest.map { (metric, record) ->
+            HealthOverviewMetric(metric, record, HealthOverviewPolicy.freshness(metric, record?.draft?.measuredAt, now, zone),
+                comparisons[metric].orEmpty())
+        }.filter { it.metric in HealthOverviewPolicy.metrics || it.outsideRange }
+            .sortedWith(compareByDescending<HealthOverviewMetric> { it.outsideRange }
+                .thenByDescending { if (it.outsideRange) it.record?.draft?.measuredAt ?: 0L else 0L })
+        val hasRecords = latest.values.any { it != null } || records.overviewLatestSelf(null, now) != null
         val reviews = runCatching { pendingReviews(context, records, names, limit = 2, onePerKind = true) }
         val connections = runCatching {
             val scopes = if (names.fixture == null) HealthConnectSettings.selection(context) else HealthConnectScope.entries.toSet()
@@ -55,6 +65,33 @@ internal object HealthOverviewRepository {
         return HealthOverviewSnapshot(now, zone, hasRecords, metrics, derived,
             listOfNotNull(derived.alert?.let { HealthOverviewAttention.Change(it) }) + reviews.getOrDefault(emptyList()) +
                 connections.getOrDefault(emptyList()), reviews.isFailure, connections.isFailure, care)
+    }
+
+    private fun ranges(context: Context, names: HealthOverviewDatabases, latest: Map<HealthMetric, HealthObservation?>,
+        versions: Map<HealthMetric, String>, now: Long, zone: ZoneId): Map<HealthMetric, List<HealthOverviewRange>> {
+        val hasCare = context.getDatabasePath(names.care).exists()
+        val eligible = latest.mapNotNull { (metric, record) ->
+            record?.takeIf { hasCare || it.draft.reference.isNotBlank() }?.let { metric to it }
+        }.toMap()
+        if (eligible.isEmpty()) return emptyMap()
+        return HealthPrivacyStore(context, names.privacy).use { store ->
+            val policy = store.policy()
+            if (!policy.metrics) return@use emptyMap()
+            store.track(HealthAccessScope(HealthAccessPurpose.OVERVIEW, eligible.keys, until = now, zone = zone.id)) {
+                val targets = if (!hasCare || !policy.profile) emptyMap() else HealthCareStore(context, names.care).use { care ->
+                    val settings = care.settings()
+                    if (!settings.enabled) emptyMap() else eligible.mapNotNull { (metric, record) ->
+                        val issue = care.forMetric(metric)?.takeIf {
+                            it.target != null && it.inputVersion == HealthCareEngine.inputVersion(settings.version, policy.version, versions.getValue(metric)) &&
+                                HealthCareProfileAccess.current(context, it.profileLink, names)
+                        } ?: return@mapNotNull null
+                        HealthOverviewRangePolicy.target(record, issue)?.let { metric to it }
+                    }.toMap()
+                }
+                if (store.policy() != policy) throw HealthAccessBlocked()
+                eligible.mapValues { (metric, record) -> listOfNotNull(HealthOverviewRangePolicy.report(record), targets[metric]) }
+            }
+        }
     }
 
     fun pendingReviews(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, limit: Int,
