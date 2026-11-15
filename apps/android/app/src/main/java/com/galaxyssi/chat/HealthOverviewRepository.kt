@@ -3,6 +3,7 @@ package com.galaxyssi.chat
 import android.content.Context
 import android.content.Intent
 import java.io.File
+import java.time.LocalDate
 import java.time.ZoneId
 
 internal data class HealthOverviewDatabases(val fixture: String? = null) {
@@ -25,7 +26,10 @@ internal fun Intent.putHealthNavigationFixture(names: HealthOverviewDatabases) =
 }
 
 internal data class HealthOverviewMetric(val metric: HealthMetric, val record: HealthObservation?, val freshness: HealthOverviewFreshness,
-    val ranges: List<HealthOverviewRange> = emptyList()) {
+    val ranges: List<HealthOverviewRange> = emptyList(),
+    val showAdultReference: Boolean = true,
+    val sleepBand: HealthOverviewGuidance.SleepBand = HealthOverviewGuidance.SleepBand.ADULT_UNSPECIFIED,
+    val stepGoal: Int? = null, val stepProgress: Double? = null, val stepProgressPermitted: Boolean = false) {
     val outsideRange get() = ranges.any { it.outside }
 }
 internal data class HealthOverviewDerived(val sleep: HealthWeeklyStat? = null, val alert: HealthSleepAlert? = null,
@@ -43,9 +47,19 @@ internal object HealthOverviewRepository {
         val latest = (HealthOverviewPolicy.metrics + selected.filter { versions.getValue(it).isNotBlank() }).distinct()
             .associateWith { records.overviewLatestSelf(it, now) }
         val comparisons = runCatching { ranges(context, names, latest, versions, now, zone) }.getOrDefault(emptyMap())
+        val birthDate = profileBirthDate(context, names)
+        val goal = runCatching { HealthOverviewStepGoalStore(context, names).load() }.getOrNull()
+        val metricProgressPermitted = goal != null && runCatching {
+            HealthPrivacyStore(context, names.privacy).use { it.policy().metrics }
+        }.getOrDefault(false)
         val metrics = latest.map { (metric, record) ->
-            HealthOverviewMetric(metric, record, HealthOverviewPolicy.freshness(metric, record?.draft?.measuredAt, now, zone),
-                comparisons[metric].orEmpty())
+            val freshness = HealthOverviewPolicy.freshness(metric, record?.draft?.measuredAt, now, zone)
+            val age = HealthOverviewGuidance.ageOn(birthDate, HealthOverviewPolicy.localDay(record?.draft?.measuredAt ?: now, zone))
+            val stepGoal = goal.takeIf { metric == HealthMetric.STEPS }
+            val steps = if (metricProgressPermitted && stepGoal != null) record?.draft?.values?.get("steps")?.toLongOrNull() else null
+            HealthOverviewMetric(metric, record, freshness, comparisons[metric].orEmpty(), HealthOverviewGuidance.adultReference(age),
+                HealthOverviewGuidance.sleep(age), stepGoal, HealthOverviewGuidance.stepProgress(stepGoal, steps, freshness, metricProgressPermitted),
+                metric == HealthMetric.STEPS && metricProgressPermitted)
         }.filter { it.metric in HealthOverviewPolicy.metrics || it.outsideRange }
             .sortedWith(compareByDescending<HealthOverviewMetric> { it.outsideRange }
                 .thenByDescending { if (it.outsideRange) it.record?.draft?.measuredAt ?: 0L else 0L })
@@ -65,6 +79,16 @@ internal object HealthOverviewRepository {
         return HealthOverviewSnapshot(now, zone, hasRecords, metrics, derived,
             listOfNotNull(derived.alert?.let { HealthOverviewAttention.Change(it) }) + reviews.getOrDefault(emptyList()) +
                 connections.getOrDefault(emptyList()), reviews.isFailure, connections.isFailure, care)
+    }
+
+    private fun profileBirthDate(context: Context, names: HealthOverviewDatabases): LocalDate? {
+        if (!context.getDatabasePath(names.profile).exists()) return null
+        return runCatching {
+            val field = HealthProfileField.BIRTH_DATE
+            HealthProfileStore(context, names.profile, names.privacy).use {
+                it.capture(setOf(field), emptySet()).fields[field]?.text?.let(LocalDate::parse)
+            }
+        }.getOrNull()
     }
 
     private fun ranges(context: Context, names: HealthOverviewDatabases, latest: Map<HealthMetric, HealthObservation?>,
