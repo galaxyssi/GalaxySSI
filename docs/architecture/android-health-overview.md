@@ -49,6 +49,22 @@ local day rollover refresh the visible overview. The activity clears visible
 data on stop and reloads after returning, preserving scroll when possible.
 Summary reads and decryption stay off the UI thread.
 
+## Reference Guidance And Phone Activity
+
+- Published blood pressure, sleep, and resting pulse guidance is displayed
+  separately from report ranges and confirmed targets. It does not change
+  comparison colors, alert decisions, or target settings. Sleep guidance
+  uses the profile birth date only when profile access is allowed.
+- A daily step goal is optional. When phone counting is turned on, Android's
+  step counter supplies today's total without adding imported or manual
+  counts. An ongoing notification allows the user to stop background
+  counting. The local checkpoint and goal are encrypted.
+- The cycling row shows completed time from Google Play services' cycling
+  transitions. Detection is opt-in and uses the physical activity
+  permission, without requesting location or saving a route. Duplicate
+  transitions do not add time twice. Completed intervals spanning midnight
+  are split by local date. There are no manual ride timers.
+
 ## Verification
 
 Version 0.1.7.30 (Android 1443) was built and cover-installed on Galaxy

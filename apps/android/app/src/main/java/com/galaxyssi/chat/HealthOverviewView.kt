@@ -10,6 +10,10 @@ import android.widget.LinearLayout
 internal class HealthOverviewView(private val activity: HealthCenterActivity, private val names: HealthOverviewDatabases) {
     private val ui get() = activity.ui
     private val metricView = HealthOverviewMetricView(activity)
+    private var stepBinding: ((HealthPhoneStepReading?, Boolean) -> Unit)? = null
+
+    fun clearTodaySteps() { stepBinding = null }
+    fun updatePhoneSteps(reading: HealthPhoneStepReading?, supported: Boolean) { stepBinding?.invoke(reading, supported) }
     private fun label(id: Int, vararg args: Any) = activity.getString(id, *args)
     private fun color(id: Int) = activity.getColor(id)
     private fun start(type: Class<*>, extras: Intent.() -> Unit = {}) {
@@ -24,11 +28,9 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
 
     fun show(content: LinearLayout, snapshot: HealthOverviewSnapshot, firstUse: HealthFirstUseView) {
         content.removeAllViews()
-        if (!snapshot.hasRecords) firstUse.showIntro(content)
         if (!snapshot.hasRecords) {
+            firstUse.showIntro(content)
             firstUse.showActions(content)
-            showCare(content, snapshot.care)
-            return
         }
         content.addView(ui.line().apply {
             addView(ui.text(label(R.string.health_overview_metrics_heading), 20f, bold = true),
@@ -44,7 +46,10 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
         })
         content.addView(ui.column().apply {
             tag = "health-overview-metrics"
-            snapshot.metrics.forEach { addView(metricView.row(it, ::openRecord)) }
+            snapshot.metrics.forEach {
+                addView(metricView.row(it, ::openRecord) { stepBinding = it })
+                if (it.metric == HealthMetric.STEPS) addView(activity.cyclingRow())
+            }
         })
         showCare(content, snapshot.care)
     }

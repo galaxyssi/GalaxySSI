@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.BODY_SENSORS" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="com.google.android.gms.permission.ACTIVITY_RECOGNITION" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
     <uses-permission android:name="android.permission.health.READ_STEPS" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
@@ -41,6 +43,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
@@ -128,6 +131,13 @@
         <activity android:name=".HealthCameraActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
         <activity android:name=".AttentionNewsSearchActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <service android:name=".VoiceNewsPlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
+        <service android:name=".HealthPhoneStepService" android:exported="false" android:foregroundServiceType="health" />
+        <receiver android:name=".HealthCyclingReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <activity android:name=".PhoneAssistantActivity" android:exported="true" android:launchMode="singleTop"
             android:theme="@style/Theme.GalaxySSI.Main">
             <intent-filter>

@@ -1,22 +1,37 @@
 package com.galaxyssi.chat
 
-import android.app.Activity
+import android.Manifest
 import android.app.AlertDialog
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.InputFilter
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import java.text.DateFormat
+import java.time.ZoneId
 import java.util.Date
 import java.util.concurrent.Executors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** A separate native page stack; health data never enters the chat transcript or generic agent memory. */
-class HealthCenterActivity : Activity() {
+class HealthCenterActivity : ComponentActivity() {
     internal val ui by lazy { HealthCenterViews(this) }
     internal lateinit var body: LinearLayout
     private lateinit var title: TextView
@@ -24,10 +39,19 @@ class HealthCenterActivity : Activity() {
     private lateinit var reminderSpacer: View
     private lateinit var root: LinearLayout
     private val worker = Executors.newSingleThreadExecutor()
+    private val stepTasks = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var stepJob: Job? = null
+    private var phoneSteps: HealthPhoneStepReading? = null
+    private val stepPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && active) startPhoneSteps()
+        else if (!granted) Toast.makeText(this, R.string.health_phone_steps_permission, Toast.LENGTH_LONG).show()
+    }
     internal val main = Handler(Looper.getMainLooper())
     private val overviewNames by lazy { intent.healthNavigationDatabases() }
     private val records by lazy { HealthRecordStore(applicationContext, overviewNames.records) }
     private val overview by lazy { HealthOverviewView(this, overviewNames) }
+    private val cycling = HealthCyclingView(this)
+    internal fun cyclingRow() = cycling.row(overviewNames.fixture != null)
     private val overviewAction = lazy { HealthCareActionReview(this, overviewNames) }
     private val firstUse by lazy { HealthFirstUseView(this, overviewNames.fixture == null) }
     private val recordCenter by lazy { HealthRecordCenterView(this, overviewNames) }
@@ -146,6 +170,7 @@ class HealthCenterActivity : Activity() {
     override fun onStop() {
         saveDraft()
         active = false; generation++
+        clearTodaySteps()
         main.removeCallbacks(savePendingDraft); main.removeCallbacks(reloadOverview)
         contentResolver.unregisterContentObserver(overviewChanges); contentResolver.unregisterContentObserver(overviewPrivacy)
         contentResolver.unregisterContentObserver(overviewCareChanges)
@@ -156,6 +181,7 @@ class HealthCenterActivity : Activity() {
         super.onStop()
     }
     override fun onDestroy() {
+        stepTasks.cancel()
         if (overviewAction.isInitialized()) overviewAction.value.destroy()
         worker.execute { records.close() }; worker.shutdown()
         super.onDestroy()
@@ -217,6 +243,41 @@ class HealthCenterActivity : Activity() {
         dialog.setOnDismissListener { sensitiveDialogs -= dialog }
         dialog.show()
     }
+
+    internal fun editOverviewStepGoal(current: Int?) {
+        val field = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            filters = arrayOf(InputFilter.LengthFilter(HealthOverviewGuidance.MAX_STEP_GOAL.toString().length))
+            hint = getString(R.string.health_overview_steps_unit)
+            if (current != null) setText(current.toString())
+            selectAll()
+        }
+        fun save(goal: Int?) {
+            query({ HealthOverviewStepGoalStore(applicationContext, overviewNames).save(goal) }) { render() }
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.health_overview_step_goal_title)
+            .setView(ui.column().apply {
+                setPadding(ui.dp(24), ui.dp(8), ui.dp(24), 0)
+                addView(field, LinearLayout.LayoutParams(-1, -2))
+            })
+            .setNegativeButton(R.string.common_cancel, null)
+            .setPositiveButton(R.string.common_save, null)
+            .apply {
+                if (current != null) setNeutralButton(R.string.health_overview_step_goal_remove) { _, _ -> save(null) }
+            }.create()
+        showHealthDialog(dialog)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val value = field.text.toString().toIntOrNull()
+            if (value == null || value !in 1..HealthOverviewGuidance.MAX_STEP_GOAL) {
+                field.error = getString(R.string.health_overview_step_goal_invalid, HealthOverviewGuidance.MAX_STEP_GOAL)
+            } else {
+                save(value)
+                dialog.dismiss()
+            }
+        }
+    }
+
     private val savePendingDraft = Runnable { saveDraft() }
 
     internal fun <T> query(work: (HealthRecordStore) -> T, done: (T) -> Unit) {
@@ -234,6 +295,7 @@ class HealthCenterActivity : Activity() {
     }
     private fun render() {
         retainOverviewScroll()
+        clearTodaySteps()
         generation++; main.removeCallbacks(savePendingDraft); main.removeCallbacks(reloadOverview); editor = null; body.removeAllViews()
         updateReminderVisibility()
         title.text = getString(when (route) {
@@ -287,15 +349,74 @@ class HealthCenterActivity : Activity() {
         body.addView(overview.quicks(), LinearLayout.LayoutParams(-1, -2))
         content.addView(ui.text(getString(R.string.health_loading), 14f, muted = true))
         val now = System.currentTimeMillis()
-        val zone = java.time.ZoneId.systemDefault()
+        val zone = ZoneId.systemDefault()
         query({ store -> HealthOverviewRepository.load(applicationContext, store, overviewNames, now, zone) }) { snapshot ->
             overviewHasRecords = snapshot.hasRecords
             updateReminderVisibility()
             overview.show(content, snapshot, firstUse)
+            observePhoneSteps()
             val position = overviewScroll
             if (position > 0) scroll.post { if (active && scroll.parent === body) scroll.scrollTo(0, position) }
             val tomorrow = HealthOverviewPolicy.localDay(now, zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
             main.postDelayed(reloadOverview, (tomorrow - System.currentTimeMillis()).coerceAtLeast(500))
+        }
+    }
+
+    private fun clearTodaySteps() {
+        stepJob?.cancel()
+        stepJob = null
+        phoneSteps = null
+        overview.clearTodaySteps()
+    }
+
+    private fun observePhoneSteps() {
+        if (overviewNames.fixture != null) return
+        val supported = HealthPhoneStepService.supported(this)
+        if (!supported) {
+            overview.updatePhoneSteps(null, supported = false)
+            return
+        }
+        phoneSteps = HealthPhoneStepUpdates.readings.value
+        overview.updatePhoneSteps(phoneSteps, supported = true)
+        stepJob = stepTasks.launch {
+            val stored = withContext(Dispatchers.IO) {
+                runCatching {
+                    val store = HealthPhoneStepStore(applicationContext)
+                    store.enabled to store.load()
+                }
+            }
+            if (HealthPhoneStepUpdates.readings.value == null) {
+                phoneSteps = HealthPhoneStepReading(stored.getOrNull()?.second, failed = stored.isFailure)
+                overview.updatePhoneSteps(phoneSteps, supported = true)
+            }
+            if (stored.getOrNull()?.first == true && HealthPhoneStepUpdates.readings.value?.let { it.active || it.failed } != true &&
+                HealthPhoneStepService.hasPermission(this@HealthCenterActivity)) startPhoneSteps(resume = true)
+            HealthPhoneStepUpdates.readings.collect { reading ->
+                if (reading != null) {
+                    phoneSteps = reading
+                    overview.updatePhoneSteps(reading, supported = true)
+                }
+            }
+        }
+    }
+
+    internal fun editPhoneSteps() {
+        if (overviewNames.fixture != null || !HealthPhoneStepService.supported(this)) return
+        if (phoneSteps?.active == true) {
+            showHealthDialog(AlertDialog.Builder(this).setTitle(R.string.health_phone_steps_title)
+                .setNegativeButton(R.string.common_cancel, null)
+                .setPositiveButton(R.string.health_phone_steps_stop) { _, _ ->
+                    startService(Intent(this, HealthPhoneStepService::class.java).setAction(HealthPhoneStepService.STOP))
+                }.create())
+        } else if (HealthPhoneStepService.hasPermission(this)) startPhoneSteps()
+        else stepPermission.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+    }
+
+    private fun startPhoneSteps(resume: Boolean = false) {
+        val request = Intent(this, HealthPhoneStepService::class.java)
+        if (!resume) request.action = HealthPhoneStepService.START
+        runCatching { startForegroundService(request) }.onFailure {
+            HealthPhoneStepUpdates.publish(HealthPhoneStepReading(phoneSteps?.ledger, failed = true))
         }
     }
     private fun updateReminderVisibility() {

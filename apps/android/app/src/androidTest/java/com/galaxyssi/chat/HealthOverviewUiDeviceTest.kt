@@ -1,10 +1,13 @@
 package com.galaxyssi.chat
 
+import android.app.AlertDialog
 import android.app.KeyguardManager
 import android.content.Intent
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
+import android.widget.TextView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
@@ -37,6 +40,10 @@ class HealthOverviewUiDeviceTest {
     private fun views(view: View): List<View> = listOf(view) + if (view is ViewGroup)
         (0 until view.childCount).flatMap { views(view.getChildAt(it)) } else emptyList()
     private fun find(activity: HealthCenterActivity, tag: String) = views(activity.body).firstOrNull { it.tag == tag }
+    @Suppress("UNCHECKED_CAST")
+    private fun dialog(activity: HealthCenterActivity): AlertDialog =
+        (HealthCenterActivity::class.java.getDeclaredField("sensitiveDialogs").apply { isAccessible = true }
+            .get(activity) as Set<AlertDialog>).single()
     private fun await(scenario: ActivityScenario<HealthCenterActivity>, tag: String) {
         val until = SystemClock.elapsedRealtime() + 15_000
         do {
@@ -160,6 +167,80 @@ class HealthOverviewUiDeviceTest {
         await(scenario, "health-overview-BLOOD_PRESSURE-MISSING")
         scenario.onActivity { assertNull(find(it, "health-overview-GLUCOSE-RECENT")) }
     }
+    @Test fun publicGuidanceRemainsSeparateFromRangesAndHonorsProfilePrivacy() = screen(seed = { names, now ->
+        val day = HealthOverviewPolicy.localDay(now, zone)
+        HealthRecordStore(context, names.records).use {
+            assertTrue(it.save(HealthDraft(values = mapOf("systolic" to "150", "diastolic" to "95"), measuredAt = now))
+                is HealthSaveResult.Saved)
+        }
+        HealthProfileStore(context, names.profile, names.privacy).use {
+            val snapshot = it.snapshot()
+            val field = HealthProfileField.BIRTH_DATE
+            it.saveBasics(HealthProfileDraft(snapshot.generation, mapOf(field to HealthProfileInput(day.minusYears(65).toString())),
+                mapOf(field to snapshot.cells.getValue(field).token)))
+        }
+    }) { scenario, names ->
+        val sleep = "health-overview-reference-SLEEP_DURATION"
+        await(scenario, sleep)
+        scenario.onActivity { activity ->
+            assertEquals(activity.getString(R.string.health_overview_sleep_65_plus), (find(activity, sleep) as TextView).text)
+            val blood = (find(activity, "health-overview-reference-BLOOD_PRESSURE") as TextView).text.toString()
+            assertTrue(blood.contains(activity.getString(R.string.health_overview_bp_home)))
+            assertTrue(blood.contains(activity.getString(R.string.health_overview_bp_office)))
+            assertNull(find(activity, "health-overview-range-BLOOD_PRESSURE"))
+            assertNull(find(activity, "health-overview-status-BLOOD_PRESSURE"))
+            val text = (find(activity, "health-overview-value-BLOOD_PRESSURE") as TextView).text as android.text.Spanned
+            assertEquals(activity.getColor(R.color.text_primary),
+                text.getSpans(0, 3, android.text.style.ForegroundColorSpan::class.java).single().foregroundColor)
+            assertNotNull(find(activity, "health-overview-reference-RESTING_HEART_RATE"))
+        }
+        scenario.moveToState(Lifecycle.State.CREATED)
+        HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.PROFILE_CONTEXT, false, it.policy().version) }
+        scenario.moveToState(Lifecycle.State.RESUMED)
+        await(scenario, sleep)
+        scenario.onActivity { activity ->
+            assertEquals(activity.getString(R.string.health_overview_sleep_adult), (find(activity, sleep) as TextView).text)
+        }
+    }
+
+    @Test fun dailyStepGoalCanBeSetValidatedRestoredAndCleared() = screen(seed = { names, now ->
+        HealthRecordStore(context, names.records).use {
+            assertTrue(it.save(HealthDraft(HealthMetric.STEPS, mapOf("steps" to "6000"), "steps", now)) is HealthSaveResult.Saved)
+        }
+    }) { scenario, names ->
+        val goal = "health-overview-step-goal"
+        val progress = "health-overview-step-progress"
+        await(scenario, goal)
+        scenario.onActivity {
+            assertNull(find(it, progress))
+            assertTrue(requireNotNull(find(it, goal)).performClick())
+            val editor = dialog(it)
+            val field = views(requireNotNull(editor.window).decorView).filterIsInstance<EditText>().single()
+            field.setText("0")
+            editor.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+            assertNotNull(field.error)
+            assertTrue(editor.isShowing)
+            field.setText("8000")
+            editor.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        }
+        await(scenario, progress)
+        assertEquals(8000, HealthOverviewStepGoalStore(context, names).load())
+        assertFalse(context.getSharedPreferences(names.prefs, 0).all.values.contains("8000"))
+        scenario.recreate()
+        await(scenario, progress)
+        scenario.onActivity {
+            val percentage = java.text.NumberFormat.getPercentInstance().format(0.75)
+            assertEquals(it.getString(R.string.health_overview_step_goal_progress, percentage), (find(it, progress) as TextView).text)
+            assertTrue(requireNotNull(find(it, goal)).performClick())
+            dialog(it).getButton(AlertDialog.BUTTON_NEUTRAL).performClick()
+        }
+        val until = SystemClock.elapsedRealtime() + 15_000
+        while (HealthOverviewStepGoalStore(context, names).load() != null && SystemClock.elapsedRealtime() < until) SystemClock.sleep(40)
+        assertNull(HealthOverviewStepGoalStore(context, names).load())
+        scenario.recreate()
+        await(scenario, goal)
+        scenario.onActivity { assertNull(find(it, progress)) }
+    }
     @Test fun firstUseKeepsPendingRecognitionOutOfTheOverview() = screen(seed = { names, now ->
         overviewOcrJob(context, names, now - 1000)
     }) { scenario, names ->
@@ -169,7 +250,8 @@ class HealthOverviewUiDeviceTest {
             assertNotNull(find(it, "health-first-no-analysis"))
             assertNull(find(it, "health-overview-attention"))
             assertNull(find(it, "health-overview-review-OCR"))
-            assertNull(find(it, "health-overview-BLOOD_PRESSURE-MISSING"))
+            assertNotNull(find(it, "health-overview-BLOOD_PRESSURE-MISSING"))
+            assertNotNull(find(it, "health-overview-reference-BLOOD_PRESSURE"))
             assertNull(find(it, "health-overview-BLOOD_PRESSURE-RECENT"))
         }
         HealthRecordStore(context, names.records).use {

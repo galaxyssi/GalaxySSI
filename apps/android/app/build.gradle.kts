@@ -163,8 +163,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1600
-        versionName = "0.18.39"
+        versionCode = 1601
+        versionName = "0.18.40"
         testInstrumentationRunner = when (providers.gradleProperty("healthResearchAcceptance").orNull) {
             "true" -> "com.galaxyssi.chat.HealthResearchAcceptanceRunner"
             "related" -> "com.galaxyssi.chat.HealthRelatedResearchAcceptanceRunner"
@@ -339,6 +339,7 @@ dependencies {
     implementation("com.qualcomm.qti:geniex-android:0.3.18")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("androidx.health.connect:connect-client:1.1.0")
