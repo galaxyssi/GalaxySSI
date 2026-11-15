@@ -2,10 +2,12 @@ package com.galaxyssi.chat
 
 import android.Manifest
 import android.app.AlertDialog
+import android.content.res.ColorStateList
 import android.os.Build
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
+import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
@@ -13,7 +15,8 @@ import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -27,21 +30,33 @@ internal class HealthCyclingView(private val activity: HealthCenterActivity) {
 
     fun row(fixture: Boolean): View {
         val detail = ui.text(activity.getString(R.string.health_cycling_auto_off), 12f, muted = true)
-        val total = ui.text(activity.getString(R.string.health_cycling_minutes, 0), 20f, bold = true).apply {
+        val total = ui.text(activity.getString(R.string.health_cycling_minutes, 0), 22f, bold = true).apply {
             gravity = Gravity.END
+            setPadding(ui.dp(4), 0, ui.dp(5), 0)
             tag = "health-overview-cycling-duration"
         }
-        val row = ui.line().apply {
-            tag = "health-overview-cycling"
-            minimumHeight = ui.dp(56)
-            setPadding(0, ui.dp(10), 0, ui.dp(10))
-            addView(ui.column().apply {
-                addView(ui.text(activity.getString(R.string.health_cycling_today), 15f, bold = true))
-                addView(detail)
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(total, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(8) })
+        val arrow = ImageView(activity).apply {
+            setImageResource(R.drawable.ic_arrow_right)
+            imageTintList = ColorStateList.valueOf(activity.getColor(R.color.text_secondary))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
-        if (fixture) return row
+        val row = ui.column().apply {
+            tag = "health-overview-cycling"
+            minimumHeight = ui.dp(50)
+            setPadding(0, ui.dp(10), 0, ui.dp(10))
+            addHealthOverviewHeadline(activity, activity.getString(R.string.health_cycling_today), R.drawable.ic_health_bike, total, arrow)
+            ui.add(this, detail, 4)
+        }
+        val result = ui.column().apply {
+            addView(row)
+            addView(View(activity).apply { setBackgroundColor(activity.getColor(R.color.separator)) },
+                LinearLayout.LayoutParams(-1, ui.dp(1)))
+        }
+        if (fixture) return result
+        fun riding(reading: HealthCyclingReading?) = reading?.let {
+            it.availability == HealthCyclingAvailability.READY && it.state.enabled &&
+                it.state.ledger.riding(SystemClock.elapsedRealtime())
+        } == true
         fun bind(reading: HealthCyclingReading?) {
             val state = reading?.state
             val time = state?.ledger?.today(System.currentTimeMillis(), ZoneId.systemDefault()) ?: 0
@@ -53,27 +68,34 @@ internal class HealthCyclingView(private val activity: HealthCenterActivity) {
                 HealthCyclingAvailability.FAILED -> R.string.health_cycling_failed
                 else -> when {
                     state?.enabled != true -> R.string.health_cycling_auto_off
-                    state.ledger.riding(SystemClock.elapsedRealtime()) -> R.string.health_cycling_riding
-                    else -> R.string.health_cycling_auto_on
+                    riding(reading) -> R.string.health_cycling_riding
+                    else -> R.string.health_cycling_stopped
                 }
             })
             val configurable = reading != null && (reading.availability != HealthCyclingAvailability.UNSUPPORTED || state?.enabled == true)
             row.setOnClickListener(if (configurable) View.OnClickListener { showSettings(reading!!) } else null)
             row.isClickable = configurable
             row.isFocusable = configurable
+            arrow.visibility = if (configurable) View.VISIBLE else View.INVISIBLE
         }
         bind(HealthCyclingTracking.readings.value)
         row.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
             private var observer: Job? = null
             override fun onViewAttachedToWindow(view: View) {
                 observer = activity.lifecycleScope.launch {
-                    HealthCyclingTracking.readings.collect { bind(it) }
+                    HealthCyclingTracking.readings.collectLatest {
+                        bind(it)
+                        if (riding(it)) {
+                            while (riding(it)) delay(30_000)
+                            bind(it)
+                        }
+                    }
                 }
                 refresh()
             }
             override fun onViewDetachedFromWindow(view: View) { observer?.cancel(); observer = null }
         })
-        return row
+        return result
     }
 
     private fun showSettings(reading: HealthCyclingReading) {

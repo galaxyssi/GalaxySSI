@@ -52,7 +52,6 @@ class HealthCenterActivity : ComponentActivity() {
     private val overview by lazy { HealthOverviewView(this, overviewNames) }
     private val cycling = HealthCyclingView(this)
     internal fun cyclingRow() = cycling.row(overviewNames.fixture != null)
-    private val overviewAction = lazy { HealthCareActionReview(this, overviewNames) }
     private val firstUse by lazy { HealthFirstUseView(this, overviewNames.fixture == null) }
     private val recordCenter by lazy { HealthRecordCenterView(this, overviewNames) }
     private var overviewHasRecords = false
@@ -70,7 +69,6 @@ class HealthCenterActivity : ComponentActivity() {
     private val overviewCareChanges = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
             if (active && route == "overview") {
-                if (overviewAction.isInitialized()) overviewAction.value.clear()
                 main.removeCallbacks(reloadOverview)
                 main.postDelayed(reloadOverview, 120)
             }
@@ -79,7 +77,6 @@ class HealthCenterActivity : ComponentActivity() {
     private val overviewPrivacy = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
             if (active && route == "overview") {
-                if (overviewAction.isInitialized()) overviewAction.value.clear()
                 sensitiveDialogs.toList().forEach { it.dismiss() }
                 main.removeCallbacks(reloadOverview)
                 render()
@@ -174,7 +171,6 @@ class HealthCenterActivity : ComponentActivity() {
         main.removeCallbacks(savePendingDraft); main.removeCallbacks(reloadOverview)
         contentResolver.unregisterContentObserver(overviewChanges); contentResolver.unregisterContentObserver(overviewPrivacy)
         contentResolver.unregisterContentObserver(overviewCareChanges)
-        if (overviewAction.isInitialized()) overviewAction.value.clear()
         retainOverviewScroll()
         editor = null; body.removeAllViews()
         sensitiveDialogs.toList().forEach { it.dismiss() }; sensitiveDialogs.clear()
@@ -182,7 +178,6 @@ class HealthCenterActivity : ComponentActivity() {
     }
     override fun onDestroy() {
         stepTasks.cancel()
-        if (overviewAction.isInitialized()) overviewAction.value.destroy()
         worker.execute { records.close() }; worker.shutdown()
         super.onDestroy()
     }
@@ -332,9 +327,6 @@ class HealthCenterActivity : ComponentActivity() {
         return content
     }
     internal fun date(time: Long): String = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(time))
-    internal fun openOverviewAction(concern: String, action: String) {
-        if (active && route == "overview") overviewAction.value.show(concern, action)
-    }
     private fun retainOverviewScroll() {
         (body.getChildAt(0) as? ScrollView)?.let {
             when (it.tag) {
