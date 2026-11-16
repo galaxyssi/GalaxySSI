@@ -35,8 +35,6 @@ class HealthCenterActivity : ComponentActivity() {
     internal val ui by lazy { HealthCenterViews(this) }
     internal lateinit var body: LinearLayout
     private lateinit var title: TextView
-    private lateinit var reminderIcon: View
-    private lateinit var reminderSpacer: View
     private lateinit var root: LinearLayout
     private val worker = Executors.newSingleThreadExecutor()
     private val stepTasks = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -54,7 +52,6 @@ class HealthCenterActivity : ComponentActivity() {
     internal fun cyclingRow() = cycling.row(overviewNames.fixture != null)
     private val firstUse by lazy { HealthFirstUseView(this, overviewNames.fixture == null) }
     private val recordCenter by lazy { HealthRecordCenterView(this, overviewNames) }
-    private var overviewHasRecords = false
     private var overviewScroll = 0
     private var recordCenterScroll = 0
     private val reloadOverview = Runnable { if (active && (route == "overview" || route == "record_center")) render() }
@@ -138,12 +135,8 @@ class HealthCenterActivity : ComponentActivity() {
         root = ui.column().apply { setBackgroundColor(getColor(R.color.page_bg)) }
         root.addView(ui.line().apply {
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { back() })
-            reminderSpacer = View(this@HealthCenterActivity)
-            addView(reminderSpacer, LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)))
             title = ui.text(getString(R.string.health_title), 19f, bold = true).apply { gravity = Gravity.CENTER }
             addView(title, LinearLayout.LayoutParams(0, -2, 1f))
-            reminderIcon = ui.icon(R.drawable.ic_settings_notification, R.string.health_reminder_title) { openReminders() }.apply { tag = "health-reminders" }
-            addView(reminderIcon)
             addView(ui.icon(R.drawable.ic_health_grid, R.string.health_functions) { open("functions") }.apply { tag = "health-functions" })
         }, LinearLayout.LayoutParams(-1, ui.dp(56)))
         body = ui.column()
@@ -292,7 +285,6 @@ class HealthCenterActivity : ComponentActivity() {
         retainOverviewScroll()
         clearTodaySteps()
         generation++; main.removeCallbacks(savePendingDraft); main.removeCallbacks(reloadOverview); editor = null; body.removeAllViews()
-        updateReminderVisibility()
         title.text = getString(when (route) {
             "manual" -> R.string.health_manual
             "review" -> R.string.health_review_title
@@ -343,8 +335,6 @@ class HealthCenterActivity : ComponentActivity() {
         val now = System.currentTimeMillis()
         val zone = ZoneId.systemDefault()
         query({ store -> HealthOverviewRepository.load(applicationContext, store, overviewNames, now, zone) }) { snapshot ->
-            overviewHasRecords = snapshot.hasRecords
-            updateReminderVisibility()
             overview.show(content, snapshot, firstUse)
             observePhoneSteps()
             val position = overviewScroll
@@ -411,11 +401,6 @@ class HealthCenterActivity : ComponentActivity() {
             HealthPhoneStepUpdates.publish(HealthPhoneStepReading(phoneSteps?.ledger, failed = true))
         }
     }
-    private fun updateReminderVisibility() {
-        val visibility = if (route == "overview" && overviewHasRecords) View.VISIBLE else View.GONE
-        reminderIcon.visibility = visibility
-        reminderSpacer.visibility = visibility
-    }
     private fun renderFunctions() {
         scrolling().apply {
             addView(ui.text(getString(R.string.health_management), 20f, bold = true))
@@ -450,13 +435,11 @@ class HealthCenterActivity : ComponentActivity() {
                 startActivity(android.content.Intent(this@HealthCenterActivity, HealthProfileActivity::class.java))
             }.apply { tag = "health-profile-entry" }, 8)
             ui.add(this, ui.profileRow(getString(R.string.health_privacy_title)) { startActivity(healthPrivacyIntent()) }.apply { tag = "health-privacy-entry" }, 8)
-            ui.add(this, ui.profileRow(getString(R.string.health_reminder_title)) { openReminders() }, 8)
             ui.add(this, ui.profileRow(getString(R.string.health_body_title), getString(R.string.health_body_entry)) {
                 startActivity(android.content.Intent(this@HealthCenterActivity, HealthBodyExplorationActivity::class.java))
             }.apply { tag = "health-body-entry" }, 8)
         }
     }
-    private fun openReminders() = startActivity(android.content.Intent(this, HealthReminderActivity::class.java))
     private fun openWeekly() = startActivity(android.content.Intent(this, HealthWeeklyActivity::class.java))
     private fun recordRow(record: HealthObservation) = ui.card().apply {
         addView(ui.text(getString(record.draft.metric.titleResource()), 14f, muted = true))

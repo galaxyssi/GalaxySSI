@@ -40,6 +40,12 @@ class HealthOverviewUiDeviceTest {
     private fun views(view: View): List<View> = listOf(view) + if (view is ViewGroup)
         (0 until view.childCount).flatMap { views(view.getChildAt(it)) } else emptyList()
     private fun find(activity: HealthCenterActivity, tag: String) = views(activity.body).firstOrNull { it.tag == tag }
+    private fun assertNoReminderCenter(activity: HealthCenterActivity) {
+        val label = activity.getString(R.string.health_reminder_title)
+        assertFalse(views(activity.window.decorView).any {
+            it.contentDescription?.toString() == label || (it as? TextView)?.text?.toString() == label
+        })
+    }
     @Suppress("UNCHECKED_CAST")
     private fun dialog(activity: HealthCenterActivity): AlertDialog =
         (HealthCenterActivity::class.java.getDeclaredField("sensitiveDialogs").apply { isAccessible = true }
@@ -250,7 +256,7 @@ class HealthOverviewUiDeviceTest {
         scenario.onActivity {
             listOf("health-overview-photo", "health-overview-manual", "health-overview-import", "health-overview-sources",
                 "health-first-add", "health-first-existing").forEach { key -> assertTrue(requireNotNull(find(it, key)).isClickable) }
-            assertEquals(View.GONE, views(it.window.decorView).single { view -> view.tag == "health-reminders" }.visibility)
+            assertNoReminderCenter(it)
         }
         cancelPicker(scenario, "health-first-existing")
         scenario.recreate()
@@ -268,10 +274,18 @@ class HealthOverviewUiDeviceTest {
         await(scenario, "health-overview-BLOOD_PRESSURE-RECENT")
         scenario.onActivity {
             assertNull(find(it, "health-overview-first"))
-            assertEquals(View.VISIBLE, views(it.window.decorView).single { view -> view.tag == "health-reminders" }.visibility)
+            assertNoReminderCenter(it)
         }
         cancelPicker(scenario, "health-overview-import")
         await(scenario, "health-overview-BLOOD_PRESSURE-RECENT")
+    }
+    @Test fun functionsMenuKeepsPrivacyEntryWithoutReminderCenter() = screen { scenario, _ ->
+        await(scenario, "health-overview-first")
+        scenario.onActivity {
+            assertTrue(views(it.window.decorView).single { view -> view.tag == "health-functions" }.performClick())
+        }
+        await(scenario, "health-privacy-entry")
+        scenario.onActivity(::assertNoReminderCenter)
     }
     private fun cancelPicker(scenario: ActivityScenario<HealthCenterActivity>, tag: String) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
