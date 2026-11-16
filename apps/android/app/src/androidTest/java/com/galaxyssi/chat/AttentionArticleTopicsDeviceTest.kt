@@ -35,7 +35,7 @@ class AttentionArticleTopicsDeviceTest {
         assertNotNull(store.nextAt(setOf("agent_frontiers")))
     }
 
-    @Test fun versionSixMigrationKeepsPublishedBodiesAndRetriesOnlyAffectedFailures() = isolated { store, name ->
+    @Test fun versionSixMigrationKeepsPublishedBodiesAndDiscardsFailedQueue() = isolated { store, name ->
         for (id in listOf("published", "translate", "network")) {
             store.enqueue(AttentionFeedArticle(id, "ai_models", "AI", "", "https://example.org/$id", "example.org", 1, 2), "AI")
         }
@@ -51,7 +51,8 @@ class AttentionArticleTopicsDeviceTest {
         val reopened = AttentionArticleStore(context, name)
         assertEquals(body, reopened.body("published"))
         assertEquals(setOf("ai_models"), reopened.topics("published").keys)
-        assertEquals("translate", reopened.claim(setOf("ai_models"), 101)!!.key)
+        assertNull(reopened.metadata("translate"))
+        assertNull(reopened.metadata("network"))
         assertNull(reopened.claim(setOf("ai_models"), 102))
     }
 

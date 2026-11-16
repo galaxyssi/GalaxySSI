@@ -12,6 +12,7 @@ class ProactiveAttentionFeedStore(context: Context) {
 
     fun ingest(article: AttentionFeedArticle, topic: AttentionTopic): Boolean = synchronized(LOCK) {
         if (!ProactiveAttentionPolicy.shouldCollect(ProactiveAttentionStore(context).preferences(), topic.id)) return false
+        if (!AttentionArticleStore(context).enqueue(article, topic.title)) return false
         val previous = rows.get(article.key)
         val record = previous ?: JSONObject().put("key", article.key).put("topic", article.topicId)
             .put("title", article.title).put("summary", article.summary).put("url", article.url)
@@ -27,7 +28,6 @@ class ProactiveAttentionFeedStore(context: Context) {
         if (addedTopic) topics.put(topic.id)
         record.put("topics", topics)
         if (previous == null || addedTopic || kindChanged) rows.put(article.key, record)
-        AttentionArticleStore(context).enqueue(article, topic.title)
         previous == null
     }
 
