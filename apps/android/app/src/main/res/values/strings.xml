@@ -353,6 +353,11 @@
     <string name="desktop_control_manage_subtitle">View authorization, live screen, and recent activity</string>
     <string name="desktop_control_picker_subtitle">Choose a paired computer to view or control</string>
     <string name="desktop_control_computers">Paired computers</string>
+    <string name="desktop_disconnect_keep_history">Disconnect and keep chats</string>
+    <string name="desktop_disconnect_confirmation">Disconnect %1$s from this phone? Existing chats will remain.\n\nComputer fingerprint: %2$s</string>
+    <string name="desktop_disconnect_action">Disconnect</string>
+    <string name="desktop_disconnect_failed">Could not disconnect this computer.</string>
+    <string name="desktop_disconnected_history">Disconnected · Chat history</string>
     <string name="desktop_control_trusted_subtitle">GalaxySSI Link encrypted remote session</string>
     <string name="desktop_control_authorized">Authorized</string>
     <string name="desktop_control_pending">Pending</string>

@@ -1002,9 +1002,9 @@ internal fun MainActivity.desktopControlDevices(): List<DesktopSecuritySummary> 
     return fromContacts.values.sortedBy { it.name.lowercase(Locale.ROOT) }
 }
 
-internal fun MainActivity.showDesktopControlPicker() {
+internal fun MainActivity.showDesktopControlPicker(openSingle: Boolean = true) {
     val devices = desktopControlDevices()
-    if (devices.size == 1) {
+    if (openSingle && devices.size == 1) {
         DesktopRemoteControl.requestAuthorizations(devices.single().id)
         openDesktopRemoteControlPage(devices.single())
         return
