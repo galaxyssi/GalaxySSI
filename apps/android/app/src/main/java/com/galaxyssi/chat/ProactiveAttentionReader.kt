@@ -253,6 +253,7 @@ internal class ProactiveAttentionReader(
             if (collapsing && anchor == key) it.coerceAtLeast(0) else it
         }
         if (collapsing) timeline.expanded.remove(key) else timeline.expanded.add(key)
+        if (!collapsing) AttentionNewsBudget.noteRead(activity.applicationContext)
         dwell.reset(); publish()
         if (position >= 0) manager.scrollToPositionWithOffset(position, offset)
         persistAt(anchor, offset)
@@ -326,6 +327,7 @@ internal class ProactiveAttentionReader(
         pendingReads += marking
         worker.execute {
             val result = runCatching { repository.markProactiveViewed(selected.flatMapTo(hashSetOf()) { it.messageIds }, System.currentTimeMillis()) }
+            if (result.isSuccess) AttentionNewsBudget.noteRead(activity.applicationContext)
             main.post {
                 pendingReads.removeAll(marking)
                 if (activity.isDestroyed) return@post

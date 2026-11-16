@@ -72,8 +72,10 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         } finally { db.endTransaction() }
     }
 
+    internal fun hasLegacyImport() = meta("legacy_done") != "1"
+
     fun importLegacy(feed: ProactiveAttentionFeedStore, topics: List<AttentionTopic>): Boolean {
-        if (meta("legacy_done") == "1") return false
+        if (!hasLegacyImport()) return false
         val records = feed.articleRecordsAfter(meta("legacy_cursor"), 256)
         val topicNames = topics.associate { it.id to it.title }
         db.beginTransaction()
@@ -143,6 +145,11 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         AttentionArticleCheckpoint.complete(db, key)
         db.setTransactionSuccessful()
         } finally { db.endTransaction() }
+    }
+
+    internal fun releaseBudgetClaim(job: AttentionArticleJob) {
+        db.execSQL("UPDATE articles SET next_at=0, attempts=? WHERE id=? AND attempts=? AND state=?",
+            arrayOf(job.attempts, job.key, job.attempts + 1, job.state))
     }
 
     fun presentation(key: String, expanded: Boolean): AttentionArticlePresentation? {

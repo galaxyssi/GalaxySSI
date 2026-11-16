@@ -132,6 +132,12 @@ class ProactiveAttentionFeedStore(context: Context) {
         } ?: JSONObject()
     }
 
+    internal fun topicDueAt(topicId: String, interval: Long): Long {
+        val state = topicState(topicId)
+        return AttentionNewsProfile.topicDueAt(state.optLong("at"), state.optLong("next"),
+            state.optLong("interval"), state.optInt("cursor"), interval)
+    }
+
     internal fun sourceDiscovered(topicId: String, now: Long) = synchronized(LOCK) {
         database.writeString("topic:$topicId", topicState(topicId).put("source_revision", SOURCE_REVISION).put("next", now).toString())
     }
