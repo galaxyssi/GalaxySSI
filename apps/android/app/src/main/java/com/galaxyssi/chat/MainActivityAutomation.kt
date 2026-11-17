@@ -1280,6 +1280,16 @@ internal fun MainActivity.showDesktopSecurityDetail(device: DesktopSecuritySumma
         ))
     }
     addSectionTitle(getString(R.string.security_section_danger))
+    featureContent.addView(featureRow(
+        getString(R.string.desktop_disconnect_keep_history), "", R.drawable.ic_protocol_link, ""
+    ).apply {
+        setOnClickListener {
+            confirmDesktopDisconnect(device.id) {
+                refreshDirectoryContacts()
+                showSecurityFeaturePage()
+            }
+        }
+    })
     featureContent.addView(featureRow(getString(R.string.security_revoke_this_pc), getString(R.string.security_revoke_this_pc_subtitle), R.drawable.ic_delete, getString(R.string.security_revoke)).apply {
         setOnClickListener { confirmRevokeDesktop(device) }
     })

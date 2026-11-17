@@ -234,8 +234,9 @@ internal fun MainActivity.displayContactName(contact: Contact): String = when (c
 
 internal fun MainActivity.showChatPage(contact: Contact) {
     val raw = AppStore.contactById(this, contact.id)
+    val historyOnly = DesktopPairingLifecycle.isHistoryOnly(raw)
     // All entry points (history, contacts, notifications and configuration) share this boundary.
-    if (contact.id != CONTACT_SYSTEM.id && AgentContactNavigationPolicy.opensAgentConversation(raw)) {
+    if (contact.id != CONTACT_SYSTEM.id && !historyOnly && AgentContactNavigationPolicy.opensAgentConversation(raw)) {
         openAgentContactConversation(contact, requireNotNull(raw))
         return
     }
@@ -254,10 +255,11 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     chatAvatar.visibility = if (notificationsOnly) View.GONE else View.VISIBLE
     chatHeaderContent.gravity = if (notificationsOnly) Gravity.CENTER else Gravity.CENTER_VERTICAL
     chatHeaderContent.setPadding(if (notificationsOnly) 0 else dp(6), 0, if (notificationsOnly) 0 else dp(6), 0)
-    chatSubtitleRow.visibility = if (notificationsOnly || isAgentResource) View.GONE else View.VISIBLE
-    statusDot.visibility = if (notificationsOnly || isAgentResource) View.GONE else View.VISIBLE
-    chatSubtitle.visibility = if (notificationsOnly || isAgentResource) View.GONE else View.VISIBLE
-    chatSubtitle.text = getString(R.string.chat_link_encrypted)
+    val showLinkSubtitle = historyOnly || (!notificationsOnly && !isAgentResource)
+    chatSubtitleRow.visibility = if (showLinkSubtitle) View.VISIBLE else View.GONE
+    statusDot.visibility = if (showLinkSubtitle && !historyOnly) View.VISIBLE else View.GONE
+    chatSubtitle.visibility = chatSubtitleRow.visibility
+    chatSubtitle.text = getString(if (historyOnly) R.string.desktop_disconnected_history else R.string.chat_link_encrypted)
     securityButton.layoutParams = securityButton.layoutParams.apply {
         width = if (notificationsOnly) dp(34) else dp(1)
         height = if (notificationsOnly) ViewGroup.LayoutParams.MATCH_PARENT else dp(1)
@@ -282,7 +284,7 @@ internal fun MainActivity.showChatPage(contact: Contact) {
         layout.stackFromEnd = ChatMessageViewportPolicy.stackFromEnd()
         layout.reverseLayout = false
     }
-    chatInputBar.visibility = if (notificationsOnly) View.GONE else View.VISIBLE
+    chatInputBar.visibility = if (notificationsOnly || historyOnly) View.GONE else View.VISIBLE
     wakePage.visibility = View.GONE
     mainPage.visibility = View.GONE
     featurePage.visibility = View.GONE

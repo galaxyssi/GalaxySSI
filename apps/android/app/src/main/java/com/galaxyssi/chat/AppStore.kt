@@ -527,6 +527,24 @@ object AppStore {
         return removed.contactIds.isNotEmpty() || linkExisted
     }
 
+    @Synchronized
+    internal fun disconnectDesktopKeepingHistory(context: Context, desktopId: String, fingerprint: String): Boolean {
+        val appContext = context.applicationContext
+        ensureInitialized(appContext)
+        val link = GalaxySSILinkProtocol.serverLink(appContext, desktopId) ?: return false
+        if (fingerprint.isBlank() || !link.desktopFingerprint.equals(fingerprint, ignoreCase = true)) return false
+        val contacts = contacts(appContext)
+        var changed = false
+        for (index in 0 until contacts.length()) {
+            val contact = contacts.optJSONObject(index) ?: continue
+            if (DesktopPairingLifecycle.preserveAsHistory(contact, link.desktopId)) changed = true
+        }
+        if (changed) writeArray(appContext, KEY_CONTACTS, contacts)
+        // The standard client_revoked packet deletes the Desktop's message history.
+        DesktopPairingLifecycle.disconnectTransport(appContext, link.desktopId)
+        return true
+    }
+
     fun setSelectedCloudModel(context: Context, hermesId: String, modelId: String): Boolean {
         if (modelId.isBlank()) return false
         ensureInitialized(context)
@@ -650,6 +668,7 @@ object AppStore {
         )
     }.getOrNull()
 
+    @Synchronized
     fun deleteDesktopConnector(
         context: Context,
         desktopId: String,
@@ -667,7 +686,7 @@ object AppStore {
                 contact,
                 desktopId
             )
-            if (belongsToDesktop) {
+            if (belongsToDesktop && !DesktopPairingLifecycle.isHistoryOnly(contact)) {
                 contactId.takeIf(String::isNotBlank)?.let(removedIds::add)
             } else {
                 kept.put(contact)
@@ -812,6 +831,7 @@ object AppStore {
         writeArray(context, KEY_CONTACTS, contacts)
     }
 
+    @Synchronized
     fun markDesktopVerified(context: Context, pairingQr: JSONObject) {
         ensureInitialized(context)
         val link = GalaxySSILinkProtocol.ensureServerLink(context, pairingQr)
@@ -857,6 +877,7 @@ object AppStore {
         updateConnectorAgentStatuses(context, fallbackAgents)
     }
 
+    @Synchronized
     fun updateDesktopDeviceContact(context: Context, payload: JSONObject): Boolean {
         ensureInitialized(context)
         val desktopId = payload.optString("desktop_id")
@@ -883,6 +904,8 @@ object AppStore {
         val contacts = contacts(context)
         val existing = findContactByGalaxySSIId(contacts, desktopId)
         val contact = existing ?: JSONObject()
+        if (DesktopPairingLifecycle.isHistoryOnly(contact) && !link.paired) return false
+        DesktopPairingLifecycle.clearHistoryOnly(contact)
         if (!contact.optBoolean("user_renamed", false)) {
             contact.put("name", defaultName)
             contact.put("display_name", defaultName)
@@ -917,6 +940,7 @@ object AppStore {
         return true
     }
 
+    @Synchronized
     fun updateConnectorAgentStatuses(context: Context, agents: JSONArray): Boolean {
         ensureInitialized(context)
         val contacts = contacts(context)
@@ -950,8 +974,13 @@ object AppStore {
                 val contact = contacts.optJSONObject(j) ?: continue
                 val contactId = contact.optString("id").ifBlank { galaxyssiIdOf(contact) }
                 if (contactId != id && galaxyssiIdOf(contact) != id) continue
-                applyConnectorAgentStatus(context, contact, agent, id, now, desktopId, desktopName, fingerprint, agentId)
-                changed = true
+                if (!DesktopPairingLifecycle.isHistoryOnly(contact) ||
+                    GalaxySSILinkProtocol.serverLink(context, desktopId)?.paired == true
+                ) {
+                    DesktopPairingLifecycle.clearHistoryOnly(contact)
+                    applyConnectorAgentStatus(context, contact, agent, id, now, desktopId, desktopName, fingerprint, agentId)
+                    changed = true
+                }
                 found = true
                 break
             }
@@ -1543,7 +1572,9 @@ object AppStore {
         for (index in 0 until contacts.length()) {
             val contact = contacts.optJSONObject(index) ?: continue
             val desktopId = contact.optString("desktop_id")
-            if (desktopId.isNotBlank() && desktopId !in activeDesktopIds) {
+            if (desktopId.isNotBlank() && desktopId !in activeDesktopIds &&
+                !DesktopPairingLifecycle.isHistoryOnly(contact)
+            ) {
                 changed = true
                 continue
             }

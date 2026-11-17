@@ -485,6 +485,7 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
             menu.add(0, 2, 1, R.string.desktop_remote_fit)
             menu.add(0, 3, 2, R.string.desktop_control_stream_title)
             menu.add(0, 4, 3, R.string.desktop_remote_advanced)
+            menu.add(0, 5, 4, R.string.desktop_disconnect_keep_history)
             setOnMenuItemClickListener {
                 when (it.itemId) {
                     1 -> showKeyboard(true)
@@ -497,6 +498,10 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
                             dialog.dismiss(); readState()
                         }.setNegativeButton(R.string.common_cancel, null).show()
                     4 -> { setResult(RESULT_OK, Intent().putExtra(EXTRA_DESKTOP_ID, desktopId)); finish() }
+                    5 -> confirmDesktopDisconnect(desktopId) {
+                        setResult(RESULT_OK, Intent().putExtra(EXTRA_DISCONNECTED, true))
+                        finish()
+                    }
                 }
                 true
             }
@@ -531,6 +536,7 @@ class DesktopRemoteControlActivity : Activity(), GalaxySSIMqttClient.Listener {
 
     companion object {
         const val EXTRA_DESKTOP_ID = "desktop_id"
+        const val EXTRA_DISCONNECTED = "desktop_disconnected"
         const val EXTRA_DESKTOP_NAME = "desktop_name"
         const val REQUEST_CONTROL = 6380
     }

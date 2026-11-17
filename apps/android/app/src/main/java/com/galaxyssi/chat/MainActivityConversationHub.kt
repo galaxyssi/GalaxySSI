@@ -342,7 +342,8 @@ internal fun MainActivity.showConversationHub(
             val contactsById = latest.associateBy(Contact::id)
             contactConversationSummaries = summaries.mapNotNull { (contactId, summary) ->
                 if (summary.lastAt <= 0L) return@mapNotNull null
-                if (!ConversationHubContactHistoryPolicy.includes(AppStore.contactById(this, contactId))) {
+                val rawContact = AppStore.contactById(this, contactId)
+                if (!ConversationHubContactHistoryPolicy.includes(rawContact)) {
                     return@mapNotNull null
                 }
                 val contact = contactsById[contactId] ?: contactById(contactId)
@@ -352,7 +353,8 @@ internal fun MainActivity.showConversationHub(
                     lastMessage = summary.lastMessage,
                     updatedAt = summary.lastAt,
                     pinned = ContactConversationPreferences.isPinned(this, contactId),
-                    unreadCount = summary.unreadCount
+                    unreadCount = summary.unreadCount,
+                    archived = DesktopPairingLifecycle.isHistoryOnly(rawContact)
                 )
             }
             renderBody()
@@ -587,7 +589,8 @@ internal fun MainActivity.showConversationHub(
         val chatSummarySnapshot = runCatching {
             ChatHistoryStore.pruneInternalTransportMessages(this)
             ChatHistoryStore.contactSummaries(this).mapNotNull { summary ->
-                if (!ConversationHubContactHistoryPolicy.includes(AppStore.contactById(this, summary.contactId))) {
+                val rawContact = AppStore.contactById(this, summary.contactId)
+                if (!ConversationHubContactHistoryPolicy.includes(rawContact)) {
                     return@mapNotNull null
                 }
                 val message = storedChatMessage(summary.contactId, summary.lastMessage) ?: return@mapNotNull null
@@ -599,7 +602,8 @@ internal fun MainActivity.showConversationHub(
                     lastMessage = preview,
                     updatedAt = message.timestamp,
                     pinned = ContactConversationPreferences.isPinned(this, summary.contactId),
-                    unreadCount = summary.unreadCount
+                    unreadCount = summary.unreadCount,
+                    archived = DesktopPairingLifecycle.isHistoryOnly(rawContact)
                 )
             }
         }.getOrDefault(emptyList())
@@ -811,7 +815,7 @@ private fun MainActivity.conversationHubRows(
             title = getString(R.string.agent_session_archived),
             subtitle = "",
             iconRes = R.drawable.ic_hub_archive,
-            trailing = archivedConversationCount.takeIf { it > 0 }?.toString().orEmpty(),
+            trailing = (archivedConversationCount + contacts.count { it.archived }).takeIf { it > 0 }?.toString().orEmpty(),
             iconTint = getColorCompat(R.color.text_secondary),
             iconBackground = Color.TRANSPARENT,
             action = ConversationHubAction.SHOW_ARCHIVED
