@@ -23,17 +23,20 @@ import kotlin.math.roundToInt
 @RunWith(AndroidJUnit4::class)
 class AgentChatShortcutBarDeviceTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
-    private val ids = listOf(R.id.agentInsightBar, R.id.agentActionNewSession, R.id.agentActionSessions,
+    private val primaryIds = listOf(R.id.agentInsightBar, R.id.agentActionNewSession, R.id.agentActionSessions,
         R.id.agentActionCamera, R.id.agentActionAddFile)
+    private val hiddenIds = listOf(R.id.agentActionHealth, R.id.agentActionScan)
+    private val ids = primaryIds + hiddenIds
 
-    @Test fun fiveInlineActionsStayAccessibleAcrossWidthsLocalesAndFontSizes() = onMain {
+    @Test fun sevenInlineActionsStayAccessibleAcrossWidthsLocalesAndFontSizes() = onMain {
         for (language in listOf("zh-CN", "en", "ar")) for (font in listOf(1f, 1.5f, 2f)) {
             for (width in listOf(320, 360, 412, 800)) {
                 val context = context(language, font)
                 val bar = AgentChatShortcutBar(context).apply { layoutDirection = View.LAYOUT_DIRECTION_LOCALE }
                 measure(bar, width)
                 val row = bar.getChildAt(0) as LinearLayout
-                assertEquals(5, row.childCount)
+                assertEquals(ids.size, row.childCount)
+                assertEquals(LinearLayout.SHOW_DIVIDER_NONE, row.showDividers)
                 val density = context.resources.displayMetrics.density
                 ids.forEachIndexed { index, id ->
                     val button = bar.findViewById<ViewGroup>(id)
@@ -68,7 +71,8 @@ class AgentChatShortcutBarDeviceTest {
                     }
                 }
                 if (font == 1f && language != "ar") {
-                    assertEquals("Normal text should show all five actions", bar.width, row.width)
+                    assertEquals("The five original actions should fill the viewport", bar.width,
+                        primaryIds.sumOf { bar.findViewById<View>(it).width })
                 }
                 val positions = ids.map { bar.findViewById<View>(it).let { v -> v.left to v.width } }
                 bar.showFeedUnread(12)
@@ -76,6 +80,28 @@ class AgentChatShortcutBarDeviceTest {
                 measure(bar, width)
                 assertEquals(positions, ids.map { bar.findViewById<View>(it).let { v -> v.left to v.width } })
             }
+        }
+    }
+
+    @Test fun healthAndScanStartHiddenAndRestoreTheBarBeforeOpening() = onMain {
+        val bar = AgentChatShortcutBar(context("zh-CN", 1f)).apply { layoutDirection = View.LAYOUT_DIRECTION_LTR }
+        measure(bar, 320)
+        val row = bar.getChildAt(0) as LinearLayout
+        assertEquals(0, bar.scrollX)
+        assertEquals(bar.width, bar.findViewById<View>(R.id.agentActionAddFile).right)
+        hiddenIds.forEach { id ->
+            val button = bar.findViewById<View>(id)
+            assertTrue(button.left >= bar.width)
+            bar.scrollTo(row.width - bar.width, 0)
+            assertTrue(button.left >= bar.scrollX)
+            assertTrue(button.right <= bar.scrollX + bar.width)
+            var opened = false
+            button.setOnClickListener {
+                assertEquals("Navigation should receive the restored bar", 0, bar.scrollX)
+                opened = true
+            }
+            assertTrue(button.performClick())
+            assertTrue(opened)
         }
     }
 

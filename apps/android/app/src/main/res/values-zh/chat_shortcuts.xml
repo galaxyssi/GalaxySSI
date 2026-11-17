@@ -4,5 +4,7 @@
     <string name="chat_shortcut_sessions">会话</string>
     <string name="chat_shortcut_camera">拍照</string>
     <string name="chat_shortcut_file">文件</string>
+    <string name="chat_shortcut_health">健康</string>
+    <string name="chat_shortcut_scan">扫一扫</string>
     <string name="chat_shortcut_sessions_unread">会话列表，有未读消息</string>
 </resources>

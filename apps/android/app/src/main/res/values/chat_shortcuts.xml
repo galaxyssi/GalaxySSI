@@ -4,6 +4,8 @@
     <string name="chat_shortcut_sessions">Chats</string>
     <string name="chat_shortcut_camera">Photo</string>
     <string name="chat_shortcut_file">Files</string>
+    <string name="chat_shortcut_health">Health</string>
+    <string name="chat_shortcut_scan">Scan</string>
     <string name="chat_shortcut_sessions_unread">Conversations, unread messages</string>
     <color name="chat_shortcut_unread">#000000</color>
     <item name="agentInsightBar" type="id" />
@@ -12,6 +14,8 @@
     <item name="agentActionSessions" type="id" />
     <item name="agentActionCamera" type="id" />
     <item name="agentActionAddFile" type="id" />
+    <item name="agentActionHealth" type="id" />
+    <item name="agentActionScan" type="id" />
     <item name="agentInsightUnreadDot" type="id" />
     <item name="agentSessionsUnreadDot" type="id" />
 </resources>
