@@ -17,6 +17,8 @@ import android.widget.TextView
 import com.galaxyssi.chat.R
 import kotlin.math.roundToInt
 
+private const val INITIAL_ACTION_COUNT = 5
+
 /** Inline actions remain reachable at large accessibility font sizes without shrinking text. */
 class AgentChatShortcutBar @JvmOverloads constructor(
     context: Context,
@@ -42,6 +44,10 @@ class AgentChatShortcutBar @JvmOverloads constructor(
             R.string.agent_attachment_take_photo, R.drawable.ic_agent_camera)
         addAction(R.id.agentActionAddFile, R.string.chat_shortcut_file,
             R.string.agent_attachment_add_file, R.drawable.ic_chat_shortcut_file)
+        addAction(R.id.agentActionHealth, R.string.chat_shortcut_health,
+            R.string.chat_shortcut_health, R.drawable.ic_health_heart, iconColor = R.color.composer_send_icon)
+        addAction(R.id.agentActionScan, R.string.chat_shortcut_scan,
+            R.string.chat_shortcut_scan, R.drawable.ic_agent_scan)
     }
 
     fun showFeedUnread(count: Int) {
@@ -60,9 +66,22 @@ class AgentChatShortcutBar @JvmOverloads constructor(
         findViewById<View>(actionId).contentDescription = description
     }
 
-    private fun addAction(id: Int, label: Int, description: Int, icon: Int, dotId: Int? = null) {
+    private fun resetPosition() {
+        val start = if (layoutDirection == LAYOUT_DIRECTION_RTL) {
+            (row.width - width + paddingLeft + paddingRight).coerceAtLeast(0)
+        } else 0
+        scrollTo(start, 0)
+    }
+
+    private fun addAction(id: Int, label: Int, description: Int, icon: Int, dotId: Int? = null,
+        iconColor: Int = R.color.text_primary) {
         val button = object : FrameLayout(context) {
             private val inkBounds = Rect()
+
+            override fun performClick(): Boolean {
+                if (hasOnClickListeners()) resetPosition()
+                return super.performClick()
+            }
 
             override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
                 super.onInitializeAccessibilityNodeInfo(info)
@@ -106,7 +125,7 @@ class AgentChatShortcutBar @JvmOverloads constructor(
             setPaddingRelative(dp(4), dp(10), dp(if (dotId == null) 4 else 8), dp(10))
             addView(ImageView(context).apply {
                 setImageResource(icon)
-                imageTintList = ColorStateList.valueOf(context.getColor(R.color.text_primary))
+                imageTintList = ColorStateList.valueOf(context.getColor(iconColor))
             }, LinearLayout.LayoutParams(dp(16), dp(16)))
             addView(TextView(context).apply {
                 if (id == R.id.agentInsightBar) this.id = R.id.agentInsightText
@@ -144,11 +163,15 @@ class AgentChatShortcutBar @JvmOverloads constructor(
         contents.forEach { it.measure(unspecified, unspecified) }
         val widths = contents.map { it.measuredWidth.coerceAtLeast(dp(48)) }
         val available = (MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight).coerceAtLeast(0)
-        val extra = (available - widths.sum()).coerceAtLeast(0)
+        // Keep the original five actions sized to the viewport; additional actions start offscreen.
+        val extra = (available - widths.take(INITIAL_ACTION_COUNT).sum()).coerceAtLeast(0)
         val height = contents.maxOf { it.measuredHeight }.coerceAtLeast(dp(48))
         actions.forEachIndexed { index, action ->
-            action.layoutParams.width = widths[index] + extra / actions.size +
-                if (index < extra % actions.size) 1 else 0
+            action.layoutParams.width = if (index < INITIAL_ACTION_COUNT) {
+                widths[index] + extra / INITIAL_ACTION_COUNT + if (index < extra % INITIAL_ACTION_COUNT) 1 else 0
+            } else {
+                maxOf(widths[index], available / INITIAL_ACTION_COUNT)
+            }
             action.layoutParams.height = height
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)

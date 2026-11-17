@@ -497,6 +497,13 @@ private fun MainActivity.configureAgentPageControls() {
             openAgentAttachmentPicker(imagesOnly = false)
         }
     }
+    findViewById<View>(R.id.agentActionHealth).setOnClickListener {
+        startActivity(Intent(this, HealthCenterActivity::class.java))
+    }
+    findViewById<View>(R.id.agentActionScan).setOnClickListener {
+        scanMode = "contact"
+        startSecurityScan()
+    }
     agentSubmitButton.setOnClickListener {
         Log.d("GalaxySSIAgent", "Agent submit clicked")
         exitAgentComposerTextMode(hideKeyboard = true)
