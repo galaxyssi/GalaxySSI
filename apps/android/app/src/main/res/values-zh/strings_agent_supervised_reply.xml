@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_supervised_reply_invalid">GalaxySSI 未能处理模型的回复。你的消息已保留，可以重试。</string>
+    <string name="agent_supervised_evidence_missing">GalaxySSI 无法核实请求的结果，未将任务标记为完成。</string>
+    <string name="agent_supervised_attachment_save_failed">GalaxySSI 已收到回复，但未能保存其中的附件，可以重试。</string>
+</resources>

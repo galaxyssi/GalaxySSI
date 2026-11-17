@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_supervised_reply_invalid">GalaxySSI could not process the model reply. Your message is saved. Try again.</string>
+    <string name="agent_supervised_evidence_missing">GalaxySSI could not verify the requested result. It has not been marked complete.</string>
+    <string name="agent_supervised_attachment_save_failed">GalaxySSI received the reply but could not save its attachment. Try again.</string>
+</resources>

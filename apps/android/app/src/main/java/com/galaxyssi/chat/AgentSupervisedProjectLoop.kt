@@ -683,11 +683,17 @@ internal object AgentSupervisedProjectRuntimeContextPolicy {
 }
 
 internal object AgentSupervisedProjectRoutingPolicy {
-    fun requiresPhoneReceipt(goal: String, context: AgentConversationContext): Boolean =
-        AgentDeviceIntent.requiresReasoning(goal) && AgentDeviceIntent.seconds(goal) != null ||
-            AgentDeviceIntent.followup(goal) != null && context.summary.contains("Phone operation:")
+    fun allowsAnswerOnly(goal: String, context: AgentConversationContext, phoneControl: Boolean): Boolean =
+        !phoneControl && !AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(goal) && !requiresPhoneReceipt(goal, context)
 
-    fun isPhoneControl(goal: String, context: AgentConversationContext): Boolean {
+    fun requiresPhoneReceipt(fullGoal: String, context: AgentConversationContext): Boolean {
+        val goal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(fullGoal)
+        return AgentDeviceIntent.requiresReasoning(goal) && AgentDeviceIntent.seconds(goal) != null ||
+            AgentDeviceIntent.followup(goal) != null && context.summary.contains("Phone operation:")
+    }
+
+    fun isPhoneControl(fullGoal: String, context: AgentConversationContext): Boolean {
+        val goal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(fullGoal)
         val statusNeedsReasoning = AgentDeviceStatusShortcutCoverage.requiresReasoning(goal)
         if (statusNeedsReasoning && AgentDeviceStatusShortcutCoverage.hasExplicitDesktopTarget(goal)) return false
         return AgentDeviceIntent.requiresReasoning(goal) ||
@@ -1165,12 +1171,13 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
     val phoneControl = PhoneAssistantTaskControl.isAutomation(activeConversationTurnId) ||
                 connector.parameters[AgentUnverifiedOutcomeRecovery.PHONE_CONTROL] == "true" ||
                 AgentSupervisedProjectRoutingPolicy.isPhoneControl(request.goal, request.conversationContext)
+    val intentGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(request.goal)
+    val allowsAnswerOnly = AgentSupervisedProjectRoutingPolicy.allowsAnswerOnly(
+        request.goal, request.conversationContext, phoneControl)
     val parsing = AgentModelPlanParser.parseWithDiagnostics(request, normalizedResponse, settings,
-        allowInitialCompletion = iteration == 0 && !phoneControl &&
-            !AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal) &&
-            !AgentSupervisedProjectRoutingPolicy.requiresPhoneReceipt(request.goal, request.conversationContext))
+        allowInitialCompletion = iteration == 0 && allowsAnswerOnly)
     val rawParsed = parsing.plan ?: run {
-            logSupervisedPlanRejection("action_plan", normalizedResponse)
+            logSupervisedPlanRejection("action_plan:${parsing.rejection?.code.orEmpty()}", normalizedResponse)
             return supervisedFormatRepairDecision(plan, connector, request, response,
                 "action_plan:" + parsing.rejection?.toJson().orEmpty())
         }
@@ -1246,7 +1253,9 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
                 return supervisedFormatRepairDecision(plan, connector, request, response, reason)
             }
         }
-        val finalCheck = AgentResponseSelfCheck.evaluate(request.goal, parsed.actions.single().description,
+        val finalCheck = AgentResponseSelfCheck.evaluate(
+            intentGoal.ifBlank { request.goal },
+            parsed.actions.single().description,
             hasOutputArtifacts = !plan.artifactRichOutputJson.isNullOrBlank())
         if (!finalCheck.accepted) {
             return supervisedFormatRepairDecision(plan, connector, request, response,
@@ -1254,9 +1263,7 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
         }
         // A pure answer is not a development task. Do not invent publication/Linux requirements,
         // but never take this path for declared obligations or unverified device effects.
-        if (parsed.completionRequirements == null && !repairOfUnexecutedTools && !phoneControl &&
-            !AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal) &&
-            !AgentSupervisedProjectRoutingPolicy.requiresPhoneReceipt(request.goal, request.conversationContext) &&
+        if (parsed.completionRequirements == null && !repairOfUnexecutedTools && allowsAnswerOnly &&
             AgentCompletionEvidenceHistory.isAnswerOnly(executionHistory) { nativeToolRegistry.lookup(it)?.descriptor }) {
             val answer = parsed.actions.single().description
             val declared = AgentRichContentCodec.fromText(answer).takeIf { blocks -> blocks.any { it.type == AgentRichBlockType.HTML } }
@@ -1288,10 +1295,10 @@ internal fun MobileNativeAgent.acceptSupervisedProjectPlan(
             requireResults = phoneControl
         ) + pendingOutcomes.map { it.missingEvidence() } +
             (if (mutationNeedsPostcondition) listOf("Declare an observable, identity-bound postcondition in completion_requirements.outcomes and verify it; API acceptance is insufficient") else emptyList()) +
-            if (AgentDeviceIntent.requiresReasoning(request.goal) && executionHistory.none { action ->
-            action.kind == AgentActionKind.SET_ALARM ||
-                action.parameters["tool_id"] == AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.SET_ALARM)
-        }) listOf("Execute the requested timer via a phone tool before claiming completion; text alone is not execution") else emptyList()
+            if (AgentDeviceIntent.requiresReasoning(intentGoal) && executionHistory.none { action ->
+                    action.kind == AgentActionKind.SET_ALARM ||
+                        action.parameters["tool_id"] == AgentNativeToolAgentActionAdapter.defaultToolId(AgentActionKind.SET_ALARM)
+                }) listOf("Execute the requested timer via a phone tool before claiming completion; text alone is not execution") else emptyList()
         if (missingEvidence.isNotEmpty()) {
             val repairAttempts = connector.parameters["supervised_completion_attempt"]
                 ?.toIntOrNull()?.coerceAtLeast(0) ?: 0

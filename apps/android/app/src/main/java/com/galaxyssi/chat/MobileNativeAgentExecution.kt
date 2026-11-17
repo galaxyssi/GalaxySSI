@@ -1421,21 +1421,24 @@ internal fun MobileNativeAgent.acceptConnectorResponseInternal(
             return snapshot()
         }
         if (decision.disposition == AgentSupervisedProjectPlanDisposition.REJECTED || decision.plan == null) {
-            val failureMessage = decision.failureMessage.ifBlank {
-                "The supervising model response could not be converted into a recoverable phone project step."
-            }
+            val failureKind = decision.failureKind.ifBlank { "supervised_project_plan_rejected" }
+            val failureMessage = appContext.getString(when (failureKind) {
+                "supervised_completion_evidence_missing" -> R.string.agent_supervised_evidence_missing
+                "visual_artifact_storage_failed" -> R.string.agent_supervised_attachment_save_failed
+                else -> R.string.agent_supervised_reply_invalid
+            })
             val failure = completedResult.copy(
                 success = false,
                 message = failureMessage,
                 metadata = completedResult.metadata + mapOf(
                     "native_tool_output" to response.take(6_000),
-                    "failure_kind" to decision.failureKind.ifBlank { "supervised_project_plan_rejected" },
+                    "failure_kind" to failureKind,
                     "structured_repair_attempts" to decision.repairAttempts.toString(),
                     "supervised_plan_disposition" to decision.disposition.name.lowercase(Locale.ROOT)
                 )
             )
             val failedPlan = responsePlan.markAction(actionId, AgentActionStatus.FAILED, failure)
-            val recoveredPlan = supervisedProjectRecoveryPlan(failedPlan, failureMessage, failure)
+            val recoveredPlan = supervisedProjectRecoveryPlan(failedPlan, decision.failureMessage.ifBlank { failureMessage }, failure)
             currentPlan = recoveredPlan ?: failedPlan
             lastActionResult = failure
             recordAudit(

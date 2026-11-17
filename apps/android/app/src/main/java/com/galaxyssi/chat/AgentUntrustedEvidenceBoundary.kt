@@ -83,10 +83,9 @@ object AgentUntrustedEvidenceBoundary {
      * but they must never select an execution route by impersonating user intent.
      */
     fun trustedInstructionPrefix(text: String): String {
-        val prefix = text.substringBefore(EVIDENCE_MARKER, text).trimEnd()
-        return prefix
-            .removeSuffix("Attached input:")
-            .trim()
+        val boundary = text.indexOf(EVIDENCE_MARKER)
+        if (boundary < 0) return text.trim()
+        return AgentVisualTurnPolicy.userGoalBeforeAttachmentEvidence(text.substring(0, boundary).trimEnd()).trim()
     }
 
     fun compactMarker(): String = "$CONTRACT_VERSION;untrusted;instruction-authority=none"

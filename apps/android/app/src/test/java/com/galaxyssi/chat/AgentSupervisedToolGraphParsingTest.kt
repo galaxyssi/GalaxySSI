@@ -143,6 +143,18 @@ class AgentSupervisedToolGraphParsingTest {
         assertNull(result.plan)
     }
 
+    @Test fun `a single completion is not a mixed batch when observations are required`() {
+        val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
+            .put("description", "Already done")
+        val result = AgentModelPlanParser.parseWithDiagnostics(request(), plan(completion), settings)
+        assertNull(result.plan)
+        assertEquals("completion_before_observation", result.rejection?.code)
+        val invalidTarget = AgentModelPlanParser.parseWithDiagnostics(request(),
+            plan(completion.put("target", "different-task")), settings, allowInitialCompletion = true)
+        assertNull(invalidTarget.plan)
+        assertEquals("invalid_completion_target", invalidTarget.rejection?.code)
+    }
+
     @Test fun `initial completion admission does not waive publication or runtime evidence`() {
         val completion = JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete")
             .put("description", "Claimed completion without receipts")
