@@ -23,10 +23,10 @@ internal object ConversationHubBackPolicy {
 
 internal object ConversationHubContactHistoryPolicy {
     fun includes(contact: org.json.JSONObject?): Boolean =
-        !AgentContactNavigationPolicy.opensAgentConversation(contact)
+        DesktopPairingLifecycle.isHistoryOnly(contact) || !AgentContactNavigationPolicy.opensAgentConversation(contact)
 
     fun hasUnread(contact: org.json.JSONObject?, unreadCount: Int, lastAt: Long): Boolean =
-        unreadCount > 0 && lastAt > 0L && includes(contact)
+        unreadCount > 0 && lastAt > 0L && includes(contact) && !DesktopPairingLifecycle.isHistoryOnly(contact)
 }
 
 internal class ConversationHubReturnState {
@@ -75,7 +75,8 @@ internal data class ConversationHubContactSummary(
     val lastMessage: String,
     val updatedAt: Long,
     val pinned: Boolean = false,
-    val unreadCount: Int = 0
+    val unreadCount: Int = 0,
+    val archived: Boolean = false
 )
 
 internal enum class ConversationHubPreviewKind {
@@ -169,7 +170,7 @@ internal object ConversationHubModels {
         archived: Boolean
     ): ConversationHubConversationSections {
         val normalizedQuery = query.trim().lowercase(Locale.ROOT)
-        val contactItems = if (archived) emptyList() else contacts.map { contact ->
+        val contactItems = contacts.asSequence().filter { it.archived == archived }.map { contact ->
             ConversationHubItem(
                 id = contact.contactId,
                 kind = ConversationHubItemKind.CONTACT,
@@ -177,10 +178,11 @@ internal object ConversationHubModels {
                 subtitle = contact.lastMessage,
                 updatedAt = contact.updatedAt,
                 pinned = contact.pinned,
-                unreadCount = contact.unreadCount
+                unreadCount = if (contact.archived) 0 else contact.unreadCount,
+                archived = contact.archived
             )
         }
-        val matching = (agents.asSequence() + contactItems.asSequence())
+        val matching = (agents.asSequence() + contactItems)
             .filter { it.archived == archived }
             .filter {
                 normalizedQuery.isBlank() ||

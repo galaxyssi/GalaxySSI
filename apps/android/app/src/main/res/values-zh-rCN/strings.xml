@@ -343,6 +343,11 @@
     <string name="desktop_control_manage_subtitle">查看授权、远程画面和最近控制记录</string>
     <string name="desktop_control_picker_subtitle">选择一台已配对电脑进行查看或控制</string>
     <string name="desktop_control_computers">已配对电脑</string>
+    <string name="desktop_disconnect_keep_history">断开电脑，保留聊天</string>
+    <string name="desktop_disconnect_confirmation">断开本机与 %1$s 的配对？聊天记录会保留。\n\n电脑指纹：%2$s</string>
+    <string name="desktop_disconnect_action">断开</string>
+    <string name="desktop_disconnect_failed">无法断开这台电脑。</string>
+    <string name="desktop_disconnected_history">已断开 · 历史聊天</string>
     <string name="desktop_control_trusted_subtitle">GalaxySSI Link 加密远程会话</string>
     <string name="desktop_control_authorized">已授权</string>
     <string name="desktop_control_pending">等待确认</string>
