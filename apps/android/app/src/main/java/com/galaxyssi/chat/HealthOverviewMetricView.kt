@@ -22,167 +22,197 @@ internal class HealthOverviewMetricView(private val activity: HealthCenterActivi
     private fun color(id: Int) = activity.getColor(id)
     private data class Reference(val lines: List<Int>, val detail: Int, val source: Int, val url: String)
 
-    fun row(item: HealthOverviewMetric, openRecord: (HealthObservation) -> Unit,
-        bindSteps: (((HealthPhoneStepReading?, Boolean) -> Unit) -> Unit) = {}): LinearLayout {
-        val record = item.record
-        val draft = record?.draft
+    fun row(item: HealthOverviewMetric, open: () -> Unit): LinearLayout {
         val metric = item.metric
+        val record = item.record
         val reference = reference(item)
-        val canExpand = record != null || reference != null
         val status = item.ranges.firstOrNull { it.outside }
             ?: item.ranges.firstOrNull { it.position == HealthOverviewRangePosition.NOT_COMPARABLE }
             ?: item.ranges.firstOrNull()
-        val title = label(when {
-            metric == HealthMetric.STEPS -> R.string.health_overview_today_steps
-            metric == HealthMetric.GLUCOSE && draft?.condition == "fasting" -> R.string.health_overview_fasting_glucose
-            else -> metric.titleResource()
-        })
-        val spacious = activity.resources.configuration.fontScale >= 1.25f
-        val icon = when (metric) {
-            HealthMetric.BLOOD_PRESSURE, HealthMetric.HEART_RATE, HealthMetric.RESTING_HEART_RATE -> R.drawable.ic_health_heart
-            HealthMetric.SLEEP_DURATION -> R.drawable.ic_conversation_paused
-            HealthMetric.STEPS -> R.drawable.ic_health_data_chart
-            else -> R.drawable.ic_avatar_lab
-        }
-        val details = ui.column().apply {
-            tag = "health-overview-detail-${metric.name}"
-            visibility = View.GONE
-            setPadding(0, ui.dp(4), 0, ui.dp(7))
-            if (record != null) {
-                addView(ui.row(label(R.string.health_overview_record_detail)) { openRecord(record) }.apply { minimumHeight = ui.dp(48) })
-                addView(ui.row(label(R.string.health_overview_metric_history)) { activity.open("metric_records", metric) }.apply { minimumHeight = ui.dp(48) })
-            } else if (reference != null) {
-                addView(ui.row(label(R.string.health_manual)) { activity.open("manual", metric) }.apply { minimumHeight = ui.dp(48) })
-            }
-            if (reference != null) {
-                ui.add(this, ui.text(label(reference.detail), 12f, muted = true), 4)
-                addView(ui.row(label(reference.source)) {
-                    runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(reference.url))) }
-                        .onFailure { Toast.makeText(activity, R.string.health_overview_reference_no_browser, Toast.LENGTH_SHORT).show() }
-                }.apply { minimumHeight = ui.dp(48) })
-            }
-        }
-        val arrow = ImageView(activity).apply {
-            setImageResource(if (canExpand) R.drawable.ic_chevron_down else R.drawable.ic_arrow_right)
-            imageTintList = ColorStateList.valueOf(color(R.color.text_secondary))
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }
-        val staleSteps = metric == HealthMetric.STEPS && item.freshness != HealthOverviewFreshness.RECENT
-        val storedValue = draft?.takeUnless { staleSteps }?.let { reading(it, item.ranges) } ?: label(R.string.health_overview_no_value)
-        val value = ui.text("", 22f, bold = true).apply {
-            text = storedValue
-            tag = "health-overview-value-${metric.name}"
-            gravity = Gravity.END
-            setPadding(ui.dp(4), 0, ui.dp(5), 0)
-        }
-        val recordMetadata = ui.column()
-        val header = ui.column().apply {
-            tag = "health-overview-${metric.name}-${item.freshness.name}"
-            setPadding(0, ui.dp(10), 0, ui.dp(10))
-            minimumHeight = ui.dp(50)
-            isFocusable = true
-            setOnClickListener {
-                if (!canExpand) activity.open("manual", metric) else {
-                    val expanded = details.visibility != View.VISIBLE
-                    details.visibility = if (expanded) View.VISIBLE else View.GONE
-                    arrow.rotation = if (expanded) 180f else 0f
-                }
-            }
-            addHealthOverviewHeadline(activity, title, icon, value, arrow)
-            if (record != null && !staleSteps) {
-                val timing = label(R.string.health_overview_source, activity.date(record.draft.measuredAt),
-                    label(healthRecordSourceResource(record.source)))
-                val source = ui.text(timing, 12f).apply { setTextColor(color(R.color.health_overview_muted)) }
-                val statusLabel = status?.let { statusText(it, metric) }
-                    ?: label(R.string.health_overview_no_range).takeIf { reference == null && metric != HealthMetric.STEPS }
-                val state = statusLabel?.let { ui.text(it, 12f, bold = true).apply {
-                    tag = "health-overview-status-${metric.name}"
-                    setTextColor(color(ink(status?.position, muted = true)))
-                    gravity = Gravity.END
-                } }
-                ui.add(recordMetadata, if (state == null) source
-                else if (spacious) ui.column().apply { addView(source); addView(state, LinearLayout.LayoutParams(-1, -2)) }
-                else ui.line().apply {
-                    addView(source, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) })
-                    addView(state, LinearLayout.LayoutParams(0, -2, 1f))
-                }, 4)
-                item.ranges.forEach { bound ->
-                    val field = if (metric.requiredFields.size > 1) "${label(healthFieldResource(bound.field))} " else ""
-                    ui.add(recordMetadata, ui.text(label(R.string.health_overview_range_line, label(bound.source.title()),
-                        "$field${bound.bounds} ${bound.unit}"), 13f).apply { tag = "health-overview-range-${metric.name}" }, 6)
-                }
-            } else ui.add(recordMetadata, ui.text(label(if (staleSteps) R.string.health_overview_no_today_steps
-                else R.string.health_overview_unrecorded), 12f, muted = true), 4)
-            addView(recordMetadata)
-            if (reference != null) ui.add(this, ui.text(reference.lines.joinToString("\n") { label(it) }, 13f, muted = true)
-                .apply { tag = "health-overview-reference-${metric.name}" }, 6)
-        }
         return ui.column().apply {
-            addView(header)
-            if (metric == HealthMetric.STEPS) {
-                val button = ui.text("", 13f, bold = true).apply {
-                    gravity = Gravity.CENTER_VERTICAL
-                    minimumHeight = ui.dp(48)
-                    tag = "health-overview-phone-steps"
-                    visibility = View.GONE
-                }
-                addView(button)
-                val progress = ui.text("", 12f, muted = true)
-                addView(stepGoal(item, progress))
-                bindSteps { phone, supported ->
-                    val day = LocalDate.now()
-                    val ledger = phone?.ledger
-                    val steps = ledger?.takeIf { it.day == day || phone?.active == true }?.today(day)?.total
-                    value.text = steps?.let {
-                        SpannableStringBuilder(NumberFormat.getIntegerInstance().format(it)).apply {
-                            appendReadingUnit(label(R.string.health_overview_steps_unit))
-                        }
-                    } ?: storedValue
-                    recordMetadata.visibility = if (steps == null) View.VISIBLE else View.GONE
-                    button.visibility = View.VISIBLE
-                    button.setText(when {
-                        !supported -> R.string.health_phone_steps_unsupported
-                        phone?.failed == true -> R.string.health_phone_steps_retry
-                        phone?.active == true -> R.string.health_phone_steps_counting
-                        steps != null -> R.string.health_phone_steps_paused
-                        else -> R.string.health_phone_steps_enable
-                    })
-                    button.setTextColor(color(if (supported) R.color.health_overview_green else R.color.health_overview_muted))
-                    button.setOnClickListener(if (supported) View.OnClickListener { activity.editPhoneSteps() } else null)
-                    button.isClickable = supported
-                    button.isFocusable = supported
-                    val ratio = if (steps == null) item.stepProgress else HealthOverviewGuidance.stepProgress(item.stepGoal,
-                        steps, HealthOverviewFreshness.RECENT, item.stepProgressPermitted)
-                    updateStepProgress(progress, ratio)
+            tag = "health-overview-${metric.name}-${item.freshness.name}"
+            setPadding(ui.dp(12), ui.dp(8), ui.dp(10), ui.dp(8))
+            minimumHeight = ui.dp(52)
+            isFocusable = true
+            setOnClickListener { open() }
+            addHealthOverviewHeadline(activity, title(item), glyph(metric), ui.text("", 18f, bold = true).apply {
+                text = record?.let { reading(it.draft, item.ranges) } ?: label(R.string.health_overview_no_value)
+                tag = "health-overview-value-${metric.name}"
+                gravity = Gravity.END
+                setPadding(ui.dp(4), 0, ui.dp(4), 0)
+            }, arrow())
+            val range = item.ranges.firstOrNull { it.source == status?.source }
+            val references = if (range == null) reference?.lines?.joinToString("\n") { label(it) } else null
+            val basis = when {
+                range != null -> rangeText(item.ranges.filter { it.source == range.source }, metric)
+                references != null -> references
+                record == null -> label(R.string.health_overview_unrecorded)
+                else -> label(R.string.health_overview_no_range)
+            }
+            val basisLabel = ui.text(basis, 12f, muted = true).apply {
+                if (range != null) tag = "health-overview-range-${metric.name}"
+                else if (references != null) tag = "health-overview-reference-${metric.name}"
+            }
+            val state = status?.let { bound ->
+                ui.text(statusText(bound, metric), 12f, bold = bound.outside).apply {
+                    tag = "health-overview-status-${metric.name}"
+                    setTextColor(color(ink(bound.position, muted = true)))
+                    gravity = Gravity.END
                 }
             }
-            addView(details)
-            addView(View(activity).apply { setBackgroundColor(color(R.color.separator)) }, LinearLayout.LayoutParams(-1, ui.dp(1)))
+            val config = activity.resources.configuration
+            if (state == null) ui.add(this, basisLabel, 3)
+            else if (config.fontScale >= 1.25f || config.screenWidthDp < 345) {
+                ui.add(this, basisLabel, 3)
+                addView(state, LinearLayout.LayoutParams(-1, -2))
+            } else ui.add(this, ui.line().apply {
+                gravity = Gravity.TOP
+                addView(basisLabel, LinearLayout.LayoutParams(0, -2, 1.25f).apply { marginEnd = ui.dp(5) })
+                addView(state, LinearLayout.LayoutParams(0, -2, 1f))
+            }, 3)
         }
     }
 
-    private fun stepGoal(item: HealthOverviewMetric, progress: android.widget.TextView): View {
+    fun showDetail(content: LinearLayout, detail: HealthOverviewMetricDetail) {
+        val item = detail.metric
+        val record = item.record
+        val ref = reference(item)
+        content.addView(ui.column().apply {
+            tag = "health-overview-detail-${item.metric.name}"
+            if (record == null) {
+                addView(ui.text(label(R.string.health_overview_unrecorded), 14f, muted = true))
+            } else {
+                addView(ui.text("", 30f, bold = true).apply { text = reading(record.draft, item.ranges) })
+                ui.add(this, ui.text(label(R.string.health_overview_source, activity.date(record.draft.measuredAt),
+                    label(healthRecordSourceResource(record.source))), 13f, muted = true), 3)
+                val condition = record.draft.condition
+                if (item.metric == HealthMetric.GLUCOSE && condition.isNotBlank()) {
+                    ui.add(this, ui.text(label(healthContextResource(condition)), 13f, muted = true), 2)
+                }
+            }
+            item.ranges.groupBy { it.source }.values.forEach { bounds ->
+                ui.add(this, ui.text(rangeText(bounds, item.metric), 14f), 8)
+                bounds.forEach { bound ->
+                    ui.add(this, ui.text(statusText(bound, item.metric), 13f).apply {
+                        setTextColor(color(ink(bound.position, muted = true)))
+                    }, 3)
+                }
+            }
+            if (ref != null) {
+                ui.add(this, ui.text(ref.lines.joinToString("\n") { label(it) }, 13f, muted = true), 10)
+                ui.add(this, ui.text(label(ref.detail), 12f, muted = true), 4)
+                addView(detailLink(ref.source) {
+                    runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ref.url))) }
+                        .onFailure { Toast.makeText(activity, R.string.health_overview_reference_no_browser, Toast.LENGTH_SHORT).show() }
+                })
+            }
+        })
+        if (detail.recent.isNotEmpty()) {
+            ui.add(content, ui.text(label(R.string.health_overview_recent_records), 15f, bold = true), 14)
+            detail.recent.forEach { previous ->
+                content.addView(ui.line().apply {
+                    minimumHeight = ui.dp(48)
+                    setOnClickListener { activity.open("detail", previous.draft.metric, previous.id) }
+                    isFocusable = true
+                    addView(ui.text(activity.date(previous.draft.measuredAt), 12f, muted = true),
+                        LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(ui.text(healthDisplayValue(previous.draft), 14f, bold = true).apply { gravity = Gravity.END },
+                        LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(arrow(), LinearLayout.LayoutParams(ui.dp(15), ui.dp(15)))
+                })
+                content.addView(healthOverviewDivider(activity))
+            }
+            content.addView(detailLink(R.string.health_overview_metric_history) { activity.open("overview_history", item.metric) })
+        }
+        if (item.outsideRange) {
+            ui.add(content, ui.text(label(R.string.health_overview_compare_note), 13f, muted = true).apply {
+                tag = "health-overview-compare-note"
+            }, 10)
+        }
+        detail.concernId?.let { id ->
+            content.addView(detailLink(R.string.health_overview_discuss_metric) { activity.openOverviewDiscussion(item.metric, id) })
+        }
+        if (record == null) ui.add(content, ui.command(R.string.health_manual) { activity.open("manual", item.metric) }, 12)
+    }
+
+    fun stepTile(item: HealthOverviewMetric, bind: (((HealthPhoneStepReading?, Boolean) -> Unit) -> Unit)): View {
+        val staleSteps = item.freshness != HealthOverviewFreshness.RECENT
+        val storedValue = item.record?.draft?.takeUnless { staleSteps }?.let { reading(it, item.ranges) }
+            ?: label(R.string.health_overview_no_value)
+        val value = ui.text("", 18f, bold = true).apply {
+            text = storedValue
+            tag = "health-overview-value-STEPS"
+        }
         val goal = item.stepGoal
-        val target = goal?.let { label(R.string.health_overview_step_goal_value, NumberFormat.getIntegerInstance().format(it)) }
-            ?: label(R.string.health_overview_step_goal_set)
-        updateStepProgress(progress, item.stepProgress)
-        return ui.line().apply {
+        val goalLink = ui.text(goal?.let { label(R.string.health_overview_step_goal_value, NumberFormat.getIntegerInstance().format(it)) }
+            ?: label(R.string.health_overview_step_goal_set), 12f, muted = true).apply {
             tag = "health-overview-step-goal"
-            minimumHeight = ui.dp(48)
-            setPadding(0, 0, 0, ui.dp(6))
+            minimumHeight = ui.dp(44)
+            gravity = Gravity.CENTER_VERTICAL
             isFocusable = true
             setOnClickListener { activity.editOverviewStepGoal(goal) }
-            addView(ui.column().apply {
-                addView(ui.text(target, 13f, bold = true).apply { setTextColor(color(R.color.health_overview_green)) })
-                addView(progress)
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(ImageView(activity).apply {
-                setImageResource(R.drawable.ic_arrow_right)
-                imageTintList = ColorStateList.valueOf(color(R.color.text_secondary))
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }, LinearLayout.LayoutParams(ui.dp(14), ui.dp(14)))
         }
+        val progress = ui.text("", 12f, muted = true)
+        val tile = healthOverviewActivityTile(activity, R.string.health_overview_today_steps, R.drawable.ic_health_data_chart,
+            value, goalLink).apply {
+            tag = "health-overview-STEPS-${item.freshness.name}"
+            addView(progress)
+        }
+        updateStepProgress(progress, item.stepProgress)
+        bind { phone, supported ->
+            val day = LocalDate.now()
+            val steps = phone?.ledger?.takeIf { it.day == day || phone?.active == true }?.today(day)?.total
+            value.text = steps?.let {
+                SpannableStringBuilder(NumberFormat.getIntegerInstance().format(it)).apply {
+                    appendReadingUnit(label(R.string.health_overview_steps_unit))
+                }
+            } ?: storedValue
+            tile.setOnClickListener(if (supported) View.OnClickListener { activity.editPhoneSteps() } else null)
+            tile.isClickable = supported
+            tile.isFocusable = supported
+            val state = label(when {
+                !supported -> R.string.health_phone_steps_unsupported
+                phone?.failed == true -> R.string.health_phone_steps_retry
+                phone?.active == true -> R.string.health_phone_steps_counting
+                steps != null -> R.string.health_phone_steps_paused
+                else -> R.string.health_phone_steps_enable
+            })
+            tile.contentDescription = label(R.string.health_overview_source, value.text, state)
+            updateStepProgress(progress, if (steps == null) item.stepProgress
+                else HealthOverviewGuidance.stepProgress(item.stepGoal, steps, HealthOverviewFreshness.RECENT, item.stepProgressPermitted))
+        }
+        return tile
     }
+
+    private fun detailLink(resource: Int, action: () -> Unit) = ui.text(label(resource), 14f).apply {
+        setTextColor(color(R.color.health_overview_green))
+        minimumHeight = ui.dp(48)
+        gravity = Gravity.CENTER_VERTICAL
+        isFocusable = true
+        setOnClickListener { action() }
+    }
+
+    private fun arrow() = ImageView(activity).apply {
+        setImageResource(R.drawable.ic_arrow_right)
+        imageTintList = ColorStateList.valueOf(color(R.color.text_secondary))
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+
+    private fun title(item: HealthOverviewMetric) =
+        label(if (item.metric == HealthMetric.GLUCOSE && item.record?.draft?.condition == "fasting")
+            R.string.health_overview_fasting_glucose else item.metric.titleResource())
+
+    private fun glyph(metric: HealthMetric) = when (metric) {
+        HealthMetric.BLOOD_PRESSURE, HealthMetric.HEART_RATE, HealthMetric.RESTING_HEART_RATE -> R.drawable.ic_health_heart
+        HealthMetric.SLEEP_DURATION -> R.drawable.ic_conversation_paused
+        else -> R.drawable.ic_avatar_lab
+    }
+
+    private fun rangeText(ranges: List<HealthOverviewRange>, metric: HealthMetric) =
+        label(R.string.health_overview_range_line, label(ranges.first().source.title()), ranges.joinToString(" / ") { bound ->
+            val field = if (metric.requiredFields.size > 1) "${label(healthFieldResource(bound.field))} " else ""
+            "$field${bound.bounds} ${bound.unit}"
+        })
 
     private fun updateStepProgress(view: android.widget.TextView, ratio: Double?) {
         view.visibility = if (ratio == null) View.GONE else View.VISIBLE
@@ -262,7 +292,7 @@ internal class HealthOverviewMetricView(private val activity: HealthCenterActivi
 internal fun LinearLayout.addHealthOverviewHeadline(activity: HealthCenterActivity, title: String, icon: Int,
     amount: TextView, arrow: ImageView) {
     val ui = activity.ui
-    val spacious = activity.resources.configuration.fontScale >= 1.25f
+    val spacious = activity.resources.configuration.let { it.fontScale >= 1.25f || it.screenWidthDp < 344 }
     addView(ui.line().apply {
         addView(ui.line().apply {
             addView(ImageView(activity).apply {

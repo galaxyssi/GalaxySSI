@@ -2,6 +2,7 @@
 <resources>
     <string name="health_cycling_today">Cycling today</string>
     <string name="health_cycling_minutes">%1$d min</string>
+    <string name="health_cycling_hours_minutes">%1$d h %2$d min</string>
     <string name="health_cycling_under_minute">Under 1 min</string>
     <string name="health_overview_today_steps">Steps today</string>
     <string name="health_overview_no_today_steps">No steps recorded today</string>
@@ -49,8 +50,11 @@
     <string name="health_overview_step_goal_progress">Today · %1$s of goal</string>
     <string name="health_overview_step_goal_remove">Clear goal</string>
     <string name="health_overview_step_goal_invalid">Enter a whole number from 1 to %1$d.</string>
-    <string name="health_overview_metrics_heading">Key measurements</string>
-    <string name="health_overview_view_all">View all</string>
+    <string name="health_overview_metrics_heading">Measurements</string>
+    <string name="health_overview_view_all">All records</string>
+    <string name="health_overview_recent_records">Recent records</string>
+    <string name="health_overview_compare_note">Compare with earlier measurements taken under similar conditions.</string>
+    <string name="health_overview_discuss_metric">Discuss in a separate health chat</string>
     <string name="health_overview_fasting_glucose">Fasting glucose</string>
     <string name="health_overview_no_value">—</string>
     <string name="health_overview_no_range">No comparison range</string>

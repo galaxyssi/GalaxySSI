@@ -32,6 +32,8 @@ internal data class HealthOverviewMetric(val metric: HealthMetric, val record: H
     val stepGoal: Int? = null, val stepProgress: Double? = null, val stepProgressPermitted: Boolean = false) {
     val outsideRange get() = ranges.any { it.outside }
 }
+internal data class HealthOverviewMetricDetail(val metric: HealthOverviewMetric, val recent: List<HealthObservation>,
+    val concernId: String?)
 internal data class HealthOverviewDerived(val sleep: HealthWeeklyStat? = null, val alert: HealthSleepAlert? = null,
     val permitted: Boolean = true, val unavailable: Boolean = false)
 internal data class HealthOverviewSnapshot(val time: Long, val zone: ZoneId, val hasRecords: Boolean, val metrics: List<HealthOverviewMetric>,
@@ -40,6 +42,38 @@ internal data class HealthOverviewSnapshot(val time: Long, val zone: ZoneId, val
 
 internal object HealthOverviewRepository {
     private val candidates = HealthMetric.entries.toSet() - setOf(HealthMetric.TEMPERATURE, HealthMetric.OXYGEN_SATURATION)
+
+    fun metricDetail(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, metric: HealthMetric,
+        now: Long, zone: ZoneId): HealthOverviewMetricDetail {
+        val versions = records.metricVersions(setOf(metric))
+        val recent = records.recentSelf(now, limit = 3, metric = metric)
+        val record = recent.firstOrNull()
+        val comparison = runCatching { ranges(context, names, mapOf(metric to record), versions, now, zone)[metric] }
+            .getOrNull().orEmpty()
+        val age = HealthOverviewGuidance.ageOn(profileBirthDate(context, names),
+            HealthOverviewPolicy.localDay(record?.draft?.measuredAt ?: now, zone))
+        val item = HealthOverviewMetric(metric, record, HealthOverviewPolicy.freshness(metric, record?.draft?.measuredAt, now, zone),
+            comparison, HealthOverviewGuidance.adultReference(age), HealthOverviewGuidance.sleep(age))
+        val concern = if (record != null) discussionConcern(context, names, record, versions.getValue(metric)) else null
+        if (versions != records.metricVersions(setOf(metric))) throw HealthWeeklyChanged()
+        return HealthOverviewMetricDetail(item, recent, concern)
+    }
+
+    fun discussionConcern(context: Context, names: HealthOverviewDatabases, record: HealthObservation,
+        version: String): String? = runCatching {
+        if (record.profileId != "self" || !context.getDatabasePath(names.care).exists()) return null
+        val privacy = HealthPrivacyStore(context, names.privacy).use { it.policy() }
+        if (!privacy.metrics || !privacy.profile) return null
+        HealthCareStore(context, names.care).use { care ->
+            val settings = care.settings()
+            care.forMetric(record.draft.metric)?.takeIf {
+                settings.enabled && it.stage !in setOf(HealthCareStage.PAUSED, HealthCareStage.CLOSED) &&
+                    it.assessment.record == HealthCareRecordRef(record.id, record.revision) &&
+                    it.inputVersion == HealthCareEngine.inputVersion(settings.version, privacy.version, version) &&
+                    HealthCareProfileAccess.current(context, it.profileLink, names)
+            }?.id
+        }
+    }.getOrNull()
 
     fun load(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, now: Long, zone: ZoneId): HealthOverviewSnapshot {
         val selected = candidates

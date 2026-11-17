@@ -35,6 +35,7 @@ class HealthCenterActivity : ComponentActivity() {
     internal val ui by lazy { HealthCenterViews(this) }
     internal lateinit var body: LinearLayout
     private lateinit var title: TextView
+    private lateinit var functionsButton: View
     private lateinit var root: LinearLayout
     private val worker = Executors.newSingleThreadExecutor()
     private val stepTasks = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -49,15 +50,14 @@ class HealthCenterActivity : ComponentActivity() {
     private val records by lazy { HealthRecordStore(applicationContext, overviewNames.records) }
     private val overview by lazy { HealthOverviewView(this, overviewNames) }
     private val cycling = HealthCyclingView(this)
-    internal fun cyclingRow() = cycling.row(overviewNames.fixture != null)
-    private val firstUse by lazy { HealthFirstUseView(this, overviewNames.fixture == null) }
+    internal fun cyclingTile() = cycling.tile(overviewNames.fixture != null)
     private val recordCenter by lazy { HealthRecordCenterView(this, overviewNames) }
     private var overviewScroll = 0
     private var recordCenterScroll = 0
-    private val reloadOverview = Runnable { if (active && (route == "overview" || route == "record_center")) render() }
+    private val reloadOverview = Runnable { if (active && route in LIVE_SUMMARY_ROUTES) render() }
     private val overviewChanges = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
-            if (active && (route == "overview" || route == "record_center")) {
+            if (active && route in LIVE_SUMMARY_ROUTES) {
                 main.removeCallbacks(reloadOverview)
                 main.postDelayed(reloadOverview, 120)
             }
@@ -65,7 +65,7 @@ class HealthCenterActivity : ComponentActivity() {
     }
     private val overviewCareChanges = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
-            if (active && route == "overview") {
+            if (active && (route == "overview" || route == "overview_metric")) {
                 main.removeCallbacks(reloadOverview)
                 main.postDelayed(reloadOverview, 120)
             }
@@ -73,7 +73,7 @@ class HealthCenterActivity : ComponentActivity() {
     }
     private val overviewPrivacy = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
-            if (active && route == "overview") {
+            if (active && (route == "overview" || route == "overview_metric")) {
                 sensitiveDialogs.toList().forEach { it.dismiss() }
                 main.removeCallbacks(reloadOverview)
                 render()
@@ -99,7 +99,7 @@ class HealthCenterActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = getColor(R.color.surface_bg)
+        window.statusBarColor = getColor(R.color.page_bg)
         window.navigationBarColor = getColor(R.color.page_bg)
         if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         reviewKey = savedInstanceState?.getString("review").orEmpty().ifBlank { intent.getStringExtra("review_draft").orEmpty() }
@@ -137,7 +137,9 @@ class HealthCenterActivity : ComponentActivity() {
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { back() })
             title = ui.text(getString(R.string.health_title), 19f, bold = true).apply { gravity = Gravity.CENTER }
             addView(title, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(ui.icon(R.drawable.ic_health_grid, R.string.health_functions) { open("functions") }.apply { tag = "health-functions" })
+            functionsButton = ui.icon(R.drawable.ic_more_horizontal, R.string.health_functions) { open("functions") }
+                .apply { tag = "health-functions" }
+            addView(functionsButton)
         }, LinearLayout.LayoutParams(-1, ui.dp(56)))
         body = ui.column()
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -199,7 +201,7 @@ class HealthCenterActivity : ComponentActivity() {
         if (saving) return
         if (destination != "detail" || id != recordId) undoDeletionRevision = 0
         saveDraft()
-        if (destination in listOf("records", "metric_records") && (route != destination || selected != metric)) {
+        if (destination in RECORD_ROUTES && (route != destination || selected != metric)) {
             pageAfter = null; nextPage = null; pageHistory.clear()
         }
         if (route != destination || selected != metric || recordId != id) backStack.addLast(Triple(route, selected, recordId))
@@ -285,12 +287,14 @@ class HealthCenterActivity : ComponentActivity() {
         retainOverviewScroll()
         clearTodaySteps()
         generation++; main.removeCallbacks(savePendingDraft); main.removeCallbacks(reloadOverview); editor = null; body.removeAllViews()
+        functionsButton.visibility = if (route == "overview") View.VISIBLE else View.INVISIBLE
         title.text = getString(when (route) {
             "manual" -> R.string.health_manual
             "review" -> R.string.health_review_title
             "records" -> R.string.health_records
             "record_center" -> R.string.health_record_center
-            "metric_records" -> selected.titleResource()
+            "metric_records", "overview_history" -> selected.titleResource()
+            "overview_metric" -> selected.titleResource()
             "detail" -> selected.titleResource()
             "history" -> R.string.health_revision_history
             "functions" -> R.string.health_functions
@@ -298,7 +302,8 @@ class HealthCenterActivity : ComponentActivity() {
         })
         when (route) {
             "manual", "review" -> renderManual()
-            "records", "metric_records" -> renderRecords()
+            "records", "metric_records", "overview_history" -> renderRecords()
+            "overview_metric" -> renderOverviewMetric()
             "record_center" -> {
                 val content = scrolling()
                 val scroll = (content.parent as ScrollView).apply { tag = "health-record-center-scroll" }
@@ -314,7 +319,9 @@ class HealthCenterActivity : ComponentActivity() {
         }
     }
     internal fun scrolling(): LinearLayout {
-        val content = ui.column().apply { setPadding(ui.dp(16), ui.dp(20), ui.dp(16), ui.dp(24)) }
+        val content = ui.column().apply {
+            setPadding(ui.dp(16), ui.dp(if (route == "overview") 8 else 16), ui.dp(16), ui.dp(16))
+        }
         body.addView(ScrollView(this).apply { isFillViewport = true; addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f))
         return content
     }
@@ -335,12 +342,44 @@ class HealthCenterActivity : ComponentActivity() {
         val now = System.currentTimeMillis()
         val zone = ZoneId.systemDefault()
         query({ store -> HealthOverviewRepository.load(applicationContext, store, overviewNames, now, zone) }) { snapshot ->
-            overview.show(content, snapshot, firstUse)
+            overview.show(content, snapshot)
             observePhoneSteps()
             val position = overviewScroll
             if (position > 0) scroll.post { if (active && scroll.parent === body) scroll.scrollTo(0, position) }
             val tomorrow = HealthOverviewPolicy.localDay(now, zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
             main.postDelayed(reloadOverview, (tomorrow - System.currentTimeMillis()).coerceAtLeast(500))
+        }
+    }
+
+    private fun renderOverviewMetric() {
+        val content = scrolling()
+        val metric = selected
+        query({ store ->
+            HealthOverviewRepository.metricDetail(applicationContext, store, overviewNames, metric,
+                System.currentTimeMillis(), ZoneId.systemDefault())
+        }) { detail ->
+            if (metric == HealthMetric.GLUCOSE && detail.metric.record?.draft?.condition == "fasting") {
+                title.setText(R.string.health_overview_fasting_glucose)
+            }
+            overview.showMetric(content, detail)
+        }
+    }
+
+    internal fun openOverviewDiscussion(metric: HealthMetric, expectedConcern: String) {
+        if (overviewNames.fixture != null || !active || route != "overview_metric" || selected != metric) return
+        query({ store ->
+            val record = store.overviewLatestSelf(metric, System.currentTimeMillis()) ?: return@query null
+            val version = store.metricVersions(setOf(metric)).getValue(metric)
+            val concern = HealthOverviewRepository.discussionConcern(applicationContext, overviewNames, record, version)
+            if (expectedConcern != concern) null else HealthCareDiscussion.open(applicationContext, expectedConcern)
+        }) { id ->
+            if (id == null) {
+                Toast.makeText(this, R.string.health_care_changed, Toast.LENGTH_SHORT).show()
+                render()
+            } else {
+                startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", id))
+            }
         }
     }
 
@@ -452,12 +491,47 @@ class HealthCenterActivity : ComponentActivity() {
     }
     private fun renderRecords() {
         val content = scrolling()
+        content.tag = "health-record-timeline"
         nextPage = null
         val after = pageAfter
-        val metric = selected.takeIf { route == "metric_records" }
-        query({ it.page(after, metric) }) { page ->
+        val selfOnly = route == "overview_history"
+        val metric = selected.takeUnless { route == "records" }
+        val now = System.currentTimeMillis()
+        val zone = ZoneId.systemDefault()
+        query({ if (selfOnly && metric != null) it.careHistory(now, metric, after) else it.page(after, metric) }) { page ->
             nextPage = page.next
-            page.records.forEach { ui.add(content, recordRow(it), 10) }
+            var shownDay: java.time.LocalDate? = null
+            val dayFormat = DateFormat.getDateInstance(DateFormat.MEDIUM)
+            val timeFormat = DateFormat.getTimeInstance(DateFormat.SHORT)
+            page.records.forEach { record ->
+                val time = record.draft.measuredAt
+                val day = HealthOverviewPolicy.localDay(time, zone)
+                if (day != shownDay) {
+                    ui.add(content, ui.text(dayFormat.format(Date(time)), 15f, bold = true).apply {
+                        tag = "health-record-day"
+                        androidx.core.view.ViewCompat.setAccessibilityHeading(this, true)
+                    }, if (shownDay == null) 0 else 16)
+                    shownDay = day
+                }
+                content.addView(ui.line().apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    minimumHeight = ui.dp(52)
+                    setPadding(0, ui.dp(5), 0, ui.dp(5))
+                    tag = "health-record-timeline-item"
+                    isFocusable = true
+                    setOnClickListener { open("detail", record.draft.metric, record.id) }
+                    addView(ui.column().apply {
+                        addView(ui.text(getString(record.draft.metric.titleResource()), 14f, bold = true))
+                        addView(ui.text(getString(R.string.health_overview_source, timeFormat.format(Date(time)), source(record)),
+                            12f, muted = true))
+                    }, LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(ui.text(value(record), 14f, bold = true).apply {
+                        gravity = Gravity.END
+                        setPadding(ui.dp(6), 0, 0, 0)
+                    }, LinearLayout.LayoutParams(0, -2, 1f))
+                })
+                content.addView(healthOverviewDivider(this))
+            }
             if (content.childCount == 0) content.addView(ui.text(getString(R.string.health_no_records), 15f, muted = true))
             if (pageHistory.isNotEmpty()) ui.add(content, ui.command(R.string.health_previous_page) {
                 pageAfter = pageHistory.removeAt(pageHistory.lastIndex); render()
@@ -654,4 +728,9 @@ class HealthCenterActivity : ComponentActivity() {
     }
     private fun openCatalog() { startActivity(android.content.Intent(this, HealthCatalogActivity::class.java).putHealthNavigationFixture(overviewNames)) }
     private fun source(record: HealthObservation) = getString(healthRecordSourceResource(record.source))
+
+    private companion object {
+        val RECORD_ROUTES = setOf("records", "metric_records", "overview_history")
+        val LIVE_SUMMARY_ROUTES = setOf("overview", "overview_metric", "record_center")
+    }
 }

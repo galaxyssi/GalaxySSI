@@ -116,7 +116,7 @@ class HealthOverviewUiDeviceTest {
             assertNotNull(find(it, "health-overview-RESTING_HEART_RATE-MISSING"))
             assertNull(find(it, "health-overview-extra-TEMPERATURE"))
             assertNull(find(it, "health-overview-extra-OXYGEN_SATURATION"))
-            assertNull(find(it, "health-overview-first"))
+            assertNull(find(it, "health-overview-empty"))
         }
         scenario.moveToState(Lifecycle.State.CREATED)
         scenario.onActivity { assertEquals(0, it.body.childCount) }
@@ -138,7 +138,11 @@ class HealthOverviewUiDeviceTest {
         await(scenario, "health-overview-GLUCOSE-RECENT")
         scenario.onActivity { activity ->
             val list = requireNotNull(find(activity, "health-overview-metrics")) as ViewGroup
+            val daily = requireNotNull(find(activity, "health-overview-activity")) as ViewGroup
             assertNotNull(list.getChildAt(0).findViewWithTag<View>("health-overview-GLUCOSE-RECENT"))
+            assertNotNull(daily.findViewWithTag<View>("health-overview-value-STEPS"))
+            assertNotNull(daily.findViewWithTag<View>("health-overview-cycling"))
+            assertNull(list.findViewWithTag<View>("health-overview-value-STEPS"))
             assertNull(find(activity, "health-overview-CHOLESTEROL-RECENT"))
             val range = requireNotNull(find(activity, "health-overview-range-GLUCOSE")) as android.widget.TextView
             assertTrue(range.text.contains(activity.getString(R.string.health_overview_report_range)))
@@ -152,13 +156,52 @@ class HealthOverviewUiDeviceTest {
             val shortcuts = views(footer).filter { it.isClickable }.map { it.tag }
             assertEquals(listOf("health-overview-photo", "health-overview-manual", "health-overview-import", "health-overview-sources"), shortcuts)
             assertTrue(requireNotNull(find(activity, "health-overview-GLUCOSE-RECENT")).performClick())
-            assertEquals(View.VISIBLE, requireNotNull(find(activity, "health-overview-detail-GLUCOSE")).visibility)
+        }
+        await(scenario, "health-overview-detail-GLUCOSE")
+        scenario.onActivity {
+            assertNull(find(it, "health-overview-activity"))
+            assertNotNull(find(it, "health-overview-compare-note"))
         }
         HealthPrivacyStore(context, names.privacy).use {
             it.change(HealthPrivacyOption.CONFIRMED_METRICS, false, it.policy().version)
         }
+        val deadline = SystemClock.elapsedRealtime() + 15_000
+        do {
+            var cleared = false
+            scenario.onActivity { cleared = find(it, "health-overview-detail-GLUCOSE") != null &&
+                find(it, "health-overview-compare-note") == null }
+            if (cleared) break
+            SystemClock.sleep(40)
+        } while (SystemClock.elapsedRealtime() < deadline)
+        scenario.onActivity {
+            assertNull(find(it, "health-overview-compare-note"))
+            it.onBackPressed()
+        }
         await(scenario, "health-overview-BLOOD_PRESSURE-MISSING")
-        scenario.onActivity { assertNull(find(it, "health-overview-GLUCOSE-RECENT")) }
+        scenario.onActivity {
+            assertNotNull(find(it, "health-overview-GLUCOSE-RECENT"))
+            assertNull(find(it, "health-overview-status-GLUCOSE"))
+        }
+    }
+
+    @Test fun allRecordsAreGroupedByLocalDateAndReturnToTheOverview() = screen(seed = { names, now ->
+        val today = HealthOverviewPolicy.localDay(now, zone)
+        val yesterday = today.minusDays(1).atTime(9, 0).atZone(zone).toInstant().toEpochMilli()
+        HealthRecordStore(context, names.records).use { store ->
+            store.save(HealthDraft(values = mapOf("systolic" to "120", "diastolic" to "80"), measuredAt = now))
+            store.save(HealthDraft(values = mapOf("systolic" to "119", "diastolic" to "79"), measuredAt = yesterday))
+        }
+    }) { scenario, _ ->
+        await(scenario, "health-overview-all-records")
+        scenario.onActivity { assertTrue(requireNotNull(find(it, "health-overview-all-records")).performClick()) }
+        await(scenario, "health-record-timeline-item")
+        scenario.onActivity {
+            assertEquals(2, views(it.body).count { view -> view.tag == "health-record-day" })
+            assertEquals(2, views(it.body).count { view -> view.tag == "health-record-timeline-item" })
+            assertNull(find(it, "health-overview-bottom-actions"))
+            it.onBackPressed()
+        }
+        await(scenario, "health-overview-activity")
     }
     @Test fun publicGuidanceRemainsSeparateFromRangesAndHonorsProfilePrivacy() = screen(seed = { names, now ->
         val day = HealthOverviewPolicy.localDay(now, zone)
@@ -237,10 +280,9 @@ class HealthOverviewUiDeviceTest {
     @Test fun firstUseKeepsPendingRecognitionOutOfTheOverview() = screen(seed = { names, now ->
         overviewOcrJob(context, names, now - 1000)
     }) { scenario, names ->
-        await(scenario, "health-first-existing")
+        await(scenario, "health-overview-empty")
         scenario.onActivity {
-            assertNotNull(find(it, "health-overview-first"))
-            assertNotNull(find(it, "health-first-no-analysis"))
+            assertNotNull(find(it, "health-overview-bottom-actions"))
             assertNull(find(it, "health-overview-attention"))
             assertNull(find(it, "health-overview-review-OCR"))
             assertNotNull(find(it, "health-overview-BLOOD_PRESSURE-MISSING"))
@@ -251,36 +293,35 @@ class HealthOverviewUiDeviceTest {
             assertEquals(HealthOverviewReviewKind.OCR, HealthOverviewRepository.pendingReviews(context, it, names, limit = 4).single().kind)
         }
     }
-    @Test fun firstUseOffersOptionalSourcesAndAFilePickerWithoutAnImportHub() = screen { scenario, _ ->
-        await(scenario, "health-first-existing")
+    @Test fun emptyOverviewOffersOneFilePickerWithoutAnImportHub() = screen { scenario, _ ->
+        await(scenario, "health-overview-empty")
         scenario.onActivity {
-            listOf("health-overview-photo", "health-overview-manual", "health-overview-import", "health-overview-sources",
-                "health-first-add", "health-first-existing").forEach { key -> assertTrue(requireNotNull(find(it, key)).isClickable) }
+            listOf("health-overview-photo", "health-overview-manual", "health-overview-import",
+                "health-overview-sources").forEach { key -> assertTrue(requireNotNull(find(it, key)).isClickable) }
             assertNoReminderCenter(it)
         }
-        cancelPicker(scenario, "health-first-existing")
+        cancelPicker(scenario, "health-overview-import")
         scenario.recreate()
-        await(scenario, "health-overview-first")
+        await(scenario, "health-overview-empty")
         scenario.onActivity {
-            assertNotNull(find(it, "health-first-no-analysis"))
             assertNull(find(it, "health-import-center"))
         }
     }
-    @Test fun firstConfirmedRecordReplacesOnboardingWithoutReopeningThePage() = screen { scenario, names ->
-        await(scenario, "health-overview-first")
+    @Test fun firstConfirmedRecordClearsTheEmptyStateWithoutReopeningThePage() = screen { scenario, names ->
+        await(scenario, "health-overview-empty")
         HealthRecordStore(context, names.records).use {
             it.save(HealthDraft(values = mapOf("systolic" to "120", "diastolic" to "80"), measuredAt = System.currentTimeMillis() - 1000))
         }
         await(scenario, "health-overview-BLOOD_PRESSURE-RECENT")
         scenario.onActivity {
-            assertNull(find(it, "health-overview-first"))
+            assertNull(find(it, "health-overview-empty"))
             assertNoReminderCenter(it)
         }
         cancelPicker(scenario, "health-overview-import")
         await(scenario, "health-overview-BLOOD_PRESSURE-RECENT")
     }
     @Test fun functionsMenuKeepsPrivacyEntryWithoutReminderCenter() = screen { scenario, _ ->
-        await(scenario, "health-overview-first")
+        await(scenario, "health-overview-empty")
         scenario.onActivity {
             assertTrue(views(it.window.decorView).single { view -> view.tag == "health-functions" }.performClick())
         }

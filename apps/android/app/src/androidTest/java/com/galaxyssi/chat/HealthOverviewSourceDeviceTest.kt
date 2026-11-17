@@ -53,7 +53,7 @@ class HealthOverviewSourceDeviceTest {
         HealthRecordStore(context, names.records).use { it.saveHealthSyncCheckpoint(failed()) }
         ActivityScenario.launch<HealthCenterActivity>(Intent(context, HealthCenterActivity::class.java)
             .putHealthNavigationFixture(names)).use { scenario ->
-            awaitTag(scenario, "health-overview-first")
+            awaitTag(scenario, "health-overview-empty")
             scenario.onActivity { activity ->
                 assertNull(activity.body.findViewWithTag<View>("health-overview-attention"))
                 assertNull(activity.body.findViewWithTag<View>("health-overview-sync-${scope.name}"))
