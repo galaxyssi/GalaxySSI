@@ -2,13 +2,9 @@ package com.galaxyssi.chat
 
 import android.Manifest
 import android.app.AlertDialog
-import android.content.res.ColorStateList
 import android.os.Build
 import android.os.SystemClock
-import android.view.Gravity
 import android.view.View
-import android.widget.ImageView
-import android.widget.LinearLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import java.time.ZoneId
@@ -28,31 +24,15 @@ internal class HealthCyclingView(private val activity: HealthCenterActivity) {
         if (granted) setEnabled(true) else refresh()
     }
 
-    fun row(fixture: Boolean): View {
+    fun tile(fixture: Boolean): View {
         val detail = ui.text(activity.getString(R.string.health_cycling_auto_off), 12f, muted = true)
-        val total = ui.text(activity.getString(R.string.health_cycling_minutes, 0), 22f, bold = true).apply {
-            gravity = Gravity.END
-            setPadding(ui.dp(4), 0, ui.dp(5), 0)
+        val total = ui.text(activity.getString(R.string.health_cycling_minutes, 0), 18f, bold = true).apply {
             tag = "health-overview-cycling-duration"
         }
-        val arrow = ImageView(activity).apply {
-            setImageResource(R.drawable.ic_arrow_right)
-            imageTintList = ColorStateList.valueOf(activity.getColor(R.color.text_secondary))
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }
-        val row = ui.column().apply {
+        val row = healthOverviewActivityTile(activity, R.string.health_cycling_today, R.drawable.ic_health_bike, total, detail).apply {
             tag = "health-overview-cycling"
-            minimumHeight = ui.dp(50)
-            setPadding(0, ui.dp(10), 0, ui.dp(10))
-            addHealthOverviewHeadline(activity, activity.getString(R.string.health_cycling_today), R.drawable.ic_health_bike, total, arrow)
-            ui.add(this, detail, 4)
         }
-        val result = ui.column().apply {
-            addView(row)
-            addView(View(activity).apply { setBackgroundColor(activity.getColor(R.color.separator)) },
-                LinearLayout.LayoutParams(-1, ui.dp(1)))
-        }
-        if (fixture) return result
+        if (fixture) return row
         fun riding(reading: HealthCyclingReading?) = reading?.let {
             it.availability == HealthCyclingAvailability.READY && it.state.enabled &&
                 it.state.ledger.riding(SystemClock.elapsedRealtime())
@@ -60,8 +40,12 @@ internal class HealthCyclingView(private val activity: HealthCenterActivity) {
         fun bind(reading: HealthCyclingReading?) {
             val state = reading?.state
             val time = state?.ledger?.today(System.currentTimeMillis(), ZoneId.systemDefault()) ?: 0
-            total.text = activity.getString(if (time in 1..59_999) R.string.health_cycling_under_minute
-                else R.string.health_cycling_minutes, time / 60_000)
+            val minutes = time / 60_000
+            total.text = when {
+                time in 1..59_999 -> activity.getString(R.string.health_cycling_under_minute)
+                minutes >= 60 -> activity.getString(R.string.health_cycling_hours_minutes, minutes / 60, minutes % 60)
+                else -> activity.getString(R.string.health_cycling_minutes, minutes)
+            }
             detail.setText(when (reading?.availability) {
                 HealthCyclingAvailability.UNSUPPORTED -> R.string.health_cycling_unavailable
                 HealthCyclingAvailability.NO_PERMISSION -> R.string.health_cycling_permission
@@ -76,7 +60,6 @@ internal class HealthCyclingView(private val activity: HealthCenterActivity) {
             row.setOnClickListener(if (configurable) View.OnClickListener { showSettings(reading!!) } else null)
             row.isClickable = configurable
             row.isFocusable = configurable
-            arrow.visibility = if (configurable) View.VISIBLE else View.INVISIBLE
         }
         bind(HealthCyclingTracking.readings.value)
         row.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
@@ -95,7 +78,7 @@ internal class HealthCyclingView(private val activity: HealthCenterActivity) {
             }
             override fun onViewDetachedFromWindow(view: View) { observer?.cancel(); observer = null }
         })
-        return result
+        return row
     }
 
     private fun showSettings(reading: HealthCyclingReading) {

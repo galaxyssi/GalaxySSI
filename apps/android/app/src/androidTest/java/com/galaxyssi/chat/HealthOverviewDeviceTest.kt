@@ -85,7 +85,10 @@ class HealthOverviewDeviceTest {
         HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.CONFIRMED_METRICS, false, it.policy().version) }
         val restricted = load(names, store)
         assertTrue(restricted.hasRecords)
-        assertFalse(restricted.metrics.any { it.metric == HealthMetric.GLUCOSE })
+        val glucose = restricted.metrics.single { it.metric == HealthMetric.GLUCOSE }
+        assertNotNull(glucose.record)
+        assertTrue(glucose.ranges.isEmpty())
+        assertNull(HealthOverviewRepository.metricDetail(context, store, names, HealthMetric.GLUCOSE, now, zone).concernId)
         HealthCareStore(context, names.care).use { assertEquals(before, it.concern(concern)) }
     }
     @Test fun latestConfirmedMetricExcludesOtherProfilesFutureValuesAndDeletedRows() = fixture { names, store ->
@@ -101,7 +104,10 @@ class HealthOverviewDeviceTest {
         val steps = snapshot.metrics.single { it.metric == HealthMetric.STEPS }
         assertEquals(expected.id, steps.record!!.id)
         assertEquals(HealthOverviewFreshness.STALE, steps.freshness)
-        assertEquals(3, snapshot.metrics.count { it.freshness == HealthOverviewFreshness.MISSING })
+        assertEquals(4, snapshot.metrics.count { it.freshness == HealthOverviewFreshness.MISSING })
+        val detail = HealthOverviewRepository.metricDetail(context, store, names, HealthMetric.STEPS, now, zone)
+        assertEquals(expected.id, detail.metric.record?.id)
+        assertEquals(listOf(expected.id), detail.recent.map { it.id })
     }
     @Test fun ocrReviewNeverBecomesAConfirmedMetricAndCompletedEvidenceIsNotCountedAgain() = fixture { names, store ->
         val (job, original) = overviewOcrJob(context, names, now - 2000)

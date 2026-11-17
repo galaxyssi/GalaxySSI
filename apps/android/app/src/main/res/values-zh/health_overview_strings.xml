@@ -2,6 +2,7 @@
 <resources>
     <string name="health_cycling_today">今日骑行</string>
     <string name="health_cycling_minutes">%1$d 分钟</string>
+    <string name="health_cycling_hours_minutes">%1$d 小时 %2$d 分</string>
     <string name="health_cycling_under_minute">不到 1 分钟</string>
     <string name="health_overview_today_steps">今日步数</string>
     <string name="health_overview_no_today_steps">暂无今日步数</string>
@@ -49,8 +50,11 @@
     <string name="health_overview_step_goal_progress">今日已完成 %1$s</string>
     <string name="health_overview_step_goal_remove">清除目标</string>
     <string name="health_overview_step_goal_invalid">请输入 1 到 %1$d 之间的整数。</string>
-    <string name="health_overview_metrics_heading">关键指标</string>
-    <string name="health_overview_view_all">查看全部</string>
+    <string name="health_overview_metrics_heading">测量指标</string>
+    <string name="health_overview_view_all">全部记录</string>
+    <string name="health_overview_recent_records">近期记录</string>
+    <string name="health_overview_compare_note">可对照在相同条件下取得的历史记录。</string>
+    <string name="health_overview_discuss_metric">在独立健康会话中讨论</string>
     <string name="health_overview_fasting_glucose">空腹血糖</string>
     <string name="health_overview_no_value">—</string>
     <string name="health_overview_no_range">无可比较范围</string>
