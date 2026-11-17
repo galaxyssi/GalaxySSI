@@ -36,9 +36,10 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
     internal fun translationProgress(key: String) = AttentionArticleCheckpoint.progress(db, key)
     internal fun progressCount(key: String) = AttentionArticleCheckpoint.progressCount(db, key)
     internal fun continueTranslation(key: String, now: Long) = db.execSQL(
-        "UPDATE articles SET next_at=? WHERE id=? AND state IN ('pending','repair')", arrayOf(now + 1_000L, key))
+        "UPDATE articles SET next_at=? WHERE id=? AND state IN ('pending','repair') AND next_at < ${AttentionArticleRetryPolicy.STOPPED}",
+        arrayOf(now + 1_000L, key))
     internal fun translationModelReady() = db.execSQL("UPDATE articles SET next_at=0 WHERE state IN ('pending','repair') " +
-        "AND error='article_translation_model_pending'")
+        "AND error='article_translation_model_pending' AND next_at < ${AttentionArticleRetryPolicy.STOPPED}")
     internal fun learnFeeds(origin: String, urls: List<String>, topics: Set<String>, now: Long) = AttentionLearnedFeedStore.remember(db, origin, urls, topics, now)
     internal fun backfillSources() = AttentionLearnedFeedStore.backfill(db)
     internal fun sourceProbe(topics: Set<String>, now: Long) = AttentionLearnedFeedStore.probe(db, topics, now)
@@ -54,9 +55,11 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
             article.copy(key = previous.key, url = previous.url) else article
     }
 
-    fun enqueue(article: AttentionFeedArticle, topicTitle: String) {
+    fun enqueue(article: AttentionFeedArticle, topicTitle: String): Boolean {
         db.beginTransaction()
         try {
+        if (db.rawQuery("SELECT 1 FROM discarded_article_ids WHERE id=?", arrayOf(article.key)).use { it.moveToFirst() })
+            return false
         db.insertWithOnConflict("articles", null, ContentValues().apply {
             put("id", article.key); put("url", article.url); put("topic", article.topicId); put("topic_title", topicTitle)
             put("title", article.title); put("publisher", AttentionFeedCollectionPlan.publisher(article.url, article.publisher))
@@ -69,6 +72,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         db.execSQL("UPDATE articles SET publisher=? WHERE id=? AND publisher='Hacker News'",
             arrayOf(AttentionFeedCollectionPlan.publisher(article.url, article.publisher), article.key))
         db.setTransactionSuccessful()
+        return true
         } finally { db.endTransaction() }
     }
 
@@ -84,7 +88,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
                 val article = AttentionFeedArticle(r.getString("key"), r.optString("topic"), r.optString("title"),
                     r.optString("summary"), r.optString("url"), r.optString("publisher"), r.optLong("published"), r.optLong("collected"),
                     discoveryDate = r.optBoolean("discovery_date"), knowledge = r.optBoolean("knowledge"))
-                enqueue(article, topicNames[article.topicId].orEmpty())
+                if (!enqueue(article, topicNames[article.topicId].orEmpty())) continue
                 val savedTopics = r.optJSONArray("topics")
                 topics.filter { topic -> ProactiveAttentionFeedSources.matches(article, topic) ||
                     savedTopics?.let { a -> (0 until a.length()).any { a.optString(it) == topic.id } } == true }
@@ -165,17 +169,27 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
     }
 
     fun requestVisual(key: String): Boolean = db.update("articles", ContentValues().apply { put("visual_requested", 1) },
-        "id = ? AND state = 'published' AND visual_revision = 0 AND visual_requested = 0", arrayOf(key)) > 0
+        "id = ? AND state = 'published' AND visual_revision = 0 AND visual_requested = 0 AND next_at < " +
+            AttentionArticleRetryPolicy.STOPPED, arrayOf(key)) > 0
 
     fun published(key: String) {
-        db.execSQL("UPDATE articles SET state = 'published', error = '' WHERE id = ?", arrayOf(key))
+        db.execSQL("UPDATE articles SET state = 'published', error = '', attempts = 0 WHERE id = ?", arrayOf(key))
         metadata(key)?.let { AttentionLearnedFeedStore.observe(db, it.url, topics(key).keys) }
     }
     fun failed(job: AttentionArticleJob, error: String, now: Long) {
-        val base = if (error.startsWith("article_") && error !in setOf("article_translation_timeout",
-                "article_translation_model_pending")) 30 * 60_000L else 60_000L
-        val delay = (base * (1L shl job.attempts.coerceIn(0, 9))).coerceAtMost(4 * 60 * 60_000L)
-        db.execSQL("UPDATE articles SET next_at = ?, error = ? WHERE id = ?", arrayOf(now + delay, error.take(120), job.key))
+        if (!AttentionArticleRetryPolicy.exhausted(job.attempts)) {
+            val delay = AttentionArticleRetryPolicy.delay(job.attempts, error)
+            db.execSQL("UPDATE articles SET next_at = ?, error = ? WHERE id = ?", arrayOf(now + delay, error.take(120), job.key))
+            return
+        }
+        db.beginTransaction()
+        try {
+            discardPending(db, "id = ?", arrayOf(job.key))
+            // A failed refresh or publication retry must not remove a usable body.
+            db.execSQL("UPDATE articles SET next_at = ?, visual_requested = 0, error = ? WHERE id = ?",
+                arrayOf(AttentionArticleRetryPolicy.STOPPED, error.take(120), job.key))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
     }
 
     fun metadata(key: String): AttentionArticleJob? = db.rawQuery("SELECT $COLUMNS FROM articles WHERE id = ?", arrayOf(key))
@@ -204,7 +218,8 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
 
     fun nextAt(topics: Set<String>): Long? {
         if (topics.isEmpty()) return null
-        return db.rawQuery("SELECT MIN(next_at) FROM articles WHERE (state <> 'published' OR visual_requested = 1) AND " +
+        return db.rawQuery("SELECT MIN(next_at) FROM articles WHERE (state <> 'published' OR visual_requested = 1) " +
+            "AND next_at < ${AttentionArticleRetryPolicy.STOPPED} AND " +
             AttentionArticleTopics.filter(topics), topics.toTypedArray()).use {
             if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null
         }
@@ -213,8 +228,8 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
     fun counts(topics: Set<String>): AttentionArticleQueueCounts {
         if (topics.isEmpty()) return AttentionArticleQueueCounts(0, 0, 0)
         return db.rawQuery("SELECT COALESCE(SUM(state = 'published'),0)," +
-            "COALESCE(SUM(state <> 'published' AND error = ''),0)," +
-            "COALESCE(SUM(state <> 'published' AND error <> ''),0) FROM articles WHERE " +
+            "COALESCE(SUM(state <> 'published' AND next_at < ${AttentionArticleRetryPolicy.STOPPED} AND error = ''),0)," +
+            "COALESCE(SUM(state <> 'published' AND next_at < ${AttentionArticleRetryPolicy.STOPPED} AND error <> ''),0) FROM articles WHERE " +
             AttentionArticleTopics.filter(topics), topics.toTypedArray()).use {
             it.moveToFirst(); AttentionArticleQueueCounts(it.getInt(0), it.getInt(1), it.getInt(2))
         }
@@ -227,7 +242,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         c.getString(4), c.getString(5), c.getLong(6), c.getLong(7),
         c.getInt(8), c.getString(9), c.getString(10), c.getString(11), c.getString(12), c.getInt(13) != 0)
 
-    private class Helper(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 11) {
+    private class Helper(context: Context, name: String) : SQLiteOpenHelper(context, name, null, 12) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE articles(id TEXT PRIMARY KEY NOT NULL,url TEXT NOT NULL,topic TEXT NOT NULL," +
                 "topic_title TEXT NOT NULL,title TEXT NOT NULL,publisher TEXT NOT NULL,published INTEGER NOT NULL," +
@@ -243,6 +258,7 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
             AttentionArticleTopics.create(db)
             AttentionArticleCheckpoint.create(db)
             AttentionLearnedFeedStore.create(db)
+            createDiscardedIds(db)
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
             if (oldVersion < 10) {
@@ -290,6 +306,12 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
                 db.execSQL("UPDATE articles SET next_at=0 WHERE state IN ('pending','repair') AND error IN " +
                     "('article_translation_not_chinese','article_translation_numbers_changed','article_language_unknown')")
             }
+            if (oldVersion < 12) {
+                createDiscardedIds(db)
+                discardPending(db, "error <> ''")
+                db.execSQL("UPDATE articles SET next_at = ?, visual_requested = 0 " +
+                    "WHERE state IN ('ready','repair') AND error <> ''", arrayOf(AttentionArticleRetryPolicy.STOPPED))
+            }
         }
         private fun queueIndex(db: SQLiteDatabase) = db.execSQL(
             "CREATE INDEX IF NOT EXISTS article_attempt_queue ON articles(state,attempts,topic,next_at,collected)")
@@ -299,6 +321,18 @@ internal class AttentionArticleStore(context: Context, name: String = NAME) {
         const val NAME = "attention_public_articles_v1.db"
         private const val COLUMNS = "id,url,topic,topic_title,title,publisher,published,collected,attempts,state,zh_title,preview,provider,knowledge"
         private val helpers = ConcurrentHashMap<String, Helper>()
+        private fun createDiscardedIds(db: SQLiteDatabase) = db.execSQL(
+            "CREATE TABLE IF NOT EXISTS discarded_article_ids(id TEXT PRIMARY KEY NOT NULL) WITHOUT ROWID")
+
+        private fun discardPending(db: SQLiteDatabase, where: String, args: Array<String> = emptyArray()) {
+            val selection = "SELECT id FROM articles WHERE state='pending' AND ($where)"
+            fun run(sql: String) = db.execSQL(sql, args)
+            run("INSERT OR IGNORE INTO discarded_article_ids $selection")
+            run("DELETE FROM article_extraction WHERE id IN ($selection)")
+            run("DELETE FROM article_translation_progress WHERE article_id IN ($selection)")
+            run("DELETE FROM article_topics WHERE article_id IN ($selection)")
+            run("DELETE FROM articles WHERE state='pending' AND ($where)")
+        }
         internal fun closeTest(context: Context, name: String) {
             require(name != NAME)
             helpers.remove(context.getDatabasePath(name).absolutePath)?.close()
