@@ -92,8 +92,7 @@ object AgentModelPlanParser {
             ) ?: reject("actions[$index].parameters", "unresolved_action", "Use an available target and parameters from the advertised tool schema.")
             actions += action
         }
-        if (!hasValidDraftPlanSemantics(request, actions, allowInitialCompletion))
-            reject("actions", "completion_mixed_with_execution", "DRAFT_PLAN target=task-complete must be the only action in a continuation after observed results. First return executable actions only, then review their receipts in the next response.")
+        validateDraftPlanSemantics(request, actions, allowInitialCompletion)
         val plan = AgentPlanFactory.actions(request, actions).copy(
             completionRequirements = completionRequirements ?: request.completionRequirements,
             plannerProfile = "model-action-plan",
@@ -110,18 +109,20 @@ object AgentModelPlanParser {
         return plan
     }
 
-    private fun hasValidDraftPlanSemantics(
+    private fun validateDraftPlanSemantics(
         request: AgentRequest,
         actions: List<AgentAction>,
         allowInitialCompletion: Boolean
-    ): Boolean {
-        val drafts = actions.filter { it.kind == AgentActionKind.DRAFT_PLAN }
-        if (drafts.isEmpty()) return true
-        // Native provider research can finish without a phone tool round trip.
-        // Receipt requirements are still checked by the supervised completion policy.
-        return (request.replanReason.isNotBlank() || allowInitialCompletion) &&
-            actions.size == 1 &&
-            drafts.single().target.equals(TASK_COMPLETE_TARGET, ignoreCase = true)
+    ) {
+        if (actions.none { it.kind == AgentActionKind.DRAFT_PLAN }) return
+        if (actions.size != 1)
+            reject("actions", "completion_mixed_with_execution",
+                "Return executable actions separately, then review their receipts in the next response.")
+        if (!actions.single().target.equals(TASK_COMPLETE_TARGET, ignoreCase = true))
+            reject("actions[0].target", "invalid_completion_target", "The completion marker target must be task-complete.")
+        if (request.replanReason.isBlank() && !allowInitialCompletion)
+            reject("actions", "completion_before_observation",
+                "This route requires tool observations. Return the necessary action without a completion marker, then review its receipt.")
     }
 
     private fun parseAction(

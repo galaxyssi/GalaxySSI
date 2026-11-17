@@ -1627,29 +1627,14 @@ internal fun MainActivity.stageAgentGoalAttachments(
                 }
             }
         }
-        val executionGoal = buildString {
-            append(baseGoal)
-            AgentDirectVisionPolicy.instruction(executionAttachments)
-                .takeIf(String::isNotBlank)
-                ?.let { directVisionInstruction ->
-                    append("\n\n")
-                    append(directVisionInstruction)
-                }
-            append(if (executionAttachments.all { it.isHistoricalReference })
-                "\n\nHistorical visual context (no new attachment in this turn):\n" else "\n\nAttached input:\n")
-            append(
-                AgentUntrustedEvidenceBoundary.wrapText(
-                    "attachment_manifest",
-                    "${conversation.id}/$turnId",
-                    attachmentManifest
-                )
+        val executionGoal = AgentVisualTurnPolicy.goalWithAttachmentEvidence(
+            baseGoal, executionAttachments,
+            AgentUntrustedEvidenceBoundary.wrapText(
+                "attachment_manifest",
+                "${conversation.id}/$turnId",
+                attachmentManifest
             )
-            append('\n')
-            if (executionAttachments.any { !it.isHistoricalReference }) {
-                append("Inspect the newly attached content in light of the user's current request. " +
-                    "If only a new image was sent, infer and complete the most helpful relevant task.")
-            }
-        }
+        )
         runOnUiThread {
             if (isSubmissionCancelled()) return@runOnUiThread
             continueAgentGoalSubmission(

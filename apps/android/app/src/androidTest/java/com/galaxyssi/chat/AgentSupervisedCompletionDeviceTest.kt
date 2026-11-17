@@ -90,6 +90,38 @@ class AgentSupervisedCompletionDeviceTest {
         assertEquals("", decision.finalResponse)
     }
 
+    @Test fun aTextFollowupWithHistoricalImagesDeliversTheListWithoutARepair() {
+        val image = AgentInputAttachment("fixture-image", android.net.Uri.EMPTY, "report.png", "image/png", 64L,
+            historicalSourceTurnId = "earlier-turn")
+        val evidence = AgentUntrustedEvidenceBoundary.wrapText("attachment_manifest", "turn", "report.png")
+        val latestRequest = "\u90a3\u91cd\u65b0\u5217\u51fa\u8981\u6d4b\u7684\u9879\u76ee"
+        val restoredGoal = "$latestRequest\n\n${AgentVisualTurnPolicy.instruction(listOf(image))}\n\n" +
+            "${AgentVisualTurnPolicy.HISTORICAL_INPUT_HEADER}\n$evidence"
+        val newGoal = AgentVisualTurnPolicy.goalWithAttachmentEvidence(latestRequest, listOf(image), evidence)
+        assertTrue(newGoal.indexOf(evidence) < newGoal.indexOf(AgentVisualTurnPolicy.HISTORICAL_CONTEXT))
+        val marker = JSONObject().put("execution_location", "phone").put("actions", JSONArray()
+            .put(JSONObject().put("kind", "DRAFT_PLAN").put("target", "task-complete").put("description", answer)))
+        for (goal in listOf(restoredGoal, newGoal)) {
+            for (response in listOf(respond(), marker.toString())) {
+                val fixture = fixture(goal)
+                assertCompleted(fixture.agent.acceptSupervisedProjectPlan(fixture.plan, fixture.connector, response))
+            }
+        }
+    }
+
+    @Test fun aHistoricalImageDoesNotAllowUnverifiedPhoneExecutionToFinish() {
+        val image = AgentInputAttachment("fixture-image", android.net.Uri.EMPTY, "report.png", "image/png", 64L,
+            historicalSourceTurnId = "earlier-turn")
+        val goal = AgentVisualTurnPolicy.goalWithAttachmentEvidence("\u8bbe\u7f6e1\u5206\u949f\u5012\u8ba1\u65f6", listOf(image),
+            AgentUntrustedEvidenceBoundary.wrapText("attachment_manifest", "turn", "report.png"))
+        val fixture = fixture(goal)
+        val response = JSONObject().put("disposition", "respond").put("final_response", "Timer started.").toString()
+        val decision = fixture.agent.acceptSupervisedProjectPlan(fixture.plan, fixture.connector, response)
+        assertEquals(AgentSupervisedProjectPlanDisposition.REPAIR, decision.disposition)
+        assertTrue(decision.plan!!.actions.single().parameters.getValue("prompt").contains("completion_before_observation"))
+        assertEquals("", decision.finalResponse)
+    }
+
     private fun respond() = JSONObject().put("disposition", "respond").put("final_response", answer).toString()
 
     private fun assertCompleted(decision: AgentSupervisedProjectPlanDecision) {
