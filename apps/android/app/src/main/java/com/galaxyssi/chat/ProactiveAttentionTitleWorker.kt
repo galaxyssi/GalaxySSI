@@ -51,8 +51,9 @@ class ProactiveAttentionTitleWorker(context: Context, params: WorkerParameters) 
             return@withContext Result.success()
         }
         val load = BackgroundLearningLoadSampler.read(context)
-        if (load.deferMillis > 0) {
-            ProactiveAttentionTitleScheduler.request(context, load.deferMillis)
+        val delay = maxOf(load.deferMillis, AttentionNewsBudget.cpuDelay())
+        if (delay > 0) {
+            ProactiveAttentionTitleScheduler.request(context, delay)
             android.util.Log.i("GalaxySSIAttention", "title_translation_deferred reason=device_load")
             return@withContext Result.success()
         }

@@ -35,7 +35,8 @@ object ProactiveAttentionFeedScheduler {
     }
 }
 
-data class AttentionFeedCycle(val newItems: Int = 0, val nextAt: Long = 0L, val error: String = "")
+data class AttentionFeedCycle(val newItems: Int = 0, val nextAt: Long = 0L, val error: String = "",
+    val scanned: Boolean = false)
 
 class ProactiveAttentionFeedCollector(
     private val context: Context,
@@ -45,14 +46,17 @@ class ProactiveAttentionFeedCollector(
             .body.toString(Charsets.UTF_8)
     }
 ) {
-    fun collect(now: Long = System.currentTimeMillis()): AttentionFeedCycle {
+    fun collect(now: Long = System.currentTimeMillis(),
+        interval: Long = ProactiveAttentionFeedPolicy.MIN_INTERVAL,
+        continueBatch: () -> Boolean = { true }): AttentionFeedCycle {
         val preferences = ProactiveAttentionStore(context).preferences()
         if (!preferences.configured || !preferences.enabled)
             return AttentionFeedCycle()
         val topics = preferences.topics.filter { it.enabled }
         val store = ProactiveAttentionFeedStore(context)
-        val topic = topics.minByOrNull { store.topicState(it.id).optLong("next") } ?: return AttentionFeedCycle()
-        val due = store.topicState(topic.id).optLong("next")
+        fun dueAt(topic: AttentionTopic) = store.topicDueAt(topic.id, interval)
+        val topic = topics.minByOrNull(::dueAt) ?: return AttentionFeedCycle()
+        val due = dueAt(topic)
         if (due > now) return AttentionFeedCycle(nextAt = due)
         val failures = mutableListOf<String>()
         var created = 0
@@ -85,7 +89,10 @@ class ProactiveAttentionFeedCollector(
                 throw failure
             }
         }
+        var scanned = 0
         for (endpoint in batch) {
+            if (!continueBatch()) break
+            scanned++
             if (store.sourceRetryAt(endpoint) > now) continue
             if (endpoint in knowledge && store.knowledgeRetryAt(topic.id, endpoint) > now) continue
             if (endpoint == learned) articles.deferLearnedFeed(endpoint, now + 5 * 60_000L, now)
@@ -128,11 +135,11 @@ class ProactiveAttentionFeedCollector(
             if (endpoint in knowledge && ProactiveAttentionPolicy.shouldCollect(
                     ProactiveAttentionStore(context).preferences(), topic.id)) store.knowledgeScanned(topic.id, endpoint, now)
         }
-        val nextCursor = (cursor + base.size).takeIf { it < endpoints.size } ?: 0
+        val nextCursor = (cursor + scanned.coerceAtMost(base.size)).takeIf { it < endpoints.size } ?: 0
         val error = failures.joinToString("; ")
-        store.recordBatch(topic.id, nextCursor, created, error, now)
-        return AttentionFeedCycle(created, topics.minOf { store.topicState(it.id).optLong("next") }.coerceAtLeast(now + 1_000L),
-            error)
+        val completed = scanned > 0 || batch.isEmpty()
+        if (completed) store.recordBatch(topic.id, nextCursor, created, error, now)
+        return AttentionFeedCycle(created, topics.minOf(::dueAt).coerceAtLeast(now + 1_000L), error, completed)
     }
 }
 
@@ -143,24 +150,36 @@ class ProactiveAttentionFeedWorker(context: Context, params: WorkerParameters) :
             return Result.success()
         }
         return execution.withLock { withContext(Dispatchers.IO) {
+        val context = applicationContext
+        val preferences = ProactiveAttentionStore(context).preferences()
+        if (!preferences.configured || !preferences.enabled) return@withContext Result.success()
+        val now = System.currentTimeMillis()
+        val profile = AttentionNewsBudget.profile(context, now)
+        val delay = maxOf(AttentionNewsBudget.feedDelay(context, now, profile), AttentionNewsBudget.pressure(context))
+        if (delay > 0L) {
+            ProactiveAttentionFeedScheduler.request(context, delay)
+            return@withContext Result.success()
+        }
         val coroutine = currentCoroutineContext()
-        val collector = ProactiveAttentionFeedCollector(applicationContext) { url ->
+        val collector = ProactiveAttentionFeedCollector(context) { url ->
             AgentBoundedWebService(AgentPinnedOkHttpWebTransport()).fetch(url, maxBytes = AttentionFeedCollectionPlan.MAX_FEED_BYTES,
                 timeoutMillis = 15_000,
                 checkpoint = { coroutine.ensureActive() }).body.toString(Charsets.UTF_8)
         }
-        val cycle = try { collector.collect() } catch (failure: Exception) {
+        val cycle = try { collector.collect(now, profile.feedInterval) {
+            coroutine.ensureActive()
+            AttentionNewsBudget.pressure(context) == 0L
+        } } catch (failure: Exception) {
             if (failure is java.util.concurrent.CancellationException) throw failure
             return@withContext Result.retry()
         }
-        // Also repairs collection-to-scheduling interruption when a replay discovers no new IDs.
-        AttentionArticleScheduler.request(applicationContext)
-        ProactiveAttentionFeedDelivery.published(applicationContext, cycle.newItems)
+        if (cycle.scanned) AttentionNewsBudget.feedFinished(context, System.currentTimeMillis())
+        ProactiveAttentionFeedDelivery.published(context, cycle.newItems)
         ProactiveAttentionPush.refresh()
         if (cycle.nextAt > 0L || cycle.newItems > 0)
-            ProactiveAttentionFeedScheduler.request(applicationContext,
+            ProactiveAttentionFeedScheduler.request(context,
                 (cycle.nextAt - System.currentTimeMillis()).coerceAtLeast(
-                    BackgroundLearningLoadSampler.read(applicationContext).spacingMillis))
+                    maxOf(profile.feedSpacing, AttentionNewsBudget.pressure(context))))
         android.util.Log.i("GalaxySSIAttention", "feed_cycle new=" + cycle.newItems + " error=" + cycle.error)
         Result.success()
     } } }

@@ -280,6 +280,7 @@ class AttentionNewsSearchActivity : Activity() {
         actions.execute {
             val at = System.currentTimeMillis()
             val result = runCatching { repository.markProactiveViewed(setOf("attention-feed:$id"), at) }
+            if (result.isSuccess) AttentionNewsBudget.noteRead(applicationContext)
             main.post { if (!isDestroyed) result.onSuccess {
                 hits = hits.map { if (it.id == id) it.copy(viewed = at) else it }; publish()
                 GlobalProactiveDeliveryBus.signalReady()

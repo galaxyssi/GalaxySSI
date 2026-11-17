@@ -176,8 +176,9 @@ class ProactiveAttentionActivity : Activity() {
                     evidence.evictAll()
                     completeInbox = true
                     render()
-                    if (p.configured && p.enabled && !collectionRequested) {
+                    if (p.configured && p.enabled && !settingsPage && !collectionRequested) {
                         collectionRequested = true
+                        AttentionNewsBudget.noteRead(applicationContext)
                         ProactiveAttentionFeedScheduler.request(applicationContext)
                         AttentionArticleScheduler.request(applicationContext)
                         ProactiveAttentionTitleScheduler.request(applicationContext)
@@ -230,6 +231,7 @@ class ProactiveAttentionActivity : Activity() {
                     ProactiveAttentionCoordinator(applicationContext).reconcile()
                     if (next.configured && next.enabled) {
                         ProactiveAttentionFeedScheduler.request(applicationContext)
+                        AttentionArticleScheduler.request(applicationContext)
                         ProactiveAttentionTitleScheduler.request(applicationContext)
                         AndroidCognitionScheduler.scheduleAt(applicationContext, System.currentTimeMillis())
                     } else AndroidCognitionScheduler.scheduleDynamic(applicationContext, runtime)

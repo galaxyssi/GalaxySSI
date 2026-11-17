@@ -53,6 +53,7 @@ internal class ProactiveAttentionPushRuntime(private val context: Context) {
     private var retryDelay = 0L
     private var draining = false
     private var openedAt = 0L
+    private var charging: Boolean? = null
 
     init {
         control.scheduleWithFixedDelay({ runCatching { reconcile() }.onFailure { log("reconcile_failed") } },
@@ -88,6 +89,17 @@ internal class ProactiveAttentionPushRuntime(private val context: Context) {
             if (source != null) { disconnect(); store.status("paused_or_offline") }
             return
         }
+        val profile = AttentionNewsBudget.profile(context)
+        val previous = charging
+        charging = profile.charging
+        if (previous == null || (profile.charging && previous == false)) {
+            ProactiveAttentionFeedScheduler.request(context)
+            AttentionArticleScheduler.request(context)
+        }
+        if (!profile.allowPush || AttentionNewsBudget.pressure(context) > 0L) {
+            if (source != null) { disconnect(); store.status("paused") }
+            return
+        }
         if (source == null && System.currentTimeMillis() >= retryAt) connect()
         drain()
     }
@@ -106,7 +118,10 @@ internal class ProactiveAttentionPushRuntime(private val context: Context) {
                 }
                 override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) = submit {
                     if (token != generation) return@submit
-                    if (!enabled()) { disconnect(); store.status("paused"); return@submit }
+                    if (!enabled() || !AttentionNewsBudget.profile(context).allowPush ||
+                        AttentionNewsBudget.pressure(context) > 0L) {
+                        disconnect(); store.status("paused"); return@submit
+                    }
                     when (type) {
                         "put", "patch" -> {
                             try { store.accept(type, data) }
@@ -138,7 +153,8 @@ internal class ProactiveAttentionPushRuntime(private val context: Context) {
     }
 
     private fun drain() {
-        if (draining || !enabled() || !online()) return
+        if (draining || !enabled() || !online() || !AttentionNewsBudget.profile(context).allowPush ||
+            AttentionNewsBudget.pressure(context) > 0L) return
         val id = store.next() ?: return
         draining = true
         reader.execute {
@@ -147,7 +163,8 @@ internal class ProactiveAttentionPushRuntime(private val context: Context) {
                     ProactiveAttentionPushPolicy.itemUrl(id), maxBytes = 128 * 1024L,
                     checkpoint = { check(!closed && !Thread.currentThread().isInterrupted) }).body.toString(Charsets.UTF_8)
                 // Pausing while a download is in flight must not create a late notification.
-                if (!enabled()) return@execute
+                if (!enabled() || !AttentionNewsBudget.profile(context).allowPush ||
+                    AttentionNewsBudget.pressure(context) > 0L) return@execute
                 val article = ProactiveAttentionPushPolicy.article(json, id, System.currentTimeMillis())
                 var created = 0
                 if (article != null) {
