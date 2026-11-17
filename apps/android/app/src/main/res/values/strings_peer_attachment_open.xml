@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="peer_attachment_unavailable">The attachment is not available to read.</string>
+    <string name="peer_attachment_open_failed">Could not open the attachment.</string>
+    <string name="peer_attachment_no_reader">No app can open this attachment. You can still save it.</string>
+    <string name="peer_attachment_pdf_open_failed">Cannot open PDF</string>
+    <string name="peer_attachment_no_pdf_reader">No PDF viewer can open this attachment directly. After saving, you can open it from Downloads/GalaxySSI in your file manager.</string>
+    <string name="peer_attachment_open_downloads">Open Downloads</string>
+    <string name="peer_attachment_downloads_unavailable">Open Downloads/GalaxySSI in your file manager.</string>
+</resources>
