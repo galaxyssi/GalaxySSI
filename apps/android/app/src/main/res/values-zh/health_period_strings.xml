@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_period_weeks">按周查看</string>
+    <string name="health_period_months">按月查看</string>
+    <string name="health_period_choose">选择采样周期</string>
+    <string name="health_period_week_label">%1$s – %2$s</string>
+    <string name="health_period_month_label">%1$d年%2$d月</string>
+    <string name="health_period_comparison">检测对比</string>
+    <string name="health_period_a">采样周期 A</string>
+    <string name="health_period_b">对比采样周期 B</string>
+    <string name="health_period_abnormal">仅异常</string>
+    <string name="health_period_basis">按采样日期归组，不按上传次数。自然周为周一至周日；同单位、同采样条件显示最新实测值及记录次数，不求平均。未结束的周期仍可能增加记录。</string>
+    <string name="health_period_record_count">本期 %1$d 次 · 显示最新值</string>
+    <string name="health_period_no_records">未检测</string>
+    <string name="health_period_no_matching">暂无符合条件的指标</string>
+    <string name="health_period_prior_outside">本期另有 %1$d 次超出报告参考范围</string>
+    <string name="health_period_expand_records">查看全部记录 ›</string>
+    <string name="health_period_collapse_records">收起记录 ⌃</string>
+</resources>

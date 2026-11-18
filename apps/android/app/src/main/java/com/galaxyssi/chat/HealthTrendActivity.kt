@@ -29,6 +29,8 @@ class HealthTrendActivity : Activity() {
     private data class PointSelection(val spec: HealthTrendSpec, val version: String, val bucket: Int, val field: String)
     private val names by lazy { intent.healthNavigationDatabases() }
     private val continuous by lazy { intent.getBooleanExtra("health_continuous", false) }
+    private fun trendEnd() = runCatching { LocalDate.parse(intent.getStringExtra("health_trend_anchor")) }
+        .getOrNull()?.takeIf { !it.isBefore(LocalDate.of(1970, 1, 1)) && !it.isAfter(LocalDate.now(zone)) } ?: LocalDate.now(zone)
     private val ui by lazy { HealthCenterViews(this) }
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -78,7 +80,7 @@ class HealthTrendActivity : Activity() {
         active = true; zone = ZoneId.systemDefault()
         contentResolver.registerContentObserver(HealthRecordStore.changes(this, names.records), false, observer); observing = true
         contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, privacyDatabase), false, privacyObserver)
-        if (continuous) { last = LocalDate.now(zone); first = if (preset == 3) LocalDate.of(1970, 1, 1) else last.minusMonths(listOf(1L, 3L, 6L)[preset]) }
+        if (continuous) { last = trendEnd(); first = if (preset == 3) LocalDate.of(1970, 1, 1) else maxOf(LocalDate.of(1970, 1, 1), last.minusMonths(listOf(1L, 3L, 6L)[preset])) }
         else if (preset < 3) { last = LocalDate.now(zone); first = last.minusDays(listOf(7L, 30L, 90L)[preset] - 1) }
         load()
     }
@@ -170,7 +172,7 @@ class HealthTrendActivity : Activity() {
                         addState(intArrayOf(), ui.background(android.graphics.Color.TRANSPARENT, radius = 6))
                     }; isChecked = preset == index
                     setOnClickListener { if (continuous) {
-                        preset = index; last = LocalDate.now(zone); first = if (index == 3) LocalDate.of(1970, 1, 1) else last.minusMonths(listOf(1L, 3L, 6L)[index]); scrollY = 0; load()
+                        preset = index; last = trendEnd(); first = if (index == 3) LocalDate.of(1970, 1, 1) else maxOf(LocalDate.of(1970, 1, 1), last.minusMonths(listOf(1L, 3L, 6L)[index])); scrollY = 0; load()
                     } else if (index == 3) { (parent as RadioGroup).let { it.check(it.getChildAt(preset).id) }; customDates() } else {
                         preset = index; last = LocalDate.now(zone); first = last.minusDays(listOf(7L, 30L, 90L)[index] - 1); scrollY = 0; load()
                     } }

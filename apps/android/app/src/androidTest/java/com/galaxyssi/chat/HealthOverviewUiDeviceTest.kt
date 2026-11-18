@@ -123,7 +123,7 @@ class HealthOverviewUiDeviceTest {
         scenario.moveToState(Lifecycle.State.RESUMED)
         await(scenario, "health-overview-BLOOD_PRESSURE-RECENT")
     }
-    @Test fun abnormalReportRowsUseInlineValuesAndKeepNativeShortcutsBelowTheScrollArea() = screen(seed = { names, now ->
+    @Test fun normalAndAbnormalReportRowsKeepInlineValuesAndNativeShortcuts() = screen(seed = { names, now ->
         HealthRecordStore(context, names.records).use { store ->
             val id = UUID.randomUUID().toString()
             val evidence = HealthEvidence(id, id, "glucose", "a".repeat(64), 1, "synthetic", confirmed = true)
@@ -143,7 +143,8 @@ class HealthOverviewUiDeviceTest {
             assertNotNull(daily.findViewWithTag<View>("health-overview-value-STEPS"))
             assertNotNull(daily.findViewWithTag<View>("health-overview-cycling"))
             assertNull(list.findViewWithTag<View>("health-overview-value-STEPS"))
-            assertNull(find(activity, "health-overview-CHOLESTEROL-RECENT"))
+            assertNotNull(find(activity, "health-overview-CHOLESTEROL-RECENT"))
+            assertTrue((requireNotNull(find(activity, "health-overview-value-CHOLESTEROL")) as TextView).text.contains("4.5"))
             val range = requireNotNull(find(activity, "health-overview-range-GLUCOSE")) as android.widget.TextView
             assertTrue(range.text.contains(activity.getString(R.string.health_overview_report_range)))
             assertTrue(range.text.contains("3.9-6.1 mmol/L"))
@@ -194,12 +195,13 @@ class HealthOverviewUiDeviceTest {
     }) { scenario, _ ->
         await(scenario, "health-overview-all-records")
         scenario.onActivity { assertTrue(requireNotNull(find(it, "health-overview-all-records")).performClick()) }
-        await(scenario, "health-record-timeline-item")
+        await(scenario, "health-overview-expanded-records")
         scenario.onActivity {
-            assertEquals(2, views(it.body).count { view -> view.tag == "health-record-day" })
-            assertEquals(2, views(it.body).count { view -> view.tag == "health-record-timeline-item" })
-            assertNull(find(it, "health-overview-bottom-actions"))
-            it.onBackPressed()
+            assertEquals(2, views(it.body).count { view -> view.tag?.toString()?.startsWith("health-expanded-record-") == true })
+            assertNotNull(find(it, "health-overview-bottom-actions"))
+            assertNotNull(find(it, "health-overview-activity"))
+            requireNotNull(find(it, "health-overview-all-records")).performClick()
+            assertNull(find(it, "health-overview-expanded-records"))
         }
         await(scenario, "health-overview-activity")
     }

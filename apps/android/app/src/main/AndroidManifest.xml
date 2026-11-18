@@ -127,7 +127,8 @@
         <activity android:name=".HealthCatalogActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".HealthTrendActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
         <activity android:name=".HealthActivityComparisonActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
-        <activity android:name=".HealthMeasurementBatchesActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
+        <activity android:name=".HealthMeasurementPeriodsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
+        <activity-alias android:name=".HealthMeasurementBatchesActivity" android:targetActivity=".HealthMeasurementPeriodsActivity" android:exported="false" />
         <activity android:name=".HealthTrendRecordsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
         <activity android:name=".HealthRecordRevisionActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
         <activity android:name=".HealthCameraActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />

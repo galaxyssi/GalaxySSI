@@ -39,22 +39,31 @@ internal data class HealthOverviewDerived(val sleep: HealthWeeklyStat? = null, v
     val permitted: Boolean = true, val unavailable: Boolean = false)
 internal data class HealthOverviewSnapshot(val time: Long, val zone: ZoneId, val hasRecords: Boolean, val metrics: List<HealthOverviewMetric>,
     val derived: HealthOverviewDerived, val attention: List<HealthOverviewAttention>, val reviewUnavailable: Boolean,
-    val connectionsUnavailable: Boolean = false)
+    val connectionsUnavailable: Boolean = false, val measurementSeries: List<HealthMeasurementSeries> = emptyList(), val measurementComparisonAllowed: Boolean = true)
 
 internal object HealthOverviewRepository {
     private val candidates = HealthMetric.entries.toSet() - setOf(HealthMetric.TEMPERATURE, HealthMetric.OXYGEN_SATURATION)
 
-    fun batch(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, snapshot: HealthOverviewSnapshot,
-        key: String): HealthOverviewSnapshot = HealthPrivacyStore.track(context,
-        HealthAccessScope(HealthAccessPurpose.OVERVIEW, HealthMetric.entries.toSet()), names.privacy) {
-        HealthOriginalStore(context, names.originals, names.originalRoot(context)).use { originals ->
-            val selected = HealthMeasurementBatches(originals).load(records, key).latest
-            val items = selected.values.filter { it.draft.metric in candidates && it.draft.metric != HealthMetric.STEPS }.map { record ->
-                HealthOverviewMetric(record.draft.metric, record, HealthOverviewPolicy.freshness(record.draft.metric, record.draft.measuredAt,
-                    snapshot.time, snapshot.zone), listOfNotNull(HealthOverviewRangePolicy.report(record)), showAdultReference = false)
-            }.sortedWith(compareByDescending<HealthOverviewMetric> { it.outsideRange }.thenBy { it.metric.ordinal })
-            snapshot.copy(metrics = snapshot.metrics.filter { it.metric == HealthMetric.STEPS } + items)
+    fun measurements(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, snapshot: HealthOverviewSnapshot,
+        period: HealthMeasurementPeriod?, check: () -> Unit = {}): HealthOverviewSnapshot {
+        val permitted = HealthPrivacyStore(context, names.privacy).use { it.policy().metrics }
+        if (period == null) {
+            val builder = HealthMeasurementPeriods.Builder(permitted)
+            snapshot.metrics.filter { it.metric != HealthMetric.STEPS }.mapNotNull { it.record }.forEach(builder::add)
+            return snapshot.copy(measurementSeries = builder.finish(null).series, measurementComparisonAllowed = permitted)
         }
+        fun build(): HealthOverviewSnapshot {
+            val summary = HealthMeasurementPeriods.load(records, period, snapshot.time, snapshot.zone, check)
+            val items = summary.series.filter { it.key.metric in candidates }.map { series ->
+                val record = series.latest
+                HealthOverviewMetric(record.draft.metric, record,
+                    HealthOverviewPolicy.freshness(record.draft.metric, record.draft.measuredAt, snapshot.time, snapshot.zone),
+                    listOfNotNull(HealthOverviewRangePolicy.report(record)), showAdultReference = false)
+            }.sortedWith(compareByDescending<HealthOverviewMetric> { it.outsideRange }.thenBy { it.metric.ordinal })
+            return snapshot.copy(metrics = snapshot.metrics.filter { it.metric == HealthMetric.STEPS } + items, measurementSeries = summary.series)
+        }
+        return HealthPrivacyStore.track(context, HealthAccessScope(HealthAccessPurpose.OVERVIEW, HealthMeasurementPeriods.metrics,
+            period.from(snapshot.zone), period.until(snapshot.zone), snapshot.zone.id), names.privacy) { build() }
     }
 
     fun metricDetail(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, metric: HealthMetric,
@@ -108,7 +117,7 @@ internal object HealthOverviewRepository {
             HealthOverviewMetric(metric, record, freshness, comparisons[metric].orEmpty(), HealthOverviewGuidance.adultReference(age),
                 HealthOverviewGuidance.sleep(age), stepGoal, HealthOverviewGuidance.stepProgress(stepGoal, steps, freshness, metricProgressPermitted),
                 metric == HealthMetric.STEPS && metricProgressPermitted)
-        }.filter { it.metric in HealthOverviewPolicy.metrics || it.outsideRange }
+        }.filter { it.metric in HealthOverviewPolicy.metrics || it.record != null }
             .sortedWith(compareByDescending<HealthOverviewMetric> { it.outsideRange }
                 .thenByDescending { if (it.outsideRange) it.record?.draft?.measuredAt ?: 0L else 0L })
         val hasRecords = latest.values.any { it != null } || records.overviewLatestSelf(null, now) != null

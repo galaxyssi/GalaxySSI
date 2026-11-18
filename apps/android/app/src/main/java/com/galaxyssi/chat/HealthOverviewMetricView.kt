@@ -22,7 +22,7 @@ internal class HealthOverviewMetricView(private val activity: HealthCenterActivi
     private fun color(id: Int) = activity.getColor(id)
     private data class Reference(val lines: List<Int>, val detail: Int, val source: Int, val url: String)
 
-    fun row(item: HealthOverviewMetric, open: () -> Unit): LinearLayout {
+    fun row(item: HealthOverviewMetric, caption: String? = null, open: () -> Unit): LinearLayout {
         val metric = item.metric
         val record = item.record
         val reference = reference(item)
@@ -70,6 +70,7 @@ internal class HealthOverviewMetricView(private val activity: HealthCenterActivi
                 addView(basisLabel, LinearLayout.LayoutParams(0, -2, 1.25f).apply { marginEnd = ui.dp(5) })
                 addView(state, LinearLayout.LayoutParams(0, -2, 1f))
             }, 3)
+            if (!caption.isNullOrBlank()) ui.add(this, ui.text(caption, 11f, muted = true), 3)
         }
     }
 

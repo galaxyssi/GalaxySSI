@@ -44,8 +44,13 @@ class HealthComparisonUiDeviceTest {
                 val all = views(activity.window.decorView)
                 val tiles = all.single { it.tag == "health-overview-activity" }
                 assertFalse(views(tiles).any { it.tag == "health-activity-comparison" })
+                assertEquals("health-overview-date-actions", (all.single { it.tag == "health-activity-comparison" }.parent as View).tag)
                 assertTrue(all.any { it.tag == "health-overview-step-goal" })
                 assertTrue(all.any { it.tag == "health-overview-cycling" })
+                val metrics = all.single { it.tag == "health-overview-metrics" }
+                val records = all.single { it.tag == "health-overview-all-records" }
+                val top = IntArray(2); val bottom = IntArray(2); metrics.getLocationOnScreen(top); records.getLocationOnScreen(bottom)
+                assertTrue(bottom[1] >= top[1] + metrics.height)
             }
         }
     }
@@ -70,9 +75,9 @@ class HealthComparisonUiDeviceTest {
             screen.moveToState(Lifecycle.State.RESUMED); await(screen, "health-activity-chart")
         }
     }
-    @Test fun emptyBatchPickerDoesNotShowInventedMeasurements() = fixture { names ->
-        ActivityScenario.launch<HealthMeasurementBatchesActivity>(Intent(context, HealthMeasurementBatchesActivity::class.java)
-            .putHealthNavigationFixture(names).putExtra("health_select_batch", true)).use { screen ->
+    @Test fun emptyPeriodComparisonDoesNotShowInventedMeasurements() = fixture { names ->
+        ActivityScenario.launch<HealthMeasurementPeriodsActivity>(Intent(context, HealthMeasurementPeriodsActivity::class.java)
+            .putHealthNavigationFixture(names)).use { screen ->
             val deadline = SystemClock.elapsedRealtime() + 15_000
             var found = false
             do {
@@ -84,7 +89,7 @@ class HealthComparisonUiDeviceTest {
             assertTrue(found)
         }
     }
-    @Test fun twoBatchResultsUseSeparateColumnsOrStackAtNarrowWidths() = fixture { names ->
+    @Test fun twoSamplingPeriodsUseSeparateColumnsOrStackAtNarrowWidths() = fixture { names ->
         val now = System.currentTimeMillis()
         val reports = HealthOriginalStore(context, names.originals, names.originalRoot(context)).use { originals ->
             (0..1).map { index ->
@@ -94,20 +99,19 @@ class HealthComparisonUiDeviceTest {
                 job to originals.importOriginal(job.id, "synthetic report $index".byteInputStream(), job.name, "application/pdf", "file")
             }
         }
+        val period = HealthMeasurementPeriod.of(HealthMeasurementPeriodKind.WEEK, LocalDate.now())
+        val sampleTimes = listOf(period.first, period.first.minusDays(1)).map {
+            it.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        }
         HealthRecordStore(context, names.records).use { records ->
             reports.forEachIndexed { index, (job, original) ->
                 assertTrue(records.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to if (index == 0) "5.1" else "6.3"),
-                    "mmol/L", now - (index + 1) * 86_400_000L, "fasting", reference = "4-6",
+                    "mmol/L", sampleTimes[index], "fasting", reference = "4-6",
                     evidence = HealthEvidence(original.id, job.id, "glucose", original.sha256, 1, "synthetic", confirmed = true))) is HealthSaveResult.Saved)
             }
         }
-        ActivityScenario.launch<HealthMeasurementBatchesActivity>(Intent(context, HealthMeasurementBatchesActivity::class.java)
-            .putHealthNavigationFixture(names).putExtra("health_batch", HealthMeasurementBatches.keyFor(reports[0].first))).use { screen ->
-            screen.onActivity { activity ->
-                HealthMeasurementBatchesActivity::class.java.getDeclaredField("b").apply { isAccessible = true }
-                    .set(activity, HealthMeasurementBatches.keyFor(reports[1].first))
-                HealthMeasurementBatchesActivity::class.java.getDeclaredMethod("refresh").apply { isAccessible = true }.invoke(activity)
-            }
+        ActivityScenario.launch<HealthMeasurementPeriodsActivity>(Intent(context, HealthMeasurementPeriodsActivity::class.java)
+            .putHealthNavigationFixture(names).putExtra("health_period", period.key)).use { screen ->
             val deadline = SystemClock.elapsedRealtime() + 15_000
             var ready = false
             do {
@@ -123,9 +127,75 @@ class HealthComparisonUiDeviceTest {
                 if (stack) assertTrue(ap[1] < bp[1]) else { assertTrue(ap[0] < bp[0]); assertEquals(ap[1], bp[1]) }
             }
             instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
-                File(context.getExternalFilesDir(null), "health-batch-comparison-test.png").outputStream().use {
+                File(context.getExternalFilesDir(null), "health-period-comparison-test.png").outputStream().use {
                     bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
                 }; bitmap.recycle()
+            }
+        }
+    }
+    @Test fun recordsExpandInlineAndPaginateWithoutReplacingTheOverview() = fixture { names ->
+        val now = System.currentTimeMillis()
+        HealthRecordStore(context, names.records).use { store ->
+            repeat(65) { index -> store.save(HealthDraft(HealthMetric.WEIGHT, mapOf("weight" to "70"), "kg", now - index * 60_000L)) }
+            store.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "6.3"), "mmol/L", now - 1000, "fasting", reference = "4-6"))
+            store.save(HealthDraft(HealthMetric.LDL, mapOf("ldl" to "3.45"), "mmol/L", now - 2000, reference = "<3.37"))
+            store.save(HealthDraft(HealthMetric.HDL, mapOf("hdl" to "1.12"), "mmol/L", now - 2000, reference = ">1.03"))
+            store.save(HealthDraft(HealthMetric.TRIGLYCERIDES, mapOf("triglycerides" to "1.68"), "mmol/L", now - 2000, reference = "<1.70"))
+            store.save(HealthDraft(values = mapOf("systolic" to "119", "diastolic" to "77"), measuredAt = now - 2000))
+        }
+        ActivityScenario.launch<HealthCenterActivity>(Intent(context, HealthCenterActivity::class.java).putHealthNavigationFixture(names)).use { screen ->
+            await(screen, "health-overview-all-records")
+            instrumentation.waitForIdleSync(); SystemClock.sleep(150)
+            instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
+                File(context.getExternalFilesDir(null), "health-period-overview-test.png").outputStream().use {
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                }; bitmap.recycle()
+            }
+            screen.onActivity { activity -> views(activity.window.decorView).single { it.tag == "health-overview-all-records" }.performClick() }
+            await(screen, "health-expanded-next-page")
+            var firstIds = emptySet<Any>()
+            screen.onActivity { activity ->
+                val all = views(activity.window.decorView)
+                firstIds = all.mapNotNull { it.tag?.takeIf { tag -> tag.toString().startsWith("health-expanded-record-") } }.toSet()
+                assertEquals(30, firstIds.size); assertTrue(all.any { it.tag == "health-overview-activity" })
+                all.single { it.tag == "health-expanded-next-page" }.performClick()
+            }
+            await(screen, "health-expanded-next-page")
+            var secondIds = emptySet<Any>()
+            screen.onActivity { activity ->
+                val all = views(activity.window.decorView)
+                secondIds = all.mapNotNull { it.tag?.takeIf { tag -> tag.toString().startsWith("health-expanded-record-") } }.toSet()
+                assertEquals(30, secondIds.size); assertTrue(firstIds.intersect(secondIds).isEmpty())
+                all.first { it.tag in secondIds }.performClick()
+                activity.onBackPressed()
+            }
+            await(screen, "health-expanded-next-page")
+            screen.onActivity { activity ->
+                val all = views(activity.window.decorView)
+                val returned = all.mapNotNull { it.tag?.takeIf { tag -> tag.toString().startsWith("health-expanded-record-") } }.toSet()
+                assertEquals(secondIds, returned)
+                all.single { it.tag == "health-overview-all-records" }.performClick()
+                assertFalse(views(activity.window.decorView).any { it.tag == "health-overview-expanded-records" })
+            }
+        }
+    }
+    @Test fun selectedSamplingMonthAndAbnormalFilterRemainOnTheOverview() = fixture { names ->
+        val now = System.currentTimeMillis(); val day = LocalDate.now()
+        HealthRecordStore(context, names.records).use { store ->
+            store.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "6.3"), "mmol/L", now - 1000, "fasting", reference = "4-6"))
+            store.save(HealthDraft(HealthMetric.WEIGHT, mapOf("weight" to "70"), "kg", now - 2000))
+        }
+        ActivityScenario.launch<HealthCenterActivity>(Intent(context, HealthCenterActivity::class.java).putHealthNavigationFixture(names)).use { screen ->
+            await(screen, "health-overview-all-records")
+            screen.onActivity { it.setMeasurementPeriod(HealthMeasurementPeriod.of(HealthMeasurementPeriodKind.MONTH, day)) }
+            await(screen, "health-measurement-abnormal-filter")
+            screen.onActivity { (views(it.window.decorView).single { v -> v.tag == "health-measurement-abnormal-filter" } as android.widget.CheckBox).isChecked = true }
+            await(screen, "health-overview-all-records")
+            screen.onActivity { activity ->
+                assertEquals(HealthMeasurementPeriodKind.MONTH, activity.measurementPeriod?.kind)
+                val metricList = views(activity.window.decorView).single { it.tag == "health-overview-metrics" }
+                assertTrue(views(metricList).any { it.tag?.toString()?.startsWith("health-overview-GLUCOSE-") == true })
+                assertFalse(views(metricList).any { it.tag?.toString()?.startsWith("health-overview-WEIGHT-") == true })
             }
         }
     }
