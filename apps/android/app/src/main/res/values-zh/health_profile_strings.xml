@@ -7,7 +7,7 @@
     <string name="health_profile_basics">基本资料</string>
     <string name="health_profile_name">姓名</string>
     <string name="health_profile_birth">出生日期</string>
-    <string name="health_profile_sex">用于医学参考的性别</string>
+    <string name="health_profile_sex">性别</string>
     <string name="health_profile_stage">相关生理阶段</string>
     <string name="health_profile_missing">未填写</string>
     <string name="health_profile_female">女</string>

@@ -78,6 +78,33 @@ class HealthUnifiedUiDeviceTest {
             capture("health-unified-functions")
         }
     }
+    @Test fun healthFeatureIconsUseDistinctReadableMedicalSymbols() = fixture { names ->
+        ActivityScenario.launch<HealthCenterActivity>(intent(HealthCenterActivity::class.java, names).putExtra("health_functions", true)).use { screen ->
+            screen.onActivity { activity ->
+                val icons = listOf("health-care-entry" to R.drawable.ic_health_proactive,
+                    "health-profile-entry" to R.drawable.ic_health_profile, "health-body-entry" to R.drawable.ic_health_body)
+                val rendered = mutableListOf<android.graphics.Bitmap>()
+                fun render(drawable: android.graphics.drawable.Drawable): android.graphics.Bitmap {
+                    val bitmap = android.graphics.Bitmap.createBitmap(72, 72, android.graphics.Bitmap.Config.ARGB_8888)
+                    drawable.setBounds(0, 0, 72, 72); drawable.draw(android.graphics.Canvas(bitmap)); return bitmap
+                }
+                try {
+                    icons.forEach { (tag, resource) ->
+                        val row = views(activity.body).single { it.tag == tag } as ViewGroup
+                        val icon = row.getChildAt(0) as ImageView
+                        val actual = render(icon.drawable.constantState!!.newDrawable(activity.resources).mutate())
+                        rendered += actual
+                        val expected = activity.getDrawable(resource)!!.mutate().apply { setTint(activity.getColor(R.color.health_overview_green)) }
+                        val reference = render(expected)
+                        try { assertTrue(tag, actual.sameAs(reference)) } finally { reference.recycle() }
+                        val pixels = IntArray(72 * 72); actual.getPixels(pixels, 0, 72, 0, 0, 72, 72)
+                        assertTrue(tag, pixels.count { android.graphics.Color.alpha(it) > 0 } > 100)
+                    }
+                    rendered.forEachIndexed { index, bitmap -> rendered.drop(index + 1).forEach { assertFalse(bitmap.sameAs(it)) } }
+                } finally { rendered.forEach { it.recycle() } }
+            }
+        }
+    }
     @Test fun everyMenuEntryOpensItsRealDestinationAndPreservesTheFixtureScope() = fixture { names ->
         val external = linkedMapOf(
             "health-care-entry" to HealthCareActivity::class.java, "health-agenda-entry" to HealthCareActionsActivity::class.java,

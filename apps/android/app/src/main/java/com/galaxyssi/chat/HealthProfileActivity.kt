@@ -54,7 +54,7 @@ class HealthProfileActivity : Activity() {
         }
         content.addView(ui.line().apply {
             addView(android.widget.ImageView(this@HealthProfileActivity).apply {
-                setImageResource(R.drawable.ic_health_heart); imageTintList = android.content.res.ColorStateList.valueOf(0xff15975e.toInt())
+                setImageResource(R.drawable.ic_health_profile); imageTintList = android.content.res.ColorStateList.valueOf(0xff15975e.toInt())
                 setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12)); background = ui.background(0xffe8f6ee.toInt(), radius = 24)
             }, LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)).apply { marginEnd = ui.dp(12) })
             addView(ui.column().apply {
@@ -64,7 +64,7 @@ class HealthProfileActivity : Activity() {
             addView(ui.icon(R.drawable.ic_hub_compose, R.string.common_edit) { if (!mutating) edit(HealthProfileField.NAME, s) })
         })
         ui.add(content, ui.text(getString(R.string.health_profile_basics), 18f, bold = true), 24)
-        HealthProfileField.entries.forEach { field ->
+        HealthProfileField.entries.filterNot { it == HealthProfileField.PHYSIOLOGICAL_CONTEXT }.forEach { field ->
             val value = s.draft?.changes?.get(field) ?: s.cells.getValue(field).value
             ui.add(content, ui.profileRow(getString(field.titleResource()), healthProfileDisplay(field, value)) { if (!mutating) edit(field, s) }.apply { tag = "health-profile-field-${field.name}" })
         }
@@ -84,16 +84,21 @@ class HealthProfileActivity : Activity() {
         ui.add(content, ui.profileRow(getString(R.string.health_profile_delete)) { delete() }.apply { tag = "health-profile-delete" }, 16)
     }
     private fun edit(field: HealthProfileField, s: HealthProfileSnapshot) {
+        if (field == HealthProfileField.PHYSIOLOGICAL_CONTEXT) return
         if (field == HealthProfileField.REFERENCE_SEX) {
-            val options = listOf<HealthReferenceSex?>(null) + HealthReferenceSex.entries
-            dialog = AlertDialog.Builder(this).setTitle(field.titleResource()).setItems(options.map { value -> healthProfileDisplay(field, value?.let { HealthProfileInput(it.name) }) }.toTypedArray()) { _, which ->
-                stage(s, field, HealthProfileInput(options[which]?.name.orEmpty()))
+            val options = listOf(HealthReferenceSex.MALE, HealthReferenceSex.FEMALE)
+            val value = s.draft?.changes?.get(field) ?: s.cells.getValue(field).value
+            val selected = options.indexOfFirst { it.name == value?.text }
+            dialog = AlertDialog.Builder(this).setTitle(field.titleResource()).setSingleChoiceItems(
+                options.map { healthProfileDisplay(field, HealthProfileInput(it.name)) }.toTypedArray(), selected
+            ) { picker, which ->
+                picker.dismiss(); stage(s, field, HealthProfileInput(options[which].name))
             }.setNegativeButton(R.string.common_cancel, null).show(); return
         }
         val base = s.draft ?: HealthProfileDraft(s.generation, emptyMap(), emptyMap())
         editChanged = false
         val initial = base.changes[field] ?: s.cells.getValue(field).value ?: HealthProfileInput(unit = if (field == HealthProfileField.HEIGHT) "cm" else "")
-        val input = healthProfileInput(initial.text, when (field) { HealthProfileField.NAME -> 80; HealthProfileField.PHYSIOLOGICAL_CONTEXT -> 1000; else -> 20 }, field == HealthProfileField.PHYSIOLOGICAL_CONTEXT)
+        val input = healthProfileInput(initial.text, if (field == HealthProfileField.NAME) 80 else 20)
         input.tag = "health-profile-editor"; if (field == HealthProfileField.BIRTH_DATE) input.hint = "YYYY-MM-DD"
         if (field == HealthProfileField.HEIGHT) input.inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
         var unit = initial.unit; val content = ui.column().apply { setPadding(ui.dp(20), 0, ui.dp(20), 0); addView(input) }

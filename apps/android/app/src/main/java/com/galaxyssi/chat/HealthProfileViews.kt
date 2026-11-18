@@ -61,13 +61,11 @@ internal fun HealthBackgroundKind.titleResource(): Int = when (this) {
 }
 internal fun Activity.healthProfileDisplay(field: HealthProfileField, value: HealthProfileInput?): String = when {
     value == null || value.text.isEmpty() -> getString(R.string.health_profile_missing)
-    field == HealthProfileField.REFERENCE_SEX -> when (val sex = runCatching { HealthReferenceSex.valueOf(value.text) }.getOrNull()) {
-        null -> value.text
-        else -> getString(when (sex) {
-        HealthReferenceSex.FEMALE -> R.string.health_profile_female; HealthReferenceSex.MALE -> R.string.health_profile_male
-        HealthReferenceSex.OTHER -> R.string.health_other; HealthReferenceSex.NOT_DISCLOSED -> R.string.health_profile_not_disclosed
-        })
-    }
+    field == HealthProfileField.REFERENCE_SEX -> getString(when (value.text) {
+        HealthReferenceSex.MALE.name -> R.string.health_profile_male
+        HealthReferenceSex.FEMALE.name -> R.string.health_profile_female
+        else -> R.string.health_profile_missing
+    })
     field == HealthProfileField.HEIGHT -> "${value.text} ${value.unit}"
     else -> value.text
 }
