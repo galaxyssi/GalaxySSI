@@ -87,6 +87,7 @@ internal fun healthComparableTrendIntent(context: Context, names: HealthOverview
     }.copy(condition = record.draft.condition, side = record.draft.side)
     return Intent(context, HealthTrendActivity::class.java).putHealthNavigationFixture(names)
         .putExtra("health_continuous", true)
+        .putExtra("health_trend_anchor", last.toString())
         .putHealthTrend(HealthTrendSpec(record.draft.metric, last.minusMonths(6), last, zone, record.draft.unit,
             aggregation = if (record.draft.evidence != null) HealthTrendAggregation.LATEST else HealthTrendAggregation.MEAN, source = source))
 }

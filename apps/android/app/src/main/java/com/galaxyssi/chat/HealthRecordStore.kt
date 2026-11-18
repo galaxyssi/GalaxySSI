@@ -73,6 +73,29 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         val visible = rows.take(PAGE_SIZE)
         return HealthRecordPage(visible, if (rows.size > PAGE_SIZE) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
     }
+    fun measurementPage(from: Long, until: Long, after: HealthPageCursor? = null, limit: Int = PAGE_SIZE,
+        check: () -> Unit = {}): HealthRecordPage {
+        require(from >= 0 && limit in 1..PAGE_SIZE)
+        if (until <= from) return HealthRecordPage(emptyList(), null)
+        val found = arrayListOf<HealthObservation>(); var cursor = after
+        while (true) {
+            check()
+            val args = arrayListOf(from.toString(), until.toString(), HealthMetric.STEPS.name)
+            val older = cursor?.let { args += listOf(it.measuredAt.toString(), it.measuredAt.toString(), it.id)
+                " AND (measured_at<? OR (measured_at=? AND id<?))" }.orEmpty()
+            val rows = helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations " +
+                "WHERE deleted=0 AND measured_at>=? AND measured_at<? AND metric<>?$older " +
+                "ORDER BY measured_at DESC,id DESC LIMIT ${limit + 1}", args.toTypedArray()).use { c -> buildList {
+                    while (c.moveToNext()) { check(); add(decode(c)) }
+                } }
+            for (record in rows) {
+                cursor = HealthPageCursor(record.draft.measuredAt, record.id)
+                if (record.profileId == "self") found += record
+                if (found.size > limit) return HealthRecordPage(found.take(limit), found[limit - 1].let { HealthPageCursor(it.draft.measuredAt, it.id) })
+            }
+            if (rows.size < limit + 1) return HealthRecordPage(found, null)
+        }
+    }
     private fun recentSelfRows(until: Long, limit: Int, metric: HealthMetric?, manual: Boolean,
         start: HealthPageCursor?): List<HealthObservation> {
         val found = ArrayList<HealthObservation>(limit)

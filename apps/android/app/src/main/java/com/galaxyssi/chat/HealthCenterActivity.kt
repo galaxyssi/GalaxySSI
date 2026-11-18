@@ -49,25 +49,32 @@ class HealthCenterActivity : ComponentActivity() {
     private val overviewNames by lazy { intent.healthNavigationDatabases() }
     private val records by lazy { HealthRecordStore(applicationContext, overviewNames.records) }
     private val overview by lazy { HealthOverviewView(this, overviewNames) }
-    internal var measurementBatch = ""
+    internal var measurementPeriod: HealthMeasurementPeriod? = null
         private set
-    private val batchPicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == RESULT_OK) {
-            measurementBatch = result.data?.getStringExtra("health_batch").orEmpty()
-            if (active) render()
-        }
+    internal var measurementAbnormal = false
+        private set
+    internal var measurementRecordsExpanded = false
+    internal fun chooseMeasurementPeriod() {
+        showHealthDialog(AlertDialog.Builder(this).setItems(arrayOf(getString(R.string.health_measurement_latest),
+            getString(R.string.health_period_weeks), getString(R.string.health_period_months))) { _, index ->
+            if (index == 0) setMeasurementPeriod(null) else {
+                val kind = HealthMeasurementPeriodKind.entries[index - 1]
+                showHealthPeriodPicker(this, R.string.health_period_choose, ::showHealthDialog, { before, done ->
+                    query({ store -> HealthPrivacyStore.track(applicationContext,
+                        HealthAccessScope(HealthAccessPurpose.OVERVIEW, HealthMeasurementPeriods.metrics), overviewNames.privacy) {
+                        HealthMeasurementPeriods.page(store, kind, System.currentTimeMillis(), ZoneId.systemDefault(), before)
+                    } }, done)
+                }, ::setMeasurementPeriod)
+            }
+        }.setNegativeButton(android.R.string.cancel, null).create())
     }
-    internal fun chooseMeasurementBatch() {
-        if (measurementBatch.isNotEmpty()) showHealthDialog(AlertDialog.Builder(this)
-            .setItems(arrayOf(getString(R.string.health_measurement_latest), getString(R.string.health_measurement_batches))) { _, index ->
-                if (index == 0) { measurementBatch = ""; render() } else launchBatchPicker()
-            }.setNegativeButton(android.R.string.cancel, null).create())
-        else launchBatchPicker()
+    internal fun setMeasurementPeriod(period: HealthMeasurementPeriod?) {
+        measurementPeriod = period; measurementRecordsExpanded = false
+        if (active) render()
     }
-    private fun launchBatchPicker() = batchPicker.launch(Intent(this, HealthMeasurementBatchesActivity::class.java)
-        .putHealthNavigationFixture(overviewNames).putExtra("health_select_batch", true).putExtra("health_batch", measurementBatch))
-    internal fun compareMeasurements() = startActivity(Intent(this, HealthMeasurementBatchesActivity::class.java)
-        .putHealthNavigationFixture(overviewNames).putExtra("health_batch", measurementBatch))
+    internal fun filterMeasurementAbnormal(value: Boolean) { measurementAbnormal = value; measurementRecordsExpanded = false; render() }
+    internal fun compareMeasurements() = startActivity(Intent(this, HealthMeasurementPeriodsActivity::class.java)
+        .putHealthNavigationFixture(overviewNames).putExtra("health_period", measurementPeriod?.key))
     internal fun metricTrend(record: HealthObservation) = startActivity(healthComparableTrendIntent(this, overviewNames, record))
     private val cycling = HealthCyclingView(this)
     internal fun cyclingTile() = cycling.tile(overviewNames.fixture != null)
@@ -94,15 +101,15 @@ class HealthCenterActivity : ComponentActivity() {
     private val overviewPrivacy = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
             if (active && (route == "overview" || route == "overview_metric")) {
-                measurementBatch = ""
+                measurementPeriod = null; measurementAbnormal = false; measurementRecordsExpanded = false
                 sensitiveDialogs.toList().forEach { it.dismiss() }
                 main.removeCallbacks(reloadOverview)
                 render()
             }
         }
     }
-    private var active = false
-    private var generation = 0
+    @Volatile private var active = false
+    @Volatile private var generation = 0
     private var route = "overview"
     private var selected = HealthMetric.BLOOD_PRESSURE
     private var recordId = ""
@@ -120,7 +127,9 @@ class HealthCenterActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        measurementBatch = savedInstanceState?.getString("measurementBatch").orEmpty()
+        measurementPeriod = HealthMeasurementPeriod.parse(savedInstanceState?.getString("measurementPeriod"))
+        measurementAbnormal = savedInstanceState?.getBoolean("measurementAbnormal") ?: false
+        measurementRecordsExpanded = savedInstanceState?.getBoolean("measurementRecordsExpanded") ?: false
         window.statusBarColor = getColor(R.color.page_bg)
         window.navigationBarColor = getColor(R.color.page_bg)
         if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
@@ -199,7 +208,8 @@ class HealthCenterActivity : ComponentActivity() {
         super.onDestroy()
     }
     override fun onSaveInstanceState(out: Bundle) {
-        out.putString("measurementBatch", measurementBatch)
+        out.putString("measurementPeriod", measurementPeriod?.key)
+        out.putBoolean("measurementAbnormal", measurementAbnormal); out.putBoolean("measurementRecordsExpanded", measurementRecordsExpanded)
         saveDraft()
         out.putString("route", route); out.putInt("metric", selected.ordinal); out.putString("record", recordId)
         if (route == "detail" && undoDeletionRevision > 0) out.putInt("undoDeletionRevision", undoDeletionRevision)
@@ -293,14 +303,17 @@ class HealthCenterActivity : ComponentActivity() {
 
     private val savePendingDraft = Runnable { saveDraft() }
 
-    internal fun <T> query(work: (HealthRecordStore) -> T, done: (T) -> Unit) {
+    internal fun <T> query(work: (HealthRecordStore) -> T, done: (T) -> Unit) = queryCancellable({ store, _ -> work(store) }, done)
+    internal fun <T> queryCancellable(work: (HealthRecordStore, () -> Unit) -> T, done: (T) -> Unit) {
         val token = generation
         worker.execute {
-            val result = runCatching { work(records) }
+            val check = { if (!active || token != generation) throw java.util.concurrent.CancellationException() }
+            val result = runCatching { check(); work(records, check).also { check() } }
             main.post {
                 if (!active || token != generation || isDestroyed) return@post
                 result.fold(done) {
-                    Toast.makeText(this, getString(R.string.health_storage_error), Toast.LENGTH_LONG).show()
+                    if (it is java.util.concurrent.CancellationException) return@post
+                    Toast.makeText(this, getString(if (it is HealthAccessBlocked) R.string.health_privacy_trend_blocked else R.string.health_storage_error), Toast.LENGTH_LONG).show()
                     body.addView(ui.row(getString(R.string.common_retry)) { render() })
                 }
             }
@@ -364,9 +377,9 @@ class HealthCenterActivity : ComponentActivity() {
         content.addView(ui.text(getString(R.string.health_loading), 14f, muted = true))
         val now = System.currentTimeMillis()
         val zone = ZoneId.systemDefault()
-        val batch = measurementBatch
-        query({ store -> HealthOverviewRepository.load(applicationContext, store, overviewNames, now, zone).let {
-            if (batch.isEmpty()) it else HealthOverviewRepository.batch(applicationContext, store, overviewNames, it, batch)
+        val period = measurementPeriod
+        queryCancellable({ store, check -> HealthOverviewRepository.load(applicationContext, store, overviewNames, now, zone).let {
+            HealthOverviewRepository.measurements(applicationContext, store, overviewNames, it, period, check)
         } }) { snapshot ->
             overview.show(content, snapshot)
             observePhoneSteps()

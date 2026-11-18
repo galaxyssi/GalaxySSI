@@ -10,17 +10,17 @@ class HealthMeasurementComparisonTest {
     private fun record(value: String = "5.4", condition: String = "fasting", unit: String = "mmol/L", source: String = "manual") =
         HealthObservation("a", 1, HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to value), unit, 1, condition), 1, source)
     @Test fun exactDifferenceDoesNotDeclareImprovement() {
-        assertEquals(BigDecimal("0.3"), HealthMeasurementBatches.delta(record("5.1"), record(), "glucose"))
+        assertEquals(BigDecimal("0.3"), HealthMeasurementPeriods.delta(record("5.1"), record(), "glucose"))
     }
-    @Test fun differentUnitsNeverProduceArithmeticDelta() { assertNull(HealthMeasurementBatches.delta(record(), record(unit = "mg/dL"), "glucose")) }
-    @Test fun differentCollectionConditionsNeverProduceArithmeticDelta() { assertNull(HealthMeasurementBatches.delta(record(), record(condition = "after_meal_2h"), "glucose")) }
-    @Test fun unspecifiedCollectionConditionsAreNotEvidenceOfComparability() { assertNull(HealthMeasurementBatches.delta(record(condition = "unspecified"), record(condition = "unspecified"), "glucose")) }
-    @Test fun inequalityAndQualitativeResultsNeverBecomeExactNumbers() { assertNull(HealthMeasurementBatches.delta(record("<5.1"), record(), "glucose")) }
+    @Test fun differentUnitsNeverProduceArithmeticDelta() { assertNull(HealthMeasurementPeriods.delta(record(), record(unit = "mg/dL"), "glucose")) }
+    @Test fun differentCollectionConditionsNeverProduceArithmeticDelta() { assertNull(HealthMeasurementPeriods.delta(record(), record(condition = "after_meal_2h"), "glucose")) }
+    @Test fun unspecifiedCollectionConditionsAreNotEvidenceOfComparability() { assertNull(HealthMeasurementPeriods.delta(record(condition = "unspecified"), record(condition = "unspecified"), "glucose")) }
+    @Test fun inequalityAndQualitativeResultsNeverBecomeExactNumbers() { assertNull(HealthMeasurementPeriods.delta(record("<5.1"), record(), "glucose")) }
     @Test fun missingAndOtherProfileReadingsAreExcluded() {
-        assertNull(HealthMeasurementBatches.delta(null, record(), "glucose"))
-        assertNull(HealthMeasurementBatches.delta(record().copy(profileId = "other"), record(), "glucose"))
+        assertNull(HealthMeasurementPeriods.delta(null, record(), "glucose"))
+        assertNull(HealthMeasurementPeriods.delta(record().copy(profileId = "other"), record(), "glucose"))
     }
-    @Test fun differentSourceTypesAreNotImplicitlyComparable() { assertNull(HealthMeasurementBatches.delta(record(), record(source = "ocr"), "glucose")) }
+    @Test fun differentSourceTypesAreNotImplicitlyComparable() { assertNull(HealthMeasurementPeriods.delta(record(), record(source = "ocr"), "glucose")) }
     @Test fun trendFilterKeepsConditionSideAndSource() {
         val filter = HealthTrendSource(condition = "fasting", side = "left", recordSource = "manual")
         assertFalse(filter.accepts(record()))
