@@ -59,17 +59,10 @@ class HealthSourcesActivity : Activity() {
         scroll = ScrollView(this).apply { addView(body) }
         setContentView(ui.column().apply {
             setBackgroundColor(getColor(R.color.page_bg))
-            addView(ui.line().apply {
-                addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { finish() })
-                addView(ui.text(getString(R.string.health_sources_title), 19f, bold = true).apply { gravity = Gravity.CENTER },
-                    LinearLayout.LayoutParams(0, -2, 1f))
-                addView(ui.icon(R.drawable.ic_health_grid, R.string.health_functions) {
-                    if (names.fixture == null) {
-                        startActivity(Intent(this@HealthSourcesActivity, HealthCenterActivity::class.java).putExtra("health_functions", true))
-                        finish()
-                    }
-                })
-            }, LinearLayout.LayoutParams(-1, ui.dp(56)))
+            addView(ui.toolbar(R.string.health_sources_title, { finish() }, ui.icon(R.drawable.ic_more_horizontal, R.string.health_functions) {
+                startActivity(Intent(this@HealthSourcesActivity, HealthCenterActivity::class.java).putExtra("health_functions", true)
+                    .putHealthNavigationFixture(names))
+            }), LinearLayout.LayoutParams(-1, ui.dp(56)))
             addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         })
     }
@@ -77,14 +70,24 @@ class HealthSourcesActivity : Activity() {
     override fun onResume() {
         super.onResume()
         contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, names.privacy), false, inventoryPrivacy)
+        loadSources()
+    }
+    private fun loadSources() {
         val request = ++generation
+        body.removeAllViews()
         body.addView(ui.text(getString(R.string.health_sources_checking), 14f, muted = true))
         work = worker.submit {
-            val result = HealthSourcesRepository.load(this, names, System.currentTimeMillis())
+            val result = runCatching { HealthSourcesRepository.load(this, names, System.currentTimeMillis()) }
             runOnUiThread {
                 if (request == generation && !isFinishing && !isDestroyed) {
-                    show(result)
-                    scroll.post { if (request == generation) scroll.scrollTo(0, scrollY) }
+                    result.fold({ snapshot ->
+                        show(snapshot)
+                        scroll.post { if (request == generation) scroll.scrollTo(0, scrollY) }
+                    }, {
+                        body.removeAllViews()
+                        body.addView(ui.text(getString(R.string.health_storage_error)).apply { tag = "health-sources-error" })
+                        ui.add(body, ui.command(R.string.common_retry) { loadSources() }, 16)
+                    })
                 }
             }
         }

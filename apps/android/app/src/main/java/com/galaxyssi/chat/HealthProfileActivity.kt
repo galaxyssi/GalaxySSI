@@ -58,7 +58,7 @@ class HealthProfileActivity : Activity() {
                 setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12)); background = ui.background(0xffe8f6ee.toInt(), radius = 24)
             }, LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)).apply { marginEnd = ui.dp(12) })
             addView(ui.column().apply {
-                addView(ui.text(name, 23f, bold = true).apply { tag = "health-profile-name"; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END })
+                addView(ui.text(name, 20f, bold = true).apply { tag = "health-profile-name"; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END })
                 ui.add(this, ui.text(getString(R.string.health_profile_source), 13f, muted = true), 6)
             }, LinearLayout.LayoutParams(0, -2, 1f))
             addView(ui.icon(R.drawable.ic_hub_compose, R.string.common_edit) { if (!mutating) edit(HealthProfileField.NAME, s) })

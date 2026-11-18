@@ -168,13 +168,10 @@ class HealthCenterActivity : ComponentActivity() {
             }
         }
         root = ui.column().apply { setBackgroundColor(getColor(R.color.page_bg)) }
-        root.addView(ui.line().apply {
-            addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { back() })
-            title = ui.text(getString(R.string.health_title), 19f, bold = true).apply { gravity = Gravity.CENTER }
-            addView(title, LinearLayout.LayoutParams(0, -2, 1f))
-            functionsButton = ui.icon(R.drawable.ic_more_horizontal, R.string.health_functions) { open("functions") }
-                .apply { tag = "health-functions" }
-            addView(functionsButton)
+        functionsButton = ui.icon(R.drawable.ic_more_horizontal, R.string.health_functions) { open("functions") }
+            .apply { tag = "health-functions" }
+        root.addView(ui.toolbar(R.string.health_title, { back() }, functionsButton).apply {
+            title = getChildAt(1) as TextView
         }, LinearLayout.LayoutParams(-1, ui.dp(56)))
         body = ui.column()
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -484,45 +481,32 @@ class HealthCenterActivity : ComponentActivity() {
         }
     }
     private fun renderFunctions() {
-        scrolling().apply {
-            addView(ui.text(getString(R.string.health_management), 20f, bold = true))
-            ui.add(this, ui.card().apply {
-                addView(ui.row(getString(R.string.health_title)) { open("overview") })
-                addView(ui.row(getString(R.string.health_care_title)) {
-                    startActivity(android.content.Intent(this@HealthCenterActivity, HealthCareActivity::class.java))
-                }.apply { tag = "health-care-entry" })
-                addView(ui.row(getString(R.string.health_agenda_title)) {
-                    startActivity(android.content.Intent(this@HealthCenterActivity, HealthCareActionsActivity::class.java))
-                })
-                addView(ui.row(getString(R.string.health_record_center), getString(R.string.health_record_center_note)) {
-                    open("record_center")
-                }.apply { tag = "health-functions-record-center" })
-                addView(ui.row(getString(R.string.health_original_library)) {
-                    startActivity(android.content.Intent(this@HealthCenterActivity, HealthOriginalLibraryActivity::class.java))
-                })
-                addView(ui.row(getString(R.string.health_manual), getString(R.string.health_measurement_context)) { open("manual") })
-                addView(ui.row(getString(R.string.health_records), getString(R.string.health_record_sources)) { open("records") })
-                addView(ui.row(getString(R.string.health_catalog_title)) { openCatalog() })
-                addView(ui.row(getString(R.string.health_weekly_title)) { openWeekly() }.apply { tag = "health-weekly-entry" })
-                addView(ui.row(getString(R.string.health_assistant_title)) {
-                    startActivity(android.content.Intent(this@HealthCenterActivity, HealthAssistantActivity::class.java))
-                }.apply { tag = "health-assistant-entry" })
-                addView(ui.row(getString(R.string.health_sources_title)) {
-                    startActivity(android.content.Intent(this@HealthCenterActivity, HealthSourcesActivity::class.java))
-                })
-                addView(ui.row(getString(R.string.health_export_data_files)) { startActivity(android.content.Intent(this@HealthCenterActivity, HealthDataFilesActivity::class.java)) })
-            }, 14)
-            ui.add(this, ui.text(getString(R.string.health_profile_preferences), 18f, bold = true), 24)
-            ui.add(this, ui.profileRow(getString(R.string.health_profile_title), getString(R.string.health_profile_source)) {
-                startActivity(android.content.Intent(this@HealthCenterActivity, HealthProfileActivity::class.java))
-            }.apply { tag = "health-profile-entry" }, 8)
-            ui.add(this, ui.profileRow(getString(R.string.health_privacy_title)) { startActivity(healthPrivacyIntent()) }.apply { tag = "health-privacy-entry" }, 8)
-            ui.add(this, ui.profileRow(getString(R.string.health_body_title), getString(R.string.health_body_entry)) {
-                startActivity(android.content.Intent(this@HealthCenterActivity, HealthBodyExplorationActivity::class.java))
-            }.apply { tag = "health-body-entry" }, 8)
+        val content = scrolling().apply { tag = "health-functions-list" }
+        fun entry(icon: Int, label: Int, tag: String, action: () -> Unit) {
+            content.addView(ui.navigationRow(icon, label, action).apply { this.tag = tag })
         }
+        fun launch(type: Class<*>) = startActivity(android.content.Intent(this, type).putHealthNavigationFixture(overviewNames).apply {
+            if (overviewNames.fixture != null) {
+                putExtra("health_sources_test_id", overviewNames.fixture)
+                putExtra("health_profile_test_db", overviewNames.profile)
+                putExtra("health_privacy_test_db", overviewNames.privacy)
+            }
+        })
+        entry(R.drawable.ic_health_heart, R.string.health_care_title, "health-care-entry") { launch(HealthCareActivity::class.java) }
+        entry(R.drawable.ic_agent_plan_progress, R.string.health_agenda_title, "health-agenda-entry") { launch(HealthCareActionsActivity::class.java) }
+        entry(R.drawable.ic_health_data_chart, R.string.health_record_center, "health-functions-record-center") { open("record_center") }
+        entry(R.drawable.ic_rich_file, R.string.health_original_library, "health-originals-entry") { launch(HealthOriginalLibraryActivity::class.java) }
+        entry(R.drawable.ic_hub_compose, R.string.health_manual, "health-manual-entry") { open("manual") }
+        entry(R.drawable.ic_agent_history, R.string.health_records, "health-records-entry") { open("records") }
+        entry(R.drawable.ic_agent_knowledge, R.string.health_catalog_title, "health-catalog-entry") { openCatalog() }
+        entry(R.drawable.ic_health_data_chart, R.string.health_weekly_title, "health-weekly-entry") { launch(HealthWeeklyActivity::class.java) }
+        entry(R.drawable.ic_tab_agent, R.string.health_assistant_title, "health-assistant-entry") { launch(HealthAssistantActivity::class.java) }
+        entry(R.drawable.ic_settings_devices, R.string.health_sources_title, "health-sources-entry") { launch(HealthSourcesActivity::class.java) }
+        entry(R.drawable.ic_settings_upload, R.string.health_export_data_files, "health-data-files-entry") { launch(HealthDataFilesActivity::class.java) }
+        entry(R.drawable.ic_avatar_profile, R.string.health_profile_title, "health-profile-entry") { launch(HealthProfileActivity::class.java) }
+        entry(R.drawable.ic_security_shield, R.string.health_privacy_title, "health-privacy-entry") { launch(HealthPrivacyActivity::class.java) }
+        entry(R.drawable.ic_agent_knowledge, R.string.health_body_title, "health-body-entry") { launch(HealthBodyExplorationActivity::class.java) }
     }
-    private fun openWeekly() = startActivity(android.content.Intent(this, HealthWeeklyActivity::class.java))
     private fun recordRow(record: HealthObservation) = ui.card().apply {
         addView(ui.text(getString(record.draft.metric.titleResource()), 14f, muted = true))
         ui.add(this, ui.text(value(record), if (value(record).length > 24) 18f else 25f, bold = true), 6)

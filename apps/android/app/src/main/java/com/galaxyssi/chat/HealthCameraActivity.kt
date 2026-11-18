@@ -83,9 +83,9 @@ class HealthCameraActivity : Activity() {
                 startActivity(Intent(this@HealthCameraActivity, HealthCenterActivity::class.java).putExtra("health_functions", true))
             })
         }, LinearLayout.LayoutParams(-1, ui.dp(56)))
-        modes = ui.line().apply { setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)); background = ui.background(0xffe6ede9.toInt(), radius = 10) }
+        modes = ui.line().apply { setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4)); background = ui.background(0xffe6ede9.toInt(), radius = 8) }
         root.addView(modes, LinearLayout.LayoutParams(-1, ui.dp(48)).apply { setMargins(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(16)) })
-        cameraArea = FrameLayout(this).apply { background = ui.background(0xff293d34.toInt(), radius = 20); clipToOutline = true }
+        cameraArea = FrameLayout(this).apply { background = ui.background(0xff293d34.toInt(), radius = 8); clipToOutline = true }
         val texture = TextureView(this).apply { isOpaque = false }
         camera = HealthCameraController(this, texture, { available, flash ->
             ready = available; if (!available) light = false

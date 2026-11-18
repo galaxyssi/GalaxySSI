@@ -53,11 +53,11 @@ class HealthCatalogUiDeviceTest {
                     instrumentation.runOnMainSync {
                         assertTrue((find(revision, "health-revision-value") as TextView).text.startsWith("1234"))
                     }
-                    back()
+                    back(revision)
                     awaitView(trend, "health-trend-latest-record")
                     instrumentation.runOnMainSync { assertTrue((find(trend, "health-trend-period-1") as RadioButton).isChecked) }
                 } finally { finishIfOpen(revision) }
-                back()
+                back(trend)
                 await(scenario) { has(it, "health-catalog-STEPS") && (find(it, "health-catalog-search") as EditText).text.toString() == "\u6b65\u6570" }
                 scenario.onActivity {
                     assertEquals(HealthMetricGroup.ACTIVITY.ordinal + 1, (find(it, "health-catalog-group") as Spinner).selectedItemPosition)
@@ -69,7 +69,7 @@ class HealthCatalogUiDeviceTest {
             try {
                 awaitView(hidden, "health-trend-latest-record")
                 instrumentation.runOnMainSync { catalog.onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) }
-                back()
+                back(hidden)
                 await(scenario) { has(it, "health-catalog-STEPS") && (find(it, "health-catalog-search") as EditText).text.isEmpty() }
             } finally { finishIfOpen(hidden) }
         }
@@ -109,7 +109,7 @@ class HealthCatalogUiDeviceTest {
                     (it.save(HealthDraft(HealthMetric.STEPS, mapOf("steps" to "9999"),
                         measuredAt = time - 32_500)) as HealthSaveResult.Saved).record
                 }
-                back()
+                back(detail)
                 await(scenario) { activity ->
                     has(activity, tag(inserted)) && has(activity, tag(anchor)) && has(activity, "health-catalog-previous") &&
                         (find(activity, "health-catalog-scroll") as ScrollView).scrollY == find(activity, tag(anchor)).top + 9
@@ -144,7 +144,23 @@ class HealthCatalogUiDeviceTest {
             return type.cast(requireNotNull(instrumentation.waitForMonitorWithTimeout(monitor, 10_000)))
         } finally { instrumentation.removeMonitor(monitor) }
     }
-    private fun back() { instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK); instrumentation.waitForIdleSync() }
+    private fun back(activity: Activity) {
+        fun waitForWindow(condition: () -> Boolean) {
+            val deadline = SystemClock.elapsedRealtime() + 10_000
+            do {
+                var ready = false
+                instrumentation.runOnMainSync { ready = condition() }
+                if (ready) return
+                SystemClock.sleep(40)
+            } while (SystemClock.elapsedRealtime() < deadline)
+            fail("Native health navigation did not finish its window transition")
+        }
+        // A populated view can precede input focus; back-to-back keys must not hit the exiting window.
+        waitForWindow { activity.window.decorView.hasWindowFocus() && !activity.isFinishing }
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        waitForWindow { activity.isDestroyed }
+        instrumentation.waitForIdleSync()
+    }
     private fun finishIfOpen(activity: Activity) = instrumentation.runOnMainSync { if (!activity.isFinishing) activity.finish() }
     private fun awaitView(activity: Activity, tag: String) {
         val deadline = SystemClock.elapsedRealtime() + 12_000

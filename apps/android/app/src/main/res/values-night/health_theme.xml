@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <bool name="health_light_system_bars">false</bool>
+    <color name="health_action_text">#07352C</color>
+</resources>

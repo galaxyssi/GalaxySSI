@@ -104,20 +104,13 @@ class HealthOriginalLibraryActivity : Activity() {
         scrollY = state?.getInt("scroll") ?: 0
         state?.getString("cursor")?.let { cursor = readCursor(it) }
         state?.getStringArrayList("previous")?.forEach { previous += readCursor(it) }
-        window.statusBarColor = getColor(R.color.surface_bg)
+        window.statusBarColor = getColor(R.color.page_bg)
         window.navigationBarColor = getColor(R.color.page_bg)
         if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         val root = ui.column().apply { setBackgroundColor(getColor(R.color.page_bg)) }
-        root.addView(ui.line().apply {
-            minimumHeight = ui.dp(56)
-            setBackgroundColor(getColor(R.color.surface_bg))
-            addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { finish() })
-            addView(ui.text(getString(R.string.health_original_library), 19f, bold = true).apply { gravity = Gravity.CENTER },
-                LinearLayout.LayoutParams(0, -2, 1f))
-            addView(ui.icon(R.drawable.ic_health_grid, R.string.health_functions) {
-                open(HealthCenterActivity::class.java) { putExtra("health_functions", true) }
-            })
-        })
+        root.addView(ui.toolbar(R.string.health_original_library, { finish() }, ui.icon(R.drawable.ic_more_horizontal, R.string.health_functions) {
+            open(HealthCenterActivity::class.java) { putExtra("health_functions", true) }
+        }), LinearLayout.LayoutParams(-1, ui.dp(56)))
         body = ui.column().apply { isFocusableInTouchMode = true }
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
@@ -271,7 +264,7 @@ class HealthOriginalLibraryActivity : Activity() {
                     startActivity(healthCaptureIntent(this@HealthOriginalLibraryActivity, names, HealthCaptureEntry.FILE))
                 }
             }.apply {
-                background = ui.background(stroke = getColor(R.color.separator), radius = 10)
+                background = ui.background(stroke = getColor(R.color.separator), radius = 8)
                 setTextColor(getColor(R.color.text_primary)); tag = "health-library-import"
             }, LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = ui.dp(8) })
             export = ui.command(R.string.health_library_export) { prepareExport() }.apply { tag = "health-library-export" }

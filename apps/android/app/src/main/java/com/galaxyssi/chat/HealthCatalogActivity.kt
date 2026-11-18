@@ -70,13 +70,9 @@ class HealthCatalogActivity : Activity() {
         window.statusBarColor = getColor(R.color.page_bg); window.navigationBarColor = getColor(R.color.page_bg)
         if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         val root = ui.column().apply { setBackgroundColor(getColor(R.color.page_bg)) }
-        root.addView(ui.line().apply {
-            addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { finish() })
-            addView(ui.text(getString(R.string.health_catalog_title), 19f, bold = true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(ui.icon(R.drawable.ic_health_grid, R.string.health_functions) {
-                openChild(Intent(this@HealthCatalogActivity, HealthCenterActivity::class.java).putExtra("health_functions", true))
-            })
-        }, LinearLayout.LayoutParams(-1, ui.dp(56)))
+        root.addView(ui.toolbar(R.string.health_catalog_title, { finish() }, ui.icon(R.drawable.ic_more_horizontal, R.string.health_functions) {
+            openChild(Intent(this, HealthCenterActivity::class.java).putExtra("health_functions", true))
+        }), LinearLayout.LayoutParams(-1, ui.dp(56)))
         body = ui.column().apply { isFocusableInTouchMode = true }
         root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f)); setContentView(root)
         ContextCompat.registerReceiver(this, screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), ContextCompat.RECEIVER_NOT_EXPORTED)

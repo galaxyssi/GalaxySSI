@@ -130,7 +130,7 @@ class HealthTableActivity : Activity() {
             addView(ui.line().apply {
                 addView(ImageView(this@HealthTableActivity).apply {
                     setImageResource(R.drawable.ic_rich_file); imageTintList = android.content.res.ColorStateList.valueOf(0xff169d70.toInt())
-                    background = ui.background(0xffe5f6ef.toInt(), radius = 12); setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12))
+                    background = ui.background(0xffe5f6ef.toInt(), radius = 8); setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12))
                     importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 }, LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)))
                 addView(ui.column().apply {
