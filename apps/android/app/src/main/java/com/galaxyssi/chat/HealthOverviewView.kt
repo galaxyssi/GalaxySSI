@@ -14,16 +14,19 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
     private val ui get() = activity.ui
     private val metricView = HealthOverviewMetricView(activity)
     private var stepBinding: ((HealthPhoneStepReading?, Boolean) -> Unit)? = null
-    private var measurementBinding: (() -> Unit)? = null
-    fun clearTodaySteps() { stepBinding = null; measurementBinding = null }
-    fun filterMeasurements() { measurementBinding?.invoke() }
+    private var measurementBinding: ((HealthOverviewSnapshot?) -> Unit)? = null
+    private var measurementPendingBinding: ((Boolean) -> Unit)? = null
+    fun clearTodaySteps() { stepBinding = null; measurementBinding = null; measurementPendingBinding = null }
+    fun filterMeasurements() { measurementBinding?.invoke(null) }
+    fun updateMeasurements(snapshot: HealthOverviewSnapshot) { measurementBinding?.invoke(snapshot) }
+    fun setMeasurementsPending(pending: Boolean) { measurementPendingBinding?.invoke(pending) }
     fun updatePhoneSteps(reading: HealthPhoneStepReading?, supported: Boolean) { stepBinding?.invoke(reading, supported) }
     private fun label(id: Int, vararg args: Any) = activity.getString(id, *args)
     private fun color(id: Int) = activity.getColor(id)
     private fun start(type: Class<*>, extras: Intent.() -> Unit = {}) {
         if (names.fixture == null) activity.startActivity(Intent(activity, type).apply(extras))
     }
-    fun show(content: LinearLayout, snapshot: HealthOverviewSnapshot) {
+    fun show(content: LinearLayout, snapshot: HealthOverviewSnapshot, period: HealthMeasurementPeriod? = activity.measurementPeriod) {
         content.removeAllViews()
         val today = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(snapshot.time))
         content.addView(ui.line().apply {
@@ -57,31 +60,37 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
                 tag = "health-overview-empty"
             }, 12)
         }
+        val periodFilter = ui.text(activity.measurementPeriod?.label(activity) ?: label(R.string.health_measurement_latest), 13f).apply {
+            minimumHeight = ui.dp(48); minWidth = ui.dp(48); gravity = Gravity.CENTER; isFocusable = true
+            maxWidth = ui.dp(((config.screenWidthDp - 32) * .6f).toInt().coerceIn(48, 180))
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(4))
+            background = ui.background(color(R.color.button_soft), stroke = color(R.color.separator), radius = 8)
+            tag = "health-measurement-period-filter"; setOnClickListener { activity.chooseMeasurementPeriod() }
+        }
         ui.add(content, ui.line().apply {
             addView(ui.text(label(R.string.health_overview_metrics_heading), 16f, bold = true),
                 LinearLayout.LayoutParams(0, -2, 1f))
-            addView(ui.text(activity.measurementPeriod?.label(activity) ?: label(R.string.health_measurement_latest), 13f).apply {
-                minimumHeight = ui.dp(48); gravity = Gravity.CENTER_VERTICAL or Gravity.END; isFocusable = true
-                setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(4))
-                background = ui.background(color(R.color.button_soft), stroke = color(R.color.separator), radius = 8)
-                tag = "health-measurement-period-filter"; setOnClickListener { activity.chooseMeasurementPeriod() }
-            }, LinearLayout.LayoutParams(0, -2, 1.2f))
+            addView(periodFilter, LinearLayout.LayoutParams(-2, -2).apply { marginStart = ui.dp(12) })
         }, 12)
         val abnormalFilter = CheckBox(activity).apply {
             tag = "health-measurement-abnormal-filter"; text = label(R.string.health_period_abnormal); textSize = 13f
             setTextColor(color(R.color.text_primary)); isChecked = activity.measurementAbnormal; isEnabled = snapshot.measurementComparisonAllowed
             setOnCheckedChangeListener { _, checked -> activity.filterMeasurementAbnormal(checked) }
         }
+        val compare = ui.text(label(R.string.health_period_comparison), 13f).apply {
+            minimumHeight = ui.dp(48); gravity = Gravity.CENTER_VERTICAL or Gravity.END; isFocusable = true
+            setTextColor(color(R.color.health_overview_green)); tag = "health-measurement-compare"
+            setOnClickListener { activity.compareMeasurements() }
+        }
         ui.add(content, ui.line().apply {
             addView(abnormalFilter, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(ui.text(label(R.string.health_period_comparison), 13f).apply {
-                minimumHeight = ui.dp(48); gravity = Gravity.CENTER_VERTICAL or Gravity.END; isFocusable = true
-                isEnabled = snapshot.measurementComparisonAllowed; alpha = if (isEnabled) 1f else .45f
-                setTextColor(color(R.color.health_overview_green)); tag = "health-measurement-compare"
-                setOnClickListener { activity.compareMeasurements() }
-            })
+            addView(compare)
         }, 4)
-        val summaries = snapshot.measurementSeries.associateBy { it.latest.id }
+        var measurementSnapshot = snapshot
+        var displayedPeriod = period
+        var pending = false
+        var summaries = snapshot.measurementSeries.associateBy { it.latest.id }
         var filtered = emptyList<HealthOverviewMetric>()
         var previewSize = 0
         var collapsedChildren = 0
@@ -97,13 +106,13 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
                     val date = DateFormat.getDateInstance(DateFormat.SHORT).format(Date(it.draft.measuredAt))
                     val qualifier = if (it.draft.condition == "unspecified" || item.metric == HealthMetric.GLUCOSE && it.draft.condition == "fasting") ""
                         else " \u00b7 ${label(healthContextResource(it.draft.condition))}"
-                    "$date$qualifier" + if (activity.measurementPeriod != null && summary != null) " \u00b7 ${label(R.string.health_period_record_count, summary.count)}" else ""
+                    "$date$qualifier" + if (displayedPeriod != null && summary != null) " \u00b7 ${label(R.string.health_period_record_count, summary.count)}" else ""
                 }
                 addView(metricView.row(item, caption) {
-                    if (activity.measurementPeriod != null && record != null) activity.metricTrend(record)
+                    if (displayedPeriod != null && record != null) activity.metricTrend(record)
                     else activity.open("overview_metric", item.metric)
                 })
-                if (summary != null && activity.measurementPeriod != null && summary.outsideCount > 0 && !item.outsideRange)
+                if (summary != null && displayedPeriod != null && summary.outsideCount > 0 && !item.outsideRange)
                     ui.add(this, ui.text(label(R.string.health_period_prior_outside, summary.outsideCount), 12f).apply {
                         setTextColor(color(R.color.health_overview_orange)); setPadding(ui.dp(12), 0, ui.dp(12), ui.dp(8))
                     })
@@ -122,8 +131,18 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
                 setText(if (activity.measurementRecordsExpanded) R.string.health_period_collapse_records else R.string.health_period_expand_records)
             }
         }
+        fun bindState() {
+            periodFilter.text = activity.measurementPeriod?.label(activity) ?: label(R.string.health_measurement_latest)
+            periodFilter.tooltipText = periodFilter.text
+            metrics.isEnabled = !pending; metrics.alpha = if (pending) .6f else 1f
+            for (index in 0 until metrics.childCount) metrics.getChildAt(index).isEnabled = !pending
+            toggle.isEnabled = !pending
+            abnormalFilter.isEnabled = !pending && measurementSnapshot.measurementComparisonAllowed
+            compare.isEnabled = abnormalFilter.isEnabled; compare.alpha = if (compare.isEnabled) 1f else .45f
+        }
         fun bindMeasurements() {
-            filtered = HealthOverviewPolicy.measurementRows(snapshot.metrics, activity.measurementAbnormal)
+            summaries = measurementSnapshot.measurementSeries.associateBy { it.latest.id }
+            filtered = HealthOverviewPolicy.measurementRows(measurementSnapshot.metrics, activity.measurementAbnormal)
             previewSize = HealthOverviewPolicy.measurementPreviewSize(filtered)
             metrics.removeAllViews()
             filtered.take(previewSize).forEach(::append)
@@ -137,8 +156,13 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
                 if (toggle.parent == null) ui.add(content, toggle, 12)
             } else content.removeView(toggle)
             if (abnormalFilter.isChecked != activity.measurementAbnormal) abnormalFilter.isChecked = activity.measurementAbnormal
+            bindState()
         }
-        measurementBinding = ::bindMeasurements
+        measurementBinding = { update ->
+            if (update != null) { measurementSnapshot = update; displayedPeriod = activity.measurementPeriod; pending = false }
+            bindMeasurements()
+        }
+        measurementPendingBinding = { value -> pending = value; bindState() }
         bindMeasurements()
     }
 

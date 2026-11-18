@@ -22,11 +22,11 @@ class HealthComparisonUiDeviceTest {
     private val context get() = instrumentation.targetContext
     private fun views(view: View): List<View> = listOf(view) + if (view is ViewGroup)
         (0 until view.childCount).flatMap { views(view.getChildAt(it)) } else emptyList()
-    private fun <T : Activity> await(scenario: ActivityScenario<T>, tag: String) {
+    private fun <T : Activity> await(scenario: ActivityScenario<T>, tag: String, enabled: Boolean = false) {
         val deadline = SystemClock.elapsedRealtime() + 15_000
         do {
             var ready = false
-            scenario.onActivity { ready = views(it.window.decorView).any { it.tag == tag } }
+            scenario.onActivity { ready = views(it.window.decorView).any { it.tag == tag && (!enabled || it.isEnabled) } }
             if (ready) return
             SystemClock.sleep(40)
         } while (SystemClock.elapsedRealtime() < deadline)
@@ -249,7 +249,7 @@ class HealthComparisonUiDeviceTest {
         ActivityScenario.launch<HealthCenterActivity>(Intent(context, HealthCenterActivity::class.java).putHealthNavigationFixture(names)).use { screen ->
             await(screen, "health-overview-metrics")
             screen.onActivity { it.setMeasurementPeriod(HealthMeasurementPeriod.of(HealthMeasurementPeriodKind.MONTH, day)) }
-            await(screen, "health-measurement-abnormal-filter")
+            await(screen, "health-overview-metrics", enabled = true)
             screen.onActivity { (views(it.window.decorView).single { v -> v.tag == "health-measurement-abnormal-filter" } as android.widget.CheckBox).isChecked = true }
             await(screen, "health-overview-metrics")
             screen.onActivity { activity ->
@@ -271,7 +271,7 @@ class HealthComparisonUiDeviceTest {
         ActivityScenario.launch<HealthCenterActivity>(Intent(context, HealthCenterActivity::class.java).putHealthNavigationFixture(names)).use { screen ->
             await(screen, "health-overview-metrics")
             screen.onActivity { it.setMeasurementPeriod(HealthMeasurementPeriod.of(HealthMeasurementPeriodKind.MONTH, LocalDate.now())) }
-            await(screen, "health-overview-value-GLUCOSE")
+            await(screen, "health-overview-metrics", enabled = true)
             screen.onActivity { activity ->
                 assertTrue((views(activity.window.decorView).single { it.tag == "health-overview-value-GLUCOSE" } as TextView).text.contains("5.1"))
                 activity.filterMeasurementAbnormal(true)
