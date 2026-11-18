@@ -36,4 +36,40 @@ class HealthActivityComparisonTest {
         assertEquals(366, HealthActivityComparison.build(first, first.plusDays(365), emptyList(), steps).current.size)
         assertThrows(IllegalArgumentException::class.java) { HealthActivityComparison.build(first, first.plusDays(366), emptyList(), steps) }
     }
+    @Test fun everyPresetIncludesTodayAndHasExactlyItsRequestedLength() {
+        listOf(7, 30, 90).forEach { days ->
+            val window = HealthActivityComparison.trailing(days, first)
+            assertEquals(first, window.endInclusive)
+            assertEquals(first.minusDays(days.toLong() - 1), window.start)
+        }
+    }
+    @Test fun trailingRangeHandlesYearAndLeapBoundaries() {
+        assertEquals(LocalDate.of(2025, 12, 26), HealthActivityComparison.trailing(7, LocalDate.of(2026, 1, 1)).start)
+        assertEquals(LocalDate.of(2024, 2, 29), HealthActivityComparison.trailing(2, LocalDate.of(2024, 3, 1)).start)
+    }
+    @Test fun customRangeCanEndTodayButNeverInTheFuture() {
+        assertTrue(HealthActivityComparison.validDates(first, first, first))
+        assertTrue(HealthActivityComparison.validDates(first.minusDays(365), first, first))
+        assertFalse(HealthActivityComparison.validDates(first, first.plusDays(1), first))
+        assertFalse(HealthActivityComparison.validDates(first.minusDays(366), first, first))
+        assertFalse(HealthActivityComparison.validDates(first, first.minusDays(1), first))
+    }
+    @Test fun liveTotalUpdatesOnlyItsCurrentDayWithoutChangingPreviousPeriod() {
+        val before = compare(day(0, 100), day(-7, 80))
+        val after = before.withDay(first, 130)
+        assertEquals(130L, after.current.first()); assertEquals(100L, before.current.first())
+        assertEquals(before.previous, after.previous)
+    }
+    @Test fun staleLiveTotalCannotDecreaseArchivedSteps() {
+        assertEquals(100L, compare(day(0, 100)).withDay(first, 20).current.first())
+    }
+    @Test fun missingLiveValueStaysUnknownWhileObservedZeroIsKnown() {
+        assertNull(compare().withDay(first, null).current.first())
+        assertEquals(0L, compare().withDay(first, 0).current.first())
+    }
+    @Test fun liveDayOutsideSelectedHistoricalRangeIsIgnored() {
+        val before = compare(day(0, 100))
+        assertEquals(before, before.withDay(first.minusDays(1), 400))
+        assertEquals(before, before.withDay(first.plusDays(7), 400))
+    }
 }
