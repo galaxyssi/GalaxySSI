@@ -14,16 +14,9 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
     private val ui get() = activity.ui
     private val metricView = HealthOverviewMetricView(activity)
     private var stepBinding: ((HealthPhoneStepReading?, Boolean) -> Unit)? = null
-    private var recordList: HealthOverviewRecordsView? = null
-    private var recordFilter = ""
-    private var recordAfter: HealthPageCursor? = null
-    private var recordHistory = emptyList<HealthPageCursor?>()
-
-    fun clearTodaySteps() {
-        stepBinding = null
-        recordList?.let { recordAfter = it.cursor; recordHistory = it.history; it.clear() }
-        recordList = null
-    }
+    private var measurementBinding: (() -> Unit)? = null
+    fun clearTodaySteps() { stepBinding = null; measurementBinding = null }
+    fun filterMeasurements() { measurementBinding?.invoke() }
     fun updatePhoneSteps(reading: HealthPhoneStepReading?, supported: Boolean) { stepBinding?.invoke(reading, supported) }
     private fun label(id: Int, vararg args: Any) = activity.getString(id, *args)
     private fun color(id: Int) = activity.getColor(id)
@@ -74,12 +67,13 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
                 tag = "health-measurement-period-filter"; setOnClickListener { activity.chooseMeasurementPeriod() }
             }, LinearLayout.LayoutParams(0, -2, 1.2f))
         }, 12)
+        val abnormalFilter = CheckBox(activity).apply {
+            tag = "health-measurement-abnormal-filter"; text = label(R.string.health_period_abnormal); textSize = 13f
+            setTextColor(color(R.color.text_primary)); isChecked = activity.measurementAbnormal; isEnabled = snapshot.measurementComparisonAllowed
+            setOnCheckedChangeListener { _, checked -> activity.filterMeasurementAbnormal(checked) }
+        }
         ui.add(content, ui.line().apply {
-            addView(CheckBox(activity).apply {
-                tag = "health-measurement-abnormal-filter"; text = label(R.string.health_period_abnormal); textSize = 13f
-                setTextColor(color(R.color.text_primary)); isChecked = activity.measurementAbnormal; isEnabled = snapshot.measurementComparisonAllowed
-                setOnCheckedChangeListener { _, checked -> activity.filterMeasurementAbnormal(checked) }
-            }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(abnormalFilter, LinearLayout.LayoutParams(0, -2, 1f))
             addView(ui.text(label(R.string.health_period_comparison), 13f).apply {
                 minimumHeight = ui.dp(48); gravity = Gravity.CENTER_VERTICAL or Gravity.END; isFocusable = true
                 isEnabled = snapshot.measurementComparisonAllowed; alpha = if (isEnabled) 1f else .45f
@@ -88,16 +82,16 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
             })
         }, 4)
         val summaries = snapshot.measurementSeries.associateBy { it.latest.id }
-        val measurements = snapshot.metrics.filterNot { it.metric == HealthMetric.STEPS }
-        val filtered = measurements.filter { !activity.measurementAbnormal || it.outsideRange || (summaries[it.record?.id]?.outsideCount ?: 0) > 0 }
-        val highlighted = filtered.filter { it.outsideRange || (summaries[it.record?.id]?.outsideCount ?: 0) > 0 }
-        val preview = highlighted + filtered.filterNot { it in highlighted }.sortedByDescending { it.record != null }
-            .take((5 - highlighted.size).coerceAtLeast(0))
-        content.addView(ui.column().apply {
+        var filtered = emptyList<HealthOverviewMetric>()
+        var previewSize = 0
+        var collapsedChildren = 0
+        val metrics = ui.column().apply {
             tag = "health-overview-metrics"
             background = ui.background(stroke = color(R.color.separator), radius = 8)
-            preview.forEachIndexed { index, item ->
-                if (index > 0) addView(healthOverviewDivider(activity))
+        }
+        fun append(item: HealthOverviewMetric) {
+            with(metrics) {
+                if (childCount > 0) addView(healthOverviewDivider(activity))
                 val record = item.record; val summary = summaries[record?.id]
                 val caption = record?.let {
                     val date = DateFormat.getDateInstance(DateFormat.SHORT).format(Date(it.draft.measuredAt))
@@ -114,15 +108,38 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
                         setTextColor(color(R.color.health_overview_orange)); setPadding(ui.dp(12), 0, ui.dp(12), ui.dp(8))
                     })
             }
-            if (preview.isEmpty()) addView(ui.text(label(R.string.health_period_no_matching), 13f, muted = true).apply { setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12)) })
-        })
-        val outsideIds = measurements.filter { it.outsideRange }.mapNotNull { it.record?.id }.toSet()
-        recordList?.clear()
-        val filter = "${activity.measurementPeriod?.key.orEmpty()}|${activity.measurementAbnormal}"
-        if (filter != recordFilter) { recordAfter = null; recordHistory = emptyList(); recordFilter = filter }
-        recordList = HealthOverviewRecordsView(activity, names, activity.measurementPeriod, activity.measurementAbnormal, outsideIds, recordAfter, recordHistory).also {
-            ui.add(content, it.root, 12); it.show()
         }
+        content.addView(metrics)
+        val toggle = ui.text(label(if (activity.measurementRecordsExpanded)
+            R.string.health_period_collapse_records else R.string.health_period_expand_records), 14f).apply {
+            tag = "health-overview-all-records"
+            gravity = Gravity.CENTER; minimumHeight = ui.dp(56); isFocusable = true
+            setTextColor(color(R.color.health_overview_green))
+            setOnClickListener {
+                activity.measurementRecordsExpanded = !activity.measurementRecordsExpanded
+                if (activity.measurementRecordsExpanded) filtered.drop(previewSize).forEach(::append)
+                else while (metrics.childCount > collapsedChildren) metrics.removeViewAt(metrics.childCount - 1)
+                setText(if (activity.measurementRecordsExpanded) R.string.health_period_collapse_records else R.string.health_period_expand_records)
+            }
+        }
+        fun bindMeasurements() {
+            filtered = HealthOverviewPolicy.measurementRows(snapshot.metrics, activity.measurementAbnormal)
+            previewSize = HealthOverviewPolicy.measurementPreviewSize(filtered)
+            metrics.removeAllViews()
+            filtered.take(previewSize).forEach(::append)
+            collapsedChildren = metrics.childCount
+            if (activity.measurementRecordsExpanded) filtered.drop(previewSize).forEach(::append)
+            if (filtered.isEmpty()) metrics.addView(ui.text(label(R.string.health_period_no_matching), 13f, muted = true).apply {
+                setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12))
+            })
+            toggle.setText(if (activity.measurementRecordsExpanded) R.string.health_period_collapse_records else R.string.health_period_expand_records)
+            if (filtered.size > previewSize) {
+                if (toggle.parent == null) ui.add(content, toggle, 12)
+            } else content.removeView(toggle)
+            if (abnormalFilter.isChecked != activity.measurementAbnormal) abnormalFilter.isChecked = activity.measurementAbnormal
+        }
+        measurementBinding = ::bindMeasurements
+        bindMeasurements()
     }
 
     fun showMetric(content: LinearLayout, detail: HealthOverviewMetricDetail) = metricView.showDetail(content, detail)
