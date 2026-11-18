@@ -20,6 +20,12 @@ internal object HealthOverviewPolicy {
         HealthMetric.SLEEP_DURATION, HealthMetric.STEPS)
     const val REVIEW_LIMIT = 30
 
+    fun measurementRows(items: List<HealthOverviewMetric>, abnormal: Boolean): List<HealthOverviewMetric> =
+        items.filter { it.metric != HealthMetric.STEPS && (!abnormal || it.outsideRange) }
+            .sortedWith(compareByDescending<HealthOverviewMetric> { it.outsideRange }.thenByDescending { it.record != null })
+
+    fun measurementPreviewSize(items: List<HealthOverviewMetric>) = maxOf(5, items.count { it.outsideRange }).coerceAtMost(items.size)
+
     fun freshness(metric: HealthMetric, time: Long?, now: Long, zone: ZoneId): HealthOverviewFreshness {
         if (time == null || time > now) return HealthOverviewFreshness.MISSING
         val today = localDay(now, zone)

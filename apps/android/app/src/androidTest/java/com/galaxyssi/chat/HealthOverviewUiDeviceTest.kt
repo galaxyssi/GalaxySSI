@@ -185,23 +185,38 @@ class HealthOverviewUiDeviceTest {
         }
     }
 
-    @Test fun allRecordsAreGroupedByLocalDateAndReturnToTheOverview() = screen(seed = { names, now ->
+    @Test fun expandKeepsExistingRowsAndAppendsMatchingMetricRowsInTheSameContainer() = screen(seed = { names, now ->
         val today = HealthOverviewPolicy.localDay(now, zone)
         val yesterday = today.minusDays(1).atTime(9, 0).atZone(zone).toInstant().toEpochMilli()
         HealthRecordStore(context, names.records).use { store ->
             store.save(HealthDraft(values = mapOf("systolic" to "120", "diastolic" to "80"), measuredAt = now))
             store.save(HealthDraft(values = mapOf("systolic" to "119", "diastolic" to "79"), measuredAt = yesterday))
+            store.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "5.1"), "mmol/L", now - 1000))
+            store.save(HealthDraft(HealthMetric.LDL, mapOf("ldl" to "3.1"), "mmol/L", now - 1000))
+            store.save(HealthDraft(HealthMetric.HDL, mapOf("hdl" to "1.2"), "mmol/L", now - 1000))
+            store.save(HealthDraft(HealthMetric.TRIGLYCERIDES, mapOf("triglycerides" to "1.5"), "mmol/L", now - 1000))
+            store.save(HealthDraft(HealthMetric.WEIGHT, mapOf("weight" to "70"), "kg", now - 1000))
         }
     }) { scenario, _ ->
         await(scenario, "health-overview-all-records")
-        scenario.onActivity { assertTrue(requireNotNull(find(it, "health-overview-all-records")).performClick()) }
-        await(scenario, "health-overview-expanded-records")
-        scenario.onActivity {
-            assertEquals(2, views(it.body).count { view -> view.tag?.toString()?.startsWith("health-expanded-record-") == true })
-            assertNotNull(find(it, "health-overview-bottom-actions"))
-            assertNotNull(find(it, "health-overview-activity"))
-            requireNotNull(find(it, "health-overview-all-records")).performClick()
-            assertNull(find(it, "health-overview-expanded-records"))
+        scenario.onActivity { activity ->
+            val metrics = requireNotNull(find(activity, "health-overview-metrics")) as ViewGroup
+            fun rows() = (0 until metrics.childCount).map { metrics.getChildAt(it) }.filter { it.isClickable }
+            val preview = rows()
+            assertEquals(5, preview.size)
+            val toggle = requireNotNull(find(activity, "health-overview-all-records"))
+            val top = IntArray(2); val bottom = IntArray(2)
+            metrics.getLocationOnScreen(top); toggle.getLocationOnScreen(bottom)
+            assertTrue(bottom[1] >= top[1] + metrics.height)
+            assertTrue(toggle.performClick())
+            assertSame(metrics, find(activity, "health-overview-metrics"))
+            assertTrue(rows().size > preview.size)
+            preview.forEachIndexed { index, view -> assertSame(view, rows()[index]) }
+            assertNull(find(activity, "health-overview-expanded-records"))
+            assertNotNull(find(activity, "health-overview-bottom-actions"))
+            assertNotNull(find(activity, "health-overview-activity"))
+            assertTrue(toggle.performClick())
+            assertEquals(preview, rows())
         }
         await(scenario, "health-overview-activity")
     }

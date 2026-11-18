@@ -48,9 +48,8 @@ class HealthComparisonUiDeviceTest {
                 assertTrue(all.any { it.tag == "health-overview-step-goal" })
                 assertTrue(all.any { it.tag == "health-overview-cycling" })
                 val metrics = all.single { it.tag == "health-overview-metrics" }
-                val records = all.single { it.tag == "health-overview-all-records" }
-                val top = IntArray(2); val bottom = IntArray(2); metrics.getLocationOnScreen(top); records.getLocationOnScreen(bottom)
-                assertTrue(bottom[1] >= top[1] + metrics.height)
+                assertTrue(metrics is ViewGroup)
+                assertFalse(all.any { it.tag == "health-overview-all-records" })
             }
         }
     }
@@ -188,7 +187,7 @@ class HealthComparisonUiDeviceTest {
             }
         }
     }
-    @Test fun recordsExpandInlineAndPaginateWithoutReplacingTheOverview() = fixture { names ->
+    @Test fun hiddenMetricsAppendToTheSameListAndRestoreAfterOpeningDetails() = fixture { names ->
         val now = System.currentTimeMillis()
         HealthRecordStore(context, names.records).use { store ->
             repeat(65) { index -> store.save(HealthDraft(HealthMetric.WEIGHT, mapOf("weight" to "70"), "kg", now - index * 60_000L)) }
@@ -207,31 +206,38 @@ class HealthComparisonUiDeviceTest {
                 }; bitmap.recycle()
             }
             screen.onActivity { activity -> views(activity.window.decorView).single { it.tag == "health-overview-all-records" }.performClick() }
-            await(screen, "health-expanded-next-page")
-            var firstIds = emptySet<Any>()
+            var expandedTags = emptyList<Any?>()
             screen.onActivity { activity ->
                 val all = views(activity.window.decorView)
-                firstIds = all.mapNotNull { it.tag?.takeIf { tag -> tag.toString().startsWith("health-expanded-record-") } }.toSet()
-                assertEquals(30, firstIds.size); assertTrue(all.any { it.tag == "health-overview-activity" })
-                all.single { it.tag == "health-expanded-next-page" }.performClick()
-            }
-            await(screen, "health-expanded-next-page")
-            var secondIds = emptySet<Any>()
-            screen.onActivity { activity ->
-                val all = views(activity.window.decorView)
-                secondIds = all.mapNotNull { it.tag?.takeIf { tag -> tag.toString().startsWith("health-expanded-record-") } }.toSet()
-                assertEquals(30, secondIds.size); assertTrue(firstIds.intersect(secondIds).isEmpty())
-                all.first { it.tag in secondIds }.performClick()
+                val metrics = all.single { it.tag == "health-overview-metrics" } as ViewGroup
+                val rows = (0 until metrics.childCount).map { metrics.getChildAt(it) }.filter { it.isClickable }
+                expandedTags = rows.map { it.tag }
+                assertTrue(rows.size > 5); assertEquals(rows.size, expandedTags.distinct().size)
+                assertFalse(all.any { it.tag == "health-overview-expanded-records" })
+                assertEquals(1, rows.count { it.tag.toString().startsWith("health-overview-WEIGHT-") })
+                assertTrue(all.any { it.tag == "health-overview-activity" })
+                rows.single { it.tag.toString().startsWith("health-overview-WEIGHT-") }.performClick()
                 activity.onBackPressed()
             }
-            await(screen, "health-expanded-next-page")
+            await(screen, "health-overview-all-records")
             screen.onActivity { activity ->
                 val all = views(activity.window.decorView)
-                val returned = all.mapNotNull { it.tag?.takeIf { tag -> tag.toString().startsWith("health-expanded-record-") } }.toSet()
-                assertEquals(secondIds, returned)
+                val metrics = all.single { it.tag == "health-overview-metrics" } as ViewGroup
+                val returned = (0 until metrics.childCount).map { metrics.getChildAt(it) }.filter { it.isClickable }
+                assertEquals(expandedTags, returned.map { it.tag })
+                assertTrue(activity.measurementRecordsExpanded)
                 all.single { it.tag == "health-overview-all-records" }.performClick()
-                assertFalse(views(activity.window.decorView).any { it.tag == "health-overview-expanded-records" })
+                assertEquals(5, (0 until metrics.childCount).count { metrics.getChildAt(it).isClickable })
+                assertFalse(activity.measurementRecordsExpanded)
             }
+        }
+        HealthRecordStore(context, names.records).use { store ->
+            val ids = mutableSetOf<String>(); var cursor: HealthPageCursor? = null
+            do {
+                val page = store.careHistory(now + 1, HealthMetric.WEIGHT, cursor)
+                ids += page.records.map { it.id }; cursor = page.next
+            } while (cursor != null)
+            assertEquals(65, ids.size)
         }
     }
     @Test fun selectedSamplingMonthAndAbnormalFilterRemainOnTheOverview() = fixture { names ->
@@ -241,11 +247,11 @@ class HealthComparisonUiDeviceTest {
             store.save(HealthDraft(HealthMetric.WEIGHT, mapOf("weight" to "70"), "kg", now - 2000))
         }
         ActivityScenario.launch<HealthCenterActivity>(Intent(context, HealthCenterActivity::class.java).putHealthNavigationFixture(names)).use { screen ->
-            await(screen, "health-overview-all-records")
+            await(screen, "health-overview-metrics")
             screen.onActivity { it.setMeasurementPeriod(HealthMeasurementPeriod.of(HealthMeasurementPeriodKind.MONTH, day)) }
             await(screen, "health-measurement-abnormal-filter")
             screen.onActivity { (views(it.window.decorView).single { v -> v.tag == "health-measurement-abnormal-filter" } as android.widget.CheckBox).isChecked = true }
-            await(screen, "health-overview-all-records")
+            await(screen, "health-overview-metrics")
             screen.onActivity { activity ->
                 assertEquals(HealthMeasurementPeriodKind.MONTH, activity.measurementPeriod?.kind)
                 val metricList = views(activity.window.decorView).single { it.tag == "health-overview-metrics" }
@@ -253,5 +259,38 @@ class HealthComparisonUiDeviceTest {
                 assertFalse(views(metricList).any { it.tag?.toString()?.startsWith("health-overview-WEIGHT-") == true })
             }
         }
+    }
+    @Test fun abnormalFilterNeverIncludesTheNormalLatestValueFromAnEarlierAbnormalSeries() = fixture { names ->
+        val now = System.currentTimeMillis()
+        HealthRecordStore(context, names.records).use { store ->
+            store.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "6.3"), "mmol/L", now - 2000, "fasting", reference = "4-6"))
+            store.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "5.1"), "mmol/L", now - 1000, "fasting", reference = "4-6"))
+            store.save(HealthDraft(HealthMetric.LDL, mapOf("ldl" to "3.45"), "mmol/L", now - 1000, reference = "<3.37"))
+            store.save(HealthDraft(HealthMetric.WEIGHT, mapOf("weight" to "70"), "kg", now - 1000))
+        }
+        ActivityScenario.launch<HealthCenterActivity>(Intent(context, HealthCenterActivity::class.java).putHealthNavigationFixture(names)).use { screen ->
+            await(screen, "health-overview-metrics")
+            screen.onActivity { it.setMeasurementPeriod(HealthMeasurementPeriod.of(HealthMeasurementPeriodKind.MONTH, LocalDate.now())) }
+            await(screen, "health-overview-value-GLUCOSE")
+            screen.onActivity { activity ->
+                assertTrue((views(activity.window.decorView).single { it.tag == "health-overview-value-GLUCOSE" } as TextView).text.contains("5.1"))
+                activity.filterMeasurementAbnormal(true)
+            }
+            await(screen, "health-overview-metrics")
+            fun assertOnlyLdl() = screen.onActivity { activity ->
+                val all = views(activity.window.decorView)
+                val metrics = all.single { it.tag == "health-overview-metrics" } as ViewGroup
+                val rows = (0 until metrics.childCount).map { metrics.getChildAt(it) }.filter { it.isClickable }
+                assertEquals(1, rows.size); assertTrue(rows.single().tag.toString().startsWith("health-overview-LDL-"))
+                assertFalse(all.any { it.tag == "health-overview-all-records" })
+                assertFalse(all.any { it.tag == "health-overview-value-GLUCOSE" || it.tag == "health-overview-value-WEIGHT" })
+            }
+            assertOnlyLdl()
+            screen.recreate(); await(screen, "health-overview-metrics"); assertOnlyLdl()
+            screen.moveToState(Lifecycle.State.CREATED)
+            screen.onActivity { assertEquals(0, it.body.childCount) }
+            screen.moveToState(Lifecycle.State.RESUMED); await(screen, "health-overview-metrics"); assertOnlyLdl()
+        }
+        HealthRecordStore(context, names.records).use { assertEquals(2, it.recentSelf(now + 1, 10, HealthMetric.GLUCOSE).size) }
     }
 }

@@ -72,7 +72,11 @@ class HealthCenterActivity : ComponentActivity() {
         measurementPeriod = period; measurementRecordsExpanded = false
         if (active) render()
     }
-    internal fun filterMeasurementAbnormal(value: Boolean) { measurementAbnormal = value; measurementRecordsExpanded = false; render() }
+    internal fun filterMeasurementAbnormal(value: Boolean) {
+        if (measurementAbnormal == value) return
+        measurementAbnormal = value
+        if (active && route == "overview") overview.filterMeasurements()
+    }
     internal fun compareMeasurements() = startActivity(Intent(this, HealthMeasurementPeriodsActivity::class.java)
         .putHealthNavigationFixture(overviewNames).putExtra("health_period", measurementPeriod?.key))
     internal fun metricTrend(record: HealthObservation) = startActivity(healthComparableTrendIntent(this, overviewNames, record))
