@@ -20,9 +20,9 @@ internal class HealthActivityComparisonChart(context: Context, private val data:
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val left = 44 * density; val right = width - 10 * density
-        val top = 14 * density; val bottom = height - 28 * density
+        val top = 14 * density; val bottom = height - 10 * density
         val divisor = if (kind == HealthActivityKind.CYCLING) 60_000.0 else 1.0
-        val maximum = ((data.current + data.previous).filterNotNull().maxOrNull()?.toDouble() ?: 1.0).coerceAtLeast(divisor)
+        val maximum = ((data.current + data.previous).filterNotNull().maxOrNull()?.toDouble() ?: 1.0).coerceAtLeast(3 * divisor)
         paint.textSize = 11 * resources.displayMetrics.scaledDensity
         for (tick in 0..3) {
             val y = bottom - (bottom - top) * tick / 3
@@ -43,9 +43,5 @@ internal class HealthActivityComparisonChart(context: Context, private val data:
             }
         }
         plot(data.previous, HealthTrendChart.BLUE); plot(data.current, context.getColor(R.color.health_overview_green))
-        paint.color = context.getColor(R.color.text_secondary)
-        canvas.drawText(data.first.toString(), left, height - 6 * density, paint)
-        paint.textAlign = Paint.Align.RIGHT
-        canvas.drawText(data.last.toString(), right, height - 6 * density, paint); paint.textAlign = Paint.Align.LEFT
     }
 }

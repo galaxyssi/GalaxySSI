@@ -12,7 +12,7 @@
     <string name="health_activity_missing">Today is excluded. Missing dates stay blank, not zero. Recorded totals may cover only part of a day. History is retained; older days absent from previous versions cannot be reconstructed.</string>
     <string name="health_activity_steps_unit">steps</string>
     <string name="health_activity_minutes">min</string>
-    <string name="health_activity_dates_invalid">Choose 1–366 completed days ending before today.</string>
+    <string name="health_activity_dates_invalid">Choose 1–366 days ending on or before today.</string>
     <string name="health_measurement_batches">Measurement batches</string>
     <string name="health_measurement_latest">Latest results ▾</string>
     <string name="health_measurement_selected">Selected batch ▾</string>

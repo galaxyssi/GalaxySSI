@@ -57,7 +57,7 @@ class HealthComparisonUiDeviceTest {
     @Test fun activityComparisonLoadsAndClearsDecryptedViewsInBackground() = fixture { names ->
         HealthActivityHistoryStore(context, names.activity).use { store ->
             repeat(35) { day ->
-                val date = LocalDate.now().minusDays(day.toLong() + 1)
+                val date = LocalDate.now().minusDays(day.toLong())
                 if (day != 5) store.save(HealthActivityKind.STEPS, date, 2500L + (day % 6) * 700L)
                 store.save(HealthActivityKind.CYCLING, date, 600_000L + (day % 4) * 300_000L)
             }
@@ -74,6 +74,61 @@ class HealthComparisonUiDeviceTest {
             screen.onActivity { activity -> assertFalse(views(activity.window.decorView).any { it.tag == "health-activity-chart" }) }
             screen.moveToState(Lifecycle.State.RESUMED); await(screen, "health-activity-chart")
         }
+    }
+    @Test fun activityPresetsIncludeTodayAndBothKindsUseTheCompactLayout() = fixture { names ->
+        HealthActivityHistoryStore(context, names.activity).use { store ->
+            store.save(HealthActivityKind.STEPS, LocalDate.now(), 1234)
+            store.save(HealthActivityKind.CYCLING, LocalDate.now(), 5_400_000)
+        }
+        ActivityScenario.launch<HealthActivityComparisonActivity>(Intent(context, HealthActivityComparisonActivity::class.java)
+            .putHealthNavigationFixture(names)).use { screen ->
+            listOf(R.string.health_trend_7, R.string.health_trend_30, R.string.health_trend_90).forEach { preset ->
+                await(screen, "health-activity-chart")
+                screen.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>()
+                    .single { it.text.toString() == activity.getString(preset) }.performClick() }
+                await(screen, "health-activity-chart")
+                screen.onActivity { activity ->
+                    val all = views(activity.window.decorView)
+                    val total = all.single { it.tag == "health-activity-total" } as TextView
+                    assertEquals(java.text.NumberFormat.getIntegerInstance().format(1234) + " " + activity.getString(R.string.health_activity_steps_unit), total.text.toString())
+                    assertCompactActivityLayout(activity, all)
+                }
+            }
+            screen.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>()
+                .single { it.text.toString() == activity.getString(R.string.health_cycling_today) }.performClick() }
+            await(screen, "health-activity-chart")
+            screen.onActivity { activity ->
+                val all = views(activity.window.decorView)
+                val total = all.single { it.tag == "health-activity-total" } as TextView
+                assertEquals("90 " + activity.getString(R.string.health_activity_minutes), total.text.toString())
+                assertCompactActivityLayout(activity, all)
+            }
+            screen.recreate(); await(screen, "health-activity-chart")
+            screen.onActivity { activity ->
+                val total = views(activity.window.decorView).single { it.tag == "health-activity-total" } as TextView
+                assertEquals("90 " + activity.getString(R.string.health_activity_minutes), total.text.toString())
+            }
+        }
+    }
+    @Test fun emptyActivityHistoryShowsUnknownInsteadOfZeroForBothKinds() = fixture { names ->
+        ActivityScenario.launch<HealthActivityComparisonActivity>(Intent(context, HealthActivityComparisonActivity::class.java)
+            .putHealthNavigationFixture(names)).use { screen ->
+            listOf(R.string.health_overview_today_steps, R.string.health_cycling_today).forEach { label ->
+                await(screen, "health-activity-chart")
+                screen.onActivity { activity -> views(activity.window.decorView).filterIsInstance<TextView>()
+                    .single { it.text.toString() == activity.getString(label) }.performClick() }
+                await(screen, "health-activity-chart")
+                screen.onActivity { activity -> assertEquals("\u2014", (views(activity.window.decorView)
+                    .single { it.tag == "health-activity-total" } as TextView).text.toString()) }
+            }
+        }
+    }
+    private fun assertCompactActivityLayout(activity: Activity, all: List<View>) {
+        val texts = all.filterIsInstance<TextView>().map { it.text.toString() }
+        listOf(R.string.health_activity_current, R.string.health_activity_previous, R.string.health_activity_missing,
+            R.string.health_trend_chart_data).forEach { assertFalse(texts.contains(activity.getString(it))) }
+        assertFalse(texts.any { Regex(".*\\d{4}-\\d{2}-\\d{2}.*").matches(it) })
+        assertTrue(all.single { it.tag == "health-activity-chart" }.isClickable)
     }
     @Test fun emptyPeriodComparisonDoesNotShowInventedMeasurements() = fixture { names ->
         ActivityScenario.launch<HealthMeasurementPeriodsActivity>(Intent(context, HealthMeasurementPeriodsActivity::class.java)
