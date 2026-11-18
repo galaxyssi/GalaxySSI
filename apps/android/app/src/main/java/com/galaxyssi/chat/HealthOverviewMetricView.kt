@@ -108,6 +108,7 @@ internal class HealthOverviewMetricView(private val activity: HealthCenterActivi
             }
         })
         if (detail.recent.isNotEmpty()) {
+            record?.let { observed -> content.addView(detailLink(R.string.health_measurement_continuous) { activity.metricTrend(observed) }) }
             ui.add(content, ui.text(label(R.string.health_overview_recent_records), 15f, bold = true), 14)
             detail.recent.forEach { previous ->
                 content.addView(ui.line().apply {

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_activity_comparison">Activity comparison</string>
+    <string name="health_activity_previous_dates">Previous period: %1$s — %2$s</string>
+    <string name="health_activity_total">Recorded total</string>
+    <string name="health_activity_coverage">%1$d / %2$d days recorded</string>
+    <string name="health_activity_average">Daily average on recorded days: %1$s</string>
+    <string name="health_activity_no_pairs">No matching recorded days to compare</string>
+    <string name="health_activity_paired">%1$d matched days · current %2$s · previous %3$s · change %4$s</string>
+    <string name="health_activity_current">Current period</string>
+    <string name="health_activity_previous">Previous period</string>
+    <string name="health_activity_missing">Today is excluded. Missing dates stay blank, not zero. Recorded totals may cover only part of a day. History is retained; older days absent from previous versions cannot be reconstructed.</string>
+    <string name="health_activity_steps_unit">steps</string>
+    <string name="health_activity_minutes">min</string>
+    <string name="health_activity_dates_invalid">Choose 1–366 completed days ending before today.</string>
+    <string name="health_measurement_batches">Measurement batches</string>
+    <string name="health_measurement_latest">Latest results ▾</string>
+    <string name="health_measurement_selected">Selected batch ▾</string>
+    <string name="health_measurement_compare">Batch comparison</string>
+    <string name="health_measurement_imported">Imported %1$s</string>
+    <string name="health_measurement_reports">%1$d reports</string>
+    <string name="health_measurement_first_page">Latest batches</string>
+    <string name="health_measurement_batch_a">Batch A</string>
+    <string name="health_measurement_batch_b">Compare with batch B</string>
+    <string name="health_measurement_clear_comparison">Remove comparison</string>
+    <string name="health_measurement_choose_report">Report selection</string>
+    <string name="health_measurement_all_reports">All reports in batch</string>
+    <string name="health_measurement_abnormal">Outside reported range only</string>
+    <string name="health_measurement_scope_note">Each metric uses its latest sampling time within the selection. A batch can contain different sampling dates. Changes are not a clinical judgment.</string>
+    <string name="health_measurement_not_comparable">No numerical comparison: unit, collection condition or source comparability is unconfirmed.</string>
+    <string name="health_measurement_condition">Collection condition</string>
+    <string name="health_measurement_continuous">Continuous trend</string>
+    <string name="health_measurement_report_range">Report range: %1$s</string>
+    <string name="health_measurement_month">1 month</string>
+    <string name="health_measurement_quarter">3 months</string>
+    <string name="health_measurement_half_year">6 months</string>
+    <string name="health_measurement_all">All</string>
+    <string name="health_measurement_latest_point">Latest actual reading in each interval</string>
+    <string name="health_measurement_report_points">Report readings are shown as separate points, not connected or averaged across unverified laboratory methods. Dense intervals show their latest actual reading.</string>
+    <string name="health_measurement_trend_note">Compare like units and collection conditions. Unspecified conditions or different laboratory methods may not be comparable.</string>
+</resources>

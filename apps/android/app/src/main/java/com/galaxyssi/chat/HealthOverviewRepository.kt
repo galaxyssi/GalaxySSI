@@ -15,6 +15,7 @@ internal data class HealthOverviewDatabases(val fixture: String? = null) {
     val profile get() = fixture?.let { "health-profile-test-$it.db" } ?: HealthProfileStore.DEFAULT_DB
     val prefs get() = fixture?.let { "health-overview-test-$it" } ?: "health-overview"
     val backups get() = fixture?.let { "health-backup-history-test-$it.db" } ?: "health_backup_history_v1.db"
+    val activity get() = fixture?.let { "health-activity-test-$it.db" } ?: HealthActivityHistoryStore.DEFAULT_DB
     fun originalRoot(context: Context) = File(context.filesDir, fixture?.let { "health-overview-test-$it" } ?: "health-originals-v1")
 }
 
@@ -42,6 +43,19 @@ internal data class HealthOverviewSnapshot(val time: Long, val zone: ZoneId, val
 
 internal object HealthOverviewRepository {
     private val candidates = HealthMetric.entries.toSet() - setOf(HealthMetric.TEMPERATURE, HealthMetric.OXYGEN_SATURATION)
+
+    fun batch(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, snapshot: HealthOverviewSnapshot,
+        key: String): HealthOverviewSnapshot = HealthPrivacyStore.track(context,
+        HealthAccessScope(HealthAccessPurpose.OVERVIEW, HealthMetric.entries.toSet()), names.privacy) {
+        HealthOriginalStore(context, names.originals, names.originalRoot(context)).use { originals ->
+            val selected = HealthMeasurementBatches(originals).load(records, key).latest
+            val items = selected.values.filter { it.draft.metric in candidates && it.draft.metric != HealthMetric.STEPS }.map { record ->
+                HealthOverviewMetric(record.draft.metric, record, HealthOverviewPolicy.freshness(record.draft.metric, record.draft.measuredAt,
+                    snapshot.time, snapshot.zone), listOfNotNull(HealthOverviewRangePolicy.report(record)), showAdultReference = false)
+            }.sortedWith(compareByDescending<HealthOverviewMetric> { it.outsideRange }.thenBy { it.metric.ordinal })
+            snapshot.copy(metrics = snapshot.metrics.filter { it.metric == HealthMetric.STEPS } + items)
+        }
+    }
 
     fun metricDetail(context: Context, records: HealthRecordStore, names: HealthOverviewDatabases, metric: HealthMetric,
         now: Long, zone: ZoneId): HealthOverviewMetricDetail {

@@ -27,6 +27,7 @@ internal object HealthPhoneStepUpdates {
 }
 
 internal class HealthPhoneStepStore(context: Context) {
+    private val context = context.applicationContext
     private val prefs = context.getSharedPreferences("health-phone-step-counter", Context.MODE_PRIVATE)
     private val aad = "health-phone-step-counter|v1".toByteArray()
     val enabled get() = prefs.getBoolean("enabled", false)
@@ -45,10 +46,17 @@ internal class HealthPhoneStepStore(context: Context) {
     }
 
     fun save(value: HealthPhoneStepLedger, enabled: Boolean) {
+        archive(value)
         val plain = ByteBuffer.allocate(28).putLong(value.day.toEpochDay()).putLong(value.total)
             .putLong(value.counter ?: -1).putInt(value.boot).array()
         val encrypted = try { AgentStorageCipher.encryptBinary(plain, aad) } finally { plain.fill(0) }
         prefs.edit().putString("checkpoint", Base64.encodeToString(encrypted, Base64.NO_WRAP))
             .putBoolean("enabled", enabled).apply()
+    }
+
+    fun archive(value: HealthPhoneStepLedger) {
+        if (value.counter != null || value.total > 0) HealthActivityHistoryStore(context).use {
+            it.save(HealthActivityKind.STEPS, value.day, value.total)
+        }
     }
 }

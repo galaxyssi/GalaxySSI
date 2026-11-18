@@ -49,6 +49,26 @@ class HealthCenterActivity : ComponentActivity() {
     private val overviewNames by lazy { intent.healthNavigationDatabases() }
     private val records by lazy { HealthRecordStore(applicationContext, overviewNames.records) }
     private val overview by lazy { HealthOverviewView(this, overviewNames) }
+    internal var measurementBatch = ""
+        private set
+    private val batchPicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            measurementBatch = result.data?.getStringExtra("health_batch").orEmpty()
+            if (active) render()
+        }
+    }
+    internal fun chooseMeasurementBatch() {
+        if (measurementBatch.isNotEmpty()) showHealthDialog(AlertDialog.Builder(this)
+            .setItems(arrayOf(getString(R.string.health_measurement_latest), getString(R.string.health_measurement_batches))) { _, index ->
+                if (index == 0) { measurementBatch = ""; render() } else launchBatchPicker()
+            }.setNegativeButton(android.R.string.cancel, null).create())
+        else launchBatchPicker()
+    }
+    private fun launchBatchPicker() = batchPicker.launch(Intent(this, HealthMeasurementBatchesActivity::class.java)
+        .putHealthNavigationFixture(overviewNames).putExtra("health_select_batch", true).putExtra("health_batch", measurementBatch))
+    internal fun compareMeasurements() = startActivity(Intent(this, HealthMeasurementBatchesActivity::class.java)
+        .putHealthNavigationFixture(overviewNames).putExtra("health_batch", measurementBatch))
+    internal fun metricTrend(record: HealthObservation) = startActivity(healthComparableTrendIntent(this, overviewNames, record))
     private val cycling = HealthCyclingView(this)
     internal fun cyclingTile() = cycling.tile(overviewNames.fixture != null)
     private val recordCenter by lazy { HealthRecordCenterView(this, overviewNames) }
@@ -74,6 +94,7 @@ class HealthCenterActivity : ComponentActivity() {
     private val overviewPrivacy = object : android.database.ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
             if (active && (route == "overview" || route == "overview_metric")) {
+                measurementBatch = ""
                 sensitiveDialogs.toList().forEach { it.dismiss() }
                 main.removeCallbacks(reloadOverview)
                 render()
@@ -99,6 +120,7 @@ class HealthCenterActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        measurementBatch = savedInstanceState?.getString("measurementBatch").orEmpty()
         window.statusBarColor = getColor(R.color.page_bg)
         window.navigationBarColor = getColor(R.color.page_bg)
         if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
@@ -177,6 +199,7 @@ class HealthCenterActivity : ComponentActivity() {
         super.onDestroy()
     }
     override fun onSaveInstanceState(out: Bundle) {
+        out.putString("measurementBatch", measurementBatch)
         saveDraft()
         out.putString("route", route); out.putInt("metric", selected.ordinal); out.putString("record", recordId)
         if (route == "detail" && undoDeletionRevision > 0) out.putInt("undoDeletionRevision", undoDeletionRevision)
@@ -341,7 +364,10 @@ class HealthCenterActivity : ComponentActivity() {
         content.addView(ui.text(getString(R.string.health_loading), 14f, muted = true))
         val now = System.currentTimeMillis()
         val zone = ZoneId.systemDefault()
-        query({ store -> HealthOverviewRepository.load(applicationContext, store, overviewNames, now, zone) }) { snapshot ->
+        val batch = measurementBatch
+        query({ store -> HealthOverviewRepository.load(applicationContext, store, overviewNames, now, zone).let {
+            if (batch.isEmpty()) it else HealthOverviewRepository.batch(applicationContext, store, overviewNames, it, batch)
+        } }) { snapshot ->
             overview.show(content, snapshot)
             observePhoneSteps()
             val position = overviewScroll

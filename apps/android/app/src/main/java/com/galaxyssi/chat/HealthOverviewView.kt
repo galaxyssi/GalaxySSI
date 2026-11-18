@@ -41,6 +41,9 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
                 addView(cyclingTile, LinearLayout.LayoutParams(0, -1, 1f))
             }
         }, 12)
+        ui.add(content, ui.row(label(R.string.health_activity_comparison)) {
+            activity.startActivity(Intent(activity, HealthActivityComparisonActivity::class.java).putHealthNavigationFixture(names))
+        }.apply { tag = "health-activity-comparison" }, 0)
         if (!snapshot.hasRecords) {
             ui.add(content, ui.text(label(R.string.health_no_records), 12f, muted = true).apply {
                 tag = "health-overview-empty"
@@ -59,12 +62,26 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
                 setOnClickListener { activity.open("records") }
             })
         }, 6)
+        ui.add(content, ui.line().apply {
+            addView(ui.text(label(if (activity.measurementBatch.isEmpty()) R.string.health_measurement_latest else R.string.health_measurement_selected), 13f).apply {
+                minimumHeight = ui.dp(48); gravity = Gravity.CENTER_VERTICAL; isFocusable = true
+                tag = "health-measurement-batch-filter"; setOnClickListener { activity.chooseMeasurementBatch() }
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(ui.text(label(R.string.health_measurement_compare), 13f).apply {
+                minimumHeight = ui.dp(48); gravity = Gravity.CENTER_VERTICAL or Gravity.END; isFocusable = true
+                setTextColor(color(R.color.health_overview_green)); tag = "health-measurement-compare"
+                setOnClickListener { activity.compareMeasurements() }
+            })
+        })
         content.addView(ui.column().apply {
             tag = "health-overview-metrics"
             background = ui.background(stroke = color(R.color.separator), radius = 8)
             snapshot.metrics.filterNot { it.metric == HealthMetric.STEPS }.forEachIndexed { index, item ->
                 if (index > 0) addView(healthOverviewDivider(activity))
-                addView(metricView.row(item) { activity.open("overview_metric", item.metric) })
+                addView(metricView.row(item) {
+                    if (activity.measurementBatch.isNotEmpty() && item.record != null) activity.open("detail", item.metric, item.record.id)
+                    else activity.open("overview_metric", item.metric)
+                })
             }
         })
     }

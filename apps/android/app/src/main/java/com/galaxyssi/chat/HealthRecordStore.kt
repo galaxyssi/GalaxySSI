@@ -351,6 +351,8 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
 
     private fun trendChunk(spec: HealthTrendSpec, after: HealthPageCursor?, signal: android.os.CancellationSignal?,
                            platformCandidates: Boolean): HealthRecordPage {
+        if (spec.source.originalId.isNotBlank()) return originalPage(spec.source.originalId, after,
+            HealthRecordExportScope(setOf(spec.metric), spec.from.coerceAtLeast(0), spec.until, spec.zone.id, spec.source.originalId), signal)
         val conditions = arrayListOf("deleted=0", "metric=?", "measured_at>=?", "measured_at<?")
         val args = arrayListOf(spec.metric.name, spec.from.toString(), spec.until.toString())
         if (spec.source.originalId.isNotBlank()) { conditions += "original_id=?"; args += spec.source.originalId }
@@ -363,7 +365,8 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
                 while (cursor.moveToNext()) add(decode(cursor).also { record ->
                     check(record.draft.metric == spec.metric && record.draft.measuredAt >= spec.from && record.draft.measuredAt < spec.until)
                     if (spec.source.originalId.isNotBlank()) check(record.draft.evidence?.originalId == spec.source.originalId) { "Health trend original mismatch" }
-                    if (spec.source.bluetoothGroup.isNotEmpty()) check(spec.source.accepts(record)) { "Health trend device mismatch" }
+                    if (spec.source.bluetoothGroup.isNotEmpty()) check(record.source == "bluetooth" &&
+                        record.bluetoothGroup == spec.source.bluetoothGroup) { "Health trend device mismatch" }
                 })
             } }
         val visible = rows.take(PAGE_SIZE)

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_activity_comparison">活动对比</string>
+    <string name="health_activity_previous_dates">上一周期：%1$s — %2$s</string>
+    <string name="health_activity_total">已记录总量</string>
+    <string name="health_activity_coverage">已记录 %1$d / %2$d 天</string>
+    <string name="health_activity_average">有记录日期的日均：%1$s</string>
+    <string name="health_activity_no_pairs">暂无双方都有记录的日期可供对比</string>
+    <string name="health_activity_paired">对齐 %1$d 天 · 本期 %2$s · 上期 %3$s · 变化 %4$s</string>
+    <string name="health_activity_current">本期</string>
+    <string name="health_activity_previous">上期</string>
+    <string name="health_activity_missing">不含尚未结束的今天。缺失日期留空，不计为零；已记录总量可能只覆盖当天部分时间。活动历史持续保留，旧版未保存的日期无法补回。</string>
+    <string name="health_activity_steps_unit">步</string>
+    <string name="health_activity_minutes">分钟</string>
+    <string name="health_activity_dates_invalid">请选择今天之前的 1–366 个完整日期。</string>
+    <string name="health_measurement_batches">检测批次</string>
+    <string name="health_measurement_latest">最新结果 ▾</string>
+    <string name="health_measurement_selected">已选批次 ▾</string>
+    <string name="health_measurement_compare">批次对比</string>
+    <string name="health_measurement_imported">导入于 %1$s</string>
+    <string name="health_measurement_reports">%1$d 份报告</string>
+    <string name="health_measurement_first_page">最新批次</string>
+    <string name="health_measurement_batch_a">检测批次 A</string>
+    <string name="health_measurement_batch_b">对比检测批次 B</string>
+    <string name="health_measurement_clear_comparison">取消对比</string>
+    <string name="health_measurement_choose_report">选择报告</string>
+    <string name="health_measurement_all_reports">本批全部报告</string>
+    <string name="health_measurement_abnormal">仅看超出报告范围的指标</string>
+    <string name="health_measurement_scope_note">每项指标显示所选范围内采样时间最新的记录，同一批次可含不同采样日期。数值变化不代表病情判断。</string>
+    <string name="health_measurement_not_comparable">暂不计算差值：单位、采样条件或来源可比性尚未确认。</string>
+    <string name="health_measurement_condition">采样条件</string>
+    <string name="health_measurement_continuous">连续变化趋势</string>
+    <string name="health_measurement_report_range">报告范围：%1$s</string>
+    <string name="health_measurement_month">1 个月</string>
+    <string name="health_measurement_quarter">3 个月</string>
+    <string name="health_measurement_half_year">6 个月</string>
+    <string name="health_measurement_all">全部</string>
+    <string name="health_measurement_latest_point">每个区间最新的实际记录</string>
+    <string name="health_measurement_report_points">报告结果以独立点展示；检测方法尚未确认一致时，不直接连线或求平均。密集区间显示其中采样时间最新的实际记录。</string>
+    <string name="health_measurement_trend_note">请对比相同单位和采样条件；条件未注明或实验室检测方法不同时，结果未必可比。</string>
+</resources>

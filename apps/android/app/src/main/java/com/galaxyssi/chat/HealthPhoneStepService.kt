@@ -48,6 +48,7 @@ class HealthPhoneStepService : Service(), SensorEventListener {
         if (intent?.action == STOP) {
             worker.post {
                 detach()
+                ledger?.let { runCatching { store.archive(it) } }
                 ledger = (ledger ?: runCatching { store.load() }.getOrNull() ?: HealthPhoneStepLedger(LocalDate.now()))
                     .today(LocalDate.now()).copy(counter = null)
                 val saved = persist(false)
@@ -73,6 +74,7 @@ class HealthPhoneStepService : Service(), SensorEventListener {
             return
         }
         val restored = runCatching { store.load() }
+        restored.getOrNull()?.let { runCatching { store.archive(it) } }
         boot = Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, -1)
         val today = LocalDate.now()
         ledger = if (restored.isFailure) null else (restored.getOrNull() ?: HealthPhoneStepLedger(today)).today(today)
@@ -97,6 +99,7 @@ class HealthPhoneStepService : Service(), SensorEventListener {
         val ageMillis = ((SystemClock.elapsedRealtimeNanos() - event.timestamp).coerceAtLeast(0L)) / 1_000_000
         val updated = current.observe(raw, boot, now.atZone(zone).toLocalDate(), now.minusMillis(ageMillis).atZone(zone).toLocalDate())
         if (updated == current) return
+        if (updated.day != current.day) runCatching { store.archive(current) }
         ledger = updated
         publish(true)
         if (!pendingWrite) {
