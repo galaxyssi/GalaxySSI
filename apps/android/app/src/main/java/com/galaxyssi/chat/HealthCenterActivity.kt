@@ -54,23 +54,66 @@ class HealthCenterActivity : ComponentActivity() {
     internal var measurementAbnormal = false
         private set
     internal var measurementRecordsExpanded = false
+    private var overviewBase: HealthOverviewSnapshot? = null
+    private var displayedMeasurementPeriod: HealthMeasurementPeriod? = null
+    @Volatile private var measurementGeneration = 0
+    @Volatile private var measurementPickerGeneration = 0
     internal fun chooseMeasurementPeriod() {
+        val picker = ++measurementPickerGeneration
+        val current = { picker == measurementPickerGeneration }
         showHealthDialog(AlertDialog.Builder(this).setItems(arrayOf(getString(R.string.health_measurement_latest),
             getString(R.string.health_period_weeks), getString(R.string.health_period_months))) { _, index ->
+            if (!current()) return@setItems
             if (index == 0) setMeasurementPeriod(null) else {
                 val kind = HealthMeasurementPeriodKind.entries[index - 1]
                 showHealthPeriodPicker(this, R.string.health_period_choose, ::showHealthDialog, { before, done ->
-                    query({ store -> HealthPrivacyStore.track(applicationContext,
-                        HealthAccessScope(HealthAccessPurpose.OVERVIEW, HealthMeasurementPeriods.metrics), overviewNames.privacy) {
-                        HealthMeasurementPeriods.page(store, kind, System.currentTimeMillis(), ZoneId.systemDefault(), before)
-                    } }, done)
-                }, ::setMeasurementPeriod)
+                    queryCancellable({ store, check ->
+                        val guard = { check(); if (!current()) throw java.util.concurrent.CancellationException() }
+                        guard()
+                        val result = runCatching { HealthPrivacyStore.track(applicationContext,
+                            HealthAccessScope(HealthAccessPurpose.OVERVIEW, HealthMeasurementPeriods.metrics), overviewNames.privacy) {
+                            HealthMeasurementPeriods.page(store, kind, System.currentTimeMillis(), ZoneId.systemDefault(), before, guard)
+                        } }
+                        guard(); result.getOrThrow()
+                    }) { if (current()) done(it) }
+                }, { if (current()) setMeasurementPeriod(it) })
             }
         }.setNegativeButton(android.R.string.cancel, null).create())
     }
     internal fun setMeasurementPeriod(period: HealthMeasurementPeriod?) {
-        measurementPeriod = period; measurementRecordsExpanded = false
-        if (active) render()
+        measurementPickerGeneration++
+        if (measurementPeriod == period) return
+        measurementPeriod = period
+        if (active && route == "overview") refreshOverviewMeasurements()
+    }
+    private fun refreshOverviewMeasurements() {
+        val base = overviewBase ?: return
+        val period = measurementPeriod
+        val token = ++measurementGeneration
+        val pageToken = generation
+        overview.setMeasurementsPending(true)
+        worker.execute {
+            val current = { active && !isDestroyed && pageToken == generation && token == measurementGeneration }
+            val check = { if (!current()) throw java.util.concurrent.CancellationException() }
+            val result = runCatching {
+                check()
+                HealthOverviewRepository.measurements(applicationContext, records, overviewNames, base, period, check).also { check() }
+            }
+            main.post {
+                if (!current()) return@post
+                result.fold({ snapshot ->
+                    displayedMeasurementPeriod = period
+                    measurementRecordsExpanded = false
+                    overview.updateMeasurements(snapshot)
+                }, { failure ->
+                    if (failure is java.util.concurrent.CancellationException) return@post
+                    measurementPeriod = displayedMeasurementPeriod
+                    overview.setMeasurementsPending(false)
+                    Toast.makeText(this, if (failure is HealthAccessBlocked) R.string.health_privacy_trend_blocked
+                        else R.string.health_storage_error, Toast.LENGTH_LONG).show()
+                })
+            }
+        }
     }
     internal fun filterMeasurementAbnormal(value: Boolean) {
         if (measurementAbnormal == value) return
@@ -379,10 +422,13 @@ class HealthCenterActivity : ComponentActivity() {
         val now = System.currentTimeMillis()
         val zone = ZoneId.systemDefault()
         val period = measurementPeriod
-        queryCancellable({ store, check -> HealthOverviewRepository.load(applicationContext, store, overviewNames, now, zone).let {
-            HealthOverviewRepository.measurements(applicationContext, store, overviewNames, it, period, check)
-        } }) { snapshot ->
-            overview.show(content, snapshot)
+        queryCancellable({ store, check -> HealthOverviewRepository.load(applicationContext, store, overviewNames, now, zone).let { base ->
+            base to HealthOverviewRepository.measurements(applicationContext, store, overviewNames, base, period, check)
+        } }) { (base, snapshot) ->
+            overviewBase = base
+            displayedMeasurementPeriod = period
+            overview.show(content, snapshot, period)
+            if (period != measurementPeriod) refreshOverviewMeasurements()
             observePhoneSteps()
             val position = overviewScroll
             if (position > 0) scroll.post { if (active && scroll.parent === body) scroll.scrollTo(0, position) }
@@ -424,6 +470,10 @@ class HealthCenterActivity : ComponentActivity() {
     }
 
     private fun clearTodaySteps() {
+        measurementGeneration++
+        measurementPickerGeneration++
+        overviewBase = null
+        displayedMeasurementPeriod = null
         stepJob?.cancel()
         stepJob = null
         phoneSteps = null
