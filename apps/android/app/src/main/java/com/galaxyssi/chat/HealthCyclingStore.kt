@@ -11,6 +11,7 @@ internal data class HealthCyclingState(
 )
 
 internal class HealthCyclingStore(context: Context) {
+    private val context = context.applicationContext
     private val prefs = context.getSharedPreferences("health-cycling", Context.MODE_PRIVATE)
     private val aad = "health-cycling|auto|v1".toByteArray()
     val enabled get() = prefs.getBoolean("enabled", false)
@@ -41,6 +42,7 @@ internal class HealthCyclingStore(context: Context) {
     }
 
     fun save(state: HealthCyclingState) {
+        archive(state)
         val ledger = state.ledger
         val plain = JSONObject().put("boot", ledger.boot).put("last", ledger.lastEvent)
             .put("days", JSONObject().apply { ledger.days.forEach { (day, total) -> put(day.toString(), total) } })
@@ -60,6 +62,12 @@ internal class HealthCyclingStore(context: Context) {
         val encrypted = try { AgentStorageCipher.encryptBinary(plain, aad) } finally { plain.fill(0) }
         check(prefs.edit().putString("ledger", Base64.encodeToString(encrypted, Base64.NO_WRAP))
             .putBoolean("enabled", state.enabled).commit())
+    }
+
+    fun archive(state: HealthCyclingState) {
+        if (state.ledger.days.isNotEmpty()) HealthActivityHistoryStore(context).use { history ->
+            state.ledger.days.forEach { (day, total) -> history.save(HealthActivityKind.CYCLING, day, total) }
+        }
     }
 
     private fun JSONObject.readElapsed(key: String) = optLong(key, -1).takeIf { it >= 0 }

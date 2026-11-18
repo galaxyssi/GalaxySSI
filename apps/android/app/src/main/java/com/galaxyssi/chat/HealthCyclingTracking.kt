@@ -105,6 +105,7 @@ internal object HealthCyclingTracking {
 
     private fun restoreState(context: Context, store: HealthCyclingStore, resetUnknownBoot: Boolean = false): HealthCyclingState {
         val saved = store.load()
+        store.archive(saved)
         val ledger = saved.ledger.onBoot(boot(context), System.currentTimeMillis(), ZoneId.systemDefault(), resetUnknownBoot)
         return saved.copy(ledger = ledger).also { if (it != saved) store.save(it) }
     }

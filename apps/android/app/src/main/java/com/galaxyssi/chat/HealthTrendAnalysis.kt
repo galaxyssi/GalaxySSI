@@ -20,9 +20,9 @@ internal fun Intent.healthTrendAnalysisHandoff(): HealthTrendAnalysisHandoff? = 
 }.getOrNull()
 
 internal data class HealthTrendAnalysisFact(
-    val key: String, val first: HealthTrendPoint, val last: HealthTrendPoint, val pointCount: Int,
+    val key: String, val first: HealthTrendPoint, val last: HealthTrendPoint, val pointCount: Int, val comparable: Boolean = true,
 ) {
-    val delta get() = if (pointCount > 1) (last.value - first.value).stripTrailingZeros() else null
+    val delta get() = if (pointCount > 1 && comparable) (last.value - first.value).stripTrailingZeros() else null
 }
 
 internal data class HealthTrendAnalysisPreview(
@@ -75,7 +75,8 @@ internal object HealthTrendAnalysis {
         val grouped = trend.points.groupBy { it.field }
         val facts = trend.spec.metric.requiredFields.mapIndexedNotNull { index, field ->
             val points = grouped[field] ?: return@mapIndexedNotNull null
-            HealthTrendAnalysisFact("f${index + 1}", points.first(), points.last(), points.size)
+            HealthTrendAnalysisFact("f${index + 1}", points.first(), points.last(), points.size,
+                trend.spec.source.recordSource !in setOf("ocr", "table"))
         }
         return HealthTrendAnalysisPreview(HealthTrendAnalysisHandoff(trend.spec, trend.version), policyVersion,
             facts, trend.eligible, trend.numericDays, trend.reportedDays, trend.nonNumeric, trend.otherUnits)

@@ -28,6 +28,7 @@ class HealthTrendActivity : Activity() {
     private enum class Picker { ORIGINAL, BLUETOOTH, PLATFORM }
     private data class PointSelection(val spec: HealthTrendSpec, val version: String, val bucket: Int, val field: String)
     private val names by lazy { intent.healthNavigationDatabases() }
+    private val continuous by lazy { intent.getBooleanExtra("health_continuous", false) }
     private val ui by lazy { HealthCenterViews(this) }
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -57,11 +58,11 @@ class HealthTrendActivity : Activity() {
         super.onCreate(state)
         val restored = state?.let { Intent().apply { it.keySet().forEach { key -> when (val value = it.get(key)) {
             is String -> putExtra(key, value); is Boolean -> putExtra(key, value)
-        } } }.healthTrendSpec() }
+        } } }.healthTrendSpec() } ?: intent.healthTrendSpec()
         metric = restored?.metric ?: HealthMetric.entries.firstOrNull { it.name == intent.getStringExtra("health_metric") } ?: run { finish(); return }
         unit = restored?.unit ?: metric.units.first(); aggregation = restored?.aggregation ?: aggregation; source = restored?.source ?: source
-        restored?.let { first = it.first; last = it.last }; explicitUnit = state?.getBoolean("explicit_unit") ?: false
-        preset = state?.getInt("preset")?.coerceIn(0, 3) ?: 0; scrollY = state?.getInt("scroll") ?: 0
+        restored?.let { first = it.first; last = it.last }; explicitUnit = state?.getBoolean("explicit_unit") ?: (restored != null)
+        preset = state?.getInt("preset")?.coerceIn(0, 3) ?: if (continuous) 2 else if (restored == null) 0 else 3; scrollY = state?.getInt("scroll") ?: 0
         window.statusBarColor = getColor(R.color.page_bg); window.navigationBarColor = getColor(R.color.page_bg)
         if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         val root = ui.column().apply { setBackgroundColor(getColor(R.color.page_bg)) }
@@ -77,7 +78,8 @@ class HealthTrendActivity : Activity() {
         active = true; zone = ZoneId.systemDefault()
         contentResolver.registerContentObserver(HealthRecordStore.changes(this, names.records), false, observer); observing = true
         contentResolver.registerContentObserver(HealthPrivacyStore.changes(this, privacyDatabase), false, privacyObserver)
-        if (preset < 3) { last = LocalDate.now(zone); first = last.minusDays(listOf(7L, 30L, 90L)[preset] - 1) }
+        if (continuous) { last = LocalDate.now(zone); first = if (preset == 3) LocalDate.of(1970, 1, 1) else last.minusMonths(listOf(1L, 3L, 6L)[preset]) }
+        else if (preset < 3) { last = LocalDate.now(zone); first = last.minusDays(listOf(7L, 30L, 90L)[preset] - 1) }
         load()
     }
     override fun onPause() {
@@ -158,7 +160,8 @@ class HealthTrendActivity : Activity() {
         })
         ui.add(content, RadioGroup(this).apply {
             orientation = RadioGroup.HORIZONTAL; background = ui.background(getColor(R.color.button_soft), radius = 8); setPadding(ui.dp(3), ui.dp(3), ui.dp(3), ui.dp(3))
-            listOf(R.string.health_trend_7, R.string.health_trend_30, R.string.health_trend_90, R.string.health_trend_custom).forEachIndexed { index, title ->
+            (if (continuous) listOf(R.string.health_measurement_month, R.string.health_measurement_quarter, R.string.health_measurement_half_year, R.string.health_measurement_all)
+            else listOf(R.string.health_trend_7, R.string.health_trend_30, R.string.health_trend_90, R.string.health_trend_custom)).forEachIndexed { index, title ->
                 addView(RadioButton(this@HealthTrendActivity).apply {
                     id = View.generateViewId(); tag = "health-trend-period-$index"; text = getString(title); textSize = 13f; gravity = Gravity.CENTER; buttonDrawable = null; backgroundTintList = null
                     minimumHeight = ui.dp(48); setTextColor(getColor(R.color.text_primary)); setPadding(ui.dp(2), ui.dp(6), ui.dp(2), ui.dp(6))
@@ -166,20 +169,31 @@ class HealthTrendActivity : Activity() {
                         addState(intArrayOf(android.R.attr.state_checked), ui.background(getColor(R.color.surface_bg), radius = 6))
                         addState(intArrayOf(), ui.background(android.graphics.Color.TRANSPARENT, radius = 6))
                     }; isChecked = preset == index
-                    setOnClickListener { if (index == 3) { (parent as RadioGroup).let { it.check(it.getChildAt(preset).id) }; customDates() } else {
+                    setOnClickListener { if (continuous) {
+                        preset = index; last = LocalDate.now(zone); first = if (index == 3) LocalDate.of(1970, 1, 1) else last.minusMonths(listOf(1L, 3L, 6L)[index]); scrollY = 0; load()
+                    } else if (index == 3) { (parent as RadioGroup).let { it.check(it.getChildAt(preset).id) }; customDates() } else {
                         preset = index; last = LocalDate.now(zone); first = last.minusDays(listOf(7L, 30L, 90L)[index] - 1); scrollY = 0; load()
                     } }
                 }, RadioGroup.LayoutParams(0, -2, 1f))
             }
         }, 16)
         ui.add(content, ui.text("$first \u2014 $last \u00b7 ${zone.id}", 12f, muted = true), 8)
+        ui.add(content, ui.row(getString(R.string.health_measurement_condition), source.condition.takeIf(String::isNotEmpty)?.let {
+            getString(healthContextResource(it)) } ?: getString(R.string.health_trend_all_sources)) {
+            val options = listOf("") + (healthGlucoseConditions + listOf("resting", "after_exercise", "other")).distinct()
+            choose(R.string.health_measurement_condition, options.map { if (it.isEmpty()) getString(R.string.health_trend_all_sources) else getString(healthContextResource(it)) }) {
+                source = source.copy(condition = options[it]); load()
+            }
+        })
+        ui.add(content, ui.text(getString(R.string.health_measurement_trend_note), 12f, muted = true), 4)
         ui.add(content, ui.row(getString(R.string.health_trend_source), healthTrendSourceLabel(spec(), sourceName)) {
             chooseSources()
         }.apply { tag = "health-trend-source" }, 8)
         ui.add(content, ui.row(getString(R.string.health_unit), unit.ifBlank { getString(R.string.health_unit_not_applicable) }) {
             choose(R.string.health_unit, metric.selectableUnits.map { it.ifBlank { getString(R.string.health_unit_not_applicable) } }) { index -> unit = metric.selectableUnits[index]; explicitUnit = true; load() }
         })
-        ui.add(content, ui.row(getString(R.string.health_trend_aggregation), getString(aggregation.titleResource())) {
+        if (source.recordSource in setOf("ocr", "table")) ui.add(content, ui.text(getString(R.string.health_measurement_report_points), 12f, muted = true), 8)
+        else ui.add(content, ui.row(getString(R.string.health_trend_aggregation), getString(aggregation.titleResource())) {
             choose(R.string.health_trend_aggregation, HealthTrendAggregation.entries.map { getString(it.titleResource()) }) { aggregation = HealthTrendAggregation.entries[it]; load() }
         }.apply { tag = "health-trend-aggregation" })
         val focused = if (summary == null) null else pointSelection?.let { selection ->
@@ -309,7 +323,7 @@ class HealthTrendActivity : Activity() {
         val snapshot = version ?: return
         val selected = spec()
         pointSelection = PointSelection(selected, snapshot, point.bucket, point.field)
-        if (point.count == 1L && point.recordId.isNotBlank()) openRecord(point.recordId, point.recordRevision)
+        if ((point.count == 1L || selected.aggregation == HealthTrendAggregation.LATEST) && point.recordId.isNotBlank()) openRecord(point.recordId, point.recordRevision)
         else openRecords(selected.copy(first = point.first, last = point.last), point.field)
     }
     private fun openRecords(spec: HealthTrendSpec, field: String? = null) {
@@ -336,8 +350,8 @@ class HealthTrendActivity : Activity() {
         listOf(R.string.health_trend_all_sources, R.string.health_source_manual, R.string.health_trend_choose_original,
             R.string.health_trend_choose_bluetooth, R.string.health_trend_choose_platform).map(::getString)) { index ->
         when (index) {
-            0 -> { source = HealthTrendSource(); sourceName = ""; load() }
-            1 -> { source = HealthTrendSource(manualOnly = true); sourceName = ""; load() }
+            0 -> { source = HealthTrendSource(condition = source.condition, side = source.side); sourceName = ""; load() }
+            1 -> { source = HealthTrendSource(manualOnly = true, condition = source.condition, side = source.side); sourceName = ""; load() }
             2 -> sourcePicker(Picker.ORIGINAL)
             3 -> sourcePicker(Picker.BLUETOOTH)
             else -> sourcePicker(Picker.PLATFORM)
@@ -383,7 +397,7 @@ class HealthTrendActivity : Activity() {
                             Picker.ORIGINAL -> HealthTrendSource(originalId = ids[index])
                             Picker.BLUETOOTH -> HealthTrendSource(bluetoothGroup = ids[index])
                             Picker.PLATFORM -> HealthTrendSource(platformOrigin = ids[index])
-                        }
+                        }.copy(condition = source.condition, side = source.side)
                         sourceName = ""
                     }
                     if (ids.size > 30) builder.setPositiveButton(R.string.health_next_page, null)

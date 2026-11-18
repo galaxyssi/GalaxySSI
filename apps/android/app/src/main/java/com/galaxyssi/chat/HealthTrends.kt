@@ -8,23 +8,29 @@ import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.BitSet
 
-internal enum class HealthTrendAggregation { MEAN, MINIMUM, MAXIMUM }
+internal enum class HealthTrendAggregation { MEAN, MINIMUM, MAXIMUM, LATEST }
 internal const val HEALTH_CONNECT_AGGREGATE_ORIGIN = "health_connect.aggregate"
 private val healthTrendPlatformOrigin = Regex("[a-zA-Z0-9_.]{1,255}")
 internal fun validHealthTrendPlatformOrigin(origin: String) = healthTrendPlatformOrigin.matches(origin)
 
 internal data class HealthTrendSource(val originalId: String = "", val manualOnly: Boolean = false,
-    val bluetoothGroup: String = "", val platformOrigin: String = "") {
+    val bluetoothGroup: String = "", val platformOrigin: String = "", val condition: String = "",
+    val side: String = "", val recordSource: String = "") {
     init {
         require(originalId.isBlank() || java.util.UUID.fromString(originalId).toString() == originalId)
         require(bluetoothGroup.isEmpty() || isHealthBluetoothGroup(bluetoothGroup))
         require(platformOrigin.isEmpty() || validHealthTrendPlatformOrigin(platformOrigin))
         require(listOf(originalId.isNotBlank(), manualOnly, bluetoothGroup.isNotEmpty(), platformOrigin.isNotEmpty()).count { it } <= 1)
+        require(condition.isEmpty() || condition in healthGlucoseConditions || condition in setOf("resting", "after_exercise", "other"))
+        require(side in setOf("", "unspecified", "left", "right"))
+        require(recordSource.length <= 40 && recordSource.none(Char::isISOControl))
     }
     fun accepts(record: HealthObservation) = (!manualOnly || record.source == "manual") &&
         (originalId.isBlank() || record.draft.evidence?.originalId == originalId) &&
         (bluetoothGroup.isEmpty() || record.source == "bluetooth" && record.bluetoothGroup == bluetoothGroup) &&
-        (platformOrigin.isEmpty() || record.source == "health_connect" && record.platformOrigin == platformOrigin)
+        (platformOrigin.isEmpty() || record.source == "health_connect" && record.platformOrigin == platformOrigin) &&
+        (condition.isEmpty() || record.draft.condition == condition) && (side.isEmpty() || record.draft.side == side) &&
+        (recordSource.isEmpty() || record.source == recordSource)
 }
 internal data class HealthTrendSpec(val metric: HealthMetric, val first: LocalDate, val last: LocalDate,
     val zone: ZoneId, val unit: String, val aggregation: HealthTrendAggregation = HealthTrendAggregation.MEAN,
@@ -57,11 +63,13 @@ internal class HealthTrendBuilder(private val spec: HealthTrendSpec, private val
     private class Cell {
         var count = 0L; var sum = BigDecimal.ZERO; var min: BigDecimal? = null; var max: BigDecimal? = null
         var minRef: Ref? = null; var maxRef: Ref? = null; var firstDay = Int.MAX_VALUE; var lastDay = -1
+        var latestRef: Ref? = null; var latestValue: BigDecimal? = null
         fun add(value: BigDecimal, record: HealthObservation, day: Int) {
             val ref = Ref(record.id, record.draft.measuredAt, record.revision)
             fun newer(old: Ref?) = old == null || ref.time > old.time || ref.time == old.time && ref.id > old.id
             if (min == null || value < min || value.compareTo(min) == 0 && newer(minRef)) { min = value; minRef = ref }
             if (max == null || value > max || value.compareTo(max) == 0 && newer(maxRef)) { max = value; maxRef = ref }
+            if (newer(latestRef)) { latestRef = ref; latestValue = value }
             count++; sum += value; firstDay = minOf(firstDay, day); lastDay = maxOf(lastDay, day)
         }
     }
@@ -86,9 +94,9 @@ internal class HealthTrendBuilder(private val spec: HealthTrendSpec, private val
             var previous: Pair<Int, Cell>? = null
             bins.filterKeys { it.second == field }.entries.sortedBy { it.key.first }.map { (key, cell) ->
                 val index = key.first
-                val gap = previous?.let { (previousIndex, previousCell) ->
+                val gap = spec.source.recordSource in setOf("ocr", "table") || (previous?.let { (previousIndex, previousCell) ->
                     index != previousIndex + 1 || numeric.nextClearBit(previousCell.lastDay) < cell.firstDay
-                } ?: true
+                } ?: true)
                 previous = index to cell
                 val start = spec.first.plusDays(index.toLong() * bucketDays)
                 val end = minOf(spec.last, start.plusDays(bucketDays.toLong() - 1))
@@ -96,11 +104,13 @@ internal class HealthTrendBuilder(private val spec: HealthTrendSpec, private val
                     HealthTrendAggregation.MEAN -> cell.sum.divide(BigDecimal.valueOf(cell.count), MathContext.DECIMAL64)
                     HealthTrendAggregation.MINIMUM -> requireNotNull(cell.min)
                     HealthTrendAggregation.MAXIMUM -> requireNotNull(cell.max)
+                    HealthTrendAggregation.LATEST -> requireNotNull(cell.latestValue)
                 }
                 val ref = when (spec.aggregation) {
                     HealthTrendAggregation.MEAN -> if (cell.count == 1L) cell.minRef else null
                     HealthTrendAggregation.MINIMUM -> cell.minRef
                     HealthTrendAggregation.MAXIMUM -> cell.maxRef
+                    HealthTrendAggregation.LATEST -> cell.latestRef
                 }
                 HealthTrendPoint(index, field, start, end, value.stripTrailingZeros(), cell.count, ref?.id.orEmpty(), gap, ref?.revision ?: 0)
             }
