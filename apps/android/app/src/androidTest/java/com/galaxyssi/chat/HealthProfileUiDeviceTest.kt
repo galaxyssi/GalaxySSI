@@ -53,12 +53,83 @@ class HealthProfileUiDeviceTest {
         screen(name, HealthProfileActivity::class.java) { scenario ->
             await(scenario) { tag(it, "health-profile-save") != null }
             scenario.onActivity { activity ->
-                HealthProfileField.entries.forEach { assertNotNull(tag(activity, "health-profile-field-${it.name}")) }
+                listOf(HealthProfileField.NAME, HealthProfileField.BIRTH_DATE, HealthProfileField.REFERENCE_SEX,
+                    HealthProfileField.HEIGHT).forEach { assertNotNull(tag(activity, "health-profile-field-${it.name}")) }
+                assertNull(tag(activity, "health-profile-field-PHYSIOLOGICAL_CONTEXT"))
+                assertFalse(views(activity.window.decorView).filterIsInstance<android.widget.TextView>()
+                    .any { it.text.toString() == activity.getString(R.string.health_profile_stage) })
                 HealthBackgroundKind.entries.forEach { assertNotNull(tag(activity, "health-background-${it.name}")) }
                 assertFalse(requireNotNull(tag(activity, "health-profile-save")).isEnabled)
                 assertEquals(2, (activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as ViewGroup).childCount)
                 assertTrue(views(activity.window.decorView).filterIsInstance<android.widget.TextView>().any { it.text.toString() == activity.getString(R.string.health_profile_source) })
             }
+        }
+    }
+    @Test fun sexPickerOnlyOffersMaleAndFemaleAndRestoresTheSavedSelection(): Unit = fixture { name, store ->
+        screen(name, HealthProfileActivity::class.java) { scenario ->
+            listOf(HealthReferenceSex.MALE, HealthReferenceSex.FEMALE).forEachIndexed { index, sex ->
+                await(scenario) { tag(it, "health-profile-save") != null }
+                scenario.onActivity { activity ->
+                    tag(activity, "health-profile-field-REFERENCE_SEX")!!.performClick()
+                    val picker = dialog(activity)
+                    assertEquals(2, picker.listView.adapter.count)
+                    assertEquals(activity.getString(R.string.health_profile_male), picker.listView.adapter.getItem(0))
+                    assertEquals(activity.getString(R.string.health_profile_female), picker.listView.adapter.getItem(1))
+                    assertTrue(views(picker.window!!.decorView).filterIsInstance<android.widget.TextView>()
+                        .any { it.text.toString() == activity.getString(R.string.health_profile_sex) })
+                    picker.listView.performItemClick(null, index, index.toLong())
+                }
+                await(scenario) { tag(it, "health-profile-unsaved") != null }
+                scenario.onActivity { tag(it, "health-profile-save")!!.performClick() }
+                await(scenario) { tag(it, "health-profile-unsaved") == null }
+                assertEquals(sex.name, store.snapshot().cells.getValue(HealthProfileField.REFERENCE_SEX).value?.text)
+                scenario.recreate()
+                await(scenario) { tag(it, "health-profile-save") != null }
+                scenario.onActivity { activity ->
+                    tag(activity, "health-profile-field-REFERENCE_SEX")!!.performClick()
+                    assertEquals(index, dialog(activity).listView.checkedItemPosition)
+                    dialog(activity).getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+                }
+                assertNull(store.basicDraft())
+            }
+        }
+    }
+    @Test fun cancellingTheSexPickerPreservesTheExistingValue(): Unit = fixture { name, store ->
+        basic(store, HealthProfileField.REFERENCE_SEX, HealthReferenceSex.FEMALE.name)
+        screen(name, HealthProfileActivity::class.java) { scenario ->
+            await(scenario) { tag(it, "health-profile-save") != null }
+            scenario.onActivity { activity ->
+                tag(activity, "health-profile-field-REFERENCE_SEX")!!.performClick()
+                assertEquals(1, dialog(activity).listView.checkedItemPosition)
+                dialog(activity).getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+            }
+            assertNull(store.basicDraft())
+            assertEquals(HealthReferenceSex.FEMALE.name, store.snapshot().cells.getValue(HealthProfileField.REFERENCE_SEX).value?.text)
+        }
+    }
+    @Test fun editingVisibleFieldsPreservesLegacyDataWithoutRestoringRemovedSettings(): Unit = fixture { name, store ->
+        basic(store, HealthProfileField.PHYSIOLOGICAL_CONTEXT, "Isolated legacy context")
+        basic(store, HealthProfileField.REFERENCE_SEX, HealthReferenceSex.OTHER.name)
+        screen(name, HealthProfileActivity::class.java) { scenario ->
+            await(scenario) { tag(it, "health-profile-save") != null }
+            scenario.onActivity { activity ->
+                assertNull(tag(activity, "health-profile-field-PHYSIOLOGICAL_CONTEXT"))
+                val row = tag(activity, "health-profile-field-REFERENCE_SEX")!!
+                assertTrue(views(row).filterIsInstance<android.widget.TextView>()
+                    .any { it.text.toString() == activity.getString(R.string.health_profile_missing) })
+                row.performClick()
+                assertEquals(2, dialog(activity).listView.adapter.count)
+                assertEquals(-1, dialog(activity).listView.checkedItemPosition)
+                dialog(activity).getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+                editName(activity, "Updated isolated profile")
+            }
+            await(scenario) { tag(it, "health-profile-unsaved") != null }
+            scenario.onActivity { tag(it, "health-profile-save")!!.performClick() }
+            await(scenario) { tag(it, "health-profile-unsaved") == null }
+            val cells = store.snapshot().cells
+            assertEquals("Updated isolated profile", cells.getValue(HealthProfileField.NAME).value?.text)
+            assertEquals("Isolated legacy context", cells.getValue(HealthProfileField.PHYSIOLOGICAL_CONTEXT).value?.text)
+            assertEquals(HealthReferenceSex.OTHER.name, cells.getValue(HealthProfileField.REFERENCE_SEX).value?.text)
         }
     }
     @Test fun stagedNameIsExplicitlySavedAndRestoredFromTheEncryptedProfile(): Unit = fixture { name, store ->

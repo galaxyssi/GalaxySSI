@@ -492,7 +492,7 @@ class HealthCenterActivity : ComponentActivity() {
                 putExtra("health_privacy_test_db", overviewNames.privacy)
             }
         })
-        entry(R.drawable.ic_health_heart, R.string.health_care_title, "health-care-entry") { launch(HealthCareActivity::class.java) }
+        entry(R.drawable.ic_health_proactive, R.string.health_care_title, "health-care-entry") { launch(HealthCareActivity::class.java) }
         entry(R.drawable.ic_agent_plan_progress, R.string.health_agenda_title, "health-agenda-entry") { launch(HealthCareActionsActivity::class.java) }
         entry(R.drawable.ic_health_data_chart, R.string.health_record_center, "health-functions-record-center") { open("record_center") }
         entry(R.drawable.ic_rich_file, R.string.health_original_library, "health-originals-entry") { launch(HealthOriginalLibraryActivity::class.java) }
@@ -503,9 +503,9 @@ class HealthCenterActivity : ComponentActivity() {
         entry(R.drawable.ic_tab_agent, R.string.health_assistant_title, "health-assistant-entry") { launch(HealthAssistantActivity::class.java) }
         entry(R.drawable.ic_settings_devices, R.string.health_sources_title, "health-sources-entry") { launch(HealthSourcesActivity::class.java) }
         entry(R.drawable.ic_settings_upload, R.string.health_export_data_files, "health-data-files-entry") { launch(HealthDataFilesActivity::class.java) }
-        entry(R.drawable.ic_avatar_profile, R.string.health_profile_title, "health-profile-entry") { launch(HealthProfileActivity::class.java) }
+        entry(R.drawable.ic_health_profile, R.string.health_profile_title, "health-profile-entry") { launch(HealthProfileActivity::class.java) }
         entry(R.drawable.ic_security_shield, R.string.health_privacy_title, "health-privacy-entry") { launch(HealthPrivacyActivity::class.java) }
-        entry(R.drawable.ic_agent_knowledge, R.string.health_body_title, "health-body-entry") { launch(HealthBodyExplorationActivity::class.java) }
+        entry(R.drawable.ic_health_body, R.string.health_body_title, "health-body-entry") { launch(HealthBodyExplorationActivity::class.java) }
     }
     private fun recordRow(record: HealthObservation) = ui.card().apply {
         addView(ui.text(getString(record.draft.metric.titleResource()), 14f, muted = true))

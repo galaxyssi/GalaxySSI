@@ -7,7 +7,7 @@
     <string name="health_profile_basics">Basic information</string>
     <string name="health_profile_name">Name</string>
     <string name="health_profile_birth">Date of birth</string>
-    <string name="health_profile_sex">Sex for medical reference</string>
+    <string name="health_profile_sex">Sex</string>
     <string name="health_profile_stage">Relevant physiological context</string>
     <string name="health_profile_missing">Not provided</string>
     <string name="health_profile_female">Female</string>
