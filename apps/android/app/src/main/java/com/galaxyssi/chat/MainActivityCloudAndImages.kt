@@ -875,7 +875,7 @@ internal fun MainActivity.openPeerAttachment(attachment: PeerChatAttachment) {
             ) return
         }
         if (attachment.transferState != PeerAttachmentTransferProgress.STATE_DOWNLOADING) {
-            Toast.makeText(this, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.peer_attachment_unavailable, Toast.LENGTH_SHORT).show()
         }
         return
     }
@@ -896,16 +896,33 @@ internal fun MainActivity.openPeerAttachment(attachment: PeerChatAttachment) {
             )
         ) { _, which ->
             if (which == 0) {
-                runCatching {
-                    startActivity(Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(source, attachment.mimeType)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    })
-                }.onFailure {
-                    Toast.makeText(this, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
+                val mime = PeerAttachmentOpen.mimeType(attachment.name, attachment.mimeType)
+                val error = when (PeerAttachmentOpen.open(this, source, attachment.name, mime, ::startActivity)) {
+                    PeerAttachmentOpenResult.OPENED -> null
+                    PeerAttachmentOpenResult.NO_READER -> if (mime == PeerAttachmentOpen.PDF_MIME) {
+                        showPeerPdfReaderUnavailable(attachment)
+                        null
+                    } else R.string.peer_attachment_no_reader
+                    PeerAttachmentOpenResult.UNREADABLE -> R.string.peer_attachment_unavailable
+                    PeerAttachmentOpenResult.FAILED -> R.string.peer_attachment_open_failed
                 }
+                error?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
             } else {
                 savePeerAttachment(attachment)
+            }
+        }
+        .show()
+}
+
+private fun MainActivity.showPeerPdfReaderUnavailable(attachment: PeerChatAttachment) {
+    AlertDialog.Builder(this)
+        .setTitle(R.string.peer_attachment_pdf_open_failed)
+        .setMessage(R.string.peer_attachment_no_pdf_reader)
+        .setNegativeButton(R.string.common_cancel, null)
+        .setNeutralButton(R.string.peer_attachment_save) { _, _ -> savePeerAttachment(attachment) }
+        .setPositiveButton(R.string.peer_attachment_open_downloads) { _, _ ->
+            if (!PeerAttachmentOpen.openDownloads(::startActivity)) {
+                Toast.makeText(this, R.string.peer_attachment_downloads_unavailable, Toast.LENGTH_SHORT).show()
             }
         }
         .show()
