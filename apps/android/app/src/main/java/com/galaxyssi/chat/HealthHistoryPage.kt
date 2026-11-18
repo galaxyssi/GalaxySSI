@@ -30,11 +30,7 @@ internal abstract class HealthHistoryPage : Activity() {
         window.statusBarColor = getColor(R.color.page_bg); window.navigationBarColor = getColor(R.color.page_bg)
         if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         val root = ui.column().apply { setBackgroundColor(getColor(R.color.page_bg)) }
-        root.addView(ui.line().apply {
-            addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { finish() })
-            addView(ui.text(getString(heading), 19f, bold = true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(ui.space(1), LinearLayout.LayoutParams(ui.dp(48), 1))
-        }, LinearLayout.LayoutParams(-1, ui.dp(56)))
+        root.addView(ui.toolbar(heading, { finish() }), LinearLayout.LayoutParams(-1, ui.dp(56)))
         content = ui.column().apply { setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(24)) }
         root.addView(ScrollView(this).apply { addView(content) }, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)

@@ -47,21 +47,14 @@ class HealthDataFilesActivity : Activity() {
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
-        window.statusBarColor = getColor(R.color.surface_bg)
+        window.statusBarColor = getColor(R.color.page_bg)
         window.navigationBarColor = getColor(R.color.page_bg)
         if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         returnScroll = state?.getInt("scroll")
         val root = ui.column().apply { setBackgroundColor(getColor(R.color.page_bg)) }
-        root.addView(ui.line().apply {
-            minimumHeight = ui.dp(56)
-            setBackgroundColor(getColor(R.color.surface_bg))
-            addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back) { finish() })
-            addView(ui.text(getString(R.string.health_export_data_files), 19f, bold = true).apply { gravity = Gravity.CENTER },
-                LinearLayout.LayoutParams(0, -2, 1f))
-            addView(ui.icon(R.drawable.ic_health_grid, R.string.health_functions) {
-                open(HealthCenterActivity::class.java) { putExtra("health_functions", true) }
-            })
-        }, LinearLayout.LayoutParams(-1, -2))
+        root.addView(ui.toolbar(R.string.health_export_data_files, { finish() }, ui.icon(R.drawable.ic_more_horizontal, R.string.health_functions) {
+            open(HealthCenterActivity::class.java) { putExtra("health_functions", true) }
+        }), LinearLayout.LayoutParams(-1, ui.dp(56)))
         val content = ui.column().apply { setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(24)) }
         scroll = ScrollView(this).apply { addView(content) }
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -164,11 +157,11 @@ class HealthDataFilesActivity : Activity() {
     private fun heading(title: Int) = ui.text(getString(title), 18f, bold = true).apply { ViewCompat.setAccessibilityHeading(this, true) }
     private fun group() = ui.column().apply {
         setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(4))
-        background = ui.background(stroke = getColor(R.color.separator), radius = 14)
+        background = ui.background(stroke = getColor(R.color.separator), radius = 8)
     }
 
     private fun summary() = ui.column().apply {
-        background = ui.background(getColor(R.color.health_data_summary_fill), getColor(R.color.health_data_summary_stroke), radius = 16)
+        background = ui.background(getColor(R.color.health_data_summary_fill), getColor(R.color.health_data_summary_stroke), radius = 8)
         setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(16))
         addView(ui.text(getString(R.string.health_data_local), 13f).apply { setTextColor(getColor(R.color.health_data_link_text)) })
         ui.add(this, ui.text(getString(R.string.health_data_heading), 24f, bold = true).apply {
@@ -196,9 +189,9 @@ class HealthDataFilesActivity : Activity() {
         gravity = Gravity.CENTER
         minimumHeight = ui.dp(48)
         setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8))
-        background = if (primary) ui.background(getColor(R.color.accent_green), radius = 10)
-            else ui.background(stroke = getColor(R.color.separator), radius = 10)
-        val ink = if (primary) Color.rgb(8, 40, 29) else getColor(R.color.health_data_link_text)
+        background = if (primary) ui.background(getColor(R.color.health_overview_green), radius = 8)
+            else ui.background(stroke = getColor(R.color.separator), radius = 8)
+        val ink = if (primary) getColor(R.color.health_action_text) else getColor(R.color.health_data_link_text)
         addView(glyph(icon, ink), LinearLayout.LayoutParams(ui.dp(20), ui.dp(20)).apply { marginEnd = ui.dp(6) })
         addView(ui.text(getString(label), 16f, bold = true).apply { setTextColor(ink) })
         tag = if (primary) "health-data-import" else "health-data-export"
@@ -211,7 +204,7 @@ class HealthDataFilesActivity : Activity() {
 
     private fun tile(resource: Int, accent: Accent) = glyph(resource, accent.ink).apply {
         val inset = ui.dp(9)
-        background = ui.background(accent.fill, radius = 10)
+        background = ui.background(accent.fill, radius = 8)
         setPadding(inset, inset, inset, inset)
     }
 

@@ -121,17 +121,17 @@
         <activity android:name=".WatchSetupActivity" android:exported="false" android:configChanges="orientation|screenSize|uiMode" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".DoorAccessActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ProactiveAttentionActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".HealthCenterActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".HealthCaptureActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".HealthTableActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
-        <activity android:name=".HealthCatalogActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".HealthTrendActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
-        <activity android:name=".HealthActivityComparisonActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
-        <activity android:name=".HealthMeasurementPeriodsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
+        <activity android:name=".HealthCenterActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".HealthCaptureActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".HealthTableActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" />
+        <activity android:name=".HealthCatalogActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".HealthTrendActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" />
+        <activity android:name=".HealthActivityComparisonActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" />
+        <activity android:name=".HealthMeasurementPeriodsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" />
         <activity-alias android:name=".HealthMeasurementBatchesActivity" android:targetActivity=".HealthMeasurementPeriodsActivity" android:exported="false" />
-        <activity android:name=".HealthTrendRecordsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
-        <activity android:name=".HealthRecordRevisionActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
-        <activity android:name=".HealthCameraActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
+        <activity android:name=".HealthTrendRecordsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" />
+        <activity android:name=".HealthRecordRevisionActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" />
+        <activity android:name=".HealthCameraActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" />
         <activity android:name=".AttentionNewsSearchActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <service android:name=".VoiceNewsPlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
         <service android:name=".HealthPhoneStepService" android:exported="false" android:foregroundServiceType="health" />
@@ -251,28 +251,28 @@
             android:authorities="${applicationId}.local-attachments"
             android:exported="false"
             android:grantUriPermissions="true" />
-        <activity android:name=".HealthOriginalLibraryActivity" android:exported="false" />
-        <activity android:name=".HealthRecordExportActivity" android:exported="false" />
-        <activity android:name=".HealthDataFilesActivity" android:exported="false" />
-        <activity android:name=".HealthBackupActivity" android:exported="false" />
-        <activity android:name=".HealthRestoreActivity" android:exported="false" />
-        <activity android:name=".HealthBodyExplorationActivity" android:exported="false" />
-        <activity android:name=".HealthProfileActivity" android:exported="false" />
-        <activity android:name=".HealthPrivacyActivity" android:exported="false" />
-        <activity android:name=".HealthSourcesActivity" android:exported="false" />
-        <activity android:name=".HealthConnectActivity" android:exported="false" />
-        <activity android:name=".HealthMeasurementHistoryActivity" android:exported="false" />
-        <activity android:name=".HealthBluetoothActivity" android:exported="false" />
-        <activity android:name=".HealthSyncActivity" android:exported="false" />
-        <activity android:name=".HealthAssistantActivity" android:exported="false" />
-        <activity android:name=".HealthCareActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".HealthCareActionsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".HealthCareVisitActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".HealthCareEncountersActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".HealthCareVisitFollowUpActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".HealthCareDocumentsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
-        <activity android:name=".HealthCareInstructionsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
-        <activity android:name=".HealthConnectRationaleActivity" android:exported="true">
+        <activity android:name=".HealthOriginalLibraryActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthRecordExportActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthDataFilesActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthBackupActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthRestoreActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthBodyExplorationActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthProfileActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthPrivacyActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthSourcesActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthConnectActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthMeasurementHistoryActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthBluetoothActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthSyncActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthAssistantActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthCareActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".HealthCareActionsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".HealthCareVisitActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".HealthCareEncountersActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".HealthCareVisitFollowUpActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".HealthCareDocumentsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" />
+        <activity android:name=".HealthCareInstructionsActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" />
+        <activity android:name=".HealthConnectRationaleActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="true">
             <intent-filter>
                 <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
             </intent-filter>
@@ -284,11 +284,11 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity-alias>
-        <activity android:name=".HealthReminderActivity" android:exported="false" />
-        <activity android:name=".HealthWeeklyActivity" android:exported="false" />
-        <activity android:name=".HealthBackgroundActivity" android:exported="false" />
-        <activity android:name=".HealthOriginalExportActivity" android:exported="false" />
-        <activity android:name=".HealthOriginalExportHistoryActivity" android:exported="false" />
+        <activity android:name=".HealthReminderActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthWeeklyActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthBackgroundActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthOriginalExportActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthOriginalExportHistoryActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
         <provider android:name=".HealthOriginalContentProvider" android:authorities="${applicationId}.health-originals"
             android:exported="false" android:grantUriPermissions="true" />
         <provider android:name=".HealthCropOutputProvider" android:authorities="${applicationId}.health-crop-output"

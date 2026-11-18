@@ -25,11 +25,10 @@ internal fun Activity.healthProfileBody(title: Int, back: () -> Unit): LinearLay
     window.statusBarColor = getColor(R.color.page_bg); window.navigationBarColor = getColor(R.color.page_bg)
     if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
     val root = ui.column().apply { setBackgroundColor(getColor(R.color.page_bg)); isSaveEnabled = false; importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS }
-    root.addView(ui.line().apply {
-        addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_back, back))
-        addView(ui.text(getString(title), 19f, bold = true).apply { gravity = Gravity.CENTER; maxLines = 1; setAutoSizeTextTypeUniformWithConfiguration(12, 19, 1, android.util.TypedValue.COMPLEX_UNIT_SP) }, LinearLayout.LayoutParams(0, -1, 1f))
-        addView(ui.icon(R.drawable.ic_health_grid, R.string.health_functions) { startActivity(Intent(this@healthProfileBody, HealthCenterActivity::class.java).putExtra("health_functions", true)) })
-    }, LinearLayout.LayoutParams(-1, ui.dp(56)))
+    root.addView(ui.toolbar(title, back, ui.icon(R.drawable.ic_more_horizontal, R.string.health_functions) {
+        startActivity(Intent(this@healthProfileBody, HealthCenterActivity::class.java).putExtra("health_functions", true)
+            .putHealthNavigationFixture(intent.healthNavigationDatabases()))
+    }), LinearLayout.LayoutParams(-1, ui.dp(56)))
     val body = ui.column(); root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f)); setContentView(root); return body
 }
 internal fun Activity.healthProfileContent(body: LinearLayout): LinearLayout {

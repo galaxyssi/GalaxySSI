@@ -60,7 +60,7 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
         }
         sourceContext?.let { ui.add(content, ui.sourceContext(activity, it), 8) }
         if (draft.recordId.isBlank() && draft.evidence == null) {
-            val metrics = ui.line().apply { background = ui.background(activity.getColor(R.color.button_soft), radius = 10) }
+            val metrics = ui.line().apply { background = ui.background(activity.getColor(R.color.button_soft), radius = 8) }
             HealthMetric.entries.take(3).forEach { metric ->
                 metrics.addView(ui.text(activity.getString(metric.titleResource()), 13f).apply {
                     tag = "health-metric-${metric.name}"; minimumHeight = ui.dp(44); gravity = Gravity.CENTER
@@ -100,7 +100,7 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
         ui.add(card, ui.text(activity.getString(R.string.health_measured_at), 13f, muted = true), 16)
         time = ui.text(if (measuredAt > 0) activity.date(measuredAt) else activity.getString(R.string.health_choose_time)).apply {
             tag = "health-measured-at"; minimumHeight = ui.dp(48); gravity = Gravity.CENTER_VERTICAL
-            background = ui.background(stroke = activity.getColor(R.color.separator), radius = 10)
+            background = ui.background(stroke = activity.getColor(R.color.separator), radius = 8)
             setPadding(ui.dp(12), 0, ui.dp(12), 0); setOnClickListener { chooseTime() }; isFocusable = true
         }
         card.addView(time)
@@ -158,7 +158,7 @@ internal class HealthManualEditor(private val activity: HealthCenterActivity, pr
             tag = "health-field-$field"; isSaveEnabled = false; contentDescription = label
             textSize = size; setSingleLine(true); minimumHeight = ui.dp(62)
             setTextColor(activity.getColor(R.color.text_primary)); setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))
-            background = ui.background(stroke = activity.getColor(R.color.separator), radius = 10)
+            background = ui.background(stroke = activity.getColor(R.color.separator), radius = 8)
             inputType = when (draft.metric.form) {
                 HealthResultForm.LABORATORY, HealthResultForm.QUALITATIVE -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                 HealthResultForm.COUNT -> InputType.TYPE_CLASS_NUMBER

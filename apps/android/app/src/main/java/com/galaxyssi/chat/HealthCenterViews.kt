@@ -5,10 +5,13 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.graphics.drawable.StateListDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -18,37 +21,70 @@ internal class HealthCenterViews(private val activity: Activity) {
     fun line() = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
     fun text(value: String, size: Float = 16f, muted: Boolean = false, bold: Boolean = false) = TextView(activity).apply {
         text = value; textSize = size
+        letterSpacing = 0f
         setTextColor(activity.getColor(if (muted) R.color.text_secondary else R.color.text_primary))
         if (bold) setTypeface(typeface, Typeface.BOLD)
         setLineSpacing(dp(3).toFloat(), 1f)
     }
-    fun background(color: Int = activity.getColor(R.color.surface_bg), stroke: Int? = null, radius: Int = 14) = GradientDrawable().apply {
+    fun background(color: Int = activity.getColor(R.color.surface_bg), stroke: Int? = null, radius: Int = 8) = GradientDrawable().apply {
         setColor(color); cornerRadius = dp(radius).toFloat(); stroke?.let { setStroke(dp(1), it) }
     }
     fun card() = column().apply {
-        setPadding(dp(18), dp(18), dp(18), dp(18))
+        setPadding(dp(16), dp(16), dp(16), dp(16))
         background = background(stroke = activity.getColor(R.color.separator))
     }
     fun icon(drawable: Int, description: Int, action: () -> Unit) = ImageButton(activity).apply {
-        setImageResource(drawable); imageTintList = ColorStateList.valueOf(activity.getColor(R.color.text_primary))
+        setImageResource(if (drawable == R.drawable.ic_health_grid && description == R.string.health_functions) R.drawable.ic_more_horizontal else drawable)
+        imageTintList = ColorStateList.valueOf(activity.getColor(R.color.text_primary))
         contentDescription = activity.getString(description); tooltipText = contentDescription
-        setBackgroundColor(Color.TRANSPARENT); setPadding(dp(13), dp(13), dp(13), dp(13))
+        background = touchBackground(radius = 24); setPadding(dp(13), dp(13), dp(13), dp(13))
         layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)); setOnClickListener { action() }
     }
     fun command(title: Int, action: () -> Unit) = text(activity.getString(title), 16f, bold = true).apply {
         gravity = Gravity.CENTER; minimumHeight = dp(48)
-        background = background(Color.rgb(17, 195, 110), radius = 12)
-        setTextColor(Color.rgb(8, 40, 29)); setOnClickListener { action() }
+        background = activity.getDrawable(R.drawable.health_button_background)
+        setTextColor(activity.getColorStateList(R.color.health_button_text)); setPadding(dp(16), dp(10), dp(16), dp(10))
+        setOnClickListener { action() }
         isFocusable = true
     }
     fun row(title: String, subtitle: String = "", action: () -> Unit) = line().apply {
-        minimumHeight = dp(72); setPadding(dp(4), dp(12), dp(4), dp(12))
+        minimumHeight = dp(64); setPadding(dp(8), dp(12), dp(8), dp(12)); background = touchBackground()
         addView(column().apply {
-            addView(text(title, bold = true))
+            addView(text(title, 16f))
             if (subtitle.isNotBlank()) addView(text(subtitle, 13f, muted = true))
         }, LinearLayout.LayoutParams(0, -2, 1f))
-        addView(text("\u203a", 24f, muted = true))
+        addView(ImageView(activity).apply {
+            setImageResource(R.drawable.ic_navigation_back); rotation = 180f
+            imageTintList = ColorStateList.valueOf(activity.getColor(R.color.text_secondary))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginStart = dp(8) })
         setOnClickListener { action() }; isFocusable = true
+    }
+    fun navigationRow(drawable: Int, title: Int, action: () -> Unit) = row(activity.getString(title), action = action).apply {
+        contentDescription = activity.getString(title)
+        addView(ImageView(activity).apply {
+            setImageResource(drawable); imageTintList = ColorStateList.valueOf(activity.getColor(R.color.health_overview_green))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            setPadding(0, 0, dp(12), 0)
+        }, 0, LinearLayout.LayoutParams(dp(36), dp(24)))
+    }
+    fun toolbar(title: Int, back: () -> Unit, action: View? = null) = line().apply {
+        tag = "health-page-toolbar"
+        minimumHeight = dp(56); setBackgroundColor(activity.getColor(R.color.page_bg))
+        addView(icon(R.drawable.ic_navigation_back, R.string.health_back, back))
+        addView(text(activity.getString(title), 19f, bold = true).apply {
+            tag = "health-page-title"; gravity = Gravity.CENTER; maxLines = 1
+            setAutoSizeTextTypeUniformWithConfiguration(12, 19, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+        }, LinearLayout.LayoutParams(0, -1, 1f))
+        addView(action ?: space(1), LinearLayout.LayoutParams(dp(48), dp(48)))
+    }
+    private fun touchBackground(radius: Int = 8): RippleDrawable {
+        val accent = activity.getColor(R.color.health_overview_green)
+        val states = StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), background(Color.TRANSPARENT, accent, radius))
+            addState(intArrayOf(), background(Color.TRANSPARENT, radius = radius))
+        }
+        return RippleDrawable(ColorStateList.valueOf((accent and 0x00ffffff) or 0x18000000), states, background(Color.WHITE, radius = radius))
     }
     fun space(height: Int) = View(activity).apply { layoutParams = LinearLayout.LayoutParams(1, dp(height)) }
     fun add(parent: LinearLayout, view: View, top: Int = 0) {
