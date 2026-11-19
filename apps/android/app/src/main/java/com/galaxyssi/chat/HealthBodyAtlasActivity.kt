@@ -262,7 +262,7 @@ class HealthBodyAtlasActivity : Activity() {
             }
             HealthAtlasTab.SIMULATION -> {
                 simulationItem = item.id
-                simulation = HealthAtlasSimulationPanel(this, content, data, item, simulationStates[item.id], physiologyStates[item.id], ::zoom, ::source)
+                simulation = HealthAtlasSimulationPanel(this, content, data, item, simulationStates[item.id], physiologyStates[item.id], ::zoom, ::source, ::select)
                 ui.add(content, ui.row(getString(R.string.health_atlas_research)) { openResearch() }.apply { tag = "atlas-open-research" }, 12)
             }
         }
@@ -290,7 +290,7 @@ class HealthBodyAtlasActivity : Activity() {
         if (topic == HealthAtlasResearchTopic.PHYSIOLOGY) {
             ui.add(content, ui.text(item.name + " · " + item.systems.mapNotNull(data::get).joinToString(" · ") { it.name }, 14f, muted = true))
             simulationItem = item.id
-            simulation = HealthAtlasSimulationPanel(this, content, data, item, simulationStates[item.id], physiologyStates[item.id], ::zoom, ::source)
+            simulation = HealthAtlasSimulationPanel(this, content, data, item, simulationStates[item.id], physiologyStates[item.id], ::zoom, ::source, ::select)
             ui.add(content, ui.row(getString(R.string.health_atlas_evidence), "OpenStax · Anatomy and Physiology 2e") {
                 source(data.mechanism(item).source)
             }.apply { tag = "atlas-source-physiology" }, 16)

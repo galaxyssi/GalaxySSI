@@ -289,9 +289,7 @@ class HealthBodyAtlasDeviceTest {
         assertTrue(restored)
         scenario.onActivity { activity ->
             assertEquals(60, (activity.view("atlas-parameter-first") as SeekBar).progress)
-            fun findDiagram(view: View): HealthAtlasProcessView? = if (view is HealthAtlasProcessView) view else
-                if (view is ViewGroup) (0 until view.childCount).firstNotNullOfOrNull { findDiagram(view.getChildAt(it)) } else null
-            val diagram = requireNotNull(findDiagram(activity.window.decorView))
+            val diagram = activity.view("atlas-process") as HealthAtlasCirculationView
             fun draw() = android.graphics.Bitmap.createBitmap(diagram.width, diagram.height, android.graphics.Bitmap.Config.ARGB_8888)
                 .also { diagram.draw(android.graphics.Canvas(it)) }
             diagram.phase = 0f; val first = draw()

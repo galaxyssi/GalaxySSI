@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_circuit_lungs">肺 · 气体交换</string>
+    <string name="health_atlas_circuit_heart">心脏</string>
+    <string name="health_atlas_circuit_tissues">全身组织 · 物质交换</string>
+    <string name="health_atlas_circuit_right">右心</string>
+    <string name="health_atlas_circuit_left">左心</string>
+    <string name="health_atlas_circuit_leg_0">体循环静脉</string>
+    <string name="health_atlas_circuit_leg_1">肺动脉</string>
+    <string name="health_atlas_circuit_leg_2">肺静脉</string>
+    <string name="health_atlas_circuit_leg_3">体循环动脉</string>
+    <string name="health_atlas_circuit_flow">%1$s L/min\n教学值</string>
+    <string name="health_atlas_circuit_scope">关联的成人双循环总览。蓝、红表示血液相对缺氧与富氧，并非血液真实颜色。箭头表示方向，动画时间不代表真实血流速度；心腔、瓣膜及毛细血管床均已简化。</string>
+    <string name="health_atlas_circuit_path">全身组织 → 体循环静脉 → 右心房与右心室 → 肺动脉 → 肺 → 肺静脉 → 左心房与左心室 → 体循环动脉 → 全身组织。肺和组织交换未作定量计算。</string>
+    <string name="health_atlas_circuit_reference">双循环 · 解剖参考</string>
+</resources>

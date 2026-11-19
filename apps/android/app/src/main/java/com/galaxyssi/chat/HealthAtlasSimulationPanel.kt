@@ -13,7 +13,8 @@ import java.text.NumberFormat
 
 internal class HealthAtlasSimulationPanel(private val activity: Activity, private val body: LinearLayout,
     private val atlas: HealthBodyAtlas, private val item: HealthAtlasItem, initial: HealthAtlasSimulation?,
-    quantitativeInitial: HealthAtlasPhysiology?, zoom: (Int, String) -> Unit, source: (String) -> Unit) {
+    quantitativeInitial: HealthAtlasPhysiology?, zoom: (Int, String) -> Unit, source: (String) -> Unit,
+    select: (HealthAtlasItem) -> Unit) {
     private val ui = HealthCenterViews(activity)
     private val mechanism = atlas.mechanism(item)
     private val cardiac = item.id in setOf("heart", "cardio")
@@ -26,9 +27,11 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private lateinit var stage: TextView
     private lateinit var progress: SeekBar
     private lateinit var output: TextView
-    private var diagram = HealthAtlasProcessView(activity, mechanism) { index ->
+    private val circulation = if (HealthAtlasCirculation.supports(item.id)) HealthAtlasCirculationView(activity, mechanism,
+        { index -> pause(); setPhase(index / 4f) }, { id -> atlas[id]?.let(select) }) else null
+    private val process = if (circulation == null) HealthAtlasProcessView(activity, mechanism) { index ->
         pause(); setPhase(index / 4f)
-    }
+    } else null
     private val resetInputs = arrayListOf<() -> Unit>()
     init {
         HealthAtlasPhysiologyKind.forItem(item.id)?.let { kind ->
@@ -37,13 +40,14 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
             quantitative = HealthAtlasPhysiologyPanel(activity, body, kind, quantitativeInitial ?: migrated, source)
         }
         val art = HealthAtlasUi.art(item)
-        if (art != null) ui.add(body, ImageView(activity).apply {
+        if (art != null && circulation == null) ui.add(body, ImageView(activity).apply {
             setImageResource(art); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = item.name
             minimumHeight = ui.dp(260); setOnClickListener { zoom(art, item.name) }; tag = "atlas-simulation-art"
             adjustViewBounds = true; maxHeight = ui.dp(280)
         })
         ui.add(body, ui.text(mechanism.title, 18f, bold = true), 14)
-        body.addView(diagram, LinearLayout.LayoutParams(-1, -2))
+        body.addView(circulation ?: requireNotNull(process), LinearLayout.LayoutParams(-1, -2))
+        if (circulation != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_circuit_scope), 12f, muted = true), 8)
         stage = ui.text("", 15f, bold = true).apply { tag = "atlas-simulation-stage" }; ui.add(body, stage)
         val controls = ui.line().apply {
             gravity = Gravity.CENTER
@@ -54,7 +58,10 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
             addView(ui.icon(R.drawable.ic_reset_data, R.string.health_atlas_reset) {
                 pause(); values = HealthAtlasSimulation.initial(item.id); resetInputs.forEach { it() }; setPhase(0f); updateOutput(); quantitative?.reset()
             }.apply { tag = "atlas-simulation-reset" })
-        }; ui.add(body, controls, 8)
+        }
+        if (circulation != null) body.addView(controls, body.indexOfChild(circulation),
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
+        else ui.add(body, controls, 8)
         progress = SeekBar(activity).apply {
             max = 1000; contentDescription = activity.getString(R.string.health_atlas_phase); tag = "atlas-simulation-progress"
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -77,6 +84,9 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
             R.string.health_atlas_model_process_note else R.string.health_atlas_qualitative_note), 13f, muted = true), 14)
         parameter(R.string.health_atlas_speed, 1..4, (values.speed * 2).toInt(), "×0.5", "speed") { pause(); values = values.copy(speed = it / 2f) }
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_teaching_note), 12f, muted = true), 14)
+        if (circulation != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_circuit_reference)) {
+            source(HealthAtlasCirculation.SOURCE)
+        }.apply { tag = "atlas-source-circulation" }, 12)
         setPhase(values.phase)
     }
     private fun parameter(label: Int, range: IntRange, initial: Int, unit: String, key: String, changed: (Int) -> Unit) {
@@ -101,9 +111,11 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private fun updateOutput() {
         if (::output.isInitialized) output.text = NumberFormat.getNumberInstance().apply { minimumFractionDigits = 2; maximumFractionDigits = 2 }
             .format(values.cardiacOutput()) + " L/min"
+        if (cardiac) circulation?.flowLitresPerMinute = values.cardiacOutput()
     }
     private fun setPhase(value: Float) {
-        values = values.copy(phase = value.coerceIn(0f, 1f)); diagram.phase = values.phase
+        values = values.copy(phase = value.coerceIn(0f, 1f))
+        circulation?.phase = values.phase; process?.phase = values.phase
         stage.text = activity.getString(R.string.health_atlas_stage, values.stage + 1, mechanism.stages.size, mechanism.stages[values.stage])
         if (::progress.isInitialized) progress.progress = (values.phase * 1000).toInt()
     }

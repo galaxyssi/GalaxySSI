@@ -844,10 +844,10 @@
     <string name="health_atlas_fragment_platelet_description">"由巨核细胞产生的细胞碎片，参与止血与血管修复；不计为完整细胞类型。"</string>
     <string name="health_atlas_fragment_platelet_aliases">"platelet 血细胞成分"</string>
     <string name="health_atlas_mechanism_cardio">"循环与泵血"</string>
-    <string name="health_atlas_mechanism_cardio_0">"静脉回流"</string>
-    <string name="health_atlas_mechanism_cardio_1">"右心至肺"</string>
-    <string name="health_atlas_mechanism_cardio_2">"左心充盈"</string>
-    <string name="health_atlas_mechanism_cardio_3">"体循环供血"</string>
+    <string name="health_atlas_mechanism_cardio_0">"体循环静脉：组织至右心"</string>
+    <string name="health_atlas_mechanism_cardio_1">"肺动脉：右心至肺"</string>
+    <string name="health_atlas_mechanism_cardio_2">"肺静脉：肺至左心"</string>
+    <string name="health_atlas_mechanism_cardio_3">"体循环动脉：左心至组织"</string>
     <string name="health_atlas_mechanism_nervous">"神经信号传递"</string>
     <string name="health_atlas_mechanism_nervous_0">"接收刺激"</string>
     <string name="health_atlas_mechanism_nervous_1">"局部整合"</string>

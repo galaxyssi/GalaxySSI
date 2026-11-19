@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="health_atlas_blood_low">#83BEEB</color>
+    <color name="health_atlas_blood_high">#F398A0</color>
+</resources>
