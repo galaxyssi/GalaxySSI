@@ -26,6 +26,10 @@
     <string name="health_atlas_view_liver">肝脏与相邻胆囊</string>
     <string name="health_atlas_view_coronal">单侧肾脏 · 冠状剖面</string>
     <string name="health_atlas_view_cell">细胞剖面</string>
+    <string name="health_atlas_view_urinary">泌尿器官 · 简化前视图，尿道长度仅作示意</string>
+    <string name="health_atlas_view_gut">食管至直肠 · 前面观示意，未显示消化腺</string>
+    <string name="health_atlas_view_pancreas">胰腺与相邻十二指肠 · 胰管剖露</string>
+    <string name="health_atlas_plate_source">结构图参考来源</string>
     <string name="health_atlas_related">相关结构</string>
     <string name="health_atlas_belongs">关联结构与系统</string>
     <string name="health_atlas_related_process">关联过程 · %1$s</string>

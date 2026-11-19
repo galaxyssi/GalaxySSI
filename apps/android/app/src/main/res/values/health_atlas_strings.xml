@@ -26,6 +26,10 @@
     <string name="health_atlas_view_liver">Liver and associated gallbladder</string>
     <string name="health_atlas_view_coronal">Single kidney · coronal section</string>
     <string name="health_atlas_view_cell">Cell cutaway</string>
+    <string name="health_atlas_view_urinary">Urinary organs · schematic anterior view; urethral length simplified</string>
+    <string name="health_atlas_view_gut">Esophagus to rectum · anterior schematic; accessory organs omitted</string>
+    <string name="health_atlas_view_pancreas">Pancreas and adjacent duodenum · main duct exposed</string>
+    <string name="health_atlas_plate_source">Anatomical illustration reference</string>
     <string name="health_atlas_related">Related structures</string>
     <string name="health_atlas_belongs">Related structures and systems</string>
     <string name="health_atlas_related_process">Related process · %1$s</string>

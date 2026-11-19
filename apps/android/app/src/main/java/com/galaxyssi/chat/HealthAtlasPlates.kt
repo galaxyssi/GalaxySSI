@@ -7,7 +7,7 @@ internal data class HealthAtlasMarker(val id: String, val x: Float, val y: Float
 }
 
 internal data class HealthAtlasPlate(val drawable: Int, val owner: String?, val viewLabel: Int,
-    val markers: List<HealthAtlasMarker>) {
+    val markers: List<HealthAtlasMarker>, val source: String? = null) {
     fun caption(context: Context, data: HealthBodyAtlas, selected: HealthAtlasItem?): String {
         val view = context.getString(viewLabel)
         return if (selected != null && selected.id != owner)
@@ -42,7 +42,22 @@ internal object HealthAtlasPlates {
         R.string.health_atlas_view_erythrocyte, emptyList())
     private val neuron = HealthAtlasPlate(R.drawable.health_atlas_neuron, "cell-neuron",
         R.string.health_atlas_view_neuron, emptyList())
-    val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron)
+    private val urinary = HealthAtlasPlate(R.drawable.health_atlas_urinary, "urinary",
+        R.string.health_atlas_view_urinary, listOf(
+            HealthAtlasMarker("kidneys", .73f, .22f), HealthAtlasMarker("ureters", .66f, .53f),
+            HealthAtlasMarker("bladder", .50f, .79f), HealthAtlasMarker("urethra", .48f, .91f)),
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-2-gross-anatomy-of-urine-transport")
+    private val gut = HealthAtlasPlate(R.drawable.health_atlas_gut, "gut", R.string.health_atlas_view_gut, listOf(
+        HealthAtlasMarker("esophagus", .56f, .08f), HealthAtlasMarker("stomach", .66f, .24f),
+        HealthAtlasMarker("large-intestine", .85f, .52f), HealthAtlasMarker("small-intestine", .47f, .60f),
+        HealthAtlasMarker("appendix", .26f, .79f), HealthAtlasMarker("rectum", .50f, .90f)),
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-1-overview-of-the-digestive-system")
+    private val pancreas = HealthAtlasPlate(R.drawable.health_atlas_pancreas, "pancreas",
+        R.string.health_atlas_view_pancreas, listOf(
+            HealthAtlasMarker("pancreas", .62f, .30f), HealthAtlasMarker("pancreatic-duct", .57f, .41f),
+            HealthAtlasMarker("duodenum", .12f, .48f)),
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder")
+    val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas)
 
     fun forId(id: String?): HealthAtlasPlate? = when (id) {
         null -> whole
@@ -50,7 +65,10 @@ internal object HealthAtlasPlates {
         "brain", "cerebrum", "cerebellum", "brainstem" -> brain
         "lungs", "trachea", "bronchi" -> lungs
         "liver", "gallbladder" -> liver
-        "kidneys", "renal-cortex", "renal-medulla", "renal-pelvis", "ureters" -> kidney
+        "kidneys", "renal-cortex", "renal-medulla", "renal-pelvis" -> kidney
+        "urinary", "ureters", "bladder", "urethra" -> urinary
+        "gut", "esophagus", "stomach", "small-intestine", "large-intestine", "appendix", "rectum" -> gut
+        "pancreas", "pancreatic-duct", "duodenum" -> pancreas
         "cell-pancreatic-beta-cell" -> beta
         "cell-erythrocyte" -> erythrocyte
         "cell-neuron" -> neuron
