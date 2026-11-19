@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_drug_models">分布与消除</string>
+    <string name="health_atlas_drug_single">单室模型</string>
+    <string name="health_atlas_drug_two">双室模型</string>
+    <string name="health_atlas_distribution_scope">教学模型：初始总量的 100% 位于中央室，两室双向转移，仅从中央室消除。室代表动力学行为的分组，不对应某个具体器官。数值是占初始总量的比例，不是浓度或药效。</string>
+    <string name="health_atlas_distribution_central">中央室</string>
+    <string name="health_atlas_distribution_peripheral">外周室</string>
+    <string name="health_atlas_distribution_eliminated">已消除</string>
+    <string name="health_atlas_distribution_outward">中央室 → 外周室 · k12</string>
+    <string name="health_atlas_distribution_return">外周室 → 中央室 · k21</string>
+    <string name="health_atlas_distribution_loss">中央室消除 · k10</string>
+    <string name="health_atlas_distribution_rate">%1$s  %2$s h⁻¹</string>
+    <string name="health_atlas_distribution_time">经过时间  %1$s 小时</string>
+    <string name="health_atlas_distribution_percent">%1$s%%</string>
+    <string name="health_atlas_distribution_summary">%1$s 小时：中央室 %2$s%%；外周室 %3$s%%；已消除 %4$s%%。</string>
+    <string name="health_atlas_distribution_rates">k12 = %1$s h⁻¹；k21 = %2$s h⁻¹；k10 = %3$s h⁻¹。</string>
+    <string name="health_atlas_distribution_formula">dA1/dt = −(k10 + k12)A1 + k21A2\ndA2/dt = k12A1 − k21A2\nA1(0) = 100；A2(0) = 0\n已消除 = 100 − A1 − A2</string>
+    <string name="health_atlas_distribution_boundary">速率常数固定的一阶模型，不含吸收、重复给药、饱和过程或个人参数拟合。滑块范围仅供教学，不是临床参考值。不计算剂量、治疗效果或个人器官暴露。</string>
+    <string name="health_atlas_distribution_reference">双室模型方程 · D’Argenio 与 Bae，2019</string>
+    <string name="health_atlas_distribution_legend_central">中央室 · 实线</string>
+    <string name="health_atlas_distribution_legend_peripheral">外周室 · 虚线</string>
+    <string name="health_atlas_distribution_legend_eliminated">已消除 · 点线</string>
+    <string name="health_atlas_distribution_chart">占初始总量比例（%%），0–48 小时。%1$s</string>
+</resources>

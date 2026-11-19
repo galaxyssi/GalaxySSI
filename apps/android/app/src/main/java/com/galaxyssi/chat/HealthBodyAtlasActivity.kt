@@ -52,6 +52,7 @@ class HealthBodyAtlasActivity : Activity() {
     private var research: HealthAtlasResearchPanel? = null
     private var researchItem = ""
     private val eliminationStates = linkedMapOf<String, HealthAtlasElimination>()
+    private val drugStates = linkedMapOf<String, HealthAtlasDrugState>()
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -61,6 +62,9 @@ class HealthBodyAtlasActivity : Activity() {
         query = state?.getString("query").orEmpty().take(100)
         tab = HealthAtlasTab.entries.firstOrNull { it.name == state?.getString("tab") } ?: HealthAtlasTab.STRUCTURE
         researchTopic = HealthAtlasResearchTopic.entries.firstOrNull { it.name == state?.getString("researchTopic") }
+        state?.getBundle("drugModelsV1")?.let { saved -> saved.keySet().take(300).forEach { key ->
+            HealthAtlasDrugState.restore(saved.getIntArray(key))?.let { drugStates[key] = it }
+        } }
         state?.getBundle("eliminations")?.let { saved -> saved.keySet().take(300).forEach { key ->
             saved.getBundle(key)?.let { value -> runCatching {
                 HealthAtlasElimination(value.getInt("halfLife"), value.getInt("elapsed"))
@@ -125,6 +129,7 @@ class HealthBodyAtlasActivity : Activity() {
             }) }
         })
         out.putString("researchTopic", researchTopic?.name)
+        out.putBundle("drugModelsV1", Bundle().apply { drugStates.forEach { (id, value) -> putIntArray(id, value.encode()) } })
         out.putBundle("eliminations", Bundle().apply { eliminationStates.forEach { (id, value) -> putBundle(id, Bundle().apply {
             putInt("halfLife", value.halfLifeHours); putInt("elapsed", value.elapsedHours)
         }) } })
@@ -282,7 +287,7 @@ class HealthBodyAtlasActivity : Activity() {
         it.quantitativeSnapshot?.let { model -> physiologyStates[simulationItem] = model }
     } }
     private fun saveMeasurementSelection() { measurements?.let { measurementSelections[measurementItem] = it.selection } }
-    private fun saveResearch() { research?.let { eliminationStates[researchItem] = it.elimination } }
+    private fun saveResearch() { research?.let { eliminationStates[researchItem] = it.elimination; drugStates[researchItem] = it.drugState } }
     private fun openResearch() { researchTopic = HealthAtlasResearchTopic.PHYSIOLOGY; scrollY = 0; render() }
     private fun researchPage(data: HealthBodyAtlas, item: HealthAtlasItem) {
         val topic = requireNotNull(researchTopic)
@@ -294,7 +299,7 @@ class HealthBodyAtlasActivity : Activity() {
             ui.add(content, ui.row(getString(R.string.health_atlas_evidence), mechanismReferenceLabel(data, item)) {
                 source(data.mechanism(item).source)
             }.apply { tag = "atlas-source-physiology" }, 16)
-        } else research = HealthAtlasResearchPanel(this, content, data, item, topic, eliminationStates[item.id], ::select, ::source)
+        } else research = HealthAtlasResearchPanel(this, content, data, item, topic, eliminationStates[item.id], ::select, ::source, drugStates[item.id])
     }
     private fun mechanismReferenceLabel(data: HealthBodyAtlas, item: HealthAtlasItem) = getString(
         if (data.mechanism(item).reference == null) R.string.health_atlas_reference_openstax else R.string.health_atlas_reference_pubmed)
@@ -319,7 +324,7 @@ class HealthBodyAtlasActivity : Activity() {
     private fun ask(item: HealthAtlasItem?) {
         simulation?.pause()
         val prompt = HealthAtlasAgentContext.prompt(this, atlas!!, item, simulation?.snapshot,
-            simulation?.quantitativeSnapshot, researchTopic, research?.elimination)
+            simulation?.quantitativeSnapshot, researchTopic, research?.elimination, research?.drugState)
         dialog = AlertDialog.Builder(this).setTitle(R.string.health_atlas_ask_ready).setMessage(prompt)
             .setNegativeButton(android.R.string.cancel, null).setPositiveButton(R.string.health_atlas_ask) { _, _ ->
                 worker.execute {

@@ -436,3 +436,44 @@ https://openstax.org/books/anatomy-and-physiology-2e/pages/23-3-the-mouth-pharyn
 These generated schematics require further expert anatomical review before any
 clinical or quantitative use. Whole-body nervous and vascular generations were
 rejected by the image service and are not included or reported as completed.
+
+## Two-compartment Distribution
+
+The drug research panel adds a two-compartment mode alongside the existing
+single-compartment elimination model. Its normalized initial amount is entirely
+central: `A1(0) = 100`, `A2(0) = 0`. Transfers follow
+`dA1/dt = -(k10+k12)*A1 + k21*A2` and
+`dA2/dt = k12*A1 - k21*A2`. The eliminated amount is `100-A1-A2`.
+The three constants are in inverse hours. The controls cover 0-3 inverse hours
+in 0.01 increments and 0-48 hours in quarter-hour increments, solely as teaching
+ranges. Values are amounts relative to the initial total, not concentrations.
+
+`HealthAtlasDistribution` evaluates the closed-form linear solution. It uses
+the stable product expression for the slower eigenvalue and `expm1` for the
+early-time exponential difference. Zero outward transfer is evaluated as the
+single-compartment limit, including coincident eigenvalues. Tests cover mass
+conservation, positivity, irreversible transfer, zero elimination, limiting
+equilibrium, equation derivatives and independent matrix-exponential fixtures.
+The implementation is original Kotlin using the standard equations, not a
+copy of the reference software. It does not bundle Monolix or an R runtime.
+
+The native diagram shows bidirectional central/peripheral transfer and an
+elimination arrow only from the central node. Three curves have distinct line
+patterns as well as colors. Numerical summaries expose current values without
+requiring color perception. Parameter edits update the local model, chart and
+diagram; they do not rebuild the page. Curve samples are recomputed only when
+rate constants change. No background simulation loop runs.
+
+Each anatomy entry retains its own selected model and parameters across
+navigation and recreation. Invalid saved arrays are rejected. The Agent preview
+includes only the active drug model, its current inputs, values, assumptions
+and source; physiology, aging and personal measurement flows do not inherit it.
+
+This is a compartment model, not organ-resolved PBPK. Compartments group kinetic
+behavior and are not labeled as individual organs. Absorption, repeat dosing,
+nonlinear elimination, drug identity, patient fitting, therapeutic thresholds
+and treatment predictions are excluded. No synthetic result becomes a personal
+health record. Organ-resolved distribution and clearance remain separate work.
+
+Reference for the linear amount equations and analytical treatment:
+https://doi.org/10.12793/tcp.2019.27.2.43
