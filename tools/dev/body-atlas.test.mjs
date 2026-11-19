@@ -30,8 +30,72 @@ function validate(data) {
   for (const model of data.mechanisms) {
     assert.equal(model.stages.length, 4, model.id);
     assert.match(model.chapter, /^[a-z0-9-]+$/);
+    if (model.kind === 'cell') {
+      assert.equal(entries.get(model.id)?.kind, 'cell', model.id);
+      assert.equal(entries.get(model.id)?.mechanism, model.id, 'Cell mechanism must match its owner');
+      assert.equal(data.entries.filter(item => item.mechanism === model.id).length, 1, 'Cell mechanism cannot leak to another entry');
+    }
   }
 }
+
+const coreCells = [
+  "cell-erythrocyte",
+  "cell-neutrophil",
+  "cell-eosinophil",
+  "cell-basophil",
+  "cell-monocyte",
+  "cell-macrophage",
+  "cell-t-cell",
+  "cell-b-cell",
+  "cell-plasma-cell",
+  "cell-natural-killer-cell",
+  "cell-neuron",
+  "cell-astrocyte",
+  "cell-schwann-cell",
+  "cell-skeletal-myocyte",
+  "cell-cardiomyocyte",
+  "cell-smooth-muscle-cell",
+  "cell-keratinocyte",
+  "cell-melanocyte",
+  "cell-fibroblast",
+  "cell-adipocyte",
+  "cell-osteoblast",
+  "cell-osteocyte",
+  "cell-osteoclast",
+  "cell-chondrocyte",
+  "cell-vascular-endothelial-cell",
+  "cell-hepatocyte",
+  "cell-pancreatic-beta-cell",
+  "cell-enterocyte",
+  "cell-spermatozoon",
+  "cell-oocyte-or-ovum"
+];
+
+test('all thirty core cells have their own sourced, localized mechanism', () => {
+  const mechanisms = new Map(catalogue.mechanisms.map(model => [model.id, model]));
+  const keys = new Set();
+  for (const id of coreCells) {
+    const entry = catalogue.entries.find(item => item.id === id);
+    assert.equal(entry?.mechanism, id);
+    const model = mechanisms.get(id);
+    assert.equal(model?.kind, 'cell');
+    for (const key of [model.title, ...model.stages]) {
+      assert.ok(!keys.has(key), key);
+      keys.add(key);
+      for (const locale of ['values', 'values-zh']) {
+        const resource = readFileSync(new URL(`../../apps/android/app/src/main/res/${locale}/health_atlas_cell_processes.xml`, import.meta.url), 'utf8');
+        assert.ok(resource.includes(`name="${key}"`), `${locale}: ${key}`);
+      }
+    }
+  }
+  assert.equal(coreCells.length, 30);
+});
+
+test('cell-specific processes cannot be reused for another cell or structure', () => {
+  const invalid = structuredClone(catalogue);
+  invalid.entries.find(item => item.id === 'cell-neutrophil').mechanism = 'cell-erythrocyte';
+  assert.throws(() => validate(invalid), /Cell mechanism/);
+});
 
 test('bundled atlas is a complete canonical graph', () => {
   validate(catalogue);

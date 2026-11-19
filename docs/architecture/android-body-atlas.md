@@ -161,6 +161,40 @@ Specialized artwork for the rest of the catalogue and quantitative research
 models are separate work. An unrelated illustration must not be relabeled as a
 different organ or cell.
 
+## Cell-specific processes
+
+The thirty core cells now have their own four-stage teaching processes and
+chapter references in the catalogue, rather than reusing a system-level cycle.
+These include the ten blood/immune examples, three neural examples, three
+muscle types, four skin/connective/metabolic examples, four bone/cartilage
+examples, endothelium, hepatocytes, beta cells, enterocytes and two gametes.
+The loader rejects a cell-specific mechanism assigned to a different entity.
+Other cell subtypes still use broader pathways until dedicated content is
+reviewed; this is not a claim of complete single-cell biology coverage.
+
+Each stage is a native focusable button. Selecting a stage pauses playback,
+updates the progress position and preserves the other simulation inputs.
+Text height is measured before layout, including at large font sizes.
+The processes are qualitative teaching sequences, not biological clocks,
+diagnostic predictions or calculated cell health scores. An example is scoped
+in its title when it describes only a subtype or one function.
+
+Two additional bitmap plates depict a mature biconcave erythrocyte without a
+nucleus and a representative myelinated multipolar neuron. They were generated
+with the built-in image tool. The specifications requested one isolated cell,
+transparent alpha, no baked-in labels and no cropped tips. The neuron edit
+requested removal of surrounding glow and at least eight percent free margins,
+while preserving one axon, separated myelin segments and terminal branches.
+They are bound only to the matching catalogue entries, not to other glia or
+white blood cells. These remain schematic illustrations, not microscopy.
+
+Cell process references are the per-entry OpenStax links. Key chapters include:
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/18-3-erythrocytes
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/12-2-nervous-tissue
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/12-5-communication-between-neurons
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/28-1-fertilization
+
 Category icons are Lucide 1.72.0 paths converted into Android VectorDrawables.
 SVG arcs are normalized to cubic paths with svgpath 2.6.0 to avoid Android's
 incompatible parsing of compressed SVG arc flags. This is an authoring-time
