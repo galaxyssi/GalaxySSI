@@ -30,6 +30,7 @@ function validate(data) {
   for (const model of data.mechanisms) {
     assert.equal(model.stages.length, 4, model.id);
     assert.match(model.chapter, /^[a-z0-9-]+$/);
+    if (model.reference !== undefined) assert.match(model.reference, /^https:\/\/pubmed\.ncbi\.nlm\.nih\.gov\/[1-9][0-9]*\/$/);
     if (model.kind === 'cell') {
       assert.equal(entries.get(model.id)?.kind, 'cell', model.id);
       assert.equal(entries.get(model.id)?.mechanism, model.id, 'Cell mechanism must match its owner');
@@ -99,7 +100,7 @@ test('cell-specific processes cannot be reused for another cell or structure', (
 
 test('bundled atlas is a complete canonical graph', () => {
   validate(catalogue);
-  for (const [kind, count] of [['system', 14], ['organ', 165], ['cell', 105], ['fragment', 1]]) {
+  for (const [kind, count] of [['system', 14], ['organ', 167], ['cell', 105], ['fragment', 1]]) {
     assert.equal(catalogue.entries.filter(item => item.kind === kind).length, count);
   }
   const skin = catalogue.entries.find(item => item.id === 'skin');
@@ -134,6 +135,34 @@ test('cross-kind duplicate identities are rejected before packaging', () => {
   const invalid = structuredClone(catalogue);
   invalid.entries.find(item => item.id === 'skin-organ').id = 'skin';
   assert.throws(() => validate(invalid), /Duplicate atlas identity/);
+});
+
+test('alveolar structures and five respiratory cells have scoped references', () => {
+  const entry = id => catalogue.entries.find(item => item.id === id);
+  assert.deepEqual(entry('alveoli').related, ['respiratory-membrane', 'pulmonary-capillaries']);
+  assert.equal(entry('alveoli').mechanism, 'gas-exchange');
+  assert.ok(entry('cell-type-i-pneumocyte').related.includes('respiratory-membrane'));
+  assert.ok(entry('cell-erythrocyte').related.includes('pulmonary-capillaries'));
+  for (const name of ['type-i-pneumocyte', 'type-ii-pneumocyte', 'ciliated-airway-cell', 'goblet-cell', 'club-cell']) {
+    const id = `cell-${name}`;
+    assert.equal(entry(id).mechanism, id);
+    const model = catalogue.mechanisms.find(item => item.id === id);
+    assert.equal(model.kind, 'cell');
+    for (const locale of ['values', 'values-zh']) {
+      const resources = readFileSync(new URL(`../../apps/android/app/src/main/res/${locale}/health_atlas_respiration.xml`, import.meta.url), 'utf8');
+      for (const key of [model.title, ...model.stages]) assert.ok(resources.includes(`name="${key}"`));
+    }
+  }
+  assert.equal(catalogue.mechanisms.find(item => item.id === 'cell-club-cell').reference, 'https://pubmed.ncbi.nlm.nih.gov/29874100/');
+});
+
+test('mechanism reference overrides accept only canonical public paper URLs', () => {
+  for (const reference of ['http://pubmed.ncbi.nlm.nih.gov/29874100/', 'https://pubmed.ncbi.nlm.nih.gov.evil/29874100/',
+    'file:///private', 'https://pubmed.ncbi.nlm.nih.gov/29874100/?data=private', '']) {
+    const invalid = structuredClone(catalogue);
+    invalid.mechanisms[0].reference = reference;
+    assert.throws(() => validate(invalid));
+  }
 });
 
 test('missing structures and category-as-organ mixups are rejected', () => {

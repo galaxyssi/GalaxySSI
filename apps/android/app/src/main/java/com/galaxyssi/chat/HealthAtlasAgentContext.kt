@@ -26,6 +26,11 @@ internal object HealthAtlasAgentContext {
                 appendLine(context.getString(R.string.health_atlas_circuit_path))
                 appendLine(HealthAtlasCirculation.SOURCE)
             }
+            if (HealthAtlasGasExchange.supports(item.id)) {
+                appendLine(context.getString(R.string.health_atlas_gas_scope))
+                HealthAtlasGasExchange.gradients.forEach { appendLine(HealthAtlasGasExchangeText.summary(context, it)) }
+                appendLine(HealthAtlasGasExchange.SOURCE)
+            }
             appendLine(context.getString(R.string.health_atlas_stage, simulation.stage + 1,
                 mechanism.stages.size, mechanism.stages[simulation.stage]))
             if (item.id in setOf("heart", "cardio")) {

@@ -15,8 +15,9 @@ internal data class HealthAtlasItem(
 )
 
 internal data class HealthAtlasMechanism(val id: String, val kind: String, val title: String,
-    val stages: List<String>, val chapter: String) {
-    val source get() = "https://openstax.org/books/anatomy-and-physiology-2e/pages/$chapter"
+    val stages: List<String>, val chapter: String, val reference: String? = null) {
+    init { require(reference == null || reference.matches(Regex("https://pubmed\\.ncbi\\.nlm\\.nih\\.gov/[1-9][0-9]*/"))) }
+    val source get() = reference ?: "https://openstax.org/books/anatomy-and-physiology-2e/pages/$chapter"
 }
 
 /** Public teaching catalogue only. Personal observations never enter this model or its search index. */
@@ -68,7 +69,8 @@ internal class HealthBodyAtlas(val items: List<HealthAtlasItem>, val mechanisms:
             }
             val models = root.getJSONArray("mechanisms").objects().map { value ->
                 HealthAtlasMechanism(value.getString("id"), value.getString("kind"), text(value.getString("title")),
-                    value.getJSONArray("stages").strings().map(::text), value.getString("chapter"))
+                    value.getJSONArray("stages").strings().map(::text), value.getString("chapter"),
+                    if (value.has("reference")) value.getString("reference") else null)
             }
             return HealthBodyAtlas(items, models)
         }
@@ -91,7 +93,8 @@ internal object HealthAtlasMetrics {
         "urinary", "kidneys", "renal-cortex", "renal-medulla", "renal-pelvis", "nephron", "glomerulus", "renal-tubules", "collecting-ducts", "cell-podocyte",
         "bowmans-capsule", "proximal-tubule", "nephron-loop", "distal-tubule" ->
             listOf(HealthMetric.CREATININE, HealthMetric.UREA, HealthMetric.URINE_PROTEIN)
-        "respiratory", "lungs", "alveoli", "cell-type-i-pneumocyte", "cell-type-ii-pneumocyte" -> listOf(HealthMetric.OXYGEN_SATURATION)
+        "respiratory", "lungs", "alveoli", "respiratory-membrane", "pulmonary-capillaries",
+        "cell-type-i-pneumocyte", "cell-type-ii-pneumocyte" -> listOf(HealthMetric.OXYGEN_SATURATION)
         "blood", "bone-marrow", "immune" -> listOf(HealthMetric.HEMOGLOBIN, HealthMetric.RED_BLOOD_CELLS, HealthMetric.WHITE_BLOOD_CELLS, HealthMetric.PLATELETS)
         "cell-erythrocyte" -> listOf(HealthMetric.RED_BLOOD_CELLS, HealthMetric.HEMOGLOBIN, HealthMetric.HEMATOCRIT)
         "fragment-platelet", "cell-megakaryocyte" -> listOf(HealthMetric.PLATELETS)
@@ -106,5 +109,5 @@ internal data class HealthAtlasSimulation(val first: Int = 70, val second: Int =
     fun cardiacOutput(): Double { require(first in 40..160 && second in 30..120); return first * second / 1000.0 }
     fun minuteVentilation(): Double { require(first in 6..30 && second in 200..900); return first * second / 1000.0 }
     val stage get() = (phase.coerceIn(0f, 1f) * 4).toInt().coerceIn(0, 3)
-    companion object { fun initial(id: String) = if (id in setOf("respiratory", "lungs")) HealthAtlasSimulation(12, 500) else HealthAtlasSimulation() }
+    companion object { fun initial(id: String) = if (id in setOf("respiratory", "lungs", "alveoli")) HealthAtlasSimulation(12, 500) else HealthAtlasSimulation() }
 }

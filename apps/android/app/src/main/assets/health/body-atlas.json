@@ -101,7 +101,9 @@
         "lungs",
         "alveoli",
         "pleura",
-        "diaphragm"
+        "diaphragm",
+        "respiratory-membrane",
+        "pulmonary-capillaries"
       ],
       "mechanism": "respiratory",
       "aliases": "health_atlas_respiratory_aliases",
@@ -880,7 +882,9 @@
       "systems": [
         "cardio"
       ],
-      "related": [],
+      "related": [
+        "pulmonary-capillaries"
+      ],
       "mechanism": "cardio",
       "aliases": "health_atlas_capillaries_aliases",
       "color": "",
@@ -1025,8 +1029,11 @@
       "systems": [
         "respiratory"
       ],
-      "related": [],
-      "mechanism": "respiratory",
+      "related": [
+        "respiratory-membrane",
+        "pulmonary-capillaries"
+      ],
+      "mechanism": "gas-exchange",
       "aliases": "health_atlas_alveoli_aliases",
       "color": "",
       "icon": ""
@@ -2795,7 +2802,8 @@
       ],
       "related": [
         "blood",
-        "bone-marrow"
+        "bone-marrow",
+        "pulmonary-capillaries"
       ],
       "mechanism": "cell-erythrocyte",
       "aliases": "health_atlas_cell_erythrocyte_aliases",
@@ -3222,7 +3230,9 @@
       ],
       "related": [
         "blood-vessels",
-        "capillaries"
+        "capillaries",
+        "respiratory-membrane",
+        "pulmonary-capillaries"
       ],
       "mechanism": "cell-vascular-endothelial-cell",
       "aliases": "health_atlas_cell_vascular_endothelial_cell_aliases",
@@ -3674,9 +3684,10 @@
         "respiratory"
       ],
       "related": [
-        "alveoli"
+        "alveoli",
+        "respiratory-membrane"
       ],
-      "mechanism": "transport",
+      "mechanism": "cell-type-i-pneumocyte",
       "aliases": "health_atlas_cell_type_i_pneumocyte_aliases",
       "color": "",
       "icon": ""
@@ -3692,7 +3703,7 @@
       "related": [
         "alveoli"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-type-ii-pneumocyte",
       "aliases": "health_atlas_cell_type_ii_pneumocyte_aliases",
       "color": "",
       "icon": ""
@@ -3709,7 +3720,7 @@
         "trachea",
         "bronchi"
       ],
-      "mechanism": "respiratory",
+      "mechanism": "cell-ciliated-airway-cell",
       "aliases": "health_atlas_cell_ciliated_airway_cell_aliases",
       "color": "",
       "icon": ""
@@ -3729,7 +3740,7 @@
         "small-intestine",
         "large-intestine"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-goblet-cell",
       "aliases": "health_atlas_cell_goblet_cell_aliases",
       "color": "",
       "icon": ""
@@ -3745,7 +3756,7 @@
       "related": [
         "bronchioles"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-club-cell",
       "aliases": "health_atlas_cell_club_cell_aliases",
       "color": "",
       "icon": ""
@@ -4583,6 +4594,37 @@
       "aliases": "health_atlas_fragment_platelet_aliases",
       "color": "",
       "icon": ""
+    },
+    {
+      "id": "respiratory-membrane",
+      "kind": "organ",
+      "name": "health_atlas_respiratory_membrane_name",
+      "description": "health_atlas_respiratory_membrane_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "pulmonary-capillaries"
+      ],
+      "mechanism": "gas-exchange",
+      "aliases": "health_atlas_respiratory_membrane_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "pulmonary-capillaries",
+      "kind": "organ",
+      "name": "health_atlas_pulmonary_capillaries_name",
+      "description": "health_atlas_pulmonary_capillaries_description",
+      "systems": [
+        "respiratory",
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "gas-exchange",
+      "aliases": "health_atlas_pulmonary_capillaries_aliases",
+      "color": "",
+      "icon": ""
     }
   ],
   "mechanisms": [
@@ -5269,6 +5311,79 @@
         "health_atlas_renal_urothelial_cell_3"
       ],
       "chapter": "25-2-gross-anatomy-of-urine-transport"
+    },
+    {
+      "id": "gas-exchange",
+      "kind": "lung",
+      "title": "health_atlas_gas_title",
+      "stages": [
+        "health_atlas_gas_0",
+        "health_atlas_gas_1",
+        "health_atlas_gas_2",
+        "health_atlas_gas_3"
+      ],
+      "chapter": "22-4-gas-exchange"
+    },
+    {
+      "id": "cell-type-i-pneumocyte",
+      "kind": "cell",
+      "title": "health_atlas_resp_type_i_pneumocyte_title",
+      "stages": [
+        "health_atlas_resp_type_i_pneumocyte_0",
+        "health_atlas_resp_type_i_pneumocyte_1",
+        "health_atlas_resp_type_i_pneumocyte_2",
+        "health_atlas_resp_type_i_pneumocyte_3"
+      ],
+      "chapter": "22-1-organs-and-structures-of-the-respiratory-system"
+    },
+    {
+      "id": "cell-type-ii-pneumocyte",
+      "kind": "cell",
+      "title": "health_atlas_resp_type_ii_pneumocyte_title",
+      "stages": [
+        "health_atlas_resp_type_ii_pneumocyte_0",
+        "health_atlas_resp_type_ii_pneumocyte_1",
+        "health_atlas_resp_type_ii_pneumocyte_2",
+        "health_atlas_resp_type_ii_pneumocyte_3"
+      ],
+      "chapter": "22-1-organs-and-structures-of-the-respiratory-system"
+    },
+    {
+      "id": "cell-ciliated-airway-cell",
+      "kind": "cell",
+      "title": "health_atlas_resp_ciliated_airway_cell_title",
+      "stages": [
+        "health_atlas_resp_ciliated_airway_cell_0",
+        "health_atlas_resp_ciliated_airway_cell_1",
+        "health_atlas_resp_ciliated_airway_cell_2",
+        "health_atlas_resp_ciliated_airway_cell_3"
+      ],
+      "chapter": "22-1-organs-and-structures-of-the-respiratory-system"
+    },
+    {
+      "id": "cell-goblet-cell",
+      "kind": "cell",
+      "title": "health_atlas_resp_goblet_cell_title",
+      "stages": [
+        "health_atlas_resp_goblet_cell_0",
+        "health_atlas_resp_goblet_cell_1",
+        "health_atlas_resp_goblet_cell_2",
+        "health_atlas_resp_goblet_cell_3"
+      ],
+      "chapter": "22-1-organs-and-structures-of-the-respiratory-system"
+    },
+    {
+      "id": "cell-club-cell",
+      "kind": "cell",
+      "title": "health_atlas_resp_club_cell_title",
+      "stages": [
+        "health_atlas_resp_club_cell_0",
+        "health_atlas_resp_club_cell_1",
+        "health_atlas_resp_club_cell_2",
+        "health_atlas_resp_club_cell_3"
+      ],
+      "chapter": "22-1-organs-and-structures-of-the-respiratory-system",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/29874100/"
     }
   ]
 }
