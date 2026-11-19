@@ -48,10 +48,22 @@ internal class HealthAtlasLabeledImage(activity: Activity, plate: HealthAtlasPla
     init { addView(image); addView(guides); labels.forEach(::addView) }
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        val labelWidth = (w * .28f).toInt()
-        labels.forEach { it.measure(MeasureSpec.makeMeasureSpec(labelWidth, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)) }
-        val required = labels.sumOf { it.measuredHeight } + ui.dp(8) * (labels.size + 1) + controlsInset
+        var labelWidth = (w * .28f).toInt()
+        fun measureLabels(): Int {
+            labels.forEach { it.measure(MeasureSpec.makeMeasureSpec(labelWidth, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)) }
+            return labels.sumOf { it.measuredHeight } + ui.dp(8) * (labels.size + 1) + controlsInset
+        }
+        var required = measureLabels()
+        // A constrained height needs a wider label column before packing large text upward.
+        if (MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) {
+            val limit = MeasureSpec.getSize(heightMeasureSpec)
+            val maximumLabelWidth = (w * .6f).toInt()
+            while (required > limit && labelWidth < maximumLabelWidth) {
+                labelWidth = (labelWidth + ui.dp(8)).coerceAtMost(maximumLabelWidth)
+                required = measureLabels()
+            }
+        }
         val h = resolveSize(required.coerceAtLeast(suggestedMinimumHeight), heightMeasureSpec)
         setMeasuredDimension(w, h)
         image.measure(MeasureSpec.makeMeasureSpec(w - labelWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))

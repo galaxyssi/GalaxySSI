@@ -14,10 +14,12 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
     private val output = ui.text("", 26f, bold = true).apply { tag = "atlas-physiology-output" }
     private val companion = ui.text("", 14f, muted = true).apply { tag = "atlas-physiology-companion" }
     private val chart = HealthAtlasPhysiologyChart(activity, model)
+    private val renalBalance = if (kind == HealthAtlasPhysiologyKind.RENAL_EXCRETION) HealthAtlasRenalBalanceView(activity) else null
     init {
         ui.add(body, ui.text(activity.getString(HealthAtlasPhysiologyText.title(kind)), 19f, bold = true), 12)
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_model_synthetic), 12f, muted = true), 4)
         ui.add(body, output, 8); ui.add(body, companion, 4)
+        renalBalance?.let { ui.add(body, it, 12) }
         ui.add(body, chart, 12)
         val axisKey = kind.inputs[kind.axis].key
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_model_axis,
@@ -59,6 +61,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         output.text = HealthAtlasPhysiologyText.number(model.result) + " " + model.kind.unit
         companion.text = HealthAtlasPhysiologyText.companion(activity, model)
         chart.model = model
+        model.renalAmounts?.let { renalBalance?.amounts = it }
         controls.forEachIndexed { index, (_, label) -> label.text = HealthAtlasPhysiologyText.input(activity, model, index) }
     }
 }

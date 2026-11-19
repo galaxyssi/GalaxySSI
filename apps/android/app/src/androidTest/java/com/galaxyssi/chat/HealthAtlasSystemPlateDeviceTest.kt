@@ -95,7 +95,7 @@ class HealthAtlasSystemPlateDeviceTest {
         }
         assertNull(HealthAtlasPlates.forId("pancreatic-islets"))
         assertNull(HealthAtlasPlates.forId("cell-pancreatic-acinar-cell"))
-        assertNull(HealthAtlasPlates.forId("glomerulus"))
+        assertNull(HealthAtlasPlates.forId("cell-podocyte"))
     }
 
     @Test fun newPlateLabelsFitPhoneAndTabletWidthsAndRemainClickable() = native { scenario ->

@@ -57,7 +57,13 @@ internal object HealthAtlasPlates {
             HealthAtlasMarker("pancreas", .62f, .30f), HealthAtlasMarker("pancreatic-duct", .57f, .41f),
             HealthAtlasMarker("duodenum", .12f, .48f)),
         "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder")
-    val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas)
+    private val nephron = HealthAtlasPlate(R.drawable.health_atlas_nephron, "nephron",
+        R.string.health_atlas_view_nephron, listOf(
+            HealthAtlasMarker("glomerulus", .243f, .175f), HealthAtlasMarker("bowmans-capsule", .288f, .095f),
+            HealthAtlasMarker("proximal-tubule", .45f, .275f), HealthAtlasMarker("nephron-loop", .494f, .902f),
+            HealthAtlasMarker("distal-tubule", .716f, .184f), HealthAtlasMarker("collecting-ducts", .853f, .644f)),
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-4-microscopic-anatomy-of-the-kidney")
+    val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron)
 
     fun forId(id: String?): HealthAtlasPlate? = when (id) {
         null -> whole
@@ -69,6 +75,8 @@ internal object HealthAtlasPlates {
         "urinary", "ureters", "bladder", "urethra" -> urinary
         "gut", "esophagus", "stomach", "small-intestine", "large-intestine", "appendix", "rectum" -> gut
         "pancreas", "pancreatic-duct", "duodenum" -> pancreas
+        "nephron", "glomerulus", "bowmans-capsule", "renal-tubules", "proximal-tubule", "nephron-loop",
+        "distal-tubule", "collecting-ducts" -> nephron
         "cell-pancreatic-beta-cell" -> beta
         "cell-erythrocyte" -> erythrocyte
         "cell-neuron" -> neuron

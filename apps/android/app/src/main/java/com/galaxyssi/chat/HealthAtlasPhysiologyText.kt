@@ -75,6 +75,7 @@ internal object HealthAtlasPhysiologyText {
         appendLine(context.getString(scope(model.kind)))
         model.inputs.indices.forEach { appendLine(input(context, model, it)) }
         appendLine(result(context, model)); appendLine(companion(context, model))
+        model.renalAmounts?.let { appendLine(HealthAtlasRenalText.context(context, it)) }
         appendLine(context.getString(formula(model.kind))); append(model.kind.sources.joinToString("\n"))
     }
 }

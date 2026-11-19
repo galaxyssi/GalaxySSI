@@ -26,6 +26,7 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
         fun forItem(id: String): HealthAtlasPhysiologyKind? = when (id) {
             "respiratory", "lungs", "alveoli" -> VENTILATION
             "urinary", "kidneys", "nephron", "renal-tubules", "collecting-ducts",
+            "proximal-tubule", "nephron-loop", "distal-tubule",
             "cell-proximal-tubular-cell", "cell-distal-tubular-cell",
             "cell-collecting-duct-principal-cell", "cell-collecting-duct-intercalated-cell" -> RENAL_EXCRETION
             "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron" -> POTASSIUM
@@ -47,12 +48,14 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
     val result: Double get() = evaluate(inputs.mapIndexed { index, _ -> input(index) })
     val companionValue: Double get() = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> input(0) * input(1) / 1000.0
-        HealthAtlasPhysiologyKind.RENAL_EXCRETION -> input(0) * input(1) / 100.0
+        HealthAtlasPhysiologyKind.RENAL_EXCRETION -> requireNotNull(renalAmounts).reabsorbed
         HealthAtlasPhysiologyKind.POTASSIUM -> input(0) / input(1)
         HealthAtlasPhysiologyKind.OXYGEN_BINDING -> requireNotNull(oxygenAmounts).total
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
+    val renalAmounts: HealthAtlasRenal.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.RENAL_EXCRETION)
+        HealthAtlasRenal.amounts(input(0), input(1), input(2)) else null
     val axisRange get() = kind.inputs[kind.axis].let { it.range.first / it.scale..it.range.last / it.scale }
     fun resultAt(x: Double): Double {
         require(x.isFinite() && x in axisRange)
@@ -60,7 +63,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
     }
     private fun evaluate(values: List<Double>): Double = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> values[0] * (values[1] - values[2]) / 1000.0
-        HealthAtlasPhysiologyKind.RENAL_EXCRETION -> values[0] * (1.0 - values[1] / 100.0) + values[2]
+        HealthAtlasPhysiologyKind.RENAL_EXCRETION -> HealthAtlasRenal.amounts(values[0], values[1], values[2]).excreted
         HealthAtlasPhysiologyKind.POTASSIUM -> potassiumPotential(values[0], values[1])
         HealthAtlasPhysiologyKind.OXYGEN_BINDING -> 100.0 * HealthAtlasOxygen.saturation(values[0], values[1])
     }
