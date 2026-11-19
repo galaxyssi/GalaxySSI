@@ -1151,6 +1151,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         startupConnectingView.finishWhenReady()
         traceStartup("on_create_complete")
         conversationWindow.attach()
+        handler.post { HealthAtlasAgentHandoff.consume(this) }
     }
 
 
@@ -1196,6 +1197,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         handleDebugSendIntent(intent)
         handleDebugIncomingIntent(intent)
         healthCareDiscussion.consumeInstruction()
+        HealthAtlasAgentHandoff.consume(this)
     }
 
 

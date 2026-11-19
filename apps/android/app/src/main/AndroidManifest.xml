@@ -257,6 +257,7 @@
         <activity android:name=".HealthBackupActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
         <activity android:name=".HealthRestoreActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
         <activity android:name=".HealthBodyExplorationActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
+        <activity android:name=".HealthBodyAtlasActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
         <activity android:name=".HealthProfileActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
         <activity android:name=".HealthPrivacyActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
         <activity android:name=".HealthSourcesActivity" android:theme="@style/Theme.GalaxySSI.Health" android:exported="false" />
