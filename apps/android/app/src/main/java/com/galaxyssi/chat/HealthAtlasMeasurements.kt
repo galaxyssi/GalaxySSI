@@ -17,7 +17,8 @@ internal data class HealthAtlasMeasurementSelection(val metric: HealthMetric?, v
 
 /** Cancels indexed reads and drops decrypted view state whenever this surface leaves the foreground. */
 internal class HealthAtlasMeasurements(private val activity: Activity, private val parent: LinearLayout,
-    private val item: HealthAtlasItem, initial: HealthAtlasMeasurementSelection?) : AutoCloseable {
+    private val item: HealthAtlasItem, initial: HealthAtlasMeasurementSelection?,
+    private val onAnalysisReady: (Boolean) -> Unit = {}) : AutoCloseable {
     private val ui = HealthCenterViews(activity)
     private val names = activity.intent.healthNavigationDatabases()
     private val metrics = HealthAtlasMetrics.forItem(item)
@@ -29,6 +30,8 @@ internal class HealthAtlasMeasurements(private val activity: Activity, private v
     private var signal: CancellationSignal? = null
     private var generation = 0
     private var closed = false
+    private var analysis: HealthTrendAnalysisHandoff? = null
+    val canAnalyze get() = !closed && analysis != null
     private var picker: android.app.AlertDialog? = null
     private val panel = ui.column().apply { isSaveEnabled = false }
     private var chart: HealthTrendChart? = null
@@ -44,6 +47,7 @@ internal class HealthAtlasMeasurements(private val activity: Activity, private v
     }
     private fun load() {
         if (closed) return
+        analysis = null; onAnalysisReady(false)
         val selected = metric ?: return
         signal?.cancel(); val cancellation = CancellationSignal(); signal = cancellation; val token = ++generation
         chart?.clear(); chart = null; panel.removeAllViews()
@@ -102,14 +106,19 @@ internal class HealthAtlasMeasurements(private val activity: Activity, private v
         ui.add(container, ui.row(activity.getString(R.string.health_atlas_trend_details)) {
             activity.startActivity(Intent(activity, HealthTrendActivity::class.java).putHealthTrend(summary.spec).putHealthNavigationFixture(names))
         })
-        if (summary.points.isNotEmpty()) ui.add(container, ui.command(R.string.health_atlas_compare) {
-            activity.startActivity(Intent(activity, HealthAssistantActivity::class.java)
-                .putHealthTrendAnalysis(HealthTrendAnalysisHandoff(summary.spec, summary.version)).putHealthNavigationFixture(names))
-        }, 12)
+        analysis = if (summary.points.isNotEmpty()) HealthTrendAnalysisHandoff(summary.spec, summary.version) else null
+        onAnalysisReady(canAnalyze)
+    }
+    fun analyze() {
+        if (closed) return
+        val selected = analysis ?: return
+        activity.startActivity(Intent(activity, HealthAssistantActivity::class.java)
+            .putHealthTrendAnalysis(selected).putHealthNavigationFixture(names))
     }
     override fun close() {
         if (closed) return
         closed = true; generation++; signal?.cancel(); signal = null; picker?.dismiss(); picker = null
+        analysis = null; onAnalysisReady(false)
         activity.contentResolver.unregisterContentObserver(observer)
         chart?.clear(); chart = null; panel.removeAllViews(); worker.shutdown()
     }

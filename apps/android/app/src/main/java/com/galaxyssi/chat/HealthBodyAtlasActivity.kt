@@ -44,6 +44,7 @@ class HealthBodyAtlasActivity : Activity() {
     private val simulationStates = linkedMapOf<String, HealthAtlasSimulation>()
     private val physiologyStates = linkedMapOf<String, HealthAtlasPhysiology>()
     private var measurements: HealthAtlasMeasurements? = null
+    private var measurementAction: View? = null
     private var measurementItem = ""
     private val measurementSelections = linkedMapOf<String, HealthAtlasMeasurementSelection>()
     private var started = false
@@ -159,6 +160,7 @@ class HealthBodyAtlasActivity : Activity() {
         saveResearch(); research = null
         saveMeasurementSelection()
         simulation?.pause(); simulation = null; measurements?.close(); measurements = null
+        measurementAction = null
         root.removeAllViews()
         val item = data[selection]
         val toolbar = ui.toolbar(R.string.health_body_title, ::back, ui.icon(R.drawable.ic_hub_search, R.string.health_atlas_search) {
@@ -182,8 +184,12 @@ class HealthBodyAtlasActivity : Activity() {
         val scroll = ScrollView(this).apply { isFillViewport = true; isSaveEnabled = false; addView(content); tag = "atlas-scroll" }
         scroller = scroll; root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         if (item == null) catalogue(data) else if (researchTopic != null) researchPage(data, item) else detail(data, item)
-        root.addView(ui.command(R.string.health_atlas_ask) { ask(item, researchContext(item)) }.apply {
+        val personal = item != null && researchTopic == null && tab == HealthAtlasTab.VALUES
+        root.addView(ui.command(if (personal) R.string.health_atlas_compare else R.string.health_atlas_ask) {
+            if (personal) measurements?.analyze() else ask(item)
+        }.apply {
             tag = "atlas-ask"
+            if (personal) { measurementAction = this; isEnabled = measurements?.canAnalyze == true }
         }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(12)) })
         scroll.post { if (scroller === scroll) scroll.scrollTo(0, scrollY) }
     }
@@ -249,7 +255,9 @@ class HealthBodyAtlasActivity : Activity() {
             }
             HealthAtlasTab.VALUES -> {
                 measurementItem = item.id
-                if (started) measurements = HealthAtlasMeasurements(this, content, item, measurementSelections[item.id])
+                if (started) measurements = HealthAtlasMeasurements(this, content, item, measurementSelections[item.id]) {
+                    measurementAction?.isEnabled = it && started
+                }
                 else content.addView(ui.text(getString(R.string.health_loading)))
             }
             HealthAtlasTab.SIMULATION -> {
@@ -284,25 +292,6 @@ class HealthBodyAtlasActivity : Activity() {
             }.apply { tag = "atlas-source-physiology" }, 16)
         } else research = HealthAtlasResearchPanel(this, content, data, item, topic, eliminationStates[item.id], ::select, ::source)
     }
-    private fun researchContext(item: HealthAtlasItem?): String {
-        item ?: return ""
-        val quantitative = if (researchTopic == HealthAtlasResearchTopic.PHYSIOLOGY ||
-            researchTopic == null && tab == HealthAtlasTab.SIMULATION)
-            simulation?.quantitativeSnapshot?.let { HealthAtlasPhysiologyText.context(this, it) }.orEmpty() else ""
-        val topic = researchTopic ?: return quantitative
-        val sources = HealthAtlasResearchSources.forTopic(topic, atlas!!.mechanism(item)).joinToString("\n")
-        val limits = getString(when (topic) {
-            HealthAtlasResearchTopic.PHYSIOLOGY -> R.string.health_atlas_teaching_note
-            HealthAtlasResearchTopic.DRUGS -> R.string.health_atlas_elimination_assumptions
-            HealthAtlasResearchTopic.AGING -> R.string.health_atlas_aging_evidence
-        })
-        val parameters = if (topic == HealthAtlasResearchTopic.DRUGS) {
-            val values = research?.elimination ?: eliminationStates[item.id] ?: HealthAtlasElimination()
-            "\n" + getString(R.string.health_atlas_elimination_summary, values.halfLifeHours, values.elapsedHours,
-                java.text.NumberFormat.getNumberInstance().apply { maximumFractionDigits = 2 }.format(values.percent))
-        } else if (quantitative.isNotEmpty()) "\n$quantitative" else ""
-        return getString(topic.title) + "\n" + limits + parameters + "\n" + sources
-    }
     private fun source(url: String) {
         runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
             .onFailure { Toast.makeText(this, R.string.health_storage_error, Toast.LENGTH_SHORT).show() }
@@ -321,12 +310,10 @@ class HealthBodyAtlasActivity : Activity() {
             setContentView(box); show(); window?.setLayout(-1, -1)
         }
     }
-    private fun ask(item: HealthAtlasItem?, focus: String = "") {
-        val prompt = (item?.let {
-            val model = atlas!!.mechanism(it)
-            getString(R.string.health_atlas_ask_context, it.name, it.description, model.title, model.source)
-        } ?: getString(R.string.health_atlas_ask_whole_context)) +
-            if (focus.isBlank()) "" else "\n$focus"
+    private fun ask(item: HealthAtlasItem?) {
+        simulation?.pause()
+        val prompt = HealthAtlasAgentContext.prompt(this, atlas!!, item, simulation?.snapshot,
+            simulation?.quantitativeSnapshot, researchTopic, research?.elimination)
         dialog = AlertDialog.Builder(this).setTitle(R.string.health_atlas_ask_ready).setMessage(prompt)
             .setNegativeButton(android.R.string.cancel, null).setPositiveButton(R.string.health_atlas_ask) { _, _ ->
                 worker.execute {
