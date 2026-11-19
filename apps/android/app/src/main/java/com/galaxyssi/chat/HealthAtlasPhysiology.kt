@@ -5,7 +5,7 @@ import kotlin.math.ln
 internal data class HealthAtlasInput(val key: String, val range: IntRange, val initial: Int, val scale: Double = 1.0)
 
 internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>, val axis: Int, val unit: String,
-    val minimum: Double, val maximum: Double, val source: String) {
+    val minimum: Double, val maximum: Double, val source: String, val extraSource: String? = null) {
     VENTILATION(listOf(HealthAtlasInput("rate", 6..30, 12), HealthAtlasInput("tidal", 200..900, 500),
         HealthAtlasInput("dead-space", 0..200, 150)), 1, "L/min", 0.0, 27.0,
         "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-3-the-process-of-breathing"),
@@ -13,7 +13,13 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
         HealthAtlasInput("secreted", 0..100, 10)), 1, "mg/min", 0.0, 300.0,
         "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption"),
     POTASSIUM(listOf(HealthAtlasInput("outside", 10..200, 40, 10.0), HealthAtlasInput("inside", 50..200, 140)),
-        0, "mV", -150.0, 0.0, "https://neurotext.library.stonybrook.edu/C2/C2_4/C2_4.html");
+        0, "mV", -150.0, 0.0, "https://neurotext.library.stonybrook.edu/C2/C2_4/C2_4.html"),
+    OXYGEN_BINDING(listOf(HealthAtlasInput("oxygen-pressure", 0..150, 100),
+        HealthAtlasInput("p50", 150..400, 268, 10.0), HealthAtlasInput("hemoglobin", 50..200, 150)),
+        0, "%", 0.0, 100.0, "https://pmc.ncbi.nlm.nih.gov/articles/PMC2862600/",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC3485568/");
+
+    val sources get() = listOfNotNull(source, extraSource)
 
     companion object {
         // These are associated whole-process models, not claims that every selected structure performs all steps.
@@ -23,6 +29,7 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "cell-proximal-tubular-cell", "cell-distal-tubular-cell",
             "cell-collecting-duct-principal-cell", "cell-collecting-duct-intercalated-cell" -> RENAL_EXCRETION
             "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron" -> POTASSIUM
+            "blood", "cell-erythrocyte" -> OXYGEN_BINDING
             else -> null
         }
     }
@@ -42,7 +49,10 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.VENTILATION -> input(0) * input(1) / 1000.0
         HealthAtlasPhysiologyKind.RENAL_EXCRETION -> input(0) * input(1) / 100.0
         HealthAtlasPhysiologyKind.POTASSIUM -> input(0) / input(1)
+        HealthAtlasPhysiologyKind.OXYGEN_BINDING -> requireNotNull(oxygenAmounts).total
     }
+    val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
+        HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
     val axisRange get() = kind.inputs[kind.axis].let { it.range.first / it.scale..it.range.last / it.scale }
     fun resultAt(x: Double): Double {
         require(x.isFinite() && x in axisRange)
@@ -52,6 +62,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.VENTILATION -> values[0] * (values[1] - values[2]) / 1000.0
         HealthAtlasPhysiologyKind.RENAL_EXCRETION -> values[0] * (1.0 - values[1] / 100.0) + values[2]
         HealthAtlasPhysiologyKind.POTASSIUM -> potassiumPotential(values[0], values[1])
+        HealthAtlasPhysiologyKind.OXYGEN_BINDING -> 100.0 * HealthAtlasOxygen.saturation(values[0], values[1])
     }
     companion object {
         fun potassiumPotential(outside: Double, inside: Double): Double {

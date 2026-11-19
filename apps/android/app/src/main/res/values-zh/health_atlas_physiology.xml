@@ -20,4 +20,14 @@
     <string name="health_atlas_model_concentration_ratio">细胞外 / 细胞内浓度比：%1$s</string>
     <string name="health_atlas_model_axis">%1$s（%2$s）· 其他参数保持不变</string>
     <string name="health_atlas_model_source">模型假设与来源</string>
+    <string name="health_atlas_model_oxygen">血红蛋白氧饱和度</string>
+    <string name="health_atlas_model_oxygen_pressure">氧分压</string>
+    <string name="health_atlas_model_p50">P50 · 半饱和氧分压</string>
+    <string name="health_atlas_model_hemoglobin">血红蛋白浓度</string>
+    <string name="health_atlas_model_oxygen_content">含氧量：%1$s mL O₂/dL 血液\n结合氧：%2$s · 溶解氧：%3$s mL O₂/dL</string>
+    <string name="health_atlas_model_oxygen_formula" formatted="false">S = 1 / (1 + (P50 / PO₂)^2.7)；饱和度 = S × 100%。PO₂ 为 0 时，S = 0。含氧量 = 1.34 × (Hb / 10) × S + 0.0031 × PO₂。Hb 单位为 g/L，氧分压单位为 mmHg；含氧量单位为 mL O₂/dL 血液。</string>
+    <string name="health_atlas_model_oxygen_scope" formatted="false">简化 Hill 平衡模型，指数固定为 2.7，约在 20–98% 饱和度区间更可靠。P50 改变亲和力；血红蛋白浓度改变含氧量，不改变这条饱和度曲线。调节范围仅供教学，不是临床参考范围。未单独模拟酸碱度、二氧化碳、温度及异常血红蛋白。不代表血氧仪读数、组织供氧量或治疗建议。</string>
+    <string name="health_atlas_model_oxygen_binding_source">氧结合 · Hill 方程与适用范围</string>
+    <string name="health_atlas_model_oxygen_content_source">血液含氧量 · 方程与单位</string>
+    <string name="health_atlas_model_process_note">下方机制步骤是独立于数值模型的定性示意，动画速度不代表真实生物过程的时间。</string>
 </resources>
