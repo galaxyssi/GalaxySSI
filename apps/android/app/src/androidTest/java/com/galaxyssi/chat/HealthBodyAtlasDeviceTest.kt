@@ -37,7 +37,7 @@ class HealthBodyAtlasDeviceTest {
     @Test fun completeCatalogueHasCanonicalStructuresAndSeparatePlateletFragments() {
         val data = HealthBodyAtlas.load(context)
         assertEquals(14, data.systems.size)
-        assertEquals(158, data.items.count { it.kind == HealthAtlasKind.ORGAN })
+        assertEquals(161, data.items.count { it.kind == HealthAtlasKind.ORGAN })
         assertEquals(105, data.items.count { it.kind == HealthAtlasKind.CELL })
         assertEquals(1, data.items.count { it.kind == HealthAtlasKind.FRAGMENT })
         assertEquals(HealthAtlasKind.SYSTEM, data["skin"]!!.kind)
@@ -49,6 +49,170 @@ class HealthBodyAtlasDeviceTest {
         assertTrue(data.search("beta", HealthAtlasKind.CELL).any { it.id == "cell-pancreatic-beta-cell" })
         assertTrue(data.search("heart", HealthAtlasKind.ORGAN).any { it.id == "heart" })
         assertFalse(data.search("nonexistent-structure", null).isNotEmpty())
+    }
+    @Test fun platesHaveCanonicalVisibleMarkersAndDoNotInventHiddenStructures() {
+        val data = HealthBodyAtlas.load(context)
+        assertEquals(7, HealthAtlasPlates.all.size)
+        assertEquals(7, HealthAtlasPlates.all.map { it.drawable }.toSet().size)
+        assertNull(HealthAtlasPlates.forId("heart-valves"))
+        assertNull(HealthAtlasPlates.forId("glomerulus"))
+        HealthAtlasPlates.all.forEach { plate ->
+            assertEquals(plate.markers.size, plate.markers.map { it.id }.toSet().size)
+            plate.markers.forEach { assertNotNull(data[it.id]) }
+        }
+        for (id in listOf("brain", "lungs", "liver", "kidneys")) {
+            val plate = requireNotNull(HealthAtlasPlates.forId(id))
+            val image = android.graphics.BitmapFactory.decodeResource(context.resources, plate.drawable)
+            try {
+                assertTrue(image.width >= 512 && image.height >= 512)
+                assertEquals(0, android.graphics.Color.alpha(image.getPixel(0, 0)))
+                plate.markers.forEach { marker ->
+                    assertTrue("Marker outside depicted anatomy: ${marker.id}", android.graphics.Color.alpha(
+                        image.getPixel((marker.x * image.width).toInt(), (marker.y * image.height).toInt())) > 200)
+                }
+            } finally { image.recycle() }
+        }
+        for (id in listOf("renal-cortex", "renal-medulla", "renal-pelvis")) {
+            assertTrue(data.children(data["kidneys"]!!).contains(data[id]))
+            assertTrue(HealthAtlasMetrics.forItem(data[id]!!).contains(HealthMetric.CREATININE))
+        }
+    }
+    @Test fun organPlateLabelsStaySeparatedWithLargeTextAndDispatchCanonicalIds() = native { scenario ->
+        scenario.onActivity { activity ->
+            val data = HealthBodyAtlas.load(activity)
+            HealthAtlasPlates.all.filter { it.markers.isNotEmpty() }.forEach { plate ->
+                val selectedId = plate.markers.first().id
+                var tapped: String? = null
+                val view = HealthAtlasLabeledImage(activity, plate, "Test", data, selectedId) { tapped = it.id }
+                val labels = (0 until view.childCount).map { view.getChildAt(it) }.filterIsInstance<TextView>()
+                labels.forEach { it.textSize = 26f }
+                view.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(2400, View.MeasureSpec.AT_MOST))
+                view.layout(0, 0, view.measuredWidth, view.measuredHeight)
+                var bottom = 0
+                labels.sortedBy { it.top }.forEach { label ->
+                    assertTrue("Clipped or overlapping label: ${label.text}", label.top >= bottom && label.bottom <= view.height)
+                    assertTrue(label.height >= label.layout.height + label.compoundPaddingTop + label.compoundPaddingBottom)
+                    bottom = label.bottom
+                    if (label.isSelected) { assertFalse(label.performClick()); assertNull(tapped) }
+                    else { label.performClick(); assertEquals(label.tag.toString().removePrefix("atlas-hotspot-"), tapped); tapped = null }
+                }
+                if (plate.owner == null) assertTrue(bottom <= view.height - HealthCenterViews(activity).dp(144))
+            }
+        }
+    }
+    @Test fun organPlatesRenderAndSharedViewsKeepTheirContextOnBack() = native { scenario ->
+        fun capture(name: String) {
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            instrumentation.waitForIdleSync(); SystemClock.sleep(150)
+            val image = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+            try { java.io.File(context.getExternalFilesDir(null), "body-atlas-plate-$name.png").outputStream().use {
+                image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            } } finally { image.recycle() }
+        }
+        for ((id, child) in listOf("brain" to "cerebellum", "lungs" to "bronchi", "liver" to "gallbladder", "kidneys" to "renal-pelvis")) {
+            scenario.onActivity { activity ->
+                activity.view("atlas-tab-2").performClick()
+                (activity.view("atlas-search") as EditText).setText(id)
+                activity.view("atlas-entry-$id").performClick()
+            }
+            capture(id)
+            scenario.onActivity { activity ->
+                activity.view("atlas-hotspot-$child").performClick()
+                assertTrue(activity.view("atlas-hotspot-$child").isSelected)
+                assertFalse(activity.view("atlas-hotspot-$child").performClick())
+                val data = HealthBodyAtlas.load(activity)
+                assertTrue((activity.view("atlas-art-caption") as TextView).text.contains(data[id]!!.name))
+                activity.view("atlas-art-reset").performClick()
+            }
+            if (id == "kidneys") capture("renal-pelvis")
+            scenario.onActivity { activity ->
+                activity.onBackPressed()
+                assertFalse(activity.view("atlas-hotspot-$child").isSelected)
+                activity.onBackPressed()
+                assertNotNull(activity.view("atlas-search"))
+            }
+        }
+    }
+    @Test fun artworkResetAndFullscreenKeepTheSameAnatomicalContext() = native { scenario ->
+        scenario.onActivity { activity ->
+            val data = HealthBodyAtlas.load(activity)
+            val item = data["renal-pelvis"]!!
+            var openedResource = 0
+            var openedTitle = ""
+            val art = HealthAtlasArtwork(activity, data, item, {}) { resource, title ->
+                openedResource = resource; openedTitle = title
+            }
+            val picture = requireNotNull(art.tagged("atlas-art-image"))
+            val target = picture.parent as HealthAtlasLabeledImage
+            target.scaleX = 2f; target.scaleY = 2f; target.translationX = 30f
+            art.tagged("atlas-art-reset")!!.performClick()
+            assertEquals(1f, target.scaleX, 0f); assertEquals(1f, target.scaleY, 0f)
+            assertEquals(0f, target.translationX, 0f)
+            assertEquals(1f, (target.parent as GalaxySSIPinchZoomViewport).currentZoomScale, 0f)
+            art.tagged("atlas-fullscreen")!!.performClick()
+            assertEquals(R.drawable.health_atlas_kidney, openedResource)
+            assertTrue(openedTitle.contains(item.name) && openedTitle.contains(data["kidneys"]!!.name))
+        }
+    }
+    @Test fun wholeBodyToolsDoNotCoverLabelsAtNarrowWidths() = native { scenario ->
+        scenario.onActivity { activity ->
+            val data = HealthBodyAtlas.load(activity)
+            for (width in listOf(720, 1080)) {
+                val art = HealthAtlasArtwork(activity, data, null, {}, { _, _ -> })
+                HealthAtlasPlates.whole.markers.forEach { (art.tagged("atlas-hotspot-${it.id}") as TextView).textSize = 26f }
+                art.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                art.layout(0, 0, art.measuredWidth, art.measuredHeight)
+                val controls = art.tagged("atlas-layers")!!.parent as View
+                HealthAtlasPlates.whole.markers.forEach {
+                    val label = art.tagged("atlas-hotspot-${it.id}")!!
+                    assertTrue("Tools obscure ${it.id}", label.bottom <= controls.top)
+                    assertTrue(label.top >= 0)
+                }
+            }
+        }
+    }
+    @Test fun fullscreenShowsThePlateAndReturnsToTheSelectedStructure() = native { scenario ->
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        var description = ""
+        scenario.onActivity { activity ->
+            activity.view("atlas-hotspot-brain").performClick()
+            description = activity.view("atlas-art-image").contentDescription.toString()
+            activity.view("atlas-fullscreen").performClick()
+        }
+        instrumentation.waitForIdleSync()
+        fun imageIn(node: android.view.accessibility.AccessibilityNodeInfo?): Boolean {
+            if (node == null) return false
+            if (node.className == "android.widget.ImageView" && node.contentDescription?.toString() == description) return true
+            return (0 until node.childCount).any { imageIn(node.getChild(it)) }
+        }
+        val shownBy = SystemClock.elapsedRealtime() + 5_000
+        var active = instrumentation.uiAutomation.rootInActiveWindow
+        while (active?.findAccessibilityNodeInfosByText(description).isNullOrEmpty() && SystemClock.elapsedRealtime() < shownBy) {
+            SystemClock.sleep(50); active = instrumentation.uiAutomation.rootInActiveWindow
+        }
+        val root = requireNotNull(active)
+        assertEquals(context.packageName, root.packageName.toString())
+        assertTrue(imageIn(root))
+        assertTrue(root.findAccessibilityNodeInfosByText(description).isNotEmpty())
+        val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+        try { java.io.File(context.getExternalFilesDir(null), "body-atlas-plate-fullscreen.png").outputStream().use {
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        } } finally { bitmap.recycle() }
+        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        instrumentation.waitForIdleSync()
+        val focusedBy = SystemClock.elapsedRealtime() + 5_000
+        var focused = false
+        while (!focused && SystemClock.elapsedRealtime() < focusedBy) {
+            scenario.onActivity { focused = it.hasWindowFocus() }
+            if (!focused) SystemClock.sleep(50)
+        }
+        scenario.onActivity {
+            assertEquals(description, it.view("atlas-art-image").contentDescription.toString())
+            assertTrue(it.view("atlas-tab-0").isSelected)
+            assertTrue(it.hasWindowFocus())
+        }
     }
     @Test fun teachingEquationsDoNotDependOnHealthRecords() {
         assertEquals(4.9, HealthAtlasSimulation().cardiacOutput(), 0.0001)

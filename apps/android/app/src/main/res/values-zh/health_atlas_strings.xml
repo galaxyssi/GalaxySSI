@@ -19,8 +19,15 @@
     <string name="health_atlas_layers">图层</string>
     <string name="health_atlas_reset">复位</string>
     <string name="health_atlas_illustration">教学示意 · 非解剖比例</string>
+    <string name="health_atlas_plate_context">定位于%1$s示意图 · %2$s</string>
+    <string name="health_atlas_view_anterior">前面观</string>
+    <string name="health_atlas_view_external">外表面</string>
+    <string name="health_atlas_view_lateral">左侧面观</string>
+    <string name="health_atlas_view_liver">肝脏与相邻胆囊</string>
+    <string name="health_atlas_view_coronal">单侧肾脏 · 冠状剖面</string>
+    <string name="health_atlas_view_cell">细胞剖面</string>
     <string name="health_atlas_related">相关结构</string>
-    <string name="health_atlas_belongs">所属与关联</string>
+    <string name="health_atlas_belongs">关联结构与系统</string>
     <string name="health_atlas_related_process">关联过程 · %1$s</string>
     <string name="health_atlas_process_note">该关联过程可能涉及多个结构，不表示当前条目独立承担每一步。</string>
     <string name="health_atlas_parameters">教学参数</string>

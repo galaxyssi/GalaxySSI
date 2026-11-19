@@ -252,6 +252,15 @@
     <string name="health_atlas_kidneys_name">"Kidneys"</string>
     <string name="health_atlas_kidneys_description">"Forms urine by filtration and tubular processing, regulating water, electrolytes and acid-base balance."</string>
     <string name="health_atlas_kidneys_aliases">""</string>
+    <string name="health_atlas_renal_cortex_name">Renal cortex</string>
+    <string name="health_atlas_renal_cortex_description">The outer kidney region contains renal corpuscles and many tubular segments involved in filtration and processing of filtrate.</string>
+    <string name="health_atlas_renal_cortex_aliases">kidney cortex</string>
+    <string name="health_atlas_renal_medulla_name">Renal medulla</string>
+    <string name="health_atlas_renal_medulla_description">The inner pyramidal region contains tubular loops and collecting ducts that contribute to concentrating urine.</string>
+    <string name="health_atlas_renal_medulla_aliases">kidney medulla renal pyramids</string>
+    <string name="health_atlas_renal_pelvis_name">Renal pelvis</string>
+    <string name="health_atlas_renal_pelvis_description">Collects urine from the calyces and directs it toward the ureter; this collecting space does not filter blood.</string>
+    <string name="health_atlas_renal_pelvis_aliases">kidney pelvis</string>
     <string name="health_atlas_nephron_name">"Nephron"</string>
     <string name="health_atlas_nephron_description">"A renal corpuscle and tubule together perform filtration and tubular processing."</string>
     <string name="health_atlas_nephron_aliases">""</string>

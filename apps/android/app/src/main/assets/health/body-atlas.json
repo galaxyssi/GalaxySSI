@@ -1409,11 +1409,50 @@
         "urinary"
       ],
       "related": [
+        "renal-cortex",
+        "renal-medulla",
+        "renal-pelvis",
         "nephron",
         "collecting-ducts"
       ],
       "mechanism": "urinary",
       "aliases": "health_atlas_kidneys_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "renal-cortex",
+      "kind": "organ",
+      "name": "health_atlas_renal_cortex_name",
+      "description": "health_atlas_renal_cortex_description",
+      "systems": ["urinary"],
+      "related": ["glomerulus", "renal-tubules"],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_renal_cortex_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "renal-medulla",
+      "kind": "organ",
+      "name": "health_atlas_renal_medulla_name",
+      "description": "health_atlas_renal_medulla_description",
+      "systems": ["urinary"],
+      "related": ["renal-tubules", "collecting-ducts"],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_renal_medulla_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "renal-pelvis",
+      "kind": "organ",
+      "name": "health_atlas_renal_pelvis_name",
+      "description": "health_atlas_renal_pelvis_description",
+      "systems": ["urinary"],
+      "related": ["ureters"],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_renal_pelvis_aliases",
       "color": "",
       "icon": ""
     },

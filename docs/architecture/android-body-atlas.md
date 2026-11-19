@@ -1,6 +1,6 @@
 # Android Body Atlas
 
-The public teaching catalogue contains 14 navigation categories, 158 canonical
+The public teaching catalogue contains 14 navigation categories, 161 canonical
 organ/structure entries, 105 cell types or subtypes, and one platelet-fragment
 entry. Shared structures have one stable identity and multiple category links.
 The taxonomy is a navigation aid, not an exhaustive ontology of all human cells.
@@ -48,7 +48,7 @@ model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
 - Extend the anatomical illustrations and selectable structures beyond the
-  whole-body, heart and beta-cell views. Each image must depict its named entity;
+  whole-body, heart, brain, lungs, liver, kidney and beta-cell views. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by
   a documented scientific model. A shared process is explicitly associated
@@ -83,6 +83,25 @@ Generation specifications: a neutral anterior anatomical mannequin with visible
 thoracic/abdominal organs; an anterior external heart; a beta-cell cutaway with
 nucleus, rough ER, Golgi, mitochondria and secretory granules. All were requested
 without baked-in labels so navigation labels remain native and localizable.
+
+Four additional generated plates show a left lateral brain, anterior lungs and
+trachea, liver with its associated gallbladder, and a single kidney in coronal
+section. They use transparent backgrounds without baked-in labels. Generation
+specified cerebral/cerebellar/brainstem regions, right/left lung lobe asymmetry,
+the gallbladder below the liver, and cortex/medulla/pelvis/ureter respectively.
+`HealthAtlasPlates` binds each image and native marker to canonical entries.
+Shared plates explicitly identify their context and view; selecting an already
+selected marker does not add navigation history. An external heart is not used
+as an illustration of internal valves. Labels are measured and packed in visual
+order instead of overlapping at the lower image edge.
+
+Anatomy references for these plates and kidney structure descriptions:
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/13-2-the-central-nervous-system
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/22-2-the-lungs
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/25-3-gross-anatomy-of-the-kidney
+
+These generated illustrations remain schematic and are not validated medical
+meshes. Marker and pixel tests check rendering/navigation, not clinical accuracy.
 
 Specialized artwork for the rest of the catalogue and quantitative research
 models are separate work. An unrelated illustration must not be relabeled as a

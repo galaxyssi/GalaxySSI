@@ -60,12 +60,7 @@ internal object HealthAtlasUi {
             }, 0, LinearLayout.LayoutParams(ui.dp(24), ui.dp(24)).apply { marginEnd = ui.dp(12) })
         }
     }
-    fun art(item: HealthAtlasItem?): Int? = when (item?.id) {
-        null -> R.drawable.health_atlas_body
-        "heart", "cardio", "atria", "ventricles", "heart-valves", "coronary-vessels" -> R.drawable.health_atlas_heart
-        "cell-pancreatic-beta-cell" -> R.drawable.health_atlas_beta_cell
-        else -> null
-    }
+    fun art(item: HealthAtlasItem?): Int? = HealthAtlasPlates.forId(item?.id)?.drawable
 }
 
 internal class HealthAtlasArtwork(
@@ -76,14 +71,23 @@ internal class HealthAtlasArtwork(
     private var layers: android.app.AlertDialog? = null
     init {
         orientation = VERTICAL
-        val resource = HealthAtlasUi.art(item)
-        if (resource != null) {
-            val art = FrameLayout(activity)
-            val labeled = if (resource != R.drawable.health_atlas_beta_cell) HealthAtlasLabeledImage(activity, resource,
-                item?.name ?: activity.getString(R.string.health_atlas_whole), data, item == null, selected) else null
+        val plate = HealthAtlasPlates.forId(item?.id)
+        if (plate != null) {
+            val resource = plate.drawable
+            val caption = plate.caption(activity, data, item)
+            val description = (item?.name ?: activity.getString(R.string.health_atlas_whole)) + " · " + caption
+            val labeled = if (plate.markers.isNotEmpty()) HealthAtlasLabeledImage(activity, plate,
+                description, data, item?.id, selected) else null
+            val art = object : FrameLayout(activity) {
+                override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                    labeled?.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+                    val required = maxOf(ui.dp(if (item == null) 400 else 300), labeled?.measuredHeight ?: 0)
+                    super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(resolveSize(required, heightMeasureSpec), MeasureSpec.EXACTLY))
+                }
+            }
             val picture = labeled?.image ?: ImageView(activity).apply {
                 setImageResource(resource); scaleType = ImageView.ScaleType.FIT_CENTER
-                contentDescription = item?.name ?: activity.getString(R.string.health_atlas_whole)
+                contentDescription = description
                 tag = "atlas-art-image"
                 setPadding(ui.dp(12), ui.dp(8), ui.dp(48), ui.dp(8))
             }
@@ -93,7 +97,8 @@ internal class HealthAtlasArtwork(
             val controls = (if (item == null) ui.column() else ui.line()).apply {
                 gravity = Gravity.END
                 addView(ui.icon(R.drawable.ic_input_menu_layers, R.string.health_atlas_layers) {
-                    val choices = if (item == null) data.systems else (data.children(item) + data.cells(item)).distinctBy { it.id }
+                    val choices = if (item == null) data.systems else (data.children(item) + data.cells(item) +
+                        plate.markers.mapNotNull { data[it.id] }).filter { it.id != item.id }.distinctBy { it.id }
                     if (choices.isNotEmpty()) layers = android.app.AlertDialog.Builder(activity).setTitle(R.string.health_atlas_layers)
                         .setItems(choices.map { it.name }.toTypedArray()) { _, index -> selected(choices[index]) }
                         .setNegativeButton(android.R.string.cancel, null).show()
@@ -105,12 +110,13 @@ internal class HealthAtlasArtwork(
                     art.addView(viewport, 0, FrameLayout.LayoutParams(-1, -1))
                 }.apply { tag = "atlas-art-reset" })
                 addView(ui.icon(R.drawable.ic_screen_assistant_expand, R.string.health_body_zoom) {
-                    zoom(resource, item?.name ?: activity.getString(R.string.health_atlas_whole))
+                    zoom(resource, description)
                 }.apply { tag = "atlas-fullscreen" })
             }
             if (item == null) art.addView(controls, FrameLayout.LayoutParams(ui.dp(48), -2, Gravity.END or Gravity.BOTTOM))
-            addView(art, LayoutParams(-1, ui.dp(if (item == null) 400 else 300)))
+            addView(art, LayoutParams(-1, -2))
             if (item != null) addView(controls, LayoutParams(-1, ui.dp(48)))
+            addView(ui.text(caption, 12f, muted = true).apply { tag = "atlas-art-caption" })
             addView(ui.text(activity.getString(R.string.health_atlas_illustration), 11f, muted = true))
         } else {
             // Related structures are shown explicitly instead of reusing an unrelated anatomical picture.

@@ -84,7 +84,7 @@ internal object HealthAtlasMetrics {
         "endocrine" -> listOf(HealthMetric.GLUCOSE, HealthMetric.HBA1C, HealthMetric.TSH)
         "thyroid-gland", "cell-thyroid-follicular-cell", "cell-thyrotroph" -> listOf(HealthMetric.TSH)
         "liver", "cell-hepatocyte", "digestive" -> listOf(HealthMetric.ALT, HealthMetric.AST, HealthMetric.ALBUMIN, HealthMetric.TOTAL_BILIRUBIN)
-        "urinary", "kidneys", "nephron", "glomerulus", "renal-tubules", "collecting-ducts", "cell-podocyte" ->
+        "urinary", "kidneys", "renal-cortex", "renal-medulla", "renal-pelvis", "nephron", "glomerulus", "renal-tubules", "collecting-ducts", "cell-podocyte" ->
             listOf(HealthMetric.CREATININE, HealthMetric.UREA, HealthMetric.URINE_PROTEIN)
         "respiratory", "lungs", "alveoli", "cell-type-i-pneumocyte", "cell-type-ii-pneumocyte" -> listOf(HealthMetric.OXYGEN_SATURATION)
         "blood", "bone-marrow", "immune" -> listOf(HealthMetric.HEMOGLOBIN, HealthMetric.RED_BLOOD_CELLS, HealthMetric.WHITE_BLOOD_CELLS, HealthMetric.PLATELETS)
