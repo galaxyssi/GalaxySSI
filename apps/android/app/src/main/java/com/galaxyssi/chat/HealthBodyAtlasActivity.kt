@@ -42,6 +42,7 @@ class HealthBodyAtlasActivity : Activity() {
     private var simulation: HealthAtlasSimulationPanel? = null
     private var simulationItem = ""
     private val simulationStates = linkedMapOf<String, HealthAtlasSimulation>()
+    private val physiologyStates = linkedMapOf<String, HealthAtlasPhysiology>()
     private var measurements: HealthAtlasMeasurements? = null
     private var measurementItem = ""
     private val measurementSelections = linkedMapOf<String, HealthAtlasMeasurementSelection>()
@@ -74,6 +75,9 @@ class HealthBodyAtlasActivity : Activity() {
             saved.getBundle(key)?.let { value -> runCatching {
                 HealthAtlasSimulation(value.getInt("first"), value.getInt("second"), value.getFloat("phase"), value.getFloat("speed"))
             }.getOrNull()?.let { simulationStates[key] = it } }
+        } }
+        state?.getBundle("physiologyV1")?.let { saved -> saved.keySet().take(300).forEach { key ->
+            HealthAtlasPhysiology.restore(key, saved.getIntArray(key))?.let { physiologyStates[key] = it }
         } }
         state?.getBundle("measurementSelections")?.let { saved -> saved.keySet().take(300).forEach { key ->
             saved.getBundle(key)?.let { value -> measurementSelections[key] = HealthAtlasMeasurementSelection(
@@ -127,6 +131,9 @@ class HealthBodyAtlasActivity : Activity() {
         out.putBundle("simulations", Bundle().apply { simulationStates.forEach { (id, value) -> putBundle(id, Bundle().apply {
             putInt("first", value.first); putInt("second", value.second); putFloat("phase", value.phase); putFloat("speed", value.speed)
         }) } })
+        out.putBundle("physiologyV1", Bundle().apply {
+            physiologyStates.forEach { (id, value) -> putIntArray(id, value.inputs.toIntArray()) }
+        })
         out.putBundle("measurementSelections", Bundle().apply { measurementSelections.forEach { (id, value) -> putBundle(id, Bundle().apply {
             putString("metric", value.metric?.name); putInt("period", value.period)
         }) } }); super.onSaveInstanceState(out)
@@ -247,7 +254,7 @@ class HealthBodyAtlasActivity : Activity() {
             }
             HealthAtlasTab.SIMULATION -> {
                 simulationItem = item.id
-                simulation = HealthAtlasSimulationPanel(this, content, data, item, simulationStates[item.id], ::zoom)
+                simulation = HealthAtlasSimulationPanel(this, content, data, item, simulationStates[item.id], physiologyStates[item.id], ::zoom, ::source)
                 ui.add(content, ui.row(getString(R.string.health_atlas_research)) { openResearch() }.apply { tag = "atlas-open-research" }, 12)
             }
         }
@@ -258,7 +265,10 @@ class HealthBodyAtlasActivity : Activity() {
             ui.add(content, ui.text(getString(R.string.health_atlas_art_note), 11f, muted = true), 8)
     }
     private fun heading(title: Int) { ui.add(content, ui.text(getString(title), 18f, bold = true), 22) }
-    private fun saveSimulation() { simulation?.let { simulationStates[simulationItem] = it.snapshot } }
+    private fun saveSimulation() { simulation?.let {
+        simulationStates[simulationItem] = it.snapshot
+        it.quantitativeSnapshot?.let { model -> physiologyStates[simulationItem] = model }
+    } }
     private fun saveMeasurementSelection() { measurements?.let { measurementSelections[measurementItem] = it.selection } }
     private fun saveResearch() { research?.let { eliminationStates[researchItem] = it.elimination } }
     private fun openResearch() { researchTopic = HealthAtlasResearchTopic.PHYSIOLOGY; scrollY = 0; render() }
@@ -268,15 +278,18 @@ class HealthBodyAtlasActivity : Activity() {
         if (topic == HealthAtlasResearchTopic.PHYSIOLOGY) {
             ui.add(content, ui.text(item.name + " · " + item.systems.mapNotNull(data::get).joinToString(" · ") { it.name }, 14f, muted = true))
             simulationItem = item.id
-            simulation = HealthAtlasSimulationPanel(this, content, data, item, simulationStates[item.id], ::zoom)
+            simulation = HealthAtlasSimulationPanel(this, content, data, item, simulationStates[item.id], physiologyStates[item.id], ::zoom, ::source)
             ui.add(content, ui.row(getString(R.string.health_atlas_evidence), "OpenStax · Anatomy and Physiology 2e") {
                 source(data.mechanism(item).source)
             }.apply { tag = "atlas-source-physiology" }, 16)
         } else research = HealthAtlasResearchPanel(this, content, data, item, topic, eliminationStates[item.id], ::select, ::source)
     }
     private fun researchContext(item: HealthAtlasItem?): String {
-        val topic = researchTopic ?: return ""
         item ?: return ""
+        val quantitative = if (researchTopic == HealthAtlasResearchTopic.PHYSIOLOGY ||
+            researchTopic == null && tab == HealthAtlasTab.SIMULATION)
+            simulation?.quantitativeSnapshot?.let { HealthAtlasPhysiologyText.context(this, it) }.orEmpty() else ""
+        val topic = researchTopic ?: return quantitative
         val sources = HealthAtlasResearchSources.forTopic(topic, atlas!!.mechanism(item)).joinToString("\n")
         val limits = getString(when (topic) {
             HealthAtlasResearchTopic.PHYSIOLOGY -> R.string.health_atlas_teaching_note
@@ -287,7 +300,7 @@ class HealthBodyAtlasActivity : Activity() {
             val values = research?.elimination ?: eliminationStates[item.id] ?: HealthAtlasElimination()
             "\n" + getString(R.string.health_atlas_elimination_summary, values.halfLifeHours, values.elapsedHours,
                 java.text.NumberFormat.getNumberInstance().apply { maximumFractionDigits = 2 }.format(values.percent))
-        } else ""
+        } else if (quantitative.isNotEmpty()) "\n$quantitative" else ""
         return getString(topic.title) + "\n" + limits + parameters + "\n" + sources
     }
     private fun source(url: String) {

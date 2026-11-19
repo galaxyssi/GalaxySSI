@@ -16,9 +16,45 @@ selection. Agent analysis of measurements uses the existing disclosure flow.
 Knowledge-only Agent requests use a single-use in-process handoff token and a
 separate conversation, with no attached health observations.
 
-Cardiac output and minute ventilation are fixed-input teaching equations.
-Other sequences are qualitative, not validated quantitative patient models.
+Cardiac output, ventilation, renal solute balance and potassium equilibrium
+potential are fixed-input teaching equations. Other sequences are qualitative,
+not validated quantitative patient models.
 No organ score, biological age, drug dose or treatment outcome is inferred.
+
+## Interactive Physiology
+
+`HealthAtlasPhysiology` provides three independently bounded teaching models:
+
+- Alveolar ventilation subtracts dead-space volume from tidal volume before
+  multiplying by respiratory rate. Total minute ventilation remains visible
+  separately. The equation follows the volume definitions; it does not calculate
+  oxygen saturation, carbon dioxide or a ventilator setting.
+- Renal solute excretion uses filtered load minus reabsorbed load plus net
+  secretion, in mg/min. Reabsorption is a percentage of the filtered load.
+  This is a whole-nephron conservation example for an unspecified freely filtered
+  solute, not urine volume, an eGFR estimate, or a drug-specific clearance model.
+- Potassium equilibrium potential uses the Nernst equation with natural log,
+  Kelvin temperature (310.15 K), charge +1 and an explicit volts-to-millivolts
+  conversion. It assumes a potassium-only membrane and concentrations as
+  activities. It is not a measured resting potential or an action potential.
+
+Seventeen canonical entries expose these associated processes. Tubular cells
+do not claim to perform the entire nephron model, nor does a brain illustration
+claim to measure an individual neuron. Unrelated entries do not inherit them.
+Slider ranges are teaching controls, not clinical reference intervals.
+
+Native parameter-response curves hold other inputs fixed and mark the selected
+input. They have numerical accessibility descriptions, not only colored pixels.
+Inputs update locally, restore per entry across recreation, and reset explicitly;
+invalid saved arrays are ignored. Model values never enter the health database.
+The knowledge-only Agent confirmation includes the current inputs, output,
+assumptions and source both from Simulation and from Research / Physiology.
+Existing separate consent for personal measurements is unchanged.
+
+Model references:
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/22-3-the-process-of-breathing
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption
+- https://neurotext.library.stonybrook.edu/C2/C2_4/C2_4.html
 
 ## Mechanisms and Research
 
