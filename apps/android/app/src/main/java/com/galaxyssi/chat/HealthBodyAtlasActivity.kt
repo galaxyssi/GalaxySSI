@@ -43,6 +43,9 @@ class HealthBodyAtlasActivity : Activity() {
     private var simulation: HealthAtlasSimulationPanel? = null
     private var simulationItem = ""
     private val simulationStates = linkedMapOf<String, HealthAtlasSimulation>()
+    private var functionPlayer: HealthAtlasFunctionPlayer? = null
+    private var functionItem = ""
+    private val functionPhases = linkedMapOf<String, Float>()
     private val physiologyStates = linkedMapOf<String, HealthAtlasPhysiology>()
     private var measurements: HealthAtlasMeasurements? = null
     private var measurementAction: View? = null
@@ -73,6 +76,9 @@ class HealthBodyAtlasActivity : Activity() {
         query = state?.getString("query").orEmpty().take(100)
         tab = HealthAtlasTab.entries.firstOrNull { it.name == state?.getString("tab") } ?: HealthAtlasTab.STRUCTURE
         researchTopic = HealthAtlasResearchTopic.entries.firstOrNull { it.name == state?.getString("researchTopic") }
+        state?.getBundle("functionPhasesV1")?.let { saved -> saved.keySet().filter(HealthAtlasFunctionStory::supports).forEach { id ->
+            functionPhases[id] = HealthAtlasFunctionStory.safePhase(saved.getFloat(id))
+        } }
         state?.getBundle("artworkViewsV1")?.let { saved -> saved.keySet().take(300).forEach { key ->
             saved.getString(key)?.let { view ->
                 if (HealthAtlasPlates.forId(key, view)?.viewKey == view) artworkViews[key] = view
@@ -136,12 +142,13 @@ class HealthBodyAtlasActivity : Activity() {
 
     override fun onStart() { super.onStart(); started = true; if (atlas != null && tab == HealthAtlasTab.VALUES && selection.isNotEmpty()) render() }
     override fun onStop() {
-        started = false; simulation?.pause(); saveMeasurementSelection(); measurements?.close(); measurements = null
+        started = false; simulation?.pause(); functionPlayer?.pause(); saveMeasurementSelection(); measurements?.close(); measurements = null
         dialog?.dismiss(); dialog = null; super.onStop()
     }
     override fun onDestroy() { worker.shutdown(); super.onDestroy() }
     override fun onSaveInstanceState(out: Bundle) {
         saveSimulation()
+        saveFunctionStory()
         saveResearch()
         saveMeasurementSelection()
         out.putInt("section", section); out.putString("selection", selection); out.putString("system", system)
@@ -167,6 +174,7 @@ class HealthBodyAtlasActivity : Activity() {
         out.putBundle("simulations", Bundle().apply { simulationStates.forEach { (id, value) -> putBundle(id, Bundle().apply {
             putInt("first", value.first); putInt("second", value.second); putFloat("phase", value.phase); putFloat("speed", value.speed)
         }) } })
+        out.putBundle("functionPhasesV1", Bundle().apply { functionPhases.forEach { (id, phase) -> putFloat(id, phase) } })
         out.putBundle("physiologyV1", Bundle().apply {
             physiologyStates.forEach { (id, value) -> putIntArray(id, value.inputs.toIntArray()) }
         })
@@ -192,6 +200,8 @@ class HealthBodyAtlasActivity : Activity() {
     private fun render() {
         val data = atlas ?: return
         saveSimulation()
+        saveFunctionStory()
+        functionPlayer?.pause(); functionPlayer = null
         saveResearch(); research = null; aging = null
         saveMeasurementSelection()
         simulation?.pause(); simulation = null; measurements?.close(); measurements = null
@@ -290,7 +300,11 @@ class HealthBodyAtlasActivity : Activity() {
         when (tab) {
             HealthAtlasTab.STRUCTURE -> structure(data, item)
             HealthAtlasTab.FUNCTION -> {
-                ui.add(content, artwork(data, item))
+                if (HealthAtlasFunctionStory.supports(item.id)) {
+                    functionItem = item.id
+                    functionPlayer = HealthAtlasFunctionPlayer(this, functionPhases[item.id] ?: 0f, ::source)
+                    ui.add(content, requireNotNull(functionPlayer))
+                } else ui.add(content, artwork(data, item))
                 ui.add(content, ui.text(item.description, 17f), 12)
                 val mechanism = data.mechanism(item)
                 ui.add(content, ui.text(getString(R.string.health_atlas_related_process, mechanism.title), 17f, bold = true), 22)
@@ -376,6 +390,7 @@ class HealthBodyAtlasActivity : Activity() {
         simulationStates[simulationItem] = it.snapshot
         it.quantitativeSnapshot?.let { model -> physiologyStates[simulationItem] = model }
     } }
+    private fun saveFunctionStory() { functionPlayer?.let { functionPhases[functionItem] = it.phase } }
     private fun saveMeasurementSelection() { measurements?.let { measurementSelections[measurementItem] = it.selection } }
     private fun saveResearch() {
         research?.let { eliminationStates[researchItem] = it.elimination; drugStates[researchItem] = it.drugState }
@@ -419,9 +434,10 @@ class HealthBodyAtlasActivity : Activity() {
     }
     private fun ask(item: HealthAtlasItem?) {
         simulation?.pause()
+        functionPlayer?.pause()
         val prompt = HealthAtlasAgentContext.prompt(this, atlas!!, item, simulation?.snapshot,
             simulation?.quantitativeSnapshot, researchTopic, research?.elimination, research?.drugState,
-            item?.let { artworkViews[it.id] }, aging = aging?.selection)
+            item?.let { artworkViews[it.id] }, aging = aging?.selection, functionPhase = functionPlayer?.phase)
         dialog = AlertDialog.Builder(this).setTitle(R.string.health_atlas_ask_ready).setMessage(prompt)
             .setNegativeButton(android.R.string.cancel, null).setPositiveButton(R.string.health_atlas_ask) { _, _ ->
                 worker.execute {

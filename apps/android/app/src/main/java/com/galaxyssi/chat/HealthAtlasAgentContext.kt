@@ -8,7 +8,7 @@ internal object HealthAtlasAgentContext {
         simulation: HealthAtlasSimulation? = null, quantitative: HealthAtlasPhysiology? = null,
         topic: HealthAtlasResearchTopic? = null, elimination: HealthAtlasElimination? = null,
         drugs: HealthAtlasDrugState? = null, artworkView: String? = null,
-        aging: HealthAtlasAgingSelection? = null): String = buildString {
+        aging: HealthAtlasAgingSelection? = null, functionPhase: Float? = null): String = buildString {
         if (item == null) {
             append(context.getString(R.string.health_atlas_ask_whole_context))
             return@buildString
@@ -29,6 +29,17 @@ internal object HealthAtlasAgentContext {
                 atlas.cells(item).joinToString(", ") { it.name })
         }
         val physiology = topic == null || topic == HealthAtlasResearchTopic.PHYSIOLOGY
+        if (topic == null && functionPhase != null && HealthAtlasFunctionStory.supports(item.id)) {
+            val chapter = HealthAtlasFunctionStory.chapter(functionPhase)
+            val (title, detail) = HealthAtlasFunctionStory.chapters[chapter]
+            appendLine(); appendLine(context.getString(R.string.health_atlas_uptake_title))
+            appendLine(context.getString(R.string.health_atlas_stage, chapter + 1,
+                HealthAtlasFunctionStory.chapters.size, context.getString(title)))
+            appendLine(context.getString(detail))
+            appendLine(context.getString(R.string.health_atlas_uptake_scope))
+            appendLine(HealthAtlasFunctionStory.SOURCE)
+            appendLine(HealthAtlasFunctionStory.PATHWAY_SOURCE)
+        }
         if (physiology && simulation != null) {
             appendLine(); appendLine(context.getString(R.string.health_atlas_teaching_note))
             if (HealthAtlasCirculation.supports(item.id)) {

@@ -441,6 +441,20 @@ Research references:
 
 ## Design Coverage and Remaining Work
 
+The Function tab for skeletal muscle tissue and adipocytes includes a
+five-chapter continuously drawn insulin and GLUT4 lesson. Marked structures
+stay in view while the ligand approaches, intracellular signals travel, a
+vesicle merges with the membrane and glucose crosses the illustrated
+transporter. The five-chapter playhead is independent of the four-step
+physiology model. Playback pauses on navigation or backgrounding; the
+current chapter and two primary sources go into the public Agent preview.
+The pancreatic beta cell keeps its own secretion mechanism rather than
+inheriting the target-cell lesson. The animation is qualitative and does not
+convert playback time or particle count into physiological measurements.
+
+Evidence: https://pubmed.ncbi.nlm.nih.gov/19188436/ and
+https://pmc.ncbi.nlm.nih.gov/articles/PMC507006/.
+
 The pinned Agent action follows the current surface. Public catalogue, mechanism
 and research prompts use `HealthAtlasAgentContext`: selected anatomy, current
 teaching stage, cardiac or other quantitative inputs, assumptions and sources.
