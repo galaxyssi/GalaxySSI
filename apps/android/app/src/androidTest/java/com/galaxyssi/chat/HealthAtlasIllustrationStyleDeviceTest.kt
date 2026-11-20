@@ -91,10 +91,10 @@ class HealthAtlasIllustrationStyleDeviceTest {
             Triple("cell-inner-ear-hair-cell", 1024, 1536), Triple("cell-rod-photoreceptor", 1024, 1536),
             Triple("cell-cone-photoreceptor", 1024, 1536), Triple("nervous", 1024, 1536),
         ).map { (id, width, height) -> requireNotNull(HealthAtlasPlates.forId(id)) to (width to height) } +
-            HealthAtlasMusculoskeletalPlates.all.map { plate ->
+            (HealthAtlasHeartSection.section to (1254 to 1254)) + HealthAtlasMusculoskeletalPlates.all.map { plate ->
                 plate to if (plate.viewKey == "skeletal-posterior") (887 to 1774) else (1024 to 1536)
             }
-        assertEquals(30, frames.map { it.first.drawable }.distinct().size)
+        assertEquals(31, frames.map { it.first.drawable }.distinct().size)
         var anchors = 0
         for ((plate, size) in frames) {
             val (width, height) = size
@@ -112,7 +112,7 @@ class HealthAtlasIllustrationStyleDeviceTest {
                 }
             } finally { art.recycle() }
         }
-        assertEquals(113, anchors)
+        assertEquals(119, anchors)
     }
 
     @Test fun muscleMarkersIdentifyThePaintedRegionsRatherThanTheMannequinSurface() {
@@ -195,6 +195,35 @@ class HealthAtlasIllustrationStyleDeviceTest {
                 assertTrue("Missing shaded surfaces in ${plate.owner}", opaque.distinct().size > 30)
             } finally { art.recycle() }
         }
+    }
+
+    @Test fun paintedCardiacSectionAlignsChambersVesselsAndLeaflets() = native { scenario ->
+        val plate = HealthAtlasHeartSection.section
+        val art = requireNotNull(BitmapFactory.decodeResource(context.resources, plate.drawable))
+        try {
+            for (marker in plate.markers + HealthAtlasHeartSection.valves.markers) {
+                val x = (marker.x * art.width).toInt()
+                val y = (marker.y * art.height).toInt()
+                val expected = (-1..1).any { dx -> (-1..1).any { dy ->
+                    val color = art.getPixel(x + dx, y + dy)
+                    val r = Color.red(color)
+                    val g = Color.green(color)
+                    val b = Color.blue(color)
+                    Color.alpha(color) > 200 && when (marker.id) {
+                        "right-atrium", "right-ventricle", "pulmonary-trunk" -> b > r + 20
+                        "aorta", "left-atrium", "left-ventricle" -> r > g + 50 && r > b + 60
+                        else -> r > 229 && g > 201 && g > b && b > 158
+                    }
+                } }
+                assertTrue("Wrong painted cardiac landmark for ${marker.id}", expected)
+            }
+        } finally { art.recycle() }
+        scenario.onActivity {
+            it.view("atlas-hotspot-heart").performClick()
+            it.view("atlas-view-1").performClick()
+        }
+        ready(scenario, "atlas-hotspot-aorta")
+        capture("cardiac-section", scenario.localized(R.string.health_atlas_heart_name))
     }
 
     @Test fun frontIllustrationKeepsBrainNavigationLive() = native { scenario ->

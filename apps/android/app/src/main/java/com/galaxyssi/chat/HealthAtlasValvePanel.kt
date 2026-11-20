@@ -84,24 +84,27 @@ internal class HealthAtlasValvePanel(private val activity: Activity, private val
                 (300 * resources.displayMetrics.density).toInt()), heightMeasureSpec))
         }
         override fun onDraw(canvas: Canvas) {
-            val scale = minOf(width / 480f, height / 460f)
-            val left = (width - 480 * scale) / 2
-            val top = (height - 460 * scale) / 2
+            val frame = 480
+            val scale = minOf(width, height).toFloat() / frame
+            val left = (width - frame * scale) / 2
+            val top = (height - frame * scale) / 2
             canvas.save()
             canvas.translate(left, top)
             canvas.scale(scale, scale)
-            heart.setBounds(0, 0, 480, 460)
+            heart.setBounds(0, 0, frame, frame)
             heart.draw(canvas)
             for (valve in HealthAtlasValve.entries) {
                 val active = valve.openAt(stage)
+                val x = valve.marker.x * frame
+                val y = valve.marker.y * frame
                 paint.style = Paint.Style.FILL
                 paint.color = surface
-                canvas.drawCircle(valve.x, valve.y, if (selected == valve.id) 17f else 13f, paint)
+                canvas.drawCircle(x, y, if (selected == valve.id) 17f else 13f, paint)
                 paint.style = Paint.Style.STROKE
                 paint.strokeWidth = if (selected == valve.id) 4f else 2.6f
                 paint.color = if (active) open else closed
-                canvas.drawCircle(valve.x, valve.y, 9f, paint)
-                if (!active) canvas.drawLine(valve.x - 5, valve.y, valve.x + 5, valve.y, paint)
+                canvas.drawCircle(x, y, 9f, paint)
+                if (!active) canvas.drawLine(x - 5, y, x + 5, y, paint)
             }
             canvas.restore()
         }

@@ -215,6 +215,12 @@ distinct. Artwork identities, viewports, localized callouts and stage paths
 are unchanged. The colors denote structures schematically, not stain results
 or quantitative measurements.
 
+The heart cutaway is a painted restyle of the original section, not a new
+clinical model. The four chambers and two outflow vessels keep their
+canonical destinations. The same calibrated leaflet positions drive both
+the structure callouts and the four-state valve demonstration. Blue and rose
+distinguish the two circulation sides without encoding oxygen saturation.
+
 ## Alimentary Canal Sections
 
 Fourteen digestive entries now have their own source-linked diagrams, from
