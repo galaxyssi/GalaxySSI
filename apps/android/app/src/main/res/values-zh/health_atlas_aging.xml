@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_aging_picker">研究主题</string>
+    <string name="health_atlas_aging_diagram_scope">机制示意 · 各步骤不是实测时间线</string>
+    <string name="health_atlas_aging_human_study">人体观察研究</string>
+    <string name="health_atlas_aging_related">相关结构示例</string>
+    <string name="health_atlas_aging_study_telomeres">Daniali 等 · Nature Communications，2013</string>
+    <string name="health_atlas_aging_sample_telomeres">87 名成人 · 4 种组织 · 19–77 岁</string>
+    <string name="health_atlas_aging_result_telomeres">在该样本中，白细胞端粒长度与骨骼肌、皮下脂肪和皮肤中的端粒长度相关（Pearson r = 0.83–0.84）。</string>
+    <string name="health_atlas_aging_limits_telomeres">这是横断面比较，并未追踪同一人随时间的变化。相关不等于血液与组织的测量值可以互相替代。</string>
+    <string name="health_atlas_aging_study_tcells">Liu 等 · Aging Cell，2009</string>
+    <string name="health_atlas_aging_sample_tcells">170 名供者 · 2 个队列</string>
+    <string name="health_atlas_aging_result_tcells">外周血 T 细胞中，p16(INK4a) mRNA 表达量取 log₂ 后与实际年龄相关（合并两个队列，Pearson r = 0.63）。</string>
+    <string name="health_atlas_aging_limits_tcells">这一关联不能用来计算器官中衰老细胞的数量，也不能验证个人衰老检测。</string>
+    <string name="health_atlas_aging_topic_genome">基因组不稳定</string>
+    <string name="health_atlas_aging_explain_genome">细胞能够识别并修复许多 DNA 损伤。未修复的损伤和突变不是一回事，但都可能干扰细胞正常功能。</string>
+    <string-array name="health_atlas_aging_steps_genome">
+        <item>DNA 损伤</item>
+        <item>识别损伤</item>
+        <item>修复或残留</item>
+        <item>细胞功能变化</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_telomeres">端粒缩短</string>
+    <string name="health_atlas_aging_explain_telomeres">端粒保护染色体末端。许多细胞在分裂中端粒可缩短；末端过短可能触发损伤应答，不同组织不能套用同一个长度判断。</string>
+    <string-array name="health_atlas_aging_steps_telomeres">
+        <item>染色体末端</item>
+        <item>反复分裂</item>
+        <item>端粒缩短</item>
+        <item>应激反应</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_epigenetics">表观遗传改变</string>
+    <string name="health_atlas_aging_explain_epigenetics">染色质和化学标记协助调节哪些基因处于活跃状态。随年龄出现的标记变化可伴随基因表达改变，而不改变 DNA 序列。</string>
+    <string-array name="health_atlas_aging_steps_epigenetics">
+        <item>染色质状态</item>
+        <item>调控改变</item>
+        <item>基因活性变化</item>
+        <item>细胞状态改变</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_proteins">蛋白质稳态失衡</string>
+    <string name="health_atlas_aging_explain_proteins">分子伴侣和降解系统帮助维持蛋白质功能。当清除跟不上损伤时，错误折叠的蛋白质可能残留或聚集。</string>
+    <string-array name="health_atlas_aging_steps_proteins">
+        <item>蛋白质折叠</item>
+        <item>质量控制</item>
+        <item>受损蛋白质</item>
+        <item>积聚</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_autophagy">宏自噬受损</string>
+    <string name="health_atlas_aging_explain_autophagy">宏自噬会包裹部分细胞质成分，并将其送往溶酶体。输送或降解受阻时，待处理成分可能积聚。图中展示的是正常流程。</string>
+    <string-array name="health_atlas_aging_steps_autophagy">
+        <item>待处理成分</item>
+        <item>包裹</item>
+        <item>与溶酶体融合</item>
+        <item>分解与回收</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_nutrients">营养感知失调</string>
+    <string name="health_atlas_aging_explain_nutrients">细胞整合营养与能量信号，协调生长和维护。衰老研究关注这种调节的变化，不能由此得出饮食或禁食目标。</string>
+    <string-array name="health_atlas_aging_steps_nutrients">
+        <item>营养信号</item>
+        <item>整合信号</item>
+        <item>生长或维护</item>
+        <item>代谢反应</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_mitochondria">线粒体功能障碍</string>
+    <string name="health_atlas_aging_explain_mitochondria">线粒体供应 ATP，也参与应激信号传递。线粒体功能及更新发生改变时，细胞应对能量需求和压力的方式也可能改变。</string>
+    <string-array name="health_atlas_aging_steps_mitochondria">
+        <item>能量需求</item>
+        <item>生成 ATP</item>
+        <item>细胞器质量</item>
+        <item>应激反应</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_senescence">细胞衰老</string>
+    <string name="health_atlas_aging_explain_senescence">一些受应激的细胞会长期停止分裂，分泌信号也可能改变。细胞衰老在修复和慢性组织变化中的作用并不相同，单一标志无法识别所有衰老细胞。</string>
+    <string-array name="health_atlas_aging_steps_senescence">
+        <item>持续应激</item>
+        <item>分裂停滞</item>
+        <item>分泌信号变化</item>
+        <item>组织反应</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_stem_cells">干细胞衰竭</string>
+    <string name="health_atlas_aging_explain_stem_cells">组织干细胞能够自我更新并产生后代细胞。随着年龄增长，干细胞及其微环境的变化可能限制再生，但这不意味着所有干细胞都会消失。</string>
+    <string-array name="health_atlas_aging_steps_stem_cells">
+        <item>组织更新</item>
+        <item>激活干细胞</item>
+        <item>产生新细胞</item>
+        <item>再生能力</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_signaling">细胞间通讯改变</string>
+    <string name="health_atlas_aging_explain_signaling">细胞通过局部和远距离信号协调组织活动。信号本身、发送细胞或接收细胞的改变，都可能改变响应，而且不同组织的反应并不相同。</string>
+    <string-array name="health_atlas_aging_steps_signaling">
+        <item>释放信号</item>
+        <item>传至邻近细胞</item>
+        <item>受体响应</item>
+        <item>组织协调</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_inflammation">慢性炎症</string>
+    <string name="health_atlas_aging_explain_inflammation">急性炎症有时有助于修复。炎症信号长期持续则是另一个研究问题，单个炎症指标不能说明病因或用于诊断衰老。</string>
+    <string-array name="health_atlas_aging_steps_inflammation">
+        <item>组织受压</item>
+        <item>免疫信号</item>
+        <item>消退或持续</item>
+        <item>组织重塑</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_dysbiosis">菌群失衡</string>
+    <string name="health_atlas_aging_explain_dysbiosis">肠道微生物群落可随年龄改变，并影响与肠道屏障的相互作用。饮食、用药等因素也会改变群落，仅凭菌群差异不能判定因果。</string>
+    <string-array name="health_atlas_aging_steps_dysbiosis">
+        <item>微生物群落</item>
+        <item>群落变化</item>
+        <item>与屏障相互作用</item>
+        <item>宿主反应</item>
+    </string-array>
+</resources>

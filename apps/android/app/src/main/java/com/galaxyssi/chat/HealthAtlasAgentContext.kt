@@ -7,7 +7,8 @@ internal object HealthAtlasAgentContext {
     fun prompt(context: Context, atlas: HealthBodyAtlas, item: HealthAtlasItem?,
         simulation: HealthAtlasSimulation? = null, quantitative: HealthAtlasPhysiology? = null,
         topic: HealthAtlasResearchTopic? = null, elimination: HealthAtlasElimination? = null,
-        drugs: HealthAtlasDrugState? = null, artworkView: String? = null): String = buildString {
+        drugs: HealthAtlasDrugState? = null, artworkView: String? = null,
+        aging: HealthAtlasAgingSelection? = null): String = buildString {
         if (item == null) {
             append(context.getString(R.string.health_atlas_ask_whole_context))
             return@buildString
@@ -62,6 +63,7 @@ internal object HealthAtlasAgentContext {
                         values.elapsedHours, HealthAtlasPhysiologyText.number(values.percent)))
                 }
             }
+            if (topic == HealthAtlasResearchTopic.AGING && aging != null) appendLine(aging.publicContext(context))
             append(HealthAtlasResearchSources.forTopic(topic, mechanism).joinToString("\n"))
         }
     }.trim()

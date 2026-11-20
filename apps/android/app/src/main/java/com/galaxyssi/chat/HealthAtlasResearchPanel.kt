@@ -9,7 +9,7 @@ import java.text.NumberFormat
 /** Public reading and teaching controls. This surface never opens a health database. */
 internal class HealthAtlasResearchPanel(
     private val activity: Activity, private val body: LinearLayout, private val atlas: HealthBodyAtlas,
-    private val item: HealthAtlasItem, val topic: HealthAtlasResearchTopic, initial: HealthAtlasElimination?,
+    private val item: HealthAtlasItem, initial: HealthAtlasElimination?,
     private val select: (HealthAtlasItem) -> Unit, private val source: (String) -> Unit, drugInitial: HealthAtlasDrugState? = null,
 ) {
     private val ui = HealthCenterViews(activity)
@@ -20,15 +20,10 @@ internal class HealthAtlasResearchPanel(
     private val resetInputs = arrayListOf<() -> Unit>()
     private lateinit var modelBody: LinearLayout
     init {
-        require(topic != HealthAtlasResearchTopic.PHYSIOLOGY)
         body.tag = "atlas-research-content"
         ui.add(body, ui.text(item.name, 18f, bold = true), 8)
         ui.add(body, ui.text(item.description, 15f), 8)
-        when (topic) {
-            HealthAtlasResearchTopic.DRUGS -> drugs()
-            HealthAtlasResearchTopic.AGING -> aging()
-            else -> Unit
-        }
+        drugs()
     }
     private fun heading(title: Int) = ui.add(body, ui.text(activity.getString(title), 18f, bold = true), 24)
     private fun note(text: Int) = ui.add(body, ui.text(activity.getString(text), 13f, muted = true), 10)
@@ -117,25 +112,5 @@ internal class HealthAtlasResearchPanel(
         }
         ui.add(body, seek)
         resetInputs += { seek.progress = default - range.first }
-    }
-    private fun aging() {
-        note(R.string.health_atlas_aging_scope)
-        val sections = listOf(
-            R.string.health_atlas_aging_genome to R.string.health_atlas_aging_genome_note,
-            R.string.health_atlas_aging_proteins to R.string.health_atlas_aging_proteins_note,
-            R.string.health_atlas_aging_energy to R.string.health_atlas_aging_energy_note,
-            R.string.health_atlas_aging_cells to R.string.health_atlas_aging_cells_note,
-        )
-        sections.forEach { (title, detail) -> heading(title); ui.add(body, ui.text(activity.getString(detail), 15f), 8) }
-        heading(R.string.health_atlas_evidence_boundary)
-        ui.add(body, ui.text(activity.getString(R.string.health_atlas_aging_evidence), 15f), 8)
-        note(R.string.health_atlas_aging_note)
-        heading(R.string.health_atlas_evidence)
-        sourceRow(R.string.health_atlas_aging_source, HealthAtlasResearchSources.AGING, "aging")
-        sourceRow(R.string.health_atlas_structure_source, atlas.mechanism(item).source, "structure")
-        heading(R.string.health_atlas_related)
-        (atlas.children(item) + atlas.parents(item) + atlas.cells(item)).distinctBy { it.id }.take(6).forEach { related ->
-            ui.add(body, HealthAtlasUi.row(activity, related, atlas) { select(related) }, 8)
-        }
     }
 }

@@ -97,16 +97,32 @@ and has no drug identity, dosage, patient data or therapeutic thresholds.
 Its half-life and elapsed-time controls restore independently for each entry.
 Drilling into a structure and returning restores the research tab and inputs.
 
-The aging tab summarizes research themes and their evidence limits, links the
-2023 Cell review and related anatomy source, and offers an Agent handoff carrying
-the selected entry, research topic, sources and public teaching assumptions.
-None of these tabs reads personal health data or infers an aging score.
-Process labels use measured multiline layout, including larger font settings.
+The aging tab exposes the 12 research themes from the 2023 Cell framework.
+Each has four localized, selectable conceptual steps, a short explanation and
+a canonical anatomy example, not a diagnosis for the selected structure.
+The local topic and step follow the original entry across tab changes, anatomy
+drilldown/return and activity recreation. Native process labels measure
+multiline content; the diagram has no time axis or playback clock.
+
+Two themes include primary human observational evidence with sample, finding
+and limits. The telomere card uses Daniali et al. (87 adults, four tissues),
+including the reported leukocyte-versus-tissue correlation range; it does
+not portray a longitudinal trajectory. The senescence card uses Liu et al.
+(170 donors, two cohorts) and distinguishes age-associated expression in
+blood T cells from counting senescent cells in an organ. Neither is a clinical
+threshold, an intervention result or a validated personal aging test.
+
+The Agent preview carries only the active aging topic, selected conceptual
+step and associated sources; switching to physiology or drug pathways omits
+aging context. None of these tabs reads personal health data, writes study
+numbers to records or infers a biological-age score.
 
 Research references:
 - https://openstax.org/books/pharmacology/pages/2-2-pharmacokinetics-and-pharmacodynamics
 - https://pharmacologyeducation.org/clinical-pharmacokinetics/
 - https://pubmed.ncbi.nlm.nih.gov/36599349/
+- https://pmc.ncbi.nlm.nih.gov/articles/PMC3615479/
+- https://pubmed.ncbi.nlm.nih.gov/19485966/
 
 ## Design Coverage and Remaining Work
 
