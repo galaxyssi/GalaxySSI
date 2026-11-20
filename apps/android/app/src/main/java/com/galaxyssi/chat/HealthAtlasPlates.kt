@@ -77,7 +77,7 @@ internal object HealthAtlasPlates {
             HealthAtlasMarker("inner-ear", .686f, .509f), HealthAtlasMarker("cochlea", .79f, .668f),
             HealthAtlasMarker("vestibular-apparatus", .797f, .19f)), HealthAtlasMiddleEar.ANATOMY_SOURCE)
     val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron, alveolus, eye, ear) +
-        HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all
+        HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all + HealthAtlasTissuePlates.all
 
     fun viewsForId(id: String?): List<HealthAtlasPlate> = HealthAtlasMusculoskeletalPlates.viewsForId(id)
         .ifEmpty { listOfNotNull(defaultForId(id)) }
@@ -104,6 +104,6 @@ internal object HealthAtlasPlates {
         "cell-pancreatic-beta-cell" -> beta
         "cell-erythrocyte" -> erythrocyte
         "cell-neuron" -> neuron
-        else -> HealthAtlasSystemPlates.forId(id)
+        else -> HealthAtlasTissuePlates.forId(id) ?: HealthAtlasSystemPlates.forId(id)
     }
 }

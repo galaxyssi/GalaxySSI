@@ -27,7 +27,8 @@ internal object HealthAtlasUi {
             }, LinearLayout.LayoutParams(0, -2, 1f)) }
         }
     }
-    fun icon(item: HealthAtlasItem): Int = if (item.kind == HealthAtlasKind.CELL || item.kind == HealthAtlasKind.FRAGMENT)
+    fun icon(item: HealthAtlasItem): Int = if (item.kind == HealthAtlasKind.TISSUE) R.drawable.ic_input_menu_layers
+        else if (item.kind == HealthAtlasKind.CELL || item.kind == HealthAtlasKind.FRAGMENT)
         R.drawable.ic_atlas_microscope else when (item.systems.first()) {
         "nervous" -> R.drawable.ic_atlas_brain
         "sensory" -> R.drawable.ic_atlas_eye
@@ -49,7 +50,8 @@ internal object HealthAtlasUi {
         val ui = HealthCenterViews(activity)
         val system = data[item.systems.first()]
         return ui.row(item.name, if (item.kind == HealthAtlasKind.SYSTEM) item.description else
-            item.systems.mapNotNull(data::get).joinToString(" · ") { it.name }, action).apply {
+            if (item.kind == HealthAtlasKind.TISSUE) activity.getString(R.string.health_atlas_tissues)
+            else item.systems.mapNotNull(data::get).joinToString(" · ") { it.name }, action).apply {
             val text = getChildAt(0) as LinearLayout
             (text.getChildAt(0) as TextView).maxLines = 2
             if (text.childCount > 1) (text.getChildAt(1) as TextView).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END }

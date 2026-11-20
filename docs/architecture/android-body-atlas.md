@@ -1,7 +1,7 @@
 # Android Body Atlas
 
 The public teaching catalogue contains 14 navigation categories, 167 canonical
-organ/structure entries, 105 cell types or subtypes, and one platelet-fragment
+organ/structure entries, 14 tissues, 105 cell types or subtypes, and one platelet-fragment
 entry. Shared structures have one stable identity and multiple category links.
 The taxonomy is a navigation aid, not an exhaustive ontology of all human cells.
 
@@ -22,6 +22,33 @@ ideal middle-ear transfer are teaching equations. Germline
 stage tables expose chromosome and DNA counts. Other sequences are qualitative,
 not validated quantitative patient models.
 No organ score, biological age, drug dose or treatment outcome is inferred.
+
+## Tissue Layer
+
+The organ catalogue has adjacent Organ and Tissue views. The Structure tab
+of an organ detail offers Organ, Tissue, and Cell layers. Changing that layer
+keeps the scroll parent and Agent action mounted. Both selectors survive
+activity recreation, and returning from a child restores the parent layer.
+
+Four tissue families are represented by 14 canonical entries, connected to
+53 organ/structure examples and 26 cell examples. Graph validation requires
+distinct `locatedIn` organ IDs with a shared category and `related` cell IDs
+on each tissue. Each tissue owns a localized four-stage function sequence.
+An organ without an explicit link shows an empty state rather than inheriting
+unrelated tissues from its system.
+
+Each tissue has an original vector schematic and hotspot links to depicted
+cells. These are instructional drawings, not microscopy, and the four steps
+are qualitative, with no time or clinical scale. Knowledge-only Agent previews
+carry the selected tissue's examples, source and, when relevant, current step.
+No patient values are computed or assigned to tissue entries.
+
+References:
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/4-1-types-of-tissues
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/4-2-epithelial-tissue
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/4-3-connective-tissue-supports-and-protects
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/4-4-muscle-tissue-and-motion
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/4-5-nervous-tissue-mediates-perception-and-response
 
 ## Interactive Physiology
 
@@ -153,7 +180,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the 26 anatomical illustrations and selectable structures to the
+- Extend the 40 anatomical and tissue illustrations and selectable structures to the
   remaining systems, organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by

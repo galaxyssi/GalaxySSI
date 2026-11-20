@@ -28,6 +28,7 @@ class HealthBodyAtlasActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var content: LinearLayout
     private var section = 0
+    private var showTissueCatalogue = false
     private var selection = ""
     private var system = ""
     private var query = ""
@@ -56,10 +57,17 @@ class HealthBodyAtlasActivity : Activity() {
     private val drugStates = linkedMapOf<String, HealthAtlasDrugState>()
     private val agingSelections = linkedMapOf<String, HealthAtlasAgingSelection>()
     private val artworkViews = linkedMapOf<String, String>()
+    private enum class StructureLayer(val label: Int) {
+        ORGAN(R.string.health_atlas_organ_layer),
+        TISSUE(R.string.health_atlas_tissues),
+        CELL(R.string.health_atlas_cells),
+    }
+    private val structureLayers = linkedMapOf<String, StructureLayer>()
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         section = state?.getInt("section")?.coerceIn(0, 3) ?: 0
+        showTissueCatalogue = state?.getBoolean("showTissueCatalogue") == true
         selection = state?.getString("selection").orEmpty()
         system = state?.getString("system").orEmpty()
         query = state?.getString("query").orEmpty().take(100)
@@ -69,6 +77,9 @@ class HealthBodyAtlasActivity : Activity() {
             saved.getString(key)?.let { view ->
                 if (HealthAtlasPlates.forId(key, view)?.viewKey == view) artworkViews[key] = view
             }
+        } }
+        state?.getBundle("structureLayersV1")?.let { saved -> saved.keySet().take(300).forEach { key ->
+            StructureLayer.entries.firstOrNull { it.name == saved.getString(key) }?.let { structureLayers[key] = it }
         } }
         state?.getBundle("drugModelsV1")?.let { saved -> saved.keySet().take(300).forEach { key ->
             HealthAtlasDrugState.restore(saved.getIntArray(key))?.let { drugStates[key] = it }
@@ -134,6 +145,8 @@ class HealthBodyAtlasActivity : Activity() {
         saveResearch()
         saveMeasurementSelection()
         out.putInt("section", section); out.putString("selection", selection); out.putString("system", system)
+        out.putBoolean("showTissueCatalogue", showTissueCatalogue)
+        out.putBundle("structureLayersV1", Bundle().apply { structureLayers.forEach { (id, layer) -> putString(id, layer.name) } })
         out.putString("query", query); out.putString("tab", tab.name)
         out.putBundle("historyV2", Bundle().apply {
             putInt("count", history.size)
@@ -186,7 +199,7 @@ class HealthBodyAtlasActivity : Activity() {
         root.removeAllViews()
         val item = data[selection]
         val toolbar = ui.toolbar(R.string.health_body_title, ::back, ui.icon(R.drawable.ic_hub_search, R.string.health_atlas_search) {
-            selection = ""; researchTopic = null; section = 2; scrollY = 0; render()
+            selection = ""; researchTopic = null; section = 2; showTissueCatalogue = false; scrollY = 0; render()
             root.findViewWithTag<EditText>("atlas-search")?.let { input -> input.requestFocus()
                 (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT) }
         })
@@ -222,22 +235,42 @@ class HealthBodyAtlasActivity : Activity() {
             ui.add(content, ui.row(data["heart"]!!.name, data["cardio"]!!.name) { select(data["heart"]!!) })
             ui.add(content, ui.row(data["cell-pancreatic-beta-cell"]!!.name, data["endocrine"]!!.name) { select(data["cell-pancreatic-beta-cell"]!!) })
             ui.add(content, ui.text(getString(R.string.health_atlas_counts, data.systems.size,
-                data.items.count { it.kind == HealthAtlasKind.ORGAN }, data.items.count { it.kind == HealthAtlasKind.CELL }), 12f, muted = true), 8)
+                data.items.count { it.kind == HealthAtlasKind.ORGAN }, data.tissues.size,
+                data.items.count { it.kind == HealthAtlasKind.CELL }), 12f, muted = true), 8)
             return
         }
+        val catalogueLayers = ui.column()
+        if (section == 2) ui.add(content, catalogueLayers)
         val search = healthProfileInput(query, 100).apply { hint = getString(R.string.health_atlas_search); tag = "atlas-search" }
         ui.add(content, search)
         if (section > 1) ui.add(content, ui.row(data[system]?.name ?: getString(R.string.health_atlas_all)) { chooseSystem(data) })
         val list = ui.column(); ui.add(content, list)
         fun update() {
             list.removeAllViews()
-            val kind = listOf(HealthAtlasKind.SYSTEM, HealthAtlasKind.ORGAN, HealthAtlasKind.CELL)[section - 1]
+            val kind = when (section) {
+                1 -> HealthAtlasKind.SYSTEM
+                2 -> if (showTissueCatalogue) HealthAtlasKind.TISSUE else HealthAtlasKind.ORGAN
+                else -> HealthAtlasKind.CELL
+            }
             val found = data.search(query, kind, if (section == 1) "" else system)
             if (found.isEmpty()) list.addView(ui.text(getString(R.string.health_atlas_no_matches), 15f, muted = true))
             found.take(limit).forEach { row(list, it) }
             if (found.size > limit) ui.add(list, ui.command(R.string.health_atlas_more) { limit += 24; update() })
             ui.add(list, ui.text(getString(R.string.health_atlas_category_note), 12f, muted = true), 12)
         }
+        fun showLayers() {
+            catalogueLayers.removeAllViews()
+            catalogueLayers.addView(HealthAtlasUi.tabs(this, listOf(R.string.health_atlas_organs, R.string.health_atlas_tissues),
+                if (showTissueCatalogue) 1 else 0, "atlas-catalogue-layer") { index ->
+                if (showTissueCatalogue != (index == 1)) {
+                    showTissueCatalogue = index == 1
+                    limit = 24
+                    showLayers()
+                    update()
+                }
+            })
+        }
+        if (section == 2) showLayers()
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { query = s.toString(); limit = 24; update() }
@@ -255,16 +288,7 @@ class HealthBodyAtlasActivity : Activity() {
     }
     private fun detail(data: HealthBodyAtlas, item: HealthAtlasItem) {
         when (tab) {
-            HealthAtlasTab.STRUCTURE -> {
-                ui.add(content, artwork(data, item))
-                ui.add(content, ui.text(item.description, 16f), 12)
-                val children = data.children(item)
-                if (children.isNotEmpty()) { heading(R.string.health_atlas_related); children.forEach { row(content, it) } }
-                val cells = data.cells(item)
-                if (cells.isNotEmpty()) { heading(R.string.health_atlas_cells); cells.forEach { row(content, it) } }
-                heading(R.string.health_atlas_belongs)
-                (data.parents(item) + item.systems.filter { it != item.id }.mapNotNull(data::get)).distinctBy { it.id }.forEach { row(content, it) }
-            }
+            HealthAtlasTab.STRUCTURE -> structure(data, item)
             HealthAtlasTab.FUNCTION -> {
                 ui.add(content, artwork(data, item))
                 ui.add(content, ui.text(item.description, 17f), 12)
@@ -298,7 +322,54 @@ class HealthBodyAtlasActivity : Activity() {
         if (HealthAtlasUi.art(item) != null && tab != HealthAtlasTab.VALUES)
             ui.add(content, ui.text(getString(R.string.health_atlas_art_note), 11f, muted = true), 8)
     }
-    private fun heading(title: Int) { ui.add(content, ui.text(getString(title), 18f, bold = true), 22) }
+    private fun structure(data: HealthBodyAtlas, item: HealthAtlasItem) {
+        fun rows(parent: LinearLayout, title: Int, items: List<HealthAtlasItem>) {
+            if (items.isEmpty()) return
+            ui.add(parent, ui.text(getString(title), 18f, bold = true), 22)
+            items.distinctBy { it.id }.forEach { row(parent, it) }
+        }
+        fun anatomy(parent: LinearLayout) {
+            ui.add(parent, artwork(data, item))
+            ui.add(parent, ui.text(item.description, 16f), 12)
+            val cells = if (item.kind == HealthAtlasKind.CELL || item.kind == HealthAtlasKind.FRAGMENT) emptyList() else data.cells(item)
+            rows(parent, R.string.health_atlas_related, data.children(item).filterNot { it in cells })
+            if (item.kind == HealthAtlasKind.SYSTEM) rows(parent, R.string.health_atlas_tissues, data.tissues(item))
+            rows(parent, if (item.kind == HealthAtlasKind.TISSUE) R.string.health_atlas_tissue_cell_examples else R.string.health_atlas_cells, cells)
+            val systems = item.systems.filter { it != item.id }.mapNotNull(data::get)
+            if (item.kind == HealthAtlasKind.TISSUE) {
+                rows(parent, R.string.health_atlas_tissue_locations, item.locatedIn.mapNotNull(data::get))
+                rows(parent, R.string.health_atlas_belongs, systems)
+            } else rows(parent, R.string.health_atlas_belongs, data.parents(item) + systems)
+        }
+        if (item.kind != HealthAtlasKind.ORGAN) { anatomy(content); return }
+        val layers = ui.column()
+        val selected = ui.column().apply { tag = "atlas-structure-layer-content" }
+        ui.add(content, layers)
+        ui.add(content, selected)
+        fun renderLayer() {
+            val current = structureLayers[item.id] ?: StructureLayer.ORGAN
+            layers.removeAllViews()
+            layers.addView(HealthAtlasUi.tabs(this, StructureLayer.entries.map { it.label }, current.ordinal, "atlas-structure-layer") { index ->
+                val next = StructureLayer.entries[index]
+                if (next != current) {
+                    structureLayers[item.id] = next
+                    renderLayer()
+                }
+            })
+            selected.removeAllViews()
+            when (current) {
+                StructureLayer.ORGAN -> anatomy(selected)
+                StructureLayer.TISSUE, StructureLayer.CELL -> {
+                    val items = if (current == StructureLayer.TISSUE) data.tissues(item) else data.cells(item)
+                    if (items.isEmpty()) ui.add(selected, ui.text(getString(
+                        if (current == StructureLayer.TISSUE) R.string.health_atlas_no_linked_tissues else R.string.health_atlas_no_linked_cells),
+                        15f, muted = true), 18)
+                    else items.forEach { row(selected, it) }
+                }
+            }
+        }
+        renderLayer()
+    }
     private fun artwork(data: HealthBodyAtlas, item: HealthAtlasItem) = HealthAtlasArtwork(this, data, item,
         ::select, ::zoom, artworkViews[item.id]) { artworkViews[item.id] = it }
     private fun saveSimulation() { simulation?.let {
