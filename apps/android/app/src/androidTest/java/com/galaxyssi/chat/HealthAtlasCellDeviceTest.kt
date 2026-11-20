@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
 import android.os.SystemClock
 import android.view.View
@@ -113,8 +114,102 @@ class HealthAtlasCellDeviceTest {
                 assertTrue("Missing transparency: $id", transparent > 500)
             } finally { bitmap.recycle() }
         }
-        assertNull(HealthAtlasPlates.forId("cell-astrocyte"))
+        assertNull(HealthAtlasPlates.forId("cell-oligodendrocyte"))
         assertEquals("cell-neutrophil", HealthAtlasPlates.forId("cell-neutrophil")!!.owner)
+    }
+    @Test fun allThirtyCoreCellsOwnDistinctArtAndEveryNewAnchorIsOnItsFigure() {
+        val atlas = HealthBodyAtlas.load(context)
+        val ids = listOf("erythrocyte", "neutrophil", "eosinophil", "basophil", "monocyte", "macrophage", "t-cell",
+            "b-cell", "plasma-cell", "natural-killer-cell", "neuron", "astrocyte", "schwann-cell", "skeletal-myocyte",
+            "cardiomyocyte", "smooth-muscle-cell", "keratinocyte", "melanocyte", "fibroblast", "adipocyte",
+            "osteoblast", "osteocyte", "osteoclast", "chondrocyte", "vascular-endothelial-cell", "hepatocyte",
+            "pancreatic-beta-cell", "enterocyte", "spermatozoon", "oocyte-or-ovum").map { "cell-$it" }
+        val images = ids.map { id ->
+            assertEquals(HealthAtlasKind.CELL, atlas[id]?.kind)
+            requireNotNull(HealthAtlasPlates.forId(id)).also { assertEquals(id, it.owner) }
+        }
+        assertEquals(30, images.map { it.drawable }.toSet().size)
+        assertEquals(18, HealthAtlasCoreCellPlates.all.size)
+        assertEquals(39, HealthAtlasCoreCellPlates.all.sumOf { it.features.size })
+        for (plate in HealthAtlasCoreCellPlates.all) {
+            val bitmap = Bitmap.createBitmap(360, 280, Bitmap.Config.ARGB_8888)
+            try {
+                context.getDrawable(plate.drawable)!!.apply { setBounds(0, 0, 360, 280); draw(Canvas(bitmap)) }
+                assertEquals(0, Color.alpha(bitmap.getPixel(0,0)))
+                for (feature in plate.features) {
+                    val m = feature.marker
+                    assertTrue("${plate.owner}/${m.id}",
+                        Color.alpha(bitmap.getPixel((360 * m.x).toInt(), (280 * m.y).toInt())) > 180)
+                }
+            } finally { bitmap.recycle() }
+        }
+    }
+
+    @Test fun sarcomereUsesTheCurrentSkeletalMyocyteStageAndRestoresItsRelativeLength() = native { scenario ->
+        fun Activity.openCell(id: String) {
+            view("atlas-tab-3").performClick()
+            (view("atlas-search") as EditText).setText(id)
+            view("atlas-entry-$id").performClick()
+        }
+        scenario.onActivity {
+            it.openCell("cell-astrocyte")
+            assertNotNull(it.view("atlas-feature-astrocyte-endfoot"))
+        }
+        capture("astrocyte")
+        scenario.onActivity {
+            it.onBackPressed(); it.openCell(HealthAtlasSarcomere.OWNER)
+            it.view("atlas-tab-3").performClick()
+            val scroll = it.view("atlas-scroll")
+            val diagram = it.view("atlas-sarcomere-diagram") as HealthAtlasSarcomerePanel.Diagram
+            for (stage in 0..3) {
+                it.view("atlas-process-stage-$stage").performClick()
+                assertEquals(HealthAtlasSarcomere(stage), diagram.model)
+                assertSame(scroll, it.view("atlas-scroll"))
+                assertTrue(diagram.contentDescription.contains((it.view("atlas-sarcomere-ratio") as TextView).text))
+            }
+            it.view("atlas-process-stage-2").performClick()
+        }
+        capture("sarcomere")
+        scenario.recreate(); await(scenario, "atlas-sarcomere-diagram")
+        scenario.onActivity {
+            assertEquals(180, (it.view("atlas-sarcomere-diagram") as HealthAtlasSarcomerePanel.Diagram).model.zDistance)
+            it.onBackPressed(); it.openCell("cell-cardiomyocyte"); it.view("atlas-tab-3").performClick()
+            assertNull(it.window.decorView.tagged("atlas-sarcomere-diagram"))
+        }
+    }
+
+    @Test fun sarcomereFramesAndTranslatedContextStayScopedToSkeletalMuscle() = native { scenario ->
+        scenario.onActivity { activity ->
+            for (locale in listOf(Locale.ENGLISH, Locale.SIMPLIFIED_CHINESE)) {
+                val localized = activity.createConfigurationContext(Configuration(activity.resources.configuration).apply { setLocale(locale) })
+                val atlas = HealthBodyAtlas.load(localized)
+                val ratio = localized.getString(R.string.health_atlas_sarcomere_ratio, 72)
+                assertTrue(HealthAtlasAgentContext.prompt(localized, atlas, atlas[HealthAtlasSarcomere.OWNER],
+                    simulation = HealthAtlasSimulation(phase = .5f)).contains(ratio))
+                for (id in listOf("cell-cardiomyocyte", "cell-smooth-muscle-cell", "muscle"))
+                    assertFalse(HealthAtlasAgentContext.prompt(localized, atlas, atlas[id],
+                        simulation = HealthAtlasSimulation(phase = .5f)).contains(ratio))
+            }
+            for (night in listOf(Configuration.UI_MODE_NIGHT_NO, Configuration.UI_MODE_NIGHT_YES)) {
+                val themed = activity.createConfigurationContext(Configuration(activity.resources.configuration).apply {
+                    uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or night
+                })
+                val diagram = HealthAtlasSarcomerePanel.Diagram(themed)
+                for (width in listOf(540, 1080, 1600)) {
+                    diagram.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                    diagram.layout(0, 0, width, diagram.measuredHeight)
+                    fun draw(stage: Int) = Bitmap.createBitmap(width, diagram.height, Bitmap.Config.ARGB_8888).also {
+                        diagram.model = HealthAtlasSarcomere(stage); diagram.draw(Canvas(it))
+                    }
+                    val relaxed = draw(3); val shortened = draw(2)
+                    try {
+                        assertFalse(relaxed.sameAs(shortened))
+                        assertTrue(Color.alpha(shortened.getPixel(width / 2, diagram.height / 2)) > 180)
+                    } finally { relaxed.recycle(); shortened.recycle() }
+                }
+            }
+        }
     }
     @Test fun everyCellStageIsFocusableAndFitsLargeText() = native { scenario ->
         scenario.onActivity { activity ->

@@ -117,7 +117,7 @@ class HealthAtlasSystemOverviewDeviceTest {
         val atlas = HealthBodyAtlas.load(context)
         for (id in listOf("brain", "heart", "lungs", "pancreas", "liver", "kidneys", "alveoli"))
             assertEquals(id, HealthAtlasPlates.forId(id)!!.owner)
-        for (id in listOf("cell-keratinocyte", "cell-melanocyte", "cell-thyroid-follicular-cell"))
+        for (id in listOf("cell-langerhans-cell", "cell-thyroid-follicular-cell"))
             assertNull(HealthAtlasPlates.forId(id))
         for (id in listOf("parathyroid-glands", "pancreatic-islets", "nails"))
             assertNull(HealthAtlasPlates.forId(id))
@@ -219,7 +219,8 @@ class HealthAtlasSystemOverviewDeviceTest {
         scenario.onActivity {
             it.open("skin"); it.view("atlas-hotspot-epidermis").performClick()
             it.view("atlas-entry-cell-keratinocyte").performClick()
-            assertNull(it.window.decorView.tagged("atlas-art-image"))
+            assertNotNull(it.view("atlas-feature-keratin-filaments"))
+            assertNull(it.window.decorView.tagged("atlas-hotspot-epidermis"))
             it.view("atlas-tab-1").performClick(); it.view("atlas-tab-3").performClick()
             assertNotNull(it.view("atlas-process-stage-0"))
         }

@@ -100,7 +100,7 @@ class HealthAtlasImmuneDeviceTest {
                 }
             } finally { bitmap.recycle() }
         }
-        assertNull(HealthAtlasPlates.forId("cell-astrocyte"))
+        assertNull(HealthAtlasPlates.forId("cell-oligodendrocyte"))
     }
 
     @Test fun annotationOpensLocalExplanationWithoutChangingTheSelectedEntry() = native { scenario ->
