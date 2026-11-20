@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_aging_picker">Research topic</string>
+    <string name="health_atlas_aging_diagram_scope">Mechanism schematic · steps are conceptual, not a timeline</string>
+    <string name="health_atlas_aging_human_study">Human observational study</string>
+    <string name="health_atlas_aging_related">Related anatomy example</string>
+    <string name="health_atlas_aging_study_telomeres">Daniali et al. · Nature Communications, 2013</string>
+    <string name="health_atlas_aging_sample_telomeres">87 adults · 4 tissues · ages 19–77</string>
+    <string name="health_atlas_aging_result_telomeres">In this sample, leukocyte telomere length correlated with length in muscle, subcutaneous fat and skin (Pearson r = 0.83–0.84).</string>
+    <string name="health_atlas_aging_limits_telomeres">This cross-sectional comparison is not repeated measurement in the same person over time. Correlation does not make blood and tissue measurements interchangeable.</string>
+    <string name="health_atlas_aging_study_tcells">Liu et al. · Aging Cell, 2009</string>
+    <string name="health_atlas_aging_sample_tcells">170 donors · 2 cohorts</string>
+    <string name="health_atlas_aging_result_tcells">In blood T cells, log₂ p16(INK4a) mRNA expression correlated with chronological age (Pearson r = 0.63 across both cohorts).</string>
+    <string name="health_atlas_aging_limits_tcells">This association does not count senescent cells in an organ or validate a personal aging test.</string>
+    <string name="health_atlas_aging_topic_genome">Genomic instability</string>
+    <string name="health_atlas_aging_explain_genome">Cells detect and repair many DNA lesions. Persistent lesions and mutations are distinct outcomes that can disrupt normal cell function.</string>
+    <string-array name="health_atlas_aging_steps_genome">
+        <item>DNA damage</item>
+        <item>Damage response</item>
+        <item>Repair or persistence</item>
+        <item>Changed cell function</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_telomeres">Telomere attrition</string>
+    <string name="health_atlas_aging_explain_telomeres">Telomeres protect chromosome ends. In many dividing cells they can shorten, and critically short ends can trigger a damage response. The response is not determined by a single length for every tissue.</string>
+    <string-array name="health_atlas_aging_steps_telomeres">
+        <item>Chromosome ends</item>
+        <item>Repeated division</item>
+        <item>Short telomeres</item>
+        <item>Stress response</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_epigenetics">Epigenetic alterations</string>
+    <string name="health_atlas_aging_explain_epigenetics">Chromatin and chemical marks help govern which genes are active. Age-related changes in these marks can accompany altered gene expression without changing the underlying DNA sequence.</string>
+    <string-array name="health_atlas_aging_steps_epigenetics">
+        <item>Chromatin state</item>
+        <item>Regulatory changes</item>
+        <item>Gene activity shifts</item>
+        <item>Cell state changes</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_proteins">Loss of proteostasis</string>
+    <string name="health_atlas_aging_explain_proteins">Chaperones and degradation systems help maintain functional proteins. If clearance cannot keep pace with damage, misfolded proteins may persist or aggregate.</string>
+    <string-array name="health_atlas_aging_steps_proteins">
+        <item>Protein folding</item>
+        <item>Quality control</item>
+        <item>Damaged proteins</item>
+        <item>Accumulation</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_autophagy">Impaired macroautophagy</string>
+    <string name="health_atlas_aging_explain_autophagy">Macroautophagy encloses some cytoplasmic material and delivers it to lysosomes. If delivery or degradation is impaired, cellular material may accumulate. The diagram shows the intact pathway.</string>
+    <string-array name="health_atlas_aging_steps_autophagy">
+        <item>Cellular cargo</item>
+        <item>Enclosure</item>
+        <item>Lysosome fusion</item>
+        <item>Recycling</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_nutrients">Deregulated nutrient sensing</string>
+    <string name="health_atlas_aging_explain_nutrients">Cells combine signals about nutrients and energy to coordinate growth and maintenance. Aging research examines changes in this regulation, not a diet or fasting target.</string>
+    <string-array name="health_atlas_aging_steps_nutrients">
+        <item>Nutrient cues</item>
+        <item>Signal integration</item>
+        <item>Growth or maintenance</item>
+        <item>Metabolic response</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_mitochondria">Mitochondrial dysfunction</string>
+    <string name="health_atlas_aging_explain_mitochondria">Mitochondria supply ATP and participate in stress signaling. Changes in their function and turnover can alter how cells meet energy demand and respond to stress.</string>
+    <string-array name="health_atlas_aging_steps_mitochondria">
+        <item>Energy demand</item>
+        <item>ATP production</item>
+        <item>Organelle quality</item>
+        <item>Stress response</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_senescence">Cellular senescence</string>
+    <string name="health_atlas_aging_explain_senescence">Some stressed cells enter a durable arrest and can alter the signals they release. Senescence can play different roles in repair and chronic tissue changes; no single marker identifies every senescent cell.</string>
+    <string-array name="health_atlas_aging_steps_senescence">
+        <item>Persistent stress</item>
+        <item>Division arrest</item>
+        <item>Signal changes</item>
+        <item>Tissue response</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_stem_cells">Stem cell exhaustion</string>
+    <string name="health_atlas_aging_explain_stem_cells">Tissue stem cells renew themselves and produce descendants. Age-related changes in those cells and their surroundings can constrain renewal without implying that every stem cell is lost.</string>
+    <string-array name="health_atlas_aging_steps_stem_cells">
+        <item>Tissue turnover</item>
+        <item>Stem-cell activation</item>
+        <item>New cell production</item>
+        <item>Renewal capacity</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_signaling">Altered intercellular communication</string>
+    <string name="health_atlas_aging_explain_signaling">Cells coordinate tissue behavior with local and distant signals. Changes in the signal, its source or the receiving cell can modify a response without affecting all tissues in the same way.</string>
+    <string-array name="health_atlas_aging_steps_signaling">
+        <item>Signal release</item>
+        <item>Signal reaches neighbors</item>
+        <item>Receptor response</item>
+        <item>Tissue coordination</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_inflammation">Chronic inflammation</string>
+    <string name="health_atlas_aging_explain_inflammation">Acute inflammation can support repair. Persistent inflammatory signaling is a separate research concern; a single inflammatory marker does not identify its cause or diagnose aging.</string>
+    <string-array name="health_atlas_aging_steps_inflammation">
+        <item>Tissue stress</item>
+        <item>Immune signals</item>
+        <item>Resolution or persistence</item>
+        <item>Remodeling</item>
+    </string-array>
+    <string name="health_atlas_aging_topic_dysbiosis">Dysbiosis</string>
+    <string name="health_atlas_aging_explain_dysbiosis">Gut microbial communities can change with age and influence interactions with the intestinal barrier. Diet, medicines and other factors also shape the community, so differences alone do not establish cause.</string>
+    <string-array name="health_atlas_aging_steps_dysbiosis">
+        <item>Microbial community</item>
+        <item>Community shifts</item>
+        <item>Barrier interaction</item>
+        <item>Host response</item>
+    </string-array>
+</resources>
