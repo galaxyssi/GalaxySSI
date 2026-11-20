@@ -1197,3 +1197,12 @@ mesh narrows visibly during ejection, not during either isovolumic phase.
 Colored tracers encode relative oxygen content, not actual blood color.
 This lesson does not calculate cardiac output, valve pressure or transit
 times. Personal measurements and the separate simulation are unaffected.
+
+## Continuous Breathing And Gas Exchange
+
+The Function lesson connects chest-scale airflow and diaphragm motion to a
+painted alveolar close-up. The close-up depicts flowing red blood cells and
+simultaneous oxygen and carbon dioxide diffusion in opposite directions.
+Chapters change focus, not the underlying order of gas exchange. Arrows,
+breath and vessel timing are illustrative; the fixed gas-gradient teaching
+examples remain in Simulation and are not plotted as personal measurements.

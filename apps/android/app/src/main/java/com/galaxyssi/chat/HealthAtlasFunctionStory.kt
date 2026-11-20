@@ -39,6 +39,18 @@ internal enum class HealthAtlasFunctionStory(
             R.string.health_atlas_beat_flow_reference to "https://www.nhlbi.nih.gov/health/heart/blood-flow",
         ),
         17_500L,
+    ),
+    BREATHING(
+        setOf("respiratory", "trachea", "bronchi", "bronchioles", "lungs", "diaphragm",
+            "alveoli", "respiratory-membrane", "pulmonary-capillaries"),
+        R.string.health_atlas_breathe_title,
+        R.string.health_atlas_breathe_scope,
+        HealthAtlasBreathingStage.entries.map { it.title to it.caption },
+        listOf(
+            R.string.health_atlas_breathe_air_source to "https://www.nhlbi.nih.gov/health/lungs/breathing-benefits",
+            R.string.health_atlas_breathe_gas_source to HealthAtlasGasExchange.SOURCE,
+        ),
+        18_000L,
     );
 
     fun chapter(value: Float) = (safePhase(value) * chapters.size).toInt().coerceAtMost(chapters.lastIndex)
@@ -47,6 +59,7 @@ internal enum class HealthAtlasFunctionStory(
     fun createArt(context: Context): HealthAtlasFunctionArt = when (this) {
         GLUCOSE -> HealthAtlasUptakeView(context)
         HEARTBEAT -> HealthAtlasHeartbeatView(context)
+        BREATHING -> HealthAtlasBreathingView(context)
     }
 
     companion object {

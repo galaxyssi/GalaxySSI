@@ -40,6 +40,24 @@ class HealthAtlasFunctionStoryTest {
         assertTrue(HealthAtlasBeatStage.EJECTION.ventricularNarrowing(.75f) > HealthAtlasBeatStage.EJECTION.ventricularNarrowing(.25f))
     }
 
+    @Test fun breathingMovesFromWholeLungsToExchangeAndBackWithoutAShapeJump() {
+        val stage = HealthAtlasBreathingStage.entries
+        for (id in listOf("respiratory", "lungs", "diaphragm", "trachea", "bronchi", "bronchioles", "alveoli",
+            "respiratory-membrane", "pulmonary-capillaries")) {
+            assertEquals(HealthAtlasFunctionStory.BREATHING, HealthAtlasFunctionStory.forId(id))
+        }
+        assertNull(HealthAtlasFunctionStory.forId("cell-red-blood-cell"))
+        stage.forEachIndexed { i, current ->
+            val next = stage[(i + 1) % stage.size]
+            assertEquals(current.closeUp(1f), next.closeUp(0f), .000001f)
+            assertEquals(current.expansion(1f), next.expansion(0f), .000001f)
+            assertEquals(i == stage.lastIndex, current.exhales)
+        }
+        assertTrue(stage.first().expansion(.75f) > stage.first().expansion(.25f))
+        assertTrue(stage.last().expansion(.75f) < stage.last().expansion(.25f))
+        assertEquals(1f, HealthAtlasBreathingStage.DIFFUSE.closeUp(.5f), 0f)
+    }
+
     @Test fun allChaptersScrubToTheirOwnBoundariesAndRejectInvalidState() = HealthAtlasFunctionStory.entries.forEach { story ->
         assertEquals(5, story.chapters.size)
         assertEquals(5, story.chapters.map { it.second }.toSet().size)

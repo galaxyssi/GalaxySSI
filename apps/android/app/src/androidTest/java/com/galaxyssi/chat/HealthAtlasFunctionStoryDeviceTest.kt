@@ -23,7 +23,7 @@ class HealthAtlasFunctionStoryDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
-    @Test fun bothLessonsAnimateWithinEveryChapterAtPhoneAndTabletWidths() {
+    @Test fun allLessonsAnimateWithinEveryChapterAtPhoneAndTabletWidths() {
         instrumentation.runOnMainSync {
             for (locale in listOf(Locale.ENGLISH, Locale.SIMPLIFIED_CHINESE)) {
                 val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
@@ -56,6 +56,38 @@ class HealthAtlasFunctionStoryDeviceTest {
                 }
             }
         }
+    }
+
+    @Test fun lungAndAlveolusOpenTheLessonWithoutChangingTheExistingGasSimulation() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-hotspot-lungs").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<HealthAtlasBreathingView>("atlas-function-breathing-art")
+                    activity.find<View>("atlas-function-next").performClick()
+                    activity.find<View>("atlas-tab-0").performClick()
+                    activity.find<View>("atlas-entry-alveoli").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    repeat(2) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_breathe_diffuse_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.find<View>("atlas-gas-arrow-OXYGEN")
+                    activity.find<View>("atlas-gas-arrow-CARBON_DIOXIDE")
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.4f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.onBackPressed()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.2f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
     }
 
     @Test fun heartAndValveKeepIndependentPositionsAndLeaveMeasurementsUntouched() {
@@ -142,6 +174,11 @@ class HealthAtlasFunctionStoryDeviceTest {
         assertTrue(beat.contains(context.getString(R.string.health_atlas_beat_eject_caption)))
         assertFalse(beat.contains(context.getString(R.string.health_atlas_beat_fill_caption)))
         assertFalse(beat.contains(glucoseSource))
+        val alveoli = requireNotNull(atlas["alveoli"])
+        val breathing = HealthAtlasAgentContext.prompt(context, atlas, alveoli, functionPhase = .47f)
+        assertTrue(breathing.contains(context.getString(R.string.health_atlas_breathe_diffuse_caption)))
+        assertFalse(breathing.contains(context.getString(R.string.health_atlas_breathe_exhale_caption)))
+        assertFalse(breathing.contains(context.getString(R.string.health_atlas_beat_eject_caption)))
     }
 
     private fun openCell(activity: HealthBodyAtlasActivity, id: String) {
