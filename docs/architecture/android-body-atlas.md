@@ -138,9 +138,32 @@ personal health measurements. See the
 and the [measured-valve modeling study](https://pmc.ncbi.nlm.nih.gov/articles/PMC4500195/)
 for anatomy and the limitations of an ideal directional element.
 
+## Alimentary Canal Sections
+
+Fourteen digestive entries now have their own source-linked diagrams, from
+oral cavity and teeth through the esophagus, stomach, three regions of the
+small intestine, the large intestine, cecum, appendix, colon, rectum, and anal
+canal. Forty-seven bilingual annotations explain named structures and 29
+canonical links open the depicted organ, adjacent duct, or cell. The parent
+digestive and pancreatic maps retain their own identities and navigation.
+
+The section renderer shares step, scrub, playback, accessibility, and restore
+behavior with the lymphatic sections. Six alimentary diagrams show a moving
+marker through a representative lumen path; the others highlight structures
+during their specific lessons. No simulated path reports real transit time.
+
+The small intestine and jejunum show equal, non-overlapping cylindrical villi
+on a 1 mm^2 patch. In the model, the exposed tip replaces the same footprint
+at the base; only the side contributes extra area. With density N per mm^2,
+radius r in mm, and height h in mm, the area ratio is `1 + N * 2*pi*r*h`.
+The top and side views share a scale, and the chart varies density with radius
+and height fixed. Folds, microvilli, transport, and individual absorption
+are excluded. See the [small intestine anatomy chapter](https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines)
+and [human mucosal morphometry](https://pubmed.ncbi.nlm.nih.gov/24694282/).
+
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides sixteen independently bounded teaching models:
+`HealthAtlasPhysiology` provides seventeen independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -189,8 +212,9 @@ for anatomy and the limitations of an ideal directional element.
 - The collecting lymphatic example applies an ideal check valve: forward
   flow is `max(delta pressure, 0) / open resistance`. It does not represent
   contractions, compliance, leakage, or a measured flow.
+- Villus geometry shows synthetic area amplification, not an absorption rate.
 
-Fifty canonical entries expose these associated processes. Tubular cells
+Fifty-two canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -317,7 +341,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the 167 anatomical, tissue and cellular illustrations and selectable structures to the
+- Extend the 181 anatomical, tissue and cellular illustrations and selectable structures to the
   remaining organs and tissue structures. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by

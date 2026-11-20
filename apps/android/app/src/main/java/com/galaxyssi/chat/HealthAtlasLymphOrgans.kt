@@ -3,17 +3,30 @@ package com.galaxyssi.chat
 internal object HealthAtlasLymphOrgans {
     const val SOURCE = "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems"
 
-    data class Lesson(val plate: HealthAtlasPlate, val stageFeatures: IntArray) {
-        val owner get() = requireNotNull(plate.owner)
-        init { require(stageFeatures.size == 4 && stageFeatures.all { it in plate.features.indices }) }
-    }
-
     private fun marker(id: String, x: Int, y: Int) = HealthAtlasMarker(id, x / 360f, y / 280f)
     private fun feature(id: String, x: Int, y: Int, name: Int, detail: Int) =
         HealthAtlasFeature(marker(id, x, y), name, detail)
     private fun lesson(id: String, art: Int, caption: Int, features: List<HealthAtlasFeature>,
         markers: List<HealthAtlasMarker>, stageFeatures: IntArray) =
-        Lesson(HealthAtlasPlate(art, id, caption, markers, SOURCE, features = features), stageFeatures)
+        HealthAtlasSectionLesson(HealthAtlasPlate(art, id, caption, markers, SOURCE, features = features),
+            stageFeatures.toList(), tracks(id), listOfNotNull(R.string.health_atlas_lymph_illustration_scope,
+                R.string.health_atlas_lymph_duct_orientation.takeIf { id == "thoracic-duct" }))
+
+    private fun tracks(id: String) = when (id) {
+        "lymph-nodes" -> listOf(
+            atlasSectionTrack(94f, 40f) { cubicTo(92f, 69f, 94f, 82f, 100f, 103f) },
+            atlasSectionTrack(100f, 103f) { cubicTo(98f, 123f, 104f, 148f, 123f, 170f) },
+            atlasSectionTrack(123f, 170f) { cubicTo(146f, 192f, 166f, 199f, 200f, 183f) },
+            atlasSectionTrack(200f, 183f) { cubicTo(222f, 174f, 252f, 181f, 272f, 188f); quadTo(295f, 191f, 320f, 169f) },
+        )
+        "thoracic-duct" -> listOf(
+            atlasSectionTrack(126f, 230f) { quadTo(140f, 221f, 163f, 224f) },
+            atlasSectionTrack(163f, 224f) { quadTo(153f, 214f, 164f, 198f); cubicTo(178f, 177f, 173f, 145f, 180f, 139f) },
+            atlasSectionTrack(180f, 139f) { cubicTo(184f, 124f, 192f, 110f, 205f, 99f) },
+            atlasSectionTrack(205f, 99f) { quadTo(214f, 76f, 231f, 61f) },
+        )
+        else -> emptyList()
+    }
 
     private val lessons = listOf(
         lesson("bone-marrow", R.drawable.health_atlas_lymph_marrow, R.string.health_atlas_lymph_marrow_view,
@@ -82,7 +95,7 @@ internal object HealthAtlasLymphOrgans {
                 feature("galt-2", 189, 184, R.string.health_atlas_lymph_galt_feature_2, R.string.health_atlas_lymph_galt_detail_2)),
             listOf(marker("cell-dendritic-cell", 195, 132), marker("cell-b-cell", 211, 177)),
             intArrayOf(0, 0, 1, 2))
-    ).associateBy(Lesson::owner)
-    val all = lessons.values.map(Lesson::plate)
+    ).associateBy(HealthAtlasSectionLesson::owner)
+    val all = lessons.values.map(HealthAtlasSectionLesson::plate)
     operator fun get(id: String?) = lessons[id]
 }

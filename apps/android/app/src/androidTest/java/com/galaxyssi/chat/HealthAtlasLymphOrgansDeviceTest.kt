@@ -123,7 +123,7 @@ class HealthAtlasLymphOrgansDeviceTest {
             activity.onBackPressed()
             assertNotNull(activity.view("atlas-feature-${plate.features.first().marker.id}"))
             activity.view("atlas-tab-3").performClick()
-            val diagram = activity.view("atlas-lymph-diagram") as HealthAtlasLymphLessonView
+            val diagram = activity.view("atlas-section-diagram") as HealthAtlasSectionLessonView
             assertEquals(id, diagram.lesson.owner)
             assertNull(activity.window.decorView.tagged("atlas-simulation-art"))
             for (i in 0..3) {
@@ -140,7 +140,7 @@ class HealthAtlasLymphOrgansDeviceTest {
     @Test fun nodeShowsMovingLymphAndPreservesTheSelectedRouteAcrossResearchAndRecreation() = native { scenario ->
         scenario.onActivity {
             it.open("lymph-nodes"); it.view("atlas-tab-3").performClick()
-            val diagram = it.view("atlas-lymph-diagram") as HealthAtlasLymphLessonView
+            val diagram = it.view("atlas-section-diagram") as HealthAtlasSectionLessonView
             diagram.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
             diagram.layout(0, 0, diagram.measuredWidth, diagram.measuredHeight)
@@ -160,11 +160,11 @@ class HealthAtlasLymphOrgansDeviceTest {
             assertFalse(HealthAtlasAgentContext.prompt(it, atlas, atlas["heart"], simulation = state).contains(scope))
         }
         capture("node", scenario.localized(R.string.health_atlas_lymph_node_title))
-        scenario.recreate(); ready(scenario, "atlas-lymph-diagram")
+        scenario.recreate(); ready(scenario, "atlas-section-diagram")
         scenario.onActivity {
-            assertEquals(3, (it.view("atlas-lymph-diagram") as HealthAtlasLymphLessonView).stage)
+            assertEquals(3, (it.view("atlas-section-diagram") as HealthAtlasSectionLessonView).stage)
             it.view("atlas-open-research").performClick()
-            assertEquals(3, (it.view("atlas-lymph-diagram") as HealthAtlasLymphLessonView).stage)
+            assertEquals(3, (it.view("atlas-section-diagram") as HealthAtlasSectionLessonView).stage)
             assertNull(it.window.decorView.tagged("atlas-physiology-lymph-pressure"))
         }
     }
@@ -191,7 +191,7 @@ class HealthAtlasLymphOrgansDeviceTest {
             assertEquals(60, (it.view("atlas-physiology-lymph-resistance") as SeekBar).progress)
             it.onBackPressed(); it.open("thoracic-duct"); it.view("atlas-tab-3").performClick()
             assertNull(it.window.decorView.tagged("atlas-physiology-lymph-pressure"))
-            assertEquals(0, (it.view("atlas-lymph-diagram") as HealthAtlasLymphLessonView).stage)
+            assertEquals(0, (it.view("atlas-section-diagram") as HealthAtlasSectionLessonView).stage)
         }
     }
 }

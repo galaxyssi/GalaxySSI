@@ -20,6 +20,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
     private val eyeOptics = if (kind == HealthAtlasPhysiologyKind.EYE_FOCUS) HealthAtlasEyeOpticsView(activity) else null
     private val middleEar = if (kind == HealthAtlasPhysiologyKind.MIDDLE_EAR) HealthAtlasMiddleEarView(activity) else null
     private val alveolar = if (kind == HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE) HealthAtlasAlveolarSurfaceView(activity) else null
+    private val villus = if (kind == HealthAtlasPhysiologyKind.VILLUS_AREA) HealthAtlasVillusAreaView(activity) else null
     init {
         ui.add(body, ui.text(activity.getString(HealthAtlasPhysiologyText.title(kind)), 19f, bold = true), 12)
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_model_synthetic), 12f, muted = true), 4)
@@ -30,6 +31,10 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         eyeOptics?.let { ui.add(body, it, 12) }
         middleEar?.let { ui.add(body, it, 12) }
         alveolar?.let { ui.add(body, it, 12) }
+        villus?.let {
+            ui.add(body, it, 8)
+            ui.add(body, ui.text(activity.getString(R.string.health_atlas_gut_section_area_views), 12f, muted = true), 4)
+        }
         val axisKey = kind.inputs[kind.axis].key
         fun addChart() {
             ui.add(body, chart, 12)
@@ -38,7 +43,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
             ui.add(body, ui.text(if (unit.isEmpty()) axisLabel else
                 activity.getString(R.string.health_atlas_model_axis, axisLabel, unit), 12f, muted = true))
         }
-        val controlsFirst = alveolar != null || kind == HealthAtlasPhysiologyKind.PHOTON_CAPTURE
+        val controlsFirst = alveolar != null || villus != null || kind == HealthAtlasPhysiologyKind.PHOTON_CAPTURE
         if (!controlsFirst) addChart()
         kind.inputs.forEachIndexed { index, input ->
             val caption = ui.text("", 14f).apply { tag = "atlas-physiology-label-${input.key}" }
@@ -89,6 +94,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         model.eyeOptics?.let { eyeOptics?.eye = it }
         model.middleEar?.let { middleEar?.model = it }
         alveolar?.model = model
+        villus?.model = model
         controls.forEachIndexed { index, (_, label) -> label.text = HealthAtlasPhysiologyText.input(activity, model, index) }
     }
 }

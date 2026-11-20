@@ -383,3 +383,23 @@ test('lymphoid organs have distinct localized lessons and canonical anatomy link
     }
   }
 });
+
+test('alimentary sections have independent bilingual stages and source chapters', () => {
+  const ids = ['oral-cavity', 'teeth', 'esophagus', 'stomach', 'small-intestine', 'duodenum', 'jejunum', 'ileum',
+    'large-intestine', 'cecum', 'appendix', 'colon', 'rectum', 'anal-canal'];
+  const keys = new Set();
+  const translations = ['values', 'values-zh'].map(locale => readFileSync(
+    new URL(`../../apps/android/app/src/main/res/${locale}/health_atlas_gut_sections.xml`, import.meta.url), 'utf8'));
+  for (const id of ids) {
+    const item = catalogue.entries.find(entry => entry.id === id);
+    assert.equal(item.mechanism, id);
+    const model = catalogue.mechanisms.find(value => value.id === id);
+    assert.equal(model.kind, 'alimentary-organ');
+    assert.match(model.chapter, /^23-[345]-/);
+    for (const key of [model.title, ...model.stages]) {
+      assert.ok(!keys.has(key));
+      keys.add(key);
+      assert.ok(translations.every(file => file.includes(`name="${key}"`)), key);
+    }
+  }
+});

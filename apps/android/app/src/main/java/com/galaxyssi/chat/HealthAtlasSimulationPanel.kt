@@ -47,9 +47,9 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private val pancreaticRoutes = if (item.id == HealthAtlasPancreaticRoutes.OWNER) HealthAtlasPancreaticRoutes(activity, atlas, select) else null
     private val isletStages = if (item.id == HealthAtlasIsletStages.OWNER) HealthAtlasIsletStages(activity, atlas, select) else null
     private val sweatView = if (item.id == HealthAtlasSweatView.OWNER) HealthAtlasSweatView(activity, mechanism) else null
-    private val lymphView = HealthAtlasLymphOrgans[item.id]?.let { HealthAtlasLymphLessonView(activity, it, mechanism) }
+    private val sectionView = HealthAtlasSectionLesson.forId(item.id)?.let { HealthAtlasSectionLessonView(activity, it, mechanism) }
     private val quantitativeAfterArt = gasExchange != null || pancreaticRoutes != null || endocrinePath != null ||
-        sweatView != null || lymphView != null
+        sweatView != null || sectionView != null
     private val resetInputs = arrayListOf<() -> Unit>()
     init {
         fun addQuantitative() {
@@ -63,7 +63,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         val art = HealthAtlasUi.art(item)
         if (art != null && circulation == null && gasExchange == null && heartValves == null &&
             phagocytosis == null && sarcomere == null && podocyte == null && pancreaticRoutes == null &&
-            isletStages == null && endocrinePath == null && retinalPath == null && sweatView == null && lymphView == null)
+            isletStages == null && endocrinePath == null && retinalPath == null && sweatView == null && sectionView == null)
             ui.add(body, ImageView(activity).apply {
             setImageResource(art); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = item.name
             minimumHeight = ui.dp(260); setOnClickListener { zoom(art, item.name) }; tag = "atlas-simulation-art"
@@ -94,12 +94,9 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
             ui.add(body, it, 8)
             ui.add(body, ui.text(activity.getString(R.string.health_atlas_context_sweat_scope), 12f, muted = true), 6)
         }
-        lymphView?.let {
+        sectionView?.let {
             ui.add(body, it, 8)
-            val caption = R.string.health_atlas_lymph_illustration_scope
-            ui.add(body, ui.text(activity.getString(caption), 12f, muted = true), 6)
-            if (item.id == "thoracic-duct")
-                ui.add(body, ui.text(activity.getString(R.string.health_atlas_lymph_duct_orientation), 12f, muted = true), 6)
+            it.lesson.notes.forEach { note -> ui.add(body, ui.text(activity.getString(note), 12f, muted = true), 6) }
         }
         if (item.id == "hair-follicles")
             ui.add(body, ui.text(activity.getString(R.string.health_atlas_context_hair_scope), 12f, muted = true), 6)
@@ -120,7 +117,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
             }.apply { tag = "atlas-simulation-reset" })
         }
         val controlsAnchor = diagram ?: heartValves ?: germline ?: phagocytosis ?: sarcomere ?: podocyte ?:
-            pancreaticRoutes ?: isletStages ?: sweatView ?: lymphView
+            pancreaticRoutes ?: isletStages ?: sweatView ?: sectionView
         if (controlsAnchor != null) body.addView(controls, body.indexOfChild(controlsAnchor),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
         else ui.add(body, controls, 8)
@@ -206,7 +203,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         if (endocrinePath?.stage != values.stage) endocrinePath?.stage = values.stage
         if (retinalPath?.stage != values.stage) retinalPath?.stage = values.stage
         sweatView?.phase = values.phase
-        lymphView?.phase = values.phase
+        sectionView?.phase = values.phase
         stage.text = activity.getString(R.string.health_atlas_stage, values.stage + 1, mechanism.stages.size, mechanism.stages[values.stage])
         if (::progress.isInitialized) progress.progress = (values.phase * 1000).toInt()
     }

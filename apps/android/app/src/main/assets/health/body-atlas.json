@@ -1583,8 +1583,12 @@
       "systems": [
         "gut"
       ],
-      "related": [],
-      "mechanism": "gut",
+      "related": [
+        "teeth",
+        "tongue",
+        "pharynx"
+      ],
+      "mechanism": "oral-cavity",
       "aliases": "health_atlas_oral_cavity_aliases",
       "color": "",
       "icon": ""
@@ -1598,7 +1602,7 @@
         "gut"
       ],
       "related": [],
-      "mechanism": "gut",
+      "mechanism": "teeth",
       "aliases": "health_atlas_teeth_aliases",
       "color": "",
       "icon": ""
@@ -1611,8 +1615,10 @@
       "systems": [
         "gut"
       ],
-      "related": [],
-      "mechanism": "gut",
+      "related": [
+        "stomach"
+      ],
+      "mechanism": "esophagus",
       "aliases": "health_atlas_esophagus_aliases",
       "color": "",
       "icon": ""
@@ -1625,8 +1631,11 @@
       "systems": [
         "gut"
       ],
-      "related": [],
-      "mechanism": "gut",
+      "related": [
+        "duodenum",
+        "cell-gastric-parietal-cell"
+      ],
+      "mechanism": "stomach",
       "aliases": "health_atlas_stomach_aliases",
       "color": "",
       "icon": ""
@@ -1644,7 +1653,7 @@
         "jejunum",
         "ileum"
       ],
-      "mechanism": "gut",
+      "mechanism": "small-intestine",
       "aliases": "health_atlas_small_intestine_aliases",
       "color": "",
       "icon": ""
@@ -1657,8 +1666,12 @@
       "systems": [
         "gut"
       ],
-      "related": [],
-      "mechanism": "gut",
+      "related": [
+        "pancreatic-duct",
+        "biliary-tract",
+        "jejunum"
+      ],
+      "mechanism": "duodenum",
       "aliases": "health_atlas_duodenum_aliases",
       "color": "",
       "icon": ""
@@ -1671,8 +1684,11 @@
       "systems": [
         "gut"
       ],
-      "related": [],
-      "mechanism": "gut",
+      "related": [
+        "cell-enterocyte",
+        "lymphatic-vessels"
+      ],
+      "mechanism": "jejunum",
       "aliases": "health_atlas_jejunum_aliases",
       "color": "",
       "icon": ""
@@ -1685,8 +1701,11 @@
       "systems": [
         "gut"
       ],
-      "related": [],
-      "mechanism": "gut",
+      "related": [
+        "cecum",
+        "gut-associated-lymphoid-tissue"
+      ],
+      "mechanism": "ileum",
       "aliases": "health_atlas_ileum_aliases",
       "color": "",
       "icon": ""
@@ -1705,7 +1724,7 @@
         "rectum",
         "anal-canal"
       ],
-      "mechanism": "gut",
+      "mechanism": "large-intestine",
       "aliases": "health_atlas_large_intestine_aliases",
       "color": "",
       "icon": ""
@@ -1718,8 +1737,12 @@
       "systems": [
         "gut"
       ],
-      "related": [],
-      "mechanism": "gut",
+      "related": [
+        "ileum",
+        "appendix",
+        "colon"
+      ],
+      "mechanism": "cecum",
       "aliases": "health_atlas_cecum_aliases",
       "color": "",
       "icon": ""
@@ -1733,8 +1756,11 @@
         "gut",
         "immune"
       ],
-      "related": [],
-      "mechanism": "gut",
+      "related": [
+        "cell-b-cell",
+        "gut-associated-lymphoid-tissue"
+      ],
+      "mechanism": "appendix",
       "aliases": "health_atlas_appendix_aliases",
       "color": "",
       "icon": ""
@@ -1747,8 +1773,10 @@
       "systems": [
         "gut"
       ],
-      "related": [],
-      "mechanism": "gut",
+      "related": [
+        "cell-goblet-cell"
+      ],
+      "mechanism": "colon",
       "aliases": "health_atlas_colon_aliases",
       "color": "",
       "icon": ""
@@ -1761,8 +1789,10 @@
       "systems": [
         "gut"
       ],
-      "related": [],
-      "mechanism": "gut",
+      "related": [
+        "anal-canal"
+      ],
+      "mechanism": "rectum",
       "aliases": "health_atlas_rectum_aliases",
       "color": "",
       "icon": ""
@@ -1775,8 +1805,11 @@
       "systems": [
         "gut"
       ],
-      "related": [],
-      "mechanism": "gut",
+      "related": [
+        "rectum",
+        "cell-skeletal-myocyte"
+      ],
+      "mechanism": "anal-canal",
       "aliases": "health_atlas_anal_canal_aliases",
       "color": "",
       "icon": ""
@@ -5760,6 +5793,174 @@
         "health_atlas_mechanism_immune_3"
       ],
       "chapter": "21-introduction"
+    },
+    {
+      "id": "oral-cavity",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_mouth_title",
+      "stages": [
+        "health_atlas_gut_section_mouth_stage_0",
+        "health_atlas_gut_section_mouth_stage_1",
+        "health_atlas_gut_section_mouth_stage_2",
+        "health_atlas_gut_section_mouth_stage_3"
+      ],
+      "chapter": "23-3-the-mouth-pharynx-and-esophagus"
+    },
+    {
+      "id": "teeth",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_tooth_title",
+      "stages": [
+        "health_atlas_gut_section_tooth_stage_0",
+        "health_atlas_gut_section_tooth_stage_1",
+        "health_atlas_gut_section_tooth_stage_2",
+        "health_atlas_gut_section_tooth_stage_3"
+      ],
+      "chapter": "23-3-the-mouth-pharynx-and-esophagus"
+    },
+    {
+      "id": "esophagus",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_esophagus_title",
+      "stages": [
+        "health_atlas_gut_section_esophagus_stage_0",
+        "health_atlas_gut_section_esophagus_stage_1",
+        "health_atlas_gut_section_esophagus_stage_2",
+        "health_atlas_gut_section_esophagus_stage_3"
+      ],
+      "chapter": "23-3-the-mouth-pharynx-and-esophagus"
+    },
+    {
+      "id": "stomach",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_stomach_title",
+      "stages": [
+        "health_atlas_gut_section_stomach_stage_0",
+        "health_atlas_gut_section_stomach_stage_1",
+        "health_atlas_gut_section_stomach_stage_2",
+        "health_atlas_gut_section_stomach_stage_3"
+      ],
+      "chapter": "23-4-the-stomach"
+    },
+    {
+      "id": "small-intestine",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_small_title",
+      "stages": [
+        "health_atlas_gut_section_small_stage_0",
+        "health_atlas_gut_section_small_stage_1",
+        "health_atlas_gut_section_small_stage_2",
+        "health_atlas_gut_section_small_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "duodenum",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_duodenum_title",
+      "stages": [
+        "health_atlas_gut_section_duodenum_stage_0",
+        "health_atlas_gut_section_duodenum_stage_1",
+        "health_atlas_gut_section_duodenum_stage_2",
+        "health_atlas_gut_section_duodenum_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "jejunum",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_jejunum_title",
+      "stages": [
+        "health_atlas_gut_section_jejunum_stage_0",
+        "health_atlas_gut_section_jejunum_stage_1",
+        "health_atlas_gut_section_jejunum_stage_2",
+        "health_atlas_gut_section_jejunum_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "ileum",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_ileum_title",
+      "stages": [
+        "health_atlas_gut_section_ileum_stage_0",
+        "health_atlas_gut_section_ileum_stage_1",
+        "health_atlas_gut_section_ileum_stage_2",
+        "health_atlas_gut_section_ileum_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "large-intestine",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_large_title",
+      "stages": [
+        "health_atlas_gut_section_large_stage_0",
+        "health_atlas_gut_section_large_stage_1",
+        "health_atlas_gut_section_large_stage_2",
+        "health_atlas_gut_section_large_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "cecum",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_cecum_title",
+      "stages": [
+        "health_atlas_gut_section_cecum_stage_0",
+        "health_atlas_gut_section_cecum_stage_1",
+        "health_atlas_gut_section_cecum_stage_2",
+        "health_atlas_gut_section_cecum_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "appendix",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_appendix_title",
+      "stages": [
+        "health_atlas_gut_section_appendix_stage_0",
+        "health_atlas_gut_section_appendix_stage_1",
+        "health_atlas_gut_section_appendix_stage_2",
+        "health_atlas_gut_section_appendix_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "colon",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_colon_title",
+      "stages": [
+        "health_atlas_gut_section_colon_stage_0",
+        "health_atlas_gut_section_colon_stage_1",
+        "health_atlas_gut_section_colon_stage_2",
+        "health_atlas_gut_section_colon_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "rectum",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_rectum_title",
+      "stages": [
+        "health_atlas_gut_section_rectum_stage_0",
+        "health_atlas_gut_section_rectum_stage_1",
+        "health_atlas_gut_section_rectum_stage_2",
+        "health_atlas_gut_section_rectum_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "anal-canal",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_anal_title",
+      "stages": [
+        "health_atlas_gut_section_anal_stage_0",
+        "health_atlas_gut_section_anal_stage_1",
+        "health_atlas_gut_section_anal_stage_2",
+        "health_atlas_gut_section_anal_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
     },
     {
       "id": "bone-marrow",

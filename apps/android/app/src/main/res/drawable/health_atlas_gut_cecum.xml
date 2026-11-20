@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <path android:pathData="M178,45 L258,45 Q276,67 274,112 L277,170 Q278,208 248,224 Q211,235 186,217 Q160,203 163,183 L162,146 Q174,97 178,45 Z" android:fillColor="#e1a39f" android:strokeColor="#a65b65" android:strokeWidth="3.3" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M193,45 L241,46 Q259,74 252,113 L257,170 Q260,199 234,208 Q201,217 183,194 Q177,178 182,154 Q189,108 193,45 Z" android:fillColor="#f7e9ce" android:strokeColor="#c89357" android:strokeWidth="2.2" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M55,113 Q99,118 133,132 L162,139" android:strokeColor="#a65b65" android:strokeWidth="30" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M55,113 Q99,118 133,132 L162,139" android:strokeColor="#f2c6b1" android:strokeWidth="25" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M55,113 Q99,118 133,132 L162,139" android:strokeColor="#f7e9ce" android:strokeWidth="7.000000000000001" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M153,128 Q168,126 181,132 L186,142 Q172,154 159,149 Z" android:fillColor="#e1a39f" android:strokeColor="#a65b65" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M166,190 Q163,210 146,222 Q136,234 143,249" android:strokeColor="#a65b65" android:strokeWidth="17" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M166,190 Q163,210 146,222 Q136,234 143,249" android:strokeColor="#f2c6b1" android:strokeWidth="12" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M168,82 Q178,91 189,96 M260,93 Q271,86 274,80 M255,155 Q267,158 276,146" android:strokeColor="#a65b65" android:strokeWidth="3" android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>

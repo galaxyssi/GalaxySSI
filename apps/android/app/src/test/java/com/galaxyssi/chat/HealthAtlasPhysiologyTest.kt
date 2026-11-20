@@ -174,4 +174,17 @@ class HealthAtlasPhysiologyTest {
         assertNull(HealthAtlasPhysiology.restore("lymph-nodes", intArrayOf(20, 40)))
         assertNull(HealthAtlasPhysiology.restore("thoracic-duct", intArrayOf(20, 40)))
     }
+    @Test fun villusSurfaceCountsSideAreaButNeverDoubleCountsTheTubeFootprint() {
+        val model = requireNotNull(HealthAtlasPhysiology.restore("jejunum", intArrayOf(12, 45, 60)))
+        assertEquals(1.0 + 12 * 2 * Math.PI * .045 * .6, model.result, 1e-9)
+        assertEquals(model.result - 1.0, model.companionValue, 1e-9)
+        assertEquals(1.0, model.withInput(0, 0).result, 1e-9)
+        assertEquals(0.0, model.withInput(0, 0).companionValue, 1e-9)
+        val maximum = model.withInput(0, 24).withInput(1, 70).withInput(2, 120)
+        assertEquals(1.0 + 24 * 2 * Math.PI * .070 * 1.2, maximum.result, 1e-9)
+        assertTrue(maximum.input(1) * 2 < 1.0 / 5.0)
+        assertNotNull(HealthAtlasPhysiology.restore("small-intestine", intArrayOf(12, 45, 60)))
+        assertNull(HealthAtlasPhysiology.restore("colon", intArrayOf(12, 45, 60)))
+        assertNull(HealthAtlasPhysiology.restore("cell-enterocyte", intArrayOf(12, 45, 60)))
+    }
 }
