@@ -1432,8 +1432,13 @@
       "kind": "organ",
       "name": "health_atlas_renal_cortex_name",
       "description": "health_atlas_renal_cortex_description",
-      "systems": ["urinary"],
-      "related": ["glomerulus", "renal-tubules"],
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "glomerulus",
+        "renal-tubules"
+      ],
       "mechanism": "urinary",
       "aliases": "health_atlas_renal_cortex_aliases",
       "color": "",
@@ -1444,8 +1449,13 @@
       "kind": "organ",
       "name": "health_atlas_renal_medulla_name",
       "description": "health_atlas_renal_medulla_description",
-      "systems": ["urinary"],
-      "related": ["renal-tubules", "collecting-ducts"],
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "renal-tubules",
+        "collecting-ducts"
+      ],
       "mechanism": "urinary",
       "aliases": "health_atlas_renal_medulla_aliases",
       "color": "",
@@ -1456,8 +1466,12 @@
       "kind": "organ",
       "name": "health_atlas_renal_pelvis_name",
       "description": "health_atlas_renal_pelvis_description",
-      "systems": ["urinary"],
-      "related": ["ureters"],
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "ureters"
+      ],
       "mechanism": "urinary",
       "aliases": "health_atlas_renal_pelvis_aliases",
       "color": "",
@@ -3338,7 +3352,7 @@
         "lymph-nodes",
         "skin-organ"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-dendritic-cell",
       "aliases": "health_atlas_cell_dendritic_cell_aliases",
       "color": "",
       "icon": ""
@@ -3355,7 +3369,7 @@
         "skin-organ",
         "small-intestine"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-mast-cell",
       "aliases": "health_atlas_cell_mast_cell_aliases",
       "color": "",
       "icon": ""
@@ -3371,7 +3385,7 @@
       "related": [
         "bone-marrow"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-megakaryocyte",
       "aliases": "health_atlas_cell_megakaryocyte_aliases",
       "color": "",
       "icon": ""
@@ -3387,7 +3401,7 @@
       "related": [
         "bone-marrow"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-hematopoietic-stem-cell",
       "aliases": "health_atlas_cell_hematopoietic_stem_cell_aliases",
       "color": "",
       "icon": ""
@@ -3404,7 +3418,7 @@
         "lymph-nodes",
         "blood"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-helper-t-cell",
       "aliases": "health_atlas_cell_helper_t_cell_aliases",
       "color": "",
       "icon": ""
@@ -3421,7 +3435,7 @@
         "lymph-nodes",
         "blood"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-cytotoxic-t-cell",
       "aliases": "health_atlas_cell_cytotoxic_t_cell_aliases",
       "color": "",
       "icon": ""
@@ -3438,7 +3452,7 @@
         "lymph-nodes",
         "blood"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-regulatory-t-cell",
       "aliases": "health_atlas_cell_regulatory_t_cell_aliases",
       "color": "",
       "icon": ""
@@ -3455,7 +3469,7 @@
         "brain",
         "spinal-cord"
       ],
-      "mechanism": "nervous",
+      "mechanism": "cell-oligodendrocyte",
       "aliases": "health_atlas_cell_oligodendrocyte_aliases",
       "color": "",
       "icon": ""
@@ -3473,7 +3487,7 @@
         "brain",
         "spinal-cord"
       ],
-      "mechanism": "nervous",
+      "mechanism": "cell-microglia",
       "aliases": "health_atlas_cell_microglia_aliases",
       "color": "",
       "icon": ""
@@ -3490,7 +3504,7 @@
         "brain",
         "spinal-cord"
       ],
-      "mechanism": "nervous",
+      "mechanism": "cell-ependymal-cell",
       "aliases": "health_atlas_cell_ependymal_cell_aliases",
       "color": "",
       "icon": ""
@@ -3506,7 +3520,7 @@
       "related": [
         "ganglia"
       ],
-      "mechanism": "nervous",
+      "mechanism": "cell-satellite-glial-cell",
       "aliases": "health_atlas_cell_satellite_glial_cell_aliases",
       "color": "",
       "icon": ""
@@ -3522,7 +3536,7 @@
       "related": [
         "retina"
       ],
-      "mechanism": "sensory",
+      "mechanism": "cell-rod-photoreceptor",
       "aliases": "health_atlas_cell_rod_photoreceptor_aliases",
       "color": "",
       "icon": ""
@@ -3538,7 +3552,7 @@
       "related": [
         "retina"
       ],
-      "mechanism": "sensory",
+      "mechanism": "cell-cone-photoreceptor",
       "aliases": "health_atlas_cell_cone_photoreceptor_aliases",
       "color": "",
       "icon": ""
@@ -3554,7 +3568,7 @@
       "related": [
         "retina"
       ],
-      "mechanism": "transport",
+      "mechanism": "cell-retinal-pigment-epithelial-cell",
       "aliases": "health_atlas_cell_retinal_pigment_epithelial_cell_aliases",
       "color": "",
       "icon": ""
@@ -3571,7 +3585,7 @@
       "related": [
         "retina"
       ],
-      "mechanism": "sensory",
+      "mechanism": "cell-retinal-ganglion-cell",
       "aliases": "health_atlas_cell_retinal_ganglion_cell_aliases",
       "color": "",
       "icon": ""
@@ -3588,7 +3602,7 @@
         "cochlea",
         "vestibular-apparatus"
       ],
-      "mechanism": "sensory",
+      "mechanism": "cell-inner-ear-hair-cell",
       "aliases": "health_atlas_cell_inner_ear_hair_cell_aliases",
       "color": "",
       "icon": ""
@@ -3605,7 +3619,7 @@
       "related": [
         "olfactory-mucosa"
       ],
-      "mechanism": "sensory",
+      "mechanism": "cell-olfactory-receptor-neuron",
       "aliases": "health_atlas_cell_olfactory_receptor_neuron_aliases",
       "color": "",
       "icon": ""
@@ -3622,7 +3636,7 @@
         "taste-buds",
         "tongue"
       ],
-      "mechanism": "sensory",
+      "mechanism": "cell-taste-receptor-cell",
       "aliases": "health_atlas_cell_taste_receptor_cell_aliases",
       "color": "",
       "icon": ""
@@ -3638,7 +3652,7 @@
       "related": [
         "cornea"
       ],
-      "mechanism": "transport",
+      "mechanism": "cell-corneal-epithelial-cell",
       "aliases": "health_atlas_cell_corneal_epithelial_cell_aliases",
       "color": "",
       "icon": ""
@@ -3654,7 +3668,7 @@
       "related": [
         "capillaries"
       ],
-      "mechanism": "cardio",
+      "mechanism": "cell-pericyte",
       "aliases": "health_atlas_cell_pericyte_aliases",
       "color": "",
       "icon": ""
@@ -3670,7 +3684,7 @@
       "related": [
         "lymphatic-vessels"
       ],
-      "mechanism": "transport",
+      "mechanism": "cell-lymphatic-endothelial-cell",
       "aliases": "health_atlas_cell_lymphatic_endothelial_cell_aliases",
       "color": "",
       "icon": ""
@@ -3772,7 +3786,7 @@
       "related": [
         "stomach"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-gastric-parietal-cell",
       "aliases": "health_atlas_cell_gastric_parietal_cell_aliases",
       "color": "",
       "icon": ""
@@ -3788,7 +3802,7 @@
       "related": [
         "stomach"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-gastric-chief-cell",
       "aliases": "health_atlas_cell_gastric_chief_cell_aliases",
       "color": "",
       "icon": ""
@@ -3804,7 +3818,7 @@
       "related": [
         "small-intestine"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-paneth-cell",
       "aliases": "health_atlas_cell_paneth_cell_aliases",
       "color": "",
       "icon": ""
@@ -3823,7 +3837,7 @@
         "small-intestine",
         "large-intestine"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-enteroendocrine-cell",
       "aliases": "health_atlas_cell_enteroendocrine_cell_aliases",
       "color": "",
       "icon": ""
@@ -3840,7 +3854,7 @@
         "small-intestine",
         "large-intestine"
       ],
-      "mechanism": "gut",
+      "mechanism": "cell-intestinal-stem-cell",
       "aliases": "health_atlas_cell_intestinal_stem_cell_aliases",
       "color": "",
       "icon": ""
@@ -3857,7 +3871,7 @@
         "liver",
         "biliary-tract"
       ],
-      "mechanism": "transport",
+      "mechanism": "cell-cholangiocyte",
       "aliases": "health_atlas_cell_cholangiocyte_aliases",
       "color": "",
       "icon": ""
@@ -3873,7 +3887,7 @@
       "related": [
         "pancreas"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-pancreatic-acinar-cell",
       "aliases": "health_atlas_cell_pancreatic_acinar_cell_aliases",
       "color": "",
       "icon": ""
@@ -3890,7 +3904,7 @@
         "pancreas",
         "pancreatic-duct"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-pancreatic-ductal-cell",
       "aliases": "health_atlas_cell_pancreatic_ductal_cell_aliases",
       "color": "",
       "icon": ""
@@ -3909,7 +3923,7 @@
         "submandibular-glands",
         "sublingual-glands"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-salivary-acinar-cell",
       "aliases": "health_atlas_cell_salivary_acinar_cell_aliases",
       "color": "",
       "icon": ""
@@ -3927,7 +3941,7 @@
         "pancreas",
         "pancreatic-islets"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-pancreatic-alpha-cell",
       "aliases": "health_atlas_cell_pancreatic_alpha_cell_aliases",
       "color": "",
       "icon": ""
@@ -3945,7 +3959,7 @@
         "pancreas",
         "pancreatic-islets"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-pancreatic-delta-cell",
       "aliases": "health_atlas_cell_pancreatic_delta_cell_aliases",
       "color": "",
       "icon": ""
@@ -3963,7 +3977,7 @@
         "pancreas",
         "pancreatic-islets"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-pancreatic-pp-cell",
       "aliases": "health_atlas_cell_pancreatic_pp_cell_aliases",
       "color": "",
       "icon": ""
@@ -3979,7 +3993,7 @@
       "related": [
         "thyroid-gland"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-thyroid-follicular-cell",
       "aliases": "health_atlas_cell_thyroid_follicular_cell_aliases",
       "color": "",
       "icon": ""
@@ -3995,7 +4009,7 @@
       "related": [
         "thyroid-gland"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-thyroid-parafollicular-cell",
       "aliases": "health_atlas_cell_thyroid_parafollicular_cell_aliases",
       "color": "",
       "icon": ""
@@ -4011,7 +4025,7 @@
       "related": [
         "parathyroid-glands"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-parathyroid-chief-cell",
       "aliases": "health_atlas_cell_parathyroid_chief_cell_aliases",
       "color": "",
       "icon": ""
@@ -4027,7 +4041,7 @@
       "related": [
         "adrenal-glands"
       ],
-      "mechanism": "endocrine",
+      "mechanism": "cell-adrenocortical-cell",
       "aliases": "health_atlas_cell_adrenocortical_cell_aliases",
       "color": "",
       "icon": ""
@@ -4043,7 +4057,7 @@
       "related": [
         "adrenal-glands"
       ],
-      "mechanism": "endocrine",
+      "mechanism": "cell-chromaffin-cell",
       "aliases": "health_atlas_cell_chromaffin_cell_aliases",
       "color": "",
       "icon": ""
@@ -4059,7 +4073,7 @@
       "related": [
         "pituitary-gland"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-somatotroph",
       "aliases": "health_atlas_cell_somatotroph_aliases",
       "color": "",
       "icon": ""
@@ -4075,7 +4089,7 @@
       "related": [
         "pituitary-gland"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-lactotroph",
       "aliases": "health_atlas_cell_lactotroph_aliases",
       "color": "",
       "icon": ""
@@ -4091,7 +4105,7 @@
       "related": [
         "pituitary-gland"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-corticotroph",
       "aliases": "health_atlas_cell_corticotroph_aliases",
       "color": "",
       "icon": ""
@@ -4107,7 +4121,7 @@
       "related": [
         "pituitary-gland"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-thyrotroph",
       "aliases": "health_atlas_cell_thyrotroph_aliases",
       "color": "",
       "icon": ""
@@ -4123,7 +4137,7 @@
       "related": [
         "pituitary-gland"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-gonadotroph",
       "aliases": "health_atlas_cell_gonadotroph_aliases",
       "color": "",
       "icon": ""
@@ -4139,7 +4153,7 @@
       "related": [
         "pineal-gland"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-pinealocyte",
       "aliases": "health_atlas_cell_pinealocyte_aliases",
       "color": "",
       "icon": ""
@@ -4474,7 +4488,7 @@
       "related": [
         "epidermis"
       ],
-      "mechanism": "skin",
+      "mechanism": "cell-merkel-cell",
       "aliases": "health_atlas_cell_merkel_cell_aliases",
       "color": "",
       "icon": ""
@@ -4491,7 +4505,7 @@
       "related": [
         "epidermis"
       ],
-      "mechanism": "skin",
+      "mechanism": "cell-langerhans-cell",
       "aliases": "health_atlas_cell_langerhans_cell_aliases",
       "color": "",
       "icon": ""
@@ -4507,7 +4521,7 @@
       "related": [
         "sebaceous-glands"
       ],
-      "mechanism": "skin",
+      "mechanism": "cell-sebocyte",
       "aliases": "health_atlas_cell_sebocyte_aliases",
       "color": "",
       "icon": ""
@@ -4523,7 +4537,7 @@
       "related": [
         "sweat-glands"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-sweat-gland-secretory-cell",
       "aliases": "health_atlas_cell_sweat_gland_secretory_cell_aliases",
       "color": "",
       "icon": ""
@@ -4539,7 +4553,7 @@
       "related": [
         "hair-follicles"
       ],
-      "mechanism": "skin",
+      "mechanism": "cell-hair-matrix-cell",
       "aliases": "health_atlas_cell_hair_matrix_cell_aliases",
       "color": "",
       "icon": ""
@@ -4556,7 +4570,7 @@
         "pectoralis-major",
         "quadriceps-femoris"
       ],
-      "mechanism": "muscle",
+      "mechanism": "cell-muscle-satellite-cell",
       "aliases": "health_atlas_cell_muscle_satellite_cell_aliases",
       "color": "",
       "icon": ""
@@ -4572,7 +4586,7 @@
       "related": [
         "tendons"
       ],
-      "mechanism": "repair",
+      "mechanism": "cell-tenocyte",
       "aliases": "health_atlas_cell_tenocyte_aliases",
       "color": "",
       "icon": ""
@@ -4590,7 +4604,7 @@
         "blood",
         "bone-marrow"
       ],
-      "mechanism": "immune",
+      "mechanism": "fragment-platelet",
       "aliases": "health_atlas_fragment_platelet_aliases",
       "color": "",
       "icon": ""
@@ -5529,6 +5543,638 @@
         "health_atlas_repro_trophoblast_3"
       ],
       "chapter": "28-2-embryonic-development"
+    },
+    {
+      "id": "cell-dendritic-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_dendritic_cell_title",
+      "stages": [
+        "health_atlas_process_cell_dendritic_cell_0",
+        "health_atlas_process_cell_dendritic_cell_1",
+        "health_atlas_process_cell_dendritic_cell_2",
+        "health_atlas_process_cell_dendritic_cell_3"
+      ],
+      "chapter": "21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types"
+    },
+    {
+      "id": "cell-mast-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_mast_cell_title",
+      "stages": [
+        "health_atlas_process_cell_mast_cell_0",
+        "health_atlas_process_cell_mast_cell_1",
+        "health_atlas_process_cell_mast_cell_2",
+        "health_atlas_process_cell_mast_cell_3"
+      ],
+      "chapter": "21-6-diseases-associated-with-depressed-or-overactive-immune-responses"
+    },
+    {
+      "id": "cell-megakaryocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_megakaryocyte_title",
+      "stages": [
+        "health_atlas_process_cell_megakaryocyte_0",
+        "health_atlas_process_cell_megakaryocyte_1",
+        "health_atlas_process_cell_megakaryocyte_2",
+        "health_atlas_process_cell_megakaryocyte_3"
+      ],
+      "chapter": "18-4-leukocytes-and-platelets"
+    },
+    {
+      "id": "cell-hematopoietic-stem-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_hematopoietic_stem_cell_title",
+      "stages": [
+        "health_atlas_process_cell_hematopoietic_stem_cell_0",
+        "health_atlas_process_cell_hematopoietic_stem_cell_1",
+        "health_atlas_process_cell_hematopoietic_stem_cell_2",
+        "health_atlas_process_cell_hematopoietic_stem_cell_3"
+      ],
+      "chapter": "18-2-production-of-the-formed-elements"
+    },
+    {
+      "id": "cell-helper-t-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_helper_t_cell_title",
+      "stages": [
+        "health_atlas_process_cell_helper_t_cell_0",
+        "health_atlas_process_cell_helper_t_cell_1",
+        "health_atlas_process_cell_helper_t_cell_2",
+        "health_atlas_process_cell_helper_t_cell_3"
+      ],
+      "chapter": "21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types"
+    },
+    {
+      "id": "cell-cytotoxic-t-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_cytotoxic_t_cell_title",
+      "stages": [
+        "health_atlas_process_cell_cytotoxic_t_cell_0",
+        "health_atlas_process_cell_cytotoxic_t_cell_1",
+        "health_atlas_process_cell_cytotoxic_t_cell_2",
+        "health_atlas_process_cell_cytotoxic_t_cell_3"
+      ],
+      "chapter": "21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types"
+    },
+    {
+      "id": "cell-regulatory-t-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_regulatory_t_cell_title",
+      "stages": [
+        "health_atlas_process_cell_regulatory_t_cell_0",
+        "health_atlas_process_cell_regulatory_t_cell_1",
+        "health_atlas_process_cell_regulatory_t_cell_2",
+        "health_atlas_process_cell_regulatory_t_cell_3"
+      ],
+      "chapter": "21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types"
+    },
+    {
+      "id": "cell-oligodendrocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_oligodendrocyte_title",
+      "stages": [
+        "health_atlas_process_cell_oligodendrocyte_0",
+        "health_atlas_process_cell_oligodendrocyte_1",
+        "health_atlas_process_cell_oligodendrocyte_2",
+        "health_atlas_process_cell_oligodendrocyte_3"
+      ],
+      "chapter": "12-2-nervous-tissue"
+    },
+    {
+      "id": "cell-microglia",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_microglia_title",
+      "stages": [
+        "health_atlas_process_cell_microglia_0",
+        "health_atlas_process_cell_microglia_1",
+        "health_atlas_process_cell_microglia_2",
+        "health_atlas_process_cell_microglia_3"
+      ],
+      "chapter": "12-2-nervous-tissue"
+    },
+    {
+      "id": "cell-ependymal-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_ependymal_cell_title",
+      "stages": [
+        "health_atlas_process_cell_ependymal_cell_0",
+        "health_atlas_process_cell_ependymal_cell_1",
+        "health_atlas_process_cell_ependymal_cell_2",
+        "health_atlas_process_cell_ependymal_cell_3"
+      ],
+      "chapter": "12-2-nervous-tissue"
+    },
+    {
+      "id": "cell-satellite-glial-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_satellite_glial_cell_title",
+      "stages": [
+        "health_atlas_process_cell_satellite_glial_cell_0",
+        "health_atlas_process_cell_satellite_glial_cell_1",
+        "health_atlas_process_cell_satellite_glial_cell_2",
+        "health_atlas_process_cell_satellite_glial_cell_3"
+      ],
+      "chapter": "12-2-nervous-tissue"
+    },
+    {
+      "id": "cell-rod-photoreceptor",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_rod_photoreceptor_title",
+      "stages": [
+        "health_atlas_process_cell_rod_photoreceptor_0",
+        "health_atlas_process_cell_rod_photoreceptor_1",
+        "health_atlas_process_cell_rod_photoreceptor_2",
+        "health_atlas_process_cell_rod_photoreceptor_3"
+      ],
+      "chapter": "14-1-sensory-perception",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/15769618/"
+    },
+    {
+      "id": "cell-cone-photoreceptor",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_cone_photoreceptor_title",
+      "stages": [
+        "health_atlas_process_cell_cone_photoreceptor_0",
+        "health_atlas_process_cell_cone_photoreceptor_1",
+        "health_atlas_process_cell_cone_photoreceptor_2",
+        "health_atlas_process_cell_cone_photoreceptor_3"
+      ],
+      "chapter": "14-1-sensory-perception",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/15769618/"
+    },
+    {
+      "id": "cell-retinal-pigment-epithelial-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_retinal_pigment_epithelial_cell_title",
+      "stages": [
+        "health_atlas_process_cell_retinal_pigment_epithelial_cell_0",
+        "health_atlas_process_cell_retinal_pigment_epithelial_cell_1",
+        "health_atlas_process_cell_retinal_pigment_epithelial_cell_2",
+        "health_atlas_process_cell_retinal_pigment_epithelial_cell_3"
+      ],
+      "chapter": "14-1-sensory-perception",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/15987797/"
+    },
+    {
+      "id": "cell-retinal-ganglion-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_retinal_ganglion_cell_title",
+      "stages": [
+        "health_atlas_process_cell_retinal_ganglion_cell_0",
+        "health_atlas_process_cell_retinal_ganglion_cell_1",
+        "health_atlas_process_cell_retinal_ganglion_cell_2",
+        "health_atlas_process_cell_retinal_ganglion_cell_3"
+      ],
+      "chapter": "14-1-sensory-perception"
+    },
+    {
+      "id": "cell-inner-ear-hair-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_inner_ear_hair_cell_title",
+      "stages": [
+        "health_atlas_process_cell_inner_ear_hair_cell_0",
+        "health_atlas_process_cell_inner_ear_hair_cell_1",
+        "health_atlas_process_cell_inner_ear_hair_cell_2",
+        "health_atlas_process_cell_inner_ear_hair_cell_3"
+      ],
+      "chapter": "14-1-sensory-perception"
+    },
+    {
+      "id": "cell-olfactory-receptor-neuron",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_olfactory_receptor_neuron_title",
+      "stages": [
+        "health_atlas_process_cell_olfactory_receptor_neuron_0",
+        "health_atlas_process_cell_olfactory_receptor_neuron_1",
+        "health_atlas_process_cell_olfactory_receptor_neuron_2",
+        "health_atlas_process_cell_olfactory_receptor_neuron_3"
+      ],
+      "chapter": "14-1-sensory-perception"
+    },
+    {
+      "id": "cell-taste-receptor-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_taste_receptor_cell_title",
+      "stages": [
+        "health_atlas_process_cell_taste_receptor_cell_0",
+        "health_atlas_process_cell_taste_receptor_cell_1",
+        "health_atlas_process_cell_taste_receptor_cell_2",
+        "health_atlas_process_cell_taste_receptor_cell_3"
+      ],
+      "chapter": "14-1-sensory-perception"
+    },
+    {
+      "id": "cell-corneal-epithelial-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_corneal_epithelial_cell_title",
+      "stages": [
+        "health_atlas_process_cell_corneal_epithelial_cell_0",
+        "health_atlas_process_cell_corneal_epithelial_cell_1",
+        "health_atlas_process_cell_corneal_epithelial_cell_2",
+        "health_atlas_process_cell_corneal_epithelial_cell_3"
+      ],
+      "chapter": "14-1-sensory-perception",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/26310149/"
+    },
+    {
+      "id": "cell-pericyte",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_pericyte_title",
+      "stages": [
+        "health_atlas_process_cell_pericyte_0",
+        "health_atlas_process_cell_pericyte_1",
+        "health_atlas_process_cell_pericyte_2",
+        "health_atlas_process_cell_pericyte_3"
+      ],
+      "chapter": "20-1-structure-and-function-of-blood-vessels",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/16166562/"
+    },
+    {
+      "id": "cell-lymphatic-endothelial-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_lymphatic_endothelial_cell_title",
+      "stages": [
+        "health_atlas_process_cell_lymphatic_endothelial_cell_0",
+        "health_atlas_process_cell_lymphatic_endothelial_cell_1",
+        "health_atlas_process_cell_lymphatic_endothelial_cell_2",
+        "health_atlas_process_cell_lymphatic_endothelial_cell_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "cell-gastric-parietal-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_gastric_parietal_cell_title",
+      "stages": [
+        "health_atlas_process_cell_gastric_parietal_cell_0",
+        "health_atlas_process_cell_gastric_parietal_cell_1",
+        "health_atlas_process_cell_gastric_parietal_cell_2",
+        "health_atlas_process_cell_gastric_parietal_cell_3"
+      ],
+      "chapter": "23-4-the-stomach"
+    },
+    {
+      "id": "cell-gastric-chief-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_gastric_chief_cell_title",
+      "stages": [
+        "health_atlas_process_cell_gastric_chief_cell_0",
+        "health_atlas_process_cell_gastric_chief_cell_1",
+        "health_atlas_process_cell_gastric_chief_cell_2",
+        "health_atlas_process_cell_gastric_chief_cell_3"
+      ],
+      "chapter": "23-4-the-stomach"
+    },
+    {
+      "id": "cell-paneth-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_paneth_cell_title",
+      "stages": [
+        "health_atlas_process_cell_paneth_cell_0",
+        "health_atlas_process_cell_paneth_cell_1",
+        "health_atlas_process_cell_paneth_cell_2",
+        "health_atlas_process_cell_paneth_cell_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "cell-enteroendocrine-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_enteroendocrine_cell_title",
+      "stages": [
+        "health_atlas_process_cell_enteroendocrine_cell_0",
+        "health_atlas_process_cell_enteroendocrine_cell_1",
+        "health_atlas_process_cell_enteroendocrine_cell_2",
+        "health_atlas_process_cell_enteroendocrine_cell_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "cell-intestinal-stem-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_intestinal_stem_cell_title",
+      "stages": [
+        "health_atlas_process_cell_intestinal_stem_cell_0",
+        "health_atlas_process_cell_intestinal_stem_cell_1",
+        "health_atlas_process_cell_intestinal_stem_cell_2",
+        "health_atlas_process_cell_intestinal_stem_cell_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/23870119/"
+    },
+    {
+      "id": "cell-cholangiocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_cholangiocyte_title",
+      "stages": [
+        "health_atlas_process_cell_cholangiocyte_0",
+        "health_atlas_process_cell_cholangiocyte_1",
+        "health_atlas_process_cell_cholangiocyte_2",
+        "health_atlas_process_cell_cholangiocyte_3"
+      ],
+      "chapter": "23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/27563020/"
+    },
+    {
+      "id": "cell-pancreatic-acinar-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_pancreatic_acinar_cell_title",
+      "stages": [
+        "health_atlas_process_cell_pancreatic_acinar_cell_0",
+        "health_atlas_process_cell_pancreatic_acinar_cell_1",
+        "health_atlas_process_cell_pancreatic_acinar_cell_2",
+        "health_atlas_process_cell_pancreatic_acinar_cell_3"
+      ],
+      "chapter": "23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder"
+    },
+    {
+      "id": "cell-pancreatic-ductal-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_pancreatic_ductal_cell_title",
+      "stages": [
+        "health_atlas_process_cell_pancreatic_ductal_cell_0",
+        "health_atlas_process_cell_pancreatic_ductal_cell_1",
+        "health_atlas_process_cell_pancreatic_ductal_cell_2",
+        "health_atlas_process_cell_pancreatic_ductal_cell_3"
+      ],
+      "chapter": "23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder"
+    },
+    {
+      "id": "cell-salivary-acinar-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_salivary_acinar_cell_title",
+      "stages": [
+        "health_atlas_process_cell_salivary_acinar_cell_0",
+        "health_atlas_process_cell_salivary_acinar_cell_1",
+        "health_atlas_process_cell_salivary_acinar_cell_2",
+        "health_atlas_process_cell_salivary_acinar_cell_3"
+      ],
+      "chapter": "23-3-the-mouth-pharynx-and-esophagus"
+    },
+    {
+      "id": "cell-pancreatic-alpha-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_pancreatic_alpha_cell_title",
+      "stages": [
+        "health_atlas_process_cell_pancreatic_alpha_cell_0",
+        "health_atlas_process_cell_pancreatic_alpha_cell_1",
+        "health_atlas_process_cell_pancreatic_alpha_cell_2",
+        "health_atlas_process_cell_pancreatic_alpha_cell_3"
+      ],
+      "chapter": "17-9-the-endocrine-pancreas"
+    },
+    {
+      "id": "cell-pancreatic-delta-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_pancreatic_delta_cell_title",
+      "stages": [
+        "health_atlas_process_cell_pancreatic_delta_cell_0",
+        "health_atlas_process_cell_pancreatic_delta_cell_1",
+        "health_atlas_process_cell_pancreatic_delta_cell_2",
+        "health_atlas_process_cell_pancreatic_delta_cell_3"
+      ],
+      "chapter": "17-9-the-endocrine-pancreas"
+    },
+    {
+      "id": "cell-pancreatic-pp-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_pancreatic_pp_cell_title",
+      "stages": [
+        "health_atlas_process_cell_pancreatic_pp_cell_0",
+        "health_atlas_process_cell_pancreatic_pp_cell_1",
+        "health_atlas_process_cell_pancreatic_pp_cell_2",
+        "health_atlas_process_cell_pancreatic_pp_cell_3"
+      ],
+      "chapter": "17-9-the-endocrine-pancreas"
+    },
+    {
+      "id": "cell-thyroid-follicular-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_thyroid_follicular_cell_title",
+      "stages": [
+        "health_atlas_process_cell_thyroid_follicular_cell_0",
+        "health_atlas_process_cell_thyroid_follicular_cell_1",
+        "health_atlas_process_cell_thyroid_follicular_cell_2",
+        "health_atlas_process_cell_thyroid_follicular_cell_3"
+      ],
+      "chapter": "17-4-the-thyroid-gland"
+    },
+    {
+      "id": "cell-thyroid-parafollicular-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_thyroid_parafollicular_cell_title",
+      "stages": [
+        "health_atlas_process_cell_thyroid_parafollicular_cell_0",
+        "health_atlas_process_cell_thyroid_parafollicular_cell_1",
+        "health_atlas_process_cell_thyroid_parafollicular_cell_2",
+        "health_atlas_process_cell_thyroid_parafollicular_cell_3"
+      ],
+      "chapter": "17-4-the-thyroid-gland"
+    },
+    {
+      "id": "cell-parathyroid-chief-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_parathyroid_chief_cell_title",
+      "stages": [
+        "health_atlas_process_cell_parathyroid_chief_cell_0",
+        "health_atlas_process_cell_parathyroid_chief_cell_1",
+        "health_atlas_process_cell_parathyroid_chief_cell_2",
+        "health_atlas_process_cell_parathyroid_chief_cell_3"
+      ],
+      "chapter": "17-5-the-parathyroid-glands"
+    },
+    {
+      "id": "cell-adrenocortical-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_adrenocortical_cell_title",
+      "stages": [
+        "health_atlas_process_cell_adrenocortical_cell_0",
+        "health_atlas_process_cell_adrenocortical_cell_1",
+        "health_atlas_process_cell_adrenocortical_cell_2",
+        "health_atlas_process_cell_adrenocortical_cell_3"
+      ],
+      "chapter": "17-6-the-adrenal-glands"
+    },
+    {
+      "id": "cell-chromaffin-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_chromaffin_cell_title",
+      "stages": [
+        "health_atlas_process_cell_chromaffin_cell_0",
+        "health_atlas_process_cell_chromaffin_cell_1",
+        "health_atlas_process_cell_chromaffin_cell_2",
+        "health_atlas_process_cell_chromaffin_cell_3"
+      ],
+      "chapter": "17-6-the-adrenal-glands"
+    },
+    {
+      "id": "cell-somatotroph",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_somatotroph_title",
+      "stages": [
+        "health_atlas_process_cell_somatotroph_0",
+        "health_atlas_process_cell_somatotroph_1",
+        "health_atlas_process_cell_somatotroph_2",
+        "health_atlas_process_cell_somatotroph_3"
+      ],
+      "chapter": "17-3-the-pituitary-gland-and-hypothalamus"
+    },
+    {
+      "id": "cell-lactotroph",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_lactotroph_title",
+      "stages": [
+        "health_atlas_process_cell_lactotroph_0",
+        "health_atlas_process_cell_lactotroph_1",
+        "health_atlas_process_cell_lactotroph_2",
+        "health_atlas_process_cell_lactotroph_3"
+      ],
+      "chapter": "17-3-the-pituitary-gland-and-hypothalamus"
+    },
+    {
+      "id": "cell-corticotroph",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_corticotroph_title",
+      "stages": [
+        "health_atlas_process_cell_corticotroph_0",
+        "health_atlas_process_cell_corticotroph_1",
+        "health_atlas_process_cell_corticotroph_2",
+        "health_atlas_process_cell_corticotroph_3"
+      ],
+      "chapter": "17-3-the-pituitary-gland-and-hypothalamus"
+    },
+    {
+      "id": "cell-thyrotroph",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_thyrotroph_title",
+      "stages": [
+        "health_atlas_process_cell_thyrotroph_0",
+        "health_atlas_process_cell_thyrotroph_1",
+        "health_atlas_process_cell_thyrotroph_2",
+        "health_atlas_process_cell_thyrotroph_3"
+      ],
+      "chapter": "17-3-the-pituitary-gland-and-hypothalamus"
+    },
+    {
+      "id": "cell-gonadotroph",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_gonadotroph_title",
+      "stages": [
+        "health_atlas_process_cell_gonadotroph_0",
+        "health_atlas_process_cell_gonadotroph_1",
+        "health_atlas_process_cell_gonadotroph_2",
+        "health_atlas_process_cell_gonadotroph_3"
+      ],
+      "chapter": "17-3-the-pituitary-gland-and-hypothalamus"
+    },
+    {
+      "id": "cell-pinealocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_pinealocyte_title",
+      "stages": [
+        "health_atlas_process_cell_pinealocyte_0",
+        "health_atlas_process_cell_pinealocyte_1",
+        "health_atlas_process_cell_pinealocyte_2",
+        "health_atlas_process_cell_pinealocyte_3"
+      ],
+      "chapter": "17-7-the-pineal-gland"
+    },
+    {
+      "id": "cell-merkel-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_merkel_cell_title",
+      "stages": [
+        "health_atlas_process_cell_merkel_cell_0",
+        "health_atlas_process_cell_merkel_cell_1",
+        "health_atlas_process_cell_merkel_cell_2",
+        "health_atlas_process_cell_merkel_cell_3"
+      ],
+      "chapter": "5-1-layers-of-the-skin"
+    },
+    {
+      "id": "cell-langerhans-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_langerhans_cell_title",
+      "stages": [
+        "health_atlas_process_cell_langerhans_cell_0",
+        "health_atlas_process_cell_langerhans_cell_1",
+        "health_atlas_process_cell_langerhans_cell_2",
+        "health_atlas_process_cell_langerhans_cell_3"
+      ],
+      "chapter": "5-1-layers-of-the-skin",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/23246038/"
+    },
+    {
+      "id": "cell-sebocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_sebocyte_title",
+      "stages": [
+        "health_atlas_process_cell_sebocyte_0",
+        "health_atlas_process_cell_sebocyte_1",
+        "health_atlas_process_cell_sebocyte_2",
+        "health_atlas_process_cell_sebocyte_3"
+      ],
+      "chapter": "5-2-accessory-structures-of-the-skin"
+    },
+    {
+      "id": "cell-sweat-gland-secretory-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_sweat_gland_secretory_cell_title",
+      "stages": [
+        "health_atlas_process_cell_sweat_gland_secretory_cell_0",
+        "health_atlas_process_cell_sweat_gland_secretory_cell_1",
+        "health_atlas_process_cell_sweat_gland_secretory_cell_2",
+        "health_atlas_process_cell_sweat_gland_secretory_cell_3"
+      ],
+      "chapter": "5-2-accessory-structures-of-the-skin"
+    },
+    {
+      "id": "cell-hair-matrix-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_hair_matrix_cell_title",
+      "stages": [
+        "health_atlas_process_cell_hair_matrix_cell_0",
+        "health_atlas_process_cell_hair_matrix_cell_1",
+        "health_atlas_process_cell_hair_matrix_cell_2",
+        "health_atlas_process_cell_hair_matrix_cell_3"
+      ],
+      "chapter": "5-2-accessory-structures-of-the-skin"
+    },
+    {
+      "id": "cell-muscle-satellite-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_muscle_satellite_cell_title",
+      "stages": [
+        "health_atlas_process_cell_muscle_satellite_cell_0",
+        "health_atlas_process_cell_muscle_satellite_cell_1",
+        "health_atlas_process_cell_muscle_satellite_cell_2",
+        "health_atlas_process_cell_muscle_satellite_cell_3"
+      ],
+      "chapter": "10-9-development-and-regeneration-of-muscle-tissue"
+    },
+    {
+      "id": "cell-tenocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_cell_tenocyte_title",
+      "stages": [
+        "health_atlas_process_cell_tenocyte_0",
+        "health_atlas_process_cell_tenocyte_1",
+        "health_atlas_process_cell_tenocyte_2",
+        "health_atlas_process_cell_tenocyte_3"
+      ],
+      "chapter": "4-3-connective-tissue-supports-and-protects"
+    },
+    {
+      "id": "fragment-platelet",
+      "kind": "fragment",
+      "title": "health_atlas_process_fragment_platelet_title",
+      "stages": [
+        "health_atlas_process_fragment_platelet_0",
+        "health_atlas_process_fragment_platelet_1",
+        "health_atlas_process_fragment_platelet_2",
+        "health_atlas_process_fragment_platelet_3"
+      ],
+      "chapter": "18-5-hemostasis"
     }
   ]
 }

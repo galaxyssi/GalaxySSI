@@ -31,10 +31,16 @@ internal class HealthBodyAtlas(val items: List<HealthAtlasItem>, val mechanisms:
         require(items.all { item -> item.systems.isNotEmpty() && item.systems.all { index[it]?.kind == HealthAtlasKind.SYSTEM } &&
             item.related.all(index::containsKey) && item.id !in item.related && models.containsKey(item.mechanism) })
         require(mechanisms.all { it.stages.size == 4 && it.stages.all(String::isNotBlank) && it.chapter.matches(Regex("[a-z0-9-]+")) })
-        require(mechanisms.filter { it.kind == "cell" }.all {
-            index[it.id]?.let { item -> item.kind == HealthAtlasKind.CELL && item.mechanism == it.id } == true
-        })
-        require(items.all { models.getValue(it.mechanism).kind != "cell" || it.mechanism == it.id })
+        val microscopicKinds = setOf("cell", "fragment")
+        require(items.filter { it.kind == HealthAtlasKind.CELL || it.kind == HealthAtlasKind.FRAGMENT }.all {
+            it.mechanism == it.id && models.getValue(it.mechanism).kind == it.kind.name.lowercase(Locale.ROOT)
+        }) { "Each microscopic entry requires its own matching mechanism" }
+        require(mechanisms.filter { it.kind in microscopicKinds }.all { model ->
+            index[model.id]?.let { it.kind.name.lowercase(Locale.ROOT) == model.kind && it.mechanism == model.id } == true
+        }) { "Microscopic mechanism owner is missing or mismatched" }
+        require(items.all { models.getValue(it.mechanism).kind !in microscopicKinds || it.mechanism == it.id }) {
+            "Microscopic mechanisms cannot be assigned to other entries"
+        }
     }
     operator fun get(id: String) = index[id]
     fun mechanism(item: HealthAtlasItem) = models.getValue(item.mechanism)
