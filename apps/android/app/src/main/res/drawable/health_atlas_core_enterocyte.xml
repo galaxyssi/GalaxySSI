@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <path android:fillColor="#D9B2A5" android:strokeColor="#A77F7A" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M82,83 L129,79 L131,220 L83,223 Z M227,79 L270,83 L270,221 L226,218 Z" />
+    <path android:fillColor="#F0C6AA" android:strokeColor="#B68976" android:strokeWidth="2.8" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M134,71 Q175,68 223,72 L223,212 Q217,224 209,227 L143,227 Q134,222 134,210 Z" />
+    <path android:strokeColor="#BD855F" android:strokeWidth="3.8" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M136,73 L134,54 M144,73 L142,54 M152,73 L150,54 M160,73 L158,54 M168,73 L166,54 M176,73 L174,54 M184,73 L182,54 M192,73 L190,54 M200,73 L198,54 M208,73 L206,54 M216,73 L214,54 M224,73 L222,54" />
+    <path android:strokeColor="#C98F66" android:strokeWidth="3.1" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M137,81 L222,81" />
+    <path android:fillColor="#816895" android:strokeColor="#634D77" android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M154,172 a25,27 0 1,0 50,0 a25,27 0 1,0 -50,0 Z" />
+    <path android:strokeColor="#B5A092" android:strokeWidth="3.3" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M97,229 Q175,232 251,226" />
+    <path android:fillColor="#D9A887"
+        android:pathData="M147.5,107 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 Z M185.5,118 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 Z M194.5,143 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 Z M149.5,152 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 Z M206.5,162 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 Z M150.5,205 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 Z M200.5,207 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 Z" />
+</vector>

@@ -208,7 +208,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the 57 anatomical, tissue and cellular illustrations and selectable structures to the
+- Extend the 75 anatomical, tissue and cellular illustrations and selectable structures to the
   remaining organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by
@@ -252,6 +252,31 @@ References:
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/21-2-barrier-defenses-and-the-innate-immune-response
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/21-4-the-adaptive-immune-response-b-lymphocytes-and-antibodies
+
+## Core Cell Structure Coverage
+
+All 30 core cell types now have their own structure illustration. The 18
+added plates include nervous, muscle, epithelial, connective, bone, cartilage,
+vascular, liver, intestinal, and reproductive cells. All 39 new landmarks
+open localized notes. Adjacent extracellular matrix, blood vessel, and
+supporting cells are shown for context without becoming extra catalogue
+identities. The remaining extended catalogue is not implied to have individual
+artwork. Existing measured health indicators remain separate.
+
+The skeletal muscle cell has an interactive sliding-filament diagram that
+uses its four existing excitation, calcium, contraction, and relaxation
+stages. At its illustrative contracted stage the Z-disc spacing is 180
+drawing units instead of 250 (72%), but neither filament length changes.
+This is a dimensionless example, not a force model or a typical clinical
+shortening percentage. The ratio and drawing follow saved phase selection
+and are only included in the current skeletal cell's public Agent context.
+
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/12-2-nervous-tissue
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/10-3-muscle-fiber-contraction-and-relaxation
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/4-3-connective-tissue-supports-and-protects
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/6-3-bone-structure
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/28-1-fertilization
 
 ## System Overview Coverage
 

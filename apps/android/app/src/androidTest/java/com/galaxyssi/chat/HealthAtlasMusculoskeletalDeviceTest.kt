@@ -80,8 +80,9 @@ class HealthAtlasMusculoskeletalDeviceTest {
             assertTrue(views.contains(plate))
             assertTrue(views.all { it.markers.any { target -> target.id == marker.id } })
         }
-        for (id in listOf("erector-spinae", "soleus", "cartilage", "ligaments", "radius",
-            "cell-skeletal-myocyte", "cell-osteoblast", "cell-chondrocyte")) assertNull(id, HealthAtlasPlates.forId(id))
+        for (id in listOf("erector-spinae", "soleus", "cartilage", "ligaments", "radius")) assertNull(id, HealthAtlasPlates.forId(id))
+        for (id in listOf("cell-skeletal-myocyte", "cell-osteoblast", "cell-chondrocyte"))
+            assertEquals(id, HealthAtlasPlates.forId(id)!!.owner)
         assertEquals("respiratory", HealthAtlasPlates.forId("diaphragm")!!.owner)
         assertEquals("immune", HealthAtlasPlates.forId("bone-marrow")!!.owner)
         assertEquals("muscle-posterior", HealthAtlasPlates.forId("trapezius", "muscle-anterior")!!.viewKey)
@@ -209,7 +210,8 @@ class HealthAtlasMusculoskeletalDeviceTest {
         scenario.onActivity {
             it.open("muscle"); it.view("atlas-hotspot-biceps-brachii").performClick()
             it.view("atlas-entry-cell-skeletal-myocyte").performClick()
-            assertNull(it.window.decorView.tagged("atlas-art-image"))
+            assertNotNull(it.view("atlas-feature-skeletal-striations"))
+            assertNull(it.window.decorView.tagged("atlas-hotspot-biceps-brachii"))
             it.view("atlas-tab-3").performClick(); assertNotNull(it.view("atlas-process-stage-0"))
             it.onBackPressed(); assertTrue(it.view("atlas-hotspot-biceps-brachii").isSelected)
             it.onBackPressed(); assertTrue(it.view("atlas-view-0").isSelected)
