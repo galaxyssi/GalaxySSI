@@ -58,6 +58,36 @@ class HealthAtlasFunctionStoryDeviceTest {
         }
     }
 
+    @Test fun hearingAndBalanceOpenDifferentFunctionsAndTheMiddleEarSimulationStillWorks() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-tab-2").performClick()
+                    activity.find<EditText>("atlas-search").setText("ear")
+                    activity.find<View>("atlas-entry-ear").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<HealthAtlasHearingStoryView>("atlas-function-hearing-art")
+                    repeat(4) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_hear_nerve_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.find<View>("atlas-middle-ear-model")
+                    activity.find<View>("atlas-tab-0").performClick()
+                    activity.find<View>("atlas-hotspot-vestibular-apparatus").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertNull(activity.window.decorView.findViewWithTag<View>("atlas-function-player"))
+                    activity.onBackPressed()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.8f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
     @Test fun lungAndAlveolusOpenTheLessonWithoutChangingTheExistingGasSimulation() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
@@ -179,6 +209,11 @@ class HealthAtlasFunctionStoryDeviceTest {
         assertTrue(breathing.contains(context.getString(R.string.health_atlas_breathe_diffuse_caption)))
         assertFalse(breathing.contains(context.getString(R.string.health_atlas_breathe_exhale_caption)))
         assertFalse(breathing.contains(context.getString(R.string.health_atlas_beat_eject_caption)))
+        val hairCell = requireNotNull(atlas["cell-inner-ear-hair-cell"])
+        val hearing = HealthAtlasAgentContext.prompt(context, atlas, hairCell, functionPhase = .65f)
+        assertTrue(hearing.contains(context.getString(R.string.health_atlas_hear_hair_caption)))
+        assertFalse(hearing.contains(context.getString(R.string.health_atlas_hear_nerve_caption)))
+        assertFalse(hearing.contains(context.getString(R.string.health_atlas_breathe_diffuse_caption)))
     }
 
     private fun openCell(activity: HealthBodyAtlasActivity, id: String) {

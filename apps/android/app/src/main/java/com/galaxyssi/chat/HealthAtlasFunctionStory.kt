@@ -51,6 +51,17 @@ internal enum class HealthAtlasFunctionStory(
             R.string.health_atlas_breathe_gas_source to HealthAtlasGasExchange.SOURCE,
         ),
         18_000L,
+    ),
+    HEARING(
+        setOf("ear", "external-ear", "middle-ear", "inner-ear", "cochlea", "cell-inner-ear-hair-cell"),
+        R.string.health_atlas_hear_title,
+        R.string.health_atlas_hear_scope,
+        HealthAtlasSoundStage.entries.map { it.title to it.caption },
+        listOf(
+            R.string.health_atlas_hear_path_source to "https://www.nidcd.nih.gov/health/how-do-we-hear",
+            R.string.health_atlas_hear_cells_source to "https://pmc.ncbi.nlm.nih.gov/articles/PMC1413628/",
+        ),
+        19_000L,
     );
 
     fun chapter(value: Float) = (safePhase(value) * chapters.size).toInt().coerceAtMost(chapters.lastIndex)
@@ -60,6 +71,7 @@ internal enum class HealthAtlasFunctionStory(
         GLUCOSE -> HealthAtlasUptakeView(context)
         HEARTBEAT -> HealthAtlasHeartbeatView(context)
         BREATHING -> HealthAtlasBreathingView(context)
+        HEARING -> HealthAtlasHearingStoryView(context)
     }
 
     companion object {

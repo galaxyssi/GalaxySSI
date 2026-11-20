@@ -58,6 +58,19 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(1f, HealthAtlasBreathingStage.DIFFUSE.closeUp(.5f), 0f)
     }
 
+    @Test fun hearingStoryIsScopedAndItsWaveTravelsFromBaseTowardApex() {
+        for (id in listOf("ear", "external-ear", "middle-ear", "inner-ear", "cochlea", "cell-inner-ear-hair-cell")) {
+            assertEquals(HealthAtlasFunctionStory.HEARING, HealthAtlasFunctionStory.forId(id))
+        }
+        assertNull(HealthAtlasFunctionStory.forId("vestibular-apparatus"))
+        assertNull(HealthAtlasFunctionStory.forId("cell-hair-matrix-cell"))
+        assertEquals(0f, HealthAtlasSoundStage.packet(.90f, .10f), 0f)
+        assertEquals(0f, HealthAtlasSoundStage.packet(.10f, .90f), 0f)
+        assertNotEquals(0f, HealthAtlasSoundStage.packet(.85f, .90f), .01f)
+        assertTrue(HealthAtlasSoundStage.oscillation(.09f) > 0f)
+        assertTrue(HealthAtlasSoundStage.oscillation(.25f) < 0f)
+    }
+
     @Test fun allChaptersScrubToTheirOwnBoundariesAndRejectInvalidState() = HealthAtlasFunctionStory.entries.forEach { story ->
         assertEquals(5, story.chapters.size)
         assertEquals(5, story.chapters.map { it.second }.toSet().size)

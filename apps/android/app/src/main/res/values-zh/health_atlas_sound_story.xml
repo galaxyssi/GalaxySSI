@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_hear_title">声音如何进入大脑</string>
+    <string name="health_atlas_hear_sound">声波沿外耳道前进</string>
+    <string name="health_atlas_hear_sound_caption">外耳收集声音，空气中的压力波沿外耳道传到鼓膜。</string>
+    <string name="health_atlas_hear_middle">鼓膜和听小骨接力</string>
+    <string name="health_atlas_hear_middle_caption">声波让鼓膜振动。锤骨、砧骨、镫骨依次传递振动，由镫骨推动耳蜗入口处的卵圆窗。</string>
+    <string name="health_atlas_hear_cochlea">耳蜗内形成行波</string>
+    <string name="health_atlas_hear_cochlea_caption">卵圆窗的振动带动耳蜗内液体，使基底膜产生行波。耳蜗底部对较高音调更敏感，靠近顶端的位置对较低音调更敏感。</string>
+    <string name="health_atlas_hear_hair">毛细胞把振动变成信号</string>
+    <string name="health_atlas_hear_hair_caption">毛束偏转会打开机械敏感通道。内毛细胞在突触释放递质，激活与它相连的听神经纤维。</string>
+    <string name="health_atlas_hear_nerve">听神经信号传到大脑</string>
+    <string name="health_atlas_hear_nerve_caption">听神经把电脉冲传到脑干。信号再经过多级中继到达听觉皮层，由大脑进一步处理声音。</string>
+    <string name="health_atlas_hear_canal">外耳道</string>
+    <string name="health_atlas_hear_drum">鼓膜</string>
+    <string name="health_atlas_hear_ossicles">三块听小骨</string>
+    <string name="health_atlas_hear_window">卵圆窗</string>
+    <string name="health_atlas_hear_cochlea_label">耳蜗</string>
+    <string name="health_atlas_hear_basilar">展开示意 · 基底膜</string>
+    <string name="health_atlas_hear_base">底部</string>
+    <string name="health_atlas_hear_apex">顶端</string>
+    <string name="health_atlas_hear_bundle">毛束</string>
+    <string name="health_atlas_hear_synapse">突触</string>
+    <string name="health_atlas_hear_relays">脑干及中继</string>
+    <string name="health_atlas_hear_cortex">听觉皮层</string>
+    <string name="health_atlas_hear_signal">神经信号传播方向</string>
+    <string name="health_atlas_hear_scope">运动幅度和时间均为放大示意，路径不按比例。动画不播放声音，也不用于听力检测。</string>
+    <string name="health_atlas_hear_path_source">资料来源：我们怎样听见声音（美国国立卫生研究院）</string>
+    <string name="health_atlas_hear_cells_source">研究资料：哺乳动物毛束运动</string>
+</resources>

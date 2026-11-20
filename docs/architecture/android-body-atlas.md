@@ -1206,3 +1206,15 @@ simultaneous oxygen and carbon dioxide diffusion in opposite directions.
 Chapters change focus, not the underlying order of gas exchange. Arrows,
 breath and vessel timing are illustrative; the fixed gas-gradient teaching
 examples remain in Simulation and are not plotted as personal measurements.
+
+## Continuous Hearing
+
+The Function lesson uses the painted ear cutaway, hair cell and brain.
+Moving pressure bands in the ear canal, motion of the eardrum and ossicles,
+the traveling wave on an unrolled basilar membrane, tilting of the hair
+bundle, and propagating marks on a schematic neural pathway are distinct
+scenes. A simplified path to cortex shows a brainstem/relay stop; it is not
+a projection of exact internal anatomy onto the lateral illustration.
+No audio, microphone, frequency measurement or hearing test is involved.
+The vestibular catalogue entry and the separate middle-ear simulation
+retain their own behavior.
