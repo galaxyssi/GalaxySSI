@@ -12,6 +12,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.ELBOW_BALANCE -> R.string.health_atlas_elbow_title
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> R.string.health_atlas_vessel_title
         HealthAtlasPhysiologyKind.EYE_FOCUS -> R.string.health_atlas_eye_title
+        HealthAtlasPhysiologyKind.MIDDLE_EAR -> R.string.health_atlas_middle_ear_pressure_ratio
     }
     fun scope(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_scope
@@ -21,6 +22,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.ELBOW_BALANCE -> R.string.health_atlas_elbow_scope
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> R.string.health_atlas_vessel_scope
         HealthAtlasPhysiologyKind.EYE_FOCUS -> R.string.health_atlas_eye_scope
+        HealthAtlasPhysiologyKind.MIDDLE_EAR -> R.string.health_atlas_middle_ear_scope
     }
     fun formula(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_formula
@@ -30,6 +32,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.ELBOW_BALANCE -> R.string.health_atlas_elbow_formula
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> R.string.health_atlas_vessel_formula
         HealthAtlasPhysiologyKind.EYE_FOCUS -> R.string.health_atlas_eye_formula
+        HealthAtlasPhysiologyKind.MIDDLE_EAR -> R.string.health_atlas_middle_ear_formula
     }
     fun label(key: String) = when (key) {
         "rate" -> R.string.health_atlas_rate
@@ -52,6 +55,9 @@ internal object HealthAtlasPhysiologyText {
         "vessel-viscosity" -> R.string.health_atlas_vessel_viscosity
         "eye-distance" -> R.string.health_atlas_eye_object_distance
         "eye-power" -> R.string.health_atlas_eye_power
+        "ear-input-area" -> R.string.health_atlas_middle_ear_input_area
+        "ear-output-area" -> R.string.health_atlas_middle_ear_output_area
+        "ear-lever" -> R.string.health_atlas_middle_ear_lever_ratio
         else -> error("Unknown physiology input: $key")
     }
     fun unit(key: String) = when (key) {
@@ -70,6 +76,8 @@ internal object HealthAtlasPhysiologyText {
         "vessel-viscosity" -> "mPa s"
         "eye-distance" -> "m"
         "eye-power" -> "D"
+        "ear-input-area", "ear-output-area" -> "mm\u00b2"
+        "ear-lever" -> "\u00d7"
         else -> error("Unknown physiology input: $key")
     }
     fun number(value: Double, digits: Int = 2): String = NumberFormat.getNumberInstance().apply {
@@ -96,6 +104,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.ELBOW_BALANCE -> R.string.health_atlas_elbow_joint
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> R.string.health_atlas_vessel_resistance
         HealthAtlasPhysiologyKind.EYE_FOCUS -> R.string.health_atlas_eye_target_power
+        HealthAtlasPhysiologyKind.MIDDLE_EAR -> R.string.health_atlas_middle_ear_gain_db
     }, number(model.companionValue, if (model.kind == HealthAtlasPhysiologyKind.POTASSIUM) 4 else 2))
     }
     fun sourceTitle(kind: HealthAtlasPhysiologyKind, index: Int): Int = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING) {
@@ -104,7 +113,8 @@ internal object HealthAtlasPhysiologyText {
         1 -> R.string.health_atlas_vessel_profile_source
         2 -> R.string.health_atlas_vessel_units_source
         else -> R.string.health_atlas_model_source
-    } else R.string.health_atlas_model_source
+    } else if (kind == HealthAtlasPhysiologyKind.MIDDLE_EAR && index == 1) R.string.health_atlas_middle_ear_measurement_source
+    else R.string.health_atlas_model_source
     fun input(context: Context, model: HealthAtlasPhysiology, index: Int): String {
         val key = model.kind.inputs[index].key
         return context.getString(label(key)) + ": " + inputNumber(key, model.input(index)) + " " + unit(key)
@@ -118,6 +128,7 @@ internal object HealthAtlasPhysiologyText {
         model.elbowForces?.let { appendLine(HealthAtlasElbowText.context(context, it)) }
         model.vesselFlow?.let { appendLine(HealthAtlasVesselFlowText.context(context, it)) }
         model.eyeOptics?.let { appendLine(HealthAtlasEyeOpticsText.context(context, it)) }
+        model.middleEar?.let { appendLine(HealthAtlasMiddleEarText.context(context, it)) }
         appendLine(context.getString(formula(model.kind))); append(model.kind.sources.joinToString("\n"))
     }
 }

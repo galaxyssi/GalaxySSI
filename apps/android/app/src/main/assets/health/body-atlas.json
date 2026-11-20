@@ -600,7 +600,7 @@
         "middle-ear",
         "inner-ear"
       ],
-      "mechanism": "sensory",
+      "mechanism": "ear",
       "aliases": "health_atlas_ear_aliases",
       "color": "",
       "icon": ""
@@ -614,7 +614,7 @@
         "sensory"
       ],
       "related": [],
-      "mechanism": "sensory",
+      "mechanism": "external-ear",
       "aliases": "health_atlas_external_ear_aliases",
       "color": "",
       "icon": ""
@@ -628,7 +628,7 @@
         "sensory"
       ],
       "related": [],
-      "mechanism": "sensory",
+      "mechanism": "middle-ear",
       "aliases": "health_atlas_middle_ear_aliases",
       "color": "",
       "icon": ""
@@ -645,7 +645,7 @@
         "cochlea",
         "vestibular-apparatus"
       ],
-      "mechanism": "sensory",
+      "mechanism": "inner-ear",
       "aliases": "health_atlas_inner_ear_aliases",
       "color": "",
       "icon": ""
@@ -659,7 +659,7 @@
         "sensory"
       ],
       "related": [],
-      "mechanism": "sensory",
+      "mechanism": "cochlea",
       "aliases": "health_atlas_cochlea_aliases",
       "color": "",
       "icon": ""
@@ -673,7 +673,7 @@
         "sensory"
       ],
       "related": [],
-      "mechanism": "sensory",
+      "mechanism": "vestibular-apparatus",
       "aliases": "health_atlas_vestibular_apparatus_aliases",
       "color": "",
       "icon": ""
@@ -4642,6 +4642,78 @@
     }
   ],
   "mechanisms": [
+    {
+      "id": "ear",
+      "kind": "organ",
+      "title": "health_atlas_hearing_ear_title",
+      "stages": [
+        "health_atlas_hearing_ear_0",
+        "health_atlas_hearing_ear_1",
+        "health_atlas_hearing_ear_2",
+        "health_atlas_hearing_ear_3"
+      ],
+      "chapter": "14-1-sensory-perception"
+    },
+    {
+      "id": "external-ear",
+      "kind": "organ",
+      "title": "health_atlas_hearing_external_ear_title",
+      "stages": [
+        "health_atlas_hearing_external_ear_0",
+        "health_atlas_hearing_external_ear_1",
+        "health_atlas_hearing_external_ear_2",
+        "health_atlas_hearing_external_ear_3"
+      ],
+      "chapter": "14-1-sensory-perception"
+    },
+    {
+      "id": "middle-ear",
+      "kind": "organ",
+      "title": "health_atlas_hearing_middle_ear_title",
+      "stages": [
+        "health_atlas_hearing_middle_ear_0",
+        "health_atlas_hearing_middle_ear_1",
+        "health_atlas_hearing_middle_ear_2",
+        "health_atlas_hearing_middle_ear_3"
+      ],
+      "chapter": "14-1-sensory-perception"
+    },
+    {
+      "id": "inner-ear",
+      "kind": "organ",
+      "title": "health_atlas_hearing_inner_ear_title",
+      "stages": [
+        "health_atlas_hearing_inner_ear_0",
+        "health_atlas_hearing_inner_ear_1",
+        "health_atlas_hearing_inner_ear_2",
+        "health_atlas_hearing_inner_ear_3"
+      ],
+      "chapter": "14-1-sensory-perception"
+    },
+    {
+      "id": "cochlea",
+      "kind": "organ",
+      "title": "health_atlas_hearing_cochlea_title",
+      "stages": [
+        "health_atlas_hearing_cochlea_0",
+        "health_atlas_hearing_cochlea_1",
+        "health_atlas_hearing_cochlea_2",
+        "health_atlas_hearing_cochlea_3"
+      ],
+      "chapter": "14-1-sensory-perception"
+    },
+    {
+      "id": "vestibular-apparatus",
+      "kind": "organ",
+      "title": "health_atlas_hearing_vestibular_apparatus_title",
+      "stages": [
+        "health_atlas_hearing_vestibular_apparatus_0",
+        "health_atlas_hearing_vestibular_apparatus_1",
+        "health_atlas_hearing_vestibular_apparatus_2",
+        "health_atlas_hearing_vestibular_apparatus_3"
+      ],
+      "chapter": "14-1-sensory-perception"
+    },
     {
       "id": "cardio",
       "kind": "flow",

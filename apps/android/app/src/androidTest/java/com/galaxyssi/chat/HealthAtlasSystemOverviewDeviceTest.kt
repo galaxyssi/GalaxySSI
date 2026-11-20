@@ -162,22 +162,27 @@ class HealthAtlasSystemOverviewDeviceTest {
     }
 
     @Test fun everySystemCanOpenAChildAndRestoreTheCorrectPlate() = native { scenario ->
-        val pairs = listOf("sensory" to "eye", "respiratory" to "larynx", "digestive" to "parotid-glands",
+        val pairs = listOf("sensory" to "eye", "sensory" to "ear", "respiratory" to "larynx", "digestive" to "parotid-glands",
             "endocrine" to "thyroid-gland", "immune" to "spleen", "skin" to "sweat-glands")
         for ((owner, child) in pairs) {
+            val dedicated = when (child) {
+                "eye" -> R.string.health_atlas_view_eye_section to "atlas-hotspot-lens"
+                "ear" -> R.string.health_atlas_view_ear_section to "atlas-hotspot-middle-ear"
+                else -> null
+            }
             fun assertChildPlate(activity: Activity) {
-                if (child == "eye") {
-                    assertEquals(context.getString(R.string.health_atlas_view_eye_section),
+                if (dedicated != null) {
+                    assertEquals(context.getString(dedicated.first),
                         (activity.view("atlas-art-caption") as TextView).text.toString())
-                    assertNotNull(activity.view("atlas-hotspot-lens"))
-                    assertNull(activity.window.decorView.tagged("atlas-hotspot-eye"))
+                    assertNotNull(activity.view(dedicated.second))
+                    assertNull(activity.window.decorView.tagged("atlas-hotspot-$child"))
                 } else assertTrue(activity.view("atlas-hotspot-$child").isSelected)
             }
             scenario.onActivity {
                 it.open(owner); it.view("atlas-hotspot-$child").performClick()
                 assertChildPlate(it)
             }
-            scenario.recreate(); ready(scenario, if (child == "eye") "atlas-hotspot-lens" else "atlas-hotspot-$child")
+            scenario.recreate(); ready(scenario, dedicated?.second ?: "atlas-hotspot-$child")
             scenario.onActivity {
                 assertChildPlate(it)
                 it.onBackPressed(); assertFalse(it.view("atlas-hotspot-$child").isSelected)

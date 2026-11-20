@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_view_ear_section">耳部横断面</string>
+    <string name="health_atlas_middle_ear_pressure_ratio">理想中耳压力比</string>
+    <string name="health_atlas_middle_ear_input_area">鼓膜有效面积</string>
+    <string name="health_atlas_middle_ear_output_area">镫骨底板面积</string>
+    <string name="health_atlas_middle_ear_lever_ratio">听小骨杠杆比</string>
+    <string name="health_atlas_middle_ear_gain_db">压力增益：%1$s dB</string>
+    <string name="health_atlas_middle_ear_transformer">面积与杠杆示意</string>
+    <string name="health_atlas_middle_ear_ratios">面积比：%1$s 倍 · 杠杆比：%2$s 倍\n输出与输入的体积速度比：%3$s 倍</string>
+    <string name="health_atlas_middle_ear_diagram_scope">左侧代表鼓膜有效面积，右侧代表镫骨底板。圆盘面积使用相同比例，杠杆为示意。</string>
+    <string name="health_atlas_middle_ear_formula">压力比 =（鼓膜有效面积 ÷ 镫骨底板面积）× 杠杆比。\n压力增益 = 20 log₁₀（压力比）。\n在无损模型中，体积速度比为压力比的倒数。</string>
+    <string name="health_atlas_middle_ear_scope">无损模型不随频率变化，不考虑刚度、阻尼或耳蜗负载。压力增益的 dB 不是绝对声压级、能量增益、听阈或个人测量值。模拟不播放测试音。</string>
+    <string name="health_atlas_middle_ear_measurement_source">中耳传递实测 · 理想模型的局限</string>
+    <string name="health_atlas_hearing_ear_title">空气传声到听神经</string>
+    <string name="health_atlas_hearing_ear_0">声音进入外耳道</string>
+    <string name="health_atlas_hearing_ear_1">鼓膜振动</string>
+    <string name="health_atlas_hearing_ear_2">听小骨带动卵圆窗</string>
+    <string name="health_atlas_hearing_ear_3">耳蜗毛细胞驱动听觉信号</string>
+    <string name="health_atlas_hearing_external_ear_title">外耳集音</string>
+    <string name="health_atlas_hearing_external_ear_0">耳廓接收声音</string>
+    <string name="health_atlas_hearing_external_ear_1">耳廓褶皱改变入射声信号</string>
+    <string name="health_atlas_hearing_external_ear_2">外耳道引导压力波</string>
+    <string name="health_atlas_hearing_external_ear_3">声波抵达鼓膜</string>
+    <string name="health_atlas_hearing_middle_ear_title">中耳机械传递</string>
+    <string name="health_atlas_hearing_middle_ear_0">声压驱动鼓膜</string>
+    <string name="health_atlas_hearing_middle_ear_1">锤骨和砧骨形成杠杆</string>
+    <string name="health_atlas_hearing_middle_ear_2">镫骨底板在卵圆窗处运动</string>
+    <string name="health_atlas_hearing_middle_ear_3">运动在耳蜗液体中产生压力波</string>
+    <string name="health_atlas_hearing_inner_ear_title">内耳的两条感觉通路</string>
+    <string name="health_atlas_hearing_inner_ear_0">耳蜗和前庭结构同处内耳</string>
+    <string name="health_atlas_hearing_inner_ear_1">耳蜗响应声波引起的振动</string>
+    <string name="health_atlas_hearing_inner_ear_2">前庭感受头部运动和重力</string>
+    <string name="health_atlas_hearing_inner_ear_3">两类信号经不同神经分支传出</string>
+    <string name="health_atlas_hearing_cochlea_title">耳蜗声信号转导</string>
+    <string name="health_atlas_hearing_cochlea_0">镫骨运动引发行波</string>
+    <string name="health_atlas_hearing_cochlea_1">不同频率在基底膜的不同位置达到峰值</string>
+    <string name="health_atlas_hearing_cochlea_2">毛束弯曲改变感受细胞活动</string>
+    <string name="health_atlas_hearing_cochlea_3">内毛细胞向听神经纤维传递信号</string>
+    <string name="health_atlas_hearing_vestibular_apparatus_title">前庭感受运动和重力</string>
+    <string name="health_atlas_hearing_vestibular_apparatus_0">半规管感受头部转动</string>
+    <string name="health_atlas_hearing_vestibular_apparatus_1">耳石器官感受直线加速度和重力</string>
+    <string name="health_atlas_hearing_vestibular_apparatus_2">相应感受器的毛细胞活动改变</string>
+    <string name="health_atlas_hearing_vestibular_apparatus_3">前庭信号参与视线稳定和平衡</string>
+</resources>

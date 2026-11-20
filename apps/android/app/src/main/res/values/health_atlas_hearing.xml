@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="health_atlas_ear_input">#B87743</color>
+    <color name="health_atlas_ear_output">#267B7B</color>
+    <string name="health_atlas_view_ear_section">Ear cross-section</string>
+    <string name="health_atlas_middle_ear_pressure_ratio">Ideal middle-ear pressure ratio</string>
+    <string name="health_atlas_middle_ear_input_area">Effective eardrum area</string>
+    <string name="health_atlas_middle_ear_output_area">Stapes footplate area</string>
+    <string name="health_atlas_middle_ear_lever_ratio">Ossicle lever ratio</string>
+    <string name="health_atlas_middle_ear_gain_db">Pressure gain: %1$s dB</string>
+    <string name="health_atlas_middle_ear_transformer">Area and lever diagram</string>
+    <string name="health_atlas_middle_ear_ratios">Area ratio: %1$s× · Lever ratio: %2$s×\nOutput/input volume velocity: %3$s×</string>
+    <string name="health_atlas_middle_ear_diagram_scope">Left: effective eardrum. Right: stapes footplate. Disc areas share one scale; lever arms are schematic.</string>
+    <string name="health_atlas_middle_ear_formula">Pressure ratio = (eardrum area ÷ footplate area) × lever ratio.\nPressure gain = 20 log₁₀(pressure ratio).\nFor the lossless model, the volume-velocity ratio is the inverse of the pressure ratio.</string>
+    <string name="health_atlas_middle_ear_scope">The ideal lossless, frequency-independent transformer omits stiffness, damping and the cochlear load. A pressure gain in dB is not an absolute sound level, energy gain, hearing threshold or personal measurement. No tones are played.</string>
+    <string name="health_atlas_middle_ear_measurement_source">Measured transfer · limits of the ideal model</string>
+    <string name="health_atlas_hearing_ear_title">Air conduction to the auditory nerve</string>
+    <string name="health_atlas_hearing_ear_0">Sound enters the ear canal</string>
+    <string name="health_atlas_hearing_ear_1">The eardrum vibrates</string>
+    <string name="health_atlas_hearing_ear_2">Ossicles move the oval window</string>
+    <string name="health_atlas_hearing_ear_3">Cochlear hair cells drive an auditory signal</string>
+    <string name="health_atlas_hearing_external_ear_title">Collecting sound in the outer ear</string>
+    <string name="health_atlas_hearing_external_ear_0">The pinna receives sound</string>
+    <string name="health_atlas_hearing_external_ear_1">Its folds shape incoming sound</string>
+    <string name="health_atlas_hearing_external_ear_2">The canal guides the pressure wave</string>
+    <string name="health_atlas_hearing_external_ear_3">The wave reaches the eardrum</string>
+    <string name="health_atlas_hearing_middle_ear_title">Mechanical transmission across the middle ear</string>
+    <string name="health_atlas_hearing_middle_ear_0">Pressure moves the eardrum</string>
+    <string name="health_atlas_hearing_middle_ear_1">The malleus and incus act as a lever</string>
+    <string name="health_atlas_hearing_middle_ear_2">The stapes footplate moves at the oval window</string>
+    <string name="health_atlas_hearing_middle_ear_3">The motion drives a pressure wave in cochlear fluid</string>
+    <string name="health_atlas_hearing_inner_ear_title">Two sensory branches in the inner ear</string>
+    <string name="health_atlas_hearing_inner_ear_0">Cochlear and vestibular structures share the inner ear</string>
+    <string name="health_atlas_hearing_inner_ear_1">The cochlea responds to sound-driven vibration</string>
+    <string name="health_atlas_hearing_inner_ear_2">Vestibular sensors respond to head motion and gravity</string>
+    <string name="health_atlas_hearing_inner_ear_3">Separate nerve branches carry the two signals</string>
+    <string name="health_atlas_hearing_cochlea_title">Turning cochlear vibration into a nerve signal</string>
+    <string name="health_atlas_hearing_cochlea_0">Stapes motion initiates a travelling wave</string>
+    <string name="health_atlas_hearing_cochlea_1">Different frequencies peak at different membrane locations</string>
+    <string name="health_atlas_hearing_cochlea_2">Hair bundles bend and receptor activity changes</string>
+    <string name="health_atlas_hearing_cochlea_3">Inner hair cells signal to auditory nerve fibres</string>
+    <string name="health_atlas_hearing_vestibular_apparatus_title">Sensing head movement and gravity</string>
+    <string name="health_atlas_hearing_vestibular_apparatus_0">Canals respond to head rotation</string>
+    <string name="health_atlas_hearing_vestibular_apparatus_1">Otolith organs sense linear acceleration and gravity</string>
+    <string name="health_atlas_hearing_vestibular_apparatus_2">Hair-cell activity changes in the relevant sensors</string>
+    <string name="health_atlas_hearing_vestibular_apparatus_3">Vestibular signals contribute to gaze and balance</string>
+</resources>
