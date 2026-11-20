@@ -41,9 +41,9 @@ internal object HealthAtlasSystemPlates {
 
     private val nervous = HealthAtlasPlate(R.drawable.health_atlas_system_nervous, "nervous",
         R.string.health_atlas_view_system_nervous, listOf(
-            marker("brain", 203, 61), marker("spinal-cord", 210, 132),
-            marker("spinal-nerves", 159, 214), marker("ganglia", 221, 264),
-            marker("peripheral-nerves", 245, 496)),
+            HealthAtlasMarker("brain", .486f, .050f), HealthAtlasMarker("spinal-cord", .499f, .120f),
+            HealthAtlasMarker("spinal-nerves", .444f, .189f), HealthAtlasMarker("ganglia", .475f, .257f),
+            HealthAtlasMarker("peripheral-nerves", .573f, .703f)),
         BOOK + "12-1-basic-structure-and-function-of-the-nervous-system")
     private val cardio = HealthAtlasPlate(R.drawable.health_atlas_system_cardio, "cardio",
         R.string.health_atlas_view_system_cardio, listOf(
