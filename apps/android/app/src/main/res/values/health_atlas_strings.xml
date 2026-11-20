@@ -19,8 +19,15 @@
     <string name="health_atlas_layers">Layers</string>
     <string name="health_atlas_reset">Reset view</string>
     <string name="health_atlas_illustration">Teaching illustration · not to scale</string>
+    <string name="health_atlas_plate_context">Context: %1$s · %2$s</string>
+    <string name="health_atlas_view_anterior">Anterior view</string>
+    <string name="health_atlas_view_external">External surface</string>
+    <string name="health_atlas_view_lateral">Left lateral view</string>
+    <string name="health_atlas_view_liver">Liver and associated gallbladder</string>
+    <string name="health_atlas_view_coronal">Single kidney · coronal section</string>
+    <string name="health_atlas_view_cell">Cell cutaway</string>
     <string name="health_atlas_related">Related structures</string>
-    <string name="health_atlas_belongs">Belongs to</string>
+    <string name="health_atlas_belongs">Related structures and systems</string>
     <string name="health_atlas_related_process">Related process · %1$s</string>
     <string name="health_atlas_process_note">This associated process may involve several structures; this entry does not independently perform every step.</string>
     <string name="health_atlas_parameters">Teaching parameters</string>

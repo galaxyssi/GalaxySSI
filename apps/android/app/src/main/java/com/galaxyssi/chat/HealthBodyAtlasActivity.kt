@@ -298,8 +298,12 @@ class HealthBodyAtlasActivity : Activity() {
         dialog?.dismiss()
         dialog = Dialog(this, android.R.style.Theme_Material_Light_NoActionBar).apply {
             val box = ui.column().apply { setBackgroundColor(getColor(R.color.page_bg)) }
-            box.addView(ui.toolbar(R.string.health_body_title, { dismiss() }).apply { findViewWithTag<TextView>("health-page-title").text = title })
-            val image = ImageView(this@HealthBodyAtlasActivity).apply { setImageResource(drawable); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = title }
+            box.addView(ui.toolbar(R.string.health_body_title, { dismiss() }))
+            box.addView(ui.text(title, 14f).apply { setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(8)) })
+            val image = ImageView(this@HealthBodyAtlasActivity).apply {
+                setImageResource(drawable); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = title
+                tag = "atlas-fullscreen-image"
+            }
             box.addView(GalaxySSIPinchZoomViewport(this@HealthBodyAtlasActivity).apply { attach(image) }, LinearLayout.LayoutParams(-1, 0, 1f))
             setContentView(box); show(); window?.setLayout(-1, -1)
         }
