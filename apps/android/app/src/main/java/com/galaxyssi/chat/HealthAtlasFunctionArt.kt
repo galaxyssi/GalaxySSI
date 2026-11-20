@@ -19,7 +19,9 @@ internal abstract class HealthAtlasFunctionArt(context: Context, protected val s
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)
-        val maxHeight = (resources.displayMetrics.density * 390).toInt()
+        val windowHeight = resources.configuration.screenHeightDp
+        val artHeight = if (windowHeight > 0) (windowHeight - 268).coerceIn(144, 390) else 390
+        val maxHeight = (resources.displayMetrics.density * artHeight).toInt()
         setMeasuredDimension(width, resolveSize(width.coerceAtMost(maxHeight), heightMeasureSpec))
     }
 

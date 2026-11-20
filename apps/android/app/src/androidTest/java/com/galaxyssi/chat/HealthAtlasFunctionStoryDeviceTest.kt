@@ -6,6 +6,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Rect
 import android.os.SystemClock
 import android.view.View
 import android.widget.EditText
@@ -56,6 +57,43 @@ class HealthAtlasFunctionStoryDeviceTest {
                 }
             }
         }
+    }
+
+    @Test fun nephronOpensWithPlaybackControlsVisibleBeforeTheArtwork() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-tab-2").performClick()
+                    activity.find<EditText>("atlas-search").setText("kidneys")
+                    activity.find<View>("atlas-entry-kidneys").performClick()
+                    activity.find<View>("atlas-entry-nephron").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                }
+                instrumentation.waitForIdleSync()
+                scenario.onActivity { activity ->
+                    val art = activity.find<View>("atlas-function-nephron-art")
+                    val play = activity.find<View>("atlas-function-play")
+                    val seeker = activity.find<View>("atlas-function-position")
+                    val visible = Rect()
+                    assertTrue(play.getGlobalVisibleRect(visible))
+                    assertEquals(play.height, visible.height())
+                    assertTrue(seeker.getGlobalVisibleRect(visible))
+                    assertEquals(seeker.height, visible.height())
+                    assertTrue(seeker.bottom < art.top)
+                    repeat(3) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_nephron_story_distal_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.find<View>("atlas-physiology-reabsorbed")
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.6f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
     }
 
     @Test fun hearingAndBalanceOpenDifferentFunctionsAndTheMiddleEarSimulationStillWorks() {
@@ -214,6 +252,11 @@ class HealthAtlasFunctionStoryDeviceTest {
         assertTrue(hearing.contains(context.getString(R.string.health_atlas_hear_hair_caption)))
         assertFalse(hearing.contains(context.getString(R.string.health_atlas_hear_nerve_caption)))
         assertFalse(hearing.contains(context.getString(R.string.health_atlas_breathe_diffuse_caption)))
+        val nephron = requireNotNull(atlas["nephron"])
+        val renal = HealthAtlasAgentContext.prompt(context, atlas, nephron, functionPhase = .31f)
+        assertTrue(renal.contains(context.getString(R.string.health_atlas_nephron_story_prox_caption)))
+        assertFalse(renal.contains(context.getString(R.string.health_atlas_nephron_story_distal_caption)))
+        assertFalse(renal.contains(context.getString(R.string.health_atlas_hear_hair_caption)))
     }
 
     private fun openCell(activity: HealthBodyAtlasActivity, id: String) {

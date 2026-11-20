@@ -1218,3 +1218,13 @@ a projection of exact internal anatomy onto the lateral illustration.
 No audio, microphone, frequency measurement or hearing test is involved.
 The vestibular catalogue entry and the separate middle-ear simulation
 retain their own behavior.
+
+## Continuous Nephron Function
+
+The Function lesson layers directed markers onto the painted nephron:
+filtration, proximal reabsorption, water and salt transport in the loop,
+distal secretion, and collecting-duct transport. Filtrate and blood are
+distinct; nearby capillary paths are schematic. This view is qualitative
+and independent of personal measurements and the solute-balance model.
+The Function player puts the button row and timeline before the illustration
+and limits canvas height in short windows so playback remains reachable.

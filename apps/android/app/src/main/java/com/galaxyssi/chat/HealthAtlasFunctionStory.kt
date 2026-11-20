@@ -62,6 +62,19 @@ internal enum class HealthAtlasFunctionStory(
             R.string.health_atlas_hear_cells_source to "https://pmc.ncbi.nlm.nih.gov/articles/PMC1413628/",
         ),
         19_000L,
+    ),
+    NEPHRON(
+        setOf("urinary", "kidneys", "nephron", "glomerulus", "bowmans-capsule", "renal-tubules",
+            "proximal-tubule", "nephron-loop", "distal-tubule", "collecting-ducts"),
+        R.string.health_atlas_nephron_story_title,
+        R.string.health_atlas_nephron_story_scope,
+        HealthAtlasNephronStage.entries.map { it.title to it.caption },
+        listOf(
+            R.string.health_atlas_nephron_story_kidney_source to "https://www.niddk.nih.gov/health-information/kidney-disease/kidneys-how-they-work",
+            R.string.health_atlas_nephron_story_tubule_source to
+                "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption",
+        ),
+        18_000L,
     );
 
     fun chapter(value: Float) = (safePhase(value) * chapters.size).toInt().coerceAtMost(chapters.lastIndex)
@@ -72,6 +85,7 @@ internal enum class HealthAtlasFunctionStory(
         HEARTBEAT -> HealthAtlasHeartbeatView(context)
         BREATHING -> HealthAtlasBreathingView(context)
         HEARING -> HealthAtlasHearingStoryView(context)
+        NEPHRON -> HealthAtlasNephronStoryView(context)
     }
 
     companion object {

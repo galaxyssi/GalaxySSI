@@ -20,6 +20,7 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, private val story: 
     private val position = SeekBar(activity).apply {
         max = 1000
         tag = "atlas-function-position"
+        minimumHeight = ui.dp(36)
         contentDescription = context.getString(R.string.health_atlas_phase)
         setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onStartTrackingTouch(seek: SeekBar?) = pause()
@@ -38,11 +39,9 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, private val story: 
         tag = "atlas-function-player"
         orientation = VERTICAL
         ui.add(this, ui.text(context.getString(story.title), 18f, bold = true))
-        ui.add(this, art, 10)
-        ui.add(this, chapterLabel, 12)
-        ui.add(this, caption, 6)
         ui.add(this, ui.line().apply {
             gravity = Gravity.CENTER
+            tag = "atlas-function-controls"
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_body_previous_step) { skip(-1) }
                 .apply { tag = "atlas-function-previous" })
             addView(play)
@@ -50,8 +49,11 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, private val story: 
                 .apply { rotation = 180f; tag = "atlas-function-next" })
             addView(ui.icon(R.drawable.ic_reset_data, R.string.health_atlas_reset) { pause(); setPhase(0f) }
                 .apply { tag = "atlas-function-reset" })
-        }, 6)
+        }, 2)
         ui.add(this, position)
+        ui.add(this, art, 6)
+        ui.add(this, chapterLabel, 12)
+        ui.add(this, caption, 6)
         ui.add(this, ui.text(context.getString(story.scope), 12f, muted = true), 6)
         story.references.forEachIndexed { index, (title, url) ->
             ui.add(this, ui.row(context.getString(title)) { openSource(url) }
@@ -84,6 +86,7 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, private val story: 
         if (!ValueAnimator.areAnimatorsEnabled()) { skip(1); return }
         play.setImageResource(R.drawable.ic_rich_pause)
         play.contentDescription = context.getString(R.string.health_body_pause)
+        play.tooltipText = play.contentDescription
         val player = ValueAnimator.ofFloat(phase, 1f).apply {
             duration = ((1f - phase) * story.durationMs).toLong().coerceAtLeast(1L)
             interpolator = LinearInterpolator()
@@ -102,6 +105,7 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, private val story: 
         animator = null
         play.setImageResource(R.drawable.ic_rich_play)
         play.contentDescription = context.getString(R.string.health_body_play)
+        play.tooltipText = play.contentDescription
     }
 
     override fun onDetachedFromWindow() { pause(); super.onDetachedFromWindow() }

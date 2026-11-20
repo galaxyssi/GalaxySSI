@@ -71,6 +71,24 @@ class HealthAtlasFunctionStoryTest {
         assertTrue(HealthAtlasSoundStage.oscillation(.25f) < 0f)
     }
 
+    @Test fun nephronChaptersKeepCrossWallTransferSeparateFromTubularFlow() {
+        val story = HealthAtlasFunctionStory.NEPHRON
+        for (id in listOf("urinary", "kidneys", "nephron", "glomerulus", "bowmans-capsule", "renal-tubules",
+            "proximal-tubule", "nephron-loop", "distal-tubule", "collecting-ducts")) {
+            assertEquals(story, HealthAtlasFunctionStory.forId(id))
+        }
+        assertNull(HealthAtlasFunctionStory.forId("bladder"))
+        assertNull(HealthAtlasFunctionStory.forId("cell-urothelial-cell"))
+        val chapters = HealthAtlasNephronStage.entries.map { it.routes.toSet() }
+        assertEquals(5, chapters.toSet().size)
+        assertEquals(setOf(HealthAtlasNephronRoute.BLOOD, HealthAtlasNephronRoute.FILTER), chapters[0])
+        assertTrue(HealthAtlasNephronRoute.REABSORB in chapters[1])
+        assertTrue(setOf(HealthAtlasNephronRoute.LOOP_WATER, HealthAtlasNephronRoute.LOOP_SALT).all { it in chapters[2] })
+        assertTrue(HealthAtlasNephronRoute.SECRETE in chapters[3])
+        assertTrue(HealthAtlasNephronRoute.URINE in chapters[4])
+        assertFalse(chapters.any { HealthAtlasNephronRoute.BLOOD in it && HealthAtlasNephronRoute.URINE in it })
+    }
+
     @Test fun allChaptersScrubToTheirOwnBoundariesAndRejectInvalidState() = HealthAtlasFunctionStory.entries.forEach { story ->
         assertEquals(5, story.chapters.size)
         assertEquals(5, story.chapters.map { it.second }.toSet().size)
