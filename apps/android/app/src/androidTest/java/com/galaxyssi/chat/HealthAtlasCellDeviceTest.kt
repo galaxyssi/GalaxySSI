@@ -65,15 +65,16 @@ class HealthAtlasCellDeviceTest {
             val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
             val atlas = HealthBodyAtlas.load(localized)
             val models = atlas.mechanisms.filter { it.kind == "cell" }
-            assertEquals(42, models.size)
-            assertEquals(42, models.map { it.title }.toSet().size)
-            assertEquals(42, models.map { it.stages }.toSet().size)
+            assertEquals(54, models.size)
+            assertEquals(54, models.map { it.title }.toSet().size)
+            assertEquals(54, models.map { it.stages }.toSet().size)
             models.forEach {
                 assertEquals(HealthAtlasKind.CELL, atlas[it.id]?.kind)
                 assertEquals(it.id, atlas[it.id]?.mechanism)
                 assertEquals(4, it.stages.size)
                 assertTrue(it.stages.all(String::isNotBlank))
                 if (it.id == "cell-club-cell") assertEquals("https://pubmed.ncbi.nlm.nih.gov/29874100/", it.source)
+                else if (it.id == "cell-endometrial-stromal-cell") assertEquals("https://pubmed.ncbi.nlm.nih.gov/25141152/", it.source)
                 else assertTrue(it.source.startsWith("https://openstax.org/books/anatomy-and-physiology-2e/pages/"))
             }
         }

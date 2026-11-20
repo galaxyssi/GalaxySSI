@@ -17,13 +17,14 @@ Knowledge-only Agent requests use a single-use in-process handoff token and a
 separate conversation, with no attached health observations.
 
 Cardiac output, ventilation, renal solute balance, potassium equilibrium
-potential and oxygen binding are fixed-input teaching equations. Other sequences are qualitative,
+potential, oxygen binding and static elbow balance are teaching equations. Germline
+stage tables expose chromosome and DNA counts. Other sequences are qualitative,
 not validated quantitative patient models.
 No organ score, biological age, drug dose or treatment outcome is inferred.
 
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides four independently bounded teaching models:
+`HealthAtlasPhysiology` provides five independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -39,8 +40,10 @@ No organ score, biological age, drug dose or treatment outcome is inferred.
   activities. It is not a measured resting potential or an action potential.
 - Oxygen binding separates hemoglobin saturation from bound and dissolved oxygen
   content. Its assumptions and references are detailed below.
+- Static elbow balance relates external load and lever arms to muscle force;
+  its assumptions and references are detailed below.
 
-Twenty-two canonical entries expose these associated processes. Tubular cells
+Twenty-eight canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -259,7 +262,8 @@ muscle types, four skin/connective/metabolic examples, four bone/cartilage
 examples, endothelium, hepatocytes, beta cells, enterocytes and two gametes.
 The loader rejects a cell-specific mechanism assigned to a different entity.
 Seven additional renal/urothelial cell types have dedicated processes, bringing
-the total to 37; five respiratory-related cells extend that to 42. Other cell
+the total to 37; five respiratory-related cells extend that to 42, and twelve
+reproductive/supporting cells extend it to 54. Other cell
 subtypes still use broader pathways until dedicated content is reviewed; this
 is not a claim of complete single-cell biology coverage.
 
@@ -570,3 +574,48 @@ dependence, fatigue, co-contraction, individualized geometry, injury prediction
 and rehabilitation advice are not modeled. Synthetic outputs never become health
 records. Textbook artwork and prose are not bundled. Equation reference:
 https://openstax.org/books/college-physics-2e/pages/9-6-forces-and-torques-in-muscles-and-joints
+
+## Reproductive Cell Mechanisms
+
+Twelve additional cell-owned mechanisms replace inherited system-level stages:
+Sertoli, Leydig, spermatogonium, spermatocyte, granulosa, theca, ciliated tubal,
+endometrial epithelial, endometrial stromal, mammary luminal, myoepithelial and
+trophoblast cells. Each has four independently localized, sourced function
+stages. The mammary mechanism is explicitly one example of myoepithelial function,
+not a claim that all myoepithelial cells respond to the same signals. The catalogue
+now has 54 independent cell mechanisms; this does not complete all 106 entries.
+Obsolete OpenStax male/female chapter slugs are replaced by the current
+testicular/ovarian chapter names. Stromal decidualization cites the review at
+https://pubmed.ncbi.nlm.nih.gov/25141152/.
+
+Four germline entries additionally expose original native chromosome/DNA
+schematics and discrete stage-end counts. `HealthAtlasGermline` tracks one
+selected cell or genome, not the sum of all meiotic daughters. The typical human
+states are 46 chromosomes/46 DNA molecules before replication, 46/92 after
+replication, 23/46 after meiosis I and 23/23 after meiosis II. A sperm always
+contributes only the paternal 23/23 in its existing fertilization mechanism.
+The oocyte sequence starts with a secondary oocyte (maternal 23/46), completes
+meiosis II after activation (maternal 23/23), and only its final zygote stage sums
+both parents (46/46, before the first zygotic DNA replication).
+
+The diagram draws a few representative replicated or unreplicated chromosome
+symbols, not an anatomical cell illustration or a complete karyotype. The scope
+label distinguishes maternal, paternal and combined counts. No continuous count
+interpolation, anaphase intermediate, meiotic arrest duration, recombination,
+abnormal karyotype, individual genetics or fertility prediction is modeled.
+The general stage-count reference is linked, not copied or bundled:
+https://openstax.org/books/biology-2e/pages/11-1-the-process-of-meiosis.
+
+Stage selection, playback and reset use the existing simulation controller.
+The current stage and transport controls precede the count diagram; extended
+scope notes follow the interactive content instead of pushing controls away.
+Only stage-boundary changes update the numeric subtree; no independent animation
+or background job is added. Per-entry restoration and on-stop playback pause
+remain intact. The public Agent preview includes the active count, its scope and
+reference only in the selected physiology flow. Drug/aging topics and unrelated
+cells do not inherit it. No simulated value is written to personal records.
+
+No reproductive-system anatomical overview artwork is added by this increment.
+An attempted internal-organ plate was rejected by the image service and is not
+included or represented as complete. Existing illustration and expert-review
+gaps remain, as do mechanisms for the other unexpanded cell entries.

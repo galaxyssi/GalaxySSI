@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_germline_title">Chromosome and DNA teaching counts</string>
+    <string name="health_atlas_germline_counts">Chromosomes: %1$d · DNA molecules: %2$d\n%3$s · %4$s</string>
+    <string name="health_atlas_germline_cell">One cell at the indicated lineage stage</string>
+    <string name="health_atlas_germline_paternal">Paternal genome only, excluding the oocyte genome</string>
+    <string name="health_atlas_germline_maternal">Maternal genome only, excluding sperm and polar bodies</string>
+    <string name="health_atlas_germline_combined">Both parental genomes, before the first zygotic DNA replication</string>
+    <string name="health_atlas_germline_symbols">A few symbols illustrate duplicated or unduplicated chromosomes, not their actual number or a karyotype. n denotes one chromosome set; C denotes its unreplicated DNA amount.</string>
+    <string name="health_atlas_germline_scope">Typical human stage-end examples. DNA counts refer to double-stranded molecules, not all daughter cells combined. In the oocyte sequence, only the last stage combines both parents; meiosis II completes following fertilization. Transient division counts, recombination and abnormal karyotypes are not modeled. No personal genetic result or fertility prediction is produced.</string>
+    <string name="health_atlas_germline_source">Meiosis and chromosome reference</string>
+    <string name="health_atlas_germline_timing">Counts change at the displayed stage boundaries. Animation speed does not represent biological timing or the duration of meiotic arrest.</string>
+</resources>
