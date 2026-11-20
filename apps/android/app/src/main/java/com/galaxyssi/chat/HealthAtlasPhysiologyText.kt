@@ -9,18 +9,21 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.RENAL_EXCRETION -> R.string.health_atlas_model_renal
         HealthAtlasPhysiologyKind.POTASSIUM -> R.string.health_atlas_model_potassium
         HealthAtlasPhysiologyKind.OXYGEN_BINDING -> R.string.health_atlas_model_oxygen
+        HealthAtlasPhysiologyKind.ELBOW_BALANCE -> R.string.health_atlas_elbow_title
     }
     fun scope(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_scope
         HealthAtlasPhysiologyKind.RENAL_EXCRETION -> R.string.health_atlas_model_renal_scope
         HealthAtlasPhysiologyKind.POTASSIUM -> R.string.health_atlas_model_potassium_scope
         HealthAtlasPhysiologyKind.OXYGEN_BINDING -> R.string.health_atlas_model_oxygen_scope
+        HealthAtlasPhysiologyKind.ELBOW_BALANCE -> R.string.health_atlas_elbow_scope
     }
     fun formula(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_formula
         HealthAtlasPhysiologyKind.RENAL_EXCRETION -> R.string.health_atlas_model_renal_formula
         HealthAtlasPhysiologyKind.POTASSIUM -> R.string.health_atlas_model_potassium_formula
         HealthAtlasPhysiologyKind.OXYGEN_BINDING -> R.string.health_atlas_model_oxygen_formula
+        HealthAtlasPhysiologyKind.ELBOW_BALANCE -> R.string.health_atlas_elbow_formula
     }
     fun label(key: String) = when (key) {
         "rate" -> R.string.health_atlas_rate
@@ -34,6 +37,9 @@ internal object HealthAtlasPhysiologyText {
         "oxygen-pressure" -> R.string.health_atlas_model_oxygen_pressure
         "p50" -> R.string.health_atlas_model_p50
         "hemoglobin" -> R.string.health_atlas_model_hemoglobin
+        "elbow-load" -> R.string.health_atlas_elbow_load
+        "elbow-load-arm" -> R.string.health_atlas_elbow_load_arm
+        "elbow-muscle-arm" -> R.string.health_atlas_elbow_muscle_arm
         else -> error("Unknown physiology input: $key")
     }
     fun unit(key: String) = when (key) {
@@ -44,6 +50,9 @@ internal object HealthAtlasPhysiologyText {
         "outside", "inside" -> "mmol/L"
         "oxygen-pressure", "p50" -> "mmHg"
         "hemoglobin" -> "g/L"
+        "elbow-load" -> "kg"
+        "elbow-load-arm" -> "cm"
+        "elbow-muscle-arm" -> "mm"
         else -> error("Unknown physiology input: $key")
     }
     fun number(value: Double, digits: Int = 2): String = NumberFormat.getNumberInstance().apply {
@@ -61,6 +70,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.RENAL_EXCRETION -> R.string.health_atlas_model_reabsorbed_amount
         HealthAtlasPhysiologyKind.POTASSIUM -> R.string.health_atlas_model_concentration_ratio
         HealthAtlasPhysiologyKind.OXYGEN_BINDING -> error("Oxygen amounts required")
+        HealthAtlasPhysiologyKind.ELBOW_BALANCE -> R.string.health_atlas_elbow_joint
     }, number(model.companionValue, if (model.kind == HealthAtlasPhysiologyKind.POTASSIUM) 4 else 2))
     }
     fun sourceTitle(kind: HealthAtlasPhysiologyKind, index: Int): Int = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING) {
@@ -76,6 +86,7 @@ internal object HealthAtlasPhysiologyText {
         model.inputs.indices.forEach { appendLine(input(context, model, it)) }
         appendLine(result(context, model)); appendLine(companion(context, model))
         model.renalAmounts?.let { appendLine(HealthAtlasRenalText.context(context, it)) }
+        model.elbowForces?.let { appendLine(HealthAtlasElbowText.context(context, it)) }
         appendLine(context.getString(formula(model.kind))); append(model.kind.sources.joinToString("\n"))
     }
 }
