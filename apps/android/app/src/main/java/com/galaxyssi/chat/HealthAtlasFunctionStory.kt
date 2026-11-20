@@ -101,6 +101,29 @@ internal enum class HealthAtlasFunctionStory(
                 "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption",
         ),
         18_000L,
+    ),
+    VISION(
+        setOf("eye", "cornea", "lens", "retina", "cell-retinal-bipolar-cell", "cell-retinal-ganglion-cell"),
+        R.string.health_atlas_vision_story_title,
+        R.string.health_atlas_vision_story_scope,
+        HealthAtlasVisionStage.pathway.map { it.title to it.caption },
+        listOf(
+            R.string.health_atlas_vision_story_nei_source to "https://www.nei.nih.gov/eye-health-information/healthy-vision/how-eyes-work",
+            R.string.health_atlas_vision_story_signal_source to
+                "https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception",
+        ),
+        19_000L,
+    ),
+    LIGHT_ADAPTATION(
+        setOf("cell-rod-photoreceptor", "cell-cone-photoreceptor"),
+        R.string.health_atlas_vision_story_adapt_title,
+        R.string.health_atlas_vision_story_adapt_scope,
+        HealthAtlasVisionStage.adaptation.map { it.title to it.caption },
+        listOf(
+            R.string.health_atlas_vision_story_mix_source to "https://pubmed.ncbi.nlm.nih.gov/23325348/",
+            R.string.health_atlas_vision_story_dark_source to "https://pubmed.ncbi.nlm.nih.gov/11060133/",
+        ),
+        18_000L,
     );
 
     fun chapter(value: Float) = (safePhase(value) * chapters.size).toInt().coerceAtMost(chapters.lastIndex)
@@ -113,6 +136,7 @@ internal enum class HealthAtlasFunctionStory(
         HEARING -> HealthAtlasHearingStoryView(context)
         NEPHRON -> HealthAtlasNephronStoryView(context)
         DIGESTION, COLON -> HealthAtlasDigestiveStoryView(context, this)
+        VISION, LIGHT_ADAPTATION -> HealthAtlasVisionStoryView(context, this)
     }
 
     companion object {

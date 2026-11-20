@@ -106,6 +106,23 @@ class HealthAtlasFunctionStoryTest {
         assertTrue(meal.chapters.toSet().intersect(colon.chapters.toSet()).isEmpty())
     }
 
+    @Test fun visionAndAdaptationAreScopedToDifferentEntriesAndKeepContinuousBrightness() {
+        val vision = HealthAtlasFunctionStory.VISION
+        val light = HealthAtlasFunctionStory.LIGHT_ADAPTATION
+        listOf("eye", "cornea", "lens", "retina", "cell-retinal-bipolar-cell", "cell-retinal-ganglion-cell")
+            .forEach { assertEquals(vision, HealthAtlasFunctionStory.forId(it)) }
+        listOf("cell-rod-photoreceptor", "cell-cone-photoreceptor")
+            .forEach { assertEquals(light, HealthAtlasFunctionStory.forId(it)) }
+        assertNull(HealthAtlasFunctionStory.forId("cell-retinal-pigment-epithelial-cell"))
+        val scenes = HealthAtlasVisionStage.adaptation
+        for (i in 1 until scenes.size) {
+            assertEquals(scenes[i - 1].displayLight(1f), scenes[i].displayLight(0f), .000001f)
+        }
+        assertTrue(HealthAtlasVisionStage.DIM.displayLight(.1f) > HealthAtlasVisionStage.DIM.displayLight(.9f))
+        assertTrue(HealthAtlasVisionStage.MIXED.displayLight(.1f) < HealthAtlasVisionStage.MIXED.displayLight(.9f))
+        assertTrue(vision.chapters.toSet().intersect(light.chapters.toSet()).isEmpty())
+    }
+
     @Test fun allChaptersScrubToTheirOwnBoundariesAndRejectInvalidState() = HealthAtlasFunctionStory.entries.forEach { story ->
         assertEquals(5, story.chapters.size)
         assertEquals(5, story.chapters.map { it.second }.toSet().size)

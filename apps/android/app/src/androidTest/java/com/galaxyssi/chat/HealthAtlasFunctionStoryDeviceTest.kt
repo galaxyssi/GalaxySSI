@@ -59,6 +59,42 @@ class HealthAtlasFunctionStoryDeviceTest {
         }
     }
 
+    @Test fun opticsSimulationAndDarkAdaptationDoNotShareTheVisionPlayhead() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        fun openEye(activity: HealthBodyAtlasActivity) {
+            activity.find<View>("atlas-tab-2").performClick()
+            activity.find<EditText>("atlas-search").setText("eye")
+            activity.find<View>("atlas-entry-eye").performClick()
+            activity.find<View>("atlas-tab-1").performClick()
+        }
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    openEye(activity)
+                    activity.find<View>("atlas-function-vision-art")
+                    repeat(3) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_vision_story_relay_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.find<View>("atlas-eye-optics")
+                    activity.onBackPressed()
+                    openCell(activity, "cell-rod-photoreceptor")
+                    activity.find<View>("atlas-function-light-adaptation-art")
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.find<View>("atlas-function-next").performClick()
+                    assertEquals(activity.getString(R.string.health_atlas_vision_story_rod_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.onBackPressed()
+                    openEye(activity)
+                    assertEquals(.6f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
     @Test fun mealAndColonKeepIndependentProgressAndVillusSimulation() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
@@ -299,6 +335,12 @@ class HealthAtlasFunctionStoryDeviceTest {
         assertFalse(colon.contains(context.getString(R.string.health_atlas_meal_villus_caption)))
         assertTrue(colon.contains(context.getString(R.string.health_atlas_colon_story_water_caption)))
         assertFalse(meal.contains(context.getString(R.string.health_atlas_colon_story_water_caption)))
+        val vision = HealthAtlasAgentContext.prompt(context, atlas, requireNotNull(atlas["eye"]), functionPhase = .46f)
+        val adaptation = HealthAtlasAgentContext.prompt(context, atlas, requireNotNull(atlas["cell-rod-photoreceptor"]),
+            functionPhase = .25f)
+        assertTrue(vision.contains(context.getString(R.string.health_atlas_vision_story_capture_caption)))
+        assertTrue(adaptation.contains(context.getString(R.string.health_atlas_vision_story_rod_caption)))
+        assertFalse(adaptation.contains(context.getString(R.string.health_atlas_vision_story_capture_caption)))
     }
 
     private fun openCell(activity: HealthBodyAtlasActivity, id: String) {

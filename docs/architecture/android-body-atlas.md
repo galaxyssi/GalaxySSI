@@ -1239,3 +1239,13 @@ shows ileocecal entry, local mixing versus propulsive contractions, water
 recovery, and rectal storage. The two entry groups retain separate playback
 positions; the villus geometry model and individual cell lessons are
 unchanged. Neither animation estimates a transit time or nutrient intake.
+
+## Continuous Vision And Light Adaptation
+
+The vision Function lesson separates refraction in the painted eye,
+reduced transmitter release in response to light, a representative cone
+relay and optic nerve output. The brain drawing supports a schematic
+route, not a precise map of the chiasm or deep structures. The rod and
+cone entries have a separate light adaptation lesson with illustrative
+brightness and contribution cues, not calibrated thresholds. The thin
+lens and retinal circuit simulations remain independent.
