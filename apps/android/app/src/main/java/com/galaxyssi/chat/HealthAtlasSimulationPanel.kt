@@ -46,6 +46,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private val podocyte = if (item.id == HealthAtlasPodocyteView.OWNER) HealthAtlasPodocyteView(activity, mechanism) else null
     private val pancreaticRoutes = if (item.id == HealthAtlasPancreaticRoutes.OWNER) HealthAtlasPancreaticRoutes(activity, atlas, select) else null
     private val isletStages = if (item.id == HealthAtlasIsletStages.OWNER) HealthAtlasIsletStages(activity, atlas, select) else null
+    private val sweatView = if (item.id == HealthAtlasSweatView.OWNER) HealthAtlasSweatView(activity, mechanism) else null
     private val resetInputs = arrayListOf<() -> Unit>()
     init {
         fun addQuantitative() {
@@ -55,11 +56,11 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 quantitative = HealthAtlasPhysiologyPanel(activity, body, kind, quantitativeInitial ?: migrated, source)
             }
         }
-        if (gasExchange == null && pancreaticRoutes == null && endocrinePath == null) addQuantitative()
+        if (gasExchange == null && pancreaticRoutes == null && endocrinePath == null && sweatView == null) addQuantitative()
         val art = HealthAtlasUi.art(item)
         if (art != null && circulation == null && gasExchange == null && heartValves == null &&
             phagocytosis == null && sarcomere == null && podocyte == null && pancreaticRoutes == null &&
-            isletStages == null && endocrinePath == null && retinalPath == null)
+            isletStages == null && endocrinePath == null && retinalPath == null && sweatView == null)
             ui.add(body, ImageView(activity).apply {
             setImageResource(art); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = item.name
             minimumHeight = ui.dp(260); setOnClickListener { zoom(art, item.name) }; tag = "atlas-simulation-art"
@@ -86,6 +87,12 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
             ui.add(body, it, 8)
             ui.add(body, ui.text(activity.getString(R.string.health_atlas_digestive_islets_scope), 12f, muted = true), 6)
         }
+        sweatView?.let {
+            ui.add(body, it, 8)
+            ui.add(body, ui.text(activity.getString(R.string.health_atlas_context_sweat_scope), 12f, muted = true), 6)
+        }
+        if (item.id == "hair-follicles")
+            ui.add(body, ui.text(activity.getString(R.string.health_atlas_context_hair_scope), 12f, muted = true), 6)
         body.addView(diagram ?: requireNotNull(process), LinearLayout.LayoutParams(-1, -2))
         if (circulation != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_circuit_scope), 12f, muted = true), 8)
         if (gasExchange != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_gas_scope), 12f, muted = true), 8)
@@ -103,7 +110,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
             }.apply { tag = "atlas-simulation-reset" })
         }
         val controlsAnchor = diagram ?: heartValves ?: germline ?: phagocytosis ?: sarcomere ?: podocyte ?:
-            pancreaticRoutes ?: isletStages
+            pancreaticRoutes ?: isletStages ?: sweatView
         if (controlsAnchor != null) body.addView(controls, body.indexOfChild(controlsAnchor),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
         else ui.add(body, controls, 8)
@@ -121,7 +128,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         if (retinalPath != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_sensory_retinal_paper)) {
             source(HealthAtlasRetinaPath.SOURCE)
         }.apply { tag = "atlas-source-retinal-path" }, 8)
-        if (gasExchange != null || pancreaticRoutes != null || endocrinePath != null) addQuantitative()
+        if (gasExchange != null || pancreaticRoutes != null || endocrinePath != null || sweatView != null) addQuantitative()
         if (cardiac) {
             output = ui.text("", 28f, bold = true).apply { tag = "atlas-simulation-output" }
             ui.add(body, ui.text(activity.getString(R.string.health_atlas_cardiac_output), 14f, muted = true), 16)
@@ -188,6 +195,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         if (isletStages?.stage != values.stage) isletStages?.stage = values.stage
         if (endocrinePath?.stage != values.stage) endocrinePath?.stage = values.stage
         if (retinalPath?.stage != values.stage) retinalPath?.stage = values.stage
+        sweatView?.phase = values.phase
         stage.text = activity.getString(R.string.health_atlas_stage, values.stage + 1, mechanism.stages.size, mechanism.stages[values.stage])
         if (::progress.isInitialized) progress.progress = (values.phase * 1000).toInt()
     }

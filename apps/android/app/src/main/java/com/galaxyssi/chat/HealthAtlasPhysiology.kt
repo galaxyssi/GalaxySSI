@@ -51,7 +51,10 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
         HealthAtlasInput("feedback-gain", 0..300, 100, 100.0)), 0, "%", 0.0, 100.0,
         "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-4-the-thyroid-gland"),
     PHOTON_CAPTURE(listOf(HealthAtlasInput("photon-mean", 0..500, 100, 100.0)), 0, "%", 0.0, 100.0,
-        "https://www.itl.nist.gov/div898/handbook/eda/section3/eda366j.htm", "https://pubmed.ncbi.nlm.nih.gov/112243/");
+        "https://www.itl.nist.gov/div898/handbook/eda/section3/eda366j.htm", "https://pubmed.ncbi.nlm.nih.gov/112243/"),
+    SWEAT_EVAPORATION(listOf(HealthAtlasInput("sweat-mass", 0..200, 60, 10.0),
+        HealthAtlasInput("sweat-evaporated", 0..100, 50)), 0, "W", 0.0, 900.0,
+        "https://pubmed.ncbi.nlm.nih.gov/23459754/");
 
     val sources get() = listOfNotNull(source, extraSource) +
         if (this == VESSEL_FLOW) listOf(HealthAtlasVesselFlow.UNIT_SOURCE) else emptyList()
@@ -76,6 +79,7 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell" -> BICARBONATE_MIX
             "thyroid-gland" -> THYROID_FEEDBACK
             "cell-rod-photoreceptor" -> PHOTON_CAPTURE
+            "sweat-glands" -> SWEAT_EVAPORATION
             else -> null
         }
     }
@@ -106,6 +110,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.BICARBONATE_MIX -> bicarbonateDelivery(input(0), input(1))
         HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> input(0) - result
         HealthAtlasPhysiologyKind.PHOTON_CAPTURE -> 100.0 * kotlin.math.exp(-input(0))
+        HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> evaporatedMass(input(0), input(1))
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
@@ -154,8 +159,11 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         // Dimensionless static example: output = input - gain * output.
         HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> values[0] / (1.0 + values[1])
         HealthAtlasPhysiologyKind.PHOTON_CAPTURE -> -100.0 * expm1(-values[0])
+        // Convert g/min to g/s and apply the example latent heat at 30 C.
+        HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> evaporatedMass(values[0], values[1]) * 2426.0 / 60.0
     }
     companion object {
+        private fun evaporatedMass(mass: Double, fractionPercent: Double) = mass * fractionPercent / 100.0
         // 1 mL/min at 20 mmol/L delivers 20 micromoles per minute.
         private fun bicarbonateDelivery(ductFlow: Double, ductConcentration: Double) = 20.0 + ductFlow * ductConcentration
         fun potassiumPotential(outside: Double, inside: Double): Double {

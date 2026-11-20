@@ -101,9 +101,22 @@ Thirty-four bilingual landmarks explain structures, and the new retina circuit
 distinguishes the example rod ON relay through AII and ON cone bipolar cells
 from cone transmission. These are representative pathways, not a wiring map.
 
+## Microscopic Artwork Coverage
+
+Every one of the 107 named cell entries now has a dedicated illustration, as
+does the separately classified platelet fragment. The final 21 cell plates
+show tissue context for marrow and immune cells, reproductive tissues, skin
+appendages, the muscle satellite-cell niche and tendon cells within collagen
+bundles. Color and shape are not
+diagnostic identifiers for T-cell subtypes or developmental stages.
+
+The hair follicle and eccrine sweat gland have their own sections with links
+to matrix and secretory cells. The sweat walkthrough distinguishes secretion,
+transport, release and evaporation; playback does not give real durations.
+
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides fourteen independently bounded teaching models:
+`HealthAtlasPhysiology` provides fifteen independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -146,8 +159,11 @@ from cone transmission. These are representative pathways, not a wiring map.
 - The rod cell panel illustrates Poisson absorption over a fixed window:
   one minus the probability of zero events. It reports absorption probability,
   not perceived brightness, visual acuity or a personal vision threshold.
+- The sweat gland panel applies an example latent heat of 2,426 J/g to a
+  synthetic evaporation rate at around 30 C. Only evaporated mass contributes
+  to this calculation; it is not a whole-body cooling or dehydration estimate.
 
-Forty-eight canonical entries expose these associated processes. Tubular cells
+Forty-nine canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -274,8 +290,8 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the 135 anatomical, tissue and cellular illustrations and selectable structures to the
-  remaining organs and cells. Each image must depict its named entity;
+- Extend the 158 anatomical, tissue and cellular illustrations and selectable structures to the
+  remaining organs and tissue structures. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by
   a documented scientific model. A shared process is explicitly associated

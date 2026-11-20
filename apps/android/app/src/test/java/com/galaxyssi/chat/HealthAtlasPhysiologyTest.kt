@@ -150,4 +150,15 @@ class HealthAtlasPhysiologyTest {
         assertNull(HealthAtlasPhysiology.restore("cell-cone-photoreceptor", intArrayOf(100)))
         assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(501)))
     }
+    @Test fun onlyTheEvaporatedFractionContributesLatentHeat() {
+        val model = requireNotNull(HealthAtlasPhysiology.restore("sweat-glands", intArrayOf(60, 50)))
+        assertEquals("W", model.kind.unit)
+        assertEquals(3.0, model.companionValue, 1e-9)
+        assertEquals(121.3, model.result, 1e-9)
+        assertEquals(0.0, model.withInput(0, 0).result, 1e-9)
+        assertEquals(0.0, model.withInput(1, 0).result, 1e-9)
+        assertEquals(242.6, model.withInput(1, 100).result, 1e-9)
+        assertNull(HealthAtlasPhysiology.restore("hair-follicles", intArrayOf(60, 50)))
+        assertNull(HealthAtlasPhysiology.restore("cell-sweat-gland-secretory-cell", intArrayOf(60, 50)))
+    }
 }

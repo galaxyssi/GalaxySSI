@@ -19,6 +19,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.BICARBONATE_MIX -> R.string.health_atlas_digestive_bicarb_title
         HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> R.string.health_atlas_endocrine_feedback_title
         HealthAtlasPhysiologyKind.PHOTON_CAPTURE -> R.string.health_atlas_sensory_photon_title
+        HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> R.string.health_atlas_context_evap_title
     }
     fun scope(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_scope
@@ -35,6 +36,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.BICARBONATE_MIX -> R.string.health_atlas_digestive_bicarb_scope
         HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> R.string.health_atlas_endocrine_feedback_scope
         HealthAtlasPhysiologyKind.PHOTON_CAPTURE -> R.string.health_atlas_sensory_photon_scope
+        HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> R.string.health_atlas_context_evap_scope
     }
     fun formula(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_formula
@@ -51,6 +53,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.BICARBONATE_MIX -> R.string.health_atlas_digestive_bicarb_formula
         HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> R.string.health_atlas_endocrine_feedback_formula
         HealthAtlasPhysiologyKind.PHOTON_CAPTURE -> R.string.health_atlas_sensory_photon_formula
+        HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> R.string.health_atlas_context_evap_formula
     }
     fun label(key: String) = when (key) {
         "rate" -> R.string.health_atlas_rate
@@ -87,6 +90,8 @@ internal object HealthAtlasPhysiologyText {
         "feedback-drive" -> R.string.health_atlas_endocrine_feedback_drive
         "feedback-gain" -> R.string.health_atlas_endocrine_feedback_gain
         "photon-mean" -> R.string.health_atlas_sensory_photon_mean
+        "sweat-mass" -> R.string.health_atlas_context_evap_rate
+        "sweat-evaporated" -> R.string.health_atlas_context_evap_fraction
         else -> error("Unknown physiology input: $key")
     }
     fun unit(key: String) = when (key) {
@@ -116,6 +121,8 @@ internal object HealthAtlasPhysiologyText {
         "feedback-drive" -> "%"
         "feedback-gain" -> "\u00d7"
         "photon-mean" -> ""
+        "sweat-mass" -> "g/min"
+        "sweat-evaporated" -> "%"
         else -> error("Unknown physiology input: $key")
     }
     fun number(value: Double, digits: Int = 2): String = NumberFormat.getNumberInstance().apply {
@@ -149,6 +156,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.BICARBONATE_MIX -> R.string.health_atlas_digestive_bicarb_companion
         HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> R.string.health_atlas_endocrine_feedback_reduction
         HealthAtlasPhysiologyKind.PHOTON_CAPTURE -> R.string.health_atlas_sensory_photon_zero
+        HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> R.string.health_atlas_context_evap_mass
     }, number(model.companionValue, if (model.kind == HealthAtlasPhysiologyKind.POTASSIUM) 4 else 2))
     }
     fun sourceTitle(kind: HealthAtlasPhysiologyKind, index: Int): Int = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING) {
