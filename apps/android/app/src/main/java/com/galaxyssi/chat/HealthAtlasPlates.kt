@@ -7,7 +7,8 @@ internal data class HealthAtlasMarker(val id: String, val x: Float, val y: Float
 }
 
 internal data class HealthAtlasPlate(val drawable: Int, val owner: String?, val viewLabel: Int,
-    val markers: List<HealthAtlasMarker>, val source: String? = null, val viewKey: String? = null) {
+    val markers: List<HealthAtlasMarker>, val source: String? = null, val viewKey: String? = null,
+    val selectorLabel: Int? = null) {
     fun caption(context: Context, data: HealthBodyAtlas, selected: HealthAtlasItem?): String {
         val view = context.getString(viewLabel)
         return if (selected != null && selected.id != owner)
@@ -24,7 +25,8 @@ internal object HealthAtlasPlates {
         HealthAtlasMarker("small-intestine", .51f, .44f)))
     private val heart = HealthAtlasPlate(R.drawable.health_atlas_heart, "heart", R.string.health_atlas_view_external, listOf(
         HealthAtlasMarker("atria", .28f, .46f), HealthAtlasMarker("coronary-vessels", .57f, .68f),
-        HealthAtlasMarker("ventricles", .61f, .84f)))
+        HealthAtlasMarker("ventricles", .61f, .84f)), HealthAtlasHeartSection.ANATOMY_SOURCE,
+        "heart-exterior", R.string.health_atlas_cardiac_exterior)
     private val brain = HealthAtlasPlate(R.drawable.health_atlas_brain, "brain", R.string.health_atlas_view_lateral, listOf(
         HealthAtlasMarker("cerebrum", .60f, .34f), HealthAtlasMarker("cerebellum", .76f, .73f),
         HealthAtlasMarker("brainstem", .53f, .86f)))
@@ -77,10 +79,10 @@ internal object HealthAtlasPlates {
             HealthAtlasMarker("inner-ear", .686f, .509f), HealthAtlasMarker("cochlea", .79f, .668f),
             HealthAtlasMarker("vestibular-apparatus", .797f, .19f)), HealthAtlasMiddleEar.ANATOMY_SOURCE)
     val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron, alveolus, eye, ear) +
-        HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all + HealthAtlasTissuePlates.all
+        HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all + HealthAtlasTissuePlates.all + HealthAtlasHeartSection.section
 
-    fun viewsForId(id: String?): List<HealthAtlasPlate> = HealthAtlasMusculoskeletalPlates.viewsForId(id)
-        .ifEmpty { listOfNotNull(defaultForId(id)) }
+    fun viewsForId(id: String?): List<HealthAtlasPlate> = if (id == "heart") listOf(heart, HealthAtlasHeartSection.section)
+        else HealthAtlasMusculoskeletalPlates.viewsForId(id).ifEmpty { listOfNotNull(defaultForId(id)) }
 
     fun forId(id: String?, viewKey: String? = null): HealthAtlasPlate? = viewsForId(id).let { views ->
         views.firstOrNull { it.viewKey == viewKey } ?: views.firstOrNull()
@@ -104,6 +106,6 @@ internal object HealthAtlasPlates {
         "cell-pancreatic-beta-cell" -> beta
         "cell-erythrocyte" -> erythrocyte
         "cell-neuron" -> neuron
-        else -> HealthAtlasTissuePlates.forId(id) ?: HealthAtlasSystemPlates.forId(id)
+        else -> HealthAtlasHeartSection.forId(id) ?: HealthAtlasTissuePlates.forId(id) ?: HealthAtlasSystemPlates.forId(id)
     }
 }

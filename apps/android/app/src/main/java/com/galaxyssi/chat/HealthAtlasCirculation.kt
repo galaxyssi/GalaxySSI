@@ -12,7 +12,7 @@ internal object HealthAtlasCirculation {
         HealthAtlasBloodLeg(HealthAtlasBloodNode.LUNGS, HealthAtlasBloodNode.LEFT_HEART, true),
         HealthAtlasBloodLeg(HealthAtlasBloodNode.LEFT_HEART, HealthAtlasBloodNode.TISSUES, true),
     )
-    fun supports(id: String) = id in setOf("cardio", "heart", "atria", "ventricles", "heart-valves",
+    fun supports(id: String) = id in setOf("cardio", "heart", "atria", "ventricles",
         "coronary-vessels", "blood-vessels", "arteries", "veins", "capillaries", "blood")
     fun phase(value: Float) = if (value.isFinite()) value.coerceIn(0f, 1f) else 0f
     fun stage(value: Float) = (phase(value) * legs.size).toInt().coerceAtMost(legs.lastIndex)
