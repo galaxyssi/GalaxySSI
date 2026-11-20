@@ -149,11 +149,19 @@ personal measurement handling are unchanged. The references supplied for
 art direction are not packaged; no text or health claims are baked into
 the illustrations.
 
+The second batch applies the same treatment to the pancreas and duodenum,
+urinary tract, nephron, alveolar section, pancreatic beta cell, erythrocyte
+and neuron. In particular, the open spaces between the ureters and nephron
+tubules remain transparent. The existing gas exchange animation and cell
+mechanisms still use their own data and controls.
+
 The native section renderer traces only the traveled portion of the active
 stage path and aims a contrasting arrow along its tangent. It does not add
 an independent animation or imply a real material speed or quantity. For
 lessons without a directional path, existing structure highlights remain.
-This is the first batch, not a completed restyle of every older plate.
+Fourteen of the original 24 bitmap plates have been restyled; the other
+system overviews, skeletal and muscle views, and vector plates are not
+part of these two batches.
 
 ## Alimentary Canal Sections
 
