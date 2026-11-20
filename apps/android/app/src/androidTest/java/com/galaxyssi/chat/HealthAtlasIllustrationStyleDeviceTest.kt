@@ -91,11 +91,12 @@ class HealthAtlasIllustrationStyleDeviceTest {
             Triple("cell-inner-ear-hair-cell", 1024, 1536), Triple("cell-rod-photoreceptor", 1024, 1536),
             Triple("cell-cone-photoreceptor", 1024, 1536), Triple("nervous", 1024, 1536),
             Triple("cell-neutrophil", 1254, 1254), Triple("cell-macrophage", 1254, 1254),
+            Triple("cell-eosinophil", 1254, 1254), Triple("cell-basophil", 1254, 1254),
         ).map { (id, width, height) -> requireNotNull(HealthAtlasPlates.forId(id)) to (width to height) } +
             (HealthAtlasHeartSection.section to (1254 to 1254)) + HealthAtlasMusculoskeletalPlates.all.map { plate ->
                 plate to if (plate.viewKey == "skeletal-posterior") (887 to 1774) else (1024 to 1536)
             }
-        assertEquals(33, frames.map { it.first.drawable }.distinct().size)
+        assertEquals(35, frames.map { it.first.drawable }.distinct().size)
         var anchors = 0
         for ((plate, size) in frames) {
             val (width, height) = size

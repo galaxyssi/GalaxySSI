@@ -213,6 +213,75 @@ class HealthAtlasImmuneDeviceTest {
             assertFalse(prompt.contains(localized.getString(R.string.health_atlas_feature_t_receptor)))
             val other = HealthAtlasAgentContext.prompt(localized, atlas, atlas["cell-monocyte"], simulation = HealthAtlasSimulation())
             assertFalse(other.contains(localized.getString(R.string.health_atlas_phagocytosis_scope)))
+            for (lesson in HealthAtlasGranulocyte.entries) {
+                val scope = localized.getString(lesson.scope)
+                val selected = requireNotNull(atlas[lesson.owner])
+                val lessonPrompt = HealthAtlasAgentContext.prompt(localized, atlas, selected,
+                    simulation = HealthAtlasSimulation(phase = .75f))
+                assertTrue(lessonPrompt.contains(atlas.mechanism(selected).stages[3]))
+                assertTrue(lessonPrompt.contains(scope))
+                assertFalse(other.contains(scope))
+                assertFalse(lessonPrompt.contains(localized.getString(R.string.health_atlas_phagocytosis_scope)))
+            }
+        }
+    }
+
+    @Test fun granulocyteScenesFollowTheLocalPlayheadAndDoNotAppearOnOtherCells() = native { scenario ->
+        val atlas = HealthBodyAtlas.load(context)
+        for (lesson in HealthAtlasGranulocyte.entries) {
+            val item = requireNotNull(atlas[lesson.owner])
+            val mechanism = atlas.mechanism(item)
+            scenario.onActivity {
+                it.open(lesson.owner)
+                it.view("atlas-tab-3").performClick()
+                val scroll = it.view("atlas-scroll")
+                val diagram = it.view("atlas-granulocyte-diagram") as HealthAtlasGranulocyteView
+                assertEquals(lesson, diagram.lesson)
+                assertNull(it.find("atlas-simulation-art"))
+                for (stage in mechanism.stages.indices) {
+                    it.view("atlas-process-stage-$stage").performClick()
+                    assertSame(scroll, it.view("atlas-scroll"))
+                    assertSame(diagram, it.view("atlas-granulocyte-diagram"))
+                    assertEquals(stage, diagram.stage)
+                    assertTrue(diagram.contentDescription.contains(mechanism.stages[stage]))
+                }
+            }
+            scenario.recreate()
+            ready(scenario, "atlas-granulocyte-diagram")
+            scenario.onActivity {
+                assertEquals(3, (it.view("atlas-granulocyte-diagram") as HealthAtlasGranulocyteView).stage)
+                it.onBackPressed()
+            }
+            ready(scenario, "atlas-search")
+        }
+        scenario.onActivity {
+            it.open("cell-monocyte")
+            it.view("atlas-tab-3").performClick()
+            assertNull(it.find("atlas-granulocyte-diagram"))
+        }
+    }
+
+    @Test fun representativeGranulocyteFramesAdvanceAndRewindAtDifferentWidths() = native { scenario ->
+        val atlas = HealthBodyAtlas.load(context)
+        scenario.onActivity { activity ->
+            for (lesson in HealthAtlasGranulocyte.entries) {
+                val diagram = HealthAtlasGranulocyteView(activity, lesson, atlas.mechanism(requireNotNull(atlas[lesson.owner])))
+                for (width in listOf(540, 1080, 1600)) {
+                    diagram.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                    diagram.layout(0, 0, width, diagram.measuredHeight)
+                    fun frame(phase: Float) = Bitmap.createBitmap(width, diagram.height, Bitmap.Config.ARGB_8888).also {
+                        diagram.phase = phase
+                        diagram.draw(Canvas(it))
+                    }
+                    val frames = listOf(0f, .125f, .25f, .375f, .5f, .625f, .75f, .875f, 1f).map(::frame)
+                    val rewind = frame(0f)
+                    try {
+                        for (i in 1 until frames.size) assertFalse("$lesson/$width/$i", frames[i].sameAs(frames[i - 1]))
+                        assertTrue(rewind.sameAs(frames.first()))
+                    } finally { frames.forEach { it.recycle() }; rewind.recycle() }
+                }
+            }
         }
     }
 }

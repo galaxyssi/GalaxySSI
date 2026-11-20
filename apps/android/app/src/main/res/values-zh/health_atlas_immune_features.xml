@@ -6,6 +6,10 @@
     <string name="health_atlas_feature_context">图中标注：%1$s</string>
     <string name="health_atlas_phagocytosis_scope">此图以示例颗粒为对象。过程仅用于教学，不代表实测大小或时间。</string>
     <string name="health_atlas_phagocytosis_visual_stage">吞噬示意：%1$s</string>
+    <string name="health_atlas_granulocyte_stage">细胞反应：%1$s</string>
+    <string name="health_atlas_neutrophil_scope">教学示意：穿出血管后，吞入并处理示例目标。图中大小和时间不代表实测。</string>
+    <string name="health_atlas_eosinophil_scope">教学示意：接触示例目标的表面并释放颗粒内容物。图中大小和时间不代表实测。</string>
+    <string name="health_atlas_basophil_scope">教学示意：释放介质与局部血管反应。图中大小和时间不代表实测。</string>
     <string name="health_atlas_feature_lobulated">分叶核</string>
     <string name="health_atlas_feature_lobulated_detail">成熟中性粒细胞的细胞核通常分成数叶，之间由细丝连接。</string>
     <string name="health_atlas_feature_fine_granules">细颗粒</string>
