@@ -39,7 +39,10 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
         HealthAtlasHeartSection.EJECTION_SOURCE),
     NERVE_TRANSIT(listOf(HealthAtlasInput("nerve-distance", 10..150, 60),
         HealthAtlasInput("nerve-speed", 1..120, 50)), 0, "ms", 0.0, 1500.0,
-        "https://www.ncbi.nlm.nih.gov/books/NBK10921/");
+        "https://www.ncbi.nlm.nih.gov/books/NBK10921/"),
+    ALVEOLAR_SURFACE(listOf(HealthAtlasInput("alveolar-tension", 5..35, 15),
+        HealthAtlasInput("alveolar-radius", 50..200, 100)), 0, "Pa", 0.0, 1400.0,
+        "https://pubmed.ncbi.nlm.nih.gov/20724566/");
 
     val sources get() = listOfNotNull(source, extraSource) +
         if (this == VESSEL_FLOW) listOf(HealthAtlasVesselFlow.UNIT_SOURCE) else emptyList()
@@ -60,6 +63,7 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "ear", "middle-ear" -> MIDDLE_EAR
             "ventricles", "right-ventricle", "left-ventricle" -> VENTRICULAR_EJECTION
             "peripheral-nerves", "spinal-nerves", "cranial-nerves" -> NERVE_TRANSIT
+            "cell-type-ii-pneumocyte" -> ALVEOLAR_SURFACE
             else -> null
         }
     }
@@ -86,6 +90,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.MIDDLE_EAR -> requireNotNull(middleEar).pressureGainDb
         HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION -> input(0) + input(1)
         HealthAtlasPhysiologyKind.NERVE_TRANSIT -> 100.0 / input(1)
+        HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> result / 2.0
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
@@ -102,6 +107,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
     val plotMaximum: Double get() = when (kind) {
         HealthAtlasPhysiologyKind.ELBOW_BALANCE -> kotlin.math.ceil(resultAt(axisRange.endInclusive) / 100.0) * 100.0
         HealthAtlasPhysiologyKind.NERVE_TRANSIT -> kotlin.math.ceil(resultAt(axisRange.endInclusive) / 10.0) * 10.0
+        HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> kotlin.math.ceil(resultAt(axisRange.endInclusive) / 100.0) * 100.0
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> {
             val peak = resultAt(axisRange.endInclusive)
             if (peak == 0.0) .01 else {
@@ -127,6 +133,8 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.MIDDLE_EAR -> HealthAtlasMiddleEar(values[0], values[1], values[2]).pressureRatio
         HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION -> 100.0 * values[0] / (values[0] + values[1])
         HealthAtlasPhysiologyKind.NERVE_TRANSIT -> 10.0 * values[0] / values[1]
+        // 2 * tension / radius, converting mN/m and micrometres to SI.
+        HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> 2000.0 * values[0] / values[1]
     }
     companion object {
         fun potassiumPotential(outside: Double, inside: Double): Double {

@@ -50,9 +50,23 @@ References:
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/4-4-muscle-tissue-and-motion
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/4-5-nervous-tissue-mediates-perception-and-response
 
+## Respiratory And Renal Cell Plates
+
+Twelve distinct plates add 25 localized landmarks for airway epithelium,
+type I and II pneumocytes, glomerular cells, tubular and collecting duct
+epithelium, and a superficial urothelial umbrella cell. The intercalated
+cell plate explicitly depicts a type A example.
+
+The podocyte walkthrough shows the fenestrated endothelium, shared basement
+membrane and filtration slits together at each step. It shows how filtrate
+enters the capsular space, not a patient filtration rate or barrier dimension.
+The structure references are the OpenStax respiratory anatomy and microscopic
+kidney chapters; the spherical interface model is linked to
+https://pubmed.ncbi.nlm.nih.gov/20724566/.
+
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides ten independently bounded teaching models:
+`HealthAtlasPhysiology` provides eleven independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -80,8 +94,13 @@ References:
   that volume and the end-systolic volume. The two inputs are synthetic.
 - Axon signal travel time uses distance divided by constant speed, with
   centimetres converted to metres and seconds converted to milliseconds.
+- The type II pneumocyte page illustrates the Young-Laplace pressure difference
+  across a single spherical interface, 2 times surface tension divided by radius.
+  It compares the selected radius with twice that radius at the same tension.
+  This omits tissue elasticity and alveolar interdependence and is not a
+  measured breathing pressure or a ventilator model.
 
-Forty-two canonical entries expose these associated processes. Tubular cells
+Forty-three canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -208,7 +227,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the 75 anatomical, tissue and cellular illustrations and selectable structures to the
+- Extend the 87 anatomical, tissue and cellular illustrations and selectable structures to the
   remaining organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by

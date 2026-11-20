@@ -87,7 +87,22 @@ class HealthAtlasPhysiologyTest {
     @Test fun unrelatedEntitiesDoNotInheritAQuantitativeModel() {
         assertNull(HealthAtlasPhysiologyKind.forItem("cell-hepatocyte"))
         assertNull(HealthAtlasPhysiologyKind.forItem("renal-pelvis"))
-        assertNull(HealthAtlasPhysiologyKind.forItem("cell-type-ii-pneumocyte"))
+        assertNull(HealthAtlasPhysiologyKind.forItem("cell-type-i-pneumocyte"))
+        assertNull(HealthAtlasPhysiologyKind.forItem("cell-podocyte"))
         assertEquals(HealthAtlasPhysiologyKind.RENAL_EXCRETION, HealthAtlasPhysiologyKind.forItem("cell-proximal-tubular-cell"))
+    }
+    @Test fun singleSphericalInterfaceUsesSIAndHalvesPressureWhenRadiusDoubles() {
+        val id = "cell-type-ii-pneumocyte"
+        val model = requireNotNull(HealthAtlasPhysiology.restore(id, intArrayOf(15, 100)))
+        assertEquals(HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE, model.kind)
+        assertEquals("Pa", model.kind.unit)
+        assertEquals(300.0, model.result, 1e-9)
+        assertEquals(150.0, model.companionValue, 1e-9)
+        assertEquals(model.companionValue, model.withInput(1, 200).result, 1e-9)
+        assertEquals(600.0, model.withInput(0, 30).result, 1e-9)
+        assertEquals(50.0, model.withInput(0, 5).withInput(1, 200).result, 1e-9)
+        assertEquals(1400.0, model.withInput(0, 35).withInput(1, 50).result, 1e-9)
+        assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(15, 0)))
+        assertNull(HealthAtlasPhysiology.restore("cell-type-i-pneumocyte", intArrayOf(15, 100)))
     }
 }

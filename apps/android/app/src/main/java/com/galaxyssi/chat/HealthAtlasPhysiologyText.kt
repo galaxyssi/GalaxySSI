@@ -15,6 +15,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.MIDDLE_EAR -> R.string.health_atlas_middle_ear_pressure_ratio
         HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION -> R.string.health_atlas_ejection_fraction
         HealthAtlasPhysiologyKind.NERVE_TRANSIT -> R.string.health_atlas_nerve_transit
+        HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> R.string.health_atlas_alveolar_surface
     }
     fun scope(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_scope
@@ -27,6 +28,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.MIDDLE_EAR -> R.string.health_atlas_middle_ear_scope
         HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION -> R.string.health_atlas_ejection_scope
         HealthAtlasPhysiologyKind.NERVE_TRANSIT -> R.string.health_atlas_nerve_transit_scope
+        HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> R.string.health_atlas_alveolar_surface_scope
     }
     fun formula(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_formula
@@ -39,6 +41,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.MIDDLE_EAR -> R.string.health_atlas_middle_ear_formula
         HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION -> R.string.health_atlas_ejection_formula
         HealthAtlasPhysiologyKind.NERVE_TRANSIT -> R.string.health_atlas_nerve_transit_formula
+        HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> R.string.health_atlas_alveolar_surface_formula
     }
     fun label(key: String) = when (key) {
         "rate" -> R.string.health_atlas_rate
@@ -68,6 +71,8 @@ internal object HealthAtlasPhysiologyText {
         "ejection-residual" -> R.string.health_atlas_ejection_residual_volume
         "nerve-distance" -> R.string.health_atlas_nerve_transit_distance
         "nerve-speed" -> R.string.health_atlas_nerve_transit_speed
+        "alveolar-tension" -> R.string.health_atlas_alveolar_tension
+        "alveolar-radius" -> R.string.health_atlas_alveolar_radius
         else -> error("Unknown physiology input: $key")
     }
     fun unit(key: String) = when (key) {
@@ -90,6 +95,8 @@ internal object HealthAtlasPhysiologyText {
         "ear-lever" -> "\u00d7"
         "nerve-distance" -> "cm"
         "nerve-speed" -> "m/s"
+        "alveolar-tension" -> "mN/m"
+        "alveolar-radius" -> "\u03bcm"
         else -> error("Unknown physiology input: $key")
     }
     fun number(value: Double, digits: Int = 2): String = NumberFormat.getNumberInstance().apply {
@@ -119,6 +126,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.MIDDLE_EAR -> R.string.health_atlas_middle_ear_gain_db
         HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION -> R.string.health_atlas_ejection_end_diastolic
         HealthAtlasPhysiologyKind.NERVE_TRANSIT -> R.string.health_atlas_nerve_transit_over_ten
+        HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> R.string.health_atlas_alveolar_surface_double
     }, number(model.companionValue, if (model.kind == HealthAtlasPhysiologyKind.POTASSIUM) 4 else 2))
     }
     fun sourceTitle(kind: HealthAtlasPhysiologyKind, index: Int): Int = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING) {

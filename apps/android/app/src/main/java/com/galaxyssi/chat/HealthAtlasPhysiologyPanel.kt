@@ -19,6 +19,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
     private val vesselFlow = if (kind == HealthAtlasPhysiologyKind.VESSEL_FLOW) HealthAtlasVesselFlowView(activity) else null
     private val eyeOptics = if (kind == HealthAtlasPhysiologyKind.EYE_FOCUS) HealthAtlasEyeOpticsView(activity) else null
     private val middleEar = if (kind == HealthAtlasPhysiologyKind.MIDDLE_EAR) HealthAtlasMiddleEarView(activity) else null
+    private val alveolar = if (kind == HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE) HealthAtlasAlveolarSurfaceView(activity) else null
     init {
         ui.add(body, ui.text(activity.getString(HealthAtlasPhysiologyText.title(kind)), 19f, bold = true), 12)
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_model_synthetic), 12f, muted = true), 4)
@@ -28,10 +29,14 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         vesselFlow?.let { ui.add(body, it, 12) }
         eyeOptics?.let { ui.add(body, it, 12) }
         middleEar?.let { ui.add(body, it, 12) }
-        ui.add(body, chart, 12)
+        alveolar?.let { ui.add(body, it, 12) }
         val axisKey = kind.inputs[kind.axis].key
-        ui.add(body, ui.text(activity.getString(R.string.health_atlas_model_axis,
-            activity.getString(HealthAtlasPhysiologyText.label(axisKey)), HealthAtlasPhysiologyText.unit(axisKey)), 12f, muted = true))
+        fun addChart() {
+            ui.add(body, chart, 12)
+            ui.add(body, ui.text(activity.getString(R.string.health_atlas_model_axis,
+                activity.getString(HealthAtlasPhysiologyText.label(axisKey)), HealthAtlasPhysiologyText.unit(axisKey)), 12f, muted = true))
+        }
+        if (alveolar == null) addChart()
         kind.inputs.forEachIndexed { index, input ->
             val caption = ui.text("", 14f).apply { tag = "atlas-physiology-label-${input.key}" }
             ui.add(body, caption, 14)
@@ -50,6 +55,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
             controls += seek to caption
             ui.add(body, seek)
         }
+        if (alveolar != null) addChart()
         if (eyeOptics != null) ui.add(body, ui.command(R.string.health_atlas_eye_match_plane) {
             val index = model.kind.axis
             val targetSteps = requireNotNull(model.eyeOptics).targetPowerSteps
@@ -79,6 +85,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         model.vesselFlow?.let { vesselFlow?.flow = it }
         model.eyeOptics?.let { eyeOptics?.eye = it }
         model.middleEar?.let { middleEar?.model = it }
+        alveolar?.model = model
         controls.forEachIndexed { index, (_, label) -> label.text = HealthAtlasPhysiologyText.input(activity, model, index) }
     }
 }

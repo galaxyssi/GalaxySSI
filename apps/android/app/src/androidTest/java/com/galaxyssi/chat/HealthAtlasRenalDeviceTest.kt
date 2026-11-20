@@ -75,7 +75,7 @@ class HealthAtlasRenalDeviceTest {
         for (id in cells) {
             assertEquals(id, atlas[id]!!.mechanism)
             assertEquals("cell", atlas.mechanism(atlas[id]!!).kind)
-            assertNull(HealthAtlasPlates.forId(id))
+            assertEquals(id, HealthAtlasPlates.forId(id)?.owner)
         }
         assertEquals("nephron", HealthAtlasPlates.forId("glomerulus")!!.owner)
     }
@@ -97,7 +97,8 @@ class HealthAtlasRenalDeviceTest {
             it.view("atlas-hotspot-proximal-tubule").performClick()
             assertTrue(it.view("atlas-hotspot-proximal-tubule").isSelected)
             it.view("atlas-entry-cell-proximal-tubular-cell").performClick()
-            assertNull(it.window.decorView.tagged("atlas-art-image"))
+            assertNotNull(it.view("atlas-feature-prox-brush"))
+            assertNull(it.window.decorView.tagged("atlas-hotspot-proximal-tubule"))
             it.view("atlas-tab-3").performClick(); it.view("atlas-process-stage-2").performClick()
             (it.view("atlas-physiology-reabsorbed") as SeekBar).progress = 50
         }

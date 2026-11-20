@@ -75,7 +75,7 @@ class HealthAtlasGasExchangeDeviceTest {
         assertTrue(atlas.cells(atlas["pulmonary-capillaries"]!!).any { it.id == "cell-erythrocyte" })
         assertEquals(5, cells.map { atlas.mechanism(atlas[it]!!).stages }.toSet().size)
         for (id in cells) {
-            assertEquals(id, atlas[id]!!.mechanism); assertNull(HealthAtlasPlates.forId(id))
+            assertEquals(id, atlas[id]!!.mechanism); assertEquals(id, HealthAtlasPlates.forId(id)?.owner)
         }
         assertEquals("https://pubmed.ncbi.nlm.nih.gov/29874100/", atlas.mechanism(atlas["cell-club-cell"]!!).source)
         assertTrue(HealthAtlasPlates.forId("respiratory-membrane")!!.caption(context, atlas, atlas["respiratory-membrane"]).contains(atlas["alveoli"]!!.name))

@@ -21,6 +21,7 @@ import org.junit.Assume.assumeFalse
 import org.junit.Test
 import java.util.Locale
 import java.util.UUID
+import kotlin.math.roundToInt
 
 class HealthAtlasCellDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
@@ -142,6 +143,113 @@ class HealthAtlasCellDeviceTest {
                         Color.alpha(bitmap.getPixel((360 * m.x).toInt(), (280 * m.y).toInt())) > 180)
                 }
             } finally { bitmap.recycle() }
+        }
+    }
+
+    @Test fun transportCellArtHasItsOwnLandmarksAndTranslatedDescriptions() {
+        val plates = HealthAtlasTransportCellPlates.all
+        assertEquals(12, plates.size)
+        assertEquals(25, plates.sumOf { it.features.size })
+        assertEquals(12, plates.map { it.drawable }.toSet().size)
+        val chinese = context.createConfigurationContext(Configuration(context.resources.configuration).apply {
+            setLocale(Locale.SIMPLIFIED_CHINESE)
+        })
+        val english = context.createConfigurationContext(Configuration(context.resources.configuration).apply {
+            setLocale(Locale.ENGLISH)
+        })
+        val atlas = HealthBodyAtlas.load(english)
+        for (plate in plates) {
+            assertEquals(HealthAtlasKind.CELL, atlas[requireNotNull(plate.owner)]?.kind)
+            assertSame(plate, HealthAtlasPlates.forId(plate.owner))
+            val bitmap = Bitmap.createBitmap(360, 280, Bitmap.Config.ARGB_8888)
+            try {
+                context.getDrawable(plate.drawable)!!.apply { setBounds(0, 0, 360, 280); draw(Canvas(bitmap)) }
+                assertEquals(0, Color.alpha(bitmap.getPixel(0, 0)))
+                for (feature in plate.features) {
+                    val m = feature.marker
+                    // Vector edges can antialias differently on the device and reference renderer.
+                    val x = (360 * m.x).roundToInt().coerceIn(1, 358)
+                    val y = (280 * m.y).roundToInt().coerceIn(1, 278)
+                    assertTrue("${plate.owner}/${m.id}",
+                        (-1..1).any { dx -> (-1..1).any { dy ->
+                            Color.alpha(bitmap.getPixel(x + dx, y + dy)) > 180
+                        } })
+                    for (key in listOf(feature.title, feature.explanation)) {
+                        assertTrue(chinese.getString(key).any { it in '\u4e00'..'\u9fff' })
+                        assertNotEquals(english.getString(key), chinese.getString(key))
+                    }
+                }
+            } finally { bitmap.recycle() }
+        }
+    }
+
+    private fun Activity.openTransportCell(id: String) {
+        view("atlas-tab-3").performClick()
+        (view("atlas-search") as EditText).setText(id)
+        view("atlas-entry-$id").performClick()
+    }
+
+    @Test fun typeIIPneumocytePressureRespondsLocallyAndSurvivesRecreation() = native { scenario ->
+        val typeII = "cell-type-ii-pneumocyte"
+        scenario.onActivity {
+            it.openTransportCell(typeII)
+            assertNotNull(it.view("atlas-feature-lamellar-body"))
+            it.view("atlas-tab-3").performClick()
+            val scroll = it.view("atlas-scroll")
+            val diagram = it.view("atlas-alveolar-surface-diagram") as HealthAtlasAlveolarSurfaceView
+            assertEquals(300.0, diagram.model.result, 1e-9)
+            (it.view("atlas-physiology-alveolar-radius") as SeekBar).progress = 150
+            assertEquals(150.0, diagram.model.result, 1e-9)
+            assertEquals(75.0, diagram.model.companionValue, 1e-9)
+            assertSame(scroll, it.view("atlas-scroll"))
+            assertTrue(diagram.contentDescription.contains("75 Pa"))
+            val control = it.view("atlas-physiology-alveolar-radius")
+            val panel = control.parent as ViewGroup
+            assertTrue(panel.indexOfChild(control) < panel.indexOfChild(it.view("atlas-physiology-chart")))
+        }
+        capture("pneumocyte-ii-surface")
+        scenario.recreate(); await(scenario, "atlas-alveolar-surface-diagram")
+        scenario.onActivity {
+            val diagram = it.view("atlas-alveolar-surface-diagram") as HealthAtlasAlveolarSurfaceView
+            assertEquals(150.0, diagram.model.result, 1e-9)
+            val atlas = HealthBodyAtlas.load(it)
+            val scope = it.getString(R.string.health_atlas_alveolar_surface_scope)
+            assertTrue(HealthAtlasAgentContext.prompt(it, atlas, atlas[typeII], quantitative = diagram.model).contains(scope))
+            val typeI = "cell-type-i-pneumocyte"
+            assertFalse(HealthAtlasAgentContext.prompt(it, atlas, atlas[typeI], quantitative = diagram.model).contains(scope))
+            it.onBackPressed(); it.openTransportCell(typeI)
+            it.view("atlas-tab-3").performClick()
+            assertNull(it.window.decorView.tagged("atlas-alveolar-surface-diagram"))
+        }
+    }
+
+    @Test fun podocyteFiltrationTracksStageWithoutLeakingToMesangium() = native { scenario ->
+        val id = HealthAtlasPodocyteView.OWNER
+        val neighbor = "cell-mesangial-cell"
+        scenario.onActivity {
+            it.openTransportCell(id)
+            assertNotNull(it.view("atlas-feature-podocyte-foot"))
+            it.view("atlas-tab-3").performClick()
+            val diagram = it.view("atlas-podocyte-diagram") as HealthAtlasPodocyteView
+            val atlas = HealthBodyAtlas.load(it)
+            val mechanism = atlas.mechanism(requireNotNull(atlas[id]))
+            val scope = it.getString(R.string.health_atlas_podocyte_scope)
+            for (stage in 0..3) {
+                it.view("atlas-process-stage-$stage").performClick()
+                assertEquals(stage, diagram.stage)
+                assertTrue(diagram.contentDescription.startsWith(mechanism.stages[stage]))
+            }
+            val simulation = HealthAtlasSimulation(phase = .75f)
+            assertTrue(HealthAtlasAgentContext.prompt(it, atlas, atlas[id], simulation = simulation).contains(scope))
+            assertFalse(HealthAtlasAgentContext.prompt(it, atlas, atlas[neighbor], simulation = simulation).contains(scope))
+        }
+        capture("podocyte-filtration")
+        scenario.recreate(); await(scenario, "atlas-podocyte-diagram")
+        scenario.onActivity {
+            assertEquals(3, (it.view("atlas-podocyte-diagram") as HealthAtlasPodocyteView).stage)
+            it.onBackPressed(); it.openTransportCell(neighbor)
+            it.view("atlas-tab-3").performClick()
+            assertNull(it.window.decorView.tagged("atlas-podocyte-diagram"))
         }
     }
 
