@@ -19,6 +19,8 @@ internal object HealthAtlasAgentContext {
             appendLine(); appendLine(plate.caption(context, atlas, item))
             appendLine(context.getString(R.string.health_atlas_art_note))
             plate.source?.let { appendLine(it) }
+            if (plate.features.isNotEmpty()) appendLine(context.getString(R.string.health_atlas_feature_context,
+                plate.features.joinToString(", ") { context.getString(it.title) }))
         }
         if (item.kind == HealthAtlasKind.TISSUE) {
             appendLine(context.getString(R.string.health_atlas_tissue_locations) + ": " +
@@ -43,6 +45,8 @@ internal object HealthAtlasAgentContext {
                 mechanism.stages.size, mechanism.stages[simulation.stage]))
             HealthAtlasGermlineText.context(context, item.id, simulation.stage)?.let { appendLine(it) }
             if (HealthAtlasValve.supports(item.id)) appendLine(HealthAtlasValveText.publicContext(context, atlas, item.id, simulation.stage))
+            if (item.id == HealthAtlasPhagocytosisView.OWNER)
+                appendLine(context.getString(R.string.health_atlas_phagocytosis_scope))
             if (item.id in setOf("heart", "cardio")) {
                 appendLine(context.getString(R.string.health_atlas_heart_rate) + ": ${simulation.first} bpm")
                 appendLine(context.getString(R.string.health_atlas_stroke_volume) + ": ${simulation.second} mL")

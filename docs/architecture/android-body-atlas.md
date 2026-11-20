@@ -208,7 +208,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the 45 anatomical and tissue illustrations and selectable structures to the
+- Extend the 57 anatomical, tissue and cellular illustrations and selectable structures to the
   remaining organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by
@@ -227,6 +227,31 @@ having a working generic panel for every catalogue entry:
 Personal health observations, public anatomy and synthetic model outputs remain
 separate domains throughout. Existing Agent page layout and health records are
 not modified by atlas navigation or teaching parameter changes.
+
+## Blood and Immune Cell Illustrations
+
+Twelve original vector plates show representative neutrophils, eosinophils,
+basophils, monocytes, macrophages, T cells, B cells, natural killer cells,
+plasma cells, megakaryocytes, dendritic cells, and the platelet fragment.
+The 25 visible landmarks open localized explanatory notes without navigating
+to a fictitious organelle entry. T- and B-cell illustrations use the same
+representative lymphocyte body with different schematic receptors; they
+cannot be used to distinguish the cells by blood smear appearance. The
+resting platelet is an anucleate fragment, not a twelfth cell type.
+
+The macrophage simulation draws the four selected phases on a native canvas:
+encounter, enclosure, digestion, and debris handling with signaling. The
+picture and accessibility description track the existing stage controller and
+saved selection. This diagram describes a generic particle and does not
+simulate physiological time, measurements, or a patient-specific outcome.
+Knowledge-only Agent previews include the selected cell's public labels and
+source, plus the simulation stage when applicable.
+
+References:
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/21-2-barrier-defenses-and-the-innate-immune-response
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/21-4-the-adaptive-immune-response-b-lymphocytes-and-antibodies
 
 ## System Overview Coverage
 

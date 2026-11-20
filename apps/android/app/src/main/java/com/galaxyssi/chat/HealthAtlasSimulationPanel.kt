@@ -36,6 +36,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     } else null
     private val germline = if (item.id in HealthAtlasGermline.supported) HealthAtlasGermlineView(activity, item.id) else null
     private val heartValves = if (HealthAtlasValve.supports(item.id)) HealthAtlasValvePanel(activity, atlas, item, select) else null
+    private val phagocytosis = if (item.id == HealthAtlasPhagocytosisView.OWNER) HealthAtlasPhagocytosisView(activity, mechanism) else null
     private val resetInputs = arrayListOf<() -> Unit>()
     init {
         fun addQuantitative() {
@@ -47,7 +48,8 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         }
         if (gasExchange == null) addQuantitative()
         val art = HealthAtlasUi.art(item)
-        if (art != null && circulation == null && gasExchange == null && heartValves == null) ui.add(body, ImageView(activity).apply {
+        if (art != null && circulation == null && gasExchange == null && heartValves == null && phagocytosis == null)
+            ui.add(body, ImageView(activity).apply {
             setImageResource(art); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = item.name
             minimumHeight = ui.dp(260); setOnClickListener { zoom(art, item.name) }; tag = "atlas-simulation-art"
             adjustViewBounds = true; maxHeight = ui.dp(280)
@@ -56,6 +58,10 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         germline?.let { ui.add(body, it, 12) }
         val diagram = circulation ?: gasExchange
         if (heartValves != null) ui.add(body, heartValves, 8)
+        if (phagocytosis != null) {
+            ui.add(body, phagocytosis, 8)
+            ui.add(body, ui.text(activity.getString(R.string.health_atlas_phagocytosis_scope), 12f, muted = true), 6)
+        }
         body.addView(diagram ?: requireNotNull(process), LinearLayout.LayoutParams(-1, -2))
         if (circulation != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_circuit_scope), 12f, muted = true), 8)
         if (gasExchange != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_gas_scope), 12f, muted = true), 8)
@@ -72,7 +78,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 pause(); values = HealthAtlasSimulation.initial(item.id); resetInputs.forEach { it() }; setPhase(0f); updateOutput(); quantitative?.reset()
             }.apply { tag = "atlas-simulation-reset" })
         }
-        val controlsAnchor = diagram ?: heartValves ?: germline
+        val controlsAnchor = diagram ?: heartValves ?: germline ?: phagocytosis
         if (controlsAnchor != null) body.addView(controls, body.indexOfChild(controlsAnchor),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
         else ui.add(body, controls, 8)
@@ -144,6 +150,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         circulation?.phase = values.phase; gasExchange?.phase = values.phase; process?.phase = values.phase
         germline?.stage = values.stage
         heartValves?.stage = values.stage
+        phagocytosis?.stage = values.stage
         stage.text = activity.getString(R.string.health_atlas_stage, values.stage + 1, mechanism.stages.size, mechanism.stages[values.stage])
         if (::progress.isInitialized) progress.progress = (values.phase * 1000).toInt()
     }
