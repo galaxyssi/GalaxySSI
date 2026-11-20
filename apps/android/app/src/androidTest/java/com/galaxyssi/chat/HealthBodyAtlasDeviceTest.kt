@@ -39,7 +39,7 @@ class HealthBodyAtlasDeviceTest {
         assertEquals(14, data.systems.size)
         assertEquals(177, data.items.count { it.kind == HealthAtlasKind.ORGAN })
         assertEquals(14, data.tissues.size)
-        assertEquals(105, data.items.count { it.kind == HealthAtlasKind.CELL })
+        assertEquals(107, data.items.count { it.kind == HealthAtlasKind.CELL })
         assertEquals(1, data.items.count { it.kind == HealthAtlasKind.FRAGMENT })
         assertEquals(HealthAtlasKind.SYSTEM, data["skin"]!!.kind)
         assertEquals(HealthAtlasKind.ORGAN, data["skin-organ"]!!.kind)
@@ -53,8 +53,8 @@ class HealthBodyAtlasDeviceTest {
     }
     @Test fun platesHaveCanonicalVisibleMarkersAndDoNotInventHiddenStructures() {
         val data = HealthBodyAtlas.load(context)
-        assertEquals(119, HealthAtlasPlates.all.size)
-        assertEquals(119, HealthAtlasPlates.all.map { it.drawable }.toSet().size)
+        assertEquals(135, HealthAtlasPlates.all.size)
+        assertEquals(135, HealthAtlasPlates.all.map { it.drawable }.toSet().size)
         assertEquals(HealthAtlasHeartSection.valves, HealthAtlasPlates.forId("heart-valves"))
         assertEquals("nephron", HealthAtlasPlates.forId("glomerulus")!!.owner)
         assertEquals("cell-podocyte", HealthAtlasPlates.forId("cell-podocyte")?.owner)

@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import kotlin.math.ln
+import kotlin.math.expm1
 import kotlin.math.pow
 
 internal data class HealthAtlasInput(val key: String, val range: IntRange, val initial: Int, val scale: Double = 1.0)
@@ -48,7 +49,9 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
         "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder"),
     THYROID_FEEDBACK(listOf(HealthAtlasInput("feedback-drive", 20..100, 80),
         HealthAtlasInput("feedback-gain", 0..300, 100, 100.0)), 0, "%", 0.0, 100.0,
-        "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-4-the-thyroid-gland");
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-4-the-thyroid-gland"),
+    PHOTON_CAPTURE(listOf(HealthAtlasInput("photon-mean", 0..500, 100, 100.0)), 0, "%", 0.0, 100.0,
+        "https://www.itl.nist.gov/div898/handbook/eda/section3/eda366j.htm", "https://pubmed.ncbi.nlm.nih.gov/112243/");
 
     val sources get() = listOfNotNull(source, extraSource) +
         if (this == VESSEL_FLOW) listOf(HealthAtlasVesselFlow.UNIT_SOURCE) else emptyList()
@@ -72,6 +75,7 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "cell-type-ii-pneumocyte" -> ALVEOLAR_SURFACE
             "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell" -> BICARBONATE_MIX
             "thyroid-gland" -> THYROID_FEEDBACK
+            "cell-rod-photoreceptor" -> PHOTON_CAPTURE
             else -> null
         }
     }
@@ -101,6 +105,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> result / 2.0
         HealthAtlasPhysiologyKind.BICARBONATE_MIX -> bicarbonateDelivery(input(0), input(1))
         HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> input(0) - result
+        HealthAtlasPhysiologyKind.PHOTON_CAPTURE -> 100.0 * kotlin.math.exp(-input(0))
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
@@ -148,6 +153,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.BICARBONATE_MIX -> bicarbonateDelivery(values[0], values[1]) / (1.0 + values[0])
         // Dimensionless static example: output = input - gain * output.
         HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> values[0] / (1.0 + values[1])
+        HealthAtlasPhysiologyKind.PHOTON_CAPTURE -> -100.0 * expm1(-values[0])
     }
     companion object {
         // 1 mL/min at 20 mmol/L delivers 20 micromoles per minute.

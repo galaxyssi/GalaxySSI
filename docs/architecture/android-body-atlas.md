@@ -1,7 +1,7 @@
 # Android Body Atlas
 
 The public teaching catalogue contains 14 navigation categories, 177 canonical
-organ/structure entries, 14 tissues, 105 cell types or subtypes, and one platelet-fragment
+organ/structure entries, 14 tissues, 107 cell types or subtypes, and one platelet-fragment
 entry. Shared structures have one stable identity and multiple category links.
 The taxonomy is a navigation aid, not an exhaustive ontology of all human cells.
 
@@ -91,9 +91,19 @@ signaling. Mechanism stages choose their own cell or organ links. The medulla
 and posterior lobe paths are not represented as steps in the ACTH or anterior
 pituitary branches.
 
+## Neural And Sensory Atlas
+
+Fifteen plates cover the remaining unillustrated nervous and sensory cells and
+the new retinal bipolar and AII amacrine entries. One additional plate shows
+the retina in section, with oppositely oriented arrows for incoming light and
+neural signal. The previous view of its position in the eye remains selectable.
+Thirty-four bilingual landmarks explain structures, and the new retina circuit
+distinguishes the example rod ON relay through AII and ON cone bipolar cells
+from cone transmission. These are representative pathways, not a wiring map.
+
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides thirteen independently bounded teaching models:
+`HealthAtlasPhysiology` provides fourteen independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -133,8 +143,11 @@ pituitary branches.
 - A linear feedback example in the thyroid panel divides the initial
   dimensionless signal by one plus feedback strength. The result is distinct
   from TSH or thyroid hormone measurements and never enters the health record.
+- The rod cell panel illustrates Poisson absorption over a fixed window:
+  one minus the probability of zero events. It reports absorption probability,
+  not perceived brightness, visual acuity or a personal vision threshold.
 
-Forty-seven canonical entries expose these associated processes. Tubular cells
+Forty-eight canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -261,7 +274,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the 119 anatomical, tissue and cellular illustrations and selectable structures to the
+- Extend the 135 anatomical, tissue and cellular illustrations and selectable structures to the
   remaining organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by
@@ -830,13 +843,13 @@ gaps remain; the following increment closes the generic microscopic-process gap.
 
 ## Complete Microscopic Process Catalogue
 
-All 105 named cell entries and the separately classified platelet fragment now
+All 107 named cell entries and the separately classified platelet fragment now
 own a four-stage English/Chinese mechanism. The 52 newly expanded entries cover
 immune and hematopoietic, neural, sensory, vascular, digestive, endocrine, skin
 and musculoskeletal functions. Each process has its own title, stage resources
 and public source. The catalogue loader and packaging tests reject a missing
 mechanism, a fallback to a system process, a mismatched cell/fragment kind or
-assignment to another entity. Platelets remain fragments, not a 106th cell type.
+assignment to another entity. Platelets remain fragments, not another cell type.
 
 Existing native stage controls provide selection, playback, pause, reset and
 per-entry restoration. Agent context carries the selected entity, stage and

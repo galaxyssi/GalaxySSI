@@ -88,10 +88,16 @@ internal object HealthAtlasPlates {
     val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron, alveolus, eye, ear) +
         HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all + HealthAtlasTissuePlates.all +
         HealthAtlasHeartSection.section + HealthAtlasImmunePlates.all + HealthAtlasCoreCellPlates.all +
-        HealthAtlasTransportCellPlates.all + HealthAtlasDigestivePlates.all + HealthAtlasEndocrinePlates.all
+        HealthAtlasTransportCellPlates.all + HealthAtlasDigestivePlates.all + HealthAtlasEndocrinePlates.all +
+        HealthAtlasSensoryPlates.all
 
-    fun viewsForId(id: String?): List<HealthAtlasPlate> = if (id == "heart") listOf(heart, HealthAtlasHeartSection.section)
-        else HealthAtlasMusculoskeletalPlates.viewsForId(id).ifEmpty { listOfNotNull(defaultForId(id)) }
+    private val retinaContext = eye.copy(viewKey = "retina-eye-context", selectorLabel = R.string.health_atlas_sensory_retinal_eye_location)
+
+    fun viewsForId(id: String?): List<HealthAtlasPlate> = when (id) {
+        "heart" -> listOf(heart, HealthAtlasHeartSection.section)
+        "retina" -> listOf(requireNotNull(HealthAtlasSensoryPlates.forId(id)), retinaContext)
+        else -> HealthAtlasMusculoskeletalPlates.viewsForId(id).ifEmpty { listOfNotNull(defaultForId(id)) }
+    }
 
     fun forId(id: String?, viewKey: String? = null): HealthAtlasPlate? = viewsForId(id).let { views ->
         views.firstOrNull { it.viewKey == viewKey } ?: views.firstOrNull()
@@ -103,7 +109,7 @@ internal object HealthAtlasPlates {
         "brain", "cerebrum", "cerebellum", "brainstem" -> brain
         "lungs", "trachea", "bronchi" -> lungs
         "alveoli", "respiratory-membrane", "pulmonary-capillaries" -> alveolus
-        "eye", "cornea", "lens", "retina" -> eye
+        "eye", "cornea", "lens" -> eye
         "ear", "external-ear", "middle-ear", "inner-ear", "cochlea", "vestibular-apparatus" -> ear
         "liver", "gallbladder" -> liver
         "kidneys", "renal-cortex", "renal-medulla", "renal-pelvis" -> kidney
@@ -118,6 +124,6 @@ internal object HealthAtlasPlates {
         else -> HealthAtlasHeartSection.forId(id) ?: HealthAtlasTissuePlates.forId(id) ?:
             HealthAtlasImmunePlates.forId(id) ?: HealthAtlasCoreCellPlates.forId(id) ?:
             HealthAtlasTransportCellPlates.forId(id) ?: HealthAtlasDigestivePlates.forId(id) ?:
-            HealthAtlasEndocrinePlates.forId(id) ?: HealthAtlasSystemPlates.forId(id)
+            HealthAtlasEndocrinePlates.forId(id) ?: HealthAtlasSensoryPlates.forId(id) ?: HealthAtlasSystemPlates.forId(id)
     }
 }

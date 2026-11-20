@@ -89,6 +89,11 @@ class HealthAtlasEyeOpticsDeviceTest {
             for (id in listOf("cornea", "lens", "retina")) {
                 activity.view("atlas-hotspot-$id").performClick()
                 assertEquals(data[id]!!.name, (activity.view("health-page-title") as TextView).text.toString())
+                if (id == "retina") {
+                    assertTrue(activity.view("atlas-view-0").isSelected)
+                    assertNotNull(activity.view("atlas-hotspot-cell-rod-photoreceptor"))
+                    activity.view("atlas-view-1").performClick()
+                }
                 assertTrue((activity.view("atlas-art-caption") as TextView).text.contains(data["eye"]!!.name))
                 assertTrue(activity.view("atlas-hotspot-$id").isSelected)
                 activity.onBackPressed()

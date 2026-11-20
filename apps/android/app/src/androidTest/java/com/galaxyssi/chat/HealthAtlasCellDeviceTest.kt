@@ -68,9 +68,9 @@ class HealthAtlasCellDeviceTest {
             val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
             val atlas = HealthBodyAtlas.load(localized)
             val models = atlas.mechanisms.filter { it.kind == "cell" }
-            assertEquals(105, models.size)
-            assertEquals(105, models.map { it.title }.toSet().size)
-            assertEquals(105, models.map { it.stages }.toSet().size)
+            assertEquals(107, models.size)
+            assertEquals(107, models.map { it.title }.toSet().size)
+            assertEquals(107, models.map { it.stages }.toSet().size)
             models.forEach {
                 assertEquals(HealthAtlasKind.CELL, atlas[it.id]?.kind)
                 assertEquals(it.id, atlas[it.id]?.mechanism)
@@ -80,7 +80,8 @@ class HealthAtlasCellDeviceTest {
                     "cell-rod-photoreceptor" to "15769618", "cell-cone-photoreceptor" to "15769618",
                     "cell-retinal-pigment-epithelial-cell" to "15987797", "cell-corneal-epithelial-cell" to "26310149",
                     "cell-pericyte" to "16166562", "cell-intestinal-stem-cell" to "23870119", "cell-cholangiocyte" to "27563020",
-                    "cell-langerhans-cell" to "23246038")[it.id]
+                    "cell-langerhans-cell" to "23246038", "cell-retinal-bipolar-cell" to "28856684",
+                    "cell-retinal-aii-amacrine-cell" to "28856684")[it.id]
                 if (paper != null) assertEquals("https://pubmed.ncbi.nlm.nih.gov/$paper/", it.source)
                 else assertTrue(it.source.startsWith("https://openstax.org/books/anatomy-and-physiology-2e/pages/"))
             }
@@ -115,7 +116,7 @@ class HealthAtlasCellDeviceTest {
                 assertTrue("Missing transparency: $id", transparent > 500)
             } finally { bitmap.recycle() }
         }
-        assertNull(HealthAtlasPlates.forId("cell-oligodendrocyte"))
+        assertEquals("cell-oligodendrocyte", HealthAtlasPlates.forId("cell-oligodendrocyte")?.owner)
         assertEquals("cell-neutrophil", HealthAtlasPlates.forId("cell-neutrophil")!!.owner)
     }
     @Test fun allThirtyCoreCellsOwnDistinctArtAndEveryNewAnchorIsOnItsFigure() {
