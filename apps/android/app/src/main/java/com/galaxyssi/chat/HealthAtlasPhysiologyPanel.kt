@@ -44,8 +44,10 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
             .apply { tag = "atlas-physiology-reset" }, LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)).apply { topMargin = ui.dp(8) })
         ui.add(body, ui.text(activity.getString(HealthAtlasPhysiologyText.formula(kind)), 14f), 8)
         ui.add(body, ui.text(activity.getString(HealthAtlasPhysiologyText.scope(kind)), 13f, muted = true), 8)
-        ui.add(body, ui.row(activity.getString(R.string.health_atlas_model_source)) { source(kind.source) }
-            .apply { tag = "atlas-physiology-source" }, 12)
+        kind.sources.forEachIndexed { index, url ->
+            ui.add(body, ui.row(activity.getString(HealthAtlasPhysiologyText.sourceTitle(kind, index))) { source(url) }
+                .apply { tag = if (index == 0) "atlas-physiology-source" else "atlas-physiology-source-$index" }, 12)
+        }
         update()
     }
     fun reset() {

@@ -121,6 +121,32 @@ Personal health observations, public anatomy and synthetic model outputs remain
 separate domains throughout. Existing Agent page layout and health records are
 not modified by atlas navigation or teaching parameter changes.
 
+## Oxygen Binding Teaching Model
+
+The blood and erythrocyte entries expose the same bounded equilibrium model,
+with independently restored inputs per entry. PO2 (0-150 mmHg), P50 (15-40 mmHg)
+and hemoglobin (50-200 g/L) are synthetic teaching controls, not reference ranges.
+The response chart plots saturation against PO2 while holding other inputs fixed.
+Changing hemoglobin changes oxygen content, not the saturation curve.
+
+The Hill fraction is `S = 1 / (1 + (P50 / PO2)^2.7)`, with `S = 0` at zero PO2.
+The default P50 is 26.8 mmHg. This uses only the introductory Hill equation in
+Dash and Bassingthwaighte (2010), not their full multivariable model. Its reported
+useful fit is approximately 20-98% saturation; extremes are illustrative.
+Bound oxygen is `1.34 * (Hb_gL / 10) * S`; dissolved oxygen is `0.0031 * PO2`.
+Both and their sum are shown in mL O2/dL whole blood. The constants and content
+balance are described in Driver et al. (2012); the BOLD model is not implemented.
+
+- https://pmc.ncbi.nlm.nih.gov/articles/PMC2862600/ (Eq. 1)
+- https://pmc.ncbi.nlm.nih.gov/articles/PMC3485568/ (oxygen-content balance)
+
+Acid-base state, CO2, temperature and abnormal hemoglobins are not independent
+inputs. No oxygen-delivery, pulse-ox, treatment or patient prediction is made.
+The panel does not read or write personal health records. Agent previews include
+the current inputs, separate components, limitations and both source links only
+for the selected physiology topic; other anatomy and research topics exclude it.
+The qualitative cell animation remains separate from the equilibrium calculation.
+
 ## Sources and Artwork
 
 - OpenStax, *Anatomy and Physiology 2e*: chapter links are stored with each mechanism.

@@ -73,7 +73,8 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 values.second, "mL", "second") { values = values.copy(second = it); updateOutput() }
             ui.add(body, ui.text(activity.getString(R.string.health_atlas_cardiac_formula), 13f, muted = true), 12)
             updateOutput()
-        } else ui.add(body, ui.text(activity.getString(R.string.health_atlas_qualitative_note), 13f, muted = true), 14)
+        } else ui.add(body, ui.text(activity.getString(if (quantitative != null)
+            R.string.health_atlas_model_process_note else R.string.health_atlas_qualitative_note), 13f, muted = true), 14)
         parameter(R.string.health_atlas_speed, 1..4, (values.speed * 2).toInt(), "×0.5", "speed") { pause(); values = values.copy(speed = it / 2f) }
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_teaching_note), 12f, muted = true), 14)
         setPhase(values.phase)

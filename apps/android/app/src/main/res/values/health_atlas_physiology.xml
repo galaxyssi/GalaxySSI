@@ -20,4 +20,14 @@
     <string name="health_atlas_model_concentration_ratio">Outside / inside concentration ratio: %1$s</string>
     <string name="health_atlas_model_axis">%1$s (%2$s) · Other inputs held fixed</string>
     <string name="health_atlas_model_source">Model assumptions and source</string>
+    <string name="health_atlas_model_oxygen">Hemoglobin oxygen saturation</string>
+    <string name="health_atlas_model_oxygen_pressure">Oxygen partial pressure</string>
+    <string name="health_atlas_model_p50">P50 · Pressure at half saturation</string>
+    <string name="health_atlas_model_hemoglobin">Hemoglobin concentration</string>
+    <string name="health_atlas_model_oxygen_content">Oxygen content: %1$s mL O₂/dL blood\nBound: %2$s · Dissolved: %3$s mL O₂/dL</string>
+    <string name="health_atlas_model_oxygen_formula" formatted="false">S = 1 / (1 + (P50 / PO₂)^2.7); saturation = S × 100%. At PO₂ = 0, S = 0. Oxygen content = 1.34 × (Hb / 10) × S + 0.0031 × PO₂. Hb is in g/L and pressures in mmHg; content is in mL O₂/dL blood.</string>
+    <string name="health_atlas_model_oxygen_scope" formatted="false">Simplified Hill equilibrium model with fixed exponent 2.7, most reliable around 20–98% saturation. P50 changes affinity; hemoglobin changes oxygen content, not this saturation curve. Control ranges are teaching ranges, not clinical reference intervals. pH, CO₂, temperature and abnormal hemoglobins are not modeled separately. Not a pulse-ox reading, oxygen-delivery estimate or treatment recommendation.</string>
+    <string name="health_atlas_model_oxygen_binding_source">Oxygen binding · Hill equation and limits</string>
+    <string name="health_atlas_model_oxygen_content_source">Oxygen content · Equation and units</string>
+    <string name="health_atlas_model_process_note">The following process steps are qualitative illustrations, separate from the numerical model; animation speed is not biological timing.</string>
 </resources>
