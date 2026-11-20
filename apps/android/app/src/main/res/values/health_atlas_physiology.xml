@@ -1,0 +1,23 @@
+<resources>
+    <string name="health_atlas_model_ventilation">Alveolar ventilation</string>
+    <string name="health_atlas_model_renal">Solute excretion rate</string>
+    <string name="health_atlas_model_potassium">Potassium equilibrium potential</string>
+    <string name="health_atlas_model_synthetic">Teaching inputs · Not personal measurements</string>
+    <string name="health_atlas_model_ventilation_scope">Whole-lung ventilation at fixed inputs. Dead space is the part of each breath not exchanging gas. This does not calculate blood oxygen, carbon dioxide or a ventilator setting.</string>
+    <string name="health_atlas_model_renal_scope">Whole-nephron mass balance for an unspecified, freely filtered solute. Reabsorption is a fraction of the filtered load; secretion is a separate net addition. It is not urine volume, GFR, a drug dose or the isolated function of one tubular cell.</string>
+    <string name="health_atlas_model_potassium_scope">An ideal membrane permeable only to potassium at 37 °C, using concentrations as activities. This is not a real neuron’s resting potential or an action-potential simulation; other ions, pumps and permeability changes are excluded.</string>
+    <string name="health_atlas_model_ventilation_formula">Alveolar ventilation = respiratory rate × (tidal volume − dead space) ÷ 1,000.</string>
+    <string name="health_atlas_model_renal_formula">Excretion = filtered load − reabsorbed amount + secreted amount.</string>
+    <string name="health_atlas_model_potassium_formula">Eₖ = (RT/F) × ln(K outside / K inside); T = 310.15 K, charge = +1. Result shown in mV.</string>
+    <string name="health_atlas_model_dead_space">Dead-space volume</string>
+    <string name="health_atlas_model_filtered">Filtered load</string>
+    <string name="health_atlas_model_reabsorbed">Reabsorbed fraction</string>
+    <string name="health_atlas_model_secreted">Net tubular secretion</string>
+    <string name="health_atlas_model_outside">Potassium outside the cell</string>
+    <string name="health_atlas_model_inside">Potassium inside the cell</string>
+    <string name="health_atlas_model_total_ventilation">Total minute ventilation: %1$s L/min</string>
+    <string name="health_atlas_model_reabsorbed_amount">Reabsorbed amount: %1$s mg/min</string>
+    <string name="health_atlas_model_concentration_ratio">Outside / inside concentration ratio: %1$s</string>
+    <string name="health_atlas_model_axis">%1$s (%2$s) · Other inputs held fixed</string>
+    <string name="health_atlas_model_source">Model assumptions and source</string>
+</resources>

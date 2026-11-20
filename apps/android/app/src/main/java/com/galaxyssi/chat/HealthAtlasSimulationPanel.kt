@@ -12,13 +12,15 @@ import android.widget.TextView
 import java.text.NumberFormat
 
 internal class HealthAtlasSimulationPanel(private val activity: Activity, private val body: LinearLayout,
-    private val atlas: HealthBodyAtlas, private val item: HealthAtlasItem, initial: HealthAtlasSimulation?, zoom: (Int, String) -> Unit) {
+    private val atlas: HealthBodyAtlas, private val item: HealthAtlasItem, initial: HealthAtlasSimulation?,
+    quantitativeInitial: HealthAtlasPhysiology?, zoom: (Int, String) -> Unit, source: (String) -> Unit) {
     private val ui = HealthCenterViews(activity)
     private val mechanism = atlas.mechanism(item)
     private val cardiac = item.id in setOf("heart", "cardio")
-    private val lung = item.id in setOf("lungs", "respiratory")
     private var values = initial ?: HealthAtlasSimulation.initial(item.id)
     val snapshot get() = values
+    private var quantitative: HealthAtlasPhysiologyPanel? = null
+    val quantitativeSnapshot get() = quantitative?.model
     private var animator: ValueAnimator? = null
     private lateinit var play: ImageButton
     private lateinit var stage: TextView
@@ -27,6 +29,11 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private var diagram = HealthAtlasProcessView(activity, mechanism)
     private val resetInputs = arrayListOf<() -> Unit>()
     init {
+        HealthAtlasPhysiologyKind.forItem(item.id)?.let { kind ->
+            val migrated = if (kind == HealthAtlasPhysiologyKind.VENTILATION && initial != null)
+                HealthAtlasPhysiology.restore(item.id, intArrayOf(initial.first, initial.second, 150)) else null
+            quantitative = HealthAtlasPhysiologyPanel(activity, body, kind, quantitativeInitial ?: migrated, source)
+        }
         val art = HealthAtlasUi.art(item)
         if (art != null) ui.add(body, ImageView(activity).apply {
             setImageResource(art); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = item.name
@@ -43,7 +50,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 .apply { tag = "atlas-simulation-play" }; addView(play)
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_body_next_step) { pause(); setPhase((values.stage + 1).coerceAtMost(3) / 4f) }.apply { rotation = 180f })
             addView(ui.icon(R.drawable.ic_reset_data, R.string.health_atlas_reset) {
-                pause(); values = HealthAtlasSimulation.initial(item.id); resetInputs.forEach { it() }; setPhase(0f); updateOutput()
+                pause(); values = HealthAtlasSimulation.initial(item.id); resetInputs.forEach { it() }; setPhase(0f); updateOutput(); quantitative?.reset()
             }.apply { tag = "atlas-simulation-reset" })
         }; ui.add(body, controls, 8)
         progress = SeekBar(activity).apply {
@@ -54,15 +61,15 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 override fun onProgressChanged(seek: SeekBar?, value: Int, user: Boolean) { if (user) setPhase(value / 1000f) }
             })
         }; ui.add(body, progress)
-        if (cardiac || lung) {
+        if (cardiac) {
             output = ui.text("", 28f, bold = true).apply { tag = "atlas-simulation-output" }
-            ui.add(body, ui.text(activity.getString(if (cardiac) R.string.health_atlas_cardiac_output else R.string.health_atlas_ventilation), 14f, muted = true), 16)
+            ui.add(body, ui.text(activity.getString(R.string.health_atlas_cardiac_output), 14f, muted = true), 16)
             ui.add(body, output)
-            parameter(if (cardiac) R.string.health_atlas_heart_rate else R.string.health_atlas_rate, if (cardiac) 40..160 else 6..30,
-                values.first, if (cardiac) "bpm" else "/min", "first") { values = values.copy(first = it); updateOutput() }
-            parameter(if (cardiac) R.string.health_atlas_stroke_volume else R.string.health_atlas_tidal, if (cardiac) 30..120 else 200..900,
+            parameter(R.string.health_atlas_heart_rate, 40..160,
+                values.first, "bpm", "first") { values = values.copy(first = it); updateOutput() }
+            parameter(R.string.health_atlas_stroke_volume, 30..120,
                 values.second, "mL", "second") { values = values.copy(second = it); updateOutput() }
-            ui.add(body, ui.text(activity.getString(if (cardiac) R.string.health_atlas_cardiac_formula else R.string.health_atlas_ventilation_formula), 13f, muted = true), 12)
+            ui.add(body, ui.text(activity.getString(R.string.health_atlas_cardiac_formula), 13f, muted = true), 12)
             updateOutput()
         } else ui.add(body, ui.text(activity.getString(R.string.health_atlas_qualitative_note), 13f, muted = true), 14)
         parameter(R.string.health_atlas_speed, 1..4, (values.speed * 2).toInt(), "×0.5", "speed") { pause(); values = values.copy(speed = it / 2f) }
@@ -90,7 +97,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     }
     private fun updateOutput() {
         if (::output.isInitialized) output.text = NumberFormat.getNumberInstance().apply { minimumFractionDigits = 2; maximumFractionDigits = 2 }
-            .format(if (cardiac) values.cardiacOutput() else values.minuteVentilation()) + " L/min"
+            .format(values.cardiacOutput()) + " L/min"
     }
     private fun setPhase(value: Float) {
         values = values.copy(phase = value.coerceIn(0f, 1f)); diagram.phase = values.phase

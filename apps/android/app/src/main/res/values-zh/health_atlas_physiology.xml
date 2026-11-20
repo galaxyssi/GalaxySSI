@@ -1,0 +1,23 @@
+<resources>
+    <string name="health_atlas_model_ventilation">肺泡通气量</string>
+    <string name="health_atlas_model_renal">溶质排泄速率</string>
+    <string name="health_atlas_model_potassium">钾离子平衡电位</string>
+    <string name="health_atlas_model_synthetic">教学参数 · 非个人测量值</string>
+    <string name="health_atlas_model_ventilation_scope">固定参数下的全肺通气模型。无效腔是每次呼吸中不参与气体交换的部分。不计算血氧、二氧化碳或呼吸机设置。</string>
+    <string name="health_atlas_model_renal_scope">以未指定的可自由滤过溶质演示整个肾单位的质量平衡。重吸收按滤过量的比例计算，分泌为独立的净增加量。不是尿量、肾小球滤过率、药物剂量或单个肾小管细胞的全部功能。</string>
+    <string name="health_atlas_model_potassium_scope">假设膜只允许钾离子通过、温度为 37 °C，以浓度近似活度。不等于真实神经元的静息电位，也不是动作电位模拟；未计入其他离子、离子泵和通透性变化。</string>
+    <string name="health_atlas_model_ventilation_formula">肺泡通气量 = 呼吸频率 ×（潮气量 − 无效腔容积）÷ 1,000。</string>
+    <string name="health_atlas_model_renal_formula">排泄量 = 滤过量 − 重吸收量 + 分泌量。</string>
+    <string name="health_atlas_model_potassium_formula">Eₖ = (RT/F) × ln(细胞外钾 / 细胞内钾)；T = 310.15 K，电荷数 = +1。结果以 mV 显示。</string>
+    <string name="health_atlas_model_dead_space">无效腔容积</string>
+    <string name="health_atlas_model_filtered">溶质滤过量</string>
+    <string name="health_atlas_model_reabsorbed">重吸收比例</string>
+    <string name="health_atlas_model_secreted">肾小管净分泌量</string>
+    <string name="health_atlas_model_outside">细胞外钾浓度</string>
+    <string name="health_atlas_model_inside">细胞内钾浓度</string>
+    <string name="health_atlas_model_total_ventilation">总分钟通气量：%1$s L/min</string>
+    <string name="health_atlas_model_reabsorbed_amount">重吸收量：%1$s mg/min</string>
+    <string name="health_atlas_model_concentration_ratio">细胞外 / 细胞内浓度比：%1$s</string>
+    <string name="health_atlas_model_axis">%1$s（%2$s）· 其他参数保持不变</string>
+    <string name="health_atlas_model_source">模型假设与来源</string>
+</resources>
