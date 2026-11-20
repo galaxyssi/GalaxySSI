@@ -7,14 +7,14 @@ internal object HealthAtlasAgentContext {
     fun prompt(context: Context, atlas: HealthBodyAtlas, item: HealthAtlasItem?,
         simulation: HealthAtlasSimulation? = null, quantitative: HealthAtlasPhysiology? = null,
         topic: HealthAtlasResearchTopic? = null, elimination: HealthAtlasElimination? = null,
-        drugs: HealthAtlasDrugState? = null): String = buildString {
+        drugs: HealthAtlasDrugState? = null, artworkView: String? = null): String = buildString {
         if (item == null) {
             append(context.getString(R.string.health_atlas_ask_whole_context))
             return@buildString
         }
         val mechanism = atlas.mechanism(item)
         append(context.getString(R.string.health_atlas_ask_context, item.name, item.description, mechanism.title, mechanism.source))
-        HealthAtlasPlates.forId(item.id)?.let { plate ->
+        HealthAtlasPlates.forId(item.id, artworkView)?.let { plate ->
             appendLine(); appendLine(plate.caption(context, atlas, item))
             appendLine(context.getString(R.string.health_atlas_art_note))
             plate.source?.let { appendLine(it) }

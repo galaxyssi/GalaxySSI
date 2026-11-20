@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_view_front">正面</string>
+    <string name="health_atlas_view_back">背面</string>
+    <string name="health_atlas_skeleton_front">骨骼 · 正面概览</string>
+    <string name="health_atlas_skeleton_back">骨骼 · 背面概览</string>
+    <string name="health_atlas_muscle_front">表层肌肉 · 正面概览</string>
+    <string name="health_atlas_muscle_back">表层肌肉 · 背面概览；肌腱以足跟处为例</string>
+</resources>

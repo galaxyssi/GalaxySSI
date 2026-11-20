@@ -66,7 +66,7 @@ class HealthAtlasSystemOverviewDeviceTest {
         val atlas = HealthBodyAtlas.load(context)
         assertEquals(6, HealthAtlasSystemPlates.all.size)
         assertEquals(6, owners.map { HealthAtlasPlates.forId(it)!!.drawable }.toSet().size)
-        assertEquals(8, atlas.systems.count { HealthAtlasPlates.forId(it.id)?.owner == it.id })
+        assertEquals(10, atlas.systems.count { HealthAtlasPlates.forId(it.id)?.owner == it.id })
         for (id in owners) {
             val plate = HealthAtlasPlates.forId(id)!!
             assertEquals(id, plate.owner)
