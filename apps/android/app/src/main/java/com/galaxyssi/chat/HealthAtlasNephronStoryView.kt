@@ -140,7 +140,7 @@ internal class HealthAtlasNephronStoryView(context: Context) :
             }
             HealthAtlasNephronStage.LOOP -> {
                 label(canvas, R.string.health_atlas_nephron_story_water, 113f, 168f, crosses)
-                label(canvas, R.string.health_atlas_nephron_story_salt, 236f, 200f, salt)
+                label(canvas, R.string.health_atlas_nephron_story_salt, 217f, 194f, salt)
                 legend(canvas, 172f, R.string.health_atlas_nephron_story_filtrate, fluid)
             }
             HealthAtlasNephronStage.DISTAL -> {
