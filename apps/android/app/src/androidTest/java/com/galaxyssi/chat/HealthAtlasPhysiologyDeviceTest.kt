@@ -102,7 +102,7 @@ class HealthAtlasPhysiologyDeviceTest {
                 val before = draw(); chart.model = chart.model.withInput(0, kind.inputs[0].range.last); val after = draw()
                 try {
                     assertFalse("Unchanged curve: $kind", before.sameAs(after))
-                    assertTrue(chart.contentDescription.contains(HealthAtlasPhysiologyText.number(chart.model.result)))
+                    assertTrue(chart.contentDescription.contains(HealthAtlasPhysiologyText.resultNumber(chart.model, chart.model.result)))
                     val pixels = IntArray(chart.width * chart.height); after.getPixels(pixels, 0, chart.width, 0, 0, chart.width, chart.height)
                     assertTrue(pixels.count { android.graphics.Color.alpha(it) > 0 } > 1000)
                 } finally { before.recycle(); after.recycle() }
@@ -132,7 +132,7 @@ class HealthAtlasPhysiologyDeviceTest {
     @Test fun everyQuantitativeMappingUsesAnExistingCanonicalEntry() {
         val atlas = HealthBodyAtlas.load(context)
         val mapped = atlas.items.mapNotNull { item -> HealthAtlasPhysiologyKind.forItem(item.id)?.let { item.id to it } }
-        assertEquals(28, mapped.size)
+        assertEquals(32, mapped.size)
         assertEquals(HealthAtlasPhysiologyKind.entries.toSet(), mapped.map { it.second }.toSet())
         mapped.forEach { (id, kind) ->
             val model = requireNotNull(HealthAtlasPhysiology.restore(id, kind.inputs.map { it.initial }.toIntArray()))

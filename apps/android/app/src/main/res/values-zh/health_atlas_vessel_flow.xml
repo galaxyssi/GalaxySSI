@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vessel_title">理想血管段流量</string>
+    <string name="health_atlas_vessel_pressure">两端压差</string>
+    <string name="health_atlas_vessel_radius">内半径</string>
+    <string name="health_atlas_vessel_length">管段长度</string>
+    <string name="health_atlas_vessel_viscosity">动力黏度</string>
+    <string name="health_atlas_vessel_resistance">流动阻力：%1$s mmHg min/mL</string>
+    <string name="health_atlas_vessel_diagram">管内速度剖面</string>
+    <string name="health_atlas_vessel_geometry">半径 %1$s mm · 长度 %2$s mm</string>
+    <string name="health_atlas_vessel_mean_speed">平均流速：%1$s mm/s</string>
+    <string name="health_atlas_vessel_centre_speed">中心流速：%1$s mm/s</string>
+    <string name="health_atlas_vessel_shear">管壁剪切应力：%1$s Pa</string>
+    <string name="health_atlas_vessel_diagram_scope">管径放大示意，非解剖比例。箭头按当前中心流速归一化；管壁处流速为零。</string>
+    <string name="health_atlas_vessel_formula">Q = π ΔP r⁴ / (8 μ L)\nR = ΔP / Q = 8 μ L / (π r⁴)\nv(s) = 2 v̄ [1 − (s/r)²]\nτw = ΔP r / (2 L)\n公式使用国际单位，显示流量换算为 mL/min。</string>
+    <string name="health_atlas_vessel_scope">单根刚性、笔直圆管，采用稳态、充分发展层流、恒定黏度和管壁无滑移假设。压差是管段两端之差，不是血压测量值。未模拟搏动、管壁弹性、分支、瓣膜、血细胞及非牛顿效应。控件范围是教学输入，不是正常范围或治疗目标。</string>
+    <string name="health_atlas_vessel_profile_source">速度与剪切力依据 · MIT</string>
+    <string name="health_atlas_vessel_units_source">压力单位换算 · NIST</string>
+</resources>

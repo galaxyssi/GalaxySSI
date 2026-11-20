@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vessel_title">Ideal vessel-segment flow</string>
+    <string name="health_atlas_vessel_pressure">Pressure drop</string>
+    <string name="health_atlas_vessel_radius">Inner radius</string>
+    <string name="health_atlas_vessel_length">Segment length</string>
+    <string name="health_atlas_vessel_viscosity">Dynamic viscosity</string>
+    <string name="health_atlas_vessel_resistance">Hydraulic resistance: %1$s mmHg min/mL</string>
+    <string name="health_atlas_vessel_diagram">Tube velocity profile</string>
+    <string name="health_atlas_vessel_geometry">Radius %1$s mm · Length %2$s mm</string>
+    <string name="health_atlas_vessel_mean_speed">Mean speed: %1$s mm/s</string>
+    <string name="health_atlas_vessel_centre_speed">Centre speed: %1$s mm/s</string>
+    <string name="health_atlas_vessel_shear">Wall shear stress: %1$s Pa</string>
+    <string name="health_atlas_vessel_diagram_scope">Enlarged diameter, not anatomical scale. Arrows are normalized to the current centre speed; speed is zero at the wall.</string>
+    <string name="health_atlas_vessel_formula">Q = π ΔP r⁴ / (8 μ L)\nR = ΔP / Q = 8 μ L / (π r⁴)\nv(s) = 2 v̄ [1 − (s/r)²]\nτw = ΔP r / (2 L)\nEquations use SI units; displayed flow is mL/min.</string>
+    <string name="health_atlas_vessel_scope">One rigid, straight, circular tube with steady, fully developed laminar flow, constant viscosity and no slip at the wall. The pressure drop is between the segment ends, not a blood-pressure reading. Pulsation, wall elasticity, branching, valves, blood cells and non-Newtonian effects are excluded. Controls are teaching inputs, not normal ranges or treatment targets.</string>
+    <string name="health_atlas_vessel_profile_source">Velocity and shear reference · MIT</string>
+    <string name="health_atlas_vessel_units_source">Pressure conversion · NIST</string>
+</resources>

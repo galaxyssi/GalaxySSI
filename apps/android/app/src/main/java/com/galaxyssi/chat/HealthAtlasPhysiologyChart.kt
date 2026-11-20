@@ -28,9 +28,11 @@ internal class HealthAtlasPhysiologyChart(context: Context, initial: HealthAtlas
         paint.textSize = font
         val low = model.kind.minimum; val high = model.plotMaximum
         val ticks = listOf(low, (low + high) / 2, high)
-        val left = ticks.maxOf { paint.measureText(HealthAtlasPhysiologyText.number(it)) } + 12 * density
+        fun resultLabel(value: Double) = HealthAtlasPhysiologyText.resultNumber(model, value)
+        fun axisLabel(value: Double) = HealthAtlasPhysiologyText.inputNumber(model.kind.inputs[model.kind.axis].key, value)
+        val left = ticks.maxOf { paint.measureText(resultLabel(it)) } + 12 * density
         val range = model.axisRange
-        val right = width - paint.measureText(HealthAtlasPhysiologyText.number(range.endInclusive)) / 2 - 6 * density
+        val right = width - paint.measureText(axisLabel(range.endInclusive)) / 2 - 6 * density
         val top = font * 2; val bottom = height - font * 2
         if (right <= left || bottom <= top) return
         fun x(value: Double) = left + ((right - left) * (value - range.start) / (range.endInclusive - range.start)).toFloat()
@@ -41,11 +43,11 @@ internal class HealthAtlasPhysiologyChart(context: Context, initial: HealthAtlas
         ticks.forEach { tick ->
             paint.color = context.getColor(R.color.separator); canvas.drawLine(left, y(tick), right, y(tick), paint)
             paint.color = context.getColor(R.color.text_secondary); paint.textAlign = Paint.Align.RIGHT
-            canvas.drawText(HealthAtlasPhysiologyText.number(tick), left - 6 * density, y(tick) + font * .3f, paint)
+            canvas.drawText(resultLabel(tick), left - 6 * density, y(tick) + font * .3f, paint)
         }
         paint.textAlign = Paint.Align.CENTER
         listOf(range.start, (range.start + range.endInclusive) / 2, range.endInclusive).forEach {
-            canvas.drawText(HealthAtlasPhysiologyText.number(it), x(it), bottom + font * 1.4f, paint)
+            canvas.drawText(axisLabel(it), x(it), bottom + font * 1.4f, paint)
         }
         val path = Path().apply {
             for (step in 0..120) {
