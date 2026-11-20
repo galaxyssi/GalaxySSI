@@ -107,7 +107,7 @@ class HealthBodyAtlasDeviceTest {
                         tapped = null
                     }
                 }
-                if (plate.owner == null) assertTrue(bottom <= view.height - HealthCenterViews(activity).dp(144))
+                if (plate.owner == null) assertTrue((bottoms.values.maxOrNull() ?: 0) <= view.height - HealthCenterViews(activity).dp(144))
             }
         }
     }
