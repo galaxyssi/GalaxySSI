@@ -7,7 +7,7 @@ internal data class HealthAtlasMarker(val id: String, val x: Float, val y: Float
 }
 
 internal data class HealthAtlasPlate(val drawable: Int, val owner: String?, val viewLabel: Int,
-    val markers: List<HealthAtlasMarker>, val source: String? = null) {
+    val markers: List<HealthAtlasMarker>, val source: String? = null, val viewKey: String? = null) {
     fun caption(context: Context, data: HealthBodyAtlas, selected: HealthAtlasItem?): String {
         val view = context.getString(viewLabel)
         return if (selected != null && selected.id != owner)
@@ -68,9 +68,16 @@ internal object HealthAtlasPlates {
             HealthAtlasMarker("alveoli", .48f, .48f), HealthAtlasMarker("respiratory-membrane", .66f, .67f),
             HealthAtlasMarker("pulmonary-capillaries", .74f, .69f)), HealthAtlasGasExchange.SOURCE)
     val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron, alveolus) +
-        HealthAtlasSystemPlates.all
+        HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all
 
-    fun forId(id: String?): HealthAtlasPlate? = when (id) {
+    fun viewsForId(id: String?): List<HealthAtlasPlate> = HealthAtlasMusculoskeletalPlates.viewsForId(id)
+        .ifEmpty { listOfNotNull(defaultForId(id)) }
+
+    fun forId(id: String?, viewKey: String? = null): HealthAtlasPlate? = viewsForId(id).let { views ->
+        views.firstOrNull { it.viewKey == viewKey } ?: views.firstOrNull()
+    }
+
+    private fun defaultForId(id: String?): HealthAtlasPlate? = when (id) {
         null -> whole
         "heart", "cardio", "atria", "ventricles", "coronary-vessels" -> heart
         "brain", "cerebrum", "cerebellum", "brainstem" -> brain

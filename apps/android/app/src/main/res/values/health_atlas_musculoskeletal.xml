@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_view_front">Front</string>
+    <string name="health_atlas_view_back">Back</string>
+    <string name="health_atlas_skeleton_front">Skeleton · Anterior overview</string>
+    <string name="health_atlas_skeleton_back">Skeleton · Posterior overview</string>
+    <string name="health_atlas_muscle_front">Superficial muscles · Anterior overview</string>
+    <string name="health_atlas_muscle_back">Superficial muscles · Posterior overview; tendon shown at the heel</string>
+</resources>

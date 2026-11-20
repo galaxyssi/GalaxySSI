@@ -53,6 +53,7 @@ class HealthBodyAtlasActivity : Activity() {
     private var researchItem = ""
     private val eliminationStates = linkedMapOf<String, HealthAtlasElimination>()
     private val drugStates = linkedMapOf<String, HealthAtlasDrugState>()
+    private val artworkViews = linkedMapOf<String, String>()
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -62,6 +63,11 @@ class HealthBodyAtlasActivity : Activity() {
         query = state?.getString("query").orEmpty().take(100)
         tab = HealthAtlasTab.entries.firstOrNull { it.name == state?.getString("tab") } ?: HealthAtlasTab.STRUCTURE
         researchTopic = HealthAtlasResearchTopic.entries.firstOrNull { it.name == state?.getString("researchTopic") }
+        state?.getBundle("artworkViewsV1")?.let { saved -> saved.keySet().take(300).forEach { key ->
+            saved.getString(key)?.let { view ->
+                if (HealthAtlasPlates.forId(key, view)?.viewKey == view) artworkViews[key] = view
+            }
+        } }
         state?.getBundle("drugModelsV1")?.let { saved -> saved.keySet().take(300).forEach { key ->
             HealthAtlasDrugState.restore(saved.getIntArray(key))?.let { drugStates[key] = it }
         } }
@@ -129,6 +135,7 @@ class HealthBodyAtlasActivity : Activity() {
             }) }
         })
         out.putString("researchTopic", researchTopic?.name)
+        out.putBundle("artworkViewsV1", Bundle().apply { artworkViews.forEach { (id, view) -> putString(id, view) } })
         out.putBundle("drugModelsV1", Bundle().apply { drugStates.forEach { (id, value) -> putIntArray(id, value.encode()) } })
         out.putBundle("eliminations", Bundle().apply { eliminationStates.forEach { (id, value) -> putBundle(id, Bundle().apply {
             putInt("halfLife", value.halfLifeHours); putInt("elapsed", value.elapsedHours)
@@ -239,7 +246,7 @@ class HealthBodyAtlasActivity : Activity() {
     private fun detail(data: HealthBodyAtlas, item: HealthAtlasItem) {
         when (tab) {
             HealthAtlasTab.STRUCTURE -> {
-                ui.add(content, HealthAtlasArtwork(this, data, item, ::select, ::zoom))
+                ui.add(content, artwork(data, item))
                 ui.add(content, ui.text(item.description, 16f), 12)
                 val children = data.children(item)
                 if (children.isNotEmpty()) { heading(R.string.health_atlas_related); children.forEach { row(content, it) } }
@@ -249,7 +256,7 @@ class HealthBodyAtlasActivity : Activity() {
                 (data.parents(item) + item.systems.filter { it != item.id }.mapNotNull(data::get)).distinctBy { it.id }.forEach { row(content, it) }
             }
             HealthAtlasTab.FUNCTION -> {
-                ui.add(content, HealthAtlasArtwork(this, data, item, ::select, ::zoom))
+                ui.add(content, artwork(data, item))
                 ui.add(content, ui.text(item.description, 17f), 12)
                 val mechanism = data.mechanism(item)
                 ui.add(content, ui.text(getString(R.string.health_atlas_related_process, mechanism.title), 17f, bold = true), 22)
@@ -282,6 +289,8 @@ class HealthBodyAtlasActivity : Activity() {
             ui.add(content, ui.text(getString(R.string.health_atlas_art_note), 11f, muted = true), 8)
     }
     private fun heading(title: Int) { ui.add(content, ui.text(getString(title), 18f, bold = true), 22) }
+    private fun artwork(data: HealthBodyAtlas, item: HealthAtlasItem) = HealthAtlasArtwork(this, data, item,
+        ::select, ::zoom, artworkViews[item.id]) { artworkViews[item.id] = it }
     private fun saveSimulation() { simulation?.let {
         simulationStates[simulationItem] = it.snapshot
         it.quantitativeSnapshot?.let { model -> physiologyStates[simulationItem] = model }
@@ -324,7 +333,8 @@ class HealthBodyAtlasActivity : Activity() {
     private fun ask(item: HealthAtlasItem?) {
         simulation?.pause()
         val prompt = HealthAtlasAgentContext.prompt(this, atlas!!, item, simulation?.snapshot,
-            simulation?.quantitativeSnapshot, researchTopic, research?.elimination, research?.drugState)
+            simulation?.quantitativeSnapshot, researchTopic, research?.elimination, research?.drugState,
+            item?.let { artworkViews[it.id] })
         dialog = AlertDialog.Builder(this).setTitle(R.string.health_atlas_ask_ready).setMessage(prompt)
             .setNegativeButton(android.R.string.cancel, null).setPositiveButton(R.string.health_atlas_ask) { _, _ ->
                 worker.execute {

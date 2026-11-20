@@ -64,15 +64,29 @@ internal object HealthAtlasUi {
 }
 
 internal class HealthAtlasArtwork(
-    private val activity: Activity, data: HealthBodyAtlas, item: HealthAtlasItem?,
-    selected: (HealthAtlasItem) -> Unit, zoom: (Int, String) -> Unit,
+    private val activity: Activity, private val data: HealthBodyAtlas, private val item: HealthAtlasItem?,
+    private val selected: (HealthAtlasItem) -> Unit, private val zoom: (Int, String) -> Unit,
+    initialView: String? = null, private val viewChanged: (String) -> Unit = {},
 ) : LinearLayout(activity) {
     private val ui = HealthCenterViews(activity)
     private var layers: android.app.AlertDialog? = null
+    private var currentView = HealthAtlasPlates.forId(item?.id, initialView)?.viewKey
     init {
         orientation = VERTICAL
-        val plate = HealthAtlasPlates.forId(item?.id)
+        renderPlate()
+    }
+    private fun renderPlate() {
+        layers?.dismiss(); layers = null
+        removeAllViews()
+        val views = HealthAtlasPlates.viewsForId(item?.id)
+        val plate = HealthAtlasPlates.forId(item?.id, currentView)
         if (plate != null) {
+            if (views.size > 1) addView(HealthAtlasUi.tabs(activity,
+                listOf(R.string.health_atlas_view_front, R.string.health_atlas_view_back), views.indexOf(plate), "atlas-view") { index ->
+                currentView = views[index].viewKey
+                currentView?.let(viewChanged)
+                renderPlate()
+            })
             val resource = plate.drawable
             val caption = plate.caption(activity, data, item)
             val description = (item?.name ?: activity.getString(R.string.health_atlas_whole)) + " · " + caption

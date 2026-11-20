@@ -36,6 +36,8 @@ class HealthAtlasDistributionDeviceTest {
     }
     private fun native(block: (ActivityScenario<HealthBodyAtlasActivity>) -> Unit) {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        // Subscribe before launch so the service observes the window-added event.
+        instrumentation.uiAutomation
         val names = HealthOverviewDatabases(java.util.UUID.randomUUID().toString())
         try {
             ActivityScenario.launch<HealthBodyAtlasActivity>(Intent(context, HealthBodyAtlasActivity::class.java)

@@ -477,3 +477,63 @@ health record. Organ-resolved distribution and clearance remain separate work.
 
 Reference for the linear amount equations and analytical treatment:
 https://doi.org/10.12793/tcp.2019.27.2.43
+
+## Musculoskeletal Views
+
+The skeletal and muscular categories each add an anterior and a posterior
+teaching plate. This brings the catalogue to twenty-four bitmap plates, with
+ten of the fourteen categories owning a system overview. These generated
+schematics are not patient imaging or a clinically validated anatomical atlas.
+
+`HealthAtlasMusculoskeletalPlates` registers only visible surface structures.
+Each system exposes a localized Front/Back selector. An individual structure
+resolves only to views in which it is marked: selecting the trapezius opens
+the posterior muscular view, never the anterior view. Undepicted deep muscles,
+microscopic cells, cartilage and ligaments retain their existing catalogue and
+mechanism views without borrowing an unrelated illustration. The diaphragm
+and bone marrow retain their dedicated respiratory and immune contexts.
+The generic tendon entry explicitly uses the heel tendon as its pictured example.
+
+Switching perspective replaces only the artwork subtree, not the activity,
+scroll container, primary tabs or Agent button. Each entry remembers its own
+stable view key across navigation and activity recreation; unrelated or invalid
+saved keys fall back to that entry's valid default. Fullscreen, zoom/reset,
+localized native hotspots, source links and the existing cell navigation remain
+available. The public Agent preview includes the currently selected view and
+its source, not a stale anterior caption. Personal measurement access and
+consent are unchanged. No synthetic value is stored in a health record.
+
+The plates do not add a new biomechanical numerical model. Existing sourced
+function stages, mechanism playback, related measurements and research modes
+remain available. Deep-layer illustrations, joint-specific mechanical models
+and expert anatomical review are still separate work.
+
+### Asset Prompt Set
+
+Built-in image generation was used, without an external image API. The final
+assets are under `apps/android/app/src/main/res/drawable-nodpi/`:
+
+- `health_atlas_skeleton_front.png`: original clinical educational full adult
+  skeleton, anterior anatomical position, head to feet, arms apart, palms
+  forward; ivory bones with realistic subtle shading, visible skull, clavicles,
+  sternum, ribs, pelvis and paired limb bones, hands and feet. Tall centered
+  transparent cutout, no skin, organs, labels, arrows, numbers or watermark.
+- `health_atlas_skeleton_back.png`: posterior full skeleton, centerline cervical,
+  thoracic and lumbar vertebrae and sacrum, scapulae over ribs, pelvis and rear
+  limb bones; ivory three-dimensional clinical teaching illustration. Transparent
+  portrait composition, no skin, organs, text, markers, frames or watermark.
+- `health_atlas_muscle_front.png`: anterior superficial muscular-system model,
+  head to feet, standing with arms apart and palms forward. Red/pink muscle
+  fibers, pale tendons, clear pectoralis, deltoids, biceps, rectus abdominis,
+  external obliques and quadriceps. Neutral medical shading and proportions,
+  transparent portrait cutout, no skin, gore, sexual anatomy or baked-in labels.
+- `health_atlas_muscle_back.png`: posterior superficial muscular-system model,
+  head to feet, arms apart, visible trapezius, posterior deltoids, triceps,
+  latissimus, gluteus maximus, hamstrings, gastrocnemius and heel tendons.
+  Red/pink fibers and pale tendons, no deep cutaways, skin, gore, text, markers
+  or watermark; transparent portrait cutout.
+
+Anatomical references are linked rather than bundling textbook artwork:
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/7-1-divisions-of-the-skeletal-system
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/11-2-naming-skeletal-muscles
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/11-5-muscles-of-the-pectoral-girdle-and-upper-limbs
