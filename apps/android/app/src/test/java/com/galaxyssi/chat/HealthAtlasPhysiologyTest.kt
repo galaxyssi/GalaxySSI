@@ -105,4 +105,20 @@ class HealthAtlasPhysiologyTest {
         assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(15, 0)))
         assertNull(HealthAtlasPhysiology.restore("cell-type-i-pneumocyte", intArrayOf(15, 100)))
     }
+    @Test fun bicarbonateMixConservesSoluteWithAndWithoutAddedFlow() {
+        val kind = HealthAtlasPhysiologyKind.BICARBONATE_MIX
+        val model = HealthAtlasPhysiology(kind)
+        assertEquals(50.0, model.result, 1e-9)
+        assertEquals(100.0, model.companionValue, 1e-9)
+        assertEquals(20.0, model.withInput(0, 0).withInput(1, 120).result, 1e-9)
+        assertEquals(100.0, model.withInput(0, 40).withInput(1, 120).result, 1e-9)
+        for (flow in kind.inputs[0].range) for (concentration in kind.inputs[1].range step 5) {
+            val mixed = model.withInput(0, flow).withInput(1, concentration)
+            assertEquals(20.0 + flow / 10.0 * concentration, mixed.result * (1 + flow / 10.0), 1e-8)
+            assertTrue(mixed.result >= 20.0 - 1e-9 && mixed.result <= concentration + 1e-9)
+        }
+        assertNull(HealthAtlasPhysiology.restore("pancreatic-islets", intArrayOf(10, 80)))
+        assertNull(HealthAtlasPhysiology.restore("cell-pancreatic-acinar-cell", intArrayOf(10, 80)))
+        assertNull(HealthAtlasPhysiology.restore("pancreatic-duct", intArrayOf(-1, 80)))
+    }
 }

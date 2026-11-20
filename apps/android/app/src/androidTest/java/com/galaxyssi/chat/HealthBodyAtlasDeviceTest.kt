@@ -53,8 +53,8 @@ class HealthBodyAtlasDeviceTest {
     }
     @Test fun platesHaveCanonicalVisibleMarkersAndDoNotInventHiddenStructures() {
         val data = HealthBodyAtlas.load(context)
-        assertEquals(87, HealthAtlasPlates.all.size)
-        assertEquals(87, HealthAtlasPlates.all.map { it.drawable }.toSet().size)
+        assertEquals(101, HealthAtlasPlates.all.size)
+        assertEquals(101, HealthAtlasPlates.all.map { it.drawable }.toSet().size)
         assertEquals(HealthAtlasHeartSection.valves, HealthAtlasPlates.forId("heart-valves"))
         assertEquals("nephron", HealthAtlasPlates.forId("glomerulus")!!.owner)
         assertEquals("cell-podocyte", HealthAtlasPlates.forId("cell-podocyte")?.owner)
@@ -97,8 +97,15 @@ class HealthBodyAtlasDeviceTest {
                         label.top >= bottom && label.bottom <= view.height)
                     assertTrue(label.height >= label.layout.height + label.compoundPaddingTop + label.compoundPaddingBottom)
                     bottom = label.bottom
-                    if (label.isSelected) { assertFalse(label.performClick()); assertNull(tapped) }
-                    else { label.performClick(); assertEquals(label.tag.toString().removePrefix("atlas-hotspot-"), tapped); tapped = null }
+                    val key = label.tag.toString()
+                    if (key.startsWith("atlas-feature-")) assertTrue(label.isClickable && label.isFocusable)
+                    else if (label.isSelected) { assertFalse(label.performClick()); assertNull(tapped) }
+                    else {
+                        assertTrue(key.startsWith("atlas-hotspot-"))
+                        assertTrue(label.performClick())
+                        assertEquals(key.removePrefix("atlas-hotspot-"), tapped)
+                        tapped = null
+                    }
                 }
                 if (plate.owner == null) assertTrue(bottom <= view.height - HealthCenterViews(activity).dp(144))
             }

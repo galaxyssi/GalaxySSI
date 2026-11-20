@@ -93,8 +93,8 @@ class HealthAtlasSystemPlateDeviceTest {
                 }
             } finally { bitmap.recycle() }
         }
-        assertNull(HealthAtlasPlates.forId("pancreatic-islets"))
-        assertNull(HealthAtlasPlates.forId("cell-pancreatic-acinar-cell"))
+        assertEquals("pancreatic-islets", HealthAtlasPlates.forId("pancreatic-islets")?.owner)
+        assertEquals("cell-pancreatic-acinar-cell", HealthAtlasPlates.forId("cell-pancreatic-acinar-cell")?.owner)
         assertEquals("cell-podocyte", HealthAtlasPlates.forId("cell-podocyte")?.owner)
     }
 

@@ -119,8 +119,9 @@ class HealthAtlasSystemOverviewDeviceTest {
             assertEquals(id, HealthAtlasPlates.forId(id)!!.owner)
         for (id in listOf("cell-langerhans-cell", "cell-thyroid-follicular-cell"))
             assertNull(HealthAtlasPlates.forId(id))
-        for (id in listOf("parathyroid-glands", "pancreatic-islets", "nails"))
+        for (id in listOf("parathyroid-glands", "nails"))
             assertNull(HealthAtlasPlates.forId(id))
+        assertEquals("pancreatic-islets", HealthAtlasPlates.forId("pancreatic-islets")?.owner)
         assertEquals("ear", HealthAtlasPlates.forId("cochlea")!!.owner)
         assertEquals("heart", HealthAtlasPlates.forId("heart-valves")!!.owner)
         for (plate in HealthAtlasSystemPlates.all) for (marker in plate.markers) {

@@ -132,7 +132,7 @@ class HealthAtlasPhysiologyDeviceTest {
     @Test fun everyQuantitativeMappingUsesAnExistingCanonicalEntry() {
         val atlas = HealthBodyAtlas.load(context)
         val mapped = atlas.items.mapNotNull { item -> HealthAtlasPhysiologyKind.forItem(item.id)?.let { item.id to it } }
-        assertEquals(43, mapped.size)
+        assertEquals(46, mapped.size)
         assertEquals(HealthAtlasPhysiologyKind.entries.toSet(), mapped.map { it.second }.toSet())
         assertEquals(setOf("ventricles", "left-ventricle", "right-ventricle"),
             mapped.filter { it.second == HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION }.map { it.first }.toSet())
@@ -140,6 +140,8 @@ class HealthAtlasPhysiologyDeviceTest {
             mapped.filter { it.second == HealthAtlasPhysiologyKind.NERVE_TRANSIT }.map { it.first }.toSet())
         assertEquals(listOf("cell-type-ii-pneumocyte"),
             mapped.filter { it.second == HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE }.map { it.first })
+        assertEquals(setOf("pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell"),
+            mapped.filter { it.second == HealthAtlasPhysiologyKind.BICARBONATE_MIX }.map { it.first }.toSet())
         mapped.forEach { (id, kind) ->
             val model = requireNotNull(HealthAtlasPhysiology.restore(id, kind.inputs.map { it.initial }.toIntArray()))
             assertTrue(HealthAtlasPhysiologyText.context(context, model).length < 3000)
