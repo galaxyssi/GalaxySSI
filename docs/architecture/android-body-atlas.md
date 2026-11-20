@@ -1,6 +1,6 @@
 # Android Body Atlas
 
-The public teaching catalogue contains 14 navigation categories, 167 canonical
+The public teaching catalogue contains 14 navigation categories, 177 canonical
 organ/structure entries, 14 tissues, 105 cell types or subtypes, and one platelet-fragment
 entry. Shared structures have one stable identity and multiple category links.
 The taxonomy is a navigation aid, not an exhaustive ontology of all human cells.
@@ -31,7 +31,7 @@ keeps the scroll parent and Agent action mounted. Both selectors survive
 activity recreation, and returning from a child restores the parent layer.
 
 Four tissue families are represented by 14 canonical entries, connected to
-53 organ/structure examples and 26 cell examples. Graph validation requires
+59 organ/structure examples and 26 cell examples. Graph validation requires
 distinct `locatedIn` organ IDs with a shared category and `related` cell IDs
 on each tissue. Each tissue owns a localized four-stage function sequence.
 An organ without an explicit link shows an empty state rather than inheriting
@@ -52,7 +52,7 @@ References:
 
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides eight independently bounded teaching models:
+`HealthAtlasPhysiology` provides nine independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -76,8 +76,10 @@ References:
   signed image offset from a fixed retinal plane.
 - Ideal middle-ear transfer relates the effective eardrum area, stapes
   footplate area and ossicle lever ratio to pressure gain.
+- Ventricular ejection fraction divides ejected stroke volume by the sum of
+  that volume and the end-systolic volume. The two inputs are synthetic.
 
-Thirty-six canonical entries expose these associated processes. Tubular cells
+Explicit canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -97,7 +99,7 @@ Model references:
 
 ## Mechanisms and Research
 
-The eleven macroscopic circulation entries use a native double-circulation
+The ten macroscopic circulation entries use a native double-circulation
 diagram with the existing lung, heart and whole-body illustrations. Directional
 paths follow tissues, right heart, lungs, left heart and tissues; pulmonary
 arteries are relatively oxygen-poor and pulmonary veins relatively oxygen-rich.
@@ -120,6 +122,30 @@ unrelated anatomy do not inherit this context.
 
 Circulation reference:
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/19-1-heart-anatomy
+
+### Heart Section and Valve Timing
+
+The heart retains its original external drawing and adds a frontal teaching
+section with six hotspots for the two arterial outlets and four chambers.
+The depicted anatomical right is on the viewer's left. The valve group
+uses the same original section and shows only the four valve landmarks.
+Each newly named structure has its own function description and four steps.
+The section selector restores on back navigation and activity recreation.
+
+The valve simulation shows the pressure-driven states of all four valves
+with both drawn indicators and text. Inlet valves open in ventricular filling;
+outlet valves open in ejection; both sets are closed in the two constant-volume
+phases. The selected phase is synchronized with the existing step and playback
+controls. Educational phase lengths do not represent actual timings.
+
+Only the ventricular entries have the ejection fraction controls. Their
+independent state and fixed-axis graph explain the volume relationship without
+inferring any personal ejection fraction, diagnostic threshold or outcome.
+The public Agent preview uses the selected valve state or teaching model and
+links its source. Personal health records and the disclosure flow are unchanged.
+
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/19-3-cardiac-cycle
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/19-4-cardiac-physiology
 
 Each entry opens a native three-tab research surface. Physiology retains the
 entry's teaching sequence and controls. Drug pathways show a clearly labeled
@@ -180,7 +206,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the 40 anatomical and tissue illustrations and selectable structures to the
+- Extend the 41 anatomical and tissue illustrations and selectable structures to the
   remaining systems, organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by

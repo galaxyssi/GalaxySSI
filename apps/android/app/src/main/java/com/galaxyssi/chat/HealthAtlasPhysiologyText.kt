@@ -13,6 +13,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> R.string.health_atlas_vessel_title
         HealthAtlasPhysiologyKind.EYE_FOCUS -> R.string.health_atlas_eye_title
         HealthAtlasPhysiologyKind.MIDDLE_EAR -> R.string.health_atlas_middle_ear_pressure_ratio
+        HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION -> R.string.health_atlas_ejection_fraction
     }
     fun scope(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_scope
@@ -23,6 +24,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> R.string.health_atlas_vessel_scope
         HealthAtlasPhysiologyKind.EYE_FOCUS -> R.string.health_atlas_eye_scope
         HealthAtlasPhysiologyKind.MIDDLE_EAR -> R.string.health_atlas_middle_ear_scope
+        HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION -> R.string.health_atlas_ejection_scope
     }
     fun formula(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_formula
@@ -33,6 +35,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> R.string.health_atlas_vessel_formula
         HealthAtlasPhysiologyKind.EYE_FOCUS -> R.string.health_atlas_eye_formula
         HealthAtlasPhysiologyKind.MIDDLE_EAR -> R.string.health_atlas_middle_ear_formula
+        HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION -> R.string.health_atlas_ejection_formula
     }
     fun label(key: String) = when (key) {
         "rate" -> R.string.health_atlas_rate
@@ -58,11 +61,13 @@ internal object HealthAtlasPhysiologyText {
         "ear-input-area" -> R.string.health_atlas_middle_ear_input_area
         "ear-output-area" -> R.string.health_atlas_middle_ear_output_area
         "ear-lever" -> R.string.health_atlas_middle_ear_lever_ratio
+        "ejection-stroke" -> R.string.health_atlas_ejection_stroke_volume
+        "ejection-residual" -> R.string.health_atlas_ejection_residual_volume
         else -> error("Unknown physiology input: $key")
     }
     fun unit(key: String) = when (key) {
         "rate" -> "/min"
-        "tidal", "dead-space" -> "mL"
+        "tidal", "dead-space", "ejection-stroke", "ejection-residual" -> "mL"
         "filtered", "secreted" -> "mg/min"
         "reabsorbed" -> "%"
         "outside", "inside" -> "mmol/L"
@@ -105,6 +110,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> R.string.health_atlas_vessel_resistance
         HealthAtlasPhysiologyKind.EYE_FOCUS -> R.string.health_atlas_eye_target_power
         HealthAtlasPhysiologyKind.MIDDLE_EAR -> R.string.health_atlas_middle_ear_gain_db
+        HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION -> R.string.health_atlas_ejection_end_diastolic
     }, number(model.companionValue, if (model.kind == HealthAtlasPhysiologyKind.POTASSIUM) 4 else 2))
     }
     fun sourceTitle(kind: HealthAtlasPhysiologyKind, index: Int): Int = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING) {

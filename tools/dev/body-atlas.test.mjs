@@ -134,6 +134,38 @@ test('each ear structure has a unique localized process rather than a shared sen
   }
 });
 
+test('cardiac cutaway links each chamber, valve and outlet to its own localized mechanism', () => {
+  const localized = ['values', 'values-zh'].map(locale => readFileSync(
+    new URL(`../../apps/android/app/src/main/res/${locale}/health_atlas_heart_section.xml`, import.meta.url), 'utf8'));
+  const groups = {
+    heart: ['aorta', 'pulmonary-trunk'],
+    atria: ['right-atrium', 'left-atrium'],
+    ventricles: ['right-ventricle', 'left-ventricle'],
+    'heart-valves': ['tricuspid-valve', 'mitral-valve', 'pulmonary-valve', 'aortic-valve'],
+  };
+  const byId = new Map(catalogue.entries.map(entry => [entry.id, entry]));
+  const mechanisms = new Map(catalogue.mechanisms.map(model => [model.id, model]));
+  const keys = new Set();
+  for (const [parent, ids] of Object.entries(groups)) {
+    for (const id of ids) {
+      assert.ok(byId.get(parent).related.includes(id));
+      const entry = byId.get(id);
+      assert.equal(entry.kind, 'organ');
+      assert.deepEqual(entry.systems, ['cardio']);
+      assert.equal(entry.mechanism, id);
+      const mechanism = mechanisms.get(entry.mechanism);
+      assert.equal(mechanism.chapter, '19-3-cardiac-cycle');
+      for (const key of [entry.name, entry.description, entry.aliases, mechanism.title, ...mechanism.stages]) {
+        assert.ok(!keys.has(key), key);
+        keys.add(key);
+        assert.ok(localized.every(xml => xml.includes(`name="${key}"`)), key);
+      }
+    }
+  }
+  assert.equal(byId.get('heart-valves').mechanism, 'heart-valves');
+  assert.equal(mechanisms.get('heart-valves').stages.length, 4);
+});
+
 test('cell-specific processes cannot be reused for another cell or structure', () => {
   const invalid = structuredClone(catalogue);
   invalid.entries.find(item => item.id === 'cell-neutrophil').mechanism = 'cell-erythrocyte';
@@ -142,7 +174,7 @@ test('cell-specific processes cannot be reused for another cell or structure', (
 
 test('bundled atlas is a complete canonical graph', () => {
   validate(catalogue);
-  for (const [kind, count] of [['system', 14], ['organ', 167], ['tissue', 14], ['cell', 105], ['fragment', 1]]) {
+  for (const [kind, count] of [['system', 14], ['organ', 177], ['tissue', 14], ['cell', 105], ['fragment', 1]]) {
     assert.equal(catalogue.entries.filter(item => item.kind === kind).length, count);
   }
   const skin = catalogue.entries.find(item => item.id === 'skin');

@@ -84,7 +84,9 @@ internal class HealthAtlasArtwork(
         val plate = HealthAtlasPlates.forId(item?.id, currentView)
         if (plate != null) {
             if (views.size > 1) addView(HealthAtlasUi.tabs(activity,
-                listOf(R.string.health_atlas_view_front, R.string.health_atlas_view_back), views.indexOf(plate), "atlas-view") { index ->
+                views.mapIndexed { index, view -> view.selectorLabel ?:
+                    if (index == 0) R.string.health_atlas_view_front else R.string.health_atlas_view_back },
+                views.indexOf(plate), "atlas-view") { index ->
                 currentView = views[index].viewKey
                 currentView?.let(viewChanged)
                 renderPlate()

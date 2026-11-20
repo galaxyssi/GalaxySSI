@@ -33,7 +33,10 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     MIDDLE_EAR(listOf(HealthAtlasInput("ear-input-area", 35..75, 55),
         HealthAtlasInput("ear-output-area", 20..50, 32, 10.0),
         HealthAtlasInput("ear-lever", 100..160, 130, 100.0)), 0, "\u00d7", 0.0, 60.0,
-        HealthAtlasMiddleEar.SOURCE, HealthAtlasMiddleEar.MEASUREMENT_SOURCE);
+        HealthAtlasMiddleEar.SOURCE, HealthAtlasMiddleEar.MEASUREMENT_SOURCE),
+    VENTRICULAR_EJECTION(listOf(HealthAtlasInput("ejection-stroke", 0..180, 70),
+        HealthAtlasInput("ejection-residual", 5..180, 60)), 0, "%", 0.0, 100.0,
+        HealthAtlasHeartSection.EJECTION_SOURCE);
 
     val sources get() = listOfNotNull(source, extraSource) +
         if (this == VESSEL_FLOW) listOf(HealthAtlasVesselFlow.UNIT_SOURCE) else emptyList()
@@ -52,6 +55,7 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "blood-vessels", "arteries", "veins", "coronary-vessels" -> VESSEL_FLOW
             "eye", "lens" -> EYE_FOCUS
             "ear", "middle-ear" -> MIDDLE_EAR
+            "ventricles", "right-ventricle", "left-ventricle" -> VENTRICULAR_EJECTION
             else -> null
         }
     }
@@ -76,6 +80,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> requireNotNull(vesselFlow).resistanceMmHgMinutesPerMl
         HealthAtlasPhysiologyKind.EYE_FOCUS -> requireNotNull(eyeOptics).targetPowerDiopters
         HealthAtlasPhysiologyKind.MIDDLE_EAR -> requireNotNull(middleEar).pressureGainDb
+        HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION -> input(0) + input(1)
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
@@ -114,6 +119,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> HealthAtlasVesselFlow(values[0], values[1], values[2], values[3]).flowMlPerMinute
         HealthAtlasPhysiologyKind.EYE_FOCUS -> HealthAtlasEyeOptics(values[0], values[1]).offsetMm
         HealthAtlasPhysiologyKind.MIDDLE_EAR -> HealthAtlasMiddleEar(values[0], values[1], values[2]).pressureRatio
+        HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION -> 100.0 * values[0] / (values[0] + values[1])
     }
     companion object {
         fun potassiumPotential(outside: Double, inside: Double): Double {

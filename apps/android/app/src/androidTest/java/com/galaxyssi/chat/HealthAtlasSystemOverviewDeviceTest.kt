@@ -101,8 +101,10 @@ class HealthAtlasSystemOverviewDeviceTest {
             assertEquals(id, HealthAtlasPlates.forId(id)!!.owner)
         for (id in listOf("cell-keratinocyte", "cell-melanocyte", "cell-thyroid-follicular-cell", "cell-neutrophil"))
             assertNull(HealthAtlasPlates.forId(id))
-        for (id in listOf("parathyroid-glands", "pancreatic-islets", "cochlea", "nails", "heart-valves"))
+        for (id in listOf("parathyroid-glands", "pancreatic-islets", "nails"))
             assertNull(HealthAtlasPlates.forId(id))
+        assertEquals("ear", HealthAtlasPlates.forId("cochlea")!!.owner)
+        assertEquals("heart", HealthAtlasPlates.forId("heart-valves")!!.owner)
         for (plate in HealthAtlasSystemPlates.all) for (marker in plate.markers) {
             val selected = HealthAtlasPlates.forId(marker.id)!!
             if (selected.owner != marker.id)

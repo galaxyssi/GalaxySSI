@@ -2,6 +2,160 @@
   "schema": 1,
   "entries": [
     {
+      "id": "aorta",
+      "kind": "organ",
+      "name": "health_atlas_aorta_name",
+      "description": "health_atlas_aorta_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "aorta",
+      "aliases": "health_atlas_aorta_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "pulmonary-trunk",
+      "kind": "organ",
+      "name": "health_atlas_pulmonary_trunk_name",
+      "description": "health_atlas_pulmonary_trunk_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "pulmonary-trunk",
+      "aliases": "health_atlas_pulmonary_trunk_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "right-atrium",
+      "kind": "organ",
+      "name": "health_atlas_right_atrium_name",
+      "description": "health_atlas_right_atrium_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "tricuspid-valve"
+      ],
+      "mechanism": "right-atrium",
+      "aliases": "health_atlas_right_atrium_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "left-atrium",
+      "kind": "organ",
+      "name": "health_atlas_left_atrium_name",
+      "description": "health_atlas_left_atrium_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "mitral-valve"
+      ],
+      "mechanism": "left-atrium",
+      "aliases": "health_atlas_left_atrium_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "right-ventricle",
+      "kind": "organ",
+      "name": "health_atlas_right_ventricle_name",
+      "description": "health_atlas_right_ventricle_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "pulmonary-valve",
+        "pulmonary-trunk"
+      ],
+      "mechanism": "right-ventricle",
+      "aliases": "health_atlas_right_ventricle_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "left-ventricle",
+      "kind": "organ",
+      "name": "health_atlas_left_ventricle_name",
+      "description": "health_atlas_left_ventricle_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "aortic-valve",
+        "aorta"
+      ],
+      "mechanism": "left-ventricle",
+      "aliases": "health_atlas_left_ventricle_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "tricuspid-valve",
+      "kind": "organ",
+      "name": "health_atlas_tricuspid_valve_name",
+      "description": "health_atlas_tricuspid_valve_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "tricuspid-valve",
+      "aliases": "health_atlas_tricuspid_valve_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "mitral-valve",
+      "kind": "organ",
+      "name": "health_atlas_mitral_valve_name",
+      "description": "health_atlas_mitral_valve_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "mitral-valve",
+      "aliases": "health_atlas_mitral_valve_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "pulmonary-valve",
+      "kind": "organ",
+      "name": "health_atlas_pulmonary_valve_name",
+      "description": "health_atlas_pulmonary_valve_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "pulmonary-trunk"
+      ],
+      "mechanism": "pulmonary-valve",
+      "aliases": "health_atlas_pulmonary_valve_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "aortic-valve",
+      "kind": "organ",
+      "name": "health_atlas_aortic_valve_name",
+      "description": "health_atlas_aortic_valve_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "aorta"
+      ],
+      "mechanism": "aortic-valve",
+      "aliases": "health_atlas_aortic_valve_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
       "id": "tissue-epidermal",
       "kind": "tissue",
       "name": "health_atlas_tissue_epidermal_name",
@@ -110,7 +264,9 @@
         "arteries",
         "veins",
         "capillaries",
-        "coronary-vessels"
+        "coronary-vessels",
+        "aorta",
+        "pulmonary-trunk"
       ]
     },
     {
@@ -181,7 +337,11 @@
       "locatedIn": [
         "heart",
         "atria",
-        "ventricles"
+        "ventricles",
+        "left-atrium",
+        "right-atrium",
+        "left-ventricle",
+        "right-ventricle"
       ]
     },
     {
@@ -1101,7 +1261,9 @@
         "atria",
         "ventricles",
         "heart-valves",
-        "coronary-vessels"
+        "coronary-vessels",
+        "aorta",
+        "pulmonary-trunk"
       ],
       "mechanism": "cardio",
       "aliases": "health_atlas_heart_aliases",
@@ -1116,7 +1278,10 @@
       "systems": [
         "cardio"
       ],
-      "related": [],
+      "related": [
+        "right-atrium",
+        "left-atrium"
+      ],
       "mechanism": "cardio",
       "aliases": "health_atlas_atria_aliases",
       "color": "",
@@ -1130,7 +1295,10 @@
       "systems": [
         "cardio"
       ],
-      "related": [],
+      "related": [
+        "right-ventricle",
+        "left-ventricle"
+      ],
       "mechanism": "cardio",
       "aliases": "health_atlas_ventricles_aliases",
       "color": "",
@@ -1144,8 +1312,13 @@
       "systems": [
         "cardio"
       ],
-      "related": [],
-      "mechanism": "cardio",
+      "related": [
+        "tricuspid-valve",
+        "mitral-valve",
+        "pulmonary-valve",
+        "aortic-valve"
+      ],
+      "mechanism": "heart-valves",
       "aliases": "health_atlas_heart_valves_aliases",
       "color": "",
       "icon": ""
@@ -3397,7 +3570,11 @@
       "related": [
         "heart",
         "atria",
-        "ventricles"
+        "ventricles",
+        "left-atrium",
+        "right-atrium",
+        "left-ventricle",
+        "right-ventricle"
       ],
       "mechanism": "cell-cardiomyocyte",
       "aliases": "health_atlas_cell_cardiomyocyte_aliases",
@@ -4974,6 +5151,138 @@
     }
   ],
   "mechanisms": [
+    {
+      "id": "heart-valves",
+      "kind": "organ",
+      "title": "health_atlas_valves_cycle",
+      "stages": [
+        "health_atlas_valves_stage_0",
+        "health_atlas_valves_stage_1",
+        "health_atlas_valves_stage_2",
+        "health_atlas_valves_stage_3"
+      ],
+      "chapter": "19-3-cardiac-cycle"
+    },
+    {
+      "id": "aorta",
+      "kind": "organ",
+      "title": "health_atlas_aorta_process",
+      "stages": [
+        "health_atlas_aorta_stage_0",
+        "health_atlas_aorta_stage_1",
+        "health_atlas_aorta_stage_2",
+        "health_atlas_aorta_stage_3"
+      ],
+      "chapter": "19-3-cardiac-cycle"
+    },
+    {
+      "id": "pulmonary-trunk",
+      "kind": "organ",
+      "title": "health_atlas_pulmonary_trunk_process",
+      "stages": [
+        "health_atlas_pulmonary_trunk_stage_0",
+        "health_atlas_pulmonary_trunk_stage_1",
+        "health_atlas_pulmonary_trunk_stage_2",
+        "health_atlas_pulmonary_trunk_stage_3"
+      ],
+      "chapter": "19-3-cardiac-cycle"
+    },
+    {
+      "id": "right-atrium",
+      "kind": "organ",
+      "title": "health_atlas_right_atrium_process",
+      "stages": [
+        "health_atlas_right_atrium_stage_0",
+        "health_atlas_right_atrium_stage_1",
+        "health_atlas_right_atrium_stage_2",
+        "health_atlas_right_atrium_stage_3"
+      ],
+      "chapter": "19-3-cardiac-cycle"
+    },
+    {
+      "id": "left-atrium",
+      "kind": "organ",
+      "title": "health_atlas_left_atrium_process",
+      "stages": [
+        "health_atlas_left_atrium_stage_0",
+        "health_atlas_left_atrium_stage_1",
+        "health_atlas_left_atrium_stage_2",
+        "health_atlas_left_atrium_stage_3"
+      ],
+      "chapter": "19-3-cardiac-cycle"
+    },
+    {
+      "id": "right-ventricle",
+      "kind": "organ",
+      "title": "health_atlas_right_ventricle_process",
+      "stages": [
+        "health_atlas_right_ventricle_stage_0",
+        "health_atlas_right_ventricle_stage_1",
+        "health_atlas_right_ventricle_stage_2",
+        "health_atlas_right_ventricle_stage_3"
+      ],
+      "chapter": "19-3-cardiac-cycle"
+    },
+    {
+      "id": "left-ventricle",
+      "kind": "organ",
+      "title": "health_atlas_left_ventricle_process",
+      "stages": [
+        "health_atlas_left_ventricle_stage_0",
+        "health_atlas_left_ventricle_stage_1",
+        "health_atlas_left_ventricle_stage_2",
+        "health_atlas_left_ventricle_stage_3"
+      ],
+      "chapter": "19-3-cardiac-cycle"
+    },
+    {
+      "id": "tricuspid-valve",
+      "kind": "organ",
+      "title": "health_atlas_tricuspid_valve_process",
+      "stages": [
+        "health_atlas_tricuspid_valve_stage_0",
+        "health_atlas_tricuspid_valve_stage_1",
+        "health_atlas_tricuspid_valve_stage_2",
+        "health_atlas_tricuspid_valve_stage_3"
+      ],
+      "chapter": "19-3-cardiac-cycle"
+    },
+    {
+      "id": "mitral-valve",
+      "kind": "organ",
+      "title": "health_atlas_mitral_valve_process",
+      "stages": [
+        "health_atlas_mitral_valve_stage_0",
+        "health_atlas_mitral_valve_stage_1",
+        "health_atlas_mitral_valve_stage_2",
+        "health_atlas_mitral_valve_stage_3"
+      ],
+      "chapter": "19-3-cardiac-cycle"
+    },
+    {
+      "id": "pulmonary-valve",
+      "kind": "organ",
+      "title": "health_atlas_pulmonary_valve_process",
+      "stages": [
+        "health_atlas_pulmonary_valve_stage_0",
+        "health_atlas_pulmonary_valve_stage_1",
+        "health_atlas_pulmonary_valve_stage_2",
+        "health_atlas_pulmonary_valve_stage_3"
+      ],
+      "chapter": "19-3-cardiac-cycle"
+    },
+    {
+      "id": "aortic-valve",
+      "kind": "organ",
+      "title": "health_atlas_aortic_valve_process",
+      "stages": [
+        "health_atlas_aortic_valve_stage_0",
+        "health_atlas_aortic_valve_stage_1",
+        "health_atlas_aortic_valve_stage_2",
+        "health_atlas_aortic_valve_stage_3"
+      ],
+      "chapter": "19-3-cardiac-cycle"
+    },
     {
       "id": "tissue-epidermal",
       "kind": "tissue",
