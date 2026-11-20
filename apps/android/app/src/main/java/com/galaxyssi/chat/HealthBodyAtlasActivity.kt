@@ -266,6 +266,10 @@ class HealthBodyAtlasActivity : Activity() {
                 ui.add(content, ui.row(getString(R.string.health_atlas_research)) { openResearch() }.apply { tag = "atlas-open-research" }, 12)
             }
         }
+        if (tab == HealthAtlasTab.STRUCTURE || tab == HealthAtlasTab.FUNCTION) HealthAtlasPlates.forId(item.id)?.source?.let { url ->
+            ui.add(content, ui.row(getString(R.string.health_atlas_plate_source)) { source(url) }
+                .apply { tag = "atlas-source-structure" }, 18)
+        }
         if (tab != HealthAtlasTab.VALUES) ui.add(content, ui.row(getString(R.string.health_atlas_evidence), "OpenStax · Anatomy and Physiology 2e") {
             source(data.mechanism(item).source)
         }, 18)

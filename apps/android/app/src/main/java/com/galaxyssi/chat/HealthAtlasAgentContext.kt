@@ -13,6 +13,11 @@ internal object HealthAtlasAgentContext {
         }
         val mechanism = atlas.mechanism(item)
         append(context.getString(R.string.health_atlas_ask_context, item.name, item.description, mechanism.title, mechanism.source))
+        HealthAtlasPlates.forId(item.id)?.let { plate ->
+            appendLine(); appendLine(plate.caption(context, atlas, item))
+            appendLine(context.getString(R.string.health_atlas_art_note))
+            plate.source?.let { appendLine(it) }
+        }
         val physiology = topic == null || topic == HealthAtlasResearchTopic.PHYSIOLOGY
         if (physiology && simulation != null) {
             appendLine(); appendLine(context.getString(R.string.health_atlas_teaching_note))

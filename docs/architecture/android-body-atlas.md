@@ -16,14 +16,14 @@ selection. Agent analysis of measurements uses the existing disclosure flow.
 Knowledge-only Agent requests use a single-use in-process handoff token and a
 separate conversation, with no attached health observations.
 
-Cardiac output, ventilation, renal solute balance and potassium equilibrium
-potential are fixed-input teaching equations. Other sequences are qualitative,
+Cardiac output, ventilation, renal solute balance, potassium equilibrium
+potential and oxygen binding are fixed-input teaching equations. Other sequences are qualitative,
 not validated quantitative patient models.
 No organ score, biological age, drug dose or treatment outcome is inferred.
 
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides three independently bounded teaching models:
+`HealthAtlasPhysiology` provides four independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -37,8 +37,10 @@ No organ score, biological age, drug dose or treatment outcome is inferred.
   Kelvin temperature (310.15 K), charge +1 and an explicit volts-to-millivolts
   conversion. It assumes a potassium-only membrane and concentrations as
   activities. It is not a measured resting potential or an action potential.
+- Oxygen binding separates hemoglobin saturation from bound and dissolved oxygen
+  content. Its assumptions and references are detailed below.
 
-Seventeen canonical entries expose these associated processes. Tubular cells
+Nineteen canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -101,8 +103,8 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the anatomical illustrations and selectable structures beyond the
-  whole-body, heart, brain, lungs, liver, kidney and beta-cell views. Each image must depict its named entity;
+- Extend the twelve anatomical illustrations and selectable structures to the
+  remaining systems, organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by
   a documented scientific model. A shared process is explicitly associated
@@ -187,7 +189,44 @@ Specialized artwork for the rest of the catalogue and quantitative research
 models are separate work. An unrelated illustration must not be relabeled as a
 different organ or cell.
 
-## Cell-specific processes
+## System and Accessory-organ Plates
+
+Three additional generated transparent PNGs show urinary organs, the digestive
+tract from esophagus to rectum, and the pancreas with its adjacent duodenum.
+They follow the existing bitmap style and native, localized clickable labels.
+The urinary overview links to the separate kidney section; selecting ureters
+from that section opens their larger urinary context. Back and saved selection
+retain each preceding anatomical view. Shared views explicitly name their owner.
+
+The urinary outlet is a simplified schematic, not a male/female urethral length
+comparison. The digestive plate omits accessory glands. The pancreas plate
+exposes the main duct, not microscopic islets or acinar cells. Those microscopic
+entries must not inherit this macroscopic artwork. Native source rows identify
+anatomy references, and public Agent previews retain the selected plate context
+and schematic-artwork disclaimer without attaching personal measurements.
+
+Built-in image-generation prompt set:
+- Anterior urinary organs only: two inward-facing kidneys, two independent
+  ureters, one bladder and a short schematic urethral outlet; no torso, adrenal
+  glands, text, leader lines or background.
+- Anterior esophagus-to-rectum tract: stomach on the viewer's right, central
+  small bowel, an outer haustrated colon, appendix on the viewer's lower left;
+  accessory organs omitted; no labels or arrows.
+- Pancreas and C-shaped duodenum: head on the viewer's left, tapered tail to the
+  right, main duct visible within a cutaway and draining toward the duodenum;
+  no bile duct, vessels or enlarged microscopic islets; no labels or arrows.
+
+Final project assets are `res/drawable-nodpi/health_atlas_urinary.png`,
+`health_atlas_gut.png` and `health_atlas_pancreas.png` in the Android app.
+These generated plates are teaching schematics, not medically validated meshes.
+Pixel and marker tests verify rendering and navigation, not clinical accuracy.
+
+References:
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/25-2-gross-anatomy-of-urine-transport
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/23-1-overview-of-the-digestive-system
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder
+
+## Cell-specific Processes
 
 The thirty core cells now have their own four-stage teaching processes and
 chapter references in the catalogue, rather than reusing a system-level cycle.
