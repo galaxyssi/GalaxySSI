@@ -127,7 +127,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the thirteen anatomical illustrations and selectable structures to the
+- Extend the twenty anatomical illustrations and selectable structures to the
   remaining systems, organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by
@@ -348,7 +348,7 @@ The lung links to an alveolar cutaway with canonical respiratory-membrane and
 pulmonary-capillary entries. These link to their relevant existing cell entries;
 cell pages do not inherit the organ plate as an individual-cell image. The
 caption identifies the shared schematic. Its thickness and colors are not
-histological measurements. Fourteen bitmap plates are currently included.
+histological measurements. This increment brought the bitmap catalogue to fourteen plates.
 
 A native gas-exchange diagram shows both diffusion directions simultaneously.
 Fixed textbook partial-pressure examples use alveolar/incoming-blood values of
@@ -380,3 +380,59 @@ References:
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/22-4-gas-exchange
 - https://pubmed.ncbi.nlm.nih.gov/29874100/
+
+## System Overview Plates
+
+Six additional system-owned plates cover sensory organs, respiratory structures,
+accessory digestive organs, selected endocrine glands, selected immune structures
+and a skin cutaway. Together with the earlier gut and urinary plates, eight of
+the fourteen navigation categories now own an overview. Twenty bitmap plates
+are included in total. The cardiovascular category still explicitly shares the
+heart plate; the remaining categories are not claimed to have completed art.
+
+`HealthAtlasSystemPlates` registers only depicted structures. Dedicated organ
+plates resolve first, so selecting lungs, liver or pancreas still opens its
+existing detailed view. Shared images name their system and view scope. Composite
+specimens are separate enlarged views, not a body-location map or equal-scale
+anatomical section. The skin plate does not imply measured layer thickness.
+Undepicted microscopic structures and cells do not inherit these pictures.
+
+The existing native labels, zoom, fullscreen, layer selector, back stack,
+per-entry simulation state, source links and scoped Agent preview are reused.
+Label leaders route around other target markers using a small visibility graph
+computed during layout, not during animation. Unobstructed leaders remain
+straight. Unresolvable overlapping endpoints retain markers without a misleading
+connector. Geometry tests cover clustered targets, reversed routes and scaling.
+This addition does not change personal measurement access, create synthetic
+patient records, introduce new numerical models or claim clinical validation.
+
+### Asset Prompt Set
+
+All six images were generated with the built-in image tool, not an external API.
+Their final paths are under `apps/android/app/src/main/res/drawable-nodpi/`.
+Common specification: original scientific educational 3D teaching illustration,
+soft shading, transparent alpha, uncropped specimens, no baked-in text, arrows,
+numbers or watermark. Native controls provide localized labels and navigation.
+
+- `health_atlas_system_sensory.png`: separate eye cutaway, ear section, sagittal
+  nasal cavity and dorsal tongue in a four-specimen composition.
+- `health_atlas_system_respiratory.png`: sagittal upper airway and anterior lungs
+  with diaphragm, explicitly a composite projection. A cleanup edit increased
+  the empty margins while retaining the specimen and airway arrangement.
+- `health_atlas_system_digestive.png`: salivary glands in a side-head view above
+  a separate liver, gallbladder, bile duct, pancreas and duodenum arrangement.
+- `health_atlas_system_endocrine.png`: separate enlarged pituitary/brain section,
+  thyroid, adrenals above kidneys and pancreas; no implied anatomical scale.
+- `health_atlas_system_immune.png`: separate thymus, spleen, lymph-node section
+  and bone-marrow cutaway, with no implied physical connection between them.
+- `health_atlas_system_skin.png`: angled block with epidermis, dermis, fat,
+  follicle, sebaceous gland, sweat coil and surface duct. The final regenerated
+  specimen preserves these structures; earlier discarded variants are not shipped.
+
+References are the plate-specific OpenStax chapters linked in the registry.
+The salivary-gland view additionally follows chapter 23.3:
+https://openstax.org/books/anatomy-and-physiology-2e/pages/23-3-the-mouth-pharynx-and-esophagus
+
+These generated schematics require further expert anatomical review before any
+clinical or quantitative use. Whole-body nervous and vascular generations were
+rejected by the image service and are not included or reported as completed.

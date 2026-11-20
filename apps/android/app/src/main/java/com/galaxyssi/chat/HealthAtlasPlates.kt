@@ -67,7 +67,8 @@ internal object HealthAtlasPlates {
         R.string.health_atlas_view_alveolus, listOf(
             HealthAtlasMarker("alveoli", .48f, .48f), HealthAtlasMarker("respiratory-membrane", .66f, .67f),
             HealthAtlasMarker("pulmonary-capillaries", .74f, .69f)), HealthAtlasGasExchange.SOURCE)
-    val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron, alveolus)
+    val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron, alveolus) +
+        HealthAtlasSystemPlates.all
 
     fun forId(id: String?): HealthAtlasPlate? = when (id) {
         null -> whole
@@ -85,6 +86,6 @@ internal object HealthAtlasPlates {
         "cell-pancreatic-beta-cell" -> beta
         "cell-erythrocyte" -> erythrocyte
         "cell-neuron" -> neuron
-        else -> null
+        else -> HealthAtlasSystemPlates.forId(id)
     }
 }

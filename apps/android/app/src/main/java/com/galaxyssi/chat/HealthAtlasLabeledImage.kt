@@ -20,6 +20,8 @@ internal class HealthAtlasLabeledImage(activity: Activity, plate: HealthAtlasPla
         tag = "atlas-art-image"
     }
     private val imageRect = RectF()
+    var leaderPaths: Map<String, List<HealthAtlasLeaderPoint>> = emptyMap()
+        private set
     private val labels = markers.map { marker ->
         ui.text(data[marker.id]!!.name, 13f, bold = marker.id == currentId).apply {
             gravity = Gravity.CENTER_VERTICAL; minimumHeight = ui.dp(48)
@@ -34,12 +36,14 @@ internal class HealthAtlasLabeledImage(activity: Activity, plate: HealthAtlasPla
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         override fun onDraw(canvas: Canvas) {
             paint.strokeWidth = resources.displayMetrics.density
+            paint.color = activity.getColor(R.color.text_primary)
+            leaderPaths.values.forEach { path -> path.zipWithNext().forEach { (start, end) ->
+                canvas.drawLine(start.x, start.y, end.x, end.y, paint)
+            } }
             markers.forEachIndexed { index, marker ->
                 val x = imageRect.left + imageRect.width() * marker.x
                 val y = imageRect.top + imageRect.height() * marker.y
                 val label = labels[index]
-                paint.color = activity.getColor(R.color.text_primary)
-                canvas.drawLine(x, y, label.left.toFloat(), label.top + label.height / 2f, paint)
                 paint.color = activity.getColor(R.color.health_overview_green)
                 canvas.drawCircle(x, y, ui.dp(if (label.isSelected) 5 else 3).toFloat(), paint)
             }
@@ -87,6 +91,11 @@ internal class HealthAtlasLabeledImage(activity: Activity, plate: HealthAtlasPla
             bottom = tops[i] - gap
         }
         labels.forEachIndexed { i, label -> label.layout(image.measuredWidth, tops[i], width, tops[i] + label.measuredHeight) }
+        val points = markers.map { HealthAtlasLeaderPoint(imageRect.left + imageRect.width() * it.x,
+            imageRect.top + imageRect.height() * it.y) }
+        leaderPaths = markers.mapIndexed { i, marker -> marker.id to HealthAtlasLeaderRoutes.route(points[i],
+            HealthAtlasLeaderPoint(labels[i].left.toFloat(), labels[i].top + labels[i].height / 2f),
+            points.filterIndexed { index, _ -> index != i }, ui.dp(8).toFloat()) }.toMap()
         guides.invalidate()
     }
 }
