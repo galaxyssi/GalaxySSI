@@ -175,6 +175,28 @@ class HealthAtlasIllustrationStyleDeviceTest {
         }
     }
 
+    @Test fun paintedTissueAndLymphVectorsRenderTheirAnatomyOnTransparentBackgrounds() {
+        val plates = HealthAtlasTissuePlates.all + HealthAtlasLymphOrgans.all
+        assertEquals(23, plates.map { it.drawable }.distinct().size)
+        val width = 360
+        val height = 240
+        val pixels = IntArray(width * height)
+        for (plate in plates) {
+            val art = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            try {
+                val drawable = requireNotNull(context.getDrawable(plate.drawable))
+                drawable.setBounds(0, 0, width, height)
+                drawable.draw(Canvas(art))
+                art.getPixels(pixels, 0, width, 0, 0, width, height)
+                for (index in listOf(0, width - 1, pixels.size - width, pixels.lastIndex))
+                    assertEquals("Opaque corner in ${plate.owner}", 0, Color.alpha(pixels[index]))
+                val opaque = pixels.filter { Color.alpha(it) == 255 }
+                assertTrue("Missing illustration in ${plate.owner}", opaque.size > pixels.size / 100)
+                assertTrue("Missing shaded surfaces in ${plate.owner}", opaque.distinct().size > 30)
+            } finally { art.recycle() }
+        }
+    }
+
     @Test fun frontIllustrationKeepsBrainNavigationLive() = native { scenario ->
         capture("body", scenario.localized(R.string.health_body_title))
         scenario.onActivity { it.view("atlas-hotspot-brain").performClick() }
