@@ -6,9 +6,16 @@ internal data class HealthAtlasMarker(val id: String, val x: Float, val y: Float
     init { require(x in 0f..1f && y in 0f..1f) }
 }
 
+internal data class HealthAtlasFeature(val marker: HealthAtlasMarker, val title: Int, val explanation: Int)
+
 internal data class HealthAtlasPlate(val drawable: Int, val owner: String?, val viewLabel: Int,
     val markers: List<HealthAtlasMarker>, val source: String? = null, val viewKey: String? = null,
-    val selectorLabel: Int? = null) {
+    val selectorLabel: Int? = null, val features: List<HealthAtlasFeature> = emptyList()) {
+    init {
+        val ids = markers.map { it.id } + features.map { it.marker.id }
+        require(ids.distinct().size == ids.size)
+    }
+    val hasLabels get() = markers.isNotEmpty() || features.isNotEmpty()
     fun caption(context: Context, data: HealthBodyAtlas, selected: HealthAtlasItem?): String {
         val view = context.getString(viewLabel)
         return if (selected != null && selected.id != owner)
@@ -79,7 +86,8 @@ internal object HealthAtlasPlates {
             HealthAtlasMarker("inner-ear", .686f, .509f), HealthAtlasMarker("cochlea", .79f, .668f),
             HealthAtlasMarker("vestibular-apparatus", .797f, .19f)), HealthAtlasMiddleEar.ANATOMY_SOURCE)
     val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron, alveolus, eye, ear) +
-        HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all + HealthAtlasTissuePlates.all + HealthAtlasHeartSection.section
+        HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all + HealthAtlasTissuePlates.all +
+        HealthAtlasHeartSection.section + HealthAtlasImmunePlates.all
 
     fun viewsForId(id: String?): List<HealthAtlasPlate> = if (id == "heart") listOf(heart, HealthAtlasHeartSection.section)
         else HealthAtlasMusculoskeletalPlates.viewsForId(id).ifEmpty { listOfNotNull(defaultForId(id)) }
@@ -106,6 +114,7 @@ internal object HealthAtlasPlates {
         "cell-pancreatic-beta-cell" -> beta
         "cell-erythrocyte" -> erythrocyte
         "cell-neuron" -> neuron
-        else -> HealthAtlasHeartSection.forId(id) ?: HealthAtlasTissuePlates.forId(id) ?: HealthAtlasSystemPlates.forId(id)
+        else -> HealthAtlasHeartSection.forId(id) ?: HealthAtlasTissuePlates.forId(id) ?:
+            HealthAtlasImmunePlates.forId(id) ?: HealthAtlasSystemPlates.forId(id)
     }
 }

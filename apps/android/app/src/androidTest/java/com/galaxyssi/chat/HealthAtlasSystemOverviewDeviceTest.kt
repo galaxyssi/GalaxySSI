@@ -117,7 +117,7 @@ class HealthAtlasSystemOverviewDeviceTest {
         val atlas = HealthBodyAtlas.load(context)
         for (id in listOf("brain", "heart", "lungs", "pancreas", "liver", "kidneys", "alveoli"))
             assertEquals(id, HealthAtlasPlates.forId(id)!!.owner)
-        for (id in listOf("cell-keratinocyte", "cell-melanocyte", "cell-thyroid-follicular-cell", "cell-neutrophil"))
+        for (id in listOf("cell-keratinocyte", "cell-melanocyte", "cell-thyroid-follicular-cell"))
             assertNull(HealthAtlasPlates.forId(id))
         for (id in listOf("parathyroid-glands", "pancreatic-islets", "nails"))
             assertNull(HealthAtlasPlates.forId(id))

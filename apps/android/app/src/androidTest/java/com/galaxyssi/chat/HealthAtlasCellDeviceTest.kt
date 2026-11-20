@@ -114,7 +114,7 @@ class HealthAtlasCellDeviceTest {
             } finally { bitmap.recycle() }
         }
         assertNull(HealthAtlasPlates.forId("cell-astrocyte"))
-        assertNull(HealthAtlasPlates.forId("cell-neutrophil"))
+        assertEquals("cell-neutrophil", HealthAtlasPlates.forId("cell-neutrophil")!!.owner)
     }
     @Test fun everyCellStageIsFocusableAndFitsLargeText() = native { scenario ->
         scenario.onActivity { activity ->
@@ -148,7 +148,7 @@ class HealthAtlasCellDeviceTest {
                 it.view("atlas-tab-3").performClick()
                 (it.view("atlas-search") as EditText).setText(id)
                 it.view("atlas-entry-$id").performClick()
-                if (id != "cell-neutrophil") assertNotNull(it.view("atlas-art-image"))
+                assertNotNull(it.view("atlas-art-image"))
             }
             capture("$id-structure")
             scenario.onActivity {

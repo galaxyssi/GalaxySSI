@@ -10,10 +10,12 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 
-internal class HealthAtlasLabeledImage(activity: Activity, plate: HealthAtlasPlate, description: String,
+internal class HealthAtlasLabeledImage(private val activity: Activity, plate: HealthAtlasPlate, description: String,
     data: HealthBodyAtlas, currentId: String?, selected: (HealthAtlasItem) -> Unit) : FrameLayout(activity) {
     private val ui = HealthCenterViews(activity)
-    private val markers = plate.markers.sortedBy { it.y }
+    private val features = plate.features.associateBy { it.marker.id }
+    private val markers = (plate.markers + plate.features.map { it.marker }).sortedBy { it.y }
+    private var featureDialog: android.app.AlertDialog? = null
     private val controlsInset = if (plate.owner == null) ui.dp(144) else 0
     val image = ImageView(activity).apply {
         setImageResource(plate.drawable); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = description
@@ -23,12 +25,18 @@ internal class HealthAtlasLabeledImage(activity: Activity, plate: HealthAtlasPla
     var leaderPaths: Map<String, List<HealthAtlasLeaderPoint>> = emptyMap()
         private set
     private val labels = markers.map { marker ->
-        ui.text(data[marker.id]!!.name, 13f, bold = marker.id == currentId).apply {
+        val feature = features[marker.id]
+        val item = if (feature == null) data[marker.id]!! else null
+        val current = item != null && item.id == currentId
+        ui.text(item?.name ?: activity.getString(requireNotNull(feature).title), 13f, bold = current).apply {
             gravity = Gravity.CENTER_VERTICAL; minimumHeight = ui.dp(48)
-            isSelected = marker.id == currentId
+            isSelected = current
             if (isSelected) setTextColor(activity.getColor(R.color.health_overview_green))
-            else { isFocusable = true; setOnClickListener { selected(data[marker.id]!!) } }
-            tag = "atlas-hotspot-${marker.id}"
+            else {
+                isFocusable = true
+                setOnClickListener { if (feature != null) showFeature(feature) else selected(requireNotNull(item)) }
+            }
+            tag = if (feature == null) "atlas-hotspot-${marker.id}" else "atlas-feature-${marker.id}"
             setPadding(ui.dp(6), ui.dp(4), 0, ui.dp(4))
         }
     }
@@ -50,6 +58,15 @@ internal class HealthAtlasLabeledImage(activity: Activity, plate: HealthAtlasPla
         }
     }
     init { addView(image); addView(guides); labels.forEach(::addView) }
+    fun showFeature(feature: HealthAtlasFeature) {
+        featureDialog?.dismiss()
+        featureDialog = android.app.AlertDialog.Builder(activity).setTitle(feature.title).setMessage(feature.explanation)
+            .setPositiveButton(android.R.string.ok, null).show()
+    }
+    override fun onDetachedFromWindow() {
+        featureDialog?.dismiss(); featureDialog = null
+        super.onDetachedFromWindow()
+    }
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
         var labelWidth = (w * .28f).toInt()

@@ -94,7 +94,7 @@ internal class HealthAtlasArtwork(
             val resource = plate.drawable
             val caption = plate.caption(activity, data, item)
             val description = (item?.name ?: activity.getString(R.string.health_atlas_whole)) + " · " + caption
-            val labeled = if (plate.markers.isNotEmpty()) HealthAtlasLabeledImage(activity, plate,
+            val labeled = if (plate.hasLabels) HealthAtlasLabeledImage(activity, plate,
                 description, data, item?.id, selected) else null
             val art = object : FrameLayout(activity) {
                 override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -117,8 +117,12 @@ internal class HealthAtlasArtwork(
                 addView(ui.icon(R.drawable.ic_input_menu_layers, R.string.health_atlas_layers) {
                     val choices = if (item == null) data.systems else (data.children(item) + data.cells(item) +
                         plate.markers.mapNotNull { data[it.id] }).filter { it.id != item.id }.distinctBy { it.id }
-                    if (choices.isNotEmpty()) layers = android.app.AlertDialog.Builder(activity).setTitle(R.string.health_atlas_layers)
-                        .setItems(choices.map { it.name }.toTypedArray()) { _, index -> selected(choices[index]) }
+                    val labels = choices.map { it.name } + plate.features.map { activity.getString(it.title) }
+                    if (labels.isNotEmpty()) layers = android.app.AlertDialog.Builder(activity).setTitle(R.string.health_atlas_layers)
+                        .setItems(labels.toTypedArray()) { _, index ->
+                            if (index < choices.size) selected(choices[index])
+                            else labeled?.showFeature(plate.features[index - choices.size])
+                        }
                         .setNegativeButton(android.R.string.cancel, null).show()
                 }.apply { tag = "atlas-layers" })
                 addView(ui.icon(R.drawable.ic_reset_data, R.string.health_atlas_reset) {
