@@ -4273,7 +4273,7 @@
       "related": [
         "testes"
       ],
-      "mechanism": "male",
+      "mechanism": "cell-sertoli-cell",
       "aliases": "health_atlas_cell_sertoli_cell_aliases",
       "color": "",
       "icon": ""
@@ -4290,7 +4290,7 @@
       "related": [
         "testes"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-leydig-cell",
       "aliases": "health_atlas_cell_leydig_cell_aliases",
       "color": "",
       "icon": ""
@@ -4306,7 +4306,7 @@
       "related": [
         "testes"
       ],
-      "mechanism": "male",
+      "mechanism": "cell-spermatogonium",
       "aliases": "health_atlas_cell_spermatogonium_aliases",
       "color": "",
       "icon": ""
@@ -4322,7 +4322,7 @@
       "related": [
         "testes"
       ],
-      "mechanism": "male",
+      "mechanism": "cell-spermatocyte",
       "aliases": "health_atlas_cell_spermatocyte_aliases",
       "color": "",
       "icon": ""
@@ -4339,7 +4339,7 @@
       "related": [
         "ovaries"
       ],
-      "mechanism": "female",
+      "mechanism": "cell-granulosa-cell",
       "aliases": "health_atlas_cell_granulosa_cell_aliases",
       "color": "",
       "icon": ""
@@ -4356,7 +4356,7 @@
       "related": [
         "ovaries"
       ],
-      "mechanism": "female",
+      "mechanism": "cell-theca-cell",
       "aliases": "health_atlas_cell_theca_cell_aliases",
       "color": "",
       "icon": ""
@@ -4372,7 +4372,7 @@
       "related": [
         "uterine-tubes"
       ],
-      "mechanism": "female",
+      "mechanism": "cell-ciliated-oviduct-cell",
       "aliases": "health_atlas_cell_ciliated_oviduct_cell_aliases",
       "color": "",
       "icon": ""
@@ -4389,7 +4389,7 @@
         "uterus",
         "endometrium"
       ],
-      "mechanism": "transport",
+      "mechanism": "cell-endometrial-epithelial-cell",
       "aliases": "health_atlas_cell_endometrial_epithelial_cell_aliases",
       "color": "",
       "icon": ""
@@ -4405,7 +4405,7 @@
       "related": [
         "endometrium"
       ],
-      "mechanism": "female",
+      "mechanism": "cell-endometrial-stromal-cell",
       "aliases": "health_atlas_cell_endometrial_stromal_cell_aliases",
       "color": "",
       "icon": ""
@@ -4421,7 +4421,7 @@
       "related": [
         "mammary-glands"
       ],
-      "mechanism": "transport",
+      "mechanism": "cell-mammary-luminal-cell",
       "aliases": "health_atlas_cell_mammary_luminal_cell_aliases",
       "color": "",
       "icon": ""
@@ -4441,7 +4441,7 @@
         "salivary-glands",
         "sweat-glands"
       ],
-      "mechanism": "muscle",
+      "mechanism": "cell-myoepithelial-cell",
       "aliases": "health_atlas_cell_myoepithelial_cell_aliases",
       "color": "",
       "icon": ""
@@ -4457,7 +4457,7 @@
       "related": [
         "placenta"
       ],
-      "mechanism": "female",
+      "mechanism": "cell-trophoblast",
       "aliases": "health_atlas_cell_trophoblast_aliases",
       "color": "",
       "icon": ""
@@ -4746,7 +4746,7 @@
         "health_atlas_mechanism_male_2",
         "health_atlas_mechanism_male_3"
       ],
-      "chapter": "27-1-anatomy-and-physiology-of-the-male-reproductive-system"
+      "chapter": "27-1-anatomy-and-physiology-of-the-testicular-reproductive-system"
     },
     {
       "id": "female",
@@ -4758,7 +4758,7 @@
         "health_atlas_mechanism_female_2",
         "health_atlas_mechanism_female_3"
       ],
-      "chapter": "27-2-anatomy-and-physiology-of-the-female-reproductive-system"
+      "chapter": "27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system"
     },
     {
       "id": "skin",
@@ -4854,7 +4854,7 @@
         "health_atlas_mechanism_sperm_2",
         "health_atlas_mechanism_sperm_3"
       ],
-      "chapter": "27-1-anatomy-and-physiology-of-the-male-reproductive-system"
+      "chapter": "27-1-anatomy-and-physiology-of-the-testicular-reproductive-system"
     },
     {
       "id": "secretory",
@@ -5384,6 +5384,151 @@
       ],
       "chapter": "22-1-organs-and-structures-of-the-respiratory-system",
       "reference": "https://pubmed.ncbi.nlm.nih.gov/29874100/"
+    },
+    {
+      "id": "cell-sertoli-cell",
+      "kind": "cell",
+      "title": "health_atlas_repro_sertoli_cell_title",
+      "stages": [
+        "health_atlas_repro_sertoli_cell_0",
+        "health_atlas_repro_sertoli_cell_1",
+        "health_atlas_repro_sertoli_cell_2",
+        "health_atlas_repro_sertoli_cell_3"
+      ],
+      "chapter": "27-1-anatomy-and-physiology-of-the-testicular-reproductive-system"
+    },
+    {
+      "id": "cell-leydig-cell",
+      "kind": "cell",
+      "title": "health_atlas_repro_leydig_cell_title",
+      "stages": [
+        "health_atlas_repro_leydig_cell_0",
+        "health_atlas_repro_leydig_cell_1",
+        "health_atlas_repro_leydig_cell_2",
+        "health_atlas_repro_leydig_cell_3"
+      ],
+      "chapter": "27-1-anatomy-and-physiology-of-the-testicular-reproductive-system"
+    },
+    {
+      "id": "cell-spermatogonium",
+      "kind": "cell",
+      "title": "health_atlas_repro_spermatogonium_title",
+      "stages": [
+        "health_atlas_repro_spermatogonium_0",
+        "health_atlas_repro_spermatogonium_1",
+        "health_atlas_repro_spermatogonium_2",
+        "health_atlas_repro_spermatogonium_3"
+      ],
+      "chapter": "27-1-anatomy-and-physiology-of-the-testicular-reproductive-system"
+    },
+    {
+      "id": "cell-spermatocyte",
+      "kind": "cell",
+      "title": "health_atlas_repro_spermatocyte_title",
+      "stages": [
+        "health_atlas_repro_spermatocyte_0",
+        "health_atlas_repro_spermatocyte_1",
+        "health_atlas_repro_spermatocyte_2",
+        "health_atlas_repro_spermatocyte_3"
+      ],
+      "chapter": "27-1-anatomy-and-physiology-of-the-testicular-reproductive-system"
+    },
+    {
+      "id": "cell-granulosa-cell",
+      "kind": "cell",
+      "title": "health_atlas_repro_granulosa_cell_title",
+      "stages": [
+        "health_atlas_repro_granulosa_cell_0",
+        "health_atlas_repro_granulosa_cell_1",
+        "health_atlas_repro_granulosa_cell_2",
+        "health_atlas_repro_granulosa_cell_3"
+      ],
+      "chapter": "27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system"
+    },
+    {
+      "id": "cell-theca-cell",
+      "kind": "cell",
+      "title": "health_atlas_repro_theca_cell_title",
+      "stages": [
+        "health_atlas_repro_theca_cell_0",
+        "health_atlas_repro_theca_cell_1",
+        "health_atlas_repro_theca_cell_2",
+        "health_atlas_repro_theca_cell_3"
+      ],
+      "chapter": "27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system"
+    },
+    {
+      "id": "cell-ciliated-oviduct-cell",
+      "kind": "cell",
+      "title": "health_atlas_repro_ciliated_oviduct_cell_title",
+      "stages": [
+        "health_atlas_repro_ciliated_oviduct_cell_0",
+        "health_atlas_repro_ciliated_oviduct_cell_1",
+        "health_atlas_repro_ciliated_oviduct_cell_2",
+        "health_atlas_repro_ciliated_oviduct_cell_3"
+      ],
+      "chapter": "27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system"
+    },
+    {
+      "id": "cell-endometrial-epithelial-cell",
+      "kind": "cell",
+      "title": "health_atlas_repro_endometrial_epithelial_cell_title",
+      "stages": [
+        "health_atlas_repro_endometrial_epithelial_cell_0",
+        "health_atlas_repro_endometrial_epithelial_cell_1",
+        "health_atlas_repro_endometrial_epithelial_cell_2",
+        "health_atlas_repro_endometrial_epithelial_cell_3"
+      ],
+      "chapter": "27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system"
+    },
+    {
+      "id": "cell-endometrial-stromal-cell",
+      "kind": "cell",
+      "title": "health_atlas_repro_endometrial_stromal_cell_title",
+      "stages": [
+        "health_atlas_repro_endometrial_stromal_cell_0",
+        "health_atlas_repro_endometrial_stromal_cell_1",
+        "health_atlas_repro_endometrial_stromal_cell_2",
+        "health_atlas_repro_endometrial_stromal_cell_3"
+      ],
+      "chapter": "27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/25141152/"
+    },
+    {
+      "id": "cell-mammary-luminal-cell",
+      "kind": "cell",
+      "title": "health_atlas_repro_mammary_luminal_cell_title",
+      "stages": [
+        "health_atlas_repro_mammary_luminal_cell_0",
+        "health_atlas_repro_mammary_luminal_cell_1",
+        "health_atlas_repro_mammary_luminal_cell_2",
+        "health_atlas_repro_mammary_luminal_cell_3"
+      ],
+      "chapter": "28-6-lactation"
+    },
+    {
+      "id": "cell-myoepithelial-cell",
+      "kind": "cell",
+      "title": "health_atlas_repro_myoepithelial_cell_title",
+      "stages": [
+        "health_atlas_repro_myoepithelial_cell_0",
+        "health_atlas_repro_myoepithelial_cell_1",
+        "health_atlas_repro_myoepithelial_cell_2",
+        "health_atlas_repro_myoepithelial_cell_3"
+      ],
+      "chapter": "28-6-lactation"
+    },
+    {
+      "id": "cell-trophoblast",
+      "kind": "cell",
+      "title": "health_atlas_repro_trophoblast_title",
+      "stages": [
+        "health_atlas_repro_trophoblast_0",
+        "health_atlas_repro_trophoblast_1",
+        "health_atlas_repro_trophoblast_2",
+        "health_atlas_repro_trophoblast_3"
+      ],
+      "chapter": "28-2-embryonic-development"
     }
   ]
 }

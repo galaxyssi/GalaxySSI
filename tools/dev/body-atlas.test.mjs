@@ -179,3 +179,22 @@ test('resource identity collisions are rejected', () => {
   invalid.entries[1].name = invalid.entries[0].name;
   assert.throws(() => validate(invalid), /Shared resource key/);
 });
+
+test('reproductive cells have independent localized mechanisms and current references', () => {
+  const names = ["sertoli-cell","leydig-cell","spermatogonium","spermatocyte","granulosa-cell","theca-cell","ciliated-oviduct-cell","endometrial-epithelial-cell","endometrial-stromal-cell","mammary-luminal-cell","myoepithelial-cell","trophoblast"];
+  for (const name of names) {
+    const id = `cell-${name}`;
+    const entry = catalogue.entries.find(item => item.id === id);
+    assert.equal(entry.mechanism, id);
+    const model = catalogue.mechanisms.find(item => item.id === id);
+    assert.equal(model.kind, 'cell');
+    for (const locale of ['values', 'values-zh']) {
+      const resource = readFileSync(new URL(`../../apps/android/app/src/main/res/${locale}/health_atlas_reproductive_cells.xml`, import.meta.url), 'utf8');
+      for (const key of [model.title, ...model.stages]) assert.ok(resource.includes(`name="${key}"`));
+    }
+  }
+  assert.equal(catalogue.mechanisms.filter(item => item.kind === 'cell').length, 54);
+  assert.equal(catalogue.mechanisms.find(item => item.id === 'cell-endometrial-stromal-cell').reference,
+    'https://pubmed.ncbi.nlm.nih.gov/25141152/');
+  assert.ok(catalogue.mechanisms.every(item => !/of-the-(?:male|female)-reproductive-system/.test(item.chapter)));
+});

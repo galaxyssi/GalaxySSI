@@ -34,6 +34,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private val process = if (circulation == null && gasExchange == null) HealthAtlasProcessView(activity, mechanism) { index ->
         pause(); setPhase(index / 4f)
     } else null
+    private val germline = if (item.id in HealthAtlasGermline.supported) HealthAtlasGermlineView(activity, item.id) else null
     private val resetInputs = arrayListOf<() -> Unit>()
     init {
         fun addQuantitative() {
@@ -51,11 +52,14 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
             adjustViewBounds = true; maxHeight = ui.dp(280)
         })
         ui.add(body, ui.text(mechanism.title, 18f, bold = true), 14)
+        germline?.let { ui.add(body, it, 12) }
         val diagram = circulation ?: gasExchange
         body.addView(diagram ?: requireNotNull(process), LinearLayout.LayoutParams(-1, -2))
         if (circulation != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_circuit_scope), 12f, muted = true), 8)
         if (gasExchange != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_gas_scope), 12f, muted = true), 8)
-        stage = ui.text("", 15f, bold = true).apply { tag = "atlas-simulation-stage" }; ui.add(body, stage)
+        stage = ui.text("", 15f, bold = true).apply { tag = "atlas-simulation-stage" }
+        if (germline != null) body.addView(stage, body.indexOfChild(germline), LinearLayout.LayoutParams(-1, -2))
+        else ui.add(body, stage)
         val controls = ui.line().apply {
             gravity = Gravity.CENTER
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_body_previous_step) { pause(); setPhase((values.stage - 1).coerceAtLeast(0) / 4f) })
@@ -66,7 +70,8 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 pause(); values = HealthAtlasSimulation.initial(item.id); resetInputs.forEach { it() }; setPhase(0f); updateOutput(); quantitative?.reset()
             }.apply { tag = "atlas-simulation-reset" })
         }
-        if (diagram != null) body.addView(controls, body.indexOfChild(diagram),
+        val controlsAnchor = diagram ?: germline
+        if (controlsAnchor != null) body.addView(controls, body.indexOfChild(controlsAnchor),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
         else ui.add(body, controls, 8)
         progress = SeekBar(activity).apply {
@@ -88,16 +93,24 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 values.second, "mL", "second") { values = values.copy(second = it); updateOutput() }
             ui.add(body, ui.text(activity.getString(R.string.health_atlas_cardiac_formula), 13f, muted = true), 12)
             updateOutput()
-        } else ui.add(body, ui.text(activity.getString(if (quantitative != null)
-            R.string.health_atlas_model_process_note else R.string.health_atlas_qualitative_note), 13f, muted = true), 14)
+        } else ui.add(body, ui.text(activity.getString(when {
+            germline != null -> R.string.health_atlas_germline_timing
+            quantitative != null -> R.string.health_atlas_model_process_note
+            else -> R.string.health_atlas_qualitative_note
+        }), 13f, muted = true), 14)
         parameter(R.string.health_atlas_speed, 1..4, (values.speed * 2).toInt(), "×0.5", "speed") { pause(); values = values.copy(speed = it / 2f) }
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_teaching_note), 12f, muted = true), 14)
+        if (germline != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_germline_scope), 12f, muted = true)
+            .apply { tag = "atlas-germline-scope" }, 12)
         if (circulation != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_circuit_reference)) {
             source(HealthAtlasCirculation.SOURCE)
         }.apply { tag = "atlas-source-circulation" }, 12)
         if (gasExchange != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_gas_reference)) {
             source(HealthAtlasGasExchange.SOURCE)
         }.apply { tag = "atlas-source-gas" }, 12)
+        if (germline != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_germline_source)) {
+            source(HealthAtlasGermline.SOURCE)
+        }.apply { tag = "atlas-source-germline" }, 12)
         setPhase(values.phase)
     }
     private fun parameter(label: Int, range: IntRange, initial: Int, unit: String, key: String, changed: (Int) -> Unit) {
@@ -127,6 +140,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private fun setPhase(value: Float) {
         values = values.copy(phase = value.coerceIn(0f, 1f))
         circulation?.phase = values.phase; gasExchange?.phase = values.phase; process?.phase = values.phase
+        germline?.stage = values.stage
         stage.text = activity.getString(R.string.health_atlas_stage, values.stage + 1, mechanism.stages.size, mechanism.stages[values.stage])
         if (::progress.isInitialized) progress.progress = (values.phase * 1000).toInt()
     }

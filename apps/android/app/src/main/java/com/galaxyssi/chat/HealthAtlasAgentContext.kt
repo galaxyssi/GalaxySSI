@@ -34,6 +34,7 @@ internal object HealthAtlasAgentContext {
             }
             appendLine(context.getString(R.string.health_atlas_stage, simulation.stage + 1,
                 mechanism.stages.size, mechanism.stages[simulation.stage]))
+            HealthAtlasGermlineText.context(context, item.id, simulation.stage)?.let { appendLine(it) }
             if (item.id in setOf("heart", "cardio")) {
                 appendLine(context.getString(R.string.health_atlas_heart_rate) + ": ${simulation.first} bpm")
                 appendLine(context.getString(R.string.health_atlas_stroke_volume) + ": ${simulation.second} mL")

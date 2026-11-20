@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_germline_title">染色体与 DNA 教学计数</string>
+    <string name="health_atlas_germline_counts">染色体：%1$d · DNA 分子：%2$d\n%3$s · %4$s</string>
+    <string name="health_atlas_germline_cell">所示谱系阶段中的一个细胞</string>
+    <string name="health_atlas_germline_paternal">只计父方基因组，不含卵母细胞基因组</string>
+    <string name="health_atlas_germline_maternal">只计母方基因组，不含精子与极体</string>
+    <string name="health_atlas_germline_combined">双亲基因组总计，合子首次 DNA 复制前</string>
+    <string name="health_atlas_germline_symbols">少量符号仅示意染色体已复制或未复制，不代表实际条数或核型。n 表示一套染色体，C 表示这一套未复制时的 DNA 量。</string>
+    <string name="health_atlas_germline_scope">典型人类阶段终点示例。DNA 数值指双链分子数，不累计全部子细胞。卵母细胞流程仅最后阶段合计双亲基因组，第二次减数分裂在受精激活后完成。不模拟分裂中的瞬时计数、重组或异常核型，不产生个人遗传检测结果或生育能力预测。</string>
+    <string name="health_atlas_germline_source">减数分裂与染色体参考</string>
+    <string name="health_atlas_germline_timing">计数随所示阶段切换，不连续插值。动画速度不代表真实生物过程时间或减数分裂停滞的时长。</string>
+</resources>
