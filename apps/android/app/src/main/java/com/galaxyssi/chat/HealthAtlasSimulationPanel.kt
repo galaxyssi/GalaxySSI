@@ -29,25 +29,32 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private lateinit var output: TextView
     private val circulation = if (HealthAtlasCirculation.supports(item.id)) HealthAtlasCirculationView(activity, mechanism,
         { index -> pause(); setPhase(index / 4f) }, { id -> atlas[id]?.let(select) }) else null
-    private val process = if (circulation == null) HealthAtlasProcessView(activity, mechanism) { index ->
+    private val gasExchange = if (HealthAtlasGasExchange.supports(item.id)) HealthAtlasGasExchangeView(activity, mechanism,
+        { index -> pause(); setPhase(index / 4f) }, { id -> atlas[id]?.let(select) }) else null
+    private val process = if (circulation == null && gasExchange == null) HealthAtlasProcessView(activity, mechanism) { index ->
         pause(); setPhase(index / 4f)
     } else null
     private val resetInputs = arrayListOf<() -> Unit>()
     init {
-        HealthAtlasPhysiologyKind.forItem(item.id)?.let { kind ->
-            val migrated = if (kind == HealthAtlasPhysiologyKind.VENTILATION && initial != null)
-                HealthAtlasPhysiology.restore(item.id, intArrayOf(initial.first, initial.second, 150)) else null
-            quantitative = HealthAtlasPhysiologyPanel(activity, body, kind, quantitativeInitial ?: migrated, source)
+        fun addQuantitative() {
+            HealthAtlasPhysiologyKind.forItem(item.id)?.let { kind ->
+                val migrated = if (kind == HealthAtlasPhysiologyKind.VENTILATION && initial != null)
+                    HealthAtlasPhysiology.restore(item.id, intArrayOf(initial.first, initial.second, 150)) else null
+                quantitative = HealthAtlasPhysiologyPanel(activity, body, kind, quantitativeInitial ?: migrated, source)
+            }
         }
+        if (gasExchange == null) addQuantitative()
         val art = HealthAtlasUi.art(item)
-        if (art != null && circulation == null) ui.add(body, ImageView(activity).apply {
+        if (art != null && circulation == null && gasExchange == null) ui.add(body, ImageView(activity).apply {
             setImageResource(art); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = item.name
             minimumHeight = ui.dp(260); setOnClickListener { zoom(art, item.name) }; tag = "atlas-simulation-art"
             adjustViewBounds = true; maxHeight = ui.dp(280)
         })
         ui.add(body, ui.text(mechanism.title, 18f, bold = true), 14)
-        body.addView(circulation ?: requireNotNull(process), LinearLayout.LayoutParams(-1, -2))
+        val diagram = circulation ?: gasExchange
+        body.addView(diagram ?: requireNotNull(process), LinearLayout.LayoutParams(-1, -2))
         if (circulation != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_circuit_scope), 12f, muted = true), 8)
+        if (gasExchange != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_gas_scope), 12f, muted = true), 8)
         stage = ui.text("", 15f, bold = true).apply { tag = "atlas-simulation-stage" }; ui.add(body, stage)
         val controls = ui.line().apply {
             gravity = Gravity.CENTER
@@ -59,7 +66,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 pause(); values = HealthAtlasSimulation.initial(item.id); resetInputs.forEach { it() }; setPhase(0f); updateOutput(); quantitative?.reset()
             }.apply { tag = "atlas-simulation-reset" })
         }
-        if (circulation != null) body.addView(controls, body.indexOfChild(circulation),
+        if (diagram != null) body.addView(controls, body.indexOfChild(diagram),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
         else ui.add(body, controls, 8)
         progress = SeekBar(activity).apply {
@@ -70,6 +77,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 override fun onProgressChanged(seek: SeekBar?, value: Int, user: Boolean) { if (user) setPhase(value / 1000f) }
             })
         }; ui.add(body, progress)
+        if (gasExchange != null) addQuantitative()
         if (cardiac) {
             output = ui.text("", 28f, bold = true).apply { tag = "atlas-simulation-output" }
             ui.add(body, ui.text(activity.getString(R.string.health_atlas_cardiac_output), 14f, muted = true), 16)
@@ -87,6 +95,9 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         if (circulation != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_circuit_reference)) {
             source(HealthAtlasCirculation.SOURCE)
         }.apply { tag = "atlas-source-circulation" }, 12)
+        if (gasExchange != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_gas_reference)) {
+            source(HealthAtlasGasExchange.SOURCE)
+        }.apply { tag = "atlas-source-gas" }, 12)
         setPhase(values.phase)
     }
     private fun parameter(label: Int, range: IntRange, initial: Int, unit: String, key: String, changed: (Int) -> Unit) {
@@ -115,7 +126,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     }
     private fun setPhase(value: Float) {
         values = values.copy(phase = value.coerceIn(0f, 1f))
-        circulation?.phase = values.phase; process?.phase = values.phase
+        circulation?.phase = values.phase; gasExchange?.phase = values.phase; process?.phase = values.phase
         stage.text = activity.getString(R.string.health_atlas_stage, values.stage + 1, mechanism.stages.size, mechanism.stages[values.stage])
         if (::progress.isInitialized) progress.progress = (values.phase * 1000).toInt()
     }

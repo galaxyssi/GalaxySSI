@@ -270,7 +270,7 @@ class HealthBodyAtlasActivity : Activity() {
             ui.add(content, ui.row(getString(R.string.health_atlas_plate_source)) { source(url) }
                 .apply { tag = "atlas-source-structure" }, 18)
         }
-        if (tab != HealthAtlasTab.VALUES) ui.add(content, ui.row(getString(R.string.health_atlas_evidence), "OpenStax · Anatomy and Physiology 2e") {
+        if (tab != HealthAtlasTab.VALUES) ui.add(content, ui.row(getString(R.string.health_atlas_evidence), mechanismReferenceLabel(data, item)) {
             source(data.mechanism(item).source)
         }, 18)
         if (HealthAtlasUi.art(item) != null && tab != HealthAtlasTab.VALUES)
@@ -291,11 +291,13 @@ class HealthBodyAtlasActivity : Activity() {
             ui.add(content, ui.text(item.name + " · " + item.systems.mapNotNull(data::get).joinToString(" · ") { it.name }, 14f, muted = true))
             simulationItem = item.id
             simulation = HealthAtlasSimulationPanel(this, content, data, item, simulationStates[item.id], physiologyStates[item.id], ::zoom, ::source, ::select)
-            ui.add(content, ui.row(getString(R.string.health_atlas_evidence), "OpenStax · Anatomy and Physiology 2e") {
+            ui.add(content, ui.row(getString(R.string.health_atlas_evidence), mechanismReferenceLabel(data, item)) {
                 source(data.mechanism(item).source)
             }.apply { tag = "atlas-source-physiology" }, 16)
         } else research = HealthAtlasResearchPanel(this, content, data, item, topic, eliminationStates[item.id], ::select, ::source)
     }
+    private fun mechanismReferenceLabel(data: HealthBodyAtlas, item: HealthAtlasItem) = getString(
+        if (data.mechanism(item).reference == null) R.string.health_atlas_reference_openstax else R.string.health_atlas_reference_pubmed)
     private fun source(url: String) {
         runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
             .onFailure { Toast.makeText(this, R.string.health_storage_error, Toast.LENGTH_SHORT).show() }

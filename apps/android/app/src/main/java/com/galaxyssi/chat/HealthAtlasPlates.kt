@@ -63,13 +63,18 @@ internal object HealthAtlasPlates {
             HealthAtlasMarker("proximal-tubule", .45f, .275f), HealthAtlasMarker("nephron-loop", .494f, .902f),
             HealthAtlasMarker("distal-tubule", .716f, .184f), HealthAtlasMarker("collecting-ducts", .853f, .644f)),
         "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-4-microscopic-anatomy-of-the-kidney")
-    val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron)
+    private val alveolus = HealthAtlasPlate(R.drawable.health_atlas_alveolus, "alveoli",
+        R.string.health_atlas_view_alveolus, listOf(
+            HealthAtlasMarker("alveoli", .48f, .48f), HealthAtlasMarker("respiratory-membrane", .66f, .67f),
+            HealthAtlasMarker("pulmonary-capillaries", .74f, .69f)), HealthAtlasGasExchange.SOURCE)
+    val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron, alveolus)
 
     fun forId(id: String?): HealthAtlasPlate? = when (id) {
         null -> whole
         "heart", "cardio", "atria", "ventricles", "coronary-vessels" -> heart
         "brain", "cerebrum", "cerebellum", "brainstem" -> brain
         "lungs", "trachea", "bronchi" -> lungs
+        "alveoli", "respiratory-membrane", "pulmonary-capillaries" -> alveolus
         "liver", "gallbladder" -> liver
         "kidneys", "renal-cortex", "renal-medulla", "renal-pelvis" -> kidney
         "urinary", "ureters", "bladder", "urethra" -> urinary

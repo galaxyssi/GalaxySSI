@@ -1,6 +1,6 @@
 # Android Body Atlas
 
-The public teaching catalogue contains 14 navigation categories, 165 canonical
+The public teaching catalogue contains 14 navigation categories, 167 canonical
 organ/structure entries, 105 cell types or subtypes, and one platelet-fragment
 entry. Shared structures have one stable identity and multiple category links.
 The taxonomy is a navigation aid, not an exhaustive ontology of all human cells.
@@ -259,8 +259,9 @@ muscle types, four skin/connective/metabolic examples, four bone/cartilage
 examples, endothelium, hepatocytes, beta cells, enterocytes and two gametes.
 The loader rejects a cell-specific mechanism assigned to a different entity.
 Seven additional renal/urothelial cell types have dedicated processes, bringing
-the total to 37. Other cell subtypes still use broader pathways until dedicated content is
-reviewed; this is not a claim of complete single-cell biology coverage.
+the total to 37; five respiratory-related cells extend that to 42. Other cell
+subtypes still use broader pathways until dedicated content is reviewed; this
+is not a claim of complete single-cell biology coverage.
 
 Each stage is a native focusable button. Selecting a stage pauses playback,
 updates the progress position and preserves the other simulation inputs.
@@ -340,3 +341,42 @@ References:
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/25-5-physiology-of-urine-formation
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/25-2-gross-anatomy-of-urine-transport
+
+## Alveolar Exploration
+
+The lung links to an alveolar cutaway with canonical respiratory-membrane and
+pulmonary-capillary entries. These link to their relevant existing cell entries;
+cell pages do not inherit the organ plate as an individual-cell image. The
+caption identifies the shared schematic. Its thickness and colors are not
+histological measurements. Fourteen bitmap plates are currently included.
+
+A native gas-exchange diagram shows both diffusion directions simultaneously.
+Fixed textbook partial-pressure examples use alveolar/incoming-blood values of
+104/40 mmHg for oxygen and 40/45 mmHg for carbon dioxide. The diagram is separate
+from the retained alveolar-ventilation equation: changing ventilation inputs
+does not invent a new gas pressure or predict personal oxygen saturation.
+Four selectable teaching focuses are not exclusive physiological time steps.
+The diagram comes before ventilation controls. Selection changes color rather
+than font metrics, keeping the measured stage rows stable during animation.
+Animation stops on backgrounding; state restores per entity and research topic.
+The public Agent preview includes directions, scope and reference without
+including personal records. It omits these simulation details for other topics.
+
+Five new cell mechanisms cover type I and II pneumocytes, ciliated airway cells,
+an airway-specific goblet-cell example, and a human club-cell research overview.
+The latter describes molecular function categories rather than claiming a
+validated temporal process or transferring mouse regeneration results to humans.
+The catalogue supports a strictly validated canonical PubMed reference override
+while preserving existing OpenStax chapter references.
+
+Built-in image-generation prompt for `res/drawable-nodpi/health_atlas_alveolus.png`:
+an original isolated human alveolar cutaway, empty air space, thin pale-pink wall,
+short duct above and a capillary network outside the wall containing red blood
+cells; blue-violet incoming vessel and red outgoing vessel, transparent alpha,
+realistic teaching-plate shading, uncropped margins, no labels, arrows, numbers,
+glow or decorative particles. This is generated schematic art, not medical imaging.
+
+References:
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/22-4-gas-exchange
+- https://pubmed.ncbi.nlm.nih.gov/29874100/
