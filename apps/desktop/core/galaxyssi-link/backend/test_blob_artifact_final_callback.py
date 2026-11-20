@@ -20,7 +20,7 @@ class BlobArtifactFinalCallbackTests(unittest.TestCase):
     enable = fixtures.BlobArtifactPeerTests.enable
 
     def callback(self, execution=None, policy_prompt="Return the generated file", request="Return the generated file",
-                 policy=None):
+                 policy=None, private_report=False):
         # Compile the unchanged production callback body; only its surrounding
         # provider loop is omitted, so no external model or real phone is used.
         tree = ast.parse(inspect.getsource(mqtt_bridge._start_remote_agent_task))
@@ -29,6 +29,7 @@ class BlobArtifactFinalCallbackTests(unittest.TestCase):
         module = ast.Module(body=[function], type_ignores=[])
         execution = execution if execution is not None else SimpleNamespace(accepts=lambda _task: True)
         namespace = {**mqtt_bridge.__dict__, "fast_chat_delivery": False, "plan_only": False,
+            "private_report": private_report,
             "AgentExecutionMode": AgentExecutionMode,
             "read_only_screen_analysis": False, "execution_policy_prompt": policy_prompt,
             "execution_policy": policy if policy is not None else execution_policy_for(policy_prompt),
@@ -43,6 +44,23 @@ class BlobArtifactFinalCallbackTests(unittest.TestCase):
             "response_language_tag": response_policy.response_language_tag}
         exec(compile(module, inspect.getfile(mqtt_bridge), "exec"), namespace)
         return namespace["publish_result"]
+
+    def test_terminal_outcome_cleans_workspace_only_for_private_reports(self):
+        task = {**self.payload, "status": "failed", "result": "Synthetic failure"}
+        outcome = {"type": "agent_message", "task_id": task["task_id"], "status": "failed"}
+        for private_report in (False, True):
+            with self.subTest(private_report=private_report), \
+                    patch("agent_task_terminal_outcome.terminal_outcome", return_value=outcome), \
+                    patch.object(mqtt_bridge, "_drop_queued_task_progress"), \
+                    patch.object(mqtt_bridge, "_publish_or_queue_task_result") as publish, \
+                    patch("task_workspace.cleanup_task_workspace") as cleanup:
+                self.callback(private_report=private_report)(task)
+                publish.assert_called_once()
+                self.assertEqual(outcome, publish.call_args.args[2])
+                if private_report:
+                    cleanup.assert_called_once_with(task["task_id"], missing_ok=True)
+                else:
+                    cleanup.assert_not_called()
 
     def test_unavailable_transport_reports_failure_and_manual_retry_restores_original_card(self):
         with self.source.open("wb") as stream:

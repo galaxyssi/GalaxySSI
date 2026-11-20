@@ -555,7 +555,7 @@ class HealthCenterActivity : ComponentActivity() {
         entry(R.drawable.ic_settings_upload, R.string.health_export_data_files, "health-data-files-entry") { launch(HealthDataFilesActivity::class.java) }
         entry(R.drawable.ic_health_profile, R.string.health_profile_title, "health-profile-entry") { launch(HealthProfileActivity::class.java) }
         entry(R.drawable.ic_security_shield, R.string.health_privacy_title, "health-privacy-entry") { launch(HealthPrivacyActivity::class.java) }
-        entry(R.drawable.ic_health_body, R.string.health_body_title, "health-body-entry") { launch(HealthBodyExplorationActivity::class.java) }
+        entry(R.drawable.ic_health_body, R.string.health_body_title, "health-body-entry") { launch(HealthBodyAtlasActivity::class.java) }
     }
     private fun recordRow(record: HealthObservation) = ui.card().apply {
         addView(ui.text(getString(record.draft.metric.titleResource()), 14f, muted = true))

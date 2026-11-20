@@ -1,0 +1,120 @@
+package com.galaxyssi.chat
+
+import android.app.Activity
+import android.widget.LinearLayout
+import android.widget.SeekBar
+import android.widget.TextView
+import java.text.NumberFormat
+
+/** Public reading and teaching controls. This surface never opens a health database. */
+internal class HealthAtlasResearchPanel(
+    private val activity: Activity, private val body: LinearLayout, private val atlas: HealthBodyAtlas,
+    private val item: HealthAtlasItem, val topic: HealthAtlasResearchTopic, initial: HealthAtlasElimination?,
+    private val select: (HealthAtlasItem) -> Unit, private val source: (String) -> Unit,
+) {
+    private val ui = HealthCenterViews(activity)
+    var elimination = initial ?: HealthAtlasElimination()
+        private set
+    private val resetInputs = arrayListOf<() -> Unit>()
+    init {
+        require(topic != HealthAtlasResearchTopic.PHYSIOLOGY)
+        body.tag = "atlas-research-content"
+        ui.add(body, ui.text(item.name, 18f, bold = true), 8)
+        ui.add(body, ui.text(item.description, 15f), 8)
+        when (topic) {
+            HealthAtlasResearchTopic.DRUGS -> drugs()
+            HealthAtlasResearchTopic.AGING -> aging()
+            else -> Unit
+        }
+    }
+    private fun heading(title: Int) = ui.add(body, ui.text(activity.getString(title), 18f, bold = true), 24)
+    private fun note(text: Int) = ui.add(body, ui.text(activity.getString(text), 13f, muted = true), 10)
+    private fun sourceRow(title: Int, url: String, key: String) {
+        ui.add(body, ui.row(activity.getString(title)) { source(url) }.apply { tag = "atlas-source-$key" }, 8)
+    }
+    private fun drugs() {
+        heading(R.string.health_atlas_adme_title)
+        note(R.string.health_atlas_adme_scope)
+        val stages = listOf(R.string.health_atlas_absorption, R.string.health_atlas_distribution,
+            R.string.health_atlas_metabolism, R.string.health_atlas_excretion)
+        val model = HealthAtlasMechanism("adme", "teaching", activity.getString(R.string.health_atlas_adme_title),
+            stages.map(activity::getString), "")
+        body.addView(HealthAtlasProcessView(activity, model).apply { phase = 1f }, LinearLayout.LayoutParams(-1, -2))
+        val structures = listOf("small-intestine", "blood-vessels", "liver", "kidneys")
+        val descriptions = listOf(R.string.health_atlas_absorption_note, R.string.health_atlas_distribution_note,
+            R.string.health_atlas_metabolism_note, R.string.health_atlas_excretion_note)
+        structures.forEachIndexed { index, id ->
+            val structure = requireNotNull(atlas[id])
+            ui.add(body, ui.row(activity.getString(stages[index]) + " · " + structure.name,
+                activity.getString(descriptions[index])) { select(structure) }.apply { tag = "atlas-adme-$id" }, 8)
+        }
+        heading(R.string.health_atlas_elimination_title)
+        note(R.string.health_atlas_elimination_assumptions)
+        val output = ui.text("", 24f, bold = true).apply { tag = "atlas-elimination-output" }
+        ui.add(body, output, 12)
+        val summary = ui.text("", 13f, muted = true).apply { tag = "atlas-elimination-summary" }
+        ui.add(body, summary, 4)
+        val chart = HealthAtlasEliminationChart(activity)
+        body.addView(chart, LinearLayout.LayoutParams(-1, -2))
+        ui.add(body, ui.text(activity.getString(R.string.health_atlas_hours_axis), 12f, muted = true))
+        fun update() {
+            val percentage = NumberFormat.getNumberInstance().apply { maximumFractionDigits = 2 }.format(elimination.percent)
+            output.text = activity.getString(R.string.health_atlas_remaining_percent, percentage)
+            summary.text = activity.getString(R.string.health_atlas_elimination_summary, elimination.halfLifeHours, elimination.elapsedHours, percentage)
+            chart.model = elimination
+        }
+        parameter(R.string.health_atlas_half_life, 1..24, elimination.halfLifeHours, 4, "half-life") {
+            elimination = elimination.copy(halfLifeHours = it); update()
+        }
+        parameter(R.string.health_atlas_elapsed, 0..48, elimination.elapsedHours, 8, "elapsed") {
+            elimination = elimination.copy(elapsedHours = it); update()
+        }
+        ui.add(body, ui.icon(R.drawable.ic_reset_data, R.string.health_atlas_reset) {
+            elimination = HealthAtlasElimination(); resetInputs.forEach { it() }; update()
+        }.apply { tag = "atlas-elimination-reset" }, 8)
+        note(R.string.health_atlas_elimination_formula)
+        note(R.string.health_atlas_drug_note)
+        heading(R.string.health_atlas_evidence)
+        sourceRow(R.string.health_atlas_pharmacology_source, HealthAtlasResearchSources.PHARMACOLOGY, "pharmacology")
+        sourceRow(R.string.health_atlas_kinetics_source, HealthAtlasResearchSources.KINETICS, "kinetics")
+        update()
+    }
+    private fun parameter(title: Int, range: IntRange, initial: Int, default: Int, key: String, changed: (Int) -> Unit) {
+        fun label(value: Int) = activity.getString(R.string.health_atlas_hours_value, activity.getString(title), value)
+        val caption = ui.text(label(initial), 14f)
+        ui.add(body, caption, 16)
+        val seek = SeekBar(activity).apply {
+            tag = "atlas-elimination-$key"; contentDescription = activity.getString(title)
+            max = range.last - range.first; progress = initial - range.first
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onStartTrackingTouch(bar: SeekBar?) = Unit
+                override fun onStopTrackingTouch(bar: SeekBar?) = Unit
+                override fun onProgressChanged(bar: SeekBar?, value: Int, user: Boolean) {
+                    caption.text = label(value + range.first); changed(value + range.first)
+                }
+            })
+        }
+        ui.add(body, seek)
+        resetInputs += { seek.progress = default - range.first }
+    }
+    private fun aging() {
+        note(R.string.health_atlas_aging_scope)
+        val sections = listOf(
+            R.string.health_atlas_aging_genome to R.string.health_atlas_aging_genome_note,
+            R.string.health_atlas_aging_proteins to R.string.health_atlas_aging_proteins_note,
+            R.string.health_atlas_aging_energy to R.string.health_atlas_aging_energy_note,
+            R.string.health_atlas_aging_cells to R.string.health_atlas_aging_cells_note,
+        )
+        sections.forEach { (title, detail) -> heading(title); ui.add(body, ui.text(activity.getString(detail), 15f), 8) }
+        heading(R.string.health_atlas_evidence_boundary)
+        ui.add(body, ui.text(activity.getString(R.string.health_atlas_aging_evidence), 15f), 8)
+        note(R.string.health_atlas_aging_note)
+        heading(R.string.health_atlas_evidence)
+        sourceRow(R.string.health_atlas_aging_source, HealthAtlasResearchSources.AGING, "aging")
+        sourceRow(R.string.health_atlas_structure_source, atlas.mechanism(item).source, "structure")
+        heading(R.string.health_atlas_related)
+        (atlas.children(item) + atlas.parents(item) + atlas.cells(item)).distinctBy { it.id }.take(6).forEach { related ->
+            ui.add(body, HealthAtlasUi.row(activity, related, atlas) { select(related) }, 8)
+        }
+    }
+}

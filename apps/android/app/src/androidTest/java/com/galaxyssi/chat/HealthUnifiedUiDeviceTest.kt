@@ -112,7 +112,7 @@ class HealthUnifiedUiDeviceTest {
             "health-weekly-entry" to HealthWeeklyActivity::class.java, "health-assistant-entry" to HealthAssistantActivity::class.java,
             "health-sources-entry" to HealthSourcesActivity::class.java, "health-data-files-entry" to HealthDataFilesActivity::class.java,
             "health-profile-entry" to HealthProfileActivity::class.java, "health-privacy-entry" to HealthPrivacyActivity::class.java,
-            "health-body-entry" to HealthBodyExplorationActivity::class.java)
+            "health-body-entry" to HealthBodyAtlasActivity::class.java)
         ActivityScenario.launch<HealthCenterActivity>(intent(HealthCenterActivity::class.java, names).putExtra("health_functions", true)).use { screen ->
             external.forEach { (tag, destination) ->
                 val launched = AtomicReference<Intent>()

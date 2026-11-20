@@ -934,6 +934,11 @@ const checks = [
     args: [path.join(root, "tools", "dev", "check-no-chinese-outside-i18n.js")]
   },
   {
+    name: "Android body atlas",
+    command: process.execPath,
+    args: ["--test", path.join(root, "tools", "dev", "body-atlas.test.mjs")]
+  },
+  {
     name: "iOS structure",
     command: process.execPath,
     args: [path.join(root, "tools", "dev", "check-ios-project.js")]
