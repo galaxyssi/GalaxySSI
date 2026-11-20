@@ -89,6 +89,23 @@ class HealthAtlasFunctionStoryTest {
         assertFalse(chapters.any { HealthAtlasNephronRoute.BLOOD in it && HealthAtlasNephronRoute.URINE in it })
     }
 
+    @Test fun digestionAndColonUseDifferentStagesAndEntryPoints() {
+        val meal = HealthAtlasFunctionStory.DIGESTION
+        val colon = HealthAtlasFunctionStory.COLON
+        listOf("digestive", "oral-cavity", "pharynx", "esophagus", "stomach", "duodenum", "jejunum",
+            "ileum", "gallbladder", "pancreatic-duct", "cell-enterocyte").forEach {
+            assertEquals(meal, HealthAtlasFunctionStory.forId(it))
+        }
+        listOf("large-intestine", "cecum", "colon", "rectum", "anal-canal").forEach {
+            assertEquals(colon, HealthAtlasFunctionStory.forId(it))
+        }
+        assertNull(HealthAtlasFunctionStory.forId("appendix"))
+        assertNull(HealthAtlasFunctionStory.forId("pancreatic-islets"))
+        assertEquals(HealthAtlasDigestionStage.VILLUS.caption, meal.chapters.last().second)
+        assertEquals(HealthAtlasDigestionStage.WATER.caption, colon.chapters[2].second)
+        assertTrue(meal.chapters.toSet().intersect(colon.chapters.toSet()).isEmpty())
+    }
+
     @Test fun allChaptersScrubToTheirOwnBoundariesAndRejectInvalidState() = HealthAtlasFunctionStory.entries.forEach { story ->
         assertEquals(5, story.chapters.size)
         assertEquals(5, story.chapters.map { it.second }.toSet().size)

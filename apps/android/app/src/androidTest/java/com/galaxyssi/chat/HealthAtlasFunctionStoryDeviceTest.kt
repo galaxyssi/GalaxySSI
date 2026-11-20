@@ -59,6 +59,42 @@ class HealthAtlasFunctionStoryDeviceTest {
         }
     }
 
+    @Test fun mealAndColonKeepIndependentProgressAndVillusSimulation() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        fun open(activity: HealthBodyAtlasActivity, id: String) {
+            activity.find<View>("atlas-tab-2").performClick()
+            activity.find<EditText>("atlas-search").setText(id)
+            activity.find<View>("atlas-entry-$id").performClick()
+            activity.find<View>("atlas-tab-1").performClick()
+        }
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    open(activity, "jejunum")
+                    activity.find<HealthAtlasDigestiveStoryView>("atlas-function-meal-art")
+                    repeat(4) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_meal_villus_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.find<View>("atlas-villus-geometry")
+                    activity.onBackPressed()
+                    open(activity, "colon")
+                    activity.find<HealthAtlasDigestiveStoryView>("atlas-function-colon-art")
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    repeat(2) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_colon_story_water_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.onBackPressed()
+                    open(activity, "jejunum")
+                    assertEquals(.8f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
     @Test fun nephronOpensWithPlaybackControlsVisibleBeforeTheArtwork() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
@@ -257,6 +293,12 @@ class HealthAtlasFunctionStoryDeviceTest {
         assertTrue(renal.contains(context.getString(R.string.health_atlas_nephron_story_prox_caption)))
         assertFalse(renal.contains(context.getString(R.string.health_atlas_nephron_story_distal_caption)))
         assertFalse(renal.contains(context.getString(R.string.health_atlas_hear_hair_caption)))
+        val meal = HealthAtlasAgentContext.prompt(context, atlas, requireNotNull(atlas["jejunum"]), functionPhase = .85f)
+        val colon = HealthAtlasAgentContext.prompt(context, atlas, requireNotNull(atlas["colon"]), functionPhase = .44f)
+        assertTrue(meal.contains(context.getString(R.string.health_atlas_meal_villus_caption)))
+        assertFalse(colon.contains(context.getString(R.string.health_atlas_meal_villus_caption)))
+        assertTrue(colon.contains(context.getString(R.string.health_atlas_colon_story_water_caption)))
+        assertFalse(meal.contains(context.getString(R.string.health_atlas_colon_story_water_caption)))
     }
 
     private fun openCell(activity: HealthBodyAtlasActivity, id: String) {

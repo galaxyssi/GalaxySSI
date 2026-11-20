@@ -52,6 +52,32 @@ internal enum class HealthAtlasFunctionStory(
         ),
         18_000L,
     ),
+    DIGESTION(
+        setOf("digestive", "oral-cavity", "tongue", "pharynx", "esophagus", "stomach", "small-intestine",
+            "duodenum", "jejunum", "ileum", "salivary-glands", "pancreas", "pancreatic-duct",
+            "gallbladder", "biliary-tract", "cell-enterocyte"),
+        R.string.health_atlas_meal_title,
+        R.string.health_atlas_meal_scope,
+        HealthAtlasDigestionStage.meal.map { it.title to it.caption },
+        listOf(
+            R.string.health_atlas_meal_main_source to "https://www.niddk.nih.gov/health-information/digestive-diseases/digestive-system-how-it-works",
+            R.string.health_atlas_meal_absorb_source to
+                "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-7-chemical-digestion-and-absorption-a-closer-look",
+        ),
+        20_000L,
+    ),
+    COLON(
+        setOf("large-intestine", "cecum", "colon", "rectum", "anal-canal"),
+        R.string.health_atlas_colon_story_title,
+        R.string.health_atlas_meal_scope,
+        HealthAtlasDigestionStage.colon.map { it.title to it.caption },
+        listOf(
+            R.string.health_atlas_meal_main_source to "https://www.niddk.nih.gov/health-information/digestive-diseases/digestive-system-how-it-works",
+            R.string.health_atlas_colon_story_source to
+                "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+        ),
+        18_000L,
+    ),
     HEARING(
         setOf("ear", "external-ear", "middle-ear", "inner-ear", "cochlea", "cell-inner-ear-hair-cell"),
         R.string.health_atlas_hear_title,
@@ -86,6 +112,7 @@ internal enum class HealthAtlasFunctionStory(
         BREATHING -> HealthAtlasBreathingView(context)
         HEARING -> HealthAtlasHearingStoryView(context)
         NEPHRON -> HealthAtlasNephronStoryView(context)
+        DIGESTION, COLON -> HealthAtlasDigestiveStoryView(context, this)
     }
 
     companion object {

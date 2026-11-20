@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_meal_title">How food becomes nutrients</string>
+    <string name="health_atlas_meal_scope">Simplified teaching animation. The paths, amounts, and timing are illustrative, not measurements.</string>
+    <string name="health_atlas_meal_swallow">The tongue moves the bolus back</string>
+    <string name="health_atlas_meal_swallow_caption">Chewing and saliva help form a soft bolus. The tongue sends it toward the throat, and the airway is briefly protected as the bolus enters the esophagus.</string>
+    <string name="health_atlas_meal_esophagus">A wave of contraction moves food</string>
+    <string name="health_atlas_meal_esophagus_caption">Muscle contracts behind the food and relaxes ahead of it. This wave pushes the bolus toward the stomach; the lower sphincter relaxes to let it pass.</string>
+    <string name="health_atlas_meal_stomach">Stomach muscle mixes food and digestive juice</string>
+    <string name="health_atlas_meal_stomach_caption">The stomach churns food with acid and digestive enzymes. Enzymes begin breaking down proteins, and small portions of chyme pass through the pylorus.</string>
+    <string name="health_atlas_meal_duodenum">Bile and pancreatic juice join the chyme</string>
+    <string name="health_atlas_meal_duodenum_caption">Bile disperses fat into small droplets. Pancreatic enzymes help digest fats, carbohydrates and proteins; intestinal enzymes continue the process.</string>
+    <string name="health_atlas_meal_villus">The intestinal lining absorbs nutrients</string>
+    <string name="health_atlas_meal_villus_caption">Simple sugars and amino acids enter blood capillaries. Most absorbed long-chain fats are repackaged in intestinal cells and enter the lymphatic vessel.</string>
+    <string name="health_atlas_meal_bolus">Food bolus</string>
+    <string name="health_atlas_meal_contraction">Contracting muscle</string>
+    <string name="health_atlas_meal_chyme">Mixing chyme</string>
+    <string name="health_atlas_meal_enzymes">Pancreatic juice</string>
+    <string name="health_atlas_meal_bile">Bile</string>
+    <string name="health_atlas_meal_blood">Sugars and amino acids</string>
+    <string name="health_atlas_meal_lymph">Most long-chain fats</string>
+    <string name="health_atlas_meal_main_source">Source: the digestive system (NIH)</string>
+    <string name="health_atlas_meal_absorb_source">Source: digestion and absorption (OpenStax)</string>
+    <string name="health_atlas_colon_story_title">How the large intestine recovers water</string>
+    <string name="health_atlas_colon_story_cecum">The remainder enters the cecum</string>
+    <string name="health_atlas_colon_story_cecum_caption">After the small intestine has absorbed most nutrients, the remaining liquid and undigested material pass from the ileum into the cecum.</string>
+    <string name="health_atlas_colon_story_mix">Local contractions mix the contents</string>
+    <string name="health_atlas_colon_story_mix_caption">Short segments of the colon squeeze at different times. This mixes the contents and brings them into contact with the colon lining.</string>
+    <string name="health_atlas_colon_story_water">Water and salts are recovered</string>
+    <string name="health_atlas_colon_story_water_caption">The colon absorbs some of the remaining water and salts. As water moves out of the contents, the material becomes more solid.</string>
+    <string name="health_atlas_colon_story_propulsion">Stronger contractions move stool onward</string>
+    <string name="health_atlas_colon_story_propulsion_caption">Occasional stronger waves move material farther along the colon toward the rectum. This movement differs from local mixing.</string>
+    <string name="health_atlas_colon_story_rectum">The rectum stores stool before release</string>
+    <string name="health_atlas_colon_story_rectum_caption">The rectum holds stool. During a bowel movement, rectal contraction and relaxation of the outlet muscles allow it to leave.</string>
+    <string name="health_atlas_colon_story_water_key">Water toward the tissue</string>
+    <string name="health_atlas_colon_story_contents">Bowel contents</string>
+    <string name="health_atlas_colon_story_source">Source: small and large intestines (OpenStax)</string>
+</resources>

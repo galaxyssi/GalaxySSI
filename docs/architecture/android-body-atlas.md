@@ -1228,3 +1228,14 @@ distinct; nearby capillary paths are schematic. This view is qualitative
 and independent of personal measurements and the solute-balance model.
 The Function player puts the button row and timeline before the illustration
 and limits canvas height in short windows so playback remains reachable.
+
+## Continuous Digestion And Water Recovery
+
+The meal lesson follows a bolus through swallowing, esophageal propulsion,
+stomach mixing, and duodenal digestive secretions before zooming to the
+painted villi. Separate paths illustrate blood uptake of sugars and amino
+acids and lymphatic transport of most long-chain fats. A second lesson
+shows ileocecal entry, local mixing versus propulsive contractions, water
+recovery, and rectal storage. The two entry groups retain separate playback
+positions; the villus geometry model and individual cell lessons are
+unchanged. Neither animation estimates a transit time or nutrient intake.
