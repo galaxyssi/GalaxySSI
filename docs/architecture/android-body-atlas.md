@@ -237,6 +237,14 @@ current playhead, restores per entry, and reports the current stage to
 accessibility services. None models clinical doses, timing or measurements.
 The public Agent handoff retains the scope of just the selected scene.
 
+Painted monocyte, dendritic cell, and plasma cell plates retain their
+individual structural landmarks. Their separate scenes distinguish tissue
+recruitment, antigen presentation, and antibody secretion. Links open the
+canonical macrophage, T-cell, and B-cell pages without changing the source
+lesson's stage. The shared playhead and framing retain the same behavior for
+granulocytes. These are qualitative examples rather than measurements or an
+exhaustive set of possible cell fates.
+
 ## Alimentary Canal Sections
 
 Fourteen digestive entries now have their own source-linked diagrams, from

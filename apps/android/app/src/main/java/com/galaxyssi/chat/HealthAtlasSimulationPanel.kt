@@ -43,6 +43,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private val heartValves = if (HealthAtlasValve.supports(item.id)) HealthAtlasValvePanel(activity, atlas, item, select) else null
     private val phagocytosis = if (item.id == HealthAtlasPhagocytosisView.OWNER) HealthAtlasPhagocytosisView(activity, mechanism) else null
     private val granulocyte = HealthAtlasGranulocyte.forId(item.id)?.let { HealthAtlasGranulocyteView(activity, it, mechanism) }
+    private val immuneLink = HealthAtlasImmuneLink.forId(item.id)?.let { HealthAtlasImmuneLinkView(activity, it, mechanism) }
     private val sarcomere = if (item.id == HealthAtlasSarcomere.OWNER) HealthAtlasSarcomerePanel(activity, mechanism) else null
     private val podocyte = if (item.id == HealthAtlasPodocyteView.OWNER) HealthAtlasPodocyteView(activity, mechanism) else null
     private val pancreaticRoutes = if (item.id == HealthAtlasPancreaticRoutes.OWNER) HealthAtlasPancreaticRoutes(activity, atlas, select) else null
@@ -63,7 +64,8 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         if (!quantitativeAfterArt) addQuantitative()
         val art = HealthAtlasUi.art(item)
         if (art != null && circulation == null && gasExchange == null && heartValves == null &&
-            phagocytosis == null && granulocyte == null && sarcomere == null && podocyte == null && pancreaticRoutes == null &&
+            phagocytosis == null && granulocyte == null && immuneLink == null && sarcomere == null &&
+            podocyte == null && pancreaticRoutes == null &&
             isletStages == null && endocrinePath == null && retinalPath == null && sweatView == null && sectionView == null)
             ui.add(body, ImageView(activity).apply {
             setImageResource(art); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = item.name
@@ -81,6 +83,14 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         granulocyte?.let {
             ui.add(body, it, 8)
             ui.add(body, ui.text(activity.getString(it.lesson.scope), 12f, muted = true), 6)
+        }
+        immuneLink?.let {
+            ui.add(body, it, 8)
+            ui.add(body, ui.text(activity.getString(it.lesson.scope), 12f, muted = true), 6)
+            atlas[it.lesson.relatedId]?.let { related ->
+                ui.add(body, HealthAtlasUi.row(activity, related, atlas) { select(related) }
+                    .apply { tag = "atlas-immune-related-${related.id}" }, 6)
+            }
         }
         sarcomere?.let { ui.add(body, it, 8) }
         podocyte?.let {
@@ -121,7 +131,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 pause(); values = HealthAtlasSimulation.initial(item.id); resetInputs.forEach { it() }; setPhase(0f); updateOutput(); quantitative?.reset()
             }.apply { tag = "atlas-simulation-reset" })
         }
-        val controlsAnchor = diagram ?: heartValves ?: germline ?: phagocytosis ?: granulocyte ?: sarcomere ?: podocyte ?:
+        val controlsAnchor = diagram ?: heartValves ?: germline ?: phagocytosis ?: granulocyte ?: immuneLink ?: sarcomere ?: podocyte ?:
             pancreaticRoutes ?: isletStages ?: sweatView ?: sectionView
         if (controlsAnchor != null) body.addView(controls, body.indexOfChild(controlsAnchor),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
@@ -202,6 +212,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         heartValves?.stage = values.stage
         phagocytosis?.phase = values.phase
         granulocyte?.phase = values.phase
+        immuneLink?.phase = values.phase
         sarcomere?.stage = values.stage
         podocyte?.stage = values.stage
         if (pancreaticRoutes?.stage != values.stage) pancreaticRoutes?.stage = values.stage

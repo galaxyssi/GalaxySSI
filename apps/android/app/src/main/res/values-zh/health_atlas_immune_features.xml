@@ -10,6 +10,9 @@
     <string name="health_atlas_neutrophil_scope">教学示意：穿出血管后，吞入并处理示例目标。图中大小和时间不代表实测。</string>
     <string name="health_atlas_eosinophil_scope">教学示意：接触示例目标的表面并释放颗粒内容物。图中大小和时间不代表实测。</string>
     <string name="health_atlas_basophil_scope">教学示意：释放介质与局部血管反应。图中大小和时间不代表实测。</string>
+    <string name="health_atlas_monocyte_lesson_scope">教学示意：单核细胞从血液被招募到组织，部分可分化为巨噬细胞。这是可能的去向之一。</string>
+    <string name="health_atlas_dendritic_lesson_scope">教学示意：树突状细胞处理物质并向 T 细胞呈递抗原片段。图标不代表分子比例。</string>
+    <string name="health_atlas_plasma_lesson_scope">教学示意：浆细胞产生并释放抗体。浅色高尔基区和蛋白质合成相关结构为示意。</string>
     <string name="health_atlas_feature_lobulated">分叶核</string>
     <string name="health_atlas_feature_lobulated_detail">成熟中性粒细胞的细胞核通常分成数叶，之间由细丝连接。</string>
     <string name="health_atlas_feature_fine_granules">细颗粒</string>
