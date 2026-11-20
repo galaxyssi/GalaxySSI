@@ -55,7 +55,12 @@ class HealthAtlasPhysiologyTest {
                     val x = model.axisRange.start + (model.axisRange.endInclusive - model.axisRange.start) * step / 120
                     val y = model.resultAt(x)
                     assertTrue("$kind: $y", y.isFinite() && y in kind.minimum..kind.maximum)
-                    previous?.let { assertTrue(if (kind == HealthAtlasPhysiologyKind.RENAL_EXCRETION) y <= it + 1e-9 else y >= it - 1e-9) }
+                    previous?.let { value ->
+                        assertTrue(when (kind) {
+                            HealthAtlasPhysiologyKind.RENAL_EXCRETION, HealthAtlasPhysiologyKind.EYE_FOCUS -> y <= value + 1e-9
+                            else -> y >= value - 1e-9
+                        })
+                    }
                     previous = y
                 }
             }

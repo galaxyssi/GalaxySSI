@@ -17,14 +17,14 @@ Knowledge-only Agent requests use a single-use in-process handoff token and a
 separate conversation, with no attached health observations.
 
 Cardiac output, ventilation, renal solute balance, potassium equilibrium
-potential, oxygen binding, static elbow balance and ideal tube flow are teaching equations. Germline
+potential, oxygen binding, static elbow balance, ideal tube flow and eye focus are teaching equations. Germline
 stage tables expose chromosome and DNA counts. Other sequences are qualitative,
 not validated quantitative patient models.
 No organ score, biological age, drug dose or treatment outcome is inferred.
 
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides six independently bounded teaching models:
+`HealthAtlasPhysiology` provides seven independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -44,8 +44,10 @@ No organ score, biological age, drug dose or treatment outcome is inferred.
   its assumptions and references are detailed below.
 - Ideal vessel-segment flow relates pressure drop, radius, length and viscosity
   to flow, resistance, speed and wall shear; its assumptions are detailed below.
+- Eye optics relates object distance and equivalent optical power to the
+  signed image offset from a fixed retinal plane.
 
-Thirty-two canonical entries expose these associated processes. Tubular cells
+Thirty-four canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -148,7 +150,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the twenty anatomical illustrations and selectable structures to the
+- Extend the 25 anatomical illustrations and selectable structures to the
   remaining systems, organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by
@@ -721,3 +723,32 @@ References are linked rather than copying textbook prose or figures:
 - https://openstax.org/books/college-physics-2e/pages/12-4-viscosity-and-laminar-flow-poiseuilles-law
 - https://ocw.mit.edu/courses/2-25-advanced-fluid-mechanics-fall-2013/1a114d602956fa0dd328155f9b45f93d_MIT2_25F13_Couet_and_Pois.pdf
 - https://www.nist.gov/pml/special-publication-811/nist-guide-si-appendix-b-conversion-factors/nist-guide-si-appendix-b9
+
+## Eye Structure And Focus
+
+The original transparent vector cross-section depicts the position and relative
+shape of the cornea, iris, lens, retina, eye wall and optic nerve. It is an
+illustration, not a clinical image or full orbital dissection. Selectable
+localized leaders route to the canonical cornea, lens and retina entries;
+those detail cards identify the shared eye-section context. Existing layer,
+pinch zoom, reset and fullscreen controls work with the scalable vector.
+
+The eye and lens entries expose a separate, paraxial one-lens teaching model
+in air. The model is deliberately restricted to a real-image domain:
+object distance 0.25-6 m and equivalent whole-eye power 55-65 D. For object
+distance `do` in metres and power `P` in reciprocal metres, the image distance
+is `di = 1 / (P - 1 / do)`. The retinal plane is fixed at 17 mm, so the chart
+displays the signed millimetre offset from that plane versus power. The focus
+action rounds the exact target power to the nearest 0.01 D. An offset below
+0.005 mm in magnitude is reported as at the plane to displayed precision.
+
+The native ray view uses one axial object point, derives both rays from
+the same image distance, and uses separate horizontal scales before and
+after the lens. The diagram, inputs and results update in place. States
+restore independently for eye and lens, including Research / Physiology.
+The public Agent preview carries current inputs and results, not personal
+visual measurements. None of this predicts a prescription, acuity,
+refractive diagnosis or the focal power of the crystalline lens by itself.
+
+- Anatomy reference: https://www.nei.nih.gov/eye-health-information/healthy-vision/nei-for-kids/about-eye
+- Thin-lens reference: https://openstax.org/books/university-physics-volume-3/pages/2-5-the-eye

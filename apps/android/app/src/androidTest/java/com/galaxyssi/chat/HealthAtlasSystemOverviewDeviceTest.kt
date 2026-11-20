@@ -161,17 +161,25 @@ class HealthAtlasSystemOverviewDeviceTest {
         }
     }
 
-    @Test fun everySystemCanOpenAChildAndRestoreSharedSelection() = native { scenario ->
+    @Test fun everySystemCanOpenAChildAndRestoreTheCorrectPlate() = native { scenario ->
         val pairs = listOf("sensory" to "eye", "respiratory" to "larynx", "digestive" to "parotid-glands",
             "endocrine" to "thyroid-gland", "immune" to "spleen", "skin" to "sweat-glands")
         for ((owner, child) in pairs) {
+            fun assertChildPlate(activity: Activity) {
+                if (child == "eye") {
+                    assertEquals(context.getString(R.string.health_atlas_view_eye_section),
+                        (activity.view("atlas-art-caption") as TextView).text.toString())
+                    assertNotNull(activity.view("atlas-hotspot-lens"))
+                    assertNull(activity.window.decorView.tagged("atlas-hotspot-eye"))
+                } else assertTrue(activity.view("atlas-hotspot-$child").isSelected)
+            }
             scenario.onActivity {
                 it.open(owner); it.view("atlas-hotspot-$child").performClick()
-                assertTrue(it.view("atlas-hotspot-$child").isSelected)
+                assertChildPlate(it)
             }
-            scenario.recreate(); ready(scenario, "atlas-hotspot-$child")
+            scenario.recreate(); ready(scenario, if (child == "eye") "atlas-hotspot-lens" else "atlas-hotspot-$child")
             scenario.onActivity {
-                assertTrue(it.view("atlas-hotspot-$child").isSelected)
+                assertChildPlate(it)
                 it.onBackPressed(); assertFalse(it.view("atlas-hotspot-$child").isSelected)
                 it.onBackPressed(); assertNotNull(it.view("atlas-search"))
             }

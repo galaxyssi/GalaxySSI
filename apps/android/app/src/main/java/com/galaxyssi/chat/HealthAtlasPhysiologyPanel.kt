@@ -17,6 +17,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
     private val renalBalance = if (kind == HealthAtlasPhysiologyKind.RENAL_EXCRETION) HealthAtlasRenalBalanceView(activity) else null
     private val elbowBalance = if (kind == HealthAtlasPhysiologyKind.ELBOW_BALANCE) HealthAtlasElbowView(activity) else null
     private val vesselFlow = if (kind == HealthAtlasPhysiologyKind.VESSEL_FLOW) HealthAtlasVesselFlowView(activity) else null
+    private val eyeOptics = if (kind == HealthAtlasPhysiologyKind.EYE_FOCUS) HealthAtlasEyeOpticsView(activity) else null
     init {
         ui.add(body, ui.text(activity.getString(HealthAtlasPhysiologyText.title(kind)), 19f, bold = true), 12)
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_model_synthetic), 12f, muted = true), 4)
@@ -24,6 +25,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         renalBalance?.let { ui.add(body, it, 12) }
         elbowBalance?.let { ui.add(body, it, 12) }
         vesselFlow?.let { ui.add(body, it, 12) }
+        eyeOptics?.let { ui.add(body, it, 12) }
         ui.add(body, chart, 12)
         val axisKey = kind.inputs[kind.axis].key
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_model_axis,
@@ -46,6 +48,11 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
             controls += seek to caption
             ui.add(body, seek)
         }
+        if (eyeOptics != null) ui.add(body, ui.command(R.string.health_atlas_eye_match_plane) {
+            val index = model.kind.axis
+            val targetSteps = requireNotNull(model.eyeOptics).targetPowerSteps
+            controls[index].first.progress = targetSteps - model.kind.inputs[index].range.first
+        }.apply { tag = "atlas-eye-match-plane" }, 12)
         body.addView(ui.icon(R.drawable.ic_reset_data, R.string.health_atlas_reset) { reset() }
             .apply { tag = "atlas-physiology-reset" }, LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)).apply { topMargin = ui.dp(8) })
         ui.add(body, ui.text(activity.getString(HealthAtlasPhysiologyText.formula(kind)), 14f), 8)
@@ -68,6 +75,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         model.renalAmounts?.let { renalBalance?.amounts = it }
         model.elbowForces?.let { elbowBalance?.forces = it }
         model.vesselFlow?.let { vesselFlow?.flow = it }
+        model.eyeOptics?.let { eyeOptics?.eye = it }
         controls.forEachIndexed { index, (_, label) -> label.text = HealthAtlasPhysiologyText.input(activity, model, index) }
     }
 }

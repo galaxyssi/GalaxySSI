@@ -41,7 +41,9 @@ internal class HealthAtlasPhysiologyChart(context: Context, initial: HealthAtlas
         canvas.drawText(model.kind.unit, left, font, paint)
         paint.strokeWidth = density
         ticks.forEach { tick ->
-            paint.color = context.getColor(R.color.separator); canvas.drawLine(left, y(tick), right, y(tick), paint)
+            paint.color = context.getColor(if (model.kind == HealthAtlasPhysiologyKind.EYE_FOCUS && tick == 0.0)
+                R.color.health_atlas_eye_retina else R.color.separator)
+            canvas.drawLine(left, y(tick), right, y(tick), paint)
             paint.color = context.getColor(R.color.text_secondary); paint.textAlign = Paint.Align.RIGHT
             canvas.drawText(resultLabel(tick), left - 6 * density, y(tick) + font * .3f, paint)
         }
