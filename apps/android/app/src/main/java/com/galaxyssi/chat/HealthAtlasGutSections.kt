@@ -9,10 +9,15 @@ internal object HealthAtlasGutSections {
     private fun marker(id: String, x: Int, y: Int) = HealthAtlasMarker(id, x / 360f, y / 280f)
     private fun feature(id: String, x: Int, y: Int, title: Int, explanation: Int) =
         HealthAtlasFeature(marker(id, x, y), title, explanation)
+    private fun paintedMarker(id: String, x: Int, y: Int) = HealthAtlasMarker(id, x / 1254f, y / 1254f)
+    private fun paintedFeature(id: String, x: Int, y: Int, title: Int, explanation: Int) =
+        HealthAtlasFeature(paintedMarker(id, x, y), title, explanation)
     private fun section(id: String, art: Int, caption: Int, source: String, features: List<HealthAtlasFeature>,
-        links: List<HealthAtlasMarker>, steps: List<Int>, tracks: List<HealthAtlasSectionTrack> = emptyList(), note: Int? = null) =
+        links: List<HealthAtlasMarker>, steps: List<Int>, tracks: List<HealthAtlasSectionTrack> = emptyList(),
+        note: Int? = null, squareArt: Boolean = false) =
         HealthAtlasSectionLesson(HealthAtlasPlate(art, id, caption, links, source, features = features), steps, tracks,
-            listOfNotNull(if (tracks.isEmpty()) R.string.health_atlas_gut_section_regional_scope else R.string.health_atlas_gut_section_motion_scope, note))
+            listOfNotNull(if (tracks.isEmpty()) R.string.health_atlas_gut_section_regional_scope else R.string.health_atlas_gut_section_motion_scope, note),
+            artHeight = if (squareArt) 360 else 280)
 
     private val lessons = listOf(
         section("oral-cavity", R.drawable.health_atlas_gut_mouth, R.string.health_atlas_gut_section_mouth_view, UPPER,
@@ -24,12 +29,12 @@ internal object HealthAtlasGutSections {
             listOf(0, 1, 1, 2)),
         section("teeth", R.drawable.health_atlas_gut_tooth, R.string.health_atlas_gut_section_tooth_view, UPPER,
             listOf(
-                feature("tooth-0", 146, 61, R.string.health_atlas_gut_section_tooth_feature_0, R.string.health_atlas_gut_section_tooth_detail_0),
-                feature("tooth-1", 151, 103, R.string.health_atlas_gut_section_tooth_feature_1, R.string.health_atlas_gut_section_tooth_detail_1),
-                feature("tooth-2", 183, 117, R.string.health_atlas_gut_section_tooth_feature_2, R.string.health_atlas_gut_section_tooth_detail_2),
-                feature("tooth-3", 226, 183, R.string.health_atlas_gut_section_tooth_feature_3, R.string.health_atlas_gut_section_tooth_detail_3)),
+                paintedFeature("tooth-0", 461, 324, R.string.health_atlas_gut_section_tooth_feature_0, R.string.health_atlas_gut_section_tooth_detail_0),
+                paintedFeature("tooth-1", 492, 393, R.string.health_atlas_gut_section_tooth_feature_1, R.string.health_atlas_gut_section_tooth_detail_1),
+                paintedFeature("tooth-2", 606, 555, R.string.health_atlas_gut_section_tooth_feature_2, R.string.health_atlas_gut_section_tooth_detail_2),
+                paintedFeature("tooth-3", 846, 777, R.string.health_atlas_gut_section_tooth_feature_3, R.string.health_atlas_gut_section_tooth_detail_3)),
             listOf(),
-            listOf(0, 1, 3, 2)),
+            listOf(0, 1, 3, 2), squareArt = true),
         section("esophagus", R.drawable.health_atlas_gut_esophagus, R.string.health_atlas_gut_section_esophagus_view, UPPER,
             listOf(
                 feature("esophagus-0", 179, 50, R.string.health_atlas_gut_section_esophagus_feature_0, R.string.health_atlas_gut_section_esophagus_detail_0),
@@ -85,12 +90,12 @@ internal object HealthAtlasGutSections {
                 atlasSectionTrack(218f, 195f) { cubicTo(175f, 213f, 128f, 183f, 102f, 214f) })),
         section("jejunum", R.drawable.health_atlas_gut_jejunum, R.string.health_atlas_gut_section_jejunum_view, INTESTINES,
             listOf(
-                feature("jejunum-0", 95, 176, R.string.health_atlas_gut_section_jejunum_feature_0, R.string.health_atlas_gut_section_jejunum_detail_0),
-                feature("jejunum-1", 169, 72, R.string.health_atlas_gut_section_jejunum_feature_1, R.string.health_atlas_gut_section_jejunum_detail_1),
-                feature("jejunum-2", 162, 132, R.string.health_atlas_gut_section_jejunum_feature_2, R.string.health_atlas_gut_section_jejunum_detail_2),
-                feature("jejunum-3", 181, 147, R.string.health_atlas_gut_section_jejunum_feature_3, R.string.health_atlas_gut_section_jejunum_detail_3)),
-            listOf(marker("cell-enterocyte", 162, 88), marker("lymphatic-vessels", 181, 172)),
-            listOf(0, 1, 2, 3)),
+                paintedFeature("jejunum-0", 318, 918, R.string.health_atlas_gut_section_jejunum_feature_0, R.string.health_atlas_gut_section_jejunum_detail_0),
+                paintedFeature("jejunum-1", 615, 336, R.string.health_atlas_gut_section_jejunum_feature_1, R.string.health_atlas_gut_section_jejunum_detail_1),
+                paintedFeature("jejunum-2", 608, 461, R.string.health_atlas_gut_section_jejunum_feature_2, R.string.health_atlas_gut_section_jejunum_detail_2),
+                paintedFeature("jejunum-3", 643, 607, R.string.health_atlas_gut_section_jejunum_feature_3, R.string.health_atlas_gut_section_jejunum_detail_3)),
+            listOf(paintedMarker("cell-enterocyte", 550, 430), paintedMarker("lymphatic-vessels", 620, 801)),
+            listOf(0, 1, 2, 3), squareArt = true),
         section("ileum", R.drawable.health_atlas_gut_ileum, R.string.health_atlas_gut_section_ileum_view, INTESTINES,
             listOf(
                 feature("ileum-0", 94, 118, R.string.health_atlas_gut_section_ileum_feature_0, R.string.health_atlas_gut_section_ileum_detail_0),

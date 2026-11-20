@@ -253,6 +253,13 @@ are separate scenes. The resting platelet is an anucleate fragment; its
 activated form is drawn separately in the plug example. The new stage shapes
 and timings do not model a patient, a drug or a coagulation test.
 
+The 14 alimentary section plates and 14 related digestive-cell or gland
+plates now use softer colors. The tooth and jejunal villi use painted
+cutaways with recalibrated markers and a square lesson frame. The other
+plates retain their exact vector paths, marker destinations and teaching
+coordinates while broad tissue surfaces are shaded and fine structures
+remain visible. Existing bolus and bowel paths are unchanged.
+
 ## Alimentary Canal Sections
 
 Fourteen digestive entries now have their own source-linked diagrams, from
