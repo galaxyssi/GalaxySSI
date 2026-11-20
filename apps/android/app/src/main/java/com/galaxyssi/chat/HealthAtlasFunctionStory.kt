@@ -124,6 +124,43 @@ internal enum class HealthAtlasFunctionStory(
             R.string.health_atlas_vision_story_dark_source to "https://pubmed.ncbi.nlm.nih.gov/11060133/",
         ),
         18_000L,
+    ),
+    MUSCLE_MOTION(
+        setOf("muscle", "biceps-brachii", "triceps-brachii", "tendons", "cell-skeletal-myocyte"),
+        R.string.health_atlas_motion_story_title,
+        R.string.health_atlas_motion_story_scope,
+        listOf(
+            R.string.health_atlas_motion_signal to R.string.health_atlas_motion_signal_caption,
+            R.string.health_atlas_motion_calcium to R.string.health_atlas_motion_calcium_caption,
+            R.string.health_atlas_motion_slide to R.string.health_atlas_motion_slide_caption,
+            R.string.health_atlas_motion_pull to R.string.health_atlas_motion_pull_caption,
+            R.string.health_atlas_motion_release to R.string.health_atlas_motion_release_caption,
+        ),
+        listOf(
+            R.string.health_atlas_motion_fiber_source to
+                "https://openstax.org/books/anatomy-and-physiology-2e/pages/10-3-muscle-fiber-contraction-and-relaxation",
+            R.string.health_atlas_motion_lever_source to
+                "https://openstax.org/books/anatomy-and-physiology-2e/pages/11-1-interactions-of-skeletal-muscles-their-fascicle-arrangement-and-their-lever-systems",
+        ),
+        20_000L,
+    ),
+    BONE_REMODELING(
+        setOf("skeletal", "limb-bones", "hand-bones", "foot-bones", "humerus", "radius", "ulna",
+            "tissue-compact-bone", "cell-osteoblast", "cell-osteocyte", "cell-osteoclast"),
+        R.string.health_atlas_bone_story_title,
+        R.string.health_atlas_bone_story_scope,
+        listOf(
+            R.string.health_atlas_bone_sense to R.string.health_atlas_bone_sense_caption,
+            R.string.health_atlas_bone_remove to R.string.health_atlas_bone_remove_caption,
+            R.string.health_atlas_bone_prepare to R.string.health_atlas_bone_prepare_caption,
+            R.string.health_atlas_bone_fill to R.string.health_atlas_bone_fill_caption,
+            R.string.health_atlas_bone_mineral to R.string.health_atlas_bone_mineral_caption,
+        ),
+        listOf(
+            R.string.health_atlas_bone_formation_source to "https://www.ncbi.nlm.nih.gov/books/NBK279149/",
+            R.string.health_atlas_bone_reversal_source to "https://pubmed.ncbi.nlm.nih.gov/28177141/",
+        ),
+        18_000L,
     );
 
     fun chapter(value: Float) = (safePhase(value) * chapters.size).toInt().coerceAtMost(chapters.lastIndex)
@@ -137,6 +174,7 @@ internal enum class HealthAtlasFunctionStory(
         NEPHRON -> HealthAtlasNephronStoryView(context)
         DIGESTION, COLON -> HealthAtlasDigestiveStoryView(context, this)
         VISION, LIGHT_ADAPTATION -> HealthAtlasVisionStoryView(context, this)
+        MUSCLE_MOTION, BONE_REMODELING -> HealthAtlasMovementStoryView(context, this)
     }
 
     companion object {

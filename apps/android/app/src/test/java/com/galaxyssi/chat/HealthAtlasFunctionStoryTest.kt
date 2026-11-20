@@ -123,6 +123,30 @@ class HealthAtlasFunctionStoryTest {
         assertTrue(vision.chapters.toSet().intersect(light.chapters.toSet()).isEmpty())
     }
 
+    @Test fun movementAndBoneRemodelingKeepDifferentOwnersAndProcessGeometry() {
+        val movement = HealthAtlasMovementGeometry
+        listOf("muscle", "biceps-brachii", "triceps-brachii", "tendons", "cell-skeletal-myocyte").forEach {
+            assertEquals(HealthAtlasFunctionStory.MUSCLE_MOTION, HealthAtlasFunctionStory.forId(it))
+        }
+        listOf("skeletal", "humerus", "radius", "ulna", "tissue-compact-bone",
+            "cell-osteoblast", "cell-osteocyte", "cell-osteoclast").forEach {
+            assertEquals(HealthAtlasFunctionStory.BONE_REMODELING, HealthAtlasFunctionStory.forId(it))
+        }
+        assertEquals(HealthAtlasFunctionStory.GLUCOSE, HealthAtlasFunctionStory.forId("tissue-skeletal-muscle"))
+        assertNull(HealthAtlasFunctionStory.forId("cell-cardiomyocyte"))
+        assertNull(HealthAtlasFunctionStory.forId("bone-marrow"))
+        assertTrue(movement.sarcomereHalfWidth(1f) < movement.sarcomereHalfWidth(0f))
+        assertTrue(movement.ACTIN_LENGTH + movement.MYOSIN_LENGTH / 2 > movement.sarcomereHalfWidth(0f))
+        assertEquals(movement.elbowAngle(false, 1f), movement.elbowAngle(true, 0f), 0f)
+        assertEquals(movement.elbowAngle(false, 0f), movement.elbowAngle(true, 1f), 0f)
+        for (chapter in 0..3) {
+            assertEquals(movement.exposedDepth(chapter, 1f), movement.exposedDepth(chapter + 1, 0f), 0f)
+        }
+        assertTrue(movement.erosionDepth(1, .9f) > movement.erosionDepth(1, .1f))
+        assertTrue(movement.exposedDepth(3, .9f) < movement.exposedDepth(3, .1f))
+        assertEquals(movement.erosionDepth(3, .1f), movement.erosionDepth(3, .9f), 0f)
+    }
+
     @Test fun allChaptersScrubToTheirOwnBoundariesAndRejectInvalidState() = HealthAtlasFunctionStory.entries.forEach { story ->
         assertEquals(5, story.chapters.size)
         assertEquals(5, story.chapters.map { it.second }.toSet().size)

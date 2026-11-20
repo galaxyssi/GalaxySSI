@@ -1249,3 +1249,18 @@ route, not a precise map of the chiasm or deep structures. The rod and
 cone entries have a separate light adaptation lesson with illustrative
 brightness and contribution cues, not calibrated thresholds. The thin
 lens and retinal circuit simulations remain independent.
+
+## Continuous Skeletal Muscle Motion And Bone Remodeling
+
+The muscle lesson follows a motor nerve signal to a muscle fiber, calcium
+release, sliding filaments of fixed length, and tendon-driven elbow
+motion. Elbow extension uses the antagonist rather than treating biceps
+relaxation as a force. The illustrated joint motion is not the lever-force
+simulation. The glucose uptake lesson on skeletal muscle tissue remains
+unchanged.
+
+The bone lesson follows a local bone surface from osteocyte signaling to
+resorption, reversal, osteoid deposition and mineralization. The depth
+and colors make these stages visible but do not estimate bone density,
+timing or individual health. Muscle and bone lessons preserve separate
+playheads and pass only the displayed public chapter to Agent.

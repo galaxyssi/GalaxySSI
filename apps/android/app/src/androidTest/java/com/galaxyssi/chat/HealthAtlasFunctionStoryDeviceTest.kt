@@ -59,6 +59,46 @@ class HealthAtlasFunctionStoryDeviceTest {
         }
     }
 
+    @Test fun elbowMotionAndBoneRemodelingKeepIndependentPlaybackAndSimulation() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        fun openBiceps(activity: HealthBodyAtlasActivity) {
+            activity.find<View>("atlas-tab-2").performClick()
+            activity.find<EditText>("atlas-search").setText("biceps-brachii")
+            activity.find<View>("atlas-entry-biceps-brachii").performClick()
+        }
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    openBiceps(activity)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.find<HealthAtlasElbowView>("atlas-elbow-balance")
+                    activity.find<android.widget.SeekBar>("atlas-physiology-elbow-load").progress = 71
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-muscle-motion-art")
+                    repeat(3) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_motion_pull_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    assertEquals(71, activity.find<android.widget.SeekBar>("atlas-physiology-elbow-load").progress)
+                    activity.onBackPressed()
+                    openCell(activity, "cell-osteoclast")
+                    activity.find<View>("atlas-function-bone-remodeling-art")
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    repeat(3) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_bone_fill_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.onBackPressed()
+                    openBiceps(activity)
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.6f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
     @Test fun opticsSimulationAndDarkAdaptationDoNotShareTheVisionPlayhead() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
@@ -341,6 +381,11 @@ class HealthAtlasFunctionStoryDeviceTest {
         assertTrue(vision.contains(context.getString(R.string.health_atlas_vision_story_capture_caption)))
         assertTrue(adaptation.contains(context.getString(R.string.health_atlas_vision_story_rod_caption)))
         assertFalse(adaptation.contains(context.getString(R.string.health_atlas_vision_story_capture_caption)))
+        val motion = HealthAtlasAgentContext.prompt(context, atlas, requireNotNull(atlas["biceps-brachii"]), functionPhase = .66f)
+        val bone = HealthAtlasAgentContext.prompt(context, atlas, requireNotNull(atlas["cell-osteoclast"]), functionPhase = .29f)
+        assertTrue(motion.contains(context.getString(R.string.health_atlas_motion_pull_caption)))
+        assertTrue(bone.contains(context.getString(R.string.health_atlas_bone_remove_caption)))
+        assertFalse(bone.contains(context.getString(R.string.health_atlas_motion_pull_caption)))
     }
 
     private fun openCell(activity: HealthBodyAtlasActivity, id: String) {
