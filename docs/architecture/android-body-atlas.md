@@ -17,14 +17,14 @@ Knowledge-only Agent requests use a single-use in-process handoff token and a
 separate conversation, with no attached health observations.
 
 Cardiac output, ventilation, renal solute balance, potassium equilibrium
-potential, oxygen binding and static elbow balance are teaching equations. Germline
+potential, oxygen binding, static elbow balance and ideal tube flow are teaching equations. Germline
 stage tables expose chromosome and DNA counts. Other sequences are qualitative,
 not validated quantitative patient models.
 No organ score, biological age, drug dose or treatment outcome is inferred.
 
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides five independently bounded teaching models:
+`HealthAtlasPhysiology` provides six independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -42,8 +42,10 @@ No organ score, biological age, drug dose or treatment outcome is inferred.
   content. Its assumptions and references are detailed below.
 - Static elbow balance relates external load and lever arms to muscle force;
   its assumptions and references are detailed below.
+- Ideal vessel-segment flow relates pressure drop, radius, length and viscosity
+  to flow, resistance, speed and wall shear; its assumptions are detailed below.
 
-Twenty-eight canonical entries expose these associated processes. Tubular cells
+Thirty-two canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -663,3 +665,43 @@ Device regression exercises every microscopic entry in the native function and
 simulation tabs, both locales, selected-stage Agent context, fragment identity,
 large-text controls, per-entry recreation and background playback suspension.
 Tests use isolated fixture stores and do not send a real Provider request.
+
+## Ideal Vessel-Segment Flow
+
+Blood vessels, arteries, veins and coronary vessels expose a Hagen-Poiseuille
+teaching model for one straight rigid circular tube. It assumes steady, fully
+developed laminar flow, constant dynamic viscosity and no slip at the wall.
+Pressure drop is between the ends of the segment, not a blood-pressure reading.
+Controls span 0-20 mmHg, radius 0.05-0.2 mm, length 20-100 mm and viscosity
+2-6 mPa s. These bounds are numerical teaching inputs, not clinical ranges.
+The model is not assigned to capillaries, whole circulation or vascular cells.
+
+The pure Kotlin model converts inputs to SI units, using conventional
+`1 mmHg = 133.3224 Pa`, then calculates `Q = pi * dP * r^4 / (8 * mu * L)`.
+The displayed flow uses `1 m^3/s = 60000000 mL/min`. Resistance is calculated
+independently as `8 * mu * L / (pi * r^4)` and remains finite at zero pressure.
+Mean speed is `Q / (pi * r^2)`, centre speed is twice the mean, and wall shear is
+`dP * r / (2 * L)`. The circular radial profile is parabolic with zero wall speed.
+Tests integrate that profile with annular areas, not a plane-channel average.
+
+An original native longitudinal-section diagram varies geometry and depicts the
+normalized speed profile. Diameter is enlarged and arrows are normalized to the
+current centre speed; their lengths do not compare absolute speed across input
+sets. Numerical speed and shear labels remain visible and accessible. Zero
+pressure removes the moving-flow arrows. The radius-response curve holds the
+other inputs fixed, with a labeled adaptive vertical scale and current marker.
+Small positive flow retains six decimal places and radius retains three; other
+existing models keep their previous display precision. There is no new animation
+loop, background work or personal-record write.
+
+Four saved controls remain isolated by entry and survive recreation. Simulation
+and Research / Physiology share the same scoped state. Public Agent previews
+include current inputs, outputs, assumptions and references, but not in unrelated
+entries or drug/aging topics. Actual blood is pulsatile, non-Newtonian and cellular;
+compliance, valves, branching and patient-specific geometry are not represented.
+This increment does not estimate personal perfusion, vascular disease or treatment.
+
+References are linked rather than copying textbook prose or figures:
+- https://openstax.org/books/college-physics-2e/pages/12-4-viscosity-and-laminar-flow-poiseuilles-law
+- https://ocw.mit.edu/courses/2-25-advanced-fluid-mechanics-fall-2013/1a114d602956fa0dd328155f9b45f93d_MIT2_25F13_Couet_and_Pois.pdf
+- https://www.nist.gov/pml/special-publication-811/nist-guide-si-appendix-b-conversion-factors/nist-guide-si-appendix-b9

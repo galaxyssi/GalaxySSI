@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import kotlin.math.ln
+import kotlin.math.pow
 
 internal data class HealthAtlasInput(val key: String, val range: IntRange, val initial: Int, val scale: Double = 1.0)
 
@@ -21,9 +22,14 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     ELBOW_BALANCE(listOf(HealthAtlasInput("elbow-load", 0..100, 40, 10.0),
         HealthAtlasInput("elbow-load-arm", 20..50, 38), HealthAtlasInput("elbow-muscle-arm", 20..60, 40)),
         0, "N", 0.0, 2700.0,
-        "https://openstax.org/books/college-physics-2e/pages/9-6-forces-and-torques-in-muscles-and-joints");
+        "https://openstax.org/books/college-physics-2e/pages/9-6-forces-and-torques-in-muscles-and-joints"),
+    VESSEL_FLOW(listOf(HealthAtlasInput("vessel-pressure", 0..20, 10),
+        HealthAtlasInput("vessel-radius", 50..200, 100, 1000.0), HealthAtlasInput("vessel-length", 20..100, 50),
+        HealthAtlasInput("vessel-viscosity", 20..60, 35, 10.0)), 1, "mL/min", 0.0, 3.0,
+        HealthAtlasVesselFlow.SOURCE, HealthAtlasVesselFlow.PROFILE_SOURCE);
 
-    val sources get() = listOfNotNull(source, extraSource)
+    val sources get() = listOfNotNull(source, extraSource) +
+        if (this == VESSEL_FLOW) listOf(HealthAtlasVesselFlow.UNIT_SOURCE) else emptyList()
 
     companion object {
         // These are associated whole-process models, not claims that every selected structure performs all steps.
@@ -36,6 +42,7 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron" -> POTASSIUM
             "blood", "cell-erythrocyte" -> OXYGEN_BINDING
             "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna" -> ELBOW_BALANCE
+            "blood-vessels", "arteries", "veins", "coronary-vessels" -> VESSEL_FLOW
             else -> null
         }
     }
@@ -57,6 +64,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.POTASSIUM -> input(0) / input(1)
         HealthAtlasPhysiologyKind.OXYGEN_BINDING -> requireNotNull(oxygenAmounts).total
         HealthAtlasPhysiologyKind.ELBOW_BALANCE -> requireNotNull(elbowForces).jointDown
+        HealthAtlasPhysiologyKind.VESSEL_FLOW -> requireNotNull(vesselFlow).resistanceMmHgMinutesPerMl
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
@@ -64,8 +72,19 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasRenal.amounts(input(0), input(1), input(2)) else null
     val elbowForces: HealthAtlasElbow.Forces? get() = if (kind == HealthAtlasPhysiologyKind.ELBOW_BALANCE)
         HealthAtlasElbow.forces(input(0), input(1), input(2)) else null
-    val plotMaximum: Double get() = if (kind == HealthAtlasPhysiologyKind.ELBOW_BALANCE)
-        kotlin.math.ceil(resultAt(axisRange.endInclusive) / 100.0) * 100.0 else kind.maximum
+    val vesselFlow: HealthAtlasVesselFlow? get() = if (kind == HealthAtlasPhysiologyKind.VESSEL_FLOW)
+        HealthAtlasVesselFlow(input(0), input(1), input(2), input(3)) else null
+    val plotMaximum: Double get() = when (kind) {
+        HealthAtlasPhysiologyKind.ELBOW_BALANCE -> kotlin.math.ceil(resultAt(axisRange.endInclusive) / 100.0) * 100.0
+        HealthAtlasPhysiologyKind.VESSEL_FLOW -> {
+            val peak = resultAt(axisRange.endInclusive)
+            if (peak == 0.0) .01 else {
+                val scale = 10.0.pow(kotlin.math.floor(kotlin.math.log10(peak)))
+                kotlin.math.ceil(peak / scale) * scale
+            }
+        }
+        else -> kind.maximum
+    }
     val axisRange get() = kind.inputs[kind.axis].let { it.range.first / it.scale..it.range.last / it.scale }
     fun resultAt(x: Double): Double {
         require(x.isFinite() && x in axisRange)
@@ -77,6 +96,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.POTASSIUM -> potassiumPotential(values[0], values[1])
         HealthAtlasPhysiologyKind.OXYGEN_BINDING -> 100.0 * HealthAtlasOxygen.saturation(values[0], values[1])
         HealthAtlasPhysiologyKind.ELBOW_BALANCE -> HealthAtlasElbow.forces(values[0], values[1], values[2]).muscle
+        HealthAtlasPhysiologyKind.VESSEL_FLOW -> HealthAtlasVesselFlow(values[0], values[1], values[2], values[3]).flowMlPerMinute
     }
     companion object {
         fun potassiumPotential(outside: Double, inside: Double): Double {
