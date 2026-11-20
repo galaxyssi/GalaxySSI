@@ -163,8 +163,8 @@ android {
         applicationId = "com.galaxyssi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1673
-        versionName = "0.18.112"
+        versionCode = 1674
+        versionName = "0.18.113"
         testInstrumentationRunner = when (providers.gradleProperty("healthResearchAcceptance").orNull) {
             "true" -> "com.galaxyssi.chat.HealthResearchAcceptanceRunner"
             "related" -> "com.galaxyssi.chat.HealthRelatedResearchAcceptanceRunner"

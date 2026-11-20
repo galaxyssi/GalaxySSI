@@ -49,6 +49,7 @@ internal object HealthAtlasAgentContext {
                 appendLine(context.getString(R.string.health_atlas_phagocytosis_scope))
             HealthAtlasGranulocyte.forId(item.id)?.let { appendLine(context.getString(it.scope)) }
             HealthAtlasImmuneLink.forId(item.id)?.let { appendLine(context.getString(it.scope)) }
+            HealthAtlasBloodDefense.forId(item.id)?.let { appendLine(context.getString(it.scope)) }
             if (item.id == HealthAtlasPodocyteView.OWNER)
                 appendLine(context.getString(R.string.health_atlas_podocyte_scope))
             if (item.id == HealthAtlasPancreaticRoutes.OWNER) {

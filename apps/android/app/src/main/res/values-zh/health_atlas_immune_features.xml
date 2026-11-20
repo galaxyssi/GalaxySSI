@@ -13,6 +13,11 @@
     <string name="health_atlas_monocyte_lesson_scope">教学示意：单核细胞从血液被招募到组织，部分可分化为巨噬细胞。这是可能的去向之一。</string>
     <string name="health_atlas_dendritic_lesson_scope">教学示意：树突状细胞处理物质并向 T 细胞呈递抗原片段。图标不代表分子比例。</string>
     <string name="health_atlas_plasma_lesson_scope">教学示意：浆细胞产生并释放抗体。浅色高尔基区和蛋白质合成相关结构为示意。</string>
+    <string name="health_atlas_t_lesson_scope">教学示意：T 细胞响应呈递的抗原和激活信号，后续作用取决于细胞亚型。</string>
+    <string name="health_atlas_b_lesson_scope">教学示意：一种依赖 T 细胞的途径可形成浆细胞或记忆 B 细胞。受体形态为示意。</string>
+    <string name="health_atlas_nk_lesson_scope">教学示意：自然杀伤细胞响应示例异常细胞。图中符号和时间为示意。</string>
+    <string name="health_atlas_mega_lesson_scope">教学示意：巨核细胞在血管附近形成胞质突起并释放血小板碎片。图中比例和时序为示意。</string>
+    <string name="health_atlas_platelet_lesson_scope">教学示意：活化血小板在血管损伤处聚集并参与形成血小板栓。不用于评估凝血或指导治疗。</string>
     <string name="health_atlas_feature_lobulated">分叶核</string>
     <string name="health_atlas_feature_lobulated_detail">成熟中性粒细胞的细胞核通常分成数叶，之间由细丝连接。</string>
     <string name="health_atlas_feature_fine_granules">细颗粒</string>

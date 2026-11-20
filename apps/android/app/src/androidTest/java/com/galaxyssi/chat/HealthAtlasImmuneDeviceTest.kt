@@ -83,9 +83,13 @@ class HealthAtlasImmuneDeviceTest {
     @Test fun allTwelvePlatesHaveVisibleDistinctFeaturesAndCorrectOwners() {
         val atlas = HealthBodyAtlas.load(context)
         val plates = HealthAtlasImmunePlates.all
+        val scenes = HealthAtlasGranulocyte.entries.map { it.owner } + HealthAtlasImmuneLink.entries.map { it.owner } +
+            HealthAtlasBloodDefense.entries.map { it.owner } + HealthAtlasPhagocytosisView.OWNER
         assertEquals(12, plates.size)
         assertEquals(12, plates.map { it.drawable }.toSet().size)
         assertEquals(25, plates.sumOf { it.features.size })
+        assertEquals(plates.map { it.owner }.toSet(), scenes.toSet())
+        assertEquals(12, scenes.size)
         for (plate in plates) {
             val item = atlas[plate.owner!!]!!
             assertEquals(plate, HealthAtlasPlates.forId(item.id))
@@ -325,6 +329,29 @@ class HealthAtlasImmuneDeviceTest {
                 activity.onBackPressed()
             }
             ready(scenario, "atlas-search")
+        }
+    }
+
+    @Test fun plateletAndPrecursorOpenSeparateLessonsAndKeepTheirOwnPlayheads() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("cell-megakaryocyte")
+            activity.view("atlas-tab-3").performClick()
+            val precursor = activity.view("atlas-blood-defense-diagram") as HealthAtlasBloodDefenseView
+            assertEquals(HealthAtlasBloodDefense.MEGAKARYOCYTE, precursor.lesson)
+            activity.view("atlas-process-stage-3").performClick()
+            activity.view("atlas-immune-related-fragment-platelet").performClick()
+            activity.view("atlas-tab-3").performClick()
+            val platelet = activity.view("atlas-blood-defense-diagram") as HealthAtlasBloodDefenseView
+            assertEquals(HealthAtlasBloodDefense.PLATELET, platelet.lesson)
+            assertEquals(0, platelet.stage)
+            activity.view("atlas-process-stage-2").performClick()
+            activity.onBackPressed()
+        }
+        ready(scenario, "atlas-blood-defense-diagram")
+        scenario.onActivity {
+            val restored = it.view("atlas-blood-defense-diagram") as HealthAtlasBloodDefenseView
+            assertEquals(HealthAtlasBloodDefense.MEGAKARYOCYTE, restored.lesson)
+            assertEquals(3, restored.stage)
         }
     }
 }
