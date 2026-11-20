@@ -20,6 +20,12 @@ internal object HealthAtlasAgentContext {
             appendLine(context.getString(R.string.health_atlas_art_note))
             plate.source?.let { appendLine(it) }
         }
+        if (item.kind == HealthAtlasKind.TISSUE) {
+            appendLine(context.getString(R.string.health_atlas_tissue_locations) + ": " +
+                item.locatedIn.mapNotNull(atlas::get).joinToString(", ") { it.name })
+            appendLine(context.getString(R.string.health_atlas_tissue_cell_examples) + ": " +
+                atlas.cells(item).joinToString(", ") { it.name })
+        }
         val physiology = topic == null || topic == HealthAtlasResearchTopic.PHYSIOLOGY
         if (physiology && simulation != null) {
             appendLine(); appendLine(context.getString(R.string.health_atlas_teaching_note))

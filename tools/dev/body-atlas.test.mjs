@@ -13,7 +13,7 @@ function validate(data) {
   const resources = new Set();
   for (const item of data.entries) {
     assert.match(item.id, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
-    assert.ok(['system', 'organ', 'cell', 'fragment'].includes(item.kind), item.id);
+    assert.ok(['system', 'organ', 'tissue', 'cell', 'fragment'].includes(item.kind), item.id);
     assert.ok(item.systems.length > 0, item.id);
     for (const system of item.systems) assert.equal(entries.get(system)?.kind, 'system', `${item.id}: ${system}`);
     for (const related of item.related) {
@@ -25,6 +25,23 @@ function validate(data) {
       assert.equal(item.mechanism, item.id, 'Cell mechanism must belong to the microscopic entry');
       assert.equal(mechanisms.get(item.mechanism).kind, item.kind, 'Cell mechanism kind must match');
     }
+    if (item.kind === 'tissue') {
+      assert.ok(item.locatedIn?.length, 'Tissues need example organ locations');
+      assert.equal(new Set(item.locatedIn).size, item.locatedIn.length, 'Tissue locations cannot repeat');
+      for (const organId of item.locatedIn) {
+        const organ = entries.get(organId);
+        assert.equal(organ?.kind, 'organ', `${item.id}: ${organId} is not an organ location`);
+        assert.ok(organ.systems.some(id => item.systems.includes(id)),
+          `${item.id}: ${organId} has unrelated systems (${organ.systems.join(', ')})`);
+      }
+      assert.ok(item.related.length && item.related.every(id => entries.get(id)?.kind === 'cell'), 'Tissues need canonical cell examples');
+      assert.equal(new Set(item.related).size, item.related.length, 'Tissue cell examples cannot repeat');
+      assert.equal(item.mechanism, item.id, 'Tissue mechanism must belong to its entry');
+      assert.equal(mechanisms.get(item.mechanism).kind, 'tissue', 'Tissue mechanism kind must match');
+    } else {
+      assert.equal(item.locatedIn?.length ?? 0, 0, 'Only tissues declare example organ locations');
+      assert.notEqual(mechanisms.get(item.mechanism).kind, 'tissue', 'Tissue stages cannot leak to other entries');
+    }
     for (const field of ['name', 'description', 'aliases']) {
       assert.match(item[field], /^health_atlas_[a-z0-9_]+$/);
       assert.ok(!resources.has(item[field]), `Shared resource key: ${item[field]}`);
@@ -35,6 +52,7 @@ function validate(data) {
     assert.equal(model.stages.length, 4, model.id);
     assert.match(model.chapter, /^[a-z0-9-]+$/);
     if (model.reference !== undefined) assert.match(model.reference, /^https:\/\/pubmed\.ncbi\.nlm\.nih\.gov\/[1-9][0-9]*\/$/);
+    if (model.kind === 'tissue') assert.equal(entries.get(model.id)?.kind, 'tissue', 'Tissue mechanism requires an owner');
     if (['cell', 'fragment'].includes(model.kind)) {
       assert.equal(entries.get(model.id)?.kind, model.kind, model.id);
       assert.equal(entries.get(model.id)?.mechanism, model.id, 'Cell mechanism must match its owner');
@@ -124,12 +142,45 @@ test('cell-specific processes cannot be reused for another cell or structure', (
 
 test('bundled atlas is a complete canonical graph', () => {
   validate(catalogue);
-  for (const [kind, count] of [['system', 14], ['organ', 167], ['cell', 105], ['fragment', 1]]) {
+  for (const [kind, count] of [['system', 14], ['organ', 167], ['tissue', 14], ['cell', 105], ['fragment', 1]]) {
     assert.equal(catalogue.entries.filter(item => item.kind === kind).length, count);
   }
   const skin = catalogue.entries.find(item => item.id === 'skin');
   assert.equal(skin.kind, 'system');
   assert.ok(skin.related.includes('skin-organ'));
+});
+
+test('tissue examples have unique localized teaching steps and explicit links', () => {
+  const tissues = catalogue.entries.filter(entry => entry.kind === 'tissue');
+  const touchedOrgans = new Set(tissues.flatMap(entry => entry.locatedIn));
+  const cells = new Set(tissues.flatMap(entry => entry.related));
+  assert.equal(tissues.length, 14);
+  assert.ok(touchedOrgans.size >= 45);
+  assert.ok(cells.size >= 20);
+  const files = ['values', 'values-zh'].map(locale => readFileSync(
+    new URL(`../../apps/android/app/src/main/res/${locale}/health_atlas_tissues.xml`, import.meta.url), 'utf8'));
+  const keys = new Set();
+  for (const item of tissues) {
+    const model = catalogue.mechanisms.find(row => row.id === item.id);
+    for (const key of [item.name, item.description, item.aliases, model.title, ...model.stages]) {
+      assert.ok(!keys.has(key), key);
+      keys.add(key);
+      for (const file of files) assert.ok(file.includes(`name="${key}"`), key);
+    }
+  }
+});
+
+test('the tissue graph rejects an invalid organ location, cell example or borrowed mechanism', () => {
+  const bad = structuredClone(catalogue);
+  const heart = bad.entries.find(entry => entry.id === 'tissue-cardiac-muscle');
+  heart.locatedIn = ['cell-cardiomyocyte'];
+  assert.throws(() => validate(bad), /not an organ location/);
+  heart.locatedIn = ['heart'];
+  heart.related = ['ventricles'];
+  assert.throws(() => validate(bad), /cell examples/);
+  heart.related = ['cell-cardiomyocyte'];
+  heart.mechanism = 'tissue-skeletal-muscle';
+  assert.throws(() => validate(bad), /must belong/);
 });
 
 test('nephron segments link to renal cells and seven independent mechanisms', () => {

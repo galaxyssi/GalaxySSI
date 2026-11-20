@@ -5,13 +5,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 
-internal enum class HealthAtlasKind { SYSTEM, ORGAN, CELL, FRAGMENT }
+internal enum class HealthAtlasKind { SYSTEM, ORGAN, TISSUE, CELL, FRAGMENT }
 internal enum class HealthAtlasTab { STRUCTURE, FUNCTION, VALUES, SIMULATION }
 
 internal data class HealthAtlasItem(
     val id: String, val kind: HealthAtlasKind, val name: String, val description: String,
     val systems: List<String>, val related: List<String>, val mechanism: String,
-    val aliases: String, val color: String, val icon: String,
+    val aliases: String, val color: String, val icon: String, val locatedIn: List<String> = emptyList(),
 )
 
 internal data class HealthAtlasMechanism(val id: String, val kind: String, val title: String,
@@ -25,6 +25,7 @@ internal class HealthBodyAtlas(val items: List<HealthAtlasItem>, val mechanisms:
     private val index = items.associateBy { it.id }
     private val models = mechanisms.associateBy { it.id }
     val systems get() = items.filter { it.kind == HealthAtlasKind.SYSTEM }
+    val tissues get() = items.filter { it.kind == HealthAtlasKind.TISSUE }
     init {
         require(index.size == items.size && models.size == mechanisms.size)
         require(items.all { it.id.matches(Regex("[a-z0-9]+(?:-[a-z0-9]+)*")) && it.name.isNotBlank() && it.description.isNotBlank() })
@@ -41,13 +42,33 @@ internal class HealthBodyAtlas(val items: List<HealthAtlasItem>, val mechanisms:
         require(items.all { models.getValue(it.mechanism).kind !in microscopicKinds || it.mechanism == it.id }) {
             "Microscopic mechanisms cannot be assigned to other entries"
         }
+        require(items.all { item ->
+            if (item.kind != HealthAtlasKind.TISSUE) item.locatedIn.isEmpty()
+            else item.locatedIn.isNotEmpty() && item.locatedIn.distinct().size == item.locatedIn.size &&
+                item.locatedIn.all { id -> index[id]?.let { organ ->
+                    organ.kind == HealthAtlasKind.ORGAN && organ.systems.any(item.systems::contains)
+                } == true } && item.related.isNotEmpty() && item.related.distinct().size == item.related.size &&
+                item.related.all { id -> index[id]?.kind == HealthAtlasKind.CELL } &&
+                item.mechanism == item.id && models.getValue(item.mechanism).kind == "tissue"
+        }) { "Tissues require a matching mechanism, explicit organ locations and cell examples" }
+        require(items.all { item -> models.getValue(item.mechanism).kind != "tissue" || item.kind == HealthAtlasKind.TISSUE })
+        require(mechanisms.filter { it.kind == "tissue" }.all { model -> index[model.id]?.kind == HealthAtlasKind.TISSUE })
     }
     operator fun get(id: String) = index[id]
     fun mechanism(item: HealthAtlasItem) = models.getValue(item.mechanism)
     fun children(item: HealthAtlasItem) = item.related.mapNotNull(index::get)
-    fun parents(item: HealthAtlasItem) = items.filter { item.id in it.related && it.kind != HealthAtlasKind.SYSTEM }
-    fun cells(item: HealthAtlasItem) = items.filter { it.kind in setOf(HealthAtlasKind.CELL, HealthAtlasKind.FRAGMENT) &&
-        (if (item.kind == HealthAtlasKind.SYSTEM) item.id in it.systems else item.id in it.related) }
+    fun parents(item: HealthAtlasItem) = (item.locatedIn.mapNotNull(index::get) +
+        items.filter { item.id in it.related && it.kind != HealthAtlasKind.SYSTEM }).distinctBy { it.id }
+    fun tissues(item: HealthAtlasItem) = tissues.filter { tissue ->
+        when (item.kind) {
+            HealthAtlasKind.SYSTEM -> item.id in tissue.systems
+            HealthAtlasKind.ORGAN -> item.id in tissue.locatedIn
+            else -> false
+        }
+    }
+    fun cells(item: HealthAtlasItem): List<HealthAtlasItem> = if (item.kind == HealthAtlasKind.TISSUE) children(item)
+        else items.filter { it.kind in setOf(HealthAtlasKind.CELL, HealthAtlasKind.FRAGMENT) &&
+            (if (item.kind == HealthAtlasKind.SYSTEM) item.id in it.systems else item.id in it.related) }
     fun search(query: String, kind: HealthAtlasKind?, system: String = ""): List<HealthAtlasItem> {
         val words = query.trim().lowercase(Locale.ROOT).split(Regex("\\s+")).filter(String::isNotBlank)
         return items.filter { item ->
@@ -71,7 +92,8 @@ internal class HealthBodyAtlas(val items: List<HealthAtlasItem>, val mechanisms:
                 HealthAtlasItem(value.getString("id"), HealthAtlasKind.valueOf(value.getString("kind").uppercase(Locale.ROOT)),
                     text(value.getString("name")), text(value.getString("description")), value.getJSONArray("systems").strings(),
                     value.getJSONArray("related").strings(), value.getString("mechanism"), text(value.getString("aliases")),
-                    value.getString("color"), value.getString("icon"))
+                    value.getString("color"), value.getString("icon"),
+                    value.optJSONArray("locatedIn")?.strings().orEmpty())
             }
             val models = root.getJSONArray("mechanisms").objects().map { value ->
                 HealthAtlasMechanism(value.getString("id"), value.getString("kind"), text(value.getString("title")),
