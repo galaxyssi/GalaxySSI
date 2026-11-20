@@ -88,7 +88,7 @@ internal object HealthAtlasPlates {
     val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron, alveolus, eye, ear) +
         HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all + HealthAtlasTissuePlates.all +
         HealthAtlasHeartSection.section + HealthAtlasImmunePlates.all + HealthAtlasCoreCellPlates.all +
-        HealthAtlasTransportCellPlates.all + HealthAtlasDigestivePlates.all
+        HealthAtlasTransportCellPlates.all + HealthAtlasDigestivePlates.all + HealthAtlasEndocrinePlates.all
 
     fun viewsForId(id: String?): List<HealthAtlasPlate> = if (id == "heart") listOf(heart, HealthAtlasHeartSection.section)
         else HealthAtlasMusculoskeletalPlates.viewsForId(id).ifEmpty { listOfNotNull(defaultForId(id)) }
@@ -117,6 +117,7 @@ internal object HealthAtlasPlates {
         "cell-neuron" -> neuron
         else -> HealthAtlasHeartSection.forId(id) ?: HealthAtlasTissuePlates.forId(id) ?:
             HealthAtlasImmunePlates.forId(id) ?: HealthAtlasCoreCellPlates.forId(id) ?:
-            HealthAtlasTransportCellPlates.forId(id) ?: HealthAtlasDigestivePlates.forId(id) ?: HealthAtlasSystemPlates.forId(id)
+            HealthAtlasTransportCellPlates.forId(id) ?: HealthAtlasDigestivePlates.forId(id) ?:
+            HealthAtlasEndocrinePlates.forId(id) ?: HealthAtlasSystemPlates.forId(id)
     }
 }

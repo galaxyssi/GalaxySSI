@@ -117,10 +117,10 @@ class HealthAtlasSystemOverviewDeviceTest {
         val atlas = HealthBodyAtlas.load(context)
         for (id in listOf("brain", "heart", "lungs", "pancreas", "liver", "kidneys", "alveoli"))
             assertEquals(id, HealthAtlasPlates.forId(id)!!.owner)
-        for (id in listOf("cell-langerhans-cell", "cell-thyroid-follicular-cell"))
+        for (id in listOf("cell-langerhans-cell", "nails"))
             assertNull(HealthAtlasPlates.forId(id))
-        for (id in listOf("parathyroid-glands", "nails"))
-            assertNull(HealthAtlasPlates.forId(id))
+        for (id in listOf("parathyroid-glands", "cell-thyroid-follicular-cell", "thyroid-gland", "pituitary-gland", "adrenal-glands"))
+            assertEquals(id, HealthAtlasPlates.forId(id)?.owner)
         assertEquals("pancreatic-islets", HealthAtlasPlates.forId("pancreatic-islets")?.owner)
         assertEquals("ear", HealthAtlasPlates.forId("cochlea")!!.owner)
         assertEquals("heart", HealthAtlasPlates.forId("heart-valves")!!.owner)
@@ -193,6 +193,7 @@ class HealthAtlasSystemOverviewDeviceTest {
                 "ear" -> R.string.health_atlas_view_ear_section to "atlas-hotspot-middle-ear"
                 "brain" -> R.string.health_atlas_view_lateral to "atlas-hotspot-cerebrum"
                 "lungs" -> R.string.health_atlas_view_anterior to "atlas-hotspot-bronchi"
+                "thyroid-gland" -> R.string.health_atlas_endocrine_thyroid_section_view to "atlas-hotspot-cell-thyroid-follicular-cell"
                 else -> null
             }
             fun assertChildPlate(activity: Activity) {

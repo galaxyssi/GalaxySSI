@@ -78,9 +78,22 @@ roles and links each step to the corresponding structure page. The steps
 describe functions, not a timing model. Hormone destinations are separate
 from the synthetic ductal-fluid calculation.
 
+## Endocrine Glands And Cells
+
+Four gland plates and fourteen cell plates add 37 labeled structures and four
+catalogue links. Cell shape and color are illustrative, not diagnostic
+histology. The thyroid panel separates follicular cells from C cells, and the
+posterior neck view shows a common, not universal, parathyroid arrangement.
+
+Four independent pathways cover thyroid feedback, PTH regulation of calcium,
+pituitary anterior and posterior lobe signaling, and adrenal cortex and medulla
+signaling. Mechanism stages choose their own cell or organ links. The medulla
+and posterior lobe paths are not represented as steps in the ACTH or anterior
+pituitary branches.
+
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides twelve independently bounded teaching models:
+`HealthAtlasPhysiology` provides thirteen independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -117,8 +130,11 @@ from the synthetic ductal-fluid calculation.
   ductal stream. It divides total bicarbonate delivered per minute by combined
   volumetric flow. It does not predict pH, neutralization, or individual
   pancreatic function.
+- A linear feedback example in the thyroid panel divides the initial
+  dimensionless signal by one plus feedback strength. The result is distinct
+  from TSH or thyroid hormone measurements and never enters the health record.
 
-Forty-six canonical entries expose these associated processes. Tubular cells
+Forty-seven canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -245,7 +261,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the 101 anatomical, tissue and cellular illustrations and selectable structures to the
+- Extend the 119 anatomical, tissue and cellular illustrations and selectable structures to the
   remaining organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by

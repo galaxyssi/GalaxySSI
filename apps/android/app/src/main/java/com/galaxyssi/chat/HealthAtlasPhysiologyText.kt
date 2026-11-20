@@ -17,6 +17,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.NERVE_TRANSIT -> R.string.health_atlas_nerve_transit
         HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> R.string.health_atlas_alveolar_surface
         HealthAtlasPhysiologyKind.BICARBONATE_MIX -> R.string.health_atlas_digestive_bicarb_title
+        HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> R.string.health_atlas_endocrine_feedback_title
     }
     fun scope(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_scope
@@ -31,6 +32,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.NERVE_TRANSIT -> R.string.health_atlas_nerve_transit_scope
         HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> R.string.health_atlas_alveolar_surface_scope
         HealthAtlasPhysiologyKind.BICARBONATE_MIX -> R.string.health_atlas_digestive_bicarb_scope
+        HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> R.string.health_atlas_endocrine_feedback_scope
     }
     fun formula(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_formula
@@ -45,6 +47,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.NERVE_TRANSIT -> R.string.health_atlas_nerve_transit_formula
         HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> R.string.health_atlas_alveolar_surface_formula
         HealthAtlasPhysiologyKind.BICARBONATE_MIX -> R.string.health_atlas_digestive_bicarb_formula
+        HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> R.string.health_atlas_endocrine_feedback_formula
     }
     fun label(key: String) = when (key) {
         "rate" -> R.string.health_atlas_rate
@@ -78,6 +81,8 @@ internal object HealthAtlasPhysiologyText {
         "alveolar-radius" -> R.string.health_atlas_alveolar_radius
         "bicarb-flow" -> R.string.health_atlas_digestive_bicarb_flow
         "bicarb-concentration" -> R.string.health_atlas_digestive_bicarb_concentration
+        "feedback-drive" -> R.string.health_atlas_endocrine_feedback_drive
+        "feedback-gain" -> R.string.health_atlas_endocrine_feedback_gain
         else -> error("Unknown physiology input: $key")
     }
     fun unit(key: String) = when (key) {
@@ -104,6 +109,8 @@ internal object HealthAtlasPhysiologyText {
         "alveolar-radius" -> "\u03bcm"
         "bicarb-flow" -> "mL/min"
         "bicarb-concentration" -> "mmol/L"
+        "feedback-drive" -> "%"
+        "feedback-gain" -> "\u00d7"
         else -> error("Unknown physiology input: $key")
     }
     fun number(value: Double, digits: Int = 2): String = NumberFormat.getNumberInstance().apply {
@@ -135,6 +142,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.NERVE_TRANSIT -> R.string.health_atlas_nerve_transit_over_ten
         HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> R.string.health_atlas_alveolar_surface_double
         HealthAtlasPhysiologyKind.BICARBONATE_MIX -> R.string.health_atlas_digestive_bicarb_companion
+        HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> R.string.health_atlas_endocrine_feedback_reduction
     }, number(model.companionValue, if (model.kind == HealthAtlasPhysiologyKind.POTASSIUM) 4 else 2))
     }
     fun sourceTitle(kind: HealthAtlasPhysiologyKind, index: Int): Int = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING) {

@@ -2181,7 +2181,7 @@
         "endocrine"
       ],
       "related": [],
-      "mechanism": "endocrine",
+      "mechanism": "pituitary-gland",
       "aliases": "health_atlas_pituitary_gland_aliases",
       "color": "",
       "icon": ""
@@ -2209,7 +2209,7 @@
         "endocrine"
       ],
       "related": [],
-      "mechanism": "endocrine",
+      "mechanism": "thyroid-gland",
       "aliases": "health_atlas_thyroid_gland_aliases",
       "color": "",
       "icon": ""
@@ -2223,7 +2223,7 @@
         "endocrine"
       ],
       "related": [],
-      "mechanism": "endocrine",
+      "mechanism": "parathyroid-glands",
       "aliases": "health_atlas_parathyroid_glands_aliases",
       "color": "",
       "icon": ""
@@ -2237,7 +2237,7 @@
         "endocrine"
       ],
       "related": [],
-      "mechanism": "endocrine",
+      "mechanism": "adrenal-glands",
       "aliases": "health_atlas_adrenal_glands_aliases",
       "color": "",
       "icon": ""
@@ -5633,6 +5633,54 @@
         "health_atlas_mechanism_urinary_3"
       ],
       "chapter": "25-introduction"
+    },
+    {
+      "id": "pituitary-gland",
+      "kind": "secretion",
+      "title": "health_atlas_endocrine_pituitary_path_title",
+      "stages": [
+        "health_atlas_endocrine_pituitary_path_0",
+        "health_atlas_endocrine_pituitary_path_1",
+        "health_atlas_endocrine_pituitary_path_2",
+        "health_atlas_endocrine_pituitary_path_3"
+      ],
+      "chapter": "17-3-the-pituitary-gland-and-hypothalamus"
+    },
+    {
+      "id": "thyroid-gland",
+      "kind": "secretion",
+      "title": "health_atlas_endocrine_thyroid_path_title",
+      "stages": [
+        "health_atlas_endocrine_thyroid_path_0",
+        "health_atlas_endocrine_thyroid_path_1",
+        "health_atlas_endocrine_thyroid_path_2",
+        "health_atlas_endocrine_thyroid_path_3"
+      ],
+      "chapter": "17-4-the-thyroid-gland"
+    },
+    {
+      "id": "parathyroid-glands",
+      "kind": "secretion",
+      "title": "health_atlas_endocrine_parathyroid_path_title",
+      "stages": [
+        "health_atlas_endocrine_parathyroid_path_0",
+        "health_atlas_endocrine_parathyroid_path_1",
+        "health_atlas_endocrine_parathyroid_path_2",
+        "health_atlas_endocrine_parathyroid_path_3"
+      ],
+      "chapter": "17-5-the-parathyroid-glands"
+    },
+    {
+      "id": "adrenal-glands",
+      "kind": "secretion",
+      "title": "health_atlas_endocrine_adrenal_path_title",
+      "stages": [
+        "health_atlas_endocrine_adrenal_path_0",
+        "health_atlas_endocrine_adrenal_path_1",
+        "health_atlas_endocrine_adrenal_path_2",
+        "health_atlas_endocrine_adrenal_path_3"
+      ],
+      "chapter": "17-6-the-adrenal-glands"
     },
     {
       "id": "endocrine",
