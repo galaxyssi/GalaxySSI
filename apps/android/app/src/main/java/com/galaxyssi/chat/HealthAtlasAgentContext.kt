@@ -6,7 +6,8 @@ import android.content.Context
 internal object HealthAtlasAgentContext {
     fun prompt(context: Context, atlas: HealthBodyAtlas, item: HealthAtlasItem?,
         simulation: HealthAtlasSimulation? = null, quantitative: HealthAtlasPhysiology? = null,
-        topic: HealthAtlasResearchTopic? = null, elimination: HealthAtlasElimination? = null): String = buildString {
+        topic: HealthAtlasResearchTopic? = null, elimination: HealthAtlasElimination? = null,
+        drugs: HealthAtlasDrugState? = null): String = buildString {
         if (item == null) {
             append(context.getString(R.string.health_atlas_ask_whole_context))
             return@buildString
@@ -48,13 +49,17 @@ internal object HealthAtlasAgentContext {
             appendLine(); appendLine(context.getString(topic.title))
             appendLine(context.getString(when (topic) {
                 HealthAtlasResearchTopic.PHYSIOLOGY -> R.string.health_atlas_teaching_note
-                HealthAtlasResearchTopic.DRUGS -> R.string.health_atlas_elimination_assumptions
+                HealthAtlasResearchTopic.DRUGS -> if (drugs?.mode == HealthAtlasDrugMode.TWO)
+                    R.string.health_atlas_drug_models else R.string.health_atlas_elimination_assumptions
                 HealthAtlasResearchTopic.AGING -> R.string.health_atlas_aging_evidence
             }))
             if (topic == HealthAtlasResearchTopic.DRUGS) {
-                val values = elimination ?: HealthAtlasElimination()
-                appendLine(context.getString(R.string.health_atlas_elimination_summary, values.halfLifeHours,
-                    values.elapsedHours, HealthAtlasPhysiologyText.number(values.percent)))
+                if (drugs?.mode == HealthAtlasDrugMode.TWO) appendLine(HealthAtlasDistributionText.prompt(context, drugs.distribution))
+                else {
+                    val values = elimination ?: HealthAtlasElimination()
+                    appendLine(context.getString(R.string.health_atlas_elimination_summary, values.halfLifeHours,
+                        values.elapsedHours, HealthAtlasPhysiologyText.number(values.percent)))
+                }
             }
             append(HealthAtlasResearchSources.forTopic(topic, mechanism).joinToString("\n"))
         }
