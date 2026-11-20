@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <path android:fillColor="#ea9ba0" android:strokeColor="#a96377" android:strokeWidth="2.7" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M48,219 Q172,200 312,220 L312,237 Q179,218 46,238 Z" />
+    <path android:fillColor="#a96377" android:pathData="M82,224 a12,4 0 1,0 24,0 a12,4 0 1,0 -24,0 Z" />
+    <path android:fillColor="#a96377" android:pathData="M192,223 a12,4 0 1,0 24,0 a12,4 0 1,0 -24,0 Z" />
+    <path android:fillColor="#a96377" android:pathData="M266,224 a12,4 0 1,0 24,0 a12,4 0 1,0 -24,0 Z" />
+    <path android:fillColor="#e7d8cf" android:strokeColor="#a96966" android:strokeWidth="2.7" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M60,141 a39,59 0 1,0 78,0 a39,59 0 1,0 -78,0 Z" />
+    <path android:fillColor="#e7d8cf" android:strokeColor="#a96966" android:strokeWidth="2.7" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M211,139 a47,64 0 1,0 94,0 a47,64 0 1,0 -94,0 Z" />
+    <path android:fillColor="#88b8b1" android:strokeColor="#4b807b" android:strokeWidth="2.7" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M117,125 Q133,79 185,82 Q219,82 233,121 L227,184 Q201,218 157,206 Q122,198 114,165 Z" />
+    <path android:fillColor="#795b86" android:pathData="M143,135 a20,18 0 1,0 40,0 a20,18 0 1,0 -40,0 Z" />
+    <path android:fillColor="#795b86" android:pathData="M80,148 a13,11 0 1,0 26,0 a13,11 0 1,0 -26,0 Z" />
+    <path android:fillColor="#795b86" android:pathData="M249,144 a14,11 0 1,0 28,0 a14,11 0 1,0 -28,0 Z" />
+    <path android:fillColor="#a67544" android:pathData="M171,182 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z M191,174 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 Z M207,161 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z M199,187 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0 Z" />
+</vector>

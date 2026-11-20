@@ -45,7 +45,10 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
         "https://pubmed.ncbi.nlm.nih.gov/20724566/"),
     BICARBONATE_MIX(listOf(HealthAtlasInput("bicarb-flow", 0..40, 10, 10.0),
         HealthAtlasInput("bicarb-concentration", 20..120, 80)), 1, "mmol/L", 0.0, 100.0,
-        "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder");
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder"),
+    THYROID_FEEDBACK(listOf(HealthAtlasInput("feedback-drive", 20..100, 80),
+        HealthAtlasInput("feedback-gain", 0..300, 100, 100.0)), 0, "%", 0.0, 100.0,
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-4-the-thyroid-gland");
 
     val sources get() = listOfNotNull(source, extraSource) +
         if (this == VESSEL_FLOW) listOf(HealthAtlasVesselFlow.UNIT_SOURCE) else emptyList()
@@ -68,6 +71,7 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "peripheral-nerves", "spinal-nerves", "cranial-nerves" -> NERVE_TRANSIT
             "cell-type-ii-pneumocyte" -> ALVEOLAR_SURFACE
             "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell" -> BICARBONATE_MIX
+            "thyroid-gland" -> THYROID_FEEDBACK
             else -> null
         }
     }
@@ -96,6 +100,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.NERVE_TRANSIT -> 100.0 / input(1)
         HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> result / 2.0
         HealthAtlasPhysiologyKind.BICARBONATE_MIX -> bicarbonateDelivery(input(0), input(1))
+        HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> input(0) - result
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
@@ -141,6 +146,8 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         // 2 * tension / radius, converting mN/m and micrometres to SI.
         HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE -> 2000.0 * values[0] / values[1]
         HealthAtlasPhysiologyKind.BICARBONATE_MIX -> bicarbonateDelivery(values[0], values[1]) / (1.0 + values[0])
+        // Dimensionless static example: output = input - gain * output.
+        HealthAtlasPhysiologyKind.THYROID_FEEDBACK -> values[0] / (1.0 + values[1])
     }
     companion object {
         // 1 mL/min at 20 mmol/L delivers 20 micromoles per minute.

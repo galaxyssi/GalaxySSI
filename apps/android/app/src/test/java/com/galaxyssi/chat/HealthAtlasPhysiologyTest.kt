@@ -121,4 +121,19 @@ class HealthAtlasPhysiologyTest {
         assertNull(HealthAtlasPhysiology.restore("cell-pancreatic-acinar-cell", intArrayOf(10, 80)))
         assertNull(HealthAtlasPhysiology.restore("pancreatic-duct", intArrayOf(-1, 80)))
     }
+    @Test fun thyroidFeedbackBalancesTheSyntheticSignalWithoutUsingPersonalResults() {
+        val id = "thyroid-gland"
+        val model = requireNotNull(HealthAtlasPhysiology.restore(id, intArrayOf(80, 100)))
+        assertEquals(40.0, model.result, 1e-9)
+        assertEquals(80.0, model.withInput(1, 0).result, 1e-9)
+        assertEquals(20.0, model.withInput(1, 300).result, 1e-9)
+        for (gain in 0..300 step 7) {
+            val current = model.withInput(1, gain)
+            assertEquals(current.result * current.input(1), current.companionValue, 1e-9)
+            assertEquals(current.input(0), current.result + current.companionValue, 1e-9)
+        }
+        assertNull(HealthAtlasPhysiology.restore("parathyroid-glands", intArrayOf(80, 100)))
+        assertNull(HealthAtlasPhysiology.restore("cell-thyrotroph", intArrayOf(80, 100)))
+        assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(80, 301)))
+    }
 }
