@@ -67,7 +67,11 @@ internal object HealthAtlasPlates {
         R.string.health_atlas_view_alveolus, listOf(
             HealthAtlasMarker("alveoli", .48f, .48f), HealthAtlasMarker("respiratory-membrane", .66f, .67f),
             HealthAtlasMarker("pulmonary-capillaries", .74f, .69f)), HealthAtlasGasExchange.SOURCE)
-    val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron, alveolus) +
+    private val eye = HealthAtlasPlate(R.drawable.health_atlas_eye_section, "eye",
+        R.string.health_atlas_view_eye_section, listOf(
+            HealthAtlasMarker("cornea", .138f, .39f), HealthAtlasMarker("lens", .30f, .49f),
+            HealthAtlasMarker("retina", .663f, .669f)), HealthAtlasEyeOptics.ANATOMY_SOURCE)
+    val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron, alveolus, eye) +
         HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all
 
     fun viewsForId(id: String?): List<HealthAtlasPlate> = HealthAtlasMusculoskeletalPlates.viewsForId(id)
@@ -83,6 +87,7 @@ internal object HealthAtlasPlates {
         "brain", "cerebrum", "cerebellum", "brainstem" -> brain
         "lungs", "trachea", "bronchi" -> lungs
         "alveoli", "respiratory-membrane", "pulmonary-capillaries" -> alveolus
+        "eye", "cornea", "lens", "retina" -> eye
         "liver", "gallbladder" -> liver
         "kidneys", "renal-cortex", "renal-medulla", "renal-pelvis" -> kidney
         "urinary", "ureters", "bladder", "urethra" -> urinary

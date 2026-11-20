@@ -26,7 +26,10 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     VESSEL_FLOW(listOf(HealthAtlasInput("vessel-pressure", 0..20, 10),
         HealthAtlasInput("vessel-radius", 50..200, 100, 1000.0), HealthAtlasInput("vessel-length", 20..100, 50),
         HealthAtlasInput("vessel-viscosity", 20..60, 35, 10.0)), 1, "mL/min", 0.0, 3.0,
-        HealthAtlasVesselFlow.SOURCE, HealthAtlasVesselFlow.PROFILE_SOURCE);
+        HealthAtlasVesselFlow.SOURCE, HealthAtlasVesselFlow.PROFILE_SOURCE),
+    EYE_FOCUS(listOf(HealthAtlasInput("eye-distance", 25..600, 100, 100.0),
+        HealthAtlasInput("eye-power", 5500..6500, 5982, 100.0)), 1, "mm", -3.0, 3.0,
+        HealthAtlasEyeOptics.SOURCE);
 
     val sources get() = listOfNotNull(source, extraSource) +
         if (this == VESSEL_FLOW) listOf(HealthAtlasVesselFlow.UNIT_SOURCE) else emptyList()
@@ -43,6 +46,7 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "blood", "cell-erythrocyte" -> OXYGEN_BINDING
             "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna" -> ELBOW_BALANCE
             "blood-vessels", "arteries", "veins", "coronary-vessels" -> VESSEL_FLOW
+            "eye", "lens" -> EYE_FOCUS
             else -> null
         }
     }
@@ -65,6 +69,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.OXYGEN_BINDING -> requireNotNull(oxygenAmounts).total
         HealthAtlasPhysiologyKind.ELBOW_BALANCE -> requireNotNull(elbowForces).jointDown
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> requireNotNull(vesselFlow).resistanceMmHgMinutesPerMl
+        HealthAtlasPhysiologyKind.EYE_FOCUS -> requireNotNull(eyeOptics).targetPowerDiopters
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
@@ -74,6 +79,8 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasElbow.forces(input(0), input(1), input(2)) else null
     val vesselFlow: HealthAtlasVesselFlow? get() = if (kind == HealthAtlasPhysiologyKind.VESSEL_FLOW)
         HealthAtlasVesselFlow(input(0), input(1), input(2), input(3)) else null
+    val eyeOptics: HealthAtlasEyeOptics? get() = if (kind == HealthAtlasPhysiologyKind.EYE_FOCUS)
+        HealthAtlasEyeOptics(input(0), input(1)) else null
     val plotMaximum: Double get() = when (kind) {
         HealthAtlasPhysiologyKind.ELBOW_BALANCE -> kotlin.math.ceil(resultAt(axisRange.endInclusive) / 100.0) * 100.0
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> {
@@ -97,6 +104,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.OXYGEN_BINDING -> 100.0 * HealthAtlasOxygen.saturation(values[0], values[1])
         HealthAtlasPhysiologyKind.ELBOW_BALANCE -> HealthAtlasElbow.forces(values[0], values[1], values[2]).muscle
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> HealthAtlasVesselFlow(values[0], values[1], values[2], values[3]).flowMlPerMinute
+        HealthAtlasPhysiologyKind.EYE_FOCUS -> HealthAtlasEyeOptics(values[0], values[1]).offsetMm
     }
     companion object {
         fun potassiumPotential(outside: Double, inside: Double): Double {
