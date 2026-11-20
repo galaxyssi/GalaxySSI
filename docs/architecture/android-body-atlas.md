@@ -155,13 +155,20 @@ and neuron. In particular, the open spaces between the ureters and nephron
 tubules remain transparent. The existing gas exchange animation and cell
 mechanisms still use their own data and controls.
 
+The third batch restyles the six raster system overviews (sensory,
+respiratory, digestive accessory organs, endocrine, immune, and skin) and
+both skeletal and muscular views. The muscle artwork uses a covered teaching
+mannequin, with the gluteal region shown by markings on the garment. Tap
+targets are recalibrated where the painted muscle, tendon, gland or cartilage
+differs from the old plate. The view keys and the destinations are unchanged.
+
 The native section renderer traces only the traveled portion of the active
 stage path and aims a contrasting arrow along its tangent. It does not add
 an independent animation or imply a real material speed or quantity. For
 lessons without a directional path, existing structure highlights remain.
-Fourteen of the original 24 bitmap plates have been restyled; the other
-system overviews, skeletal and muscle views, and vector plates are not
-part of these two batches.
+All 24 original bitmap plates have now been restyled. The separately
+authored vector plates and native simulation artwork are not part of
+the raster migration.
 
 ## Alimentary Canal Sections
 
