@@ -79,6 +79,24 @@ Research references:
 
 ## Design Coverage and Remaining Work
 
+The pinned Agent action follows the current surface. Public catalogue, mechanism
+and research prompts use `HealthAtlasAgentContext`: selected anatomy, current
+teaching stage, cardiac or other quantitative inputs, assumptions and sources.
+Animation pauses before the confirmation preview so the preview is a stable
+snapshot. Inactive research models are not added to another topic's prompt.
+
+On personal values, the pinned action opens the existing scoped trend analysis
+and consent flow, retaining metric, units, time range and data revision. It is
+disabled while loading, for empty charts and after backgrounding or access
+revocation. It never falls back to a public anatomy question. Selecting a new
+metric or period invalidates the previous handoff before starting the next read.
+The existing local preview, provider choice and disclosure checks remain intact;
+entering this screen alone does not authorize a network request.
+
+`HealthAtlasAgentLiveTest` is an opt-in real-provider check using public synthetic
+cardiac inputs and one follow-up. It creates its own conversation, never reads
+personal measurements and does not delete messages. Its report stays local.
+
 The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
