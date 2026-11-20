@@ -503,10 +503,11 @@ available. The public Agent preview includes the currently selected view and
 its source, not a stale anterior caption. Personal measurement access and
 consent are unchanged. No synthetic value is stored in a health record.
 
-The plates do not add a new biomechanical numerical model. Existing sourced
+The plates themselves do not add a biomechanical numerical model. Existing sourced
 function stages, mechanism playback, related measurements and research modes
 remain available. Deep-layer illustrations, joint-specific mechanical models
-and expert anatomical review are still separate work.
+and expert anatomical review are separate work; the static elbow example below
+is one subsequent model, not a replacement for that broader work.
 
 ### Asset Prompt Set
 
@@ -537,3 +538,35 @@ Anatomical references are linked rather than bundling textbook artwork:
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/7-1-divisions-of-the-skeletal-system
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/11-2-naming-skeletal-muscles
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/11-5-muscles-of-the-pectoral-girdle-and-upper-limbs
+
+## Static Elbow Mechanics
+
+The skeletal and muscular categories, biceps brachii, humerus, radius and ulna
+expose one explicitly scoped elbow example. A horizontal rigid forearm is in
+static equilibrium with vertical forces and a relaxed antagonist. Controls vary
+external mass (0-10 kg), its distance from the elbow (20-50 cm) and the biceps
+perpendicular lever arm (20-60 mm). Forearm mass is fixed at 2.5 kg, its centre
+of mass at 0.16 m and gravitational acceleration at 9.8 m/s^2. These are teaching
+assumptions, not patient measurements or safe lifting ranges.
+
+The original pure Kotlin model converts distances to metres and evaluates
+`B = (armWeight * 0.16 + loadWeight * loadArm) / muscleArm` and
+`E = B - armWeight - loadWeight`. B acts upward; E acts downward throughout
+the supported input domain. The default produces B = 470.4 N, E = 406.7 N and
+opposing moments of 18.816 N m. Tests independently check reference values,
+unit conversions, zero external load, all control corners, force/torque balance,
+monotonic responses and invalid saved states.
+
+An original native free-body diagram uses labeled arrows and numerical text;
+arrow length is not a force scale. Lever-arm locations update with the controls.
+The response curve is muscle force versus external mass, not time or a health
+trend; its labeled vertical range adapts to the current geometry. Updates retain
+the page and controls. Parameters remain scoped to each entry across navigation
+and recreation. The Agent preview receives the active inputs, numerical forces,
+assumptions and source; unrelated cells, drug and aging topics do not inherit it.
+
+No animation implies a dynamic mechanical solution. Acceleration, muscle-length
+dependence, fatigue, co-contraction, individualized geometry, injury prediction
+and rehabilitation advice are not modeled. Synthetic outputs never become health
+records. Textbook artwork and prose are not bundled. Equation reference:
+https://openstax.org/books/college-physics-2e/pages/9-6-forces-and-torques-in-muscles-and-joints

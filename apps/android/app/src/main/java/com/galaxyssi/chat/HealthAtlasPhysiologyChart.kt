@@ -26,7 +26,7 @@ internal class HealthAtlasPhysiologyChart(context: Context, initial: HealthAtlas
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         paint.textSize = font
-        val low = model.kind.minimum; val high = model.kind.maximum
+        val low = model.kind.minimum; val high = model.plotMaximum
         val ticks = listOf(low, (low + high) / 2, high)
         val left = ticks.maxOf { paint.measureText(HealthAtlasPhysiologyText.number(it)) } + 12 * density
         val range = model.axisRange

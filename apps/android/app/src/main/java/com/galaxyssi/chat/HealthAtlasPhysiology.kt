@@ -17,7 +17,11 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     OXYGEN_BINDING(listOf(HealthAtlasInput("oxygen-pressure", 0..150, 100),
         HealthAtlasInput("p50", 150..400, 268, 10.0), HealthAtlasInput("hemoglobin", 50..200, 150)),
         0, "%", 0.0, 100.0, "https://pmc.ncbi.nlm.nih.gov/articles/PMC2862600/",
-        "https://pmc.ncbi.nlm.nih.gov/articles/PMC3485568/");
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC3485568/"),
+    ELBOW_BALANCE(listOf(HealthAtlasInput("elbow-load", 0..100, 40, 10.0),
+        HealthAtlasInput("elbow-load-arm", 20..50, 38), HealthAtlasInput("elbow-muscle-arm", 20..60, 40)),
+        0, "N", 0.0, 2700.0,
+        "https://openstax.org/books/college-physics-2e/pages/9-6-forces-and-torques-in-muscles-and-joints");
 
     val sources get() = listOfNotNull(source, extraSource)
 
@@ -31,6 +35,7 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "cell-collecting-duct-principal-cell", "cell-collecting-duct-intercalated-cell" -> RENAL_EXCRETION
             "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron" -> POTASSIUM
             "blood", "cell-erythrocyte" -> OXYGEN_BINDING
+            "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna" -> ELBOW_BALANCE
             else -> null
         }
     }
@@ -51,11 +56,16 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.RENAL_EXCRETION -> requireNotNull(renalAmounts).reabsorbed
         HealthAtlasPhysiologyKind.POTASSIUM -> input(0) / input(1)
         HealthAtlasPhysiologyKind.OXYGEN_BINDING -> requireNotNull(oxygenAmounts).total
+        HealthAtlasPhysiologyKind.ELBOW_BALANCE -> requireNotNull(elbowForces).jointDown
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
     val renalAmounts: HealthAtlasRenal.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.RENAL_EXCRETION)
         HealthAtlasRenal.amounts(input(0), input(1), input(2)) else null
+    val elbowForces: HealthAtlasElbow.Forces? get() = if (kind == HealthAtlasPhysiologyKind.ELBOW_BALANCE)
+        HealthAtlasElbow.forces(input(0), input(1), input(2)) else null
+    val plotMaximum: Double get() = if (kind == HealthAtlasPhysiologyKind.ELBOW_BALANCE)
+        kotlin.math.ceil(resultAt(axisRange.endInclusive) / 100.0) * 100.0 else kind.maximum
     val axisRange get() = kind.inputs[kind.axis].let { it.range.first / it.scale..it.range.last / it.scale }
     fun resultAt(x: Double): Double {
         require(x.isFinite() && x in axisRange)
@@ -66,6 +76,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.RENAL_EXCRETION -> HealthAtlasRenal.amounts(values[0], values[1], values[2]).excreted
         HealthAtlasPhysiologyKind.POTASSIUM -> potassiumPotential(values[0], values[1])
         HealthAtlasPhysiologyKind.OXYGEN_BINDING -> 100.0 * HealthAtlasOxygen.saturation(values[0], values[1])
+        HealthAtlasPhysiologyKind.ELBOW_BALANCE -> HealthAtlasElbow.forces(values[0], values[1], values[2]).muscle
     }
     companion object {
         fun potassiumPotential(outside: Double, inside: Double): Double {

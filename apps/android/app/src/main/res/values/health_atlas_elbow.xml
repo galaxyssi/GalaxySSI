@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_elbow_title">Biceps force at static balance</string>
+    <string name="health_atlas_elbow_load">External load mass</string>
+    <string name="health_atlas_elbow_load_arm">Load distance from elbow</string>
+    <string name="health_atlas_elbow_muscle_arm">Biceps perpendicular lever arm</string>
+    <string name="health_atlas_elbow_joint">Joint force on forearm: %1$s N downward</string>
+    <string name="health_atlas_elbow_diagram">Horizontal forearm: force directions</string>
+    <string name="health_atlas_elbow_muscle_force">B · Biceps pull: %1$s N upward</string>
+    <string name="health_atlas_elbow_joint_force">E · Elbow reaction: %1$s N downward</string>
+    <string name="health_atlas_elbow_arm_weight">A · Forearm weight: %1$s N downward</string>
+    <string name="health_atlas_elbow_load_weight">L · External weight: %1$s N downward</string>
+    <string name="health_atlas_elbow_torque">Opposing moments at balance: %1$s N·m each</string>
+    <string name="health_atlas_elbow_fixed">Example assumptions: forearm mass 2.5 kg, centre of mass 16 cm from the elbow, g = 9.8 m/s². Arrows indicate direction, not force magnitude.</string>
+    <string name="health_atlas_elbow_formula">B × muscle arm = forearm weight × 0.16 m + load weight × load arm. E = B − forearm weight − load weight. All distances are converted to metres.</string>
+    <string name="health_atlas_elbow_scope">Elbow example only: horizontal rigid forearm, vertical forces and a relaxed antagonist. No acceleration, fatigue, co-contraction or personalized geometry. Control ranges are teaching choices, not safe lifting limits. This is not a strength test, injury prediction or rehabilitation prescription; it is not saved as a health measurement.</string>
+</resources>
