@@ -17,14 +17,15 @@ Knowledge-only Agent requests use a single-use in-process handoff token and a
 separate conversation, with no attached health observations.
 
 Cardiac output, ventilation, renal solute balance, potassium equilibrium
-potential, oxygen binding, static elbow balance, ideal tube flow and eye focus are teaching equations. Germline
+potential, oxygen binding, static elbow balance, ideal tube flow, eye focus and
+ideal middle-ear transfer are teaching equations. Germline
 stage tables expose chromosome and DNA counts. Other sequences are qualitative,
 not validated quantitative patient models.
 No organ score, biological age, drug dose or treatment outcome is inferred.
 
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides seven independently bounded teaching models:
+`HealthAtlasPhysiology` provides eight independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -46,8 +47,10 @@ No organ score, biological age, drug dose or treatment outcome is inferred.
   to flow, resistance, speed and wall shear; its assumptions are detailed below.
 - Eye optics relates object distance and equivalent optical power to the
   signed image offset from a fixed retinal plane.
+- Ideal middle-ear transfer relates the effective eardrum area, stapes
+  footplate area and ossicle lever ratio to pressure gain.
 
-Thirty-four canonical entries expose these associated processes. Tubular cells
+Thirty-six canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -150,7 +153,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the 25 anatomical illustrations and selectable structures to the
+- Extend the 26 anatomical illustrations and selectable structures to the
   remaining systems, organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by
@@ -752,3 +755,33 @@ refractive diagnosis or the focal power of the crystalline lens by itself.
 
 - Anatomy reference: https://www.nei.nih.gov/eye-health-information/healthy-vision/nei-for-kids/about-eye
 - Thin-lens reference: https://openstax.org/books/university-physics-volume-3/pages/2-5-the-eye
+
+## Ear Anatomy And Hearing
+
+An original ear-section vector shows the pinna and canal, eardrum and middle
+ear, cochlea and semicircular canals. Five localized hotspots link to outer
+ear, middle ear, inner ear, cochlea and the vestibular apparatus. Subpart
+cards retain the whole-ear caption and highlight the selected structure.
+The ear and these five subparts each have a separate four-step mechanism
+in English and Chinese. Cochlear hearing is distinguished from vestibular
+responses to rotation, linear acceleration and gravity; the vestibular
+stages are a conceptual sequence, not consecutive events in one movement.
+
+The ear and middle ear expose a lossless ideal transformer based on a lever
+and two effective areas. The pressure ratio is `N = (Ain / Aout) * lever`.
+The pressure gain is `20 * log10(N)` dB and the volume-velocity ratio is
+`1 / N` under the lossless assumption. Both areas are in mm^2; their units
+cancel. The controls span 35-75 mm^2, 2-5 mm^2 and lever ratio 1-1.6. The
+native diagram uses a common area scale and schematic lever arms. Curve
+points vary the effective eardrum area with other inputs fixed.
+
+This is not an absolute sound level, sound-energy gain, audiogram, or
+prediction of individual hearing. The model excludes frequency dependence,
+cochlear load, stiffness and losses. No test tone, microphone capture, or
+write to personal health records is involved. The Agent preview scopes
+active settings to hearing physiology only.
+
+- Ear anatomy: https://www.nidcd.nih.gov/health/how-do-we-hear
+- Hearing and vestibular mechanisms: https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception
+- Pressure-transformer equation and fuller model: https://pmc.ncbi.nlm.nih.gov/articles/PMC4570511/
+- Frequency-dependent human temporal-bone measurements: https://pubmed.ncbi.nlm.nih.gov/28079680/

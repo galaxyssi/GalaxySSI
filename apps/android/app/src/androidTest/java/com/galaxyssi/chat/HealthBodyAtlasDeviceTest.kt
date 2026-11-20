@@ -52,8 +52,8 @@ class HealthBodyAtlasDeviceTest {
     }
     @Test fun platesHaveCanonicalVisibleMarkersAndDoNotInventHiddenStructures() {
         val data = HealthBodyAtlas.load(context)
-        assertEquals(25, HealthAtlasPlates.all.size)
-        assertEquals(25, HealthAtlasPlates.all.map { it.drawable }.toSet().size)
+        assertEquals(26, HealthAtlasPlates.all.size)
+        assertEquals(26, HealthAtlasPlates.all.map { it.drawable }.toSet().size)
         assertNull(HealthAtlasPlates.forId("heart-valves"))
         assertEquals("nephron", HealthAtlasPlates.forId("glomerulus")!!.owner)
         assertNull(HealthAtlasPlates.forId("cell-podocyte"))

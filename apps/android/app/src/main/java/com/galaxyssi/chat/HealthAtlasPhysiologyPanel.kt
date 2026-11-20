@@ -18,6 +18,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
     private val elbowBalance = if (kind == HealthAtlasPhysiologyKind.ELBOW_BALANCE) HealthAtlasElbowView(activity) else null
     private val vesselFlow = if (kind == HealthAtlasPhysiologyKind.VESSEL_FLOW) HealthAtlasVesselFlowView(activity) else null
     private val eyeOptics = if (kind == HealthAtlasPhysiologyKind.EYE_FOCUS) HealthAtlasEyeOpticsView(activity) else null
+    private val middleEar = if (kind == HealthAtlasPhysiologyKind.MIDDLE_EAR) HealthAtlasMiddleEarView(activity) else null
     init {
         ui.add(body, ui.text(activity.getString(HealthAtlasPhysiologyText.title(kind)), 19f, bold = true), 12)
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_model_synthetic), 12f, muted = true), 4)
@@ -26,6 +27,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         elbowBalance?.let { ui.add(body, it, 12) }
         vesselFlow?.let { ui.add(body, it, 12) }
         eyeOptics?.let { ui.add(body, it, 12) }
+        middleEar?.let { ui.add(body, it, 12) }
         ui.add(body, chart, 12)
         val axisKey = kind.inputs[kind.axis].key
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_model_axis,
@@ -76,6 +78,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         model.elbowForces?.let { elbowBalance?.forces = it }
         model.vesselFlow?.let { vesselFlow?.flow = it }
         model.eyeOptics?.let { eyeOptics?.eye = it }
+        model.middleEar?.let { middleEar?.model = it }
         controls.forEachIndexed { index, (_, label) -> label.text = HealthAtlasPhysiologyText.input(activity, model, index) }
     }
 }

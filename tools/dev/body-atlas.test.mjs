@@ -96,6 +96,26 @@ test('all thirty core cells have their own sourced, localized mechanism', () => 
   assert.equal(coreCells.length, 30);
 });
 
+test('each ear structure has a unique localized process rather than a shared sensory sequence', () => {
+  const locales = ['values', 'values-zh'].map(locale => readFileSync(
+    new URL(`../../apps/android/app/src/main/res/${locale}/health_atlas_hearing.xml`, import.meta.url), 'utf8'));
+  const names = ['ear', 'external-ear', 'middle-ear', 'inner-ear', 'cochlea', 'vestibular-apparatus'];
+  const keys = new Set();
+  for (const name of names) {
+    const entry = catalogue.entries.find(item => item.id === name);
+    assert.equal(entry?.mechanism, name);
+    const process = catalogue.mechanisms.find(item => item.id === name);
+    assert.equal(process?.kind, 'organ');
+    assert.equal(process?.chapter, '14-1-sensory-perception');
+    assert.equal(process.stages.length, 4);
+    for (const key of [process.title, ...process.stages]) {
+      assert.ok(!keys.has(key), key);
+      keys.add(key);
+      for (const resources of locales) assert.ok(resources.includes(`name="${key}"`), key);
+    }
+  }
+});
+
 test('cell-specific processes cannot be reused for another cell or structure', () => {
   const invalid = structuredClone(catalogue);
   invalid.entries.find(item => item.id === 'cell-neutrophil').mechanism = 'cell-erythrocyte';
