@@ -49,7 +49,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private val sweatView = if (item.id == HealthAtlasSweatView.OWNER) HealthAtlasSweatView(activity, mechanism) else null
     private val sectionView = HealthAtlasSectionLesson.forId(item.id)?.let { HealthAtlasSectionLessonView(activity, it, mechanism) }
     private val quantitativeAfterArt = gasExchange != null || pancreaticRoutes != null || endocrinePath != null ||
-        sweatView != null || sectionView != null
+        sweatView != null || (sectionView != null && item.kind != HealthAtlasKind.CELL)
     private val resetInputs = arrayListOf<() -> Unit>()
     init {
         fun addQuantitative() {

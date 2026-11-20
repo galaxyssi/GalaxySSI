@@ -196,4 +196,30 @@ class HealthAtlasSensoryDeviceTest {
             assertNull(it.window.decorView.tagged("atlas-physiology-photon-mean"))
         }
     }
+
+    @Test fun paintedCellStagesUseTheirOwnPortraitAndHighlightTheirOutputs() = native { scenario ->
+        val outputs = mapOf(
+            "cell-inner-ear-hair-cell" to "hair-afferent-contact",
+            "cell-rod-photoreceptor" to "rod-spherule",
+            "cell-cone-photoreceptor" to "cone-pedicle",
+        )
+        scenario.onActivity { activity ->
+            val atlas = HealthBodyAtlas.load(activity)
+            for ((id, output) in outputs) {
+                activity.open(id)
+                activity.view("atlas-tab-3").performClick()
+                val section = activity.view("atlas-section-diagram") as HealthAtlasSectionLessonView
+                val lesson = section.lesson
+                val art = requireNotNull(activity.getDrawable(lesson.plate.drawable))
+                assertEquals(lesson.artWidth * 3, lesson.artHeight * 2)
+                assertEquals(art.intrinsicWidth * 3, art.intrinsicHeight * 2)
+                assertEquals(id, lesson.owner)
+                activity.view("atlas-process-stage-3").performClick()
+                assertEquals(3, section.stage)
+                assertEquals(output, lesson.plate.features[lesson.stageFeatures[section.stage]].marker.id)
+                assertTrue(section.contentDescription.contains(atlas.mechanism(requireNotNull(atlas[id])).stages[3]))
+                activity.onBackPressed()
+            }
+        }
+    }
 }

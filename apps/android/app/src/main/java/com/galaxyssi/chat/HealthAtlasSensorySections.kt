@@ -6,6 +6,9 @@ internal object HealthAtlasSensorySections {
     operator fun get(id: String?) = when (id) {
         "ear" -> ear
         "retina" -> retina
+        "cell-inner-ear-hair-cell" -> hairCell
+        "cell-rod-photoreceptor" -> rod
+        "cell-cone-photoreceptor" -> cone
         else -> null
     }
 
@@ -53,5 +56,22 @@ internal object HealthAtlasSensorySections {
         )
         HealthAtlasSectionLesson(original.copy(markers = emptyList(), features = features),
             listOf(0, 1, 2, 3), emptyList(), emptyList())
+    }
+
+    private fun portrait(plate: HealthAtlasPlate, stages: List<Int>) =
+        HealthAtlasSectionLesson(plate, stages, emptyList(), emptyList(), artWidth = 280, artHeight = 420)
+
+    private val rod by lazy {
+        portrait(requireNotNull(HealthAtlasPlates.forId("cell-rod-photoreceptor")), listOf(0, 0, 0, 1))
+    }
+    private val cone by lazy {
+        portrait(requireNotNull(HealthAtlasPlates.forId("cell-cone-photoreceptor")), listOf(0, 0, 0, 1))
+    }
+    private val hairCell by lazy {
+        val plate = requireNotNull(HealthAtlasPlates.forId("cell-inner-ear-hair-cell"))
+        val body = HealthAtlasFeature(HealthAtlasMarker("hair-cell-receptor-body", .431f, .574f),
+            R.string.health_atlas_cell_inner_ear_hair_cell_name,
+            R.string.health_atlas_process_cell_inner_ear_hair_cell_2)
+        portrait(plate.copy(features = plate.features + body), listOf(0, 0, 2, 1))
     }
 }
