@@ -195,7 +195,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         circulation?.phase = values.phase; gasExchange?.phase = values.phase; process?.phase = values.phase
         germline?.stage = values.stage
         heartValves?.stage = values.stage
-        phagocytosis?.stage = values.stage
+        phagocytosis?.phase = values.phase
         sarcomere?.stage = values.stage
         podocyte?.stage = values.stage
         if (pancreaticRoutes?.stage != values.stage) pancreaticRoutes?.stage = values.stage

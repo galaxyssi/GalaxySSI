@@ -221,6 +221,13 @@ canonical destinations. The same calibrated leaflet positions drive both
 the structure callouts and the four-state valve demonstration. Blue and rose
 distinguish the two circulation sides without encoding oxygen saturation.
 
+The neutrophil and macrophage use separate painted plates. The neutrophil
+retains one connected lobulated nucleus and peripheral granules; the
+macrophage retains its membrane extensions and representative vesicle. The
+macrophage stage player shares the painted cell and moves a generic particle
+and teaching overlays along the existing playhead. The visual sequence is
+qualitative: its timing, geometry, colors and particle size are illustrative.
+
 ## Alimentary Canal Sections
 
 Fourteen digestive entries now have their own source-linked diagrams, from
