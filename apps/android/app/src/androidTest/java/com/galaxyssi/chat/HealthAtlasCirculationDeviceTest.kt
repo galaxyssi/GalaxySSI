@@ -173,8 +173,13 @@ class HealthAtlasCirculationDeviceTest {
         assertTrue(prompt.contains(context.getString(R.string.health_atlas_circuit_path)))
         assertTrue(prompt.contains("7.2"))
         assertTrue(prompt.contains(context.getString(R.string.health_atlas_circuit_scope)))
-        for (topic in listOf(HealthAtlasResearchTopic.DRUGS, HealthAtlasResearchTopic.AGING))
-            assertFalse(HealthAtlasAgentContext.prompt(context, atlas, item, HealthAtlasSimulation(), topic = topic).contains(HealthAtlasCirculation.SOURCE))
+        for (topic in listOf(HealthAtlasResearchTopic.DRUGS, HealthAtlasResearchTopic.AGING)) {
+            val other = HealthAtlasAgentContext.prompt(context, atlas, item, HealthAtlasSimulation(), topic = topic)
+            assertTrue(other.contains(HealthAtlasHeartSection.ANATOMY_SOURCE))
+            assertFalse(other.contains(context.getString(R.string.health_atlas_circuit_scope)))
+            assertFalse(other.contains(context.getString(R.string.health_atlas_circuit_path)))
+            assertFalse(other.contains(context.getString(R.string.health_atlas_cardiac_output) + ":"))
+        }
         assertFalse(HealthAtlasAgentContext.prompt(context, atlas, atlas["kidneys"], HealthAtlasSimulation()).contains(HealthAtlasCirculation.SOURCE))
     }
     @Test fun actualConfirmationIncludesTheSelectedCirculationStage() = native { scenario ->
