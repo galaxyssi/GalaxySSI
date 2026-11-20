@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="conversation_action_menu">会话操作</string>
+    <string name="conversation_action_agent">Agent 会话</string>
+    <string name="conversation_action_contact">联系人会话</string>
+    <string name="conversation_rename_title">重命名会话</string>
+    <string name="conversation_rename_hint">会话名称</string>
+    <string name="conversation_rename_counter">%1$d/%2$d</string>
+    <string name="conversation_rename_required">名称不能为空</string>
+    <string name="conversation_rename_invalid">名称最多 %1$d 个字符，请勿换行</string>
+    <string name="conversation_rename_failed">名称保存失败，请重试</string>
+</resources>

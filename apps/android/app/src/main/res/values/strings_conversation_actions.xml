@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="conversation_action_menu">Conversation actions</string>
+    <string name="conversation_action_agent">Agent conversation</string>
+    <string name="conversation_action_contact">Contact conversation</string>
+    <string name="conversation_rename_title">Rename conversation</string>
+    <string name="conversation_rename_hint">Conversation name</string>
+    <string name="conversation_rename_counter">%1$d/%2$d</string>
+    <string name="conversation_rename_required">Enter a name.</string>
+    <string name="conversation_rename_invalid">Use at most %1$d characters on a single line.</string>
+    <string name="conversation_rename_failed">The name could not be saved. Please try again.</string>
+    <color name="conversation_action_destructive">#B42318</color>
+</resources>

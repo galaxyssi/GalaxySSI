@@ -192,6 +192,20 @@ internal fun MainActivity.showConversationHub(
                     dialog.dismiss()
                     showConversationHub(ConversationHubTab.CONVERSATIONS, archivedMode)
                 },
+                onRenamed = { name ->
+                    captureConversationScroll()
+                    restoreConversationScrollOnNextRender = true
+                    if (row.item.kind == ConversationHubItemKind.AGENT) {
+                        conversations = conversations?.map { if (it.id == row.item.id) it.copy(title = name) else it }
+                        val title = conversations?.firstOrNull { it.id == row.item.id }?.let { agentConversationDisplayTitle(it) } ?: name
+                        agentConversationItems = agentConversationItems?.map { if (it.id == row.item.id) it.copy(title = title) else it }
+                    } else {
+                        contacts = contacts?.map { if (it.id == row.item.id) it.copy(name = name) else it }
+                        val title = contacts?.firstOrNull { it.id == row.item.id }?.let { displayContactName(it) } ?: name
+                        contactConversationSummaries = contactConversationSummaries?.map { if (it.contactId == row.item.id) it.copy(title = title) else it }
+                    }
+                    renderBody()
+                },
                 onOpenAgent = {
                     captureConversationScroll()
                     closeSearch()
@@ -851,6 +865,7 @@ private fun MainActivity.conversationHubConversationRow(
     item: ConversationHubItem,
     conversations: List<AgentConversation>,
     onItemsChanged: () -> Unit,
+    onRenamed: (String) -> Unit,
     onOpenAgent: () -> Unit,
     onOpenContact: (String) -> Unit
 ): View {
@@ -887,60 +902,11 @@ private fun MainActivity.conversationHubConversationRow(
             refreshAgentConversationHeader()
             refreshAgentTranscriptWindow()
         },
-        onLongClick = {
-            showConversationHubConversationActions(item, conversations, onItemsChanged)
+        onLongClick = { anchor ->
+            showConversationHubConversationActions(anchor, item, conversations, onItemsChanged, onRenamed)
             true
         }
     )
-}
-
-private fun MainActivity.showConversationHubConversationActions(
-    item: ConversationHubItem,
-    conversations: List<AgentConversation>,
-    onItemsChanged: () -> Unit
-) {
-    val pinLabel = getString(if (item.pinned) R.string.agent_session_unpin else R.string.agent_session_pin)
-    val actions = arrayOf(getString(R.string.agent_session_delete), pinLabel)
-    android.app.AlertDialog.Builder(this)
-        .setTitle(item.title)
-        .setItems(actions) { _, which ->
-            when (which) {
-                0 -> confirmConversationHubDelete(item, conversations, onItemsChanged)
-                1 -> {
-                    if (item.kind == ConversationHubItemKind.AGENT) {
-                        agentTranscriptStore.setPinned(item.id, !item.pinned)
-                    } else {
-                        ContactConversationPreferences.setPinned(this, item.id, !item.pinned)
-                    }
-                    onItemsChanged()
-                }
-            }
-        }
-        .setNegativeButton(getString(R.string.common_cancel), null)
-        .show()
-}
-
-private fun MainActivity.confirmConversationHubDelete(
-    item: ConversationHubItem,
-    conversations: List<AgentConversation>,
-    onItemsChanged: () -> Unit
-) {
-    android.app.AlertDialog.Builder(this)
-        .setTitle(getString(R.string.agent_session_delete))
-        .setMessage(getString(R.string.agent_session_delete_confirm))
-        .setPositiveButton(getString(R.string.common_delete)) { _, _ ->
-            if (item.kind == ConversationHubItemKind.AGENT) {
-                conversations.firstOrNull { it.id == item.id }?.let(::deleteAgentConversationData)
-                refreshAgentConversationHeader()
-                refreshAgentTranscriptWindow()
-            } else {
-                deleteChatConversationData(contactById(item.id))
-                android.widget.Toast.makeText(this, getString(R.string.delete_chat_toast), android.widget.Toast.LENGTH_SHORT).show()
-            }
-            onItemsChanged()
-        }
-        .setNegativeButton(getString(R.string.common_cancel), null)
-        .show()
 }
 
 private fun MainActivity.renderConversationHubContacts(
@@ -1067,7 +1033,7 @@ private fun MainActivity.conversationHubListRow(
     unreadCount: Int = 0,
     agentStatus: ConversationHubAgentStatus? = null,
     onClick: () -> Unit,
-    onLongClick: (() -> Boolean)? = null
+    onLongClick: ((View) -> Boolean)? = null
 ): View = conversationHubBaseRow(
     title = title,
     subtitle = subtitle,
@@ -1097,7 +1063,7 @@ private fun MainActivity.conversationHubBaseRow(
     showChevron: Boolean,
     agentStatus: ConversationHubAgentStatus? = null,
     onClick: () -> Unit,
-    onLongClick: (() -> Boolean)?
+    onLongClick: ((View) -> Boolean)?
 ): View = LinearLayout(this).apply {
     orientation = LinearLayout.VERTICAL
     val contentRow = LinearLayout(this@conversationHubBaseRow).apply {
@@ -1169,7 +1135,7 @@ private fun MainActivity.conversationHubBaseRow(
             }, LinearLayout.LayoutParams(dp(24), dp(36)).apply { marginStart = dp(2) })
         })
         setOnClickListener { onClick() }
-        onLongClick?.let { handler -> setOnLongClickListener { handler() } }
+        onLongClick?.let { handler -> setOnLongClickListener { handler(it) } }
     }
     addView(contentRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     addView(View(this@conversationHubBaseRow).apply {
