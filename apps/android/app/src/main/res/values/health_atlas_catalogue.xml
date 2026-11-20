@@ -844,10 +844,10 @@
     <string name="health_atlas_fragment_platelet_description">"A megakaryocyte-derived cell fragment involved in hemostasis and vessel repair; not counted as a complete cell."</string>
     <string name="health_atlas_fragment_platelet_aliases">"platelet"</string>
     <string name="health_atlas_mechanism_cardio">"Circulation and pumping"</string>
-    <string name="health_atlas_mechanism_cardio_0">"Venous return"</string>
-    <string name="health_atlas_mechanism_cardio_1">"Right heart to lungs"</string>
-    <string name="health_atlas_mechanism_cardio_2">"Left ventricular filling"</string>
-    <string name="health_atlas_mechanism_cardio_3">"Systemic supply"</string>
+    <string name="health_atlas_mechanism_cardio_0">"Systemic veins: tissues to right heart"</string>
+    <string name="health_atlas_mechanism_cardio_1">"Pulmonary arteries: right heart to lungs"</string>
+    <string name="health_atlas_mechanism_cardio_2">"Pulmonary veins: lungs to left heart"</string>
+    <string name="health_atlas_mechanism_cardio_3">"Systemic arteries: left heart to tissues"</string>
     <string name="health_atlas_mechanism_nervous">"Neural signaling"</string>
     <string name="health_atlas_mechanism_nervous_0">"Receive stimulus"</string>
     <string name="health_atlas_mechanism_nervous_1">"Local integration"</string>

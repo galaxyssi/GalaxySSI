@@ -21,6 +21,11 @@ internal object HealthAtlasAgentContext {
         val physiology = topic == null || topic == HealthAtlasResearchTopic.PHYSIOLOGY
         if (physiology && simulation != null) {
             appendLine(); appendLine(context.getString(R.string.health_atlas_teaching_note))
+            if (HealthAtlasCirculation.supports(item.id)) {
+                appendLine(context.getString(R.string.health_atlas_circuit_scope))
+                appendLine(context.getString(R.string.health_atlas_circuit_path))
+                appendLine(HealthAtlasCirculation.SOURCE)
+            }
             appendLine(context.getString(R.string.health_atlas_stage, simulation.stage + 1,
                 mechanism.stages.size, mechanism.stages[simulation.stage]))
             if (item.id in setOf("heart", "cardio")) {

@@ -60,6 +60,30 @@ Model references:
 
 ## Mechanisms and Research
 
+The eleven macroscopic circulation entries use a native double-circulation
+diagram with the existing lung, heart and whole-body illustrations. Directional
+paths follow tissues, right heart, lungs, left heart and tissues; pulmonary
+arteries are relatively oxygen-poor and pulmonary veins relatively oxygen-rich.
+Both color and localized stage text identify each route. The anatomical heart
+image represents one heart; side labels describe the simplified right/left flow
+ports, not exposed chambers on the external image.
+
+Stage selection, seeking and playback use the same saved phase as the rest of
+the simulator. Teaching cardiac output updates the heart label on the heart and
+cardiovascular-system entries only. Other associated entries do not inherit an
+invented numerical flow. Animation time is illustrative, not measured transit
+time or hemodynamics. Gas exchange, pressure, coronary branches and shunts are
+not computed. Inputs do not read or write personal health records.
+
+Native lung and heart targets open their canonical structure pages and retain
+the originating research topic, phase and cardiac inputs on return. Public
+Agent previews include the selected stage, circuit scope, full flow sequence
+and reference only for the active physiology topic. Other research topics and
+unrelated anatomy do not inherit this context.
+
+Circulation reference:
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/19-1-heart-anatomy
+
 Each entry opens a native three-tab research surface. Physiology retains the
 entry's teaching sequence and controls. Drug pathways show a clearly labeled
 whole-body ADME overview with links to relevant structures, plus a normalized

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="health_atlas_blood_low">#336FA4</color>
+    <color name="health_atlas_blood_high">#B74650</color>
+    <string name="health_atlas_circuit_lungs">Lungs · gas exchange</string>
+    <string name="health_atlas_circuit_heart">Heart</string>
+    <string name="health_atlas_circuit_tissues">Body tissues · exchange</string>
+    <string name="health_atlas_circuit_right">Right heart</string>
+    <string name="health_atlas_circuit_left">Left heart</string>
+    <string name="health_atlas_circuit_leg_0">Systemic veins</string>
+    <string name="health_atlas_circuit_leg_1">Pulmonary arteries</string>
+    <string name="health_atlas_circuit_leg_2">Pulmonary veins</string>
+    <string name="health_atlas_circuit_leg_3">Systemic arteries</string>
+    <string name="health_atlas_circuit_flow">%1$s L/min\nTeaching value</string>
+    <string name="health_atlas_circuit_scope">Associated adult circulation overview. Blue and red indicate relatively oxygen-poor and oxygen-rich blood, not actual blood colors. Arrows show direction; animation time is not blood-flow speed. Chambers, valves and capillary beds are simplified.</string>
+    <string name="health_atlas_circuit_path">Body tissues → systemic veins → right atrium and ventricle → pulmonary arteries → lungs → pulmonary veins → left atrium and ventricle → systemic arteries → body tissues. Lung and tissue exchange are not numerically modeled.</string>
+    <string name="health_atlas_circuit_reference">Double circulation · anatomical reference</string>
+</resources>
