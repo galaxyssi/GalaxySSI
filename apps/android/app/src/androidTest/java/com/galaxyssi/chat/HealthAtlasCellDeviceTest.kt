@@ -60,14 +60,14 @@ class HealthAtlasCellDeviceTest {
             image.compress(Bitmap.CompressFormat.PNG, 100, it)
         } } finally { image.recycle() }
     }
-    @Test fun thirtyCellProcessesResolveInBothLocalesWithoutSharedStages() {
+    @Test fun cellProcessesResolveInBothLocalesWithoutSharedStages() {
         for (locale in listOf(Locale.ENGLISH, Locale.SIMPLIFIED_CHINESE)) {
             val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
             val atlas = HealthBodyAtlas.load(localized)
             val models = atlas.mechanisms.filter { it.kind == "cell" }
-            assertEquals(30, models.size)
-            assertEquals(30, models.map { it.title }.toSet().size)
-            assertEquals(30, models.map { it.stages }.toSet().size)
+            assertEquals(37, models.size)
+            assertEquals(37, models.map { it.title }.toSet().size)
+            assertEquals(37, models.map { it.stages }.toSet().size)
             models.forEach {
                 assertEquals(HealthAtlasKind.CELL, atlas[it.id]?.kind)
                 assertEquals(it.id, atlas[it.id]?.mechanism)

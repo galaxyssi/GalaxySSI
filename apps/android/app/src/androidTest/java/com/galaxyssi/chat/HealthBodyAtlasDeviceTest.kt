@@ -37,7 +37,7 @@ class HealthBodyAtlasDeviceTest {
     @Test fun completeCatalogueHasCanonicalStructuresAndSeparatePlateletFragments() {
         val data = HealthBodyAtlas.load(context)
         assertEquals(14, data.systems.size)
-        assertEquals(161, data.items.count { it.kind == HealthAtlasKind.ORGAN })
+        assertEquals(165, data.items.count { it.kind == HealthAtlasKind.ORGAN })
         assertEquals(105, data.items.count { it.kind == HealthAtlasKind.CELL })
         assertEquals(1, data.items.count { it.kind == HealthAtlasKind.FRAGMENT })
         assertEquals(HealthAtlasKind.SYSTEM, data["skin"]!!.kind)
@@ -52,10 +52,11 @@ class HealthBodyAtlasDeviceTest {
     }
     @Test fun platesHaveCanonicalVisibleMarkersAndDoNotInventHiddenStructures() {
         val data = HealthBodyAtlas.load(context)
-        assertEquals(12, HealthAtlasPlates.all.size)
-        assertEquals(12, HealthAtlasPlates.all.map { it.drawable }.toSet().size)
+        assertEquals(13, HealthAtlasPlates.all.size)
+        assertEquals(13, HealthAtlasPlates.all.map { it.drawable }.toSet().size)
         assertNull(HealthAtlasPlates.forId("heart-valves"))
-        assertNull(HealthAtlasPlates.forId("glomerulus"))
+        assertEquals("nephron", HealthAtlasPlates.forId("glomerulus")!!.owner)
+        assertNull(HealthAtlasPlates.forId("cell-podocyte"))
         HealthAtlasPlates.all.forEach { plate ->
             assertEquals(plate.markers.size, plate.markers.map { it.id }.toSet().size)
             plate.markers.forEach { assertNotNull(data[it.id]) }
@@ -91,7 +92,8 @@ class HealthBodyAtlasDeviceTest {
                 view.layout(0, 0, view.measuredWidth, view.measuredHeight)
                 var bottom = 0
                 labels.sortedBy { it.top }.forEach { label ->
-                    assertTrue("Clipped or overlapping label: ${label.text}", label.top >= bottom && label.bottom <= view.height)
+                    assertTrue("Clipped or overlapping label: ${label.text}, ${label.top}..${label.bottom} in ${view.height}",
+                        label.top >= bottom && label.bottom <= view.height)
                     assertTrue(label.height >= label.layout.height + label.compoundPaddingTop + label.compoundPaddingBottom)
                     bottom = label.bottom
                     if (label.isSelected) { assertFalse(label.performClick()); assertNull(tapped) }

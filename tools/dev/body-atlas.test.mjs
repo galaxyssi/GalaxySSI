@@ -99,12 +99,35 @@ test('cell-specific processes cannot be reused for another cell or structure', (
 
 test('bundled atlas is a complete canonical graph', () => {
   validate(catalogue);
-  for (const [kind, count] of [['system', 14], ['organ', 161], ['cell', 105], ['fragment', 1]]) {
+  for (const [kind, count] of [['system', 14], ['organ', 165], ['cell', 105], ['fragment', 1]]) {
     assert.equal(catalogue.entries.filter(item => item.kind === kind).length, count);
   }
   const skin = catalogue.entries.find(item => item.id === 'skin');
   assert.equal(skin.kind, 'system');
   assert.ok(skin.related.includes('skin-organ'));
+});
+
+test('nephron segments link to renal cells and seven independent mechanisms', () => {
+  const entry = id => catalogue.entries.find(item => item.id === id);
+  assert.ok(entry('nephron').related.includes('bowmans-capsule'));
+  assert.deepEqual(entry('renal-tubules').related, ['proximal-tubule', 'nephron-loop', 'distal-tubule']);
+  for (const part of ['bowmans-capsule', 'proximal-tubule', 'nephron-loop', 'distal-tubule']) {
+    assert.equal(entry(part).kind, 'organ');
+    assert.deepEqual(entry(part).systems, ['urinary']);
+  }
+  assert.ok(entry('cell-proximal-tubular-cell').related.includes('proximal-tubule'));
+  assert.ok(entry('cell-distal-tubular-cell').related.includes('distal-tubule'));
+  for (const name of ['podocyte', 'mesangial-cell', 'proximal-tubular-cell', 'distal-tubular-cell',
+    'collecting-duct-principal-cell', 'collecting-duct-intercalated-cell', 'urothelial-cell']) {
+    const id = `cell-${name}`;
+    assert.equal(entry(id).mechanism, id);
+    const mechanism = catalogue.mechanisms.find(item => item.id === id);
+    assert.equal(mechanism.kind, 'cell');
+    for (const locale of ['values', 'values-zh']) {
+      const resources = readFileSync(new URL(`../../apps/android/app/src/main/res/${locale}/health_atlas_renal.xml`, import.meta.url), 'utf8');
+      for (const key of [mechanism.title, ...mechanism.stages]) assert.ok(resources.includes(`name="${key}"`));
+    }
+  }
 });
 
 test('cross-kind duplicate identities are rejected before packaging', () => {

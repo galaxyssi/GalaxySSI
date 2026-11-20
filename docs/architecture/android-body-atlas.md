@@ -1,6 +1,6 @@
 # Android Body Atlas
 
-The public teaching catalogue contains 14 navigation categories, 161 canonical
+The public teaching catalogue contains 14 navigation categories, 165 canonical
 organ/structure entries, 105 cell types or subtypes, and one platelet-fragment
 entry. Shared structures have one stable identity and multiple category links.
 The taxonomy is a navigation aid, not an exhaustive ontology of all human cells.
@@ -40,7 +40,7 @@ No organ score, biological age, drug dose or treatment outcome is inferred.
 - Oxygen binding separates hemoglobin saturation from bound and dissolved oxygen
   content. Its assumptions and references are detailed below.
 
-Nineteen canonical entries expose these associated processes. Tubular cells
+Twenty-two canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -127,7 +127,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the twelve anatomical illustrations and selectable structures to the
+- Extend the thirteen anatomical illustrations and selectable structures to the
   remaining systems, organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by
@@ -258,7 +258,8 @@ These include the ten blood/immune examples, three neural examples, three
 muscle types, four skin/connective/metabolic examples, four bone/cartilage
 examples, endothelium, hepatocytes, beta cells, enterocytes and two gametes.
 The loader rejects a cell-specific mechanism assigned to a different entity.
-Other cell subtypes still use broader pathways until dedicated content is
+Seven additional renal/urothelial cell types have dedicated processes, bringing
+the total to 37. Other cell subtypes still use broader pathways until dedicated content is
 reviewed; this is not a claim of complete single-cell biology coverage.
 
 Each stage is a native focusable button. Selecting a stage pauses playback,
@@ -290,3 +291,52 @@ incompatible parsing of compressed SVG arc flags. This is an authoring-time
 conversion, not an application dependency.
 The packaged `licenses/body-atlas-lucide.txt` retains the ISC and inherited
 Feather notices. Icons are local assets and require no runtime network access.
+
+## Nephron and Renal Cell Exploration
+
+Four canonical structures extend the kidney hierarchy: the glomerular capsule,
+proximal tubule, nephron loop and distal tubule. Native markers link them with
+the glomerulus and collecting duct in a shared nephron overview. Selecting a
+segment retains its identity and shows the explicit shared-image caption.
+The proximal and distal segments link to their existing cell entries. Returning
+from a cell restores its parent view rather than resetting to the catalogue.
+In height-constrained layouts, the native marker column widens when necessary
+to fit larger labels before positioning them; ordinary scroll layouts retain
+the illustration-first proportions without reducing text size.
+
+The generated plate is a simplified tube arrangement, not a histological section
+or scaled cortical/medullary map. It omits capillary networks and the
+juxtaglomerular apparatus. The collecting duct is shown as an associated
+structure, not mislabeled as part of a single nephron. Microscopic cell entries
+do not inherit this illustration as an image of an individual cell.
+
+Seven independent four-stage mechanisms cover podocytes, mesangial cells,
+proximal and distal tubular cells, collecting-duct principal and intercalated
+cells, and urothelial cells. Titles scope the glucose-recovery, water-recovery
+and type-A acid-handling examples; they do not describe every function of every
+subtype. Each mechanism has its own source and remains qualitative.
+
+`HealthAtlasRenal` centralizes the existing mass-balance equation. The native
+balance display lists filtered, reabsorbed, secreted and excreted solute with
+their directions and mg/min units. The response curve, output, reset and public
+Agent preview use the same values. Zero transfers remain explicit; arrows are
+directional rather than proportional flow gauges. Reabsorption is a fraction
+of filtered load, and secretion is net added solute. This does not model water,
+eGFR, segment-specific rates, drug clearance or an individual patient's kidneys.
+No synthetic value is written into a health record.
+
+Built-in image-generation prompt set for `res/drawable-nodpi/health_atlas_nephron.png`:
+- An isolated simplified nephron with an associated collecting duct, transparent
+  background and realistic teaching-plate shading; a red capillary tuft in a
+  cutaway capsule, connected convoluted proximal tube, descending/hairpin/
+  ascending loop, distal tube and a straight collecting outlet. No surrounding
+  kidney, capillary network, labels, arrows or numbers.
+- Cleanup edit preserving tissue and tube arrangement, removing exterior glow
+  and adding transparent margins. Alpha and rendered-device checks verify
+  usable image edges, not scientific or clinical validation.
+
+References:
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/25-4-microscopic-anatomy-of-the-kidney
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/25-5-physiology-of-urine-formation
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/25-2-gross-anatomy-of-urine-transport
