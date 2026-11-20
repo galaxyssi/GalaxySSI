@@ -8,12 +8,11 @@ import android.graphics.Path
 import android.graphics.PathMeasure
 import android.graphics.RectF
 import android.graphics.Shader
-import android.view.View
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 
-internal class HealthAtlasUptakeView(context: Context) : View(context) {
+internal class HealthAtlasUptakeView(context: Context) : HealthAtlasFunctionArt(context, HealthAtlasFunctionStory.GLUCOSE) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     private val shape = Path()
     private val trace = Path()
@@ -30,30 +29,12 @@ internal class HealthAtlasUptakeView(context: Context) : View(context) {
         route { moveTo(103f, 153f); cubicTo(100f, 180f, 115f, 188f, 146f, 188f); lineTo(276f, 188f) },
         route { moveTo(275f, 204f); cubicTo(278f, 224f, 259f, 234f, 244f, 242f) },
     )
-    var phase = 0f
-        set(value) {
-            val previous = HealthAtlasFunctionStory.chapter(field)
-            field = HealthAtlasFunctionStory.safePhase(value)
-            if (previous != HealthAtlasFunctionStory.chapter(field)) describe()
-            invalidate()
-        }
-
-    init {
-        tag = "atlas-function-uptake-art"
-        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
-        describe()
-    }
-
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val width = MeasureSpec.getSize(widthMeasureSpec)
-        val maxHeight = (resources.displayMetrics.density * 390).toInt()
-        setMeasuredDimension(width, resolveSize(width.coerceAtMost(maxHeight), heightMeasureSpec))
-    }
+    init { tag = "atlas-function-uptake-art" }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val chapter = HealthAtlasFunctionStory.chapter(phase)
-        val t = HealthAtlasFunctionStory.fraction(phase)
+        val chapter = story.chapter(phase)
+        val t = story.fraction(phase)
         val scale = minOf(width, height) / 344f
         canvas.save()
         canvas.translate((width - 344f * scale) / 2f, (height - 344f * scale) / 2f)
@@ -241,9 +222,6 @@ internal class HealthAtlasUptakeView(context: Context) : View(context) {
         paint.shader = null
         paint.color = ink
         paint.style = style
-    }
-    private fun describe() {
-        contentDescription = context.getString(HealthAtlasFunctionStory.chapters[HealthAtlasFunctionStory.chapter(phase)].second)
     }
     private fun route(shape: Path.() -> Unit) = PathMeasure(Path().apply(shape), false)
 }

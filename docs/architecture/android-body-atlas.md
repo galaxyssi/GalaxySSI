@@ -1185,3 +1185,15 @@ active settings to hearing physiology only.
 - Hearing and vestibular mechanisms: https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception
 - Pressure-transformer equation and fuller model: https://pmc.ncbi.nlm.nih.gov/articles/PMC4570511/
 - Frequency-dependent human temporal-bone measurements: https://pubmed.ncbi.nlm.nih.gov/28079680/
+
+## Continuous Heart Function
+
+The Function tab for the cardiovascular system, heart, chambers and valves
+uses the existing painted section. Its shared five-chapter player animates
+filling, atrial contraction, pressure rise, ejection and early relaxation.
+Directional tracers follow ventricular inflow or outflow only during the
+corresponding phase; illustrated leaflets signal open and closed valves. The
+mesh narrows visibly during ejection, not during either isovolumic phase.
+Colored tracers encode relative oxygen content, not actual blood color.
+This lesson does not calculate cardiac output, valve pressure or transit
+times. Personal measurements and the separate simulation are unaffected.

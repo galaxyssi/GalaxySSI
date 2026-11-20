@@ -29,16 +29,17 @@ internal object HealthAtlasAgentContext {
                 atlas.cells(item).joinToString(", ") { it.name })
         }
         val physiology = topic == null || topic == HealthAtlasResearchTopic.PHYSIOLOGY
-        if (topic == null && functionPhase != null && HealthAtlasFunctionStory.supports(item.id)) {
-            val chapter = HealthAtlasFunctionStory.chapter(functionPhase)
-            val (title, detail) = HealthAtlasFunctionStory.chapters[chapter]
-            appendLine(); appendLine(context.getString(R.string.health_atlas_uptake_title))
-            appendLine(context.getString(R.string.health_atlas_stage, chapter + 1,
-                HealthAtlasFunctionStory.chapters.size, context.getString(title)))
-            appendLine(context.getString(detail))
-            appendLine(context.getString(R.string.health_atlas_uptake_scope))
-            appendLine(HealthAtlasFunctionStory.SOURCE)
-            appendLine(HealthAtlasFunctionStory.PATHWAY_SOURCE)
+        if (topic == null && functionPhase != null) {
+            HealthAtlasFunctionStory.forId(item.id)?.let { story ->
+                val chapter = story.chapter(functionPhase)
+                val (title, detail) = story.chapters[chapter]
+                appendLine(); appendLine(context.getString(story.title))
+                appendLine(context.getString(R.string.health_atlas_stage, chapter + 1,
+                    story.chapters.size, context.getString(title)))
+                appendLine(context.getString(detail))
+                appendLine(context.getString(story.scope))
+                story.references.forEach { (_, url) -> appendLine(url) }
+            }
         }
         if (physiology && simulation != null) {
             appendLine(); appendLine(context.getString(R.string.health_atlas_teaching_note))

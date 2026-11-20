@@ -76,7 +76,7 @@ class HealthBodyAtlasActivity : Activity() {
         query = state?.getString("query").orEmpty().take(100)
         tab = HealthAtlasTab.entries.firstOrNull { it.name == state?.getString("tab") } ?: HealthAtlasTab.STRUCTURE
         researchTopic = HealthAtlasResearchTopic.entries.firstOrNull { it.name == state?.getString("researchTopic") }
-        state?.getBundle("functionPhasesV1")?.let { saved -> saved.keySet().filter(HealthAtlasFunctionStory::supports).forEach { id ->
+        state?.getBundle("functionPhasesV1")?.let { saved -> saved.keySet().filter { HealthAtlasFunctionStory.forId(it) != null }.forEach { id ->
             functionPhases[id] = HealthAtlasFunctionStory.safePhase(saved.getFloat(id))
         } }
         state?.getBundle("artworkViewsV1")?.let { saved -> saved.keySet().take(300).forEach { key ->
@@ -300,9 +300,10 @@ class HealthBodyAtlasActivity : Activity() {
         when (tab) {
             HealthAtlasTab.STRUCTURE -> structure(data, item)
             HealthAtlasTab.FUNCTION -> {
-                if (HealthAtlasFunctionStory.supports(item.id)) {
+                val story = HealthAtlasFunctionStory.forId(item.id)
+                if (story != null) {
                     functionItem = item.id
-                    functionPlayer = HealthAtlasFunctionPlayer(this, functionPhases[item.id] ?: 0f, ::source)
+                    functionPlayer = HealthAtlasFunctionPlayer(this, story, functionPhases[item.id] ?: 0f, ::source)
                     ui.add(content, requireNotNull(functionPlayer))
                 } else ui.add(content, artwork(data, item))
                 ui.add(content, ui.text(item.description, 17f), 12)
