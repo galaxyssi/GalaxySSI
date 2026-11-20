@@ -161,4 +161,17 @@ class HealthAtlasPhysiologyTest {
         assertNull(HealthAtlasPhysiology.restore("hair-follicles", intArrayOf(60, 50)))
         assertNull(HealthAtlasPhysiology.restore("cell-sweat-gland-secretory-cell", intArrayOf(60, 50)))
     }
+    @Test fun idealLymphValveDistinguishesForwardFlowFromAnAdverseGradient() {
+        val model = requireNotNull(HealthAtlasPhysiology.restore("lymphatic-vessels", intArrayOf(20, 40)))
+        assertEquals(0.5, model.result, 1e-9)
+        assertEquals(0.25, model.withInput(1, 80).result, 1e-9)
+        assertEquals(0.0, model.withInput(0, 0).result, 1e-9)
+        val reverse = model.withInput(0, -20)
+        assertEquals(0.0, reverse.result, 1e-9)
+        assertEquals(-0.5, reverse.companionValue, 1e-9)
+        assertEquals(2.0, model.withInput(0, 40).withInput(1, 20).result, 1e-9)
+        assertNull(HealthAtlasPhysiology.restore("lymphatic-vessels", intArrayOf(20, 0)))
+        assertNull(HealthAtlasPhysiology.restore("lymph-nodes", intArrayOf(20, 40)))
+        assertNull(HealthAtlasPhysiology.restore("thoracic-duct", intArrayOf(20, 40)))
+    }
 }

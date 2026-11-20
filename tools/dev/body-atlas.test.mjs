@@ -362,3 +362,24 @@ test('the retina and its two relay cells have separate localized and sourced mec
     }
   }
 });
+
+test('lymphoid organs have distinct localized lessons and canonical anatomy links', () => {
+  const immune = catalogue.entries.find(item => item.id === 'immune');
+  const ids = immune.related.filter(id => id !== 'appendix');
+  assert.equal(ids.length, 9);
+  const seen = new Set();
+  const localized = ['values', 'values-zh'].map(locale => readFileSync(
+    new URL(`../../apps/android/app/src/main/res/${locale}/health_atlas_lymph_organs.xml`, import.meta.url), 'utf8'));
+  for (const id of ids) {
+    const organ = catalogue.entries.find(item => item.id === id);
+    assert.equal(organ.mechanism, id);
+    const model = catalogue.mechanisms.find(item => item.id === id);
+    assert.equal(model.kind, 'lymphoid-organ');
+    assert.ok(organ.related.length > 0);
+    for (const key of [model.title, ...model.stages]) {
+      assert.ok(!seen.has(key));
+      seen.add(key);
+      assert.ok(localized.every(source => source.includes(`name="${key}"`)), key);
+    }
+  }
+});

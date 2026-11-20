@@ -65,6 +65,11 @@ internal object HealthAtlasAgentContext {
             }
             if (item.id == HealthAtlasSweatView.OWNER) appendLine(context.getString(R.string.health_atlas_context_sweat_scope))
             if (item.id == "hair-follicles") appendLine(context.getString(R.string.health_atlas_context_hair_scope))
+            HealthAtlasLymphOrgans[item.id]?.let { lesson ->
+                appendLine(context.getString(R.string.health_atlas_lymph_illustration_scope))
+                appendLine(context.getString(lesson.plate.features[lesson.stageFeatures[simulation.stage]].title))
+                if (item.id == "thoracic-duct") appendLine(context.getString(R.string.health_atlas_lymph_duct_orientation))
+            }
             if (item.id == HealthAtlasSarcomere.OWNER) {
                 appendLine(context.getString(R.string.health_atlas_sarcomere_ratio,
                     HealthAtlasSarcomere(simulation.stage).relativeLengthPercent))

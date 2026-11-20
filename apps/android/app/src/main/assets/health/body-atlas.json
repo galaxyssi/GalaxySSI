@@ -2310,8 +2310,11 @@
         "immune",
         "skeletal"
       ],
-      "related": [],
-      "mechanism": "immune",
+      "related": [
+        "cell-hematopoietic-stem-cell",
+        "cell-megakaryocyte"
+      ],
+      "mechanism": "bone-marrow",
       "aliases": "health_atlas_bone_marrow_aliases",
       "color": "",
       "icon": ""
@@ -2324,8 +2327,10 @@
       "systems": [
         "immune"
       ],
-      "related": [],
-      "mechanism": "immune",
+      "related": [
+        "cell-t-cell"
+      ],
+      "mechanism": "thymus",
       "aliases": "health_atlas_thymus_aliases",
       "color": "",
       "icon": ""
@@ -2338,8 +2343,11 @@
       "systems": [
         "immune"
       ],
-      "related": [],
-      "mechanism": "immune",
+      "related": [
+        "cell-macrophage",
+        "cell-b-cell"
+      ],
+      "mechanism": "spleen",
       "aliases": "health_atlas_spleen_aliases",
       "color": "",
       "icon": ""
@@ -2352,8 +2360,10 @@
       "systems": [
         "immune"
       ],
-      "related": [],
-      "mechanism": "immune",
+      "related": [
+        "cell-b-cell"
+      ],
+      "mechanism": "lymph-nodes",
       "aliases": "health_atlas_lymph_nodes_aliases",
       "color": "",
       "icon": ""
@@ -2366,8 +2376,10 @@
       "systems": [
         "immune"
       ],
-      "related": [],
-      "mechanism": "immune",
+      "related": [
+        "cell-lymphatic-endothelial-cell"
+      ],
+      "mechanism": "lymphatic-vessels",
       "aliases": "health_atlas_lymphatic_vessels_aliases",
       "color": "",
       "icon": ""
@@ -2380,8 +2392,10 @@
       "systems": [
         "immune"
       ],
-      "related": [],
-      "mechanism": "immune",
+      "related": [
+        "lymphatic-vessels"
+      ],
+      "mechanism": "thoracic-duct",
       "aliases": "health_atlas_thoracic_duct_aliases",
       "color": "",
       "icon": ""
@@ -2394,8 +2408,10 @@
       "systems": [
         "immune"
       ],
-      "related": [],
-      "mechanism": "immune",
+      "related": [
+        "cell-b-cell"
+      ],
+      "mechanism": "tonsils",
       "aliases": "health_atlas_tonsils_aliases",
       "color": "",
       "icon": ""
@@ -2408,8 +2424,10 @@
       "systems": [
         "immune"
       ],
-      "related": [],
-      "mechanism": "immune",
+      "related": [
+        "cell-dendritic-cell"
+      ],
+      "mechanism": "adenoids",
       "aliases": "health_atlas_adenoids_aliases",
       "color": "",
       "icon": ""
@@ -2422,8 +2440,11 @@
       "systems": [
         "immune"
       ],
-      "related": [],
-      "mechanism": "immune",
+      "related": [
+        "cell-dendritic-cell",
+        "cell-b-cell"
+      ],
+      "mechanism": "gut-associated-lymphoid-tissue",
       "aliases": "health_atlas_gut_associated_lymphoid_tissue_aliases",
       "color": "",
       "icon": ""
@@ -5739,6 +5760,114 @@
         "health_atlas_mechanism_immune_3"
       ],
       "chapter": "21-introduction"
+    },
+    {
+      "id": "bone-marrow",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_marrow_title",
+      "stages": [
+        "health_atlas_lymph_marrow_stage_0",
+        "health_atlas_lymph_marrow_stage_1",
+        "health_atlas_lymph_marrow_stage_2",
+        "health_atlas_lymph_marrow_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "thymus",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_thymus_title",
+      "stages": [
+        "health_atlas_lymph_thymus_stage_0",
+        "health_atlas_lymph_thymus_stage_1",
+        "health_atlas_lymph_thymus_stage_2",
+        "health_atlas_lymph_thymus_stage_3"
+      ],
+      "chapter": "21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types"
+    },
+    {
+      "id": "spleen",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_spleen_title",
+      "stages": [
+        "health_atlas_lymph_spleen_stage_0",
+        "health_atlas_lymph_spleen_stage_1",
+        "health_atlas_lymph_spleen_stage_2",
+        "health_atlas_lymph_spleen_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "lymph-nodes",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_node_title",
+      "stages": [
+        "health_atlas_lymph_node_stage_0",
+        "health_atlas_lymph_node_stage_1",
+        "health_atlas_lymph_node_stage_2",
+        "health_atlas_lymph_node_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "lymphatic-vessels",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_vessel_title",
+      "stages": [
+        "health_atlas_lymph_vessel_stage_0",
+        "health_atlas_lymph_vessel_stage_1",
+        "health_atlas_lymph_vessel_stage_2",
+        "health_atlas_lymph_vessel_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "thoracic-duct",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_duct_title",
+      "stages": [
+        "health_atlas_lymph_duct_stage_0",
+        "health_atlas_lymph_duct_stage_1",
+        "health_atlas_lymph_duct_stage_2",
+        "health_atlas_lymph_duct_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "tonsils",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_tonsil_title",
+      "stages": [
+        "health_atlas_lymph_tonsil_stage_0",
+        "health_atlas_lymph_tonsil_stage_1",
+        "health_atlas_lymph_tonsil_stage_2",
+        "health_atlas_lymph_tonsil_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "adenoids",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_adenoid_title",
+      "stages": [
+        "health_atlas_lymph_adenoid_stage_0",
+        "health_atlas_lymph_adenoid_stage_1",
+        "health_atlas_lymph_adenoid_stage_2",
+        "health_atlas_lymph_adenoid_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "gut-associated-lymphoid-tissue",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_galt_title",
+      "stages": [
+        "health_atlas_lymph_galt_stage_0",
+        "health_atlas_lymph_galt_stage_1",
+        "health_atlas_lymph_galt_stage_2",
+        "health_atlas_lymph_galt_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
     },
     {
       "id": "male",

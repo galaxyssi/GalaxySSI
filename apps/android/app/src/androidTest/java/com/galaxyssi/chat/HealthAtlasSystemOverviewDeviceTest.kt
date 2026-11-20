@@ -194,6 +194,7 @@ class HealthAtlasSystemOverviewDeviceTest {
                 "brain" -> R.string.health_atlas_view_lateral to "atlas-hotspot-cerebrum"
                 "lungs" -> R.string.health_atlas_view_anterior to "atlas-hotspot-bronchi"
                 "thyroid-gland" -> R.string.health_atlas_endocrine_thyroid_section_view to "atlas-hotspot-cell-thyroid-follicular-cell"
+                "spleen" -> R.string.health_atlas_lymph_spleen_view to "atlas-hotspot-cell-macrophage"
                 "sweat-glands" -> R.string.health_atlas_context_sweat_gland_view to "atlas-hotspot-cell-sweat-gland-secretory-cell"
                 else -> null
             }

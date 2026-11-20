@@ -114,9 +114,33 @@ The hair follicle and eccrine sweat gland have their own sections with links
 to matrix and secretory cells. The sweat walkthrough distinguishes secretion,
 transport, release and evaporation; playback does not give real durations.
 
+## Immune And Lymphatic Organs
+
+Nine entries now open original sectional or regional artwork instead of relying
+on the parent immune overview: red marrow, thymus, spleen, lymph node,
+collecting lymphatic, thoracic duct, palatine tonsil, adenoid, and ileal
+Peyer patch (one example of gut-associated lymphoid tissue). Thirty bilingual
+landmarks explain depicted compartments; markers lead to existing cell or
+vessel entries, without creating duplicate anatomical identities.
+
+Each lesson has four localized steps. The lymph node and thoracic duct show
+one directed fluid route; other plates highlight the region relevant to a step.
+Spleen filters blood rather than lymph, thymus supports T-cell maturation, and
+the tonsil/adenoid examples distinguish palatine crypts from nasopharyngeal folds.
+The thoracic duct illustration marks the patient's left and notes anatomical
+variation. Phases restore by entry and are shared with Mechanism Research.
+
+The independent valve example shows pressure difference and open resistance,
+forward flow, and the signed hypothetical flow without the valve. Slider
+bounds are synthetic, not reference intervals. No simulation reads or writes
+personal health measurements. See the
+[anatomy chapter](https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems)
+and the [measured-valve modeling study](https://pmc.ncbi.nlm.nih.gov/articles/PMC4500195/)
+for anatomy and the limitations of an ideal directional element.
+
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides fifteen independently bounded teaching models:
+`HealthAtlasPhysiology` provides sixteen independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -162,8 +186,11 @@ transport, release and evaporation; playback does not give real durations.
 - The sweat gland panel applies an example latent heat of 2,426 J/g to a
   synthetic evaporation rate at around 30 C. Only evaporated mass contributes
   to this calculation; it is not a whole-body cooling or dehydration estimate.
+- The collecting lymphatic example applies an ideal check valve: forward
+  flow is `max(delta pressure, 0) / open resistance`. It does not represent
+  contractions, compliance, leakage, or a measured flow.
 
-Forty-nine canonical entries expose these associated processes. Tubular cells
+Fifty canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -290,7 +317,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the 158 anatomical, tissue and cellular illustrations and selectable structures to the
+- Extend the 167 anatomical, tissue and cellular illustrations and selectable structures to the
   remaining organs and tissue structures. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by
