@@ -17,6 +17,9 @@
     <string name="health_atlas_hearing_ear_1">鼓膜振动</string>
     <string name="health_atlas_hearing_ear_2">听小骨带动卵圆窗</string>
     <string name="health_atlas_hearing_ear_3">耳蜗毛细胞驱动听觉信号</string>
+    <string name="health_atlas_hearing_eardrum">鼓膜</string>
+    <string name="health_atlas_hearing_ossicles">听小骨</string>
+    <string name="health_atlas_hearing_route_scope">空气传声示意。播放节奏不代表实际信号的速度、强度或频率。</string>
     <string name="health_atlas_hearing_external_ear_title">外耳集音</string>
     <string name="health_atlas_hearing_external_ear_0">耳廓接收声音</string>
     <string name="health_atlas_hearing_external_ear_1">耳廓褶皱改变入射声信号</string>

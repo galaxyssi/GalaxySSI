@@ -19,6 +19,9 @@
     <string name="health_atlas_hearing_ear_1">The eardrum vibrates</string>
     <string name="health_atlas_hearing_ear_2">Ossicles move the oval window</string>
     <string name="health_atlas_hearing_ear_3">Cochlear hair cells drive an auditory signal</string>
+    <string name="health_atlas_hearing_eardrum">Eardrum</string>
+    <string name="health_atlas_hearing_ossicles">Ossicles</string>
+    <string name="health_atlas_hearing_route_scope">Air-conduction schematic. Playback does not represent the speed, strength or frequency of the signal.</string>
     <string name="health_atlas_hearing_external_ear_title">Collecting sound in the outer ear</string>
     <string name="health_atlas_hearing_external_ear_0">The pinna receives sound</string>
     <string name="health_atlas_hearing_external_ear_1">Its folds shape incoming sound</string>

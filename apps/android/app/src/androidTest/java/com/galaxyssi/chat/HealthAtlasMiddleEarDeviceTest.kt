@@ -139,6 +139,44 @@ class HealthAtlasMiddleEarDeviceTest {
         }
     }
 
+    @Test fun auditorySequenceMovesOnTheCrossSectionAndRestoresItsOwnStage() = native { scenario ->
+        scenario.onActivity {
+            it.openEar(); it.view("atlas-tab-3").performClick()
+            val section = it.view("atlas-section-diagram") as HealthAtlasSectionLessonView
+            assertEquals(460, section.lesson.artWidth)
+            val drawable = requireNotNull(it.getDrawable(section.lesson.plate.drawable))
+            val unmarked = Bitmap.createBitmap(460, 280, Bitmap.Config.ARGB_8888)
+            try {
+                drawable.setBounds(0, 0, 460, 280)
+                drawable.draw(Canvas(unmarked))
+                for (feature in section.lesson.plate.features) {
+                    val marker = feature.marker
+                    assertTrue(marker.id, Color.alpha(unmarked.getPixel((marker.x * 460).toInt(), (marker.y * 280).toInt())) > 200)
+                }
+            } finally { unmarked.recycle() }
+            section.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            section.layout(0, 0, section.measuredWidth, section.measuredHeight)
+            fun frame() = Bitmap.createBitmap(section.width, section.height, Bitmap.Config.ARGB_8888).also { section.draw(Canvas(it)) }
+            val start = frame()
+            section.phase = .17f
+            val moving = frame()
+            try { assertFalse(start.sameAs(moving)) } finally { start.recycle(); moving.recycle() }
+            it.view("atlas-process-stage-3").performClick()
+            assertEquals(3, section.stage)
+            assertTrue(section.contentDescription.contains(it.getString(R.string.health_atlas_hearing_ear_3)))
+            assertEquals(HealthAtlasMiddleEar(), it.transformer().model)
+        }
+        capture("sequence", context.getString(R.string.health_atlas_hearing_ear_title))
+        scenario.recreate(); ready(scenario, "atlas-section-diagram")
+        scenario.onActivity {
+            val section = it.view("atlas-section-diagram") as HealthAtlasSectionLessonView
+            assertEquals(3, section.stage)
+            it.view("atlas-simulation-reset").performClick()
+            assertEquals(0, section.stage)
+        }
+    }
+
     @Test fun earArtworkAndResponsiveDiagramRenderVisiblePixels() = native { scenario ->
         scenario.onActivity { activity ->
             val plate = HealthAtlasPlates.forId("ear")!!

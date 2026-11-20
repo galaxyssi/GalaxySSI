@@ -167,8 +167,16 @@ stage path and aims a contrasting arrow along its tangent. It does not add
 an independent animation or imply a real material speed or quantity. For
 lessons without a directional path, existing structure highlights remain.
 All 24 original bitmap plates have now been restyled. The separately
-authored vector plates and native simulation artwork are not part of
-the raster migration.
+authored vector plates and native simulation artwork are a separate
+migration.
+
+The sensory vector pass applies soft shading to the ear and eye sections, the
+cochlear hair cell, and the retinal layers without changing the underlying
+paths or structure hotspots. The ear's four air-conduction steps now run over
+the original wide cross-section, separately from the ideal middle-ear
+pressure model. The retinal cross-section highlights the region represented
+by the selected circuit stage, and the circuit still supplies the full
+relay labels and cell links. Neither animation measures personal function.
 
 ## Alimentary Canal Sections
 
