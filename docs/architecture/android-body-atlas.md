@@ -64,9 +64,23 @@ The structure references are the OpenStax respiratory anatomy and microscopic
 kidney chapters; the spherical interface model is linked to
 https://pubmed.ncbi.nlm.nih.gov/20724566/.
 
+## Digestive Cell Pathways
+
+Thirteen cell plates cover the remaining cells linked to the digestive tract
+or its accessory organs. The islet plate adds four links to alpha, beta, delta
+and PP cells. Twenty-seven structural callouts distinguish secretion surfaces,
+granules and nearby tissue. Islet colors denote cell examples, not actual
+staining, abundance or fixed placement in human islets.
+
+The pancreas compares delivery to the duodenum through the duct with hormone
+secretion toward local capillaries. The islet compares four distinct cell
+roles and links each step to the corresponding structure page. The steps
+describe functions, not a timing model. Hormone destinations are separate
+from the synthetic ductal-fluid calculation.
+
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides eleven independently bounded teaching models:
+`HealthAtlasPhysiology` provides twelve independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -99,8 +113,12 @@ https://pubmed.ncbi.nlm.nih.gov/20724566/.
   It compares the selected radius with twice that radius at the same tension.
   This omits tissue elasticity and alveolar interdependence and is not a
   measured breathing pressure or a ventilator model.
+- Bicarbonate mixing combines a fixed synthetic base stream and a variable
+  ductal stream. It divides total bicarbonate delivered per minute by combined
+  volumetric flow. It does not predict pH, neutralization, or individual
+  pancreatic function.
 
-Forty-three canonical entries expose these associated processes. Tubular cells
+Forty-six canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -227,7 +245,7 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the 87 anatomical, tissue and cellular illustrations and selectable structures to the
+- Extend the 101 anatomical, tissue and cellular illustrations and selectable structures to the
   remaining organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by

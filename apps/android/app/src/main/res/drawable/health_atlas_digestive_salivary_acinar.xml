@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <path android:fillColor="#b69bb8" android:strokeColor="#826087" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M70,73 Q121,38 163,83 L182,122 L150,141 L83,133 Q56,115 70,73 Z" />
+    <path android:fillColor="#b69bb8" android:strokeColor="#826087" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M191,123 L215,68 Q253,41 288,74 Q307,117 273,138 L211,143 Z" />
+    <path android:fillColor="#b69bb8" android:strokeColor="#826087" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M182,140 L215,151 Q264,176 234,220 Q181,246 128,220 Q109,179 150,149 Z" />
+    <path android:fillColor="#826087" android:pathData="M84,99 a15,12 0 1,0 30,0 a15,12 0 1,0 -30,0 Z" />
+    <path android:fillColor="#826087" android:pathData="M251,100 a15,12 0 1,0 30,0 a15,12 0 1,0 -30,0 Z" />
+    <path android:fillColor="#826087" android:pathData="M161,204 a18,13 0 1,0 36,0 a18,13 0 1,0 -36,0 Z" />
+    <path android:fillColor="#eedfce" android:strokeColor="#826087" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M144,137 Q174,120 201,131 L226,147 L328,152 L328,166 L222,159 Q180,151 144,147 Z" />
+    <path android:fillColor="#4b8c87" android:pathData="M134,104 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z M147,116 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z M210,110 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z M219,121 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z M169,169 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z M189,173 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z" />
+    <path android:strokeColor="#a95e75" android:strokeWidth="3" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M78,61 Q115,45 147,52 M234,54 Q267,51 286,62 M133,221 Q168,240 205,231" />
+</vector>

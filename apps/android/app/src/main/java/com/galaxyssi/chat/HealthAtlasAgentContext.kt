@@ -49,6 +49,14 @@ internal object HealthAtlasAgentContext {
                 appendLine(context.getString(R.string.health_atlas_phagocytosis_scope))
             if (item.id == HealthAtlasPodocyteView.OWNER)
                 appendLine(context.getString(R.string.health_atlas_podocyte_scope))
+            if (item.id == HealthAtlasPancreaticRoutes.OWNER) {
+                appendLine(context.getString(R.string.health_atlas_digestive_routes_scope))
+                appendLine(context.getString(R.string.health_atlas_digestive_routes_exocrine_chain))
+                appendLine(context.getString(R.string.health_atlas_digestive_routes_endo_chain))
+                appendLine(HealthAtlasPancreaticRoutes.SOURCE)
+            }
+            if (item.id == HealthAtlasIsletStages.OWNER)
+                appendLine(context.getString(R.string.health_atlas_digestive_islets_scope))
             if (item.id == HealthAtlasSarcomere.OWNER) {
                 appendLine(context.getString(R.string.health_atlas_sarcomere_ratio,
                     HealthAtlasSarcomere(simulation.stage).relativeLengthPercent))

@@ -39,6 +39,8 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private val phagocytosis = if (item.id == HealthAtlasPhagocytosisView.OWNER) HealthAtlasPhagocytosisView(activity, mechanism) else null
     private val sarcomere = if (item.id == HealthAtlasSarcomere.OWNER) HealthAtlasSarcomerePanel(activity, mechanism) else null
     private val podocyte = if (item.id == HealthAtlasPodocyteView.OWNER) HealthAtlasPodocyteView(activity, mechanism) else null
+    private val pancreaticRoutes = if (item.id == HealthAtlasPancreaticRoutes.OWNER) HealthAtlasPancreaticRoutes(activity, atlas, select) else null
+    private val isletStages = if (item.id == HealthAtlasIsletStages.OWNER) HealthAtlasIsletStages(activity, atlas, select) else null
     private val resetInputs = arrayListOf<() -> Unit>()
     init {
         fun addQuantitative() {
@@ -48,10 +50,10 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 quantitative = HealthAtlasPhysiologyPanel(activity, body, kind, quantitativeInitial ?: migrated, source)
             }
         }
-        if (gasExchange == null) addQuantitative()
+        if (gasExchange == null && pancreaticRoutes == null) addQuantitative()
         val art = HealthAtlasUi.art(item)
         if (art != null && circulation == null && gasExchange == null && heartValves == null &&
-            phagocytosis == null && sarcomere == null && podocyte == null)
+            phagocytosis == null && sarcomere == null && podocyte == null && pancreaticRoutes == null && isletStages == null)
             ui.add(body, ImageView(activity).apply {
             setImageResource(art); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = item.name
             minimumHeight = ui.dp(260); setOnClickListener { zoom(art, item.name) }; tag = "atlas-simulation-art"
@@ -70,6 +72,14 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
             ui.add(body, it, 8)
             ui.add(body, ui.text(activity.getString(R.string.health_atlas_podocyte_scope), 12f, muted = true), 6)
         }
+        pancreaticRoutes?.let {
+            ui.add(body, it, 8)
+            ui.add(body, ui.text(activity.getString(R.string.health_atlas_digestive_routes_scope), 12f, muted = true), 6)
+        }
+        isletStages?.let {
+            ui.add(body, it, 8)
+            ui.add(body, ui.text(activity.getString(R.string.health_atlas_digestive_islets_scope), 12f, muted = true), 6)
+        }
         body.addView(diagram ?: requireNotNull(process), LinearLayout.LayoutParams(-1, -2))
         if (circulation != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_circuit_scope), 12f, muted = true), 8)
         if (gasExchange != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_gas_scope), 12f, muted = true), 8)
@@ -86,7 +96,8 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 pause(); values = HealthAtlasSimulation.initial(item.id); resetInputs.forEach { it() }; setPhase(0f); updateOutput(); quantitative?.reset()
             }.apply { tag = "atlas-simulation-reset" })
         }
-        val controlsAnchor = diagram ?: heartValves ?: germline ?: phagocytosis ?: sarcomere ?: podocyte
+        val controlsAnchor = diagram ?: heartValves ?: germline ?: phagocytosis ?: sarcomere ?: podocyte ?:
+            pancreaticRoutes ?: isletStages
         if (controlsAnchor != null) body.addView(controls, body.indexOfChild(controlsAnchor),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
         else ui.add(body, controls, 8)
@@ -98,7 +109,10 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 override fun onProgressChanged(seek: SeekBar?, value: Int, user: Boolean) { if (user) setPhase(value / 1000f) }
             })
         }; ui.add(body, progress)
-        if (gasExchange != null) addQuantitative()
+        if (pancreaticRoutes != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_digestive_routes_reference)) {
+            source(HealthAtlasPancreaticRoutes.SOURCE)
+        }.apply { tag = "atlas-source-pancreatic-routes" }, 8)
+        if (gasExchange != null || pancreaticRoutes != null) addQuantitative()
         if (cardiac) {
             output = ui.text("", 28f, bold = true).apply { tag = "atlas-simulation-output" }
             ui.add(body, ui.text(activity.getString(R.string.health_atlas_cardiac_output), 14f, muted = true), 16)
@@ -161,6 +175,8 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         phagocytosis?.stage = values.stage
         sarcomere?.stage = values.stage
         podocyte?.stage = values.stage
+        if (pancreaticRoutes?.stage != values.stage) pancreaticRoutes?.stage = values.stage
+        if (isletStages?.stage != values.stage) isletStages?.stage = values.stage
         stage.text = activity.getString(R.string.health_atlas_stage, values.stage + 1, mechanism.stages.size, mechanism.stages[values.stage])
         if (::progress.isInitialized) progress.progress = (values.phase * 1000).toInt()
     }

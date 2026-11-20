@@ -1896,7 +1896,7 @@
         "pancreatic-islets",
         "pancreatic-duct"
       ],
-      "mechanism": "digestive",
+      "mechanism": "pancreas",
       "aliases": "health_atlas_pancreas_aliases",
       "color": "",
       "icon": ""
@@ -2251,7 +2251,7 @@
         "endocrine"
       ],
       "related": [],
-      "mechanism": "beta",
+      "mechanism": "pancreatic-islets",
       "aliases": "health_atlas_pancreatic_islets_aliases",
       "color": "",
       "icon": ""
@@ -5597,6 +5597,30 @@
         "health_atlas_mechanism_digestive_3"
       ],
       "chapter": "23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder"
+    },
+    {
+      "id": "pancreas",
+      "kind": "secretion",
+      "title": "health_atlas_digestive_pancreas_title",
+      "stages": [
+        "health_atlas_digestive_pancreas_0",
+        "health_atlas_digestive_pancreas_1",
+        "health_atlas_digestive_pancreas_2",
+        "health_atlas_digestive_pancreas_3"
+      ],
+      "chapter": "23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder"
+    },
+    {
+      "id": "pancreatic-islets",
+      "kind": "secretion",
+      "title": "health_atlas_digestive_islets_title",
+      "stages": [
+        "health_atlas_digestive_islets_0",
+        "health_atlas_digestive_islets_1",
+        "health_atlas_digestive_islets_2",
+        "health_atlas_digestive_islets_3"
+      ],
+      "chapter": "17-9-the-endocrine-pancreas"
     },
     {
       "id": "urinary",
