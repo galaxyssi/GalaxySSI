@@ -182,6 +182,10 @@ class HealthAtlasSystemOverviewDeviceTest {
                             }
                         }
                     }
+                    if (plate.splitCallouts) {
+                        assertSplitPlateRendersItsArtwork(view, "${plate.owner}/${locale.language}/$width")
+                        continue
+                    }
                     for (background in listOf(Color.WHITE, Color.rgb(18, 20, 22))) {
                         val rendered = Bitmap.createBitmap(width, view.height, Bitmap.Config.ARGB_8888)
                         try {
@@ -195,6 +199,26 @@ class HealthAtlasSystemOverviewDeviceTest {
                 }
             }
         }
+    }
+
+    private fun assertSplitPlateRendersItsArtwork(view: HealthAtlasLabeledImage, case: String) {
+        val art = view.image
+        val silhouette = Bitmap.createBitmap(art.width, art.height, Bitmap.Config.ARGB_8888)
+        val rendered = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        try {
+            art.draw(Canvas(silhouette))
+            val samples = buildList {
+                for (y in 0 until silhouette.height step 8) for (x in 0 until silhouette.width step 8)
+                    if (Color.alpha(silhouette.getPixel(x, y)) > 224) add(x to y)
+            }
+            assertTrue("$case needs a substantial visible illustration", samples.size >= 300)
+            for (background in listOf(Color.WHITE, Color.rgb(18, 20, 22))) {
+                rendered.eraseColor(background)
+                view.draw(Canvas(rendered))
+                val visible = samples.count { (x, y) -> rendered.getPixel(x + art.left, y + art.top) != background }
+                assertTrue("$case displayed only $visible of ${samples.size} artwork samples", visible >= samples.size * .95)
+            }
+        } finally { silhouette.recycle(); rendered.recycle() }
     }
 
     @Test fun everySystemCanOpenAChildAndRestoreTheCorrectPlate() = native { scenario ->
