@@ -263,9 +263,9 @@ examples, endothelium, hepatocytes, beta cells, enterocytes and two gametes.
 The loader rejects a cell-specific mechanism assigned to a different entity.
 Seven additional renal/urothelial cell types have dedicated processes, bringing
 the total to 37; five respiratory-related cells extend that to 42, and twelve
-reproductive/supporting cells extend it to 54. Other cell
-subtypes still use broader pathways until dedicated content is reviewed; this
-is not a claim of complete single-cell biology coverage.
+reproductive/supporting cells extend it to 54. The complete microscopic catalogue
+increment below adds the remaining 51 cell types and the platelet fragment.
+This is not a claim of complete single-cell biology coverage.
 
 Each stage is a native focusable button. Selecting a stage pauses playback,
 updates the progress position and preserves the other simulation inputs.
@@ -583,7 +583,8 @@ endometrial epithelial, endometrial stromal, mammary luminal, myoepithelial and
 trophoblast cells. Each has four independently localized, sourced function
 stages. The mammary mechanism is explicitly one example of myoepithelial function,
 not a claim that all myoepithelial cells respond to the same signals. The catalogue
-now has 54 independent cell mechanisms; this does not complete all 106 entries.
+reached 54 independent cell mechanisms at that increment, before the remaining
+microscopic entries described below were expanded.
 Obsolete OpenStax male/female chapter slugs are replaced by the current
 testicular/ovarian chapter names. Stromal decidualization cites the review at
 https://pubmed.ncbi.nlm.nih.gov/25141152/.
@@ -618,4 +619,47 @@ cells do not inherit it. No simulated value is written to personal records.
 No reproductive-system anatomical overview artwork is added by this increment.
 An attempted internal-organ plate was rejected by the image service and is not
 included or represented as complete. Existing illustration and expert-review
-gaps remain, as do mechanisms for the other unexpanded cell entries.
+gaps remain; the following increment closes the generic microscopic-process gap.
+
+## Complete Microscopic Process Catalogue
+
+All 105 named cell entries and the separately classified platelet fragment now
+own a four-stage English/Chinese mechanism. The 52 newly expanded entries cover
+immune and hematopoietic, neural, sensory, vascular, digestive, endocrine, skin
+and musculoskeletal functions. Each process has its own title, stage resources
+and public source. The catalogue loader and packaging tests reject a missing
+mechanism, a fallback to a system process, a mismatched cell/fragment kind or
+assignment to another entity. Platelets remain fragments, not a 106th cell type.
+
+Existing native stage controls provide selection, playback, pause, reset and
+per-entry restoration. Agent context carries the selected entity, stage and
+source; no personal observations are automatically attached. Stage timing is
+an illustrative sequence, not measured biological duration. Processes with
+multiple possible functions explicitly select an example, including I-cell
+CCK secretion, adrenal zona fasciculata cortisol synthesis, eccrine cooling,
+ependymal ciliary transport and retinal pigment epithelial clearance.
+
+The content distinguishes photoreceptor hyperpolarization from ganglion-cell
+action potentials, prolactin-driven milk synthesis from milk ejection, and
+platelet aggregation from the coagulation process that stabilizes the plug.
+Pancreatic polypeptide roles are described with research uncertainty. No new
+patient-specific scores, treatment recommendations or numerical models are
+introduced. Dedicated artwork for every cell, comprehensive molecular pathways,
+organ-specific numerical models and expert anatomical/content review remain
+separate work. This closes catalogue function coverage, not the entire atlas.
+
+Sources are linked in each mechanism; textbook prose and figures are not copied.
+Specific review references complement the OpenStax chapters:
+
+- Photoreceptor signaling: https://pubmed.ncbi.nlm.nih.gov/15769618/
+- Retinal pigment epithelium: https://pubmed.ncbi.nlm.nih.gov/15987797/
+- Corneal epithelial renewal: https://pubmed.ncbi.nlm.nih.gov/26310149/
+- Endothelial/pericyte interactions: https://pubmed.ncbi.nlm.nih.gov/16166562/
+- Intestinal stem-cell compartment: https://pubmed.ncbi.nlm.nih.gov/23870119/
+- Cholangiocyte biology: https://pubmed.ncbi.nlm.nih.gov/27563020/
+- Langerhans antigen presentation: https://pubmed.ncbi.nlm.nih.gov/23246038/
+
+Device regression exercises every microscopic entry in the native function and
+simulation tabs, both locales, selected-stage Agent context, fragment identity,
+large-text controls, per-entry recreation and background playback suspension.
+Tests use isolated fixture stores and do not send a real Provider request.

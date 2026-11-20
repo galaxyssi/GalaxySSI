@@ -21,6 +21,10 @@ function validate(data) {
       assert.notEqual(related, item.id, `${item.id}: self-reference`);
     }
     assert.ok(mechanisms.has(item.mechanism), `${item.id}: missing mechanism`);
+    if (['cell', 'fragment'].includes(item.kind)) {
+      assert.equal(item.mechanism, item.id, 'Cell mechanism must belong to the microscopic entry');
+      assert.equal(mechanisms.get(item.mechanism).kind, item.kind, 'Cell mechanism kind must match');
+    }
     for (const field of ['name', 'description', 'aliases']) {
       assert.match(item[field], /^health_atlas_[a-z0-9_]+$/);
       assert.ok(!resources.has(item[field]), `Shared resource key: ${item[field]}`);
@@ -31,8 +35,8 @@ function validate(data) {
     assert.equal(model.stages.length, 4, model.id);
     assert.match(model.chapter, /^[a-z0-9-]+$/);
     if (model.reference !== undefined) assert.match(model.reference, /^https:\/\/pubmed\.ncbi\.nlm\.nih\.gov\/[1-9][0-9]*\/$/);
-    if (model.kind === 'cell') {
-      assert.equal(entries.get(model.id)?.kind, 'cell', model.id);
+    if (['cell', 'fragment'].includes(model.kind)) {
+      assert.equal(entries.get(model.id)?.kind, model.kind, model.id);
       assert.equal(entries.get(model.id)?.mechanism, model.id, 'Cell mechanism must match its owner');
       assert.equal(data.entries.filter(item => item.mechanism === model.id).length, 1, 'Cell mechanism cannot leak to another entry');
     }
@@ -193,8 +197,51 @@ test('reproductive cells have independent localized mechanisms and current refer
       for (const key of [model.title, ...model.stages]) assert.ok(resource.includes(`name="${key}"`));
     }
   }
-  assert.equal(catalogue.mechanisms.filter(item => item.kind === 'cell').length, 54);
+  assert.equal(catalogue.mechanisms.filter(item => item.kind === 'cell').length, 105);
   assert.equal(catalogue.mechanisms.find(item => item.id === 'cell-endometrial-stromal-cell').reference,
     'https://pubmed.ncbi.nlm.nih.gov/25141152/');
   assert.ok(catalogue.mechanisms.every(item => !/of-the-(?:male|female)-reproductive-system/.test(item.chapter)));
+});
+
+test('every microscopic entry has a distinct four-stage mechanism, including the platelet fragment', () => {
+  const entries = catalogue.entries.filter(item => ['cell', 'fragment'].includes(item.kind));
+  assert.equal(entries.length, 106);
+  const keys = new Set();
+  for (const entry of entries) {
+    const model = catalogue.mechanisms.find(item => item.id === entry.id);
+    assert.equal(entry.mechanism, model.id);
+    assert.equal(model.kind, entry.kind);
+    for (const key of [model.title, ...model.stages]) {
+      assert.ok(!keys.has(key), `Shared microscopic text key: ${key}`);
+      keys.add(key);
+    }
+  }
+  assert.equal(catalogue.mechanisms.find(item => item.id === 'fragment-platelet').kind, 'fragment');
+});
+
+test('microscopic mechanisms cannot silently regress to inherited system content', () => {
+  for (const id of ['cell-dendritic-cell', 'fragment-platelet']) {
+    const invalid = structuredClone(catalogue);
+    invalid.entries.find(item => item.id === id).mechanism = invalid.entries.find(item => item.kind === 'system').mechanism;
+    invalid.mechanisms = invalid.mechanisms.filter(item => item.id !== id);
+    assert.throws(() => validate(invalid), /Cell mechanism/);
+  }
+  for (const kind of ['cell', 'immune']) {
+    const invalid = structuredClone(catalogue);
+    invalid.mechanisms.find(item => item.id === 'fragment-platelet').kind = kind;
+    assert.throws(() => validate(invalid), /Cell mechanism/);
+  }
+  const invalid = structuredClone(catalogue);
+  invalid.entries.find(item => item.id === 'heart').mechanism = 'fragment-platelet';
+  assert.throws(() => validate(invalid), /Cell mechanism/);
+});
+
+test('all extended cell resources exist in English and Chinese', () => {
+  for (const locale of ['values', 'values-zh']) {
+    const resource = readFileSync(new URL(`../../apps/android/app/src/main/res/${locale}/health_atlas_extended_cells.xml`, import.meta.url), 'utf8');
+    const models = catalogue.mechanisms.filter(item => item.title.startsWith('health_atlas_process_') && !coreCells.includes(item.id));
+    assert.equal(models.length, 52);
+    for (const model of models) for (const key of [model.title, ...model.stages])
+      assert.ok(resource.includes(`name="${key}"`), `${locale}: ${key}`);
+  }
 });

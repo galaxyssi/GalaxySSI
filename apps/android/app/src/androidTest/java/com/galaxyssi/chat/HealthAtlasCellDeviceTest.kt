@@ -29,6 +29,7 @@ class HealthAtlasCellDeviceTest {
     private fun Activity.view(tag: String) = requireNotNull(window.decorView.tagged(tag)) { tag }
     private fun native(block: (ActivityScenario<HealthBodyAtlasActivity>) -> Unit) {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        instrumentation.uiAutomation
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
         try {
             ActivityScenario.launch<HealthBodyAtlasActivity>(Intent(context, HealthBodyAtlasActivity::class.java)
@@ -65,16 +66,20 @@ class HealthAtlasCellDeviceTest {
             val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
             val atlas = HealthBodyAtlas.load(localized)
             val models = atlas.mechanisms.filter { it.kind == "cell" }
-            assertEquals(54, models.size)
-            assertEquals(54, models.map { it.title }.toSet().size)
-            assertEquals(54, models.map { it.stages }.toSet().size)
+            assertEquals(105, models.size)
+            assertEquals(105, models.map { it.title }.toSet().size)
+            assertEquals(105, models.map { it.stages }.toSet().size)
             models.forEach {
                 assertEquals(HealthAtlasKind.CELL, atlas[it.id]?.kind)
                 assertEquals(it.id, atlas[it.id]?.mechanism)
                 assertEquals(4, it.stages.size)
                 assertTrue(it.stages.all(String::isNotBlank))
-                if (it.id == "cell-club-cell") assertEquals("https://pubmed.ncbi.nlm.nih.gov/29874100/", it.source)
-                else if (it.id == "cell-endometrial-stromal-cell") assertEquals("https://pubmed.ncbi.nlm.nih.gov/25141152/", it.source)
+                val paper = mapOf("cell-club-cell" to "29874100", "cell-endometrial-stromal-cell" to "25141152",
+                    "cell-rod-photoreceptor" to "15769618", "cell-cone-photoreceptor" to "15769618",
+                    "cell-retinal-pigment-epithelial-cell" to "15987797", "cell-corneal-epithelial-cell" to "26310149",
+                    "cell-pericyte" to "16166562", "cell-intestinal-stem-cell" to "23870119", "cell-cholangiocyte" to "27563020",
+                    "cell-langerhans-cell" to "23246038")[it.id]
+                if (paper != null) assertEquals("https://pubmed.ncbi.nlm.nih.gov/$paper/", it.source)
                 else assertTrue(it.source.startsWith("https://openstax.org/books/anatomy-and-physiology-2e/pages/"))
             }
         }
@@ -114,7 +119,7 @@ class HealthAtlasCellDeviceTest {
     @Test fun everyCellStageIsFocusableAndFitsLargeText() = native { scenario ->
         scenario.onActivity { activity ->
             val atlas = HealthBodyAtlas.load(activity)
-            for (model in atlas.mechanisms.filter { it.kind == "cell" }) {
+            for (model in atlas.mechanisms.filter { it.kind in setOf("cell", "fragment") }) {
                 var selected = -1
                 val process = HealthAtlasProcessView(activity, model) { selected = it }
                 (0 until process.childCount).forEach { (process.getChildAt(it) as TextView).textSize = 26f }
