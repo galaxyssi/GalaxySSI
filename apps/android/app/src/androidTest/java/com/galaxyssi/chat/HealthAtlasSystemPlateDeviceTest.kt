@@ -110,11 +110,11 @@ class HealthAtlasSystemPlateDeviceTest {
                 view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
                 view.layout(0, 0, view.measuredWidth, view.measuredHeight)
-                var bottom = 0
+                val bottoms = mutableMapOf<Int, Int>()
                 for (label in labels.sortedBy { it.top }) {
-                    assertTrue(label.top >= bottom && label.bottom <= view.height && label.right <= width)
+                    assertTrue(label.top >= (bottoms[label.left] ?: 0) && label.bottom <= view.height && label.right <= width)
                     assertTrue(label.height >= label.layout.height + label.compoundPaddingTop + label.compoundPaddingBottom)
-                    bottom = label.bottom
+                    bottoms[label.left] = label.bottom
                     if (!label.isSelected) { label.performClick(); assertEquals(label.tag.toString().removePrefix("atlas-hotspot-"), selected) }
                 }
                 for (background in listOf(Color.WHITE, Color.rgb(18, 20, 22))) {

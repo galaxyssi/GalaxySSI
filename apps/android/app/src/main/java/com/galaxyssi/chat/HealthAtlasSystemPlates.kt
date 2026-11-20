@@ -7,7 +7,7 @@ internal object HealthAtlasSystemPlates {
         R.string.health_atlas_view_system_sensory, listOf(
             HealthAtlasMarker("eye", .24f, .26f), HealthAtlasMarker("ear", .71f, .24f),
             HealthAtlasMarker("nose", .14f, .79f), HealthAtlasMarker("tongue", .76f, .73f)),
-        BOOK + "14-1-sensory-perception")
+        BOOK + "14-1-sensory-perception", splitCallouts = true)
     private val respiratory = HealthAtlasPlate(R.drawable.health_atlas_system_respiratory, "respiratory",
         R.string.health_atlas_view_system_respiratory, listOf(
             HealthAtlasMarker("nasal-cavity", .42f, .15f), HealthAtlasMarker("pharynx", .52f, .23f),
@@ -24,12 +24,12 @@ internal object HealthAtlasSystemPlates {
         R.string.health_atlas_view_system_endocrine, listOf(
             HealthAtlasMarker("pituitary-gland", .23f, .42f), HealthAtlasMarker("thyroid-gland", .81f, .31f),
             HealthAtlasMarker("adrenal-glands", .37f, .58f), HealthAtlasMarker("pancreas", .71f, .71f)),
-        BOOK + "17-1-an-overview-of-the-endocrine-system")
+        BOOK + "17-1-an-overview-of-the-endocrine-system", splitCallouts = true)
     private val immune = HealthAtlasPlate(R.drawable.health_atlas_system_immune, "immune",
         R.string.health_atlas_view_system_immune, listOf(
             HealthAtlasMarker("thymus", .285f, .20f), HealthAtlasMarker("spleen", .82f, .33f),
             HealthAtlasMarker("lymph-nodes", .28f, .70f), HealthAtlasMarker("bone-marrow", .70f, .76f)),
-        BOOK + "21-1-anatomy-of-the-lymphatic-and-immune-systems")
+        BOOK + "21-1-anatomy-of-the-lymphatic-and-immune-systems", splitCallouts = true)
     private val skin = HealthAtlasPlate(R.drawable.health_atlas_system_skin, "skin",
         R.string.health_atlas_view_system_skin, listOf(
             HealthAtlasMarker("epidermis", .32f, .34f), HealthAtlasMarker("dermis", .51f, .46f),

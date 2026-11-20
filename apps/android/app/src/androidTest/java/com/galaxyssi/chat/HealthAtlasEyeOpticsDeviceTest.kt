@@ -141,13 +141,14 @@ class HealthAtlasEyeOpticsDeviceTest {
                 }
                 val themed = activity.createConfigurationContext(configuration)
                 val drawing = requireNotNull(themed.getDrawable(R.drawable.health_atlas_eye_section))
-                val bitmap = Bitmap.createBitmap(400, 280, Bitmap.Config.ARGB_8888)
+                val bitmap = Bitmap.createBitmap(420, 280, Bitmap.Config.ARGB_8888)
                 try {
-                    drawing.setBounds(0, 0, 400, 280)
+                    assertEquals(3 * drawing.intrinsicHeight, 2 * drawing.intrinsicWidth)
+                    drawing.setBounds(0, 0, bitmap.width, bitmap.height)
                     drawing.draw(Canvas(bitmap))
                     assertEquals(0, Color.alpha(bitmap.getPixel(0, 0)))
                     HealthAtlasPlates.forId("eye")!!.markers.forEach { marker ->
-                        assertTrue(marker.id, Color.alpha(bitmap.getPixel((marker.x * 400).toInt(), (marker.y * 280).toInt())) > 200)
+                        assertTrue(marker.id, Color.alpha(bitmap.getPixel((marker.x * bitmap.width).toInt(), (marker.y * bitmap.height).toInt())) > 200)
                     }
                 } finally { bitmap.recycle() }
                 val rays = HealthAtlasEyeOpticsView.RayDiagram(themed)

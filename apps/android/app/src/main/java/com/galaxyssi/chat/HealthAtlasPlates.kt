@@ -10,7 +10,8 @@ internal data class HealthAtlasFeature(val marker: HealthAtlasMarker, val title:
 
 internal data class HealthAtlasPlate(val drawable: Int, val owner: String?, val viewLabel: Int,
     val markers: List<HealthAtlasMarker>, val source: String? = null, val viewKey: String? = null,
-    val selectorLabel: Int? = null, val features: List<HealthAtlasFeature> = emptyList()) {
+    val selectorLabel: Int? = null, val features: List<HealthAtlasFeature> = emptyList(),
+    val splitCallouts: Boolean = false) {
     init {
         val ids = markers.map { it.id } + features.map { it.marker.id }
         require(ids.distinct().size == ids.size)
@@ -78,13 +79,14 @@ internal object HealthAtlasPlates {
             HealthAtlasMarker("pulmonary-capillaries", .74f, .69f)), HealthAtlasGasExchange.SOURCE)
     private val eye = HealthAtlasPlate(R.drawable.health_atlas_eye_section, "eye",
         R.string.health_atlas_view_eye_section, listOf(
-            HealthAtlasMarker("cornea", .138f, .39f), HealthAtlasMarker("lens", .30f, .49f),
-            HealthAtlasMarker("retina", .663f, .669f)), HealthAtlasEyeOptics.ANATOMY_SOURCE)
+            HealthAtlasMarker("cornea", .159f, .475f), HealthAtlasMarker("lens", .324f, .496f),
+            HealthAtlasMarker("retina", .758f, .479f)), HealthAtlasEyeOptics.ANATOMY_SOURCE, splitCallouts = true)
     private val ear = HealthAtlasPlate(R.drawable.health_atlas_ear_section, "ear",
         R.string.health_atlas_view_ear_section, listOf(
             HealthAtlasMarker("external-ear", .105f, .251f), HealthAtlasMarker("middle-ear", .531f, .420f),
             HealthAtlasMarker("inner-ear", .656f, .426f), HealthAtlasMarker("cochlea", .759f, .556f),
-            HealthAtlasMarker("vestibular-apparatus", .742f, .111f)), HealthAtlasMiddleEar.ANATOMY_SOURCE)
+            HealthAtlasMarker("vestibular-apparatus", .742f, .111f)), HealthAtlasMiddleEar.ANATOMY_SOURCE,
+        splitCallouts = true)
     val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron, alveolus, eye, ear) +
         HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all + HealthAtlasTissuePlates.all +
         HealthAtlasHeartSection.section + HealthAtlasImmunePlates.all + HealthAtlasCoreCellPlates.all +
