@@ -82,9 +82,9 @@ class HealthAtlasMicroscopicDeviceTest {
             val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
             val atlas = HealthBodyAtlas.load(localized)
             val items = entries(atlas)
-            assertEquals(106, items.size)
-            assertEquals(106, items.map { atlas.mechanism(it).title }.toSet().size)
-            assertEquals(106, items.map { atlas.mechanism(it).stages }.toSet().size)
+            assertEquals(108, items.size)
+            assertEquals(108, items.map { atlas.mechanism(it).title }.toSet().size)
+            assertEquals(108, items.map { atlas.mechanism(it).stages }.toSet().size)
             items.forEach {
                 assertEquals(it.id, atlas.mechanism(it).id)
                 assertEquals(it.kind.name.lowercase(Locale.ROOT), atlas.mechanism(it).kind)

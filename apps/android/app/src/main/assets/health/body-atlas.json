@@ -1077,7 +1077,7 @@
         "sensory"
       ],
       "related": [],
-      "mechanism": "sensory",
+      "mechanism": "retina",
       "aliases": "health_atlas_retina_aliases",
       "color": "",
       "icon": ""
@@ -4103,6 +4103,40 @@
       "icon": ""
     },
     {
+      "id": "cell-retinal-bipolar-cell",
+      "kind": "cell",
+      "name": "health_atlas_sensory_bipolar_name",
+      "description": "health_atlas_sensory_bipolar_description",
+      "systems": [
+        "sensory",
+        "nervous"
+      ],
+      "related": [
+        "retina"
+      ],
+      "mechanism": "cell-retinal-bipolar-cell",
+      "aliases": "health_atlas_sensory_bipolar_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-retinal-aii-amacrine-cell",
+      "kind": "cell",
+      "name": "health_atlas_sensory_aii_name",
+      "description": "health_atlas_sensory_aii_description",
+      "systems": [
+        "sensory",
+        "nervous"
+      ],
+      "related": [
+        "retina"
+      ],
+      "mechanism": "cell-retinal-aii-amacrine-cell",
+      "aliases": "health_atlas_sensory_aii_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
       "id": "cell-inner-ear-hair-cell",
       "kind": "cell",
       "name": "health_atlas_cell_inner_ear_hair_cell_name",
@@ -6631,6 +6665,45 @@
         "health_atlas_process_cell_satellite_glial_cell_3"
       ],
       "chapter": "12-2-nervous-tissue"
+    },
+    {
+      "id": "retina",
+      "kind": "vision",
+      "title": "health_atlas_sensory_retinal_path_title",
+      "stages": [
+        "health_atlas_sensory_retinal_path_0",
+        "health_atlas_sensory_retinal_path_1",
+        "health_atlas_sensory_retinal_path_2",
+        "health_atlas_sensory_retinal_path_3"
+      ],
+      "chapter": "14-1-sensory-perception",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/28856684/"
+    },
+    {
+      "id": "cell-retinal-bipolar-cell",
+      "kind": "cell",
+      "title": "health_atlas_sensory_bipolar_title",
+      "stages": [
+        "health_atlas_sensory_bipolar_stage_0",
+        "health_atlas_sensory_bipolar_stage_1",
+        "health_atlas_sensory_bipolar_stage_2",
+        "health_atlas_sensory_bipolar_stage_3"
+      ],
+      "chapter": "14-1-sensory-perception",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/28856684/"
+    },
+    {
+      "id": "cell-retinal-aii-amacrine-cell",
+      "kind": "cell",
+      "title": "health_atlas_sensory_aii_title",
+      "stages": [
+        "health_atlas_sensory_aii_stage_0",
+        "health_atlas_sensory_aii_stage_1",
+        "health_atlas_sensory_aii_stage_2",
+        "health_atlas_sensory_aii_stage_3"
+      ],
+      "chapter": "14-1-sensory-perception",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/28856684/"
     },
     {
       "id": "cell-rod-photoreceptor",

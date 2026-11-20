@@ -136,4 +136,18 @@ class HealthAtlasPhysiologyTest {
         assertNull(HealthAtlasPhysiology.restore("cell-thyrotroph", intArrayOf(80, 100)))
         assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(80, 301)))
     }
+    @Test fun idealPoissonAbsorptionComplementsTheZeroEventProbability() {
+        val id = "cell-rod-photoreceptor"
+        val model = requireNotNull(HealthAtlasPhysiology.restore(id, intArrayOf(100)))
+        assertEquals(63.21205588, model.result, 1e-8)
+        assertEquals(0.0, model.withInput(0, 0).result, 1e-9)
+        assertEquals(99.3262053, model.withInput(0, 500).result, 1e-7)
+        for (count in 0..500) {
+            val example = model.withInput(0, count)
+            assertEquals(100.0, example.result + example.companionValue, 1e-9)
+        }
+        assertNull(HealthAtlasPhysiology.restore("retina", intArrayOf(100)))
+        assertNull(HealthAtlasPhysiology.restore("cell-cone-photoreceptor", intArrayOf(100)))
+        assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(501)))
+    }
 }

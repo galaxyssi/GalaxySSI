@@ -34,7 +34,9 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private val endocrinePath = HealthAtlasEndocrinePath.all[item.id]?.let {
         HealthAtlasEndocrinePathView(activity, atlas, item, it, { index -> pause(); setPhase(index / 4f) }, select)
     }
-    private val process = if (circulation == null && gasExchange == null && endocrinePath == null) HealthAtlasProcessView(activity, mechanism) { index ->
+    private val retinalPath = if (item.id == HealthAtlasRetinaPath.OWNER)
+        HealthAtlasRetinaPath(activity, atlas, mechanism, { index -> pause(); setPhase(index / 4f) }, select) else null
+    private val process = if (circulation == null && gasExchange == null && endocrinePath == null && retinalPath == null) HealthAtlasProcessView(activity, mechanism) { index ->
         pause(); setPhase(index / 4f)
     } else null
     private val germline = if (item.id in HealthAtlasGermline.supported) HealthAtlasGermlineView(activity, item.id) else null
@@ -57,7 +59,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         val art = HealthAtlasUi.art(item)
         if (art != null && circulation == null && gasExchange == null && heartValves == null &&
             phagocytosis == null && sarcomere == null && podocyte == null && pancreaticRoutes == null &&
-            isletStages == null && endocrinePath == null)
+            isletStages == null && endocrinePath == null && retinalPath == null)
             ui.add(body, ImageView(activity).apply {
             setImageResource(art); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = item.name
             minimumHeight = ui.dp(260); setOnClickListener { zoom(art, item.name) }; tag = "atlas-simulation-art"
@@ -65,7 +67,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         })
         ui.add(body, ui.text(mechanism.title, 18f, bold = true), 14)
         germline?.let { ui.add(body, it, 12) }
-        val diagram = circulation ?: gasExchange ?: endocrinePath
+        val diagram = circulation ?: gasExchange ?: endocrinePath ?: retinalPath
         if (heartValves != null) ui.add(body, heartValves, 8)
         if (phagocytosis != null) {
             ui.add(body, phagocytosis, 8)
@@ -89,7 +91,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         if (gasExchange != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_gas_scope), 12f, muted = true), 8)
         stage = ui.text("", 15f, bold = true).apply { tag = "atlas-simulation-stage" }
         if (germline != null) body.addView(stage, body.indexOfChild(germline), LinearLayout.LayoutParams(-1, -2))
-        else ui.add(body, stage)
+        else if (retinalPath == null && endocrinePath == null) ui.add(body, stage)
         val controls = ui.line().apply {
             gravity = Gravity.CENTER
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_body_previous_step) { pause(); setPhase((values.stage - 1).coerceAtLeast(0) / 4f) })
@@ -116,6 +118,9 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         if (pancreaticRoutes != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_digestive_routes_reference)) {
             source(HealthAtlasPancreaticRoutes.SOURCE)
         }.apply { tag = "atlas-source-pancreatic-routes" }, 8)
+        if (retinalPath != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_sensory_retinal_paper)) {
+            source(HealthAtlasRetinaPath.SOURCE)
+        }.apply { tag = "atlas-source-retinal-path" }, 8)
         if (gasExchange != null || pancreaticRoutes != null || endocrinePath != null) addQuantitative()
         if (cardiac) {
             output = ui.text("", 28f, bold = true).apply { tag = "atlas-simulation-output" }
@@ -182,6 +187,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         if (pancreaticRoutes?.stage != values.stage) pancreaticRoutes?.stage = values.stage
         if (isletStages?.stage != values.stage) isletStages?.stage = values.stage
         if (endocrinePath?.stage != values.stage) endocrinePath?.stage = values.stage
+        if (retinalPath?.stage != values.stage) retinalPath?.stage = values.stage
         stage.text = activity.getString(R.string.health_atlas_stage, values.stage + 1, mechanism.stages.size, mechanism.stages[values.stage])
         if (::progress.isInitialized) progress.progress = (values.phase * 1000).toInt()
     }

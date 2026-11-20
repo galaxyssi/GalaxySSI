@@ -58,6 +58,11 @@ internal object HealthAtlasAgentContext {
             if (item.id == HealthAtlasIsletStages.OWNER)
                 appendLine(context.getString(R.string.health_atlas_digestive_islets_scope))
             HealthAtlasEndocrinePath.all[item.id]?.let { appendLine(context.getString(it.scope)) }
+            if (item.id == HealthAtlasRetinaPath.OWNER) {
+                appendLine(context.getString(R.string.health_atlas_sensory_retinal_scope))
+                appendLine(context.getString(R.string.health_atlas_sensory_retinal_relay_rod))
+                appendLine(HealthAtlasRetinaPath.SOURCE)
+            }
             if (item.id == HealthAtlasSarcomere.OWNER) {
                 appendLine(context.getString(R.string.health_atlas_sarcomere_ratio,
                     HealthAtlasSarcomere(simulation.stage).relativeLengthPercent))

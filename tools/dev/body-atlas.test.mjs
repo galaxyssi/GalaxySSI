@@ -174,7 +174,7 @@ test('cell-specific processes cannot be reused for another cell or structure', (
 
 test('bundled atlas is a complete canonical graph', () => {
   validate(catalogue);
-  for (const [kind, count] of [['system', 14], ['organ', 177], ['tissue', 14], ['cell', 105], ['fragment', 1]]) {
+  for (const [kind, count] of [['system', 14], ['organ', 177], ['tissue', 14], ['cell', 107], ['fragment', 1]]) {
     assert.equal(catalogue.entries.filter(item => item.kind === kind).length, count);
   }
   const skin = catalogue.entries.find(item => item.id === 'skin');
@@ -300,7 +300,7 @@ test('reproductive cells have independent localized mechanisms and current refer
       for (const key of [model.title, ...model.stages]) assert.ok(resource.includes(`name="${key}"`));
     }
   }
-  assert.equal(catalogue.mechanisms.filter(item => item.kind === 'cell').length, 105);
+  assert.equal(catalogue.mechanisms.filter(item => item.kind === 'cell').length, 107);
   assert.equal(catalogue.mechanisms.find(item => item.id === 'cell-endometrial-stromal-cell').reference,
     'https://pubmed.ncbi.nlm.nih.gov/25141152/');
   assert.ok(catalogue.mechanisms.every(item => !/of-the-(?:male|female)-reproductive-system/.test(item.chapter)));
@@ -308,7 +308,7 @@ test('reproductive cells have independent localized mechanisms and current refer
 
 test('every microscopic entry has a distinct four-stage mechanism, including the platelet fragment', () => {
   const entries = catalogue.entries.filter(item => ['cell', 'fragment'].includes(item.kind));
-  assert.equal(entries.length, 106);
+  assert.equal(entries.length, 108);
   const keys = new Set();
   for (const entry of entries) {
     const model = catalogue.mechanisms.find(item => item.id === entry.id);
@@ -346,5 +346,19 @@ test('all extended cell resources exist in English and Chinese', () => {
     assert.equal(models.length, 52);
     for (const model of models) for (const key of [model.title, ...model.stages])
       assert.ok(resource.includes(`name="${key}"`), `${locale}: ${key}`);
+  }
+});
+
+test('the retina and its two relay cells have separate localized and sourced mechanisms', () => {
+  for (const id of ['retina', 'cell-retinal-bipolar-cell', 'cell-retinal-aii-amacrine-cell']) {
+    const entry = catalogue.entries.find(item => item.id === id);
+    assert.equal(entry.mechanism, id);
+    if (entry.kind === 'cell') assert.ok(entry.related.includes('retina'));
+    const model = catalogue.mechanisms.find(item => item.id === id);
+    assert.equal(model.reference, 'https://pubmed.ncbi.nlm.nih.gov/28856684/');
+    for (const locale of ['values', 'values-zh']) {
+      const resource = readFileSync(new URL(`../../apps/android/app/src/main/res/${locale}/health_atlas_sensory_plates.xml`, import.meta.url), 'utf8');
+      for (const key of [model.title, ...model.stages]) assert.ok(resource.includes(`name="${key}"`));
+    }
   }
 });

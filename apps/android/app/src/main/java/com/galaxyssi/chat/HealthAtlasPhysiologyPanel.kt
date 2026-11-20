@@ -33,10 +33,13 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         val axisKey = kind.inputs[kind.axis].key
         fun addChart() {
             ui.add(body, chart, 12)
-            ui.add(body, ui.text(activity.getString(R.string.health_atlas_model_axis,
-                activity.getString(HealthAtlasPhysiologyText.label(axisKey)), HealthAtlasPhysiologyText.unit(axisKey)), 12f, muted = true))
+            val axisLabel = activity.getString(HealthAtlasPhysiologyText.label(axisKey))
+            val unit = HealthAtlasPhysiologyText.unit(axisKey)
+            ui.add(body, ui.text(if (unit.isEmpty()) axisLabel else
+                activity.getString(R.string.health_atlas_model_axis, axisLabel, unit), 12f, muted = true))
         }
-        if (alveolar == null) addChart()
+        val controlsFirst = alveolar != null || kind == HealthAtlasPhysiologyKind.PHOTON_CAPTURE
+        if (!controlsFirst) addChart()
         kind.inputs.forEachIndexed { index, input ->
             val caption = ui.text("", 14f).apply { tag = "atlas-physiology-label-${input.key}" }
             ui.add(body, caption, 14)
@@ -55,7 +58,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
             controls += seek to caption
             ui.add(body, seek)
         }
-        if (alveolar != null) addChart()
+        if (controlsFirst) addChart()
         if (eyeOptics != null) ui.add(body, ui.command(R.string.health_atlas_eye_match_plane) {
             val index = model.kind.axis
             val targetSteps = requireNotNull(model.eyeOptics).targetPowerSteps
