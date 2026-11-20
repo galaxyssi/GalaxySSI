@@ -178,6 +178,15 @@ pressure model. The retinal cross-section highlights the region represented
 by the selected circuit stage, and the circuit still supplies the full
 relay labels and cell links. Neither animation measures personal function.
 
+The illustrated hearing update replaces the ear vector with a transparent
+3:2 painted cutaway, using the same drawable for labeled structure,
+fullscreen, and playback. The five navigation anchors and the four
+air-conduction tracks are calibrated to the new illustration independently.
+The last track terminates on the auditory nerve. Retinal circuit destinations
+also use shaded plates for rods, cones, bipolar cells, AII amacrine cells,
+ganglion cells, and the pigment epithelium; their native geometry and
+semantic callouts are unchanged.
+
 ## Alimentary Canal Sections
 
 Fourteen digestive entries now have their own source-linked diagrams, from

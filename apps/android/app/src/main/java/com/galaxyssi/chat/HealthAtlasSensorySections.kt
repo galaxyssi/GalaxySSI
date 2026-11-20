@@ -1,6 +1,8 @@
 package com.galaxyssi.chat
 
 internal object HealthAtlasSensorySections {
+    private const val EAR_WIDTH = 420
+
     operator fun get(id: String?) = when (id) {
         "ear" -> ear
         "retina" -> retina
@@ -10,22 +12,31 @@ internal object HealthAtlasSensorySections {
     private val ear by lazy {
         val original = requireNotNull(HealthAtlasPlates.forId("ear"))
         fun feature(id: String, x: Int, y: Int, title: Int, stage: Int) =
-            HealthAtlasFeature(HealthAtlasMarker(id, x / 460f, y / 280f), title, stage)
+            HealthAtlasFeature(HealthAtlasMarker(id, x.toFloat() / EAR_WIDTH, y / 280f), title, stage)
 
         val features = listOf(
-            feature("ear-canal", 148, 140, R.string.health_atlas_external_ear_name, R.string.health_atlas_hearing_ear_0),
-            feature("eardrum", 214, 138, R.string.health_atlas_hearing_eardrum, R.string.health_atlas_hearing_ear_1),
-            feature("ossicles", 254, 111, R.string.health_atlas_hearing_ossicles, R.string.health_atlas_hearing_ear_2),
-            feature("cochlea-output", 361, 177, R.string.health_atlas_cochlea_name, R.string.health_atlas_hearing_ear_3),
+            feature("ear-canal", 135, 145, R.string.health_atlas_external_ear_name, R.string.health_atlas_hearing_ear_0),
+            feature("eardrum", 187, 139, R.string.health_atlas_hearing_eardrum, R.string.health_atlas_hearing_ear_1),
+            feature("ossicles", 223, 118, R.string.health_atlas_hearing_ossicles, R.string.health_atlas_hearing_ear_2),
+            feature("cochlea-output", 319, 156, R.string.health_atlas_cochlea_name, R.string.health_atlas_hearing_ear_3),
         )
+        // Match the 3:2 plate. The final track follows the nerve, not the auditory tube.
         val routes = listOf(
-            atlasSectionTrack(40f, 137f) { cubicTo(66f, 130f, 77f, 137f, 95f, 140f); quadTo(132f, 136f, 179f, 137f) },
-            atlasSectionTrack(179f, 137f) { quadTo(193f, 140f, 214f, 138f) },
-            atlasSectionTrack(220f, 137f) { lineTo(231f, 106f); quadTo(248f, 91f, 255f, 109f); lineTo(262f, 141f); lineTo(289f, 141f) },
-            atlasSectionTrack(357f, 179f) { cubicTo(377f, 176f, 397f, 181f, 442f, 198f) },
+            atlasSectionTrack(79f, 149f) { cubicTo(100f, 146f, 124f, 144f, 153f, 145f) },
+            atlasSectionTrack(153f, 145f) { quadTo(172f, 145f, 187f, 139f) },
+            atlasSectionTrack(195f, 145f) {
+                quadTo(202f, 111f, 211f, 109f)
+                cubicTo(221f, 109f, 228f, 113f, 229f, 120f)
+                quadTo(233f, 133f, 236f, 143f)
+                lineTo(266f, 144f)
+            },
+            atlasSectionTrack(319f, 156f) {
+                cubicTo(344f, 153f, 351f, 151f, 361f, 147f)
+                cubicTo(382f, 143f, 395f, 138f, 411f, 135f)
+            },
         )
         HealthAtlasSectionLesson(original.copy(features = features), listOf(0, 1, 2, 3), routes,
-            listOf(R.string.health_atlas_hearing_route_scope), artWidth = 460)
+            listOf(R.string.health_atlas_hearing_route_scope), artWidth = EAR_WIDTH)
     }
 
     private val retina by lazy {

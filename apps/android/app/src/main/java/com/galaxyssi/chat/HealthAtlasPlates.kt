@@ -82,9 +82,9 @@ internal object HealthAtlasPlates {
             HealthAtlasMarker("retina", .663f, .669f)), HealthAtlasEyeOptics.ANATOMY_SOURCE)
     private val ear = HealthAtlasPlate(R.drawable.health_atlas_ear_section, "ear",
         R.string.health_atlas_view_ear_section, listOf(
-            HealthAtlasMarker("external-ear", .129f, .354f), HealthAtlasMarker("middle-ear", .54f, .447f),
-            HealthAtlasMarker("inner-ear", .686f, .509f), HealthAtlasMarker("cochlea", .79f, .668f),
-            HealthAtlasMarker("vestibular-apparatus", .797f, .19f)), HealthAtlasMiddleEar.ANATOMY_SOURCE)
+            HealthAtlasMarker("external-ear", .105f, .251f), HealthAtlasMarker("middle-ear", .531f, .420f),
+            HealthAtlasMarker("inner-ear", .656f, .426f), HealthAtlasMarker("cochlea", .759f, .556f),
+            HealthAtlasMarker("vestibular-apparatus", .742f, .111f)), HealthAtlasMiddleEar.ANATOMY_SOURCE)
     val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron, urinary, gut, pancreas, nephron, alveolus, eye, ear) +
         HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all + HealthAtlasTissuePlates.all +
         HealthAtlasHeartSection.section + HealthAtlasImmunePlates.all + HealthAtlasCoreCellPlates.all +

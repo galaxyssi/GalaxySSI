@@ -7,6 +7,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.PathMeasure
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.View
@@ -143,16 +144,29 @@ class HealthAtlasMiddleEarDeviceTest {
         scenario.onActivity {
             it.openEar(); it.view("atlas-tab-3").performClick()
             val section = it.view("atlas-section-diagram") as HealthAtlasSectionLessonView
-            assertEquals(460, section.lesson.artWidth)
+            val artWidth = section.lesson.artWidth
+            assertEquals(420, artWidth)
             val drawable = requireNotNull(it.getDrawable(section.lesson.plate.drawable))
-            val unmarked = Bitmap.createBitmap(460, 280, Bitmap.Config.ARGB_8888)
+            assertEquals(3 * drawable.intrinsicHeight, 2 * drawable.intrinsicWidth)
+            val unmarked = Bitmap.createBitmap(artWidth, 280, Bitmap.Config.ARGB_8888)
             try {
-                drawable.setBounds(0, 0, 460, 280)
+                drawable.setBounds(0, 0, artWidth, 280)
                 drawable.draw(Canvas(unmarked))
                 for (feature in section.lesson.plate.features) {
                     val marker = feature.marker
-                    assertTrue(marker.id, Color.alpha(unmarked.getPixel((marker.x * 460).toInt(), (marker.y * 280).toInt())) > 200)
+                    assertTrue(marker.id, Color.alpha(unmarked.getPixel((marker.x * artWidth).toInt(), (marker.y * 280).toInt())) > 200)
                 }
+                val point = FloatArray(2)
+                for ((stage, track) in section.lesson.tracks.withIndex()) {
+                    val path = PathMeasure(track(), false)
+                    for (i in 0..12) {
+                        assertTrue(path.getPosTan(path.length * i / 12f, point, null))
+                        assertTrue("Off-plate route: stage $stage, point $i",
+                            Color.alpha(unmarked.getPixel(point[0].toInt(), point[1].toInt())) > 200)
+                    }
+                }
+                val output = unmarked.getPixel(point[0].toInt(), point[1].toInt())
+                assertTrue("Neural output should end on the ochre nerve", Color.red(output) > Color.blue(output) + 45)
             } finally { unmarked.recycle() }
             section.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
@@ -166,6 +180,7 @@ class HealthAtlasMiddleEarDeviceTest {
             assertEquals(3, section.stage)
             assertTrue(section.contentDescription.contains(it.getString(R.string.health_atlas_hearing_ear_3)))
             assertEquals(HealthAtlasMiddleEar(), it.transformer().model)
+            section.phase = .96f
         }
         capture("sequence", context.getString(R.string.health_atlas_hearing_ear_title))
         scenario.recreate(); ready(scenario, "atlas-section-diagram")
@@ -180,7 +195,7 @@ class HealthAtlasMiddleEarDeviceTest {
     @Test fun earArtworkAndResponsiveDiagramRenderVisiblePixels() = native { scenario ->
         scenario.onActivity { activity ->
             val plate = HealthAtlasPlates.forId("ear")!!
-            val image = Bitmap.createBitmap(460, 280, Bitmap.Config.ARGB_8888)
+            val image = Bitmap.createBitmap(420, 280, Bitmap.Config.ARGB_8888)
             try {
                 activity.getDrawable(plate.drawable)!!.apply { setBounds(0, 0, image.width, image.height); draw(Canvas(image)) }
                 assertEquals(0, Color.alpha(image.getPixel(0, 0)))

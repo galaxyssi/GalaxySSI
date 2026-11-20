@@ -174,8 +174,10 @@ class HealthAtlasSensoryDeviceTest {
     }
 
     @Test fun photonAbsorptionScopeAndControlsRemainLocalToTheRod() = native { scenario ->
+        scenario.onActivity { it.open("cell-rod-photoreceptor") }
+        capture("rod-structure", scenario.localized(R.string.health_atlas_cell_rod_photoreceptor_name))
         scenario.onActivity {
-            it.open("cell-rod-photoreceptor"); it.view("atlas-tab-3").performClick()
+            it.view("atlas-tab-3").performClick()
             val scroll = it.view("atlas-scroll")
             val control = it.view("atlas-physiology-photon-mean") as SeekBar
             assertEquals(100, control.progress)
