@@ -52,7 +52,7 @@ References:
 
 ## Interactive Physiology
 
-`HealthAtlasPhysiology` provides nine independently bounded teaching models:
+`HealthAtlasPhysiology` provides ten independently bounded teaching models:
 
 - Alveolar ventilation subtracts dead-space volume from tidal volume before
   multiplying by respiratory rate. Total minute ventilation remains visible
@@ -78,8 +78,10 @@ References:
   footplate area and ossicle lever ratio to pressure gain.
 - Ventricular ejection fraction divides ejected stroke volume by the sum of
   that volume and the end-systolic volume. The two inputs are synthetic.
+- Axon signal travel time uses distance divided by constant speed, with
+  centimetres converted to metres and seconds converted to milliseconds.
 
-Explicit canonical entries expose these associated processes. Tubular cells
+Forty-two canonical entries expose these associated processes. Tubular cells
 do not claim to perform the entire nephron model, nor does a brain illustration
 claim to measure an individual neuron. Unrelated entries do not inherit them.
 Slider ranges are teaching controls, not clinical reference intervals.
@@ -206,8 +208,8 @@ The native catalogue and research surface are not the complete virtual-human
 model shown in the supplied design references. Completion requires more than
 having a working generic panel for every catalogue entry:
 
-- Extend the 41 anatomical and tissue illustrations and selectable structures to the
-  remaining systems, organs and cells. Each image must depict its named entity;
+- Extend the 45 anatomical and tissue illustrations and selectable structures to the
+  remaining organs and cells. Each image must depict its named entity;
   related anatomy must not be presented as an isolated structure it does not show.
 - Add entity-specific mechanism diagrams and model inputs where supported by
   a documented scientific model. A shared process is explicitly associated
@@ -225,6 +227,32 @@ having a working generic panel for every catalogue entry:
 Personal health observations, public anatomy and synthetic model outputs remain
 separate domains throughout. Existing Agent page layout and health records are
 not modified by atlas navigation or teaching parameter changes.
+
+## System Overview Coverage
+
+All 14 navigation categories own an overview illustration. Four new original
+schematics cover central and peripheral nervous anatomy, pulmonary and systemic
+circulation, the testicular tract in side view, and the ovarian tract in front
+view. The 23 hotspots match drawn landmarks and reuse canonical catalogue
+entries. Dedicated child artwork still takes precedence, so selecting the
+heart, lungs, brain, aorta, or pulmonary trunk does not replace their detail
+plates with an overview. Where a child uses system art, the caption identifies
+that system rather than claiming to depict an isolated organ.
+
+These teaching plates summarize selected relationships, not all anatomy or
+patient geometry. The circulatory illustration simplifies vessel branching.
+The reproductive views do not claim to track a person's cycles or fertility.
+The nerve model is available in the cranial, spinal and peripheral nerve
+entries. Its response chart holds the selected speed fixed and rescales the
+vertical axis to that curve. It excludes synaptic delay and clinical test
+interpretation, and does not replace the existing potassium equation.
+
+References:
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/12-1-basic-structure-and-function-of-the-nervous-system
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/20-5-circulatory-pathways
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/27-1-anatomy-and-physiology-of-the-testicular-reproductive-system
+- https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system
+- https://www.ncbi.nlm.nih.gov/books/NBK10921/
 
 ## Oxygen Binding Teaching Model
 

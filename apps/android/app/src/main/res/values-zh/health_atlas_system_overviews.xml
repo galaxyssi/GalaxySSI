@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_view_system_nervous">中枢与周围神经通路</string>
+    <string name="health_atlas_view_system_cardio">肺循环与体循环</string>
+    <string name="health_atlas_view_system_testicular">男性生殖通路 · 侧面</string>
+    <string name="health_atlas_view_system_ovarian">女性生殖通路 · 正面</string>
+    <string name="health_atlas_nerve_transit">轴突信号传导时间</string>
+    <string name="health_atlas_nerve_transit_distance">示例传导距离</string>
+    <string name="health_atlas_nerve_transit_speed">示例传导速度</string>
+    <string name="health_atlas_nerve_transit_over_ten">以此速度通过 10 cm 需要 %1$s ms</string>
+    <string name="health_atlas_nerve_transit_formula">时间（ms）= 10 × 距离（cm）÷ 速度（m/s）</string>
+    <string name="health_atlas_nerve_transit_scope">假设信号沿一条轴突匀速传递。不计突触延迟，不预测反应时间，也不用于解读神经传导检查。</string>
+</resources>

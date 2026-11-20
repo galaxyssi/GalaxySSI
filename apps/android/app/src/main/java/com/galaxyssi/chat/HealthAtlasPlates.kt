@@ -90,7 +90,7 @@ internal object HealthAtlasPlates {
 
     private fun defaultForId(id: String?): HealthAtlasPlate? = when (id) {
         null -> whole
-        "heart", "cardio", "atria", "ventricles", "coronary-vessels" -> heart
+        "heart", "atria", "ventricles", "coronary-vessels" -> heart
         "brain", "cerebrum", "cerebellum", "brainstem" -> brain
         "lungs", "trachea", "bronchi" -> lungs
         "alveoli", "respiratory-membrane", "pulmonary-capillaries" -> alveolus

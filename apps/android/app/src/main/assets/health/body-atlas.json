@@ -566,7 +566,10 @@
         "arteries",
         "veins",
         "capillaries",
-        "blood"
+        "blood",
+        "aorta",
+        "pulmonary-trunk",
+        "lungs"
       ],
       "mechanism": "cardio",
       "aliases": "health_atlas_cardio_aliases",

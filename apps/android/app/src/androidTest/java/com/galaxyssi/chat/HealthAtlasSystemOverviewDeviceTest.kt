@@ -24,7 +24,9 @@ import org.junit.Test
 class HealthAtlasSystemOverviewDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
-    private val owners = listOf("sensory", "respiratory", "digestive", "endocrine", "immune", "skin")
+    private val rasterOwners = listOf("sensory", "respiratory", "digestive", "endocrine", "immune", "skin")
+    private val vectorOwners = listOf("nervous", "cardio", "male", "female")
+    private val owners = rasterOwners + vectorOwners
     private fun View.tagged(key: String): View? = if (tag == key) this else if (this is ViewGroup)
         (0 until childCount).firstNotNullOfOrNull { getChildAt(it).tagged(key) } else null
     private fun Activity.view(key: String) = requireNotNull(window.decorView.tagged(key)) { key }
@@ -64,9 +66,9 @@ class HealthAtlasSystemOverviewDeviceTest {
 
     @Test fun selectedSystemsOwnDistinctPlatesWithCanonicalChildrenAndSources() {
         val atlas = HealthBodyAtlas.load(context)
-        assertEquals(6, HealthAtlasSystemPlates.all.size)
-        assertEquals(6, owners.map { HealthAtlasPlates.forId(it)!!.drawable }.toSet().size)
-        assertEquals(10, atlas.systems.count { HealthAtlasPlates.forId(it.id)?.owner == it.id })
+        assertEquals(10, HealthAtlasSystemPlates.all.size)
+        assertEquals(10, owners.map { HealthAtlasPlates.forId(it)!!.drawable }.toSet().size)
+        assertEquals(14, atlas.systems.count { HealthAtlasPlates.forId(it.id)?.owner == it.id })
         for (id in owners) {
             val plate = HealthAtlasPlates.forId(id)!!
             assertEquals(id, plate.owner)
@@ -78,7 +80,7 @@ class HealthAtlasSystemOverviewDeviceTest {
     }
 
     @Test fun bitmapsContainOpaqueHotspotsAndTransparentCorners() {
-        for (id in owners) {
+        for (id in rasterOwners) {
             val plate = HealthAtlasPlates.forId(id)!!
             val bitmap = BitmapFactory.decodeResource(context.resources, plate.drawable)
             try {
@@ -91,6 +93,22 @@ class HealthAtlasSystemOverviewDeviceTest {
                 for (y in 0 until bitmap.height step 12) for (x in 0 until bitmap.width step 12)
                     if (Color.alpha(bitmap.getPixel(x, y)) > 200) solid++
                 assertTrue("Blank $id", solid > 500)
+            } finally { bitmap.recycle() }
+        }
+    }
+
+    @Test fun vectorOverviewAnchorsAreOpaqueAndAllArtworkHasClearMargins() {
+        val artwork = vectorOwners.map { HealthAtlasPlates.forId(it)!! }
+        assertEquals(23, artwork.sumOf { it.markers.size })
+        for (plate in artwork) {
+            val height = if (plate.owner == "nervous" || plate.owner == "cardio") 560 else 400
+            val bitmap = Bitmap.createBitmap(420, height, Bitmap.Config.ARGB_8888)
+            try {
+                context.getDrawable(plate.drawable)!!.apply { setBounds(0, 0, bitmap.width, height); draw(Canvas(bitmap)) }
+                assertEquals(0, Color.alpha(bitmap.getPixel(0, 0)))
+                assertEquals(0, Color.alpha(bitmap.getPixel(bitmap.width - 1, height - 1)))
+                for (marker in plate.markers) assertTrue("${plate.owner}/${marker.id}",
+                    Color.alpha(bitmap.getPixel((marker.x * bitmap.width).toInt(), (marker.y * height).toInt())) > 200)
             } finally { bitmap.recycle() }
         }
     }
@@ -165,11 +183,15 @@ class HealthAtlasSystemOverviewDeviceTest {
 
     @Test fun everySystemCanOpenAChildAndRestoreTheCorrectPlate() = native { scenario ->
         val pairs = listOf("sensory" to "eye", "sensory" to "ear", "respiratory" to "larynx", "digestive" to "parotid-glands",
-            "endocrine" to "thyroid-gland", "immune" to "spleen", "skin" to "sweat-glands")
+            "endocrine" to "thyroid-gland", "immune" to "spleen", "skin" to "sweat-glands",
+            "nervous" to "brain", "cardio" to "aorta", "cardio" to "lungs",
+            "male" to "epididymis", "female" to "uterine-tubes")
         for ((owner, child) in pairs) {
             val dedicated = when (child) {
                 "eye" -> R.string.health_atlas_view_eye_section to "atlas-hotspot-lens"
                 "ear" -> R.string.health_atlas_view_ear_section to "atlas-hotspot-middle-ear"
+                "brain" -> R.string.health_atlas_view_lateral to "atlas-hotspot-cerebrum"
+                "lungs" -> R.string.health_atlas_view_anterior to "atlas-hotspot-bronchi"
                 else -> null
             }
             fun assertChildPlate(activity: Activity) {
@@ -177,7 +199,7 @@ class HealthAtlasSystemOverviewDeviceTest {
                     assertEquals(context.getString(dedicated.first),
                         (activity.view("atlas-art-caption") as TextView).text.toString())
                     assertNotNull(activity.view(dedicated.second))
-                    assertNull(activity.window.decorView.tagged("atlas-hotspot-$child"))
+                    activity.window.decorView.tagged("atlas-hotspot-$child")?.let { assertTrue(it.isSelected) }
                 } else assertTrue(activity.view("atlas-hotspot-$child").isSelected)
             }
             scenario.onActivity {
@@ -238,7 +260,7 @@ class HealthAtlasSystemOverviewDeviceTest {
         scenario.onActivity { assertTrue(it.view("atlas-process-stage-2").isSelected) }
     }
 
-    @Test fun allSixSystemScreensAndSkinFullscreenRenderOnTheDevice() = native { scenario ->
+    @Test fun allTenSystemScreensAndSkinFullscreenRenderOnTheDevice() = native { scenario ->
         for (id in owners) {
             scenario.onActivity {
                 it.open(id)
@@ -252,6 +274,34 @@ class HealthAtlasSystemOverviewDeviceTest {
                 instrumentation.waitForIdleSync(); SystemClock.sleep(250)
             }
             scenario.onActivity { it.onBackPressed() }
+        }
+    }
+
+    @Test fun nerveTransitRestoresInputsAndDoesNotLeakIntoSpinalCordPhysiology() = native { scenario ->
+        val kind = HealthAtlasPhysiologyKind.NERVE_TRANSIT
+        val transit = HealthAtlasPhysiology(kind, listOf(120, 40))
+        val value = HealthAtlasPhysiologyText.resultNumber(transit, transit.result) + " ms"
+        scenario.onActivity {
+            it.open("nervous"); it.view("atlas-hotspot-peripheral-nerves").performClick()
+            it.view("atlas-tab-3").performClick()
+            val scroll = it.view("atlas-scroll")
+            (it.view("atlas-physiology-nerve-distance") as SeekBar).progress = 110
+            (it.view("atlas-physiology-nerve-speed") as SeekBar).progress = 39
+            assertEquals(value, (it.view("atlas-physiology-output") as TextView).text.toString())
+            assertSame(scroll, it.view("atlas-scroll"))
+        }
+        scenario.recreate(); ready(scenario, "atlas-physiology-nerve-distance")
+        scenario.onActivity {
+            assertEquals(value, (it.view("atlas-physiology-output") as TextView).text.toString())
+            val atlas = HealthBodyAtlas.load(it)
+            val prompt = HealthAtlasAgentContext.prompt(it, atlas, atlas["peripheral-nerves"], quantitative = transit)
+            assertTrue(prompt.contains(HealthAtlasPhysiologyText.result(it, transit)))
+            assertTrue(prompt.contains(kind.source))
+            assertTrue(HealthAtlasMetrics.forItem(atlas["peripheral-nerves"]!!).isEmpty())
+            it.onBackPressed(); it.view("atlas-hotspot-spinal-cord").performClick()
+            it.view("atlas-tab-3").performClick()
+            assertNotNull(it.view("atlas-physiology-outside"))
+            assertNull(it.window.decorView.tagged("atlas-physiology-nerve-distance"))
         }
     }
 }

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_view_system_nervous">Central and peripheral nervous pathways</string>
+    <string name="health_atlas_view_system_cardio">Pulmonary and systemic circulation</string>
+    <string name="health_atlas_view_system_testicular">Testicular reproductive tract · side view</string>
+    <string name="health_atlas_view_system_ovarian">Ovarian reproductive tract · front view</string>
+    <string name="health_atlas_nerve_transit">Axon signal travel time</string>
+    <string name="health_atlas_nerve_transit_distance">Example path length</string>
+    <string name="health_atlas_nerve_transit_speed">Example conduction speed</string>
+    <string name="health_atlas_nerve_transit_over_ten">At this speed, 10 cm takes %1$s ms</string>
+    <string name="health_atlas_nerve_transit_formula">Time (ms) = 10 × length (cm) ÷ speed (m/s)</string>
+    <string name="health_atlas_nerve_transit_scope">Constant speed along one hypothetical axon. Does not include synaptic delay, predict reaction time or interpret a nerve conduction test.</string>
+</resources>
