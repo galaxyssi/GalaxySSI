@@ -2726,7 +2726,7 @@
         "blood",
         "bone-marrow"
       ],
-      "mechanism": "bloodcell",
+      "mechanism": "cell-erythrocyte",
       "aliases": "health_atlas_cell_erythrocyte_aliases",
       "color": "",
       "icon": ""
@@ -2743,7 +2743,7 @@
         "blood",
         "bone-marrow"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-neutrophil",
       "aliases": "health_atlas_cell_neutrophil_aliases",
       "color": "",
       "icon": ""
@@ -2760,7 +2760,7 @@
         "blood",
         "bone-marrow"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-eosinophil",
       "aliases": "health_atlas_cell_eosinophil_aliases",
       "color": "",
       "icon": ""
@@ -2777,7 +2777,7 @@
         "blood",
         "bone-marrow"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-basophil",
       "aliases": "health_atlas_cell_basophil_aliases",
       "color": "",
       "icon": ""
@@ -2794,7 +2794,7 @@
         "blood",
         "bone-marrow"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-monocyte",
       "aliases": "health_atlas_cell_monocyte_aliases",
       "color": "",
       "icon": ""
@@ -2813,7 +2813,7 @@
         "spleen",
         "skin-organ"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-macrophage",
       "aliases": "health_atlas_cell_macrophage_aliases",
       "color": "",
       "icon": ""
@@ -2832,7 +2832,7 @@
         "lymph-nodes",
         "spleen"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-t-cell",
       "aliases": "health_atlas_cell_t_cell_aliases",
       "color": "",
       "icon": ""
@@ -2851,7 +2851,7 @@
         "lymph-nodes",
         "spleen"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-b-cell",
       "aliases": "health_atlas_cell_b_cell_aliases",
       "color": "",
       "icon": ""
@@ -2868,7 +2868,7 @@
         "bone-marrow",
         "gut-associated-lymphoid-tissue"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-plasma-cell",
       "aliases": "health_atlas_cell_plasma_cell_aliases",
       "color": "",
       "icon": ""
@@ -2885,7 +2885,7 @@
         "blood",
         "spleen"
       ],
-      "mechanism": "immune",
+      "mechanism": "cell-natural-killer-cell",
       "aliases": "health_atlas_cell_natural_killer_cell_aliases",
       "color": "",
       "icon": ""
@@ -2903,7 +2903,7 @@
         "spinal-cord",
         "ganglia"
       ],
-      "mechanism": "nervous",
+      "mechanism": "cell-neuron",
       "aliases": "health_atlas_cell_neuron_aliases",
       "color": "",
       "icon": ""
@@ -2920,7 +2920,7 @@
         "brain",
         "spinal-cord"
       ],
-      "mechanism": "nervous",
+      "mechanism": "cell-astrocyte",
       "aliases": "health_atlas_cell_astrocyte_aliases",
       "color": "",
       "icon": ""
@@ -2936,7 +2936,7 @@
       "related": [
         "peripheral-nerves"
       ],
-      "mechanism": "nervous",
+      "mechanism": "cell-schwann-cell",
       "aliases": "health_atlas_cell_schwann_cell_aliases",
       "color": "",
       "icon": ""
@@ -2956,7 +2956,7 @@
         "diaphragm",
         "quadriceps-femoris"
       ],
-      "mechanism": "muscle",
+      "mechanism": "cell-skeletal-myocyte",
       "aliases": "health_atlas_cell_skeletal_myocyte_aliases",
       "color": "",
       "icon": ""
@@ -2974,7 +2974,7 @@
         "atria",
         "ventricles"
       ],
-      "mechanism": "muscle",
+      "mechanism": "cell-cardiomyocyte",
       "aliases": "health_atlas_cell_cardiomyocyte_aliases",
       "color": "",
       "icon": ""
@@ -2997,7 +2997,7 @@
         "bladder",
         "uterus"
       ],
-      "mechanism": "muscle",
+      "mechanism": "cell-smooth-muscle-cell",
       "aliases": "health_atlas_cell_smooth_muscle_cell_aliases",
       "color": "",
       "icon": ""
@@ -3014,7 +3014,7 @@
         "epidermis",
         "hair-follicles"
       ],
-      "mechanism": "transport",
+      "mechanism": "cell-keratinocyte",
       "aliases": "health_atlas_cell_keratinocyte_aliases",
       "color": "",
       "icon": ""
@@ -3031,7 +3031,7 @@
         "epidermis",
         "hair-follicles"
       ],
-      "mechanism": "transport",
+      "mechanism": "cell-melanocyte",
       "aliases": "health_atlas_cell_melanocyte_aliases",
       "color": "",
       "icon": ""
@@ -3049,7 +3049,7 @@
         "dermis",
         "tendons"
       ],
-      "mechanism": "repair",
+      "mechanism": "cell-fibroblast",
       "aliases": "health_atlas_cell_fibroblast_aliases",
       "color": "",
       "icon": ""
@@ -3066,7 +3066,7 @@
       "related": [
         "subcutaneous-tissue"
       ],
-      "mechanism": "secretory",
+      "mechanism": "cell-adipocyte",
       "aliases": "health_atlas_cell_adipocyte_aliases",
       "color": "",
       "icon": ""
@@ -3083,7 +3083,7 @@
         "vertebrae",
         "femur"
       ],
-      "mechanism": "skeletal",
+      "mechanism": "cell-osteoblast",
       "aliases": "health_atlas_cell_osteoblast_aliases",
       "color": "",
       "icon": ""
@@ -3100,7 +3100,7 @@
         "vertebrae",
         "femur"
       ],
-      "mechanism": "skeletal",
+      "mechanism": "cell-osteocyte",
       "aliases": "health_atlas_cell_osteocyte_aliases",
       "color": "",
       "icon": ""
@@ -3117,7 +3117,7 @@
         "vertebrae",
         "femur"
       ],
-      "mechanism": "skeletal",
+      "mechanism": "cell-osteoclast",
       "aliases": "health_atlas_cell_osteoclast_aliases",
       "color": "",
       "icon": ""
@@ -3136,7 +3136,7 @@
         "joints",
         "trachea"
       ],
-      "mechanism": "repair",
+      "mechanism": "cell-chondrocyte",
       "aliases": "health_atlas_cell_chondrocyte_aliases",
       "color": "",
       "icon": ""
@@ -3153,7 +3153,7 @@
         "blood-vessels",
         "capillaries"
       ],
-      "mechanism": "transport",
+      "mechanism": "cell-vascular-endothelial-cell",
       "aliases": "health_atlas_cell_vascular_endothelial_cell_aliases",
       "color": "",
       "icon": ""
@@ -3169,7 +3169,7 @@
       "related": [
         "liver"
       ],
-      "mechanism": "digestive",
+      "mechanism": "cell-hepatocyte",
       "aliases": "health_atlas_cell_hepatocyte_aliases",
       "color": "",
       "icon": ""
@@ -3187,7 +3187,7 @@
         "pancreas",
         "pancreatic-islets"
       ],
-      "mechanism": "beta",
+      "mechanism": "cell-pancreatic-beta-cell",
       "aliases": "health_atlas_cell_pancreatic_beta_cell_aliases",
       "color": "",
       "icon": ""
@@ -3206,7 +3206,7 @@
         "jejunum",
         "ileum"
       ],
-      "mechanism": "gut",
+      "mechanism": "cell-enterocyte",
       "aliases": "health_atlas_cell_enterocyte_aliases",
       "color": "",
       "icon": ""
@@ -3223,7 +3223,7 @@
         "testes",
         "epididymis"
       ],
-      "mechanism": "sperm",
+      "mechanism": "cell-spermatozoon",
       "aliases": "health_atlas_cell_spermatozoon_aliases",
       "color": "",
       "icon": ""
@@ -3240,7 +3240,7 @@
         "ovaries",
         "uterine-tubes"
       ],
-      "mechanism": "female",
+      "mechanism": "cell-oocyte-or-ovum",
       "aliases": "health_atlas_cell_oocyte_or_ovum_aliases",
       "color": "",
       "icon": ""
@@ -4752,6 +4752,366 @@
         "health_atlas_mechanism_secretory_3"
       ],
       "chapter": "3-introduction"
+    },
+    {
+      "id": "cell-erythrocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_erythrocyte_title",
+      "stages": [
+        "health_atlas_process_erythrocyte_0",
+        "health_atlas_process_erythrocyte_1",
+        "health_atlas_process_erythrocyte_2",
+        "health_atlas_process_erythrocyte_3"
+      ],
+      "chapter": "18-3-erythrocytes"
+    },
+    {
+      "id": "cell-neutrophil",
+      "kind": "cell",
+      "title": "health_atlas_process_neutrophil_title",
+      "stages": [
+        "health_atlas_process_neutrophil_0",
+        "health_atlas_process_neutrophil_1",
+        "health_atlas_process_neutrophil_2",
+        "health_atlas_process_neutrophil_3"
+      ],
+      "chapter": "18-4-leukocytes-and-platelets"
+    },
+    {
+      "id": "cell-eosinophil",
+      "kind": "cell",
+      "title": "health_atlas_process_eosinophil_title",
+      "stages": [
+        "health_atlas_process_eosinophil_0",
+        "health_atlas_process_eosinophil_1",
+        "health_atlas_process_eosinophil_2",
+        "health_atlas_process_eosinophil_3"
+      ],
+      "chapter": "18-4-leukocytes-and-platelets"
+    },
+    {
+      "id": "cell-basophil",
+      "kind": "cell",
+      "title": "health_atlas_process_basophil_title",
+      "stages": [
+        "health_atlas_process_basophil_0",
+        "health_atlas_process_basophil_1",
+        "health_atlas_process_basophil_2",
+        "health_atlas_process_basophil_3"
+      ],
+      "chapter": "18-4-leukocytes-and-platelets"
+    },
+    {
+      "id": "cell-monocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_monocyte_title",
+      "stages": [
+        "health_atlas_process_monocyte_0",
+        "health_atlas_process_monocyte_1",
+        "health_atlas_process_monocyte_2",
+        "health_atlas_process_monocyte_3"
+      ],
+      "chapter": "18-4-leukocytes-and-platelets"
+    },
+    {
+      "id": "cell-macrophage",
+      "kind": "cell",
+      "title": "health_atlas_process_macrophage_title",
+      "stages": [
+        "health_atlas_process_macrophage_0",
+        "health_atlas_process_macrophage_1",
+        "health_atlas_process_macrophage_2",
+        "health_atlas_process_macrophage_3"
+      ],
+      "chapter": "21-2-barrier-defenses-and-the-innate-immune-response"
+    },
+    {
+      "id": "cell-t-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_t_cell_title",
+      "stages": [
+        "health_atlas_process_t_cell_0",
+        "health_atlas_process_t_cell_1",
+        "health_atlas_process_t_cell_2",
+        "health_atlas_process_t_cell_3"
+      ],
+      "chapter": "21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types"
+    },
+    {
+      "id": "cell-b-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_b_cell_title",
+      "stages": [
+        "health_atlas_process_b_cell_0",
+        "health_atlas_process_b_cell_1",
+        "health_atlas_process_b_cell_2",
+        "health_atlas_process_b_cell_3"
+      ],
+      "chapter": "21-4-the-adaptive-immune-response-b-lymphocytes-and-antibodies"
+    },
+    {
+      "id": "cell-plasma-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_plasma_cell_title",
+      "stages": [
+        "health_atlas_process_plasma_cell_0",
+        "health_atlas_process_plasma_cell_1",
+        "health_atlas_process_plasma_cell_2",
+        "health_atlas_process_plasma_cell_3"
+      ],
+      "chapter": "21-4-the-adaptive-immune-response-b-lymphocytes-and-antibodies"
+    },
+    {
+      "id": "cell-natural-killer-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_natural_killer_cell_title",
+      "stages": [
+        "health_atlas_process_natural_killer_cell_0",
+        "health_atlas_process_natural_killer_cell_1",
+        "health_atlas_process_natural_killer_cell_2",
+        "health_atlas_process_natural_killer_cell_3"
+      ],
+      "chapter": "21-2-barrier-defenses-and-the-innate-immune-response"
+    },
+    {
+      "id": "cell-neuron",
+      "kind": "cell",
+      "title": "health_atlas_process_neuron_title",
+      "stages": [
+        "health_atlas_process_neuron_0",
+        "health_atlas_process_neuron_1",
+        "health_atlas_process_neuron_2",
+        "health_atlas_process_neuron_3"
+      ],
+      "chapter": "12-5-communication-between-neurons"
+    },
+    {
+      "id": "cell-astrocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_astrocyte_title",
+      "stages": [
+        "health_atlas_process_astrocyte_0",
+        "health_atlas_process_astrocyte_1",
+        "health_atlas_process_astrocyte_2",
+        "health_atlas_process_astrocyte_3"
+      ],
+      "chapter": "12-2-nervous-tissue"
+    },
+    {
+      "id": "cell-schwann-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_schwann_cell_title",
+      "stages": [
+        "health_atlas_process_schwann_cell_0",
+        "health_atlas_process_schwann_cell_1",
+        "health_atlas_process_schwann_cell_2",
+        "health_atlas_process_schwann_cell_3"
+      ],
+      "chapter": "12-2-nervous-tissue"
+    },
+    {
+      "id": "cell-skeletal-myocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_skeletal_myocyte_title",
+      "stages": [
+        "health_atlas_process_skeletal_myocyte_0",
+        "health_atlas_process_skeletal_myocyte_1",
+        "health_atlas_process_skeletal_myocyte_2",
+        "health_atlas_process_skeletal_myocyte_3"
+      ],
+      "chapter": "10-3-muscle-fiber-contraction-and-relaxation"
+    },
+    {
+      "id": "cell-cardiomyocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_cardiomyocyte_title",
+      "stages": [
+        "health_atlas_process_cardiomyocyte_0",
+        "health_atlas_process_cardiomyocyte_1",
+        "health_atlas_process_cardiomyocyte_2",
+        "health_atlas_process_cardiomyocyte_3"
+      ],
+      "chapter": "10-7-cardiac-muscle-tissue"
+    },
+    {
+      "id": "cell-smooth-muscle-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_smooth_muscle_cell_title",
+      "stages": [
+        "health_atlas_process_smooth_muscle_cell_0",
+        "health_atlas_process_smooth_muscle_cell_1",
+        "health_atlas_process_smooth_muscle_cell_2",
+        "health_atlas_process_smooth_muscle_cell_3"
+      ],
+      "chapter": "10-8-smooth-muscle"
+    },
+    {
+      "id": "cell-keratinocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_keratinocyte_title",
+      "stages": [
+        "health_atlas_process_keratinocyte_0",
+        "health_atlas_process_keratinocyte_1",
+        "health_atlas_process_keratinocyte_2",
+        "health_atlas_process_keratinocyte_3"
+      ],
+      "chapter": "5-1-layers-of-the-skin"
+    },
+    {
+      "id": "cell-melanocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_melanocyte_title",
+      "stages": [
+        "health_atlas_process_melanocyte_0",
+        "health_atlas_process_melanocyte_1",
+        "health_atlas_process_melanocyte_2",
+        "health_atlas_process_melanocyte_3"
+      ],
+      "chapter": "5-1-layers-of-the-skin"
+    },
+    {
+      "id": "cell-fibroblast",
+      "kind": "cell",
+      "title": "health_atlas_process_fibroblast_title",
+      "stages": [
+        "health_atlas_process_fibroblast_0",
+        "health_atlas_process_fibroblast_1",
+        "health_atlas_process_fibroblast_2",
+        "health_atlas_process_fibroblast_3"
+      ],
+      "chapter": "4-3-connective-tissue-supports-and-protects"
+    },
+    {
+      "id": "cell-adipocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_adipocyte_title",
+      "stages": [
+        "health_atlas_process_adipocyte_0",
+        "health_atlas_process_adipocyte_1",
+        "health_atlas_process_adipocyte_2",
+        "health_atlas_process_adipocyte_3"
+      ],
+      "chapter": "24-3-lipid-metabolism"
+    },
+    {
+      "id": "cell-osteoblast",
+      "kind": "cell",
+      "title": "health_atlas_process_osteoblast_title",
+      "stages": [
+        "health_atlas_process_osteoblast_0",
+        "health_atlas_process_osteoblast_1",
+        "health_atlas_process_osteoblast_2",
+        "health_atlas_process_osteoblast_3"
+      ],
+      "chapter": "6-3-bone-structure"
+    },
+    {
+      "id": "cell-osteocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_osteocyte_title",
+      "stages": [
+        "health_atlas_process_osteocyte_0",
+        "health_atlas_process_osteocyte_1",
+        "health_atlas_process_osteocyte_2",
+        "health_atlas_process_osteocyte_3"
+      ],
+      "chapter": "6-3-bone-structure"
+    },
+    {
+      "id": "cell-osteoclast",
+      "kind": "cell",
+      "title": "health_atlas_process_osteoclast_title",
+      "stages": [
+        "health_atlas_process_osteoclast_0",
+        "health_atlas_process_osteoclast_1",
+        "health_atlas_process_osteoclast_2",
+        "health_atlas_process_osteoclast_3"
+      ],
+      "chapter": "6-3-bone-structure"
+    },
+    {
+      "id": "cell-chondrocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_chondrocyte_title",
+      "stages": [
+        "health_atlas_process_chondrocyte_0",
+        "health_atlas_process_chondrocyte_1",
+        "health_atlas_process_chondrocyte_2",
+        "health_atlas_process_chondrocyte_3"
+      ],
+      "chapter": "4-3-connective-tissue-supports-and-protects"
+    },
+    {
+      "id": "cell-vascular-endothelial-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_vascular_endothelial_cell_title",
+      "stages": [
+        "health_atlas_process_vascular_endothelial_cell_0",
+        "health_atlas_process_vascular_endothelial_cell_1",
+        "health_atlas_process_vascular_endothelial_cell_2",
+        "health_atlas_process_vascular_endothelial_cell_3"
+      ],
+      "chapter": "20-1-structure-and-function-of-blood-vessels"
+    },
+    {
+      "id": "cell-hepatocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_hepatocyte_title",
+      "stages": [
+        "health_atlas_process_hepatocyte_0",
+        "health_atlas_process_hepatocyte_1",
+        "health_atlas_process_hepatocyte_2",
+        "health_atlas_process_hepatocyte_3"
+      ],
+      "chapter": "23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder"
+    },
+    {
+      "id": "cell-pancreatic-beta-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_pancreatic_beta_cell_title",
+      "stages": [
+        "health_atlas_process_pancreatic_beta_cell_0",
+        "health_atlas_process_pancreatic_beta_cell_1",
+        "health_atlas_process_pancreatic_beta_cell_2",
+        "health_atlas_process_pancreatic_beta_cell_3"
+      ],
+      "chapter": "17-9-the-endocrine-pancreas"
+    },
+    {
+      "id": "cell-enterocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_enterocyte_title",
+      "stages": [
+        "health_atlas_process_enterocyte_0",
+        "health_atlas_process_enterocyte_1",
+        "health_atlas_process_enterocyte_2",
+        "health_atlas_process_enterocyte_3"
+      ],
+      "chapter": "23-7-chemical-digestion-and-absorption-a-closer-look"
+    },
+    {
+      "id": "cell-spermatozoon",
+      "kind": "cell",
+      "title": "health_atlas_process_spermatozoon_title",
+      "stages": [
+        "health_atlas_process_spermatozoon_0",
+        "health_atlas_process_spermatozoon_1",
+        "health_atlas_process_spermatozoon_2",
+        "health_atlas_process_spermatozoon_3"
+      ],
+      "chapter": "28-1-fertilization"
+    },
+    {
+      "id": "cell-oocyte-or-ovum",
+      "kind": "cell",
+      "title": "health_atlas_process_oocyte_or_ovum_title",
+      "stages": [
+        "health_atlas_process_oocyte_or_ovum_0",
+        "health_atlas_process_oocyte_or_ovum_1",
+        "health_atlas_process_oocyte_or_ovum_2",
+        "health_atlas_process_oocyte_or_ovum_3"
+      ],
+      "chapter": "28-1-fertilization"
     }
   ]
 }

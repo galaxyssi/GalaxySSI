@@ -38,7 +38,11 @@ internal object HealthAtlasPlates {
         HealthAtlasMarker("renal-pelvis", .56f, .51f), HealthAtlasMarker("ureters", .68f, .85f)))
     private val beta = HealthAtlasPlate(R.drawable.health_atlas_beta_cell, "cell-pancreatic-beta-cell",
         R.string.health_atlas_view_cell, emptyList())
-    val all = listOf(whole, heart, brain, lungs, liver, kidney, beta)
+    private val erythrocyte = HealthAtlasPlate(R.drawable.health_atlas_erythrocyte, "cell-erythrocyte",
+        R.string.health_atlas_view_erythrocyte, emptyList())
+    private val neuron = HealthAtlasPlate(R.drawable.health_atlas_neuron, "cell-neuron",
+        R.string.health_atlas_view_neuron, emptyList())
+    val all = listOf(whole, heart, brain, lungs, liver, kidney, beta, erythrocyte, neuron)
 
     fun forId(id: String?): HealthAtlasPlate? = when (id) {
         null -> whole
@@ -48,6 +52,8 @@ internal object HealthAtlasPlates {
         "liver", "gallbladder" -> liver
         "kidneys", "renal-cortex", "renal-medulla", "renal-pelvis", "ureters" -> kidney
         "cell-pancreatic-beta-cell" -> beta
+        "cell-erythrocyte" -> erythrocyte
+        "cell-neuron" -> neuron
         else -> null
     }
 }

@@ -30,6 +30,10 @@ internal class HealthBodyAtlas(val items: List<HealthAtlasItem>, val mechanisms:
         require(items.all { item -> item.systems.isNotEmpty() && item.systems.all { index[it]?.kind == HealthAtlasKind.SYSTEM } &&
             item.related.all(index::containsKey) && item.id !in item.related && models.containsKey(item.mechanism) })
         require(mechanisms.all { it.stages.size == 4 && it.stages.all(String::isNotBlank) && it.chapter.matches(Regex("[a-z0-9-]+")) })
+        require(mechanisms.filter { it.kind == "cell" }.all {
+            index[it.id]?.let { item -> item.kind == HealthAtlasKind.CELL && item.mechanism == it.id } == true
+        })
+        require(items.all { models.getValue(it.mechanism).kind != "cell" || it.mechanism == it.id })
     }
     operator fun get(id: String) = index[id]
     fun mechanism(item: HealthAtlasItem) = models.getValue(item.mechanism)

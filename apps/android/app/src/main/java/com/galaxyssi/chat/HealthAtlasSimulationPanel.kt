@@ -26,7 +26,9 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private lateinit var stage: TextView
     private lateinit var progress: SeekBar
     private lateinit var output: TextView
-    private var diagram = HealthAtlasProcessView(activity, mechanism)
+    private var diagram = HealthAtlasProcessView(activity, mechanism) { index ->
+        pause(); setPhase(index / 4f)
+    }
     private val resetInputs = arrayListOf<() -> Unit>()
     init {
         HealthAtlasPhysiologyKind.forItem(item.id)?.let { kind ->
