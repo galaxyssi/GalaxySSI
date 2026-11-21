@@ -97,12 +97,20 @@ struct GalaxySSIHealthAtlasValues: View {
         }.padding(.horizontal)
         trend(first)
       }.privacySensitive()
-    } else { Text(t("no_metrics")).padding() }
+    } else {
+      Text(t("no_metrics")).padding().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .safeAreaInset(edge: .bottom) {
+          #if GALAXYSSI_ATLAS_AGENT_CONTEXT
+          GalaxySSIHealthAtlasPinnedAnalysisButton(enabled: false, action: {})
+          #endif
+        }
+    }
   }
   @ViewBuilder private func trend(_ first: GalaxySSIHealthMetric) -> some View {
     #if GALAXYSSI_ATLAS_AGENT_CONTEXT
     GalaxySSIHealthTrendView(records: records, fixedMetric: selection.metric ?? first,
       atlasWindow: $selection.window).id(selection.metric ?? first).environment(\.galaxySSIAtlasPinnedAnalysis, true)
+      .environment(\.galaxySSIAtlasAnalysisSelection, entry.id + ":" + (selection.metric ?? first).rawValue + ":" + selection.window.rawValue)
     #else
     GalaxySSIHealthTrendView(records: records, fixedMetric: selection.metric ?? first,
       atlasWindow: $selection.window).id(selection.metric ?? first)

@@ -174,8 +174,8 @@ struct GalaxySSIHealthAtlasSimulation: Equatable, Codable {
   }
   mutating func sanitize(_ id: String) {
     let lung = ["lungs", "respiratory"].contains(id)
-    first = first.isFinite ? min(lung ? 30 : 160, max(lung ? 6 : 40, first)) : (lung ? 12 : 70)
-    second = second.isFinite ? min(lung ? 900 : 120, max(lung ? 200 : 30, second)) : (lung ? 500 : 70)
+    first = first.isFinite ? min(lung ? 30 : 160, max(lung ? 6 : 40, first.rounded())) : (lung ? 12 : 70)
+    second = second.isFinite ? min(lung ? 900 : 120, max(lung ? 200 : 30, second.rounded())) : (lung ? 500 : 70)
     phase = phase.isFinite ? min(1, max(0, phase)) : 0
     speed = speed.isFinite ? min(2, max(0.5, speed)) : 1
   }
@@ -186,8 +186,8 @@ struct GalaxySSIHealthAtlasElimination: Equatable, Codable {
   var elapsed: Double = 8
   func percent(at hours: Double) -> Double { 100 * pow(0.5, max(0, hours) / max(1, halfLife)) }
   mutating func sanitize() {
-    halfLife = halfLife.isFinite ? min(24, max(1, halfLife)) : 4
-    elapsed = elapsed.isFinite ? min(48, max(0, elapsed)) : 8
+    halfLife = halfLife.isFinite ? min(24, max(1, halfLife.rounded())) : 4
+    elapsed = elapsed.isFinite ? min(48, max(0, elapsed.rounded())) : 8
   }
 }
 
