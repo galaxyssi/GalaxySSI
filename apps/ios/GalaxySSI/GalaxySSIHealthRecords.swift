@@ -188,6 +188,7 @@ struct GalaxySSIHealthRecords {
     var localCareFeedback: [String: [GalaxySSIHealthCareFollowUp.FeedbackReceipt]]?
     var localCareResearch: GalaxySSIHealthCareResearch.Ledger?
     var localCareModelReviews: [UUID: GalaxySSIHealthCareModelReview.Review]?
+    var localCareModelAttention: [UUID: GalaxySSIHealthCareModelAttention.Receipt]?
     var localCareQuestions: [String: GalaxySSIHealthCareQuestions.Ledger]?
     var localCareAnswerDrafts: [String: [GalaxySSIHealthCareAnswerDraft.Item]]?
     var localCareEncounters: GalaxySSIHealthEncounter.Ledger?
@@ -1818,6 +1819,12 @@ struct GalaxySSIHealthRecords {
     }
     try ledger.transition(job, concern: approval.concernID, to: .completed,
       process: GalaxySSIHealthCareResearch.process, reviewRetained: true)
+    if approval.requiresStructuredReview, let review = archive.localCareModelReviews?[job.id] {
+      var notices = archive.localCareModelAttention ?? [:]
+      if review.input.attentionRequested { notices[concern.id] = .init(review) }
+      else if notices[concern.id] != nil { notices[concern.id]?.state = .stale }
+      archive.localCareModelAttention = notices
+    }
     if let binding = ledger.desktopTransport?.active[job.id.uuidString] {
       try ledger.desktopTransport?.finish(binding)
     }
@@ -2420,6 +2427,7 @@ struct GalaxySSIHealthRecords {
     archive.localCareAnswerDrafts?.removeValue(forKey: concern.id.uuidString)
     archive.localCareFeedback?.removeValue(forKey: concern.id.uuidString)
     archive.localCareModelReviews = archive.localCareModelReviews?.filter { $0.value.authorization.concern != concern.id }
+    archive.localCareModelAttention?.removeValue(forKey: concern.id)
     archive.localCareEncounters?.remove(concern: concern.id)
     archive.localCareEncounterDocuments = archive.localCareEncounterDocuments?.filter { $0.value.concern != concern.id }
     archive.localCareInstructions?.remove(concern: concern.id)
@@ -3088,6 +3096,13 @@ struct GalaxySSIHealthRecords {
   func saveRecordingReminderSettings(_ settings: GalaxySSIHealthRecordingReminders.Settings, at now: Date) throws {
     guard settings.isValid else { throw Failure.invalid }
     var archive = try load()
+    let previouslyAllowed = archive.recordingReminders.map { $0.settings.notifications && $0.settings.allowsModelReviews } ?? false
+    if !settings.notifications || !settings.allowsModelReviews || !previouslyAllowed {
+      for key in Array((archive.localCareModelAttention ?? [:]).keys)
+        where archive.localCareModelAttention?[key]?.state == .waiting {
+        archive.localCareModelAttention?[key]?.state = .inAppOnly
+      }
+    }
     var ledger = archive.recordingReminders ?? .init(settings: settings)
     guard ledger.settings.version == settings.version else { throw Failure.stale }
     let before = ledger.settings
@@ -3320,6 +3335,8 @@ struct GalaxySSIHealthRecords {
     archive.reviewReminderState = state
     try persist(archive)
   }
+
+  func persistModelAttention(_ archive: Archive) throws { try persist(archive, notify: false) }
 
   private func persist(_ archive: Archive, notify: Bool = true) throws {
     var archive = archive

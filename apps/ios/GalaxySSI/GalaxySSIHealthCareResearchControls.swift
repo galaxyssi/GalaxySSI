@@ -95,6 +95,8 @@ struct GalaxySSIHealthCareResearchControls: View {
       }
     }
     .onAppear(perform: reload)
+    .modifier(GalaxySSIHealthCareModelAttentionVisibility(owner: records.owner, concern: concern,
+      conversation: assessment?.authorization.thread))
     .onChange(of: provider) { _ in
       desktopModel = ""; desktopEffort = .automatic; shareQuestionPages = false; shareActionFeedback = false
       shareFeedbackHistory = false

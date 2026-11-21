@@ -102,10 +102,18 @@ struct GalaxySSIHealthRecordingReminderView: View {
               }
             }
             DatePicker(t("time", "Daily time"), selection: timeBinding, displayedComponents: .hourAndMinute)
-            Toggle(t("notifications", "System notifications"), isOn: $draft.notifications)
           }
         }
         Section(t("delivery", "Health notification delivery")) {
+          Toggle(t("notifications", "System notifications"), isOn: $draft.notifications)
+          Toggle(t("model_reviews", "Agent assessment updates"), isOn: Binding(
+            get: { draft.allowsModelReviews }, set: { draft.modelReviews = $0 }))
+          if draft.notifications, let syncAuthorization, !GalaxySSIHealthReviewDelivery.permitted(syncAuthorization) {
+            Button(t("notification_permission", "Allow notifications in Settings")) {
+              if syncAuthorization == .notDetermined { Task { await refreshSyncAuthorization(request: true) } }
+              else if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            }
+          }
           hourPicker(t("quiet_start", "Quiet hours begin"), value: $draft.quietStart)
           hourPicker(t("quiet_end", "Quiet hours end"), value: $draft.quietEnd)
           Toggle(t("pause", "Pause for 24 hours"), isOn: Binding(
@@ -261,7 +269,10 @@ struct GalaxySSIHealthRecordingReminderView: View {
     }
     guard !Task.isCancelled else { return }
     syncAuthorization = await center.notificationSettings().authorizationStatus
-    if request { NotificationCenter.default.post(name: GalaxySSIHealthRecords.syncIncidentsChanged, object: records.owner) }
+    if request {
+      NotificationCenter.default.post(name: GalaxySSIHealthRecords.syncIncidentsChanged, object: records.owner)
+      NotificationCenter.default.post(name: GalaxySSIHealthRecordingReminders.changed, object: records.owner)
+    }
   }
 
   private func acknowledge(_ incident: GalaxySSIHealthKitSync.Incident) {
@@ -333,7 +344,10 @@ struct GalaxySSIHealthRecordingReminderView: View {
   }
 
   private func save() {
-    do { try records.saveRecordingReminderSettings(draft, at: Date()); reload(resetDraft: true) }
+    do {
+      try records.saveRecordingReminderSettings(draft, at: Date()); reload(resetDraft: true)
+      if draft.notifications { Task { await refreshSyncAuthorization(request: true) } }
+    }
     catch { reload(resetDraft: true); failed = true }
   }
 
