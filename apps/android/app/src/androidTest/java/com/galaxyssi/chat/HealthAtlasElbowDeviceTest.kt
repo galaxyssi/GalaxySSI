@@ -171,7 +171,7 @@ class HealthAtlasElbowDeviceTest {
         capture("controls")
         scenario.onActivity {
             (it.view("atlas-physiology-elbow-load") as SeekBar).progress = 80
-            val chart = it.view("atlas-physiology-chart")
+            val chart = it.view("atlas-physiology-curve")
             chart.requestRectangleOnScreen(android.graphics.Rect(0, 0, chart.width, chart.height), true)
         }
         capture("curve")
