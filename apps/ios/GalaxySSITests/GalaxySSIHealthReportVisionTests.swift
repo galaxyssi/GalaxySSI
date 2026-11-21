@@ -16,6 +16,12 @@ final class GalaxySSIHealthReportVisionTests: XCTestCase {
     XCTAssertEqual(try Vision.parse("```json\n" + response + "\n```"), parsed)
   }
 
+  func testPlainNumericLabResultsAreAcceptedWithoutInventingQualifiers() throws {
+    let parsed = try Vision.parse(response.replacingOccurrences(of: "<3.0", with: "3.0"))
+    XCTAssertEqual(parsed.rows.first?.values["value"], "3.0")
+    XCTAssertEqual(parsed.rows.first?.reference, "3.9-6.1")
+  }
+
   func testRejectsUnknownFieldsWrongTypesDuplicateAndEmptyRows() throws {
     var object = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(response.utf8))
     object["approved"] = .bool(true)
