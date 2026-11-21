@@ -27,10 +27,13 @@ struct GalaxySSIHealthCenterView: View {
   @State private var overviewDestination: OverviewDestination?
   @State private var overviewNotice: Notice?
   @State private var overviewWidth: CGFloat = 0
+  @State private var measurementBatch: String?
 
   private enum OverviewDestination: String, Identifiable {
     case weekly, assistant, files, sleep, reviews, records, devices, originals, pdf, profile, crop
     case export, privacy, backup, trends, catalog, recording, body, imports, photo, movement, care, agenda, timeline
+    case activityComparison
+    case measurementPicker, measurementComparison
     var id: String { rawValue }
   }
 
@@ -94,6 +97,9 @@ struct GalaxySSIHealthCenterView: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.profileInputsChanged)) { notification in
       if notification.object as? String == records.owner, scenePhase == .active { reload() }
     }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthOriginalStore.indexChanged)) { notification in
+      if notification.object as? String == records.owner, scenePhase == .active { reload() }
+    }
     .onChange(of: timeZone) { _ in if scenePhase == .active { reload() } }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
       if scenePhase == .active { reload() }
@@ -106,6 +112,7 @@ struct GalaxySSIHealthCenterView: View {
         }
       } else {
         overviewDestination = nil
+        measurementBatch = nil
         overviewNotice = nil
         editor = nil
         alert = nil
@@ -359,6 +366,17 @@ struct GalaxySSIHealthCenterView: View {
     let ranges = (try? records.overviewRanges(expected: snapshot, now: now)) ?? [:]
     let birth = try? records.overviewBirthDate(expected: snapshot)
     let overview = GalaxySSIHealthOverview(current: snapshot.current, now: now, calendar: local, ranges: ranges)
+    let recentCutoff = local.date(byAdding: .day, value: -6, to: local.startOfDay(for: now)) ?? now
+    let batch: GalaxySSIHealthMeasurementBatches.Snapshot? = {
+      guard let measurementBatch, snapshot.derivesOverview == true,
+            let group = GalaxySSIHealthMeasurementBatches.groups(snapshot).first(where: { $0.id == measurementBatch }) else { return nil }
+      return try? GalaxySSIHealthMeasurementBatches.snapshot(group, archive: snapshot, now: now)
+    }()
+    let metrics = measurementBatch == nil ? overview.metrics.filter { $0.metric != .steps } :
+      (batch?.readings ?? []).filter { $0.metric != .steps }.map {
+        GalaxySSIHealthOverview.Metric(metric: $0.metric, reading: $0, freshness: $0.measuredAt >= recentCutoff ? .recent : .stale,
+          ranges: [GalaxySSIHealthOverviewRange.report($0)].compactMap { $0 })
+      }
     let stackActivity = overviewWidth < 312 || sizeCategory.isAccessibilityCategory ||
       [.extraExtraLarge, .extraExtraExtraLarge].contains(sizeCategory)
     return VStack(alignment: .leading, spacing: 12) {
@@ -374,6 +392,10 @@ struct GalaxySSIHealthCenterView: View {
           .padding(11).frame(maxWidth: .infinity, minHeight: 102, alignment: .topLeading)
           .background(RoundedRectangle(cornerRadius: 8).stroke(Color(uiColor: .separator), lineWidth: 0.5))
       }
+      Button { overviewDestination = .activityComparison } label: {
+        Label(t("activity_comparison.title", "Activity comparison"), systemImage: "chart.bar.xaxis")
+          .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+      }.buttonStyle(.plain).accessibilityIdentifier("health-activity-comparison")
       if snapshot.current.isEmpty {
         Text(t("first_use.title", "No confirmed measurements yet")).font(.caption).foregroundColor(.secondary)
       }
@@ -384,10 +406,27 @@ struct GalaxySSIHealthCenterView: View {
         Button(t("overview_list.view_all", "All records")) { overviewDestination = .timeline }
           .font(.subheadline).frame(minHeight: 44)
       }
+      HStack(alignment: .top, spacing: 12) {
+        Menu {
+          Button(t("measurement_comparison.latest", "Latest measurements")) { measurementBatch = nil }
+          Button(t("measurement_comparison.choose_source", "Choose import group")) { overviewDestination = .measurementPicker }
+        } label: {
+          Label(measurementBatch == nil ? t("measurement_comparison.latest", "Latest measurements") : t("measurement_comparison.selected", "Selected import group"),
+            systemImage: "line.3.horizontal.decrease.circle")
+            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        }
+        Button { overviewDestination = .measurementComparison } label: {
+          Label(t("measurement_comparison.compare", "Compare"), systemImage: "arrow.left.arrow.right")
+            .fixedSize(horizontal: false, vertical: true).frame(minHeight: 44)
+        }
+      }.font(.subheadline)
+      if measurementBatch != nil && batch == nil {
+        Text(t("measurement_comparison.unavailable", "The selected sources or measurements changed. Reload and select again.")).font(.caption).foregroundColor(.secondary)
+      }
       VStack(spacing: 0) {
-      ForEach(overview.metrics.filter { $0.metric != .steps }) { item in
+      ForEach(metrics) { item in
         GalaxySSIHealthOverviewMetricRow(item: item, records: records, open: openOverviewReading, manual: { startManual($0) },
-          birthDate: birth, progressPermitted: snapshot.derivesOverview == true)
+          birthDate: birth, progressPermitted: snapshot.derivesOverview == true, openRecordInsteadOfMetric: measurementBatch != nil)
           .padding(.horizontal, 12)
         Divider()
       }
@@ -491,6 +530,12 @@ struct GalaxySSIHealthCenterView: View {
           TextField(t("catalog.diastolic", "Diastolic") + " (" + unit + ")",
                     text: field(\.diastolic, "")).keyboardType(.decimalPad)
           TextField(t("pulse", "Pulse (bpm, optional)"), text: field(\.pulse, "")).keyboardType(.decimalPad)
+          Picker(t("measurement_comparison.side", "Measurement side"), selection: Binding(
+            get: { editor?.measurementSide ?? "unspecified" }, set: { editor?.measurementSide = $0 })) {
+            Text(t("measurement_comparison.side_unspecified", "Not specified")).tag("unspecified")
+            Text(t("measurement_comparison.side_left", "Left")).tag("left")
+            Text(t("measurement_comparison.side_right", "Right")).tag("right")
+          }
         }
         if draft.metric.laboratory {
           TextField(t("catalog.reference", "Report reference interval (optional)"), text: Binding(
@@ -550,7 +595,7 @@ struct GalaxySSIHealthCenterView: View {
                     value: reading.reported?.raw ?? reading.reportedNotation ?? reading.value.map(number) ?? "",
                     diastolic: reading.diastolic.map(number) ?? "", pulse: reading.pulse.map(number) ?? "",
                     conditions: reading.conditions, notes: reading.notes, unitOverride: reading.unitOverride,
-                    referenceInterval: reading.referenceInterval)
+                    referenceInterval: reading.referenceInterval, measurementSide: reading.measurementSide)
   }
 
   private func latestRemoval(in archive: GalaxySSIHealthRecords.Archive) -> GalaxySSIHealthReading? {
@@ -610,6 +655,7 @@ struct GalaxySSIHealthCenterView: View {
         reading.diastolic = pressure ? parse(draft.diastolic) : nil
         reading.pulse = pulse
         reading.conditions = draft.conditions
+        reading.measurementSide = pressure ? draft.measurementSide : nil
         reading.notes = draft.notes
         try records.write(reading, allowDuplicate: allowDuplicate, draftId: draft.id)
       }
@@ -643,7 +689,7 @@ struct GalaxySSIHealthCenterView: View {
 
   private func reload() {
     guard scenePhase == .active else { return }
-    do { archive = try records.load() }
+    do { archive = try records.load(); if archive?.derivesOverview != true { measurementBatch = nil } }
     catch { archive = nil }
     if let id = initialRecordID, let archive {
       initialRecordID = nil
@@ -693,6 +739,12 @@ struct GalaxySSIHealthCenterView: View {
     case .imports: GalaxySSIHealthImportView(store: originals, records: records, initialAction: .files)
     case .photo: GalaxySSIHealthPhotoCaptureView(records: records, originals: originals, initialCamera: true)
     case .movement: GalaxySSIHealthMotionView(records: records)
+    case .activityComparison: GalaxySSIHealthActivityComparisonView(records: records)
+    case .measurementPicker:
+      GalaxySSIHealthMeasurementBatchesView(records: records, initialBatch: measurementBatch) { selected in
+        measurementBatch = selected; overviewDestination = nil; reload()
+      }
+    case .measurementComparison: GalaxySSIHealthMeasurementBatchesView(records: records, initialBatch: measurementBatch)
     case .care: GalaxySSIHealthCareView(records: records)
     case .agenda: GalaxySSIHealthCareAgendaView(records: records)
     }
@@ -718,6 +770,7 @@ struct GalaxySSIHealthCenterView: View {
     menuEntry(.privacy, "privacy.title", "Health Privacy", "lock.shield")
     menuEntry(.backup, "backup.title", "Health Backup", "externaldrive")
     menuEntry(.movement, "motion.title", "Movement", "figure.walk")
+    menuEntry(.activityComparison, "activity_comparison.title", "Activity comparison", "chart.bar.xaxis")
     }
     Group {
       menuEntry(.care, "care.title", "Care", "heart.text.square")
