@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mucus_film_thickness_title">Mucus film thickness (teaching model)</string>
+    <string name="health_atlas_mucus_film_thickness_volume">Fictional fluid volume</string>
+    <string name="health_atlas_mucus_film_thickness_area">Fictional coated area</string>
+    <string name="health_atlas_mucus_film_thickness_companion">Total fictional fluid volume: %1$s u&#179;</string>
+    <string name="health_atlas_mucus_film_thickness_formula">Uniform film thickness = fluid volume &#247; coated area. At fixed volume, doubling the area halves the thickness. At fixed area, doubling the volume doubles the thickness.</string>
+    <string name="health_atlas_mucus_film_thickness_scope">Goblet cells secrete mucins that help form surface mucus. Airway mucus helps trap inhaled particles; intestinal mucus helps lubricate and protect the lining. For the pharynx, this example refers only to the ciliated respiratory lining in parts of the nasopharynx. The calculation spreads a fictional fluid evenly over a flat patch. All units are arbitrary. It does not represent real mucus thickness or model secretion or clearance over time, assay results, or pathogen spread.</string>
+</resources>
