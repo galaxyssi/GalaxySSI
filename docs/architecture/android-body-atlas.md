@@ -245,6 +245,14 @@ lesson's stage. The shared playhead and framing retain the same behavior for
 granulocytes. These are qualitative examples rather than measurements or an
 exhaustive set of possible cell fates.
 
+The 12 core immune and blood plates now all have painted artwork and their own
+qualitative stage renderers. T-cell and B-cell plates preserve their distinct
+schematic receptor symbols without implying a diagnostic distinction by shape.
+The NK response, megakaryocyte platelet formation, and platelet plug formation
+are separate scenes. The resting platelet is an anucleate fragment; its
+activated form is drawn separately in the plug example. The new stage shapes
+and timings do not model a patient, a drug or a coagulation test.
+
 ## Alimentary Canal Sections
 
 Fourteen digestive entries now have their own source-linked diagrams, from
