@@ -19,7 +19,7 @@ internal class HealthAtlasPhysiologyChart(context: Context, initial: HealthAtlas
                 HealthAtlasPhysiologyText.input(context, value, value.kind.axis)
             invalidate()
         }
-    init { tag = "atlas-physiology-chart"; isSaveEnabled = false; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES; model = initial }
+    init { tag = "atlas-physiology-curve"; isSaveEnabled = false; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES; model = initial }
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), resolveSize((160 * density + font * 4).toInt(), heightMeasureSpec))
     }

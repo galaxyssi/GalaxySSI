@@ -266,7 +266,8 @@ class HealthAtlasPhysiologyDeviceTest {
     @Test fun newStructureLessonsExposeLiveControlsAndKeepTheirFunctionPlayback() = native { scenario ->
         val examples = listOf("pulmonary-trunk", "colon", "thoracic-duct", "clavicle", "hair",
             "cell-oligodendrocyte", "cell-pancreatic-beta-cell", "cell-retinal-bipolar-cell", "cell-skeletal-myocyte",
-            "stomach", "vestibular-apparatus", "cell-megakaryocyte", "cell-osteoblast", "cell-sebocyte")
+            "stomach", "vestibular-apparatus", "cell-megakaryocyte", "cell-osteoblast", "cell-sebocyte",
+            "external-ear", "liver", "joints", "cell-granulosa-cell", "cell-sweat-gland-secretory-cell")
         for (id in examples) scenario.onActivity { activity ->
             activity.open(id, cell = id.startsWith("cell-"))
             val kind = requireNotNull(HealthAtlasPhysiologyKind.forItem(id))

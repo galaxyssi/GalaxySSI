@@ -159,7 +159,8 @@ class HealthAtlasPhysiologyTest {
                             HealthAtlasPhysiologyKind.GASTRIC_LIQUID_EMPTYING,
                             HealthAtlasPhysiologyKind.BONE_REMODELING_BALANCE,
                             HealthAtlasPhysiologyKind.CUTANEOUS_SEBUM,
-                            HealthAtlasPhysiologyKind.EXTERNAL_EAR_RESONANCE -> y <= value + 1e-9
+                            HealthAtlasPhysiologyKind.EXTERNAL_EAR_RESONANCE,
+                            HealthAtlasPhysiologyKind.SWEAT_DUCT_BALANCE -> y <= value + 1e-9
                             else -> y >= value - 1e-9
                         })
                     }
