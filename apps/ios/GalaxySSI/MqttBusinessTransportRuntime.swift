@@ -572,7 +572,7 @@ final class MqttBusinessTransportRuntime {
     let startedAt = DispatchTime.now().uptimeNanoseconds
     while true {
       try Task.checkCancellation()
-      guard valid(), !stopped, evidenceDestination(binding) != nil,
+      guard valid(), !stopped,
             DispatchTime.now().uptimeNanoseconds - startedAt < 180_000_000_000 else { throw MqttRouteError.identityChanged }
       if let outcome = privateReports.outcome(request) {
         completed = true
