@@ -12494,6 +12494,48 @@ final class MessageCoordinator: ObservableObject {
     return isPrivateHealthDesktopRouteAvailable(route) ? route : nil
   }
 
+  func privateHealthReportCodexTarget() -> GalaxySSIHealthReportCodex.Target? {
+    guard !usesLegacyMqtt, journalMqttRuntime != nil, UIApplication.shared.isProtectedDataAvailable else { return nil }
+    for contact in store.contacts where GalaxySSIHealthReportCodex.supports(contact) {
+      let configured = AgentModelSelectionSettings.configurationForTarget(conversationId: "health-report-vision",
+        targetId: contact.id, defaults: store.defaults) ??
+        AgentModelSelectionSettings.configurationForTarget(conversationId: "health-report-vision", targetId: "codex", defaults: store.defaults)
+      let model = configured?.modelId ?? contact.connectorInvocationProfile.defaultModelId
+      let effort = configured?.reasoningEffort ?? .automatic
+      guard let route = privateHealthDesktopRoute(contactID: contact.id, modelID: model, effort: effort) else { continue }
+      let name = String(contact.desktopName.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }.map(String.init).joined().prefix(100))
+      return .init(route: route, authority: name.isBlank ? "Desktop" : name)
+    }
+    return nil
+  }
+
+  func transcribePrivateHealthReport(target: GalaxySSIHealthReportCodex.Target, jpeg: Data, instructions: String,
+                                    valid: () -> Bool) async throws -> String {
+    let profile = store.profile.identityFingerprint
+    guard valid(), privateHealthReportCodexTarget() == target, let runtime = journalMqttRuntime else {
+      throw GalaxySSIError.transportUnavailable
+    }
+    let request = GalaxySSIHealthReportCodex.Request(target: target)
+    let ticket = AgentDataDisclosureLedger.beginDesktopRequest(store: healthDisclosureStore,
+      contactId: target.route.connector.contactId, desktopId: target.route.connector.desktopId, providerId: "codex",
+      title: target.title, text: instructions,
+      attachments: [.init(displayName: "report.jpg", mimeType: "image/jpeg", sizeBytes: Int64(jpeg.count))],
+      conversationId: request.identity.conversationId, taskId: request.identity.taskId, turnId: request.identity.turnId)
+    guard ticket.allowed else { throw AgentDataDisclosureBlockedError(destination: "Codex") }
+    var status: AgentDisclosureStatus = .failed
+    defer {
+      AgentDataDisclosureLedger.update(store: healthDisclosureStore, ticket: ticket, status: status,
+        failureReason: status == .failed ? "private_health_report_not_completed" : "")
+    }
+    let result = try await runtime.transcribePrivateHealthReport(request, jpeg: jpeg, instructions: instructions, published: { status = .sent }) {
+      valid() && store.profile.identityFingerprint == profile && privateHealthReportCodexTarget() == target &&
+        !healthDisclosureStore.blockedDestinationIds().contains(target.route.connector.contactId)
+    }
+    status = .sent
+    guard valid(), privateHealthReportCodexTarget() == target else { throw GalaxySSIError.transportUnavailable }
+    return result
+  }
+
   func isPrivateHealthDesktopRouteAvailable(_ route: GalaxySSIHealthDesktopResearch.Route) -> Bool {
     !usesLegacyMqtt && isPrivateHealthDesktopRouteConfigured(route) && pairedPhonePlannerLink(route.connector) != nil
   }
@@ -18050,6 +18092,11 @@ final class MessageCoordinator: ObservableObject {
         link: link,
         allowStage: allowStage
       )
+      return
+    }
+    // Private report replies are owned only by the foreground journal-runtime exchange.
+    if appPayload.string("conversation_id").hasPrefix(GalaxySSIHealthReportCodex.prefix) {
+      if !appPayload.string("message_id").isEmpty { deliveryStore.completeIncoming(messageId: appPayload.string("message_id")) }
       return
     }
     if shouldValidateAgentTaskIdentity(appPayload),

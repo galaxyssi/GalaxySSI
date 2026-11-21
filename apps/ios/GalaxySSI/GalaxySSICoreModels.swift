@@ -105,6 +105,7 @@ struct GalaxySSIContact: Codable, Identifiable, Equatable, Hashable {
   var connectorAdapterType: String? = nil
   var connectorProviderProfileJSON: Data? = nil
   var connectorInvocationProfileJSON: Data? = nil
+  var private_health_report_vision_v1: Bool? = nil
   var deletedAt: Date? = nil
   var deviceName: String? = nil
   var deviceManufacturer: String? = nil

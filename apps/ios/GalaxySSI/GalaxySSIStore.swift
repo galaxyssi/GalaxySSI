@@ -2807,6 +2807,7 @@ final class GalaxySSIStore: ObservableObject {
       contact.connectorProtocolFeatures = connectorProtocolFeatures.isEmpty ? nil : connectorProtocolFeatures
       contact.connectorAdapterType = connectorAdapterType.nonEmpty
       contact.connectorProviderProfileJSON = providerProfileJSON(from: payload)
+      contact.private_health_report_vision_v1 = payload["private_health_report_vision_v1"] as? Bool == true && isPaired ? true : nil
       if let invocationProfile = invocationProfileJSON(from: payload),
          invocationProfile != contact.connectorInvocationProfileJSON {
         AgentInvocationProfile.clearMetadataCache()

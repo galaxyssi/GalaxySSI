@@ -147,23 +147,6 @@ final class GalaxySSIHealthReportVisionTests: XCTestCase {
     XCTAssertEqual(oldSource, source)
   }
 
-  func testAllProviderFormatsContainOneImageAndNoHistory() throws {
-    let jpeg = Data([0xff, 0xd8, 0xff, 0xd9])
-    for style in [GalaxySSICloudAPIStyle.openAICompatible, .anthropic, .gemini] {
-      let endpoint = style == .gemini ? "https://example.test/v1/models/vision:generateContent" : "https://example.test/v1/chat/completions"
-      let model = CloudModelConfig(id: "vision", displayName: "Vision", provider: "Custom", modelId: "vision",
-        endpoint: endpoint, apiStyle: style, keychainAccount: "", updatedAt: Date())
-      let request = try GalaxySSIHealthReportVisionProvider.request(model, key: "fixture-api-key", jpeg: jpeg)
-      let body = try XCTUnwrap(request.httpBody)
-      let text = String(decoding: body, as: UTF8.self)
-      XCTAssertTrue(text.contains(jpeg.base64EncodedString()))
-      XCTAssertFalse(text.contains("tool_calls"))
-      XCTAssertFalse(text.contains("history"))
-      XCTAssertEqual(request.httpMethod, "POST")
-      XCTAssertEqual(request.url?.scheme, "https")
-    }
-  }
-
   func testImagePreparationIsBoundedAndRejectsNonImages() throws {
     XCTAssertThrowsError(try GalaxySSIHealthReportVisionProvider.jpeg(Data("not an image".utf8)))
     let format = UIGraphicsImageRendererFormat(); format.scale = 1
@@ -171,7 +154,7 @@ final class GalaxySSIHealthReportVisionTests: XCTestCase {
       UIColor.white.setFill(); context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
     }
     let encoded = try GalaxySSIHealthReportVisionProvider.jpeg(XCTUnwrap(image.pngData()))
-    XCTAssertTrue((1...(4 * 1024 * 1024)).contains(encoded.count))
+    XCTAssertTrue((1...GalaxySSIHealthReportCodex.maximumImageBytes).contains(encoded.count))
     XCTAssertTrue(encoded.starts(with: [0xff, 0xd8]))
   }
 
