@@ -29,7 +29,7 @@ struct GalaxySSIHealthCenterView: View {
 
   private enum OverviewDestination: String, Identifiable {
     case weekly, assistant, files, sleep, reviews, records, devices, originals, pdf, profile, crop
-    case export, privacy, backup, trends, catalog, recording, body, imports, photo, movement
+    case export, privacy, backup, trends, catalog, recording, body, imports, photo, movement, care, agenda
     var id: String { rawValue }
   }
 
@@ -72,7 +72,6 @@ struct GalaxySSIHealthCenterView: View {
               .textCase(nil)
           }
         }
-        GalaxySSIHealthOverviewCareSection(records: records)
       } else if scenePhase == .active {
         Text(t("unavailable", "Health records could not be accessed."))
         Button(t("retry", "Reload records"), action: reload)
@@ -683,6 +682,8 @@ struct GalaxySSIHealthCenterView: View {
     case .imports: GalaxySSIHealthImportView(store: originals, records: records, initialAction: .files)
     case .photo: GalaxySSIHealthPhotoCaptureView(records: records, originals: originals, initialCamera: true)
     case .movement: GalaxySSIHealthMotionView(records: records)
+    case .care: GalaxySSIHealthCareView(records: records)
+    case .agenda: GalaxySSIHealthCareAgendaView(records: records)
     }
   }
 
@@ -709,6 +710,10 @@ struct GalaxySSIHealthCenterView: View {
     menuEntry(.privacy, "privacy.title", "Health Privacy", "lock.shield")
     menuEntry(.backup, "backup.title", "Health Backup", "externaldrive")
     menuEntry(.movement, "motion.title", "Movement", "figure.walk")
+    }
+    Group {
+      menuEntry(.care, "care.title", "Care", "heart.text.square")
+      menuEntry(.agenda, "agenda.title", "Health Actions", "calendar")
     }
     if let archive, let removed = latestRemoval(in: archive) {
       Button { openDeletion(removed) } label: { Label(t("resume_removal", "Review last removed measurement"), systemImage: "arrow.uturn.backward") }
