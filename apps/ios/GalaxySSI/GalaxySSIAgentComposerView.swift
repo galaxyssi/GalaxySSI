@@ -28,11 +28,13 @@ struct GalaxySSIAgentComposerView: View {
   var onRemoveAttachment: (GalaxySSIDraftAttachment) -> Void
   var onReplaceAttachment: (String, GalaxySSIDraftAttachment, GalaxySSIDraftAttachment) -> Bool
   var onImageAttachment: ((GalaxySSIDraftAttachment) -> Void)? = nil
+  var onOpenFeed: () -> Void
   var onNewSession: () -> Void
   var onOpenSessions: () -> Void
   var onScan: () -> Void
   var onTakePhoto: () -> Void
   var onAddFile: () -> Void
+  var onOpenHealth: () -> Void
   var onAnalyzeScreenshot: () -> Void = {}
   var onSend: () -> Void
   var onPendingPrimaryAction: () -> Void
@@ -168,13 +170,16 @@ struct GalaxySSIAgentComposerView: View {
         }
         let findings = store.globalProactiveInboxItems(limit: 100)
         GalaxySSIAgentChatShortcuts(
-          feedUnread: findings.isEmpty ? nil : GlobalProactiveInboxPolicy.newCount(findings),
+          feedUnread: GlobalProactiveInboxPolicy.newCount(findings),
           chatUnread: chatUnreadCount,
           minimumTouchSize: minimumTouchSize,
+          onOpenFeed: { runShortcut(onOpenFeed) },
           onNewSession: { runShortcut(onNewSession) },
           onOpenSessions: { runShortcut(onOpenSessions) },
           onTakePhoto: { runShortcut(onTakePhoto) },
           onAddFile: { runShortcut(onAddFile) },
+          onOpenHealth: { runShortcut(onOpenHealth) },
+          onScan: { runShortcut(onScan) },
           t: t)
         inputRow
       }

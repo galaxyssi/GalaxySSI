@@ -169,6 +169,7 @@ struct AgentHomeView: View {
   @State var agentKnowledgeShortcutActive = false
   @State var agentScreenContextShortcutActive = false
   @State var agentInsightsShortcutActive = false
+  @State var agentHealthShortcutActive = false
   @State private var conversationHubShortcutActive = false
   @State var contactsShortcutActive = false
   @State private var discoverShortcutActive = false
@@ -328,6 +329,7 @@ struct AgentHomeView: View {
           agentKnowledgeShortcutActive: $agentKnowledgeShortcutActive,
           agentScreenContextShortcutActive: $agentScreenContextShortcutActive,
           agentInsightsShortcutActive: $agentInsightsShortcutActive,
+          agentHealthShortcutActive: $agentHealthShortcutActive,
           conversationHubShortcutActive: $conversationHubShortcutActive,
           contactsShortcutActive: $contactsShortcutActive,
           discoverShortcutActive: $discoverShortcutActive,
@@ -652,6 +654,7 @@ struct AgentHomeView: View {
     agentKnowledgeShortcutActive = false
     agentScreenContextShortcutActive = false
     agentInsightsShortcutActive = false
+    agentHealthShortcutActive = false
     conversationHubShortcutActive = false
     contactsShortcutActive = false
     discoverShortcutActive = false
@@ -896,6 +899,7 @@ struct AgentHomeView: View {
         return attachments.replaceComposerAttachment(expected, with: edited)
       },
       onImageAttachment: appendAttachment,
+      onOpenFeed: { agentInsightsShortcutActive = true },
       onNewSession: createAgentConversation,
       onOpenSessions: {
         actionTrayPresented = false
@@ -910,6 +914,7 @@ struct AgentHomeView: View {
         fileAttachmentRequest = UUID()
         fileImporterPresented = true
       },
+      onOpenHealth: { agentHealthShortcutActive = true },
       onAnalyzeScreenshot: presentScreenCaptureSources,
       onSend: { sendAgentMessage() },
       onPendingPrimaryAction: handlePendingAgentTaskAction,
