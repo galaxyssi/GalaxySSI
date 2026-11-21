@@ -208,6 +208,13 @@ calibrated to the painted positions. The circulatory and both reproductive
 overviews use shaded fills while retaining their native anatomy paths,
 viewports, and callout locations.
 
+All 14 tissue plates and nine lymphatic section plates use softly shaded
+native vector surfaces. Broad fibers and tissue layers retain their original
+contours, while thin boundaries, nuclei, valves and pathway linework remain
+distinct. Artwork identities, viewports, localized callouts and stage paths
+are unchanged. The colors denote structures schematically, not stain results
+or quantitative measurements.
+
 ## Alimentary Canal Sections
 
 Fourteen digestive entries now have their own source-linked diagrams, from

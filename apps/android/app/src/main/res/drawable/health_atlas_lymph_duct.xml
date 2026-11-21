@@ -1,14 +1,68 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
+<vector xmlns:aapt="http://schemas.android.com/aapt" xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="360dp" android:height="280dp"
     android:viewportWidth="360" android:viewportHeight="280">
-    <path android:pathData="M92,94 L136,72 L156,72 L161,50 L201,50 L209,72 L234,72 L270,96 L289,159 L268,231 L97,231 L73,161 Z" android:fillColor="#eddfd3" android:strokeColor="#b59b8c" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round" />
-    <path android:pathData="M176,84 H190 V211 H176 Z" android:fillColor="#d4b5a9" android:strokeColor="#a3827b" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round" />
-    <path android:pathData="M117,111 Q96,132 98,173 Q110,205 135,168 L154,109 Q139,98 117,111 Z M242,111 Q267,133 261,174 Q249,207 221,169 L205,111 Q220,99 242,111 Z" android:fillColor="#dfaca8" android:strokeColor="#a86770" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round" />
-    <path android:pathData="M191,62 Q211,60 231,61 Q250,71 284,67 M231,61 L231,35" android:strokeColor="#6686ae" android:strokeWidth="13" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M92,94 L136,72 L156,72 L161,50 L201,50 L209,72 L234,72 L270,96 L289,159 L268,231 L97,231 L73,161 Z" android:strokeColor="#b59b8c" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round" >
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="122.68" android:startY="50"
+                android:endX="172.36" android:endY="231">
+                <item android:color="#F5EADE" android:offset="0"/>
+                <item android:color="#EEE1D5" android:offset="0.52"/>
+                <item android:color="#C7C0BC" android:offset="1"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M176,84 H190 V211 H176 Z" android:strokeColor="#a3827b" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round" >
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="179.22" android:startY="84"
+                android:endX="182.44" android:endY="211">
+                <item android:color="#E7D2C6" android:offset="0"/>
+                <item android:color="#D7BAAE" android:offset="0.52"/>
+                <item android:color="#B39F9A" android:offset="1"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M117,111 Q96,132 98,173 Q110,205 135,168 L154,109 Q139,98 117,111 Z M242,111 Q267,133 261,174 Q249,207 221,169 L205,111 Q220,99 242,111 Z" android:strokeColor="#a86770" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round" >
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="135.62" android:startY="103.96"
+                android:endX="173.42" android:endY="189.34">
+                <item android:color="#EDCDC6" android:offset="0"/>
+                <item android:color="#E2B2AD" android:offset="0.52"/>
+                <item android:color="#BC9899" android:offset="1"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M191,62 Q211,60 231,61 Q250,71 284,67 M231,61 L231,35" android:strokeWidth="13" android:strokeLineCap="round" android:strokeLineJoin="round" >
+        <aapt:attr name="android:strokeColor">
+            <gradient android:startX="212.39" android:startY="28.5"
+                android:endX="233.78" android:endY="74.64">
+                <item android:color="#90A5BF" android:offset="0"/>
+                <item android:color="#6E8CB1" android:offset="0.52"/>
+                <item android:color="#5F7EA4" android:offset="1"/>
+            </gradient>
+        </aapt:attr>
+    </path>
     <path android:pathData="M98,164 Q128,148 155,171 Q179,187 199,173 Q236,144 266,166" android:strokeColor="#a57663" android:strokeWidth="3" android:strokeLineCap="round" android:strokeLineJoin="round" />
-    <path android:pathData="M126,230 Q140,221 163,224 M194,233 Q182,220 163,224 M163,224 Q153,214 164,198 C178,177 173,145 180,139 C184,124 192,110 205,99 Q214,76 231,61" android:strokeColor="#4f897d" android:strokeWidth="9" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M126,230 Q140,221 163,224 M194,233 Q182,220 163,224 M163,224 Q153,214 164,198 C178,177 173,145 180,139 C184,124 192,110 205,99 Q214,76 231,61" android:strokeWidth="9" android:strokeLineCap="round" android:strokeLineJoin="round" >
+        <aapt:attr name="android:strokeColor">
+            <gradient android:startX="150.15" android:startY="56.5"
+                android:endX="174.3" android:endY="237.5">
+                <item android:color="#7FA79B" android:offset="0"/>
+                <item android:color="#588E83" android:offset="0.52"/>
+                <item android:color="#4B8179" android:offset="1"/>
+            </gradient>
+        </aapt:attr>
+    </path>
     <path android:pathData="M163,224 Q153,214 164,198 C178,177 173,145 180,139 C184,124 192,110 205,99 Q214,76 231,61" android:strokeColor="#a5d2c4" android:strokeWidth="4" android:strokeLineCap="round" android:strokeLineJoin="round" />
-    <path android:pathData="M155,213 a6,8 0 1,0 12,0 a6,8 0 1,0 -12,0 Z" android:fillColor="#a5d2c4" />
+    <path android:pathData="M155,213 a6,8 0 1,0 12,0 a6,8 0 1,0 -12,0 Z" >
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="157.76" android:startY="205"
+                android:endX="160.52" android:endY="221">
+                <item android:color="#CDE2D6" android:offset="0"/>
+                <item android:color="#ACD5C7" android:offset="0.52"/>
+                <item android:color="#8EB6B0" android:offset="1"/>
+            </gradient>
+        </aapt:attr>
+    </path>
     <path android:pathData="M156,184 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 Z" android:fillColor="#4f897d" />
 </vector>

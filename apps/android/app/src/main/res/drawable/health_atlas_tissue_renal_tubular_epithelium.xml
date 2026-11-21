@@ -1,8 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
+<vector xmlns:aapt="http://schemas.android.com/aapt" xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="420dp" android:height="200dp" android:viewportWidth="420" android:viewportHeight="200">
-    <path android:pathData="M127,100a83,83 0,1 0 166,0a83,83 0,1 0 -166,0Z" android:fillColor="#FAE2D3" android:strokeColor="#AA7882" android:strokeWidth="3"/>
-    <path android:pathData="M168,100a42,42 0,1 0 84,0a42,42 0,1 0 -84,0Z" android:fillColor="#F0F7F5" android:strokeColor="#AA7882" android:strokeWidth="2"/>
+    <path android:pathData="M127,100a83,83 0,1 0 166,0a83,83 0,1 0 -166,0Z" android:strokeColor="#AA7882" android:strokeWidth="3">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="165.18" android:startY="17"
+                android:endX="203.36" android:endY="183">
+                <item android:color="#FCEBDE" android:offset="0"/>
+                <item android:color="#FAE4D5" android:offset="0.52"/>
+                <item android:color="#D2C3BC" android:offset="1"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M168,100a42,42 0,1 0 84,0a42,42 0,1 0 -84,0Z" android:strokeColor="#AA7882" android:strokeWidth="2">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="187.32" android:startY="58"
+                android:endX="206.64" android:endY="142">
+                <item android:color="#F7F7F1" android:offset="0"/>
+                <item android:color="#F1F7F4" android:offset="0.52"/>
+                <item android:color="#CAD4D7" android:offset="1"/>
+            </gradient>
+        </aapt:attr>
+    </path>
     <path android:pathData="M252,100L292,100" android:strokeColor="#AD7483" android:strokeWidth="2"/>
     <path android:pathData="M264.8,116.5a7,5 0,1 0 14,0a7,5 0,1 0 -14,0Z" android:fillColor="#704668"/>
     <path android:pathData="M246.4,121L281,141" android:strokeColor="#AD7483" android:strokeWidth="2"/>
