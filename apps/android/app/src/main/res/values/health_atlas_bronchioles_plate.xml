@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_bronchioles_plate_caption">Terminal bronchioles and enlarged wall section</string>
+    <string name="health_atlas_bronchioles_plate_terminal_branch">Terminal branch</string>
+    <string name="health_atlas_bronchioles_plate_terminal_branch_detail">An upstream bronchiole divides into the terminal branches shown here. These are the last airways of the conducting zone, with no alveolar openings in their walls. Those openings first appear in respiratory bronchioles farther downstream.</string>
+    <string name="health_atlas_bronchioles_plate_lumen">Airway lumen</string>
+    <string name="health_atlas_bronchioles_plate_lumen_detail">Air passes through this open space on its way to and from the gas-exchanging region. Gas exchange does not occur across the terminal bronchiole wall.</string>
+    <string name="health_atlas_bronchioles_plate_epithelium">Epithelial lining</string>
+    <string name="health_atlas_bronchioles_plate_epithelium_detail">A single layer of low, cuboidal cells lines the lumen. Rounded club cells have no cilia; the short tufts mark the ciliated cells among them.</string>
+    <string name="health_atlas_bronchioles_plate_smooth_muscle">Smooth muscle</string>
+    <string name="health_atlas_bronchioles_plate_smooth_muscle_detail">Curving bundles of smooth muscle surround the lining and can narrow the airway when they contract. Unlike a bronchus, a bronchiole has no cartilage plates.</string>
+    <string name="health_atlas_bronchioles_plate_elastic_fibers">Elastic fibers</string>
+    <string name="health_atlas_bronchioles_plate_elastic_fibers_detail">Fine elastic fibers are woven through the connective tissue of the wall. They stretch and recoil as the airway changes shape during breathing.</string>
+</resources>

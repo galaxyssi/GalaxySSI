@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_podocyte_story_title">How the glomerular filtration barrier works</string>
+    <string name="health_atlas_podocyte_story_choice">Glomerular filtration barrier</string>
+    <string name="health_atlas_podocyte_story_scope">A qualitative close-up of one glomerular capillary wall in a healthy kidney. Structures and particles are not to scale. The urinary side contains newly formed filtrate, not final urine.</string>
+    <string name="health_atlas_podocyte_story_glomerulus">Inside the glomerulus</string>
+    <string name="health_atlas_podocyte_story_glomerulus_caption">At the start of a nephron, blood flows through a tuft of capillaries called the glomerulus. The close-up shows one wall between capillary blood and the urinary space of Bowman\'s capsule.</string>
+    <string name="health_atlas_podocyte_story_fenestrae">Fenestrated endothelium</string>
+    <string name="health_atlas_podocyte_story_fenestrae_caption">Small openings called fenestrae pass through thin regions of the cells lining the capillary. They are on the blood side of the barrier and do not open directly into the urinary space.</string>
+    <string name="health_atlas_podocyte_story_basement">A shared basement membrane</string>
+    <string name="health_atlas_podocyte_story_basement_caption">A continuous basement membrane lies directly between the capillary lining and the podocyte foot processes. It is a shared layer of the same capillary wall.</string>
+    <string name="health_atlas_podocyte_story_feet">Interlocking foot processes</string>
+    <string name="health_atlas_podocyte_story_feet_caption">Foot processes from neighboring podocytes interleave on the urinary side of the basement membrane. Thin slit diaphragms span the narrow gaps between adjacent processes.</string>
+    <string name="health_atlas_podocyte_story_filtration">What crosses the barrier?</string>
+    <string name="health_atlas_podocyte_story_filtration_caption">Across all three layers, some water and small dissolved solutes enter the urinary space as filtrate. Blood cells and most large proteins stay in the bloodstream. This is the combined result of the whole barrier.</string>
+    <string name="health_atlas_podocyte_story_label_glomerulus">Glomerulus</string>
+    <string name="health_atlas_podocyte_story_label_blood">Capillary blood</string>
+    <string name="health_atlas_podocyte_story_label_fenestrated">Fenestrated</string>
+    <string name="health_atlas_podocyte_story_label_endothelium">endothelium</string>
+    <string name="health_atlas_podocyte_story_label_basement">Basement</string>
+    <string name="health_atlas_podocyte_story_label_membrane">membrane</string>
+    <string name="health_atlas_podocyte_story_label_feet">Foot processes</string>
+    <string name="health_atlas_podocyte_story_label_slit">Slit diaphragm</string>
+    <string name="health_atlas_podocyte_story_label_urinary">Urinary space</string>
+    <string name="health_atlas_podocyte_story_label_water">Water</string>
+    <string name="health_atlas_podocyte_story_label_solutes">Small solutes</string>
+    <string name="health_atlas_podocyte_story_label_cells">Red blood cells</string>
+    <string name="health_atlas_podocyte_story_label_proteins">Large proteins</string>
+    <string name="health_atlas_podocyte_story_ref_structure">Ichimura et al. (2015): Three-dimensional podocyte architecture</string>
+    <string name="health_atlas_podocyte_story_ref_albumin">Ryan and Karnovsky (1976): Albumin distribution in the rat glomerulus</string>
+</resources>

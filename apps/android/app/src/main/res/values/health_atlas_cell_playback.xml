@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cell_play_macrophage_0_caption">The macrophage recognizes material in its surroundings that it can take up.</string>
+    <string name="health_atlas_cell_play_macrophage_1_caption">Its membrane extends around the material and encloses it in a compartment inside the cell.</string>
+    <string name="health_atlas_cell_play_macrophage_2_caption">The compartment joins structures containing digestive enzymes, which break down the material.</string>
+    <string name="health_atlas_cell_play_macrophage_3_caption">The cell clears or recycles parts of the material and can send signals to surrounding cells.</string>
+    <string name="health_atlas_cell_play_neutrophil_0_caption">Local signals guide the neutrophil toward the vessel wall.</string>
+    <string name="health_atlas_cell_play_neutrophil_1_caption">The cell passes between cells of the vessel lining into the surrounding tissue.</string>
+    <string name="health_atlas_cell_play_neutrophil_2_caption">It surrounds an encountered particle and encloses it in an internal compartment.</string>
+    <string name="health_atlas_cell_play_neutrophil_3_caption">The cell brings granule contents to the compartment to help break down the material.</string>
+    <string name="health_atlas_cell_play_eosinophil_0_caption">Immune signals recruit eosinophils into the affected tissue.</string>
+    <string name="health_atlas_cell_play_eosinophil_1_caption">An eosinophil can approach and interact with a target in the tissue.</string>
+    <string name="health_atlas_cell_play_eosinophil_2_caption">Some granule contents are released outside the cell near the target.</string>
+    <string name="health_atlas_cell_play_eosinophil_3_caption">The released contents can damage a susceptible target in this teaching example.</string>
+    <string name="health_atlas_cell_play_basophil_0_caption">An activating signal reaches the basophil. This example illustrates one local inflammatory response.</string>
+    <string name="health_atlas_cell_play_basophil_1_caption">Secretory granules prepare to release their contents at the membrane.</string>
+    <string name="health_atlas_cell_play_basophil_2_caption">Histamine and other mediators enter the surrounding space.</string>
+    <string name="health_atlas_cell_play_basophil_3_caption">The released messengers can change how nearby blood vessels respond.</string>
+    <string name="health_atlas_cell_play_monocyte_0_caption">A circulating monocyte travels in the bloodstream before it is recruited into tissue.</string>
+    <string name="health_atlas_cell_play_monocyte_1_caption">In response to local signals the cell moves toward a site where it can leave the vessel.</string>
+    <string name="health_atlas_cell_play_monocyte_2_caption">It passes through the vessel lining and reaches the surrounding tissue.</string>
+    <string name="health_atlas_cell_play_monocyte_3_caption">Some recruited monocytes become macrophages in the tissue. Not all macrophages come from this route.</string>
+    <string name="health_atlas_cell_play_dendritic_0_caption">A dendritic cell takes up a small amount of material from its surroundings.</string>
+    <string name="health_atlas_cell_play_dendritic_1_caption">Protein in the material is processed into smaller fragments.</string>
+    <string name="health_atlas_cell_play_dendritic_2_caption">The cell shows a fragment on its surface so a matching T cell can recognize it.</string>
+    <string name="health_atlas_cell_play_dendritic_3_caption">In lymphoid tissue, additional signals can help a matching T cell become activated.</string>
+    <string name="health_atlas_cell_play_t_cell_0_caption">A T cell can recognize a matching fragment displayed by an antigen-presenting cell.</string>
+    <string name="health_atlas_cell_play_t_cell_1_caption">Other activation signals help determine whether that T cell responds.</string>
+    <string name="health_atlas_cell_play_t_cell_2_caption">Selected T cells divide, producing cells that recognize the same signal.</string>
+    <string name="health_atlas_cell_play_t_cell_3_caption">The roles of T cells differ: some coordinate responses, some suppress them, and others act on target cells.</string>
+    <string name="health_atlas_cell_play_nk_0_caption">A natural killer cell contacts neighboring cells and reads signals at their surfaces.</string>
+    <string name="health_atlas_cell_play_nk_1_caption">A balance of activating and inhibitory signals helps it respond to an abnormal cell.</string>
+    <string name="health_atlas_cell_play_nk_2_caption">It directs granule contents toward that cell at the point of contact.</string>
+    <string name="health_atlas_cell_play_nk_3_caption">These contents can trigger a controlled cell-death process in the target cell.</string>
+    <string name="health_atlas_cell_play_megakaryocyte_0_caption">In the bone marrow, a precursor matures into a megakaryocyte.</string>
+    <string name="health_atlas_cell_play_megakaryocyte_1_caption">As the cell matures its cytoplasm expands and provides material for platelets.</string>
+    <string name="health_atlas_cell_play_megakaryocyte_2_caption">Parts of the cytoplasm form extensions that can reach the circulation.</string>
+    <string name="health_atlas_cell_play_megakaryocyte_3_caption">Fragments from these extensions become platelets. A platelet is a cell fragment, not a whole cell.</string>
+</resources>

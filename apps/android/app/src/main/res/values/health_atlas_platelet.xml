@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_platelet_hemostasis_title">How platelets help stop bleeding</string>
+    <string name="health_atlas_platelet_hemostasis_scope">A simplified view of normal hemostasis at a small gap in a blood vessel. These events overlap in the body; sizes and timing are not to scale.</string>
+    <string name="health_atlas_platelet_hemostasis_choice">Platelet hemostasis</string>
+    <string name="health_atlas_platelet_gap">A small gap in the vessel wall</string>
+    <string name="health_atlas_platelet_gap_caption">A small break in the vessel lining exposes collagen in the wall to the passing blood.</string>
+    <string name="health_atlas_platelet_adhesion">Platelets attach to the exposed wall</string>
+    <string name="health_atlas_platelet_adhesion_caption">Von Willebrand factor, a blood protein, helps passing platelets catch and attach where collagen is exposed.</string>
+    <string name="health_atlas_platelet_activation">Attached platelets activate</string>
+    <string name="health_atlas_platelet_activation_caption">The attached platelets change shape and release signals that help activate nearby platelets.</string>
+    <string name="health_atlas_platelet_aggregation">A platelet plug forms</string>
+    <string name="health_atlas_platelet_aggregation_caption">More platelets stick to one another at the gap. This cluster of platelets is the platelet plug.</string>
+    <string name="health_atlas_platelet_stabilization">Fibrin reinforces the plug</string>
+    <string name="health_atlas_platelet_stabilization_caption">As blood coagulates locally, fibrin forms a mesh through and around the platelet plug, helping hold it in place.</string>
+    <string name="health_atlas_platelet_vessel_lining">Vessel lining</string>
+    <string name="health_atlas_platelet_blood_flow">Blood flow</string>
+    <string name="health_atlas_platelet_exposed_gap">Gap in vessel wall</string>
+    <string name="health_atlas_platelet_fragment">Platelet</string>
+    <string name="health_atlas_platelet_signals">Local signals</string>
+    <string name="health_atlas_platelet_plug">Platelet plug</string>
+    <string name="health_atlas_platelet_fibrin_mesh">Fibrin mesh</string>
+    <string name="health_atlas_platelet_ref_adhesion">Specific synergy of multiple substrate-receptor interactions in platelet thrombus formation under flow</string>
+    <string name="health_atlas_platelet_ref_activation">Respective contributions of single and compound granule fusion to secretion by activated platelets</string>
+    <string name="health_atlas_platelet_ref_fibrin">A Human Vascular Injury-on-a-Chip Model of Hemostasis</string>
+</resources>

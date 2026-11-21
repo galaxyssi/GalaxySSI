@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ligaments_plate_title">膝关节交叉韧带</string>
+    <string name="health_atlas_ligaments_plate_caption">右膝斜视图。图中青绿色的前交叉韧带从紫色的后交叉韧带前方经过。省略髌骨和关节囊前部，以显露两条韧带的附着部位。</string>
+    <string name="health_atlas_ligaments_plate_acl_femur">前交叉韧带的股骨附着点</string>
+    <string name="health_atlas_ligaments_plate_acl_femur_detail">前交叉韧带附着于股骨外侧髁朝向髁间窝的一面，位置偏后。</string>
+    <string name="health_atlas_ligaments_plate_acl_tibia">前交叉韧带的胫骨附着点</string>
+    <string name="health_atlas_ligaments_plate_acl_tibia_detail">前交叉韧带附着于胫骨前髁间区，在两髁之间的骨性隆起前方。</string>
+    <string name="health_atlas_ligaments_plate_pcl_femur">后交叉韧带的股骨附着点</string>
+    <string name="health_atlas_ligaments_plate_pcl_femur_detail">后交叉韧带附着于股骨内侧髁朝向髁间窝的一面，与前交叉韧带的股骨附着点分居髁间窝两侧。</string>
+    <string name="health_atlas_ligaments_plate_pcl_tibia">后交叉韧带的胫骨附着点</string>
+    <string name="health_atlas_ligaments_plate_pcl_tibia_detail">后交叉韧带附着于胫骨后髁间区的斜面，位置紧邻胫骨平台后缘下方。</string>
+</resources>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cartilage_story_title">关节软骨如何承重</string>
+    <string name="health_atlas_cartilage_story_scope">本图是健康成人髌股关节透明软骨的定性剖面示意，重点展示股骨侧。形变经过夸大，箭头仅表示方向。本图并非人体测量结果，也不适用于所有软骨。</string>
+    <string name="health_atlas_cartilage_story_rest">静息时富含水分</string>
+    <string name="health_atlas_cartilage_story_rest_caption">相对的骨面覆有关节软骨。间质液充满软骨固体基质中的空隙。</string>
+    <string name="health_atlas_cartilage_story_press">开始受力</string>
+    <string name="health_atlas_cartilage_story_press_caption">关节面相互挤压时，间质液产生的压力与固体基质共同承受负荷。软骨局部开始受压变薄。</string>
+    <string name="health_atlas_cartilage_story_hold">持续受压</string>
+    <string name="health_atlas_cartilage_story_hold_caption">持续受力时，部分间质液流向接触区旁未被覆盖的区域，并流出软骨。受压区域进一步变薄，固体基质承担的负荷份额增大。</string>
+    <string name="health_atlas_cartilage_story_unload">解除负荷</string>
+    <string name="health_atlas_cartilage_story_unload_caption">关节面分开。受压区域开始回弹，但不会立即恢复原有厚度。</string>
+    <string name="health_atlas_cartilage_story_recover">液体回流</string>
+    <string name="health_atlas_cartilage_story_recover_caption">液体重新进入基质，受压区域逐渐恢复到接近静息时的厚度。这是局部恢复，不是长出新的软骨。</string>
+    <string name="health_atlas_cartilage_story_label_patella">髌骨</string>
+    <string name="health_atlas_cartilage_story_label_joint_space">关节腔</string>
+    <string name="health_atlas_cartilage_story_label_trochlea">股骨滑车</string>
+    <string name="health_atlas_cartilage_story_label_matrix">软骨基质</string>
+    <string name="health_atlas_cartilage_story_label_fluid">间质液</string>
+    <string name="health_atlas_cartilage_story_label_load">施加的负荷</string>
+    <string name="health_atlas_cartilage_story_reference_load">Park 等（2003）：无侧限压缩中软骨间质液的承载作用</string>
+    <string name="health_atlas_cartilage_story_reference_recovery">Voinier 等（2022）：软骨液体流失与恢复的方式及其速率</string>
+</resources>

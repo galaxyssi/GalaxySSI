@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Oblique anterior view of a right knee, with the patella and front of the capsule omitted. -->
+    <path android:fillColor="#E0CCB4" android:strokeColor="#927D69" android:strokeWidth="1.3"
+        android:pathData="M89,178 C78,179 72,185 75,196 Q78,205 87,209 Q98,229 98,249 Q103,256 115,251 C114,234 107,214 106,198 Q105,180 89,178 Z" />
+    <path android:strokeColor="#F6EBDD" android:strokeWidth="1.4" android:strokeLineCap="round"
+        android:pathData="M82,184 Q76,190 81,198 Q87,202 91,208 Q102,230 104,246" />
+    <path android:strokeColor="#867564" android:strokeWidth="1.5" android:strokeLineJoin="round"
+        android:pathData="M86,172 C84,157 108,148 134,148 Q152,146 168,149 Q185,143 204,145 C235,143 268,149 274,162 C280,178 269,191 259,201 Q232,217 227,234 Q224,244 227,255 C204,262 164,265 139,258 Q137,234 127,222 C113,204 92,200 86,172 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="98" android:startY="170" android:endX="235" android:endY="251">
+                <item android:offset="0" android:color="#BAA18A" />
+                <item android:offset="0.38" android:color="#E0CBB1" />
+                <item android:offset="0.69" android:color="#F4E8D5" />
+                <item android:offset="1" android:color="#CEB397" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#FFFAEC" android:fillAlpha="0.36"
+        android:pathData="M105,191 C128,200 151,201 172,202 C199,203 233,199 255,184 C247,199 228,203 216,215 Q201,230 205,254 Q174,259 151,254 C146,224 133,213 105,191 Z" />
+    <path android:strokeColor="#BC9C7C" android:strokeAlpha="0.8" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M105,195 Q145,212 153,245 M120,201 Q143,211 147,227 M251,193 C236,205 223,210 217,231 M209,217 Q201,234 202,253 M146,253 Q184,261 219,252" />
+    <path android:strokeColor="#FCF3E4" android:strokeWidth="1.4" android:strokeLineCap="round"
+        android:pathData="M108,185 C131,196 149,196 167,197 M181,198 Q216,197 247,182 M158,211 Q173,223 173,253 M179,222 Q184,237 182,254" />
+
+    <!-- The posterior intercondylar slope is visible between the two articular surfaces. -->
+    <path android:fillColor="#C0AA95" android:strokeColor="#917B69" android:strokeWidth="1.1"
+        android:pathData="M147,153 Q160,143 177,145 Q187,146 204,147 L210,158 Q190,166 183,179 L158,176 Z" />
+    <path android:strokeColor="#698E89" android:strokeWidth="1.25"
+        android:pathData="M88,165 C94,153 124,149 145,152 Q155,153 163,159 Q160,167 163,172 Q151,185 127,187 C106,188 89,178 88,165 Z M194,158 C208,148 244,145 263,155 C279,163 270,174 257,180 C237,188 218,187 199,182 Q193,173 194,158 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="172" android:startY="150" android:endX="174" android:endY="191">
+                <item android:offset="0" android:color="#91B4A9" />
+                <item android:offset="0.52" android:color="#D6E6D7" />
+                <item android:offset="1" android:color="#A4C7BE" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#EEF5E8" android:strokeWidth="1.35" android:strokeLineCap="round"
+        android:pathData="M95,166 C110,155 136,154 150,159 M99,174 Q126,189 152,175 M206,159 C223,152 252,153 262,160 M210,180 Q241,186 261,171" />
+    <path android:fillColor="#EBDBC6" android:strokeColor="#A48B74" android:strokeWidth="1.15"
+        android:pathData="M153,181 Q160,174 169,175 L174,164 Q179,161 182,170 Q184,173 189,167 Q194,165 199,177 Q211,182 207,187 Q184,195 158,188 Z" />
+    <path android:strokeColor="#FFF5E4" android:strokeWidth="1.3" android:strokeLineCap="round"
+        android:pathData="M158,183 Q170,183 175,170 M183,176 Q190,175 193,171 M175,191 Q185,191 199,187" />
+
+    <path android:fillColor="#BFA991" android:strokeColor="#8C7461" android:strokeWidth="1.2"
+        android:pathData="M146,79 Q175,61 209,77 L232,103 Q224,119 206,126 Q184,112 161,123 Q145,117 142,105 Z" />
+    <path android:strokeColor="#8B7563" android:strokeWidth="1.55" android:strokeLineJoin="round"
+        android:pathData="M130,22 C152,15 197,15 215,22 C214,39 219,59 231,68 C246,78 267,88 272,108 C279,132 252,144 228,140 Q209,137 204,119 Q200,110 204,100 C197,84 180,83 170,92 Q163,99 161,114 C158,131 149,143 131,144 C103,147 83,137 84,117 C85,96 105,81 119,71 C133,58 134,40 130,22 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="112" android:startY="30" android:endX="254" android:endY="133">
+                <item android:offset="0" android:color="#FBF1DE" />
+                <item android:offset="0.37" android:color="#EBDDCA" />
+                <item android:offset="0.72" android:color="#D1B69B" />
+                <item android:offset="1" android:color="#F2E4CE" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#A18370" android:fillAlpha="0.32"
+        android:pathData="M119,74 C137,62 146,53 149,35 Q152,62 141,78 C126,95 134,119 149,119 Q146,140 127,140 C111,139 105,120 108,105 Q110,89 119,74 Z M163,89 C178,73 199,74 213,90 C225,103 215,121 225,134 Q210,132 206,117 Q201,108 206,101 C197,85 181,84 170,93 Q165,101 163,108 Z" />
+    <path android:fillColor="#FFF6E6" android:fillAlpha="0.64"
+        android:pathData="M141,24 Q171,18 203,24 Q199,47 212,66 C196,59 185,57 168,61 Q149,70 134,75 C147,57 145,45 141,24 Z M224,78 C247,85 266,100 266,113 Q259,130 243,130 Q227,127 228,107 Z" />
+    <path android:strokeColor="#F9EFDE" android:strokeWidth="1.55" android:strokeLineCap="round"
+        android:pathData="M135,26 Q160,19 197,22 M139,40 Q143,64 123,78 C108,90 92,105 92,118 M222,74 C246,83 262,96 267,109 M173,81 Q187,77 198,84" />
+    <path android:strokeColor="#B79C85" android:strokeWidth="1.25" android:strokeLineCap="round"
+        android:pathData="M161,30 C163,50 159,65 149,75 M196,31 Q195,55 207,69 M122,92 C112,109 119,130 136,134 M230,92 Q238,105 235,121 M249,104 Q256,112 252,120" />
+    <path android:fillColor="#A7C1B5" android:strokeColor="#78958C" android:strokeWidth="1.2"
+        android:pathData="M86,112 C82,130 93,141 110,144 C131,149 151,142 157,127 Q145,136 128,137 C109,140 91,129 86,112 Z M206,120 Q211,132 229,135 C247,139 272,131 273,113 C278,133 256,144 233,142 Q214,141 206,127 Z" />
+    <path android:strokeColor="#E5EFE4" android:strokeWidth="1.1" android:strokeLineCap="round"
+        android:pathData="M92,132 Q116,149 145,137 M217,136 Q244,148 265,130" />
+
+    <!-- PCL first: medial femoral notch wall to the rear slope of the tibia. -->
+    <path android:fillColor="#9D8098" android:strokeColor="#725A76" android:strokeWidth="1"
+        android:pathData="M159,148 Q166,144 175,149 Q174,157 168,162 Q160,164 155,158 Z" />
+    <path android:strokeColor="#755778" android:strokeWidth="1.45" android:strokeLineJoin="round"
+        android:pathData="M200,103 C204,98 214,96 218,101 Q221,108 213,115 C194,124 181,135 174,146 Q169,153 168,160 Q161,164 157,158 C158,145 166,131 176,122 Q184,110 200,103 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="171" android:startY="110" android:endX="200" android:endY="144">
+                <item android:offset="0" android:color="#9D819D" />
+                <item android:offset="0.47" android:color="#DFC9DB" />
+                <item android:offset="1" android:color="#A582A2" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#F1DDE8" android:strokeAlpha="0.86" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M213,102 C186,108 165,133 161,156 M214,107 C192,115 172,134 166,152" />
+    <path android:strokeColor="#977495" android:strokeWidth="1.05" android:strokeLineCap="round"
+        android:pathData="M207,111 Q182,125 169,149" />
+
+    <!-- ACL passes in front in this projection, from the lateral notch wall to the anterior tibia. -->
+    <path android:fillColor="#86AFA2" android:strokeColor="#5C8479" android:strokeWidth="1.05"
+        android:pathData="M180,181 Q191,176 199,180 Q205,188 195,191 Q186,191 180,188 Z" />
+    <path android:strokeColor="#517D73" android:strokeWidth="1.45" android:strokeLineJoin="round"
+        android:pathData="M153,98 Q159,93 168,97 Q171,100 171,108 C172,129 177,144 187,160 C191,166 196,174 199,181 Q198,189 188,189 C181,184 176,176 171,165 C160,148 156,130 153,114 Q151,106 153,98 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="153" android:startY="146" android:endX="190" android:endY="132">
+                <item android:offset="0" android:color="#689C90" />
+                <item android:offset="0.46" android:color="#BBDBCB" />
+                <item android:offset="0.78" android:color="#E1EBD8" />
+                <item android:offset="1" android:color="#8DB7AC" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#EDF4E4" android:strokeWidth="1.25" android:strokeLineCap="round"
+        android:pathData="M160,99 C160,124 164,147 176,166 Q182,179 190,185 M166,101 C167,128 172,145 182,162 Q188,172 194,183" />
+    <path android:strokeColor="#669F91" android:strokeWidth="1.1" android:strokeLineCap="round"
+        android:pathData="M157,106 C158,129 165,153 173,167 Q181,183 188,186 M169,112 C172,139 178,153 186,164" />
+</vector>

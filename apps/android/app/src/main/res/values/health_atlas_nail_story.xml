@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_nail_story_title">Normal nail plate formation</string>
+    <string name="health_atlas_nail_story_choice">How the nail plate grows</string>
+    <string name="health_atlas_nail_story_scope">A simplified lengthwise section of a human fingertip showing normal nail plate formation. Shapes and movement are not to scale, and chapter timing does not represent growth time. For anatomy education.</string>
+    <string name="health_atlas_nail_story_section">A lengthwise view</string>
+    <string name="health_atlas_nail_story_section_caption">The proximal nail fold covers the root of the nail plate. The matrix lies at the root, the bed lies under the plate farther toward the fingertip, and the free edge extends past the bed. The moving highlight traces the plate.</string>
+    <string name="health_atlas_nail_story_division">New cells in the matrix</string>
+    <string name="health_atlas_nail_story_division_caption">Living cells divide in the nail matrix beneath the root. Some of their descendants move toward the underside of the forming plate.</string>
+    <string name="health_atlas_nail_story_maturation">Cells become plate material</string>
+    <string name="health_atlas_nail_story_maturation_caption">As these cells mature, they flatten, fill with hard keratins and lose their nuclei. They become part of the layered nail plate.</string>
+    <string name="health_atlas_nail_story_advance">The plate moves toward the tip</string>
+    <string name="health_atlas_nail_story_advance_caption">New material joins the plate at the matrix, displacing the already-formed plate toward the fingertip. The small marks move with the plate to show that it advances together.</string>
+    <string name="health_atlas_nail_story_edge">From nail bed to free edge</string>
+    <string name="health_atlas_nail_story_edge_caption">The nail bed supports the plate as it moves; the matrix remains its main source. Once the plate passes the end of the bed, it extends as the free edge. The tip does not make new plate.</string>
+    <string name="health_atlas_nail_story_label_fold">Proximal nail fold</string>
+    <string name="health_atlas_nail_story_label_matrix">Nail matrix</string>
+    <string name="health_atlas_nail_story_label_plate">Nail plate</string>
+    <string name="health_atlas_nail_story_label_bed">Nail bed</string>
+    <string name="health_atlas_nail_story_label_edge">Free edge</string>
+    <string name="health_atlas_nail_story_ref_matrix">Perrin et al. (2004): Keratin expression in the adult human nail unit</string>
+    <string name="health_atlas_nail_story_ref_anatomy">Fleckman et al. (2013): Comparative anatomy of mouse and human nail units</string>
+</resources>

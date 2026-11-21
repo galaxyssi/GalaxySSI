@@ -6,8 +6,8 @@ import android.graphics.Paint
 import android.graphics.drawable.Drawable
 import android.view.View
 
-internal abstract class HealthAtlasCellSceneView(context: Context, private val mechanism: HealthAtlasMechanism,
-    private val stageLabel: Int) : View(context) {
+internal abstract class HealthAtlasCellSceneView(context: Context, private val stageTitles: List<String>,
+    private val stageLabel: Int, private val maxHeightDp: Int = 240) : View(context) {
     protected val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
     val stage get() = (phase * 4f).toInt().coerceAtMost(3)
     var phase = 0f
@@ -21,27 +21,30 @@ internal abstract class HealthAtlasCellSceneView(context: Context, private val m
         }
 
     init {
-        require(mechanism.stages.size == 4)
+        require(stageTitles.size == 4)
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         describe()
     }
 
     private fun describe() {
-        contentDescription = context.getString(stageLabel, mechanism.stages[stage])
+        contentDescription = context.getString(stageLabel, stageTitles[stage])
     }
 
     final override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)
-        val height = (width * .56f).toInt().coerceAtMost((240 * resources.displayMetrics.density).toInt())
+        val height = (width * .56f).toInt().coerceAtMost((maxHeightDp * resources.displayMetrics.density).toInt())
         setMeasuredDimension(width, resolveSize(height, heightMeasureSpec))
     }
 
-    final override fun onDraw(canvas: Canvas) {
-        val scale = minOf(width / 360f, height / 200f)
+    final override fun onDraw(canvas: Canvas) = drawFrame(canvas, width, height, phase)
+
+    fun drawFrame(canvas: Canvas, frameWidth: Int, frameHeight: Int, position: Float) {
+        phase = position
+        val scale = minOf(frameWidth / 360f, frameHeight / 200f)
         val progress = phase * 4f - stage
         val ease = progress * progress * (3f - 2f * progress)
         canvas.save()
-        canvas.translate((width - 360f * scale) / 2f, (height - 200f * scale) / 2f)
+        canvas.translate((frameWidth - 360f * scale) / 2f, (frameHeight - 200f * scale) / 2f)
         canvas.scale(scale, scale)
         drawScene(canvas, ease)
         canvas.restore()

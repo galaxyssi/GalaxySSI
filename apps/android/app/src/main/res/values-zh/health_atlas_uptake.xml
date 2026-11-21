@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_uptake_title">胰岛素如何帮助细胞摄取葡萄糖</string>
+    <string name="health_atlas_uptake_bind">胰岛素结合受体</string>
+    <string name="health_atlas_uptake_bind_caption">细胞外的胰岛素与细胞膜上的胰岛素受体结合。</string>
+    <string name="health_atlas_uptake_irs">受体将信号传给 IRS</string>
+    <string name="health_atlas_uptake_irs_caption">在细胞内，激活的受体使胰岛素受体底物（IRS）磷酸化。</string>
+    <string name="health_atlas_uptake_akt">PI3K 和 AKT 接力传递信号</string>
+    <string name="health_atlas_uptake_akt_caption">IRS 帮助招募 PI3K。PI3K 将膜上的 PIP2 转为 PIP3，进而帮助招募和激活 AKT。</string>
+    <string name="health_atlas_uptake_fuse">GLUT4 囊泡与细胞膜融合</string>
+    <string name="health_atlas_uptake_fuse_caption">信号促进携带 GLUT4 的囊泡与细胞膜融合，增加细胞表面的 GLUT4。</string>
+    <string name="health_atlas_uptake_transport">葡萄糖经 GLUT4 进入细胞</string>
+    <string name="health_atlas_uptake_transport_caption">GLUT4 帮助葡萄糖沿浓度梯度进入细胞。示意图中胰岛素仍留在细胞外。</string>
+    <string name="health_atlas_uptake_outside">细胞外</string>
+    <string name="health_atlas_uptake_inside">细胞内</string>
+    <string name="health_atlas_uptake_insulin">胰岛素</string>
+    <string name="health_atlas_uptake_receptor">胰岛素受体</string>
+    <string name="health_atlas_uptake_glucose">葡萄糖</string>
+    <string name="health_atlas_uptake_scope">骨骼肌和脂肪细胞的简化教学图。结构、距离和播放时间不按比例，不用于预测血糖。</string>
+    <string name="health_atlas_uptake_reference">研究依据：骨骼肌中的 GLUT4 转移</string>
+    <string name="health_atlas_uptake_pathway_reference">研究依据：GLUT4 囊泡融合成像</string>
+</resources>

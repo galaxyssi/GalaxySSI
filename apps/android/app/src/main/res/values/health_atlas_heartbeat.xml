@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_beat_title">How the heart pumps blood</string>
+    <string name="health_atlas_beat_fill">The ventricles fill</string>
+    <string name="health_atlas_beat_fill_caption">Blood enters the right atrium from the body and the left atrium from the lungs. The tricuspid and mitral valves open and the ventricles fill.</string>
+    <string name="health_atlas_beat_atrial">The atria finish filling the ventricles</string>
+    <string name="health_atlas_beat_atrial_caption">Both atria squeeze, pushing the last part of the filling volume through the open inlet valves.</string>
+    <string name="health_atlas_beat_pressure">Ventricular pressure rises</string>
+    <string name="health_atlas_beat_pressure_caption">The inlet valves close. Pressure rises before the outlet valves open, so blood is not yet ejected and ventricular volume stays nearly constant.</string>
+    <string name="health_atlas_beat_eject">Both ventricles eject blood</string>
+    <string name="health_atlas_beat_eject_caption">The pulmonary valve opens toward the lungs, and the aortic valve opens toward the body. The ventricles narrow as blood leaves.</string>
+    <string name="health_atlas_beat_relax">The ventricles relax</string>
+    <string name="health_atlas_beat_relax_caption">The outlet valves close. Pressure drops while all four valves are closed, until the next filling phase begins.</string>
+    <string name="health_atlas_beat_low">Right heart: less oxygen</string>
+    <string name="health_atlas_beat_high">Left heart: more oxygen</string>
+    <string name="health_atlas_beat_scope">Slowed teaching animation. Colored arrows indicate relative oxygen content and flow direction, not the actual color of blood. Not a measurement of your heart.</string>
+    <string name="health_atlas_beat_cycle_reference">Source: cardiac cycle (OpenStax)</string>
+    <string name="health_atlas_beat_flow_reference">Source: blood flow through the heart (NIH)</string>
+</resources>

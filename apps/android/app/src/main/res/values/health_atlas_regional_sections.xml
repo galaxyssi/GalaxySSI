@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_radius_section_view">Radius and ulna with the palm facing forward</string>
+    <string name="health_atlas_radius_section_head">Radial head</string>
+    <string name="health_atlas_radius_section_head_detail">The disc-shaped head at the elbow can turn against the ulna when you rotate the forearm.</string>
+    <string name="health_atlas_radius_section_shaft">Radial shaft</string>
+    <string name="health_atlas_radius_section_shaft_detail">The shaft runs along the thumb side in this view. The fibrous sheet between the two bones connects their shafts.</string>
+    <string name="health_atlas_radius_section_wrist">Wrist end</string>
+    <string name="health_atlas_radius_section_wrist_detail">The widened distal radius meets part of the first row of wrist bones.</string>
+    <string name="health_atlas_radius_section_styloid">Radial styloid</string>
+    <string name="health_atlas_radius_section_styloid_detail">This bony projection marks the thumb side of the wrist.</string>
+    <string name="health_atlas_olfactory_mucosa_view">Olfactory mucosa, enlarged section · not to scale</string>
+    <string name="health_atlas_olfactory_mucosa_mucus">Mucus film</string>
+    <string name="health_atlas_olfactory_mucosa_mucus_detail">Odor molecules enter the thin wet layer at the mucosal surface before encountering receptors on sensory cilia.</string>
+    <string name="health_atlas_olfactory_mucosa_cilia">Olfactory cilia</string>
+    <string name="health_atlas_olfactory_mucosa_cilia_detail">These extensions of olfactory neurons reach into the mucus. They detect odors; they do not sweep mucus like the motile cilia elsewhere in the nose.</string>
+    <string name="health_atlas_olfactory_mucosa_support">Supporting cells</string>
+    <string name="health_atlas_olfactory_mucosa_support_detail">These epithelial cells surround the sensory neurons and help maintain the tissue around them.</string>
+    <string name="health_atlas_olfactory_mucosa_gland">Olfactory gland</string>
+    <string name="health_atlas_olfactory_mucosa_gland_detail">A gland below the epithelium delivers its secretion to the surface through a small duct.</string>
+    <string name="health_atlas_cranial_attach_view">Cranial nerve connections viewed from below · schematic</string>
+    <string name="health_atlas_cranial_attach_one">I · Olfactory</string>
+    <string name="health_atlas_cranial_attach_one_detail">Olfactory nerve fibers from the nasal mucosa enter the bulbs on the underside of the forebrain.</string>
+    <string name="health_atlas_cranial_attach_two">II · Optic</string>
+    <string name="health_atlas_cranial_attach_two_detail">The optic nerves from the two eyes meet at the optic chiasm, where some fibers cross.</string>
+    <string name="health_atlas_cranial_attach_mid">III and IV · Midbrain</string>
+    <string name="health_atlas_cranial_attach_mid_detail">The oculomotor nerve (III) appears on the underside of the midbrain. The trochlear nerve (IV) emerges on the back and curves around the side, indicated by broken lines.</string>
+    <string name="health_atlas_cranial_attach_pons">V · Trigeminal</string>
+    <string name="health_atlas_cranial_attach_pons_detail">The main trigeminal root is attached along the lateral pons. It carries much of the sensation of the face and contributes to chewing movements.</string>
+    <string name="health_atlas_cranial_attach_border">VI–VIII · Pons border</string>
+    <string name="health_atlas_cranial_attach_border_detail">At the pons–medulla border, abducens (VI) is near the midline; facial (VII) and vestibulocochlear (VIII) attach farther to the side.</string>
+    <string name="health_atlas_cranial_attach_lower">IX and X · Medulla</string>
+    <string name="health_atlas_cranial_attach_lower_detail">Glossopharyngeal (IX) and vagus (X) have small roots along the side of the medulla.</string>
+    <string name="health_atlas_cranial_attach_accessory">XI · Accessory</string>
+    <string name="health_atlas_cranial_attach_accessory_detail">The main spinal component rises alongside the upper cervical spinal cord rather than emerging from the pons.</string>
+    <string name="health_atlas_cranial_attach_tongue">XII · Hypoglossal</string>
+    <string name="health_atlas_cranial_attach_tongue_detail">Hypoglossal rootlets emerge from a groove closer to the midline of the medulla. The nerve supplies most tongue muscles.</string>
+    <string name="health_atlas_limb_bones_overview_view">Upper and lower limb bones · side-by-side schematic</string>
+    <string name="health_atlas_hair_shaft_view">Hair shaft and its layers · magnified</string>
+    <string name="health_atlas_hair_shaft_cuticle">Cuticle</string>
+    <string name="health_atlas_hair_shaft_cuticle_detail">Overlapping flattened cells form the thin outer layer that protects the shaft.</string>
+    <string name="health_atlas_hair_shaft_cortex">Cortex</string>
+    <string name="health_atlas_hair_shaft_cortex_detail">This thick middle layer contains keratin fibers that give the shaft much of its strength.</string>
+    <string name="health_atlas_hair_shaft_medulla">Medulla</string>
+    <string name="health_atlas_hair_shaft_medulla_detail">A central region that can be continuous, interrupted or absent. It is shown in this example.</string>
+</resources>

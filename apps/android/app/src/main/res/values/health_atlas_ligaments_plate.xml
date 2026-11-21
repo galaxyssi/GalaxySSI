@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ligaments_plate_title">Knee cruciate ligaments</string>
+    <string name="health_atlas_ligaments_plate_caption">Oblique view of the right knee. The teal ACL crosses in front of the violet PCL in this view. The kneecap and front of the capsule are omitted to show where the bands attach.</string>
+    <string name="health_atlas_ligaments_plate_acl_femur">ACL on the femur</string>
+    <string name="health_atlas_ligaments_plate_acl_femur_detail">The ACL attaches to the notch-facing surface of the lateral femoral condyle, toward the back of that surface.</string>
+    <string name="health_atlas_ligaments_plate_acl_tibia">ACL on the tibia</string>
+    <string name="health_atlas_ligaments_plate_acl_tibia_detail">The ACL attaches in the anterior intercondylar area of the tibia, in front of the bony ridge between the tibial condyles.</string>
+    <string name="health_atlas_ligaments_plate_pcl_femur">PCL on the femur</string>
+    <string name="health_atlas_ligaments_plate_pcl_femur_detail">The PCL attaches to the notch-facing surface of the medial femoral condyle, on the opposite wall from the ACL.</string>
+    <string name="health_atlas_ligaments_plate_pcl_tibia">PCL on the tibia</string>
+    <string name="health_atlas_ligaments_plate_pcl_tibia_detail">The PCL attaches to the sloping posterior intercondylar area, just below the rear edge of the tibial plateau.</string>
+</resources>

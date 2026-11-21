@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ribs_attachments_plate_caption">肋骨：连接方式与肋弓</string>
+    <string name="health_atlas_ribs_attachments_plate_posterior_joint">肋椎关节</string>
+    <string name="health_atlas_ribs_attachments_plate_posterior_joint_detail">每根肋骨的后端都与胸椎相连。图中较浅的后方弧线显示了肋骨转向脊柱的走向。</string>
+    <string name="health_atlas_ribs_attachments_plate_shaft">弯曲的肋骨体</string>
+    <string name="health_atlas_ribs_attachments_plate_shaft_detail">细长的肋骨体绕过胸廓侧面，与相邻肋骨之间留有肋间隙。</string>
+    <string name="health_atlas_ribs_attachments_plate_direct_cartilage">直连胸骨的肋软骨</string>
+    <string name="health_atlas_ribs_attachments_plate_direct_cartilage_detail">前七对肋骨各自通过肋软骨连到胸骨。肋软骨在胸廓前方连接这两部分骨骼。</string>
+    <string name="health_atlas_ribs_attachments_plate_costal_arch">肋弓</string>
+    <string name="health_atlas_ribs_attachments_plate_costal_arch_detail">第8至10肋的软骨通常与上一肋的软骨相连，而不各自连到胸骨，从而形成倾斜的肋缘。</string>
+    <string name="health_atlas_ribs_attachments_plate_floating_tip">浮肋游离端</string>
+    <string name="health_atlas_ribs_attachments_plate_floating_tip_detail">第11和第12肋在后方有附着点，前端游离，不与胸骨或肋弓相连。</string>
+</resources>

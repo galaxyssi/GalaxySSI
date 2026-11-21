@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_red_cell_story_title">红细胞如何运送氧气</string>
+    <string name="health_atlas_red_cell_story_choice">红细胞运氧</string>
+    <string name="health_atlas_red_cell_story_scope">这是正常供氧过程的定性示意。图中大小、时间和氧气符号均不按实际比例绘制，也不表示氧含量。图中未展示完整血液循环或二氧化碳交换，不构成医疗建议。</string>
+    <string name="health_atlas_red_cell_story_cell">红细胞与血红蛋白</string>
+    <string name="health_atlas_red_cell_story_cell_caption">红细胞像两面中央凹陷的圆盘。细胞内含有许多血红蛋白分子，可与氧可逆结合。放大图简化显示了一个血红蛋白分子。</string>
+    <string name="health_atlas_red_cell_story_loading">在肺中结合氧</string>
+    <string name="health_atlas_red_cell_story_loading_caption">氧从肺泡内的空气中扩散，穿过薄薄的气血屏障，进入邻近肺毛细血管中的红细胞，与血红蛋白结合。</string>
+    <string name="health_atlas_red_cell_story_transport">随血流运送</string>
+    <string name="health_atlas_red_cell_story_transport_caption">血流带着红细胞流向组织。血液中的氧大部分与红细胞内的血红蛋白结合，随之运送。</string>
+    <string name="health_atlas_red_cell_story_release">在组织毛细血管中释氧</string>
+    <string name="health_atlas_red_cell_story_release_caption">在血液中溶解氧较少的地方，一部分氧从血红蛋白上解离，离开红细胞并溶入血浆。</string>
+    <string name="health_atlas_red_cell_story_diffusion">氧扩散进入组织</string>
+    <string name="health_atlas_red_cell_story_diffusion_caption">氧沿分压降低的方向扩散：从血液穿过毛细血管壁，再经组织液进入附近的细胞。红细胞仍留在血管内。</string>
+    <string name="health_atlas_red_cell_story_label_red_cell">红细胞</string>
+    <string name="health_atlas_red_cell_story_label_hemoglobin">血红蛋白</string>
+    <string name="health_atlas_red_cell_story_label_alveolus">肺泡腔</string>
+    <string name="health_atlas_red_cell_story_label_oxygen">氧气（O₂）</string>
+    <string name="health_atlas_red_cell_story_label_lung_capillary">肺毛细血管</string>
+    <string name="health_atlas_red_cell_story_label_vessel">体循环血管</string>
+    <string name="health_atlas_red_cell_story_label_flow">血流方向</string>
+    <string name="health_atlas_red_cell_story_label_tissue_capillary">组织毛细血管</string>
+    <string name="health_atlas_red_cell_story_label_plasma">血浆</string>
+    <string name="health_atlas_red_cell_story_label_tissue_fluid">组织液</string>
+    <string name="health_atlas_red_cell_story_label_tissue">组织细胞</string>
+    <string name="health_atlas_red_cell_story_ref_binding">Adair（1925）：氧与血红蛋白结合</string>
+    <string name="health_atlas_red_cell_story_ref_microcirculation">Colburn 等（2020）：肌肉毛细血管两侧的氧分压梯度</string>
+</resources>

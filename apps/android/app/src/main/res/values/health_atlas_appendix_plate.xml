@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_appendix_plate_caption">Appendix at the cecum and an enlarged cross-section through its wall</string>
+    <string name="health_atlas_appendix_plate_cecal_attachment">Cecal attachment</string>
+    <string name="health_atlas_appendix_plate_cecal_attachment_detail">The base of the appendix joins the cecum, the first pouch of the large intestine.</string>
+    <string name="health_atlas_appendix_plate_blind_tip">Closed tip</string>
+    <string name="health_atlas_appendix_plate_blind_tip_detail">The appendix ends blindly. Its position and curvature can vary.</string>
+    <string name="health_atlas_appendix_plate_lumen">Appendiceal lumen</string>
+    <string name="health_atlas_appendix_plate_lumen_detail">The narrow inner space opens into the cecum at the base and ends at the closed tip.</string>
+    <string name="health_atlas_appendix_plate_lymphoid_follicle">Lymphoid follicle</string>
+    <string name="health_atlas_appendix_plate_lymphoid_follicle_detail">Lymphoid follicles cluster in the mucosa and submucosa around the lumen. Some have pale germinal centers.</string>
+    <string name="health_atlas_appendix_plate_muscularis_externa">Outer muscle coat</string>
+    <string name="health_atlas_appendix_plate_muscularis_externa_detail">The muscularis externa surrounds the inner wall. Its outer longitudinal muscle forms a continuous layer here.</string>
+</resources>

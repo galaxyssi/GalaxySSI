@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_shoulder_plate_deltoid_view">三角肌起止点</string>
+    <string name="health_atlas_shoulder_plate_spinal_detail">后束起自肩胛冈，在不同肩关节位置参与上臂运动。</string>
+    <string name="health_atlas_shoulder_plate_acromial_detail">中束起自肩峰，参与上臂外展。</string>
+    <string name="health_atlas_shoulder_plate_clavicular_detail">前束起自锁骨外侧，参与上臂前举。</string>
+    <string name="health_atlas_shoulder_plate_tuberosity_detail">三束肌纤维汇合并止于肱骨外侧的三角肌粗隆。</string>
+    <string name="health_atlas_shoulder_plate_scapular_view">肩胛骨周围的斜方肌与前锯肌</string>
+    <string name="health_atlas_shoulder_plate_upper_detail">斜方肌上束连到锁骨外侧，帮助抬高肩带。</string>
+    <string name="health_atlas_shoulder_plate_middle_detail">斜方肌中束走向肩胛冈，帮助内收和稳定肩胛骨。</string>
+    <string name="health_atlas_shoulder_plate_lower_detail">斜方肌下束牵拉肩胛冈内侧，参与抬臂时肩胛骨上旋。</string>
+    <string name="health_atlas_shoulder_plate_serratus_detail">前锯肌沿胸廓连到肩胛骨内缘，抬臂时与斜方肌协同。</string>
+    <string name="health_atlas_shoulder_plate_inferior_angle_detail">肩胛骨上旋时，下角向外移动。</string>
+</resources>

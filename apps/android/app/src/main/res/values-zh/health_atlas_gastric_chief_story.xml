@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gastric_chief_story_title">胃主细胞如何帮助消化蛋白质</string>
+    <string name="health_atlas_gastric_chief_story_choice">胃蛋白酶原分泌</string>
+    <string name="health_atlas_gastric_chief_story_scope">从主细胞内的胃蛋白酶原出发，定性展示人体正常胃内消化中蛋白质分解的起始过程。剖面、时序和分子形状均为示意。</string>
+
+    <string name="health_atlas_gastric_chief_story_locate">在腺底附近找到主细胞</string>
+    <string name="health_atlas_gastric_chief_story_locate_caption">胃上部隆起的胃底和胃体都分布着胃底腺，经胃小凹通向胃腔。主细胞集中在这些腺体深处，靠近腺底。</string>
+    <string name="health_atlas_gastric_chief_story_pack">将无活性的前体装入颗粒</string>
+    <string name="health_atlas_gastric_chief_story_pack_caption">主细胞将胃蛋白酶的无活性前体胃蛋白酶原装入分泌颗粒。颗粒集中在朝向腺腔的一侧，与细胞核所在的一侧相对。</string>
+    <string name="health_atlas_gastric_chief_story_release">将胃蛋白酶原释放到腺腔</string>
+    <string name="health_atlas_gastric_chief_story_release_caption">分泌颗粒的膜与主细胞朝向腺腔的细胞膜融合。胃蛋白酶原被释放到腺体内部的腺腔中，颗粒的膜则留在细胞上。</string>
+    <string name="health_atlas_gastric_chief_story_activate">酸性的腺腔使胃蛋白酶原活化</string>
+    <string name="health_atlas_gastric_chief_story_activate_caption">胃酸由邻近的壁细胞分泌，而不是由主细胞分泌。在酸性的腺腔内，胃蛋白酶原的一小段被切去，剩下的部分就是具有活性的胃蛋白酶。</string>
+    <string name="health_atlas_gastric_chief_story_digest">胃蛋白酶开始分解食物中的蛋白质</string>
+    <string name="health_atlas_gastric_chief_story_digest_caption">胃液将胃蛋白酶带入胃腔。胃蛋白酶在那里将食物中较长的蛋白质链切成较短的肽。这是蛋白质消化的开始，并非全部过程。</string>
+
+    <string name="health_atlas_gastric_chief_story_stomach">胃</string>
+    <string name="health_atlas_gastric_chief_story_pit">胃小凹</string>
+    <string name="health_atlas_gastric_chief_story_gland_base">腺底</string>
+    <string name="health_atlas_gastric_chief_story_chief_cells">主细胞</string>
+    <string name="health_atlas_gastric_chief_story_chief_cell">主细胞</string>
+    <string name="health_atlas_gastric_chief_story_nucleus">靠近基底部的细胞核</string>
+    <string name="health_atlas_gastric_chief_story_granule">分泌颗粒</string>
+    <string name="health_atlas_gastric_chief_story_gland_lumen">腺腔</string>
+    <string name="health_atlas_gastric_chief_story_membrane">朝向腺腔的细胞膜</string>
+    <string name="health_atlas_gastric_chief_story_pepsinogen">胃蛋白酶原</string>
+    <string name="health_atlas_gastric_chief_story_parietal_cell">壁细胞</string>
+    <string name="health_atlas_gastric_chief_story_acidic_lumen">酸性腺腔</string>
+    <string name="health_atlas_gastric_chief_story_activation_site">活化处</string>
+    <string name="health_atlas_gastric_chief_story_pepsin">胃蛋白酶</string>
+    <string name="health_atlas_gastric_chief_story_protein">食物中的蛋白质</string>
+    <string name="health_atlas_gastric_chief_story_cut_sites">蛋白质链切断处</string>
+
+    <string name="health_atlas_gastric_chief_story_ref_fundic_cells">研究证据：正常人胃腺中的细胞分布</string>
+    <string name="health_atlas_gastric_chief_story_ref_activation">研究证据：人胃蛋白酶原如何转变为有活性的酶</string>
+</resources>

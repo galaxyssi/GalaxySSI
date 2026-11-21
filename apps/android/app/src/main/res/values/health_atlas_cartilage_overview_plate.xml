@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cartilage_overview_plate_title">Articular cartilage section</string>
+    <string name="health_atlas_cartilage_overview_plate_caption">One example of cartilage: a magnified section of hyaline articular cartilage and the bone beneath it. The thickness of the layers and the size of the cells are schematic.</string>
+    <string name="health_atlas_cartilage_overview_plate_surface">Hyaline articular surface</string>
+    <string name="health_atlas_cartilage_overview_plate_surface_detail">This smooth surface faces the joint cavity. The cells just beneath it are flatter than those deeper in the cartilage.</string>
+    <string name="health_atlas_cartilage_overview_plate_chondrocytes">Chondrocytes</string>
+    <string name="health_atlas_cartilage_overview_plate_chondrocytes_detail">These cells sit in small spaces called lacunae and maintain the matrix around them. Deeper cells tend to line up in short columns.</string>
+    <string name="health_atlas_cartilage_overview_plate_matrix">Cartilage matrix</string>
+    <string name="health_atlas_cartilage_overview_plate_matrix_detail">Most of the tissue is matrix, not cells. The matrix contains abundant water, proteoglycans, and a fine network of type II collagen.</string>
+    <string name="health_atlas_cartilage_overview_plate_calcified">Calcified cartilage</string>
+    <string name="health_atlas_cartilage_overview_plate_calcified_detail">Below the thin, wavy boundary called the tidemark, the cartilage matrix is mineralized. This layer lies between uncalcified cartilage and bone.</string>
+    <string name="health_atlas_cartilage_overview_plate_bone">Subchondral bone</string>
+    <string name="health_atlas_cartilage_overview_plate_bone_detail">A dense plate of bone supports the cartilage from below, with a lattice of trabecular bone deeper down.</string>
+</resources>

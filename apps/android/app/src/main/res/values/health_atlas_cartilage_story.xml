@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cartilage_story_title">How articular cartilage carries load</string>
+    <string name="health_atlas_cartilage_story_scope">A qualitative cross-section of healthy adult patellofemoral articular hyaline cartilage, focused on the femoral side. Shape changes are exaggerated; arrows show direction only. This is not a human measurement or a model for all cartilage.</string>
+    <string name="health_atlas_cartilage_story_rest">Hydrated at rest</string>
+    <string name="health_atlas_cartilage_story_rest_caption">Articular cartilage covers the opposing bone surfaces. Interstitial fluid fills spaces within its solid matrix.</string>
+    <string name="health_atlas_cartilage_story_press">Initial loading</string>
+    <string name="health_atlas_cartilage_story_press_caption">As the surfaces press together, pressure rises in the interstitial fluid, which shares the load with the solid matrix. The cartilage begins to compress locally.</string>
+    <string name="health_atlas_cartilage_story_hold">Sustained compression</string>
+    <string name="health_atlas_cartilage_story_hold_caption">Under a held load, some fluid moves toward exposed areas beside the contact and out of the cartilage. The patch thins further, and the solid matrix carries a larger share of the load.</string>
+    <string name="health_atlas_cartilage_story_unload">Load removed</string>
+    <string name="health_atlas_cartilage_story_unload_caption">The surfaces separate. The compressed patch begins to rebound but does not immediately regain all its thickness.</string>
+    <string name="health_atlas_cartilage_story_recover">Fluid returns</string>
+    <string name="health_atlas_cartilage_story_recover_caption">Fluid returns to the matrix and the patch moves back toward its resting thickness. This is local recovery, not growth of new cartilage.</string>
+    <string name="health_atlas_cartilage_story_label_patella">Patella</string>
+    <string name="health_atlas_cartilage_story_label_joint_space">Joint space</string>
+    <string name="health_atlas_cartilage_story_label_trochlea">Femoral trochlea</string>
+    <string name="health_atlas_cartilage_story_label_matrix">Cartilage matrix</string>
+    <string name="health_atlas_cartilage_story_label_fluid">Interstitial fluid</string>
+    <string name="health_atlas_cartilage_story_label_load">Applied load</string>
+    <string name="health_atlas_cartilage_story_reference_load">Park et al. (2003): Cartilage interstitial fluid load support in unconfined compression</string>
+    <string name="health_atlas_cartilage_story_reference_recovery">Voinier et al. (2022): The modes and competing rates of cartilage fluid loss and recovery</string>
+</resources>

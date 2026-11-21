@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pineal_story_title">How the pineal gland signals night</string>
+    <string name="health_atlas_pineal_story_choice">The pineal night signal</string>
+    <string name="health_atlas_pineal_story_scope">Normal pineal physiology, from the human brain to a single pinealocyte. Much of the evidence for the nerve relay and its cellular timing comes from mammals such as rats. The pathways and day–night curve are schematic, not measurements.</string>
+
+    <string name="health_atlas_pineal_story_orient">Find the pineal gland</string>
+    <string name="health_atlas_pineal_story_orient_caption">In this midline section, the pineal body sits behind the upper end of the third ventricle, just above the midbrain. The nearby pineal recess belongs to the ventricle. The body clock is farther forward, in the hypothalamus.</string>
+    <string name="health_atlas_pineal_story_retina">The retina gives the clock light information</string>
+    <string name="health_atlas_pineal_story_retina_caption">Light reaches the retina at the back of the eye. Special retinal ganglion cells send signals to the suprachiasmatic nucleus (SCN), the main circadian clock in the hypothalamus. Light helps set the clock; the clock keeps time even in darkness.</string>
+    <string name="health_atlas_pineal_story_relay">Follow the nighttime nerve relay</string>
+    <string name="health_atlas_pineal_story_relay_caption">Clock timing reaches the pineal gland indirectly: through the paraventricular nucleus, the upper thoracic spinal cord, and the superior cervical ganglion. During biological night, sympathetic endings in the gland release more norepinephrine.</string>
+    <string name="health_atlas_pineal_story_production">Zoom in: a pinealocyte makes melatonin</string>
+    <string name="health_atlas_pineal_story_production_caption">Norepinephrine acts on the pinealocyte, promoting melatonin synthesis. Inside the cell, AANAT converts serotonin to N-acetylserotonin; ASMT then converts that intermediate to melatonin. Newly made melatonin passes out of the cell and into nearby blood vessels.</string>
+    <string name="health_atlas_pineal_story_rhythm">Compare biological day and night</string>
+    <string name="health_atlas_pineal_story_rhythm_caption">Circulating melatonin is generally lower during biological day. It rises during biological night and falls toward morning. Light reaching the eyes at night can suppress the rise; darkness alone does not set the timing.</string>
+
+    <string name="health_atlas_pineal_story_label_anterior">Anterior</string>
+    <string name="health_atlas_pineal_story_label_posterior">Posterior</string>
+    <string name="health_atlas_pineal_story_label_light">Light</string>
+    <string name="health_atlas_pineal_story_label_retina">Retina</string>
+    <string name="health_atlas_pineal_story_label_scn">SCN clock</string>
+    <string name="health_atlas_pineal_story_label_pvn">Paraventricular nucleus</string>
+    <string name="health_atlas_pineal_story_label_spinal">Upper thoracic cord</string>
+    <string name="health_atlas_pineal_story_label_scg">Superior cervical ganglion</string>
+    <string name="health_atlas_pineal_story_label_pinealocyte">Pinealocyte</string>
+    <string name="health_atlas_pineal_story_label_norepinephrine">Norepinephrine</string>
+    <string name="health_atlas_pineal_story_label_serotonin">Serotonin</string>
+    <string name="health_atlas_pineal_story_label_intermediate">N-acetylserotonin</string>
+    <string name="health_atlas_pineal_story_label_melatonin">Melatonin</string>
+    <string name="health_atlas_pineal_story_label_aanat">AANAT</string>
+    <string name="health_atlas_pineal_story_label_asmt">ASMT</string>
+    <string name="health_atlas_pineal_story_label_capillary">Capillary</string>
+    <string name="health_atlas_pineal_story_label_relative">Relative melatonin in blood</string>
+    <string name="health_atlas_pineal_story_label_day">Day</string>
+    <string name="health_atlas_pineal_story_label_night">Night</string>
+
+    <string name="health_atlas_pineal_story_ref_anatomy">Anatomy: the human pineal region (Fang and Meyers)</string>
+    <string name="health_atlas_pineal_story_ref_retina">Evidence: light-sensitive retinal ganglion cells that reach the clock (Berson et al.)</string>
+    <string name="health_atlas_pineal_story_ref_relay">Evidence: the autonomic relay to the pineal gland in rats (Larsen et al.)</string>
+    <string name="health_atlas_pineal_story_ref_norepinephrine">Evidence: nightly norepinephrine release in rat pineal glands (Drijfhout et al.)</string>
+    <string name="health_atlas_pineal_story_ref_aanat">Evidence: daily regulation of pineal AANAT in rats (Roseboom et al.)</string>
+    <string name="health_atlas_pineal_story_ref_asmt">Evidence: conversion of N-acetylserotonin to melatonin (Axelrod and Weissbach)</string>
+    <string name="health_atlas_pineal_story_ref_rhythm">Evidence: the daily melatonin pattern in human blood (Brown et al.)</string>
+    <string name="health_atlas_pineal_story_ref_light">Evidence: light and nighttime melatonin in humans (Lewy et al.)</string>
+</resources>

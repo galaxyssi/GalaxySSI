@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_podocyte_story_title">肾小球滤过屏障如何工作</string>
+    <string name="health_atlas_podocyte_story_choice">肾小球滤过屏障</string>
+    <string name="health_atlas_podocyte_story_scope">这是健康肾脏中一段肾小球毛细血管壁的定性示意。结构和颗粒未按比例绘制。尿腔内是刚形成的滤液，不是终尿。</string>
+    <string name="health_atlas_podocyte_story_glomerulus">肾小球内部</string>
+    <string name="health_atlas_podocyte_story_glomerulus_caption">在肾单位的起始处，血液流经一团称为肾小球的毛细血管。放大图展示了分隔毛细血管内血液和肾小囊尿腔的一段血管壁。</string>
+    <string name="health_atlas_podocyte_story_fenestrae">有窗孔的内皮</string>
+    <string name="health_atlas_podocyte_story_fenestrae_caption">称为窗孔的小开口贯穿毛细血管内皮细胞较薄的区域。窗孔位于屏障的血液侧，并不直接通向尿腔。</string>
+    <string name="health_atlas_podocyte_story_basement">共用的基膜</string>
+    <string name="health_atlas_podocyte_story_basement_caption">连续的基膜紧贴在毛细血管内皮与足细胞足突之间。它是两者共用的一层，属于同一段毛细血管壁。</string>
+    <string name="health_atlas_podocyte_story_feet">交错排列的足突</string>
+    <string name="health_atlas_podocyte_story_feet_caption">相邻足细胞的足突在基膜的尿腔侧交错排列。薄薄的裂孔隔膜横跨在相邻足突之间的狭窄间隙上。</string>
+    <string name="health_atlas_podocyte_story_filtration">什么能穿过滤过屏障？</string>
+    <string name="health_atlas_podocyte_story_filtration_caption">一部分水和小分子溶质穿过三层屏障，进入尿腔形成滤液。血细胞和大多数大分子蛋白质留在血液中。这是整个屏障共同作用的结果。</string>
+    <string name="health_atlas_podocyte_story_label_glomerulus">肾小球</string>
+    <string name="health_atlas_podocyte_story_label_blood">毛细血管内血液</string>
+    <string name="health_atlas_podocyte_story_label_fenestrated">有窗孔的</string>
+    <string name="health_atlas_podocyte_story_label_endothelium">内皮</string>
+    <string name="health_atlas_podocyte_story_label_basement">肾小球</string>
+    <string name="health_atlas_podocyte_story_label_membrane">基膜</string>
+    <string name="health_atlas_podocyte_story_label_feet">足突</string>
+    <string name="health_atlas_podocyte_story_label_slit">裂孔隔膜</string>
+    <string name="health_atlas_podocyte_story_label_urinary">尿腔</string>
+    <string name="health_atlas_podocyte_story_label_water">水</string>
+    <string name="health_atlas_podocyte_story_label_solutes">小分子溶质</string>
+    <string name="health_atlas_podocyte_story_label_cells">红细胞</string>
+    <string name="health_atlas_podocyte_story_label_proteins">大分子蛋白质</string>
+    <string name="health_atlas_podocyte_story_ref_structure">Ichimura 等（2015）：足细胞的三维结构</string>
+    <string name="health_atlas_podocyte_story_ref_albumin">Ryan 和 Karnovsky（1976）：大鼠肾小球内的白蛋白分布</string>
+</resources>

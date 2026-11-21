@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_sebaceous_title">How a sebaceous gland makes sebum</string>
+    <string name="health_atlas_sebaceous_choice">Sebum production</string>
+    <string name="health_atlas_sebaceous_scope">Illustration of a normal hair-associated sebaceous gland. The stages are sped up, the drawing is not to scale, and particle counts do not represent measurements.</string>
+    <string name="health_atlas_sebaceous_locate">A gland beside the hair follicle</string>
+    <string name="health_atlas_sebaceous_locate_caption">Lobules of a hair-associated sebaceous gland sit beside the follicle in the dermis. A short duct connects the gland with the follicular canal.</string>
+    <string name="health_atlas_sebaceous_renew">New cells form at the edge</string>
+    <string name="health_atlas_sebaceous_renew_caption">Small basal cells along the edge divide and replace the cells that mature inward. The cutaway follows one example cell.</string>
+    <string name="health_atlas_sebaceous_store">Maturing cells accumulate lipids</string>
+    <string name="health_atlas_sebaceous_store_caption">As sebocytes mature toward the inside of the lobule, lipid droplets accumulate and occupy more of the cell.</string>
+    <string name="health_atlas_sebaceous_release">The mature cell releases its contents</string>
+    <string name="health_atlas_sebaceous_release_caption">Near the duct, the mature cell breaks down. Its lipids and other cell contents contribute to sebum. This is called holocrine secretion.</string>
+    <string name="health_atlas_sebaceous_surface_flow">Sebum reaches the skin surface</string>
+    <string name="health_atlas_sebaceous_surface_flow_caption">The sebum passes through the short duct into the follicular canal and reaches the skin surface alongside the hair shaft.</string>
+    <string name="health_atlas_sebaceous_skin_view">Skin cutaway</string>
+    <string name="health_atlas_sebaceous_acinar_view">Lobule close-up</string>
+    <string name="health_atlas_sebaceous_follicle">Hair follicle</string>
+    <string name="health_atlas_sebaceous_surface">Skin surface</string>
+    <string name="health_atlas_sebaceous_young">Basal cells</string>
+    <string name="health_atlas_sebaceous_mature">Lipid-rich cells</string>
+    <string name="health_atlas_sebaceous_duct">Sebaceous duct</string>
+    <string name="health_atlas_sebaceous_lipids">Lipids</string>
+    <string name="health_atlas_sebaceous_ref_histology">Human study: structure of hair-associated sebaceous glands</string>
+    <string name="health_atlas_sebaceous_ref_maturation">Human sebocyte study: changes during maturation</string>
+</resources>

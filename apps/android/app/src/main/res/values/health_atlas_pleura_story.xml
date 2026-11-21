@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pleura_story_title">How the pleura couples the lungs to the chest wall</string>
+    <string name="health_atlas_pleura_story_choice">Pleural coupling</string>
+    <string name="health_atlas_pleura_story_scope">A qualitative illustration of normal quiet breathing. Layer thickness, movement and timing are not to scale.</string>
+
+    <string name="health_atlas_pleura_story_layers">Two layers and a thin fluid film</string>
+    <string name="health_atlas_pleura_story_layers_caption">Parietal pleura lines the inside of the chest wall and covers the upper surface of the diaphragm. Visceral pleura covers the lung. A thin film of fluid lies in the narrow space between them.</string>
+    <string name="health_atlas_pleura_story_expand">The chest expands</string>
+    <string name="health_atlas_pleura_story_expand_caption">During quiet inhalation, the ribs lift and move outward as the diaphragm contracts, flattens and descends. The parietal pleura moves with these surfaces.</string>
+    <string name="health_atlas_pleura_story_follow">The lungs follow</string>
+    <string name="health_atlas_pleura_story_follow_caption">The closely apposed pleural layers mechanically couple each lung to the moving chest wall and diaphragm. As the chest expands, the lungs expand with it.</string>
+    <string name="health_atlas_pleura_story_slide">The sheets slide</string>
+    <string name="health_atlas_pleura_story_slide_caption">The layers stay close as they glide past each other. The thin fluid film reduces friction; the marks follow the two sheets as the direction of motion reverses.</string>
+    <string name="health_atlas_pleura_story_return">Lungs return to resting volume</string>
+    <string name="health_atlas_pleura_story_return_caption">The diaphragm relaxes and rises into a dome again. The ribs settle and elastic recoil reduces lung volume toward its resting level while the pleural layers stay close.</string>
+
+    <string name="health_atlas_pleura_story_lung">Lung</string>
+    <string name="health_atlas_pleura_story_wall">Rib cage</string>
+    <string name="health_atlas_pleura_story_diaphragm">Diaphragm</string>
+    <string name="health_atlas_pleura_story_detail">Magnified pleural interface</string>
+    <string name="health_atlas_pleura_story_parietal">Parietal pleura</string>
+    <string name="health_atlas_pleura_story_fluid">Thin fluid film</string>
+    <string name="health_atlas_pleura_story_visceral">Visceral pleura</string>
+
+    <string name="health_atlas_pleura_story_ref_sliding">Study: friction and lubrication in rabbit pleura</string>
+    <string name="health_atlas_pleura_story_ref_motion">Study: chest wall and diaphragm motion in healthy adults</string>
+</resources>

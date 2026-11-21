@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_tonsil_story_title">How tonsils sample their surroundings</string>
+    <string name="health_atlas_tonsil_story_choice">Tonsillar sampling</string>
+    <string name="health_atlas_tonsil_story_scope">Palatine tonsils and adenoids both sample material at mucosal surfaces. The cellular close-up follows one palatine crypt, not an adenoid fold. Sizes and timing are schematic.</string>
+
+    <string name="health_atlas_tonsil_story_locate">Find the two sites</string>
+    <string name="health_atlas_tonsil_story_locate_caption">The pharyngeal tonsil, also called the adenoids, sits high behind the nose. The paired palatine tonsils sit lower, one on each side of the throat behind the mouth. This side view shows the nearer palatine tonsil.</string>
+    <string name="health_atlas_tonsil_story_compare">Compare a crypt and folds</string>
+    <string name="health_atlas_tonsil_story_compare_caption">A palatine crypt is a deep pocket lined by the surface tissue. The adenoid surface is shaped mainly into mucosal folds, not the deep crypt pattern of the palatine tonsil. Both surfaces lie next to lymphoid tissue.</string>
+    <string name="health_atlas_tonsil_story_encounter">Material reaches one crypt</string>
+    <string name="health_atlas_tonsil_story_encounter_caption">Material passing through the mouth can enter a palatine crypt and meet its lining. Here the amber speck is a harmless bit of food protein that the immune system can recognize as an antigen.</string>
+    <string name="health_atlas_tonsil_story_sample">A small sample reaches a local cell</string>
+    <string name="health_atlas_tonsil_story_sample_caption">A small sample can reach a dendritic cell near the crypt lining. The close-up shows the idea of sampling, not a single fixed route across the lining.</string>
+    <string name="health_atlas_tonsil_story_present">A dendritic cell meets a T cell</string>
+    <string name="health_atlas_tonsil_story_present_caption">A dendritic cell can display a small fragment of a sampled protein. A nearby T cell can check that display during contact. Sampling does not mean an immune response will follow.</string>
+
+    <string name="health_atlas_tonsil_story_pharyngeal">Pharyngeal tonsil</string>
+    <string name="health_atlas_tonsil_story_adenoids">Adenoids</string>
+    <string name="health_atlas_tonsil_story_palatine">Palatine tonsil</string>
+    <string name="health_atlas_tonsil_story_crypt">Palatine crypt</string>
+    <string name="health_atlas_tonsil_story_folds">Mucosal folds</string>
+    <string name="health_atlas_tonsil_story_antigen">Environmental antigen</string>
+    <string name="health_atlas_tonsil_story_lumen">Crypt opening</string>
+    <string name="health_atlas_tonsil_story_lymphoid">Lymphoid tissue</string>
+    <string name="health_atlas_tonsil_story_lining">Crypt lining</string>
+    <string name="health_atlas_tonsil_story_dendritic">Dendritic cell</string>
+    <string name="health_atlas_tonsil_story_t_cell">T cell</string>
+
+    <string name="health_atlas_tonsil_story_ref_palatine">Study: the lining and nearby immune cells in human palatine tonsils</string>
+    <string name="health_atlas_tonsil_story_ref_adenoid">Study: antigen uptake at the human adenoid surface</string>
+</resources>

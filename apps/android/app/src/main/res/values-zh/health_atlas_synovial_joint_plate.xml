@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_synovial_joint_plate_title">滑膜关节切面</string>
+    <string name="health_atlas_synovial_joint_plate_caption">一个简化的滑膜关节切面。滑膜关节只是关节的一种；图中适当加宽了关节间隙。</string>
+    <string name="health_atlas_synovial_joint_plate_capsule">关节囊纤维层</string>
+    <string name="health_atlas_synovial_joint_plate_capsule_detail">外层的纤维性囊壁包绕关节，连接两块骨，比其内侧的滑膜更厚。</string>
+    <string name="health_atlas_synovial_joint_plate_lining">滑膜</string>
+    <string name="health_atlas_synovial_joint_plate_lining_detail">这层薄膜衬在关节囊内侧，延伸到关节软骨的边缘，但不覆盖关节面。</string>
+    <string name="health_atlas_synovial_joint_plate_cavity">关节腔（潜在腔隙）</string>
+    <string name="health_atlas_synovial_joint_plate_cavity_detail">正常的关节腔是一道狭窄的间隙，含有少量起润滑作用的滑液，并不是两块骨之间宽大的空隙。</string>
+    <string name="health_atlas_synovial_joint_plate_surfaces">关节面</string>
+    <string name="health_atlas_synovial_joint_plate_surfaces_detail">在这个例子中，相对的两个骨面各覆有一薄层透明软骨。两层软骨隔着关节间隙相对，但并不相连。</string>
+    <string name="health_atlas_synovial_joint_plate_attachment">关节囊附着处</string>
+    <string name="health_atlas_synovial_joint_plate_attachment_detail">关节囊附着在光滑的软骨覆盖区之外的骨面上，使两个关节面可以相对滑动。</string>
+</resources>

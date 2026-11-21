@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_placenta_plate_title">Placental section</string>
+    <string name="health_atlas_placenta_plate_caption">Placental disc in section, with the fetal side above and the uterine wall below</string>
+    <string name="health_atlas_placenta_plate_cord">Umbilical cord</string>
+    <string name="health_atlas_placenta_plate_cord_detail">Two umbilical arteries carry fetal blood to the placenta. One umbilical vein carries it back to the fetus.</string>
+    <string name="health_atlas_placenta_plate_chorionic_plate">Chorionic plate</string>
+    <string name="health_atlas_placenta_plate_chorionic_plate_detail">The fetal face of the placental disc. Fetal vessels spread out here before branching into the villi.</string>
+    <string name="health_atlas_placenta_plate_terminal_villus">Terminal villus</string>
+    <string name="health_atlas_placenta_plate_terminal_villus_detail">A fine tip of the branching villous tree. It holds fetal capillaries and is covered by a thin outer layer, the syncytiotrophoblast.</string>
+    <string name="health_atlas_placenta_plate_intervillous">Intervillous space</string>
+    <string name="health_atlas_placenta_plate_intervillous_detail">Maternal blood flows around the villi in this space. Fetal blood stays within the villous vessels during normal exchange.</string>
+    <string name="health_atlas_placenta_plate_spiral_artery">Uterine spiral artery</string>
+    <string name="health_atlas_placenta_plate_spiral_artery_detail">This maternal vessel passes through the uterine side of the placenta and opens into the intervillous space.</string>
+</resources>

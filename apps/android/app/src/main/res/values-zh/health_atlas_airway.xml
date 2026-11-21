@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_airway_title">气道如何清除吸入的颗粒</string>
+    <string name="health_atlas_airway_scope">传导气道内壁的简化示意，不代表肺泡。结构、距离和播放时间不按比例。</string>
+    <string name="health_atlas_airway_choice">黏液清除</string>
+    <string name="health_atlas_airway_catch">黏液捕获颗粒</string>
+    <string name="health_atlas_airway_catch_caption">吸入的颗粒落到气道内壁时，表面的黏液可以把它们黏住。</string>
+    <string name="health_atlas_airway_secrete">杯状细胞分泌黏蛋白</string>
+    <string name="health_atlas_airway_secrete_caption">杯状细胞释放黏蛋白。这些大分子帮助在纤毛上方形成凝胶状的黏液。</string>
+    <string name="health_atlas_airway_beat">纤毛协调摆动</string>
+    <string name="health_atlas_airway_beat_caption">纤毛在黏液下方的液层中摆动，用同向的推力带动上面的黏液。</string>
+    <string name="health_atlas_airway_move">黏液带着颗粒向咽部移动</string>
+    <string name="health_atlas_airway_move_caption">黏液把捕获的颗粒沿传导气道运向咽部。</string>
+    <string name="health_atlas_airway_clear">黏液到达咽部</string>
+    <string name="health_atlas_airway_clear_caption">到达咽部的黏液可以被吞咽，经食管向下。食管不是气道。</string>
+    <string name="health_atlas_airway_throat">咽部</string>
+    <string name="health_atlas_airway_airway_wall">气道内壁</string>
+    <string name="health_atlas_airway_esophagus">食管</string>
+    <string name="health_atlas_airway_toward_throat">向咽部</string>
+    <string name="health_atlas_airway_particles">吸入的颗粒</string>
+    <string name="health_atlas_airway_mucus">黏液层</string>
+    <string name="health_atlas_airway_goblet">杯状细胞</string>
+    <string name="health_atlas_airway_cilia">纤毛</string>
+    <string name="health_atlas_airway_ref_layers">研究依据：黏液与纤毛周围层</string>
+    <string name="health_atlas_airway_ref_motion">研究依据：人气道细胞中的黏液输送</string>
+</resources>

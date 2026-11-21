@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_knee_title">膝关节如何屈伸</string>
+    <string name="health_atlas_knee_choice">膝关节屈伸</string>
+    <string name="health_atlas_knee_scope">正常膝关节运动的侧面简图，示意时固定大腿。角度、受力、距离和播放速度均不代表实测值。</string>
+    <string name="health_atlas_knee_map">两组肌肉跨过膝关节</string>
+    <string name="health_atlas_knee_map_caption">股四头肌位于大腿前侧，腘绳肌位于后侧。两组肌肉通过肌腱连到膝关节两侧的骨。</string>
+    <string name="health_atlas_knee_bend">腘绳肌帮助屈膝</string>
+    <string name="health_atlas_knee_bend_caption">腘绳肌从膝关节后方牵拉时，小腿可相对大腿向后弯。</string>
+    <string name="health_atlas_knee_glide">屈膝时髌骨沿沟滑动</string>
+    <string name="health_atlas_knee_glide_caption">小腿弯曲时，髌骨沿股骨前方的沟滑动，并始终连在膝关节的伸肌肌腱上。</string>
+    <string name="health_atlas_knee_extend">股四头肌帮助伸膝</string>
+    <string name="health_atlas_knee_extend_caption">股四头肌带动髌骨，再经髌腱牵拉胫骨，帮助小腿伸直。</string>
+    <string name="health_atlas_knee_return">膝关节回到起始姿势附近</string>
+    <string name="health_atlas_knee_return_caption">图中分开演示主要的牵拉作用。在日常动作中，前后两组肌肉也可以同时参与。</string>
+    <string name="health_atlas_knee_quadriceps">股四头肌</string>
+    <string name="health_atlas_knee_hamstrings">腘绳肌</string>
+    <string name="health_atlas_knee_patella">髌骨</string>
+    <string name="health_atlas_knee_tibia">胫骨</string>
+    <string name="health_atlas_knee_ref_imaging">研究依据：动态磁共振下的膝关节与髌骨运动</string>
+    <string name="health_atlas_knee_ref_pull">研究依据：膝关节运动中的股四头肌与腘绳肌</string>
+</resources>

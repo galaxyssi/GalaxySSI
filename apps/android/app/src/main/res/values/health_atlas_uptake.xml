@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_uptake_title">How insulin helps cells take up glucose</string>
+    <string name="health_atlas_uptake_bind">Insulin binds its receptor</string>
+    <string name="health_atlas_uptake_bind_caption">Outside the cell, insulin binds a receptor on the cell membrane.</string>
+    <string name="health_atlas_uptake_irs">The receptor signals to IRS</string>
+    <string name="health_atlas_uptake_irs_caption">Inside the cell, the activated receptor phosphorylates an insulin receptor substrate (IRS).</string>
+    <string name="health_atlas_uptake_akt">PI3K and AKT relay the signal</string>
+    <string name="health_atlas_uptake_akt_caption">IRS helps recruit PI3K. PI3K changes the membrane lipid PIP2 into PIP3, which helps recruit and activate AKT.</string>
+    <string name="health_atlas_uptake_fuse">A GLUT4 vesicle fuses with the membrane</string>
+    <string name="health_atlas_uptake_fuse_caption">The signal promotes fusion of GLUT4-containing vesicles with the cell membrane, increasing the amount of GLUT4 at the surface.</string>
+    <string name="health_atlas_uptake_transport">Glucose enters through GLUT4</string>
+    <string name="health_atlas_uptake_transport_caption">GLUT4 facilitates glucose entry down its concentration gradient. Insulin stays outside the cell in this illustration.</string>
+    <string name="health_atlas_uptake_outside">Outside the cell</string>
+    <string name="health_atlas_uptake_inside">Inside the cell</string>
+    <string name="health_atlas_uptake_insulin">Insulin</string>
+    <string name="health_atlas_uptake_receptor">Insulin receptor</string>
+    <string name="health_atlas_uptake_glucose">Glucose</string>
+    <string name="health_atlas_uptake_scope">Simplified skeletal muscle and fat cell pathway. Shapes, distances and playback time are not to scale; this is not a blood glucose prediction.</string>
+    <string name="health_atlas_uptake_reference">Evidence: GLUT4 movement in muscle</string>
+    <string name="health_atlas_uptake_pathway_reference">Evidence: imaging GLUT4 vesicle fusion</string>
+</resources>

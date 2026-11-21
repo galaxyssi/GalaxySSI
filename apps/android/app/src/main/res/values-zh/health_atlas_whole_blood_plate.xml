@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_whole_blood_caption">悬浮状态的全血 · 大小和数量为示意</string>
+    <string name="health_atlas_whole_blood_plasma">血浆</string>
+    <string name="health_atlas_whole_blood_plasma_detail">血细胞和血小板悬浮在血浆中，血浆还携带溶解的蛋白质、盐分、营养物质和代谢废物。</string>
+</resources>

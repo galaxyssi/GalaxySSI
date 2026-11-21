@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_deltoid_story_title">How the deltoid raises the arm</string>
+    <string name="health_atlas_deltoid_story_choice">Deltoid and arm elevation</string>
+    <string name="health_atlas_deltoid_story_scope">A simplified side view of normal arm elevation. Depth is opened up to show all three parts. The poses are illustrative, not measured angles or a fixed sequence of muscle activation.</string>
+    <string name="health_atlas_deltoid_story_parts">Three parts, one attachment</string>
+    <string name="health_atlas_deltoid_story_parts_caption">The front part starts at the outer clavicle, the middle part at the acromion, and the rear part at the scapular spine. All three converge at the deltoid tuberosity on the humerus.</string>
+    <string name="health_atlas_deltoid_story_lift">The upper arm lifts</string>
+    <string name="health_atlas_deltoid_story_lift_caption">As the arm moves out to the side, the middle deltoid helps turn the humerus upward. The rotator cuff helps keep the humeral head centered; the relative contribution of each deltoid part varies with the direction of the lift.</string>
+    <string name="health_atlas_deltoid_story_coordinate">The blade turns with the arm</string>
+    <string name="health_atlas_deltoid_story_coordinate_caption">The humerus rises at the shoulder joint while the scapula also rotates upward, turning the socket up. The clavicle moves with the shoulder girdle. These movements overlap and vary with the path of the arm.</string>
+    <string name="health_atlas_deltoid_story_return">The arm lowers smoothly</string>
+    <string name="health_atlas_deltoid_story_return_caption">As the arm returns, the upper arm and shoulder blade move back together. In a controlled descent, the arm elevators can stay active as they lengthen, helping to slow the pull of gravity.</string>
+    <string name="health_atlas_deltoid_story_spinal">Scapular spine part</string>
+    <string name="health_atlas_deltoid_story_acromial">Acromial part</string>
+    <string name="health_atlas_deltoid_story_clavicular">Clavicular part</string>
+    <string name="health_atlas_deltoid_story_tuberosity">Deltoid tuberosity</string>
+    <string name="health_atlas_deltoid_story_blade">Scapula</string>
+    <string name="health_atlas_deltoid_story_ref_anatomy">Temple University Press: Shoulder and arm anatomy</string>
+    <string name="health_atlas_deltoid_story_ref_moment_arms">Deltoid and other shoulder muscle moment arms</string>
+    <string name="health_atlas_deltoid_story_ref_coordination">Three-dimensional motion of the shoulder during arm elevation</string>
+    <string name="health_atlas_deltoid_story_ref_lowering">Shoulder motion and muscle activity during elevation and lowering</string>
+</resources>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cerebellum_story_title">How the cerebellum helps coordinate a reach</string>
+    <string name="health_atlas_cerebellum_story_choice">Cerebellar coordination</string>
+    <string name="health_atlas_cerebellum_story_scope">A qualitative example of normal reaching. Paths and timing are illustrative.</string>
+
+    <string name="health_atlas_cerebellum_story_plan">Plan the reach</string>
+    <string name="health_atlas_cerebellum_story_plan_caption">The brain uses the target location to plan a reach and predicts how the arm will move as the shoulder and elbow work together.</string>
+    <string name="health_atlas_cerebellum_story_feedback">Sensory feedback arrives</string>
+    <string name="health_atlas_cerebellum_story_feedback_caption">As the hand moves, vision and signals from muscles and joints provide information about where the arm is. This feedback takes time to reach and be processed by the brain.</string>
+    <string name="health_atlas_cerebellum_story_compare">Compare prediction and movement</string>
+    <string name="health_atlas_cerebellum_story_compare_caption">The cerebellum helps the brain compare the movement it predicted with what the senses report. In this reach, the hand is a little off the predicted path.</string>
+    <string name="health_atlas_cerebellum_story_correct">Adjust the ongoing reach</string>
+    <string name="health_atlas_cerebellum_story_correct_caption">The brain can use ongoing feedback together with its predictions to adjust arm movement and guide the hand toward the target.</string>
+    <string name="health_atlas_cerebellum_story_recalibrate">Recalibrate with experience</string>
+    <string name="health_atlas_cerebellum_story_recalibrate_caption">Across repeated reaches, the cerebellum helps recalibrate predictions for later movements. Here, the hand follows a path closer to the one expected and needs less adjustment along the way.</string>
+
+    <string name="health_atlas_cerebellum_story_cerebrum">Cerebrum</string>
+    <string name="health_atlas_cerebellum_story_cerebellum">Cerebellum</string>
+    <string name="health_atlas_cerebellum_story_brainstem">Brainstem</string>
+    <string name="health_atlas_cerebellum_story_arm">Reaching arm</string>
+    <string name="health_atlas_cerebellum_story_target">Target</string>
+    <string name="health_atlas_cerebellum_story_predicted">Predicted path</string>
+    <string name="health_atlas_cerebellum_story_actual">Actual path</string>
+    <string name="health_atlas_cerebellum_story_vision">Vision</string>
+    <string name="health_atlas_cerebellum_story_position">Arm position</string>
+    <string name="health_atlas_cerebellum_story_mismatch">Prediction mismatch</string>
+    <string name="health_atlas_cerebellum_story_earlier">Earlier reach</string>
+    <string name="health_atlas_cerebellum_story_later">Later reaches</string>
+
+    <string name="health_atlas_cerebellum_story_ref_estimation">Study: estimating arm position during reaching</string>
+    <string name="health_atlas_cerebellum_story_ref_adaptation">Study: learning from prediction errors during reaching</string>
+</resources>

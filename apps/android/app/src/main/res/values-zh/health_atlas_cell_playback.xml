@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cell_play_macrophage_0_caption">巨噬细胞识别周围环境中可以摄取的材料。</string>
+    <string name="health_atlas_cell_play_macrophage_1_caption">细胞膜伸出并围住材料，将其包入细胞内的小室。</string>
+    <string name="health_atlas_cell_play_macrophage_2_caption">这个小室与含有消化酶的结构融合，帮助分解其中的材料。</string>
+    <string name="health_atlas_cell_play_macrophage_3_caption">细胞清除或回收分解后的部分材料，也可以向周围细胞发送信号。</string>
+    <string name="health_atlas_cell_play_neutrophil_0_caption">周围组织发出的信号引导中性粒细胞靠近血管壁。</string>
+    <string name="health_atlas_cell_play_neutrophil_1_caption">细胞从血管内皮细胞之间通过，进入周围组织。</string>
+    <string name="health_atlas_cell_play_neutrophil_2_caption">它包围遇到的颗粒，把颗粒包入细胞内的一个小室。</string>
+    <string name="health_atlas_cell_play_neutrophil_3_caption">细胞把自身颗粒内的物质送到这个小室，帮助分解它包入的材料。</string>
+    <string name="health_atlas_cell_play_eosinophil_0_caption">免疫信号把嗜酸性粒细胞募集到受到影响的组织。</string>
+    <string name="health_atlas_cell_play_eosinophil_1_caption">嗜酸性粒细胞靠近组织里的目标，并与其发生相互作用。</string>
+    <string name="health_atlas_cell_play_eosinophil_2_caption">一些颗粒内容物释放到细胞外，作用在目标附近。</string>
+    <string name="health_atlas_cell_play_eosinophil_3_caption">本图示例中，释放的物质可以损伤易受其影响的目标。</string>
+    <string name="health_atlas_cell_play_basophil_0_caption">激活信号传到嗜碱性粒细胞。图中展示的是一种局部炎症反应。</string>
+    <string name="health_atlas_cell_play_basophil_1_caption">分泌颗粒在细胞膜附近准备释放内容物。</string>
+    <string name="health_atlas_cell_play_basophil_2_caption">组胺等介质释放到细胞周围。</string>
+    <string name="health_atlas_cell_play_basophil_3_caption">释放的信号物质可改变附近血管的反应。</string>
+    <string name="health_atlas_cell_play_monocyte_0_caption">在进入组织之前，单核细胞在血液中循环。</string>
+    <string name="health_atlas_cell_play_monocyte_1_caption">受到局部信号吸引后，细胞向可以离开血管的位置移动。</string>
+    <string name="health_atlas_cell_play_monocyte_2_caption">它穿过血管内壁，到达周围组织。</string>
+    <string name="health_atlas_cell_play_monocyte_3_caption">一部分进入组织的单核细胞可成为巨噬细胞，但并非所有巨噬细胞都来自这条路径。</string>
+    <string name="health_atlas_cell_play_dendritic_0_caption">树突状细胞从周围环境中摄取少量材料。</string>
+    <string name="health_atlas_cell_play_dendritic_1_caption">其中的蛋白质被处理成更小的片段。</string>
+    <string name="health_atlas_cell_play_dendritic_2_caption">细胞把片段展示在表面，让能够匹配的 T 细胞识别。</string>
+    <string name="health_atlas_cell_play_dendritic_3_caption">在淋巴组织中，额外信号可以帮助相匹配的 T 细胞被激活。</string>
+    <string name="health_atlas_cell_play_t_cell_0_caption">T 细胞能识别抗原呈递细胞展示的相匹配片段。</string>
+    <string name="health_atlas_cell_play_t_cell_1_caption">其他激活信号共同决定这颗 T 细胞是否作出应答。</string>
+    <string name="health_atlas_cell_play_t_cell_2_caption">被选中的 T 细胞分裂，产生识别同一信号的细胞。</string>
+    <string name="health_atlas_cell_play_t_cell_3_caption">不同类型的 T 细胞作用不同，有的协调、有的抑制应答，还有的作用于目标细胞。</string>
+    <string name="health_atlas_cell_play_nk_0_caption">自然杀伤细胞接触周围细胞，读取它们表面的信号。</string>
+    <string name="health_atlas_cell_play_nk_1_caption">激活和抑制信号的平衡帮助它判断是否对异常细胞作出应答。</string>
+    <string name="health_atlas_cell_play_nk_2_caption">它把颗粒内容物定向释放到与目标细胞接触的位置。</string>
+    <string name="health_atlas_cell_play_nk_3_caption">这些物质可让目标细胞启动受控制的死亡过程。</string>
+    <string name="health_atlas_cell_play_megakaryocyte_0_caption">在骨髓里，前体细胞成熟为巨核细胞。</string>
+    <string name="health_atlas_cell_play_megakaryocyte_1_caption">随着成熟，细胞质增多，为形成血小板准备材料。</string>
+    <string name="health_atlas_cell_play_megakaryocyte_2_caption">部分细胞质形成伸展的突起，可以进入循环。</string>
+    <string name="health_atlas_cell_play_megakaryocyte_3_caption">这些突起产生的碎片形成血小板。血小板是细胞碎片，不是完整细胞。</string>
+</resources>

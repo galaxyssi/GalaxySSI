@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_hair_cycle_story_title">The hair follicle cycle</string>
+    <string name="health_atlas_hair_cycle_story_scope">A qualitative cross-section of one human scalp follicle in a typical cycle. Shapes and motion are simplified and not to scale. Chapters do not show real durations; follicles cycle independently, and shedding and renewed growth need not coincide. This is anatomy education, not health advice.</string>
+    <string name="health_atlas_hair_cycle_story_matrix">Active matrix (anagen)</string>
+    <string name="health_atlas_hair_cycle_story_matrix_caption">In the bulb at the base of the growing follicle, matrix cells divide. Some of their descendants form the hair shaft.</string>
+    <string name="health_atlas_hair_cycle_story_growth">Growing shaft (anagen)</string>
+    <string name="health_atlas_hair_cycle_story_growth_caption">Cells that form the shaft harden as they mature. New shaft material added at the base moves the existing shaft outward; growth does not occur at the tip.</string>
+    <string name="health_atlas_hair_cycle_story_regression">Regression (catagen)</string>
+    <string name="health_atlas_hair_cycle_story_regression_caption">Shaft growth stops, the lower follicle shortens, and the base of the old shaft rounds into a club root. The upper follicle stays in place.</string>
+    <string name="health_atlas_hair_cycle_story_rest">Rest (telogen)</string>
+    <string name="health_atlas_hair_cycle_story_rest_caption">The shortened follicle can hold the old club hair without lengthening it. The moving ring only highlights the retained root.</string>
+    <string name="health_atlas_hair_cycle_story_renewal">Shedding and renewal</string>
+    <string name="health_atlas_hair_cycle_story_renewal_caption">During shedding (exogen), the club hair releases. A new shaft forms at the base as the same follicle re-enters anagen. These events are shown together, but one does not have to trigger the other.</string>
+    <string name="health_atlas_hair_cycle_story_label_epidermis">Epidermis</string>
+    <string name="health_atlas_hair_cycle_story_label_follicle">Follicle</string>
+    <string name="health_atlas_hair_cycle_story_label_shaft">Hair shaft</string>
+    <string name="health_atlas_hair_cycle_story_label_matrix">Hair matrix</string>
+    <string name="health_atlas_hair_cycle_story_label_lower">Lower follicle</string>
+    <string name="health_atlas_hair_cycle_story_label_club">Club root</string>
+    <string name="health_atlas_hair_cycle_story_label_shedding">Shedding hair</string>
+    <string name="health_atlas_hair_cycle_story_label_replacement">New shaft</string>
+    <string name="health_atlas_hair_cycle_story_reference_regression">Soma et al. (1998): Cell death during human hair follicle regression</string>
+    <string name="health_atlas_hair_cycle_story_reference_shedding">Van Neste et al. (2007): Exogen hair characterization in human scalp</string>
+</resources>

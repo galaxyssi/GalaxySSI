@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_placental_exchange_story_title">How the placenta exchanges gases and nutrients</string>
+    <string name="health_atlas_placental_exchange_story_choice">Placental exchange</string>
+    <string name="health_atlas_placental_exchange_story_scope">Normal human placental anatomy and physiology in late pregnancy. The views and motion are schematic: not to scale and not a measure of flow or transfer.</string>
+
+    <string name="health_atlas_placental_exchange_story_orient">Find the exchange surface</string>
+    <string name="health_atlas_placental_exchange_story_orient_caption">The placenta lies against the uterine wall and connects to the fetus through the umbilical cord. On the fetal side, trees of chorionic villi branch into a space filled with maternal blood. The ring marks one of the fine tips, called terminal villi.</string>
+    <string name="health_atlas_placental_exchange_story_routes">Follow two separate blood routes</string>
+    <string name="health_atlas_placental_exchange_story_routes_caption">Maternal blood enters through uterine spiral arteries, flows around the villi in the intervillous space, and drains into uterine veins. Two umbilical arteries bring fetal blood to the villous capillaries; one umbilical vein returns it to the fetus. The two blood streams do not directly mix during normal exchange.</string>
+    <string name="health_atlas_placental_exchange_story_interface">Look closely at the villous surface</string>
+    <string name="health_atlas_placental_exchange_story_interface_caption">The syncytiotrophoblast is a continuous outer layer with many nuclei that is in direct contact with maternal blood. Fetal blood remains within the capillary endothelium. Where the capillary hugs the surface, very little tissue separates the blood streams.</string>
+    <string name="health_atlas_placental_exchange_story_gases">Oxygen and carbon dioxide diffuse</string>
+    <string name="health_atlas_placental_exchange_story_gases_caption">Oxygen moves overall from maternal blood to fetal blood; carbon dioxide moves overall in the opposite direction. They diffuse across the thin villous barrier down their respective partial-pressure gradients. The arrows show net transfer of gases, not the motion of blood cells.</string>
+    <string name="health_atlas_placental_exchange_story_nutrients">Glucose uses transport proteins</string>
+    <string name="health_atlas_placental_exchange_story_nutrients_caption">Glucose is one example of a nutrient that moves overall toward fetal blood. GLUT1 proteins on both sides of the syncytiotrophoblast help glucose cross that layer by facilitated diffusion. Different nutrients can use different mechanisms.</string>
+
+    <string name="health_atlas_placental_exchange_story_cord">Umbilical cord</string>
+    <string name="health_atlas_placental_exchange_story_chorionic_plate">Chorionic plate</string>
+    <string name="health_atlas_placental_exchange_story_basal_plate">Basal plate</string>
+    <string name="health_atlas_placental_exchange_story_terminal_villus">Terminal villus</string>
+    <string name="health_atlas_placental_exchange_story_intervillous">Intervillous space</string>
+    <string name="health_atlas_placental_exchange_story_syncytium">Syncytiotrophoblast</string>
+    <string name="health_atlas_placental_exchange_story_capillary">Fetal capillary</string>
+    <string name="health_atlas_placental_exchange_story_endothelium">Capillary endothelium</string>
+    <string name="health_atlas_placental_exchange_story_maternal_in">From spiral artery</string>
+    <string name="health_atlas_placental_exchange_story_maternal_out">To uterine vein</string>
+    <string name="health_atlas_placental_exchange_story_fetal_in">From umbilical arteries</string>
+    <string name="health_atlas_placental_exchange_story_fetal_out">To umbilical vein</string>
+    <string name="health_atlas_placental_exchange_story_oxygen">Oxygen</string>
+    <string name="health_atlas_placental_exchange_story_carbon_dioxide">Carbon dioxide</string>
+    <string name="health_atlas_placental_exchange_story_glucose">Glucose</string>
+    <string name="health_atlas_placental_exchange_story_glut1">GLUT1 transporters</string>
+
+    <string name="health_atlas_placental_exchange_story_ref_anatomy">Anatomy and exchange: chorionic villi and umbilical circulation (OpenStax)</string>
+    <string name="health_atlas_placental_exchange_story_ref_flow">Observation: blood flow in the human placenta in utero (Dellschaft et al.)</string>
+    <string name="health_atlas_placental_exchange_story_ref_interface">Observation: thin exchange regions in human placental villi (Burton and Tham)</string>
+    <string name="health_atlas_placental_exchange_story_ref_glucose">Observation: GLUT1 location in human placental villi at term (Takata et al.)</string>
+</resources>

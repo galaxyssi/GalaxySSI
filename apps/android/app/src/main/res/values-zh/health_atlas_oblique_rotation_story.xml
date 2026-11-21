@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_oblique_rotation_story_title">腹斜肌如何转动躯干</string>
+    <string name="health_atlas_oblique_rotation_story_choice">腹斜肌与躯干旋转</string>
+    <string name="health_atlas_oblique_rotation_story_scope">从头侧向下观察，图的上方为身体前方；左右均指人体自身的方向。胸廓与骨盆叠示，腹斜肌的两层分开显示。骨盆保持不动；肌肉高亮仅作示意，实际参与程度因动作而异。</string>
+    <string name="health_atlas_oblique_rotation_story_align">骨盆固定，腹斜肌分两层</string>
+    <string name="health_atlas_oblique_rotation_story_align_caption">腹外斜肌位于浅层，腹内斜肌位于其深面。胸廓可以相对于骨盆转动，而骨盆不随之转动。</string>
+    <string name="health_atlas_oblique_rotation_story_right">向右旋转</string>
+    <string name="health_atlas_oblique_rotation_story_right_caption">左侧腹外斜肌和右侧腹内斜肌协同使胸廓向人体右侧旋转。这一对肌肉位于腹壁的两侧。</string>
+    <string name="health_atlas_oblique_rotation_story_center">回到中立位</string>
+    <string name="health_atlas_oblique_rotation_story_center_caption">胸廓相对于同一骨盆转回。接近中立位时，图中负责右转的肌肉对逐渐淡出高亮；其他躯干肌也可参与控制回转。</string>
+    <string name="health_atlas_oblique_rotation_story_left">向左旋转</string>
+    <string name="health_atlas_oblique_rotation_story_left_caption">协同的肌肉换到另一对：右侧腹外斜肌与左侧腹内斜肌共同帮助胸廓向人体左侧旋转，骨盆仍保持不动。</string>
+    <string name="health_atlas_oblique_rotation_story_return">回到中立位并放松</string>
+    <string name="health_atlas_oblique_rotation_story_return_caption">胸廓转回朝前的位置，不再高亮左转的肌肉对。整个过程中，胸廓始终是相对于骨盆转动。</string>
+    <string name="health_atlas_oblique_rotation_story_anterior">前方</string>
+    <string name="health_atlas_oblique_rotation_story_body_left">身体左侧</string>
+    <string name="health_atlas_oblique_rotation_story_body_right">身体右侧</string>
+    <string name="health_atlas_oblique_rotation_story_left_external">左腹外斜肌</string>
+    <string name="health_atlas_oblique_rotation_story_right_external">右腹外斜肌</string>
+    <string name="health_atlas_oblique_rotation_story_left_internal">左腹内斜肌</string>
+    <string name="health_atlas_oblique_rotation_story_right_internal">右腹内斜肌</string>
+    <string name="health_atlas_oblique_rotation_story_pelvis">固定的骨盆</string>
+    <string name="health_atlas_oblique_rotation_story_plate_caption">腹壁前面观：人体右侧保留腹外斜肌，左侧显露腹内斜肌</string>
+    <string name="health_atlas_oblique_rotation_story_plate_external">腹外斜肌</string>
+    <string name="health_atlas_oblique_rotation_story_plate_external_detail">浅层肌纤维大多从胸廓外侧斜向内下方，走向腹前正中线及髂嵴。</string>
+    <string name="health_atlas_oblique_rotation_story_plate_internal">腹内斜肌</string>
+    <string name="health_atlas_oblique_rotation_story_plate_internal_detail">图中显露部分的肌纤维大多从髂嵴斜向内上方，走向下位肋骨及腹前正中线。</string>
+    <string name="health_atlas_oblique_rotation_story_plate_ribs">下位肋骨</string>
+    <string name="health_atlas_oblique_rotation_story_plate_ribs_detail">腹外斜肌起于下方 8 对肋骨；腹内斜肌的上部纤维附着于最下方的肋骨。</string>
+    <string name="health_atlas_oblique_rotation_story_plate_crest">髂嵴</string>
+    <string name="health_atlas_oblique_rotation_story_plate_crest_detail">髋骨的上缘是两层腹斜肌的部分纤维附着处。</string>
+    <string name="health_atlas_oblique_rotation_story_plate_linea">腹白线</string>
+    <string name="health_atlas_oblique_rotation_story_plate_linea_detail">两层腹斜肌的宽阔腱膜在腹前正中线汇合，参与形成腹白线。</string>
+    <string name="health_atlas_oblique_rotation_story_ref_anatomy">OpenStax：腹壁肌</string>
+    <string name="health_atlas_oblique_rotation_story_ref_rotation">躯干轴向旋转时的肌电图研究</string>
+    <string name="health_atlas_oblique_rotation_story_ref_variation">不同旋转任务中的细丝电极肌电图研究</string>
+</resources>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_calcium_feedback_story_title">甲状旁腺如何调节钙水平</string>
+    <string name="health_atlas_calcium_feedback_story_choice">甲状旁腺反馈</string>
+    <string name="health_atlas_calcium_feedback_story_scope">定性展示正常人体的钙反馈调节，重点介绍甲状旁腺、肾脏和小肠。时间、粒子数量和解剖结构均为示意，不代表测量结果或预测。</string>
+
+    <string name="health_atlas_calcium_feedback_story_sense">主细胞感知游离钙下降</string>
+    <string name="health_atlas_calcium_feedback_story_sense_caption">甲状旁腺主细胞上的钙敏感受体感知细胞外的游离钙。游离钙减少时，受体活性随之降低。</string>
+    <string name="health_atlas_calcium_feedback_story_release">甲状旁腺释放更多甲状旁腺激素</string>
+    <string name="health_atlas_calcium_feedback_story_release_caption">钙敏感受体活性下降时，主细胞释放更多甲状旁腺激素（PTH）。这种激素进入附近的毛细血管，随血液循环。</string>
+    <string name="health_atlas_calcium_feedback_story_kidney">肾脏保留钙并活化维生素D</string>
+    <string name="health_atlas_calcium_feedback_story_kidney_caption">甲状旁腺激素使更多钙从肾小管液回到血液中，也通过另一途径促进肾脏生成活性维生素D。</string>
+    <string name="health_atlas_calcium_feedback_story_intestine">活性维生素D促进小肠吸收钙</string>
+    <string name="health_atlas_calcium_feedback_story_intestine_caption">活性维生素D帮助小肠上皮细胞将钙从肠腔吸收入血。甲状旁腺激素通过活性维生素D间接发挥这一作用。</string>
+    <string name="health_atlas_calcium_feedback_story_recover">钙水平回升，甲状旁腺激素释放减少</string>
+    <string name="health_atlas_calcium_feedback_story_recover_caption">游离钙回升时，钙敏感受体活性随之恢复。主细胞释放的甲状旁腺激素减少，促使钙水平回升的反应也随之减弱。</string>
+
+    <string name="health_atlas_calcium_feedback_story_art_glands">甲状旁腺</string>
+    <string name="health_atlas_calcium_feedback_story_art_thyroid">甲状腺（后视）</string>
+    <string name="health_atlas_calcium_feedback_story_art_chief">主细胞</string>
+    <string name="health_atlas_calcium_feedback_story_art_receptor">钙敏感受体</string>
+    <string name="health_atlas_calcium_feedback_story_art_calcium">游离钙</string>
+    <string name="health_atlas_calcium_feedback_story_art_pth">甲状旁腺激素（PTH）</string>
+    <string name="health_atlas_calcium_feedback_story_art_blood">毛细血管内的血液</string>
+    <string name="health_atlas_calcium_feedback_story_art_kidney">肾脏剖面</string>
+    <string name="health_atlas_calcium_feedback_story_art_tubule">肾小管液</string>
+    <string name="health_atlas_calcium_feedback_story_art_activation">维生素D活化</string>
+    <string name="health_atlas_calcium_feedback_story_art_vitamin_d">活性维生素D</string>
+    <string name="health_atlas_calcium_feedback_story_art_lumen">肠腔</string>
+    <string name="health_atlas_calcium_feedback_story_art_villus">小肠绒毛</string>
+
+    <string name="health_atlas_calcium_feedback_story_ref_sensing">研究证据：人甲状旁腺的钙敏感受体</string>
+    <string name="health_atlas_calcium_feedback_story_ref_vitamin_d">研究证据：大鼠甲状旁腺对维生素D活化的调节</string>
+</resources>

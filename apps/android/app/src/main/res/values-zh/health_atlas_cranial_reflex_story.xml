@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cranial_reflex_story_title">光照如何使双侧瞳孔缩小</string>
+    <string name="health_atlas_cranial_reflex_story_choice">瞳孔对光反射</string>
+    <string name="health_atlas_cranial_reflex_story_scope">本图仅示意一种正常的脑神经反射，不涵盖所有脑神经，也不用于指导检查或诊断。神经通路经过简化，运动幅度和时间不按比例。</string>
+
+    <string name="health_atlas_cranial_reflex_story_light">光线到达视网膜</string>
+    <string name="health_atlas_cranial_reflex_story_light_caption">光线通过一只眼的瞳孔进入眼内，到达视网膜。视网膜神经细胞发出信号，反映光照增强。</string>
+    <string name="health_atlas_cranial_reflex_story_input">视神经传入信号</string>
+    <string name="health_atlas_cranial_reflex_story_input_caption">视神经（第 II 对脑神经）将信号传向脑。部分纤维在视交叉处交叉，另一些留在同侧，因此信号到达两侧顶盖前区。</string>
+    <string name="health_atlas_cranial_reflex_story_relay">中脑向双侧转递信号</string>
+    <string name="health_atlas_cranial_reflex_story_relay_caption">在中脑内，顶盖前区将光照信号转递到双侧动眼神经副核，后者再向双眼发出运动信号。</string>
+    <string name="health_atlas_cranial_reflex_story_output">运动信号返回双眼</string>
+    <string name="health_atlas_cranial_reflex_story_output_caption">副交感信号沿两侧动眼神经（第 III 对脑神经）传至睫状神经节，再经睫状短神经到达虹膜内的瞳孔括约肌。</string>
+    <string name="health_atlas_cranial_reflex_story_response">直接与间接对光反应</string>
+    <string name="health_atlas_cranial_reflex_story_response_caption">两侧的瞳孔括约肌收缩，使双侧瞳孔缩小。受光眼的瞳孔缩小是直接反应，另一只眼的瞳孔缩小是间接反应。瞳孔缩小后，到达视网膜的光线减少，这是光适应的一部分。</string>
+
+    <string name="health_atlas_cranial_reflex_story_iris">瞳孔括约肌</string>
+    <string name="health_atlas_cranial_reflex_story_retina">视网膜</string>
+    <string name="health_atlas_cranial_reflex_story_optic">视神经（II）</string>
+    <string name="health_atlas_cranial_reflex_story_chiasm">视交叉</string>
+    <string name="health_atlas_cranial_reflex_story_ganglion">睫状神经节</string>
+    <string name="health_atlas_cranial_reflex_story_pretectum">顶盖前区</string>
+    <string name="health_atlas_cranial_reflex_story_ew">动眼神经副核</string>
+    <string name="health_atlas_cranial_reflex_story_motor">动眼神经（III）</string>
+    <string name="health_atlas_cranial_reflex_story_midbrain">中脑</string>
+    <string name="health_atlas_cranial_reflex_story_direct">直接反应</string>
+    <string name="health_atlas_cranial_reflex_story_consensual">间接反应</string>
+
+    <string name="health_atlas_cranial_reflex_story_ref_circuit">May 等：猕猴瞳孔对光反射的中脑回路</string>
+    <string name="health_atlas_cranial_reflex_story_ref_responses">Smith 等：人的直接和间接对光反射</string>
+</resources>

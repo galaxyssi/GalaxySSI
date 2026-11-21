@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cerebral_sensorimotor_story_title">How the cerebral cortex guides a reach</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_choice">Cortical control of a reach</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_scope">One example of a normal voluntary reach. The regions can work together as the reach unfolds; the chapters and paths do not show a fixed processing order or exact nerve routes.</string>
+
+    <string name="health_atlas_cerebral_sensorimotor_story_locate">Find the sensorimotor regions</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_locate_caption">On the outer surface of the left hemisphere, the primary motor cortex lies just in front of the central sulcus and the primary somatosensory cortex just behind it. Both help guide the right hand in this example.</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_register">Register touch and arm position</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_register_caption">As the fingertip rests on a surface, skin receptors signal contact. Signals from muscles and joints also report the position of the arm. The primary somatosensory cortex processes both kinds of information.</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_integrate">Plan a reach toward the cup</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_integrate_caption">The posterior parietal and premotor regions work together, using the position of the hand and the location of the cup to help plan the reach.</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_command">Send motor commands</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_command_caption">The primary motor cortex helps send commands down to the spinal cord. Spinal motor neurons activate muscles at the shoulder and elbow, moving the hand toward the cup.</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_feedback">Keep sensing as the hand moves</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_feedback_caption">While the arm moves, fresh information about its position keeps arriving. The brain can use it to update outgoing commands. When the fingertip meets the cup, touch signals report contact again.</string>
+
+    <string name="health_atlas_cerebral_sensorimotor_story_central_sulcus">Central sulcus</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_motor_cortex">Primary motor cortex</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_sensory_cortex">Somatosensory cortex</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_premotor">Premotor cortex</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_parietal">Posterior parietal cortex</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_cup">Cup</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_touch">Touch</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_position">Arm position</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_reach_plan">Reach plan</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_motor_output">Motor output</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_sensory_feedback">Sensory feedback</string>
+
+    <string name="health_atlas_cerebral_sensorimotor_story_ref_planning">Study: how the cortex combines hand and target positions</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_ref_feedback">Study: feedback control in primary motor cortex</string>
+</resources>

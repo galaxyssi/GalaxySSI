@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_club_cell_story_title">How club cells protect small airways</string>
+    <string name="health_atlas_club_cell_story_choice">Club cell secretion and repair</string>
+    <string name="health_atlas_club_cell_story_scope">A qualitative look at club cells in a normal human bronchiole, from their shape to their secretions. The final chapter shows an example of local lining renewal and repair from mouse bronchioles, not an established sequence in humans. Shapes and timing are schematic.</string>
+
+    <string name="health_atlas_club_cell_story_locate">Find a club cell in a small bronchiole</string>
+    <string name="health_atlas_club_cell_story_locate_caption">A cut across a small bronchiole shows the open airway and the thin layer of cells around it. Club cells sit among other cells in this layer, inside the smooth muscle of the airway wall.</string>
+    <string name="health_atlas_club_cell_story_dome_chapter">Compare the dome with its neighbors</string>
+    <string name="health_atlas_club_cell_story_dome_chapter_caption">The apical surface, the side that faces the airway, bulges into a dome. It has no beating cilia, unlike neighboring ciliated cells. Dense secretory granules lie beneath the dome.</string>
+    <string name="health_atlas_club_cell_story_release">Release proteins at the dome</string>
+    <string name="health_atlas_club_cell_story_release_caption">A granule moves toward the airway-facing surface and its membrane joins the cell membrane. The granule releases proteins, including club cell secretory protein (SCGB1A1), into the thin liquid lining the airway.</string>
+    <string name="health_atlas_club_cell_story_spread">Proteins spread in the lining fluid</string>
+    <string name="health_atlas_club_cell_story_spread_caption">Once released, proteins such as SCGB1A1 spread within the liquid coating, rather than through the air. These secretions help protect the lining.</string>
+    <string name="health_atlas_club_cell_story_renew">Renew a small patch of the lining</string>
+    <string name="health_atlas_club_cell_story_renew_caption">In mouse bronchioles, club cells can produce more club cells and new ciliated cells. This helps maintain and repair the lining locally. The animation shows one example, not a proven pathway in human bronchioles.</string>
+
+    <string name="health_atlas_club_cell_story_lumen">Airway lumen</string>
+    <string name="health_atlas_club_cell_story_bronchiole">Small bronchiole</string>
+    <string name="health_atlas_club_cell_story_club">Club cell</string>
+    <string name="health_atlas_club_cell_story_muscle">Smooth muscle</string>
+    <string name="health_atlas_club_cell_story_dome">Apical dome</string>
+    <string name="health_atlas_club_cell_story_cilia">Cilia</string>
+    <string name="health_atlas_club_cell_story_granule">Secretory granule</string>
+    <string name="health_atlas_club_cell_story_ciliated">Ciliated cell</string>
+    <string name="health_atlas_club_cell_story_surface">Apical membrane</string>
+    <string name="health_atlas_club_cell_story_fluid">Lining fluid</string>
+    <string name="health_atlas_club_cell_story_protein">Secreted protein</string>
+    <string name="health_atlas_club_cell_story_epithelium">Epithelial lining</string>
+    <string name="health_atlas_club_cell_story_mouse">Mouse bronchiole</string>
+    <string name="health_atlas_club_cell_story_new_ciliated">New ciliated cell</string>
+
+    <string name="health_atlas_club_cell_story_ref_human">Evidence: club cell structure and secretory features in human small airways (Zuo et al.)</string>
+    <string name="health_atlas_club_cell_story_ref_mouse">Evidence: bronchiolar lining maintenance and repair in mice (Rawlins et al.)</string>
+</resources>

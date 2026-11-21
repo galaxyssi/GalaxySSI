@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_beat_title">心脏怎样把血液泵出去</string>
+    <string name="health_atlas_beat_fill">心室舒张，血液流入</string>
+    <string name="health_atlas_beat_fill_caption">来自全身和肺的血液分别回到右心房和左心房。三尖瓣与二尖瓣打开，血液流进心室。</string>
+    <string name="health_atlas_beat_atrial">心房收缩，补充血液</string>
+    <string name="health_atlas_beat_atrial_caption">左右心房收缩，血液继续通过仍然打开的房室瓣，补充心室。</string>
+    <string name="health_atlas_beat_pressure">心室收缩，压力升高</string>
+    <string name="health_atlas_beat_pressure_caption">三尖瓣和二尖瓣关闭。此时心室压力正在升高，出口瓣还未打开，心室内的血量几乎不变。</string>
+    <string name="health_atlas_beat_eject">左右心室同时射血</string>
+    <string name="health_atlas_beat_eject_caption">肺动脉瓣打开，右心室将血液送往肺；主动脉瓣打开，左心室将血液送往全身。血液流出时，心室腔缩小。</string>
+    <string name="health_atlas_beat_relax">心室舒张，出口瓣关闭</string>
+    <string name="health_atlas_beat_relax_caption">肺动脉瓣和主动脉瓣关闭。短时间内四个瓣都关闭，心室压力下降，随后开始下一轮充盈。</string>
+    <string name="health_atlas_beat_low">右心 · 含氧较低</string>
+    <string name="health_atlas_beat_high">左心 · 含氧较高</string>
+    <string name="health_atlas_beat_scope">慢速科普示意。箭头表示流向，颜色区分相对含氧量，并非血液的真实颜色。不是个人心脏测量结果。</string>
+    <string name="health_atlas_beat_cycle_reference">资料来源：心动周期（OpenStax）</string>
+    <string name="health_atlas_beat_flow_reference">资料来源：心脏血流路径（美国国立卫生研究院）</string>
+</resources>

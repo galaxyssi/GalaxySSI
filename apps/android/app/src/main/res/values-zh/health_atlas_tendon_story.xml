@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_tendon_story_title">肌腱如何传递肌肉产生的力</string>
+    <string name="health_atlas_tendon_story_choice">肌腱传力</string>
+    <string name="health_atlas_tendon_story_scope">本图定性示意正常的肌肉、肌腱和骨。为便于观察，夸大了胶原波纹和运动幅度。解剖结构不按比例绘制，动画时序不代表实际时间。不展示患者测量数据或计算所得的力值。</string>
+    <string name="health_atlas_tendon_story_link">肌肉、肌腱和骨</string>
+    <string name="health_atlas_tendon_story_link_caption">肌腱将骨骼肌连接到骨。肌腱内的胶原纤维束大多沿长度方向排列，低负荷时呈轻微波纹。</string>
+    <string name="health_atlas_tendon_story_load">肌肉牵拉肌腱</string>
+    <string name="health_atlas_tendon_story_load_caption">肌肉收缩并牵拉肌腱。肌腱沿长度方向的张力升高，肌腱开始略微伸长。</string>
+    <string name="health_atlas_tendon_story_uncrimp">胶原波纹变平</string>
+    <string name="health_atlas_tendon_story_uncrimp_caption">肌腱受拉伸长时，沿长度方向排列的胶原纤维束波纹逐渐变平。放大图夸大了这一变化。</string>
+    <string name="health_atlas_tendon_story_transfer">张力牵拉骨</string>
+    <string name="health_atlas_tendon_story_transfer_caption">受拉的肌腱将肌肉产生的牵拉力传到骨上的附着处。箭头表示骨受到牵拉的方向，不表示骨的运动方向。</string>
+    <string name="health_atlas_tendon_story_recoil">负荷降低，肌腱回弹</string>
+    <string name="health_atlas_tendon_story_recoil_caption">张力降低后，肌腱通过弹性回弹趋近静息长度，胶原波纹重新变得明显。肌腱不会主动收缩。</string>
+    <string name="health_atlas_tendon_story_muscle">肌肉</string>
+    <string name="health_atlas_tendon_story_tendon">肌腱</string>
+    <string name="health_atlas_tendon_story_bone">骨</string>
+    <string name="health_atlas_tendon_story_pull">骨所受的牵拉</string>
+    <string name="health_atlas_tendon_story_collagen">胶原纤维束（放大）</string>
+    <string name="health_atlas_tendon_story_tension">张力</string>
+    <string name="health_atlas_tendon_story_ref_crimp">松弛和拉伸状态下大鼠跟腱的胶原波纹形态</string>
+    <string name="health_atlas_tendon_story_ref_loading">步行和跑步时人体跟腱的力学负荷与弹性应变能的量化</string>
+</resources>

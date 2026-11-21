@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_melanin_story_choice">黑色素转移</string>
+    <string name="health_atlas_melanin_story_title">表皮中的黑色素转移</string>
+    <string name="health_atlas_melanin_story_scope">本图定性展示正常人体表皮。大小、时间和运动路径均为示意；色素分布并不固定，图中只展示一种推测的转移方式。</string>
+    <string name="health_atlas_melanin_story_neighborhood">表皮中的细胞邻里</string>
+    <string name="health_atlas_melanin_story_neighborhood_caption">黑色素细胞位于表皮基底层。它的树状突起伸入相邻角质形成细胞之间。</string>
+    <string name="health_atlas_melanin_story_packaging">黑素体中的色素</string>
+    <string name="health_atlas_melanin_story_packaging_caption">在黑色素细胞内，黑色素在称为黑素体的膜性细胞器中合成并积聚。</string>
+    <string name="health_atlas_melanin_story_transport">沿树状突起运输</string>
+    <string name="health_atlas_melanin_story_transport_caption">部分黑素体从细胞体沿树状突起移向末端，将色素带到角质形成细胞附近。</string>
+    <string name="health_atlas_melanin_story_transfer">把色素传给邻近细胞</string>
+    <string name="health_atlas_melanin_story_transfer_caption">图中展示一种推测的途径：黑色素细胞释放黑色素核心，角质形成细胞将其摄入。其他可能的途径包括摄入由膜包裹的色素包，或摄入部分树状突起末端。</string>
+    <string name="health_atlas_melanin_story_shielding">部分遮挡紫外线</string>
+    <string name="health_atlas_melanin_story_shielding_caption">色素可分散在角质形成细胞内，也可在细胞核朝向皮肤表面的一侧聚成色素帽。色素帽能减少到达核内 DNA 的紫外线，但不能完全阻挡紫外线。</string>
+    <string name="health_atlas_melanin_story_label_surface">皮肤表面</string>
+    <string name="health_atlas_melanin_story_label_keratinocyte">角质形成细胞</string>
+    <string name="health_atlas_melanin_story_label_melanocyte">黑色素细胞</string>
+    <string name="health_atlas_melanin_story_label_basement">基底膜</string>
+    <string name="health_atlas_melanin_story_label_dendrite">树状突起</string>
+    <string name="health_atlas_melanin_story_label_melanosome">黑素体</string>
+    <string name="health_atlas_melanin_story_label_core">黑色素核心</string>
+    <string name="health_atlas_melanin_story_label_cap">色素帽</string>
+    <string name="health_atlas_melanin_story_reference_transfer">Tarafder 等（2014）：黑色素的释放与摄入</string>
+    <string name="health_atlas_melanin_story_reference_uv">Kobayashi 等（1998）：黑色素帽与紫外线对 DNA 的影响</string>
+</resources>

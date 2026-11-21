@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_fibroblast_story_title">成纤维细胞如何维持真皮基质</string>
+    <string name="health_atlas_fibroblast_story_choice">成纤维细胞与真皮基质</string>
+    <string name="health_atlas_fibroblast_story_scope">简化展示正常人体真皮基质的支撑与修复过程。信号与纤维变化均为示意，未按比例绘制。</string>
+    <string name="health_atlas_fibroblast_story_scaffold">已有的胶原纤维网络</string>
+    <string name="health_atlas_fibroblast_story_scaffold_caption">在表皮下方，成纤维细胞分布在胶原纤维束之间。胶原纤维束是细胞外基质的一部分；细胞外基质是细胞周围起支撑作用的物质。</string>
+    <string name="health_atlas_fibroblast_story_repair">局部修复信号</string>
+    <string name="health_atlas_fibroblast_story_repair_caption">在正常组织修复过程中，局部信号可促使附近的成纤维细胞产生更多基质。图中的脉冲代表信号，并非可见的伤口。</string>
+    <string name="health_atlas_fibroblast_story_deposit">新基质沉积</string>
+    <string name="health_atlas_fibroblast_story_deposit_caption">成纤维细胞释放胶原前体及其他基质蛋白。胶原在细胞外组装成原纤维，补充纤维网络。</string>
+    <string name="health_atlas_fibroblast_story_arrange">纤维排列发生改变</string>
+    <string name="health_atlas_fibroblast_story_arrange_caption">基质重塑时，纤维可改变位置，并形成走向不同的纤维束。新纤维成为原有网络的一部分。</string>
+    <string name="health_atlas_fibroblast_story_support">逐步更新，维持真皮支撑</string>
+    <string name="health_atlas_fibroblast_story_support_caption">在形成新基质的同时，部分旧基质被分解并替换。胶原纤维网络有助于真皮抵抗拉伸。</string>
+    <string name="health_atlas_fibroblast_story_epidermis">表皮</string>
+    <string name="health_atlas_fibroblast_story_dermis">真皮</string>
+    <string name="health_atlas_fibroblast_story_collagen">胶原纤维束</string>
+    <string name="health_atlas_fibroblast_story_fibroblast">成纤维细胞</string>
+    <string name="health_atlas_fibroblast_story_ref_deposition">人体皮肤修复中的成纤维细胞与胶原生成</string>
+    <string name="health_atlas_fibroblast_story_ref_structure">人体真皮的胶原结构与拉伸特性</string>
+</resources>
