@@ -7,6 +7,16 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    8332FF366E1CB020728E3B49 /* GalaxySSIHealthAtlas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 919373B1F2EC81778D6C1518 /* GalaxySSIHealthAtlas.swift */; };
+    8D35CFD559C1355DCB35BDED /* GalaxySSIHealthAtlasAgentHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C60A63B797B0A797C0B802 /* GalaxySSIHealthAtlasAgentHandoff.swift */; };
+    1E81F8D329E13C8B46E1D204 /* GalaxySSIHealthAtlasArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77250658843A3AAD50E9681B /* GalaxySSIHealthAtlasArtwork.swift */; };
+    56668657960EE8B00531B479 /* GalaxySSIHealthAtlasDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A44D7D7AAABC6353A3E171 /* GalaxySSIHealthAtlasDetail.swift */; };
+    3A27D153792D057E63607118 /* GalaxySSIHealthAtlasResearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */; };
+    11A6C0253F091CDA9CEA0803 /* GalaxySSIHealthAtlasSimulationPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */; };
+    F81EA90A113A7DE2667956C6 /* GalaxySSIHealthAtlasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */; };
+    1AA5A2AD38BCAE4FA01FE49A /* GalaxySSIHealthAtlasTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8967AB28E2E61CC057AEBD3 /* GalaxySSIHealthAtlasTests.swift */; };
+    40A8F2E0933DD60C3E202D5C /* body-atlas in Resources */ = {isa = PBXBuildFile; fileRef = B85158A6D23086CFED45AC26 /* body-atlas */; };
+    7E9C74C29FE3236437B57ACB /* BodyAtlas.strings in Resources */ = {isa = PBXBuildFile; fileRef = 42B68EDFC3BE81F4555E8974 /* BodyAtlas.strings */; };
     C43080000000000000000011 /* PublicNewsArticleRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43080000000000000000012 /* PublicNewsArticleRetryPolicy.swift */; };
     C43080000000000000000021 /* PublicNewsArticleRetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43080000000000000000022 /* PublicNewsArticleRetryTests.swift */; };
     C43070000000000000000011 /* PublicNewsBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43070000000000000000012 /* PublicNewsBudget.swift */; };
@@ -1425,6 +1435,17 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    919373B1F2EC81778D6C1518 /* GalaxySSIHealthAtlas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlas.swift; sourceTree = "<group>"; };
+    37C60A63B797B0A797C0B802 /* GalaxySSIHealthAtlasAgentHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAgentHandoff.swift; sourceTree = "<group>"; };
+    77250658843A3AAD50E9681B /* GalaxySSIHealthAtlasArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasArtwork.swift; sourceTree = "<group>"; };
+    94A44D7D7AAABC6353A3E171 /* GalaxySSIHealthAtlasDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDetail.swift; sourceTree = "<group>"; };
+    41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasResearch.swift; sourceTree = "<group>"; };
+    2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSimulationPanel.swift; sourceTree = "<group>"; };
+    490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasState.swift; sourceTree = "<group>"; };
+    A8967AB28E2E61CC057AEBD3 /* GalaxySSIHealthAtlasTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTests.swift; sourceTree = "<group>"; };
+    B85158A6D23086CFED45AC26 /* body-atlas */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "body-atlas"; sourceTree = "<group>"; };
+    EB1C928817FD0B78C0D6F86C /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/BodyAtlas.strings"; sourceTree = "<group>"; };
+    B8A1B2B5E765E6F693FE6E5D /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/BodyAtlas.strings"; sourceTree = "<group>"; };
     C43080000000000000000012 /* PublicNewsArticleRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticleRetryPolicy.swift; sourceTree = "<group>"; };
     C43080000000000000000022 /* PublicNewsArticleRetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticleRetryTests.swift; sourceTree = "<group>"; };
     C43070000000000000000012 /* PublicNewsBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBudget.swift; sourceTree = "<group>"; };
@@ -2860,6 +2881,15 @@
     A40000000000000000000002 /* GalaxySSI */ = {
       isa = PBXGroup;
       children = (
+        919373B1F2EC81778D6C1518 /* GalaxySSIHealthAtlas.swift */,
+        37C60A63B797B0A797C0B802 /* GalaxySSIHealthAtlasAgentHandoff.swift */,
+        77250658843A3AAD50E9681B /* GalaxySSIHealthAtlasArtwork.swift */,
+        94A44D7D7AAABC6353A3E171 /* GalaxySSIHealthAtlasDetail.swift */,
+        41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */,
+        2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */,
+        490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */,
+        B85158A6D23086CFED45AC26 /* body-atlas */,
+        42B68EDFC3BE81F4555E8974 /* BodyAtlas.strings */,
         F22666000000000000000001 /* AgentInteractiveProgress.swift */,
         F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */,
         F22680000000000000000001 /* AgentDirectVisionPolicy.swift */,
@@ -3939,6 +3969,7 @@
     A40000000000000000000003 /* GalaxySSITests */ = {
       isa = PBXGroup;
       children = (
+        A8967AB28E2E61CC057AEBD3 /* GalaxySSIHealthAtlasTests.swift */,
         D22979000000000000000002 /* AgentActionEffectExecutorTests.swift */,
         D22980100000000000000001 /* AgentRuntimeTimingTests.swift */,
         D22981000000000000000002 /* AgentImagePipelineTests.swift */,
@@ -4297,6 +4328,7 @@
 /* End PBXGroup section */
 
 /* Begin PBXVariantGroup section */
+    42B68EDFC3BE81F4555E8974 /* BodyAtlas.strings */ = {isa = PBXVariantGroup; children = (EB1C928817FD0B78C0D6F86C /* en */, B8A1B2B5E765E6F693FE6E5D /* zh-Hans */,); name = BodyAtlas.strings; sourceTree = "<group>"; };
     C43040000000000000000062 /* InfoPlist.strings */ = {isa = PBXVariantGroup; children = (C43040000000000000000064 /* zh-Hans */,); name = InfoPlist.strings; sourceTree = "<group>"; };
     A41000000000000000000890 /* Localizable.strings */ = {
       isa = PBXVariantGroup;
@@ -4391,7 +4423,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (E36400000000000000000003 /* vad in Resources */, A10000000000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F35620000000000000000001 /* browser-session-engine.cjs in Resources */, F35620000000000000000002 /* browser-runtime-readiness.cjs in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, C43040000000000000000061 /* InfoPlist.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */, E3699C000000000000000003 /* research-quality.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (40A8F2E0933DD60C3E202D5C /* body-atlas in Resources */, 7E9C74C29FE3236437B57ACB /* BodyAtlas.strings in Resources */, E36400000000000000000003 /* vad in Resources */, A10000000000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F35620000000000000000001 /* browser-session-engine.cjs in Resources */, F35620000000000000000002 /* browser-runtime-readiness.cjs in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, C43040000000000000000061 /* InfoPlist.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */, E3699C000000000000000003 /* research-quality.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (E3699C000000000000000005 /* quality-cases.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
@@ -4425,6 +4457,13 @@
       isa = PBXSourcesBuildPhase;
       buildActionMask = 2147483647;
       files = (
+        8332FF366E1CB020728E3B49 /* GalaxySSIHealthAtlas.swift in Sources */,
+        8D35CFD559C1355DCB35BDED /* GalaxySSIHealthAtlasAgentHandoff.swift in Sources */,
+        1E81F8D329E13C8B46E1D204 /* GalaxySSIHealthAtlasArtwork.swift in Sources */,
+        56668657960EE8B00531B479 /* GalaxySSIHealthAtlasDetail.swift in Sources */,
+        3A27D153792D057E63607118 /* GalaxySSIHealthAtlasResearch.swift in Sources */,
+        11A6C0253F091CDA9CEA0803 /* GalaxySSIHealthAtlasSimulationPanel.swift in Sources */,
+        F81EA90A113A7DE2667956C6 /* GalaxySSIHealthAtlasState.swift in Sources */,
         F12666000000000000000001 /* AgentInteractiveProgress.swift in Sources */,
         F12666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift in Sources */,
         A1000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift in Sources */,
@@ -5490,6 +5529,7 @@
       isa = PBXSourcesBuildPhase;
       buildActionMask = 2147483647;
       files = (
+        1AA5A2AD38BCAE4FA01FE49A /* GalaxySSIHealthAtlasTests.swift in Sources */,
         D12979000000000000000002 /* AgentActionEffectExecutorTests.swift in Sources */,
         D12980100000000000000001 /* AgentRuntimeTimingTests.swift in Sources */,
         D12981000000000000000002 /* AgentImagePipelineTests.swift in Sources */,
