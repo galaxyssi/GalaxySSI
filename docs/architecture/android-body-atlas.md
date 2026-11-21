@@ -195,6 +195,13 @@ multi-panel sensory, immune, and endocrine overviews, callouts use separately
 measured left and right rails. Leader detours stay in the half of the image
 that contains their target, and labels retain their native touch targets.
 
+The cochlear inner hair cell, rod photoreceptor, and cone photoreceptor
+use separate painted 2:3 plates. Their existing explanatory stages
+highlight the selected cell region on the portrait without representing
+measured kinetics. The hair-cell view distinguishes its afferent contact
+from the receptor itself; the rod and cone retain their distinct terminal
+callouts. The rod photon model remains independent of the stage player.
+
 ## Alimentary Canal Sections
 
 Fourteen digestive entries now have their own source-linked diagrams, from

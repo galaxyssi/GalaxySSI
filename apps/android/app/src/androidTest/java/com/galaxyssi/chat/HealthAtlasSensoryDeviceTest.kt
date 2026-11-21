@@ -7,6 +7,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Rect
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
@@ -194,6 +195,49 @@ class HealthAtlasSensoryDeviceTest {
             it.onBackPressed()
             it.open("cell-cone-photoreceptor"); it.view("atlas-tab-3").performClick()
             assertNull(it.window.decorView.tagged("atlas-physiology-photon-mean"))
+        }
+    }
+
+    @Test fun paintedCellStagesUseTheirOwnPortraitAndHighlightTheirOutputs() = native { scenario ->
+        val outputs = mapOf(
+            "cell-inner-ear-hair-cell" to "hair-afferent-contact",
+            "cell-rod-photoreceptor" to "rod-spherule",
+            "cell-cone-photoreceptor" to "cone-pedicle",
+        )
+        for ((id, output) in outputs) {
+            scenario.onActivity { activity ->
+                activity.open(id)
+                activity.view("atlas-tab-3").performClick()
+            }
+            instrumentation.waitForIdleSync()
+            var title = ""
+            scenario.onActivity { activity ->
+                val atlas = HealthBodyAtlas.load(activity)
+                val item = requireNotNull(atlas[id])
+                title = item.name
+                val section = activity.view("atlas-section-diagram") as HealthAtlasSectionLessonView
+                val lesson = section.lesson
+                val art = requireNotNull(activity.getDrawable(lesson.plate.drawable))
+                assertEquals(lesson.artWidth * 3, lesson.artHeight * 2)
+                assertEquals(art.intrinsicWidth * 3, art.intrinsicHeight * 2)
+                assertEquals(id, lesson.owner)
+                fun frame() = Bitmap.createBitmap(section.width, section.height, Bitmap.Config.ARGB_8888).also {
+                    section.draw(Canvas(it))
+                }
+                val before = frame()
+                try {
+                    activity.view("atlas-process-stage-3").performClick()
+                    assertEquals(3, section.stage)
+                    assertEquals(output, lesson.plate.features[lesson.stageFeatures[section.stage]].marker.id)
+                    assertTrue(section.contentDescription.contains(atlas.mechanism(item).stages[3]))
+                    val after = frame()
+                    try { assertFalse("$id stage highlight did not repaint", before.sameAs(after)) }
+                    finally { after.recycle() }
+                } finally { before.recycle() }
+                section.requestRectangleOnScreen(Rect(0, 0, section.width, section.height), true)
+            }
+            capture("painted-stage-$id", title)
+            scenario.onActivity { it.onBackPressed() }
         }
     }
 }

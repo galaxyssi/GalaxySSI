@@ -27,7 +27,7 @@ internal class HealthAtlasSectionLessonView(context: Context, val lesson: Health
 
     init {
         tag = "atlas-section-diagram"
-        art.setBounds(0, 0, lesson.artWidth, 280)
+        art.setBounds(0, 0, lesson.artWidth, lesson.artHeight)
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         describe()
     }
@@ -39,19 +39,20 @@ internal class HealthAtlasSectionLessonView(context: Context, val lesson: Health
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val available = MeasureSpec.getSize(widthMeasureSpec)
-        val maximum = (226 * resources.displayMetrics.density).toInt()
-        setMeasuredDimension(available, resolveSize((available * (280f / lesson.artWidth)).toInt().coerceAtMost(maximum), heightMeasureSpec))
+        val maximum = ((if (lesson.artHeight > lesson.artWidth) 280 else 226) * resources.displayMetrics.density).toInt()
+        val desired = (available * (lesson.artHeight.toFloat() / lesson.artWidth)).toInt().coerceAtMost(maximum)
+        setMeasuredDimension(available, resolveSize(desired, heightMeasureSpec))
     }
 
     override fun onDraw(canvas: Canvas) {
-        val scale = minOf(width / lesson.artWidth.toFloat(), height / 280f)
+        val scale = minOf(width / lesson.artWidth.toFloat(), height / lesson.artHeight.toFloat())
         canvas.save()
-        canvas.translate((width - lesson.artWidth * scale) / 2, (height - 280 * scale) / 2)
+        canvas.translate((width - lesson.artWidth * scale) / 2, (height - lesson.artHeight * scale) / 2)
         canvas.scale(scale, scale)
         art.draw(canvas)
         val marker = lesson.plate.features[lesson.stageFeatures[stage]].marker
         val x = marker.x * lesson.artWidth
-        val y = marker.y * 280f
+        val y = marker.y * lesson.artHeight
         val fraction = (phase * 4f - stage).coerceIn(0f, 1f)
         paint.style = Paint.Style.STROKE
         paint.color = 0xfff9fcf9.toInt()

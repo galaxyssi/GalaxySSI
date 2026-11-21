@@ -2,7 +2,9 @@ package com.galaxyssi.chat
 
 internal object HealthAtlasSensoryPlates {
     private fun feature(id: String, x: Int, y: Int, title: Int, explanation: Int) =
-        HealthAtlasFeature(HealthAtlasMarker(id, x / 360f, y / 280f), title, explanation)
+        feature(id, x / 360f, y / 280f, title, explanation)
+    private fun feature(id: String, x: Float, y: Float, title: Int, explanation: Int) =
+        HealthAtlasFeature(HealthAtlasMarker(id, x, y), title, explanation)
     private fun plate(id: String, art: Int, source: String, caption: Int, vararg features: HealthAtlasFeature,
         markers: List<HealthAtlasMarker> = emptyList(), viewKey: String? = null, selector: Int? = null) =
         HealthAtlasPlate(art, id, caption, markers, source, viewKey, selector, features.toList())
@@ -31,13 +33,13 @@ internal object HealthAtlasSensoryPlates {
         plate("cell-rod-photoreceptor", R.drawable.health_atlas_sensory_rod,
             "https://www.ncbi.nlm.nih.gov/books/NBK10885/",
             R.string.health_atlas_cell_morphology,
-            feature("rod-discs", 180, 79, R.string.health_atlas_sensory_rod_discs, R.string.health_atlas_sensory_rod_discs_detail),
-            feature("rod-spherule", 180, 229, R.string.health_atlas_sensory_rod_spherule, R.string.health_atlas_sensory_rod_spherule_detail)),
+            feature("rod-discs", .492f, .255f, R.string.health_atlas_sensory_rod_discs, R.string.health_atlas_sensory_rod_discs_detail),
+            feature("rod-spherule", .498f, .957f, R.string.health_atlas_sensory_rod_spherule, R.string.health_atlas_sensory_rod_spherule_detail)),
         plate("cell-cone-photoreceptor", R.drawable.health_atlas_sensory_cone,
             "https://www.ncbi.nlm.nih.gov/books/NBK10885/",
             R.string.health_atlas_cell_morphology,
-            feature("cone-outer-segment", 180, 83, R.string.health_atlas_sensory_cone_outer_segment, R.string.health_atlas_sensory_cone_outer_segment_detail),
-            feature("cone-pedicle", 180, 225, R.string.health_atlas_sensory_cone_pedicle, R.string.health_atlas_sensory_cone_pedicle_detail)),
+            feature("cone-outer-segment", .517f, .197f, R.string.health_atlas_sensory_cone_outer_segment, R.string.health_atlas_sensory_cone_outer_segment_detail),
+            feature("cone-pedicle", .520f, .955f, R.string.health_atlas_sensory_cone_pedicle, R.string.health_atlas_sensory_cone_pedicle_detail)),
         plate("cell-retinal-pigment-epithelial-cell", R.drawable.health_atlas_sensory_rpe,
             "https://pubmed.ncbi.nlm.nih.gov/15987797/",
             R.string.health_atlas_cell_morphology,
@@ -51,8 +53,8 @@ internal object HealthAtlasSensoryPlates {
         plate("cell-inner-ear-hair-cell", R.drawable.health_atlas_sensory_cochlear_hair,
             "https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception",
             R.string.health_atlas_sensory_inner_hair_view,
-            feature("hair-bundle", 186, 70, R.string.health_atlas_sensory_hair_bundle, R.string.health_atlas_sensory_hair_bundle_detail),
-            feature("hair-afferent-contact", 177, 207, R.string.health_atlas_sensory_hair_afferent_contact, R.string.health_atlas_sensory_hair_afferent_contact_detail)),
+            feature("hair-bundle", .542f, .219f, R.string.health_atlas_sensory_hair_bundle, R.string.health_atlas_sensory_hair_bundle_detail),
+            feature("hair-afferent-contact", .517f, .825f, R.string.health_atlas_sensory_hair_afferent_contact, R.string.health_atlas_sensory_hair_afferent_contact_detail)),
         plate("cell-olfactory-receptor-neuron", R.drawable.health_atlas_sensory_olfactory,
             "https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception",
             R.string.health_atlas_cell_morphology,
