@@ -31,7 +31,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(model.title, language))).font(.headline)
       Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
       LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-        ForEach(0..<4) { stage in
+        ForEach([0, 1, 3, 2], id: \.self) { stage in
           Button { playing = false; simulation.selectStage(stage) } label: {
             VStack(spacing: 8) {
               Text("\(stage + 1)").font(.headline).frame(width: 32, height: 32)
@@ -39,8 +39,10 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
               Text(GalaxySSIHealthAtlasText.get(model.stages[stage], language)).font(.caption)
                 .fixedSize(horizontal: false, vertical: true)
             }.frame(maxWidth: .infinity, minHeight: 44).padding(8)
-          }.accessibilityLabel(GalaxySSIHealthAtlasText.get(model.stages[stage], language))
+          }.accessibilityLabel(String(format: t("stage"), Int64(stage + 1), Int64(4),
+            GalaxySSIHealthAtlasText.get(model.stages[stage], language)))
             .accessibilityAddTraits(stage == simulation.stage ? .isSelected : [])
+            .accessibilitySortPriority(Double(4 - stage))
             .accessibilityIdentifier("health-atlas-stage-" + entry.id + "-" + String(stage))
         }
       }
