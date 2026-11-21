@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cardiac_title">心脏电信号如何带动心肌收缩</string>
+    <string name="health_atlas_cardiac_choice">电信号传导</string>
+    <string name="health_atlas_cardiac_scope">正常心脏传导和心室肌细胞的简化示意。路径、时间和缩短幅度不按比例，不代表心电图或个人测量值。</string>
+    <string name="health_atlas_cardiac_pace">窦房结启动一次心跳</string>
+    <string name="health_atlas_cardiac_pace_caption">专门的起搏细胞发出电信号。信号传遍心房，带动心房收缩。</string>
+    <string name="health_atlas_cardiac_delay">房室结放慢信号传递</string>
+    <string name="health_atlas_cardiac_delay_caption">信号通过房室结时用时较长，让心房可以先于心室收缩。</string>
+    <string name="health_atlas_cardiac_spread">信号传入两侧心室</string>
+    <string name="health_atlas_cardiac_spread_caption">电信号沿房室束和束支传递，再经浦肯野纤维快速传遍两侧心室。</string>
+    <string name="health_atlas_cardiac_shorten">钙帮助心肌细胞收缩</string>
+    <string name="health_atlas_cardiac_shorten_caption">心室肌细胞受到电信号后，少量钙流入细胞，促使细胞内储存的钙释放。钙使收缩肌丝能够相互滑动。</string>
+    <string name="health_atlas_cardiac_relax">胞质中的钙减少，心肌舒张</string>
+    <string name="health_atlas_cardiac_relax_caption">钙被送回细胞内的储存位置，或排出细胞。随着胞质中的钙减少，收缩肌丝松弛，心肌可以重新伸长。</string>
+    <string name="health_atlas_cardiac_sa_label">窦房结</string>
+    <string name="health_atlas_cardiac_av_label">房室结</string>
+    <string name="health_atlas_cardiac_network_label">浦肯野纤维</string>
+    <string name="health_atlas_cardiac_cell_label">心室肌细胞</string>
+    <string name="health_atlas_cardiac_filaments_label">收缩肌丝</string>
+    <string name="health_atlas_cardiac_calcium_label">钙</string>
+    <string name="health_atlas_cardiac_ref_conduction">研究依据：测量人心脏各部位的兴奋传导</string>
+    <string name="health_atlas_cardiac_ref_cell">研究依据：人心室肌细胞模型中的钙释放与收缩</string>
+</resources>

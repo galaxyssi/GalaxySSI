@@ -28,6 +28,139 @@ class HealthAtlasFunctionStoryDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
+    @Test fun everyAnimationIsReachableFromTheBundledCatalogue() {
+        val atlas = HealthBodyAtlas.load(context)
+        val reached = linkedSetOf<HealthAtlasFunctionStory>()
+        for (item in atlas.items) {
+            val choices = HealthAtlasFunctionStory.choicesForId(item.id)
+            assertEquals(item.id, choices.distinct(), choices)
+            for (story in choices) {
+                reached += story
+                assertTrue(item.id, story.entryPhase(item.id) in 0f..1f)
+                for ((target, next) in story.relatedLessons) {
+                    assertNotNull(target, atlas[target])
+                    assertTrue(target, next in HealthAtlasFunctionStory.choicesForId(target))
+                }
+            }
+        }
+        assertEquals(HealthAtlasFunctionStory.entries.toSet(), reached)
+    }
+
+    @Test fun openingAFocusedCellStartsAtItsChapterButReopeningKeepsTheUsersPlace() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    openCell(activity, "cell-type-i-pneumocyte")
+                    activity.find<View>("atlas-function-breathing-art")
+                    assertEquals(activity.getString(R.string.health_atlas_breathe_diffuse_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-function-previous").performClick()
+                    activity.find<View>("atlas-function-previous").performClick()
+                    activity.onBackPressed()
+                    openCell(activity, "cell-type-i-pneumocyte")
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.onBackPressed()
+                    openCell(activity, "cell-proximal-tubular-cell")
+                    assertEquals(activity.getString(R.string.health_atlas_nephron_story_prox_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
+    @Test fun kneeAnimationKeepsAnatomyAndPatellaPlaybackSeparate() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-tab-2").performClick()
+                    activity.find<EditText>("atlas-search").setText("quadriceps-femoris")
+                    activity.find<View>("atlas-entry-quadriceps-femoris").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-knee-articulation-art")
+                    repeat(2) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_knee_glide_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    assertNull(activity.window.decorView.findViewWithTag<View>("atlas-function-player"))
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.4f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.onBackPressed()
+                    activity.find<EditText>("atlas-search").setText("patella")
+                    activity.find<View>("atlas-entry-patella").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-cartilage-load-art")
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    activity.find<View>("atlas-function-knee-articulation-art")
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
+    @Test fun cardiomyocyteAndHeartOfferElectricalPlaybackWithoutReplacingThePump() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-hotspot-heart").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-heartbeat-art")
+                    activity.find<View>("atlas-function-next").performClick()
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    activity.find<View>("atlas-function-cardiac-excitation-art")
+                    repeat(3) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_cardiac_shorten_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-function-lesson-0").performClick()
+                    assertEquals(.2f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.onBackPressed()
+                    openCell(activity, "cell-cardiomyocyte")
+                    activity.find<View>("atlas-function-cardiac-excitation-art")
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
+    @Test fun bladderStartsWithStorageAndLinksBackToTheIndependentNephronLesson() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-tab-2").performClick()
+                    activity.find<EditText>("atlas-search").setText("bladder")
+                    activity.find<View>("atlas-entry-bladder").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-urine-route-art")
+                    assertEquals(activity.getString(R.string.health_atlas_urine_route_story_store_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-function-previous").performClick()
+                    activity.find<View>("atlas-related-lesson-nephron").performClick()
+                    assertEquals(HealthAtlasFunctionStory.NEPHRON,
+                        activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").story)
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.onBackPressed()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.4f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
     @Test fun allLessonsAnimateWithinEveryChapterAtPhoneAndTabletWidths() {
         for (locale in listOf(Locale.ENGLISH, Locale.SIMPLIFIED_CHINESE)) {
             val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })

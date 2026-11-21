@@ -32,7 +32,7 @@ internal enum class HealthAtlasFunctionStory(
     HEARTBEAT(
         setOf("heart", "cardio", "atria", "ventricles", "heart-valves", "left-atrium", "right-atrium",
             "left-ventricle", "right-ventricle", "tricuspid-valve", "mitral-valve", "pulmonary-valve", "aortic-valve",
-            "tissue-cardiac-muscle"),
+            "tissue-cardiac-muscle", "aorta", "pulmonary-trunk"),
         R.string.health_atlas_beat_title,
         R.string.health_atlas_beat_scope,
         HealthAtlasBeatStage.entries.map { it.title to it.caption },
@@ -44,7 +44,7 @@ internal enum class HealthAtlasFunctionStory(
     ),
     BREATHING(
         setOf("respiratory", "trachea", "bronchi", "bronchioles", "lungs", "diaphragm",
-            "alveoli", "respiratory-membrane", "pulmonary-capillaries", "tissue-alveolar-epithelium"),
+            "alveoli", "respiratory-membrane", "pulmonary-capillaries", "tissue-alveolar-epithelium", "cell-type-i-pneumocyte"),
         R.string.health_atlas_breathe_title,
         R.string.health_atlas_breathe_scope,
         HealthAtlasBreathingStage.entries.map { it.title to it.caption },
@@ -93,7 +93,8 @@ internal enum class HealthAtlasFunctionStory(
     ),
     NEPHRON(
         setOf("urinary", "kidneys", "nephron", "glomerulus", "bowmans-capsule", "renal-tubules",
-            "proximal-tubule", "nephron-loop", "distal-tubule", "collecting-ducts", "tissue-renal-tubular-epithelium"),
+            "proximal-tubule", "nephron-loop", "distal-tubule", "collecting-ducts", "tissue-renal-tubular-epithelium",
+            "renal-cortex", "renal-medulla", "cell-proximal-tubular-cell", "cell-collecting-duct-principal-cell"),
         R.string.health_atlas_nephron_story_title,
         R.string.health_atlas_nephron_story_scope,
         HealthAtlasNephronStage.entries.map { it.title to it.caption },
@@ -674,6 +675,226 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    KNEE_ARTICULATION(
+        setOf("joints", "femur", "tibia", "quadriceps-femoris", "hamstrings"),
+        R.string.health_atlas_knee_title,
+        R.string.health_atlas_knee_scope,
+        listOf(
+            R.string.health_atlas_knee_map to R.string.health_atlas_knee_map_caption,
+            R.string.health_atlas_knee_bend to R.string.health_atlas_knee_bend_caption,
+            R.string.health_atlas_knee_glide to R.string.health_atlas_knee_glide_caption,
+            R.string.health_atlas_knee_extend to R.string.health_atlas_knee_extend_caption,
+            R.string.health_atlas_knee_return to R.string.health_atlas_knee_return_caption,
+        ),
+        listOf(
+            R.string.health_atlas_knee_ref_imaging to "https://pubmed.ncbi.nlm.nih.gov/23806309/",
+            R.string.health_atlas_knee_ref_pull to "https://pubmed.ncbi.nlm.nih.gov/10619099/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    CARDIAC_EXCITATION(
+        setOf("cell-cardiomyocyte"),
+        R.string.health_atlas_cardiac_title,
+        R.string.health_atlas_cardiac_scope,
+        listOf(
+            R.string.health_atlas_cardiac_pace to R.string.health_atlas_cardiac_pace_caption,
+            R.string.health_atlas_cardiac_delay to R.string.health_atlas_cardiac_delay_caption,
+            R.string.health_atlas_cardiac_spread to R.string.health_atlas_cardiac_spread_caption,
+            R.string.health_atlas_cardiac_shorten to R.string.health_atlas_cardiac_shorten_caption,
+            R.string.health_atlas_cardiac_relax to R.string.health_atlas_cardiac_relax_caption,
+        ),
+        listOf(
+            R.string.health_atlas_cardiac_ref_conduction to "https://pubmed.ncbi.nlm.nih.gov/5482907/",
+            R.string.health_atlas_cardiac_ref_cell to "https://pubmed.ncbi.nlm.nih.gov/26200878/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    RED_CELL_OXYGEN(
+        setOf("blood", "cell-erythrocyte"),
+        R.string.health_atlas_red_cell_story_title,
+        R.string.health_atlas_red_cell_story_scope,
+        listOf(
+            R.string.health_atlas_red_cell_story_cell to
+                R.string.health_atlas_red_cell_story_cell_caption,
+            R.string.health_atlas_red_cell_story_loading to
+                R.string.health_atlas_red_cell_story_loading_caption,
+            R.string.health_atlas_red_cell_story_transport to
+                R.string.health_atlas_red_cell_story_transport_caption,
+            R.string.health_atlas_red_cell_story_release to
+                R.string.health_atlas_red_cell_story_release_caption,
+            R.string.health_atlas_red_cell_story_diffusion to
+                R.string.health_atlas_red_cell_story_diffusion_caption,
+        ),
+        listOf(
+            R.string.health_atlas_red_cell_story_ref_binding to "https://doi.org/10.1016/S0021-9258(18)85018-9",
+            R.string.health_atlas_red_cell_story_ref_microcirculation to "https://pubmed.ncbi.nlm.nih.gov/32445225/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    SALIVA_SECRETION(
+        setOf("parotid-glands", "submandibular-glands", "sublingual-glands", "cell-salivary-acinar-cell"),
+        R.string.health_atlas_saliva_story_title,
+        R.string.health_atlas_saliva_story_scope,
+        listOf(
+            R.string.health_atlas_saliva_story_locate to
+                R.string.health_atlas_saliva_story_locate_caption,
+            R.string.health_atlas_saliva_story_acinus to
+                R.string.health_atlas_saliva_story_acinus_caption,
+            R.string.health_atlas_saliva_story_release to
+                R.string.health_atlas_saliva_story_release_caption,
+            R.string.health_atlas_saliva_story_modify to
+                R.string.health_atlas_saliva_story_modify_caption,
+            R.string.health_atlas_saliva_story_empty to
+                R.string.health_atlas_saliva_story_empty_caption,
+        ),
+        listOf(
+            R.string.health_atlas_saliva_story_ref_duct to "https://link.springer.com/article/10.1007/BF00362655",
+            R.string.health_atlas_saliva_story_ref_human to "https://pmc.ncbi.nlm.nih.gov/articles/PMC1357582/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    VENOUS_RETURN(
+        setOf("veins", "gastrocnemius", "soleus"),
+        R.string.health_atlas_venous_return_story_title,
+        R.string.health_atlas_venous_return_story_scope,
+        listOf(
+            R.string.health_atlas_venous_return_story_locate to
+                R.string.health_atlas_venous_return_story_locate_caption,
+            R.string.health_atlas_venous_return_story_squeeze to
+                R.string.health_atlas_venous_return_story_squeeze_caption,
+            R.string.health_atlas_venous_return_story_propel to
+                R.string.health_atlas_venous_return_story_propel_caption,
+            R.string.health_atlas_venous_return_story_limit to
+                R.string.health_atlas_venous_return_story_limit_caption,
+            R.string.health_atlas_venous_return_story_refill to
+                R.string.health_atlas_venous_return_story_refill_caption,
+        ),
+        listOf(
+            R.string.health_atlas_venous_return_story_ref_pump to "https://pubmed.ncbi.nlm.nih.gov/23455014/",
+            R.string.health_atlas_venous_return_story_ref_valves to "https://pubmed.ncbi.nlm.nih.gov/14603200/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    HAIR_FOLLICLE_CYCLE(
+        setOf("hair", "hair-follicles", "cell-hair-matrix-cell"),
+        R.string.health_atlas_hair_cycle_story_title,
+        R.string.health_atlas_hair_cycle_story_scope,
+        listOf(
+            R.string.health_atlas_hair_cycle_story_matrix to
+                R.string.health_atlas_hair_cycle_story_matrix_caption,
+            R.string.health_atlas_hair_cycle_story_growth to
+                R.string.health_atlas_hair_cycle_story_growth_caption,
+            R.string.health_atlas_hair_cycle_story_regression to
+                R.string.health_atlas_hair_cycle_story_regression_caption,
+            R.string.health_atlas_hair_cycle_story_rest to
+                R.string.health_atlas_hair_cycle_story_rest_caption,
+            R.string.health_atlas_hair_cycle_story_renewal to
+                R.string.health_atlas_hair_cycle_story_renewal_caption,
+        ),
+        listOf(
+            R.string.health_atlas_hair_cycle_story_reference_regression to "https://pubmed.ncbi.nlm.nih.gov/9856801/",
+            R.string.health_atlas_hair_cycle_story_reference_shedding to "https://pubmed.ncbi.nlm.nih.gov/17908196/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    URINE_ROUTE(
+        setOf("renal-pelvis", "ureters", "bladder", "urethra"),
+        R.string.health_atlas_urine_route_story_title,
+        R.string.health_atlas_urine_route_story_scope,
+        listOf(
+            R.string.health_atlas_urine_route_story_collect to
+                R.string.health_atlas_urine_route_story_collect_caption,
+            R.string.health_atlas_urine_route_story_peristalsis to
+                R.string.health_atlas_urine_route_story_peristalsis_caption,
+            R.string.health_atlas_urine_route_story_junction to
+                R.string.health_atlas_urine_route_story_junction_caption,
+            R.string.health_atlas_urine_route_story_store to
+                R.string.health_atlas_urine_route_story_store_caption,
+            R.string.health_atlas_urine_route_story_empty to
+                R.string.health_atlas_urine_route_story_empty_caption,
+        ),
+        listOf(
+            R.string.health_atlas_urine_route_story_ref_junction to "https://pure.amsterdamumc.nl/en/publications/functional-anatomy-of-the-human-ureterovesical-junction/",
+            R.string.health_atlas_urine_route_story_ref_emptying to "https://pubmed.ncbi.nlm.nih.gov/40899193/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    PLEURAL_COUPLING(
+        setOf("pleura"),
+        R.string.health_atlas_pleura_story_title,
+        R.string.health_atlas_pleura_story_scope,
+        listOf(
+            R.string.health_atlas_pleura_story_layers to
+                R.string.health_atlas_pleura_story_layers_caption,
+            R.string.health_atlas_pleura_story_expand to
+                R.string.health_atlas_pleura_story_expand_caption,
+            R.string.health_atlas_pleura_story_follow to
+                R.string.health_atlas_pleura_story_follow_caption,
+            R.string.health_atlas_pleura_story_slide to
+                R.string.health_atlas_pleura_story_slide_caption,
+            R.string.health_atlas_pleura_story_return to
+                R.string.health_atlas_pleura_story_return_caption,
+        ),
+        listOf(
+            R.string.health_atlas_pleura_story_ref_sliding to "https://pubmed.ncbi.nlm.nih.gov/15351304/",
+            R.string.health_atlas_pleura_story_ref_motion to "https://pmc.ncbi.nlm.nih.gov/articles/PMC9785439/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    PARATHYROID_FEEDBACK(
+        setOf("parathyroid-glands", "cell-parathyroid-chief-cell"),
+        R.string.health_atlas_calcium_feedback_story_title,
+        R.string.health_atlas_calcium_feedback_story_scope,
+        listOf(
+            R.string.health_atlas_calcium_feedback_story_sense to
+                R.string.health_atlas_calcium_feedback_story_sense_caption,
+            R.string.health_atlas_calcium_feedback_story_release to
+                R.string.health_atlas_calcium_feedback_story_release_caption,
+            R.string.health_atlas_calcium_feedback_story_kidney to
+                R.string.health_atlas_calcium_feedback_story_kidney_caption,
+            R.string.health_atlas_calcium_feedback_story_intestine to
+                R.string.health_atlas_calcium_feedback_story_intestine_caption,
+            R.string.health_atlas_calcium_feedback_story_recover to
+                R.string.health_atlas_calcium_feedback_story_recover_caption,
+        ),
+        listOf(
+            R.string.health_atlas_calcium_feedback_story_ref_sensing to "https://pubmed.ncbi.nlm.nih.gov/7759551/",
+            R.string.health_atlas_calcium_feedback_story_ref_vitamin_d to "https://pubmed.ncbi.nlm.nih.gov/4340153/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    MAMMARY_MILK_FLOW(
+        setOf("mammary-glands", "cell-mammary-luminal-cell", "cell-myoepithelial-cell"),
+        R.string.health_atlas_mammary_story_title,
+        R.string.health_atlas_mammary_story_scope,
+        listOf(
+            R.string.health_atlas_mammary_story_locate to
+                R.string.health_atlas_mammary_story_locate_caption,
+            R.string.health_atlas_mammary_story_secrete to
+                R.string.health_atlas_mammary_story_secrete_caption,
+            R.string.health_atlas_mammary_story_accumulate to
+                R.string.health_atlas_mammary_story_accumulate_caption,
+            R.string.health_atlas_mammary_story_contract to
+                R.string.health_atlas_mammary_story_contract_caption,
+            R.string.health_atlas_mammary_story_eject to
+                R.string.health_atlas_mammary_story_eject_caption,
+        ),
+        listOf(
+            R.string.health_atlas_mammary_story_ref_secretion to "https://pubmed.ncbi.nlm.nih.gov/28179456/",
+            R.string.health_atlas_mammary_story_ref_ejection to "https://pmc.ncbi.nlm.nih.gov/articles/PMC7604439/",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -706,6 +927,13 @@ internal enum class HealthAtlasFunctionStory(
         TENDON_FORCE_TRANSFER -> R.string.health_atlas_tendon_story_choice
         ALVEOLAR_SURFACTANT -> R.string.health_atlas_surfactant_choice
         INTESTINAL_ABSORPTION -> R.string.health_atlas_absorption_story_choice
+        KNEE_ARTICULATION -> R.string.health_atlas_knee_choice
+        CARDIAC_EXCITATION -> R.string.health_atlas_cardiac_choice
+        RED_CELL_OXYGEN -> R.string.health_atlas_red_cell_story_choice
+        SALIVA_SECRETION -> R.string.health_atlas_saliva_story_choice
+        VENOUS_RETURN -> R.string.health_atlas_venous_return_story_choice
+        PLEURAL_COUPLING -> R.string.health_atlas_pleura_story_choice
+        PARATHYROID_FEEDBACK -> R.string.health_atlas_calcium_feedback_story_choice
         else -> title
     }
 
@@ -732,12 +960,47 @@ internal enum class HealthAtlasFunctionStory(
         TENDON_FORCE_TRANSFER -> listOf("biceps-brachii" to MUSCLE_MOTION)
         ALVEOLAR_SURFACTANT -> listOf("alveoli" to BREATHING)
         INTESTINAL_ABSORPTION -> listOf("lymphatic-vessels" to LYMPH_RETURN)
+        KNEE_ARTICULATION -> listOf("patella" to CARTILAGE_LOAD, "tissue-dense-regular-connective" to TENDON_FORCE_TRANSFER)
+        CARDIAC_EXCITATION -> listOf("heart" to HEARTBEAT)
+        RED_CELL_OXYGEN -> listOf("pulmonary-capillaries" to BREATHING)
+        SALIVA_SECRETION -> listOf("oral-cavity" to DIGESTION)
+        VENOUS_RETURN -> listOf("heart" to HEARTBEAT)
+        NEPHRON -> listOf("renal-pelvis" to URINE_ROUTE)
+        URINE_ROUTE -> listOf("nephron" to NEPHRON)
+        PLEURAL_COUPLING -> listOf("lungs" to BREATHING)
+        PARATHYROID_FEEDBACK -> listOf("renal-cortex" to NEPHRON, "small-intestine" to INTESTINAL_ABSORPTION)
+        THYROID_FEEDBACK -> listOf("parathyroid-glands" to PARATHYROID_FEEDBACK)
         else -> emptyList()
     }
 
     fun chapter(value: Float) = (safePhase(value) * chapters.size).toInt().coerceAtMost(chapters.lastIndex)
     fun fraction(value: Float) = (safePhase(value) * chapters.size - chapter(value)).coerceIn(0f, 1f)
     fun startOf(chapter: Int) = chapter.coerceIn(chapters.indices) / chapters.size.toFloat()
+
+    fun entryPhase(id: String): Float = startOf(when (this) {
+        HEARTBEAT -> if (id == "aorta" || id == "pulmonary-trunk") HealthAtlasBeatStage.EJECTION.ordinal else 0
+        BREATHING -> if (id == "cell-type-i-pneumocyte") HealthAtlasBreathingStage.DIFFUSE.ordinal else 0
+        SALIVA_SECRETION -> if (id == "cell-salivary-acinar-cell") 1 else 0
+        NEPHRON -> when (id) {
+            "cell-proximal-tubular-cell" -> HealthAtlasNephronStage.PROXIMAL.ordinal
+            "renal-medulla" -> HealthAtlasNephronStage.LOOP.ordinal
+            "cell-collecting-duct-principal-cell" -> HealthAtlasNephronStage.COLLECT.ordinal
+            else -> 0
+        }
+        URINE_ROUTE -> when (id) {
+            "ureters" -> 1
+            "bladder" -> 3
+            "urethra" -> 4
+            else -> 0
+        }
+        MAMMARY_MILK_FLOW -> when (id) {
+            "cell-mammary-luminal-cell" -> 1
+            "cell-myoepithelial-cell" -> 3
+            else -> 0
+        }
+        else -> 0
+    })
+
     fun createArt(context: Context): HealthAtlasFunctionArt = when (this) {
         GLUCOSE -> HealthAtlasUptakeView(context)
         HEARTBEAT -> HealthAtlasHeartbeatView(context)
@@ -764,6 +1027,16 @@ internal enum class HealthAtlasFunctionStory(
         TENDON_FORCE_TRANSFER -> HealthAtlasTendonStoryView(context)
         ALVEOLAR_SURFACTANT -> HealthAtlasSurfactantStoryView(context)
         INTESTINAL_ABSORPTION -> HealthAtlasIntestinalAbsorptionStoryView(context)
+        KNEE_ARTICULATION -> HealthAtlasKneeStoryView(context)
+        CARDIAC_EXCITATION -> HealthAtlasCardiacSignalStoryView(context)
+        RED_CELL_OXYGEN -> HealthAtlasRedCellStoryView(context)
+        SALIVA_SECRETION -> HealthAtlasSalivaStoryView(context)
+        VENOUS_RETURN -> HealthAtlasVenousReturnStoryView(context)
+        HAIR_FOLLICLE_CYCLE -> HealthAtlasHairCycleStoryView(context)
+        URINE_ROUTE -> HealthAtlasUrineRouteStoryView(context)
+        PLEURAL_COUPLING -> HealthAtlasPleuraStoryView(context)
+        PARATHYROID_FEEDBACK -> HealthAtlasCalciumFeedbackStoryView(context)
+        MAMMARY_MILK_FLOW -> HealthAtlasMammaryStoryView(context)
     }
 
     companion object {
@@ -794,6 +1067,10 @@ internal enum class HealthAtlasFunctionStory(
                 "tissue-intestinal-epithelium" -> listOf(primary, DIGESTION)
                 "duodenum", "jejunum", "ileum", "cell-enterocyte" -> listOf(primary, INTESTINAL_ABSORPTION)
                 "alveoli", "tissue-alveolar-epithelium" -> listOf(primary, ALVEOLAR_SURFACTANT)
+                "patella" -> listOf(primary, KNEE_ARTICULATION)
+                "cardio", "heart", "ventricles", "tissue-cardiac-muscle" -> listOf(primary, CARDIAC_EXCITATION)
+                "salivary-glands", "oral-cavity" -> listOf(primary, SALIVA_SECRETION)
+                "lungs" -> listOf(primary, PLEURAL_COUPLING)
                 "tendons" -> listOf(primary, TENDON_FORCE_TRANSFER)
                 else -> listOf(primary)
             }

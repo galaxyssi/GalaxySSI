@@ -476,6 +476,31 @@ the lymphatic route. Organ entries preserve their default lessons and
 expose the focused mechanisms as additional choices. Structure and
 quantitative simulations remain independent of visual playback.
 
+The knee-motion lesson links the joint, femur, tibia, quadriceps and
+hamstrings. It maintains the same side cutaway through flexion, patellar
+glide and extension, with a separate cartilage loading lesson on the
+patella. Playback pose and highlighted pull directions are illustrative, not
+measurements or exercise prescriptions.
+
+The heart and cardiac muscle offer an electrical-signaling lesson alongside
+the existing pumping cycle. Its five chapters keep the cardiac conduction
+path and a ventricular muscle cell visible, then distinguish activation,
+calcium-linked filament sliding and relaxation. The standalone
+cardiomyocyte entry opens this process directly.
+
+New focused entries for aortic and pulmonary outflow, type I alveolar cells
+and renal structures start at their relevant chapter in a shared lesson.
+Users can return to the beginning or select another chapter. A saved
+playhead, including zero, always takes precedence over this initial chapter.
+
+The regional lessons also show oxygen transport in red cells, the calf
+venous pump, pleural coupling, urine transport and storage, salivary
+secretion, the hair follicle cycle, parathyroid calcium feedback and milk
+production and release. These are separate qualitative explanations, not
+clinical models. Salivary and mammary cells open at their own role in the
+process; nephron filtration, whole-lung ventilation and other broader
+lessons retain their independent playheads.
+
 The pinned Agent action follows the current surface. Public catalogue, mechanism
 and research prompts use `HealthAtlasAgentContext`: selected anatomy, current
 teaching stage, cardiac or other quantitative inputs, assumptions and sources.

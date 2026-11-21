@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_venous_return_story_title">小腿肌肉泵如何帮助静脉回流</string>
+    <string name="health_atlas_venous_return_story_choice">小腿肌肉泵</string>
+    <string name="health_atlas_venous_return_story_scope">本图定性示意小腿内一段带有两个瓣膜的静脉，并非所有静脉都有瓣膜。解剖结构、瓣膜间距、运动幅度和时序均不按实际比例呈现。图中省略其他静脉回流路径，不构成健康建议。</string>
+    <string name="health_atlas_venous_return_story_locate">一段静脉上的两个瓣膜</string>
+    <string name="health_atlas_venous_return_story_locate_caption">腓肠肌和比目鱼肌位于小腿后侧。剖视图显示一段有代表性的小腿静脉，其中两个瓣膜相隔一段距离。</string>
+    <string name="health_atlas_venous_return_story_squeeze">小腿肌肉挤压静脉</string>
+    <string name="health_atlas_venous_return_story_squeeze_caption">小腿肌肉收缩时会挤压附近的静脉。图中这段静脉变窄，靠近足部的瓣膜闭合，靠近心脏方向的瓣膜打开。</string>
+    <string name="health_atlas_venous_return_story_propel">近端瓣膜让血液通过</string>
+    <string name="health_atlas_venous_return_story_propel_caption">血液经过打开的近端瓣膜流向心脏。瓣叶受两侧的压力差而打开，瓣膜本身不会泵血。</string>
+    <string name="health_atlas_venous_return_story_limit">远端瓣膜限制倒流</string>
+    <string name="health_atlas_venous_return_story_limit_caption">远端瓣膜的瓣叶合拢，限制血液倒流向足部，此时血液仍可通过近端瓣膜。</string>
+    <string name="health_atlas_venous_return_story_refill">小腿放松，静脉重新充盈</string>
+    <string name="health_atlas_venous_return_story_refill_caption">小腿肌肉放松时，静脉管腔变宽。在图示情形中，近端瓣膜闭合，远端瓣膜重新打开，让来自小腿更远端的血液重新充盈这段静脉。</string>
+    <string name="health_atlas_venous_return_story_calf">小腿（后视）</string>
+    <string name="health_atlas_venous_return_story_cutaway">静脉剖视图</string>
+    <string name="health_atlas_venous_return_story_gastrocnemius">腓肠肌</string>
+    <string name="health_atlas_venous_return_story_soleus">比目鱼肌</string>
+    <string name="health_atlas_venous_return_story_heartward">流向心脏</string>
+    <string name="health_atlas_venous_return_story_proximal_valve">近端瓣膜</string>
+    <string name="health_atlas_venous_return_story_distal_valve">远端瓣膜</string>
+    <string name="health_atlas_venous_return_story_ref_pump">小腿肌肉泵功能与收缩时的腘静脉血流</string>
+    <string name="health_atlas_venous_return_story_ref_valves">静脉瓣膜闭合及其在循环中的作用</string>
+</resources>

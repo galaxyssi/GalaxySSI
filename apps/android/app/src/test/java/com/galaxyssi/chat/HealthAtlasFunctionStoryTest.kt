@@ -4,6 +4,97 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HealthAtlasFunctionStoryTest {
+    @Test fun focusedEntryChaptersAreOnlyDefaultsAndDoNotOverrideSavedPlayback() {
+        val items = mapOf(
+            "aorta" to (HealthAtlasFunctionStory.HEARTBEAT to HealthAtlasBeatStage.EJECTION.ordinal),
+            "pulmonary-trunk" to (HealthAtlasFunctionStory.HEARTBEAT to HealthAtlasBeatStage.EJECTION.ordinal),
+            "cell-type-i-pneumocyte" to (HealthAtlasFunctionStory.BREATHING to HealthAtlasBreathingStage.DIFFUSE.ordinal),
+            "renal-cortex" to (HealthAtlasFunctionStory.NEPHRON to HealthAtlasNephronStage.FILTER.ordinal),
+            "renal-medulla" to (HealthAtlasFunctionStory.NEPHRON to HealthAtlasNephronStage.LOOP.ordinal),
+            "cell-proximal-tubular-cell" to (HealthAtlasFunctionStory.NEPHRON to HealthAtlasNephronStage.PROXIMAL.ordinal),
+            "cell-collecting-duct-principal-cell" to (HealthAtlasFunctionStory.NEPHRON to HealthAtlasNephronStage.COLLECT.ordinal),
+        )
+        val state = HealthAtlasFunctionState()
+        for ((id, expected) in items) {
+            val (story, chapter) = expected
+            assertEquals(id, story, HealthAtlasFunctionStory.forId(id))
+            assertEquals(id, story.startOf(chapter), state.loadPhase(id, story), 0f)
+            state.savePhase(id, story, 0f)
+            assertEquals(id, 0f, state.loadPhase(id, story), 0f)
+        }
+        assertEquals(0f, state.loadPhase("alveoli", HealthAtlasFunctionStory.BREATHING), 0f)
+        assertEquals(0f, state.loadPhase("heart", HealthAtlasFunctionStory.HEARTBEAT), 0f)
+    }
+
+    @Test fun regionalAnimationsOnlyOpenTheMatchingAnatomyAndKeepTheOriginalLessons() {
+        val stories = mapOf(
+            HealthAtlasFunctionStory.RED_CELL_OXYGEN to listOf("blood", "cell-erythrocyte"),
+            HealthAtlasFunctionStory.SALIVA_SECRETION to listOf("parotid-glands", "submandibular-glands",
+                "sublingual-glands", "cell-salivary-acinar-cell"),
+            HealthAtlasFunctionStory.VENOUS_RETURN to listOf("veins", "gastrocnemius", "soleus"),
+            HealthAtlasFunctionStory.HAIR_FOLLICLE_CYCLE to listOf("hair", "hair-follicles", "cell-hair-matrix-cell"),
+            HealthAtlasFunctionStory.URINE_ROUTE to listOf("renal-pelvis", "ureters", "bladder", "urethra"),
+            HealthAtlasFunctionStory.PLEURAL_COUPLING to listOf("pleura"),
+            HealthAtlasFunctionStory.PARATHYROID_FEEDBACK to listOf("parathyroid-glands", "cell-parathyroid-chief-cell"),
+            HealthAtlasFunctionStory.MAMMARY_MILK_FLOW to listOf("mammary-glands", "cell-mammary-luminal-cell", "cell-myoepithelial-cell"),
+        )
+        for ((story, ids) in stories) for (id in ids) assertEquals(id, listOf(story), HealthAtlasFunctionStory.choicesForId(id))
+        val urine = HealthAtlasFunctionStory.URINE_ROUTE
+        assertEquals(R.string.health_atlas_urine_route_story_peristalsis_caption,
+            urine.chapters[urine.chapter(urine.entryPhase("ureters"))].second)
+        assertEquals(R.string.health_atlas_urine_route_story_store_caption,
+            urine.chapters[urine.chapter(urine.entryPhase("bladder"))].second)
+        assertEquals(R.string.health_atlas_urine_route_story_empty_caption,
+            urine.chapters[urine.chapter(urine.entryPhase("urethra"))].second)
+        assertEquals(listOf(HealthAtlasFunctionStory.BREATHING, HealthAtlasFunctionStory.PLEURAL_COUPLING),
+            HealthAtlasFunctionStory.choicesForId("lungs"))
+        assertEquals(listOf(HealthAtlasFunctionStory.DIGESTION, HealthAtlasFunctionStory.SALIVA_SECRETION),
+            HealthAtlasFunctionStory.choicesForId("salivary-glands"))
+        assertEquals(listOf(HealthAtlasFunctionStory.NEPHRON), HealthAtlasFunctionStory.choicesForId("nephron"))
+        val milk = HealthAtlasFunctionStory.MAMMARY_MILK_FLOW
+        assertEquals(R.string.health_atlas_mammary_story_secrete_caption, milk.chapters[milk.chapter(milk.entryPhase("cell-mammary-luminal-cell"))].second)
+        assertEquals(R.string.health_atlas_mammary_story_contract_caption, milk.chapters[milk.chapter(milk.entryPhase("cell-myoepithelial-cell"))].second)
+    }
+
+    @Test fun cardiacExcitationExplainsCellMotionWithoutReplacingHeartPumping() {
+        val signal = HealthAtlasFunctionStory.CARDIAC_EXCITATION
+        val pump = HealthAtlasFunctionStory.HEARTBEAT
+        assertEquals(listOf(signal), HealthAtlasFunctionStory.choicesForId("cell-cardiomyocyte"))
+        for (id in listOf("cardio", "heart", "ventricles", "tissue-cardiac-muscle")) {
+            assertEquals(listOf(pump, signal), HealthAtlasFunctionStory.choicesForId(id))
+        }
+        assertEquals(listOf(pump), HealthAtlasFunctionStory.choicesForId("tricuspid-valve"))
+        for (step in 0..2) assertEquals(0f, HealthAtlasCardiacSignalMotion.shortening(step, .75f), 0f)
+        assertEquals(HealthAtlasCardiacSignalMotion.shortening(3, 1f),
+            HealthAtlasCardiacSignalMotion.shortening(4, 0f), 0f)
+        assertTrue(HealthAtlasCardiacSignalMotion.shortening(3, .75f) >
+            HealthAtlasCardiacSignalMotion.shortening(3, .25f))
+        assertTrue(HealthAtlasCardiacSignalMotion.shortening(4, .75f) <
+            HealthAtlasCardiacSignalMotion.shortening(4, .25f))
+    }
+
+    @Test fun kneeMotionLinksTheMatchingJointBonesAndMusclesAndKeepsItsPoseAtCuts() {
+        val story = HealthAtlasFunctionStory.KNEE_ARTICULATION
+        for (id in listOf("joints", "femur", "tibia", "quadriceps-femoris", "hamstrings")) {
+            assertEquals(id, story, HealthAtlasFunctionStory.forId(id))
+        }
+        assertEquals(listOf(HealthAtlasFunctionStory.CARTILAGE_LOAD, story),
+            HealthAtlasFunctionStory.choicesForId("patella"))
+        for (index in story.chapters.indices) {
+            val finish = HealthAtlasKneeMotion.at(index, 1f)
+            val start = HealthAtlasKneeMotion.at((index + 1) % story.chapters.size, 0f)
+            assertEquals(start.bend, finish.bend, .0001f)
+            assertEquals(start.extensor, finish.extensor, .0001f)
+            assertEquals(start.flexor, finish.flexor, .0001f)
+        }
+        val flex = HealthAtlasKneeMotion.at(1, .75f)
+        val extend = HealthAtlasKneeMotion.at(3, .75f)
+        assertTrue(flex.flexor > flex.extensor)
+        assertTrue(extend.extensor > extend.flexor)
+        assertTrue(HealthAtlasKneeMotion.at(1, .75f).bend > HealthAtlasKneeMotion.at(1, .25f).bend)
+        assertTrue(HealthAtlasKneeMotion.at(3, .75f).bend < HealthAtlasKneeMotion.at(3, .25f).bend)
+    }
+
     @Test fun onlySupportedTargetsShareTheGlucoseUptakeStory() {
         assertEquals(HealthAtlasFunctionStory.GLUCOSE, HealthAtlasFunctionStory.forId("tissue-skeletal-muscle"))
         assertEquals(HealthAtlasFunctionStory.GLUCOSE, HealthAtlasFunctionStory.forId("tissue-white-adipose"))
@@ -19,7 +110,7 @@ class HealthAtlasFunctionStoryTest {
         val lessons = mapOf(
             "tissue-alveolar-epithelium" to listOf(HealthAtlasFunctionStory.BREATHING, HealthAtlasFunctionStory.ALVEOLAR_SURFACTANT),
             "tissue-renal-tubular-epithelium" to listOf(HealthAtlasFunctionStory.NEPHRON),
-            "tissue-cardiac-muscle" to listOf(HealthAtlasFunctionStory.HEARTBEAT),
+            "tissue-cardiac-muscle" to listOf(HealthAtlasFunctionStory.HEARTBEAT, HealthAtlasFunctionStory.CARDIAC_EXCITATION),
             "tissue-intestinal-epithelium" to listOf(HealthAtlasFunctionStory.INTESTINAL_ABSORPTION, HealthAtlasFunctionStory.DIGESTION),
         )
         for ((id, stories) in lessons) {
@@ -87,7 +178,7 @@ class HealthAtlasFunctionStoryTest {
             "left-atrium", "right-atrium", "left-ventricle", "right-ventricle") + HealthAtlasValve.entries.map { it.id }) {
             assertEquals(HealthAtlasFunctionStory.HEARTBEAT, HealthAtlasFunctionStory.forId(id))
         }
-        assertNull(HealthAtlasFunctionStory.forId("blood"))
+        assertEquals(HealthAtlasFunctionStory.RED_CELL_OXYGEN, HealthAtlasFunctionStory.forId("blood"))
         HealthAtlasBeatStage.entries.forEachIndexed { i, stage ->
             val expected = when (i) {
                 0, 1 -> setOf(HealthAtlasValve.TRICUSPID, HealthAtlasValve.MITRAL)
@@ -150,7 +241,7 @@ class HealthAtlasFunctionStoryTest {
             assertEquals(HealthAtlasFunctionStory.HEARING, HealthAtlasFunctionStory.forId(id))
         }
         assertEquals(HealthAtlasFunctionStory.VESTIBULAR_BALANCE, HealthAtlasFunctionStory.forId("vestibular-apparatus"))
-        assertNull(HealthAtlasFunctionStory.forId("cell-hair-matrix-cell"))
+        assertEquals(HealthAtlasFunctionStory.HAIR_FOLLICLE_CYCLE, HealthAtlasFunctionStory.forId("cell-hair-matrix-cell"))
         assertEquals(0f, HealthAtlasSoundStage.packet(.90f, .10f), 0f)
         assertEquals(0f, HealthAtlasSoundStage.packet(.10f, .90f), 0f)
         assertNotEquals(0f, HealthAtlasSoundStage.packet(.85f, .90f), .01f)
@@ -164,7 +255,7 @@ class HealthAtlasFunctionStoryTest {
             "proximal-tubule", "nephron-loop", "distal-tubule", "collecting-ducts")) {
             assertEquals(story, HealthAtlasFunctionStory.forId(id))
         }
-        assertNull(HealthAtlasFunctionStory.forId("bladder"))
+        assertEquals(HealthAtlasFunctionStory.URINE_ROUTE, HealthAtlasFunctionStory.forId("bladder"))
         assertNull(HealthAtlasFunctionStory.forId("cell-urothelial-cell"))
         val chapters = HealthAtlasNephronStage.entries.map { it.routes.toSet() }
         assertEquals(5, chapters.toSet().size)
@@ -235,7 +326,7 @@ class HealthAtlasFunctionStoryTest {
             assertEquals(HealthAtlasFunctionStory.BONE_REMODELING, HealthAtlasFunctionStory.forId(it))
         }
         assertEquals(HealthAtlasFunctionStory.GLUCOSE, HealthAtlasFunctionStory.forId("tissue-skeletal-muscle"))
-        assertNull(HealthAtlasFunctionStory.forId("cell-cardiomyocyte"))
+        assertEquals(HealthAtlasFunctionStory.CARDIAC_EXCITATION, HealthAtlasFunctionStory.forId("cell-cardiomyocyte"))
         assertNull(HealthAtlasFunctionStory.forId("bone-marrow"))
         assertTrue(movement.sarcomereHalfWidth(1f) < movement.sarcomereHalfWidth(0f))
         assertTrue(movement.ACTIN_LENGTH + movement.MYOSIN_LENGTH / 2 > movement.sarcomereHalfWidth(0f))
@@ -360,7 +451,7 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(listOf(thyroid), HealthAtlasFunctionStory.choicesForId("cell-thyrotroph"))
         assertEquals(listOf(thyroid), HealthAtlasFunctionStory.choicesForId("cell-thyroid-follicular-cell"))
         assertNull(HealthAtlasFunctionStory.forId("cell-thyroid-parafollicular-cell"))
-        assertNull(HealthAtlasFunctionStory.forId("parathyroid-glands"))
+        assertEquals(HealthAtlasFunctionStory.PARATHYROID_FEEDBACK, HealthAtlasFunctionStory.forId("parathyroid-glands"))
         val motion = HealthAtlasSignalMotion
         assertEquals(0f, motion.axonTravel(0f, true), 0f)
         assertEquals(0f, motion.axonTravel(0f, false), 0f)

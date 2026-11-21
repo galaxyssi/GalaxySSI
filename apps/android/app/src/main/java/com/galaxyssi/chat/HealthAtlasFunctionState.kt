@@ -11,7 +11,7 @@ internal class HealthAtlasFunctionState {
         if (story in HealthAtlasFunctionStory.choicesForId(id)) selections[id] = story
     }
 
-    fun loadPhase(id: String, story: HealthAtlasFunctionStory) = phases[id to story] ?: 0f
+    fun loadPhase(id: String, story: HealthAtlasFunctionStory) = phases[id to story] ?: story.entryPhase(id)
     fun savePhase(id: String, story: HealthAtlasFunctionStory, phase: Float) {
         if (story in HealthAtlasFunctionStory.choicesForId(id))
             phases[id to story] = HealthAtlasFunctionStory.safePhase(phase)
