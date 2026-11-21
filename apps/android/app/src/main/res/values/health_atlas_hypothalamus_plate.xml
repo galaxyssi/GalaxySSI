@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_hypothalamus_plate_scope">Normal midsagittal anatomy, with the front of the brain at left. Teal marks the hypothalamus. Regional schematic, not to scale.</string>
+    <string name="health_atlas_hypothalamus_plate_region">Hypothalamus</string>
+    <string name="health_atlas_hypothalamus_plate_region_detail">The hypothalamus lies below and partly in front of the thalamus. It forms the floor and part of the lower walls of the third ventricle.</string>
+    <string name="health_atlas_hypothalamus_plate_thalamus">Thalamus</string>
+    <string name="health_atlas_hypothalamus_plate_thalamus_detail">The thalamus lies above and partly behind the hypothalamus. The hypothalamic sulcus marks their boundary along the wall of the third ventricle.</string>
+    <string name="health_atlas_hypothalamus_plate_optic_chiasm">Optic chiasm</string>
+    <string name="health_atlas_hypothalamus_plate_optic_chiasm_detail">Some optic nerve fibers cross here, at the base of the brain in front of the pituitary stalk.</string>
+    <string name="health_atlas_hypothalamus_plate_infundibulum">Pituitary stalk</string>
+    <string name="health_atlas_hypothalamus_plate_infundibulum_detail">The infundibulum descends from the floor of the hypothalamus and is continuous with the posterior lobe of the pituitary gland.</string>
+</resources>

@@ -99,9 +99,9 @@ class HealthAtlasTissueContextDeviceTest {
         val chinese = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
         val atlas = HealthBodyAtlas.load(english)
         val plates = HealthAtlasTissueContextPlates.all
-        assertEquals(26, plates.size)
-        assertEquals(56, plates.sumOf { it.features.size })
-        assertEquals(5, plates.sumOf { it.markers.size })
+        assertEquals(30, plates.size)
+        assertEquals(75, plates.sumOf { it.features.size })
+        assertEquals(7, plates.sumOf { it.markers.size })
         for (plate in plates) {
             val owner = requireNotNull(plate.owner)
             assertNotNull(atlas[owner])
@@ -158,6 +158,36 @@ class HealthAtlasTissueContextDeviceTest {
         }
     }
 
+    @Test fun sinusCutawayAndDrainagePlayWithoutReplacingEachOther() = native { scenario ->
+        scenario.onActivity {
+            it.open("paranasal-sinuses")
+            for (feature in listOf("frontal", "ethmoid", "maxillary", "nasal-cavity", "inferior-conchae"))
+                assertNotNull(it.view("atlas-feature-sinus-$feature"))
+        }
+        capture("sinus-coronal", scenario.localized(R.string.health_atlas_sinus_plate_caption))
+        scenario.onActivity {
+            it.view("atlas-tab-1").performClick()
+            assertNotNull(it.view("atlas-function-sinus-drainage-art"))
+            it.view("atlas-tab-0").performClick()
+            assertNotNull(it.view("atlas-feature-sinus-maxillary"))
+        }
+    }
+
+    @Test fun tasteBudShowsItsPoreAndLinksToSensoryCells() = native { scenario ->
+        scenario.onActivity {
+            it.open("taste-buds")
+            assertNotNull(it.view("atlas-feature-taste-pore"))
+            assertNotNull(it.view("atlas-feature-taste-afferent-contact"))
+        }
+        capture("taste-bud-cutaway", scenario.localized(R.string.health_atlas_taste_buds_plate_caption))
+        scenario.onActivity {
+            it.view("atlas-hotspot-cell-taste-receptor-cell").performClick()
+            assertNotNull(it.view("atlas-tab-1"))
+            it.onBackPressed()
+            assertNotNull(it.view("atlas-feature-taste-pore"))
+        }
+    }
+
     @Test fun pleuraCutawayExplainsTheFluidFilmAndReturnsFromTheLung() = native { scenario ->
         scenario.onActivity {
             it.open("pleura")
@@ -173,6 +203,38 @@ class HealthAtlasTissueContextDeviceTest {
             it.view("atlas-hotspot-lungs").performClick()
             it.onBackPressed()
             assertNotNull(it.view("atlas-feature-pleural-fluid-film"))
+        }
+    }
+
+    @Test fun bronchioleCutawayAndClubCellLessonAreBothReachable() = native { scenario ->
+        scenario.onActivity {
+            it.open("bronchioles")
+            for (feature in listOf("terminal-branch", "epithelium", "lumen", "elastic-fibers", "smooth-muscle"))
+                assertNotNull(it.view("atlas-feature-bronchioles-$feature"))
+        }
+        capture("terminal-bronchiole", scenario.localized(R.string.health_atlas_bronchioles_plate_caption))
+        scenario.onActivity {
+            it.view("atlas-tab-1").performClick()
+            it.view("atlas-related-lesson-cell-club-cell").performClick()
+            assertNotNull(it.view("atlas-function-club-cell-airway-art"))
+            it.onBackPressed()
+            assertNotNull(it.view("atlas-related-lesson-cell-club-cell"))
+        }
+    }
+
+    @Test fun hypothalamusCutawayLinksToThePituitary() = native { scenario ->
+        scenario.onActivity {
+            it.open("hypothalamus")
+            assertNotNull(it.view("atlas-feature-hypothalamus-region"))
+            assertNotNull(it.view("atlas-feature-hypothalamus-infundibulum"))
+        }
+        capture("hypothalamus-midsagittal", scenario.localized(R.string.health_atlas_hypothalamus_plate_scope))
+        scenario.onActivity {
+            it.view("atlas-hotspot-pituitary-gland").performClick()
+            assertEquals(it.getString(R.string.health_atlas_pituitary_gland_name),
+                (it.view("health-page-title") as TextView).text)
+            it.onBackPressed()
+            assertNotNull(it.view("atlas-feature-hypothalamus-region"))
         }
     }
 
