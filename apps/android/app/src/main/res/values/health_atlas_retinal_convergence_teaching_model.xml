@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_retinal_convergence_title">Expected lit sample count</string>
+    <string name="health_atlas_retinal_convergence_samples">Pooled sample count</string>
+    <string name="health_atlas_retinal_convergence_lit_percent">Simulated chance each sample is lit</string>
+    <string name="health_atlas_retinal_convergence_companion">Expected unlit sample count: %1$s</string>
+    <string name="health_atlas_retinal_convergence_formula">Expected lit count = pooled sample count × (lit percentage ÷ 100). Each sample contributes 1 if lit and 0 otherwise. The expected lit and unlit counts add up to the pool size.</string>
+    <string name="health_atlas_retinal_convergence_scope">In some retinal circuits, bipolar cells combine photoreceptor signals, and ganglion cells pool signals from multiple bipolar cells. This teaching example adds equally weighted binary samples into one pool. At the same nonzero lit chance, a larger pool has more lit samples on average. The expected count is a long-run average, so it can be fractional. The model omits ON/OFF signaling and center-surround interactions. The samples do not represent separate human receptive fields, and the output is neither a vision threshold nor a firing rate.</string>
+</resources>

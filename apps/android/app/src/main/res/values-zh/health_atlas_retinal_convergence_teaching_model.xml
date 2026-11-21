@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_retinal_convergence_title">亮起的样本数（期望值）</string>
+    <string name="health_atlas_retinal_convergence_samples">参与汇聚的样本数</string>
+    <string name="health_atlas_retinal_convergence_lit_percent">每个样本在模拟中亮起的概率</string>
+    <string name="health_atlas_retinal_convergence_companion">未亮起的样本数（期望值）：%1$s</string>
+    <string name="health_atlas_retinal_convergence_formula">亮起的样本数（期望值）= 参与汇聚的样本数 ×（亮起概率的百分数 ÷ 100）。每个样本亮起时计为 1，否则计为 0。亮起和未亮起的样本数的期望值之和等于总样本数。</string>
+    <string name="health_atlas_retinal_convergence_scope">在某些视网膜回路中，双极细胞整合感光细胞的信号，神经节细胞汇聚多个双极细胞的信号。本教学示例将等权重的二值样本汇入同一组。亮起概率相同且大于零时，样本越多，平均亮起的样本数就越多。期望值是长期平均值，因此可以不是整数。本模型不考虑 ON/OFF 通路及感受野中心与周边的相互作用。各样本不代表彼此独立的人眼感受野，结果也不代表视觉阈值或神经放电频率。</string>
+</resources>
