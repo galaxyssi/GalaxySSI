@@ -15,6 +15,8 @@ struct GalaxySSIHealthCareResearchControls: View {
   @State private var online = false
   @State private var authorization: Research.Authorization?
   @State private var job: Research.Job?
+  @State private var assessment: GalaxySSIHealthCareModelReview.Review?
+  @State private var historicalAssessment = false
   @State private var provider = ""
   @State private var desktopModel = ""
   @State private var desktopEffort = AgentModelReasoningEffort.automatic
@@ -40,7 +42,11 @@ struct GalaxySSIHealthCareResearchControls: View {
           Text(authorization.model)
           Text(authorization.endpoint?.absoluteString ?? authorization.pairedDesktop?.connector.desktopId ?? "")
             .font(.caption).foregroundColor(.secondary)
-          if let job { Text(status(job.state)) }
+          if let job {
+            if job.assessmentMissing == true {
+              Text(t("assessment_missing", "The reply was retained, but the model did not record its structured assessment. The review is incomplete."))
+            } else { Text(status(job.state)) }
+          }
           Button(t("revoke", "Revoke research authorization"), role: .destructive) {
             do { try records.revokeLocalCareResearch(concern); reload() }
             catch { failed = true }
@@ -82,6 +88,9 @@ struct GalaxySSIHealthCareResearchControls: View {
         } else {
           Text(t("online_off", "Online Health discussion is off.")).foregroundColor(.secondary)
         }
+        if let assessment {
+          GalaxySSIHealthCareModelReviewView(review: assessment, historical: historicalAssessment)
+        }
         if failed { Text(t("unavailable", "Research authorization is no longer available.")) }
       }
     }
@@ -119,7 +128,7 @@ struct GalaxySSIHealthCareResearchControls: View {
                 Text($0.title)
               }
             }
-            Text(t("scope", "While GalaxySSI is active, this concern may send updated measurements, approved profile context, recent private replies and scoped plan status to this model. Research may save a reply or draft, but cannot adopt steps or schedule reminders. You can revoke access at any time."))
+            Text(t("scope", "While GalaxySSI is active, this concern may send updated measurements, approved profile context, recent private replies and scoped plan status to this model. Research may retain a structured model assessment, reply or draft, but cannot adopt steps, send attention notifications or schedule reminders. You can revoke access at any time."))
             if proposed.approval.allowsStandingFeedbackPages {
               Text(t("feedback_history_scope", "The selected model may request up to four pages of eligible action feedback, including future entries, for each automatic review of this concern."))
               if proposed.approval.includesActionFeedback {
@@ -213,10 +222,13 @@ struct GalaxySSIHealthCareResearchControls: View {
     online = archive.healthOnlinePermission != nil
     authorization = archive.localCareResearch?.authorizations[concern.uuidString]
     job = archive.localCareResearch?.jobs[concern.uuidString]
+    assessment = job.flatMap { archive.localCareModelReviews?[$0.id] }
+    historicalAssessment = assessment.map { !records.localCareModelReviewIsCurrent($0) } ?? false
   }
 
   private func clear() {
     online = false; authorization = nil; job = nil; review = nil; confirmed = false; failed = false
+    assessment = nil; historicalAssessment = false
     provider = ""; sources = []
     desktopModel = ""; desktopEffort = .automatic
     shareQuestions = false

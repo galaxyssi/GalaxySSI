@@ -18,16 +18,39 @@ enum GalaxySSIHealthScopedReadTransport {
     var questionRemaining = Questions.maximumContinuations
     var feedbackCursor = review.feedbackCursor
     var feedbackRemaining = Feedback.maximumPages
+    var reviewCalls = 0
+    var planRecorded = false
+    var reviewRecorded = false
     while true {
       try Task.checkCancellation()
       guard let contact = currentDestination() else { throw CancellationError() }
       try records.validateLocalCareDiscussionTurn(review)
       guard let call = try Tool.call(bytes, style: style, proposesPlan: review.proposesPlan,
-        allowsQuestionRead: review.questions != nil, asksQuestions: review.asksQuestions, allowsFeedbackRead: feedbackCursor != nil)
+        allowsQuestionRead: review.questions != nil, asksQuestions: review.asksQuestions, allowsFeedbackRead: feedbackCursor != nil,
+        allowsReview: review.requiresStructuredReview)
       else { return bytes }
       let payload: AgentMcpJSONObject
       let purpose: String
-      if call.name == Feedback.function {
+      if call.name == GalaxySSIHealthCareModelReview.function {
+        guard reviewCalls < 3 else { throw GalaxySSIHealthRecords.Failure.permission }
+        reviewCalls += 1
+        do {
+          payload = try records.recordLocalCareModelReview(review, arguments: call.arguments).receipt
+          reviewRecorded = true
+        } catch let failure as GalaxySSIHealthRecords.Failure {
+          guard let feedback = GalaxySSIHealthCareModelReview.failure(failure) else { throw failure }
+          payload = feedback
+        }
+        purpose = "Scoped Health model assessment recording result"
+      } else if call.name == GalaxySSIHealthCarePlan.tool {
+        guard review.requiresStructuredReview, !reviewRecorded, reviewCalls < 3 else { throw GalaxySSIHealthRecords.Failure.permission }
+        reviewCalls += 1
+        try records.saveLocalCarePlan(review, arguments: call.arguments)
+        payload = ["plan_id": .string(review.id.uuidString), "stored": .bool(true), "adopted": .bool(false),
+          "scheduled": .bool(false), "clinical_verification": .bool(false)]
+        planRecorded = true
+        purpose = "Stored unadopted Health plan draft"
+      } else if call.name == Feedback.function {
         guard feedbackRemaining > 0, let cursor = feedbackCursor,
               cursor.arguments == call.arguments else { throw GalaxySSIHealthRecords.Failure.permission }
         feedbackRemaining -= 1
@@ -54,9 +77,9 @@ enum GalaxySSIHealthScopedReadTransport {
         purpose = "Approved health measurement history continuation"
       }
       request = try Tool.continuing(request, with: call, payload: payload, style: style,
-        proposesPlan: review.proposesPlan, historyAvailable: history?.cursor != nil, allowsMaintenance: review.history != nil,
+        proposesPlan: review.proposesPlan && !planRecorded && !reviewRecorded, historyAvailable: history?.cursor != nil, allowsMaintenance: review.history != nil,
         questionsAvailable: questionCursor != nil, asksQuestions: review.asksQuestions,
-        feedbackAvailable: feedbackCursor != nil)
+        feedbackAvailable: feedbackCursor != nil, reviewAvailable: review.requiresStructuredReview, reviewRecorded: reviewRecorded)
       let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: ledger, destination: .init(contact: contact),
         text: "", purpose: purpose,
         textSummary: .init(characters: request.httpBody?.count ?? 0, kinds: [.messageText, .systemInstructions, .toolOutput]))

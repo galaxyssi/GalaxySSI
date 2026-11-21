@@ -129,6 +129,7 @@ enum GalaxySSIHealthCareDiscussion {
     var actionFeedbackContextIncluded = false
     var feedbackHistoryAllowed = false
     var allowsStandingFeedbackPages = false
+    var requiresStructuredReview: Bool { research?.reviewRequired == true }
 
     var feedbackCursor: GalaxySSIHealthCareFeedbackTool.Cursor? {
       guard feedbackHistoryAllowed, model != nil, !asksQuestions, !allowsAnswerDraft else { return nil }
@@ -308,7 +309,12 @@ enum GalaxySSIHealthCareDiscussion {
         there is no accepted action. Never defer a priority warning for routine research.
         """
     }
-    if approval.proposesPlan {
+    if approval.requiresStructuredReview {
+      instruction += "\n" + GalaxySSIHealthCareModelReview.instructions
+      if approval.proposesPlan {
+        instruction += "\nA plan draft is optional. Use only current native_sources receipts and exact supporting quotes if proposing one."
+      }
+    } else if approval.proposesPlan {
       instruction += "\nUse exactly one \(GalaxySSIHealthCarePlan.tool) call to propose a draft. Cite only supplied native_sources by " +
           "their exact evidence_id and URL. Copy a short original-language supporting quote from the excerpt. " +
           "When excerpt_truncated is true, do not infer or cite omitted text. " +
@@ -335,7 +341,8 @@ enum GalaxySSIHealthCareDiscussion {
         """
     }
     if journalRead { instruction = GalaxySSIHealthVisitJournalRead.instructions }
-    let structuredTokens: Int? = approval.asksQuestions ? 4_096 : (approval.proposesPlan || approval.allowsAnswerDraft ? 2_048 : nil)
+    let structuredTokens: Int? = approval.requiresStructuredReview || approval.asksQuestions ? 4_096 :
+      (approval.proposesPlan || approval.allowsAnswerDraft ? 2_048 : nil)
     let user = ["role": "user", "content": payload]
     var body: [String: Any]
     switch model.apiStyle {
@@ -362,11 +369,12 @@ enum GalaxySSIHealthCareDiscussion {
     if journalRead {
       GalaxySSIHealthCareHistoryTool.configure(&body, style: model.apiStyle,
         proposesPlan: false, historyAvailable: false, journalAvailable: true)
-    } else if approval.asksQuestions || approval.history != nil || approval.questionCursor != nil || approval.feedbackCursor != nil {
+    } else if approval.requiresStructuredReview || approval.asksQuestions || approval.history != nil || approval.questionCursor != nil || approval.feedbackCursor != nil {
       GalaxySSIHealthCareHistoryTool.configure(&body, style: model.apiStyle,
         proposesPlan: approval.proposesPlan, historyAvailable: approval.history?.recent.cursor != nil,
         allowsMaintenance: approval.history != nil, questionsAvailable: approval.questionCursor != nil,
-        asksQuestions: approval.asksQuestions, feedbackAvailable: approval.feedbackCursor != nil)
+        asksQuestions: approval.asksQuestions, feedbackAvailable: approval.feedbackCursor != nil,
+        reviewAvailable: approval.requiresStructuredReview)
     } else if approval.proposesPlan || approval.allowsAnswerDraft {
       let draft = approval.allowsAnswerDraft
       let name = draft ? GalaxySSIHealthCareAnswerDraft.tool : GalaxySSIHealthCarePlan.tool

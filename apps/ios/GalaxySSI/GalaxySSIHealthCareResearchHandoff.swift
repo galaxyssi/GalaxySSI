@@ -100,7 +100,9 @@ enum GalaxySSIHealthCareResearchHandoff {
   static func make(job: Research.Job, authorization: Research.Authorization, basis: Basis, prior: Checkpoint?,
                    hasEarlierResult: Bool, plan: PlanContext?, recordedPlan: GalaxySSIHealthCarePlan.State?,
                    actionCount: Int, historicalSources: [GalaxySSIHealthCareEvidence.Receipt],
-                   essentialContextMissing: Bool, priorityWarning: Bool) -> Handoff {
+                   essentialContextMissing: Bool, priorityWarning: Bool,
+                   recordReferences: [GalaxySSIHealthCareModelReview.Reference] = [],
+                   modelReview: GalaxySSIHealthCareModelReview.Review? = nil) -> Handoff {
     let previous = prior.flatMap { $0.matches(authorization, job: job) ? $0 : nil }
     let before = previous?.basis
     var reasons: [Reason] = []
@@ -152,6 +154,12 @@ enum GalaxySSIHealthCareResearchHandoff {
       }
     } ?? []
     let payload: AgentMcpJSONObject = [
+      "structured_review_required": .bool(job.reviewRequired == true),
+      "review_tool_id": .string(GalaxySSIHealthCareModelReview.toolID),
+      "review_id": .string(job.id.uuidString), "record_references": .array(recordReferences.map(\.payload)),
+      "prior_model_assessment": modelReview.flatMap {
+        $0.id == prior?.turn && $0.reusable(for: authorization, job: job) ? $0.historicalPayload : nil
+      } ?? .null,
       "observed_at": .string(date.string(from: job.createdAt)), "reasons": .array(reasons.map { .string($0.rawValue) }),
       "comparison_available": .bool(before != nil), "elapsed_time_only": .bool(elapsedOnly),
       "existing_plan": .bool(plan != nil), "existing_plan_actions": .array(actions), "due_action_ids": tokens(basis.due),

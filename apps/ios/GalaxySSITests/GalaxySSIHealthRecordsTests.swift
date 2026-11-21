@@ -6,6 +6,21 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  @MainActor
+  private func retainAutomaticAssessment(_ approval: GalaxySSIHealthCareDiscussion.Approval,
+      records: GalaxySSIHealthRecords, now: Date) throws {
+    let concern = try XCTUnwrap(records.load().localCare?.current[approval.metric.rawValue])
+    let plan = try records.load().localCarePlans?[approval.id.uuidString]
+    let input: AgentMcpJSONObject = ["summary": .string("Synthetic review"), "rationale": .string("Current scoped inputs"),
+      "uncertainty": .string("Clinical applicability is unverified"), "next_step": .string("Review current evidence"),
+      "decision": .string(plan == nil ? "OBSERVE" : "PROPOSE_PLAN"), "review_events": .array([.string("SOURCE_CHANGE")]),
+      "records": .array(GalaxySSIHealthCareModelReview.references(concern).map(\.payload)),
+      "evidence_ids": .array(approval.evidence.map { .string($0.id.uuidString) }),
+      "plan_id": .string(plan?.id.uuidString ?? ""), "attention_requested": .bool(false),
+      "attention_reason": .string("No notification is requested")]
+    _ = try records.recordLocalCareModelReview(approval, arguments: input, now: now)
+  }
+
   func testInstructionActionAcknowledgementStartsUncheckedAndSubmitsOnlyOnce() {
     var confirmation = GalaxySSIHealthInstruction.ActionAcknowledgement()
     XCTAssertFalse(confirmation.canConfirm)
@@ -1064,6 +1079,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertFalse(clarification.proposesPlan)
     XCTAssertEqual(clarification.researchHandoff?.payload["reasons"], .array([.string("initial_review")]))
     try records.beginLocalCareDiscussionTurn(clarification, now: now)
+    try retainAutomaticAssessment(clarification, records: records, now: now)
     try records.finishLocalCareDiscussionTurn(clarification, answer: "Was this collected fasting?", now: now)
     let confirmedAt = now.addingTimeInterval(1)
     try records.setLocalCareContext(concern, applicability: .applicable, now: confirmedAt)
@@ -1091,6 +1107,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       """
     let arguments = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(json.utf8))
     try records.saveLocalCarePlan(initial, arguments: arguments, now: confirmedAt)
+    try retainAutomaticAssessment(initial, records: records, now: confirmedAt)
+    try records.finishLocalCareDiscussionTurn(initial, answer: "Synthetic automatic plan response", now: confirmedAt)
     let research = try XCTUnwrap(records.load().localCareResearch)
     let key = concern.id.uuidString
     let authorization = try XCTUnwrap(research.authorizations[key])
@@ -1127,8 +1145,11 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       handoff["newly_due_action_ids"]?.arrayValue?.first)
     let request = try GalaxySSIHealthCareDiscussion.request(followUp, key: "fixture-api-key")
     let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
-    XCTAssertNil(body["tools"])
+    let reviewTools = try XCTUnwrap(body["tools"] as? [[String: Any]])
+    XCTAssertEqual(reviewTools.count, 1)
+    XCTAssertEqual((reviewTools.first?["function"] as? [String: Any])?["name"] as? String, GalaxySSIHealthCareModelReview.function)
     try records.beginLocalCareDiscussionTurn(followUp, now: due)
+    try retainAutomaticAssessment(followUp, records: records, now: due)
     try records.finishLocalCareDiscussionTurn(followUp, answer: "The existing review is due.", now: due)
     let archive = try records.load()
     XCTAssertEqual(archive.localCarePlans?.count, 1)
@@ -1203,6 +1224,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let initial = try dispatch(at: now)
     XCTAssertNotNil(initial.feedbackCursor)
     try records.saveLocalCarePlan(initial, arguments: plan(initial), now: now)
+    try retainAutomaticAssessment(initial, records: records, now: now)
+    try records.finishLocalCareDiscussionTurn(initial, answer: "Synthetic automatic plan response", now: now)
     let proposal = try XCTUnwrap(records.load().localCarePlans?[initial.id.uuidString])
     try records.resolveLocalCarePlan(proposal, selected: [0], currentDestination: initial.destinationDigest, now: now)
     let accepted = try XCTUnwrap(records.load().localCare?.current["glucose"])
@@ -1243,6 +1266,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     broadActions[0] = .object(firstBroadAction)
     broadPlan["actions"] = .array(broadActions)
     try records.saveLocalCarePlan(next, arguments: broadPlan, now: feedbackAt)
+    try retainAutomaticAssessment(next, records: records, now: feedbackAt)
+    try records.finishLocalCareDiscussionTurn(next, answer: "Synthetic feedback review", now: feedbackAt)
     XCTAssertThrowsError(try records.readLocalCareDiscussionFeedback(next, cursor: nextCursor, remaining: 0, now: feedbackAt))
     try records.authorizeLocalCareResearch(prepare(at: feedbackAt, standingHistory: true), sources: [source],
       sharesActionFeedback: true, now: feedbackAt)
@@ -1419,6 +1444,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(restored.threadID, thread.id)
     XCTAssertEqual(try restored.providerPayload(now: now), try approval.providerPayload(now: now))
     try reopened.validateLocalCareDiscussionTurn(restored, now: now)
+    try retainAutomaticAssessment(restored, records: reopened, now: now)
     try reopened.finishLocalCareDiscussionTurn(restored, answer: "Please confirm the measurement context.", now: now)
     XCTAssertTrue(try reopened.dispatchedLocalCareDesktopResearch().isEmpty)
     XCTAssertTrue(try reopened.reconcileLocalCareResearch(now: now).isEmpty)
@@ -1565,6 +1591,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(fresh.threadID, thread.id)
     XCTAssertThrowsError(try records.saveLocalCarePlan(fresh, arguments: arguments(old), now: nextAt))
     try records.saveLocalCarePlan(fresh, arguments: arguments(fresh), now: nextAt)
+    try retainAutomaticAssessment(fresh, records: records, now: nextAt)
+    try records.finishLocalCareDiscussionTurn(fresh, answer: "Synthetic current-evidence response", now: nextAt)
 
     let reopened = GalaxySSIHealthRecords(owner: records.owner, secrets: secrets, isolatedFile: file)
     let archive = try reopened.load()
