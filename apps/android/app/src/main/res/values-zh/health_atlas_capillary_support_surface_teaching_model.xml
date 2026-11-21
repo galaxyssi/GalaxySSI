@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_capillary_support_surface_title">毛细血管模型的侧面积</string>
+    <string name="health_atlas_capillary_support_surface_radius">模型半径</string>
+    <string name="health_atlas_capillary_support_surface_length">模型管段长度</string>
+    <string name="health_atlas_capillary_support_surface_companion">模型圆周长：%1$s µm</string>
+    <string name="health_atlas_capillary_support_surface_formula">圆柱侧面展开后是一个长方形，宽为圆周长 2πr，长为管段长度 L。侧面积 = 2πr × L，不包括两端的圆面。保持一个尺寸不变时，增大半径或增加管段长度都会使侧面积增大。</string>
+    <string name="health_atlas_capillary_support_surface_scope">周细胞位于毛细血管壁外侧，紧邻内皮。在肾小球中，系膜细胞及其周围的基质为毛细血管袢提供结构支撑。直圆柱只是适用于这两种情形的几何示例，既不代表肾小球毛细血管袢的形状，也不估算这两种细胞各自的接触面积。模型尺寸是假设的教学数值，并非实测值。本模型不描述血流、滤过或细胞收缩的影响。</string>
+</resources>
