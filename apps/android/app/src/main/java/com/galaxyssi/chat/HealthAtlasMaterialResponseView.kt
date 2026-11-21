@@ -24,6 +24,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> R.string.health_atlas_cushion_model_diagram
         HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT -> R.string.health_atlas_diaphragm_demo_diagram
         HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY -> R.string.health_atlas_arterial_continuity_diagram
+        HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE -> R.string.health_atlas_airway_ciliary_clearance_diagram
         else -> error("Unexpected material response: $kind")
     }
     private val ink = context.getColor(R.color.text_primary)
@@ -50,6 +51,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> "atlas-cushion-contact"
             HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT -> "atlas-diaphragm-displacement"
             HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY -> "atlas-arterial-continuity"
+            HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE -> "atlas-airway-cilia-track"
             else -> error("Unexpected material response: $kind")
         }
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
@@ -77,6 +79,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> drawCushionContact(canvas)
             HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT -> drawDiaphragm(canvas)
             HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY -> drawArterialContinuity(canvas)
+            HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE -> drawCiliaTrack(canvas)
             else -> Unit
         }
         canvas.restore()
@@ -341,6 +344,35 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         else oval(c, start - 3f, y - 3f, start + 3f, y + 3f, teal)
         label(c, R.string.health_atlas_arterial_continuity_section, x, 145f, 134f)
         label(c, R.string.health_atlas_arterial_continuity_speed, (start + end) / 2, 145f, 172f)
+    }
+
+    private fun drawCiliaTrack(c: Canvas) {
+        val left = 26f
+        val right = 314f
+        val step = (right - left) / 9
+        val marker = left + (right - left) * (model.companionValue.toFloat() / 100f)
+        rectangle(c, left - 12, 34f, right + 12, 64f, 0xffd3e8e3.toInt(), 14f)
+        repeat(9) { i ->
+            val x = left + step * i
+            rectangle(c, x + 1, 77f, x + step - 1, 121f, 0xffa4d4cb.toInt(), 8f)
+            oval(c, x + 10, 95f, x + 23, 112f, 0xff598788.toInt())
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 1.65f
+            paint.color = teal
+            repeat(4) { branch ->
+                val base = x + 4 + branch * 6
+                c.drawPath(Path().apply {
+                    moveTo(base, 80f)
+                    quadTo(base - 3, 69f, base + 4, if ((i + branch) % 3 == 0) 57f else 60f)
+                }, paint)
+            }
+            paint.style = Paint.Style.FILL
+        }
+        line(c, left, 49f, right, 49f, 0xff7faaa3.toInt(), 1.6f)
+        if (marker - left >= 8f) arrow(c, left, 49f, marker - 2f, 49f, teal, 2.1f)
+        oval(c, marker - 6, 43f, marker + 6, 55f, 0xffbc803f.toInt())
+        oval(c, marker - 2, 45f, marker + 1, 48f, 0xffffe0a5.toInt())
+        label(c, R.string.health_atlas_airway_ciliary_clearance_track, 170f, 145f, 300f)
     }
 
     private fun rectangle(c: Canvas, left: Float, top: Float, right: Float, bottom: Float, color: Int, radius: Float = 10f) {

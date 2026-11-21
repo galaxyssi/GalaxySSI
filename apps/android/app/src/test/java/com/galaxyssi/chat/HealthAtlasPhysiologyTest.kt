@@ -155,7 +155,8 @@ class HealthAtlasPhysiologyTest {
                             HealthAtlasPhysiologyKind.AIRWAY_SPLIT, HealthAtlasPhysiologyKind.VISUAL_ANGLE,
                             HealthAtlasPhysiologyKind.HORMONE_SIGNAL, HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY,
                             HealthAtlasPhysiologyKind.COLONIC_WATER_BALANCE, HealthAtlasPhysiologyKind.GLIAL_CAPACITANCE,
-                            HealthAtlasPhysiologyKind.ENDOCRINE_DILUTION -> y <= value + 1e-9
+                            HealthAtlasPhysiologyKind.ENDOCRINE_DILUTION,
+                            HealthAtlasPhysiologyKind.GASTRIC_LIQUID_EMPTYING -> y <= value + 1e-9
                             else -> y >= value - 1e-9
                         })
                     }
