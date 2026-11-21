@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_circadian_light_window_title">昼夜节律的光照与黑暗时段</string>
+    <string name="health_atlas_circadian_light_window_period">示例周期长度</string>
+    <string name="health_atlas_circadian_light_window_elapsed">示例已过时间</string>
+    <string name="health_atlas_circadian_light_window_companion">当前周期内的相位：%1$s°</string>
+    <string name="health_atlas_circadian_light_window_formula">累计相位 = 360° × 已过时间 ÷ 周期长度。图表累计每一整圈。周期内相位是扣除整圈后的余量：0° 至不足 180° 为示例光照时段，180° 至不足 360° 为示例黑暗时段。</string>
+    <string name="health_atlas_circadian_light_window_scope">来自视网膜的光信号帮助下丘脑的视交叉上核（SCN）与昼夜交替同步。视交叉上核通过间接的神经通路调节松果体细胞释放褪黑素的时间，释放量通常在生理夜间升高。此处等长的光照和黑暗时段是虚构的提示，并不模拟光如何改变生物钟。本模型不估算个人的昼夜节律相位、褪黑素水平或释放时间，也不预测睡眠时间，不提供光照或其他干预建议。</string>
+</resources>
