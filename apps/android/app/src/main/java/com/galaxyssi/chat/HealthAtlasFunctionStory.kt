@@ -1203,6 +1203,108 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    CHONDROCYTE_MATRIX(
+        setOf("cell-chondrocyte"),
+        R.string.health_atlas_chondrocyte_story_title,
+        R.string.health_atlas_chondrocyte_story_scope,
+        listOf(
+            R.string.health_atlas_chondrocyte_story_locate to R.string.health_atlas_chondrocyte_story_locate_caption,
+            R.string.health_atlas_chondrocyte_story_collagen to R.string.health_atlas_chondrocyte_story_collagen_caption,
+            R.string.health_atlas_chondrocyte_story_aggrecan to R.string.health_atlas_chondrocyte_story_aggrecan_caption,
+            R.string.health_atlas_chondrocyte_story_hydration to R.string.health_atlas_chondrocyte_story_hydration_caption,
+            R.string.health_atlas_chondrocyte_story_recovery to R.string.health_atlas_chondrocyte_story_recovery_caption,
+        ),
+        listOf(
+            R.string.health_atlas_chondrocyte_story_ref_aggrecan to "https://pubmed.ncbi.nlm.nih.gov/9862227/",
+            R.string.health_atlas_chondrocyte_story_ref_swelling to "https://pmc.ncbi.nlm.nih.gov/articles/PMC3175069/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    ADRENAL_MEDULLA_SIGNAL(
+        setOf("cell-chromaffin-cell", "adrenal-glands"),
+        R.string.health_atlas_adrenal_medulla_story_title,
+        R.string.health_atlas_adrenal_medulla_story_scope,
+        listOf(
+            R.string.health_atlas_adrenal_medulla_story_locate to R.string.health_atlas_adrenal_medulla_story_locate_caption,
+            R.string.health_atlas_adrenal_medulla_story_signal to R.string.health_atlas_adrenal_medulla_story_signal_caption,
+            R.string.health_atlas_adrenal_medulla_story_release to R.string.health_atlas_adrenal_medulla_story_release_caption,
+            R.string.health_atlas_adrenal_medulla_story_circulate to R.string.health_atlas_adrenal_medulla_story_circulate_caption,
+            R.string.health_atlas_adrenal_medulla_story_settle to R.string.health_atlas_adrenal_medulla_story_settle_caption,
+        ),
+        listOf(
+            R.string.health_atlas_adrenal_medulla_story_ref_exocytosis to "https://pubmed.ncbi.nlm.nih.gov/16723417/",
+            R.string.health_atlas_adrenal_medulla_story_ref_recovery to "https://pubmed.ncbi.nlm.nih.gov/6895925/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    GASTRIC_ACID_SECRETION(
+        setOf("cell-gastric-parietal-cell"),
+        R.string.health_atlas_gastric_acid_story_title,
+        R.string.health_atlas_gastric_acid_story_scope,
+        listOf(
+            R.string.health_atlas_gastric_acid_story_locate to R.string.health_atlas_gastric_acid_story_locate_caption,
+            R.string.health_atlas_gastric_acid_story_signal to R.string.health_atlas_gastric_acid_story_signal_caption,
+            R.string.health_atlas_gastric_acid_story_exchange to R.string.health_atlas_gastric_acid_story_exchange_caption,
+            R.string.health_atlas_gastric_acid_story_secrete to R.string.health_atlas_gastric_acid_story_secrete_caption,
+            R.string.health_atlas_gastric_acid_story_feedback to R.string.health_atlas_gastric_acid_story_feedback_caption,
+        ),
+        listOf(
+            R.string.health_atlas_gastric_acid_story_ref_canaliculus to "https://pubmed.ncbi.nlm.nih.gov/8382956/",
+            R.string.health_atlas_gastric_acid_story_ref_feedback to "https://pubmed.ncbi.nlm.nih.gov/7481540/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    MARROW_HEMATOPOIESIS(
+        setOf("bone-marrow", "cell-hematopoietic-stem-cell"),
+        R.string.health_atlas_marrow_story_title,
+        R.string.health_atlas_marrow_story_scope,
+        listOf(
+            R.string.health_atlas_marrow_story_niche to R.string.health_atlas_marrow_story_niche_caption,
+            R.string.health_atlas_marrow_story_renewal to R.string.health_atlas_marrow_story_renewal_caption,
+            R.string.health_atlas_marrow_story_commitment to R.string.health_atlas_marrow_story_commitment_caption,
+            R.string.health_atlas_marrow_story_maturation to R.string.health_atlas_marrow_story_maturation_caption,
+            R.string.health_atlas_marrow_story_release to R.string.health_atlas_marrow_story_release_caption,
+        ),
+        listOf(
+            R.string.health_atlas_marrow_story_ref_lineages to "https://pubmed.ncbi.nlm.nih.gov/26541609/",
+            R.string.health_atlas_marrow_story_ref_egress to "https://www.jstage.jst.go.jp/article/jvms/64/10/64_10_913/_article",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    CORONARY_PERFUSION(
+        setOf("coronary-vessels"),
+        R.string.health_atlas_coronary_story_title,
+        R.string.health_atlas_coronary_story_scope,
+        listOf(
+            R.string.health_atlas_coronary_story_ostia to R.string.health_atlas_coronary_story_ostia_caption,
+            R.string.health_atlas_coronary_story_branch to R.string.health_atlas_coronary_story_branch_caption,
+            R.string.health_atlas_coronary_story_systole to R.string.health_atlas_coronary_story_systole_caption,
+            R.string.health_atlas_coronary_story_diastole to R.string.health_atlas_coronary_story_diastole_caption,
+            R.string.health_atlas_coronary_story_return to R.string.health_atlas_coronary_story_return_caption,
+        ),
+        listOf(
+            R.string.health_atlas_coronary_story_ref_ostia to "https://pmc.ncbi.nlm.nih.gov/articles/PMC6172585/",
+            R.string.health_atlas_coronary_story_ref_flow to "https://pubmed.ncbi.nlm.nih.gov/7261259/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    PODOCYTE_BARRIER(
+        setOf("cell-podocyte"),
+        R.string.health_atlas_podocyte_story_title,
+        R.string.health_atlas_podocyte_story_scope,
+        HealthAtlasPodocyteStage.entries.map { it.title to it.caption },
+        listOf(
+            R.string.health_atlas_podocyte_story_ref_structure to HealthAtlasPodocyteStoryView.STRUCTURE_SOURCE,
+            R.string.health_atlas_podocyte_story_ref_albumin to HealthAtlasPodocyteStoryView.ALBUMIN_SOURCE,
+        ),
+        HealthAtlasPodocyteStoryView.DURATION_MS,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -1251,6 +1353,12 @@ internal enum class HealthAtlasFunctionStory(
         BRAINSTEM_RHYTHM -> R.string.health_atlas_brainstem_story_choice
         FIBROBLAST_MATRIX -> R.string.health_atlas_fibroblast_story_choice
         ARTERIAL_PULSE -> R.string.health_atlas_arterial_choice
+        CHONDROCYTE_MATRIX -> R.string.health_atlas_chondrocyte_story_choice
+        ADRENAL_MEDULLA_SIGNAL -> R.string.health_atlas_adrenal_medulla_story_choice
+        GASTRIC_ACID_SECRETION -> R.string.health_atlas_gastric_acid_story_choice
+        MARROW_HEMATOPOIESIS -> R.string.health_atlas_marrow_story_choice
+        CORONARY_PERFUSION -> R.string.health_atlas_coronary_story_choice
+        PODOCYTE_BARRIER -> R.string.health_atlas_podocyte_story_choice
         else -> title
     }
 
@@ -1279,10 +1387,10 @@ internal enum class HealthAtlasFunctionStory(
         INTESTINAL_ABSORPTION -> listOf("lymphatic-vessels" to LYMPH_RETURN)
         KNEE_ARTICULATION -> listOf("patella" to CARTILAGE_LOAD, "tissue-dense-regular-connective" to TENDON_FORCE_TRANSFER)
         CARDIAC_EXCITATION -> listOf("heart" to HEARTBEAT)
-        RED_CELL_OXYGEN -> listOf("pulmonary-capillaries" to BREATHING)
+        RED_CELL_OXYGEN -> listOf("pulmonary-capillaries" to BREATHING, "bone-marrow" to MARROW_HEMATOPOIESIS)
         SALIVA_SECRETION -> listOf("oral-cavity" to DIGESTION)
         VENOUS_RETURN -> listOf("heart" to HEARTBEAT)
-        NEPHRON -> listOf("renal-pelvis" to URINE_ROUTE)
+        NEPHRON -> listOf("renal-pelvis" to URINE_ROUTE, "cell-podocyte" to PODOCYTE_BARRIER)
         URINE_ROUTE -> listOf("nephron" to NEPHRON)
         PLEURAL_COUPLING -> listOf("lungs" to BREATHING)
         PARATHYROID_FEEDBACK -> listOf("renal-cortex" to NEPHRON, "small-intestine" to INTESTINAL_ABSORPTION)
@@ -1300,6 +1408,14 @@ internal enum class HealthAtlasFunctionStory(
         BRAINSTEM_RHYTHM -> listOf("diaphragm" to BREATHING)
         FIBROBLAST_MATRIX -> listOf("skin-organ" to EPIDERMAL_BARRIER)
         ARTERIAL_PULSE -> listOf("aorta" to HEARTBEAT, "capillaries" to ENDOTHELIAL_EXCHANGE, "veins" to VENOUS_RETURN)
+        HEARTBEAT -> listOf("coronary-vessels" to CORONARY_PERFUSION)
+        CORONARY_PERFUSION -> listOf("heart" to HEARTBEAT)
+        PODOCYTE_BARRIER -> listOf("glomerulus" to NEPHRON)
+        CHONDROCYTE_MATRIX -> listOf("tissue-hyaline-cartilage" to CARTILAGE_LOAD)
+        ADRENAL_MEDULLA_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
+        GASTRIC_ACID_SECRETION -> listOf("stomach" to DIGESTION)
+        MARROW_HEMATOPOIESIS -> listOf("cell-erythrocyte" to RED_CELL_OXYGEN)
+        CARTILAGE_LOAD -> listOf("cell-chondrocyte" to CHONDROCYTE_MATRIX)
         else -> emptyList()
     }
 
@@ -1376,6 +1492,12 @@ internal enum class HealthAtlasFunctionStory(
         BRAINSTEM_RHYTHM -> HealthAtlasBrainstemRhythmStoryView(context)
         FIBROBLAST_MATRIX -> HealthAtlasFibroblastStoryView(context)
         ARTERIAL_PULSE -> HealthAtlasArterialStoryView(context)
+        CHONDROCYTE_MATRIX -> HealthAtlasChondrocyteStoryView(context)
+        ADRENAL_MEDULLA_SIGNAL -> HealthAtlasAdrenalMedullaStoryView(context)
+        GASTRIC_ACID_SECRETION -> HealthAtlasGastricAcidStoryView(context)
+        MARROW_HEMATOPOIESIS -> HealthAtlasMarrowStoryView(context)
+        CORONARY_PERFUSION -> HealthAtlasCoronaryStoryView(context)
+        PODOCYTE_BARRIER -> HealthAtlasPodocyteStoryView(context)
         NEUTROPHIL_DEFENSE, EOSINOPHIL_RESPONSE, BASOPHIL_SIGNALING, MONOCYTE_RECRUITMENT,
         DENDRITIC_PRESENTATION, T_CELL_RESPONSE, NK_SURVEILLANCE, PLATELET_FORMATION, MACROPHAGE_CLEARANCE ->
             HealthAtlasCellFunctionArt(context, this, owners.single())
@@ -1415,6 +1537,7 @@ internal enum class HealthAtlasFunctionStory(
                 "cardio", "heart", "ventricles", "tissue-cardiac-muscle" -> listOf(primary, CARDIAC_EXCITATION)
                 "aorta" -> listOf(primary, ARTERIAL_PULSE)
                 "blood-vessels" -> listOf(primary, ENDOTHELIAL_EXCHANGE, VENOUS_RETURN)
+                "stomach" -> listOf(primary, GASTRIC_ACID_SECRETION)
                 "salivary-glands", "oral-cavity" -> listOf(primary, SALIVA_SECRETION)
                 "lungs" -> listOf(primary, PLEURAL_COUPLING)
                 "tendons" -> listOf(primary, TENDON_FORCE_TRANSFER)

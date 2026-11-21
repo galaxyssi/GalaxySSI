@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gastric_acid_story_title">壁细胞如何分泌胃酸</string>
+    <string name="health_atlas_gastric_acid_story_choice">胃酸分泌</string>
+    <string name="health_atlas_gastric_acid_story_scope">以胃腺中的一个壁细胞为例，定性展示人体正常的胃内消化。剖面、反馈回路、时序和粒子数量均为示意。</string>
+
+    <string name="health_atlas_gastric_acid_story_locate">在胃腺中找到壁细胞</string>
+    <string name="health_atlas_gastric_acid_story_locate_caption">胃体的胃腺经胃小凹通向胃腔。高亮处标出胃腺壁上的一个壁细胞。它分泌胃酸的一侧朝向腺腔，背向附近的血管。</string>
+    <string name="health_atlas_gastric_acid_story_signal">局部信号为分泌做准备</string>
+    <string name="health_atlas_gastric_acid_story_signal_caption">邻近细胞释放的组胺是促进胃酸分泌的信号之一。组胺与壁细胞朝向血液一侧的受体结合。细胞内带有质子泵的膜与顶端膜融合；这层顶端膜衬在通往腺腔的狭窄分泌小管内壁。</string>
+    <string name="health_atlas_gastric_acid_story_exchange">质子泵交换质子和钾离子</string>
+    <string name="health_atlas_gastric_acid_story_exchange_caption">在分泌小管处，质子泵利用 ATP 提供的能量，把质子（H⁺）送出细胞，同时把钾离子（K⁺）送入细胞。两种移动都由朝向腺腔的同一个泵完成。</string>
+    <string name="health_atlas_gastric_acid_story_secrete">氯离子与质子汇入腺腔</string>
+    <string name="health_atlas_gastric_acid_story_secrete_caption">氯离子（Cl⁻）经另一条通道进入同一分泌小管。质子和氯离子构成胃液中的盐酸成分。胃液流入胃腔，酸性环境有助于消化蛋白质。</string>
+    <string name="health_atlas_gastric_acid_story_feedback">酸度反馈调节分泌</string>
+    <string name="health_atlas_gastric_acid_story_feedback_caption">胃内容物酸度升高时，包括生长抑素在内的反馈信号会抑制胃泌素释放。胃泌素的刺激减弱，壁细胞分泌的胃酸就会减少。示意图只展示其中一条反馈途径。</string>
+
+    <string name="health_atlas_gastric_acid_story_stomach">胃</string>
+    <string name="health_atlas_gastric_acid_story_gastric_gland">胃腺</string>
+    <string name="health_atlas_gastric_acid_story_parietal_cell">壁细胞</string>
+    <string name="health_atlas_gastric_acid_story_apical_canaliculus">顶端分泌小管</string>
+    <string name="health_atlas_gastric_acid_story_blood_side">朝向血液的一侧</string>
+    <string name="health_atlas_gastric_acid_story_gland_lumen">腺腔</string>
+    <string name="health_atlas_gastric_acid_story_histamine">组胺信号</string>
+    <string name="health_atlas_gastric_acid_story_pump">质子泵</string>
+    <string name="health_atlas_gastric_acid_story_proton">质子（H⁺）</string>
+    <string name="health_atlas_gastric_acid_story_potassium">钾离子（K⁺）</string>
+    <string name="health_atlas_gastric_acid_story_chloride">氯离子（Cl⁻）</string>
+    <string name="health_atlas_gastric_acid_story_to_stomach">通往胃腔</string>
+    <string name="health_atlas_gastric_acid_story_stomach_acid">胃腔内的酸</string>
+    <string name="health_atlas_gastric_acid_story_somatostatin">生长抑素</string>
+    <string name="health_atlas_gastric_acid_story_gastrin">胃泌素</string>
+    <string name="health_atlas_gastric_acid_story_output">胃酸分泌</string>
+
+    <string name="health_atlas_gastric_acid_story_ref_canaliculus">研究证据：兔壁细胞分泌小管处的胃酸分泌</string>
+    <string name="health_atlas_gastric_acid_story_ref_feedback">研究证据：人体胃内酸度与反馈信号</string>
+</resources>

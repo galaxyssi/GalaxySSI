@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_chondrocyte_story_title">软骨细胞如何维持软骨基质</string>
+    <string name="health_atlas_chondrocyte_story_choice">软骨细胞与软骨基质</string>
+    <string name="health_atlas_chondrocyte_story_scope">以正常关节透明软骨为例，示意软骨细胞周围的基质。不按实际比例绘制分子及各基质区，并加快呈现缓慢的基质维持过程。</string>
+    <string name="health_atlas_chondrocyte_story_locate">软骨陷窝里的细胞</string>
+    <string name="health_atlas_chondrocyte_story_locate_caption">软骨细胞位于称为软骨陷窝的小腔内。细胞周基质紧贴细胞，领地基质包绕其外，领地间基质则填充细胞之间的区域。</string>
+    <string name="health_atlas_chondrocyte_story_collagen">为胶原网络补充材料</string>
+    <string name="health_atlas_chondrocyte_story_collagen_caption">软骨细胞释放Ⅱ型胶原的前体。胶原在细胞外组装成原纤维，加入已有的网络。成熟软骨中的胶原更新非常缓慢。</string>
+    <string name="health_atlas_chondrocyte_story_aggrecan">补充聚集蛋白聚糖</string>
+    <string name="health_atlas_chondrocyte_story_aggrecan_caption">软骨细胞也合成并释放聚集蛋白聚糖。这些刷状分子在细胞外附着于透明质酸链，补充胶原网络中的蛋白聚糖聚集体。</string>
+    <string name="health_atlas_chondrocyte_story_hydration">基质留住水分</string>
+    <string name="health_atlas_chondrocyte_story_hydration_caption">聚集蛋白聚糖带负电的侧链有助于将水分吸引到基质中。胶原网络限制基质膨胀，使富含水分的基质能够抵抗压缩。</string>
+    <string name="health_atlas_chondrocyte_story_recovery">富含水分的基质恢复原形</string>
+    <string name="health_atlas_chondrocyte_story_recovery_caption">短暂受压时，基质受到挤压，部分水分移开。压力解除后，水分回流，组织恢复原形。这比细胞持续维持基质的过程快得多。</string>
+    <string name="health_atlas_chondrocyte_story_label_lacuna">软骨陷窝</string>
+    <string name="health_atlas_chondrocyte_story_label_chondrocyte">软骨细胞</string>
+    <string name="health_atlas_chondrocyte_story_label_pericellular">细胞周基质</string>
+    <string name="health_atlas_chondrocyte_story_label_territorial">领地基质</string>
+    <string name="health_atlas_chondrocyte_story_label_interterritorial">领地间基质</string>
+    <string name="health_atlas_chondrocyte_story_label_collagen">Ⅱ型胶原</string>
+    <string name="health_atlas_chondrocyte_story_label_aggrecan">聚集蛋白聚糖</string>
+    <string name="health_atlas_chondrocyte_story_label_water">水分</string>
+    <string name="health_atlas_chondrocyte_story_ref_aggrecan">Winter 等（1998）：关节软骨细胞周围聚集蛋白聚糖的周转</string>
+    <string name="health_atlas_chondrocyte_story_ref_swelling">Han 等（2011）：蛋白聚糖的渗透膨胀压与软骨压缩</string>
+</resources>

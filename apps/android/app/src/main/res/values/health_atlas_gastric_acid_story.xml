@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gastric_acid_story_title">How parietal cells secrete stomach acid</string>
+    <string name="health_atlas_gastric_acid_story_choice">Gastric acid secretion</string>
+    <string name="health_atlas_gastric_acid_story_scope">A qualitative view of normal human stomach digestion, following one parietal cell in a gastric gland. The cutaway, feedback loop, timing and particle counts are schematic.</string>
+
+    <string name="health_atlas_gastric_acid_story_locate">Find a parietal cell in a gastric gland</string>
+    <string name="health_atlas_gastric_acid_story_locate_caption">In the body of the stomach, gastric glands open into the stomach cavity through gastric pits. The highlight locates one parietal cell along a gland. Its acid-secreting side opens into the gland, away from nearby blood vessels.</string>
+    <string name="health_atlas_gastric_acid_story_signal">A local signal readies the cell</string>
+    <string name="health_atlas_gastric_acid_story_signal_caption">Histamine from a nearby cell is one signal for acid secretion. It binds on the blood-facing side of the parietal cell. Inside the cell, membranes carrying proton pumps join the apical membrane lining the canaliculus, a narrow passage open to the gland lumen.</string>
+    <string name="health_atlas_gastric_acid_story_exchange">The pump exchanges protons for potassium</string>
+    <string name="health_atlas_gastric_acid_story_exchange_caption">At the canaliculus, the proton pump uses energy from ATP to move protons (H⁺) out of the cell and potassium ions (K⁺) in. Both movements are shown at the same pump on the side facing the gland lumen.</string>
+    <string name="health_atlas_gastric_acid_story_secrete">Chloride joins protons in the lumen</string>
+    <string name="health_atlas_gastric_acid_story_secrete_caption">Chloride ions (Cl⁻) pass through a separate channel into the same passage. The protons and chloride form the hydrochloric acid component of gastric juice. This juice reaches the stomach cavity, where the acidic environment helps digest proteins.</string>
+    <string name="health_atlas_gastric_acid_story_feedback">Acidity feeds back on secretion</string>
+    <string name="health_atlas_gastric_acid_story_feedback_caption">As stomach contents become more acidic, feedback signals including somatostatin restrain gastrin release. With less stimulation from gastrin, parietal cells secrete less acid. The diagram traces one pathway rather than showing all the signals involved.</string>
+
+    <string name="health_atlas_gastric_acid_story_stomach">Stomach</string>
+    <string name="health_atlas_gastric_acid_story_gastric_gland">Gastric gland</string>
+    <string name="health_atlas_gastric_acid_story_parietal_cell">Parietal cell</string>
+    <string name="health_atlas_gastric_acid_story_apical_canaliculus">Apical canaliculus</string>
+    <string name="health_atlas_gastric_acid_story_blood_side">Blood-facing side</string>
+    <string name="health_atlas_gastric_acid_story_gland_lumen">Gland lumen</string>
+    <string name="health_atlas_gastric_acid_story_histamine">Histamine signal</string>
+    <string name="health_atlas_gastric_acid_story_pump">Proton pump</string>
+    <string name="health_atlas_gastric_acid_story_proton">Proton (H⁺)</string>
+    <string name="health_atlas_gastric_acid_story_potassium">Potassium (K⁺)</string>
+    <string name="health_atlas_gastric_acid_story_chloride">Chloride (Cl⁻)</string>
+    <string name="health_atlas_gastric_acid_story_to_stomach">To stomach cavity</string>
+    <string name="health_atlas_gastric_acid_story_stomach_acid">Acid in stomach</string>
+    <string name="health_atlas_gastric_acid_story_somatostatin">Somatostatin</string>
+    <string name="health_atlas_gastric_acid_story_gastrin">Gastrin</string>
+    <string name="health_atlas_gastric_acid_story_output">Acid secretion</string>
+
+    <string name="health_atlas_gastric_acid_story_ref_canaliculus">Evidence: acid secretion at the parietal cell canaliculus in rabbits</string>
+    <string name="health_atlas_gastric_acid_story_ref_feedback">Evidence: stomach acidity and feedback signals in humans</string>
+</resources>

@@ -520,6 +520,15 @@ separately marked. The aorta's original ejection lesson remains available;
 the vessel-family entry also links to venous return and capillary exchange.
 The cutaways use qualitative motion, not personal flow or pressure values.
 
+Separate close-ups show articular chondrocytes maintaining their matrix,
+chromaffin cells releasing hormones in the adrenal medulla, gastric
+parietal cells secreting acid, and blood cells forming in red marrow.
+Related entries link to these lessons without reassigning unrelated cells.
+The coronary lesson links to the heartbeat while separately showing perfusion
+during contraction and relaxation and drainage through the coronary sinus.
+The podocyte lesson shows the three layers of the filtration barrier rather
+than attributing whole-nephron transport to one cell.
+
 The pinned Agent action follows the current surface. Public catalogue, mechanism
 and research prompts use `HealthAtlasAgentContext`: selected anatomy, current
 teaching stage, cardiac or other quantitative inputs, assumptions and sources.

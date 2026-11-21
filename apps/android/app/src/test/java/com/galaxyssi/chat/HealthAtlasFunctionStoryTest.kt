@@ -65,6 +65,23 @@ class HealthAtlasFunctionStoryTest {
         assertTrue(motion.expansion(2, .8f, late) > motion.expansion(2, .8f, early))
     }
 
+    @Test fun regionalTopicsRespectTheirCellAndOrganScope() {
+        assertEquals(HealthAtlasFunctionStory.CORONARY_PERFUSION, HealthAtlasFunctionStory.forId("coronary-vessels"))
+        assertEquals(HealthAtlasFunctionStory.HEARTBEAT, HealthAtlasFunctionStory.forId("heart"))
+        assertEquals(HealthAtlasFunctionStory.PODOCYTE_BARRIER, HealthAtlasFunctionStory.forId("cell-podocyte"))
+        assertEquals(HealthAtlasFunctionStory.NEPHRON, HealthAtlasFunctionStory.forId("glomerulus"))
+        assertEquals(HealthAtlasFunctionStory.ADRENAL_MEDULLA_SIGNAL, HealthAtlasFunctionStory.forId("adrenal-glands"))
+        assertEquals(HealthAtlasFunctionStory.ADRENAL_MEDULLA_SIGNAL, HealthAtlasFunctionStory.forId("cell-chromaffin-cell"))
+        assertNull(HealthAtlasFunctionStory.forId("cell-adrenocortical-cell"))
+        assertEquals(HealthAtlasFunctionStory.GASTRIC_ACID_SECRETION, HealthAtlasFunctionStory.forId("cell-gastric-parietal-cell"))
+        assertNull(HealthAtlasFunctionStory.forId("cell-gastric-chief-cell"))
+        assertEquals(listOf(HealthAtlasFunctionStory.DIGESTION, HealthAtlasFunctionStory.GASTRIC_ACID_SECRETION),
+            HealthAtlasFunctionStory.choicesForId("stomach"))
+        assertEquals(HealthAtlasFunctionStory.MARROW_HEMATOPOIESIS,
+            HealthAtlasFunctionStory.forId("cell-hematopoietic-stem-cell"))
+        assertEquals(HealthAtlasFunctionStory.RED_CELL_OXYGEN, HealthAtlasFunctionStory.forId("cell-erythrocyte"))
+    }
+
     @Test fun focusedEntryChaptersAreOnlyDefaultsAndDoNotOverrideSavedPlayback() {
         val items = mapOf(
             "aorta" to (HealthAtlasFunctionStory.HEARTBEAT to HealthAtlasBeatStage.EJECTION.ordinal),
@@ -201,7 +218,9 @@ class HealthAtlasFunctionStoryTest {
             HealthAtlasFunctionStory.choicesForId("tendons"))
         assertEquals(HealthAtlasFunctionStory.ENDOTHELIAL_EXCHANGE, HealthAtlasFunctionStory.forId("capillaries"))
         assertEquals(HealthAtlasFunctionStory.BREATHING, HealthAtlasFunctionStory.forId("pulmonary-capillaries"))
-        assertNull(HealthAtlasFunctionStory.forId("cell-chondrocyte"))
+        assertEquals(HealthAtlasFunctionStory.CHONDROCYTE_MATRIX, HealthAtlasFunctionStory.forId("cell-chondrocyte"))
+        assertEquals(listOf("cell-chondrocyte" to HealthAtlasFunctionStory.CHONDROCYTE_MATRIX),
+            HealthAtlasFunctionStory.CARTILAGE_LOAD.relatedLessons)
     }
 
     @Test fun glut4DocksAndFlattensContinuouslyBeforeGlucoseCrossesTheMembrane() {
@@ -388,7 +407,7 @@ class HealthAtlasFunctionStoryTest {
         }
         assertEquals(HealthAtlasFunctionStory.GLUCOSE, HealthAtlasFunctionStory.forId("tissue-skeletal-muscle"))
         assertEquals(HealthAtlasFunctionStory.CARDIAC_EXCITATION, HealthAtlasFunctionStory.forId("cell-cardiomyocyte"))
-        assertNull(HealthAtlasFunctionStory.forId("bone-marrow"))
+        assertEquals(HealthAtlasFunctionStory.MARROW_HEMATOPOIESIS, HealthAtlasFunctionStory.forId("bone-marrow"))
         assertTrue(movement.sarcomereHalfWidth(1f) < movement.sarcomereHalfWidth(0f))
         assertTrue(movement.ACTIN_LENGTH + movement.MYOSIN_LENGTH / 2 > movement.sarcomereHalfWidth(0f))
         assertEquals(movement.elbowAngle(false, 1f), movement.elbowAngle(true, 0f), 0f)
