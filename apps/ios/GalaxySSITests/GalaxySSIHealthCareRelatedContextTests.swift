@@ -213,4 +213,104 @@ final class GalaxySSIHealthCareRelatedContextTests: XCTestCase {
     XCTAssertTrue(f.approval.relatedHistory.isEmpty)
     XCTAssertFalse(try f.approval.providerPayload(now: f.now).contains("related_measurements"))
   }
+
+  func testMissingSelectedInputIsCorrectableWithoutInsertingReferences() throws {
+    let f = try HealthModelReviewFixture(selected: [.weight, .bloodPressure])
+    var missing = try f.arguments()
+    missing["records"] = .array(GalaxySSIHealthCareModelReview.references(f.concern).map(\.payload))
+    let original = missing
+    XCTAssertThrowsError(try f.records.recordLocalCareModelReview(f.approval, arguments: missing, now: f.now)) { error in
+      guard let failure = error as? GalaxySSIHealthRecords.Failure else { return XCTFail("Wrong failure type") }
+      XCTAssertEqual(GalaxySSIHealthCareModelReview.failure(failure)?["error"], .string("invalid_health_review"))
+    }
+    XCTAssertEqual(missing, original)
+    XCTAssertNil(try f.records.load().localCareModelReviews?[f.approval.id])
+    let repaired = try f.records.recordLocalCareModelReview(f.approval, arguments: f.arguments(), now: f.now)
+    XCTAssertEqual(repaired.input.records.count, 3)
+    XCTAssertEqual(repaired.input.payload["records"], try f.arguments()["records"])
+  }
+
+  func testOmittingOneOfSeveralSelectedInputsIsAlsoRejected() throws {
+    let f = try HealthModelReviewFixture(selected: [.weight, .bloodPressure])
+    let pressure = try XCTUnwrap(GalaxySSIHealthCareRelatedContext.measurement(.bloodPressure,
+      archive: f.records.load(), now: f.now).record)
+    var input = try f.arguments()
+    input["records"] = .array((input["records"]?.arrayValue ?? []).filter {
+      $0 != GalaxySSIHealthCareModelReview.Reference(pressure).payload
+    })
+    XCTAssertThrowsError(try f.records.recordLocalCareModelReview(f.approval, arguments: input, now: f.now)) { error in
+      guard let failure = error as? GalaxySSIHealthRecords.Failure else { return XCTFail("Wrong failure type") }
+      XCTAssertEqual(GalaxySSIHealthCareModelReview.failure(failure)?["error"], .string("invalid_health_review"))
+    }
+    XCTAssertNil(try f.records.load().localCareModelReviews?[f.approval.id])
+  }
+
+  func testUnavailableSelectedMetricDoesNotRequireInventedReference() throws {
+    let f = try HealthModelReviewFixture(selected: [.weight, .height])
+    let archive = try f.records.load()
+    XCTAssertNil(GalaxySSIHealthCareRelatedContext.measurement(.height, archive: archive, now: f.now).record)
+    XCTAssertEqual(f.records.requiredLocalCareReviewReferences(f.concern, related: f.approval.relatedMeasurements,
+      archive: archive, now: f.now).count, 2)
+    let review = try f.records.recordLocalCareModelReview(f.approval, arguments: f.arguments(), now: f.now)
+    XCTAssertEqual(review.input.records.count, 2)
+  }
+
+  func testRequiredSelectedReferencesCannotBeTruncatedByLongPrimaryBaseline() throws {
+    let f = try HealthModelReviewFixture(selected: [.weight, .bloodPressure])
+    var concern = f.concern
+    let source = concern.assessment
+    let baseline = (0..<30).map { _ in
+      GalaxySSIHealthCare.Record(GalaxySSIHealthReading(revision: 1, metric: .glucose, value: 100))
+    }
+    concern.assessment = .init(record: source.record, measuredAt: source.measuredAt, result: source.result,
+      unit: source.unit, reference: source.reference, signals: source.signals, guidelineVersion: source.guidelineVersion,
+      baseline: .init(records: baseline, low: 90, high: 110))
+    let archive = try f.records.load()
+    let required = f.records.requiredLocalCareReviewReferences(concern, related: f.approval.relatedMeasurements,
+      archive: archive, now: f.now)
+    let allowed = f.records.localCareReviewReferences(concern, related: f.approval.relatedMeasurements,
+      archive: archive, now: f.now)
+    XCTAssertEqual(required.count, 3); XCTAssertEqual(allowed.count, 30)
+    XCTAssertTrue(Set(required).isSubset(of: Set(allowed)))
+  }
+
+  func testActualCloudLoopCanRepairMissingSelectedReferencesWithinSameTurn() async throws {
+    let f = try HealthModelReviewFixture(selected: [.weight, .bloodPressure])
+    let model = try XCTUnwrap(f.approval.model)
+    let contact = GalaxySSIContact(id: "provider", galaxySSIId: "provider", name: "Fixture", displayName: "Fixture",
+      type: "agent", agentKind: "cloud-api", deliveryMode: .cloudAPI, trustState: .verified, desktopId: "", desktopName: "",
+      identityFingerprint: "", setupStatus: "ready", setupDetail: "", cloudProvider: "Custom", cloudModels: [model],
+      selectedCloudModelId: model.id, deleted: false, createdAt: f.now, updatedAt: f.now)
+    func call(_ input: AgentMcpJSONObject) -> Data {
+      Data(AgentMcpJSONCodec.stringify(["choices": .array([.object(["finish_reason": .string("tool_calls"),
+        "message": .object(["role": .string("assistant"), "tool_calls": .array([.object([
+          "id": .string(UUID().uuidString), "type": .string("function"), "function": .object([
+            "name": .string(GalaxySSIHealthCareModelReview.function), "arguments": .string(AgentMcpJSONCodec.stringify(input))])])])])])])]).utf8)
+    }
+    var missing = try f.arguments()
+    missing["records"] = .array(GalaxySSIHealthCareModelReview.references(f.concern).map(\.payload))
+    let corrected = call(try f.arguments())
+    var steps = 0
+    let final = try await GalaxySSIHealthScopedReadTransport.finish(f.approval, records: f.records,
+      initial: call(missing), request: GalaxySSIHealthCareDiscussion.request(f.approval, key: "fixture-api-key"),
+      style: .openAICompatible, ledger: InMemoryAgentDataDisclosureStore(), currentDestination: { contact }, send: { request in
+        steps += 1
+        let text = String(decoding: try XCTUnwrap(request.httpBody), as: UTF8.self)
+        if steps == 1 {
+          XCTAssertNil(try f.records.load().localCareModelReviews?[f.approval.id])
+          XCTAssertTrue(text.contains("invalid_health_review"))
+          XCTAssertTrue(text.contains("EVERY available selected"))
+          XCTAssertFalse(text.contains("health_review_scope_changed"))
+          return corrected
+        }
+        XCTAssertEqual(try f.records.load().localCareModelReviews?[f.approval.id]?.input.records.count, 3)
+        return Data(#"{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Corrected input provenance"}}]}"#.utf8)
+      })
+    XCTAssertEqual(steps, 2)
+    try f.records.finishLocalCareDiscussionTurn(f.approval,
+      answer: GalaxySSIHealthFollowUpTransport.output(final, style: .openAICompatible), now: f.now)
+    XCTAssertEqual(try f.records.load().localCareResearch?.jobs[f.concern.id.uuidString]?.state, .completed)
+    XCTAssertTrue(try f.records.load().localCareFollowUps?.isEmpty ?? true)
+    XCTAssertTrue(try f.records.load().localCare?.current["glucose"]?.adoptedActions?.isEmpty ?? true)
+  }
 }

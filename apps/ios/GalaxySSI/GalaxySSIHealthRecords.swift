@@ -1339,6 +1339,8 @@ struct GalaxySSIHealthRecords {
           job.authorization == authorization.id, now >= approval.reviewedAt,
           Set(input.records).isSubset(of: Set(localCareReviewReferences(concern, related: approval.relatedMeasurements, archive: archive, now: now))),
           concern.assessment.record.map({ input.records.contains(Review.Reference($0)) }) == true else { throw Failure.stale }
+    let required = requiredLocalCareReviewReferences(concern, related: approval.relatedMeasurements, archive: archive, now: now)
+    guard Set(required).isSubset(of: Set(input.records)) else { throw Failure.invalid }
     let evidence = archive.localCareEvidence?[approval.id.uuidString] ?? []
     guard evidence == approval.evidence, input.evidenceIDs.allSatisfy({ id in
       evidence.contains { $0.id == id && $0.valid(for: approval, now: now) }
