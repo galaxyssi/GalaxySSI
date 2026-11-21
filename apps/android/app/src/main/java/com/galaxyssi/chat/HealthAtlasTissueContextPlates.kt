@@ -5,7 +5,8 @@ internal object HealthAtlasTissueContextPlates {
         HealthAtlasFeature(HealthAtlasMarker(id, x / 360f, y / 280f), title, explanation)
     private fun plate(id: String, art: Int, source: String, caption: Int, vararg features: HealthAtlasFeature,
         markers: List<HealthAtlasMarker> = emptyList(), splitCallouts: Boolean = false) =
-        HealthAtlasPlate(art, id, caption, markers, source, features = features.toList(), splitCallouts = splitCallouts)
+        HealthAtlasPlate(art, id, caption, markers, source, viewKey = "atlas-detail-$id", selectorLabel = caption,
+            features = features.toList(), splitCallouts = splitCallouts)
 
     val all = listOf(
         plate("fibula", R.drawable.health_atlas_fibula_section,
