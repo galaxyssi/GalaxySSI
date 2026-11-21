@@ -97,13 +97,23 @@ class HealthAtlasCirculationDeviceTest {
         }
     }
     @Test fun researchUsesTheSameCircuitAndReturnsToItsInputs() = native { scenario ->
+        fun mechanismComesFirst(activity: Activity): Boolean {
+            val diagram = activity.view("atlas-process")
+            val output = activity.view("atlas-physiology-output")
+            val parent = diagram.parent as ViewGroup
+            assertSame(parent, output.parent)
+            return parent.indexOfChild(diagram) < parent.indexOfChild(output)
+        }
         scenario.onActivity {
+            assertFalse(mechanismComesFirst(it))
             it.view("atlas-open-research").performClick()
+            assertTrue(mechanismComesFirst(it))
             it.view("atlas-process-stage-1").performClick()
             assertNotNull(it.view("atlas-source-circulation"))
             it.view("atlas-circulation-node-lungs").performClick()
             it.onBackPressed()
             assertTrue(it.view("atlas-research-tab-0").isSelected)
+            assertTrue(mechanismComesFirst(it))
             assertEquals(250, (it.view("atlas-simulation-progress") as SeekBar).progress)
             it.view("atlas-research-tab-1").performClick()
             assertNull(it.window.decorView.tagged("atlas-circulation-node-lungs"))

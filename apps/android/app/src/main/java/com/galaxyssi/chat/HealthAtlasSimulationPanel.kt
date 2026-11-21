@@ -14,7 +14,7 @@ import java.text.NumberFormat
 internal class HealthAtlasSimulationPanel(private val activity: Activity, private val body: LinearLayout,
     private val atlas: HealthBodyAtlas, private val item: HealthAtlasItem, initial: HealthAtlasSimulation?,
     quantitativeInitial: HealthAtlasPhysiology?, zoom: (Int, String) -> Unit, source: (String) -> Unit,
-    select: (HealthAtlasItem) -> Unit) {
+    select: (HealthAtlasItem) -> Unit, mechanismFirst: Boolean = false) {
     private val ui = HealthCenterViews(activity)
     private val mechanism = atlas.mechanism(item)
     private val cardiac = item.id in setOf("heart", "cardio")
@@ -51,7 +51,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private val isletStages = if (item.id == HealthAtlasIsletStages.OWNER) HealthAtlasIsletStages(activity, atlas, select) else null
     private val sweatView = if (item.id == HealthAtlasSweatView.OWNER) HealthAtlasSweatView(activity, mechanism) else null
     private val sectionView = HealthAtlasSectionLesson.forId(item.id)?.let { HealthAtlasSectionLessonView(activity, it, mechanism) }
-    private val quantitativeAfterArt = gasExchange != null || pancreaticRoutes != null || endocrinePath != null ||
+    private val quantitativeAfterArt = mechanismFirst || gasExchange != null || pancreaticRoutes != null || endocrinePath != null ||
         sweatView != null || (sectionView != null && item.kind != HealthAtlasKind.CELL)
     private val resetInputs = arrayListOf<() -> Unit>()
     init {
