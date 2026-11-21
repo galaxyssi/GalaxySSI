@@ -179,6 +179,43 @@ class HealthAtlasFunctionStoryDeviceTest {
         } finally { clearHealthOverviewFixture(context, fixture) }
     }
 
+    @Test fun ocularCellAnimationsRemainSeparateFromOpticsAndRetinalSimulation() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-tab-2").performClick()
+                    activity.find<EditText>("atlas-search").setText("retina")
+                    activity.find<View>("atlas-entry-retina").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-vision-art")
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    activity.find<View>("atlas-function-dim-light-relay-art")
+                    repeat(3) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_ocular_relay_branches_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-function-lesson-2").performClick()
+                    activity.find<View>("atlas-function-rpe-visual-cycle-art")
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.find<View>("atlas-retinal-path")
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    assertEquals(.6f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.onBackPressed()
+                    openCell(activity, "cell-corneal-epithelial-cell")
+                    activity.find<View>("atlas-function-corneal-surface-renewal-art")
+                    repeat(2) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_ocular_cornea_migration_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
     @Test fun mealAndColonKeepIndependentProgressAndVillusSimulation() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())

@@ -1358,3 +1358,17 @@ Merkel-cell and sensory-nerve complex. The vestibular lesson separates
 canal fluid lag, cupula displacement, otolith movement, and compensatory
 eye rotation. These are educational paths, not personal sensitivity
 measurements or clinical tests.
+
+## Ocular Cell Lessons
+
+The additional ocular scenes separate three processes: retinoid exchange
+between rods and the retinal pigment epithelium, the AII relay into ON
+and OFF pathways in the inner retina, and normal corneal surface renewal.
+The rod relay distinguishes electrical coupling from glycinergic
+inhibition. Corneal surface renewal shows inward migration separately
+from movement through the epithelial layers. Its colored routes are
+schematic and do not model injury, recovery time or corrective optics.
+
+Retina, rod and cornea entries retain their earlier vision or light
+adaptation animations as the default. The existing optics simulation and
+structural plates remain separate from the new cell-function scenes.

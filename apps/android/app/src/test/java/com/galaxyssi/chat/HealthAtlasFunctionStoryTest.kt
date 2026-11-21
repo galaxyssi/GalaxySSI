@@ -113,7 +113,8 @@ class HealthAtlasFunctionStoryTest {
             .forEach { assertEquals(vision, HealthAtlasFunctionStory.forId(it)) }
         listOf("cell-rod-photoreceptor", "cell-cone-photoreceptor")
             .forEach { assertEquals(light, HealthAtlasFunctionStory.forId(it)) }
-        assertNull(HealthAtlasFunctionStory.forId("cell-retinal-pigment-epithelial-cell"))
+        assertEquals(HealthAtlasFunctionStory.RPE_VISUAL_CYCLE,
+            HealthAtlasFunctionStory.forId("cell-retinal-pigment-epithelial-cell"))
         val scenes = HealthAtlasVisionStage.adaptation
         for (i in 1 until scenes.size) {
             assertEquals(scenes[i - 1].displayLight(1f), scenes[i].displayLight(0f), .000001f)
@@ -342,6 +343,30 @@ class HealthAtlasFunctionStoryTest {
             assertTrue(motion.relativeFluid(t) < 0f)
             assertEquals(0f, motion.headHeading(t) + motion.gazeCounterRotation(t), 0f)
         }
+    }
+
+    @Test fun ocularCellsKeepSpecializedLessonsAndRetainTheExistingVisionAndAdaptationRoutes() {
+        val pigment = HealthAtlasFunctionStory.RPE_VISUAL_CYCLE
+        val relay = HealthAtlasFunctionStory.DIM_LIGHT_RELAY
+        val cornea = HealthAtlasFunctionStory.CORNEAL_SURFACE_RENEWAL
+        val vision = HealthAtlasFunctionStory.VISION
+        val adaptation = HealthAtlasFunctionStory.LIGHT_ADAPTATION
+
+        assertEquals(listOf(pigment), HealthAtlasFunctionStory.choicesForId("cell-retinal-pigment-epithelial-cell"))
+        assertEquals(listOf(relay), HealthAtlasFunctionStory.choicesForId("cell-retinal-aii-amacrine-cell"))
+        assertEquals(listOf(cornea), HealthAtlasFunctionStory.choicesForId("cell-corneal-epithelial-cell"))
+        assertEquals(listOf(vision, relay, pigment), HealthAtlasFunctionStory.choicesForId("retina"))
+        assertEquals(listOf(vision, relay), HealthAtlasFunctionStory.choicesForId("cell-retinal-bipolar-cell"))
+        assertEquals(listOf(adaptation, relay, pigment), HealthAtlasFunctionStory.choicesForId("cell-rod-photoreceptor"))
+        assertEquals(listOf(adaptation), HealthAtlasFunctionStory.choicesForId("cell-cone-photoreceptor"))
+        assertEquals(listOf(vision, cornea), HealthAtlasFunctionStory.choicesForId("cornea"))
+        assertEquals(listOf(vision), HealthAtlasFunctionStory.choicesForId("lens"))
+        assertEquals(172f, HealthAtlasOcularMotion.transfer(0f, false), 0f)
+        assertEquals(238f, HealthAtlasOcularMotion.transfer(1f, false), 0f)
+        assertEquals(238f, HealthAtlasOcularMotion.transfer(0f, true), 0f)
+        assertEquals(172f, HealthAtlasOcularMotion.transfer(1f, true), 0f)
+        assertTrue(HealthAtlasOcularMotion.limbalRadius(.85f) < HealthAtlasOcularMotion.limbalRadius(.15f))
+        assertTrue(HealthAtlasOcularMotion.relayFraction(.4f, 2) < HealthAtlasOcularMotion.relayFraction(.4f, 0))
     }
 
     @Test fun allChaptersScrubToTheirOwnBoundariesAndRejectInvalidState() = HealthAtlasFunctionStory.entries.forEach { story ->

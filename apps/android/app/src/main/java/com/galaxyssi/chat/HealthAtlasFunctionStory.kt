@@ -437,6 +437,60 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    RPE_VISUAL_CYCLE(
+        setOf("cell-retinal-pigment-epithelial-cell"),
+        R.string.health_atlas_ocular_pigment_title,
+        R.string.health_atlas_ocular_pigment_scope,
+        listOf(
+            R.string.health_atlas_ocular_pigment_layers to R.string.health_atlas_ocular_pigment_layers_caption,
+            R.string.health_atlas_ocular_pigment_light to R.string.health_atlas_ocular_pigment_light_caption,
+            R.string.health_atlas_ocular_pigment_outbound to R.string.health_atlas_ocular_pigment_outbound_caption,
+            R.string.health_atlas_ocular_pigment_processing to R.string.health_atlas_ocular_pigment_processing_caption,
+            R.string.health_atlas_ocular_pigment_return to R.string.health_atlas_ocular_pigment_return_caption,
+        ),
+        listOf(
+            R.string.health_atlas_ocular_pigment_ref_human to "https://pmc.ncbi.nlm.nih.gov/articles/PMC1131412/",
+            R.string.health_atlas_ocular_pigment_ref_enzyme to "https://pubmed.ncbi.nlm.nih.gov/9843205/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    DIM_LIGHT_RELAY(
+        setOf("cell-retinal-aii-amacrine-cell"),
+        R.string.health_atlas_ocular_relay_title,
+        R.string.health_atlas_ocular_relay_scope,
+        listOf(
+            R.string.health_atlas_ocular_relay_rods to R.string.health_atlas_ocular_relay_rods_caption,
+            R.string.health_atlas_ocular_relay_bipolar to R.string.health_atlas_ocular_relay_bipolar_caption,
+            R.string.health_atlas_ocular_relay_aii to R.string.health_atlas_ocular_relay_aii_caption,
+            R.string.health_atlas_ocular_relay_branches to R.string.health_atlas_ocular_relay_branches_caption,
+            R.string.health_atlas_ocular_relay_out to R.string.health_atlas_ocular_relay_out_caption,
+        ),
+        listOf(
+            R.string.health_atlas_ocular_relay_ref_circuit to "https://pmc.ncbi.nlm.nih.gov/articles/PMC6133723/",
+            R.string.health_atlas_ocular_relay_ref_junction to "https://pmc.ncbi.nlm.nih.gov/articles/PMC2834592/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    CORNEAL_SURFACE_RENEWAL(
+        setOf("cell-corneal-epithelial-cell"),
+        R.string.health_atlas_ocular_cornea_title,
+        R.string.health_atlas_ocular_cornea_scope,
+        listOf(
+            R.string.health_atlas_ocular_cornea_barrier to R.string.health_atlas_ocular_cornea_barrier_caption,
+            R.string.health_atlas_ocular_cornea_limbus to R.string.health_atlas_ocular_cornea_limbus_caption,
+            R.string.health_atlas_ocular_cornea_migration to R.string.health_atlas_ocular_cornea_migration_caption,
+            R.string.health_atlas_ocular_cornea_layers to R.string.health_atlas_ocular_cornea_layers_caption,
+            R.string.health_atlas_ocular_cornea_shed to R.string.health_atlas_ocular_cornea_shed_caption,
+        ),
+        listOf(
+            R.string.health_atlas_ocular_cornea_ref_human to "https://pubmed.ncbi.nlm.nih.gov/33865984/",
+            R.string.health_atlas_ocular_cornea_ref_lineage to "https://pmc.ncbi.nlm.nih.gov/articles/PMC5639292/",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -459,6 +513,10 @@ internal enum class HealthAtlasFunctionStory(
         TASTE_SIGNAL -> R.string.health_atlas_sense_choice_taste
         TOUCH_SIGNAL -> R.string.health_atlas_sense_choice_touch
         COLON -> R.string.health_atlas_sense_choice_colon
+        LIGHT_ADAPTATION -> R.string.health_atlas_ocular_choice_adaptation
+        RPE_VISUAL_CYCLE -> R.string.health_atlas_ocular_choice_pigment
+        DIM_LIGHT_RELAY -> R.string.health_atlas_ocular_choice_relay
+        CORNEAL_SURFACE_RENEWAL -> R.string.health_atlas_ocular_choice_cornea
         else -> title
     }
 
@@ -474,6 +532,9 @@ internal enum class HealthAtlasFunctionStory(
         TASTE_SIGNAL -> listOf("olfactory-mucosa" to OLFACTION)
         TOUCH_SIGNAL -> listOf("epidermis" to EPIDERMAL_BARRIER)
         VESTIBULAR_BALANCE -> listOf("cochlea" to HEARING)
+        RPE_VISUAL_CYCLE -> listOf("cell-retinal-aii-amacrine-cell" to DIM_LIGHT_RELAY)
+        DIM_LIGHT_RELAY -> listOf("cell-rod-photoreceptor" to LIGHT_ADAPTATION)
+        CORNEAL_SURFACE_RENEWAL -> listOf("cornea" to VISION)
         else -> emptyList()
     }
 
@@ -497,6 +558,7 @@ internal enum class HealthAtlasFunctionStory(
         SPERM_TRANSPORT, OVUM_TRANSPORT -> HealthAtlasGameteStoryView(context, this)
         OLFACTION, TASTE_SIGNAL -> HealthAtlasChemicalSenseStoryView(context, this)
         TOUCH_SIGNAL, VESTIBULAR_BALANCE -> HealthAtlasMotionSenseStoryView(context, this)
+        RPE_VISUAL_CYCLE, DIM_LIGHT_RELAY, CORNEAL_SURFACE_RENEWAL -> HealthAtlasOcularStoryView(context, this)
     }
 
     companion object {
@@ -517,6 +579,10 @@ internal enum class HealthAtlasFunctionStory(
                 "ear", "inner-ear", "cell-inner-ear-hair-cell" -> listOf(primary, VESTIBULAR_BALANCE)
                 "tongue" -> listOf(primary, TASTE_SIGNAL)
                 "gut" -> listOf(primary, COLON)
+                "retina" -> listOf(primary, DIM_LIGHT_RELAY, RPE_VISUAL_CYCLE)
+                "cell-rod-photoreceptor" -> listOf(primary, DIM_LIGHT_RELAY, RPE_VISUAL_CYCLE)
+                "cell-retinal-bipolar-cell" -> listOf(primary, DIM_LIGHT_RELAY)
+                "cornea" -> listOf(primary, CORNEAL_SURFACE_RENEWAL)
                 else -> listOf(primary)
             }
         }
