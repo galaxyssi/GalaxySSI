@@ -1,12 +1,14 @@
 package com.galaxyssi.chat
 
 import android.content.Intent
+import android.os.Build
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.app.Instrumentation
 import android.app.Dialog
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.ScrollView
@@ -53,7 +55,7 @@ class AgentRichContentPinchZoomTest {
         }
 
         val touch = viewportTouch(instrumentation, viewport)
-        dispatchPinch(touch, centerX, centerY)
+        dispatchPinch(touch, centerX, centerY, engagedPinchRadius(viewport))
         instrumentation.waitForIdleSync()
         val translationBefore = image.translationX
         dispatchDrag(touch, centerX, centerY, centerX + 140f, centerY + 80f)
@@ -101,7 +103,7 @@ class AgentRichContentPinchZoomTest {
                 y = viewport.height / 2f
             }
             val touch = viewportTouch(instrumentation, viewport)
-            dispatchPinch(touch, x, y)
+            dispatchPinch(touch, x, y, engagedPinchRadius(viewport))
             instrumentation.waitForIdleSync()
             assertTrue(viewport.currentZoomScale > 1.2f)
             assertEquals(0, clicks)
@@ -174,7 +176,7 @@ class AgentRichContentPinchZoomTest {
             pinchCenterX = webLocation[0] + viewport.width / 2f
             pinchCenterY = webLocation[1] + viewport.height / 2f
         }
-        dispatchPinch(instrumentation::sendPointerSync, pinchCenterX, pinchCenterY)
+        dispatchPinch(instrumentation::sendPointerSync, pinchCenterX, pinchCenterY, engagedPinchRadius(viewport))
         instrumentation.waitForIdleSync()
         SystemClock.sleep(250)
         instrumentation.runOnMainSync {
@@ -202,40 +204,49 @@ class AgentRichContentPinchZoomTest {
         }
     }
 
-    private fun dispatchPinch(touch: (MotionEvent) -> Unit, centerX: Float, centerY: Float) {
+    private fun engagedPinchRadius(viewport: View): Float {
+        val configuration = ViewConfiguration.get(viewport.context)
+        val minimumSpan = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) configuration.scaledMinimumScalingSpan.toFloat()
+            else 170f * viewport.resources.displayMetrics.density
+        return minimumSpan / 2f + configuration.scaledTouchSlop + 1f
+    }
+
+    private fun dispatchPinch(touch: (MotionEvent) -> Unit, centerX: Float, centerY: Float, engaged: Float) {
         val downTime = SystemClock.uptimeMillis() - 80
         val first = pointerProperties(0)
         val second = pointerProperties(1)
-        touch(event(downTime, downTime, MotionEvent.ACTION_DOWN, listOf(first), listOf(coords(centerX - 70f, centerY))))
+        val start = .38f * engaged
+        val widened = 1.5f * engaged
+        touch(event(downTime, downTime, MotionEvent.ACTION_DOWN, listOf(first), listOf(coords(centerX - start, centerY))))
         touch(event(
             downTime,
             downTime + 16,
             MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
             listOf(first, second),
-            listOf(coords(centerX - 70f, centerY), coords(centerX + 70f, centerY))
+            listOf(coords(centerX - start, centerY), coords(centerX + start, centerY))
         ))
         touch(event(
             downTime,
             downTime + 32,
             MotionEvent.ACTION_MOVE,
             listOf(first, second),
-            listOf(coords(centerX - 150f, centerY), coords(centerX + 150f, centerY))
+            listOf(coords(centerX - engaged, centerY), coords(centerX + engaged, centerY))
         ))
         touch(event(
             downTime,
             downTime + 48,
             MotionEvent.ACTION_MOVE,
             listOf(first, second),
-            listOf(coords(centerX - 230f, centerY), coords(centerX + 230f, centerY))
+            listOf(coords(centerX - widened, centerY), coords(centerX + widened, centerY))
         ))
         touch(event(
             downTime,
             downTime + 64,
             MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
             listOf(first, second),
-            listOf(coords(centerX - 230f, centerY), coords(centerX + 230f, centerY))
+            listOf(coords(centerX - widened, centerY), coords(centerX + widened, centerY))
         ))
-        touch(event(downTime, downTime + 80, MotionEvent.ACTION_UP, listOf(first), listOf(coords(centerX - 230f, centerY))))
+        touch(event(downTime, downTime + 80, MotionEvent.ACTION_UP, listOf(first), listOf(coords(centerX - widened, centerY))))
     }
 
     private fun dispatchDrag(
