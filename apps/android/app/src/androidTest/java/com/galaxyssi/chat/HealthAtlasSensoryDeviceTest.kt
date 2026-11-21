@@ -139,11 +139,14 @@ class HealthAtlasSensoryDeviceTest {
         scenario.onActivity {
             it.open("retina"); it.view("atlas-tab-3").performClick()
             val path = it.view("atlas-retinal-path") as HealthAtlasRetinaPath
+            val section = it.view("atlas-section-diagram") as HealthAtlasSectionLessonView
             val atlas = HealthBodyAtlas.load(it)
             val mechanism = atlas.mechanism(requireNotNull(atlas["retina"]))
             for (i in 0..3) {
                 it.view("atlas-retina-node-$i").performClick()
                 assertEquals(i, path.stage)
+                assertEquals(i, section.stage)
+                assertTrue(section.contentDescription.contains(mechanism.stages[i]))
                 assertEquals(mechanism.stages[i], (it.view("atlas-retina-step-text") as TextView).text.toString())
             }
             it.view("atlas-retina-node-2").performClick()
@@ -156,6 +159,7 @@ class HealthAtlasSensoryDeviceTest {
         scenario.recreate(); ready(scenario, "atlas-retinal-path")
         scenario.onActivity {
             assertEquals(1, (it.view("atlas-retinal-path") as HealthAtlasRetinaPath).stage)
+            assertEquals(1, (it.view("atlas-section-diagram") as HealthAtlasSectionLessonView).stage)
             it.view("atlas-retina-open-cell-retinal-aii-amacrine-cell").performClick()
             assertNotNull(it.view("atlas-feature-aii-on-connection"))
             assertNull(it.window.decorView.tagged("atlas-retinal-path"))

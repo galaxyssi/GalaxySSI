@@ -27,7 +27,7 @@ internal class HealthAtlasSectionLessonView(context: Context, val lesson: Health
 
     init {
         tag = "atlas-section-diagram"
-        art.setBounds(0, 0, 360, 280)
+        art.setBounds(0, 0, lesson.artWidth, 280)
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         describe()
     }
@@ -40,17 +40,17 @@ internal class HealthAtlasSectionLessonView(context: Context, val lesson: Health
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val available = MeasureSpec.getSize(widthMeasureSpec)
         val maximum = (226 * resources.displayMetrics.density).toInt()
-        setMeasuredDimension(available, resolveSize((available * .78f).toInt().coerceAtMost(maximum), heightMeasureSpec))
+        setMeasuredDimension(available, resolveSize((available * (280f / lesson.artWidth)).toInt().coerceAtMost(maximum), heightMeasureSpec))
     }
 
     override fun onDraw(canvas: Canvas) {
-        val scale = minOf(width / 360f, height / 280f)
+        val scale = minOf(width / lesson.artWidth.toFloat(), height / 280f)
         canvas.save()
-        canvas.translate((width - 360 * scale) / 2, (height - 280 * scale) / 2)
+        canvas.translate((width - lesson.artWidth * scale) / 2, (height - 280 * scale) / 2)
         canvas.scale(scale, scale)
         art.draw(canvas)
         val marker = lesson.plate.features[lesson.stageFeatures[stage]].marker
-        val x = marker.x * 360f
+        val x = marker.x * lesson.artWidth
         val y = marker.y * 280f
         val fraction = (phase * 4f - stage).coerceIn(0f, 1f)
         paint.style = Paint.Style.STROKE
