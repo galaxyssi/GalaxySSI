@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_prostate_sagittal_selector">矢状切面分区</string>
+    <string name="health_atlas_prostate_sagittal_view">前列腺矢状切面分区示意，图左为身体前方。</string>
+    <string name="health_atlas_prostate_base">前列腺底</string>
+    <string name="health_atlas_prostate_base_detail">前列腺宽阔的上面与膀胱颈相接，尿道在此进入前列腺。</string>
+    <string name="health_atlas_prostatic_urethra">尿道前列腺部</string>
+    <string name="health_atlas_prostatic_urethra_detail">这段尿道从膀胱颈穿过前列腺，直至前列腺尖。</string>
+    <string name="health_atlas_prostate_central_zone">中央区</string>
+    <string name="health_atlas_prostate_central_zone_detail">这片楔形腺体组织围绕射精管，靠近前列腺底较宽，朝射精管汇入尿道前列腺部的位置逐渐变窄。</string>
+    <string name="health_atlas_prostate_peripheral_zone">外周区</string>
+    <string name="health_atlas_prostate_peripheral_zone_detail">这一区域的腺体组织构成前列腺后部和两侧的大部分。在此切面上，它面向直肠，向下延伸至前列腺尖附近。</string>
+    <string name="health_atlas_prostate_apex">前列腺尖</string>
+    <string name="health_atlas_prostate_apex_detail">前列腺下端逐渐变窄形成尖部。尿道由此离开前列腺，继续通向盆底。</string>
+    <string name="health_atlas_vagina_sagittal_selector">矢状切面</string>
+    <string name="health_atlas_vagina_sagittal_view">阴道矢状切面示意，图左为身体前方。图中将阴道前后壁略微分开。</string>
+    <string name="health_atlas_vagina_posterior_fornix">阴道后穹窿</string>
+    <string name="health_atlas_vagina_posterior_fornix_detail">此隐窝位于子宫颈后方与阴道上部管壁之间，比子宫颈前方较浅的隐窝向上延伸得更远。</string>
+    <string name="health_atlas_vagina_anterior_wall">阴道前壁</string>
+    <string name="health_atlas_vagina_anterior_wall_detail">阴道是由纤维和肌肉组织构成的管道。阴道前壁上段位于膀胱底后方，下段位于尿道后方。</string>
+    <string name="health_atlas_vagina_rugae">阴道皱襞</string>
+    <string name="health_atlas_vagina_rugae_detail">这些横行的黏膜皱襞在阴道壁伸展时变平。通常，阴道前后壁在大部分管段内相贴。</string>
+    <string name="health_atlas_vaginal_opening">阴道口</string>
+    <string name="health_atlas_vaginal_opening_detail">阴道管下端开口于阴道前庭，位于独立的尿道外口后方。</string>
+</resources>

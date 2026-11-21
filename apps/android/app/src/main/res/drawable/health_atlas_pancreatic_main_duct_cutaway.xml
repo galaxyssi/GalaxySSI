@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- The opened duodenal C-loop cradles the head on the viewer's left. -->
+    <path android:fillColor="#B77B81" android:strokeColor="#884F60" android:strokeWidth="2"
+        android:pathData="M136,91 C120,90 104,75 86,78 C55,81 37,107 32,139 C25,177 39,214 66,233 C92,253 126,251 163,236 Q180,229 190,231 L186,200 Q165,200 144,212 C120,223 100,221 84,207 C68,192 64,171 68,146 C72,128 83,115 96,116 C110,118 118,123 131,124 Q144,111 136,91 Z" />
+    <path android:fillColor="#D49896"
+        android:pathData="M133,98 C116,98 105,82 87,85 C59,88 44,111 39,138 C32,170 42,207 70,227 C96,246 129,241 160,229 Q176,222 184,223 L181,208 Q167,208 147,219 C121,230 97,228 79,212 C63,197 57,173 62,145 C66,123 79,110 94,110 Q108,110 127,118 Q133,114 133,98 Z" />
+    <path android:fillColor="#A86B7A" android:strokeColor="#E9B2A6" android:strokeWidth="2.2"
+        android:pathData="M83,101 C66,105 50,125 47,151 C43,180 55,208 76,224 Q96,240 125,232 L122,223 Q97,225 83,211 C67,197 60,173 65,149 Q68,128 85,115 Z" />
+    <path android:strokeColor="#DBA19D" android:strokeWidth="2.7" android:strokeLineCap="round"
+        android:pathData="M75,108 Q78,111 77,118 M64,119 Q69,121 68,127 M56,134 Q62,134 63,141 M52,151 Q57,149 63,155 M51,167 Q58,162 63,168 M54,185 Q60,178 66,184 M61,200 Q65,194 73,201 M71,213 Q74,207 80,211 M85,224 Q86,220 92,218 M100,230 Q104,226 108,225" />
+    <path android:strokeColor="#EEC0AE" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M95,86 Q116,92 128,97 M40,155 C37,181 49,207 62,217 M128,238 Q152,232 172,224" />
+    <!-- Lobulated pancreatic head, body and tapered tail. -->
+    <path android:fillColor="#C08B60" android:strokeColor="#8E6550" android:strokeWidth="2.1"
+        android:pathData="M84,122 Q86,108 98,104 Q103,94 116,97 Q124,91 135,98 Q144,94 155,100 Q168,92 180,97 Q190,89 203,93 Q214,86 226,89 Q238,81 249,85 Q260,77 273,80 Q283,72 295,76 Q309,69 323,76 Q339,77 333,89 Q331,99 316,103 Q310,111 299,111 Q294,121 281,123 Q276,132 262,132 Q254,142 241,142 Q228,151 216,148 Q205,156 192,152 Q183,160 171,156 Q160,161 154,174 C151,185 142,192 130,194 Q120,206 103,198 Q87,200 84,185 Q75,178 80,166 Q75,156 81,147 Q75,135 84,122 Z" />
+    <path android:fillColor="#E4B386"
+        android:pathData="M90,123 Q92,111 102,110 Q107,101 117,103 Q125,98 134,104 Q145,100 155,106 Q168,98 180,103 Q191,95 204,99 Q216,91 227,95 Q240,86 251,91 Q263,82 274,86 Q286,78 296,83 Q309,74 323,81 Q334,81 327,89 Q323,96 311,98 Q307,106 296,106 Q289,116 278,117 Q269,125 257,127 Q250,135 238,136 Q228,144 215,141 Q204,148 192,145 Q182,153 169,150 C154,153 151,158 145,173 Q141,185 126,188 Q116,197 105,192 Q92,194 90,181 Q83,177 86,165 Q81,155 87,147 Q82,137 90,123 Z" />
+    <path android:fillColor="#F4C99B"
+        android:pathData="M99,123 Q112,105 142,111 C182,113 225,104 257,96 Q294,84 319,86 C289,108 249,128 208,135 Q174,143 145,144 C123,144 112,158 98,160 Q88,146 99,123 Z" />
+    <path android:strokeColor="#BD8A66" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M100,110 Q105,116 103,123 M119,103 Q122,112 117,117 M137,104 Q134,110 141,116 M155,106 Q152,114 158,119 M181,103 Q180,108 184,113 M203,100 Q199,106 204,111 M226,95 Q224,102 230,105 M250,91 Q247,97 253,100 M273,86 Q274,92 268,96 M295,83 Q291,87 295,91 M317,99 Q309,97 303,101 M296,107 Q288,106 284,113 M278,117 Q268,114 263,121 M260,129 Q252,124 245,133 M237,136 Q231,133 223,139 M215,142 Q205,138 201,145 M192,145 Q185,140 178,147 M169,150 Q161,143 155,151 M132,176 Q140,174 144,168 M122,187 Q123,179 114,178 M98,186 Q104,180 102,174 M90,159 Q96,156 100,158" />
+    <path android:strokeColor="#FFDCAC" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M105,112 Q110,108 114,109 M126,108 Q131,107 133,109 M163,107 Q169,103 173,105 M189,104 Q193,101 197,102 M211,100 Q216,96 220,97 M236,95 Q242,92 245,94 M260,90 Q265,87 269,88 M280,86 Q285,82 288,84 M306,82 Q313,79 317,82 M95,173 Q94,169 97,166 M108,185 Q112,186 115,184 M133,183 Q137,181 137,178" />
+    <!-- The common bile duct descends behind the head; the cutaway shows its course. -->
+    <path android:strokeColor="#5B6C4D" android:strokeWidth="8" android:strokeLineCap="round"
+        android:pathData="M106,36 C103,58 104,81 108,103 C114,126 113,143 103,155 Q94,165 84,169" />
+    <path android:strokeColor="#A6B480" android:strokeWidth="4.2" android:strokeLineCap="round"
+        android:pathData="M106,36 C103,58 104,81 108,103 C114,126 113,143 103,155 Q94,165 84,169" />
+    <path android:fillColor="#707B56" android:strokeColor="#A8B684" android:strokeWidth="1.5"
+        android:pathData="M102,35 C102,31 112,31 111,35 C111,39 102,39 102,35 Z" />
+    <!-- The lobular tributaries feed the main duct from the tail toward the head. -->
+    <path android:strokeColor="#4D7F79" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M305,85 Q303,91 299,94 M305,104 Q300,98 296,96 M279,94 Q282,99 277,102 M283,115 Q277,113 272,104 M260,93 Q262,100 258,107 M258,126 Q250,123 249,110 M236,103 Q238,110 234,115 M238,132 Q229,127 226,117 M213,106 Q216,112 212,119 M214,137 Q207,131 205,120 M189,108 Q198,114 193,121 M190,143 Q183,136 183,122 M170,110 Q178,117 172,123 M168,143 Q162,139 160,125 M147,113 Q152,118 150,127 M148,151 Q143,146 140,132 M126,119 Q132,125 130,135 M131,160 Q124,154 121,140 M126,173 Q115,168 111,153" />
+    <path android:strokeColor="#A4C6AB" android:strokeWidth="1.25" android:strokeLineCap="round"
+        android:pathData="M305,85 Q303,91 299,94 M305,104 Q300,98 296,96 M279,94 Q282,99 277,102 M283,115 Q277,113 272,104 M260,93 Q262,100 258,107 M258,126 Q250,123 249,110 M236,103 Q238,110 234,115 M238,132 Q229,127 226,117 M213,106 Q216,112 212,119 M214,137 Q207,131 205,120 M189,108 Q198,114 193,121 M190,143 Q183,136 183,122 M170,110 Q178,117 172,123 M168,143 Q162,139 160,125 M147,113 Q152,118 150,127 M148,151 Q143,146 140,132 M126,119 Q132,125 130,135 M131,160 Q124,154 121,140 M126,173 Q115,168 111,153" />
+    <path android:strokeColor="#3E706A" android:strokeWidth="6.6" android:strokeLineCap="round"
+        android:pathData="M314,90 C287,98 271,102 250,110 C234,117 219,120 204,120 C182,120 164,122 151,127 C136,133 127,132 119,142 C107,155 104,166 84,169" />
+    <path android:strokeColor="#B5D6B9" android:strokeWidth="3.2" android:strokeLineCap="round"
+        android:pathData="M314,90 C287,98 271,102 250,110 C234,117 219,120 204,120 C182,120 164,122 151,127 C136,133 127,132 119,142 C107,155 104,166 84,169" />
+    <!-- The short common channel passes through the wall to the major papilla. -->
+    <path android:fillColor="#DE9D9B" android:strokeColor="#8D5667" android:strokeWidth="1.8"
+        android:pathData="M79,165 Q82,164 84,168 Q86,173 81,177 Q76,185 69,181 Q63,178 66,173 Q68,169 79,165 Z" />
+    <path android:strokeColor="#617C63" android:strokeWidth="4.2" android:strokeLineCap="round"
+        android:pathData="M84,169 Q77,170 72,174" />
+    <path android:strokeColor="#BFD4A8" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M84,169 Q77,170 72,174" />
+    <path android:strokeColor="#714A62" android:strokeWidth="3.1" android:strokeLineCap="round"
+        android:pathData="M71,175 L72,173" />
+</vector>

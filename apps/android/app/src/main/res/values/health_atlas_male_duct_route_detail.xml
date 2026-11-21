@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mdr_epi_selector">Epididymal duct</string>
+    <string name="health_atlas_mdr_epi_view">Epididymis · Posterolateral view with the testis partly cut away</string>
+    <string name="health_atlas_mdr_epi_ductules">Efferent ductules</string>
+    <string name="health_atlas_mdr_epi_ductules_detail">These small channels lead from the rete testis into the head of the epididymis, where they feed into a single epididymal duct.</string>
+    <string name="health_atlas_mdr_epi_head">Head of the epididymis</string>
+    <string name="health_atlas_mdr_epi_head_detail">The broad head caps the upper pole of the testis and receives the efferent ductules.</string>
+    <string name="health_atlas_mdr_epi_body">Body of the epididymis</string>
+    <string name="health_atlas_mdr_epi_body_detail">The narrower body runs behind and to the side of the testis. It contains many turns of the same continuous epididymal duct.</string>
+    <string name="health_atlas_mdr_epi_tail">Tail of the epididymis</string>
+    <string name="health_atlas_mdr_epi_tail_detail">At the lower pole of the testis, the coiled duct in the tail straightens and continues as the vas deferens, which turns upward.</string>
+
+    <string name="health_atlas_mdr_vas_selector">Vas deferens route</string>
+    <string name="health_atlas_mdr_vas_view">Vas deferens · One-sided route from the epididymis to the back of the bladder</string>
+    <string name="health_atlas_mdr_vas_cord">Spermatic cord segment</string>
+    <string name="health_atlas_mdr_vas_cord_detail">The vas deferens ascends from the epididymal tail within the spermatic cord, alongside vessels and nerves.</string>
+    <string name="health_atlas_mdr_vas_canal">Inguinal canal</string>
+    <string name="health_atlas_mdr_vas_canal_detail">The spermatic cord passes through this short passage in the lower abdominal wall. The vas deferens leaves the cord at the deep inguinal ring.</string>
+    <string name="health_atlas_mdr_vas_pelvic">Pelvic segment</string>
+    <string name="health_atlas_mdr_vas_pelvic_detail">After entering the pelvis, the vas deferens runs along its side wall and turns toward the back and base of the bladder. It does not open into the bladder.</string>
+    <string name="health_atlas_mdr_vas_ampulla">Ampulla of the vas deferens</string>
+    <string name="health_atlas_mdr_vas_ampulla_detail">This widened end of the vas deferens lies medial to the seminal vesicle. It joins the duct of that vesicle to form the ejaculatory duct on the same side.</string>
+
+    <string name="health_atlas_mdr_sv_selector">Paired seminal vesicles</string>
+    <string name="health_atlas_mdr_sv_view">Seminal vesicles · Posterior view at the bladder base</string>
+    <string name="health_atlas_mdr_sv_blind">Blind upper end</string>
+    <string name="health_atlas_mdr_sv_blind_detail">The upper end of each seminal vesicle is closed. It lies behind the bladder and lateral to the end of the vas deferens.</string>
+    <string name="health_atlas_mdr_sv_coil">Coiled gland</string>
+    <string name="health_atlas_mdr_sv_coil_detail">Each vesicle is a coiled glandular tube. Its folded lining secretes fluid that contributes to semen.</string>
+    <string name="health_atlas_mdr_sv_outlet">Seminal vesicle duct</string>
+    <string name="health_atlas_mdr_sv_outlet_detail">This short outlet leaves the lower end of the gland and joins the ampulla of the vas deferens on the same side. The channel beyond the junction is an ejaculatory duct.</string>
+
+    <string name="health_atlas_mdr_ej_selector">Ejaculatory duct cutaway</string>
+    <string name="health_atlas_mdr_ej_view">Ejaculatory ducts · Posterior projection through the prostate</string>
+    <string name="health_atlas_mdr_ej_union">Duct junction</string>
+    <string name="health_atlas_mdr_ej_union_detail">On each side, a seminal vesicle duct joins the ampulla of the vas deferens. The single narrow channel below each junction is that side’s ejaculatory duct.</string>
+    <string name="health_atlas_mdr_ej_course">Course through the prostate</string>
+    <string name="health_atlas_mdr_ej_course_detail">The paired ducts enter at the base of the prostate and angle inward and forward toward the urethra, remaining separate as they cross the gland.</string>
+    <string name="health_atlas_mdr_ej_openings">Openings at the seminal colliculus</string>
+    <string name="health_atlas_mdr_ej_openings_detail">The two ducts empty through separate openings at the seminal colliculus, a raised landmark on the back wall of the prostatic urethra.</string>
+    <string name="health_atlas_mdr_ej_urethra">Prostatic urethra</string>
+    <string name="health_atlas_mdr_ej_urethra_detail">This part of the urethra runs from the bladder neck through the prostate. The ejaculatory ducts empty into it rather than continuing as separate channels below the gland.</string>
+</resources>

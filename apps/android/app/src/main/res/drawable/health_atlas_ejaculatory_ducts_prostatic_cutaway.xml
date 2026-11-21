@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- A broad cut face shows both ducts in one projection. -->
+    <path android:strokeColor="#935E66" android:strokeWidth="2"
+        android:pathData="M57,126 C66,95 102,87 134,91 Q159,92 181,101 Q212,88 241,91 C275,92 302,112 305,144 C308,183 285,210 251,226 C228,236 211,237 193,249 Q182,255 171,248 C155,237 128,235 111,226 C75,208 48,172 57,126Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="142" android:startY="93" android:endX="222" android:endY="247"
+                android:startColor="#F0C9B6" android:centerColor="#DCA79E" android:endColor="#AD7381"/>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#F2D3BD" android:strokeColor="#CA9589" android:strokeWidth="1.4"
+        android:pathData="M67,133 C74,107 105,96 133,101 Q159,103 181,112 Q214,96 241,101 C272,105 293,123 294,149 C295,179 275,203 244,215 C218,226 199,224 182,240 C165,225 140,226 116,213 C85,197 61,162 67,133Z"/>
+    <path android:fillColor="#DFAAA1" android:strokeColor="#CD968B" android:strokeWidth="1.2"
+        android:pathData="M116,107 C136,112 155,110 181,120 C205,110 226,105 247,111 C232,124 225,140 217,165 C211,187 198,205 182,214 C163,202 151,185 142,168 C131,142 128,122 116,107Z"/>
+    <path android:strokeColor="#CC988C" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M79,142 Q102,126 120,137 M79,159 Q104,144 125,153 M90,181 Q107,167 133,170 M110,201 Q126,190 144,191 M248,126 Q269,125 282,147 M238,144 Q258,140 274,159 M230,162 Q246,155 264,173 M220,183 Q240,174 256,187 M214,201 Q230,194 244,198"/>
+    <path android:strokeColor="#F9E2CA" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M74,126 Q87,109 107,106 M79,179 Q94,200 112,206 M251,108 Q277,118 284,135 M268,193 Q255,207 238,212"/>
+    <!-- Open prostatic urethra; the raised colliculus carries two ostia. -->
+    <path android:strokeColor="#6E8D93" android:strokeWidth="1.8"
+        android:pathData="M162,72 Q181,79 200,72 C197,90 190,99 191,120 C191,144 188,153 194,169 C202,185 199,198 194,214 C191,229 193,241 192,252 Q181,258 170,252 C169,241 172,227 167,213 C161,197 159,184 167,168 C174,152 170,138 170,119 C170,100 164,89 162,72Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="164" android:startY="185" android:endX="199" android:endY="185"
+                android:startColor="#91ADB1" android:centerColor="#DAE3D7" android:endColor="#90ADB0"/>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#ECF1E0" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M170,84 Q180,104 176,134 M186,220 Q185,240 186,247"/>
+    <path android:strokeColor="#77979B" android:strokeWidth="1.3"
+        android:pathData="M181,159 C188,170 195,175 194,188 C194,201 188,210 181,215 C175,211 166,201 166,191 C166,177 176,169 181,159Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="172" android:startY="178" android:endX="191" android:endY="205"
+                android:startColor="#EDF0DA" android:endColor="#91AFAF"/>
+        </aapt:attr>
+    </path>
+    <!-- Two independent Y junctions: amber vesicle outlet and green ampulla. -->
+    <path android:strokeColor="#A36A4A" android:strokeWidth="17" android:strokeLineCap="round"
+        android:pathData="M64,43 C81,36 99,41 90,50 C83,57 67,51 68,61 C69,73 91,63 95,71 Q97,75 103,76 M280,44 C270,33 248,35 249,43 C251,50 271,47 271,55 C271,64 256,64 251,58 Q244,55 249,67"/>
+    <path android:strokeColor="#E3AB73" android:strokeWidth="13.5" android:strokeLineCap="round"
+        android:pathData="M64,43 C81,36 99,41 90,50 C83,57 67,51 68,61 C69,73 91,63 95,71 Q97,75 103,76 M280,44 C270,33 248,35 249,43 C251,50 271,47 271,55 C271,64 256,64 251,58 Q244,55 249,67"/>
+    <path android:strokeColor="#F6D2A1" android:strokeWidth="2.8" android:strokeLineCap="round"
+        android:pathData="M65,42 Q82,36 89,44 M72,62 Q80,66 90,64 M280,43 Q266,34 254,39 M254,50 Q261,51 266,53"/>
+    <path android:strokeColor="#A36A4A" android:strokeWidth="8" android:strokeLineCap="round"
+        android:pathData="M100,75 Q106,76 112,83 M249,67 Q246,75 242,83"/>
+    <path android:strokeColor="#EDBB83" android:strokeWidth="4" android:strokeLineCap="round"
+        android:pathData="M100,75 Q106,76 112,83 M249,67 Q246,75 242,83"/>
+    <path android:fillColor="#7EAA94" android:strokeColor="#537B6E" android:strokeWidth="1.9"
+        android:pathData="M147,21 C153,29 153,40 149,51 C144,63 129,75 112,83 C117,72 124,67 130,56 C136,45 138,30 147,21Z M212,20 C221,26 222,42 228,55 C233,66 239,73 242,83 C226,76 213,64 208,53 C201,38 204,28 212,20Z"/>
+    <path android:strokeColor="#CEE0B4" android:strokeWidth="3.4" android:strokeLineCap="round"
+        android:pathData="M147,26 Q148,31 146,36 C143,61 126,72 112,83 M212,26 C209,53 226,71 242,83"/>
+    <!-- The narrow ducts converge in direction only, then diverge at their tips. -->
+    <path android:strokeColor="#77485E" android:strokeWidth="9.8" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M112,83 C116,108 132,122 142,144 C151,161 166,171 170,181 C173,187 168,193 169,197 M242,83 C238,106 224,124 214,143 C203,161 195,169 190,180 C187,187 193,192 192,197"/>
+    <path android:strokeColor="#C68193" android:strokeWidth="5.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M112,83 C116,108 132,122 142,144 C151,161 166,171 170,181 C173,187 168,193 169,197 M242,83 C238,106 224,124 214,143 C203,161 195,169 190,180 C187,187 193,192 192,197"/>
+    <path android:strokeColor="#EEC0B2" android:strokeWidth="1.55" android:strokeLineCap="round"
+        android:pathData="M113,85 C119,111 132,123 142,144 Q154,165 166,175 M241,85 C236,106 224,124 214,143 Q206,158 195,171"/>
+    <path android:fillColor="#654253" android:strokeColor="#E1A7A8" android:strokeWidth="1.5"
+        android:pathData="M164,197 a5,4 0,1 0,10 0 a5,4 0,1 0,-10 0Z M187,197 a5,4 0,1 0,10 0 a5,4 0,1 0,-10 0Z"/>
+</vector>

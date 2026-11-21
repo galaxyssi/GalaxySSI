@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Calyx wall and lumen cup the tip of the pyramid. -->
+    <path android:fillColor="#BE827D" android:strokeColor="#956161" android:strokeWidth="1.6"
+        android:pathData="M145,206 C136,207 136,221 141,231 C150,252 171,259 191,260 Q205,262 211,272 L235,263 C229,250 217,244 221,234 C226,225 236,215 228,205 Q220,197 210,206 Q177,211 145,206Z"/>
+    <path android:fillColor="#F2D8AD" android:strokeColor="#DEAB91" android:strokeWidth="1.5"
+        android:pathData="M149,209 C142,211 144,223 150,233 C158,245 174,251 194,252 Q209,254 215,265 L226,261 C219,253 211,242 215,234 C220,224 228,215 223,210 Q216,207 210,215 Q180,218 149,209Z"/>
+    <path android:strokeColor="#FAE6C2" android:strokeWidth="2.3" android:strokeLineCap="round"
+        android:pathData="M153,235 Q167,249 191,250 Q208,251 217,264"/>
+    <!-- Cortex overlies a single striated medullary pyramid. -->
+    <path android:fillColor="#BC7E86" android:strokeColor="#A06972" android:strokeWidth="1.6"
+        android:pathData="M52,99 Q101,83 160,89 C218,83 270,85 308,105 Q287,127 260,156 C236,181 216,206 201,225 Q191,237 180,230 C158,216 137,196 118,168 C94,139 70,125 52,99Z"/>
+    <path android:fillColor="#D6A0A0"
+        android:pathData="M60,100 Q122,92 161,95 C222,89 265,91 300,106 Q258,137 240,163 Q209,196 196,226 Q188,231 183,227 C157,207 141,181 123,161 Q83,124 60,100Z"/>
+    <path android:strokeColor="#EDBEB4" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M73,108 Q114,137 141,173 M86,108 Q120,128 149,176 M102,110 Q130,132 147,154 M115,109 Q145,134 151,162 M164,114 Q166,151 176,174 M177,110 Q178,149 185,175 M192,111 Q191,145 191,165 M205,113 Q201,149 196,175 M217,115 Q209,157 202,172 M261,116 Q248,137 229,155 M278,112 Q263,135 246,146 M285,117 Q264,142 246,157 M134,170 Q146,190 170,214 M148,178 Q159,199 176,218 M228,169 Q214,187 204,210"/>
+    <path android:strokeColor="#B97F85" android:strokeWidth="1.3" android:strokeLineCap="round"
+        android:pathData="M92,112 Q111,126 122,139 M126,117 Q142,133 146,146 M171,115 Q175,145 179,158 M184,119 L188,153 M198,118 Q196,148 193,158 M274,126 Q262,142 250,151 M143,176 Q155,195 167,204 M219,177 Q207,193 202,202"/>
+    <path android:fillColor="#E2ABA1" android:strokeColor="#C79189" android:strokeWidth="1.4"
+        android:pathData="M40,54 C54,31 100,23 153,22 C197,19 249,24 293,37 Q318,46 325,63 L320,99 Q311,119 288,119 C251,113 230,107 200,111 Q160,118 124,113 Q88,107 54,115 Q40,114 38,99Z"/>
+    <path android:fillColor="#F4D8C5"
+        android:pathData="M43,55 C60,33 104,28 153,27 C207,23 253,31 292,42 Q315,50 320,63 L315,92 Q309,110 287,109 C249,103 227,98 197,102 Q162,109 125,104 Q82,98 51,106 Q44,107 43,98Z"/>
+    <path android:strokeColor="#DFB19F" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M57,76 Q62,83 71,80 M72,93 Q77,87 85,91 M107,38 Q119,34 127,39 M120,51 Q126,46 132,50 M198,42 Q209,37 217,45 M203,64 Q211,70 221,65 M302,80 Q295,83 294,90"/>
+    <!-- Three distinct distal convolutions terminate in connecting tubules. -->
+    <path android:strokeColor="#527870" android:strokeWidth="14" android:strokeLineCap="round"
+        android:pathData="M59,59 C57,48 68,44 77,50 C86,57 78,66 86,71 C94,76 104,62 115,68 M145,39 C150,29 165,30 172,38 C179,47 172,53 163,51 C154,49 152,57 158,61 C164,65 171,60 175,63 M297,52 C295,42 279,39 273,48 C267,57 280,64 271,70 C263,75 254,66 251,72"/>
+    <path android:strokeColor="#8BB1A1" android:strokeWidth="10" android:strokeLineCap="round"
+        android:pathData="M59,59 C57,48 68,44 77,50 C86,57 78,66 86,71 C94,76 104,62 115,68 M145,39 C150,29 165,30 172,38 C179,47 172,53 163,51 C154,49 152,57 158,61 C164,65 171,60 175,63 M297,52 C295,42 279,39 273,48 C267,57 280,64 271,70 C263,75 254,66 251,72"/>
+    <path android:strokeColor="#D7E5C8" android:strokeWidth="3.5" android:strokeLineCap="round"
+        android:pathData="M59,59 C57,48 68,44 77,50 C86,57 78,66 86,71 C94,76 104,62 115,68 M145,39 C150,29 165,30 172,38 C179,47 172,53 163,51 C154,49 152,57 158,61 C164,65 171,60 175,63 M297,52 C295,42 279,39 273,48 C267,57 280,64 271,70 C263,75 254,66 251,72"/>
+    <path android:strokeColor="#66836D" android:strokeWidth="11" android:strokeLineCap="round"
+        android:pathData="M115,68 Q121,73 117,83 Q116,94 146,96 M175,63 Q185,72 164,77 Q151,80 146,87 M251,72 Q244,75 244,96"/>
+    <path android:strokeColor="#B6BE89" android:strokeWidth="7.5" android:strokeLineCap="round"
+        android:pathData="M115,68 Q121,73 117,83 Q116,94 146,96 M175,63 Q185,72 164,77 Q151,80 146,87 M251,72 Q244,75 244,96"/>
+    <path android:strokeColor="#E3E7B6" android:strokeWidth="2.8" android:strokeLineCap="round"
+        android:pathData="M115,68 Q121,73 117,83 Q116,94 146,96 M175,63 Q185,72 164,77 Q151,80 146,87 M251,72 Q244,75 244,96"/>
+    <!-- Two inputs share the left cortical duct; deeper ducts unite at the papilla. -->
+    <path android:strokeColor="#7D6547" android:strokeWidth="16" android:strokeLineCap="round"
+        android:pathData="M146,87 C147,110 149,137 156,155 C164,174 181,181 188,195 M244,96 C242,121 235,146 224,160 C214,176 201,183 188,195"/>
+    <path android:strokeColor="#7D6547" android:strokeWidth="20" android:strokeLineCap="round"
+        android:pathData="M188,195 Q189,210 190,229"/>
+    <path android:strokeColor="#C4A66A" android:strokeWidth="12" android:strokeLineCap="round"
+        android:pathData="M146,87 C147,110 149,137 156,155 C164,174 181,181 188,195 M244,96 C242,121 235,146 224,160 C214,176 201,183 188,195"/>
+    <path android:strokeColor="#C4A66A" android:strokeWidth="16" android:strokeLineCap="round"
+        android:pathData="M188,195 Q189,210 190,229"/>
+    <path android:strokeColor="#F2DBA2" android:strokeWidth="4.5" android:strokeLineCap="round"
+        android:pathData="M146,87 C147,110 149,137 156,155 C164,174 181,181 188,195 M244,96 C242,121 235,146 224,160 C214,176 201,183 188,195"/>
+    <path android:strokeColor="#F2DBA2" android:strokeWidth="6.5" android:strokeLineCap="round"
+        android:pathData="M188,195 Q189,210 190,229"/>
+    <path android:strokeColor="#ECE3AC" android:strokeWidth="3.6" android:strokeLineCap="round"
+        android:pathData="M133,94 Q139,96 146,96 M155,80 Q150,82 146,87 M245,84 L244,97"/>
+    <path android:fillColor="#795D46" android:strokeColor="#EACD91" android:strokeWidth="1.5"
+        android:pathData="M182,230 C182,225 198,225 198,230 C198,236 182,236 182,230Z"/>
+</vector>

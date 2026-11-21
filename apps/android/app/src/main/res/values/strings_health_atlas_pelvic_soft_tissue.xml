@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_prostate_sagittal_selector">Sagittal zones</string>
+    <string name="health_atlas_prostate_sagittal_view">Prostate zonal cutaway, with the front of the body at left.</string>
+    <string name="health_atlas_prostate_base">Prostate base</string>
+    <string name="health_atlas_prostate_base_detail">The broad upper surface of the prostate meets the bladder neck, where the urethra enters the gland.</string>
+    <string name="health_atlas_prostatic_urethra">Prostatic urethra</string>
+    <string name="health_atlas_prostatic_urethra_detail">This segment of the urethra passes through the prostate from the bladder neck to the apex.</string>
+    <string name="health_atlas_prostate_central_zone">Central zone</string>
+    <string name="health_atlas_prostate_central_zone_detail">This wedge of glandular tissue surrounds the ejaculatory ducts. It is broad near the base and tapers toward the point where the ducts join the prostatic urethra.</string>
+    <string name="health_atlas_prostate_peripheral_zone">Peripheral zone</string>
+    <string name="health_atlas_prostate_peripheral_zone_detail">This glandular region forms much of the back and sides of the prostate. In this section it faces the rectum and extends down toward the apex.</string>
+    <string name="health_atlas_prostate_apex">Prostate apex</string>
+    <string name="health_atlas_prostate_apex_detail">The prostate narrows to its lower tip, where the urethra leaves the gland and continues toward the pelvic floor.</string>
+    <string name="health_atlas_vagina_sagittal_selector">Sagittal cutaway</string>
+    <string name="health_atlas_vagina_sagittal_view">Vaginal canal in sagittal section, with the front of the body at left. The walls are shown slightly apart.</string>
+    <string name="health_atlas_vagina_posterior_fornix">Posterior fornix</string>
+    <string name="health_atlas_vagina_posterior_fornix_detail">This recess lies between the back of the cervix and the upper vaginal wall. It reaches higher than the shallower recess in front of the cervix.</string>
+    <string name="health_atlas_vagina_anterior_wall">Anterior wall</string>
+    <string name="health_atlas_vagina_anterior_wall_detail">The front wall of this fibromuscular canal lies behind the bladder base above and the urethra below.</string>
+    <string name="health_atlas_vagina_rugae">Vaginal rugae</string>
+    <string name="health_atlas_vagina_rugae_detail">These transverse folds in the mucosal lining flatten as the vaginal wall stretches. The walls usually rest against each other along most of the canal.</string>
+    <string name="health_atlas_vaginal_opening">Vaginal opening</string>
+    <string name="health_atlas_vaginal_opening_detail">The lower end of the vaginal canal opens into the vestibule, behind the separate opening of the urethra.</string>
+</resources>

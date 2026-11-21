@@ -78,7 +78,9 @@ class HealthAtlasGasExchangeDeviceTest {
             assertEquals(id, atlas[id]!!.mechanism); assertEquals(id, HealthAtlasPlates.forId(id)?.owner)
         }
         assertEquals("https://pubmed.ncbi.nlm.nih.gov/29874100/", atlas.mechanism(atlas["cell-club-cell"]!!).source)
-        assertTrue(HealthAtlasPlates.forId("respiratory-membrane")!!.caption(context, atlas, atlas["respiratory-membrane"]).contains(atlas["alveoli"]!!.name))
+        val membrane = HealthAtlasPlates.viewsForId("respiratory-membrane")
+        assertEquals("respiratory-membrane", membrane.first().owner)
+        assertTrue(membrane[1].caption(context, atlas, atlas["respiratory-membrane"]).contains(atlas["alveoli"]!!.name))
     }
     @Test fun artworkHasAlphaAndVisibleCanonicalMarkers() {
         val plate = HealthAtlasPlates.forId("alveoli")!!
@@ -108,6 +110,8 @@ class HealthAtlasGasExchangeDeviceTest {
             (it.view("atlas-physiology-rate") as SeekBar).progress = 20
             it.view("atlas-process-stage-2").performClick()
             it.view("atlas-gas-membrane").performClick()
+            assertTrue(it.view("atlas-view-0").isSelected)
+            it.view("atlas-view-1").performClick()
             assertTrue(it.view("atlas-hotspot-respiratory-membrane").isSelected)
             it.view("atlas-entry-cell-type-i-pneumocyte").performClick(); it.view("atlas-tab-3").performClick()
             assertNull(it.window.decorView.tagged("atlas-gas-alveolus"))

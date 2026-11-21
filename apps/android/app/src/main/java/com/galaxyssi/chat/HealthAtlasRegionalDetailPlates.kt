@@ -9,7 +9,12 @@ internal object HealthAtlasRegionalDetailPlates {
         HealthAtlasHeartChamberDetailPlates.all + HealthAtlasHeartValveDetailPlates.all +
         HealthAtlasOuterSensoryDetailPlates.all + HealthAtlasNephronStructureDetailPlates.all +
         HealthAtlasNeuralConnectionDetailPlates.all + HealthAtlasReproductiveAnatomyDetailPlates.all +
-        HealthAtlasMajorMuscleDetailPlates.all + HealthAtlasLimbBoneDetailPlates.all
+        HealthAtlasMajorMuscleDetailPlates.all + HealthAtlasLimbBoneDetailPlates.all +
+        HealthAtlasSternumAndHandDetailPlates.all + HealthAtlasCardiacComparisonDetailPlates.all +
+        HealthAtlasVascularInterfaceDetailPlates.all + HealthAtlasRenalOutletDetailPlates.all +
+        HealthAtlasMaleDuctRouteDetailPlates.all + HealthAtlasAirwayDiaphragmDetailPlates.all +
+        HealthAtlasDigestiveDuctDetailPlates.all + HealthAtlasPosteriorMuscleTendonDetailPlates.all +
+        HealthAtlasPelvicSoftTissueDetailPlates.all
     private val byOwner = all.associateBy { it.owner }
 
     fun forId(id: String?) = byOwner[id]

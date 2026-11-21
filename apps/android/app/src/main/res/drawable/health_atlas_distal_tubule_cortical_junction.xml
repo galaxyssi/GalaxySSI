@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <path android:fillColor="#EACBC5"
+        android:pathData="M40,155 C24,115 34,72 70,49 C107,24 159,19 201,33 Q232,44 251,71 C270,98 290,108 317,130 Q338,146 335,187 L330,225 Q324,249 289,252 C238,252 214,226 172,222 C137,217 120,250 82,247 C55,246 47,221 48,196 Q48,173 40,155Z"/>
+    <path android:fillColor="#F8E7DA" android:strokeColor="#E3BDB3" android:strokeWidth="1.2"
+        android:pathData="M43,147 C29,111 40,73 73,51 C109,28 158,23 199,37 Q227,47 248,77 C267,103 290,115 315,135 Q334,150 330,186 L325,219 Q319,242 286,245 C238,245 213,220 172,215 C135,209 115,243 82,239 Q55,236 54,203 Q54,170 43,147Z"/>
+    <path android:strokeColor="#E3BCAD" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M57,149 Q59,141 66,140 M66,157 Q70,151 76,152 M139,41 Q147,38 154,39 M145,160 Q150,166 158,163 M151,174 Q160,180 168,173 M245,96 Q255,104 261,114 M224,205 Q226,212 234,214 M285,144 Q291,153 298,154"/>
+    <!-- Nearby corpuscle: only its arterioles approach the macula densa. -->
+    <path android:fillColor="#FBE0CD" android:strokeColor="#A4696B" android:strokeWidth="2"
+        android:pathData="M57,80 C56,62 69,47 88,47 C110,45 122,59 121,76 C121,94 107,105 88,105 C71,106 59,96 57,80Z"/>
+    <path android:strokeColor="#9B5563" android:strokeWidth="10" android:strokeLineCap="round"
+        android:pathData="M93,91 C95,103 101,110 109,113 Q115,113 121,107"/>
+    <path android:strokeColor="#A96772" android:strokeWidth="6.5" android:strokeLineCap="round"
+        android:pathData="M83,92 Q81,111 96,120"/>
+    <path android:strokeColor="#E7A6A0" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M93,91 C95,103 101,110 109,113 Q115,113 121,107 M83,92 Q81,111 96,120"/>
+    <path android:fillColor="#B86B77"
+        android:pathData="M66,77 Q64,68 74,66 Q73,56 85,58 Q94,52 99,60 Q112,58 110,70 Q118,74 111,83 Q113,92 103,93 Q96,101 89,96 Q78,100 74,90 Q64,91 66,77Z"/>
+    <path android:strokeColor="#F5B1A9" android:strokeWidth="2.8" android:strokeLineCap="round"
+        android:pathData="M70,75 Q72,68 81,70 Q88,74 82,79 Q75,87 86,90 M83,64 Q93,60 97,68 Q100,75 93,77 Q87,81 95,87 M104,68 Q110,73 101,79 Q96,82 103,88"/>
+    <!-- Ascending limb and its packed macula densa cells on the corpuscle side. -->
+    <path android:strokeColor="#655D79" android:strokeWidth="21" android:strokeLineCap="round"
+        android:pathData="M76,229 C77,207 82,178 89,158 C97,135 111,124 130,117"/>
+    <path android:strokeColor="#A99CBA" android:strokeWidth="17" android:strokeLineCap="round"
+        android:pathData="M76,229 C77,207 82,178 89,158 C97,135 111,124 130,117"/>
+    <path android:strokeColor="#E4D8E8" android:strokeWidth="6" android:strokeLineCap="round"
+        android:pathData="M76,229 C77,207 82,178 89,158 C97,135 111,124 130,117"/>
+    <path android:strokeColor="#766085" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M100,127 l3,4 M104,123 l3,4 M108,120 l3,4 M112,117 l3,4 M117,115 l2,4 M122,112 l2,5"/>
+    <path android:fillColor="#675B78" android:strokeColor="#DBCEE4" android:strokeWidth="1.3"
+        android:pathData="M68,229 C68,224 84,224 84,229 C84,234 68,234 68,229Z"/>
+    <!-- Short connecting segment and the receiving duct. -->
+    <path android:strokeColor="#7F6B42" android:strokeWidth="20" android:strokeLineCap="round"
+        android:pathData="M306,174 Q306,198 306,218 L306,247"/>
+    <path android:strokeColor="#C6A669" android:strokeWidth="16" android:strokeLineCap="round"
+        android:pathData="M306,174 Q306,198 306,218 L306,247"/>
+    <path android:strokeColor="#F1DCA3" android:strokeWidth="5.5" android:strokeLineCap="round"
+        android:pathData="M306,174 Q306,198 306,218 L306,247"/>
+    <path android:fillColor="#8B7448" android:strokeColor="#DFC78E" android:strokeWidth="1.3"
+        android:pathData="M298,174 C298,169 314,169 314,174 C314,179 298,179 298,174Z M298,248 C298,243 314,243 314,248 C314,253 298,253 298,248Z"/>
+    <path android:strokeColor="#5A7868" android:strokeWidth="16" android:strokeLineCap="round"
+        android:pathData="M246,197 C235,200 229,214 243,222 C257,230 278,216 305,217"/>
+    <path android:strokeColor="#ADBA88" android:strokeWidth="12" android:strokeLineCap="round"
+        android:pathData="M246,197 C235,200 229,214 243,222 C257,230 278,216 305,217"/>
+    <path android:strokeColor="#E4E8B8" android:strokeWidth="4.5" android:strokeLineCap="round"
+        android:pathData="M246,197 C235,200 229,214 243,222 C257,230 278,216 305,217"/>
+    <path android:strokeColor="#F1DCA3" android:strokeWidth="5.5" android:strokeLineCap="round"
+        android:pathData="M306,209 L306,225"/>
+    <!-- Enlarged distal convolution with a longitudinal window through its wall. -->
+    <path android:strokeColor="#426D67" android:strokeWidth="27" android:strokeLineCap="round"
+        android:pathData="M130,117 C153,105 146,68 168,59 C190,50 212,61 210,81 C209,97 180,99 178,119 C176,137 193,148 210,148 L244,148 C268,148 279,160 276,180 C274,199 255,201 246,197"/>
+    <path android:strokeColor="#84B2A6" android:strokeWidth="23" android:strokeLineCap="round"
+        android:pathData="M130,117 C153,105 146,68 168,59 C190,50 212,61 210,81 C209,97 180,99 178,119 C176,137 193,148 210,148 L244,148 C268,148 279,160 276,180 C274,199 255,201 246,197"/>
+    <path android:strokeColor="#BDD6C0" android:strokeWidth="7" android:strokeLineCap="round"
+        android:pathData="M130,117 C153,105 146,68 168,59 C190,50 212,61 210,81 C209,97 180,99 178,119 C176,137 193,148 210,148 L244,148 C268,148 279,160 276,180 C274,199 255,201 246,197"/>
+    <path android:fillColor="#638C82" android:strokeColor="#537F75" android:strokeWidth="1.3"
+        android:pathData="M200,142 Q205,135 214,135 L242,135 Q253,136 260,143 L258,152 Q250,161 241,161 L216,161 Q203,160 200,153Z"/>
+    <path android:fillColor="#D8E8CB" android:strokeColor="#AFC9AE" android:strokeWidth="1.2"
+        android:pathData="M201,145 Q209,142 220,144 L244,144 Q251,143 258,147 L257,151 Q249,153 242,152 L218,152 Q208,153 201,150Z"/>
+    <path android:strokeColor="#A6C6AB" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M211,137 L212,142 M220,136 L220,143 M230,136 L231,143 M241,136 L241,143 M251,139 L250,144 M211,153 L210,158 M221,153 L221,160 M231,153 L230,160 M241,153 L241,160 M250,153 L251,157"/>
+    <path android:strokeColor="#345F57" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M215,139 L216,139 M225,139 L226,139 M235,139 L236,139 M245,139 L246,140 M216,156 L217,157 M225,156 L226,156 M235,156 L236,156 M245,156 L246,155"/>
+</vector>

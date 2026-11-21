@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_sternum_front_detail">胸骨正面</string>
+    <string name="health_atlas_sternum_notch">颈静脉切迹</string>
+    <string name="health_atlas_sternum_notch_detail">胸骨上缘的凹陷，位于左右锁骨与胸骨连接处之间。</string>
+    <string name="health_atlas_sternum_manubrium">胸骨柄</string>
+    <string name="health_atlas_sternum_manubrium_detail">胸骨宽阔的上段，连接两侧锁骨和第一肋软骨。</string>
+    <string name="health_atlas_sternum_angle">胸骨角</string>
+    <string name="health_atlas_sternum_angle_detail">胸骨柄与胸骨体相接处略向前突起，两侧在第二肋软骨的水平。</string>
+    <string name="health_atlas_sternum_body">胸骨体</string>
+    <string name="health_atlas_sternum_body_detail">胸骨细长的中段，两侧有肋软骨的连接处。</string>
+    <string name="health_atlas_sternum_xiphoid">剑突</string>
+    <string name="health_atlas_sternum_xiphoid_detail">胸骨下端的小突起，起初是软骨，可随年龄增长而骨化；形状因人而异。</string>
+    <string name="health_atlas_hand_palmar_detail">手骨掌侧</string>
+    <string name="health_atlas_hand_phalanges">手指指骨</string>
+    <string name="health_atlas_hand_phalanges_detail">除拇指外，每根手指有三节指骨，相邻指骨的关节让手指能够弯曲。</string>
+    <string name="health_atlas_hand_thumb">拇指指骨</string>
+    <string name="health_atlas_hand_thumb_detail">拇指只有两节指骨。它较大的活动范围还依赖第一掌骨底部的关节。</string>
+    <string name="health_atlas_hand_metacarpals">掌骨</string>
+    <string name="health_atlas_hand_metacarpals_detail">五块掌骨连接腕部与手指，组成手掌的骨性支架。</string>
+    <string name="health_atlas_hand_carpals">腕骨</string>
+    <string name="health_atlas_hand_carpals_detail">八块小骨排列成两排，构成手掌的基部；其中部分腕骨与桡骨相接。</string>
+    <string name="health_atlas_hand_pisiform">豌豆骨</string>
+    <string name="health_atlas_hand_pisiform_detail">这块圆形小腕骨位于三角骨的掌侧，靠近小指一边。</string>
+</resources>

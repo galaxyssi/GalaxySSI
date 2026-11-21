@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- A parasagittal window exposes one lateral wall, not the midline septum. -->
+    <path android:fillColor="#BC8B82" android:strokeColor="#805B59" android:strokeWidth="1.8"
+        android:pathData="M102,36 C131,25 177,24 223,30 C257,34 285,44 305,61 Q318,78 317,113 L314,213 Q313,234 296,244 L120,244 Q100,238 86,228 C73,215 62,198 62,181 Q63,172 58,167 C48,165 39,161 38,154 Q36,146 47,137 Q70,120 84,99 C94,86 95,76 93,63 Q91,46 102,36 Z"/>
+    <path android:fillColor="#E3B6A2" android:strokeColor="#AB7F72" android:strokeWidth="1.6"
+        android:pathData="M108,42 C143,30 212,30 257,44 Q292,54 302,73 Q310,92 307,119 L304,211 Q301,227 290,234 L119,234 Q96,227 83,209 Q70,192 74,177 Q75,162 59,158 Q46,158 47,151 Q47,146 58,139 Q85,119 99,94 Q105,81 101,62 Q98,48 108,42 Z"/>
+    <path android:fillColor="#F2CFAB"
+        android:pathData="M111,50 C150,37 220,36 257,50 Q289,59 297,77 Q301,89 298,104 Q282,84 251,72 L118,81 Q107,91 99,104 Q111,82 108,64 Q105,56 111,50 Z"/>
+    <path android:fillColor="#A67573"
+        android:pathData="M297,91 Q307,113 303,159 L301,211 Q300,224 291,234 L273,234 Q291,208 290,180 L289,112 Z"/>
+    <path android:strokeColor="#F4D1B0" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M102,45 Q120,34 150,34 M103,64 Q108,85 94,104 Q78,125 56,143 M69,177 Q68,193 79,207 M111,229 L129,235"/>
+    <!-- Neighboring air spaces; the choana is the open transition above the palate. -->
+    <path android:fillColor="#526977" android:strokeColor="#8E625E" android:strokeWidth="2.4" android:strokeLineJoin="round"
+        android:pathData="M52,151 C76,135 94,118 104,94 Q117,69 138,64 C169,55 219,57 247,63 Q257,65 263,81 C270,99 292,97 300,119 Q306,135 301,164 Q297,193 300,224 L274,229 Q266,207 269,190 Q273,176 267,161 Q263,152 252,154 C214,157 167,159 119,159 Q101,159 89,163 Q73,161 65,157 Z"/>
+    <path android:fillColor="#6E8D90"
+        android:pathData="M87,132 Q103,115 110,96 Q122,73 143,70 Q190,62 237,69 Q253,70 259,89 Q269,108 276,114 L276,137 Q274,150 256,149 Q171,155 91,155 Q82,153 87,132 Z"/>
+    <path android:fillColor="#65838B"
+        android:pathData="M271,101 Q295,109 297,131 Q299,145 293,174 Q291,198 295,222 L280,224 Q273,201 278,179 Q280,161 271,150 Q264,141 268,125 Z"/>
+    <path android:fillColor="#9FB5AE"
+        android:pathData="M118,89 Q130,73 147,70 Q195,62 238,69 Q250,71 254,78 Q211,71 170,77 Q138,80 118,89 Z"/>
+    <path android:strokeColor="#AAC0B7" android:strokeWidth="1.9" android:strokeLineCap="round"
+        android:pathData="M282,113 Q295,124 292,145 M289,155 Q284,179 285,190 M108,153 Q159,155 219,151 M230,150 L244,149"/>
+    <!-- Bony palate separates the nasal floor from the oral cavity. -->
+    <path android:fillColor="#714D5A" android:strokeColor="#926460" android:strokeWidth="1.7"
+        android:pathData="M82,189 Q101,182 121,180 Q182,169 222,174 Q252,181 265,197 Q271,210 274,228 Q250,237 220,234 L124,233 Q95,226 84,210 Q77,200 82,189 Z"/>
+    <path android:fillColor="#EFCDAA" android:strokeColor="#A47D68" android:strokeWidth="1.5"
+        android:pathData="M81,168 Q98,158 124,158 Q192,160 249,153 L249,163 Q234,175 203,174 Q132,173 91,190 Q83,184 81,168 Z"/>
+    <path android:fillColor="#C98781" android:strokeColor="#8D6260" android:strokeWidth="1.5"
+        android:pathData="M242,158 Q251,153 259,156 Q273,164 270,181 Q266,187 266,194 Q259,196 254,190 Q251,182 243,176 Q234,172 230,171 Z"/>
+    <path android:strokeColor="#FAE1BA" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M95,173 Q144,162 200,165 L230,162"/>
+    <path android:strokeColor="#DDABA0" android:strokeWidth="2.3" android:strokeLineCap="round"
+        android:pathData="M247,162 Q256,160 262,170 L263,180"/>
+    <path android:fillColor="#D19191" android:strokeColor="#95616D" android:strokeWidth="1.5"
+        android:pathData="M88,211 Q106,214 127,210 C166,205 202,197 223,202 Q250,209 259,229 Q228,236 197,234 L125,234 Q102,230 88,211 Z"/>
+    <path android:strokeColor="#F0B9A6" android:strokeWidth="2.1" android:strokeLineCap="round"
+        android:pathData="M126,216 Q161,210 190,207 Q224,201 239,214"/>
+    <!-- Short high superior shelf; successive shelves grow anteriorly and inferiorly. -->
+    <path android:fillColor="#CC8B8B" android:strokeColor="#936065" android:strokeWidth="1.5"
+        android:pathData="M180,82 C193,74 218,73 237,77 Q244,80 239,86 Q227,92 204,91 Q190,90 180,95 Q174,90 180,82 Z"/>
+    <path android:fillColor="#ECAEA1"
+        android:pathData="M181,85 Q204,76 229,78 Q235,78 235,82 Q226,85 208,86 Q190,85 181,91 Z"/>
+    <path android:fillColor="#C77F85" android:strokeColor="#8C5B64" android:strokeWidth="1.6"
+        android:pathData="M126,103 C143,94 166,94 187,96 Q217,99 238,94 Q243,95 242,103 Q241,110 231,114 Q212,121 185,116 Q155,113 132,124 Q123,124 121,117 Q118,110 126,103 Z"/>
+    <path android:fillColor="#E7A49A"
+        android:pathData="M126,109 Q142,99 170,101 Q209,107 235,99 Q237,105 230,108 Q213,114 187,109 Q151,106 129,118 Q125,117 126,109 Z"/>
+    <path android:fillColor="#BB747F" android:strokeColor="#865764" android:strokeWidth="1.7"
+        android:pathData="M105,136 C119,126 147,126 172,128 C193,129 222,127 236,119 Q243,119 242,127 Q240,137 228,141 Q207,148 177,147 Q140,144 118,152 Q106,156 101,149 Q97,143 105,136 Z"/>
+    <path android:fillColor="#E2A097"
+        android:pathData="M106,140 Q127,130 169,133 Q221,136 237,124 Q237,131 226,135 Q209,142 177,141 Q139,139 117,147 Q109,150 105,147 Q102,145 106,140 Z"/>
+    <path android:strokeColor="#F6C3AA" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M190,82 Q203,78 218,79 M134,108 Q147,102 173,104 M112,141 Q133,133 160,136 M173,137 Q199,138 218,133"/>
+    <!-- Vestibular skin at the naris; the rim behind the shelves frames the choana. -->
+    <path android:fillColor="#BE897C" android:strokeColor="#8F645D" android:strokeWidth="1.4"
+        android:pathData="M48,151 Q64,140 79,127 Q91,128 92,138 Q88,147 92,156 Q82,158 88,164 Q74,164 66,157 Q58,153 48,155 Z"/>
+    <path android:fillColor="#E0AA91"
+        android:pathData="M58,149 Q72,142 80,134 Q87,135 84,143 Q80,150 84,157 Q74,157 69,153 Z"/>
+    <path android:strokeColor="#77595B" android:strokeWidth="1.4" android:strokeLineCap="round"
+        android:pathData="M66,153 Q70,151 71,148 M71,156 Q75,153 76,149 M78,158 Q81,154 81,151"/>
+    <path android:strokeColor="#E6AB94" android:strokeWidth="2.3" android:strokeLineCap="round"
+        android:pathData="M245,65 Q254,68 259,79 M247,154 Q254,151 260,153"/>
+</vector>

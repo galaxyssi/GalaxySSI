@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- One mid-ventricular slice: a thin free-wall arc merges into a thick left muscular ring. -->
+    <path android:fillColor="#A26E79" android:strokeColor="#71495A" android:strokeWidth="2.4"
+        android:pathData="M218,55 C264,54 303,79 319,119 C339,165 319,213 281,239 C246,263 193,260 152,238 C111,216 67,184 46,144 C24,103 40,67 77,48 C114,28 168,32 218,55 Z" />
+    <path android:fillColor="#CE9A91"
+        android:pathData="M217,59 C265,60 299,81 314,121 C332,166 313,209 276,234 C243,257 196,252 154,231 C110,208 71,180 51,141 C32,104 45,72 80,53 C116,34 165,38 217,59 Z" />
+    <path android:fillColor="#BE8384"
+        android:pathData="M210,68 C254,59 297,92 309,130 C324,174 304,211 273,231 C241,251 196,245 161,226 C133,210 107,191 95,167 C84,144 95,116 118,100 Q159,77 210,68 Z" />
+    <path android:fillColor="#DCA69A"
+        android:pathData="M204,78 C248,69 284,89 301,126 C318,166 300,207 267,225 C234,242 191,235 161,212 C138,194 124,165 132,139 C140,112 165,86 204,78 Z" />
+    <path android:fillColor="#CC8986"
+        android:pathData="M305,123 C321,157 305,199 282,220 C259,241 226,245 195,233 C171,224 153,210 144,192 C166,215 189,225 221,225 C255,223 280,209 292,182 C300,162 301,140 294,121 Z" />
+    <path android:fillColor="#E5B4A4"
+        android:pathData="M154,100 C176,79 207,73 235,76 C258,78 278,88 289,105 C272,94 254,89 234,88 C196,88 169,109 155,136 C149,152 148,168 152,187 C136,166 131,145 142,121 Q147,109 154,100 Z" />
+    <path android:strokeColor="#9F6672" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M283,91 C300,104 308,123 310,143 M310,160 Q311,182 298,200 M291,209 C274,229 248,240 226,240 M219,245 Q182,242 158,225 M306,165 Q304,182 297,190 M282,213 Q265,230 248,232 M168,223 Q185,235 207,238" />
+    <path android:strokeColor="#F1C3AF" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M63,64 Q87,45 116,43 M128,43 Q157,44 184,51 M53,75 Q42,94 44,110 M266,85 Q286,94 297,112 M316,147 Q318,168 311,186 M179,237 Q204,248 228,247" />
+
+    <!-- The right cavity wraps around the septum; the left cavity is nearly round. -->
+    <path android:fillColor="#496F84" android:strokeColor="#F1C1AE" android:strokeWidth="2.5"
+        android:pathData="M199,70 C159,52 110,47 81,63 C53,78 47,103 59,131 C72,161 101,184 127,193 C114,172 108,147 117,124 C128,97 154,76 199,70 Z" />
+    <path android:fillColor="#38556C"
+        android:pathData="M184,69 C148,58 112,54 84,68 C61,79 53,101 65,127 C77,150 97,170 115,178 C106,156 108,134 115,117 C128,91 152,75 184,69 Z" />
+    <path android:fillColor="#557D91"
+        android:pathData="M62,117 C73,117 83,123 88,135 C95,146 102,148 109,149 C108,161 110,170 115,178 C94,167 75,150 65,128 Z" />
+    <path android:strokeColor="#7D9FA6" android:strokeWidth="5.4" android:strokeLineCap="round"
+        android:pathData="M61,121 Q69,119 78,128 Q81,132 87,132 M68,137 Q78,133 84,141 Q89,147 96,147 M79,151 Q87,148 93,155 Q99,160 106,160 M112,125 Q117,113 126,105 M116,172 Q117,180 123,186" />
+    <path android:strokeColor="#AEC5BE" android:strokeWidth="1.3" android:strokeLineCap="round"
+        android:pathData="M62,120 Q71,118 78,127 M70,136 Q77,133 84,140 M82,151 Q88,149 94,155" />
+    <path android:fillColor="#844F66" android:strokeColor="#F1C1AE" android:strokeWidth="2.5"
+        android:pathData="M225,100 C257,99 281,122 285,151 C290,183 273,211 246,221 C219,231 187,218 171,195 C155,172 157,145 173,124 C185,108 206,101 225,100 Z" />
+    <path android:fillColor="#63445B"
+        android:pathData="M226,108 C254,106 274,126 278,153 C282,180 269,202 243,212 C219,222 192,210 178,191 C164,172 164,148 179,130 C190,115 208,109 226,108 Z" />
+    <path android:fillColor="#784E62"
+        android:pathData="M167,159 C173,175 183,183 199,189 C224,201 254,197 274,180 C268,196 259,207 243,212 C219,222 192,210 178,191 C170,180 166,171 167,159 Z" />
+    <path android:fillColor="#B37A7F" android:strokeColor="#915D71" android:strokeWidth="1.1"
+        android:pathData="M254,115 C251,111 243,109 238,112 C233,115 234,119 238,122 C244,126 254,125 256,121 Z M249,209 C245,201 237,199 230,203 C223,209 225,215 231,217 Q242,217 249,209 Z" />
+    <path android:strokeColor="#EAAD9C" android:strokeWidth="1.9" android:strokeLineCap="round"
+        android:pathData="M240,113 Q248,112 252,118 M229,211 Q232,204 239,205 M156,121 Q145,137 143,151 M145,169 Q149,186 159,197" />
+</vector>

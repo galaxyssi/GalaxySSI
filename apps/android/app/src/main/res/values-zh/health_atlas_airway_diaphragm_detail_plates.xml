@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_nasal_wall_selector">鼻腔外侧壁</string>
+    <string name="health_atlas_nasal_wall_view">鼻腔侧面剖视，鼻中隔已移除</string>
+    <string name="health_atlas_nasal_wall_vestibule">鼻前庭</string>
+    <string name="health_atlas_nasal_wall_vestibule_detail">鼻前庭紧邻鼻孔内侧，内衬类似皮肤，粗硬的鼻毛可拦截部分较大的颗粒。</string>
+    <string name="health_atlas_nasal_wall_superior">上鼻甲</string>
+    <string name="health_atlas_nasal_wall_superior_detail">通常所见的三个鼻甲中，上鼻甲最小，从鼻腔外侧壁的后上方突出，部分表面属于嗅区。</string>
+    <string name="health_atlas_nasal_wall_middle">中鼻甲</string>
+    <string name="health_atlas_nasal_wall_middle_detail">中鼻甲呈弯曲的薄片状，是筛骨的一部分。其下方的中鼻道接收多个鼻旁窦的引流。</string>
+    <string name="health_atlas_nasal_wall_inferior">下鼻甲</string>
+    <string name="health_atlas_nasal_wall_inferior_detail">下鼻甲位置最低、体积最大，是一块独立的骨。其表面黏膜有助于温暖和湿润吸入的空气，鼻泪管开口于其下方的下鼻道。</string>
+    <string name="health_atlas_nasal_wall_choana">后鼻孔</string>
+    <string name="health_atlas_nasal_wall_choana_detail">左右鼻腔各有一个后方开口，称为后鼻孔，通向软腭上方的鼻咽。</string>
+
+    <string name="health_atlas_pharynx_regions_selector">咽的三个分区</string>
+    <string name="health_atlas_pharynx_regions_view">显示咽的三个分区的矢状切面</string>
+    <string name="health_atlas_pharynx_regions_nasopharynx">鼻咽</string>
+    <string name="health_atlas_pharynx_regions_nasopharynx_detail">鼻咽是咽的上部，位于鼻腔后方、软腭上方。气流由鼻腔经此进入咽部。</string>
+    <string name="health_atlas_pharynx_regions_oropharynx">口咽</string>
+    <string name="health_atlas_pharynx_regions_oropharynx_detail">口咽是咽的中部，位于软腭下方、口腔和舌的后方。气流和吞咽的食物都经此通过。</string>
+    <string name="health_atlas_pharynx_regions_laryngopharynx">喉咽</string>
+    <string name="health_atlas_pharynx_regions_laryngopharynx_detail">喉咽是咽的最下部，位于喉后方，向下续接食管，而喉入口朝向前方。</string>
+    <string name="health_atlas_pharynx_regions_soft_palate">软腭</string>
+    <string name="health_atlas_pharynx_regions_soft_palate_detail">软腭是硬腭后方可活动的部分。吞咽时软腭抬起，将鼻咽与下方的通道隔开。</string>
+    <string name="health_atlas_pharynx_regions_epiglottis">会厌</string>
+    <string name="health_atlas_pharynx_regions_epiglottis_detail">会厌是位于喉入口附近的叶状软骨，吞咽时向后翻下覆盖喉入口，有助于保护气道。</string>
+
+    <string name="health_atlas_diaphragm_inferior_selector">膈的下面观</string>
+    <string name="health_atlas_diaphragm_inferior_view">从下方观察膈，图上方为人体前方</string>
+    <string name="health_atlas_diaphragm_inferior_tendon">中心腱</string>
+    <string name="health_atlas_diaphragm_inferior_tendon_detail">周围的膈肌纤维汇聚于这片浅色的三叶状腱膜。呼吸时，中心腱随膈肌运动。</string>
+    <string name="health_atlas_diaphragm_inferior_costal">膈肋部</string>
+    <string name="health_atlas_diaphragm_inferior_costal_detail">膈肋部的肌纤维附着于下部肋骨和肋软骨的内面，并向内汇入中心腱。</string>
+    <string name="health_atlas_diaphragm_inferior_caval">腔静脉孔</string>
+    <string name="health_atlas_diaphragm_inferior_caval_detail">下腔静脉经中心腱右侧的开口穿过膈。</string>
+    <string name="health_atlas_diaphragm_inferior_esophageal">食管裂孔</string>
+    <string name="health_atlas_diaphragm_inferior_esophageal_detail">食管经中心腱后方肌性部分的开口穿过膈。环绕裂孔的肌纤维主要来自右膈脚。</string>
+    <string name="health_atlas_diaphragm_inferior_aortic">主动脉裂孔</string>
+    <string name="health_atlas_diaphragm_inferior_aortic_detail">主动脉从正中弓状韧带下方通过，位于两膈脚之间、膈的后方，不穿过膈肌或中心腱。</string>
+    <string name="health_atlas_diaphragm_inferior_crus">右膈脚</string>
+    <string name="health_atlas_diaphragm_inferior_crus_detail">右膈脚比左膈脚长，将膈固定在上部腰椎。从下方观察时，右膈脚位于图像左侧。</string>
+</resources>

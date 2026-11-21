@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_atria_compare_selector">双心房剖视</string>
+    <string name="health_atlas_atria_compare_view">左右心房内部对照：图左为右心房，图右为左心房。两侧为独立的剖视图。</string>
+    <string name="health_atlas_atria_compare_caval">上腔静脉口</string>
+    <string name="health_atlas_atria_compare_caval_detail">上腔静脉在右心房上部开口。下腔静脉开口较低，两者均位于内壁平滑的静脉区。</string>
+    <string name="health_atlas_atria_compare_pectinate">右心房梳状肌</string>
+    <string name="health_atlas_atria_compare_pectinate_detail">梳状肌从界嵴呈扇形伸入右心耳。界嵴将隆起的肌壁与平滑的静脉区分开。</string>
+    <string name="health_atlas_atria_compare_fossa">卵圆窝</string>
+    <string name="health_atlas_atria_compare_fossa_detail">这是右心房房间隔面上的浅椭圆形凹陷，是胎儿卵圆孔的遗迹。本图所示的成人卵圆窝并非开放的通道。</string>
+    <string name="health_atlas_atria_compare_pulmonary">肺静脉开口</string>
+    <string name="health_atlas_atria_compare_pulmonary_detail">图中左心房后壁有四个肺静脉口，每侧肺各有两个，接收从肺回流的血液。</string>
+    <string name="health_atlas_atria_compare_smooth">左心房平滑壁</string>
+    <string name="health_atlas_atria_compare_smooth_detail">左心房大部分内壁较平滑，包括各肺静脉口之间的后壁；梳状肌仅位于左心耳内。</string>
+
+    <string name="health_atlas_ventricles_compare_selector">双心室短轴切面</string>
+    <string name="health_atlas_ventricles_compare_view">从心底向心尖看心室中段的横切面：图左上为新月形右心室腔，图右下为近圆形左心室腔。</string>
+    <string name="health_atlas_ventricles_compare_right_wall">右心室薄游离壁</string>
+    <string name="health_atlas_ventricles_compare_right_wall_detail">右心室外侧肌壁比左心室薄，在本切面上构成新月形腔的外弧。</string>
+    <string name="health_atlas_ventricles_compare_trabeculae">右心室肉柱</string>
+    <string name="health_atlas_ventricles_compare_trabeculae_detail">粗大的肌性隆起称为肉柱，从右心室内壁突入心室腔。</string>
+    <string name="health_atlas_ventricles_compare_septum">肌性室间隔</string>
+    <string name="health_atlas_ventricles_compare_septum_detail">这面由心肌构成的共同壁分隔左右心室腔，并构成新月形右心室腔的内弧。</string>
+    <string name="health_atlas_ventricles_compare_left_wall">左心室厚游离壁</string>
+    <string name="health_atlas_ventricles_compare_left_wall_detail">左心室游离壁比右心室游离壁厚，和室间隔一起围成近圆形的左心室腔。</string>
+
+    <string name="health_atlas_valves_compare_selector">四瓣膜对照</string>
+    <string name="health_atlas_valves_compare_view">分别显示四个瓣膜的闭合瓣面，并非同一切面或同一时刻。图左为右心，图右为左心；上排为流出道瓣（从动脉侧看），下排为流入道瓣（从心房侧看）。</string>
+    <string name="health_atlas_valves_compare_pulmonary">肺动脉瓣半月瓣叶</string>
+    <string name="health_atlas_valves_compare_pulmonary_detail">三个袋状瓣叶在中央相接，位于右心室通往肺动脉干的出口。</string>
+    <string name="health_atlas_valves_compare_aortic">主动脉瓣半月瓣叶</string>
+    <string name="health_atlas_valves_compare_aortic_detail">主动脉瓣有右冠瓣、左冠瓣和无冠瓣三个半月形瓣叶，在左心室通往主动脉的出口处合拢。</string>
+    <string name="health_atlas_valves_compare_tricuspid">三尖瓣瓣叶</string>
+    <string name="health_atlas_valves_compare_tricuspid_detail">右心室入口的三尖瓣有前瓣、后瓣和隔瓣三个主要瓣叶，宽大的前瓣通常最大。</string>
+    <string name="health_atlas_valves_compare_mitral">二尖瓣瓣叶</string>
+    <string name="health_atlas_valves_compare_mitral_detail">左心室入口的二尖瓣有两个主要瓣叶。较深的前瓣与较浅、边缘呈扇贝状的后瓣沿弧形闭合线相接。</string>
+</resources>

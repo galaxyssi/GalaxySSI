@@ -131,17 +131,15 @@ class HealthAtlasSystemPlateDeviceTest {
         }
     }
 
-    @Test fun overviewSelectionRestoresForSharedAndDedicatedPlates() = native { scenario ->
+    @Test fun locatorSelectionRestoresForDedicatedPlates() = native { scenario ->
         for ((owner, child) in listOf("urinary" to "bladder", "eye" to "cornea", "pancreas" to "pancreatic-duct")) {
             val locator = requireNotNull(HealthAtlasPlates.viewsForId(child).firstOrNull { it.owner == owner })
             scenario.onActivity {
                 it.open(owner); assertNotNull(it.view("atlas-source-structure"))
                 it.view("atlas-hotspot-$child").performClick()
-                if (child != "pancreatic-duct") {
-                    assertEquals(child, HealthAtlasPlates.forId(child)?.owner)
-                    assertTrue(it.view("atlas-view-0").isSelected)
-                    it.view("atlas-view-1").performClick()
-                }
+                assertEquals(child, HealthAtlasPlates.forId(child)?.owner)
+                assertTrue(it.view("atlas-view-0").isSelected)
+                it.view("atlas-view-1").performClick()
                 assertTrue(it.view("atlas-hotspot-$child").isSelected)
                 val atlas = HealthBodyAtlas.load(it)
                 assertEquals(locator.caption(it, atlas, atlas[child]),

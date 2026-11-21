@@ -55,8 +55,10 @@ class HealthBodyAtlasDeviceTest {
         val data = HealthBodyAtlas.load(context)
         val plates = HealthAtlasPlates.all
         assertEquals(plates.size, plates.map { it.drawable }.toSet().size)
-        data.items.forEach { assertNotNull("Missing structure artwork for ${it.id}", HealthAtlasPlates.forId(it.id)) }
-        assertEquals(HealthAtlasHeartSection.valves, HealthAtlasPlates.forId("heart-valves"))
+        data.items.forEach { assertEquals("Missing dedicated artwork for ${it.id}", it.id, HealthAtlasPlates.forId(it.id)?.owner) }
+        val valveLocator = HealthAtlasPlates.viewsForId("heart-valves").single { it.owner == "heart" }
+        assertEquals(HealthAtlasHeartSection.valves.drawable, valveLocator.drawable)
+        assertEquals(HealthAtlasHeartSection.valves.markers, valveLocator.markers)
         assertTrue(HealthAtlasPlates.viewsForId("glomerulus").any { it.owner == "nephron" })
         assertEquals("cell-podocyte", HealthAtlasPlates.forId("cell-podocyte")?.owner)
         HealthAtlasPlates.all.forEach { plate ->
