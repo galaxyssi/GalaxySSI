@@ -170,6 +170,24 @@ class HealthAtlasPhysiologyDeviceTest {
         }
     }
 
+    @Test fun allSystemPagesOpenAQuantitativeModelWithoutRemovingTheirSimulation() = native { scenario ->
+        val systems = HealthBodyAtlas.load(context).systems
+        assertEquals(14, systems.size)
+        scenario.onActivity { activity ->
+            for (system in systems) {
+                activity.view("atlas-tab-1").performClick()
+                (activity.view("atlas-search") as EditText).setText(system.id)
+                activity.view("atlas-entry-${system.id}").performClick()
+                activity.view("atlas-tab-3").performClick()
+                val curve = activity.view("atlas-physiology-curve") as HealthAtlasPhysiologyChart
+                assertEquals(system.id, requireNotNull(HealthAtlasPhysiologyKind.forItem(system.id)), curve.model.kind)
+                assertNotNull(activity.view("atlas-simulation-play"))
+                if (system.id == "cardio") assertNotNull(activity.view("atlas-simulation-output"))
+                activity.onBackPressed()
+            }
+        }
+    }
+
     @Test fun capillaryExchangeInputsStayLocalWhenMovingBetweenTissueAndCell() = native { scenario ->
         val kind = HealthAtlasPhysiologyKind.CAPILLARY_EXCHANGE
         val key = "atlas-physiology-capillary-exchange-ps"
@@ -208,6 +226,7 @@ class HealthAtlasPhysiologyDeviceTest {
             Triple("soleus", "calf-pump", "calf-stroke"),
             Triple("pelvis", "pelvic-support", "pelvis-load"),
             Triple("subcutaneous-tissue", "cushion-contact", "cushion-load"),
+            Triple("diaphragm", "diaphragm-displacement", "diaphragm-descent"),
         )
         for ((id, art, input) in examples) {
             var initial = 0

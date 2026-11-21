@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_model_visual_angle_title">中央视角</string>
+    <string name="health_atlas_model_visual_angle_width">物体宽度（W）</string>
+    <string name="health_atlas_model_visual_angle_distance">观察距离（D）</string>
+    <string name="health_atlas_model_visual_angle_formula">视角（度）= 2 × arctan(W / (2 × D)) × 180 / π。W 为物体宽度，D 为观察点到物体中心的距离，两者均以厘米为单位。</string>
+    <string name="health_atlas_model_visual_angle_half">半视角（视线与任一侧边缘方向的夹角）：%1$s°</string>
+    <string name="health_atlas_model_visual_angle_scope">本示例只演示视觉，使用模拟的宽度和距离来说明二维几何关系。物体中心位于视线上，物体与视线垂直。正常视觉中，眼睛将光线聚焦在视网膜上；本模型只计算物体两侧边缘在观察点形成的夹角，不预测视力或屈光误差，也不评估眼部健康。</string>
+</resources>

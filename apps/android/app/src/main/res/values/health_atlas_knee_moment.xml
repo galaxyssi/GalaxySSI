@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_knee_moment_title">Knee extension moment</string>
+    <string name="health_atlas_knee_moment_force">Synthetic extensor force</string>
+    <string name="health_atlas_knee_moment_arm">Perpendicular moment arm</string>
+    <string name="health_atlas_knee_moment_scope">The patella helps redirect the pull of the quadriceps so force is transmitted to the tibia through the patellar tendon. This example uses synthetic inputs for a single force about a fixed knee axis. The moment is proportional to either input when the other is held fixed. The example does not simulate patellar tracking, knee motion, or injury, estimate patient forces, or guide training.</string>
+    <string name="health_atlas_knee_moment_formula">Knee extension moment (N·m) = F × (d / 100)\nF: synthetic extensor force (N). d: perpendicular distance from the knee axis to the line of action of the force (cm). Dividing by 100 converts cm to m.</string>
+    <string name="health_atlas_knee_moment_arm_meters">Moment arm: %1$s m</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_oviduct_ciliary_cycles_title">Uterine tube ciliary beat cycles</string>
+    <string name="health_atlas_oviduct_ciliary_cycles_rate">Simulated beat rate</string>
+    <string name="health_atlas_oviduct_ciliary_cycles_time">Simulated elapsed time</string>
+    <string name="health_atlas_oviduct_ciliary_cycles_companion">Time per beat cycle: %1$s ms</string>
+    <string name="health_atlas_oviduct_ciliary_cycles_formula">Cycles elapsed = beat rate (Hz) × elapsed time (s), including any partial cycle. Time per cycle (ms) = 1,000 ÷ beat rate (Hz).</string>
+    <string name="health_atlas_oviduct_ciliary_cycles_scope">This teaching model simulates one motile cilium in the ciliated epithelium of a human uterine tube, beating at a constant rate. The inputs are synthetic examples, not medical measurements or reference ranges. The model does not predict egg-cell (ovum) velocity, ovulation, conception, pregnancy, or individual fertility.</string>
+</resources>

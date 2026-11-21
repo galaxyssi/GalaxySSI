@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_immune_composition_title">Selected white blood cell count</string>
+    <string name="health_atlas_immune_composition_sample_size">Total white blood cells in the sample</string>
+    <string name="health_atlas_immune_composition_selected_percent">Percentage in the selected group</string>
+    <string name="health_atlas_immune_composition_companion">Other white blood cells: %1$s cells</string>
+    <string name="health_atlas_immune_composition_formula">Selected count = fraction &#215; sample size, where fraction = selected percentage &#247; 100. At the same fraction, a larger sample contains more selected cells unless the fraction is zero.</string>
+    <string name="health_atlas_immune_composition_scope">This classroom model counts only white blood cells (leukocytes) in a simulated sample. Sample sizes and percentages are invented, not clinical measurements or reference ranges. Neutrophils, eosinophils, and basophils are granulocytes. T cells, B cells, and natural killer cells are lymphocytes. Monocytes are a separate group.</string>
+</resources>

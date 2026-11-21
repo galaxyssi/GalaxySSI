@@ -2,10 +2,12 @@ package com.galaxyssi.chat
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.view.View
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 internal class HealthAtlasMaterialResponseView(context: Context, initial: HealthAtlasPhysiology) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -20,6 +22,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_diagram
         HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> R.string.health_atlas_pelvis_model_diagram
         HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> R.string.health_atlas_cushion_model_diagram
+        HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT -> R.string.health_atlas_diaphragm_demo_diagram
         else -> error("Unexpected material response: $kind")
     }
     private val ink = context.getColor(R.color.text_primary)
@@ -44,6 +47,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.CALF_PUMP -> "atlas-calf-pump"
             HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> "atlas-pelvic-support"
             HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> "atlas-cushion-contact"
+            HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT -> "atlas-diaphragm-displacement"
             else -> error("Unexpected material response: $kind")
         }
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
@@ -69,6 +73,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.CALF_PUMP -> drawCalfPump(canvas)
             HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> drawPelvicSupport(canvas)
             HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> drawCushionContact(canvas)
+            HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT -> drawDiaphragm(canvas)
             else -> Unit
         }
         canvas.restore()
@@ -253,6 +258,60 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         }
         pad(85f, 40f, model.companionValue.toFloat(), R.string.health_atlas_cushion_model_standard_pad)
         pad(255f, model.input(1).toFloat(), model.result.toFloat(), R.string.health_atlas_cushion_model_changed_pad)
+    }
+
+    private fun drawDiaphragm(c: Canvas) {
+        val halfWidth = 108f * sqrt(model.input(1).toFloat() / 250f)
+        val left = 170f - halfWidth
+        val right = 170f + halfWidth
+        val rest = 88f
+        val shift = model.input(0).toFloat() * 1.1f
+        val current = rest + shift
+        fun dome(y: Float) = Path().apply {
+            moveTo(left, y)
+            cubicTo(left + halfWidth * .58f, y - 29f, right - halfWidth * .58f, y - 29f, right, y)
+        }
+        val chest = Path().apply {
+            moveTo(left, current)
+            cubicTo(left, 77f, left - 8f, 37f, left + 14f, 29f)
+            cubicTo(139f, 1f, 201f, 1f, right - 14f, 29f)
+            cubicTo(right + 8f, 37f, right, 77f, right, current)
+        }
+        val gain = Path().apply {
+            addPath(dome(rest))
+            lineTo(right, current)
+            cubicTo(right - halfWidth * .58f, current - 29f, left + halfWidth * .58f, current - 29f, left, current)
+            close()
+        }
+        paint.color = 0xffdeeeef.toInt()
+        val chamber = Path(chest).apply {
+            cubicTo(right - halfWidth * .58f, current - 29f, left + halfWidth * .58f, current - 29f, left, current)
+            close()
+        }
+        c.drawPath(chamber, paint)
+        if (shift > 0f) {
+            paint.color = 0xffa7d7c9.toInt()
+            c.drawPath(gain, paint)
+        }
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2.5f
+        paint.color = blue
+        c.drawPath(chest, paint)
+        val dashes = DashPathEffect(floatArrayOf(6f, 4f), 0f)
+        paint.pathEffect = dashes
+        c.drawPath(dome(rest), paint)
+        paint.pathEffect = null
+        paint.color = teal
+        paint.strokeWidth = 3.5f
+        c.drawPath(dome(current), paint)
+        paint.style = Paint.Style.FILL
+        if (shift >= 8f) arrow(c, 170f, rest - 21f, 170f, current - 23f, teal, 2f)
+        paint.pathEffect = dashes
+        line(c, 35f, 143f, 57f, 143f, blue, 2f)
+        paint.pathEffect = null
+        line(c, 184f, 143f, 206f, 143f, teal, 3f)
+        label(c, R.string.health_atlas_diaphragm_demo_resting, 111f, 147f, 98f)
+        label(c, R.string.health_atlas_diaphragm_demo_current, 261f, 147f, 98f)
     }
 
     private fun rectangle(c: Canvas, left: Float, top: Float, right: Float, bottom: Float, color: Int, radius: Float = 10f) {

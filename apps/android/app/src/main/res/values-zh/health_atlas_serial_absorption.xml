@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_serial_absorption_title">小肠两阶段吸收</string>
+    <string name="health_atlas_serial_absorption_stage_a">A 段：占起始量的吸收比例</string>
+    <string name="health_atlas_serial_absorption_stage_b">B 段：占 A 段后剩余量的吸收比例</string>
+    <string name="health_atlas_serial_absorption_scope">本模型仅用于演示数量收支：一种不特指的已溶解营养物质依次通过两个示意性小肠段。两个阶段都表示整个肠段的合计吸收，而非单个肠上皮吸收细胞的实测速率。A 段和 B 段不对应具体的解剖部位。百分比为虚构的教学参数，并非参考值。模型不考虑消化、通过时间或吸收后的去向，也不预测真实吸收量。</string>
+    <string name="health_atlas_serial_absorption_formula">将两个滑块的百分数分别除以 100，得到比例 a 和 b。设起始量为 M，A 段吸收 M × a，B 段吸收 M × (1 − a) × b。图中显示的是两段吸收量之和占 M 的百分比。留在肠腔内的量为 M × (1 − a) × (1 − b)。</string>
+    <string name="health_atlas_serial_absorption_companion">经过 B 段后，肠腔内仍有起始量的 %1$s%%</string>
+</resources>

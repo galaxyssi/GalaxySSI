@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_immune_composition_title">所选白细胞的数量</string>
+    <string name="health_atlas_immune_composition_sample_size">样本中的白细胞总数</string>
+    <string name="health_atlas_immune_composition_selected_percent">所选白细胞的百分比</string>
+    <string name="health_atlas_immune_composition_companion">其他白细胞：%1$s 个</string>
+    <string name="health_atlas_immune_composition_formula">所选白细胞数量 = 所占比例 × 样本总数，其中所占比例 = 所选白细胞的百分数 ÷ 100。比例相同且不为零时，样本总数越大，所选白细胞的数量就越多。</string>
+    <string name="health_atlas_immune_composition_scope">这是课堂用模拟模型，仅对样本中的白细胞计数。样本总数和百分比均为虚构值，并非临床测量值或参考范围。中性粒细胞、嗜酸性粒细胞和嗜碱性粒细胞属于粒细胞。T 细胞、B 细胞和自然杀伤细胞属于淋巴细胞。单核细胞另成一类。</string>
+</resources>

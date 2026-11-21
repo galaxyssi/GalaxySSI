@@ -24,7 +24,8 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
     private val materialResponse = when (kind) {
         HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION, HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION,
         HealthAtlasPhysiologyKind.BONE_BENDING, HealthAtlasPhysiologyKind.CALF_PUMP,
-        HealthAtlasPhysiologyKind.PELVIC_SUPPORT, HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE ->
+        HealthAtlasPhysiologyKind.PELVIC_SUPPORT, HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE,
+        HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT ->
             HealthAtlasMaterialResponseView(activity, model)
         else -> null
     }
@@ -50,7 +51,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         fun addChart() {
             ui.add(body, chart, 12)
             val axisLabel = activity.getString(HealthAtlasPhysiologyText.label(axisKey))
-            val unit = HealthAtlasPhysiologyText.unit(axisKey)
+            val unit = HealthAtlasPhysiologyText.displayUnit(activity, HealthAtlasPhysiologyText.unit(axisKey))
             ui.add(body, ui.text(if (unit.isEmpty()) axisLabel else
                 activity.getString(R.string.health_atlas_model_axis, axisLabel, unit), 12f, muted = true))
         }
@@ -97,7 +98,8 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         update()
     }
     private fun update() {
-        output.text = HealthAtlasPhysiologyText.resultNumber(model, model.result) + " " + model.kind.unit
+        output.text = HealthAtlasPhysiologyText.resultNumber(model, model.result) + " " +
+            HealthAtlasPhysiologyText.displayUnit(activity, model.kind.unit)
         companion.text = HealthAtlasPhysiologyText.companion(activity, model)
         chart.model = model
         model.renalAmounts?.let { renalBalance?.amounts = it }

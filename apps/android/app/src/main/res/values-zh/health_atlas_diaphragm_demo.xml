@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_diaphragm_demo_title">膈肌下降与胸腔容积</string>
+    <string name="health_atlas_diaphragm_demo_descent">向下移动距离</string>
+    <string name="health_atlas_diaphragm_demo_area">有效投影面积</string>
+    <string name="health_atlas_diaphragm_demo_per_mm">每下降 1 毫米增加的空间：%1$s mL</string>
+    <string name="health_atlas_diaphragm_demo_formula">增加的容积 = 投影面积 × 下降距离（换算成厘米）</string>
+    <string name="health_atlas_diaphragm_demo_scope">把胸腔简化为横截面积固定、底部可移动的容器。模型只显示膈肌下降腾出的几何空间，不包含胸廓运动或组织变形，也不估算个人的吸气量。</string>
+    <string name="health_atlas_diaphragm_demo_diagram">胸腔截面示意，不按比例。蓝色虚线是静息位置，青色实线是下降后的位置。</string>
+    <string name="health_atlas_diaphragm_demo_resting">静息位置</string>
+    <string name="health_atlas_diaphragm_demo_current">下降后</string>
+</resources>

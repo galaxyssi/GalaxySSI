@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_teaching_unit_heart_rate">次/分</string>
+    <string name="health_atlas_teaching_unit_cells">个细胞</string>
+    <string name="health_atlas_teaching_unit_cycles">个周期</string>
+</resources>

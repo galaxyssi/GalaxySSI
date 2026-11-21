@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_duct_transit_title">Idealized duct transit time</string>
+    <string name="health_atlas_duct_transit_length">Model path length</string>
+    <string name="health_atlas_duct_transit_speed">Constant marker speed</string>
+    <string name="health_atlas_duct_transit_companion">Model time per length unit: %1$s TU/LU</string>
+    <string name="health_atlas_duct_transit_formula">Model time (TU) = path length (LU) ÷ marker speed (LU/TU).</string>
+    <string name="health_atlas_duct_transit_scope">The epididymis, vas deferens, and ejaculatory ducts are parts of the male reproductive tract. Smooth muscle helps move contents through the epididymis and vas deferens. This model follows an ideal marker moving at constant speed through a single representative straightened duct segment. The geometry is invented, with arbitrary units for length (LU) and time (TU). Marker transport does not represent sperm motility or fertility. The model does not simulate ejaculation or conception, or estimate actual transit duration.</string>
+</resources>

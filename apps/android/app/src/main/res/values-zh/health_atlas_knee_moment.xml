@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_knee_moment_title">伸膝力矩</string>
+    <string name="health_atlas_knee_moment_force">演示用伸膝力</string>
+    <string name="health_atlas_knee_moment_arm">垂直力臂</string>
+    <string name="health_atlas_knee_moment_scope">髌骨有助于改变股四头肌的牵拉方向，使拉力经髌腱传递至胫骨。此例采用虚构输入，只考虑单一作用力绕固定膝关节转轴产生的力矩。固定其中一个输入时，力矩与另一个输入成正比。此例不模拟髌骨运动轨迹、膝关节运动或损伤，不估算患者的受力，也不用于指导训练。</string>
+    <string name="health_atlas_knee_moment_formula">伸膝力矩（N·m）= F × (d / 100)\nF：演示用伸膝力（N）；d：从膝关节转轴到力作用线的垂直距离（cm）。除以 100 将 cm 换算为 m。</string>
+    <string name="health_atlas_knee_moment_arm_meters">力臂：%1$s m</string>
+</resources>

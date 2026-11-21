@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cardiac_phase_time_title">模拟心室充盈时间</string>
+    <string name="health_atlas_cardiac_phase_time_rate">模拟心率</string>
+    <string name="health_atlas_cardiac_phase_time_filling_percent">假设的充盈时间占心动周期的百分比</string>
+    <string name="health_atlas_cardiac_phase_time_companion">完整心动周期：%1$s 毫秒</string>
+    <string name="health_atlas_cardiac_phase_time_formula">完整心动周期（毫秒）= 60,000 ÷ 心率（次/分）。模拟充盈时间 = 完整心动周期 ×（充盈时间百分比 ÷ 100）。</string>
+    <string name="health_atlas_cardiac_phase_time_scope">在正常跳动的人体心脏中，充盈时血液从心房流入心室。本模拟假设心率恒定。充盈百分比是独立设定的时间占比，不由心率推算，也不代表血量占比。本模型不能预测个人的心室充盈情况，也不估算心输出量。</string>
+</resources>

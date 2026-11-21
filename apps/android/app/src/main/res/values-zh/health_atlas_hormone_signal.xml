@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_hormone_signal_title">循环信号剩余量</string>
+    <string name="health_atlas_hormone_signal_half_life">半衰期（示例刻度）</string>
+    <string name="health_atlas_hormone_signal_elapsed">停止分泌后的时间（示例刻度）</string>
+    <string name="health_atlas_hormone_signal_scope">本模拟从一种假想的循环信号停止分泌时开始，将初始水平设为百分之百，并假定半衰期恒定：每过一个半衰期，当时剩余的信号就减少一半。时间刻度为任意设定，不对应实际时间单位。本示例不代表任何特定激素的半衰期或患者的检测结果，也不模拟持续分泌或反馈。</string>
+    <string name="health_atlas_hormone_signal_formula">剩余信号占初始值的百分比 = 100 × 2^(−经过时间 ÷ 半衰期)。</string>
+    <string name="health_atlas_hormone_signal_removed">已清除的信号占初始值的比例：%1$s%%</string>
+</resources>

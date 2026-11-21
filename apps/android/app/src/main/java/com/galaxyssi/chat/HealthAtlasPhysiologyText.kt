@@ -191,8 +191,14 @@ internal object HealthAtlasPhysiologyText {
     fun number(value: Double, digits: Int = 2): String = NumberFormat.getNumberInstance().apply {
         maximumFractionDigits = digits
     }.format(value)
+    fun displayUnit(context: Context, unit: String): String = when (unit) {
+        "bpm" -> context.getString(R.string.health_atlas_teaching_unit_heart_rate)
+        "cells" -> context.getString(R.string.health_atlas_teaching_unit_cells)
+        "cycles" -> context.getString(R.string.health_atlas_teaching_unit_cycles)
+        else -> unit
+    }
     fun result(context: Context, model: HealthAtlasPhysiology) = context.getString(title(model.kind)) +
-        ": " + resultNumber(model, model.result) + " " + model.kind.unit
+        ": " + resultNumber(model, model.result) + " " + displayUnit(context, model.kind.unit)
     fun resultNumber(model: HealthAtlasPhysiology, value: Double) = when (model.kind) {
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> number(value, 6)
         HealthAtlasPhysiologyKind.EYE_FOCUS -> HealthAtlasEyeOpticsText.offsetNumber(value)
@@ -250,7 +256,7 @@ internal object HealthAtlasPhysiologyText {
     fun input(context: Context, model: HealthAtlasPhysiology, index: Int): String {
         val key = model.kind.inputs[index].key
         val value = inputNumber(key, model.input(index))
-        val displayUnit = unit(key)
+        val displayUnit = displayUnit(context, unit(key))
         return context.getString(label(key)) + ": " + if (displayUnit.isEmpty()) value else "$value $displayUnit"
     }
     fun context(context: Context, model: HealthAtlasPhysiology): String = buildString {
