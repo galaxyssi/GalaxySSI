@@ -20,14 +20,17 @@ class HealthAtlasGasExchangeTest {
         assertEquals(0f, HealthAtlasGasExchange.phase(-1f), 0f)
         assertEquals(3, HealthAtlasGasExchange.stage(2f))
     }
-    @Test fun illustrativePressuresAreNotRecomputedFromTheVentilationInputs() {
+    @Test fun illustrativePressuresStayIndependentOfVentilationAndDiffusionControls() {
         val examples = HealthAtlasGasExchange.gradients.toList()
-        val model = HealthAtlasPhysiology(HealthAtlasPhysiologyKind.VENTILATION)
-        assertEquals(4.2, model.result, 1e-9)
-        assertEquals(10.5, model.withInput(0, 30).result, 1e-9)
-        assertEquals(examples, HealthAtlasGasExchange.gradients)
         assertEquals(HealthAtlasPhysiologyKind.VENTILATION, HealthAtlasPhysiologyKind.forItem("alveoli"))
-        assertNull(HealthAtlasPhysiologyKind.forItem("respiratory-membrane"))
+        val ventilation = HealthAtlasPhysiology(HealthAtlasPhysiologyKind.VENTILATION)
+        assertEquals(4.2, ventilation.result, 1e-9)
+        assertEquals(10.5, ventilation.withInput(0, 30).result, 1e-9)
+        val diffusion = requireNotNull(HealthAtlasPhysiology.restore("respiratory-membrane", intArrayOf(100, 100, 100)))
+        assertEquals(HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION, diffusion.kind)
+        assertEquals(1.0, diffusion.result, 1e-9)
+        assertEquals(0.0, diffusion.withInput(0, 0).result, 1e-9)
+        assertEquals(examples, HealthAtlasGasExchange.gradients)
         assertTrue(HealthAtlasGasExchange.supports("pulmonary-capillaries"))
         assertFalse(HealthAtlasGasExchange.supports("cell-type-i-pneumocyte"))
         assertFalse(HealthAtlasGasExchange.supports("capillaries"))
