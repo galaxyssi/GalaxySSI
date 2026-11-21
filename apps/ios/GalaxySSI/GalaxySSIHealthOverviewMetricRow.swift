@@ -302,7 +302,7 @@ struct GalaxySSIHealthOverviewMetricDetailView: View {
     }
     .navigationTitle(metric == .glucose && item?.reading?.conditions == "fasting"
       ? t("fasting_glucose", "Fasting glucose") : metric.title(language: language))
-    .navigationBarTitleDisplayMode(.inline).privacySensitive()
+    .galaxySSIHealthTheme().privacySensitive()
     .background(NavigationLink(isActive: Binding(get: { discussion != nil }, set: { if !$0 { discussion = nil } })) {
       if let discussion { GalaxySSIHealthCareDiscussionView(records: records, concernID: discussion, metric: metric) }
     } label: { EmptyView() }.hidden())
@@ -400,7 +400,7 @@ struct GalaxySSIHealthOverviewHistoryView: View {
       }
     }
     .navigationTitle(metric?.title(language: language) ?? t("overview_list.all_records", "All records"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .privacySensitive()
     .onAppear(perform: reload)
     .onChange(of: scene) { if $0 == .active { reload() } else { readings = []; failed = false } }
@@ -478,7 +478,7 @@ struct GalaxySSIHealthOverviewRecordView: View {
         } else { Text(t("unavailable", "Health records could not be accessed.")); Button(t("retry", "Reload records"), action: reload) }
       }
     }
-    .navigationTitle(record.metric.title(language: language)).navigationBarTitleDisplayMode(.inline)
+    .navigationTitle(record.metric.title(language: language)).galaxySSIHealthTheme()
     .privacySensitive()
     .onAppear(perform: reload)
     .onDisappear { clear() }

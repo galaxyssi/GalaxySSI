@@ -355,7 +355,7 @@ struct GalaxySSIHealthTrendView: View {
       }
     }
     .navigationTitle(t("title", "Measurement Trends"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: metric) { _ in component = .value; selectedUnit = nil; resetOrigins(); reload() }
     .onChange(of: component) { _ in reload() }
@@ -451,7 +451,7 @@ struct GalaxySSIHealthTrendView: View {
             }
           }
           .navigationTitle(point.day.formatted(date: .abbreviated, time: .omitted))
-          .navigationBarTitleDisplayMode(.inline)
+          .galaxySSIHealthTheme()
           .toolbar { ToolbarItem(placement: .confirmationAction) {
             Button(t("done", "Done")) { selected = nil }
           } }

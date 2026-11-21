@@ -95,6 +95,7 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
           concernID: route.concern, metric: route.metric)
       }
       .navigationTitle(route.metric.title(language: language))
+      .galaxySSIHealthTheme()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button(GalaxySSILocalization.string("galaxyssi.common.close", fallback: "Close", language: language)) {

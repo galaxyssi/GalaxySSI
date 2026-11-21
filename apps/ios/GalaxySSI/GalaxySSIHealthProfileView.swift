@@ -178,7 +178,8 @@ struct GalaxySSIHealthProfileView: View {
       }
     }
     .navigationTitle(t("title", "Health Profile"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
+    .galaxySSIHealthFunctionsToolbar()
     .onAppear(perform: reload)
     .onChange(of: scenePhase) { phase in
       if phase == .active { reload() }
@@ -296,6 +297,8 @@ struct GalaxySSIHealthProfileView: View {
           TextField(t("notes", "Notes"), text: $entry.notes)
           if alreadySaved { Button(t("remove", "Remove"), role: .destructive) { remove(entry.id) } }
         }
+        .navigationTitle(t("entry", "Entry"))
+        .galaxySSIHealthTheme()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button(t("cancel", "Cancel")) { dismiss() } }
           ToolbarItem(placement: .confirmationAction) {

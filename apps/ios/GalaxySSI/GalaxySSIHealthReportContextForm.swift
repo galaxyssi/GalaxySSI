@@ -57,7 +57,7 @@ struct GalaxySSIHealthReportContextForm: View {
       }
       .environment(\.timeZone, TimeZone(identifier: review.zone) ?? .current)
       .navigationTitle(t("confirm_batch", "Confirm sampling details"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button(t("cancel", "Cancel")) { dismiss() }

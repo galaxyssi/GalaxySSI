@@ -194,7 +194,7 @@ private struct GalaxySSIHealthPDFSourceViewport: View {
           .onEnded { zoom = min(4, max(1, zoom * $0)) })
       }
       .navigationTitle(t("source", "Original page"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button(t("close_source", "Close")) { dismiss() }
@@ -375,7 +375,7 @@ struct GalaxySSIHealthPDFTextView: View {
       }
     }
     .navigationTitle(t("title", "Report PDF Text"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onDisappear(perform: clearPassword)
     .onDisappear { if status == .working { cancel() } }

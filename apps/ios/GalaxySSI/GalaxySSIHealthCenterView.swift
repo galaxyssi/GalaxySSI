@@ -32,6 +32,7 @@ struct GalaxySSIHealthCenterView: View {
   @State private var measurementSelection = UUID()
 
   private enum OverviewDestination: String, Identifiable {
+    case functions
     case weekly, assistant, files, sleep, reviews, records, devices, originals, pdf, profile, crop
     case export, privacy, backup, trends, catalog, recording, body, imports, photo, movement, care, agenda, timeline
     case activityComparison
@@ -68,13 +69,11 @@ struct GalaxySSIHealthCenterView: View {
     .navigationTitle(t("title", "Health Center"))
     .navigationBarTitleDisplayMode(.inline)
     .toolbar { ToolbarItem(placement: .navigationBarTrailing) {
-      Menu {
-        overviewMenu
-        Button { overviewDestination = .weekly } label: { Label(t("weekly.title", "Weekly Health Report"), systemImage: "calendar") }
-        Button { overviewDestination = .assistant } label: { Label(t("assistant.title", "Health Assistant"), systemImage: "chart.bar.xaxis") }
-        Button { overviewDestination = .files } label: { Label(t("data_files.title", "Data and Files"), systemImage: "folder") }
-      } label: { Image(systemName: "ellipsis").accessibilityLabel(t("more_menu", "More")) }
-      .help(t("more_menu", "More"))
+      Button { overviewDestination = .functions } label: {
+        Image(systemName: "ellipsis").frame(minWidth: 44, minHeight: 44)
+          .accessibilityLabel(t("functions", "Health functions"))
+      }
+      .help(t("functions", "Health functions")).accessibilityIdentifier("health-functions")
       .disabled(scenePhase != .active)
     } }
     .background(NavigationLink(isActive: Binding(get: { overviewDestination != nil }, set: {
@@ -131,6 +130,7 @@ struct GalaxySSIHealthCenterView: View {
     .sheet(item: $editor, onDismiss: reload) { _ in
       NavigationView { editorForm }
         .navigationViewStyle(.stack)
+        .galaxySSIHealthTheme()
         .interactiveDismissDisabled()
         .alert(item: $alert, content: editorAlert)
     }
@@ -139,7 +139,10 @@ struct GalaxySSIHealthCenterView: View {
         GalaxySSIHealthKitImportView(records: records, recoveryScope: incident.scope)
       }
       .navigationViewStyle(.stack)
+      .galaxySSIHealthTheme()
     }
+    .galaxySSIHealthTheme()
+    .environment(\.galaxySSIHealthFunctions, { functionsView })
   }
 
   private var privacyOverview: some View {
@@ -217,6 +220,11 @@ struct GalaxySSIHealthCenterView: View {
         } label: {
           Label(t("originals.removal_history", "Original removal history"), systemImage: "clock.arrow.circlepath")
         }
+        if let removed = latestRemoval(in: archive) {
+          Button { openDeletion(removed) } label: {
+            Label(t("resume_removal", "Review last removed measurement"), systemImage: "arrow.uturn.backward")
+          }
+        }
       } else if scenePhase == .active {
         Text(t("unavailable", "Health records could not be accessed."))
         Button(t("retry", "Reload records"), action: reload)
@@ -287,10 +295,15 @@ struct GalaxySSIHealthCenterView: View {
             }
             if sourceAttentionUnavailable {
               Text(t("healthkit.recovery_unavailable", "Source recovery information is unavailable.")).foregroundColor(.secondary)
+              Button(t("sources_retry", "Retry sources"), action: reloadSourceAttention)
+                .buttonStyle(GalaxySSIHealthCommandStyle()).accessibilityIdentifier("health-sources-retry")
             }
           }
         }
         Section(t("device_sources", "Device sources")) {
+          NavigationLink { GalaxySSIHealthMotionView(records: records) } label: {
+            Label(t("motion.title", "Movement"), systemImage: "figure.walk")
+          }
           NavigationLink {
             GalaxySSIHealthKitSyncView(records: records)
           } label: {
@@ -359,6 +372,7 @@ struct GalaxySSIHealthCenterView: View {
     }
     .navigationTitle(t("sources", "Devices & Data Sources"))
     .navigationBarTitleDisplayMode(.inline)
+    .toolbar { ToolbarItem(placement: .navigationBarTrailing) { functionsLink } }
     .onAppear(perform: reload)
   }
 
@@ -684,7 +698,9 @@ struct GalaxySSIHealthCenterView: View {
   }
 
   @ViewBuilder private func destinationView(_ destination: OverviewDestination) -> some View {
+    Group {
     switch destination {
+    case .functions: functionsView
     case .weekly: GalaxySSIWeeklyHealthReportView(records: records)
     case .files: GalaxySSIHealthDataFilesView(records: records, metrics: { metricCatalog }, review: { recordCenter })
     case .assistant:
@@ -720,40 +736,40 @@ struct GalaxySSIHealthCenterView: View {
     case .care: GalaxySSIHealthCareView(records: records)
     case .agenda: GalaxySSIHealthCareAgendaView(records: records)
     }
+    }.galaxySSIHealthTheme()
   }
 
   private var originals: GalaxySSIHealthOriginalStore {
-    GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets)
+    GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets, restoreRecordsFile: records.isolatedFile)
   }
 
-  @ViewBuilder private var overviewMenu: some View {
-    Group {
-    menuEntry(.records, "record_center.title", "Health Record Center", "square.and.pencil")
-    menuEntry(.catalog, "catalog.title", "Measurement Catalog", "list.bullet.rectangle")
-    menuEntry(.trends, "trend.title", "Measurement Trends", "chart.xyaxis.line")
-    menuEntry(.body, "body.title", "Body Explorer", "figure.stand")
-    }
-    Group {
-    menuEntry(.profile, "profile.title", "Health Profile", "person.text.rectangle")
-    menuEntry(.originals, "originals.title", "Health Originals", "doc.on.doc")
-    menuEntry(.pdf, "pdf_text.title", "Report PDF Text", "doc.text.magnifyingglass")
-    menuEntry(.crop, "report_crop.title", "Report Crop Preview", "crop")
-    menuEntry(.export, "export.title", "Export Measurements", "square.and.arrow.up")
-    menuEntry(.privacy, "privacy.title", "Health Privacy", "lock.shield")
-    menuEntry(.backup, "backup.title", "Health Backup", "externaldrive")
-    menuEntry(.movement, "motion.title", "Movement", "figure.walk")
-    menuEntry(.activityComparison, "activity_comparison.title", "Activity comparison", "chart.bar.xaxis")
-    }
-    Group {
-      menuEntry(.care, "care.title", "Care", "heart.text.square")
-      menuEntry(.agenda, "agenda.title", "Health Actions", "calendar")
-    }
-    if let archive, let removed = latestRemoval(in: archive) {
-      Button { openDeletion(removed) } label: { Label(t("resume_removal", "Review last removed measurement"), systemImage: "arrow.uturn.backward") }
+  private var functionsView: AnyView {
+    // Erase the recursive Functions -> destination -> Functions navigation boundary.
+    AnyView(GalaxySSIHealthFunctionsView(destination: { feature in AnyView(featureDestination(feature)) }, manual: { startManual() }))
+  }
+  @ViewBuilder private func featureDestination(_ feature: GalaxySSIHealthFeature) -> some View {
+    switch feature {
+    case .care: destinationView(.care)
+    case .agenda: destinationView(.agenda)
+    case .recordCenter: destinationView(.records)
+    case .originals: GalaxySSIHealthOriginalsView(store: originals)
+    case .manual: EmptyView()
+    case .records: destinationView(.timeline)
+    case .catalog: destinationView(.catalog)
+    case .weekly: destinationView(.weekly)
+    case .assistant: destinationView(.assistant)
+    case .sources: sourceOverview
+    case .files: destinationView(.files)
+    case .profile: destinationView(.profile)
+    case .privacy: destinationView(.privacy)
+    case .body: destinationView(.body)
     }
   }
-  private func menuEntry(_ destination: OverviewDestination, _ key: String, _ fallback: String, _ icon: String) -> some View {
-    Button { overviewDestination = destination } label: { Label(t(key, fallback), systemImage: icon) }
+  private var functionsLink: some View {
+    NavigationLink { functionsView } label: {
+      Image(systemName: "ellipsis").frame(minWidth: 44, minHeight: 44)
+        .accessibilityLabel(t("functions", "Health functions"))
+    }.help(t("functions", "Health functions"))
   }
   private var bottomActions: some View {
     VStack(spacing: 0) {

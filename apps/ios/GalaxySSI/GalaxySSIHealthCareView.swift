@@ -44,6 +44,7 @@ struct GalaxySSIHealthCareView: View {
       }
     }
     .navigationTitle(t("title", "Health Care"))
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) { _ in reload() }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
@@ -440,6 +441,7 @@ struct GalaxySSIHealthCareDetail: View {
       if scene == .active, failed { Text(t("unavailable", "Local health review could not be loaded.")) }
     }
     .navigationTitle(metric.title(language: language))
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) { _ in reload() }
     .onChange(of: store.profile.identityFingerprint) { _ in reload() }

@@ -139,7 +139,7 @@ struct GalaxySSIHealthReviewReminderView: View {
       }
     }
     .navigationTitle(t("title", "Health Review Reminders"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) {
       if $0 == .active { reload() }

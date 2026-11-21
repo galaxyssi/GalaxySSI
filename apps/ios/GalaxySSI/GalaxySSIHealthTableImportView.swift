@@ -110,7 +110,7 @@ struct GalaxySSIHealthTableImportView: View {
       }
     }
     .navigationTitle(t("title", "Import Measurement Table"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
@@ -240,7 +240,7 @@ struct GalaxySSIHealthTableImportView: View {
         .environment(\.calendar, clockCalendar)
         .environment(\.timeZone, clockCalendar.timeZone)
         .navigationTitle(t("date_only_title", "Date-only time"))
-        .navigationBarTitleDisplayMode(.inline)
+        .galaxySSIHealthTheme()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) {
             Button(t("close_source", "Close")) { pickingDateOnlyTime = false }

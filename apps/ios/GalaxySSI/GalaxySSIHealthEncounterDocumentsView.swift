@@ -47,7 +47,7 @@ struct GalaxySSIHealthEncounterDocumentsView: View {
         } else { Color.clear }
       }
       .navigationTitle(library == nil ? t("documents", "Visit documents") : t("document_library", "Retained originals"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .alert(GalaxySSIHealthInstruction.text("source_in_use", "Delete the instruction drafts before removing this source link.", language),
         isPresented: $sourceInUse) {
           Button(t("document_done", "Done"), role: .cancel) {}
@@ -135,7 +135,7 @@ struct GalaxySSIHealthEncounterDocumentsView: View {
           .disabled(document.page >= document.count || openLink?.page != nil)
           .accessibilityLabel(t("document_next", "Next page"))
       }
-      if openLink == nil { Button(t("document_select", "Link to visit")) { confirm = true }.buttonStyle(.borderedProminent) }
+      if openLink == nil { Button(t("document_select", "Link to visit")) { confirm = true }.buttonStyle(GalaxySSIHealthCommandStyle()) }
     }
     .padding()
     .confirmationDialog(t("document_confirm", "Link this original to the visit?"), isPresented: $confirm,

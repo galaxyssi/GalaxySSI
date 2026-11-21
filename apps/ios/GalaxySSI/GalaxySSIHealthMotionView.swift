@@ -47,7 +47,7 @@ struct GalaxySSIHealthMotionView: View {
       }
     }
     .navigationTitle(t("title", "Movement"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .privacySensitive()
     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("close", "Close")) { dismiss() } } }
     .onAppear { reload() }

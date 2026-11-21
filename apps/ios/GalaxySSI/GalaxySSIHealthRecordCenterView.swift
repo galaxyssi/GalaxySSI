@@ -121,7 +121,7 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
       }
     }
     .navigationTitle(t("record_center.title", "Health Record Center"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) { if $0 == .active { reload() } else { snapshot = nil; failed = false } }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in

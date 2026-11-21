@@ -96,7 +96,7 @@ struct GalaxySSIHealthImportView: View {
       }
     }
     .navigationTitle(t("title", "Import Health Data"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear {
       activate()
     }

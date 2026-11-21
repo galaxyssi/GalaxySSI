@@ -159,7 +159,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
     }
     .task(id: scene) { await runPhotoBatch() }
     .navigationTitle(t("title", "Local Report Recognition"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .background {
       NavigationLink(isActive: Binding(get: { quickReportRoute != nil }, set: { if !$0 { quickReportRoute = nil } })) {
         if let id = quickReportRoute {
@@ -266,6 +266,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
       }
     }
     .navigationTitle(t("jobs", "Recognition jobs"))
+    .galaxySSIHealthTheme()
     .onDisappear { if activeID == id { stop(cancelled: false) } }
   }
 
@@ -290,6 +291,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
       }
     }
     .navigationTitle(String(format: t("page", "Page %lld"), Int64(index + 1)))
+    .galaxySSIHealthTheme()
     .onAppear {
       if scene == .active, let job = jobs.first(where: { $0.id == jobID }),
          (try? store.read(job.original)) == nil { missingSource = jobID }

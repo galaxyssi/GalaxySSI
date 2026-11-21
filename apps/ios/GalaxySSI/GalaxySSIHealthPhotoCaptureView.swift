@@ -89,7 +89,7 @@ struct GalaxySSIHealthPhotoCaptureView: View {
       }
     }
     .navigationTitle(t("title", "Health photos"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .privacySensitive()
     .onAppear {
       reload()
