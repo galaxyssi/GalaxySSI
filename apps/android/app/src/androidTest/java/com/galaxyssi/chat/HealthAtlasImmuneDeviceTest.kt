@@ -184,16 +184,18 @@ class HealthAtlasImmuneDeviceTest {
                 diagram.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
                 diagram.layout(0, 0, width, diagram.measuredHeight)
-                val frames = (0..3).map { stage ->
-                    Bitmap.createBitmap(width, diagram.height, Bitmap.Config.ARGB_8888).also {
-                        diagram.stage = stage
-                        diagram.draw(Canvas(it))
-                    }
+                fun frame(phase: Float) = Bitmap.createBitmap(width, diagram.height, Bitmap.Config.ARGB_8888).also {
+                    diagram.phase = phase
+                    diagram.draw(Canvas(it))
                 }
+                val frames = listOf(0f, .125f, .25f, .375f, .50f, .75f, 1f).map(::frame)
+                val rewind = frame(0f)
                 try {
                     for (i in frames.indices) for (j in 0 until i) assertFalse(frames[i].sameAs(frames[j]))
                     frames.forEach { assertTrue(Color.alpha(it.getPixel(it.width / 2, it.height / 2)) > 200) }
-                } finally { frames.forEach { it.recycle() } }
+                    assertTrue(frames.first().sameAs(rewind))
+                    assertEquals(0, diagram.stage)
+                } finally { frames.forEach { it.recycle() }; rewind.recycle() }
             }
         }
     }

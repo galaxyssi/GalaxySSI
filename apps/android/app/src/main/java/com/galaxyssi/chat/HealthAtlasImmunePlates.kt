@@ -10,13 +10,15 @@ internal object HealthAtlasImmunePlates {
 
     private fun feature(id: String, x: Int, y: Int, name: Int, explanation: Int) =
         HealthAtlasFeature(HealthAtlasMarker(id, x / 360f, y / 280f), name, explanation)
+    private fun paintedFeature(id: String, x: Int, y: Int, name: Int, explanation: Int) =
+        HealthAtlasFeature(HealthAtlasMarker(id, x / 1254f, y / 1254f), name, explanation)
     private fun plate(owner: String, drawable: Int, viewLabel: Int, source: String, vararg features: HealthAtlasFeature) =
         HealthAtlasPlate(drawable, owner, viewLabel, emptyList(), source, features = features.toList())
 
     val all = listOf(
         plate("cell-neutrophil", R.drawable.health_atlas_cell_neutrophil, R.string.health_atlas_cell_morphology, BLOOD,
-            feature("lobulated", 170, 115, R.string.health_atlas_feature_lobulated, R.string.health_atlas_feature_lobulated_detail),
-            feature("fine-granules", 249, 165, R.string.health_atlas_feature_fine_granules, R.string.health_atlas_feature_fine_granules_detail)),
+            paintedFeature("lobulated", 593, 540, R.string.health_atlas_feature_lobulated, R.string.health_atlas_feature_lobulated_detail),
+            paintedFeature("fine-granules", 917, 652, R.string.health_atlas_feature_fine_granules, R.string.health_atlas_feature_fine_granules_detail)),
         plate("cell-eosinophil", R.drawable.health_atlas_cell_eosinophil, R.string.health_atlas_cell_morphology, BLOOD,
             feature("bilobed", 145, 133, R.string.health_atlas_feature_bilobed, R.string.health_atlas_feature_bilobed_detail),
             feature("eosin-granules", 244, 141, R.string.health_atlas_feature_eosin_granules, R.string.health_atlas_feature_eosin_granules_detail)),
@@ -27,8 +29,8 @@ internal object HealthAtlasImmunePlates {
             feature("kidney-nucleus", 128, 131, R.string.health_atlas_feature_kidney_nucleus, R.string.health_atlas_feature_kidney_nucleus_detail),
             feature("monocyte-cytoplasm", 238, 152, R.string.health_atlas_feature_monocyte_cytoplasm, R.string.health_atlas_feature_monocyte_cytoplasm_detail)),
         plate("cell-macrophage", R.drawable.health_atlas_cell_macrophage, R.string.health_atlas_cell_morphology, INNATE,
-            feature("cell-projection", 283, 89, R.string.health_atlas_feature_cell_projection, R.string.health_atlas_feature_cell_projection_detail),
-            feature("vesicle", 226, 141, R.string.health_atlas_feature_vesicle, R.string.health_atlas_feature_vesicle_detail)),
+            paintedFeature("cell-projection", 1028, 410, R.string.health_atlas_feature_cell_projection, R.string.health_atlas_feature_cell_projection_detail),
+            paintedFeature("vesicle", 712, 615, R.string.health_atlas_feature_vesicle, R.string.health_atlas_feature_vesicle_detail)),
         plate("cell-t-cell", R.drawable.health_atlas_cell_t, R.string.health_atlas_cell_receptor_scheme, T_CELLS,
             feature("t-receptor", 301, 149, R.string.health_atlas_feature_t_receptor, R.string.health_atlas_feature_t_receptor_detail),
             feature("lymphocyte-nucleus", 173, 145, R.string.health_atlas_feature_lymphocyte_nucleus, R.string.health_atlas_feature_lymphocyte_nucleus_detail)),
