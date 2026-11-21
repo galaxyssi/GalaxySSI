@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_larynx_inlet_plate_selector">Laryngeal inlet</string>
+    <string name="health_atlas_larynx_inlet_plate_caption">Larynx cutaway, looking down from above. The front of the larynx is at the top.</string>
+    <string name="health_atlas_larynx_inlet_plate_epiglottis">Epiglottis</string>
+    <string name="health_atlas_larynx_inlet_plate_epiglottis_detail">This leaf-shaped flap of elastic cartilage forms the front edge of the laryngeal inlet, above the folds. It tips back over the inlet during swallowing.</string>
+    <string name="health_atlas_larynx_inlet_plate_vestibular_folds">Vestibular folds</string>
+    <string name="health_atlas_larynx_inlet_plate_vestibular_folds_detail">These paired pink ridges sit above and farther out than the paler true vocal folds. They are also called false vocal folds.</string>
+    <string name="health_atlas_larynx_inlet_plate_vocal_folds">True vocal folds</string>
+    <string name="health_atlas_larynx_inlet_plate_vocal_folds_detail">These pale folds sit below the vestibular folds. Their free inner edges border the glottic opening and vibrate to produce voice.</string>
+    <string name="health_atlas_larynx_inlet_plate_glottic_opening">Glottic opening</string>
+    <string name="health_atlas_larynx_inlet_plate_glottic_opening_detail">This gap lies between the inner edges of the true vocal folds. It is wider toward the back in this view of the open airway.</string>
+
+    <string name="health_atlas_trachea_ring_plate_selector">Tracheal rings</string>
+    <string name="health_atlas_trachea_ring_plate_caption">Tracheal wall cutaway. The back wall is at the top of the exposed cross-section.</string>
+    <string name="health_atlas_trachea_ring_plate_posterior_wall">Back wall</string>
+    <string name="health_atlas_trachea_ring_plate_posterior_wall_detail">This flexible back wall bridges the open ends of the cartilage rings. It contains the trachealis smooth muscle and faces the esophagus.</string>
+    <string name="health_atlas_trachea_ring_plate_lumen">Tracheal lumen</string>
+    <string name="health_atlas_trachea_ring_plate_lumen_detail">This is the hollow air passage inside the trachea. The ring curves around its front and sides; the flexible back wall completes its boundary.</string>
+    <string name="health_atlas_trachea_ring_plate_cartilage">C-shaped cartilage</string>
+    <string name="health_atlas_trachea_ring_plate_cartilage_detail">Stacked rings of hyaline cartilage support the front and sides of the trachea. Each ring is open at the back.</string>
+    <string name="health_atlas_trachea_ring_plate_lining">Inner lining</string>
+    <string name="health_atlas_trachea_ring_plate_lining_detail">The exposed mucosa lines the air passage on the inside of the supporting cartilage. Microscopic cilia on its surface move mucus toward the throat.</string>
+
+    <string name="health_atlas_main_bronchi_plate_selector">Main bronchial split</string>
+    <string name="health_atlas_main_bronchi_plate_caption">Front view of the main bronchial split. The right side of the body is on the left of the image.</string>
+    <string name="health_atlas_main_bronchi_plate_distal_trachea">Lower trachea</string>
+    <string name="health_atlas_main_bronchi_plate_distal_trachea_detail">Above the carina, the lower trachea is a single air passage. It continues into both main bronchi at the split.</string>
+    <string name="health_atlas_main_bronchi_plate_carina">Carina</string>
+    <string name="health_atlas_main_bronchi_plate_carina_detail">This raised ridge inside the lower trachea separates the openings of the right and left main bronchi.</string>
+    <string name="health_atlas_main_bronchi_plate_right">Right main bronchus</string>
+    <string name="health_atlas_main_bronchi_plate_right_detail">This branch on the left of the image leads to the right lung. It is typically wider, shorter, and more vertical than the left main bronchus.</string>
+    <string name="health_atlas_main_bronchi_plate_left">Left main bronchus</string>
+    <string name="health_atlas_main_bronchi_plate_left_detail">This branch on the right of the image leads to the left lung. It is typically narrower, longer, and more oblique than the right main bronchus.</string>
+</resources>

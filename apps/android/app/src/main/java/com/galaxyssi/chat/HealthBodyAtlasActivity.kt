@@ -241,7 +241,8 @@ class HealthBodyAtlasActivity : Activity() {
 
     private fun catalogue(data: HealthBodyAtlas) {
         if (section == 0) {
-            ui.add(content, HealthAtlasArtwork(this, data, null, ::select, ::zoom).apply { tag = "atlas-whole-art" })
+            ui.add(content, HealthAtlasArtwork(this, data, null, ::select,
+                { plate, title -> zoomAnatomy(data, null, plate, title) }).apply { tag = "atlas-whole-art" })
             ui.add(content, ui.row(data["heart"]!!.name, data["cardio"]!!.name) { select(data["heart"]!!) })
             ui.add(content, ui.row(data["cell-pancreatic-beta-cell"]!!.name, data["endocrine"]!!.name) { select(data["cell-pancreatic-beta-cell"]!!) })
             ui.add(content, ui.text(getString(R.string.health_atlas_counts, data.systems.size,
@@ -435,8 +436,8 @@ class HealthBodyAtlasActivity : Activity() {
         }
         renderLayer()
     }
-    private fun artwork(data: HealthBodyAtlas, item: HealthAtlasItem) = HealthAtlasArtwork(this, data, item,
-        ::select, ::zoom, artworkViews[item.id]) { artworkViews[item.id] = it }
+    private fun artwork(data: HealthBodyAtlas, item: HealthAtlasItem) = HealthAtlasArtwork(this, data, item, ::select,
+        { plate, title -> zoomAnatomy(data, item.id, plate, title) }, artworkViews[item.id]) { artworkViews[item.id] = it }
     private fun saveSimulation() { simulation?.let {
         simulationStates[simulationItem] = it.snapshot
         it.quantitativeSnapshot?.let { model -> physiologyStates[simulationItem] = model }
@@ -469,6 +470,11 @@ class HealthBodyAtlasActivity : Activity() {
         runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
             .onFailure { Toast.makeText(this, R.string.health_storage_error, Toast.LENGTH_SHORT).show() }
     }
+    private fun zoomAnatomy(data: HealthBodyAtlas, currentId: String?, plate: HealthAtlasPlate, title: String) {
+        dialog?.dismiss()
+        dialog = HealthAtlasAnatomyDialog(this, data, currentId, plate, title, ::select).also(Dialog::show)
+    }
+
     private fun zoom(drawable: Int, title: String) {
         dialog?.dismiss()
         dialog = Dialog(this, android.R.style.Theme_Material_Light_NoActionBar).apply {

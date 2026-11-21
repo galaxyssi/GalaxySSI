@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Posterior arch and descending aorta, kept subordinate to pulmonary outflow. -->
+    <path android:strokeColor="#9D5961" android:strokeAlpha="0.45" android:strokeWidth="36"
+        android:pathData="M143,109 C142,71 168,50 204,49 C241,46 263,71 265,111 L266,197" />
+    <path android:strokeColor="#E4A39D" android:strokeAlpha="0.82" android:strokeWidth="32"
+        android:pathData="M143,109 C142,71 168,50 204,49 C241,46 263,71 265,111 L266,197" />
+    <path android:strokeColor="#F3C0AF" android:strokeWidth="5" android:strokeLineCap="round"
+        android:pathData="M152,84 Q167,45 215,44 Q235,45 246,59 M271,144 L272,192" />
+
+    <path android:fillColor="#C4878B" android:strokeColor="#875966" android:strokeWidth="2.2"
+        android:pathData="M125,219 Q149,207 181,218 C187,231 179,244 185,255 Q163,266 124,251 Q111,241 125,219 Z" />
+    <path android:fillColor="#65445E"
+        android:pathData="M133,223 Q153,217 174,222 Q170,233 171,252 Q151,252 131,245 Q124,238 133,223 Z" />
+    <path android:strokeColor="#E5A5A4" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M122,236 Q122,244 137,248 M177,235 Q174,244 178,251" />
+
+    <path android:strokeColor="#304D79" android:strokeWidth="34" android:strokeLineJoin="round"
+        android:pathData="M55,103 Q68,99 83,101 C130,101 164,118 196,111 C222,108 249,114 277,125 Q292,130 308,139" />
+    <path android:strokeColor="#5683B7" android:strokeWidth="30" android:strokeLineJoin="round"
+        android:pathData="M55,103 Q68,99 83,101 C130,101 164,118 196,111 C222,108 249,114 277,125 Q292,130 308,139" />
+    <path android:strokeColor="#91B8D7" android:strokeWidth="6" android:strokeLineCap="round"
+        android:pathData="M58,97 Q74,93 88,95 C128,94 166,110 196,103 C229,100 267,114 303,131" />
+    <path android:fillColor="#A3C3DD" android:strokeColor="#304D79" android:strokeWidth="1.7"
+        android:pathData="M54,87 C61,86 66,116 59,119 C50,122 46,89 54,87 Z M314,126 C322,129 309,158 302,152 C295,148 307,123 314,126 Z" />
+    <path android:fillColor="#2E537F"
+        android:pathData="M54,93 C58,92 62,113 58,114 C54,115 50,94 54,93 Z M312,131 C316,132 307,150 304,148 C300,146 308,129 312,131 Z" />
+
+    <!-- The ascending aorta lies in front of the right branch, but behind the blue trunk. -->
+    <path android:fillColor="#F1ACA5" android:fillAlpha="0.73" android:strokeColor="#A26570"
+        android:strokeAlpha="0.6" android:strokeWidth="2"
+        android:pathData="M126,94 Q130,83 139,76 L163,88 Q156,94 156,110 L158,192 Q143,202 123,195 L123,126 Q122,109 126,94 Z" />
+    <path android:strokeColor="#FFCFB9" android:strokeAlpha="0.75" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M134,96 Q130,110 130,128 L131,181" />
+
+    <path android:fillColor="#5683B7"
+        android:pathData="M165,119 Q177,102 196,102 Q211,102 224,116 C212,122 221,143 213,165 C207,186 199,202 186,221 Q171,234 146,231 Q131,230 130,219 C136,201 151,182 163,164 C172,151 172,131 165,119 Z" />
+    <path android:fillColor="#709FC9"
+        android:pathData="M176,125 Q182,114 197,110 Q205,110 209,114 C206,126 215,142 207,164 C199,185 193,200 174,220 Q155,234 137,219 C144,202 157,186 168,169 C177,153 176,139 176,125 Z" />
+    <path android:fillColor="#4772A3"
+        android:pathData="M193,127 Q194,118 206,115 C205,128 216,143 207,164 Q199,192 181,210 Q170,218 154,217 Q178,193 188,166 Q198,142 193,127 Z" />
+    <path android:strokeColor="#B4D1E5" android:strokeWidth="4" android:strokeLineCap="round"
+        android:pathData="M174,152 Q177,138 177,128 Q181,113 196,111 Q205,109 214,109 M146,205 Q150,194 160,183" />
+    <path android:fillColor="#385E8A" android:strokeColor="#A6C5DC" android:strokeWidth="2"
+        android:pathData="M134,218 Q143,205 162,205 Q176,205 184,217 Q174,229 158,230 Q143,232 134,218 Z" />
+    <path android:fillColor="#DCE4E6" android:strokeColor="#456589" android:strokeWidth="1.4" android:strokeLineJoin="round"
+        android:pathData="M136,215 Q147,211 158,226 Q143,227 136,215 Z M158,226 Q170,211 182,215 Q173,226 158,226 Z" />
+    <path android:strokeColor="#304D79" android:strokeWidth="2.3" android:strokeLineCap="round"
+        android:pathData="M168,126 C172,137 172,152 163,164 C151,182 136,201 130,219 Q131,230 146,231 Q171,234 186,221 C199,202 207,186 213,165 C218,152 216,138 215,127" />
+</vector>

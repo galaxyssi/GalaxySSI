@@ -266,6 +266,71 @@ class HealthAtlasTissueContextDeviceTest {
         }
     }
 
+    @Test fun regionalCutawaysHaveTheirOwnArtworkAndPreserveTheOriginalLocator() {
+        val en = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.ENGLISH) })
+        val zh = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
+        val atlas = HealthBodyAtlas.load(en)
+        val details = HealthAtlasRegionalDetailPlates.all
+        assertEquals(details.size, details.map { it.owner }.toSet().size)
+        assertEquals(details.size, details.map { it.drawable }.toSet().size)
+        for (detail in details) {
+            val owner = requireNotNull(detail.owner)
+            assertNotNull(atlas[owner])
+            assertTrue(requireNotNull(detail.source).startsWith("https://"))
+            val views = HealthAtlasPlates.viewsForId(owner)
+            assertSame(detail, views.first())
+            val locator = views.getOrNull(1)
+            assertNotNull("$owner has no matching locator", locator)
+            assertNotEquals(detail.drawable, locator!!.drawable)
+            assertNotNull(locator.viewKey)
+            assertEquals(locator, HealthAtlasPlates.forId(owner, locator.viewKey))
+            val bitmap = Bitmap.createBitmap(360, 280, Bitmap.Config.ARGB_8888)
+            try {
+                context.getDrawable(detail.drawable)!!.apply { setBounds(0, 0, 360, 280); draw(Canvas(bitmap)) }
+                assertEquals("$owner has an opaque background", 0, Color.alpha(bitmap.getPixel(0, 0)))
+                for (marker in detail.markers + detail.features.map { it.marker }) {
+                    val x = (marker.x * 360).roundToInt().coerceIn(1, 358)
+                    val y = (marker.y * 280).roundToInt().coerceIn(1, 278)
+                    assertTrue("$owner/${marker.id}", (-1..1).any { dx -> (-1..1).any { dy ->
+                        Color.alpha(bitmap.getPixel(x + dx, y + dy)) > 180
+                    } })
+                }
+                for (key in detail.features.flatMap { listOf(it.title, it.explanation) }) {
+                    assertNotEquals(en.getString(key), zh.getString(key))
+                    assertTrue(zh.getString(key).any { it in '\u4e00'..'\u9fff' })
+                }
+            } finally { bitmap.recycle() }
+        }
+    }
+
+    @Test fun fullscreenAnatomyKeepsLabelsAndSelectionWhileAllowingAnUnlabeledView() = native { scenario ->
+        scenario.onActivity { activity ->
+            val data = HealthBodyAtlas.load(activity)
+            val plate = requireNotNull(HealthAtlasPlates.forId("pelvis"))
+            var selection = ""
+            val zoom = HealthAtlasAnatomyDialog(activity, data, "pelvis", plate, "Pelvis") { selection = it.id }
+            try {
+                zoom.show()
+                val root = requireNotNull(zoom.window).decorView
+                val marker = requireNotNull(root.tagged("atlas-hotspot-femur"))
+                val toggle = requireNotNull(root.tagged("atlas-fullscreen-labels"))
+                assertTrue(marker.isClickable)
+                assertEquals(View.VISIBLE, marker.visibility)
+                assertEquals(activity.getString(R.string.health_atlas_hide_labels), toggle.contentDescription)
+                assertNotNull(root.tagged("atlas-fullscreen-image"))
+                toggle.performClick()
+                assertEquals(View.GONE, marker.visibility)
+                assertEquals(activity.getString(R.string.health_atlas_show_labels), toggle.contentDescription)
+                toggle.performClick()
+                assertEquals(View.VISIBLE, marker.visibility)
+                assertNotNull(root.tagged("atlas-fullscreen-reset"))
+                marker.performClick()
+                assertEquals("femur", selection)
+                assertFalse(zoom.isShowing)
+            } finally { zoom.dismiss() }
+        }
+    }
+
     @Test fun pelvisAndSubcutaneousSectionsOpenTheirOwnFunctions() = native { scenario ->
         scenario.onActivity { activity ->
             activity.open("pelvis")

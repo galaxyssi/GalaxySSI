@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gallbladder_cutaway_caption">Gallbladder and extrahepatic bile ducts</string>
+    <string name="health_atlas_gallbladder_cutaway_selector">Bile duct route</string>
+    <string name="health_atlas_gallbladder_cutaway_fundus">Fundus</string>
+    <string name="health_atlas_gallbladder_cutaway_fundus_detail">The rounded, blind end of the gallbladder projects below the lower edge of the liver.</string>
+    <string name="health_atlas_gallbladder_cutaway_body">Body</string>
+    <string name="health_atlas_gallbladder_cutaway_body_detail">The broad middle of the gallbladder lies against the underside of the liver. Its cut surface exposes the lumen where bile is stored.</string>
+    <string name="health_atlas_gallbladder_cutaway_neck">Neck</string>
+    <string name="health_atlas_gallbladder_cutaway_neck_detail">This tapered end of the gallbladder is continuous with the cystic duct.</string>
+    <string name="health_atlas_gallbladder_cutaway_cystic">Cystic duct</string>
+    <string name="health_atlas_gallbladder_cutaway_cystic_detail">Bile passes through this short duct both into and out of the gallbladder. The duct joins the common hepatic duct to form the common bile duct.</string>
+    <string name="health_atlas_gallbladder_cutaway_common">Common bile duct</string>
+    <string name="health_atlas_gallbladder_cutaway_common_detail">Below the junction of the cystic and common hepatic ducts, this shared channel carries bile toward the duodenum.</string>
+    <string name="health_atlas_gallbladder_cutaway_papilla">Major duodenal papilla</string>
+    <string name="health_atlas_gallbladder_cutaway_papilla_detail">This small bump is on the inner wall of the descending duodenum. In the usual arrangement, bile enters the intestine here through an opening shared with the main pancreatic duct, which is not shown.</string>
+    <string name="health_atlas_parotid_cutaway_caption">Parotid gland and cheek duct</string>
+    <string name="health_atlas_parotid_cutaway_selector">Cheek duct route</string>
+    <string name="health_atlas_parotid_cutaway_gland">Parotid gland</string>
+    <string name="health_atlas_parotid_cutaway_gland_detail">One of the paired parotid glands is shown in front of and below the ear, over the back of the lower jaw.</string>
+    <string name="health_atlas_parotid_cutaway_duct">Stensen duct</string>
+    <string name="health_atlas_parotid_cutaway_duct_detail">The main parotid duct leaves the front of the gland and runs forward across the outer surface of the masseter, a chewing muscle.</string>
+    <string name="health_atlas_parotid_cutaway_turn">Turn into the cheek</string>
+    <string name="health_atlas_parotid_cutaway_turn_detail">At the front edge of the masseter, the duct turns inward and passes through the buccinator, the muscle of the cheek.</string>
+    <string name="health_atlas_parotid_cutaway_papilla">Parotid papilla</string>
+    <string name="health_atlas_parotid_cutaway_papilla_detail">Stensen duct opens at this small bump on the inner cheek, opposite the second upper molar. The opening is in the cheek, not on the gum.</string>
+    <string name="health_atlas_submandibular_cutaway_caption">Submandibular gland and floor of the mouth</string>
+    <string name="health_atlas_submandibular_cutaway_selector">Mouth floor route</string>
+    <string name="health_atlas_submandibular_cutaway_superficial">Superficial part</string>
+    <string name="health_atlas_submandibular_cutaway_superficial_detail">Most of the submandibular gland lies beneath the lower jaw and below the mylohyoid, the muscle that supports the floor of the mouth.</string>
+    <string name="health_atlas_submandibular_cutaway_deep">Deep part</string>
+    <string name="health_atlas_submandibular_cutaway_deep_detail">The same gland wraps around the free back edge of the mylohyoid. Its smaller deep part sits above the muscle and gives rise to Wharton duct.</string>
+    <string name="health_atlas_submandibular_cutaway_mylohyoid">Mylohyoid</string>
+    <string name="health_atlas_submandibular_cutaway_mylohyoid_detail">This muscular sheet forms the floor of the mouth. The superficial part lies below it; the deep part and the neighboring sublingual gland lie above it.</string>
+    <string name="health_atlas_submandibular_cutaway_duct">Wharton duct</string>
+    <string name="health_atlas_submandibular_cutaway_duct_detail">The main duct of the submandibular gland runs forward along the tongue side of the neighboring sublingual gland to the front of the mouth floor.</string>
+    <string name="health_atlas_submandibular_cutaway_neighbor">Sublingual gland</string>
+    <string name="health_atlas_submandibular_cutaway_neighbor_detail">This is a separate gland just under the mouth floor, not the deep part of the submandibular gland. Its small ducts of Rivinus open along the raised sublingual fold.</string>
+    <string name="health_atlas_submandibular_cutaway_caruncle">Sublingual caruncle</string>
+    <string name="health_atlas_submandibular_cutaway_caruncle_detail">Despite its name, this small bump beside the tongue frenulum is where the main submandibular duct opens. The matching opening on the other side is not shown.</string>
+</resources>

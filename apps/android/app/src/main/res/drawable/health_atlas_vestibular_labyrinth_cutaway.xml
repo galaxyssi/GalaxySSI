@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Oblique projection: nested strokes show membranous ducts within bony canals. -->
+    <path android:fillColor="#CEDBD5" android:strokeColor="#6E8E89" android:strokeWidth="2"
+        android:pathData="M120,167 C133,148 164,145 187,152 C205,152 239,156 255,174 C269,190 263,215 244,230 C225,246 197,250 171,242 C149,235 132,221 121,205 C111,190 111,180 120,167 Z" />
+    <path android:fillColor="#E6EBDF"
+        android:pathData="M131,164 C156,152 184,156 206,166 C178,166 154,176 145,194 C139,202 144,212 150,219 C126,205 118,179 131,164 Z" />
+    <path android:strokeColor="#9CB0A7" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M122,198 L126,207 M146,225 L153,228 M167,235 L176,238 M217,239 L231,234 M248,220 L253,214" />
+    <!-- The rear canal passes behind the lateral loop; the two steep loops meet in the common crus. -->
+    <path android:strokeColor="#436970" android:strokeWidth="22" android:strokeLineCap="round"
+        android:pathData="M188,114 C190,92 201,59 224,56 C237,54 249,61 258,71 C285,100 297,145 272,175 C264,184 253,189 242,191 L211,193" />
+    <path android:strokeColor="#91B5B3" android:strokeWidth="17" android:strokeLineCap="round"
+        android:pathData="M188,114 C190,92 201,59 224,56 C237,54 249,61 258,71 C285,100 297,145 272,175 C264,184 253,189 242,191 L211,193" />
+    <path android:name="posterior_canal" android:strokeColor="#C9E9E4" android:strokeWidth="5.5" android:strokeLineCap="round"
+        android:pathData="M188,114 C190,92 201,59 224,56 C237,54 249,61 258,71 C285,100 297,145 272,175 C264,184 253,189 242,191 L211,193" />
+    <path android:strokeColor="#416E76" android:strokeWidth="22" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M121,173 C112,155 103,111 104,81 C105,63 111,51 122,44 C135,34 156,37 171,50 C189,67 192,90 188,114 C185,132 187,157 193,179" />
+    <path android:strokeColor="#80B0B4" android:strokeWidth="17" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M121,173 C112,155 103,111 104,81 C105,63 111,51 122,44 C135,34 156,37 171,50 C189,67 192,90 188,114 C185,132 187,157 193,179" />
+    <path android:name="anterior_canal" android:strokeColor="#C9E9E4" android:strokeWidth="5.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M121,173 C112,155 103,111 104,81 C105,63 111,51 122,44 C135,34 156,37 171,50 C189,67 192,90 188,114 C185,132 187,157 193,179" />
+    <path android:strokeColor="#C9E9E4" android:strokeWidth="5.5" android:strokeLineCap="round"
+        android:pathData="M188,114 C190,92 201,59 224,56" />
+    <!-- A distinct, flatter loop returns to the utricle at two separate openings. -->
+    <path android:strokeColor="#365E65" android:strokeWidth="22" android:strokeLineCap="round"
+        android:pathData="M204,177 C182,157 165,134 124,126 C109,122 95,124 84,128 C64,135 58,145 70,155 C82,166 111,168 134,177 L146,185" />
+    <path android:strokeColor="#66A4A8" android:strokeWidth="17" android:strokeLineCap="round"
+        android:pathData="M204,177 C182,157 165,134 124,126 C109,122 95,124 84,128 C64,135 58,145 70,155 C82,166 111,168 134,177 L146,185" />
+    <path android:name="lateral_canal" android:strokeColor="#BCE3DF" android:strokeWidth="5.5" android:strokeLineCap="round"
+        android:pathData="M204,177 C182,157 165,134 124,126 C109,122 95,124 84,128 C64,135 58,145 70,155 C82,166 111,168 134,177 L146,185" />
+    <path android:fillColor="#7DADAE" android:strokeColor="#436970" android:strokeWidth="2.2"
+        android:pathData="M108,167 C112,160 124,160 131,165 C137,170 145,176 145,184 C140,192 128,193 119,188 C111,184 106,175 108,167 Z" />
+    <path android:fillColor="#B0D2C9"
+        android:pathData="M113,169 C116,166 122,165 127,169 L136,178 L130,184 C120,186 112,178 113,169 Z" />
+    <path android:fillColor="#72A7A7" android:strokeColor="#365E65" android:strokeWidth="2.2"
+        android:pathData="M123,173 C128,167 139,166 146,172 L158,181 C157,188 151,195 141,195 C131,196 123,191 120,184 C119,180 120,176 123,173 Z" />
+    <path android:fillColor="#B4D8CB"
+        android:pathData="M124,178 C128,172 135,172 142,176 L151,182 L144,189 C136,192 126,186 124,178 Z" />
+    <path android:name="posterior_ampulla" android:fillColor="#8CB8B1" android:strokeColor="#436970" android:strokeWidth="2.2"
+        android:pathData="M227,180 C234,173 244,173 252,179 C259,185 257,194 251,200 C245,206 237,205 229,203 C219,200 219,188 227,180 Z" />
+    <path android:fillColor="#C4DDCE"
+        android:pathData="M230,181 C236,178 243,177 248,183 C255,189 250,197 245,199 C236,203 227,197 227,190 C227,187 228,183 230,181 Z" />
+    <path android:fillColor="#81AAA7" android:strokeColor="#547F7E" android:strokeWidth="1.5"
+        android:pathData="M235,198 Q238,194 238,187 Q239,181 243,182 Q247,189 243,197 Z" />
+    <!-- The warmer cut faces expose a flat utricular macula and a steeper saccular macula. -->
+    <path android:fillColor="#BC837A" android:strokeColor="#74545B" android:strokeWidth="2.4"
+        android:pathData="M198,201 C208,197 220,200 224,210 C230,223 220,237 208,240 C197,243 185,236 184,226 C183,216 189,206 198,201 Z" />
+    <path android:name="saccule" android:fillColor="#E7AB94"
+        android:pathData="M200,203 C208,200 217,204 220,212 C224,222 216,234 206,236 C197,238 189,231 189,223 C190,214 193,207 200,203 Z" />
+    <path android:fillColor="#B66F67"
+        android:pathData="M205,205 C212,203 216,210 214,218 C213,226 210,233 204,234 C199,234 198,227 200,220 C201,214 201,208 205,205 Z" />
+    <path android:strokeColor="#F9D8AB" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M207,209 L208,210 M208,216 L209,217 M205,221 L206,222 M204,227 L205,228" />
+    <path android:fillColor="#B28267" android:strokeColor="#745751" android:strokeWidth="2.4"
+        android:pathData="M137,182 C151,172 175,169 193,170 C209,169 222,176 230,186 C233,192 229,201 219,204 C208,207 199,204 187,205 C167,208 145,207 134,201 C125,196 128,188 137,182 Z" />
+    <path android:name="utricle" android:fillColor="#F1C794"
+        android:pathData="M138,184 C152,176 176,173 194,174 C207,174 219,179 225,186 C229,191 224,197 215,199 C204,202 194,199 186,201 C165,204 145,202 135,198 C129,194 132,189 138,184 Z" />
+    <path android:fillColor="#C18465"
+        android:pathData="M142,191 C150,183 171,180 187,181 C199,181 207,183 209,187 C211,193 199,197 185,197 C169,199 145,199 141,195 Q139,193 142,191 Z" />
+    <path android:strokeColor="#FFE1AF" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M149,193 L151,193 M158,188 L160,188 M169,192 L171,192 M177,187 L179,187 M186,192 L188,192 M195,187 L197,187" />
+</vector>

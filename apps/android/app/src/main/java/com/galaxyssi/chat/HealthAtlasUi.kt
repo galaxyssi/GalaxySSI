@@ -67,7 +67,7 @@ internal object HealthAtlasUi {
 
 internal class HealthAtlasArtwork(
     private val activity: Activity, private val data: HealthBodyAtlas, private val item: HealthAtlasItem?,
-    private val selected: (HealthAtlasItem) -> Unit, private val zoom: (Int, String) -> Unit,
+    private val selected: (HealthAtlasItem) -> Unit, private val zoom: (HealthAtlasPlate, String) -> Unit,
     initialView: String? = null, private val viewChanged: (String) -> Unit = {},
 ) : LinearLayout(activity) {
     private val ui = HealthCenterViews(activity)
@@ -95,7 +95,7 @@ internal class HealthAtlasArtwork(
             val caption = plate.caption(activity, data, item)
             val description = (item?.name ?: activity.getString(R.string.health_atlas_whole)) + " · " + caption
             val labeled = if (plate.hasLabels) HealthAtlasLabeledImage(activity, plate,
-                description, data, item?.id, selected) else null
+                description, data, item?.id, selected = selected) else null
             val art = object : FrameLayout(activity) {
                 override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
                     labeled?.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
@@ -110,7 +110,7 @@ internal class HealthAtlasArtwork(
                 setPadding(ui.dp(12), ui.dp(8), ui.dp(48), ui.dp(8))
             }
             val target = labeled ?: picture
-            var viewport = GalaxySSIPinchZoomViewport(activity).apply { attach(target) }
+            val viewport = GalaxySSIPinchZoomViewport(activity).apply { attach(target) }
             art.addView(viewport, FrameLayout.LayoutParams(-1, -1))
             val controls = (if (item == null) ui.column() else ui.line()).apply {
                 gravity = Gravity.END
@@ -126,13 +126,10 @@ internal class HealthAtlasArtwork(
                         .setNegativeButton(android.R.string.cancel, null).show()
                 }.apply { tag = "atlas-layers" })
                 addView(ui.icon(R.drawable.ic_reset_data, R.string.health_atlas_reset) {
-                    viewport.removeAllViews(); art.removeView(viewport)
-                    target.scaleX = 1f; target.scaleY = 1f; target.translationX = 0f; target.translationY = 0f
-                    viewport = GalaxySSIPinchZoomViewport(activity).apply { attach(target) }
-                    art.addView(viewport, 0, FrameLayout.LayoutParams(-1, -1))
+                    viewport.resetZoom()
                 }.apply { tag = "atlas-art-reset" })
                 addView(ui.icon(R.drawable.ic_screen_assistant_expand, R.string.health_body_zoom) {
-                    zoom(resource, description)
+                    zoom(plate, description)
                 }.apply { tag = "atlas-fullscreen" })
             }
             if (item == null) art.addView(controls, FrameLayout.LayoutParams(ui.dp(48), -2, Gravity.END or Gravity.BOTTOM))

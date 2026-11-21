@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <path android:fillColor="#A77D78" android:strokeColor="#675455" android:strokeWidth="2"
+        android:pathData="M101,86 C101,53 143,36 180,36 C220,36 259,56 260,88 L260,216 C260,240 224,256 180,256 C136,256 101,240 101,216 Z"/>
+    <path android:fillColor="#BDA498"
+        android:pathData="M102,112 C119,136 152,142 185,143 L185,254 C145,255 114,244 103,225 Z"/>
+    <path android:fillColor="#795561"
+        android:pathData="M181,122 C205,122 239,113 259,96 L259,215 C259,235 229,252 182,255 L190,230 L185,213 L190,193 L186,176 L190,158 L185,144 Z"/>
+    <path android:name="lining" android:fillColor="#D99D9C" android:strokeColor="#A46C75" android:strokeWidth="1.5"
+        android:pathData="M189,131 C218,130 246,118 252,109 L252,211 C249,232 222,244 191,246 L196,229 L192,212 L197,193 L193,176 L197,158 L192,143 Z"/>
+    <path android:fillColor="#E7AEAC"
+        android:pathData="M222,128 Q235,123 245,117 L245,205 C245,218 234,230 222,234 C227,211 224,191 225,172 Q226,147 222,128 Z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#AE7780" android:strokeAlpha="0.72"
+        android:strokeWidth="1.35" android:strokeLineCap="round"
+        android:pathData="M207,142 C207,172 207,212 204,230 M217,137 C220,148 216,155 217,167 M214,190 Q215,209 212,221 M235,135 C237,156 233,179 236,194 M234,202 Q235,213 230,218"/>
+    <path android:fillColor="#00000000" android:strokeColor="#527470" android:strokeWidth="13" android:strokeLineCap="round"
+        android:pathData="M107,115 C116,131 148,143 183,145 M107,137 C119,153 147,165 184,167 M107,159 C118,175 148,187 183,189 M107,181 C119,198 149,210 184,211 M107,203 C120,220 148,231 183,233 M109,224 C124,239 149,250 181,250"/>
+    <path android:fillColor="#00000000" android:strokeColor="#A6C7BA" android:strokeWidth="9" android:strokeLineCap="round"
+        android:pathData="M107,115 C116,131 148,143 183,145 M107,137 C119,153 147,165 184,167 M107,159 C118,175 148,187 183,189 M107,181 C119,198 149,210 184,211 M107,203 C120,220 148,231 183,233 M109,224 C124,239 149,250 181,250"/>
+    <path android:fillColor="#00000000" android:strokeColor="#C9DBCA" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M113,119 Q132,137 166,141 M113,141 Q132,159 167,163 M113,163 Q132,181 166,185 M113,185 Q132,203 167,207 M113,207 Q132,225 166,229 M115,228 Q137,245 166,247"/>
+
+    <!-- Exposed transverse face: cartilage wraps the front; muscle bridges the gap at the back. -->
+    <path android:name="lumen" android:fillColor="#59404E"
+        android:pathData="M144,47 Q180,35 216,47 C247,56 258,72 257,89 C257,112 223,126 180,126 C137,126 104,110 104,89 C103,71 118,55 144,47 Z"/>
+    <path android:fillColor="#765360"
+        android:pathData="M134,63 Q179,47 225,64 C239,69 247,78 246,90 C207,65 151,69 114,91 Q112,74 134,63 Z"/>
+    <path android:name="posterior_wall" android:fillColor="#CD8989" android:strokeColor="#875E67" android:strokeWidth="1.8"
+        android:pathData="M143,43 Q180,32 216,43 L212,57 Q180,48 148,57 Z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#EFACA5" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M150,46 Q179,39 208,46"/>
+    <path android:name="cartilage" android:fillColor="#A6C7BA" android:strokeColor="#527470" android:strokeWidth="1.8"
+        android:pathData="M143,43 C113,51 99,68 101,90 C103,114 137,131 180,131 C224,131 257,115 259,92 C262,72 246,52 216,43 L212,57 C233,63 247,76 245,89 C244,105 214,116 180,116 C145,116 116,104 115,88 C113,75 128,64 148,57 Z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#D4E1CE" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M137,51 C118,60 109,74 110,87 M122,104 C150,126 215,126 245,103 M249,77 Q244,61 222,53"/>
+</vector>

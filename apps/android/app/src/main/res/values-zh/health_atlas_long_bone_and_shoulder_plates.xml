@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_scapula_landmarks_selector">后面骨性标志</string>
+    <string name="health_atlas_scapula_landmarks_caption">右肩胛骨，后斜位</string>
+    <string name="health_atlas_scapula_landmarks_acromion">肩峰</string>
+    <string name="health_atlas_scapula_landmarks_acromion_detail">肩胛冈向外侧延伸并变宽，形成肩部的骨性突起，在此与锁骨相接。</string>
+    <string name="health_atlas_scapula_landmarks_supraspinous">冈上窝</string>
+    <string name="health_atlas_scapula_landmarks_supraspinous_detail">肩胛冈上方较窄的凹陷，是冈上肌的起点。</string>
+    <string name="health_atlas_scapula_landmarks_spine">肩胛冈</string>
+    <string name="health_atlas_scapula_landmarks_spine_detail">这条隆起的骨嵴横过肩胛骨后面，将冈上窝和冈下窝分开，向外侧扩大为肩峰。</string>
+    <string name="health_atlas_scapula_landmarks_glenoid">关节盂</string>
+    <string name="health_atlas_scapula_landmarks_glenoid_detail">肩胛骨外侧角的浅窝，与肱骨头相接形成肩关节。</string>
+    <string name="health_atlas_scapula_landmarks_infraspinous">冈下窝</string>
+    <string name="health_atlas_scapula_landmarks_infraspinous_detail">肩胛冈下方较宽的凹陷，是冈下肌的起点。</string>
+    <string name="health_atlas_scapula_landmarks_inferior_angle">下角</string>
+    <string name="health_atlas_scapula_landmarks_inferior_angle_detail">肩胛骨内侧缘和外侧缘在最下方相交，形成下角。</string>
+
+    <string name="health_atlas_humerus_landmarks_selector">前面骨性标志</string>
+    <string name="health_atlas_humerus_landmarks_caption">右肱骨，前面观</string>
+    <string name="health_atlas_humerus_landmarks_head">肱骨头</string>
+    <string name="health_atlas_humerus_landmarks_head_detail">肱骨上端的圆形关节面朝向内侧，与肩胛骨的关节盂相接。</string>
+    <string name="health_atlas_humerus_landmarks_greater_tubercle">大结节</string>
+    <string name="health_atlas_humerus_landmarks_greater_tubercle_detail">肱骨上端外侧的骨性突起，有三条肩袖肌腱附着于此。</string>
+    <string name="health_atlas_humerus_landmarks_deltoid">三角肌粗隆</string>
+    <string name="health_atlas_humerus_landmarks_deltoid_detail">肱骨体外侧的粗糙区，是三角肌的附着处。</string>
+    <string name="health_atlas_humerus_landmarks_shaft">肱骨体</string>
+    <string name="health_atlas_humerus_landmarks_shaft_detail">肱骨中间的长段，连接靠近肩部的圆形上端与靠近肘部的宽大下端。</string>
+    <string name="health_atlas_humerus_landmarks_capitulum">肱骨小头</string>
+    <string name="health_atlas_humerus_landmarks_capitulum_detail">肱骨下端外侧的圆形关节面，与桡骨头相接。</string>
+    <string name="health_atlas_humerus_landmarks_trochlea">肱骨滑车</string>
+    <string name="health_atlas_humerus_landmarks_trochlea_detail">肱骨下端内侧呈滑轮状的关节面，与尺骨相接。</string>
+
+    <string name="health_atlas_tibia_landmarks_selector">前面骨性标志</string>
+    <string name="health_atlas_tibia_landmarks_caption">右胫骨，前斜位</string>
+    <string name="health_atlas_tibia_landmarks_lateral_condyle">外侧髁</string>
+    <string name="health_atlas_tibia_landmarks_lateral_condyle_detail">胫骨增宽上端的外侧部分，其上方关节面在膝部与股骨外侧髁相接。</string>
+    <string name="health_atlas_tibia_landmarks_medial_condyle">内侧髁</string>
+    <string name="health_atlas_tibia_landmarks_medial_condyle_detail">胫骨增宽上端的内侧部分，其上方关节面在膝部与股骨内侧髁相接。</string>
+    <string name="health_atlas_tibia_landmarks_tuberosity">胫骨粗隆</string>
+    <string name="health_atlas_tibia_landmarks_tuberosity_detail">膝下方、胫骨上端前面的隆起，是髌韧带的附着处。</string>
+    <string name="health_atlas_tibia_landmarks_anterior_border">胫骨前缘</string>
+    <string name="health_atlas_tibia_landmarks_anterior_border_detail">这条骨嵴从胫骨粗隆向下延伸，形成小腿前方的胫骨边缘。</string>
+    <string name="health_atlas_tibia_landmarks_fibular_notch">腓切迹</string>
+    <string name="health_atlas_tibia_landmarks_fibular_notch_detail">胫骨下端外侧的浅槽，与腓骨下端相接。</string>
+    <string name="health_atlas_tibia_landmarks_malleolus">内踝</string>
+    <string name="health_atlas_tibia_landmarks_malleolus_detail">这处向下的骨突形成踝部内侧的隆起，朝向踝关节的关节面与距骨相接。</string>
+</resources>

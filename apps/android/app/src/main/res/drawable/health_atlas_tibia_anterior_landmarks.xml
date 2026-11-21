@@ -1,0 +1,33 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <path android:pathData="M129,44 C130,33 146,28 164,30 Q171,30 174,26 L180,22 L185,29 L190,23 Q193,27 196,31 C214,25 233,32 237,43 C240,53 235,67 227,72 C214,81 205,96 201,112 C195,136 193,163 192,188 C191,210 195,224 205,236 C211,243 217,250 215,260 Q213,268 206,267 Q198,266 195,254 C187,253 171,255 160,252 Q150,249 151,243 Q155,230 156,218 C156,198 154,174 155,155 C156,130 156,111 151,95 C147,81 136,76 130,66 Q125,57 129,44Z"
+        android:fillColor="#E7C5A8" android:strokeColor="#836A61" android:strokeWidth="2" />
+    <path android:pathData="M133,55 C145,63 162,63 180,55 C181,65 184,72 187,80 Q191,88 186,101 C177,121 176,149 172,174 Q167,202 164,227 C162,236 162,243 165,251 Q156,251 153,246 C154,236 157,228 157,217 C157,199 155,177 156,155 C158,129 157,109 152,94 C148,80 137,75 131,64Z"
+        android:fillColor="#C49984" />
+    <path android:pathData="M193,75 Q201,63 232,56 Q229,69 219,76 C202,91 200,110 196,133 C193,155 192,174 191,199 C192,216 194,225 202,236 Q210,243 213,254 C201,251 197,242 192,238 Q176,239 165,244 C163,220 170,200 173,180 C176,152 176,121 187,100 Q192,90 193,75Z"
+        android:fillColor="#F2D8B5" />
+    <path android:pathData="M129,43 C133,33 154,29 171,34 Q179,36 181,43 Q183,48 176,52 C164,59 141,57 132,52 Q128,49 129,43Z"
+        android:fillColor="#AABCAA" android:strokeColor="#748982" android:strokeWidth="1.5" />
+    <path android:pathData="M190,41 C199,30 218,29 231,36 Q237,40 236,45 C234,54 213,58 199,55 Q185,52 190,41Z"
+        android:fillColor="#AABCAA" android:strokeColor="#748982" android:strokeWidth="1.5" />
+    <path android:pathData="M134,43 C142,36 156,34 170,38 M196,42 Q212,33 229,39"
+        android:strokeColor="#DCE2C6" android:strokeWidth="2.3" android:strokeLineCap="round" />
+    <path android:pathData="M176,42 Q177,33 180,26 L185,33 L190,27 Q192,34 194,38 L189,48 Q185,51 178,49Z"
+        android:fillColor="#EED0AC" android:strokeColor="#A98370" android:strokeWidth="1.4" android:strokeLineJoin="round" />
+    <!-- Anterior tuberosity continues into the crest of the prismatic shaft. -->
+    <path android:pathData="M184,73 C194,73 198,82 194,95 C192,102 184,112 179,110 C173,105 172,96 175,86 Q178,75 184,73Z"
+        android:fillColor="#D5AC8F" android:strokeColor="#A97E6A" android:strokeWidth="1.4" />
+    <path android:pathData="M180,88 Q184,82 189,83 M180,95 L185,90 M180,101 L185,97"
+        android:strokeColor="#F5DBBE" android:strokeWidth="1.8" android:strokeLineCap="round" />
+    <path android:pathData="M180,108 C176,126 176,148 173,170 C172,191 167,214 165,231"
+        android:strokeColor="#A78372" android:strokeWidth="1.8" android:strokeLineCap="round" />
+    <path android:pathData="M184,111 C180,129 180,154 177,174 C175,192 171,212 170,223"
+        android:strokeColor="#FAE5C7" android:strokeWidth="2.1" android:strokeLineCap="round" />
+    <path android:pathData="M157,222 Q160,228 158,235 Q156,243 159,247 L154,246 Q151,244 153,239 Q156,230 157,222Z"
+        android:fillColor="#9D9583" />
+    <path android:pathData="M162,248 Q179,243 194,246 Q199,253 203,259 Q207,265 213,261 Q211,269 205,266 Q197,264 195,254 Q176,256 160,252Z"
+        android:fillColor="#ABBAA7" android:strokeColor="#918F7D" android:strokeWidth="1.3" />
+    <path android:pathData="M198,238 Q205,246 208,254"
+        android:strokeColor="#FAE5C7" android:strokeWidth="2.1" android:strokeLineCap="round" />
+</vector>

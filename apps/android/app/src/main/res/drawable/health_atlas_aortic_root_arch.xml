@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Left ventricular outflow cuff at the lower edge of the root window. -->
+    <path android:fillColor="#C7817F" android:strokeColor="#8F535A" android:strokeWidth="2"
+        android:pathData="M110,222 Q149,218 182,225 C182,239 176,251 179,260 Q151,268 121,258 Q121,240 110,222 Z" />
+    <path android:fillColor="#8E414F"
+        android:pathData="M124,230 Q149,237 170,229 Q162,247 165,260 Q148,262 133,258 Q132,244 124,230 Z" />
+    <path android:strokeColor="#E9A59B" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M116,235 Q123,243 125,252 M176,235 Q173,241 172,248" />
+
+    <!-- Common outer wall, then continuous coral vessel interior. -->
+    <path android:strokeColor="#853A49" android:strokeWidth="25" android:strokeLineJoin="round"
+        android:pathData="M101,25 Q111,39 120,54 Q132,76 157,109" />
+    <path android:strokeColor="#853A49" android:strokeWidth="20" android:strokeLineJoin="round"
+        android:pathData="M193,19 L194,35 Q194,58 192,93 M274,31 Q262,40 254,54 Q240,76 228,101" />
+    <path android:strokeColor="#853A49" android:strokeWidth="48" android:strokeLineJoin="round"
+        android:pathData="M151,185 C149,167 145,150 145,134 C145,105 161,90 190,90 C223,89 251,106 253,145 L253,232" />
+    <path android:strokeColor="#CE6670" android:strokeWidth="21"
+        android:pathData="M101,25 Q111,39 120,54 Q132,76 157,109" />
+    <path android:strokeColor="#CE6670" android:strokeWidth="16"
+        android:pathData="M193,19 L194,35 Q194,58 192,93 M274,31 Q262,40 254,54 Q240,76 228,101" />
+    <path android:strokeColor="#CD5D65" android:strokeWidth="44" android:strokeLineJoin="round"
+        android:pathData="M151,185 C149,167 145,150 145,134 C145,105 161,90 190,90 C223,89 251,106 253,145 L253,232" />
+    <path android:strokeColor="#E78381" android:strokeWidth="18" android:strokeLineCap="round"
+        android:pathData="M145,177 C143,161 138,143 140,129 C142,105 161,84 190,84 C222,83 244,104 247,142 L247,226" />
+    <path android:strokeColor="#F2A39A" android:strokeWidth="4" android:strokeLineCap="round"
+        android:pathData="M101,32 Q115,53 126,72 M190,26 Q190,44 189,61 M268,37 Q256,50 250,64 M133,149 Q125,107 156,84 M241,146 L241,222" />
+    <path android:fillColor="#F4B0A1" android:strokeColor="#853A49" android:strokeWidth="1.6"
+        android:pathData="M91,31 C87,27 107,13 111,19 C115,24 95,36 91,31 Z M184,19 C184,13 202,13 202,19 C202,25 184,25 184,19 Z M268,25 C270,20 285,33 280,37 C276,40 264,30 268,25 Z M230,231 C230,222 276,222 276,231 C276,242 230,242 230,231 Z" />
+    <path android:fillColor="#8A3749"
+        android:pathData="M94,29 C94,26 105,19 108,20 C108,23 98,30 94,29 Z M187,19 C187,17 200,17 200,19 C200,22 187,22 187,19 Z M271,27 C273,26 280,32 278,35 C276,35 270,29 271,27 Z M237,231 C237,227 269,227 269,231 C269,237 237,237 237,231 Z" />
+
+    <!-- Longitudinal root window exposes the sinus pocket and visible cusps. -->
+    <path android:fillColor="#E18B85" android:strokeColor="#853A49" android:strokeWidth="2"
+        android:pathData="M128,172 Q151,177 173,172 C171,186 185,191 188,205 Q193,223 174,237 Q151,247 124,237 Q109,228 113,207 C115,195 127,189 128,172 Z" />
+    <path android:fillColor="#963E53" android:strokeColor="#FFC0AD" android:strokeWidth="2.4"
+        android:pathData="M136,177 Q150,181 165,177 C163,189 178,193 178,205 Q185,222 168,231 Q146,239 130,231 Q118,222 122,208 C126,196 136,188 136,177 Z" />
+    <path android:fillColor="#B65261"
+        android:pathData="M165,193 Q174,194 178,205 Q181,214 174,221 Q163,223 156,214 Q161,204 165,193 Z" />
+    <path android:fillColor="#F8C8AC" android:strokeColor="#7E394E" android:strokeWidth="1.5" android:strokeLineJoin="round"
+        android:pathData="M123,218 Q133,230 144,236 Q130,237 124,229 Z M144,236 Q158,228 178,216 Q175,228 165,233 Q155,237 144,236 Z" />
+    <path android:strokeColor="#FFDFC5" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M126,220 Q135,230 144,236 Q160,227 175,219" />
+</vector>

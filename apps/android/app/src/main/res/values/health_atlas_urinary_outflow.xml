@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_outflow_ureter_view">Ureter course and wall cross-section</string>
+    <string name="health_atlas_outflow_ureter_selector">Course and wall</string>
+    <string name="health_atlas_outflow_ureter_pelvis_junction">Renal pelvis junction</string>
+    <string name="health_atlas_outflow_ureter_pelvis_junction_detail">The funnel of the renal pelvis narrows into the ureter at the kidney hilum. The ureter then descends behind the peritoneum.</string>
+    <string name="health_atlas_outflow_ureter_iliac_crossing">Iliac crossing</string>
+    <string name="health_atlas_outflow_ureter_iliac_crossing_detail">The ureter passes in front of the iliac vessels near the common iliac artery bifurcation as it crosses the pelvic brim.</string>
+    <string name="health_atlas_outflow_ureter_intramural">Intramural ureter</string>
+    <string name="health_atlas_outflow_ureter_intramural_detail">The terminal ureter runs at a slant through the bladder wall before it opens inside. Bladder wall pressure can flatten this tunnel and limit backward flow.</string>
+    <string name="health_atlas_outflow_ureter_urothelium">Urothelium</string>
+    <string name="health_atlas_outflow_ureter_urothelium_detail">This innermost lining follows the folds around the lumen and forms a barrier between urine and the tissues of the ureter wall.</string>
+    <string name="health_atlas_outflow_ureter_lumen">Folded lumen</string>
+    <string name="health_atlas_outflow_ureter_lumen_detail">Urine travels through this central space. In cross-section, folds of the relaxed mucosa can give the lumen a star-like shape.</string>
+    <string name="health_atlas_outflow_ureter_muscle">Smooth muscle</string>
+    <string name="health_atlas_outflow_ureter_muscle_detail">Smooth muscle surrounds the mucosa and its supporting connective tissue. Waves of contraction propel urine toward the bladder.</string>
+
+    <string name="health_atlas_outflow_bladder_view">Bladder wall and trigone cutaway</string>
+    <string name="health_atlas_outflow_bladder_selector">Wall and trigone</string>
+    <string name="health_atlas_outflow_bladder_urothelium">Urothelium</string>
+    <string name="health_atlas_outflow_bladder_urothelium_detail">This urine-facing epithelium lines the bladder. It stretches during filling while maintaining a barrier between urine and the underlying tissue.</string>
+    <string name="health_atlas_outflow_bladder_folds">Mucosal folds</string>
+    <string name="health_atlas_outflow_bladder_folds_detail">The lining outside the trigone can form ridges when the bladder is relatively empty. The ridges flatten as the wall stretches during filling.</string>
+    <string name="health_atlas_outflow_bladder_ureteric_orifice">Ureteric opening</string>
+    <string name="health_atlas_outflow_bladder_ureteric_orifice_detail">Each ureter empties into the bladder through its own opening. The two openings form the upper corners of the trigone.</string>
+    <string name="health_atlas_outflow_bladder_detrusor">Detrusor</string>
+    <string name="health_atlas_outflow_bladder_detrusor_detail">Interwoven bundles of smooth muscle form this thick layer outside the lining and its supporting tissue. They contract to empty the bladder.</string>
+    <string name="health_atlas_outflow_bladder_trigone">Trigone</string>
+    <string name="health_atlas_outflow_bladder_trigone_detail">This smooth triangular area at the bladder base lies between the two ureteric openings and the internal opening of the urethra.</string>
+    <string name="health_atlas_outflow_bladder_outlet">Bladder outlet</string>
+    <string name="health_atlas_outflow_bladder_outlet_detail">The internal urethral opening is the lower point of the trigone. At this point the bladder neck opens into the urethra.</string>
+
+    <string name="health_atlas_outflow_urethra_view">Urinary channel (female sagittal cutaway)</string>
+    <string name="health_atlas_outflow_urethra_selector">Channel (female anatomy)</string>
+    <string name="health_atlas_outflow_urethra_internal">Internal opening</string>
+    <string name="health_atlas_outflow_urethra_internal_detail">The female urethra begins at this opening in the bladder neck, where the bladder cavity narrows into the urinary channel.</string>
+    <string name="health_atlas_outflow_urethra_lumen">Urethral lumen</string>
+    <string name="health_atlas_outflow_urethra_lumen_detail">This passage inside the urethra carries urine from the bladder neck to the external opening. It is separate from the vaginal canal.</string>
+    <string name="health_atlas_outflow_urethra_external">External opening</string>
+    <string name="health_atlas_outflow_urethra_external_detail">The female urethra opens into the vestibule, in front of and separate from the vaginal opening.</string>
+    <string name="health_atlas_outflow_urethra_sphincter">External sphincter</string>
+    <string name="health_atlas_outflow_urethra_sphincter_detail">Striated muscle around the middle portion of the urethra helps close the urinary channel and contributes to voluntary control of urine flow.</string>
+    <string name="health_atlas_outflow_urethra_vaginal_wall">Anterior vaginal wall</string>
+    <string name="health_atlas_outflow_urethra_vaginal_wall_detail">This wall lies just behind the female urethra and helps support it. The urinary and vaginal passages do not connect.</string>
+</resources>

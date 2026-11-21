@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Cut depth and the strip of medulla beneath the cortical face. -->
+    <path android:fillColor="#864454" android:strokeColor="#673644" android:strokeWidth="1.8"
+        android:pathData="M45,78 C86,35 182,27 269,45 Q299,50 314,61 L320,218 Q279,250 224,257 C155,267 84,251 46,231Z"/>
+    <path android:fillColor="#AD626D" android:strokeColor="#803F50" android:strokeWidth="1.5"
+        android:pathData="M45,177 Q151,148 300,174 L302,221 Q249,252 184,250 Q99,250 45,224Z"/>
+    <path android:strokeColor="#DB9394" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M70,194L86,230 M81,192L101,234 M91,190L115,237 M106,191L129,239 M123,188L148,242 M139,186L161,245 M157,184L178,245 M178,186L194,245 M198,187L207,244 M219,190L219,243 M234,191L231,241 M250,191L245,237 M267,191L257,233 M281,190L270,228"/>
+    <!-- Cortex: irregular labyrinth between longitudinal ray bundles. -->
+    <path android:fillColor="#D78A86" android:strokeColor="#8D484F" android:strokeWidth="1.5"
+        android:pathData="M45,74 Q64,60 100,49 C152,31 245,31 300,55 L302,196 Q267,204 237,201 Q204,197 173,207 C131,220 87,212 45,196Z"/>
+    <path android:fillColor="#EFB49F"
+        android:pathData="M53,76 Q78,59 102,55 C165,36 246,40 294,59 L295,190 Q270,197 239,195 Q207,192 174,201 Q139,212 111,207 Q78,204 52,191Z"/>
+    <path android:fillColor="#F3C8AD" android:strokeColor="#DA9A83" android:strokeWidth="1.5"
+        android:pathData="M63,92 Q72,85 78,94 Q82,145 87,203 L55,193 Q61,146 63,92Z M171,64 Q188,55 207,71 Q216,116 226,199 Q199,197 171,207 Q176,143 171,64Z M278,86 Q285,80 294,85 L298,197 L274,200 Q280,145 278,86Z"/>
+    <path android:strokeColor="#B76863" android:strokeWidth="2.8" android:strokeLineCap="round"
+        android:pathData="M67,103 Q66,152 64,191 M74,99 Q74,149 75,195 M178,78 Q184,134 178,204 M186,72 Q191,130 190,200 M194,76 Q200,137 202,198 M199,81 L202,110 Q207,158 211,198 M206,89 Q216,149 220,198 M283,95 Q285,143 282,195 M290,94 Q291,145 291,194"/>
+    <path android:strokeColor="#FFDFBE" android:strokeWidth="2.1" android:strokeLineCap="round"
+        android:pathData="M69,113L69,171 M80,119L83,179 M183,88 Q187,138 184,196 M190,86 Q196,140 196,193 M203,84 Q212,141 216,187 M286,109 Q288,142 286,184"/>
+    <!-- Coiled tubules: paired strokes leave a lighter center. -->
+    <path android:strokeColor="#B76E67" android:strokeWidth="7" android:strokeLineCap="round"
+        android:pathData="M86,78 C93,70 111,79 120,72 S141,60 150,70 Q155,77 147,82 M130,96 Q139,84 152,91 Q160,98 150,104 Q140,107 145,118 Q151,126 160,116 M89,134 Q98,125 106,135 Q111,142 101,149 Q87,158 99,169 M117,140 Q125,150 116,160 Q109,168 119,176 Q127,183 129,194 M88,186 Q97,176 107,188 L114,195 M155,171 Q167,170 165,182 Q164,192 148,193 M222,70 Q232,58 243,66 Q254,74 242,80 Q231,85 238,95 M263,70 Q276,74 269,86 Q259,95 265,105 M264,122 Q277,126 265,138 Q252,148 243,138 M272,152 Q255,151 254,170 Q254,177 244,177 Q232,175 238,186 Q242,191 251,188 M229,151 Q225,143 231,135"/>
+    <path android:strokeColor="#F8C8AB" android:strokeWidth="2.8" android:strokeLineCap="round"
+        android:pathData="M86,78 C93,70 111,79 120,72 S141,60 150,70 Q155,77 147,82 M130,96 Q139,84 152,91 Q160,98 150,104 Q140,107 145,118 Q151,126 160,116 M89,134 Q98,125 106,135 Q111,142 101,149 Q87,158 99,169 M117,140 Q125,150 116,160 Q109,168 119,176 Q127,183 129,194 M88,186 Q97,176 107,188 L114,195 M155,171 Q167,170 165,182 Q164,192 148,193 M222,70 Q232,58 243,66 Q254,74 242,80 Q231,85 238,95 M263,70 Q276,74 269,86 Q259,95 265,105 M264,122 Q277,126 265,138 Q252,148 243,138 M272,152 Q255,151 254,170 Q254,177 244,177 Q232,175 238,186 Q242,191 251,188 M229,151 Q225,143 231,135"/>
+    <!-- Bowman spaces around the glomerular tufts. -->
+    <path android:fillColor="#FCE2C7" android:strokeColor="#975460" android:strokeWidth="2.2"
+        android:pathData="M91,109 C91,98 100,89 112,89 C126,89 133,99 133,109 C133,121 124,129 112,129 C99,129 91,120 91,109Z M131,149 Q132,135 148,134 Q163,132 167,147 Q169,161 155,165 Q140,168 133,158Z M225,114 Q225,102 236,99 Q250,95 257,106 Q266,121 251,129 Q237,136 229,125Z"/>
+    <path android:fillColor="#B45664"
+        android:pathData="M97,108 Q96,103 102,101 Q101,94 109,96 Q115,91 119,98 Q129,97 126,106 Q132,111 125,116 Q125,124 116,120 Q109,126 104,119 Q96,120 97,108Z M137,149 Q135,143 142,142 Q145,136 151,141 Q158,138 160,146 Q166,152 158,156 Q154,164 148,159 Q139,162 137,149Z M231,112 Q230,106 238,105 Q242,100 248,106 Q256,104 254,113 Q261,120 252,123 Q246,130 241,124 Q232,125 231,112Z"/>
+    <path android:strokeColor="#F2A39A" android:strokeWidth="2.1" android:strokeLineCap="round"
+        android:pathData="M102,108 Q103,102 109,103 Q116,105 112,109 Q107,114 112,117 Q121,120 121,112 Q116,108 122,103 M141,151 Q143,143 150,145 Q155,147 150,151 Q147,155 156,155 M235,113 Q242,106 245,112 Q248,116 241,119 Q242,124 251,117"/>
+    <!-- Capsule along the convex outer surface. -->
+    <path android:fillColor="#ECA18C" android:strokeColor="#844652" android:strokeWidth="1.5"
+        android:pathData="M44,69 Q62,53 100,44 C150,26 245,28 300,50 L304,57 C247,36 154,35 100,54 Q66,63 45,80Z"/>
+    <path android:strokeColor="#FFCEAB" android:strokeWidth="2.1" android:strokeLineCap="round"
+        android:pathData="M50,71 Q69,58 100,49 C157,30 243,33 297,53"/>
+    <path android:strokeColor="#9B565C" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M306,72 L312,209 Q308,216 299,221 M52,198 Q104,219 150,212 Q177,207 196,204 M231,203 Q267,207 295,199"/>
+</vector>

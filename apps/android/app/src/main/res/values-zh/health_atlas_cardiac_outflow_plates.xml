@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_aortic_root_arch_selector">主动脉根部与弓</string>
+    <string name="health_atlas_aortic_root_arch_view">主动脉剖视 · 前面观，人体右侧位于图左</string>
+    <string name="health_atlas_aortic_root_valve">主动脉瓣</string>
+    <string name="health_atlas_aortic_root_valve_detail">浅色瓣叶位于左心室流出道与主动脉根部的交界，向主动脉一侧开放。</string>
+    <string name="health_atlas_aortic_root_sinus">主动脉窦</string>
+    <string name="health_atlas_aortic_root_sinus_detail">瓣叶正上方的这个膨出是三个主动脉窦之一。左、右冠状动脉分别起自其中两个窦。</string>
+    <string name="health_atlas_aortic_ascending">升主动脉</string>
+    <string name="health_atlas_aortic_ascending_detail">这一段位于膨大的根部上方，从窦管交界向上延伸至主动脉弓发出第一支处，输送来自左心室的富氧血。</string>
+    <string name="health_atlas_aortic_arch">主动脉弓</string>
+    <string name="health_atlas_aortic_arch_detail">主动脉弓向人体后方和左侧弯曲。通常的三条分支按图示顺序从弓的上缘发出。</string>
+    <string name="health_atlas_aortic_brachiocephalic">头臂干</string>
+    <string name="health_atlas_aortic_brachiocephalic_detail">主动脉弓的第一支向人体右侧走行，并在图示范围外分为右颈总动脉和右锁骨下动脉。</string>
+    <string name="health_atlas_aortic_left_carotid">左颈总动脉</string>
+    <string name="health_atlas_aortic_left_carotid_detail">主动脉弓的第二支沿颈部左侧向上走行，为头颈部供血。</string>
+    <string name="health_atlas_aortic_left_subclavian">左锁骨下动脉</string>
+    <string name="health_atlas_aortic_left_subclavian_detail">主动脉弓的第三支转向左肩，为左上肢供血。</string>
+    <string name="health_atlas_aortic_descending">降主动脉</string>
+    <string name="health_atlas_aortic_descending_detail">越过左锁骨下动脉起点后，主动脉弓向下延续为胸降主动脉，在心脏后方走行。</string>
+
+    <string name="health_atlas_pulmonary_bifurcation_selector">肺动脉干分叉</string>
+    <string name="health_atlas_pulmonary_bifurcation_view">肺动脉流出道剖视 · 前面观，人体右侧位于图左</string>
+    <string name="health_atlas_pulmonary_trunk_valve">肺动脉瓣</string>
+    <string name="health_atlas_pulmonary_trunk_valve_detail">浅色瓣叶位于右心室流出道与肺动脉干起始部之间，向肺动脉干一侧开放。</string>
+    <string name="health_atlas_pulmonary_main_trunk">肺动脉干</string>
+    <string name="health_atlas_pulmonary_main_trunk_detail">这段蓝色短血管起自右心室，先在升主动脉前方上行，随后走向其左侧。蓝色表示流向双肺的低氧血。</string>
+    <string name="health_atlas_pulmonary_branch_point">肺动脉干分叉</string>
+    <string name="health_atlas_pulmonary_branch_point_detail">在主动脉弓下方，肺动脉干分为左右两支肺动脉，分别通往左肺和右肺。</string>
+    <string name="health_atlas_pulmonary_right_branch">右肺动脉</string>
+    <string name="health_atlas_pulmonary_right_branch_detail">较长的一支从升主动脉后方通往右肺。图中将淡红色的主动脉画成半透明，以显示两者的交叉关系。</string>
+    <string name="health_atlas_pulmonary_left_branch">左肺动脉</string>
+    <string name="health_atlas_pulmonary_left_branch_detail">较短的一支从降主动脉前方、左主支气管上方通往左肺。</string>
+
+    <string name="health_atlas_coronary_routes_selector">心外膜冠脉走行</string>
+    <string name="health_atlas_coronary_routes_view">心表冠状动脉剖示 · 前面观，人体右侧位于图左</string>
+    <string name="health_atlas_coronary_right_route">右冠状动脉</string>
+    <string name="health_atlas_coronary_right_route_detail">这条红色动脉起自右主动脉窦，沿右心房和右心室之间的右房室沟走行。图中红色冠脉将富氧血输送给心肌。</string>
+    <string name="health_atlas_coronary_right_marginal">右缘支</string>
+    <string name="health_atlas_coronary_right_marginal_detail">右缘支在心脏右下缘附近由右冠状动脉发出，沿右心室表面走向心尖。</string>
+    <string name="health_atlas_coronary_left_main">左冠状动脉主干</string>
+    <string name="health_atlas_coronary_left_main_detail">这段短主干起自左主动脉窦，经过肺动脉干与左心耳之间，分为前降支和回旋支。图中淡化了遮挡起点的肺动脉干。</string>
+    <string name="health_atlas_coronary_lad">前降支</string>
+    <string name="health_atlas_coronary_lad_detail">左前降支沿左右心室之间的前室间沟走向心尖。</string>
+    <string name="health_atlas_coronary_circumflex">回旋支</string>
+    <string name="health_atlas_coronary_circumflex_detail">回旋支从左冠状动脉主干的分叉处发出，沿左心房与左心室之间的左房室沟走行，向后绕出前面观的视野。</string>
+</resources>

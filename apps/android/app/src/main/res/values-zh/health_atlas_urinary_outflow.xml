@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_outflow_ureter_view">输尿管走行与管壁横切面</string>
+    <string name="health_atlas_outflow_ureter_selector">走行与管壁</string>
+    <string name="health_atlas_outflow_ureter_pelvis_junction">肾盂输尿管连接处</string>
+    <string name="health_atlas_outflow_ureter_pelvis_junction_detail">漏斗状的肾盂在肾门处逐渐变窄，与输尿管相接。输尿管随后在腹膜后向下走行。</string>
+    <string name="health_atlas_outflow_ureter_iliac_crossing">髂血管交叉处</string>
+    <string name="health_atlas_outflow_ureter_iliac_crossing_detail">输尿管跨越骨盆缘时，在髂总动脉分叉附近从髂血管前方经过。</string>
+    <string name="health_atlas_outflow_ureter_intramural">输尿管壁内段</string>
+    <string name="health_atlas_outflow_ureter_intramural_detail">输尿管末段斜穿膀胱壁，再开口于膀胱内。膀胱壁的压力可压扁这段通道，限制尿液反流。</string>
+    <string name="health_atlas_outflow_ureter_urothelium">尿路上皮</string>
+    <string name="health_atlas_outflow_ureter_urothelium_detail">这层内衬沿着管腔周围的皱襞分布，在尿液和输尿管壁组织之间形成屏障。</string>
+    <string name="health_atlas_outflow_ureter_lumen">星形管腔</string>
+    <string name="health_atlas_outflow_ureter_lumen_detail">尿液从中央的管腔通过。在横切面上，舒张状态下的黏膜皱襞可使管腔呈星形。</string>
+    <string name="health_atlas_outflow_ureter_muscle">平滑肌层</string>
+    <string name="health_atlas_outflow_ureter_muscle_detail">平滑肌位于黏膜及其支持性结缔组织外侧。平滑肌的波状收缩将尿液推向膀胱。</string>
+
+    <string name="health_atlas_outflow_bladder_view">膀胱壁与膀胱三角剖视图</string>
+    <string name="health_atlas_outflow_bladder_selector">膀胱壁与三角</string>
+    <string name="health_atlas_outflow_bladder_urothelium">尿路上皮</string>
+    <string name="health_atlas_outflow_bladder_urothelium_detail">这层上皮覆盖膀胱内表面，直接接触尿液。膀胱充盈时，它随膀胱壁伸展，同时维持尿液与下方组织之间的屏障。</string>
+    <string name="health_atlas_outflow_bladder_folds">黏膜皱襞</string>
+    <string name="health_atlas_outflow_bladder_folds_detail">膀胱内尿量较少时，膀胱三角以外的黏膜可形成皱襞。随着膀胱充盈，膀胱壁伸展，皱襞逐渐变平。</string>
+    <string name="health_atlas_outflow_bladder_ureteric_orifice">输尿管口</string>
+    <string name="health_atlas_outflow_bladder_ureteric_orifice_detail">两侧输尿管各自经一个开口将尿液排入膀胱。这两个开口构成膀胱三角的两个上角。</string>
+    <string name="health_atlas_outflow_bladder_detrusor">逼尿肌</string>
+    <string name="health_atlas_outflow_bladder_detrusor_detail">相互交织的平滑肌束在黏膜及其支持组织外形成这层厚壁。排尿时，逼尿肌收缩以排出膀胱内的尿液。</string>
+    <string name="health_atlas_outflow_bladder_trigone">膀胱三角</string>
+    <string name="health_atlas_outflow_bladder_trigone_detail">这是膀胱底部一片平滑的三角区，位于两个输尿管口与尿道内口之间。</string>
+    <string name="health_atlas_outflow_bladder_outlet">膀胱出口</string>
+    <string name="health_atlas_outflow_bladder_outlet_detail">尿道内口位于膀胱三角的下角，膀胱颈在此与尿道相通。</string>
+
+    <string name="health_atlas_outflow_urethra_view">女性尿道矢状剖视图</string>
+    <string name="health_atlas_outflow_urethra_selector">尿道剖面（女性）</string>
+    <string name="health_atlas_outflow_urethra_internal">尿道内口</string>
+    <string name="health_atlas_outflow_urethra_internal_detail">女性尿道起于膀胱颈的这个开口，膀胱腔在此收窄并与尿道相通。</string>
+    <string name="health_atlas_outflow_urethra_lumen">尿道腔</string>
+    <string name="health_atlas_outflow_urethra_lumen_detail">尿液沿尿道内的通道从膀胱颈流向尿道外口。尿道腔与阴道腔彼此独立。</string>
+    <string name="health_atlas_outflow_urethra_external">尿道外口</string>
+    <string name="health_atlas_outflow_urethra_external_detail">女性尿道开口于阴道前庭。尿道外口位于阴道口前方，两者是不同的开口。</string>
+    <string name="health_atlas_outflow_urethra_sphincter">尿道外括约肌</string>
+    <string name="health_atlas_outflow_urethra_sphincter_detail">环绕尿道中段的横纹肌有助于关闭尿道，并参与对尿流的随意控制。</string>
+    <string name="health_atlas_outflow_urethra_vaginal_wall">阴道前壁</string>
+    <string name="health_atlas_outflow_urethra_vaginal_wall_detail">阴道前壁紧邻女性尿道后方，并为尿道提供支撑。尿道腔与阴道腔互不相通。</string>
+</resources>

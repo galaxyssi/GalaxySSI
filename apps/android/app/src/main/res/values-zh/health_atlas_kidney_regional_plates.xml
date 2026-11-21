@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_renal_cortex_cutaway_view">肾皮质切面</string>
+    <string name="health_atlas_renal_cortex_cutaway_selector">皮质剖面</string>
+    <string name="health_atlas_renal_cortex_capsule">肾纤维囊</string>
+    <string name="health_atlas_renal_cortex_capsule_detail">这层薄薄的致密结缔组织覆盖在肾皮质的外表面。</string>
+    <string name="health_atlas_renal_cortex_corpuscle">肾小体</string>
+    <string name="health_atlas_renal_cortex_corpuscle_detail">圆形的肾小体内，肾小球是一团由肾小囊包围的毛细血管。肾小体位于皮质迷路内，不在由直行小管组成的髓放线内。</string>
+    <string name="health_atlas_renal_cortex_ray">髓放线</string>
+    <string name="health_atlas_renal_cortex_ray_detail">髓放线虽以髓命名，这束小管实际位于皮质。肾小管的直行段和集合管在这里并排走行，与髓质相连。</string>
+    <string name="health_atlas_renal_cortex_labyrinth">皮质迷路</string>
+    <string name="health_atlas_renal_cortex_labyrinth_detail">髓放线之间的组织内有弯曲的近曲小管和远曲小管，其间散布着圆形的肾小体。</string>
+
+    <string name="health_atlas_renal_medulla_cutaway_view">肾锥体切面</string>
+    <string name="health_atlas_renal_medulla_cutaway_selector">肾锥体剖面</string>
+    <string name="health_atlas_renal_medulla_pyramid_base">肾锥体底部</string>
+    <string name="health_atlas_renal_medulla_pyramid_base_detail">肾锥体宽阔的底部与肾皮质相接，向肾内逐渐变窄，末端形成肾乳头。</string>
+    <string name="health_atlas_renal_medulla_column">肾柱</string>
+    <string name="health_atlas_renal_medulla_column_detail">这部分皮质组织向内延伸，位于相邻的肾锥体之间。</string>
+    <string name="health_atlas_renal_medulla_ducts">集合管</string>
+    <string name="health_atlas_renal_medulla_ducts_detail">集合管沿肾锥体的长轴走行，在较深处汇成更粗的管道，末端的管道开口于肾乳头顶端。</string>
+    <string name="health_atlas_renal_medulla_papilla">肾乳头</string>
+    <string name="health_atlas_renal_medulla_papilla_detail">肾锥体圆钝的尖端突入杯状的肾小盏。肾小盏接收从乳头管开口流出的尿液。</string>
+
+    <string name="health_atlas_renal_pelvis_cutaway_view">肾盏与肾盂切面</string>
+    <string name="health_atlas_renal_pelvis_cutaway_selector">肾盂剖面</string>
+    <string name="health_atlas_renal_pelvis_minor_calyx">肾小盏</string>
+    <string name="health_atlas_renal_pelvis_minor_calyx_detail">这个杯状腔包绕突出的肾乳头尖端，较窄的颈部通向肾大盏。</string>
+    <string name="health_atlas_renal_pelvis_major_calyx">肾大盏</string>
+    <string name="health_atlas_renal_pelvis_major_calyx_detail">图中上方的两个肾小盏汇成这条较宽的分支，通入肾盂。</string>
+    <string name="health_atlas_renal_pelvis_funnel">肾盂漏斗</string>
+    <string name="health_atlas_renal_pelvis_funnel_detail">肾大盏汇入这个宽阔的腔，腔体在肾门处逐渐收窄，与输尿管相连。</string>
+</resources>

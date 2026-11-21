@@ -133,13 +133,18 @@ class HealthAtlasSystemPlateDeviceTest {
 
     @Test fun overviewSelectionRestoresForSharedAndDedicatedPlates() = native { scenario ->
         for ((owner, child) in listOf("urinary" to "bladder", "eye" to "cornea", "pancreas" to "pancreatic-duct")) {
-            assertEquals(owner, HealthAtlasPlates.forId(child)?.owner)
+            val locator = requireNotNull(HealthAtlasPlates.viewsForId(child).firstOrNull { it.owner == owner })
             scenario.onActivity {
                 it.open(owner); assertNotNull(it.view("atlas-source-structure"))
                 it.view("atlas-hotspot-$child").performClick()
+                if (child != "pancreatic-duct") {
+                    assertEquals(child, HealthAtlasPlates.forId(child)?.owner)
+                    assertTrue(it.view("atlas-view-0").isSelected)
+                    it.view("atlas-view-1").performClick()
+                }
                 assertTrue(it.view("atlas-hotspot-$child").isSelected)
                 val atlas = HealthBodyAtlas.load(it)
-                assertEquals(HealthAtlasPlates.forId(child)!!.caption(it, atlas, atlas[child]),
+                assertEquals(locator.caption(it, atlas, atlas[child]),
                     (it.view("atlas-art-caption") as TextView).text.toString())
             }
             scenario.recreate(); ready(scenario, "atlas-hotspot-$child")
@@ -171,6 +176,9 @@ class HealthAtlasSystemPlateDeviceTest {
             assertNotNull(it.view("atlas-hotspot-renal-cortex"))
             assertEquals(it.getString(R.string.health_atlas_view_coronal), (it.view("atlas-art-caption") as TextView).text)
             it.view("atlas-hotspot-ureters").performClick()
+            assertTrue(it.view("atlas-view-0").isSelected)
+            assertEquals("ureters", HealthAtlasPlates.forId("ureters")?.owner)
+            it.view("atlas-view-1").performClick()
             assertTrue(it.view("atlas-hotspot-ureters").isSelected)
             assertNotNull(it.view("atlas-hotspot-bladder"))
             it.onBackPressed(); assertNotNull(it.view("atlas-hotspot-renal-cortex"))

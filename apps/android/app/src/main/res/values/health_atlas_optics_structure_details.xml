@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_optics_cornea_detail">Layers of the cornea</string>
+    <string name="health_atlas_optics_cornea_tear">Tear film</string>
+    <string name="health_atlas_optics_cornea_tear_detail">The thin liquid film covers the exposed surface and helps smooth the first optical interface.</string>
+    <string name="health_atlas_optics_cornea_epithelium">Epithelium</string>
+    <string name="health_atlas_optics_cornea_epithelium_detail">Several layers of epithelial cells cover the front of the cornea, beneath the tear film.</string>
+    <string name="health_atlas_optics_cornea_bowman">Bowman layer</string>
+    <string name="health_atlas_optics_cornea_bowman_detail">A thin, dense layer lies between the epithelium and the main stroma.</string>
+    <string name="health_atlas_optics_cornea_stroma">Stroma</string>
+    <string name="health_atlas_optics_cornea_stroma_detail">Organized collagen sheets make up most of the thickness. Layer thickness in this drawing is exaggerated for clarity.</string>
+    <string name="health_atlas_optics_cornea_descemet">Descemet membrane</string>
+    <string name="health_atlas_optics_cornea_descemet_detail">The basement membrane of the endothelium lies at the back of the stroma.</string>
+    <string name="health_atlas_optics_cornea_endothelium">Endothelium</string>
+    <string name="health_atlas_optics_cornea_endothelium_detail">A single layer of cells faces the aqueous humor and helps regulate fluid in the cornea.</string>
+    <string name="health_atlas_optics_cornea_aqueous">Aqueous humor</string>
+    <string name="health_atlas_optics_cornea_aqueous_detail">Fluid in the anterior chamber contacts the inner surface of the cornea.</string>
+    <string name="health_atlas_optics_lens_detail">Lens fibers and zonules</string>
+    <string name="health_atlas_optics_lens_capsule">Lens capsule</string>
+    <string name="health_atlas_optics_lens_capsule_detail">A clear capsule envelopes the lens and provides a surface for zonular attachments.</string>
+    <string name="health_atlas_optics_lens_epithelium">Anterior epithelium</string>
+    <string name="health_atlas_optics_lens_epithelium_detail">The epithelial layer is on the anterior side just inside the capsule. It is not continuous across the back surface.</string>
+    <string name="health_atlas_optics_lens_cortex">Lens cortex</string>
+    <string name="health_atlas_optics_lens_cortex_detail">Outer fiber layers surround the central nucleus.</string>
+    <string name="health_atlas_optics_lens_nucleus">Lens nucleus</string>
+    <string name="health_atlas_optics_lens_nucleus_detail">The central region contains older lens fibers. It is not a cellular nucleus.</string>
+    <string name="health_atlas_optics_lens_zonules">Zonular fibers</string>
+    <string name="health_atlas_optics_lens_zonules_detail">Suspensory fibers between the ciliary body and lens capsule transmit tension to the lens.</string>
+    <string name="health_atlas_optics_lens_ciliary">Ciliary processes</string>
+    <string name="health_atlas_optics_lens_ciliary_detail">The diagram shows projections of the ciliary body and their position beside the lens equator.</string>
+</resources>

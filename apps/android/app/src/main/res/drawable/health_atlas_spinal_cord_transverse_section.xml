@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp"
+    android:height="280dp"
+    android:viewportWidth="360"
+    android:viewportHeight="280">
+    <!-- Dorsal at top: a shallow sulcus opposite the deeper ventral fissure. -->
+    <path
+        android:fillColor="#F0DDC6"
+        android:strokeColor="#80616B"
+        android:strokeWidth="2.6"
+        android:strokeLineJoin="round"
+        android:pathData="M180,69 C176,64 170,62 160,62 C129,61 100,70 78,86 C55,102 44,122 45,147 C45,171 61,193 85,205 C109,218 136,224 160,222 C171,221 176,215 176,205 L177,194 C177,189 178,185 180,184 C182,185 183,189 183,194 L184,205 C184,215 189,221 200,222 C224,224 251,218 275,205 C299,193 315,171 315,147 C316,122 305,102 282,86 C260,70 231,61 200,62 C190,62 184,64 180,69 Z" />
+    <path
+        android:fillColor="#E8CCB3"
+        android:pathData="M47,147 C48,169 67,189 94,200 C115,209 140,213 163,211 C170,210 173,207 176,203 C175,214 172,220 160,221 C130,222 105,214 85,204 C62,193 46,170 47,147 Z M313,147 C312,169 293,189 266,200 C245,209 220,213 197,211 C190,210 187,207 184,203 C185,214 188,220 200,221 C230,222 255,214 275,204 C298,193 314,170 313,147 Z" />
+    <path
+        android:strokeColor="#FAECDD"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M60,131 C71,95 109,76 155,73 M53,148 C59,176 83,194 111,202 M300,131 C289,95 251,76 205,73 M307,148 C301,176 277,194 249,202" />
+    <path
+        android:strokeColor="#C9A99B"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M180,70 L180,120 M83,112 l0,0 M96,103 l0,0 M105,89 l0,0 M120,86 l0,0 M142,80 l0,0 M162,79 l0,0 M156,91 l0,0 M166,105 l0,0 M71,138 l0,0 M78,126 l0,0 M94,127 l0,0 M111,121 l0,0 M110,134 l0,0 M88,145 l0,0 M65,153 l0,0 M81,159 l0,0 M101,155 l0,0 M96,172 l0,0 M75,171 l0,0 M92,187 l0,0 M105,195 l0,0 M121,201 l0,0 M140,207 l0,0 M156,203 l0,0 M164,180 l0,0 M159,190 l0,0 M277,112 l0,0 M264,103 l0,0 M255,89 l0,0 M240,86 l0,0 M218,80 l0,0 M198,79 l0,0 M204,91 l0,0 M194,105 l0,0 M289,138 l0,0 M282,126 l0,0 M266,127 l0,0 M249,121 l0,0 M250,134 l0,0 M272,145 l0,0 M295,153 l0,0 M279,159 l0,0 M259,155 l0,0 M264,172 l0,0 M285,171 l0,0 M268,187 l0,0 M255,195 l0,0 M239,201 l0,0 M220,207 l0,0 M204,203 l0,0 M196,180 l0,0 M201,190 l0,0" />
+
+    <!-- The gray commissure joins paired slender dorsal and broad ventral horns. -->
+    <path
+        android:fillColor="#B17E9B"
+        android:strokeColor="#815672"
+        android:strokeWidth="2.1"
+        android:strokeLineJoin="round"
+        android:pathData="M180,128 C170,128 164,124 158,116 C149,104 143,94 133,90 C122,85 116,91 120,99 C125,109 134,119 140,128 C146,139 140,145 130,149 C117,153 107,165 109,177 C111,188 119,194 131,193 C143,192 150,186 154,176 C158,166 157,155 166,149 C170,146 175,146 180,146 C185,146 190,146 194,149 C203,155 202,166 206,176 C210,186 217,192 229,193 C241,194 249,188 251,177 C253,165 243,153 230,149 C220,145 214,139 220,128 C226,119 235,109 240,99 C244,91 238,85 227,90 C217,94 211,104 202,116 C196,124 190,128 180,128 Z" />
+    <path
+        android:fillColor="#C999AE"
+        android:pathData="M124,94 C136,94 141,104 147,114 C152,123 159,132 171,136 C159,137 151,132 146,127 C138,115 130,104 124,94 Z M236,94 C224,94 219,104 213,114 C208,123 201,132 189,136 C201,137 209,132 214,127 C222,115 230,104 236,94 Z M115,174 C119,164 127,159 135,156 C140,154 145,150 148,146 C149,158 147,169 140,177 C133,184 119,186 115,174 Z M245,174 C241,164 233,159 225,156 C220,154 215,150 212,146 C211,158 213,169 220,177 C227,184 241,186 245,174 Z" />
+    <path
+        android:fillColor="#EAC1CC"
+        android:pathData="M180,128 a8,8 0,1 1,0 16 a8,8 0,1 1,0 -16 Z" />
+    <path
+        android:fillColor="#FFF5EC"
+        android:strokeColor="#70425D"
+        android:strokeWidth="1.8"
+        android:pathData="M180,132 a4,4 0,1 1,0 8 a4,4 0,1 1,0 -8 Z" />
+    <path
+        android:strokeColor="#9C6E8B"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M129,101 l4,5 M142,117 l4,6 M125,166 l0,0 M136,166 l0,0 M119,176 l0,0 M130,179 l0,0 M140,174 l0,0 M231,101 l-4,5 M218,117 l-4,6 M235,166 l0,0 M224,166 l0,0 M241,176 l0,0 M230,179 l0,0 M220,174 l0,0" />
+</vector>

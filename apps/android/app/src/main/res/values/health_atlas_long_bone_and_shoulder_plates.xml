@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_scapula_landmarks_selector">Posterior landmarks</string>
+    <string name="health_atlas_scapula_landmarks_caption">Right scapula, posterior oblique view</string>
+    <string name="health_atlas_scapula_landmarks_acromion">Acromion</string>
+    <string name="health_atlas_scapula_landmarks_acromion_detail">This broad outer extension of the scapular spine forms the bony tip of the shoulder and meets the clavicle.</string>
+    <string name="health_atlas_scapula_landmarks_supraspinous">Supraspinous fossa</string>
+    <string name="health_atlas_scapula_landmarks_supraspinous_detail">This narrow hollow above the scapular spine is where the supraspinatus muscle begins.</string>
+    <string name="health_atlas_scapula_landmarks_spine">Scapular spine</string>
+    <string name="health_atlas_scapula_landmarks_spine_detail">This raised ridge crosses the back of the blade, separating the two hollows and widening into the acromion.</string>
+    <string name="health_atlas_scapula_landmarks_glenoid">Glenoid cavity</string>
+    <string name="health_atlas_scapula_landmarks_glenoid_detail">This shallow socket at the outer corner meets the head of the humerus to form the shoulder joint.</string>
+    <string name="health_atlas_scapula_landmarks_infraspinous">Infraspinous fossa</string>
+    <string name="health_atlas_scapula_landmarks_infraspinous_detail">This broad hollow below the scapular spine is where the infraspinatus muscle begins.</string>
+    <string name="health_atlas_scapula_landmarks_inferior_angle">Inferior angle</string>
+    <string name="health_atlas_scapula_landmarks_inferior_angle_detail">The lowest point of the shoulder blade is where its inner and outer borders meet.</string>
+
+    <string name="health_atlas_humerus_landmarks_selector">Anterior landmarks</string>
+    <string name="health_atlas_humerus_landmarks_caption">Right humerus, anterior view</string>
+    <string name="health_atlas_humerus_landmarks_head">Humeral head</string>
+    <string name="health_atlas_humerus_landmarks_head_detail">The rounded upper end faces inward and meets the glenoid cavity of the scapula.</string>
+    <string name="health_atlas_humerus_landmarks_greater_tubercle">Greater tubercle</string>
+    <string name="health_atlas_humerus_landmarks_greater_tubercle_detail">This bump lies on the outer side of the upper humerus. Three rotator cuff tendons attach here.</string>
+    <string name="health_atlas_humerus_landmarks_deltoid">Deltoid tuberosity</string>
+    <string name="health_atlas_humerus_landmarks_deltoid_detail">The deltoid muscle attaches to this rough patch on the outer side of the shaft.</string>
+    <string name="health_atlas_humerus_landmarks_shaft">Shaft</string>
+    <string name="health_atlas_humerus_landmarks_shaft_detail">This long central portion connects the rounded shoulder end to the widened elbow end.</string>
+    <string name="health_atlas_humerus_landmarks_capitulum">Capitulum</string>
+    <string name="health_atlas_humerus_landmarks_capitulum_detail">This round joint surface on the outer side of the lower humerus meets the head of the radius.</string>
+    <string name="health_atlas_humerus_landmarks_trochlea">Trochlea</string>
+    <string name="health_atlas_humerus_landmarks_trochlea_detail">This pulley-shaped surface lies on the inner side of the lower humerus and meets the ulna.</string>
+
+    <string name="health_atlas_tibia_landmarks_selector">Anterior landmarks</string>
+    <string name="health_atlas_tibia_landmarks_caption">Right tibia, oblique front view</string>
+    <string name="health_atlas_tibia_landmarks_lateral_condyle">Lateral condyle</string>
+    <string name="health_atlas_tibia_landmarks_lateral_condyle_detail">This is the outer half of the widened upper tibia. Its top surface meets the outer condyle of the femur at the knee.</string>
+    <string name="health_atlas_tibia_landmarks_medial_condyle">Medial condyle</string>
+    <string name="health_atlas_tibia_landmarks_medial_condyle_detail">This is the inner half of the widened upper tibia. Its top surface meets the inner condyle of the femur at the knee.</string>
+    <string name="health_atlas_tibia_landmarks_tuberosity">Tibial tuberosity</string>
+    <string name="health_atlas_tibia_landmarks_tuberosity_detail">The patellar ligament attaches to this raised area on the front of the upper tibia, below the knee.</string>
+    <string name="health_atlas_tibia_landmarks_anterior_border">Anterior border</string>
+    <string name="health_atlas_tibia_landmarks_anterior_border_detail">This ridge runs down from the tibial tuberosity and forms the front edge of the shin.</string>
+    <string name="health_atlas_tibia_landmarks_fibular_notch">Fibular notch</string>
+    <string name="health_atlas_tibia_landmarks_fibular_notch_detail">This shallow groove on the outer side of the lower tibia receives the lower end of the fibula.</string>
+    <string name="health_atlas_tibia_landmarks_malleolus">Medial malleolus</string>
+    <string name="health_atlas_tibia_landmarks_malleolus_detail">This downward projection forms the inner ankle bump. Its inner joint surface meets the talus.</string>
+</resources>

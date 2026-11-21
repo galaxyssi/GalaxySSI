@@ -10,9 +10,11 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.ScrollView
+import android.widget.Button
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -66,6 +68,65 @@ class AgentRichContentPinchZoomTest {
             image.translationX > translationBefore + 40f
         )
         instrumentation.runOnMainSync { dialog.dismiss(); activity.finish() }
+    }
+
+    @Test
+    fun interactiveZoomTargetSeparatesLabelTapFromPan() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val activity = instrumentation.startActivitySync(
+            Intent(instrumentation.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        lateinit var marker: Button
+        lateinit var viewport: GalaxySSIPinchZoomViewport
+        var dialog: Dialog? = null
+        var clicks = 0
+        try {
+            instrumentation.runOnMainSync {
+                marker = Button(activity).apply {
+                    text = "Marker"
+                    setOnClickListener { clicks++ }
+                }
+                viewport = GalaxySSIPinchZoomViewport(activity, keepZoomedTargetTaps = true).apply { attach(marker) }
+                dialog = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen).apply {
+                    setContentView(viewport)
+                    show()
+                }
+            }
+            instrumentation.waitForIdleSync()
+            val location = IntArray(2)
+            var x = 0f
+            var y = 0f
+            instrumentation.runOnMainSync {
+                viewport.getLocationOnScreen(location)
+                x = location[0] + viewport.width / 2f
+                y = location[1] + viewport.height / 2f
+            }
+            dispatchPinch(instrumentation, x, y)
+            instrumentation.waitForIdleSync()
+            assertTrue(viewport.currentZoomScale > 1.2f)
+            assertEquals(0, clicks)
+            dispatchDrag(instrumentation, x, y, x + 125f, y + 54f)
+            instrumentation.waitForIdleSync()
+            assertTrue(marker.translationX > 20f)
+            assertEquals(0, clicks)
+            val down = SystemClock.uptimeMillis()
+            val p = listOf(pointerProperties(0))
+            val c = listOf(coords(x, y))
+            instrumentation.sendPointerSync(event(down, down, MotionEvent.ACTION_DOWN, p, c))
+            instrumentation.sendPointerSync(event(down, down + 28, MotionEvent.ACTION_UP, p, c))
+            instrumentation.waitForIdleSync()
+            assertEquals(1, clicks)
+            instrumentation.runOnMainSync {
+                viewport.resetZoom()
+                assertEquals(1f, viewport.currentZoomScale, 0f)
+                assertEquals(0f, marker.translationX, 0f)
+            }
+        } finally {
+            instrumentation.runOnMainSync {
+                dialog?.dismiss()
+                activity.finish()
+            }
+        }
     }
 
     @Test
