@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_muscle_satellite_renewal_title">肌卫星细胞如何自我更新和修复肌纤维</string>
+    <string name="health_atlas_muscle_satellite_renewal_choice">肌卫星细胞的自我更新与融合</string>
+    <string name="health_atlas_muscle_satellite_renewal_scope">本图示简化呈现成人骨骼肌中的卫星细胞。大小、形状和时间均为示意。自我更新和融合是两种可能的去向，并不是每次分裂后都恰好各有一个子细胞走向这两条途径。</string>
+    <string name="health_atlas_muscle_satellite_renewal_niche">基板下的静息细胞</string>
+    <string name="health_atlas_muscle_satellite_renewal_niche_caption">静息的肌卫星细胞位于薄薄的基板与肌膜之间。肌膜是肌纤维自身的细胞膜。卫星细胞有自己的细胞核，与肌纤维彼此独立。</string>
+    <string name="health_atlas_muscle_satellite_renewal_activation">从静息到激活</string>
+    <string name="health_atlas_muscle_satellite_renewal_activation_caption">附近肌肉需要修复时，周围组织发出的信号可激活卫星细胞。激活后的细胞离开静息状态，可以开始分裂。</string>
+    <string name="health_atlas_muscle_satellite_renewal_division">一个细胞分成两个</string>
+    <string name="health_atlas_muscle_satellite_renewal_division_caption">激活的卫星细胞分裂为两个子细胞，每个子细胞都有自己的细胞核。继续分裂可以产生更多后代。分裂的是卫星细胞，不是肌纤维本身。</string>
+    <string name="health_atlas_muscle_satellite_renewal_renewal">部分后代补充细胞储备</string>
+    <string name="health_atlas_muscle_satellite_renewal_renewal_caption">一部分后代回到基板下，成为静息的卫星细胞。这种自我更新为今后的修复保留了细胞储备。另一些后代分化为成肌细胞。</string>
+    <string name="health_atlas_muscle_satellite_renewal_fusion">后代细胞与肌纤维融合</string>
+    <string name="health_atlas_muscle_satellite_renewal_fusion_caption">分化后的成肌细胞可以与已有的肌纤维融合。两者的细胞膜相连，成肌细胞的细胞核成为肌纤维内众多细胞核之一。静息的卫星细胞仍与肌纤维分开。</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_lamina">基板</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_cell">肌卫星细胞</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_sarcolemma">肌膜</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_fiber">骨骼肌纤维</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_signals">局部修复信号</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_active">已激活的细胞</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_division">细胞分裂</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_daughters">子细胞</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_reserve">静息的卫星细胞</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_myoblast">成肌细胞</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_fusion">融合处</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_nucleus">新增的细胞核</string>
+    <string name="health_atlas_muscle_satellite_renewal_ref_niche">Mauro（1961）：基板下的卫星细胞</string>
+    <string name="health_atlas_muscle_satellite_renewal_ref_renewal">Zammit 等（2004）：卫星细胞的激活与不同去向</string>
+    <string name="health_atlas_muscle_satellite_renewal_ref_fusion">Chou 与 Nonaka（1977）：人骨骼肌的卫星细胞与再生</string>
+</resources>

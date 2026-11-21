@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pericyte_coverage_title">A pericyte around a capillary</string>
+    <string name="health_atlas_pericyte_coverage_scope">Original diagrams of a normal capillary. Scale and timing are illustrative; moving highlights trace anatomy, not changes in vessel width.</string>
+    <string name="health_atlas_pericyte_coverage_choice">Pericyte and capillary wall</string>
+    <string name="health_atlas_pericyte_coverage_location">Outside the lumen</string>
+    <string name="health_atlas_pericyte_coverage_location_caption">Endothelial cells line the lumen, the space where blood flows. The pericyte sits on the tissue-facing side of the lining, outside the blood path.</string>
+    <string name="health_atlas_pericyte_coverage_wrap">A partial wrap</string>
+    <string name="health_atlas_pericyte_coverage_wrap_caption">A pericyte sends slender extensions along and partway around the endothelial tube. In this cross-section, the moving highlight follows one extension. The pericyte is not a continuous sleeve.</string>
+    <string name="health_atlas_pericyte_coverage_interface">A shared interface</string>
+    <string name="health_atlas_pericyte_coverage_interface_caption">The two cells share a thin supporting layer called the basement membrane. At some points their surfaces meet directly, as shown at the highlighted contact.</string>
+    <string name="health_atlas_pericyte_coverage_cooperation">Working together</string>
+    <string name="health_atlas_pericyte_coverage_cooperation_caption">The endothelium forms the inner lining. Pericytes help support the small vessel wall from outside it. Both cell types contribute to the shared basement membrane and help maintain the wall.</string>
+    <string name="health_atlas_pericyte_coverage_art_lengthwise">Lengthwise view</string>
+    <string name="health_atlas_pericyte_coverage_art_cross_section">Cross-section</string>
+    <string name="health_atlas_pericyte_coverage_art_detail">Wall detail</string>
+    <string name="health_atlas_pericyte_coverage_art_lumen">Lumen</string>
+    <string name="health_atlas_pericyte_coverage_art_lining">Endothelium</string>
+    <string name="health_atlas_pericyte_coverage_art_cell">Pericyte</string>
+    <string name="health_atlas_pericyte_coverage_art_extension">Cell extension</string>
+    <string name="health_atlas_pericyte_coverage_art_matrix">Basement membrane</string>
+    <string name="health_atlas_pericyte_coverage_art_contact">Direct contact</string>
+    <string name="health_atlas_pericyte_coverage_ref_shape">Gonzales et al.: capillary pericyte shape</string>
+    <string name="health_atlas_pericyte_coverage_ref_interface">Stefanska et al.: pericyte and endothelial contact</string>
+    <string name="health_atlas_pericyte_coverage_ref_cooperation">Stratman et al.: assembly of the shared basement membrane</string>
+
+    <string name="health_atlas_langerhans_sentinel_title">A Langerhans cell in the epidermis</string>
+    <string name="health_atlas_langerhans_sentinel_scope">Original diagrams of an epidermal immune cell. The diamonds stand for sampled material, not individual molecules. Scale and timing are illustrative.</string>
+    <string name="health_atlas_langerhans_sentinel_choice">Langerhans cell and skin immunity</string>
+    <string name="health_atlas_langerhans_sentinel_location">At home in the epidermis</string>
+    <string name="health_atlas_langerhans_sentinel_location_caption">Langerhans cells are immune sentinels in the epidermis, the outer tissue of the skin. Their cell bodies lie between keratinocytes, beneath the flattened surface layers.</string>
+    <string name="health_atlas_langerhans_sentinel_sampling">Sampling between neighbors</string>
+    <string name="health_atlas_langerhans_sentinel_sampling_caption">Branching extensions called dendrites can reach and withdraw between keratinocytes. They help the cell sample its surroundings while the cell body remains in the epidermis.</string>
+    <string name="health_atlas_langerhans_sentinel_presentation">A sample on display</string>
+    <string name="health_atlas_langerhans_sentinel_presentation_caption">A Langerhans cell can display small pieces of sampled material on its surface. This display, called antigen presentation, lets another immune cell read information about the sample.</string>
+    <string name="health_atlas_langerhans_sentinel_communication">A local immune conversation</string>
+    <string name="health_atlas_langerhans_sentinel_communication_caption">A nearby T cell can recognize a displayed piece during cell contact. Interactions like this help regulate local immune activity; contact does not always produce the same response.</string>
+    <string name="health_atlas_langerhans_sentinel_art_epidermis">Epidermis</string>
+    <string name="health_atlas_langerhans_sentinel_art_surface">Skin surface</string>
+    <string name="health_atlas_langerhans_sentinel_art_keratinocyte">Keratinocyte</string>
+    <string name="health_atlas_langerhans_sentinel_art_cell">Langerhans cell</string>
+    <string name="health_atlas_langerhans_sentinel_art_branch">Dendrite</string>
+    <string name="health_atlas_langerhans_sentinel_art_sample">Sampled material</string>
+    <string name="health_atlas_langerhans_sentinel_art_display">Surface display</string>
+    <string name="health_atlas_langerhans_sentinel_art_t_cell">T cell</string>
+    <string name="health_atlas_langerhans_sentinel_art_contact">Cell contact</string>
+    <string name="health_atlas_langerhans_sentinel_ref_location">Park et al.: immune cell layout in the epidermis</string>
+    <string name="health_atlas_langerhans_sentinel_ref_sampling">Nishibu et al.: movement of epidermal dendrites</string>
+    <string name="health_atlas_langerhans_sentinel_ref_communication">Seneschal et al.: Langerhans cells and resident T cells in human skin</string>
+</resources>

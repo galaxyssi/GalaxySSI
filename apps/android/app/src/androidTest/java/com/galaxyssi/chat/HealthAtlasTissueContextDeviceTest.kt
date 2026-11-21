@@ -266,6 +266,28 @@ class HealthAtlasTissueContextDeviceTest {
         }
     }
 
+    @Test fun pelvisAndSubcutaneousSectionsOpenTheirOwnFunctions() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("pelvis")
+            assertNotNull(activity.view("atlas-feature-pelvic-ring-sacroiliac"))
+            assertNotNull(activity.view("atlas-hotspot-femur"))
+        }
+        capture("pelvic-ring", scenario.localized(R.string.health_atlas_pelvic_ring_view))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-pelvic-ring-art"))
+            activity.onBackPressed()
+            activity.open("subcutaneous-tissue")
+            assertNotNull(activity.view("atlas-feature-subcutaneous-septum"))
+            assertNotNull(activity.view("atlas-hotspot-cell-adipocyte"))
+        }
+        capture("subcutaneous-section", scenario.localized(R.string.health_atlas_subcutaneous_view))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-subcutaneous-cushion-art"))
+        }
+    }
+
     @Test fun clavicleAndFibulaHaveDedicatedLandmarksAndRelatedMotion() = native { scenario ->
         scenario.onActivity { activity ->
             activity.open("clavicle")

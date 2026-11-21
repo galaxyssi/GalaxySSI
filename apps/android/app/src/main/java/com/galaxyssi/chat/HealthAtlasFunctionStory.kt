@@ -2021,7 +2021,10 @@ internal enum class HealthAtlasFunctionStory(
     DISTAL_TUBULAR_EXCHANGE(HealthAtlasDistalTubularCellAssignment),
     UROTHELIAL_BARRIER_GEOMETRY(HealthAtlasUrothelialCellAssignment),
     LEYDIG_ENDOCRINE(HealthAtlasLeydigEndocrineAssignment),
-    THECA_COOPERATION(HealthAtlasThecaCooperationAssignment);
+    THECA_COOPERATION(HealthAtlasThecaCooperationAssignment),
+    PERICYTE_COVERAGE(HealthAtlasPericyteCoverageAssignment),
+    LANGERHANS_SENTINEL(HealthAtlasLangerhansSentinelAssignment),
+    MUSCLE_SATELLITE_RENEWAL(HealthAtlasMuscleSatelliteRenewalAssignment);
 
     private constructor(lesson: HealthAtlasCellLesson) : this(
         lesson.owners, lesson.title, lesson.scope, lesson.chapters, lesson.references,
@@ -2247,6 +2250,9 @@ internal enum class HealthAtlasFunctionStory(
         UROTHELIAL_BARRIER_GEOMETRY -> listOf("bladder" to URINE_ROUTE)
         LEYDIG_ENDOCRINE -> listOf("cell-gonadotroph" to GONADOTROPH_DUAL_SIGNAL)
         THECA_COOPERATION -> listOf("cell-granulosa-cell" to OVUM_TRANSPORT)
+        PERICYTE_COVERAGE -> listOf("capillaries" to ENDOTHELIAL_EXCHANGE)
+        LANGERHANS_SENTINEL -> listOf("epidermis" to EPIDERMAL_BARRIER)
+        MUSCLE_SATELLITE_RENEWAL -> listOf("cell-skeletal-myocyte" to MUSCLE_MOTION)
         CHONDROCYTE_MATRIX -> listOf("tissue-hyaline-cartilage" to CARTILAGE_LOAD)
         ADRENAL_MEDULLA_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
         GASTRIC_ACID_SECRETION -> listOf("stomach" to DIGESTION, "cell-gastric-chief-cell" to GASTRIC_CHIEF_SECRETION)
@@ -2418,6 +2424,9 @@ internal enum class HealthAtlasFunctionStory(
         UROTHELIAL_BARRIER_GEOMETRY -> HealthAtlasUrothelialCellAssignment.createArt(context, this)
         LEYDIG_ENDOCRINE -> HealthAtlasLeydigEndocrineStoryView(context, this)
         THECA_COOPERATION -> HealthAtlasThecaCooperationStoryView(context, this)
+        PERICYTE_COVERAGE -> HealthAtlasPericyteCoverageStoryView(context, this)
+        LANGERHANS_SENTINEL -> HealthAtlasLangerhansSentinelStoryView(context, this)
+        MUSCLE_SATELLITE_RENEWAL -> HealthAtlasMuscleSatelliteRenewalStoryView(context, this)
         NEUTROPHIL_DEFENSE, EOSINOPHIL_RESPONSE, BASOPHIL_SIGNALING, MONOCYTE_RECRUITMENT,
         DENDRITIC_PRESENTATION, T_CELL_RESPONSE, NK_SURVEILLANCE, PLATELET_FORMATION, MACROPHAGE_CLEARANCE ->
             HealthAtlasCellFunctionArt(context, this, owners.single())
