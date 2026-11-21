@@ -485,6 +485,7 @@ struct GalaxySSIHealthCareDetail: View {
     return Picker(t("clarification.collection", "Collection condition"), selection: $answers.collection) {
       Text(t("none", "Not recorded")).tag(Collection?.none)
       Text(t("clarification.collection.fasting", "Fasting")).tag(Optional(Collection.fasting))
+      Text(GalaxySSIHealthReportQuickImport.text("non_fasting", "Not fasting", language)).tag(Optional(Collection.nonFasting))
       Text(t("clarification.collection.after_meal", "After a meal")).tag(Optional(Collection.afterMeal))
       Text(t("clarification.collection.resting", "Resting")).tag(Optional(Collection.resting))
       Text(t("clarification.collection.after_activity", "After activity")).tag(Optional(Collection.afterActivity))

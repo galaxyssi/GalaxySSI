@@ -174,6 +174,7 @@ struct GalaxySSIHealthRecords {
     var reportImagePermission: UUID?
     var healthKitImportedAt: [GalaxySSIHealthKitImport.Scope: Date]?
     var retainImportOriginals: Bool?
+    var reviewOnlyReportOriginals: Set<UUID>?
     var profileAnalysisPermission: UUID?
     var profileAnalysisAudit: [ProfileAnalysisAudit]?
     var localCarePermission: UUID?
@@ -3439,6 +3440,13 @@ struct GalaxySSIHealthRecords {
   func persistModelAttention(_ archive: Archive) throws { try persist(archive, notify: false) }
   func persistAppointmentReminder(_ archive: Archive) throws { try persist(archive) }
   func persistReportVision(_ archive: Archive) throws { try persist(archive) }
+  func persistQuickReport(_ archive: Archive) throws {
+    var archive = archive
+    pruneReviewActions(&archive)
+    try persist(archive)
+    NotificationCenter.default.post(name: Self.reviewInputsChanged, object: owner)
+    NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
+  }
 
   private func persist(_ archive: Archive, notify: Bool = true) throws {
     var archive = archive

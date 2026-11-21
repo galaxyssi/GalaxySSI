@@ -31,7 +31,7 @@ enum GalaxySSIHealthReportReview {
     }
   }
 
-  struct Item: Codable, Identifiable {
+  struct Item: Codable, Identifiable, Equatable {
     var id: UUID { version }
     let version: UUID
     let source: Source

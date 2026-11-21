@@ -21,10 +21,12 @@ struct GalaxySSIHealthCenterView: View {
   @State private var sourceCoverage: GalaxySSIHealthSourceAttention?
   @State private var sourceAttentionUnavailable = false
   @State private var initialRecordMetric: GalaxySSIHealthMetric?
+  @State private var initialRecordID: UUID?
 
-  init(records: GalaxySSIHealthRecords, initialRecordMetric: GalaxySSIHealthMetric? = nil) {
+  init(records: GalaxySSIHealthRecords, initialRecordMetric: GalaxySSIHealthMetric? = nil, initialRecordID: UUID? = nil) {
     self.records = records
     _initialRecordMetric = State(initialValue: initialRecordMetric)
+    _initialRecordID = State(initialValue: initialRecordID)
   }
   @State private var sourceRecovery: GalaxySSIHealthSourceAttention.Incident?
 
@@ -280,8 +282,6 @@ struct GalaxySSIHealthCenterView: View {
             get: { self.archive?.profileAnalysisPermission != nil }, set: { changePrivacy(.profileAnalysis, enabled: $0) }))
         }
         Section(t("privacy.imports", "New imports")) {
-          Toggle(GalaxySSIHealthReportVision.text("permission", "Allow report images in explicitly confirmed online requests", language), isOn: Binding(
-            get: { self.archive?.reportImagePermission != nil }, set: { changePrivacy(.reportImages, enabled: $0) }))
           Toggle(t("privacy.import_originals", "Keep originals of new imports"), isOn: Binding(
             get: { self.archive?.keepsNewImportOriginals == true },
             set: { changePrivacy(.importOriginals, enabled: $0) }))
@@ -737,6 +737,11 @@ struct GalaxySSIHealthCenterView: View {
     guard scenePhase == .active else { return }
     do { archive = try records.load() }
     catch { archive = nil }
+    if let id = initialRecordID, let archive {
+      initialRecordID = nil
+      if let reading = archive.current.first(where: { $0.id == id }) { edit(reading) }
+      else { alert = .unavailable }
+    }
     reloadSourceAttention()
   }
 
