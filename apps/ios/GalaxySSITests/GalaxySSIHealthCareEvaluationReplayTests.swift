@@ -119,16 +119,16 @@ final class GalaxySSIHealthCareEvaluationReplayTests: XCTestCase {
     // The production API is synchronous and MainActor-isolated, not a cross-process database transaction.
     let left = Task { @MainActor in
       try first.reconcileLocalCare(now: now)
-      return try first.load().localCare?.current["glucose"]
     }
     let right = Task { @MainActor in
       try second.reconcileLocalCare(now: now)
-      return try second.load().localCare?.current["glucose"]
     }
-    let firstValue = try await left.value
-    let secondValue = try await right.value
-    let a = try XCTUnwrap(firstValue)
-    let b = try XCTUnwrap(secondValue)
+    let firstOutcome = await left.result
+    let secondOutcome = await right.result
+    try firstOutcome.get()
+    try secondOutcome.get()
+    let a = try XCTUnwrap(first.load().localCare?.current["glucose"])
+    let b = try XCTUnwrap(second.load().localCare?.current["glucose"])
     XCTAssertEqual(a, b)
     XCTAssertEqual(try f.records.load().localCare?.current.count, 1)
     XCTAssertTrue(try f.records.localCareHistory(a.id).isEmpty)
