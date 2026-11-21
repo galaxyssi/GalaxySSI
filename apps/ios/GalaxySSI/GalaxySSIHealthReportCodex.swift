@@ -2,7 +2,7 @@ import Foundation
 
 enum GalaxySSIHealthReportCodex {
   static let prefix = "health-report-vision:"
-  static let maximumImageBytes = 224 * 1024
+  static let maximumImageBytes = 100_000
   static let maximumReplyBytes = 131_072
 
   static func supports(_ contact: GalaxySSIContact, now: Date = Date()) -> Bool {

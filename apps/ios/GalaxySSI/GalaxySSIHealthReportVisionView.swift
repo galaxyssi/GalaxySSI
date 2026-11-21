@@ -21,13 +21,15 @@ struct GalaxySSIHealthReportVisionView: View {
   @State private var task: Task<Void, Never>?
   @State private var run: UUID?
   @State private var failed = false
-  @State private var originalPreview: UIImage?
   @State private var originalAvailable = true
   @State private var previewStarted = false
-  @State private var supplementPlan: GalaxySSIHealthReportQuickImport.Plan?
   @State private var outcome: GalaxySSIHealthReportQuickImport.Outcome?
-  @State private var targets: [String: UUID] = [:]
-  @State private var handled: Set<String> = []
+  @State private var savedRecords: [GalaxySSIHealthReading] = []
+  @State private var stage: Stage?
+
+  private enum Stage: Int, CaseIterable {
+    case compressing, sending, saving
+  }
 
   private struct Review: Identifiable {
     let id = UUID()
@@ -45,24 +47,24 @@ struct GalaxySSIHealthReportVisionView: View {
     List {
       if accessible, let job {
         Text(job.original.name)
-        if let originalPreview { Image(uiImage: originalPreview).resizable().scaledToFit() }
-        if !originalAvailable { Text(q("released", "Original is no longer available for review.")).foregroundColor(.secondary) }
-        if let outcome {
-          Text(String(format: q("outcome", "Last import: %lld saved, %lld linked duplicates, %lld pending review"),
-            Int64(outcome.saved), Int64(outcome.duplicates), Int64(outcome.pending)))
-        }
-        if let result = job.reportVision {
-          Text(t("unverified", "Model transcription is unverified. Check every field against the original.")).foregroundColor(.secondary)
-          if result.partial { Text(t("partial", "Some results were omitted or unreadable.")).foregroundColor(.secondary) }
-          ForEach(result.rows) { row in
-            resultRow(row, result: result, job: job)
+        if let stage {
+          Section {
+            ProgressView(stageTitle(stage)).accessibilityIdentifier("health-report-import-stage")
+            ForEach(Stage.allCases, id: \.rawValue) { step in
+              HStack {
+                Text(stageTitle(step)); Spacer()
+                Text(step.rawValue < stage.rawValue ? q("stage_done", "Done") :
+                  step == stage ? q("stage_active", "In progress") : q("stage_wait", "Waiting"))
+                  .foregroundColor(.secondary)
+              }
+            }
+            Button(t("cancel", "Cancel request"), role: .destructive) { cancel() }
           }
-          if originalAvailable {
-            Button(q("save_all", "Save supported results"), action: beginQuickImport)
-          }
-          NavigationLink {
-            GalaxySSIHealthReportBatchView(records: records, store: originals, original: job.original)
-          } label: { Text(GalaxySSIHealthReportReview.text("batch", "Reviewed measurements", language: language)) }
+        } else if metrics, let outcome, outcome.skipped != nil {
+          resultSummary(outcome)
+        } else if job.reportVision != nil, metrics {
+          Button(q("finish", "Finish saved report import"), action: beginQuickImport)
+            .disabled(!online || !metrics || !originalAvailable)
         } else {
           Toggle(t("online", "Allow confirmed online health requests"), isOn: Binding(get: { online }, set: { value in
             change { try records.setHealthOnlinePermission(value) }
@@ -74,25 +76,22 @@ struct GalaxySSIHealthReportVisionView: View {
           else { Text(t("codex_unavailable", "Pair a ready Desktop with private report transcription support.")).foregroundColor(.secondary) }
           Button(t("preview", "Review image before sending"), action: prepare)
             .disabled(task != nil || !online || !metrics || coordinator.privateHealthReportCodexTarget() == nil || !Vision.eligible(job))
-          if task != nil {
-            ProgressView()
-            Button(t("cancel", "Cancel request"), role: .destructive) { cancel() }
-          }
         }
       }
       if failed { Text(t("failed", "Nothing was confirmed. The image, permission or provider may have changed, or the reply was invalid.")).foregroundColor(.secondary) }
     }
-    .navigationTitle(t("title", "Transcribe with a vision model"))
+    .navigationTitle(q("import_title", "Import report image"))
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
       originals.releaseCompletedQuickReportOriginals()
       reload()
+      if job?.reportVision != nil, outcome?.skipped == nil, online, metrics { beginQuickImport() }
       if automaticallyPreview, !previewStarted {
         previewStarted = true
         if job?.reportVision == nil, online, metrics { prepare() }
       }
     }
-    .onDisappear { cancel(); review = nil; supplementPlan = nil }
+    .onDisappear { cancel(); review = nil }
     .onChange(of: scene) { phase in
       if phase == .active { reload() } else { clearSensitive() }
     }
@@ -107,7 +106,7 @@ struct GalaxySSIHealthReportVisionView: View {
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthOriginalStore.indexChanged)) { event in
-      if event.object as? String == records.owner { cancel(); review = nil; originalPreview = nil; reload() }
+      if event.object as? String == records.owner { cancel(); review = nil; reload() }
     }
     .sheet(item: $review) { approval in
       NavigationView {
@@ -115,45 +114,59 @@ struct GalaxySSIHealthReportVisionView: View {
           if let image = UIImage(data: approval.jpeg) { Image(uiImage: image).resizable().scaledToFit() }
           Text(approval.target.title)
           Text(String(format: t("bytes", "One image, %lld bytes"), Int64(approval.jpeg.count)))
-          Text(t("paired_disclosure", "Send this image to paired Desktop Codex in a temporary read-only thread. No history, tools, search, offline queue or provider fallback. Supported results are saved after any missing sample information is completed; uncertain results remain editable drafts."))
+          Text(q("automatic_disclosure", "Send only this image to paired Desktop Codex in a temporary read-only thread. No history, tools, search, offline queue or provider fallback. Valid measurements are saved automatically, existing measurements are linked, and unreadable or undated results are skipped. Transcription is not clinician verification."))
           Button(t("send", "Send this image once")) { send(approval) }
         }
         .navigationTitle(t("preview", "Review image before sending"))
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("cancel", "Cancel request")) { review = nil } } }
       }.navigationViewStyle(.stack)
     }
-    .sheet(item: $supplementPlan) { plan in
-      GalaxySSIHealthReportSupplementView(plan: plan, language: language) { supplement in saveQuick(plan, supplement: supplement) }
-    }
   }
 
-  @ViewBuilder private func resultRow(_ row: Vision.Row, result: Vision.Result, job: GalaxySSIHealthRecognitionJobs.Job) -> some View {
-    let key = Vision.source(row, job: job).regionIdentity
-    if let id = targets[key] {
-      NavigationLink { GalaxySSIHealthCenterView(records: records, initialRecordID: id) } label: {
-        rowLabel(row, status: q("saved", "Saved measurement"))
+  @ViewBuilder private func resultSummary(_ outcome: GalaxySSIHealthReportQuickImport.Outcome) -> some View {
+    Section {
+      Label(outcome.saved > 0 ? String(format: q("import_count", "%lld measurements imported"), Int64(outcome.saved)) :
+        outcome.duplicates > 0 ? q("existing", "Measurements already recorded") : q("not_imported", "No measurements imported"),
+        systemImage: outcome.saved + outcome.duplicates > 0 ? "checkmark.circle" : "exclamationmark.circle")
+        .font(.headline).accessibilityIdentifier("health-report-import-summary")
+      if let bytes = outcome.imageBytes, bytes > 0 {
+        Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)).foregroundColor(.secondary)
       }
-    } else if handled.contains(key) {
-      rowLabel(row, status: q("handled", "Already processed"))
-    } else {
-      NavigationLink {
-        GalaxySSIHealthReportItemEditor(records: records, source: Vision.source(row, job: job), excerpt: row.source,
-          sourceContext: sourceContext(result), modelPrefill: row, modelFasting: result.fasting,
-          modelSourceIsAvailable: { accessible && (try? input(job)) != nil })
-      } label: { rowLabel(row, status: q("pending", "Pending review")) }.disabled(!originalAvailable)
-    }
-  }
-  private func rowLabel(_ row: Vision.Row, status: String) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text(row.metric.title(language: language))
-      Text((row.values["value"] ?? "") + " " + row.unit).foregroundColor(.secondary)
-      Text(status).font(.caption).foregroundColor(.secondary)
+      if outcome.duplicates > 0 {
+        Text(String(format: q("duplicate_count", "%lld existing measurements linked; no records overwritten"), Int64(outcome.duplicates)))
+          .font(.caption).foregroundColor(.secondary)
+      }
+      if let skipped = outcome.skipped, skipped > 0 {
+        Text(String(format: q("skipped_count", "%lld unreadable, ambiguous or undated results skipped"), Int64(skipped)))
+          .font(.caption).foregroundColor(.secondary)
+      }
+      if outcome.partial { Text(t("partial", "Some results were omitted or unreadable.")).font(.caption).foregroundColor(.secondary) }
+      Text(q("saved_unverified", "Model transcription is not clinician verification. Saved measurements can be reviewed in Health Records."))
+        .font(.caption).foregroundColor(.secondary)
+      ForEach(savedRecords) { reading in
+        NavigationLink { GalaxySSIHealthCenterView(records: records, initialRecordID: reading.id) } label: {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(reading.metric.title(language: language))
+            Text(measurement(reading)).foregroundColor(.secondary)
+            Text(reading.unit).font(.caption).foregroundColor(.secondary)
+          }
+        }
+      }
     }
   }
 
-  private func sourceContext(_ result: Vision.Result) -> GalaxySSIHealthOCRSourceContext {
-    GalaxySSIHealthOCRSourceContext.inspect(["Collected at: " + result.collected],
-      timeZone: job?.reportVisionZone.flatMap(TimeZone.init(identifier:)) ?? zone)
+  private func stageTitle(_ value: Stage) -> String {
+    switch value {
+    case .compressing: return q("compressing", "Compressing image")
+    case .sending: return q("sending", "Recognizing report")
+    case .saving: return q("saving", "Saving measurements")
+    }
+  }
+
+  private func measurement(_ reading: GalaxySSIHealthReading) -> String {
+    let value = reading.reportedNotation ?? reading.value.map { NSDecimalNumber(decimal: $0).stringValue } ?? ""
+    if let diastolic = reading.diastolic { return value + " / " + NSDecimalNumber(decimal: diastolic).stringValue }
+    return value
   }
   private func change(_ operation: () throws -> Void) {
     cancel(); review = nil
@@ -167,25 +180,12 @@ struct GalaxySSIHealthReportVisionView: View {
       guard let current = archive.recognitionJobs?.first(where: { $0.id == jobID }) else { throw GalaxySSIHealthRecords.Failure.stale }
       let listing = try originals.list()
       originalAvailable = listing.originals.contains(current.original)
-      guard originalAvailable || (current.reportImportOutcome?.releaseOriginal == true &&
-        (listing.removed.contains(current.original) || listing.pendingRemovals.contains(current.original.id))) else { throw GalaxySSIHealthRecords.Failure.stale }
+      guard originalAvailable || current.reportImportOutcome?.releaseOriginal == true else { throw GalaxySSIHealthRecords.Failure.stale }
       job = current
-      outcome = current.reportImportOutcome
-      handled = current.reportImportedSources ?? []
-      targets = [:]
-      let live = Set(archive.current.map(\.id))
-      for row in current.reportVision?.rows ?? [] {
-        let source = Vision.source(row, job: current)
-        if let record = archive.revisions.last(where: { $0.reportSource == source }) {
-          handled.insert(source.regionIdentity)
-          if live.contains(record.id) { targets[source.regionIdentity] = record.id }
-        } else if let link = archive.reportEvidence?.first(where: { $0.source == source && live.contains($0.target.record) }) {
-          handled.insert(source.regionIdentity); targets[source.regionIdentity] = link.target.record
-        }
-      }
-      if originalAvailable, originalPreview == nil { originalPreview = try GalaxySSIHealthReportVisionProvider.preview(input(current)) }
-      if !originalAvailable { originalPreview = nil }
-    } catch { job = nil; originalPreview = nil; failed = true }
+      outcome = metrics ? current.reportImportOutcome : nil
+      let live = Dictionary(archive.current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+      savedRecords = (outcome?.recordIDs ?? []).compactMap { live[$0] }
+    } catch { job = nil; outcome = nil; savedRecords = []; failed = true }
   }
   private func input(_ job: GalaxySSIHealthRecognitionJobs.Job) throws -> Data {
     _ = try originals.read(job.original)
@@ -199,14 +199,21 @@ struct GalaxySSIHealthReportVisionView: View {
   }
   private func prepare() {
     guard accessible, task == nil else { return }
-    do {
-      reload()
-      guard let job, Vision.eligible(job), let target = coordinator.privateHealthReportCodexTarget()
-      else { throw GalaxySSIHealthRecords.Failure.invalid }
-      review = Review(job: job, consent: try .init(records.load()), target: target,
-        jpeg: try GalaxySSIHealthReportVisionProvider.jpeg(input(job)), zone: zone.identifier)
-      failed = false
-    } catch { review = nil; failed = true }
+    stage = .compressing
+    let token = UUID(); run = token
+    task = Task {
+      defer { if run == token { task = nil; run = nil; stage = nil } }
+      await Task.yield()
+      do {
+        reload()
+        guard accessible, run == token, !Task.isCancelled, let job, Vision.eligible(job),
+              let target = coordinator.privateHealthReportCodexTarget() else { throw GalaxySSIHealthRecords.Failure.stale }
+        let approval = Review(job: job, consent: try .init(records.load()), target: target,
+          jpeg: try GalaxySSIHealthReportVisionProvider.jpeg(input(job)), zone: zone.identifier)
+        try current(approval)
+        review = approval; failed = false
+      } catch { if run == token, !Task.isCancelled { review = nil; failed = true } }
+    }
   }
   private func current(_ approval: Review) throws {
     guard accessible, !Task.isCancelled, zone.identifier == approval.zone,
@@ -223,10 +230,10 @@ struct GalaxySSIHealthReportVisionView: View {
     guard review?.id == approval.id, task == nil else { return }
     do {
       try current(approval)
-      let id = UUID(); run = id; activeReview = approval; review = nil; failed = false
+      let id = UUID(); run = id; activeReview = approval; review = nil; failed = false; stage = .sending
       task = Task {
         defer {
-          if run == id { run = nil; task = nil; activeReview = nil }
+          if run == id { run = nil; task = nil; activeReview = nil; stage = nil }
         }
         do {
           try current(approval)
@@ -235,33 +242,35 @@ struct GalaxySSIHealthReportVisionView: View {
           try current(approval)
           guard run == id else { throw CancellationError() }
           let result = try Vision.parse(response)
-          try records.commitReportVision(result, job: approval.job, consent: approval.consent, zone: approval.zone)
+          stage = .saving
+          await Task.yield()
+          try current(approval)
+          activeReview = nil
+          outcome = try records.commitAutomaticReportVision(result, job: approval.job, consent: approval.consent,
+            zone: approval.zone, imageBytes: approval.jpeg.count, originals: originals,
+            active: { run == id && (try? current(approval)) != nil })
+          originals.releaseCompletedQuickReportOriginals()
           reload()
-          beginQuickImport()
         } catch { if run == id, !Task.isCancelled { failed = true } }
       }
     } catch { review = nil; failed = true }
   }
-  private func cancel() { task?.cancel(); task = nil; run = nil; activeReview = nil }
+  private func cancel() { task?.cancel(); task = nil; run = nil; activeReview = nil; stage = nil }
   private func clearSensitive() {
-    cancel(); review = nil; supplementPlan = nil; job = nil; originalPreview = nil; outcome = nil; targets = [:]; handled = []
+    cancel(); review = nil; job = nil; outcome = nil; savedRecords = []
   }
   private func beginQuickImport() {
-    guard accessible else { return }
-    do {
-      let plan = try records.quickReportPlan(job: jobID, originals: originals)
-      if plan.needsSupplement { supplementPlan = plan }
-      else { saveQuick(plan, supplement: .init()) }
-    } catch { failed = true }
-  }
-  private func saveQuick(_ plan: GalaxySSIHealthReportQuickImport.Plan, supplement: GalaxySSIHealthReportQuickImport.Supplement) {
-    guard accessible else { return }
-    do {
-      outcome = try records.saveQuickReport(plan, supplement: supplement, originals: originals, active: { accessible })
-      supplementPlan = nil
-      originals.releaseCompletedQuickReportOriginals()
-      reload(); failed = false
-    } catch { supplementPlan = nil; failed = true }
+    guard accessible, task == nil else { return }
+    let token = UUID(); run = token; stage = .saving
+    task = Task {
+      defer { if run == token { task = nil; run = nil; stage = nil } }
+      await Task.yield()
+      do {
+        outcome = try records.finishAutomaticReport(job: jobID, originals: originals, active: { accessible && run == token })
+        originals.releaseCompletedQuickReportOriginals()
+        reload(); failed = false
+      } catch { if run == token, !Task.isCancelled { failed = true } }
+    }
   }
   private func q(_ key: String, _ fallback: String) -> String { GalaxySSIHealthReportQuickImport.text(key, fallback, language) }
   private func t(_ key: String, _ fallback: String) -> String { Vision.text(key, fallback, language) }

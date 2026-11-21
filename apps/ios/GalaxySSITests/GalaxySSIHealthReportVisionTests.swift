@@ -22,7 +22,7 @@ final class GalaxySSIHealthReportVisionTests: XCTestCase {
     XCTAssertEqual(parsed.rows.first?.reference, "3.9-6.1")
   }
 
-  func testRejectsUnknownFieldsWrongTypesDuplicateAndEmptyRows() throws {
+  func testRejectsUnknownFieldsWrongTypesAndDuplicateRowsButAllowsEmptyOutcome() throws {
     var object = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(response.utf8))
     object["approved"] = .bool(true)
     XCTAssertThrowsError(try parse(object))
@@ -34,7 +34,7 @@ final class GalaxySSIHealthReportVisionTests: XCTestCase {
     object["rows"] = .array([row, row])
     XCTAssertThrowsError(try parse(object))
     object["rows"] = .array([])
-    XCTAssertThrowsError(try parse(object))
+    XCTAssertTrue(try parse(object).rows.isEmpty)
     XCTAssertThrowsError(try Vision.parse(response + " trailing"))
   }
 

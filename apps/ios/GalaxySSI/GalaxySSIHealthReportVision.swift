@@ -38,7 +38,7 @@ enum GalaxySSIHealthReportVision {
     if text.hasPrefix("```json\n"), text.hasSuffix("\n```") { text = String(text.dropFirst(8).dropLast(4)) }
     let object = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(text.utf8))
     guard Set(object.keys).subtracting(["fasting"]) == ["rows", "collected", "partial"], case .array(let raw)? = object["rows"],
-          (1...80).contains(raw.count), let collected = object["collected"]?.strictStringValue,
+          (0...80).contains(raw.count), let collected = object["collected"]?.strictStringValue,
           validText(collected, limit: 80), case .bool(let partial)? = object["partial"] else { throw invalid }
     let fasting: String?
     if let value = object["fasting"] {

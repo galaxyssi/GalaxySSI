@@ -84,6 +84,15 @@ final class GalaxySSIHealthReportCodexTests: XCTestCase {
     XCTAssertThrowsError(try request().payload(jpeg: Data("not jpeg".utf8), instructions: "Only image"))
   }
 
+  func testExactly100000BytesFitsButOneMoreByteIsRejectedAtTransportBoundary() throws {
+    var image = Data([0xff, 0xd8])
+    image.append(Data(repeating: 0, count: 99_998))
+    XCTAssertEqual(Codex.maximumImageBytes, 100_000)
+    XCTAssertNoThrow(try request().payload(jpeg: image, instructions: "Only image"))
+    image.append(0)
+    XCTAssertThrowsError(try request().payload(jpeg: image, instructions: "Only image"))
+  }
+
   func testRetiredModelCannotSilentlyBecomeDefault() {
     let route = GalaxySSIHealthDesktopResearch.Route(connector: .init(contactId: "desktop:codex", desktopId: "desktop",
       clientRouteId: "route", modelId: "gpt-5.3-codex-spark", reasoningEffort: .high), desktopFingerprint: "pinned")
