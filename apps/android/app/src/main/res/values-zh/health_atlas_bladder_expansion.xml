@@ -1,0 +1,14 @@
+<resources>
+    <string name="health_atlas_bladder_expansion_title">膀胱充盈与扩张</string>
+    <string name="health_atlas_bladder_expansion_initial">示例起始容积</string>
+    <string name="health_atlas_bladder_expansion_added">示例增加容积</string>
+    <string name="health_atlas_bladder_expansion_formula">表面积增加百分比＝100 ×［（最终容积 ÷ 起始容积）的三分之二次方 − 1］。</string>
+    <string name="health_atlas_bladder_expansion_area">模型最终表面积：%1$s cm²</string>
+    <string name="health_atlas_bladder_expansion_scope">膀胱壁与内衬可随充盈扩张。这里以球体说明容积和表面积的关系，不估算真实膀胱容量、压力或单个细胞的伸展。</string>
+    <string name="health_atlas_bladder_expansion_caption">起始与充盈剖面对比</string>
+    <string name="health_atlas_bladder_expansion_before">起始</string>
+    <string name="health_atlas_bladder_expansion_current">充盈</string>
+    <string name="health_atlas_bladder_expansion_description">模型剖面。起始 %1$s 毫升，设定最终容积 %2$s 毫升。</string>
+    <string name="health_atlas_bladder_expansion_play">播放膀胱充盈</string>
+    <string name="health_atlas_bladder_expansion_pause">暂停膀胱充盈</string>
+</resources>

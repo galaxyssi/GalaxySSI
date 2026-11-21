@@ -1,0 +1,14 @@
+<resources>
+    <string name="health_atlas_bladder_expansion_title">Bladder filling and expansion</string>
+    <string name="health_atlas_bladder_expansion_initial">Starting model volume</string>
+    <string name="health_atlas_bladder_expansion_added">Added model volume</string>
+    <string name="health_atlas_bladder_expansion_formula">Surface area increase = 100 × [(final volume ÷ starting volume)^(2/3) − 1].</string>
+    <string name="health_atlas_bladder_expansion_area">Final model surface area: %1$s cm²</string>
+    <string name="health_atlas_bladder_expansion_scope">The bladder wall and its lining accommodate filling. This example uses a sphere to relate volume to surface area. It does not estimate bladder capacity, pressure, or the stretch of individual cells.</string>
+    <string name="health_atlas_bladder_expansion_caption">Starting volume and filling cross-section</string>
+    <string name="health_atlas_bladder_expansion_before">Start</string>
+    <string name="health_atlas_bladder_expansion_current">Filling</string>
+    <string name="health_atlas_bladder_expansion_description">Model cross-sections. Start: %1$s mL. Selected finish: %2$s mL.</string>
+    <string name="health_atlas_bladder_expansion_play">Play bladder filling</string>
+    <string name="health_atlas_bladder_expansion_pause">Pause bladder filling</string>
+</resources>
