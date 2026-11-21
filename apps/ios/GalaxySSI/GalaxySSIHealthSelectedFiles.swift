@@ -36,7 +36,10 @@ enum GalaxySSIHealthSelectedFiles {
   }
 
   @MainActor static func restore(batch: UUID, records: GalaxySSIHealthRecords) throws -> Selection {
-    let archive = try records.load()
+    try restore(batch: batch, archive: records.load())
+  }
+
+  @MainActor static func restore(batch: UUID, archive: GalaxySSIHealthRecords.Archive) throws -> Selection {
     let jobs = (archive.recognitionJobs ?? []).filter { $0.reportBatchID == batch }.sorted {
       $0.addedAt != $1.addedAt ? $0.addedAt < $1.addedAt : $0.id.uuidString < $1.id.uuidString
     }
@@ -50,6 +53,32 @@ enum GalaxySSIHealthSelectedFiles {
 
   @MainActor static func read(_ urls: [URL], records: GalaxySSIHealthRecords, originals: GalaxySSIHealthOriginalStore,
       retainOriginal: Bool, approval: GalaxySSIHealthReportPickerApproval?) throws -> Selection {
+    let files = try validated(urls, records: records, originals: originals, approval: approval)
+    let batch = UUID()
+    var ids = Set<UUID>()
+    let entries = files.map { readOne($0, batch: batch, records: records, originals: originals,
+      retainOriginal: retainOriginal, approval: approval) }.filter { ids.insert($0.id).inserted }
+    return .init(id: batch, entries: entries, approval: approval)
+  }
+
+  @MainActor static func readAsync(_ urls: [URL], records: GalaxySSIHealthRecords, originals: GalaxySSIHealthOriginalStore,
+      retainOriginal: Bool, approval: GalaxySSIHealthReportPickerApproval?, active: () -> Bool) async throws -> Selection {
+    let files = try validated(urls, records: records, originals: originals, approval: approval)
+    let batch = UUID()
+    var entries: [Entry] = [], ids = Set<UUID>()
+    for url in files {
+      await Task.yield()
+      guard active(), !Task.isCancelled else { throw CancellationError() }
+      let entry = readOne(url, batch: batch, records: records, originals: originals,
+        retainOriginal: retainOriginal, approval: approval)
+      if ids.insert(entry.id).inserted { entries.append(entry) }
+    }
+    guard active(), !Task.isCancelled else { throw CancellationError() }
+    return .init(id: batch, entries: entries, approval: approval)
+  }
+
+  @MainActor private static func validated(_ urls: [URL], records: GalaxySSIHealthRecords,
+      originals: GalaxySSIHealthOriginalStore, approval: GalaxySSIHealthReportPickerApproval?) throws -> [URL] {
     var seen = Set<URL>()
     let files = urls.filter { seen.insert($0).inserted }
     guard !files.isEmpty, files.count <= GalaxySSIHealthRecognitionJobs.maximumJobs,
@@ -61,9 +90,11 @@ enum GalaxySSIHealthSelectedFiles {
         throw GalaxySSIHealthRecords.Failure.permission
       }
     }
-    let batch = UUID()
-    var ids = Set<UUID>()
-    let entries = files.map { url -> Entry in
+    return files
+  }
+
+  @MainActor private static func readOne(_ url: URL, batch: UUID, records: GalaxySSIHealthRecords,
+      originals: GalaxySSIHealthOriginalStore, retainOriginal: Bool, approval: GalaxySSIHealthReportPickerApproval?) -> Entry {
       let name = String(url.lastPathComponent.prefix(180))
       do {
         let access = url.startAccessingSecurityScopedResource()
@@ -106,8 +137,6 @@ enum GalaxySSIHealthSelectedFiles {
           batchID: batch, modelFirst: approval != nil)
         return .init(id: job.id, name: name, kind: .job(job.id))
       } catch { return .init(name: name, kind: .failure) }
-    }.filter { ids.insert($0.id).inserted }
-    return .init(id: batch, entries: entries, approval: approval)
   }
 }
 

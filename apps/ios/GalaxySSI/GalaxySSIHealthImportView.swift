@@ -28,11 +28,19 @@ struct GalaxySSIHealthImportView: View {
   @State private var selectedFiles: GalaxySSIHealthSelectedFiles.Selection?
   @State private var pickerApproval: GalaxySSIHealthReportPickerApproval?
   @State private var choosingAnalysis = false
+  @State private var selectionTask: Task<Void, Never>?
+  @State private var selectionRun: UUID?
 
   private enum Notice { case saved, failed }
 
   var body: some View {
     List {
+      if selectionTask != nil {
+        Section {
+          ProgressView(t("preparing_files", "Preparing selected files"))
+          Button(t("cancel", "Cancel"), role: .destructive) { stopSelection() }
+        }
+      }
       Section(t("report", "Report originals")) {
         NavigationLink {
           GalaxySSIHealthPhotoCaptureView(records: records, originals: store)
@@ -95,6 +103,7 @@ struct GalaxySSIHealthImportView: View {
     .onChange(of: scene) {
       if $0 == .active { activate() }
       else if $0 == .background {
+        stopSelection()
         notice = nil; picking = false; scanning = false; fileRetention = nil; scanRetention = nil
         transientReport = nil; pendingScanReview = nil; selectedFiles = nil; pickerApproval = nil; choosingAnalysis = false
       }
@@ -103,7 +112,12 @@ struct GalaxySSIHealthImportView: View {
       if scene == .active, notification.object as? String == records.owner { reloadRetention() }
     }
     .onChange(of: app.profile.identityFingerprint) { _ in
+      stopSelection()
       selectedFiles = nil; pickerApproval = nil; choosingAnalysis = false; picking = false; fileRetention = nil
+    }
+    .onDisappear { stopSelection() }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
+      stopSelection(); selectedFiles = nil; pickerApproval = nil; choosingAnalysis = false
     }
     .confirmationDialog(t("all_files", "Choose files"), isPresented: $choosingAnalysis, titleVisibility: .visible) {
       Button(t("select_analyze", "Choose and recognize report images")) { openPicker(analyze: true) }
@@ -127,8 +141,7 @@ struct GalaxySSIHealthImportView: View {
           guard approval.matches(owner: records.owner, consent: try .init(records.load()),
             target: coordinator.privateHealthReportCodexTarget()) else { throw GalaxySSIHealthRecords.Failure.stale }
         }
-        selectedFiles = try GalaxySSIHealthSelectedFiles.read(urls, records: records, originals: store,
-          retainOriginal: retainOriginal, approval: pickerApproval)
+        selectFiles(urls, retainOriginal: retainOriginal, approval: pickerApproval)
       }
       catch {
         let failure = error as NSError
@@ -185,6 +198,7 @@ struct GalaxySSIHealthImportView: View {
   }
 
   private func requestFiles() {
+    guard selectionTask == nil else { return }
     guard app.profile.identityFingerprint == records.owner, UIApplication.shared.isProtectedDataAvailable,
           let retain = beginImport() else { return }
     fileRetention = retain
@@ -194,6 +208,25 @@ struct GalaxySSIHealthImportView: View {
       choosingAnalysis = true
     } else { pickerApproval = nil; picking = true }
   }
+
+  private func selectFiles(_ urls: [URL], retainOriginal: Bool, approval: GalaxySSIHealthReportPickerApproval?) {
+    guard selectionTask == nil else { return }
+    let run = UUID(); selectionRun = run
+    selectionTask = Task {
+      defer { if selectionRun == run { selectionTask = nil; selectionRun = nil } }
+      do {
+        let selected = try await GalaxySSIHealthSelectedFiles.readAsync(urls, records: records, originals: store,
+          retainOriginal: retainOriginal, approval: approval, active: {
+            selectionRun == run && scene != .background && UIApplication.shared.isProtectedDataAvailable &&
+              app.profile.identityFingerprint == records.owner
+          })
+        guard selectionRun == run, !Task.isCancelled else { return }
+        selectedFiles = selected
+      } catch { if selectionRun == run, !Task.isCancelled { notice = .failed } }
+    }
+  }
+
+  private func stopSelection() { selectionTask?.cancel(); selectionTask = nil; selectionRun = nil }
 
   private func openPicker(analyze: Bool) {
     guard scene == .active, app.profile.identityFingerprint == records.owner else { return }

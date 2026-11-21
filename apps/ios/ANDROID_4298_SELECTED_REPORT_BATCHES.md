@@ -27,6 +27,6 @@ Android merge: `b084370a801bb71bb8087ab5a2bf8b3e8bd67277`.
 
 ## Validation Boundary
 
-Added 21 XCTest source methods covering whole-batch hold, mixed printed dates/timestamps, local confirmation, DST rollback, pending retention, consent/record/job/lease invalidation, replay/deletion, nearby updates and exclusions, post-meal context, encrypted table staging, group restoration, selection bounds, approval scope, deferred reasons and explicitly skipping unrecognized images. Updated the previous automatic-import tests for the new pending-confirmation contract.
+Added 22 XCTest source methods covering whole-batch hold, mixed printed dates/timestamps, local confirmation, DST rollback, pending retention, consent/record/job/lease invalidation, replay/deletion, nearby updates and exclusions, post-meal context, encrypted table staging, group restoration, selection bounds, approval scope, deferred reasons, explicitly skipping unrecognized images and cancellation before asynchronous file preparation. Updated the previous automatic-import tests for the new pending-confirmation contract.
 
 Windows checks cover project registration, added-text localization placement, Swift grammar and Git diff/merge structure only. Xcode compilation, XCTest execution, native picker rendering, actual device lifecycle, live paired recognition and notification delivery have not been verified here. No Android/Desktop edits, version bump, IPA or auto-merge are included.

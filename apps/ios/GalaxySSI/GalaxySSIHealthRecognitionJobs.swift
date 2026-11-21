@@ -431,7 +431,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
       jobs = archive.recognitionJobs ?? []
       let batches = Set(jobs.compactMap(\.reportBatchID) + (archive.tableReviews ?? []).compactMap(\.reportBatchID))
       selectedBatches = batches.sorted { $0.uuidString < $1.uuidString }.compactMap {
-        try? GalaxySSIHealthSelectedFiles.restore(batch: $0, records: records)
+        try? GalaxySSIHealthSelectedFiles.restore(batch: $0, archive: archive)
       }
       let listing = try store.list()
       originals = listing.originals

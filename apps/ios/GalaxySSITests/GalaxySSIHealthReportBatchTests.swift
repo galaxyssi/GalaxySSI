@@ -279,6 +279,18 @@ final class GalaxySSIHealthReportBatchTests: XCTestCase {
     XCTAssertEqual(try f.records.load().current.count, 1)
   }
 
+  func testAsyncSelectionStopsBeforeWritingWhenTheImportIsNoLongerActive() async throws {
+    let f = try Fixture()
+    let bytes = try Data(contentsOf: f.file)
+    do {
+      _ = try await GalaxySSIHealthSelectedFiles.readAsync([f.root.appendingPathComponent("unused.png")],
+        records: f.records, originals: f.originals, retainOriginal: false, approval: nil, active: { false })
+      XCTFail("Expected cancellation")
+    } catch is CancellationError { }
+    XCTAssertEqual(try Data(contentsOf: f.file), bytes)
+    XCTAssertTrue(try f.records.load().recognitionJobs?.isEmpty ?? true)
+  }
+
   private func stamp(_ value: String) throws -> Date { try XCTUnwrap(ISO8601DateFormatter().date(from: value)) }
 
   @MainActor private final class Fixture {
