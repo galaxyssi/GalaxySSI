@@ -27,16 +27,14 @@ struct GalaxySSIHealthCenterView: View {
   @State private var overviewDestination: OverviewDestination?
   @State private var overviewNotice: Notice?
   @State private var overviewWidth: CGFloat = 0
-  @State private var measurementPeriod: GalaxySSIHealthMeasurementPeriod?
-  @State private var measurementKind = GalaxySSIHealthMeasurementPeriod.Kind.week
-  @State private var measurementSelection = UUID()
+  @State private var comparisonPeriod: GalaxySSIHealthMeasurementPeriod?
 
   private enum OverviewDestination: String, Identifiable {
     case functions
     case weekly, assistant, files, sleep, reviews, records, devices, originals, pdf, profile, crop
     case export, privacy, backup, trends, catalog, recording, body, imports, photo, movement, care, agenda, timeline
     case activityComparison
-    case measurementPicker, measurementComparison
+    case measurementComparison
     var id: String { rawValue }
   }
 
@@ -113,7 +111,7 @@ struct GalaxySSIHealthCenterView: View {
         }
       } else {
         overviewDestination = nil
-        measurementPeriod = nil
+        comparisonPeriod = nil
         overviewNotice = nil
         editor = nil
         alert = nil
@@ -410,10 +408,9 @@ struct GalaxySSIHealthCenterView: View {
         Text(t("first_use.title", "No confirmed measurements yet")).font(.caption).foregroundColor(.secondary)
       }
       GalaxySSIHealthMeasurementOverviewView(records: records, latestMetrics: overview.metrics, birthDate: birth, now: now,
-        allowed: snapshot.derivesOverview == true, period: $measurementPeriod,
-        choosePeriod: { kind in measurementKind = kind; overviewDestination = .measurementPicker },
-        compare: { overviewDestination = .measurementComparison }, edit: openOverviewReading, manual: { startManual($0) })
-        .id(measurementSelection)
+        allowed: snapshot.derivesOverview == true,
+        compare: { period in comparisonPeriod = period; overviewDestination = .measurementComparison },
+        edit: openOverviewReading, manual: { startManual($0) })
     }
     .background(GeometryReader { geometry in
       Color.clear.onAppear { overviewWidth = geometry.size.width }
@@ -673,7 +670,7 @@ struct GalaxySSIHealthCenterView: View {
     guard scenePhase == .active else { return }
     do {
       archive = try records.load()
-      if archive?.derivesOverview != true { measurementPeriod = nil }
+      if archive?.derivesOverview != true { comparisonPeriod = nil }
     }
     catch { archive = nil }
     if let id = initialRecordID, let archive {
@@ -727,12 +724,8 @@ struct GalaxySSIHealthCenterView: View {
     case .photo: GalaxySSIHealthPhotoCaptureView(records: records, originals: originals, initialCamera: true)
     case .movement: GalaxySSIHealthMotionView(records: records)
     case .activityComparison: GalaxySSIHealthActivityComparisonView(records: records)
-    case .measurementPicker:
-      GalaxySSIHealthMeasurementPeriodPicker(records: records, initialKind: measurementKind, allowsKindChange: false, showsLatest: false) { selected in
-        measurementPeriod = selected; measurementSelection = UUID(); overviewDestination = nil; reload()
-      }
     case .measurementComparison:
-      GalaxySSIHealthMeasurementPeriodComparisonView(records: records, initialPeriod: measurementPeriod, edit: openOverviewReading)
+      GalaxySSIHealthMeasurementPeriodComparisonView(records: records, initialPeriod: comparisonPeriod, edit: openOverviewReading)
     case .care: GalaxySSIHealthCareView(records: records)
     case .agenda: GalaxySSIHealthCareAgendaView(records: records)
     }

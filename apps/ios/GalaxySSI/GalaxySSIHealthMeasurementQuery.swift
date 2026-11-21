@@ -84,6 +84,7 @@ final class GalaxySSIHealthMeasurementQuery: ObservableObject {
   private var token = UUID()
   private var lastInput: GalaxySSIHealthMeasurementInput?
   private var lastScope: Scope?
+  private var lastOwner: String?
 
   func load(records: GalaxySSIHealthRecords, scope: Scope, zone: TimeZone, preservingOutput: Bool = false,
             ownerMatches: @escaping @MainActor () -> Bool) {
@@ -93,9 +94,9 @@ final class GalaxySSIHealthMeasurementQuery: ObservableObject {
     do {
       let archive = try records.load()
       if scope.requiresPermission && archive.derivesOverview != true { cancel(); failure = .permission; return }
-      if !preservingOutput || scope != lastScope || lastInput?.matches(archive) != true { output = nil }
+      if !preservingOutput || records.owner != lastOwner || scope != lastScope || lastInput?.matches(archive) != true { output = nil }
       let input = GalaxySSIHealthMeasurementInput(archive), now = Date(), request = token
-      lastInput = input; lastScope = scope
+      lastInput = input; lastScope = scope; lastOwner = records.owner
       let work = Task.detached(priority: .userInitiated) { try Self.run(input, scope: scope, now: now, zone: zone) }
       worker = work
       task = Task { @MainActor in
@@ -119,14 +120,21 @@ final class GalaxySSIHealthMeasurementQuery: ObservableObject {
   }
   func cancel(clear: Bool = true) {
     token = UUID(); task?.cancel(); worker?.cancel(); task = nil; worker = nil
-    if clear { output = nil; failure = nil; lastInput = nil; lastScope = nil }
+    if clear { output = nil; failure = nil; lastInput = nil; lastScope = nil; lastOwner = nil }
   }
   func isCurrent(records: GalaxySSIHealthRecords) -> Bool {
-    guard output != nil, failure == nil, let archive = try? records.load(),
+    guard lastOwner == records.owner, output != nil, failure == nil, let archive = try? records.load(),
           lastScope?.requiresPermission != true || archive.derivesOverview == true else { return false }
     return lastInput?.matches(archive) == true
   }
   func hasScope(_ scope: Scope) -> Bool { lastScope == scope }
+  func adopt(_ other: GalaxySSIHealthMeasurementQuery, records: GalaxySSIHealthRecords) -> Bool {
+    guard other.isCurrent(records: records) else { return false }
+    let value = other.output, input = other.lastInput, scope = other.lastScope
+    cancel()
+    lastInput = input; lastScope = scope; lastOwner = records.owner; output = value
+    return true
+  }
   nonisolated static func run(_ input: GalaxySSIHealthMeasurementInput, scope: Scope,
                              now: Date, zone: TimeZone) throws -> Output {
     try Task.checkCancellation()
