@@ -1,0 +1,7 @@
+<resources>
+    <string name="health_atlas_model_cochlear_frequency_title">耳蜗的位置与频率</string>
+    <string name="health_atlas_model_cochlear_frequency_position">从蜗顶起的基底膜位置（x）</string>
+    <string name="health_atlas_model_cochlear_frequency_formula">格林伍德（1990）：特征频率（Hz）= 165.4 × (10^(2.1 × x) − 0.88)。x 表示从蜗顶起沿基底膜的距离占基底膜全长的比例，蜗顶为 0（低频），蜗底为 1（高频）。</string>
+    <string name="health_atlas_model_cochlear_frequency_from_base">距蜗底的距离占基底膜全长的 %1$s%%。</string>
+    <string name="health_atlas_model_cochlear_frequency_scope">这个一维模型演示正常人耳蜗的频率调谐，不代表个人测量结果。耳蜗毛细胞响应声音；前庭毛细胞感知头部运动及其相对于重力的方向。本模型不预测听力图，也不用于指导治疗。</string>
+</resources>

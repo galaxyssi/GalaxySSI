@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_salivary_delivery_title">唾液总流量</string>
+    <string name="health_atlas_salivary_delivery_parotid">双侧腮腺流量</string>
+    <string name="health_atlas_salivary_delivery_submandibular">双侧下颌下腺流量</string>
+    <string name="health_atlas_salivary_delivery_sublingual">双侧舌下腺流量</string>
+    <string name="health_atlas_salivary_delivery_scope">每个腺体内的许多腺泡细胞共同分泌原始唾液。每项流量代表一对大唾液腺的贡献，而非单个细胞的分泌量。演示不计入小唾液腺，数值采用虚构的体积单位（DU），并非个人测量值或参考值。</string>
+    <string name="health_atlas_salivary_delivery_formula">总流量 = 腮腺流量 + 下颌下腺流量 + 舌下腺流量。流量不变时，体积 = 总流量 × 5 分钟。</string>
+    <string name="health_atlas_salivary_delivery_companion">5 分钟内的累积体积：%1$s DU</string>
+</resources>

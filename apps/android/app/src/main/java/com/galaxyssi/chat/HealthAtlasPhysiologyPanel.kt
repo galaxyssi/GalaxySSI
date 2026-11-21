@@ -13,7 +13,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
     private val controls = arrayListOf<Pair<SeekBar, TextView>>()
     private val output = ui.text("", 26f, bold = true).apply { tag = "atlas-physiology-output" }
     private val companion = ui.text("", 14f, muted = true).apply { tag = "atlas-physiology-companion" }
-    private val chart = HealthAtlasPhysiologyChart(activity, model)
+    private val chart = HealthAtlasPhysiologyChart(activity, model).apply { tag = "atlas-physiology-curve" }
     private val renalBalance = if (kind == HealthAtlasPhysiologyKind.RENAL_EXCRETION) HealthAtlasRenalBalanceView(activity) else null
     private val elbowBalance = if (kind == HealthAtlasPhysiologyKind.ELBOW_BALANCE) HealthAtlasElbowView(activity) else null
     private val vesselFlow = if (kind == HealthAtlasPhysiologyKind.VESSEL_FLOW) HealthAtlasVesselFlowView(activity) else null

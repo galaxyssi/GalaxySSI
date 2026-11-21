@@ -151,7 +151,8 @@ class HealthAtlasPhysiologyTest {
                     previous?.let { value ->
                         assertTrue("$kind at $x", when (kind) {
                             HealthAtlasPhysiologyKind.RENAL_EXCRETION, HealthAtlasPhysiologyKind.EYE_FOCUS,
-                            HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> y <= value + 1e-9
+                            HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE,
+                            HealthAtlasPhysiologyKind.AIRWAY_SPLIT -> y <= value + 1e-9
                             else -> y >= value - 1e-9
                         })
                     }
@@ -178,11 +179,31 @@ class HealthAtlasPhysiologyTest {
         assertNull(HealthAtlasPhysiology.restore("liver", intArrayOf(40, 140)))
         assertEquals(4.2, requireNotNull(HealthAtlasPhysiology.restore("lungs", intArrayOf(12, 500, 150))).result, 1e-9)
     }
+
+    @Test fun teachingModelsUseTheirOwnScaledInputsAndBindings() {
+        val controls = HealthAtlasPhysiologyKind.entries.flatMap { it.inputs }.map { it.key }
+        assertEquals(controls.size, controls.distinct().size)
+        for (kind in HealthAtlasPhysiologyKind.entries) {
+            val spec = kind.teaching ?: continue
+            val defaults = HealthAtlasPhysiology(kind)
+            val scaled = spec.inputs.map { it.control.initial / it.control.scale }
+            assertEquals(spec.inputs.map { it.control }, kind.inputs)
+            assertEquals(spec.evaluate(scaled), defaults.result, 0.0)
+            assertEquals(spec.companionValue(scaled), defaults.companionValue, 0.0)
+            assertTrue(defaults.companionValue.isFinite())
+            assertEquals(spec.source, kind.sources[0])
+            for (id in spec.entryIds) {
+                assertEquals(kind, HealthAtlasPhysiologyKind.forItem(id))
+                assertEquals(defaults, HealthAtlasPhysiology.restore(id, defaults.inputs.toIntArray()))
+            }
+        }
+    }
+
     @Test fun unrelatedEntitiesDoNotInheritAQuantitativeModel() {
         assertNull(HealthAtlasPhysiologyKind.forItem("cell-hepatocyte"))
         assertNull(HealthAtlasPhysiologyKind.forItem("renal-pelvis"))
         assertNull(HealthAtlasPhysiologyKind.forItem("cell-club-cell"))
-        assertNull(HealthAtlasPhysiologyKind.forItem("cell-podocyte"))
+        assertEquals(HealthAtlasPhysiologyKind.GLOMERULAR_FILTRATION, HealthAtlasPhysiologyKind.forItem("cell-podocyte"))
         assertEquals(HealthAtlasPhysiologyKind.RENAL_EXCRETION, HealthAtlasPhysiologyKind.forItem("cell-proximal-tubular-cell"))
     }
     @Test fun singleSphericalInterfaceUsesSIAndHalvesPressureWhenRadiusDoubles() {

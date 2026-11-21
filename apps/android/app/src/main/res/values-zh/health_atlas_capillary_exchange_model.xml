@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_capillary_exchange_title">毛细血管交换比例</string>
+    <string name="health_atlas_capillary_exchange_scope">用均匀的毛细血管床示意溶质第一次通过时的交换。假设通透性和表面积不变，忽略溶质返回血液的过程。数值不是器官或个人实测结果。</string>
+    <string name="health_atlas_capillary_exchange_formula">交换比例 = 100 × [1 − exp(−PS / Q)]</string>
+    <string name="health_atlas_capillary_exchange_ps">通透性 × 表面积（PS）</string>
+    <string name="health_atlas_capillary_exchange_flow">通过毛细血管床的流量（Q）</string>
+    <string name="health_atlas_capillary_exchange_remaining">一次通过后留在血液中的比例：%1$s%%</string>
+</resources>

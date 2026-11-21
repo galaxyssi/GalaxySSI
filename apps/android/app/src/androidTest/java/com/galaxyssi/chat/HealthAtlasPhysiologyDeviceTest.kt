@@ -132,7 +132,12 @@ class HealthAtlasPhysiologyDeviceTest {
     @Test fun everyQuantitativeMappingUsesAnExistingCanonicalEntry() {
         val atlas = HealthBodyAtlas.load(context)
         val mapped = atlas.items.mapNotNull { item -> HealthAtlasPhysiologyKind.forItem(item.id)?.let { item.id to it } }
-        assertEquals(67, mapped.size)
+        val teaching = HealthAtlasPhysiologyKind.entries.filter { it.teaching != null }
+        assertEquals(67 + teaching.sumOf { requireNotNull(it.teaching).entryIds.size }, mapped.size)
+        teaching.forEach { kind ->
+            assertEquals(requireNotNull(kind.teaching).entryIds,
+                mapped.filter { it.second == kind }.map { it.first }.toSet())
+        }
         assertEquals(HealthAtlasPhysiologyKind.entries.toSet(), mapped.map { it.second }.toSet())
         assertEquals(setOf("ventricles", "left-ventricle", "right-ventricle"),
             mapped.filter { it.second == HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION }.map { it.first }.toSet())
@@ -162,6 +167,37 @@ class HealthAtlasPhysiologyDeviceTest {
         mapped.forEach { (id, kind) ->
             val model = requireNotNull(HealthAtlasPhysiology.restore(id, kind.inputs.map { it.initial }.toIntArray()))
             assertTrue(HealthAtlasPhysiologyText.context(context, model).length < 3000)
+        }
+    }
+
+    @Test fun capillaryExchangeInputsStayLocalWhenMovingBetweenTissueAndCell() = native { scenario ->
+        val kind = HealthAtlasPhysiologyKind.CAPILLARY_EXCHANGE
+        val key = "atlas-physiology-capillary-exchange-ps"
+        val baseline = HealthAtlasPhysiology(kind)
+        val changed = baseline.withInput(0, 35)
+        scenario.onActivity {
+            it.open("capillaries")
+            val slider = it.view(key) as SeekBar
+            assertEquals(20, slider.progress)
+            slider.progress = 35
+            assertEquals(changed, (it.view("atlas-physiology-curve") as HealthAtlasPhysiologyChart).model)
+            assertEquals(HealthAtlasPhysiologyText.companion(it, changed),
+                (it.view("atlas-physiology-companion") as TextView).text.toString())
+        }
+        scenario.recreate(); ready(scenario, key)
+        scenario.onActivity {
+            assertEquals(changed, (it.view("atlas-physiology-curve") as HealthAtlasPhysiologyChart).model)
+        }
+        capture("capillary-exchange")
+        scenario.onActivity {
+            it.onBackPressed()
+            it.open("cell-vascular-endothelial-cell", cell = true)
+            assertEquals(baseline, (it.view("atlas-physiology-curve") as HealthAtlasPhysiologyChart).model)
+            it.onBackPressed()
+            it.open("capillaries")
+            assertEquals(35, (it.view(key) as SeekBar).progress)
+            it.view("atlas-physiology-reset").performClick()
+            assertEquals(baseline, (it.view("atlas-physiology-curve") as HealthAtlasPhysiologyChart).model)
         }
     }
     @Test fun newMaterialDiagramsShowChangesAndRestoreSyntheticInputs() = native { scenario ->

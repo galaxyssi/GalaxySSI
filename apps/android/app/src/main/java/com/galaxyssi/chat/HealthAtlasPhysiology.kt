@@ -7,7 +7,8 @@ import kotlin.math.pow
 internal data class HealthAtlasInput(val key: String, val range: IntRange, val initial: Int, val scale: Double = 1.0)
 
 internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>, val axis: Int, val unit: String,
-    val minimum: Double, val maximum: Double, val source: String, val extraSource: String? = null) {
+    val minimum: Double, val maximum: Double, val source: String, val extraSource: String? = null,
+    val teaching: HealthAtlasTeachingModelSpec? = null) {
     VENTILATION(listOf(HealthAtlasInput("rate", 6..30, 12), HealthAtlasInput("tidal", 200..900, 500),
         HealthAtlasInput("dead-space", 0..200, 150)), 1, "L/min", 0.0, 27.0,
         "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-3-the-process-of-breathing"),
@@ -80,12 +81,34 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
         "https://openstax.org/books/college-physics-2e/pages/9-3-stability", HealthAtlasLoadTransferPlates.pelvicSource),
     CUSHION_CONTACT_PRESSURE(listOf(HealthAtlasInput("cushion-load", 0..80, 40),
         HealthAtlasInput("cushion-area", 10..90, 40)), 1, "kPa", 0.0, 80.0,
-        "https://openstax.org/books/college-physics-2e/pages/11-3-pressure", HealthAtlasLoadTransferPlates.subcutaneousSource);
+        "https://openstax.org/books/college-physics-2e/pages/11-3-pressure", HealthAtlasLoadTransferPlates.subcutaneousSource),
+    CAPILLARY_EXCHANGE(HealthAtlasCapillaryExchangeTeachingModel.spec),
+    VALVE_FLUX(HealthAtlasValveFluxTeachingModel.spec),
+    GLOMERULAR_FILTRATION(HealthAtlasGlomerularFiltrationTeachingModel.spec),
+    SKIN_WATER_BARRIER(HealthAtlasSkinWaterBarrierTeachingModel.spec),
+    SALIVARY_DELIVERY(HealthAtlasSalivaryDeliveryTeachingModel.spec),
+    TENDON_ELONGATION(HealthAtlasTendonElongationTeachingModel.spec),
+    AIRWAY_SPLIT(HealthAtlasAirwaySplitTeachingModel.spec),
+    PERISTALTIC_TRAVEL(HealthAtlasPeristalticTravelTeachingModel.spec),
+    COCHLEAR_FREQUENCY(HealthAtlasCochlearFrequencyTeachingModel.spec);
+
+    constructor(spec: HealthAtlasTeachingModelSpec) : this(spec.inputs.map { it.control }, spec.axis, spec.unit,
+        spec.minimum, spec.maximum, spec.source, spec.extraSource, spec)
 
     val sources get() = listOfNotNull(source, extraSource) +
         if (this == VESSEL_FLOW) listOf(HealthAtlasVesselFlow.UNIT_SOURCE) else emptyList()
 
     companion object {
+        private val teachingById by lazy {
+            val pairs = entries.flatMap { kind -> kind.teaching?.entryIds.orEmpty().map { it to kind } }
+            pairs.toMap().also { require(it.size == pairs.size) }
+        }
+        private val teachingControls by lazy {
+            val controls = entries.flatMap { it.teaching?.inputs.orEmpty() }
+            controls.associateBy { it.control.key }.also { require(it.size == controls.size) }
+        }
+        fun teachingInput(key: String): HealthAtlasTeachingInput? = teachingControls[key]
+
         // These are associated whole-process models, not claims that every selected structure performs all steps.
         fun forItem(id: String): HealthAtlasPhysiologyKind? = when (id) {
             "respiratory", "lungs", "alveoli" -> VENTILATION
@@ -115,7 +138,7 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "soleus", "gastrocnemius" -> CALF_PUMP
             "pelvis" -> PELVIC_SUPPORT
             "subcutaneous-tissue" -> CUSHION_CONTACT_PRESSURE
-            else -> null
+            else -> teachingById[id]
         }
     }
 }
@@ -129,7 +152,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         return copy(inputs = inputs.toMutableList().apply { this[index] = value })
     }
     fun input(index: Int) = inputs[index] / kind.inputs[index].scale
-    val result: Double get() = evaluate(inputs.mapIndexed { index, _ -> input(index) })
+    val result: Double get() = evaluate(scaledInputs())
     val companionValue: Double get() = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> input(0) * input(1) / 1000.0
         HealthAtlasPhysiologyKind.RENAL_EXCRETION -> requireNotNull(renalAmounts).reabsorbed
@@ -154,6 +177,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.CALF_PUMP -> netStroke(input(0), input(2))
         HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> supportReaction(input(0), -input(1))
         HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> 10.0 * input(0) / 40.0
+        else -> requireNotNull(kind.teaching).companionValue(scaledInputs())
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
@@ -185,6 +209,8 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         require(x.isFinite() && x in axisRange)
         return evaluate(inputs.mapIndexed { index, _ -> if (index == kind.axis) x else input(index) })
     }
+    private fun scaledInputs(): List<Double> = inputs.indices.map(::input)
+
     private fun evaluate(values: List<Double>): Double = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> values[0] * (values[1] - values[2]) / 1000.0
         HealthAtlasPhysiologyKind.RENAL_EXCRETION -> HealthAtlasRenal.amounts(values[0], values[1], values[2]).excreted
@@ -215,6 +241,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> supportReaction(values[0], values[1])
         // N/cm^2 multiplied by 10 gives kPa.
         HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> 10.0 * values[0] / values[1]
+        else -> requireNotNull(kind.teaching).evaluate(values)
     }
     companion object {
         private fun supportReaction(load: Double, positionPercent: Double) = load * (100.0 + positionPercent) / 200.0

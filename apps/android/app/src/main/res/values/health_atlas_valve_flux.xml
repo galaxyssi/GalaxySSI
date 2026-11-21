@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_valve_flux_title">Instantaneous flow through a heart valve</string>
+    <string name="health_atlas_valve_flux_area">Valve opening area</string>
+    <string name="health_atlas_valve_flux_speed">Mean forward speed</string>
+    <string name="health_atlas_valve_flux_scope">This idealized example shows forward blood flow through the selected valve at one instant. Speed is averaged across the opening. The inputs and results are for demonstration only, not personal measurements or reference values.</string>
+    <string name="health_atlas_valve_flux_formula">Q = A × v; cm² × cm/s = cm³/s = mL/s.</string>
+    <string name="health_atlas_valve_flux_companion">If flow stays steady for 0.1 s, %1$s mL of blood would pass through the valve.</string>
+</resources>

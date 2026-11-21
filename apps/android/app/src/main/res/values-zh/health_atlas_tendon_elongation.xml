@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_tendon_elongation_title">胶原纤维束的伸长</string>
+    <string name="health_atlas_tendon_elongation_force">轴向拉力</string>
+    <string name="health_atlas_tendon_elongation_length">纤维束原长</string>
+    <string name="health_atlas_tendon_elongation_area">横截面积</string>
+    <string name="health_atlas_tendon_elongation_modulus">弹性模量</string>
+    <string name="health_atlas_tendon_elongation_scope">这是低应变教学演示，假定均匀的胶原纤维束在轴向拉伸时呈线弹性，不模拟整条肌腱、韧带或单个细胞。模型忽略非线性行为和随时间变化的黏弹性。输入为虚构的演示数值，并非个人测量值。结果不用于判断组织损伤阈值，也不提供训练或医疗建议。</string>
+    <string name="health_atlas_tendon_elongation_formula">ΔL = F L / (E A)\n轴向应变（%）= 100 × ΔL / L\nF：拉力（N）；L：原长（mm）；E：弹性模量（N/mm²）；A：横截面积（mm²）。伸长量 ΔL 的单位为 mm。</string>
+    <string name="health_atlas_tendon_elongation_strain">轴向应变：%1$s%%</string>
+</resources>

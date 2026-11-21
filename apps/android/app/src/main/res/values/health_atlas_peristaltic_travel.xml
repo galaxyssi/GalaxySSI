@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_peristaltic_travel_title">Esophageal peristaltic wave</string>
+    <string name="health_atlas_peristaltic_travel_speed">Wave-front speed</string>
+    <string name="health_atlas_peristaltic_travel_time">Elapsed time</string>
+    <string name="health_atlas_peristaltic_travel_scope">In the smooth-muscle part of the esophagus, contractions occur in sequence. This demo tracks the leading edge of that pattern at a constant speed. The inputs are invented, not personal measurements. The model does not track food.</string>
+    <string name="health_atlas_peristaltic_travel_formula">Wave-front distance (cm) = wave-front speed (cm/s) × elapsed time (s).</string>
+    <string name="health_atlas_peristaltic_travel_progress">Wave-front progress along the 10 cm demo segment: %1$s%%</string>
+</resources>

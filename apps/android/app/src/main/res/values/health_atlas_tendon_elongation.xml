@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_tendon_elongation_title">Collagen bundle elongation</string>
+    <string name="health_atlas_tendon_elongation_force">Axial tensile force</string>
+    <string name="health_atlas_tendon_elongation_length">Original bundle length</string>
+    <string name="health_atlas_tendon_elongation_area">Cross-sectional area</string>
+    <string name="health_atlas_tendon_elongation_modulus">Elastic modulus</string>
+    <string name="health_atlas_tendon_elongation_scope">This low-strain demo treats a uniform collagen bundle as linearly elastic under axial tension. It does not model a whole tendon, ligament, or individual cell. It omits nonlinear behavior and time-dependent viscoelasticity. Inputs are synthetic, not personal measurements. Outputs do not identify injury thresholds or provide training or medical advice.</string>
+    <string name="health_atlas_tendon_elongation_formula">ΔL = F L / (E A)\nAxial strain (%) = 100 × ΔL / L\nF: tensile force (N); L: original length (mm); E: elastic modulus (N/mm²); A: cross-sectional area (mm²). Elongation ΔL is in mm.</string>
+    <string name="health_atlas_tendon_elongation_strain">Axial strain: %1$s%%</string>
+</resources>

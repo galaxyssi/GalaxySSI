@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_skin_water_barrier_title">皮肤相对水分通量</string>
+    <string name="health_atlas_skin_water_barrier_diffusivity">相对水分扩散系数</string>
+    <string name="health_atlas_skin_water_barrier_gradient">相对水分浓度差</string>
+    <string name="health_atlas_skin_water_barrier_thickness">相对屏障厚度</string>
+    <string name="health_atlas_skin_water_barrier_formula">相对水分通量大小 = 相对扩散系数 × 相对水分浓度差 ÷ 相对厚度。</string>
+    <string name="health_atlas_skin_water_barrier_conductance">屏障的相对水分传导能力：%1$s 倍</string>
+    <string name="health_atlas_skin_water_barrier_scope">本示例仅考虑水分，将角质层简化为处于稳态的单一均匀层。角质形成细胞成熟后成为角质细胞，并提供角质细胞之间的脂质。角质细胞及其间的脂质共同构成外层屏障，限制水分流失。所有数值均为假设基准值的倍数，不能预测个人的水分流失量或单个细胞的行为。</string>
+</resources>

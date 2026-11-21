@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_capillary_exchange_title">Capillary exchange fraction</string>
+    <string name="health_atlas_capillary_exchange_scope">Idealized first passage of a dissolved solute through a uniform capillary bed. The example neglects return to the blood and assumes a fixed permeability and surface area. It is not a measurement of an organ or a person.</string>
+    <string name="health_atlas_capillary_exchange_formula">Exchange fraction = 100 × [1 − exp(−PS / Q)]</string>
+    <string name="health_atlas_capillary_exchange_ps">Permeability × surface area (PS)</string>
+    <string name="health_atlas_capillary_exchange_flow">Flow through the capillary bed (Q)</string>
+    <string name="health_atlas_capillary_exchange_remaining">Remaining in the blood after one pass: %1$s%%</string>
+</resources>
