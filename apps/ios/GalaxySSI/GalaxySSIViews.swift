@@ -137,6 +137,7 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     UNUserNotificationCenter.current().delegate = self
     GalaxySSIContactReminderNotification.register()
     GalaxySSIHealthCareModelAttentionBackground.register()
+    GalaxySSIHealthAppointmentBackground.register()
     return true
   }
 
@@ -158,6 +159,12 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     }
     if GalaxySSIHealthCareFollowUp.JournalVisibility.shared.suppresses(notification.request.identifier) {
       completionHandler([])
+      return
+    }
+    if GalaxySSIHealthAppointmentNotifications.isAppointment(notification.request) {
+      Task { @MainActor in
+        completionHandler(await GalaxySSIHealthAppointmentNotifications.presentation(notification.request))
+      }
       return
     }
     if notification.request.identifier.hasPrefix(GalaxySSIHealthRecordingReminders.prefix) ||

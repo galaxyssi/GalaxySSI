@@ -7,6 +7,11 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    C42920000000000000000011 /* GalaxySSIHealthAppointmentReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42920000000000000000012 /* GalaxySSIHealthAppointmentReminder.swift */; };
+    C42920000000000000000021 /* GalaxySSIHealthAppointmentNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42920000000000000000022 /* GalaxySSIHealthAppointmentNotifications.swift */; };
+    C42920000000000000000031 /* GalaxySSIHealthAppointmentBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42920000000000000000032 /* GalaxySSIHealthAppointmentBackground.swift */; };
+    C42920000000000000000041 /* GalaxySSIHealthAppointmentReminderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42920000000000000000042 /* GalaxySSIHealthAppointmentReminderView.swift */; };
+    C42920000000000000000051 /* GalaxySSIHealthAppointmentReminderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42920000000000000000052 /* GalaxySSIHealthAppointmentReminderTests.swift */; };
     D12980000000000000000001 /* GalaxySSIConversationSceneController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22980000000000000000001 /* GalaxySSIConversationSceneController.swift */; };
     D12677000000000000000001 /* AgentProviderHealthRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */; };
     F12660000000000000000001 /* GalaxySSIMermaidDiagramView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000001 /* GalaxySSIMermaidDiagramView.swift */; };
@@ -1358,6 +1363,11 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    C42920000000000000000012 /* GalaxySSIHealthAppointmentReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAppointmentReminder.swift; sourceTree = "<group>"; };
+    C42920000000000000000022 /* GalaxySSIHealthAppointmentNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAppointmentNotifications.swift; sourceTree = "<group>"; };
+    C42920000000000000000032 /* GalaxySSIHealthAppointmentBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAppointmentBackground.swift; sourceTree = "<group>"; };
+    C42920000000000000000042 /* GalaxySSIHealthAppointmentReminderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAppointmentReminderView.swift; sourceTree = "<group>"; };
+    C42920000000000000000052 /* GalaxySSIHealthAppointmentReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAppointmentReminderTests.swift; sourceTree = "<group>"; };
     D22980000000000000000001 /* GalaxySSIConversationSceneController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationSceneController.swift; sourceTree = "<group>"; };
     D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderHealthRecoveryTests.swift; sourceTree = "<group>"; };
     F22666000000000000000001 /* AgentInteractiveProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInteractiveProgress.swift; sourceTree = "<group>"; };
@@ -3550,6 +3560,10 @@
         A2000000000000000000F5B7 /* GalaxySSIHealthInstructionReviewView.swift */,
         A2000000000000000000F5B8 /* GalaxySSIHealthInstructionEditor.swift */,
         A2000000000000000000F493 /* GalaxySSIHealthEncounterEditor.swift */,
+        C42920000000000000000012 /* GalaxySSIHealthAppointmentReminder.swift */,
+        C42920000000000000000022 /* GalaxySSIHealthAppointmentNotifications.swift */,
+        C42920000000000000000032 /* GalaxySSIHealthAppointmentBackground.swift */,
+        C42920000000000000000042 /* GalaxySSIHealthAppointmentReminderView.swift */,
         A2000000000000000000F431 /* GalaxySSIHealthCareVisit.swift */,
         A2000000000000000000F432 /* GalaxySSIHealthCareVisitView.swift */,
         A20000000000000000009828 /* GalaxySSIHealthReportReview.swift */,
@@ -4018,6 +4032,7 @@
         A20000000000000000009803 /* GalaxySSIHealthRecordsTests.swift */,
         B42880000000000000000002 /* GalaxySSIHealthCareActiveRevocationTests.swift */,
         B42900000000000000000002 /* GalaxySSIHealthCareEvaluationReplayTests.swift */,
+        C42920000000000000000052 /* GalaxySSIHealthAppointmentReminderTests.swift */,
         D24251000000000000000005 /* GalaxySSIHealthVisitJournalDiscussionTests.swift */,
         B42840000000000000000014 /* GalaxySSIHealthCareModelAttentionTests.swift */,
         B42860000000000000000004 /* GalaxySSIHealthCareRelatedContextTests.swift */,
@@ -5034,6 +5049,10 @@
         A1000000000000000000F5B7 /* GalaxySSIHealthInstructionReviewView.swift in Sources */,
         A1000000000000000000F5B8 /* GalaxySSIHealthInstructionEditor.swift in Sources */,
         A1000000000000000000F493 /* GalaxySSIHealthEncounterEditor.swift in Sources */,
+        C42920000000000000000011 /* GalaxySSIHealthAppointmentReminder.swift in Sources */,
+        C42920000000000000000021 /* GalaxySSIHealthAppointmentNotifications.swift in Sources */,
+        C42920000000000000000031 /* GalaxySSIHealthAppointmentBackground.swift in Sources */,
+        C42920000000000000000041 /* GalaxySSIHealthAppointmentReminderView.swift in Sources */,
         A1000000000000000000F431 /* GalaxySSIHealthCareVisit.swift in Sources */,
         A1000000000000000000F432 /* GalaxySSIHealthCareVisitView.swift in Sources */,
         A10000000000000000009828 /* GalaxySSIHealthReportReview.swift in Sources */,
@@ -5502,6 +5521,7 @@
         A10000000000000000009803 /* GalaxySSIHealthRecordsTests.swift in Sources */,
         B42880000000000000000001 /* GalaxySSIHealthCareActiveRevocationTests.swift in Sources */,
         B42900000000000000000001 /* GalaxySSIHealthCareEvaluationReplayTests.swift in Sources */,
+        C42920000000000000000051 /* GalaxySSIHealthAppointmentReminderTests.swift in Sources */,
         D14251000000000000000005 /* GalaxySSIHealthVisitJournalDiscussionTests.swift in Sources */,
         B42840000000000000000013 /* GalaxySSIHealthCareModelAttentionTests.swift in Sources */,
         B42860000000000000000003 /* GalaxySSIHealthCareRelatedContextTests.swift in Sources */,
@@ -5746,7 +5766,7 @@
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh";
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh";
         INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";
@@ -5811,7 +5831,7 @@
         ENABLE_DEBUG_DYLIB = NO;
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh";
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh";
         INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";
