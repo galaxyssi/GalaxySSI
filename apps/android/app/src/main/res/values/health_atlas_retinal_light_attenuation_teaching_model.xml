@@ -6,4 +6,8 @@
     <string name="health_atlas_retinal_light_attenuation_scope">Cone photoreceptors convert light into changes in their electrical signals, a process called phototransduction. Melanin in cells of the retinal pigment epithelium (RPE) absorbs stray light and reduces internal reflections. These are distinct roles. The plot shows only absorption of a fictional beam by an invented, uniform layer, with all values in arbitrary model units. It does not model either cell type, retinal sensitivity, or macular pigment optical density.</string>
     <string name="health_atlas_retinal_light_attenuation_formula">The beam starts with 100 model light units. For a path length d and an absorption coefficient k, the transmitted amount is 100 × exp(−k × d). At a fixed coefficient, each equal stretch of the path absorbs the same fraction of the light entering that stretch. With no reflection or scattering in this model, the absorbed amount is 100 minus the transmitted amount.</string>
     <string name="health_atlas_retinal_light_attenuation_companion">Absorbed light: %1$s a.u.</string>
+    <string name="health_atlas_retinal_light_attenuation_diagram">The colored layer represents the chosen path length and attenuation; the fading outgoing rays represent the transmitted light.</string>
+    <string name="health_atlas_retinal_light_attenuation_incident">Incident light</string>
+    <string name="health_atlas_retinal_light_attenuation_transmitted">Transmitted light</string>
+    <string name="health_atlas_retinal_light_attenuation_layer">Example absorbing layer</string>
 </resources>

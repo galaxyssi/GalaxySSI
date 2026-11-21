@@ -33,7 +33,8 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT, HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY,
         HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE, HealthAtlasPhysiologyKind.CORNEAL_REFRACTION,
         HealthAtlasPhysiologyKind.CIRCADIAN_LIGHT_WINDOW, HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE,
-        HealthAtlasPhysiologyKind.TOOTH_ENAMEL_SECTION, HealthAtlasPhysiologyKind.RENAL_TUBULE_RETENTION ->
+        HealthAtlasPhysiologyKind.TOOTH_ENAMEL_SECTION, HealthAtlasPhysiologyKind.RENAL_TUBULE_RETENTION,
+        HealthAtlasPhysiologyKind.RETINAL_LIGHT_ATTENUATION ->
             HealthAtlasMaterialResponseView(activity, model)
         else -> null
     }

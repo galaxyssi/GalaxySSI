@@ -32,6 +32,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE -> R.string.health_atlas_adipose_volume_share_diagram
         HealthAtlasPhysiologyKind.TOOTH_ENAMEL_SECTION -> R.string.health_atlas_tooth_enamel_section_diagram
         HealthAtlasPhysiologyKind.RENAL_TUBULE_RETENTION -> R.string.health_atlas_renal_tubule_retention_diagram
+        HealthAtlasPhysiologyKind.RETINAL_LIGHT_ATTENUATION -> R.string.health_atlas_retinal_light_attenuation_diagram
         else -> error("Unexpected material response: $kind")
     }
     private val ink = context.getColor(R.color.text_primary)
@@ -64,6 +65,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE -> "atlas-adipose-volume-share"
             HealthAtlasPhysiologyKind.TOOTH_ENAMEL_SECTION -> "atlas-tooth-enamel-section"
             HealthAtlasPhysiologyKind.RENAL_TUBULE_RETENTION -> "atlas-renal-tubule-retention"
+            HealthAtlasPhysiologyKind.RETINAL_LIGHT_ATTENUATION -> "atlas-retinal-light-layer"
             else -> error("Unexpected material response: $kind")
         }
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
@@ -97,6 +99,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE -> drawAdiposeShare(canvas)
             HealthAtlasPhysiologyKind.TOOTH_ENAMEL_SECTION -> drawEnamelSection(canvas)
             HealthAtlasPhysiologyKind.RENAL_TUBULE_RETENTION -> drawTubuleMarker(canvas)
+            HealthAtlasPhysiologyKind.RETINAL_LIGHT_ATTENUATION -> drawRetinalLightLayer(canvas)
             else -> Unit
         }
         canvas.restore()
@@ -527,6 +530,33 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             c.drawText(HealthAtlasPhysiologyText.number(value, 1), x, 128f, paint)
             label(c, caption, x, 147f, 102f)
         }
+    }
+
+    private fun drawRetinalLightLayer(c: Canvas) {
+        val start = 123f
+        val end = start + 22f * model.input(1).toFloat()
+        val intensity = (model.result / model.kind.maximum).toFloat()
+        val tint = (72 + model.input(0) * 150).roundToInt()
+        if (end > start) {
+            rectangle(c, start, 33f, end, 119f, (tint shl 24) or 0x00577d91, 5f)
+            line(c, start, 33f, start, 119f, blue, 1.6f)
+            line(c, end, 33f, end, 119f, blue, 1.6f)
+        }
+        val beam = 0xffac712d.toInt()
+        val strength = (56 + intensity * 199).roundToInt()
+        for (y in listOf(62f, 76f, 90f)) {
+            arrow(c, 24f, y, start - 8f, y, beam, 2.8f)
+            line(c, start, y, end, y, (124 shl 24) or 0x00b88143, 1.4f)
+            arrow(c, end + 4f, y, 316f, y, (strength shl 24) or 0x00ac712d, 1f + 1.8f * intensity)
+        }
+        if (end - start > 18 && model.companionValue > 0.0) {
+            val x = (start + end) / 2
+            val radius = 4f + 6f * (1f - intensity)
+            oval(c, x - radius, 105f - radius, x + radius, 105f + radius, 0xffb98749.toInt())
+        }
+        label(c, R.string.health_atlas_retinal_light_attenuation_incident, 69f, 22f, 121f)
+        label(c, R.string.health_atlas_retinal_light_attenuation_transmitted, 264f, 22f, 137f)
+        label(c, R.string.health_atlas_retinal_light_attenuation_layer, 170f, 147f, 234f)
     }
 
     private fun rectangle(c: Canvas, left: Float, top: Float, right: Float, bottom: Float, color: Int, radius: Float = 10f) {

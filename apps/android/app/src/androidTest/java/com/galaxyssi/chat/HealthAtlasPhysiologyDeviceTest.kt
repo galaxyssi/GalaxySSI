@@ -234,6 +234,7 @@ class HealthAtlasPhysiologyDeviceTest {
             Triple("cell-adipocyte", "adipose-volume-share", "adipose-volume-share-radius-ratio"),
             Triple("teeth", "tooth-enamel-section", "tooth-enamel-section-thickness"),
             Triple("renal-cortex", "renal-tubule-retention", "renal-tubule-retention-segment-b"),
+            Triple("cell-retinal-pigment-epithelial-cell", "retinal-light-layer", "retinal-light-attenuation-path-length"),
         )
         for ((id, art, input) in examples) {
             var initial = 0

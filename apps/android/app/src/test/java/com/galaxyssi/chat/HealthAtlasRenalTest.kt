@@ -42,6 +42,6 @@ class HealthAtlasRenalTest {
         assertNull(HealthAtlasPhysiology.restore("cell-podocyte", intArrayOf(150, 80, 20)))
         assertEquals(HealthAtlasPhysiologyKind.GLOMERULAR_FILTRATION, HealthAtlasPhysiologyKind.forItem("cell-podocyte"))
         assertNull(HealthAtlasPhysiology(HealthAtlasPhysiologyKind.GLOMERULAR_FILTRATION).renalAmounts)
-        assertNull(HealthAtlasPhysiologyKind.forItem("cell-mesangial-cell"))
+        assertEquals(HealthAtlasPhysiologyKind.CAPILLARY_SUPPORT_SURFACE, HealthAtlasPhysiologyKind.forItem("cell-mesangial-cell"))
     }
 }

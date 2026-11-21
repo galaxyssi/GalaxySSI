@@ -6,4 +6,8 @@
     <string name="health_atlas_retinal_light_attenuation_scope">视锥细胞将光刺激转化为电信号的变化，这一过程称为光转导。视网膜色素上皮（RPE）细胞中的黑色素吸收杂散光，减少眼内反射。这是两种不同的作用。图中只演示一束虚构的光在假想均匀层中的吸收，所有数值均采用任意模型单位。模型不模拟这两类细胞，也不反映视网膜光敏感性或黄斑色素光密度。</string>
     <string name="health_atlas_retinal_light_attenuation_formula">光束的初始光量为 100 个模型光量单位。设路径长度为 d，吸收系数为 k，则透射光量为 100 × exp(−k × d)。吸收系数固定时，每一段等长路径吸收的光占进入该段光量的比例相同。本模型不考虑反射或散射，因此吸收光量等于 100 减去透射光量。</string>
     <string name="health_atlas_retinal_light_attenuation_companion">吸收光量：%1$s a.u.</string>
+    <string name="health_atlas_retinal_light_attenuation_diagram">色层的宽度和深浅对应所选光程与吸收系数，右侧逐渐变淡的箭头表示透过光。</string>
+    <string name="health_atlas_retinal_light_attenuation_incident">入射光</string>
+    <string name="health_atlas_retinal_light_attenuation_transmitted">透过光</string>
+    <string name="health_atlas_retinal_light_attenuation_layer">示例吸收层</string>
 </resources>
