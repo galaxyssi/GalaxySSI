@@ -33,7 +33,7 @@ The foundation pins public Ask outside the scroll area, requests playback pause,
 ## Verification Boundaries
 
 - `npm run check:ios` and `git diff --check`: static checks only.
-- Static scope/i18n audit passed: all changed files are under `apps/ios`, Chinese remains in localization resources, both app targets' Debug/Release configurations receive the context condition, and approval retains the existing permission/cohort-revision checks. The action's Chinese label matches the Android XML.
+- Static scope/i18n audit passed: all changed files are under `apps/ios`, Chinese remains in localization resources, the app target's Debug and Release configurations receive the context condition, and approval retains the existing permission/cohort-revision checks. The action's Chinese label matches the Android XML.
 - `git merge-tree --write-tree` succeeded against each of #4428 (`225736e5d`), #4429 and #4430, without changing the worktree or merging those PRs. This proves absence of pairwise text conflicts at those heads, not native execution.
 - Swift grammar parsing covers new context/action/test sources and the changed trend view. Conditional foundation adapters are checked in the supported feature-condition combinations. This is not Apple SDK type checking.
 - Regression XCTest source covers stage/cardio context, inactive/foreign model exclusion, drug/aging source boundaries, no public Values fallback, invalid synthetic descriptors, frozen prompt values, control/selection identity changes, loading, background, permission revocation and empty charts. **Not executed**, per request.
