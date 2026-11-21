@@ -7572,3 +7572,11 @@
 "galaxyssi.health.period.condition_unknown" = "未注明测量条件";
 "galaxyssi.health.period.condition_resting" = "静息";
 "galaxyssi.health.period.condition_after_exercise" = "运动后";
+
+"galaxyssi.conversation_actions.hint" = "会话名称";
+"galaxyssi.conversation_actions.rename" = "重命名会话";
+"galaxyssi.conversation_actions.invalid" = "请使用不超过 72 个字符的单行名称。";
+"galaxyssi.conversation_actions.required" = "请输入名称。";
+"galaxyssi.conversation_actions.failed" = "名称保存失败，请重试。";
+"galaxyssi.conversation_actions.saving" = "正在保存名称";
+"galaxyssi.conversation_actions.more" = "更多操作";
