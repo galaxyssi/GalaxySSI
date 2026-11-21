@@ -110,7 +110,10 @@ extension GalaxySSIHealthRecords {
       thread: prior, destination: approval.destinationDigest, savedProfile: localCareProfilePayload(concern),
       actionFeedback: approval.includesActionFeedback ? localCareModelFeedback(concern, thread: prior,
         destination: approval.destinationDigest, archive: archive, includesHistory: approval.feedbackHistoryAllowed,
-        relatedMeasurements: result.relatedMeasurements) : nil, relatedMeasurements: result.relatedMeasurements)
+        relatedMeasurements: result.relatedMeasurements,
+        includesQuestions: approval.questions != nil || (approval.research != nil &&
+          archive.localCareResearch?.authorizations[approval.concernID.uuidString]?.sharesQuestionSnapshot == true)) : nil,
+      relatedMeasurements: result.relatedMeasurements)
     result.relatedPayload = selected.isEmpty ? [:] : ["selected": .array(selected.sorted { $0.rawValue < $1.rawValue }.map {
       .object(Related.measurement($0, archive: archive, now: now).payload)
     }), "complete_health_archive": .bool(false), "other_conversations_included": .bool(false),
@@ -124,7 +127,7 @@ extension GalaxySSIHealthRecords {
     }
     if approval.questions != nil {
       let page = try modelLocalCareQuestionPage(concern, archive: archive,
-        selected: result.relatedMeasurements, after: nil)
+        selected: result.relatedMeasurements, after: nil, excludingTurn: approval.research == nil ? nil : approval.id)
       result.questions = page
       if approval.questionCursor != nil {
         result.questionCursor = .init(page, remaining: GalaxySSIHealthCareQuestions.maximumContinuations)
@@ -192,12 +195,12 @@ extension GalaxySSIHealthRecords {
   }
 
   func modelLocalCareQuestionPage(_ concern: GalaxySSIHealthCare.Concern, archive: Archive,
-      selected: GalaxySSIHealthCareRelatedContext.Scope, after: UUID?) throws -> GalaxySSIHealthCareQuestions.Page {
+      selected: GalaxySSIHealthCareRelatedContext.Scope, after: UUID?, excludingTurn: UUID? = nil) throws -> GalaxySSIHealthCareQuestions.Page {
     typealias Questions = GalaxySSIHealthCareQuestions
     return try (archive.localCareQuestions?[concern.id.uuidString] ?? .init()).page(
       scope: Questions.scope(concern), basis: Questions.basis(concern),
       known: Questions.known(concern, profile: localCareProfilePayload(concern)), after: after,
-      allowedRelatedMeasurements: Set(selected.keys))
+      allowedRelatedMeasurements: Set(selected.keys), excludingTurn: excludingTurn)
   }
 
   func relatedLocalCareMeasurementPage(_ approval: GalaxySSIHealthCareDiscussion.Approval,

@@ -24,6 +24,7 @@ enum GalaxySSIHealthCareResearch {
     var sharesActionFeedback: Bool?
     var sharesFeedbackHistory: Bool?
     var relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope?
+    var reviewedAnswerFollowUp: Bool?
   }
 
   enum State: String, Codable {
@@ -152,12 +153,14 @@ enum GalaxySSIHealthCareResearch {
     let dueActions: [String]
     let latestFeedback: [String: UUID]?
     let relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope?
+    let reviewedQuestions: UUID?
   }
 
   static func trigger(_ concern: GalaxySSIHealthCare.Concern, history: String, now: Date,
                       scopedActions: [GalaxySSIHealthCarePlan.AdoptedAction],
                       clinicalFeedback: [String: UUID] = [:],
-                      relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope = [:]) throws -> String {
+                      relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope = [:],
+                      reviewedQuestions: UUID? = nil) throws -> String {
     let actions = scopedActions.sorted { $0.id < $1.id }
     var latest = clinicalFeedback
     for action in actions {
@@ -167,7 +170,7 @@ enum GalaxySSIHealthCareResearch {
       history: history, actionOutcomes: actions.filter { $0.outcome != nil },
       dueActions: actions.filter { $0.outcome == nil && $0.action.dueFrom.map { $0 <= now } == true }.map(\.id),
       latestFeedback: latest.isEmpty ? nil : latest,
-      relatedMeasurements: relatedMeasurements.isEmpty ? nil : relatedMeasurements)
+      relatedMeasurements: relatedMeasurements.isEmpty ? nil : relatedMeasurements, reviewedQuestions: reviewedQuestions)
     let encoder = JSONEncoder()
     encoder.outputFormatting = .sortedKeys
     return AgentModelLoopRecoveryIdentity.sha256(["health_research": String(decoding: try encoder.encode(input), as: UTF8.self)])

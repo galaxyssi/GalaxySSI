@@ -25,6 +25,7 @@ enum GalaxySSIHealthCareDiscussion {
     var actionFeedbackContextIncluded: Bool?
     var feedbackHistoryAllowed: Bool?
     var relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope?
+    var automaticQuestionRequestDigest: String?
   }
 
   struct Thread: Codable, Identifiable, Equatable {
@@ -125,6 +126,9 @@ enum GalaxySSIHealthCareDiscussion {
     var questionCursor: GalaxySSIHealthCareQuestions.Cursor?
     var asksQuestions = false
     var allowsStandingQuestionPages = false
+    var allowsStandingQuestionFollowUp = false
+    var automaticQuestionsAllowed = false
+    var canProposeAutomaticQuestions: Bool { requiresStructuredReview && automaticQuestionsAllowed && questions != nil }
     var allowsAnswerDraft = false
     var includesActionFeedback = false
     var actionFeedbackContextIncluded = false
@@ -333,6 +337,11 @@ enum GalaxySSIHealthCareDiscussion {
     }
     if approval.requiresStructuredReview {
       instruction += "\n" + GalaxySSIHealthCareModelReview.instructions
+      if approval.canProposeAutomaticQuestions {
+        instruction += "\nWhen material context is missing, retain necessary unresolved questions with " + GalaxySSIHealthCareQuestions.tool +
+          " before recording the assessment. Never invent user answers or repeat answered, deferred or declined questions. " +
+          "Reviewed answers can trigger another authorized assessment in this same private conversation. " + GalaxySSIHealthCareQuestions.instruction
+      }
       if approval.proposesPlan {
         instruction += "\nA plan draft is optional. Use only current native_sources receipts and exact supporting quotes if proposing one."
       }
@@ -396,7 +405,7 @@ enum GalaxySSIHealthCareDiscussion {
         proposesPlan: approval.proposesPlan, historyAvailable: approval.hasHistoryReads,
         allowsMaintenance: approval.history != nil, questionsAvailable: approval.questionCursor != nil,
         asksQuestions: approval.asksQuestions, feedbackAvailable: approval.feedbackCursor != nil,
-        reviewAvailable: approval.requiresStructuredReview)
+        reviewAvailable: approval.requiresStructuredReview, automaticQuestionsAvailable: approval.canProposeAutomaticQuestions)
     } else if approval.proposesPlan || approval.allowsAnswerDraft {
       let draft = approval.allowsAnswerDraft
       let name = draft ? GalaxySSIHealthCareAnswerDraft.tool : GalaxySSIHealthCarePlan.tool

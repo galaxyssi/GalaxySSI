@@ -118,9 +118,10 @@ enum GalaxySSIHealthCareQuestions {
     var revisions: [String: [Row]] = [:]
 
     func page(scope: String, basis: String, known: AgentMcpJSONObject, after: UUID?,
-              allowedRelatedMeasurements: Set<String>? = nil) throws -> Page {
+              allowedRelatedMeasurements: Set<String>? = nil, excludingTurn: UUID? = nil) throws -> Page {
       let current = revisions.values.compactMap(\.last).filter { row in
-        row.scope == scope && (allowedRelatedMeasurements.map { $0.isSuperset(of: row.relatedMeasurements ?? []) } ?? true)
+        row.scope == scope && row.turn != excludingTurn &&
+          (allowedRelatedMeasurements.map { $0.isSuperset(of: row.relatedMeasurements ?? []) } ?? true)
       }.sorted {
         ($0.createdAt, $0.id.uuidString) > ($1.createdAt, $1.id.uuidString)
       }
@@ -147,15 +148,18 @@ enum GalaxySSIHealthCareQuestions {
       }
     }
 
-    mutating func review(_ expected: Row, scope: String, basis: String, state: State, answer: String?, now: Date) throws {
+    @discardableResult
+    mutating func review(_ expected: Row, scope: String, basis: String, state: State, answer: String?, now: Date) throws -> Bool {
       let id = expected.id.uuidString
       let text = answer?.trimmingCharacters(in: .whitespacesAndNewlines)
       let needsAnswer = state == .answered || state == .conflict
       guard expected.scope == scope, state != .stale, now >= expected.updatedAt,
-            var history = revisions[id], history.last == expected, history.count < maximumRevisions,
-            state == .open || expected.basis == basis,
-            state == .open || (expected.state != .deferred && expected.state != .declined),
+            var history = revisions[id], history.last == expected,
             needsAnswer ? text.map({ !$0.isEmpty && $0.utf8.count <= 2_000 }) == true : text == nil
+      else { throw GalaxySSIHealthRecords.Failure.stale }
+      if expected.basis == basis, expected.state == state, expected.answer == text { return false }
+      guard history.count < maximumRevisions, state == .open || expected.basis == basis,
+            state == .open || (expected.state != .deferred && expected.state != .declined)
       else { throw GalaxySSIHealthRecords.Failure.stale }
       var next = expected
       next.revision += 1
@@ -165,6 +169,7 @@ enum GalaxySSIHealthCareQuestions {
       next.updatedAt = now
       history.append(next)
       revisions[id] = history
+      return true
     }
   }
 

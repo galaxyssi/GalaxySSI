@@ -10,6 +10,7 @@ enum GalaxySSIHealthCareResearchHandoff {
     case targetChanged = "reviewed_target_changed", actionFeedback = "action_feedback"
     case reviewDue = "review_due", authorizationReview = "authorization_review"
     case relatedChanged = "related_measurements_changed"
+    case reviewedQuestions = "reviewed_question_answer"
   }
 
   struct Basis: Codable, Equatable {
@@ -21,10 +22,11 @@ enum GalaxySSIHealthCareResearchHandoff {
     let outcomes: [String: String]
     let latestFeedback: [String: UUID]?
     var relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope?
+    var reviewedQuestions: UUID?
 
     init(_ concern: GalaxySSIHealthCare.Concern, history: String, observedAt: Date,
          actions: [GalaxySSIHealthCarePlan.AdoptedAction], clinicalFeedback: [String: UUID] = [:],
-         relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope = [:]) throws {
+         relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope = [:], reviewedQuestions: UUID? = nil) throws {
       measurement = concern.assessment.record
       self.history = history
       let encoder = JSONEncoder()
@@ -46,6 +48,7 @@ enum GalaxySSIHealthCareResearchHandoff {
       }
       latestFeedback = latest.isEmpty ? nil : latest
       self.relatedMeasurements = relatedMeasurements.isEmpty ? nil : relatedMeasurements
+      self.reviewedQuestions = reviewedQuestions
     }
   }
 
@@ -115,6 +118,7 @@ enum GalaxySSIHealthCareResearchHandoff {
     var feedback = Set<String>()
     var outcomes = Set<String>()
     if let before {
+      if basis.reviewedQuestions != before.reviewedQuestions { reasons.append(.reviewedQuestions) }
       if (basis.relatedMeasurements ?? [:]) != (before.relatedMeasurements ?? [:]) { reasons.append(.relatedChanged) }
       if basis.measurement != before.measurement {
         reasons.append(basis.measurement?.id == before.measurement?.id ? .correction : .newMeasurement)
@@ -143,7 +147,7 @@ enum GalaxySSIHealthCareResearchHandoff {
     let initialSourceReviewPending = sources.isEmpty && recordedPlan == nil && actionCount == 0
     let changedEvidence = reasons.contains(where: {
       switch $0 {
-      case .newMeasurement, .correction, .historyChanged, .contextChanged, .targetChanged, .actionFeedback, .relatedChanged: return true
+      case .newMeasurement, .correction, .historyChanged, .contextChanged, .targetChanged, .actionFeedback, .relatedChanged, .reviewedQuestions: return true
       default: return false
       }
     })

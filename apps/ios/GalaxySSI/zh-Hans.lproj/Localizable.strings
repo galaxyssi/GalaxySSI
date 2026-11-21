@@ -7217,3 +7217,4 @@
 "galaxyssi.health.research.related_title" = "一起分析的其他指标";
 "galaxyssi.health.research.related_selected" = "同时共享";
 "galaxyssi.health.research.related_consent" = "可选。仅向此模型共享勾选的指标及其测量条件，历史按页读取，不共享其他会话和健康计划。所选记录变化后会重新评估。模型建议不会自动确认计划或创建提醒。";
+"galaxyssi.health.research.question_follow_up_scope" = "模型可以保存必要的澄清问题，但不能替你作答。每次自动评估可包含已审核的澄清记录及今后审核的答案。你审核答案后，本授权可在同一私密会话中触发一次后续评估；重复确认同一答案不会再次触发。计划与提醒仍需单独确认。";
