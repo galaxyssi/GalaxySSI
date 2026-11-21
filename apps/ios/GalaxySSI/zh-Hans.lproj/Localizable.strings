@@ -7235,3 +7235,17 @@
 "galaxyssi.health.appointment.confirm" = "我确认此就诊提醒时间";
 "galaxyssi.health.appointment.notice" = "提醒不会代为预约，也不会更改照护计划。";
 "galaxyssi.health.appointment.notification" = "打开 GalaxySSI 查看就诊提醒。";
+"galaxyssi.health.report_vision.title" = "使用视觉模型识别";
+"galaxyssi.health.report_vision.unverified" = "模型识别结果未经确认，请对照原图逐项核对。";
+"galaxyssi.health.report_vision.partial" = "部分结果被省略或无法辨认。";
+"galaxyssi.health.report_vision.permission" = "允许在单独确认的云端请求中使用报告图片";
+"galaxyssi.health.report_vision.online" = "允许经确认的在线健康请求";
+"galaxyssi.health.report_vision.metrics" = "允许健康测量数据处理";
+"galaxyssi.health.report_vision.model" = "视觉模型";
+"galaxyssi.health.report_vision.choose" = "选择已配置的模型";
+"galaxyssi.health.report_vision.preview" = "发送前核对图片";
+"galaxyssi.health.report_vision.cancel" = "取消请求";
+"galaxyssi.health.report_vision.failed" = "未确认任何记录。图片、权限或模型可能已变化，或返回结果无效。";
+"galaxyssi.health.report_vision.bytes" = "1 张图片，%lld 字节";
+"galaxyssi.health.report_vision.disclosure" = "图片可能包含个人信息。本次仅发送此图片用于识别，不包含聊天历史或其他健康记录。结果仍为未确认草稿。";
+"galaxyssi.health.report_vision.send" = "仅发送此图片一次";

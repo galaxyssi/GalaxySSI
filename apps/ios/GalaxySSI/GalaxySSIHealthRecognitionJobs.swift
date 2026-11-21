@@ -36,6 +36,8 @@ enum GalaxySSIHealthRecognitionJobs {
     var pages: [Page] = []
     var requiresPDFPassword: Bool?
     var runProcess: UUID?
+    var reportVision: GalaxySSIHealthReportVision.Result?
+    var reportVisionZone: String?
 
     var reviewPages: [Page] { requiresPDFPassword == true && phase != .completed ? [] : pages }
   }
@@ -177,6 +179,13 @@ struct GalaxySSIHealthRecognitionJobsView: View {
     List {
       if scene == .active, let job = jobs.first(where: { $0.id == id }) {
         Text(phase(job))
+        if job.original.kind == .image, [.completed, .failed].contains(job.phase) {
+          NavigationLink {
+            GalaxySSIHealthReportVisionView(records: records, originals: store, jobID: job.id)
+          } label: {
+            Label(GalaxySSIHealthReportVision.text("title", "Transcribe with a vision model", language), systemImage: "doc.text.viewfinder")
+          }.disabled(task != nil)
+        }
         if removedSources.contains(job.original.id) {
           Text(t("source_removed", "The original was removed.")).foregroundColor(.secondary)
         } else if missingSource == id || !originals.contains(job.original) {

@@ -121,7 +121,7 @@ struct GalaxySSIHealthRecords {
   }
 
   enum PrivacyScope: String, Codable {
-    case overview, weeklyReport, importOriginals, profileAnalysis, localCare
+    case overview, weeklyReport, importOriginals, profileAnalysis, localCare, reportImages
   }
 
   struct PrivacyEvent: Codable, Identifiable {
@@ -171,6 +171,7 @@ struct GalaxySSIHealthRecords {
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
     var tableEvidence: [GalaxySSIHealthTableImport.Evidence]?
     var healthOnlinePermission: UUID?
+    var reportImagePermission: UUID?
     var healthKitImportedAt: [GalaxySSIHealthKitImport.Scope: Date]?
     var retainImportOriginals: Bool?
     var profileAnalysisPermission: UUID?
@@ -450,6 +451,9 @@ struct GalaxySSIHealthRecords {
     case .profileAnalysis:
       previous = archive.profileAnalysisPermission != nil
       archive.profileAnalysisPermission = enabled ? UUID() : nil
+    case .reportImages:
+      previous = archive.reportImagePermission != nil
+      if previous != enabled { archive.reportImagePermission = enabled ? UUID() : nil }
     case .localCare:
       previous = archive.localCareAllowed ?? false
       archive.localCareAllowed = enabled
@@ -2832,6 +2836,13 @@ struct GalaxySSIHealthRecords {
 
   func stageReportItem(_ input: GalaxySSIHealthReportReview.Item, replacing expected: UUID?) throws {
     var archive = try load()
+    if input.source.recognition == .model {
+      guard archive.recognitionJobs?.contains(where: { job in
+        job.reportVision?.rows.contains(where: { row in
+          GalaxySSIHealthReportVision.source(row, job: job) == input.source && row.source == input.excerpt
+        }) == true
+      }) == true else { throw Failure.stale }
+    }
     guard archive.reportEvidence?.contains(where: { $0.source == input.source }) != true else { throw Failure.duplicate }
     var pending = archive.reportReview ?? []
     let index = pending.firstIndex { $0.source == input.source }
@@ -3427,6 +3438,7 @@ struct GalaxySSIHealthRecords {
 
   func persistModelAttention(_ archive: Archive) throws { try persist(archive, notify: false) }
   func persistAppointmentReminder(_ archive: Archive) throws { try persist(archive) }
+  func persistReportVision(_ archive: Archive) throws { try persist(archive) }
 
   private func persist(_ archive: Archive, notify: Bool = true) throws {
     var archive = archive
