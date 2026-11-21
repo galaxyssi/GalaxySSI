@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_thymic_branching_title">胸腺分化：所选方格计数</string>
+    <string name="health_atlas_thymic_branching_starting_tally">起始方格总数</string>
+    <string name="health_atlas_thymic_branching_selected_percent">所选组占方格总数的比例</string>
+    <string name="health_atlas_thymic_branching_companion">剩余组：%1$s 个方格</string>
+    <string name="health_atlas_thymic_branching_formula">所选方格数 = 起始方格总数 ×（所选方格百分数 ÷ 100）。剩余方格数 = 起始方格总数减去所选方格数。</string>
+    <string name="health_atlas_thymic_branching_scope">在胸腺中，阳性选择使部分同时表达 CD4 和 CD8 的胸腺细胞得以存活，并向 CD4+ 或 CD8+ 谱系发育。阴性选择淘汰许多具有自身反应性的胸腺细胞。常规 CD4+ T 细胞日后可发挥辅助功能，常规 CD8+ T 细胞则可发挥细胞毒性功能。胸腺来源的调节性 T 细胞也由发育中的 CD4+ 细胞产生，但不同于常规辅助性 T 细胞。本练习把虚构的方格（tiles）分为两组，两组都不代表真实的发育阶段、谱系或细胞命运。数值并非生物测量，也不用于估算任何人的情况。</string>
+</resources>
