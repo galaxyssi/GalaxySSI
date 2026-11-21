@@ -14,6 +14,7 @@ struct GalaxySSIHealthPhotoCaptureView: View {
 
   let records: GalaxySSIHealthRecords
   let originals: GalaxySSIHealthOriginalStore
+  var initialCamera = false
   @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @State private var draft: GalaxySSIHealthPhotoDraft.Batch?
@@ -29,6 +30,7 @@ struct GalaxySSIHealthPhotoCaptureView: View {
   @State private var showingSubmitted = false
   @State private var failed = false
   @State private var loaded = false
+  @State private var initialCameraStarted = false
 
   var body: some View {
     List {
@@ -89,7 +91,13 @@ struct GalaxySSIHealthPhotoCaptureView: View {
     .navigationTitle(t("title", "Health photos"))
     .navigationBarTitleDisplayMode(.inline)
     .privacySensitive()
-    .onAppear(perform: reload)
+    .onAppear {
+      reload()
+      if initialCamera, !initialCameraStarted, canAdd {
+        initialCameraStarted = true
+        start(.camera)
+      }
+    }
     .onDisappear {
       if camera == nil && gallery == nil && cropOriginal == nil { clearTransient() }
     }

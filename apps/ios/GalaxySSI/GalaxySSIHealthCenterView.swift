@@ -1,5 +1,6 @@
 import CoreBluetooth
 import SwiftUI
+import UIKit
 
 @MainActor
 struct GalaxySSIHealthCenterView: View {
@@ -8,6 +9,7 @@ struct GalaxySSIHealthCenterView: View {
   @Environment(\.locale) private var locale
   @Environment(\.calendar) private var calendar
   @Environment(\.timeZone) private var timeZone
+  @Environment(\.sizeCategory) private var sizeCategory
   let records: GalaxySSIHealthRecords
   @State private var archive: GalaxySSIHealthRecords.Archive?
   @State private var editor: GalaxySSIHealthDraft?
@@ -23,10 +25,11 @@ struct GalaxySSIHealthCenterView: View {
   @State private var initialRecordMetric: GalaxySSIHealthMetric?
   @State private var initialRecordID: UUID?
   @State private var overviewDestination: OverviewDestination?
-  @AppStorage("galaxyssi.health.overview.order") private var attentionOrder = "CHANGES_FIRST"
+  @State private var overviewNotice: Notice?
 
   private enum OverviewDestination: String, Identifiable {
-    case weekly, assistant, files, sleep, reviews
+    case weekly, assistant, files, sleep, reviews, records, devices, originals, pdf, profile, crop
+    case export, privacy, backup, trends, catalog, recording, body, imports, photo
     var id: String { rawValue }
   }
 
@@ -44,165 +47,47 @@ struct GalaxySSIHealthCenterView: View {
 
   var body: some View {
     List {
-      NavigationLink {
-        recordCenter
-      } label: {
-        Label(t("record_center.title", "Health Record Center"), systemImage: "square.and.pencil")
-      }
-      GalaxySSIHealthOverviewCareSection(records: records)
-      Section {
-        if scenePhase == .active, let archive {
-          if let removed = latestRemoval(in: archive) {
-            Button { openDeletion(removed) } label: {
-              Label(t("resume_removal", "Review last removed measurement"), systemImage: "arrow.uturn.backward")
-            }
-          }
-          if archive.current.isEmpty {
+      if scenePhase == .active, let archive {
+        if archive.current.isEmpty {
+          Section {
             Label(t("first_use.title", "No confirmed measurements yet"), systemImage: "heart.text.square")
               .font(.headline)
-          }
-          if let draft = archive.draft {
-            Button { editor = draft } label: {
-              Label(t("resume_draft", "Resume draft"), systemImage: "doc.text")
+            Button { overviewDestination = .profile } label: {
+              Label(t("profile.title", "Health Profile"), systemImage: "person.text.rectangle")
             }
-          } else {
-            Button { editor = GalaxySSIHealthDraft() } label: {
-              Label(t("manual", "Record measurement"), systemImage: "plus.circle")
+            Button { overviewDestination = .devices } label: {
+              Label(t("sources", "Devices & Data Sources"), systemImage: "externaldrive.connected.to.line.below")
             }
           }
-        }
-        NavigationLink {
-          GalaxySSIHealthImportView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets),
-                                    records: records, initialAction: .files)
-        } label: {
-          Label(t("import.title", "Import Health Data"), systemImage: "square.and.arrow.down")
-        }
-        NavigationLink {
-          GalaxySSIHealthReviewReminderView(records: records)
-        } label: {
-          Label(t("review_reminder.title", "Health Review Reminders"), systemImage: "bell")
-        }
-      }
-      NavigationLink {
-        GalaxySSIHealthRecordingReminderView(records: records) { metric in
-          if let draft = archive?.draft { editor = draft }
-          else { editor = GalaxySSIHealthDraft(metric: metric) }
-        }
-      } label: {
-        Label(t("recording_reminder.title", "Health Recording Reminders"), systemImage: "bell")
-      }
-      NavigationLink {
-        GalaxySSIHealthBodyView { bloodPressureRecords }
-      } label: {
-        Label(GalaxySSIHealthBodyText.string("title", language: language), systemImage: "figure.stand")
-      }
-      Section {
-        NavigationLink {
-          sourceOverview
-        } label: {
-          Label(t("sources", "Devices & Data Sources"), systemImage: "externaldrive.connected.to.line.below")
-        }
-        NavigationLink {
-          GalaxySSIHealthOriginalsView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets))
-        } label: {
-          Label(t("originals.title", "Health Originals"), systemImage: "doc.on.doc")
-        }
-        NavigationLink {
-          GalaxySSIHealthPDFTextView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets),
-                                    reviewRecords: records)
-        } label: {
-          Label(t("pdf_text.title", "Report PDF Text"), systemImage: "doc.text.magnifyingglass")
-        }
-        NavigationLink {
-          GalaxySSIHealthProfileView(records: records)
-        } label: {
-          Label(t("profile.title", "Health Profile"), systemImage: "person.text.rectangle")
-        }
-        NavigationLink {
-          GalaxySSIHealthReportCropView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets))
-        } label: {
-          Label(t("report_crop.title", "Report Crop Preview"), systemImage: "crop")
-        }
-      }
-      if scenePhase == .active, let archive {
-        TimelineView(.everyMinute) { context in
-          attentionSection(archive, now: context.date)
-        }
-      }
-      if scenePhase == .active, let archive {
-        let current = archive.current
-        if !current.isEmpty {
-          Section(t("key_metrics", "Key measurements")) {
-            Toggle(t("derive_overview", "Show local measurement summary"), isOn: Binding(
-              get: { self.archive?.derivesOverview == true }, set: setOverviewPermission))
-            if overviewPermissionFailed {
-              Text(t("overview_permission_error", "Could not update the summary setting."))
-                .foregroundColor(.secondary)
-            }
-            if archive.derivesOverview == true {
+        } else {
+          Section {
               TimelineView(.everyMinute) { context in
-                overview(current, now: context.date)
+                overview(archive, now: context.date)
               }
-            }
-          }
-          Section(t("recent", "Recent measurements")) {
-            ForEach(current.prefix(limit)) { reading in
-              Button { edit(reading) } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                  Text(title(reading.metric)).foregroundColor(.primary)
-                  Text(summary(reading))
-                  Text(reading.measuredAt, style: .date).foregroundColor(.secondary)
-                }
+          } header: {
+            HStack {
+              Text(t("overview_list.heading", "Measurements"))
+              Spacer()
+              Button(t("overview_list.view_all", "View all")) { overviewDestination = .catalog }
+                .textCase(nil)
               }
-              .disabled(archive.draft != nil)
-            }
-            if current.count > limit {
-              Button(t("more", "Show more")) { limit += 30 }
-            }
           }
         }
+        GalaxySSIHealthOverviewCareSection(records: records)
       } else if scenePhase == .active {
         Text(t("unavailable", "Health records could not be accessed."))
         Button(t("retry", "Reload records"), action: reload)
       }
-      NavigationLink {
-        GalaxySSIHealthMeasurementExportView(records: records)
-      } label: {
-        Label(t("export.title", "Export Measurements"), systemImage: "square.and.arrow.up")
-      }
-      NavigationLink {
-        GalaxySSIHealthSleepReminderView(records: records)
-      } label: {
-        Label(t("sleep_reminder.title", "Sleep Change Reminders"), systemImage: "moon.zzz")
-      }
-      NavigationLink {
-        privacyOverview
-      } label: {
-        Label(t("privacy.title", "Health Privacy"), systemImage: "lock.shield")
-      }
-      NavigationLink {
-        GalaxySSIHealthBackupView(records: records, originals:
-          GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets))
-      } label: {
-        Label(t("backup.title", "Health Backup"), systemImage: "externaldrive")
-      }
-      NavigationLink {
-        GalaxySSIHealthTrendView(records: records) { metric in
-          editor = (try? records.load())?.draft ?? GalaxySSIHealthDraft(metric: metric)
-        }
-      } label: {
-        Label(t("trend.title", "Measurement Trends"), systemImage: "chart.xyaxis.line")
-      }
-      NavigationLink {
-        metricCatalog
-      } label: {
-        Label(t("catalog.title", "Measurement Catalog"), systemImage: "list.bullet.rectangle")
-      }
     }
+    .listStyle(.plain)
+    .privacySensitive()
+    .safeAreaInset(edge: .bottom, spacing: 0) { bottomActions }
+    .alert(item: $overviewNotice, content: editorAlert)
     .navigationTitle(t("title", "Health Center"))
     .navigationBarTitleDisplayMode(.inline)
     .toolbar { ToolbarItem(placement: .navigationBarTrailing) {
       Menu {
+        overviewMenu
         Button { overviewDestination = .weekly } label: { Label(t("weekly.title", "Weekly Health Report"), systemImage: "calendar") }
         Button { overviewDestination = .assistant } label: { Label(t("assistant.title", "Health Assistant"), systemImage: "chart.bar.xaxis") }
         Button { overviewDestination = .files } label: { Label(t("data_files.title", "Data and Files"), systemImage: "folder") }
@@ -229,6 +114,13 @@ struct GalaxySSIHealthCenterView: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.sourceAttentionChanged)) { notification in
       if notification.object as? String == records.owner, scenePhase == .active { reloadSourceAttention() }
     }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.profileInputsChanged)) { notification in
+      if notification.object as? String == records.owner, scenePhase == .active { reload() }
+    }
+    .onChange(of: timeZone) { _ in if scenePhase == .active { reload() } }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+      if scenePhase == .active { reload() }
+    }
     .onChange(of: scenePhase) { phase in
       if phase == .active {
         reload()
@@ -237,6 +129,7 @@ struct GalaxySSIHealthCenterView: View {
         }
       } else {
         overviewDestination = nil
+        overviewNotice = nil
         editor = nil
         alert = nil
         archive = nil
@@ -395,6 +288,22 @@ struct GalaxySSIHealthCenterView: View {
   private var sourceOverview: some View {
     List {
       if scenePhase == .active {
+        if !sourceAttention.isEmpty || sourceAttentionUnavailable {
+          Section(t("source_attention", "Data source attention")) {
+            ForEach(sourceAttention) { incident in
+              Button { sourceRecovery = incident } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                  Label(incident.scope.metric.title(language: language), systemImage: "exclamationmark.arrow.circlepath")
+                  Text(t("healthkit.recovery_failed", "The last Apple Health query failed.")).foregroundColor(.secondary)
+                  Text(incident.failedAt, style: .relative).font(.caption).foregroundColor(.secondary)
+                }
+              }
+            }
+            if sourceAttentionUnavailable {
+              Text(t("healthkit.recovery_unavailable", "Source recovery information is unavailable.")).foregroundColor(.secondary)
+            }
+          }
+        }
         Section(t("device_sources", "Device sources")) {
           NavigationLink {
             GalaxySSIHealthKitSyncView(records: records)
@@ -467,40 +376,15 @@ struct GalaxySSIHealthCenterView: View {
     .onAppear(perform: reload)
   }
 
-  private func overview(_ current: [GalaxySSIHealthReading], now: Date) -> some View {
+  private func overview(_ snapshot: GalaxySSIHealthRecords.Archive, now: Date) -> some View {
     var local = calendar
     local.timeZone = timeZone
-    let overview = GalaxySSIHealthOverview(current: current, now: now, calendar: local)
-    return VStack(alignment: .leading, spacing: 12) {
-      Text(String(format: t("key_coverage", "%lld of %lld key metrics are recent"),
-                  locale: locale, Int64(overview.recentCount), Int64(overview.metrics.count)))
-        .font(.footnote).foregroundColor(.secondary)
-      LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: 16) {
-        ForEach(overview.metrics) { item in
-        if let reading = item.reading {
-          Button { edit(reading) } label: {
-            VStack(alignment: .leading, spacing: 4) {
-              Text(title(item.metric)).foregroundColor(.primary)
-              Text(summary(reading))
-              Text(item.freshness == .recent ? (item.metric == .steps ? t("fresh_today", "Today") : t("fresh", "Recent")) : t("stale_reading", "Older"))
-                .foregroundColor(.secondary)
-              Text(reading.healthKitSource != nil ? "Apple Health" :
-                reading.tableSource != nil ? t("table.source", "Imported table") :
-                (reading.bluetoothReceipt == nil ? t("manual_source", "Entered manually") :
-                  t("bluetooth.source", "Bluetooth monitor"))).foregroundColor(.secondary)
-              Text(reading.measuredAt.formatted(date: .abbreviated, time: .shortened))
-                .foregroundColor(.secondary)
-            }
-          }
-          .buttonStyle(.borderless)
-          .disabled(archive?.draft != nil)
-        } else {
-          VStack(alignment: .leading, spacing: 4) {
-            Text(title(item.metric))
-            Text(t("missing_reading", "Not recorded")).foregroundColor(.secondary)
-          }
-        }
-      }
+    let ranges = (try? records.overviewRanges(expected: snapshot, now: now)) ?? [:]
+    let overview = GalaxySSIHealthOverview(current: snapshot.current, now: now, calendar: local, ranges: ranges)
+    return VStack(alignment: .leading, spacing: 0) {
+      ForEach(overview.metrics) { item in
+        GalaxySSIHealthOverviewMetricRow(item: item, records: records, open: openOverviewReading, manual: { startManual($0) })
+        Divider()
       }
     }
   }
@@ -771,55 +655,6 @@ struct GalaxySSIHealthCenterView: View {
     }
   }
 
-  @ViewBuilder private func attentionSection(_ archive: GalaxySSIHealthRecords.Archive, now: Date) -> some View {
-    let local: Calendar = { var value = calendar; value.timeZone = timeZone; return value }()
-    let items = GalaxySSIHealthOverviewAttention.sorted(
-      GalaxySSIHealthOverviewAttention.items(archive: archive, sources: sourceAttention, now: now, calendar: local),
-      order: .init(rawValue: attentionOrder) ?? .changesFirst)
-    if !archive.current.isEmpty || !items.isEmpty || sourceAttentionUnavailable || archive.derivesOverview != true {
-      Section {
-        ForEach(items) { item in
-          Button {
-            if let incident = item.incident { sourceRecovery = incident }
-            else { overviewDestination = item.kind == .change ? .sleep : .reviews }
-          } label: {
-            VStack(alignment: .leading, spacing: 4) {
-              if let incident = item.incident {
-                Label(incident.scope.metric.title(language: language), systemImage: "exclamationmark.arrow.circlepath")
-                Text(t("healthkit.recovery_failed", "The last Apple Health query failed.")).foregroundColor(.secondary)
-              } else if item.kind == .change {
-                Label(t("sleep_reminder.title", "Sleep Change Reminders"), systemImage: "moon.zzz")
-              } else {
-                Label(t("review_reminder.title", "Health Review Reminders"), systemImage: item.kind == .report ? "doc.text.magnifyingglass" : "tablecells")
-              }
-              Text(item.at, style: .relative).font(.caption).foregroundColor(.secondary)
-            }
-          }
-        }
-        if items.isEmpty, !sourceAttentionUnavailable {
-          Text(archive.derivesOverview == true ? t("attention.empty", "No items need attention.") :
-            t("attention.disabled", "Local measurement summaries are disabled.")).foregroundColor(.secondary)
-        }
-        if sourceAttentionUnavailable {
-          Text(t("healthkit.recovery_unavailable", "Source recovery information is unavailable.")).foregroundColor(.secondary)
-        }
-      } header: {
-        HStack {
-          Text(t("attention.title", "Needs attention"))
-          Spacer()
-          if !archive.current.isEmpty {
-            Menu {
-              Picker(t("attention.sort", "Sort attention"), selection: $attentionOrder) {
-                ForEach(GalaxySSIHealthOverviewAttention.Order.allCases, id: \.rawValue) { order in Text(order.title(language)).tag(order.rawValue) }
-              }
-            } label: { Image(systemName: "line.3.horizontal.decrease").accessibilityLabel(t("attention.sort", "Sort attention")) }
-            .help(t("attention.sort", "Sort attention"))
-          }
-        }
-      }
-    }
-  }
-
   @ViewBuilder private func destinationView(_ destination: OverviewDestination) -> some View {
     switch destination {
     case .weekly: GalaxySSIWeeklyHealthReportView(records: records)
@@ -830,7 +665,91 @@ struct GalaxySSIHealthCenterView: View {
       }
     case .sleep: GalaxySSIHealthSleepReminderView(records: records)
     case .reviews: GalaxySSIHealthReviewReminderView(records: records)
+    case .records: recordCenter
+    case .devices: sourceOverview
+    case .originals: GalaxySSIHealthOriginalsView(store: originals)
+    case .pdf: GalaxySSIHealthPDFTextView(store: originals, reviewRecords: records)
+    case .profile: GalaxySSIHealthProfileView(records: records)
+    case .crop: GalaxySSIHealthReportCropView(store: originals)
+    case .export: GalaxySSIHealthMeasurementExportView(records: records)
+    case .privacy: privacyOverview
+    case .backup: GalaxySSIHealthBackupView(records: records, originals: originals)
+    case .trends: GalaxySSIHealthTrendView(records: records) { startManual($0) }
+    case .catalog: metricCatalog
+    case .recording: GalaxySSIHealthRecordingReminderView(records: records) { startManual($0) }
+    case .body: GalaxySSIHealthBodyView { bloodPressureRecords }
+    case .imports: GalaxySSIHealthImportView(store: originals, records: records, initialAction: .files)
+    case .photo: GalaxySSIHealthPhotoCaptureView(records: records, originals: originals, initialCamera: true)
     }
+  }
+
+  private var originals: GalaxySSIHealthOriginalStore {
+    GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets)
+  }
+
+  @ViewBuilder private var overviewMenu: some View {
+    Group {
+    menuEntry(.records, "record_center.title", "Health Record Center", "square.and.pencil")
+    menuEntry(.catalog, "catalog.title", "Measurement Catalog", "list.bullet.rectangle")
+    menuEntry(.trends, "trend.title", "Measurement Trends", "chart.xyaxis.line")
+    menuEntry(.reviews, "review_reminder.title", "Health Review Reminders", "doc.text.magnifyingglass")
+    menuEntry(.recording, "recording_reminder.title", "Health Recording Reminders", "bell")
+    menuEntry(.sleep, "sleep_reminder.title", "Sleep Change Reminders", "moon.zzz")
+    menuEntry(.body, "body.title", "Body Explorer", "figure.stand")
+    }
+    Group {
+    menuEntry(.profile, "profile.title", "Health Profile", "person.text.rectangle")
+    menuEntry(.originals, "originals.title", "Health Originals", "doc.on.doc")
+    menuEntry(.pdf, "pdf_text.title", "Report PDF Text", "doc.text.magnifyingglass")
+    menuEntry(.crop, "report_crop.title", "Report Crop Preview", "crop")
+    menuEntry(.export, "export.title", "Export Measurements", "square.and.arrow.up")
+    menuEntry(.privacy, "privacy.title", "Health Privacy", "lock.shield")
+    menuEntry(.backup, "backup.title", "Health Backup", "externaldrive")
+    }
+    if let archive, let removed = latestRemoval(in: archive) {
+      Button { openDeletion(removed) } label: { Label(t("resume_removal", "Review last removed measurement"), systemImage: "arrow.uturn.backward") }
+    }
+  }
+  private func menuEntry(_ destination: OverviewDestination, _ key: String, _ fallback: String, _ icon: String) -> some View {
+    Button { overviewDestination = destination } label: { Label(t(key, fallback), systemImage: icon) }
+  }
+  private var bottomActions: some View {
+    VStack(spacing: 0) {
+      Divider()
+      LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count:
+        sizeCategory.isAccessibilityCategory || [.extraExtraLarge, .extraExtraExtraLarge].contains(sizeCategory) ? 2 : 4), spacing: 4) {
+        bottomAction("overview_list.photo", "Photo", "camera") { overviewDestination = .photo }
+        bottomAction(archive?.draft == nil ? "manual" : "resume_draft", archive?.draft == nil ? "Manual entry" : "Resume draft", "square.and.pencil") { startManual() }
+        bottomAction("overview_list.import", "Import file", "square.and.arrow.down") { overviewDestination = .imports }
+        bottomAction("overview_list.devices", "Connect devices", "externaldrive.connected.to.line.below") { overviewDestination = .devices }
+      }.padding(.horizontal, 12).padding(.vertical, 4)
+    }
+    .background(Color(uiColor: .systemBackground))
+    .disabled(scenePhase != .active || archive == nil)
+    .accessibilityIdentifier("health-overview-bottom-actions")
+  }
+  private func bottomAction(_ key: String, _ fallback: String, _ icon: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      VStack(spacing: 4) {
+        Image(systemName: icon).font(.body).foregroundColor(.green)
+        Text(t(key, fallback)).font(.caption.weight(.semibold)).foregroundColor(.primary)
+          .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+      }.frame(maxWidth: .infinity, minHeight: 54)
+    }.buttonStyle(.plain).help(t(key, fallback))
+  }
+  private func startManual(_ metric: GalaxySSIHealthMetric? = nil) {
+    guard scenePhase == .active else { return }
+    do { editor = try records.load().draft ?? GalaxySSIHealthDraft(metric: metric ?? .bloodPressure) }
+    catch { overviewNotice = .unavailable }
+  }
+  private func openOverviewReading(_ reading: GalaxySSIHealthReading) {
+    guard scenePhase == .active else { return }
+    do {
+      let current = try records.load()
+      if let draft = current.draft { editor = draft; return }
+      guard current.current.contains(reading) else { reload(); overviewNotice = .stale; return }
+      edit(reading)
+    } catch { overviewNotice = .unavailable }
   }
 
   private func parse(_ text: String) -> Decimal? {
