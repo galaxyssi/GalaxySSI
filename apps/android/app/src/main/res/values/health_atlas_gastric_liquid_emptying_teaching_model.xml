@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gastric_liquid_emptying_title">Gastric liquid emptying: marker remaining</string>
+    <string name="health_atlas_gastric_liquid_emptying_removal">Removed per model interval</string>
+    <string name="health_atlas_gastric_liquid_emptying_intervals">Number of model intervals</string>
+    <string name="health_atlas_gastric_liquid_emptying_companion">Marker emptied: %1$s%% of the starting amount</string>
+    <string name="health_atlas_gastric_liquid_emptying_formula">Let f be the selected removal percentage divided by 100. Each interval removes f times the marker then present, leaving a fraction (1 − f). After n intervals, the percent of the starting marker remaining is 100 × (1 − f)^n. Percent emptied is 100 minus percent remaining.</string>
+    <string name="health_atlas_gastric_liquid_emptying_scope">The stomach releases liquid contents through the pylorus into the duodenum. Real emptying is regulated and can vary with the energy density of the liquid. This model tracks a fictional marker in one perfectly mixed compartment. No marker is added, absorbed, or broken down; it only leaves with the outflow. The removal percentage is invented, and intervals have no physical duration. For teaching only: this does not predict digestion or personal gastric emptying and is not for clinical use.</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gastric_liquid_emptying_title">胃内液体排空：剩余标记物</string>
+    <string name="health_atlas_gastric_liquid_emptying_removal">每步排出比例</string>
+    <string name="health_atlas_gastric_liquid_emptying_intervals">模型步数</string>
+    <string name="health_atlas_gastric_liquid_emptying_companion">已排出的标记物占初始量的 %1$s%%</string>
+    <string name="health_atlas_gastric_liquid_emptying_formula">将所选的排出百分数除以 100，得到比例 f。每一步都按比例 f 从当时剩余的标记物中排出一部分，留下的比例为（1 − f）。经过 n 步后，剩余标记物占初始量的百分数为 100 ×（1 − f）^n，排出百分数为 100 减去剩余百分数。</string>
+    <string name="health_atlas_gastric_liquid_emptying_scope">胃内的液体内容物经幽门进入十二指肠。实际的胃排空受到生理调节，可随液体的能量密度而变化。此模型将胃简化为一个完全混合的空间，追踪一种虚构的标记物。标记物不会被添加、吸收或分解，只随液体流出。排出百分比仅为示例，模型步数不对应实际时间。仅供教学，不用于预测消化过程或个人的胃排空情况，也不用于临床。</string>
+</resources>
