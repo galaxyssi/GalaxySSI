@@ -734,6 +734,7 @@ struct ConversationView: View {
   }
 
   private var contactStatusText: String {
+    if contact.isDesktopHistoryOnly { return t("galaxyssi.status.disconnected", "Disconnected") }
     if isSystemNoticeContact {
       return t("chat_system_notice", "System Notifications")
     }
@@ -891,7 +892,10 @@ struct ConversationView: View {
           }
         }
       }
-      if !isSystemNoticeContact {
+      if contact.isDesktopHistoryOnly {
+        Text(t("galaxyssi.desktop_disconnect.history_only", "Desktop disconnected. This conversation is read-only."))
+          .font(.footnote).foregroundColor(.secondary).padding()
+      } else if !isSystemNoticeContact {
         Divider()
           .background(Color.galaxySSISeparator)
         if peerSendPending {
@@ -1484,7 +1488,7 @@ struct ConversationView: View {
   }
 
   private var isAgentSessionContact: Bool {
-    contact.id == "hermes" || contact.type == "agent" || contact.deliveryMode == .cloudAPI
+    !contact.isDesktopHistoryOnly && (contact.id == "hermes" || contact.type == "agent" || contact.deliveryMode == .cloudAPI)
   }
 
   private var runtimeArtifactManagedRoots: [URL] {
