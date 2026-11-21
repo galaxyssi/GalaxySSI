@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_merkel_contact_title">Surface pressure at a touch site</string>
+    <string name="health_atlas_merkel_contact_force">Normal touch force</string>
+    <string name="health_atlas_merkel_contact_radius">Contact radius</string>
+    <string name="health_atlas_merkel_contact_companion">Circular contact area: %1$s mm&#178;</string>
+    <string name="health_atlas_merkel_contact_formula">Average surface pressure (kPa) = normal force (mN) / circular contact area (mm&#178;). The area is &#960; &#215; radius squared. At the same force, doubling the radius spreads the load over four times the area and reduces average pressure to one quarter.</string>
+    <string name="health_atlas_merkel_contact_scope">Merkel cells in the basal epidermis work with sensory nerve endings to help signal sustained touch. The forces and small circular patches in this model are invented examples. The surface patch is not a Merkel cell or its receptive field. The model gives only average pressure at the skin surface, not pressure at the receptor. It does not predict receptor response, neural firing, or touch perception, and it does not measure touch sensitivity.</string>
+</resources>
