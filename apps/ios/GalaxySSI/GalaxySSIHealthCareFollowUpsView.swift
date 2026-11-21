@@ -37,6 +37,19 @@ struct GalaxySSIHealthCareAgendaView: View {
 }
 
 @MainActor
+struct GalaxySSIHealthCareActionReviewView: View {
+  let records: GalaxySSIHealthRecords
+  let scope: GalaxySSIHealthCareAgenda.Scope
+  let actionID: String
+
+  var body: some View {
+    List {
+      GalaxySSIHealthCareAgendaRows(records: records, filter: nil, scope: scope, selectedActionID: actionID)
+    }
+  }
+}
+
+@MainActor
 private struct GalaxySSIHealthCareAgendaRows: View {
   typealias Agenda = GalaxySSIHealthCareAgenda
   @EnvironmentObject private var store: GalaxySSIStore
@@ -47,6 +60,7 @@ private struct GalaxySSIHealthCareAgendaRows: View {
   let records: GalaxySSIHealthRecords
   let filter: Agenda.Filter?
   let scope: Agenda.Scope?
+  var selectedActionID: String? = nil
   @State private var page: Agenda.Page?
   @State private var cursors: [Agenda.Cursor] = []
   @State private var editor: Editor?
@@ -114,6 +128,7 @@ private struct GalaxySSIHealthCareAgendaRows: View {
     .onDisappear(perform: clear)
     .onChange(of: filter) { _ in reset() }
     .onChange(of: scope) { _ in reset() }
+    .onChange(of: selectedActionID) { _ in reset() }
     .onChange(of: scene) { if $0 == .active { reset() } else { clear() } }
     .onChange(of: timeZone) { _ in reset() }
     .onChange(of: store.profile.identityFingerprint) { _ in reset() }
@@ -261,7 +276,11 @@ private struct GalaxySSIHealthCareAgendaRows: View {
     var local = calendar
     local.timeZone = timeZone
     do {
-      page = try records.localCareAgendaPage(filter: filter, scope: scope, after: cursors.last, calendar: local)
+      if let selectedActionID, let scope {
+        page = try records.localCareAgendaAction(scope: scope, actionID: selectedActionID, calendar: local)
+      } else {
+        page = try records.localCareAgendaPage(filter: filter, scope: scope, after: cursors.last, calendar: local)
+      }
       failed = false
     } catch GalaxySSIHealthRecords.Failure.permission {
       clear()
@@ -278,7 +297,7 @@ private struct GalaxySSIHealthCareAgendaRows: View {
 
   private func clear() {
     page = nil; cursors = []; editor = nil; history = nil; instructionSource = nil
-    cancelling = nil; failed = false; disallowed = false
+    cancelling = nil; journalReview = nil; failed = false; disallowed = false
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

@@ -2339,6 +2339,73 @@ struct GalaxySSIHealthRecords {
     return .init(items: Array(checkedItems.prefix(limit)), next: next, dayEnd: dayEnd,
       remindersEnabled: Self.careFollowUpPreferences(archive) != nil)
   }
+  func localCareOverview(calendar: Calendar = .autoupdatingCurrent, now: Date = Date()) throws
+      -> GalaxySSIHealthOverviewCare.Snapshot {
+    typealias Overview = GalaxySSIHealthOverviewCare
+    let archive = try load()
+    guard archive.derivesOverview == true else { return .init(permitted: false) }
+    guard archive.localCareAllowed == true, let permission = archive.localCarePermission else { return .init() }
+    guard let dayEnd = calendar.dateInterval(of: .day, for: now)?.end else { throw Failure.invalid }
+    var result = Overview.Snapshot(enabled: true, permission: permission)
+    let concerns = (archive.localCare?.current ?? [:]).values.sorted {
+      $0.updatedAt != $1.updatedAt ? $0.updatedAt > $1.updatedAt : $0.id.uuidString < $1.id.uuidString
+    }.prefix(Overview.previewLimit)
+    let entries = Array((archive.localCareEncounters?.entries ?? [:]).values)
+    for concern in concerns {
+      let context = careAgendaContext(concern, archive: archive, now: now)
+      result.concerns.append(.init(id: concern.id, metric: concern.metric, revision: concern.revision,
+        stage: concern.stage, sourceChanged: !context.assessmentCurrent || !context.profileCurrent))
+      if let visit = Overview.latestVisit(entries, concern: concern.id) {
+        let journal = archive.localVisitJournals?.entries[visit.id].flatMap {
+          $0.concern == concern.id && $0.visit == visit.id ? $0 : nil
+        }
+        result.visits.append(.init(concern: concern.id, metric: concern.metric, concernRevision: concern.revision,
+          entry: visit, journal: journal))
+      }
+    }
+    // Rebuild the read-only projection, so a cached index cannot imply an empty day after source changes.
+    let context = careAgendaContexts(archive, now: now)
+    let index = makeCareAgenda(archive, context: context, now: now)
+    func read(_ filter: GalaxySSIHealthCareAgenda.Filter) throws -> ([Overview.Action], Bool) {
+      let rows = try index.page(filter: filter, scope: nil, dayEnd: dayEnd, after: nil, limit: Overview.candidateLimit)
+      let actions = rows.prefix(Overview.candidateLimit).compactMap { row -> Overview.Action? in
+        guard row.journalVisit == nil, let concern = archive.localCare?.current[row.metric.rawValue],
+              concern.id == row.key.concern, let state = context[row.metric.rawValue],
+              let action = concern.adoptedActions?.first(where: { $0.id == row.key.action }) else { return nil }
+        let (checked, reminder) = careAgendaRow(action, concern: concern, archive: archive, context: state, now: now)
+        guard checked == row else { return nil }
+        return Overview.Action(.init(scope: .init(concern: concern.id, metric: concern.metric), revision: concern.revision,
+          action: action, reminder: reminder, plannedAt: row.key.due, bucket: row.key.bucket, canRecord: row.canRecord), now: now)
+      }
+      return (actions, rows.count > Overview.candidateLimit)
+    }
+    let (today, moreToday) = try read(.today)
+    result.actions = Array(today.prefix(Overview.previewLimit))
+    if today.isEmpty && !moreToday {
+      let (later, moreLater) = try read(.later)
+      result.upcoming = later.first
+      result.actionsReady = !later.isEmpty || !moreLater
+    } else {
+      result.actionsReady = !today.isEmpty || !moreToday
+    }
+    return result
+  }
+
+  func localCareAgendaAction(scope: GalaxySSIHealthCareAgenda.Scope, actionID: String,
+      calendar: Calendar = .autoupdatingCurrent, now: Date = Date()) throws -> GalaxySSIHealthCareAgenda.Page {
+    let archive = try load()
+    guard archive.localCareAllowed == true, archive.derivesOverview == true else { throw Failure.permission }
+    guard let concern = archive.localCare?.current[scope.metric.rawValue], concern.id == scope.concern,
+          let action = concern.adoptedActions?.first(where: { $0.id == actionID }),
+          let dayEnd = calendar.dateInterval(of: .day, for: now)?.end else { throw Failure.stale }
+    let state = careAgendaContext(concern, archive: archive, now: now)
+    let (row, reminder) = careAgendaRow(action, concern: concern, archive: archive, context: state, now: now)
+    guard row.key.bucket == .planned else { throw Failure.stale }
+    let item = GalaxySSIHealthCareAgenda.Item(scope: scope, revision: concern.revision, action: action,
+      reminder: reminder, plannedAt: row.key.due, bucket: row.key.bucket, canRecord: row.canRecord)
+    return .init(items: [item], next: nil, dayEnd: dayEnd, remindersEnabled: Self.careFollowUpPreferences(archive) != nil)
+  }
+
   private func currentDiscussionConcern(id: UUID, metric: GalaxySSIHealthMetric, archive: Archive,
                                         now: Date) throws -> GalaxySSIHealthCare.Concern {
     guard archive.localCareAllowed == true else { throw Failure.permission }
