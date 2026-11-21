@@ -11,15 +11,15 @@ struct GalaxySSIHealthActivityDay: Equatable, Sendable {
   let total: Int64
 }
 
-struct GalaxySSIHealthActivityComparison {
-  struct Pair: Identifiable {
+struct GalaxySSIHealthActivityComparison: Equatable, Sendable {
+  struct Pair: Identifiable, Equatable, Sendable {
     let id: Int
     let day: Date
     let previousDay: Date
     let current: Int64?
     let previous: Int64?
   }
-  let pairs: [Pair]
+  private(set) var pairs: [Pair]
   var coverage: Int { pairs.filter { $0.current != nil }.count }
   var paired: [Pair] { pairs.filter { $0.current != nil && $0.previous != nil } }
   var currentTotal: Int64 { pairs.compactMap(\.current).reduce(0, +) }
@@ -67,7 +67,7 @@ struct GalaxySSIHealthActivityComparison {
           now.timeIntervalSinceReferenceDate.isFinite else { throw GalaxySSIHealthRecords.Failure.invalid }
     let start = calendar.startOfDay(for: first), end = calendar.startOfDay(for: last)
     guard let count = calendar.dateComponents([.day], from: start, to: end).day.map({ $0 + 1 }),
-          (1...366).contains(count), end < calendar.startOfDay(for: now),
+          (1...366).contains(count), end <= calendar.startOfDay(for: now),
           let previousStart = calendar.date(byAdding: .day, value: -count, to: start) else {
       throw GalaxySSIHealthRecords.Failure.invalid
     }
@@ -87,18 +87,54 @@ struct GalaxySSIHealthActivityComparison {
     }
   }
 
+  static func trailing(days: Int, now: Date, calendar supplied: Calendar) throws -> ClosedRange<Date> {
+    guard (1...366).contains(days), now.timeIntervalSinceReferenceDate.isFinite else { throw GalaxySSIHealthRecords.Failure.invalid }
+    var calendar = Calendar(identifier: .gregorian); calendar.timeZone = supplied.timeZone
+    let end = calendar.startOfDay(for: now)
+    guard let start = calendar.date(byAdding: .day, value: -(days - 1), to: end) else { throw GalaxySSIHealthRecords.Failure.invalid }
+    return start...end
+  }
+
+  func withDay(_ row: GalaxySSIHealthActivityDay?, kind: GalaxySSIHealthActivityKind, zone: TimeZone) throws -> Self {
+    guard let row, row.kind == kind else { return self }
+    guard Self.validDay(row.day), (0...kind.maximum).contains(row.total) else { throw GalaxySSIHealthRecords.Failure.invalid }
+    guard let index = pairs.firstIndex(where: { Self.dayKey($0.day, zone: zone) == row.day }) else { return self }
+    var result = self
+    let pair = pairs[index]
+    result.pairs[index] = Pair(id: pair.id, day: pair.day, previousDay: pair.previousDay,
+      current: max(pair.current ?? 0, row.total), previous: pair.previous)
+    return result
+  }
+
+  // Display-only projection: an active ride never becomes a permanent history row here.
+  static func today(_ state: GalaxySSIHealthMotion.State?, kind: GalaxySSIHealthActivityKind,
+                    now: Date, calendar: Calendar) -> GalaxySSIHealthActivityDay? {
+    guard let state, now.timeIntervalSinceReferenceDate.isFinite else { return nil }
+    let key = dayKey(now, zone: calendar.timeZone)
+    switch kind {
+    case .steps:
+      guard let steps = state.steps, steps.sampledThrough != nil || steps.total > 0,
+            steps.sampledThrough.map({ $0 <= now }) != false,
+            let total = steps.today(now, calendar: calendar), (0...GalaxySSIHealthMotion.maximumSteps).contains(total) else { return nil }
+      return .init(kind: kind, day: key, total: Int64(total))
+    case .cycling:
+      let cycling = state.cycling
+      let saved = cycling.days.first { $0.start == calendar.startOfDay(for: now) && $0.zone == calendar.timeZone.identifier }
+      let sameZone = cycling.zone == calendar.timeZone.identifier
+      let seconds = sameZone ? cycling.today(now, calendar: calendar) : saved?.seconds ?? 0
+      guard seconds.isFinite, seconds >= 0, seconds <= Double(kind.maximum) / 1000,
+            saved != nil || seconds > 0 || (sameZone && state.cyclingEnabled != nil) else { return nil }
+      return .init(kind: kind, day: key, total: Int64(seconds * 1000))
+    }
+  }
+
   static func checkpoints(_ state: GalaxySSIHealthMotion.State) -> [GalaxySSIHealthActivityDay] {
     var rows: [GalaxySSIHealthActivityDay] = []
     if let steps = state.steps, let zone = TimeZone(identifier: steps.zone),
        steps.sampledThrough != nil || steps.total > 0 {
       rows.append(.init(kind: .steps, day: dayKey(steps.day, zone: zone), total: Int64(steps.total)))
     }
-    var cycling = state.cycling
-    if let through = cycling.confirmedThrough, let zone = TimeZone(identifier: cycling.zone) {
-      var calendar = Calendar(identifier: .gregorian); calendar.timeZone = zone
-      cycling.settle(now: through, calendar: calendar)
-    }
-    for day in state.cycling.days + cycling.days {
+    for day in state.cycling.days {
       guard let zone = TimeZone(identifier: day.zone), day.seconds.isFinite,
             (0...172_800).contains(day.seconds) else { continue }
       rows.append(.init(kind: .cycling, day: dayKey(day.start, zone: zone), total: Int64(day.seconds * 1_000)))

@@ -3642,7 +3642,7 @@ struct GalaxySSIHealthRecords {
     guard let encrypted = try AES.GCM.seal(payload, using: key(create: true, account: motionAccount),
       authenticating: motionContext).combined else { throw Failure.unavailable }
     try encrypted.write(to: storageFile(context: motionContext, fixtureExtension: "motion"), options: [.atomic, .completeFileProtection])
-    NotificationCenter.default.post(name: Self.motionChanged, object: owner)
+    NotificationCenter.default.post(name: Self.motionChanged, object: owner, userInfo: ["state": state])
     return state
   }
 
