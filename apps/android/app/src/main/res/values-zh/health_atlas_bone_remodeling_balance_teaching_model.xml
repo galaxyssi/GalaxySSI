@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_bone_remodeling_balance_title">骨基质净变化量</string>
+    <string name="health_atlas_bone_remodeling_balance_resorbed">基质吸收量</string>
+    <string name="health_atlas_bone_remodeling_balance_formed">基质形成量</string>
+    <string name="health_atlas_bone_remodeling_balance_companion">重塑后骨基质总量：%1$s a.u.</string>
+    <string name="health_atlas_bone_remodeling_balance_formula">基质净变化量 = 基质形成量 − 基质吸收量。重塑后骨基质总量 = 100 a.u. + 基质净变化量。净变化量为零表示形成量与吸收量相等。</string>
+    <string name="health_atlas_bone_remodeling_balance_scope">骨细胞发出信号，帮助协调骨重塑。破骨细胞先吸收旧基质，随后成骨细胞沉积新基质。本模型只计算一小块骨组织中骨基质的增减，不模拟各阶段的时长或信号传递。数值均为教学设定，以任意单位（a.u.）表示，不用于估算真实骨组织的变化。</string>
+</resources>
