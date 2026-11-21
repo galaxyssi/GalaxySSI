@@ -1,6 +1,18 @@
 import CryptoKit
 import Foundation
 
+struct LinkCapabilitySnapshot: Codable, Equatable {
+  let binding: String
+  let revision: Int64
+
+  init?(payload: [String: Any], binding: String) {
+    guard MqttRouteProtocol.hex(binding, count: 64), payload.string("type") == "artifact_blob_capability",
+          let revision = try? MqttRouteProtocol.integer(payload, "revision"), revision > 0 else { return nil }
+    self.binding = binding
+    self.revision = revision
+  }
+}
+
 struct LinkAttachmentDeclarationKey: Hashable {
   let topic: String
   let contactId: String
@@ -36,6 +48,16 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
   var backgroundLearning: Bool?
   var retryClassified: Bool?
   var attachmentDeclaration: String?
+  var capabilitySnapshot: LinkCapabilitySnapshot? = nil
+
+  var replaceableCapability: LinkCapabilitySnapshot? {
+    guard status == "queued", attempts == 0, clientSourceMessageId.isEmpty,
+          attachmentTransferId.isEmpty, blockedByAttachmentTransferIds.isEmpty,
+          attachmentDeclaration == nil, deferredTaskPayload == nil, backgroundLearning != true,
+          let snapshot = capabilitySnapshot, snapshot.revision > 0, MqttRouteProtocol.hex(snapshot.binding, count: 64)
+    else { return nil }
+    return snapshot
+  }
 
   var pendingAttachmentDeclaration: LinkAttachmentDeclarationKey? {
     guard ["queued", "publishing", "published"].contains(status), deferredTaskPayload == nil,
@@ -101,10 +123,12 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     case backgroundLearning = "background_learning"
     case retryClassified = "retry_classified"
     case attachmentDeclaration = "attachment_declaration"
+    case capabilitySnapshot = "capability_snapshot"
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    capabilitySnapshot = try container.decodeIfPresent(LinkCapabilitySnapshot.self, forKey: .capabilitySnapshot)
     messageId = try container.decode(String.self, forKey: .messageId)
     topic = try container.decode(String.self, forKey: .topic)
     wirePayload = try container.decodeIfPresent(String.self, forKey: .wirePayload) ?? ""
@@ -609,6 +633,31 @@ final class GalaxySSILinkDeliveryStore {
       changed = true
     }
     if changed { save() }
+  }
+
+  @discardableResult
+  func enqueueCapabilitySnapshot(messageId: String, topic: String, wire: String,
+      snapshot: LinkCapabilitySnapshot, now: Date = Date()) -> Bool {
+    guard journalHealthy, !messageId.isBlank, GalaxySSILinkProtocol.validTopic(topic), !wire.isBlank,
+          wire.utf8.count <= 16_384 else { return false }
+    if let existing = state.outbox.first(where: { $0.messageId == messageId }) {
+      return existing.capabilitySnapshot == snapshot && existing.topic == topic && existing.wirePayload == wire
+    }
+    let old = state.outbox.filter { $0.replaceableCapability?.binding == snapshot.binding }
+    guard old.allSatisfy({ ($0.capabilitySnapshot?.revision ?? Int64.max) < snapshot.revision }) else { return false }
+    let previous = state
+    let removed = Set(old.map(\.messageId))
+    state.outbox.removeAll { removed.contains($0.messageId) }
+    var item = PendingLinkMessage(messageId: messageId, topic: topic, wirePayload: wire, status: "queued",
+      attempts: 0, nextAttemptAt: now, createdAt: now, updatedAt: now)
+    item.capabilitySnapshot = snapshot
+    state.outbox.append(item)
+    guard save() else { state = previous; return false }
+    for item in old {
+      payloadStore.delete(fileName: item.wirePayloadFile)
+      recoveryStore.remove(messageId: item.messageId)
+    }
+    return true
   }
 
   static func recoverablePeerEnvelope(

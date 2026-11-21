@@ -70,6 +70,18 @@ final class MqttBusinessOutbox {
               existing.message.topic == entry.message.topic else { throw MqttChunkStorageError.corruptState }
         return false
       }
+      if let snapshot = entry.message.replaceableCapability {
+        // The enclosing transaction restores every previous row if quota or insertion fails.
+        guard snapshot.binding == entry.identity.binding else { throw MqttChunkStorageError.corruptState }
+        let keys = try database.query("SELECT record_key FROM mqtt_business_outbox WHERE binding_digest=?",
+          [.text(entry.identity.binding)], maximumRows: limits.peerRecords) { try $0.text(0) }
+        for oldKey in keys {
+          guard let old = try read(oldKey), old.identity == entry.identity,
+                let previous = old.message.replaceableCapability, previous.binding == snapshot.binding else { continue }
+          guard previous.revision < snapshot.revision else { throw MqttChunkStorageError.corruptState }
+          try database.run("DELETE FROM mqtt_business_outbox WHERE record_key=?", [.text(oldKey)])
+        }
+      }
       try quota(identity: entry.identity, bytes: encoded.count, control: entry.traffic == "control")
       try write(entry, key: key)
       return true

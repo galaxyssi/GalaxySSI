@@ -19445,7 +19445,7 @@ final class MessageCoordinator: ObservableObject {
           "desktop_fingerprint": pair.desktopFingerprint
         ]
         if usesLegacyMqtt {
-          publishDesktopArtifactControl(payload, link: link)
+          guard publishDesktopArtifactControl(payload, link: link) else { continue }
         } else {
           guard let runtime = journalMqttRuntime else { continue }
           try runtime.enqueueDesktopBlobControl(payload, desktopId: link.desktopId)
@@ -19528,9 +19528,21 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func publishDesktopArtifactControl(_ payload: [String: Any], link: ServerLink?) {
+  @discardableResult
+  private func publishDesktopArtifactControl(_ payload: [String: Any], link: ServerLink?) -> Bool {
     guard let link, link.paired, let wire = try? linkWirePayload(payload, link: link) else {
-      return
+      return false
+    }
+    if payload.string("type") == "artifact_blob_capability" {
+      let binding = MqttRouteProtocol.digest(Data([
+        link.desktopId, link.routes.clientRouteId, link.routes.localFingerprint,
+        link.routes.remoteFingerprint, link.routes.linkSecret
+      ].joined(separator: "\u{001f}").utf8))
+      guard let snapshot = LinkCapabilitySnapshot(payload: payload, binding: binding),
+            deliveryStore.enqueueCapabilitySnapshot(messageId: wire.messageId, topic: link.routes.controlTopic,
+              wire: wire.wireText, snapshot: snapshot) else { return false }
+      scheduleOutboxFlush(after: 0)
+      return true
     }
     deliveryStore.enqueue(
       messageId: wire.messageId,
@@ -19545,6 +19557,7 @@ final class MessageCoordinator: ObservableObject {
         scheduleOutboxFlush(after: 0)
       }
     }
+    return true
   }
 
   private func handleDesktopControlPayload(
