@@ -7572,3 +7572,22 @@
 "galaxyssi.health.period.condition_unknown" = "未注明测量条件";
 "galaxyssi.health.period.condition_resting" = "静息";
 "galaxyssi.health.period.condition_after_exercise" = "运动后";
+
+/* Android #4323 additive organ-plate catalogue and view captions. */
+"health_atlas_belongs" = "关联结构与系统";
+"health_atlas_plate_context" = "定位于%1$@示意图 · %2$@";
+"health_atlas_renal_cortex_aliases" = "renal cortex 肾脏皮质";
+"health_atlas_renal_cortex_description" = "肾脏外层区域，含肾小体和多种肾小管段，参与血液滤过及滤液处理。";
+"health_atlas_renal_cortex_name" = "肾皮质";
+"health_atlas_renal_medulla_aliases" = "renal medulla 肾锥体";
+"health_atlas_renal_medulla_description" = "肾脏内部的锥体区域，含肾小管袢及集合管等，参与尿液浓缩。";
+"health_atlas_renal_medulla_name" = "肾髓质";
+"health_atlas_renal_pelvis_aliases" = "renal pelvis 肾脏集尿空间";
+"health_atlas_renal_pelvis_description" = "汇集肾盏流来的尿液并引向输尿管；这个集尿空间本身不负责血液滤过。";
+"health_atlas_renal_pelvis_name" = "肾盂";
+"health_atlas_view_anterior" = "前面观";
+"health_atlas_view_cell" = "细胞剖面";
+"health_atlas_view_coronal" = "单侧肾脏 · 冠状剖面";
+"health_atlas_view_external" = "外表面";
+"health_atlas_view_lateral" = "左侧面观";
+"health_atlas_view_liver" = "肝脏与相邻胆囊";
