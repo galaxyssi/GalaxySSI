@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_joint_articular_arc_title">Articular surface arc distance</string>
+    <string name="health_atlas_joint_articular_arc_angle">Sweep angle</string>
+    <string name="health_atlas_joint_articular_arc_radius">Surface radius</string>
+    <string name="health_atlas_joint_articular_arc_companion">Sweep angle in radians: %1$s rad</string>
+    <string name="health_atlas_joint_articular_arc_formula">Arc distance along the surface (mm) = radius (mm) × angle (rad). Angle (rad) = angle (degrees) × π / 180. A larger sweep gives a longer arc at the same radius. At a nonzero sweep, a larger radius also gives a longer arc.</string>
+    <string name="health_atlas_joint_articular_arc_scope">At the shoulder, the rounded head of the humerus is the ball, and the shallow glenoid cavity of the scapula is the socket. This synthetic example uses a circular slice of an ideal rounded joint surface. The angle is the size of the sweep from a fixed starting ray, not a direction of shoulder motion. The model does not track real joint motion or estimate contact forces. Its angles are not exercise targets or diagnostic measures.</string>
+</resources>
