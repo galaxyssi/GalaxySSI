@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_platelet_fragment_count_title">Platelet tile count</string>
+    <string name="health_atlas_platelet_fragment_count_icons">Megakaryocyte icons</string>
+    <string name="health_atlas_platelet_fragment_count_tiles_per_icon">Platelet tiles per icon</string>
+    <string name="health_atlas_platelet_fragment_count_companion">Tiles added per extra icon: %1$s</string>
+    <string name="health_atlas_platelet_fragment_count_formula">Total tiles = megakaryocyte icons &#215; platelet tiles per icon. At a fixed tiles-per-icon setting, each extra icon adds that many tiles. The chart uses the nearest whole icon count.</string>
+    <string name="health_atlas_platelet_fragment_count_scope">Real platelets are small fragments of cytoplasm from bone marrow megakaryocytes, not whole cells. For this counting exercise, imagine that each megakaryocyte icon has a set of pre-labeled tiles. Each tile stands for one hypothetical platelet. These invented counts do not represent real platelet yield, blood test thresholds, or clot growth, and they are not laboratory instructions.</string>
+</resources>
