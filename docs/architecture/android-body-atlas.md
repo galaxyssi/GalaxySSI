@@ -138,6 +138,23 @@ personal health measurements. See the
 and the [measured-valve modeling study](https://pmc.ncbi.nlm.nih.gov/articles/PMC4500195/)
 for anatomy and the limitations of an ideal directional element.
 
+## Editorial Illustration Migration
+
+The first style batch replaces the whole-body, heart, lungs, liver, kidney,
+brain and intestinal overview bitmap plates with original, softly shaded
+educational illustrations rather than specimen-like renders. The canvases
+keep their previous dimensions and alpha framing. The canonical overlay
+coordinates, zoom, section navigation, localized labels, sources and
+personal measurement handling are unchanged. The references supplied for
+art direction are not packaged; no text or health claims are baked into
+the illustrations.
+
+The native section renderer traces only the traveled portion of the active
+stage path and aims a contrasting arrow along its tangent. It does not add
+an independent animation or imply a real material speed or quantity. For
+lessons without a directional path, existing structure highlights remain.
+This is the first batch, not a completed restyle of every older plate.
+
 ## Alimentary Canal Sections
 
 Fourteen digestive entries now have their own source-linked diagrams, from
