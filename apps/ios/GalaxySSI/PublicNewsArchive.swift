@@ -167,8 +167,8 @@ final class PublicNewsArchive: ObservableObject {
     catch { return nil }
   }
 
-  init(fileURL: URL? = PublicNewsArchive.defaultFileURL,
-       backlog: PublicNewsBacklogStore? = nil, bodies: PublicNewsBodyStore? = nil, budget: PublicNewsBudget? = nil) {
+  init(fileURL: URL? = PublicNewsArchive.defaultFileURL, budget: PublicNewsBudget? = nil,
+       backlog: PublicNewsBacklogStore? = nil, bodies: PublicNewsBodyStore? = nil) {
     self.fileURL = fileURL
     let production = fileURL == Self.defaultFileURL
     articleBacklog = backlog ?? (production ? .shared : PublicNewsBacklogStore(file: fileURL?.appendingPathExtension("backlog.json")))
