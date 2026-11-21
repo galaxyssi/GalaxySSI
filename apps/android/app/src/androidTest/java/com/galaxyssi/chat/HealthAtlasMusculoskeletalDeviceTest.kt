@@ -85,7 +85,8 @@ class HealthAtlasMusculoskeletalDeviceTest {
             assertEquals(id, HealthAtlasPlates.forId(id)!!.owner)
         assertEquals("respiratory", HealthAtlasPlates.forId("diaphragm")!!.owner)
         assertEquals("bone-marrow", HealthAtlasPlates.forId("bone-marrow")!!.owner)
-        assertEquals("muscle-posterior", HealthAtlasPlates.forId("trapezius", "muscle-anterior")!!.viewKey)
+        assertEquals("atlas-detail-trapezius", HealthAtlasPlates.forId("trapezius", "muscle-anterior")!!.viewKey)
+        assertEquals("muscle-posterior", HealthAtlasPlates.forId("trapezius", "muscle-posterior")!!.viewKey)
         assertEquals("skeletal-anterior", HealthAtlasPlates.forId("skeletal", "muscle-posterior")!!.viewKey)
     }
 
@@ -148,6 +149,18 @@ class HealthAtlasMusculoskeletalDeviceTest {
             it.onBackPressed(); it.open("skeletal"); assertTrue(it.view("atlas-view-0").isSelected)
             it.onBackPressed(); it.open("muscle"); assertTrue(it.view("atlas-view-1").isSelected)
         }
+    }
+
+    @Test fun returningToADedicatedCutawayRemainsSelectedAfterRecreation() = native { scenario ->
+        scenario.onActivity {
+            it.open("trapezius")
+            assertTrue(it.view("atlas-view-0").isSelected)
+            it.view("atlas-view-1").performClick()
+            assertTrue(it.view("atlas-view-1").isSelected)
+            it.view("atlas-view-0").performClick()
+        }
+        scenario.recreate(); ready(scenario, "atlas-view-0")
+        scenario.onActivity { assertTrue(it.view("atlas-view-0").isSelected) }
     }
 
     @Test fun currentViewAndSourceAreHandedToThePublicAgentWithoutOtherViews() {
