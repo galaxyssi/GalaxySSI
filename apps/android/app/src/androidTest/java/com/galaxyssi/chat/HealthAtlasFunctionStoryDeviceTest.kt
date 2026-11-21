@@ -250,7 +250,8 @@ class HealthAtlasFunctionStoryDeviceTest {
                                 } finally { early.recycle(); late.recycle() }
                             }
                             val rewind = render(0f)
-                            try { assertTrue(first.sameAs(rewind)) } finally { rewind.recycle() }
+                            try { assertTrue("$story did not rewind at $size px in $locale", first.sameAs(rewind)) }
+                            finally { rewind.recycle() }
                         } finally { first.recycle() }
                     }
                 }

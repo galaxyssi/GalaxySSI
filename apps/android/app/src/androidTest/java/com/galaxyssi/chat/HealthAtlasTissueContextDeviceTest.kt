@@ -112,7 +112,7 @@ class HealthAtlasTissueContextDeviceTest {
             val bitmap = Bitmap.createBitmap(360, 280, Bitmap.Config.ARGB_8888)
             try {
                 context.getDrawable(plate.drawable)!!.apply { setBounds(0, 0, 360, 280); draw(Canvas(bitmap)) }
-                assertEquals(0, Color.alpha(bitmap.getPixel(0, 0)))
+                assertEquals("$owner has artwork in the transparent corner", 0, Color.alpha(bitmap.getPixel(0, 0)))
                 for (marker in plate.markers + plate.features.map { it.marker }) {
                     val x = (360 * marker.x).roundToInt().coerceIn(1, 358)
                     val y = (280 * marker.y).roundToInt().coerceIn(1, 278)

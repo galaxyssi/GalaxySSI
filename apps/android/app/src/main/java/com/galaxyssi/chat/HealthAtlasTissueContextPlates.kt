@@ -331,7 +331,7 @@ internal object HealthAtlasTissueContextPlates {
         plate("taste-buds", R.drawable.health_atlas_taste_buds_plate,
             "https://openstax.org/books/introduction-behavioral-neuroscience/pages/8-2-the-gustatory-system",
             R.string.health_atlas_taste_buds_plate_caption,
-            feature("taste-pore", 178, 45, R.string.health_atlas_taste_buds_plate_pore,
+            feature("taste-pore", 183, 70, R.string.health_atlas_taste_buds_plate_pore,
                 R.string.health_atlas_taste_buds_plate_pore_detail),
             feature("taste-microvilli", 189, 60, R.string.health_atlas_taste_buds_plate_microvilli,
                 R.string.health_atlas_taste_buds_plate_microvilli_detail),

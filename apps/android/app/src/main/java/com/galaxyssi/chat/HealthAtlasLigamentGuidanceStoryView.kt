@@ -27,8 +27,10 @@ internal class HealthAtlasLigamentGuidanceStoryView(context: Context) :
 
         val phase = HealthAtlasFunctionStory.safePhase(t)
         val emphasis = phase * phase * (3f - 2f * phase)
-        footprints(c, plate.aclFemur, plate.aclTibia, aclInk, if (step in 1..2 || step == 4) emphasis else null)
-        footprints(c, plate.pclFemur, plate.pclTibia, pclInk, if (step == 1 || step in 3..4) emphasis else null)
+        val aclFocus = when (step) { 0 -> phase; 1, 2, 4 -> emphasis; else -> null }
+        val pclFocus = when (step) { 0 -> 1f - phase; 1, 3, 4 -> emphasis; else -> null }
+        footprints(c, plate.aclFemur, plate.aclTibia, aclInk, aclFocus)
+        footprints(c, plate.pclFemur, plate.pclTibia, pclInk, pclFocus)
 
         if (step >= 2) {
             line(c, 31f, 283f, 329f, 283f, 0xffadc1ba, 1f)
