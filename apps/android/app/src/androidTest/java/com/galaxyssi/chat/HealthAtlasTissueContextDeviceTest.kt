@@ -99,9 +99,9 @@ class HealthAtlasTissueContextDeviceTest {
         val chinese = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
         val atlas = HealthBodyAtlas.load(english)
         val plates = HealthAtlasTissueContextPlates.all
-        assertEquals(23, plates.size)
-        assertEquals(46, plates.sumOf { it.features.size })
-        assertEquals(2, plates.sumOf { it.markers.size })
+        assertEquals(25, plates.size)
+        assertEquals(53, plates.sumOf { it.features.size })
+        assertEquals(4, plates.sumOf { it.markers.size })
         for (plate in plates) {
             val owner = requireNotNull(plate.owner)
             assertNotNull(atlas[owner])
@@ -123,6 +123,38 @@ class HealthAtlasTissueContextDeviceTest {
                     assertNotEquals(english.getString(key), chinese.getString(key))
                 }
             } finally { bitmap.recycle() }
+        }
+    }
+
+    @Test fun nailAndSebaceousCutawaysExposeTheRightStructuresAndLinks() = native { scenario ->
+        scenario.onActivity {
+            it.open("nails")
+            for (feature in listOf("fold", "matrix", "plate", "bed", "free-edge"))
+                assertNotNull(it.view("atlas-feature-nail-$feature"))
+            assertNotNull(it.view("atlas-layers"))
+            assertNotNull(it.view("atlas-fullscreen"))
+        }
+        capture("nail-lengthwise", scenario.localized(R.string.health_atlas_context_nail_section))
+        scenario.onActivity { it.view("atlas-feature-nail-matrix").performClick() }
+        awaitVisibleText(scenario.localized(R.string.health_atlas_context_nail_matrix_detail))
+        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        instrumentation.waitForIdleSync()
+        scenario.onActivity {
+            assertNotNull(it.view("atlas-feature-nail-matrix"))
+            it.onBackPressed()
+            it.open("sebaceous-glands")
+            assertNotNull(it.view("atlas-feature-sebaceous-duct"))
+            assertNotNull(it.view("atlas-feature-sebaceous-lobules"))
+        }
+        capture("sebaceous-gland", scenario.localized(R.string.health_atlas_context_sebaceous_section))
+        scenario.onActivity {
+            it.view("atlas-hotspot-cell-sebocyte").performClick()
+            assertNotNull(it.view("atlas-feature-sebocyte-lipid"))
+            it.onBackPressed()
+            it.view("atlas-hotspot-hair-follicles").performClick()
+            assertNotNull(it.view("atlas-feature-hair-section-papilla"))
+            it.onBackPressed()
+            assertNotNull(it.view("atlas-feature-sebaceous-lobules"))
         }
     }
 

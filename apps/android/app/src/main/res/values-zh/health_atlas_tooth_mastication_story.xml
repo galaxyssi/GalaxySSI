@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_tooth_mastication_story_title">牙齿如何咬断和咀嚼食物</string>
+    <string name="health_atlas_tooth_mastication_story_choice">咬断与咀嚼</string>
+    <string name="health_atlas_tooth_mastication_story_scope">这是正常成人牙齿和咀嚼过程的定性示意。图中仅展示部分牙齿和简化的下颌运动，大小和节奏均为示意。</string>
+
+    <string name="health_atlas_tooth_mastication_story_arch">认识牙弓</string>
+    <string name="health_atlas_tooth_mastication_story_arch_caption">从下方看上排牙齿，切牙排在最前面，两侧各有一颗尖尖的尖牙，再往后是前磨牙和宽大的磨牙。图中按这个顺序依次突出显示。</string>
+    <string name="health_atlas_tooth_mastication_story_cut">切牙切下一口食物</string>
+    <string name="health_atlas_tooth_mastication_story_cut_caption">下颌向上排牙齿抬起。上下切牙薄薄的切缘从两侧接触食物，切下一块。</string>
+    <string name="health_atlas_tooth_mastication_story_tear">尖牙可以帮助撕开食物</string>
+    <string name="health_atlas_tooth_mastication_story_tear_caption">尖牙的尖端可以咬住较韧或富含纤维的食物。食物抵着牙尖受到牵拉时，纤维可能先拉长再断开。这是撕下一口食物的一种方式。</string>
+    <string name="health_atlas_tooth_mastication_story_grind">后牙压碎和磨细食物</string>
+    <string name="health_atlas_tooth_mastication_story_grind_caption">前磨牙和磨牙的咀嚼面较宽。下颌抬起并向侧方略微移动。后牙挤压夹在中间的食物，并在食物表面滑动，把食物磨成更小的碎块。</string>
+    <string name="health_atlas_tooth_mastication_story_bolus">舌与唾液帮助形成食团</string>
+    <string name="health_atlas_tooth_mastication_story_bolus_caption">下颌张开时，舌可以把食物送回牙齿的咀嚼面。唾液润湿碎块，使其聚成柔软的一团，称为食团。牙齿以机械方式弄碎食物，并不对食物进行化学消化。</string>
+
+    <string name="health_atlas_tooth_mastication_story_incisors">切牙</string>
+    <string name="health_atlas_tooth_mastication_story_canines">尖牙</string>
+    <string name="health_atlas_tooth_mastication_story_premolars">前磨牙</string>
+    <string name="health_atlas_tooth_mastication_story_molars">磨牙</string>
+    <string name="health_atlas_tooth_mastication_story_jaw">下颌骨</string>
+    <string name="health_atlas_tooth_mastication_story_tongue">舌</string>
+    <string name="health_atlas_tooth_mastication_story_saliva">唾液</string>
+
+    <string name="health_atlas_tooth_mastication_story_ref_motion">研究证据：咀嚼时舌与下颌的协调</string>
+    <string name="health_atlas_tooth_mastication_story_ref_bolus">研究证据：咀嚼时唾液混入食物与食团形成</string>
+</resources>

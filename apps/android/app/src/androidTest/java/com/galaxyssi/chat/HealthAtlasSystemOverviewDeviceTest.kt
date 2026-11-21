@@ -117,7 +117,8 @@ class HealthAtlasSystemOverviewDeviceTest {
         val atlas = HealthBodyAtlas.load(context)
         for (id in listOf("brain", "heart", "lungs", "pancreas", "liver", "kidneys", "alveoli"))
             assertEquals(id, HealthAtlasPlates.forId(id)!!.owner)
-        assertNull(HealthAtlasPlates.forId("nails"))
+        for (id in listOf("nails", "sebaceous-glands"))
+            assertEquals(id, HealthAtlasPlates.forId(id)?.owner)
         assertEquals("cell-langerhans-cell", HealthAtlasPlates.forId("cell-langerhans-cell")?.owner)
         for (id in listOf("parathyroid-glands", "cell-thyroid-follicular-cell", "thyroid-gland", "pituitary-gland", "adrenal-glands"))
             assertEquals(id, HealthAtlasPlates.forId(id)?.owner)
@@ -136,7 +137,8 @@ class HealthAtlasSystemOverviewDeviceTest {
             for (locale in listOf(java.util.Locale.ENGLISH, java.util.Locale.SIMPLIFIED_CHINESE)) {
                 val config = Configuration(activity.resources.configuration).apply { setLocale(locale) }
                 val atlas = HealthBodyAtlas.load(activity.createConfigurationContext(config))
-                val plates = HealthAtlasSystemPlates.all + listOf("ear", "eye").map { requireNotNull(HealthAtlasPlates.forId(it)) }
+                val detailed = listOf("ear", "eye", "nails", "sebaceous-glands")
+                val plates = HealthAtlasSystemPlates.all + detailed.map { requireNotNull(HealthAtlasPlates.forId(it)) }
                 for (plate in plates) for (width in listOf(720, 1080, 1600)) {
                     var selected = ""
                     val view = HealthAtlasLabeledImage(activity, plate, plate.owner!!, atlas, plate.owner) { selected = it.id }
@@ -156,7 +158,13 @@ class HealthAtlasSystemOverviewDeviceTest {
                             assertTrue(label.top >= bottom && label.bottom <= view.height && label.right <= width)
                             assertTrue(label.height >= label.layout.height + label.compoundPaddingTop + label.compoundPaddingBottom)
                             bottom = label.bottom
-                            label.performClick(); assertEquals(label.tag.toString().removePrefix("atlas-hotspot-"), selected)
+                            val marker = label.tag.toString()
+                            if (marker.startsWith("atlas-hotspot-")) {
+                                label.performClick()
+                                assertEquals(marker.removePrefix("atlas-hotspot-"), selected)
+                            } else {
+                                assertTrue(marker.startsWith("atlas-feature-") && label.isClickable)
+                            }
                         }
                     }
                     if (plate.splitCallouts || plate.owner == "skin") {

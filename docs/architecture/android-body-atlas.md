@@ -544,6 +544,12 @@ acinar cells have a digestive enzyme lesson that is separate from the islet
 and ductal models. The tonsil example distinguishes palatine crypts from
 adenoid folds. The nail example explains formation in the matrix and support
 by the bed, not growth at the free edge.
+The nail and sebaceous-gland Structure tabs have dedicated two-sided
+cutaneous cutaways. Their callouts explain local anatomy; the sebaceous
+plate also opens the matching follicle and sebocyte entries.
+The sinus lesson locates the four sinus groups before showing clearance
+in one maxillary sinus. The tooth lesson shows cutting and grinding without
+changing the existing mouth and digestion lessons.
 
 The pinned Agent action follows the current surface. Public catalogue, mechanism
 and research prompts use `HealthAtlasAgentContext`: selected anatomy, current

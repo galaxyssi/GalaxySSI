@@ -86,11 +86,16 @@ class HealthAtlasFunctionStoryTest {
             HealthAtlasFunctionStory.GASTRIC_CHIEF_SECRETION),
             HealthAtlasFunctionStory.choicesForId("stomach"))
         assertEquals(HealthAtlasFunctionStory.ACINAR_ENZYME_SECRETION, HealthAtlasFunctionStory.forId("cell-pancreatic-acinar-cell"))
-        assertEquals(listOf("cell-pancreatic-acinar-cell" to HealthAtlasFunctionStory.ACINAR_ENZYME_SECRETION),
+        assertEquals(listOf("cell-pancreatic-acinar-cell" to HealthAtlasFunctionStory.ACINAR_ENZYME_SECRETION,
+            "teeth" to HealthAtlasFunctionStory.TOOTH_MASTICATION),
             HealthAtlasFunctionStory.DIGESTION.relatedLessons)
         assertNull(HealthAtlasFunctionStory.forId("cell-pancreatic-ductal-cell"))
         assertEquals(HealthAtlasFunctionStory.NAIL_MATRIX_GROWTH, HealthAtlasFunctionStory.forId("nails"))
         assertEquals(HealthAtlasFunctionStory.TONSILLAR_SAMPLING, HealthAtlasFunctionStory.forId("tonsils"))
+        assertEquals(HealthAtlasFunctionStory.OLFACTION, HealthAtlasFunctionStory.forId("nasal-cavity"))
+        assertEquals(HealthAtlasFunctionStory.SINUS_DRAINAGE, HealthAtlasFunctionStory.forId("paranasal-sinuses"))
+        assertEquals(HealthAtlasFunctionStory.DIGESTION, HealthAtlasFunctionStory.forId("oral-cavity"))
+        assertEquals(HealthAtlasFunctionStory.TOOTH_MASTICATION, HealthAtlasFunctionStory.forId("teeth"))
         assertEquals(HealthAtlasFunctionStory.MARROW_HEMATOPOIESIS,
             HealthAtlasFunctionStory.forId("cell-hematopoietic-stem-cell"))
         assertEquals(HealthAtlasFunctionStory.RED_CELL_OXYGEN, HealthAtlasFunctionStory.forId("cell-erythrocyte"))

@@ -1467,6 +1467,42 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    SINUS_DRAINAGE(
+        setOf("paranasal-sinuses"),
+        R.string.health_atlas_sinus_drainage_title,
+        R.string.health_atlas_sinus_drainage_scope,
+        listOf(
+            R.string.health_atlas_sinus_drainage_locate to R.string.health_atlas_sinus_drainage_locate_caption,
+            R.string.health_atlas_sinus_drainage_zoom to R.string.health_atlas_sinus_drainage_zoom_caption,
+            R.string.health_atlas_sinus_drainage_secrete to R.string.health_atlas_sinus_drainage_secrete_caption,
+            R.string.health_atlas_sinus_drainage_sweep to R.string.health_atlas_sinus_drainage_sweep_caption,
+            R.string.health_atlas_sinus_drainage_enter to R.string.health_atlas_sinus_drainage_enter_caption,
+        ),
+        listOf(
+            R.string.health_atlas_sinus_drainage_ref_opening to "https://pubmed.ncbi.nlm.nih.gov/22319687/",
+            R.string.health_atlas_sinus_drainage_ref_clearance to "https://pubmed.ncbi.nlm.nih.gov/1874632/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    TOOTH_MASTICATION(
+        setOf("teeth"),
+        R.string.health_atlas_tooth_mastication_story_title,
+        R.string.health_atlas_tooth_mastication_story_scope,
+        listOf(
+            R.string.health_atlas_tooth_mastication_story_arch to R.string.health_atlas_tooth_mastication_story_arch_caption,
+            R.string.health_atlas_tooth_mastication_story_cut to R.string.health_atlas_tooth_mastication_story_cut_caption,
+            R.string.health_atlas_tooth_mastication_story_tear to R.string.health_atlas_tooth_mastication_story_tear_caption,
+            R.string.health_atlas_tooth_mastication_story_grind to R.string.health_atlas_tooth_mastication_story_grind_caption,
+            R.string.health_atlas_tooth_mastication_story_bolus to R.string.health_atlas_tooth_mastication_story_bolus_caption,
+        ),
+        listOf(
+            R.string.health_atlas_tooth_mastication_story_ref_motion to "https://pmc.ncbi.nlm.nih.gov/articles/PMC10530480/",
+            R.string.health_atlas_tooth_mastication_story_ref_bolus to "https://pubmed.ncbi.nlm.nih.gov/12648556/",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -1530,6 +1566,8 @@ internal enum class HealthAtlasFunctionStory(
         TONSILLAR_SAMPLING -> R.string.health_atlas_tonsil_story_choice
         ACINAR_ENZYME_SECRETION -> R.string.health_atlas_acinar_enzyme_story_choice
         NAIL_MATRIX_GROWTH -> R.string.health_atlas_nail_story_choice
+        SINUS_DRAINAGE -> R.string.health_atlas_sinus_drainage_choice
+        TOOTH_MASTICATION -> R.string.health_atlas_tooth_mastication_story_choice
         else -> title
     }
 
@@ -1543,11 +1581,11 @@ internal enum class HealthAtlasFunctionStory(
         EPIDERMAL_BARRIER -> listOf("sweat-glands" to SWEAT_COOLING, "sebaceous-glands" to SEBUM_RELEASE,
             "nails" to NAIL_MATRIX_GROWTH)
         ANTIBODY_RESPONSE -> listOf("tonsils" to TONSILLAR_SAMPLING)
-        DIGESTION -> listOf("cell-pancreatic-acinar-cell" to ACINAR_ENZYME_SECRETION)
+        DIGESTION -> listOf("cell-pancreatic-acinar-cell" to ACINAR_ENZYME_SECRETION, "teeth" to TOOTH_MASTICATION)
         HAIR_FOLLICLE_CYCLE -> listOf("sebaceous-glands" to SEBUM_RELEASE)
         OVUM_TRANSPORT -> listOf("endometrium" to ENDOMETRIUM_RENEWAL)
         VISION -> listOf("cranial-nerves" to CRANIAL_REFLEX)
-        OLFACTION -> listOf("taste-buds" to TASTE_SIGNAL)
+        OLFACTION -> listOf("taste-buds" to TASTE_SIGNAL, "paranasal-sinuses" to SINUS_DRAINAGE)
         TASTE_SIGNAL -> listOf("olfactory-mucosa" to OLFACTION)
         TOUCH_SIGNAL -> listOf("epidermis" to EPIDERMAL_BARRIER)
         VESTIBULAR_BALANCE -> listOf("cochlea" to HEARING)
@@ -1597,6 +1635,8 @@ internal enum class HealthAtlasFunctionStory(
         TONSILLAR_SAMPLING -> listOf("immune" to ANTIBODY_RESPONSE)
         ACINAR_ENZYME_SECRETION -> listOf("pancreas" to DIGESTION)
         NAIL_MATRIX_GROWTH -> listOf("epidermis" to EPIDERMAL_BARRIER)
+        SINUS_DRAINAGE -> listOf("nasal-cavity" to OLFACTION)
+        TOOTH_MASTICATION -> listOf("oral-cavity" to DIGESTION)
         CHONDROCYTE_MATRIX -> listOf("tissue-hyaline-cartilage" to CARTILAGE_LOAD)
         ADRENAL_MEDULLA_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
         GASTRIC_ACID_SECRETION -> listOf("stomach" to DIGESTION, "cell-gastric-chief-cell" to GASTRIC_CHIEF_SECRETION)
@@ -1700,6 +1740,8 @@ internal enum class HealthAtlasFunctionStory(
         TONSILLAR_SAMPLING -> HealthAtlasTonsilStoryView(context)
         ACINAR_ENZYME_SECRETION -> HealthAtlasAcinarEnzymeStoryView(context)
         NAIL_MATRIX_GROWTH -> HealthAtlasNailStoryView(context)
+        SINUS_DRAINAGE -> HealthAtlasSinusDrainageStoryView(context)
+        TOOTH_MASTICATION -> HealthAtlasToothMasticationStoryView(context)
         NEUTROPHIL_DEFENSE, EOSINOPHIL_RESPONSE, BASOPHIL_SIGNALING, MONOCYTE_RECRUITMENT,
         DENDRITIC_PRESENTATION, T_CELL_RESPONSE, NK_SURVEILLANCE, PLATELET_FORMATION, MACROPHAGE_CLEARANCE ->
             HealthAtlasCellFunctionArt(context, this, owners.single())

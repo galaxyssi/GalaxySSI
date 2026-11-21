@@ -4,8 +4,8 @@ internal object HealthAtlasTissueContextPlates {
     private fun feature(id: String, x: Int, y: Int, title: Int, explanation: Int) =
         HealthAtlasFeature(HealthAtlasMarker(id, x / 360f, y / 280f), title, explanation)
     private fun plate(id: String, art: Int, source: String, caption: Int, vararg features: HealthAtlasFeature,
-        markers: List<HealthAtlasMarker> = emptyList()) =
-        HealthAtlasPlate(art, id, caption, markers, source, features = features.toList())
+        markers: List<HealthAtlasMarker> = emptyList(), splitCallouts: Boolean = false) =
+        HealthAtlasPlate(art, id, caption, markers, source, features = features.toList(), splitCallouts = splitCallouts)
 
     val all = listOf(
         plate("cell-mast-cell", R.drawable.health_atlas_cell_mast,
@@ -126,7 +126,24 @@ internal object HealthAtlasTissueContextPlates {
             feature("hair-section-shaft", 185, 49, R.string.health_atlas_context_hair_section_shaft, R.string.health_atlas_context_hair_section_shaft_detail),
             feature("hair-section-papilla", 179, 220, R.string.health_atlas_context_hair_section_papilla, R.string.health_atlas_context_hair_section_papilla_detail),
             markers = listOf(
-                HealthAtlasMarker("cell-hair-matrix-cell", 153 / 360f, 200 / 280f)))
+                HealthAtlasMarker("cell-hair-matrix-cell", 153 / 360f, 200 / 280f))),
+        plate("nails", R.drawable.health_atlas_nail_section, "https://doi.org/10.1002/ar.22660",
+            R.string.health_atlas_context_nail_section,
+            feature("nail-fold", 120, 74, R.string.health_atlas_nail_story_label_fold, R.string.health_atlas_context_nail_fold_detail),
+            feature("nail-matrix", 119, 116, R.string.health_atlas_nail_story_label_matrix, R.string.health_atlas_context_nail_matrix_detail),
+            feature("nail-plate", 203, 85, R.string.health_atlas_nail_story_label_plate, R.string.health_atlas_context_nail_plate_detail),
+            feature("nail-bed", 241, 96, R.string.health_atlas_nail_story_label_bed, R.string.health_atlas_context_nail_bed_detail),
+            feature("nail-free-edge", 302, 97, R.string.health_atlas_nail_story_label_edge, R.string.health_atlas_context_nail_edge_detail),
+            splitCallouts = true),
+        plate("sebaceous-glands", R.drawable.health_atlas_sebaceous_section, "https://pubmed.ncbi.nlm.nih.gov/38542083/",
+            R.string.health_atlas_context_sebaceous_section,
+            feature("sebaceous-duct", 159, 121, R.string.health_atlas_sebaceous_duct, R.string.health_atlas_context_sebaceous_duct_detail),
+            feature("sebaceous-lobules", 231, 113, R.string.health_atlas_context_sebaceous_lobules,
+                R.string.health_atlas_context_sebaceous_lobules_detail),
+            markers = listOf(
+                HealthAtlasMarker("hair-follicles", 129 / 360f, 169 / 280f),
+                HealthAtlasMarker("cell-sebocyte", 240 / 360f, 157 / 280f)),
+            splitCallouts = true)
     )
     private val byId = all.associateBy { it.owner }
     fun forId(id: String?) = byId[id]

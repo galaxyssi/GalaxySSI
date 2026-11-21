@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_sinus_drainage_title">鼻旁窦如何清除黏液</string>
+    <string name="health_atlas_sinus_drainage_choice">鼻旁窦黏液清除</string>
+    <string name="health_atlas_sinus_drainage_scope">先从两个视角辨认四组鼻旁窦，再用简化剖面展示一个上颌窦的正常黏液清除过程。图中的层次、运动和时间均不按实际比例呈现。</string>
+
+    <string name="health_atlas_sinus_drainage_locate">鼻周的四组鼻旁窦</string>
+    <string name="health_atlas_sinus_drainage_locate_caption">额窦位于眼睛上方，筛窦气房位于两眼之间，上颌窦位于眼睛下方。从侧面可见，蝶窦位于筛窦气房后方深处。</string>
+    <string name="health_atlas_sinus_drainage_zoom">自然开口位于高处</string>
+    <string name="health_atlas_sinus_drainage_zoom_caption">从正面看这个剖面，自然开口位于靠近鼻腔的窦壁上部，明显高于窦底。头部直立时，黏液必须向上移动才能到达开口，单靠重力做不到这一点。</string>
+    <string name="health_atlas_sinus_drainage_secrete">窦壁黏膜分泌黏液</string>
+    <string name="health_atlas_sinus_drainage_secrete_caption">分泌细胞产生的黏液汇入覆盖窦壁黏膜的薄层。相邻细胞表面细小如毛发的纤毛在黏液层下摆动。</string>
+    <string name="health_atlas_sinus_drainage_sweep">纤毛将黏液向上运送</string>
+    <string name="health_atlas_sinus_drainage_sweep_caption">纤毛协调摆动，推动黏液层沿窦壁向上移向自然开口。剖面图突出显示其中一条沿壁的运送路径。</string>
+    <string name="health_atlas_sinus_drainage_enter">黏液进入鼻道</string>
+    <string name="health_atlas_sinus_drainage_enter_caption">黏液经过自然开口和一小段通道，进入中鼻甲下方的中鼻道。鼻腔的纤毛接着沿黏膜继续运送黏液。</string>
+
+    <string name="health_atlas_sinus_drainage_frontal">额窦</string>
+    <string name="health_atlas_sinus_drainage_ethmoid">筛窦气房</string>
+    <string name="health_atlas_sinus_drainage_sphenoid">蝶窦</string>
+    <string name="health_atlas_sinus_drainage_maxillary_pair">上颌窦</string>
+    <string name="health_atlas_sinus_drainage_maxillary">上颌窦</string>
+    <string name="health_atlas_sinus_drainage_front_view">正面观</string>
+    <string name="health_atlas_sinus_drainage_side_view">侧面剖视</string>
+    <string name="health_atlas_sinus_drainage_coronal_view">冠状剖面</string>
+    <string name="health_atlas_sinus_drainage_opening">自然开口</string>
+    <string name="health_atlas_sinus_drainage_floor">窦底</string>
+    <string name="health_atlas_sinus_drainage_nasal_passage">鼻道</string>
+    <string name="health_atlas_sinus_drainage_mucus_film">黏液层</string>
+    <string name="health_atlas_sinus_drainage_secretory_cell">分泌细胞</string>
+    <string name="health_atlas_sinus_drainage_cilia">纤毛</string>
+
+    <string name="health_atlas_sinus_drainage_ref_opening">研究证据：上颌窦自然开口的位置</string>
+    <string name="health_atlas_sinus_drainage_ref_clearance">研究证据：健康上颌窦的黏液清除</string>
+</resources>
