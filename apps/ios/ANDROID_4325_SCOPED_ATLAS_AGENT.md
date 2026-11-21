@@ -5,7 +5,7 @@
 - Android PR: https://github.com/galaxyssi/GalaxySSI/pull/4325
 - Source merge: `3e7e4f48508119bd6594eb6fc023987d714c6936`.
 - This independent main-based increment adds the public context policy, pinned personal-analysis policy, native trend integration, regression source and build condition. It does not copy the unmerged atlas or physiology implementations, change Android/Desktop versions, install a provider or produce an IPA.
-- Atlas views and the generic snapshot/pause adapter are in https://github.com/galaxyssi/GalaxySSI/pull/4428. The opt-in `GALAXYSSI_ATLAS_AGENT_CONTEXT` condition selects this implementation only when the increment is included. Both app target configurations enable it through inherited `OTHER_SWIFT_FLAGS`; the separate #4430 physiology condition remains intact.
+- Atlas views and the generic snapshot/pause adapter are in https://github.com/galaxyssi/GalaxySSI/pull/4428. The opt-in `GALAXYSSI_ATLAS_AGENT_CONTEXT` condition selects this implementation only when the increment is included. Both app configurations contribute `GALAXYSSI_ATLAS_AGENT_CONTEXT_FLAGS`; the foundation collects it through inherited `OTHER_SWIFT_FLAGS`. The existing IPA workflow's replacement of `SWIFT_ACTIVE_COMPILATION_CONDITIONS` therefore does not erase the module flag, and companion modules contribute separate variables rather than replacing each other's flags.
 - Full functionality requires #4428 and this PR. Quantitative physiology context additionally requires https://github.com/galaxyssi/GalaxySSI/pull/4430. Organ images remain a separate increment in https://github.com/galaxyssi/GalaxySSI/pull/4429. Dependencies are functional and explicitly stated, not hidden as repeated predecessor diffs.
 
 ## Personal Values
