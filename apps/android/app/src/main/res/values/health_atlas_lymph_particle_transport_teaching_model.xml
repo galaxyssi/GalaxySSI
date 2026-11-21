@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_lymph_particle_transport_title">Dye carried by lymph</string>
+    <string name="health_atlas_lymph_particle_transport_flow">Model lymph flow</string>
+    <string name="health_atlas_lymph_particle_transport_concentration">Dye concentration in lymph</string>
+    <string name="health_atlas_lymph_particle_transport_companion">Dye mass carried in 5 min: %1$s &#181;g</string>
+    <string name="health_atlas_lymph_particle_transport_formula">Dye mass rate (&#181;g/min) = concentration (&#181;g/mL) &#215; lymph flow (mL/min).</string>
+    <string name="health_atlas_lymph_particle_transport_scope">Lymphatic endothelial cells line the capillaries where tissue fluid enters to become lymph. Lymph leaves a node through efferent vessels, and the thoracic duct usually returns lymph to the bloodstream where the left internal jugular and left subclavian veins meet. This model starts with imaginary dye already mixed evenly into a single steady stream, such as in a vessel leaving a node. No dye is added, lost, or stored along the segment, so the same dye mass enters and leaves each minute. At a fixed concentration, more lymph per minute carries more dye per minute. The values are made up and do not estimate dye entry into lymph, lymph node filtration, or actual lymph flow.</string>
+</resources>
