@@ -4784,17 +4784,18 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
     let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 10, hour: 12)))
     let boundary = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 4)))
-    let weight = GalaxySSIHealthReading(metric: .weight, measuredAt: boundary, value: 65)
-    let older = GalaxySSIHealthReading(metric: .weight, measuredAt: boundary.addingTimeInterval(-1), value: 60)
-    let stale = GalaxySSIHealthReading(metric: .heartRate, measuredAt: boundary.addingTimeInterval(-1), value: 65)
-    let future = GalaxySSIHealthReading(metric: .weight, measuredAt: now.addingTimeInterval(1), value: 90)
-    let deleted = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 5, deleted: true)
+    let weight = GalaxySSIHealthReading(metric: .sleepDuration, measuredAt: boundary, value: 7)
+    let older = GalaxySSIHealthReading(metric: .sleepDuration, measuredAt: boundary.addingTimeInterval(-1), value: 6)
+    let stale = GalaxySSIHealthReading(metric: .restingHeartRate, measuredAt: boundary.addingTimeInterval(-1), value: 65)
+    let future = GalaxySSIHealthReading(metric: .sleepDuration, measuredAt: now.addingTimeInterval(1), value: 9)
+    let deleted = GalaxySSIHealthReading(metric: .bloodPressure, measuredAt: now, value: 120, diastolic: 80, deleted: true)
     let overview = GalaxySSIHealthOverview(current: [older, weight, stale, future, deleted],
                                           now: now, calendar: calendar)
     XCTAssertEqual(overview.recentCount, 1)
-    XCTAssertEqual(overview.metrics.first { $0.metric == .weight }?.reading?.id, weight.id)
-    XCTAssertEqual(overview.metrics.first { $0.metric == .heartRate }?.freshness, .stale)
-    XCTAssertEqual(overview.metrics.first { $0.metric == .glucose }?.freshness, .missing)
+    XCTAssertEqual(overview.metrics.map(\.metric), [.bloodPressure, .sleepDuration, .restingHeartRate, .steps])
+    XCTAssertEqual(overview.metrics.first { $0.metric == .sleepDuration }?.reading?.id, weight.id)
+    XCTAssertEqual(overview.metrics.first { $0.metric == .restingHeartRate }?.freshness, .stale)
+    XCTAssertEqual(overview.metrics.first { $0.metric == .bloodPressure }?.freshness, .missing)
   }
 
   @MainActor

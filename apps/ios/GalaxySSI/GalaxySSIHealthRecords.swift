@@ -101,11 +101,11 @@ struct GalaxySSIHealthOverview {
       if let previous = latest[reading.metric], previous.measuredAt >= reading.measuredAt { continue }
       latest[reading.metric] = reading
     }
-    let overviewMetrics: [GalaxySSIHealthMetric] = [.bloodPressure, .glucose, .weight, .heartRate]
+    let overviewMetrics: [GalaxySSIHealthMetric] = [.bloodPressure, .sleepDuration, .restingHeartRate, .steps]
     metrics = overviewMetrics.map { metric in
       let reading = latest[metric]
       return Metric(metric: metric, reading: reading,
-                    freshness: reading.map { $0.measuredAt >= cutoff ? .recent : .stale } ?? .missing)
+                    freshness: reading.map { $0.measuredAt >= (metric == .steps ? today : cutoff) ? .recent : .stale } ?? .missing)
     }
   }
 }
