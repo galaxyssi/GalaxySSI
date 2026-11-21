@@ -156,7 +156,9 @@ class HealthAtlasPhysiologyTest {
                             HealthAtlasPhysiologyKind.HORMONE_SIGNAL, HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY,
                             HealthAtlasPhysiologyKind.COLONIC_WATER_BALANCE, HealthAtlasPhysiologyKind.GLIAL_CAPACITANCE,
                             HealthAtlasPhysiologyKind.ENDOCRINE_DILUTION,
-                            HealthAtlasPhysiologyKind.GASTRIC_LIQUID_EMPTYING -> y <= value + 1e-9
+                            HealthAtlasPhysiologyKind.GASTRIC_LIQUID_EMPTYING,
+                            HealthAtlasPhysiologyKind.BONE_REMODELING_BALANCE,
+                            HealthAtlasPhysiologyKind.CUTANEOUS_SEBUM -> y <= value + 1e-9
                             else -> y >= value - 1e-9
                         })
                     }

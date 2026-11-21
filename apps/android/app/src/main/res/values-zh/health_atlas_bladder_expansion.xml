@@ -1,5 +1,5 @@
 <resources>
-    <string name="health_atlas_bladder_expansion_title">膀胱充盈与扩张</string>
+    <string name="health_atlas_bladder_expansion_title">膀胱充盈：表面积增幅</string>
     <string name="health_atlas_bladder_expansion_initial">示例起始容积</string>
     <string name="health_atlas_bladder_expansion_added">示例增加容积</string>
     <string name="health_atlas_bladder_expansion_formula">表面积增加百分比＝100 ×［（最终容积 ÷ 起始容积）的三分之二次方 − 1］。</string>

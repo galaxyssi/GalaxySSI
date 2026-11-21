@@ -264,7 +264,8 @@ class HealthAtlasPhysiologyDeviceTest {
     }
     @Test fun newStructureLessonsExposeLiveControlsAndKeepTheirFunctionPlayback() = native { scenario ->
         val examples = listOf("pulmonary-trunk", "colon", "thoracic-duct", "clavicle", "hair",
-            "cell-oligodendrocyte", "cell-pancreatic-beta-cell", "cell-retinal-bipolar-cell", "cell-skeletal-myocyte")
+            "cell-oligodendrocyte", "cell-pancreatic-beta-cell", "cell-retinal-bipolar-cell", "cell-skeletal-myocyte",
+            "stomach", "vestibular-apparatus", "cell-megakaryocyte", "cell-osteoblast", "cell-sebocyte")
         for (id in examples) scenario.onActivity { activity ->
             activity.open(id, cell = id.startsWith("cell-"))
             val kind = requireNotNull(HealthAtlasPhysiologyKind.forItem(id))
@@ -286,6 +287,7 @@ class HealthAtlasPhysiologyDeviceTest {
     }
     @Test fun bladderFillingPlaybackChangesTheDiagramWithoutChangingTheSelectedVolume() = native { scenario ->
         scenario.onActivity { it.open("bladder") }
+        capture("bladder-filling")
         scenario.onActivity { activity ->
             val diagram = activity.view("atlas-bladder-filling-diagram")
             val play = activity.view("atlas-bladder-filling-play")

@@ -1,5 +1,5 @@
 <resources>
-    <string name="health_atlas_bladder_expansion_title">Bladder filling and expansion</string>
+    <string name="health_atlas_bladder_expansion_title">Bladder filling: surface area increase</string>
     <string name="health_atlas_bladder_expansion_initial">Starting model volume</string>
     <string name="health_atlas_bladder_expansion_added">Added model volume</string>
     <string name="health_atlas_bladder_expansion_formula">Surface area increase = 100 × [(final volume ÷ starting volume)^(2/3) − 1].</string>
