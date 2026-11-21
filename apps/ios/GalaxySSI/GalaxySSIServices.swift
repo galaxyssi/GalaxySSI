@@ -17681,7 +17681,7 @@ final class MessageCoordinator: ObservableObject {
         "size_bytes": transfer.originalSizeBytes,
         "sha256": transfer.sha256,
         "progress": 0,
-        "state": GalaxySSIPeerAttachmentTransferProgress.uploading
+        "state": GalaxySSIPeerAttachmentTransferProgress.outboundState(transfer.mimeType)
       ], contact: contact)
     }
   }

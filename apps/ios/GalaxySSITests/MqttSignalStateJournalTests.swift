@@ -8,6 +8,28 @@ final class MqttSignalStateJournalTests: XCTestCase {
   private let snapshot = Data("test-ratchet-state".utf8)
   private let next = Data("advanced-test-ratchet-state".utf8)
 
+  func testAttachmentChunkCoalescingSurvivesReopenAndCannotCrossBindings() throws {
+    let f = try ChunkFixture()
+    let journal = try makeJournal(f)
+    let original = try legacyEntry("chunk")
+    var message = original.message
+    let transfer = String(repeating: "c", count: 64)
+    message.attachmentTransferId = transfer
+    let part = MqttBusinessOutbox.AttachmentChunk(transfer: transfer, index: 0, digest: String(repeating: "d", count: 64))
+    _ = try journal.commit(expected: nil) { token in
+      (try journal.outbox.enqueue(identity: original.identity, message: message, traffic: .message,
+        attachmentChunk: part, transaction: token), snapshot)
+    }
+    let reopened = try makeJournal(f)
+    _ = try reopened.commit(expected: snapshot) { token in
+      let stored = try reopened.outbox.pendingAttachmentChunk(identity: original.identity, part: part, transaction: token)
+      XCTAssertEqual(stored?.message.messageId, "chunk")
+      XCTAssertNil(try reopened.outbox.pendingAttachmentChunk(identity: signalTestIdentity(remote: String(repeating: "f", count: 64)),
+        part: part, transaction: token))
+      return ((), snapshot)
+    }
+  }
+
   func testColdStartupOnlyAdoptsAnIntactMarkerForThisProfile() throws {
     let fixture = try ChunkFixture()
     let journal = try makeJournal(fixture)

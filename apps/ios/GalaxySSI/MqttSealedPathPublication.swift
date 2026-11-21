@@ -53,12 +53,55 @@ final class MqttDeliveryCompletionRelay {
   }
 }
 
+// Tracks physical receipt copies independently of the caller's coalesced feedback slot.
+final class MqttReceiptPublication {
+  struct Copy { let token: String; let generation: Int64; let configuration: String; let started: Int64; var failed = false }
+  let payload: Data
+  let expires: Int64
+  private let lock = NSLock()
+  private var copies: [String: Copy] = [:]
+  private var acknowledged = false
+
+  init(payload: Data, now: Int64) { self.payload = payload; self.expires = now + 30_000 }
+  var accepted: Bool { locked { acknowledged } }
+  var attempted: Set<String> { locked { Set(copies.keys) } }
+
+  func claim(broker: String, generation: Int64, now: Int64, configuration: String = "") -> String? {
+    locked {
+      guard !acknowledged, now < expires else { return nil }
+      if let latest = copies.values.max(by: { $0.started < $1.started }), !latest.failed,
+         now - latest.started < 1000 { return nil }
+      if let previous = copies[broker], previous.generation == generation, previous.configuration == configuration,
+         !previous.failed || now - previous.started < 500 { return nil }
+      let token = UUID().uuidString
+      copies[broker] = Copy(token: token, generation: generation, configuration: configuration, started: now)
+      return token
+    }
+  }
+
+  func permits(broker: String, token: String) -> Bool {
+    locked { !acknowledged && copies[broker]?.token == token && copies[broker]?.failed == false }
+  }
+  func finish(broker: String, token: String, accepted: Bool) {
+    locked {
+      guard var copy = copies[broker], copy.token == token else { return }
+      if accepted { acknowledged = true }
+      else { copy.failed = true; copies[broker] = copy }
+    }
+  }
+  private func locked<T>(_ body: () -> T) -> T { lock.lock(); defer { lock.unlock() }; return body() }
+}
+
 enum MqttSignalDelivery {
+  static let publicBrokerDirectBytes = 60 * 1024
+  static let publicBrokerChunkBytes = 44 * 1024
+
   static func requiresFragments(topic: String, wire: Data, message: MqttDeliveryEnvelope.Message) throws -> Bool {
     guard let object = try JSONSerialization.jsonObject(with: wire) as? [String: Any] else {
       throw MqttRouteError.invalidPayload
     }
     let bytes = try framedBytes(object, message: message)
+    if bytes > publicBrokerDirectBytes { return true }
     guard let sealed = try? GalaxySSILinkProtocol.sealedWirePacketByteCount(payloadBytes: bytes) else { return true }
     return (try? MqttDeliveryDispatch.packetBytes(topic: topic, payloadBytes: sealed)) == nil
   }
