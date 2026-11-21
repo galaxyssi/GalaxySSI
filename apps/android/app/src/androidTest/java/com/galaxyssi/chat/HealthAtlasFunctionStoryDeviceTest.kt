@@ -1,6 +1,8 @@
 package com.galaxyssi.chat
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.KeyguardManager
+import android.app.UiAutomation
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -9,6 +11,8 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.View
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.EditText
 import android.widget.TextView
 import androidx.lifecycle.Lifecycle
@@ -559,6 +563,11 @@ class HealthAtlasFunctionStoryDeviceTest {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
         val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        val automation = instrumentation.uiAutomation
+        val originalFlags = automation.serviceInfo.flags
+        automation.serviceInfo = automation.serviceInfo.apply {
+            flags = originalFlags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        }
         try {
             ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
                 waitFor(scenario, "atlas-whole-art")
@@ -573,19 +582,19 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<View>("atlas-tab-1").performClick()
                     activity.find<View>("atlas-function-lesson-menu").performClick()
                 }
-                pickFunction(smellTitle)
+                pickFunction(automation, smellTitle)
                 scenario.onActivity { activity ->
                     activity.find<View>("atlas-function-olfaction-art")
                     repeat(3) { activity.find<View>("atlas-function-next").performClick() }
                     activity.find<View>("atlas-function-lesson-menu").performClick()
                 }
-                pickFunction(tasteTitle)
+                pickFunction(automation, tasteTitle)
                 scenario.onActivity { activity ->
                     activity.find<View>("atlas-function-taste-signal-art")
                     assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
                     activity.find<View>("atlas-function-lesson-menu").performClick()
                 }
-                pickFunction(smellTitle)
+                pickFunction(automation, smellTitle)
                 scenario.onActivity { activity ->
                     assertEquals(.6f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
                     activity.onBackPressed()
@@ -601,17 +610,23 @@ class HealthAtlasFunctionStoryDeviceTest {
                     assertEquals(.2f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
                 }
             }
-        } finally { clearHealthOverviewFixture(context, fixture) }
+        } finally {
+            automation.serviceInfo = automation.serviceInfo.apply { flags = originalFlags }
+            clearHealthOverviewFixture(context, fixture)
+        }
     }
 
-    private fun pickFunction(title: String) {
-        val deadline = SystemClock.uptimeMillis() + 4_000
+    private fun pickFunction(automation: UiAutomation, title: String) {
+        val deadline = SystemClock.uptimeMillis() + 8_000
         do {
-            instrumentation.waitForIdleSync()
-            val options = instrumentation.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText(title).orEmpty()
-            if (options.any {
-                    it.text?.toString() == title &&
-                        it.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
+            val roots = listOfNotNull(automation.rootInActiveWindow) + automation.windows
+                .filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION && (it.isActive || it.isFocused) }
+                .mapNotNull { it.root }
+            if (roots.any { root ->
+                    root.findAccessibilityNodeInfosByText(title).any { node ->
+                        node.text?.toString() == title && node.isClickable
+                            && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    }
                 }) return
             SystemClock.sleep(100)
         } while (SystemClock.uptimeMillis() < deadline)
