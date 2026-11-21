@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_parathyroid_occupancy_title">受体位点占有率</string>
+    <string name="health_atlas_parathyroid_occupancy_signal">示例信号水平（s）</string>
+    <string name="health_atlas_parathyroid_occupancy_half_point">半数位点被占据时的信号水平（k）</string>
+    <string name="health_atlas_parathyroid_occupancy_scope">血钙下降时，甲状旁腺主细胞分泌甲状旁腺激素（PTH），帮助调节血钙。分泌后，这种激素可以与靶细胞上的受体结合，引发细胞反应。本类比只展示一种假想信号与受体的结合，不表示细胞反应的强弱。两个滑块的数值都是虚构的，没有单位，不来自个人记录，也不代表真实的受体亲和力。本模型不能预测 PTH 或血钙水平。</string>
+    <string name="health_atlas_parathyroid_occupancy_formula">占有率（百分比）= 100 × s ÷ (s + k)。当 s 等于 k 时，一半受体位点被占据。k 不变时，随着 s 增大，占有率的增幅逐渐减小，并趋近于百分之百。</string>
+    <string name="health_atlas_parathyroid_occupancy_unoccupied">未被占据的位点：%1$s%%</string>
+</resources>

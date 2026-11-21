@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_parathyroid_occupancy_title">Receptor site occupancy</string>
+    <string name="health_atlas_parathyroid_occupancy_signal">Example signal level (s)</string>
+    <string name="health_atlas_parathyroid_occupancy_half_point">Half-occupancy level (k)</string>
+    <string name="health_atlas_parathyroid_occupancy_scope">When blood calcium falls, parathyroid chief cells release parathyroid hormone (PTH) to help regulate it. After secretion, the hormone can bind to receptors on target cells and start a response. This analogy shows only binding of an imaginary signal, not how strongly a cell responds. Both sliders use made-up, unitless numbers, not personal records or real receptor affinity. This model does not predict PTH or blood calcium levels.</string>
+    <string name="health_atlas_parathyroid_occupancy_formula">Occupied percent = 100 × s ÷ (s + k). When s equals k, half the sites are occupied. At fixed k, as s rises, occupancy approaches 100 percent in smaller and smaller steps.</string>
+    <string name="health_atlas_parathyroid_occupancy_unoccupied">Unoccupied sites: %1$s%%</string>
+</resources>
