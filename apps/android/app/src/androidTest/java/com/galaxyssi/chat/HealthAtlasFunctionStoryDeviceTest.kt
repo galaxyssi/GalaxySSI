@@ -413,6 +413,95 @@ class HealthAtlasFunctionStoryDeviceTest {
         } finally { clearHealthOverviewFixture(context, fixture) }
     }
 
+    @Test fun plateletPlaybackDoesNotReplaceItsMicroscopicProcess() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    openCell(activity, "fragment-platelet")
+                    activity.find<View>("atlas-function-platelet-hemostasis-art")
+                    repeat(4) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_platelet_stabilization_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.find<View>("atlas-process-stage-2").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.8f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    assertTrue(activity.find<View>("atlas-process-stage-2").isSelected)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
+    @Test fun tissueCatalogueOpensDifferentStableMechanisms() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        val routes = mapOf(
+            "tissue-vascular-endothelium" to "atlas-function-endothelial-exchange-art",
+            "tissue-hyaline-cartilage" to "atlas-function-cartilage-load-art",
+            "tissue-smooth-muscle" to "atlas-function-smooth-muscle-wave-art",
+            "tissue-dense-regular-connective" to "atlas-function-tendon-force-transfer-art",
+        )
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-tab-2").performClick()
+                    activity.find<View>("atlas-catalogue-layer-1").performClick()
+                    for ((id, art) in routes) {
+                        activity.find<EditText>("atlas-search").setText(id)
+                        activity.find<View>("atlas-entry-$id").performClick()
+                        activity.find<View>("atlas-tab-1").performClick()
+                        activity.find<View>(art)
+                        assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                        activity.find<View>("atlas-function-next").performClick()
+                        activity.onBackPressed()
+                    }
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
+    @Test fun focusedAlveolarAndIntestinalLessonsPreserveWholeOrganPlayback() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    openCell(activity, "cell-type-ii-pneumocyte")
+                    activity.find<View>("atlas-function-alveolar-surfactant-art")
+                    activity.find<View>("atlas-function-next").performClick()
+                    assertEquals(activity.getString(R.string.health_atlas_surfactant_release_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.onBackPressed()
+                    activity.find<View>("atlas-tab-2").performClick()
+                    activity.find<EditText>("atlas-search").setText("small-intestine")
+                    activity.find<View>("atlas-entry-small-intestine").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(HealthAtlasFunctionStory.DIGESTION,
+                        activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").story)
+                    activity.find<View>("atlas-function-next").performClick()
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    activity.find<View>("atlas-function-intestinal-absorption-art")
+                    repeat(4) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_absorption_story_lymph_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-function-lesson-2").performClick()
+                    activity.find<View>("atlas-function-smooth-muscle-wave-art")
+                    activity.find<View>("atlas-function-lesson-0").performClick()
+                    assertEquals(.2f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
     @Test fun uptakeRestoresPausedAndDoesNotReplaceTheBetaCellLesson() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())

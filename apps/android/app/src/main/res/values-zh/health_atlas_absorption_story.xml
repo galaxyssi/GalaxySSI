@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_absorption_story_title">小肠如何吸收营养物质</string>
+    <string name="health_atlas_absorption_story_choice">小肠吸收</string>
+    <string name="health_atlas_absorption_story_scope">这是正常人体小肠吸收的示意图。绒毛和放大的细胞不按实际比例绘制，图中路径只表示方向，不代表时间或吸收量。</string>
+    <string name="health_atlas_absorption_story_villus">绒毛伸入肠腔</string>
+    <string name="health_atlas_absorption_story_villus_caption">绒毛增加了吸收表面积。每根绒毛的表面覆盖着上皮，内部有毛细血管和称为乳糜管的细小淋巴管。</string>
+    <string name="health_atlas_absorption_story_brush_border">微绒毛形成刷状缘</string>
+    <string name="health_atlas_absorption_story_brush_border_caption">小肠吸收细胞是绒毛上皮中的一种细胞。细胞朝向肠腔的一面有许多微绒毛，它们组成刷状缘，进一步增大吸收面积。</string>
+    <string name="health_atlas_absorption_story_blood">可溶性营养物质进入血液</string>
+    <string name="health_atlas_absorption_story_blood_caption">葡萄糖和氨基酸穿过小肠吸收细胞，从靠组织的一侧离开，进入附近的毛细血管，再随肝门静脉血流流向肝脏。</string>
+    <string name="health_atlas_absorption_story_package">吸收细胞包装长链脂质</string>
+    <string name="health_atlas_absorption_story_package_caption">长链脂肪的消化产物进入吸收细胞后，细胞重新合成甘油三酯，并将其与其他脂质和蛋白质一起组装成乳糜微粒。</string>
+    <string name="health_atlas_absorption_story_lymph">乳糜微粒先进入淋巴</string>
+    <string name="health_atlas_absorption_story_lymph_caption">乳糜微粒从吸收细胞靠组织的一侧释放，进入乳糜管。它们随淋巴液到达血液，不像葡萄糖和氨基酸那样直接进入毛细血管。</string>
+    <string name="health_atlas_absorption_story_label_lumen">肠腔</string>
+    <string name="health_atlas_absorption_story_label_villus">绒毛</string>
+    <string name="health_atlas_absorption_story_label_brush_border">刷状缘</string>
+    <string name="health_atlas_absorption_story_label_enterocyte">小肠吸收细胞</string>
+    <string name="health_atlas_absorption_story_label_capillaries">毛细血管</string>
+    <string name="health_atlas_absorption_story_label_lacteal">乳糜管</string>
+    <string name="health_atlas_absorption_story_label_solutes">葡萄糖和氨基酸</string>
+    <string name="health_atlas_absorption_story_label_lipid">脂肪消化产物</string>
+    <string name="health_atlas_absorption_story_label_chylomicrons">乳糜微粒</string>
+    <string name="health_atlas_absorption_story_soluble_source">人体小肠对葡萄糖和氨基酸的吸收</string>
+    <string name="health_atlas_absorption_story_lipid_source">人体小肠脂质颗粒的形成与乳糜管转运</string>
+</resources>

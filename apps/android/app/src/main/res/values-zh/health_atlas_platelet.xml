@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_platelet_hemostasis_title">血小板如何帮助止血</string>
+    <string name="health_atlas_platelet_hemostasis_scope">血管出现小缺口时正常止血过程的简化示意。体内的这些过程相互重叠，图中大小和时间不按比例呈现。</string>
+    <string name="health_atlas_platelet_hemostasis_choice">血小板止血</string>
+    <string name="health_atlas_platelet_gap">血管壁出现小缺口</string>
+    <string name="health_atlas_platelet_gap_caption">血管内衬出现小缺口，血管壁中的胶原暴露，与流经此处的血液接触。</string>
+    <string name="health_atlas_platelet_adhesion">血小板黏附在暴露的血管壁上</string>
+    <string name="health_atlas_platelet_adhesion_caption">血液中的血管性血友病因子帮助流经此处的血小板在胶原暴露处停留并黏附。</string>
+    <string name="health_atlas_platelet_activation">黏附的血小板被激活</string>
+    <string name="health_atlas_platelet_activation_caption">黏附的血小板改变形状并释放信号，帮助激活附近的血小板。</string>
+    <string name="health_atlas_platelet_aggregation">形成血小板栓</string>
+    <string name="health_atlas_platelet_aggregation_caption">更多血小板在缺口处相互黏附，聚集形成血小板栓。</string>
+    <string name="health_atlas_platelet_stabilization">纤维蛋白加固血小板栓</string>
+    <string name="health_atlas_platelet_stabilization_caption">血液在局部凝固时，纤维蛋白在血小板栓内部和周围形成网状结构，帮助血小板栓保持稳定。</string>
+    <string name="health_atlas_platelet_vessel_lining">血管内衬</string>
+    <string name="health_atlas_platelet_blood_flow">血流方向</string>
+    <string name="health_atlas_platelet_exposed_gap">血管壁缺口</string>
+    <string name="health_atlas_platelet_fragment">血小板</string>
+    <string name="health_atlas_platelet_signals">局部信号</string>
+    <string name="health_atlas_platelet_plug">血小板栓</string>
+    <string name="health_atlas_platelet_fibrin_mesh">纤维蛋白网</string>
+    <string name="health_atlas_platelet_ref_adhesion">血流中血小板血栓形成时多种底物与受体相互作用的特异性协同</string>
+    <string name="health_atlas_platelet_ref_activation">单颗粒融合与复合颗粒融合对活化血小板分泌的各自贡献</string>
+    <string name="health_atlas_platelet_ref_fibrin">人血管损伤芯片止血模型</string>
+</resources>

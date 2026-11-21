@@ -15,6 +15,43 @@ class HealthAtlasFunctionStoryTest {
         assertNull(HealthAtlasFunctionStory.forId(null))
     }
 
+    @Test fun tissueEntriesReuseOnlyTheirMatchingPlaybackLesson() {
+        val lessons = mapOf(
+            "tissue-alveolar-epithelium" to listOf(HealthAtlasFunctionStory.BREATHING, HealthAtlasFunctionStory.ALVEOLAR_SURFACTANT),
+            "tissue-renal-tubular-epithelium" to listOf(HealthAtlasFunctionStory.NEPHRON),
+            "tissue-cardiac-muscle" to listOf(HealthAtlasFunctionStory.HEARTBEAT),
+            "tissue-intestinal-epithelium" to listOf(HealthAtlasFunctionStory.INTESTINAL_ABSORPTION, HealthAtlasFunctionStory.DIGESTION),
+        )
+        for ((id, stories) in lessons) {
+            assertEquals(id, stories.first(), HealthAtlasFunctionStory.forId(id))
+            assertEquals(id, stories, HealthAtlasFunctionStory.choicesForId(id))
+        }
+    }
+
+    @Test fun tissueAndPlateletMechanismsHaveScopedPlayback() {
+        val owners = mapOf(
+            "tissue-vascular-endothelium" to HealthAtlasFunctionStory.ENDOTHELIAL_EXCHANGE,
+            "cell-vascular-endothelial-cell" to HealthAtlasFunctionStory.ENDOTHELIAL_EXCHANGE,
+            "fragment-platelet" to HealthAtlasFunctionStory.PLATELET_HEMOSTASIS,
+            "tissue-smooth-muscle" to HealthAtlasFunctionStory.SMOOTH_MUSCLE_WAVE,
+            "cell-smooth-muscle-cell" to HealthAtlasFunctionStory.SMOOTH_MUSCLE_WAVE,
+            "tissue-dense-regular-connective" to HealthAtlasFunctionStory.TENDON_FORCE_TRANSFER,
+            "tissue-hyaline-cartilage" to HealthAtlasFunctionStory.CARTILAGE_LOAD,
+        )
+        for ((id, story) in owners) {
+            assertEquals(id, story, HealthAtlasFunctionStory.forId(id))
+            assertEquals(id, listOf(story), HealthAtlasFunctionStory.choicesForId(id))
+        }
+        assertEquals(listOf(HealthAtlasFunctionStory.DIGESTION, HealthAtlasFunctionStory.INTESTINAL_ABSORPTION,
+            HealthAtlasFunctionStory.SMOOTH_MUSCLE_WAVE),
+            HealthAtlasFunctionStory.choicesForId("small-intestine"))
+        assertEquals(listOf(HealthAtlasFunctionStory.MUSCLE_MOTION, HealthAtlasFunctionStory.TENDON_FORCE_TRANSFER),
+            HealthAtlasFunctionStory.choicesForId("tendons"))
+        assertEquals(HealthAtlasFunctionStory.ENDOTHELIAL_EXCHANGE, HealthAtlasFunctionStory.forId("capillaries"))
+        assertEquals(HealthAtlasFunctionStory.BREATHING, HealthAtlasFunctionStory.forId("pulmonary-capillaries"))
+        assertNull(HealthAtlasFunctionStory.forId("cell-chondrocyte"))
+    }
+
     @Test fun glut4DocksAndFlattensContinuouslyBeforeGlucoseCrossesTheMembrane() {
         val radius = HealthAtlasUptakeMotion.RADIUS
         val surface = HealthAtlasUptakeMotion.SURFACE
@@ -100,7 +137,7 @@ class HealthAtlasFunctionStoryTest {
         for (id in listOf("respiratory", "trachea", "bronchi")) {
             assertEquals(listOf(breathing, airway), HealthAtlasFunctionStory.choicesForId(id))
         }
-        assertEquals(listOf(breathing), HealthAtlasFunctionStory.choicesForId("alveoli"))
+        assertFalse(airway in HealthAtlasFunctionStory.choicesForId("alveoli"))
         assertTrue(HealthAtlasAirwayMotion.fall(0, .6f, 0) > HealthAtlasAirwayMotion.fall(0, .6f, 2))
         for (step in 0..2) assertEquals(0f, HealthAtlasAirwayMotion.surfaceTravel(step, 1f), 0f)
         assertEquals(1f, HealthAtlasAirwayMotion.fall(0, 1f, 2), 0f)
@@ -154,6 +191,20 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(HealthAtlasDigestionStage.VILLUS.caption, meal.chapters.last().second)
         assertEquals(HealthAtlasDigestionStage.WATER.caption, colon.chapters[2].second)
         assertTrue(meal.chapters.toSet().intersect(colon.chapters.toSet()).isEmpty())
+    }
+
+    @Test fun surfactantAndAbsorptionExtendButDoNotReplaceWholeOrganPlayback() {
+        val surfactant = HealthAtlasFunctionStory.ALVEOLAR_SURFACTANT
+        val absorption = HealthAtlasFunctionStory.INTESTINAL_ABSORPTION
+        val breathing = HealthAtlasFunctionStory.BREATHING
+        val digestion = HealthAtlasFunctionStory.DIGESTION
+        assertEquals(surfactant, HealthAtlasFunctionStory.forId("cell-type-ii-pneumocyte"))
+        assertFalse(surfactant in HealthAtlasFunctionStory.choicesForId("cell-type-i-pneumocyte"))
+        assertEquals(listOf(breathing, surfactant), HealthAtlasFunctionStory.choicesForId("alveoli"))
+        for (id in listOf("cell-enterocyte", "duodenum", "jejunum", "ileum")) {
+            assertEquals(listOf(digestion, absorption), HealthAtlasFunctionStory.choicesForId(id))
+        }
+        assertEquals(listOf("lymphatic-vessels" to HealthAtlasFunctionStory.LYMPH_RETURN), absorption.relatedLessons)
     }
 
     @Test fun visionAndAdaptationAreScopedToDifferentEntriesAndKeepContinuousBrightness() {

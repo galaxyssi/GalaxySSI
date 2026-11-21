@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_surfactant_title">How surfactant works in an alveolus</string>
+    <string name="health_atlas_surfactant_choice">Alveolar surfactant</string>
+    <string name="health_atlas_surfactant_scope">A simplified cutaway of a normal alveolus. Layers, movements and timing are not to scale. Secretion maintains the film over time; the film spreads and compresses with each breath.</string>
+
+    <string name="health_atlas_surfactant_locate">Two kinds of lining cell</string>
+    <string name="health_atlas_surfactant_locate_caption">The rounded type II cell stores surfactant, a mixture of lipids and proteins, in layered packets called lamellar bodies. The flat type I cell forms the thin part of the wall through which gases diffuse between air and blood.</string>
+    <string name="health_atlas_surfactant_release">A type II cell releases surfactant</string>
+    <string name="health_atlas_surfactant_release_caption">A lamellar body fuses with the cell membrane facing the alveolar air. Its contents enter the thin liquid lining, rather than being released directly into the air.</string>
+    <string name="health_atlas_surfactant_spread">Surfactant joins the film</string>
+    <string name="health_atlas_surfactant_spread_caption">Released surfactant can reach the boundary where alveolar air meets liquid and spread to replenish the existing film. The film lowers surface tension at that boundary.</string>
+    <string name="health_atlas_surfactant_inhale">Inhale: the film spreads</string>
+    <string name="health_atlas_surfactant_inhale_caption">As the alveolus expands, its air-liquid interface has more area. The existing surfactant film spreads over that larger surface.</string>
+    <string name="health_atlas_surfactant_exhale">Exhale: the film compresses</string>
+    <string name="health_atlas_surfactant_exhale_caption">As the alveolus gets smaller, the film packs more closely and surface tension falls. Lower tension helps keep the alveolus open at lower lung volumes.</string>
+
+    <string name="health_atlas_surfactant_air">Alveolar air</string>
+    <string name="health_atlas_surfactant_film">Surfactant film</string>
+    <string name="health_atlas_surfactant_liquid">Liquid lining</string>
+    <string name="health_atlas_surfactant_type_ii">Type II cell</string>
+    <string name="health_atlas_surfactant_type_i">Type I cell</string>
+    <string name="health_atlas_surfactant_capillary">Capillary</string>
+    <string name="health_atlas_surfactant_lamellar_bodies">Lamellar bodies</string>
+
+    <string name="health_atlas_surfactant_ref_secretion">Evidence: surfactant release in rat type II cells</string>
+    <string name="health_atlas_surfactant_ref_film">Evidence: film area and surface tension in rat surfactant</string>
+</resources>

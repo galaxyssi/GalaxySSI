@@ -31,7 +31,8 @@ internal enum class HealthAtlasFunctionStory(
     ),
     HEARTBEAT(
         setOf("heart", "cardio", "atria", "ventricles", "heart-valves", "left-atrium", "right-atrium",
-            "left-ventricle", "right-ventricle", "tricuspid-valve", "mitral-valve", "pulmonary-valve", "aortic-valve"),
+            "left-ventricle", "right-ventricle", "tricuspid-valve", "mitral-valve", "pulmonary-valve", "aortic-valve",
+            "tissue-cardiac-muscle"),
         R.string.health_atlas_beat_title,
         R.string.health_atlas_beat_scope,
         HealthAtlasBeatStage.entries.map { it.title to it.caption },
@@ -43,7 +44,7 @@ internal enum class HealthAtlasFunctionStory(
     ),
     BREATHING(
         setOf("respiratory", "trachea", "bronchi", "bronchioles", "lungs", "diaphragm",
-            "alveoli", "respiratory-membrane", "pulmonary-capillaries"),
+            "alveoli", "respiratory-membrane", "pulmonary-capillaries", "tissue-alveolar-epithelium"),
         R.string.health_atlas_breathe_title,
         R.string.health_atlas_breathe_scope,
         HealthAtlasBreathingStage.entries.map { it.title to it.caption },
@@ -92,7 +93,7 @@ internal enum class HealthAtlasFunctionStory(
     ),
     NEPHRON(
         setOf("urinary", "kidneys", "nephron", "glomerulus", "bowmans-capsule", "renal-tubules",
-            "proximal-tubule", "nephron-loop", "distal-tubule", "collecting-ducts"),
+            "proximal-tubule", "nephron-loop", "distal-tubule", "collecting-ducts", "tissue-renal-tubular-epithelium"),
         R.string.health_atlas_nephron_story_title,
         R.string.health_atlas_nephron_story_scope,
         HealthAtlasNephronStage.entries.map { it.title to it.caption },
@@ -509,6 +510,170 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    ENDOTHELIAL_EXCHANGE(
+        setOf("tissue-vascular-endothelium", "cell-vascular-endothelial-cell", "capillaries"),
+        R.string.health_atlas_endothelium_title,
+        R.string.health_atlas_endothelium_scope,
+        listOf(
+            R.string.health_atlas_endothelium_boundary to
+                R.string.health_atlas_endothelium_boundary_caption,
+            R.string.health_atlas_endothelium_filtration to
+                R.string.health_atlas_endothelium_filtration_caption,
+            R.string.health_atlas_endothelium_diffusion to
+                R.string.health_atlas_endothelium_diffusion_caption,
+            R.string.health_atlas_endothelium_retention to
+                R.string.health_atlas_endothelium_retention_caption,
+            R.string.health_atlas_endothelium_drainage to
+                R.string.health_atlas_endothelium_drainage_caption,
+        ),
+        listOf(
+            R.string.health_atlas_endothelium_ref_filtration to "https://pubmed.ncbi.nlm.nih.gov/3498833/",
+            R.string.health_atlas_endothelium_ref_diffusion to "https://pubmed.ncbi.nlm.nih.gov/9841533/",
+            R.string.health_atlas_endothelium_ref_albumin to "https://pubmed.ncbi.nlm.nih.gov/2224941/",
+            R.string.health_atlas_endothelium_ref_lymph to "https://pubmed.ncbi.nlm.nih.gov/11481218/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    PLATELET_HEMOSTASIS(
+        setOf("fragment-platelet"),
+        R.string.health_atlas_platelet_hemostasis_title,
+        R.string.health_atlas_platelet_hemostasis_scope,
+        listOf(
+            R.string.health_atlas_platelet_gap to
+                R.string.health_atlas_platelet_gap_caption,
+            R.string.health_atlas_platelet_adhesion to
+                R.string.health_atlas_platelet_adhesion_caption,
+            R.string.health_atlas_platelet_activation to
+                R.string.health_atlas_platelet_activation_caption,
+            R.string.health_atlas_platelet_aggregation to
+                R.string.health_atlas_platelet_aggregation_caption,
+            R.string.health_atlas_platelet_stabilization to
+                R.string.health_atlas_platelet_stabilization_caption,
+        ),
+        listOf(
+            R.string.health_atlas_platelet_ref_adhesion to "https://pubmed.ncbi.nlm.nih.gov/9741630/",
+            R.string.health_atlas_platelet_ref_activation to "https://pubmed.ncbi.nlm.nih.gov/27625359/",
+            R.string.health_atlas_platelet_ref_fibrin to "https://pubmed.ncbi.nlm.nih.gov/33150735/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    CARTILAGE_LOAD(
+        setOf("tissue-hyaline-cartilage", "patella"),
+        R.string.health_atlas_cartilage_story_title,
+        R.string.health_atlas_cartilage_story_scope,
+        listOf(
+            R.string.health_atlas_cartilage_story_rest to
+                R.string.health_atlas_cartilage_story_rest_caption,
+            R.string.health_atlas_cartilage_story_press to
+                R.string.health_atlas_cartilage_story_press_caption,
+            R.string.health_atlas_cartilage_story_hold to
+                R.string.health_atlas_cartilage_story_hold_caption,
+            R.string.health_atlas_cartilage_story_unload to
+                R.string.health_atlas_cartilage_story_unload_caption,
+            R.string.health_atlas_cartilage_story_recover to
+                R.string.health_atlas_cartilage_story_recover_caption,
+        ),
+        listOf(
+            R.string.health_atlas_cartilage_story_reference_load to "https://pmc.ncbi.nlm.nih.gov/articles/PMC2833094/",
+            R.string.health_atlas_cartilage_story_reference_recovery to "https://pubmed.ncbi.nlm.nih.gov/34800716/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    SMOOTH_MUSCLE_WAVE(
+        setOf("tissue-smooth-muscle", "cell-smooth-muscle-cell"),
+        R.string.health_atlas_smooth_muscle_story_title,
+        R.string.health_atlas_smooth_muscle_story_scope,
+        listOf(
+            R.string.health_atlas_smooth_muscle_story_fill to
+                R.string.health_atlas_smooth_muscle_story_fill_caption,
+            R.string.health_atlas_smooth_muscle_story_relax to
+                R.string.health_atlas_smooth_muscle_story_relax_caption,
+            R.string.health_atlas_smooth_muscle_story_contract to
+                R.string.health_atlas_smooth_muscle_story_contract_caption,
+            R.string.health_atlas_smooth_muscle_story_propel to
+                R.string.health_atlas_smooth_muscle_story_propel_caption,
+            R.string.health_atlas_smooth_muscle_story_recover to
+                R.string.health_atlas_smooth_muscle_story_recover_caption,
+        ),
+        listOf(
+            R.string.health_atlas_smooth_muscle_story_anatomy_source to "https://pubmed.ncbi.nlm.nih.gov/7367760/",
+            R.string.health_atlas_smooth_muscle_story_propulsion_source to "https://pmc.ncbi.nlm.nih.gov/articles/PMC1155880/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    TENDON_FORCE_TRANSFER(
+        setOf("tissue-dense-regular-connective"),
+        R.string.health_atlas_tendon_story_title,
+        R.string.health_atlas_tendon_story_scope,
+        listOf(
+            R.string.health_atlas_tendon_story_link to
+                R.string.health_atlas_tendon_story_link_caption,
+            R.string.health_atlas_tendon_story_load to
+                R.string.health_atlas_tendon_story_load_caption,
+            R.string.health_atlas_tendon_story_uncrimp to
+                R.string.health_atlas_tendon_story_uncrimp_caption,
+            R.string.health_atlas_tendon_story_transfer to
+                R.string.health_atlas_tendon_story_transfer_caption,
+            R.string.health_atlas_tendon_story_recoil to
+                R.string.health_atlas_tendon_story_recoil_caption,
+        ),
+        listOf(
+            R.string.health_atlas_tendon_story_ref_crimp to "https://pubmed.ncbi.nlm.nih.gov/17229278/",
+            R.string.health_atlas_tendon_story_ref_loading to "https://pmc.ncbi.nlm.nih.gov/articles/PMC7955091/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    ALVEOLAR_SURFACTANT(
+        setOf("cell-type-ii-pneumocyte"),
+        R.string.health_atlas_surfactant_title,
+        R.string.health_atlas_surfactant_scope,
+        listOf(
+            R.string.health_atlas_surfactant_locate to
+                R.string.health_atlas_surfactant_locate_caption,
+            R.string.health_atlas_surfactant_release to
+                R.string.health_atlas_surfactant_release_caption,
+            R.string.health_atlas_surfactant_spread to
+                R.string.health_atlas_surfactant_spread_caption,
+            R.string.health_atlas_surfactant_inhale to
+                R.string.health_atlas_surfactant_inhale_caption,
+            R.string.health_atlas_surfactant_exhale to
+                R.string.health_atlas_surfactant_exhale_caption,
+        ),
+        listOf(
+            R.string.health_atlas_surfactant_ref_secretion to "https://pubmed.ncbi.nlm.nih.gov/14704221/",
+            R.string.health_atlas_surfactant_ref_film to "https://pubmed.ncbi.nlm.nih.gov/1730014/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    INTESTINAL_ABSORPTION(
+        setOf("tissue-intestinal-epithelium"),
+        R.string.health_atlas_absorption_story_title,
+        R.string.health_atlas_absorption_story_scope,
+        listOf(
+            R.string.health_atlas_absorption_story_villus to
+                R.string.health_atlas_absorption_story_villus_caption,
+            R.string.health_atlas_absorption_story_brush_border to
+                R.string.health_atlas_absorption_story_brush_border_caption,
+            R.string.health_atlas_absorption_story_blood to
+                R.string.health_atlas_absorption_story_blood_caption,
+            R.string.health_atlas_absorption_story_package to
+                R.string.health_atlas_absorption_story_package_caption,
+            R.string.health_atlas_absorption_story_lymph to
+                R.string.health_atlas_absorption_story_lymph_caption,
+        ),
+        listOf(
+            R.string.health_atlas_absorption_story_soluble_source to "https://pubmed.ncbi.nlm.nih.gov/4852103/",
+            R.string.health_atlas_absorption_story_lipid_source to "https://www.jci.org/articles/view/106700",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -536,6 +701,11 @@ internal enum class HealthAtlasFunctionStory(
         DIM_LIGHT_RELAY -> R.string.health_atlas_ocular_choice_relay
         CORNEAL_SURFACE_RENEWAL -> R.string.health_atlas_ocular_choice_cornea
         AIRWAY_CLEARANCE -> R.string.health_atlas_airway_choice
+        ENDOTHELIAL_EXCHANGE -> R.string.health_atlas_endothelium_choice
+        PLATELET_HEMOSTASIS -> R.string.health_atlas_platelet_hemostasis_choice
+        TENDON_FORCE_TRANSFER -> R.string.health_atlas_tendon_story_choice
+        ALVEOLAR_SURFACTANT -> R.string.health_atlas_surfactant_choice
+        INTESTINAL_ABSORPTION -> R.string.health_atlas_absorption_story_choice
         else -> title
     }
 
@@ -556,6 +726,12 @@ internal enum class HealthAtlasFunctionStory(
         CORNEAL_SURFACE_RENEWAL -> listOf("cornea" to VISION)
         BREATHING -> listOf("tissue-respiratory-epithelium" to AIRWAY_CLEARANCE)
         AIRWAY_CLEARANCE -> listOf("lungs" to BREATHING)
+        ENDOTHELIAL_EXCHANGE -> listOf("lymphatic-vessels" to LYMPH_RETURN)
+        PLATELET_HEMOSTASIS -> listOf("capillaries" to ENDOTHELIAL_EXCHANGE)
+        SMOOTH_MUSCLE_WAVE -> listOf("small-intestine" to DIGESTION)
+        TENDON_FORCE_TRANSFER -> listOf("biceps-brachii" to MUSCLE_MOTION)
+        ALVEOLAR_SURFACTANT -> listOf("alveoli" to BREATHING)
+        INTESTINAL_ABSORPTION -> listOf("lymphatic-vessels" to LYMPH_RETURN)
         else -> emptyList()
     }
 
@@ -581,6 +757,13 @@ internal enum class HealthAtlasFunctionStory(
         TOUCH_SIGNAL, VESTIBULAR_BALANCE -> HealthAtlasMotionSenseStoryView(context, this)
         RPE_VISUAL_CYCLE, DIM_LIGHT_RELAY, CORNEAL_SURFACE_RENEWAL -> HealthAtlasOcularStoryView(context, this)
         AIRWAY_CLEARANCE -> HealthAtlasAirwayStoryView(context)
+        ENDOTHELIAL_EXCHANGE -> HealthAtlasEndothelialStoryView(context)
+        PLATELET_HEMOSTASIS -> HealthAtlasPlateletStoryView(context)
+        CARTILAGE_LOAD -> HealthAtlasCartilageStoryView(context)
+        SMOOTH_MUSCLE_WAVE -> HealthAtlasSmoothMuscleStoryView(context)
+        TENDON_FORCE_TRANSFER -> HealthAtlasTendonStoryView(context)
+        ALVEOLAR_SURFACTANT -> HealthAtlasSurfactantStoryView(context)
+        INTESTINAL_ABSORPTION -> HealthAtlasIntestinalAbsorptionStoryView(context)
     }
 
     companion object {
@@ -607,6 +790,11 @@ internal enum class HealthAtlasFunctionStory(
                 "cell-retinal-bipolar-cell" -> listOf(primary, DIM_LIGHT_RELAY)
                 "cornea" -> listOf(primary, CORNEAL_SURFACE_RENEWAL)
                 "respiratory", "trachea", "bronchi" -> listOf(primary, AIRWAY_CLEARANCE)
+                "small-intestine" -> listOf(primary, INTESTINAL_ABSORPTION, SMOOTH_MUSCLE_WAVE)
+                "tissue-intestinal-epithelium" -> listOf(primary, DIGESTION)
+                "duodenum", "jejunum", "ileum", "cell-enterocyte" -> listOf(primary, INTESTINAL_ABSORPTION)
+                "alveoli", "tissue-alveolar-epithelium" -> listOf(primary, ALVEOLAR_SURFACTANT)
+                "tendons" -> listOf(primary, TENDON_FORCE_TRANSFER)
                 else -> listOf(primary)
             }
         }

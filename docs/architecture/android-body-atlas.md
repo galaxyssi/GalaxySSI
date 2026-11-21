@@ -466,6 +466,16 @@ Alveolar gas exchange is not depicted as having a mucus conveyor.
 Evidence: https://pmc.ncbi.nlm.nih.gov/articles/PMC3633213/ and
 https://pmc.ncbi.nlm.nih.gov/articles/PMC4504973/.
 
+The tissue catalogue links cardiac muscle, alveolar lining and renal
+tubular epithelium to matching organ lessons. Separate five-stage lessons
+show capillary exchange, platelet plug formation, intestinal smooth muscle
+propulsion, tendon force transfer, articular cartilage loading and recovery,
+alveolar surfactant and intestinal absorption. The absorption lesson
+distinguishes soluble nutrients going to blood from lipid particles taking
+the lymphatic route. Organ entries preserve their default lessons and
+expose the focused mechanisms as additional choices. Structure and
+quantitative simulations remain independent of visual playback.
+
 The pinned Agent action follows the current surface. Public catalogue, mechanism
 and research prompts use `HealthAtlasAgentContext`: selected anatomy, current
 teaching stage, cardiac or other quantitative inputs, assumptions and sources.

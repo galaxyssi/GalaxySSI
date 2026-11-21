@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_endothelium_title">毛细血管内皮如何调节物质交换</string>
+    <string name="health_atlas_endothelium_scope">组织中正常连续型毛细血管的简化示意。不同组织的交换情况有所不同，路径、大小和时间均不按比例。仅供学习，不构成医疗建议。</string>
+    <string name="health_atlas_endothelium_choice">毛细血管交换</string>
+    <string name="health_atlas_endothelium_boundary">血液与组织之间的内皮层</string>
+    <string name="health_atlas_endothelium_boundary_caption">一层薄薄的内皮细胞衬在毛细血管内侧。血液在血管腔内流动，组织细胞周围的空间称为组织间隙。内皮把两者分开，并选择性地让物质通过。</string>
+    <string name="health_atlas_endothelium_filtration">一部分水向外滤出</string>
+    <string name="health_atlas_endothelium_filtration_caption">在许多组织中，血管壁两侧压力的平衡使一部分水从血液滤入组织间隙。这种向外的液体流动称为滤过。</string>
+    <string name="health_atlas_endothelium_diffusion">小分子溶质扩散通过内皮</string>
+    <string name="health_atlas_endothelium_diffusion_caption">小分子溶质可以向两个方向扩散。每种溶质的净移动方向是从高浓度处到低浓度处。这与液体整体流动不同。</string>
+    <string name="health_atlas_endothelium_retention">大分子大多留在血液中</string>
+    <string name="health_atlas_endothelium_retention_caption">许多大分子比小分子溶质更难通过内皮，例如血浆中的白蛋白。血液流经毛细血管时，大部分白蛋白留在血液中，但仍有少量可以通过。</string>
+    <string name="health_atlas_endothelium_drainage">多余的组织液进入淋巴管</string>
+    <string name="health_atlas_endothelium_drainage_caption">多余的组织液进入附近的毛细淋巴管，进入后称为淋巴液。这一途径并不依赖毛细血管的静脉端持续重吸收液体。</string>
+    <string name="health_atlas_endothelium_lumen">血管腔</string>
+    <string name="health_atlas_endothelium_lining">内皮层</string>
+    <string name="health_atlas_endothelium_interstitium">组织间隙</string>
+    <string name="health_atlas_endothelium_lymph_capillary">毛细淋巴管</string>
+    <string name="health_atlas_endothelium_water">水</string>
+    <string name="health_atlas_endothelium_solutes">小分子溶质</string>
+    <string name="health_atlas_endothelium_proteins">血浆蛋白</string>
+    <string name="health_atlas_endothelium_ref_filtration">研究依据：毛细血管液体滤过</string>
+    <string name="health_atlas_endothelium_ref_diffusion">研究依据：毛细血管对小分子溶质的通透性</string>
+    <string name="health_atlas_endothelium_ref_albumin">研究依据：人体前臂毛细血管的白蛋白交换</string>
+    <string name="health_atlas_endothelium_ref_lymph">研究依据：液体进入初始淋巴管</string>
+</resources>
