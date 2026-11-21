@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_olfactory_surface_retention_title">Fictional marker on the mucus side</string>
+    <string name="health_atlas_olfactory_surface_retention_total">Total marker amount</string>
+    <string name="health_atlas_olfactory_surface_retention_mucus_share">Chosen mucus-side share</string>
+    <string name="health_atlas_olfactory_surface_retention_companion">Marker on the air side: %1$s a.u.</string>
+    <string name="health_atlas_olfactory_surface_retention_formula">Mucus-side amount = total marker × (chosen percentage ÷ 100). Air-side amount = total marker − mucus-side amount. Both amounts are in arbitrary units (a.u.).</string>
+    <string name="health_atlas_olfactory_surface_retention_scope">High in the nasal cavity, mucus covers the surface of the olfactory epithelium. Bowman glands beneath the epithelium supply mucus to that surface. This exercise splits an imaginary, inert marker across that mucus–air boundary without changing its total. The chosen share is hypothetical. It does not describe a real substance, predict smell, or assess anyone’s sense of smell.</string>
+</resources>

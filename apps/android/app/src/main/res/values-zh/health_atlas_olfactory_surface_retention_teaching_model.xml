@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_olfactory_surface_retention_title">黏液侧的虚构标记物量</string>
+    <string name="health_atlas_olfactory_surface_retention_total">标记物总量</string>
+    <string name="health_atlas_olfactory_surface_retention_mucus_share">设定的黏液侧占比</string>
+    <string name="health_atlas_olfactory_surface_retention_companion">空气侧的标记物量：%1$s a.u.</string>
+    <string name="health_atlas_olfactory_surface_retention_formula">黏液侧标记物量 = 标记物总量 ×（设定的百分比 ÷ 100）。空气侧标记物量 = 标记物总量 − 黏液侧标记物量。两侧的量均以任意单位（a.u.）表示。</string>
+    <string name="health_atlas_olfactory_surface_retention_scope">在鼻腔上部，嗅上皮表面覆盖着黏液。上皮下方的鲍曼腺向这一表面分泌黏液。这个练习把一种虚构的惰性标记物分配到黏液与空气交界面的两侧，总量保持不变。设定的占比只用于假想示例，不代表任何真实物质的分布，也不能预测气味感知或评估个人嗅觉。</string>
+</resources>
