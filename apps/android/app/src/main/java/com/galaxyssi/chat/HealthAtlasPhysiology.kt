@@ -151,7 +151,9 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     VULVAR_FOLD_OVERLAP(HealthAtlasVulvarFoldOverlapTeachingModel.spec),
     UTERINE_LINING_AREA(HealthAtlasUterineLiningAreaTeachingModel.spec),
     CAPILLARY_SUPPORT_SURFACE(HealthAtlasCapillarySupportSurfaceTeachingModel.spec),
-    RETINAL_LIGHT_ATTENUATION(HealthAtlasRetinalLightAttenuationTeachingModel.spec);
+    RETINAL_LIGHT_ATTENUATION(HealthAtlasRetinalLightAttenuationTeachingModel.spec),
+    EPENDYMAL_BEAT_PHASE(HealthAtlasEpendymalBeatPhaseTeachingModel.spec),
+    MARROW_RENEWAL(HealthAtlasMarrowRenewalTeachingModel.spec);
 
     constructor(spec: HealthAtlasTeachingModelSpec) : this(spec.inputs.map { it.control }, spec.axis, spec.unit,
         spec.minimum, spec.maximum, spec.source, spec.extraSource, spec)
