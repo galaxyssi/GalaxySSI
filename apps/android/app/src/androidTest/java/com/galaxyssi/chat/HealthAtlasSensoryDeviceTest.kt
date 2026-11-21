@@ -86,7 +86,7 @@ class HealthAtlasSensoryDeviceTest {
             .map { requireNotNull(HealthAtlasTissueContextPlates.forId(it)) }
         val plates = HealthAtlasSensoryPlates.all + extendedCells
         assertEquals(16, plates.size)
-        assertEquals(42, plates.sumOf { it.features.size })
+        assertEquals(40, plates.sumOf { it.features.size })
         assertEquals(3, plates.sumOf { it.markers.size })
         assertEquals(16, plates.map { it.drawable }.toSet().size)
         for (plate in plates) {
