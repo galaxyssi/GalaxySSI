@@ -6,10 +6,11 @@ enum GalaxySSIHealthCareHistoryTool {
   static let pageBudget = 12_000
   static let requestBudget = 180_000
   static let instructions = """
-    Only the approved concern's contiguous measurement_history is available. To read the next older page,
+    Only the approved concern's measurement_history and explicitly selected_measurement_history are available. To read the next older page,
     call galaxyssi_health_history_read with the exact input_version and cursor from next in the latest page.
     Use only returned evidence. Explain gaps in coverage and comparability; never infer clinical stability from numbers.
-    Do not count a corrected record twice. If a plan is requested, its call must be final and not parallel with history.
+    Do not count a corrected record twice. Never parallelize plan and history calls. Record any required structured
+    assessment after an optional plan draft and before the final reply.
     """
 
   struct Output: Equatable {
@@ -26,6 +27,11 @@ enum GalaxySSIHealthCareHistoryTool {
   struct Approval {
     let binding: GalaxySSIHealthCareSeries.Binding
     let recent: Output
+    var entryToken: String?
+
+    func entryArguments(turn: UUID) -> AgentMcpJSONObject? {
+      entryToken.map { ["input_version": .string(turn.uuidString), "cursor": .string($0)] }
+    }
   }
 
   static func output(_ page: GalaxySSIHealthCareSeries.Page, metric: GalaxySSIHealthMetric,
@@ -35,7 +41,8 @@ enum GalaxySSIHealthCareHistoryTool {
     let rows: [AgentMcpJSONValue] = try page.rows.map { row in
       guard let time = Int64(exactly: (row.measuredAt.timeIntervalSince1970 * 1_000).rounded(.down))
       else { throw invalid }
-      return .object(["measured_at_unix_ms": .int(time), "result": .string(row.result), "unit": .string(row.unit),
+      return .object(["record_id": .string(row.record.id.uuidString), "revision": .int(Int64(row.record.revision)),
+        "measured_at_unix_ms": .int(time), "result": .string(row.result), "unit": .string(row.unit),
         "gaps_against_current": .array(row.gaps.map { .string($0.rawValue) })])
     }
     let payload: AgentMcpJSONObject = [

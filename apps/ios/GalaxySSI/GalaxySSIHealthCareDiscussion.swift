@@ -24,6 +24,7 @@ enum GalaxySSIHealthCareDiscussion {
     var answerDraftStaged: Bool?
     var actionFeedbackContextIncluded: Bool?
     var feedbackHistoryAllowed: Bool?
+    var relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope?
   }
 
   struct Thread: Codable, Identifiable, Equatable {
@@ -111,7 +112,7 @@ enum GalaxySSIHealthCareDiscussion {
     let destinationDigest: String
     let destination: Destination
     let question: String
-    let payload: String
+    var payload: String
     let reviewedAt: Date
     var proposesPlan = false
     var evidence: [GalaxySSIHealthCareEvidence.Receipt] = []
@@ -129,6 +130,10 @@ enum GalaxySSIHealthCareDiscussion {
     var actionFeedbackContextIncluded = false
     var feedbackHistoryAllowed = false
     var allowsStandingFeedbackPages = false
+    var relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope = [:]
+    var relatedPayload: AgentMcpJSONObject = [:]
+    var relatedHistory: [String: GalaxySSIHealthCareHistoryTool.Approval] = [:]
+    var hasHistoryReads: Bool { history?.recent.cursor != nil || (pairedDesktop == nil && !relatedHistory.isEmpty) }
     var requiresStructuredReview: Bool { research?.reviewRequired == true }
 
     var feedbackCursor: GalaxySSIHealthCareFeedbackTool.Cursor? {
@@ -169,13 +174,22 @@ enum GalaxySSIHealthCareDiscussion {
     }
 
     func providerPayload(now: Date = Date()) throws -> String {
-      guard proposesPlan || history != nil || researchHandoff != nil || questions != nil || feedbackCursor != nil else { return payload }
+      guard proposesPlan || history != nil || researchHandoff != nil || questions != nil || feedbackCursor != nil || !relatedMeasurements.isEmpty else { return payload }
       guard !proposesPlan || ((1...3).contains(evidence.count) && Set(evidence.map(\.id)).count == evidence.count &&
             Set(evidence.map(\.url)).count == evidence.count &&
             evidence.allSatisfy({ $0.valid(for: self, now: now) })) else { throw GalaxySSIHealthRecords.Failure.permission }
       var content = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(payload.utf8))
       if proposesPlan { content["native_sources"] = .array(evidence.map { .object($0.modelValue) }) }
       if let history { content["measurement_history"] = .object(history.recent.payload) }
+      if !relatedMeasurements.isEmpty {
+        content["related_measurements"] = .object(relatedPayload)
+        content["selected_measurement_history"] = .array(pairedDesktop == nil ? relatedHistory.keys.sorted().compactMap { metric in
+          relatedHistory[metric]?.entryArguments(turn: id).map {
+            .object(["metric": .string(metric), "samples_not_read": .bool(true), "next": .object($0)])
+          }
+        } : [])
+        content["selected_history_read_available"] = .bool(pairedDesktop == nil)
+      }
       if let feedbackCursor { content["approved_feedback_history"] = .object(feedbackCursor.arguments) }
       if let researchHandoff { content["research_handoff"] = .object(researchHandoff.payload) }
       if let questions {
@@ -200,6 +214,7 @@ enum GalaxySSIHealthCareDiscussion {
     let question: String
     let answer: String
     let measurementScope: String
+    let selectedMeasurementScope: String?
   }
   private struct Payload: Encodable {
     let concern: Snapshot
@@ -231,19 +246,23 @@ enum GalaxySSIHealthCareDiscussion {
   }
 
   static func payload(concern: GalaxySSIHealthCare.Concern, question: String, thread: Thread, destination: String,
-                      savedProfile: AgentMcpJSONObject? = nil, actionFeedback: [AgentMcpJSONValue]? = nil) throws -> String {
+                      savedProfile: AgentMcpJSONObject? = nil, actionFeedback: [AgentMcpJSONValue]? = nil,
+                      relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope = [:]) throws -> String {
     guard thread.concernID == concern.id, !question.isBlank, question.utf8.count <= 2_048
     else { throw GalaxySSIHealthRecords.Failure.invalid }
     // A new turn does not inherit consent to disclose a previous history-derived answer.
     let recent = thread.turns.lazy.filter {
       $0.destination == destination && $0.answer != nil && $0.historyIncluded != true &&
+        GalaxySSIHealthCareRelatedContext.permits($0.relatedMeasurements, selected: relatedMeasurements) &&
         $0.questionContextIncluded != true && $0.actionFeedbackContextIncluded != true && $0.feedbackHistoryAllowed != true
     }.suffix(3)
     let previous = recent.compactMap { turn in
       turn.answer.map {
         Exchange(question: turn.question, answer: $0, measurementScope: turn.measurement.map {
           $0 == concern.assessment.record ? "current_record" : "historical_record"
-        } ?? "unknown")
+        } ?? "unknown", selectedMeasurementScope: turn.relatedMeasurements.map {
+          $0 == relatedMeasurements ? "current_selected_measurements" : "historical_selected_measurements"
+        })
       }
     }
     let encoder = JSONEncoder()
@@ -289,6 +308,9 @@ enum GalaxySSIHealthCareDiscussion {
       Do not claim to schedule or perform any action. If proposing a plan, report each action's source requirements,
       missing information, and conflicts with a next step. Do not invent facts or treat a matched check as clinical validation.
       """
+    if !approval.relatedMeasurements.isEmpty {
+      instruction += "\nOnly explicitly selected measurements may be combined. Preserve each unit, measurement time and context; do not infer simultaneous sampling or causality. Missing or withdrawn measurements are not negative findings. No other conversations or care plans are authorized."
+    }
     if approval.questions != nil {
       instruction += """
         \nUse reviewed_questions only as scoped user self-reports. Do not repeat answered, deferred or declined
@@ -324,12 +346,12 @@ enum GalaxySSIHealthCareDiscussion {
       instruction += "\n" + GalaxySSIHealthCareQuestions.instruction
     } else if approval.allowsAnswerDraft {
       instruction += "\n" + GalaxySSIHealthCareAnswerDraft.instruction
-    } else if approval.history?.recent.cursor == nil && approval.questionCursor == nil && approval.feedbackCursor == nil {
+    } else if !approval.hasHistoryReads && approval.questionCursor == nil && approval.feedbackCursor == nil {
       instruction += "\nReturn only plain text. No tools are available."
     } else {
       instruction += "\nAfter any needed scoped reads, return a plain-text reply."
     }
-    if approval.history != nil { instruction += "\n" + GalaxySSIHealthCareHistoryTool.instructions }
+    if approval.history != nil || !approval.relatedHistory.isEmpty { instruction += "\n" + GalaxySSIHealthCareHistoryTool.instructions }
     if approval.questionCursor != nil { instruction += "\n" + GalaxySSIHealthCareQuestions.readInstruction }
     if approval.feedbackCursor != nil { instruction += "\n" + GalaxySSIHealthCareFeedbackTool.instructions }
     if approval.proposesPlan && approval.history != nil {
@@ -369,9 +391,9 @@ enum GalaxySSIHealthCareDiscussion {
     if journalRead {
       GalaxySSIHealthCareHistoryTool.configure(&body, style: model.apiStyle,
         proposesPlan: false, historyAvailable: false, journalAvailable: true)
-    } else if approval.requiresStructuredReview || approval.asksQuestions || approval.history != nil || approval.questionCursor != nil || approval.feedbackCursor != nil {
+    } else if approval.requiresStructuredReview || approval.asksQuestions || approval.history != nil || !approval.relatedHistory.isEmpty || approval.questionCursor != nil || approval.feedbackCursor != nil {
       GalaxySSIHealthCareHistoryTool.configure(&body, style: model.apiStyle,
-        proposesPlan: approval.proposesPlan, historyAvailable: approval.history?.recent.cursor != nil,
+        proposesPlan: approval.proposesPlan, historyAvailable: approval.hasHistoryReads,
         allowsMaintenance: approval.history != nil, questionsAvailable: approval.questionCursor != nil,
         asksQuestions: approval.asksQuestions, feedbackAvailable: approval.feedbackCursor != nil,
         reviewAvailable: approval.requiresStructuredReview)

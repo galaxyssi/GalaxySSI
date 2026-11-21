@@ -9,6 +9,7 @@ enum GalaxySSIHealthCareResearchHandoff {
     case historyChanged = "measurement_history_changed", contextChanged = "measurement_context_changed"
     case targetChanged = "reviewed_target_changed", actionFeedback = "action_feedback"
     case reviewDue = "review_due", authorizationReview = "authorization_review"
+    case relatedChanged = "related_measurements_changed"
   }
 
   struct Basis: Codable, Equatable {
@@ -19,9 +20,11 @@ enum GalaxySSIHealthCareResearchHandoff {
     let due: Set<String>
     let outcomes: [String: String]
     let latestFeedback: [String: UUID]?
+    var relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope?
 
     init(_ concern: GalaxySSIHealthCare.Concern, history: String, observedAt: Date,
-         actions: [GalaxySSIHealthCarePlan.AdoptedAction], clinicalFeedback: [String: UUID] = [:]) throws {
+         actions: [GalaxySSIHealthCarePlan.AdoptedAction], clinicalFeedback: [String: UUID] = [:],
+         relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope = [:]) throws {
       measurement = concern.assessment.record
       self.history = history
       let encoder = JSONEncoder()
@@ -42,6 +45,7 @@ enum GalaxySSIHealthCareResearchHandoff {
         if let feedback = action.feedback, feedback.isInScope(concern) { latest[action.id] = feedback.id }
       }
       latestFeedback = latest.isEmpty ? nil : latest
+      self.relatedMeasurements = relatedMeasurements.isEmpty ? nil : relatedMeasurements
     }
   }
 
@@ -58,7 +62,8 @@ enum GalaxySSIHealthCareResearchHandoff {
         authorization.localPermission == current.localPermission && authorization.onlinePermission == current.onlinePermission &&
         authorization.profileScopeEpoch == current.profileScopeEpoch && authorization.sources == current.sources &&
         (authorization.sharesActionFeedback == true) == (current.sharesActionFeedback == true) &&
-        (authorization.sharesFeedbackHistory == true) == (current.sharesFeedbackHistory == true)
+        (authorization.sharesFeedbackHistory == true) == (current.sharesFeedbackHistory == true) &&
+        GalaxySSIHealthCareRelatedContext.permits(authorization.relatedMeasurements, selected: current.relatedMeasurements)
     }
   }
 
@@ -110,6 +115,7 @@ enum GalaxySSIHealthCareResearchHandoff {
     var feedback = Set<String>()
     var outcomes = Set<String>()
     if let before {
+      if (basis.relatedMeasurements ?? [:]) != (before.relatedMeasurements ?? [:]) { reasons.append(.relatedChanged) }
       if basis.measurement != before.measurement {
         reasons.append(basis.measurement?.id == before.measurement?.id ? .correction : .newMeasurement)
       } else if basis.history != before.history { reasons.append(.historyChanged) }
@@ -137,7 +143,7 @@ enum GalaxySSIHealthCareResearchHandoff {
     let initialSourceReviewPending = sources.isEmpty && recordedPlan == nil && actionCount == 0
     let changedEvidence = reasons.contains(where: {
       switch $0 {
-      case .newMeasurement, .correction, .historyChanged, .contextChanged, .targetChanged, .actionFeedback: return true
+      case .newMeasurement, .correction, .historyChanged, .contextChanged, .targetChanged, .actionFeedback, .relatedChanged: return true
       default: return false
       }
     })

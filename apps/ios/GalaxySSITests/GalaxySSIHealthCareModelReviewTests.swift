@@ -243,10 +243,17 @@ final class HealthModelReviewFixture {
   let approval: GalaxySSIHealthCareDiscussion.Approval
   let quote = "This fictional laboratory paragraph is a fixture for testing extraction and exact passage matching only."
 
-  init(plan: Bool = false, paired: Bool = false) throws {
+  init(plan: Bool = false, paired: Bool = false, selected: Set<GalaxySSIHealthMetric> = []) throws {
     let records = GalaxySSIHealthRecords(owner: "review-fixture", secrets: secrets, isolatedFile: file)
     self.records = records
     try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-120), value: 110, unitOverride: "mg/dL"))
+    if !selected.isEmpty {
+      for index in 0..<35 {
+        try records.write(.init(metric: .weight, measuredAt: now.addingTimeInterval(Double(-300 - index * 3600)), value: 70))
+      }
+      try records.write(.init(metric: .bloodPressure, measuredAt: now.addingTimeInterval(-200), value: 121, diastolic: 79))
+      try records.write(.init(metric: .heartRate, measuredAt: now.addingTimeInterval(-200), value: 72))
+    }
     try records.setPrivacy(.localCare, enabled: true)
     try records.setHealthOnlinePermission(true)
     try records.reconcileLocalCare(now: now)
@@ -258,9 +265,10 @@ final class HealthModelReviewFixture {
       endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
     let route = GalaxySSIHealthDesktopResearch.Route(connector: .init(contactId: "desktop:codex", desktopId: "desktop",
       clientRouteId: "client", modelId: "fixture", reasoningEffort: .automatic), desktopFingerprint: "pinned")
-    let preview = try paired ? records.prepareLocalCareDesktopDiscussion(id: concern.id, metric: .glucose,
+    var preview = try paired ? records.prepareLocalCareDesktopDiscussion(id: concern.id, metric: .glucose,
       question: "Review exact scope", route: route, now: now) : records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose,
       question: "Review exact scope", destinationID: "provider", model: model, credential: "fixture-api-key", now: now)
+    preview = try records.approveRelatedLocalCareMeasurements(preview, selected: selected, now: now)
     try records.authorizeLocalCareResearch(preview, sources: [.labResults], now: now)
     let queued = try XCTUnwrap(records.reconcileLocalCareResearch(now: now).first?.1)
     let job = try records.transitionLocalCareResearch(queued, concern: concern.id, to: .preparing)

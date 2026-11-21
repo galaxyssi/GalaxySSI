@@ -7214,3 +7214,6 @@
 "galaxyssi.health.encounter.invalid_time" = "所选时区中不存在这个本地时间。";
 "galaxyssi.health.encounter.offset" = "UTC 偏移";
 "galaxyssi.health.encounter.choose_offset" = "选择偏移";
+"galaxyssi.health.research.related_title" = "一起分析的其他指标";
+"galaxyssi.health.research.related_selected" = "同时共享";
+"galaxyssi.health.research.related_consent" = "可选。仅向此模型共享勾选的指标及其测量条件，历史按页读取，不共享其他会话和健康计划。所选记录变化后会重新评估。模型建议不会自动确认计划或创建提醒。";

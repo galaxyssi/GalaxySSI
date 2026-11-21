@@ -12,6 +12,8 @@ enum GalaxySSIHealthScopedReadTransport {
     typealias Feedback = GalaxySSIHealthCareFeedbackTool
     var bytes = initial
     var history = review.history?.recent
+    var relatedHistory: [String: Tool.Output] = [:]
+    var relatedEntries = review.relatedHistory
     var questionCursor = review.questionCursor
     var request = request
     var historyRemaining = Tool.maximumPages
@@ -67,17 +69,33 @@ enum GalaxySSIHealthScopedReadTransport {
         payload = Questions.Cursor.payload(older, cursor: questionCursor, turn: review.id)
         purpose = "Approved Health clarification continuation"
       } else {
-        guard historyRemaining > 0, let prior = history, prior.authorizes(call.arguments, turn: review.id),
-              let cursor = prior.cursor else { throw GalaxySSIHealthRecords.Failure.permission }
+        guard historyRemaining > 0 else { throw GalaxySSIHealthRecords.Failure.permission }
         historyRemaining -= 1
-        let older = try records.readLocalCareDiscussionHistory(review, after: cursor)
-        let output = try Tool.output(older, metric: review.metric, turn: review.id, remaining: historyRemaining)
-        history = output
-        payload = output.payload
+        if let prior = history, prior.authorizes(call.arguments, turn: review.id), let cursor = prior.cursor {
+          let older = try records.readLocalCareDiscussionHistory(review, after: cursor)
+          let output = try Tool.output(older, metric: review.metric, turn: review.id, remaining: historyRemaining)
+          history = output
+          payload = output.payload
+        } else if let (key, _) = relatedEntries.first(where: { $0.value.entryArguments(turn: review.id) == call.arguments }),
+                  let metric = GalaxySSIHealthMetric(rawValue: key) {
+          let first = try records.readRelatedLocalCareHistory(review, metric: metric)
+          let output = try Tool.output(first, metric: metric, turn: review.id, remaining: historyRemaining)
+          relatedEntries.removeValue(forKey: key)
+          relatedHistory[key] = output
+          payload = output.payload
+        } else if let (key, prior) = relatedHistory.first(where: { $0.value.authorizes(call.arguments, turn: review.id) }),
+                  let metric = GalaxySSIHealthMetric(rawValue: key), let cursor = prior.cursor {
+          let older = try records.readRelatedLocalCareHistory(review, metric: metric, after: cursor)
+          let output = try Tool.output(older, metric: metric, turn: review.id, remaining: historyRemaining)
+          relatedHistory[key] = output
+          payload = output.payload
+        } else { throw GalaxySSIHealthRecords.Failure.permission }
         purpose = "Approved health measurement history continuation"
       }
       request = try Tool.continuing(request, with: call, payload: payload, style: style,
-        proposesPlan: review.proposesPlan && !planRecorded && !reviewRecorded, historyAvailable: history?.cursor != nil, allowsMaintenance: review.history != nil,
+        proposesPlan: review.proposesPlan && !planRecorded && !reviewRecorded,
+        historyAvailable: historyRemaining > 0 && (history?.cursor != nil || !relatedEntries.isEmpty || relatedHistory.values.contains { $0.cursor != nil }),
+        allowsMaintenance: review.history != nil,
         questionsAvailable: questionCursor != nil, asksQuestions: review.asksQuestions,
         feedbackAvailable: feedbackCursor != nil, reviewAvailable: review.requiresStructuredReview, reviewRecorded: reviewRecorded)
       let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: ledger, destination: .init(contact: contact),

@@ -637,7 +637,7 @@ struct GalaxySSIHealthRecords {
     return (try? loadProfile()).map(scope.isCurrent) == true
   }
 
-  private func localCareProfilePayload(_ concern: GalaxySSIHealthCare.Concern) throws -> AgentMcpJSONObject? {
+  func localCareProfilePayload(_ concern: GalaxySSIHealthCare.Concern) throws -> AgentMcpJSONObject? {
     guard let scope = concern.profileScope else { return nil }
     guard let date = concern.assessment.measuredAt else { throw Failure.stale }
     return try scope.snapshot(loadProfile(), measuredAt: date)
@@ -1086,7 +1086,7 @@ struct GalaxySSIHealthRecords {
     var ledgers = archive.localCareQuestions ?? [:]
     var ledger = ledgers[key] ?? .init()
     try ledger.propose(proposals, scope: Questions.scope(concern), basis: approvedPage.basis,
-      known: approvedPage.known, turn: approval.id, now: now)
+      known: approvedPage.known, turn: approval.id, now: now, relatedMeasurements: Set(approval.relatedMeasurements.keys))
     ledgers[key] = ledger
     archive.localCareQuestions = ledgers
     thread.turns[index].questionsRetained = true
@@ -1124,7 +1124,8 @@ struct GalaxySSIHealthRecords {
     let sharesHistory = research == nil ? feedbackHistoryAllowed :
       archive.localCareResearch?.authorizations[id.uuidString]?.sharesFeedbackHistory == true
     let feedback = sharesFeedback ? localCareModelFeedback(concern, thread: thread, destination: destination,
-      archive: archive, includesHistory: sharesHistory) : nil
+      archive: archive, includesHistory: sharesHistory,
+      relatedMeasurements: research == nil ? [:] : (archive.localCareResearch?.authorizations[id.uuidString]?.relatedMeasurements ?? [:])) : nil
     var approval = GalaxySSIHealthCareDiscussion.Approval(id: turn, owner: owner, threadID: thread.id,
       priorTurnID: thread.turns.last?.id,
       concernID: id, metric: metric, concernRevision: concern.revision, carePermission: care,
@@ -1137,8 +1138,12 @@ struct GalaxySSIHealthRecords {
     approval.includesActionFeedback = sharesFeedback
     approval.actionFeedbackContextIncluded = feedback != nil
     approval.feedbackHistoryAllowed = sharesHistory
+    if research != nil, let scope = archive.localCareResearch?.authorizations[id.uuidString]?.relatedMeasurements {
+      approval = try bindRelatedLocalCareMeasurements(approval,
+        selected: GalaxySSIHealthCareRelatedContext.metrics(scope), archive: archive, now: now)
+    }
     if includesQuestions || asksQuestions {
-      let page = try localCareQuestionPage(concern, archive: archive, after: nil)
+      let page = try modelLocalCareQuestionPage(concern, archive: archive, selected: approval.relatedMeasurements, after: nil)
       approval.questions = page
       if allowsAnswerDraft {
         guard !GalaxySSIHealthCareAnswerDraft.eligible(page).isEmpty else { throw Failure.stale }
@@ -1150,7 +1155,7 @@ struct GalaxySSIHealthRecords {
     }
     if let research {
       if let authorization = archive.localCareResearch?.authorizations[id.uuidString], authorization.sharesQuestionSnapshot == true {
-        let page = try localCareQuestionPage(concern, archive: archive, after: nil)
+        let page = try modelLocalCareQuestionPage(concern, archive: archive, selected: approval.relatedMeasurements, after: nil)
         approval.questions = page
         if authorization.sharesQuestionPages == true {
           approval.questionCursor = .init(page, remaining: GalaxySSIHealthCareQuestions.maximumContinuations)
@@ -1196,7 +1201,8 @@ struct GalaxySSIHealthRecords {
     guard thread.turns.count < GalaxySSIHealthCareDiscussion.maximumTurns else { throw Failure.permission }
     let sharesFeedback = research == nil ? includesActionFeedback :
       archive.localCareResearch?.authorizations[id.uuidString]?.sharesActionFeedback == true
-    let feedback = sharesFeedback ? localCareModelFeedback(concern, thread: thread, destination: route.digest, archive: archive) : nil
+    let feedback = sharesFeedback ? localCareModelFeedback(concern, thread: thread, destination: route.digest, archive: archive,
+      relatedMeasurements: research == nil ? [:] : (archive.localCareResearch?.authorizations[id.uuidString]?.relatedMeasurements ?? [:])) : nil
     var approval = GalaxySSIHealthCareDiscussion.Approval(id: turn, owner: owner, threadID: thread.id,
       priorTurnID: thread.turns.last?.id, concernID: id, metric: metric, concernRevision: concern.revision,
       carePermission: care, onlinePermission: online, destinationID: route.connector.contactId,
@@ -1207,7 +1213,11 @@ struct GalaxySSIHealthRecords {
     approval.includesActionFeedback = sharesFeedback
     approval.actionFeedbackContextIncluded = feedback != nil
     if includesQuestions || (research != nil && archive.localCareResearch?.authorizations[id.uuidString]?.sharesQuestionSnapshot == true) {
-      approval.questions = try localCareQuestionPage(concern, archive: archive, after: nil)
+      approval.questions = try modelLocalCareQuestionPage(concern, archive: archive, selected: approval.relatedMeasurements, after: nil)
+    }
+    if research != nil, let scope = archive.localCareResearch?.authorizations[id.uuidString]?.relatedMeasurements {
+      approval = try bindRelatedLocalCareMeasurements(approval,
+        selected: GalaxySSIHealthCareRelatedContext.metrics(scope), archive: archive, now: now)
     }
     if resume != nil {
       guard archive.localCareDiscussions?[id.uuidString]?.turns.last?.questionSnapshotVersion ==
@@ -1244,7 +1254,8 @@ struct GalaxySSIHealthRecords {
       pairedDesktop: approval.pairedDesktop, sharesQuestionSnapshot: approval.questions == nil ? nil : true,
       sharesQuestionPages: approval.allowsStandingQuestionPages ? true : nil,
       sharesActionFeedback: sharesActionFeedback ? true : nil,
-      sharesFeedbackHistory: approval.allowsStandingFeedbackPages ? true : nil))
+      sharesFeedbackHistory: approval.allowsStandingFeedbackPages ? true : nil,
+      relatedMeasurements: approval.relatedMeasurements.isEmpty ? nil : approval.relatedMeasurements))
     archive.localCareResearch = ledger
     try persist(archive)
   }
@@ -1326,7 +1337,8 @@ struct GalaxySSIHealthRecords {
           let authorization = archive.localCareResearch?.authorizations[approval.concernID.uuidString],
           let job = archive.localCareResearch?.jobs[approval.concernID.uuidString], job.id == approval.id,
           job.authorization == authorization.id, now >= approval.reviewedAt,
-          Set(input.records).isSubset(of: Set(Review.references(concern))) else { throw Failure.stale }
+          Set(input.records).isSubset(of: Set(localCareReviewReferences(concern, related: approval.relatedMeasurements, archive: archive, now: now))),
+          concern.assessment.record.map({ input.records.contains(Review.Reference($0)) }) == true else { throw Failure.stale }
     let evidence = archive.localCareEvidence?[approval.id.uuidString] ?? []
     guard evidence == approval.evidence, input.evidenceIDs.allSatisfy({ id in
       evidence.contains { $0.id == id && $0.valid(for: approval, now: now) }
@@ -1340,11 +1352,13 @@ struct GalaxySSIHealthRecords {
     let version = try GalaxySSIHealthCare.inputDigest(concern.assessment)
     if let previous = archive.localCareModelReviews?[approval.id] {
       guard previous.owner == owner, previous.authorization == authorization, previous.revision == concern.revision,
-            previous.trigger == job.trigger, previous.inputVersion == version, previous.input == input else { throw Failure.stale }
+            previous.trigger == job.trigger, previous.inputVersion == version, previous.input == input,
+            (previous.relatedMeasurements ?? [:]) == approval.relatedMeasurements else { throw Failure.stale }
       return previous
     }
     let review = Review.Review(id: approval.id, owner: owner, authorization: authorization, revision: concern.revision,
-      trigger: job.trigger, inputVersion: version, createdAt: now, input: input)
+      trigger: job.trigger, inputVersion: version, createdAt: now, input: input,
+      relatedMeasurements: approval.relatedMeasurements.isEmpty ? nil : approval.relatedMeasurements)
     var rows = archive.localCareModelReviews ?? [:]
     rows[approval.id] = review
     archive.localCareModelReviews = rows
@@ -1362,6 +1376,8 @@ struct GalaxySSIHealthRecords {
           archive.healthOnlinePermission == review.authorization.onlinePermission,
           concern.profileScopeEpoch == review.authorization.profileScopeEpoch, localCareProfileIsCurrent(concern.profileScope),
           (try? GalaxySSIHealthCare.inputDigest(concern.assessment)) == review.inputVersion,
+          GalaxySSIHealthCareRelatedContext.current(review.relatedMeasurements ?? [:], primary: concern.metric, archive: archive, now: now),
+          Set((review.relatedMeasurements ?? [:]).keys) == Set((review.authorization.relatedMeasurements ?? [:]).keys),
           (try? localCareResearchTrigger(concern, archive: archive, now: now)) == review.trigger else { return false }
     return true
   }
@@ -1375,7 +1391,9 @@ struct GalaxySSIHealthRecords {
     return try GalaxySSIHealthCareResearch.trigger(concern, history: GalaxySSIHealthCareSeries.version(measurements),
       now: now, scopedActions: scopedLocalCareResearchActions(concern, plans: plans,
         includesFeedback: authorization.sharesActionFeedback == true || authorization.sharesFeedbackHistory == true),
-      clinicalFeedback: scopedClinicalFeedback(concern, authorization: authorization, archive: archive))
+      clinicalFeedback: scopedClinicalFeedback(concern, authorization: authorization, archive: archive),
+      relatedMeasurements: GalaxySSIHealthCareRelatedContext.capture(
+        try GalaxySSIHealthCareRelatedContext.metrics(authorization.relatedMeasurements ?? [:]), archive: archive, now: now))
   }
 
   func bindLocalCareDesktopResearch(_ authorization: GalaxySSIHealthCareResearch.Authorization,
@@ -1424,7 +1442,8 @@ struct GalaxySSIHealthRecords {
       guard let thread = archive.localCareDiscussions?[binding.concern.uuidString], thread.turns.last?.id == job,
             let expected = thread.turns.last?.questionSnapshotVersion,
             let concern = archive.localCare?.current[authorization.metric.rawValue],
-            (try? localCareQuestionPage(concern, archive: archive, after: nil).ledgerVersion) == expected else { return nil }
+            (try? modelLocalCareQuestionPage(concern, archive: archive,
+              selected: authorization.relatedMeasurements ?? [:], after: nil).ledgerVersion) == expected else { return nil }
     }
     return binding
   }
@@ -1448,8 +1467,10 @@ struct GalaxySSIHealthRecords {
     let questionRevision = archive.localCare?.current[authorization.metric.rawValue]?.questionRevision
     return turns.compactMap { turn in
       guard turn.destination == authorization.destination, let id = turn.proposalID,
+            GalaxySSIHealthCareRelatedContext.permits(turn.relatedMeasurements, selected: authorization.relatedMeasurements),
             turn.feedbackHistoryAllowed != true || authorization.sharesFeedbackHistory == true,
             let plan = archive.localCarePlans?[id.uuidString], plan.concernID == authorization.concern,
+            GalaxySSIHealthCareRelatedContext.permits(plan.relatedMeasurements, selected: authorization.relatedMeasurements),
             plan.onlinePermission == authorization.onlinePermission, plan.carePermission == authorization.localPermission,
             plan.profileScopeEpoch == authorization.profileScopeEpoch, plan.questionRevision == questionRevision,
             plan.destinationDigest == authorization.destination
@@ -1472,10 +1493,11 @@ struct GalaxySSIHealthRecords {
     }
   }
 
-  private func localCareModelFeedback(_ concern: GalaxySSIHealthCare.Concern,
+  func localCareModelFeedback(_ concern: GalaxySSIHealthCare.Concern,
       thread: GalaxySSIHealthCareDiscussion.Thread, destination: String, archive: Archive,
-      includesHistory: Bool = false) -> [AgentMcpJSONValue]? {
+      includesHistory: Bool = false, relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope = [:]) -> [AgentMcpJSONValue]? {
     let proposals = Set(thread.turns.filter { $0.destination == destination &&
+      GalaxySSIHealthCareRelatedContext.permits($0.relatedMeasurements, selected: relatedMeasurements) &&
       ($0.feedbackHistoryAllowed != true || includesHistory) }.compactMap(\.proposalID))
     let currentBasis = try? GalaxySSIHealthCare.inputDigest(concern.assessment)
     let latest = (concern.adoptedActions ?? []).compactMap { action -> (GalaxySSIHealthCarePlan.AdoptedAction,
@@ -1483,12 +1505,14 @@ struct GalaxySSIHealthRecords {
       guard action.instruction == nil, action.action.kind != .clinicalInstruction,
             let feedback = action.feedback, feedback.isInScope(concern), proposals.contains(action.proposalID),
             let plan = archive.localCarePlans?[action.proposalID.uuidString], plan.state == .accepted,
+            GalaxySSIHealthCareRelatedContext.permits(plan.relatedMeasurements, selected: relatedMeasurements),
             plan.selected.contains(action.action.id), plan.concernID == concern.id, plan.destinationDigest == destination,
             plan.onlinePermission == archive.healthOnlinePermission, archive.matchesLocalCarePermission(plan.carePermission),
             plan.profileScope == concern.profileScope, plan.profileScopeEpoch == concern.profileScopeEpoch,
             plan.questionRevision == concern.questionRevision, plan.assessmentDigest == feedback.planBasis
       else { return nil }
-      return (action, feedback, currentBasis == feedback.planBasis && concern.context == plan.sourceContext)
+      return (action, feedback, currentBasis == feedback.planBasis && concern.context == plan.sourceContext &&
+        relatedLocalCarePlanIsCurrent(plan, archive: archive, now: Date()))
     }.sorted {
       ($0.1.recordedAt, $0.1.id.uuidString) > ($1.1.recordedAt, $1.1.id.uuidString)
     }
@@ -1525,13 +1549,16 @@ struct GalaxySSIHealthRecords {
     guard let ledger = archive.localCareResearch, let authorization = ledger.authorizations[key],
           let thread = archive.localCareDiscussions?[key], thread.id == authorization.thread else { throw Failure.stale }
     let measurements = archive.current.filter { $0.metric == concern.metric && $0.isValid && $0.measuredAt <= job.createdAt }
-    let turns = thread.turns.filter { $0.destination == authorization.destination && $0.id != job.id }
+    let turns = thread.turns.filter { $0.destination == authorization.destination && $0.id != job.id &&
+      GalaxySSIHealthCareRelatedContext.permits($0.relatedMeasurements, selected: authorization.relatedMeasurements) }
     let plans = scopedLocalCareResearchPlans(turns, authorization: authorization, archive: archive)
     let actions = scopedLocalCareResearchActions(concern, plans: plans,
       includesFeedback: authorization.sharesActionFeedback == true || authorization.sharesFeedbackHistory == true)
     let basis = try Handoff.Basis(concern, history: GalaxySSIHealthCareSeries.version(measurements),
       observedAt: job.createdAt, actions: actions,
-      clinicalFeedback: scopedClinicalFeedback(concern, authorization: authorization, archive: archive))
+      clinicalFeedback: scopedClinicalFeedback(concern, authorization: authorization, archive: archive),
+      relatedMeasurements: GalaxySSIHealthCareRelatedContext.capture(
+        try GalaxySSIHealthCareRelatedContext.metrics(authorization.relatedMeasurements ?? [:]), archive: archive, now: job.createdAt))
     let plan = plans.last(where: { context in
       let proposal = context.proposal
       return proposal.state == .accepted && proposal.selected.contains { basis.due.contains("\(proposal.id.uuidString):\($0)") }
@@ -1552,7 +1579,8 @@ struct GalaxySSIHealthRecords {
       hasEarlierResult: turns.contains { $0.answer != nil || $0.proposalID != nil }, plan: plan,
       recordedPlan: plans.last?.proposal.state, actionCount: actions.count, historicalSources: sources,
       essentialContextMissing: concern.assessment.signals.contains(.glucoseContext),
-      priorityWarning: concern.bloodPressureWarning != nil, recordReferences: GalaxySSIHealthCareModelReview.references(concern),
+      priorityWarning: concern.bloodPressureWarning != nil,
+      recordReferences: localCareReviewReferences(concern, related: authorization.relatedMeasurements ?? [:], archive: archive, now: job.createdAt),
       modelReview: checkpoint.flatMap { archive.localCareModelReviews?[$0.turn] }.flatMap {
         $0.owner == owner && $0.reusable(for: authorization, job: job) ? $0 : nil
       })
@@ -1565,6 +1593,7 @@ struct GalaxySSIHealthRecords {
           approval.proposesPlan == handoff.plansOnly, approval.history == nil,
           !approval.allowsStandingFeedbackPages,
           let authorization = archive.localCareResearch?.authorizations[key], authorization.id == binding.authorization,
+          Set((authorization.relatedMeasurements ?? [:]).keys) == Set(approval.relatedMeasurements.keys),
           (authorization.sharesQuestionSnapshot == true) == (approval.questions != nil),
           (authorization.sharesActionFeedback == true) == approval.includesActionFeedback,
           (authorization.sharesFeedbackHistory == true) == approval.feedbackHistoryAllowed,
@@ -1609,7 +1638,9 @@ struct GalaxySSIHealthRecords {
           try GalaxySSIHealthCareDiscussion.payload(concern: concern, question: approval.question, thread: thread,
             destination: approval.destinationDigest, savedProfile: localCareProfilePayload(concern),
             actionFeedback: approval.includesActionFeedback ? localCareModelFeedback(concern, thread: thread,
-              destination: approval.destinationDigest, archive: archive, includesHistory: approval.feedbackHistoryAllowed) : nil) == approval.payload
+              destination: approval.destinationDigest, archive: archive, includesHistory: approval.feedbackHistoryAllowed,
+              relatedMeasurements: approval.relatedMeasurements) : nil,
+            relatedMeasurements: approval.relatedMeasurements) == approval.payload
     else { throw Failure.stale }
     if approval.research != nil {
       try validateLocalCareResearch(approval, archive: archive, concern: concern, state: .preparing, now: now)
@@ -1634,7 +1665,8 @@ struct GalaxySSIHealthRecords {
       questionSnapshotVersion: approval.questions?.ledgerVersion,
       answerDraftSourceDigest: approval.allowsAnswerDraft ? GalaxySSIHealthCareAnswerDraft.digest(approval.question) : nil,
       actionFeedbackContextIncluded: approval.actionFeedbackContextIncluded || approval.feedbackCursor != nil ? true : nil,
-      feedbackHistoryAllowed: approval.feedbackCursor == nil ? nil : true))
+      feedbackHistoryAllowed: approval.feedbackCursor == nil ? nil : true,
+      relatedMeasurements: approval.relatedMeasurements.isEmpty ? nil : approval.relatedMeasurements))
     archive.localCareDiscussions?[approval.concernID.uuidString] = thread
     if let job = approval.research {
       try archive.localCareResearch?.transition(job, concern: approval.concernID, to: .dispatched,
@@ -1651,6 +1683,7 @@ struct GalaxySSIHealthRecords {
       try validateLocalCareResearch(approval, archive: archive, concern: concern, state: .dispatched, now: now)
     }
     guard thread.turns.last?.id == approval.id, thread.turns.last?.answer == nil,
+          (thread.turns.last?.relatedMeasurements ?? [:]) == approval.relatedMeasurements,
           thread.turns.last?.proposalID == nil ||
             (approval.requiresStructuredReview && thread.turns.last?.proposalID == approval.id),
           thread.turns.last?.questionsRetained != true,
@@ -1714,12 +1747,14 @@ struct GalaxySSIHealthRecords {
         }
       } else {
         guard action?.action.kind != .clinicalInstruction, let plan = archive.localCarePlans?[planID],
+              GalaxySSIHealthCareRelatedContext.permits(plan.relatedMeasurements, selected: approval.relatedMeasurements),
               plan.concernID == concern.id, plan.destinationDigest == approval.destinationDigest,
               plan.onlinePermission == approval.onlinePermission, archive.matchesLocalCarePermission(plan.carePermission),
               plan.profileScope == concern.profileScope, plan.profileScopeEpoch == concern.profileScopeEpoch
         else { return (receipt.revision, redacted) }
         current = plan.state == .accepted && plan.questionRevision == concern.questionRevision &&
-          plan.sourceContext == concern.context && currentBasis == receipt.feedback.planBasis
+          plan.sourceContext == concern.context && currentBasis == receipt.feedback.planBasis &&
+          relatedLocalCarePlanIsCurrent(plan, archive: archive, now: now)
       }
       var row: AgentMcpJSONObject = ["revision": revision,
         "action_id": .string(AgentModelLoopRecoveryIdentity.sha256(["discussion": approval.threadID.uuidString, "action": receipt.actionID])),
@@ -1794,7 +1829,8 @@ struct GalaxySSIHealthRecords {
       questionRevision: concern.questionRevision,
       carePermission: approval.carePermission, onlinePermission: approval.onlinePermission, contactID: approval.destinationID,
       modelID: approval.modelID, endpoint: approval.endpoint, destinationDigest: approval.destinationDigest,
-      createdAt: now, requestDigest: digest, draft: draft, pairedDesktop: approval.pairedDesktop)
+      createdAt: now, requestDigest: digest, draft: draft, pairedDesktop: approval.pairedDesktop,
+      relatedMeasurements: approval.relatedMeasurements.isEmpty ? nil : approval.relatedMeasurements)
     thread.turns[index].proposalID = approval.id
     archive.localCarePlans = plans
     archive.localCareDiscussions?[approval.concernID.uuidString] = thread
@@ -1850,6 +1886,7 @@ struct GalaxySSIHealthRecords {
     if let selected {
       let checked = try currentDiscussionConcern(id: saved.concernID, metric: saved.metric, archive: archive, now: now)
       guard currentDestination == saved.destinationDigest,
+            relatedLocalCarePlanIsCurrent(saved, archive: archive, now: now),
             checked.revision == saved.concernRevision, checked.revision < Int.max,
             checked.profileScopeEpoch == saved.profileScopeEpoch, checked.profileScope == saved.profileScope,
             checked.questionRevision == saved.questionRevision,
@@ -1907,6 +1944,7 @@ struct GalaxySSIHealthRecords {
     let archive = try load()
     let concern = try currentDiscussionConcern(id: proposal.concernID, metric: proposal.metric, archive: archive, now: now)
     guard archive.localCarePlans?[proposal.id.uuidString] == proposal, proposal.state == .pending,
+          relatedLocalCarePlanIsCurrent(proposal, archive: archive, now: now),
           concern.revision == proposal.concernRevision,
           concern.profileScopeEpoch == proposal.profileScopeEpoch, concern.profileScope == proposal.profileScope,
           concern.questionRevision == proposal.questionRevision,
@@ -2272,10 +2310,12 @@ struct GalaxySSIHealthRecords {
           archive.matchesLocalCarePermission(approval.carePermission),
           concern.profileScopeEpoch == approval.profileScopeEpoch, concern.profileScope == approval.profileScope,
           localCareProfileIsCurrent(approval.profileScope),
+          GalaxySSIHealthCareRelatedContext.current(approval.relatedMeasurements, primary: approval.metric, archive: archive, now: now),
           let thread = archive.localCareDiscussions?[concern.id.uuidString], thread.id == approval.threadID
     else { throw Failure.permission }
+    try validateRelatedLocalCareMeasurements(approval, archive: archive, now: now)
     if let snapshot = approval.questions {
-      let current = try localCareQuestionPage(concern, archive: archive, after: nil)
+      let current = try modelLocalCareQuestionPage(concern, archive: archive, selected: approval.relatedMeasurements, after: nil)
       guard current.basis == snapshot.basis, current.ledgerVersion == snapshot.ledgerVersion,
             current.payload == snapshot.payload else { throw Failure.stale }
     }
@@ -2288,7 +2328,7 @@ struct GalaxySSIHealthRecords {
     try validateLocalCareDiscussionTurn(approval, now: now)
     let archive = try load()
     let concern = try currentDiscussionConcern(id: approval.concernID, metric: approval.metric, archive: archive, now: now)
-    let page = try localCareQuestionPage(concern, archive: archive, after: cursor)
+    let page = try modelLocalCareQuestionPage(concern, archive: archive, selected: approval.relatedMeasurements, after: cursor)
     guard page.basis == original.basis, page.ledgerVersion == original.ledgerVersion else { throw Failure.stale }
     return page
   }

@@ -108,6 +108,7 @@ enum GalaxySSIHealthCareModelReview {
     let inputVersion: String
     let createdAt: Date
     let input: Input
+    var relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope?
 
     func reusable(for next: GalaxySSIHealthCareResearch.Authorization, job: GalaxySSIHealthCareResearch.Job) -> Bool {
       id != job.id && createdAt <= job.createdAt && authorization.concern == next.concern &&
@@ -117,7 +118,9 @@ enum GalaxySSIHealthCareModelReview {
         authorization.endpoint == next.endpoint && authorization.pairedDesktop == next.pairedDesktop &&
         (authorization.sharesQuestionSnapshot != true || next.sharesQuestionSnapshot == true) &&
         (authorization.sharesActionFeedback != true || next.sharesActionFeedback == true) &&
-        (authorization.sharesFeedbackHistory != true || next.sharesFeedbackHistory == true)
+        (authorization.sharesFeedbackHistory != true || next.sharesFeedbackHistory == true) &&
+        GalaxySSIHealthCareRelatedContext.permits(authorization.relatedMeasurements, selected: next.relatedMeasurements) &&
+        GalaxySSIHealthCareRelatedContext.permits(relatedMeasurements, selected: next.relatedMeasurements)
     }
     var historicalPayload: AgentMcpJSONValue {
       .object(["assessment": .object(input.payload), "input_version": .string(inputVersion),
