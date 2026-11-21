@@ -5952,6 +5952,7 @@
         SDKROOT = iphoneos;
         SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
         SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+        GALAXYSSI_ATLAS_PHYSIOLOGY_FLAGS = "-D GALAXYSSI_ATLAS_PHYSIOLOGY";
       };
       name = Debug;
     };
@@ -6015,6 +6016,7 @@
         STRIP_STYLE = all;
         SWIFT_COMPILATION_MODE = wholemodule;
         SWIFT_OPTIMIZATION_LEVEL = "-O";
+        GALAXYSSI_ATLAS_PHYSIOLOGY_FLAGS = "-D GALAXYSSI_ATLAS_PHYSIOLOGY";
         VALIDATE_PRODUCT = YES;
       };
       name = Release;
@@ -6062,7 +6064,6 @@
         GALAXYSSI_REALTIME_ASR_CREDENTIAL_BROKER_URL = "";
         SWIFT_EMIT_LOC_STRINGS = YES;
         SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG GALAXYSSI_NATIVE_LLAMA GALAXYSSI_NATIVE_WHISPER $(GALAXYSSI_HEALTHKIT_CONDITION)";
-        GALAXYSSI_ATLAS_PHYSIOLOGY_FLAGS = "-D GALAXYSSI_ATLAS_PHYSIOLOGY";
         INFOPLIST_KEY_NSHealthShareUsageDescription = "Preview and import only the Apple Health measurements you select into your local health archive.";
         LIBRARY_SEARCH_PATHS = (
           "$(inherited)",
@@ -6129,7 +6130,6 @@
         GALAXYSSI_REALTIME_ASR_CREDENTIAL_BROKER_URL = "";
         SWIFT_EMIT_LOC_STRINGS = YES;
         SWIFT_ACTIVE_COMPILATION_CONDITIONS = "GALAXYSSI_NATIVE_LLAMA GALAXYSSI_NATIVE_WHISPER $(GALAXYSSI_HEALTHKIT_CONDITION)";
-        GALAXYSSI_ATLAS_PHYSIOLOGY_FLAGS = "-D GALAXYSSI_ATLAS_PHYSIOLOGY";
         INFOPLIST_KEY_NSHealthShareUsageDescription = "Preview and import only the Apple Health measurements you select into your local health archive.";
         LIBRARY_SEARCH_PATHS = (
           "$(inherited)",
