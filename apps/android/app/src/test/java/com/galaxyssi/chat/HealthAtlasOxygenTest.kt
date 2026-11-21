@@ -66,7 +66,8 @@ class HealthAtlasOxygenTest {
             assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(100, 26, 150)))
             assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(100, 268)))
         }
-        assertNull(HealthAtlasPhysiologyKind.forItem("cell-neutrophil"))
+        assertEquals(HealthAtlasPhysiologyKind.IMMUNE_COMPOSITION, HealthAtlasPhysiologyKind.forItem("cell-neutrophil"))
+        assertNull(HealthAtlasPhysiology.restore("cell-neutrophil", intArrayOf(100, 268, 150)))
         assertNull(HealthAtlasPhysiologyKind.forItem("cell-platelet"))
         assertNull(HealthAtlasPhysiology(HealthAtlasPhysiologyKind.POTASSIUM).oxygenAmounts)
         assertEquals(2, defaults.kind.sources.size)
