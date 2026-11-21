@@ -5330,7 +5330,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   func testHealthCatalogTypedResultsDoNotEnterNumericTrendsOrMixUnits() throws {
-    XCTAssertEqual(GalaxySSIHealthMetric.allCases.count, 27)
+    XCTAssertEqual(GalaxySSIHealthMetric.allCases.count, 47)
     XCTAssertTrue(GalaxySSIHealthMetric.hemoglobin.matches("HGB g/L"))
     let bound = try XCTUnwrap(GalaxySSIHealthReportedResult.parse("< 2.50", metric: .glucose))
     XCTAssertEqual(bound.kind, .comparison)

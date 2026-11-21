@@ -195,7 +195,8 @@ final class GalaxySSIHealthReportCodexExchange {
     switch status {
     case "unavailable": admission = .missing
     case "failed", "cancelled", "timed_out": admission = .terminalFailure
-    case "accepted", "queued", "starting", "recovering", "running", "waiting_input", "waiting_approval", "completed": admission = .active
+    case "completed": admission = .completed
+    case "accepted", "queued", "starting", "recovering", "running": admission = .active
     default: admission = .unknown
     }
     pending.probe?.admission = admission; active[key] = pending
