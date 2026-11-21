@@ -14,21 +14,21 @@ enum GalaxySSIHealthReportVision {
     let rows: [Row]
     let collected: String
     let partial: Bool
+    var fasting: String? = nil
   }
   struct Consent: Equatable {
     let online: UUID
-    let images: UUID
     let metrics: UUID?
     init(_ archive: GalaxySSIHealthRecords.Archive) throws {
-      guard archive.derivesOverview == true, let online = archive.healthOnlinePermission,
-            let images = archive.reportImagePermission else { throw GalaxySSIHealthRecords.Failure.permission }
-      self.online = online; self.images = images
+      guard archive.derivesOverview == true, let online = archive.healthOnlinePermission else { throw GalaxySSIHealthRecords.Failure.permission }
+      self.online = online
       metrics = archive.privacyEvents?.last(where: { $0.scope == .overview })?.id
     }
   }
 
   static func eligible(_ job: GalaxySSIHealthRecognitionJobs.Job) -> Bool {
-    job.original.kind == .image && job.pageCount == 1 && [.completed, .failed].contains(job.phase) && job.reportVision == nil
+    job.original.kind == .image && job.pageCount == 1 && job.captureSource?.mode != .device &&
+      [.completed, .failed].contains(job.phase) && job.reportVision == nil
   }
 
   static func parse(_ response: String) throws -> Result {
@@ -37,9 +37,14 @@ enum GalaxySSIHealthReportVision {
     var text = response.trimmingCharacters(in: .whitespacesAndNewlines)
     if text.hasPrefix("```json\n"), text.hasSuffix("\n```") { text = String(text.dropFirst(8).dropLast(4)) }
     let object = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(text.utf8))
-    guard Set(object.keys) == ["rows", "collected", "partial"], case .array(let raw)? = object["rows"],
+    guard Set(object.keys).subtracting(["fasting"]) == ["rows", "collected", "partial"], case .array(let raw)? = object["rows"],
           (1...80).contains(raw.count), let collected = object["collected"]?.strictStringValue,
           validText(collected, limit: 80), case .bool(let partial)? = object["partial"] else { throw invalid }
+    let fasting: String?
+    if let value = object["fasting"] {
+      guard let text = value.strictStringValue, ["", "fasting", "non_fasting", "after_meal"].contains(text) else { throw invalid }
+      fasting = text
+    } else { fasting = nil }
     let rows = try raw.map { value -> Row in
       guard let row = value.objectValue, Set(row.keys) == ["metric", "values", "unit", "reference", "source"],
             let name = row["metric"]?.strictStringValue, let metric = GalaxySSIHealthMetric(rawValue: name),
@@ -52,8 +57,9 @@ enum GalaxySSIHealthReportVision {
       for (key, value) in fields {
         guard let text = value.strictStringValue, validText(text, limit: 128), !text.isBlank else { throw invalid }
         if metric.laboratory {
-          guard let parsed = GalaxySSIHealthReportedResult.parse(text, metric: metric),
-                (parsed.kind == .qualitative) == (metric.form == .qualitative) else { throw invalid }
+          let parsed = GalaxySSIHealthReportedResult.parse(text, metric: metric)
+          guard parsed.map({ ($0.kind == .qualitative) == (metric.form == .qualitative) }) ??
+                (metric.form == .laboratory && GalaxySSIHealthReportedResult.number(text) != nil) else { throw invalid }
         } else {
           guard let number = GalaxySSIHealthReportedResult.number(text), number >= 0,
                 metric.form != .positive || number > 0,
@@ -65,7 +71,7 @@ enum GalaxySSIHealthReportVision {
       return Row(metric: metric, values: values, unit: unit, reference: reference, source: source)
     }
     guard Set(rows.map(\.id)).count == rows.count else { throw invalid }
-    return Result(rows: rows, collected: collected, partial: partial)
+    return Result(rows: rows, collected: collected, partial: partial, fasting: fasting)
   }
 
   private static func validText(_ value: String, limit: Int) -> Bool {

@@ -22,6 +22,7 @@ struct GalaxySSIHealthImportView: View {
   @State private var scanRetention: Bool?
   @State private var transientReport: GalaxySSIHealthTransientReport?
   @State private var pendingScanReview: GalaxySSIHealthTransientReport?
+  @State private var quickReport: GalaxySSIHealthRecognitionJobs.Job?
 
   private enum Notice { case saved, failed }
 
@@ -92,7 +93,7 @@ struct GalaxySSIHealthImportView: View {
       if $0 == .active { activate() }
       else if $0 == .background {
         notice = nil; picking = false; scanning = false; fileRetention = nil; scanRetention = nil
-        transientReport = nil; pendingScanReview = nil
+        transientReport = nil; pendingScanReview = nil; quickReport = nil
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
@@ -103,14 +104,16 @@ struct GalaxySSIHealthImportView: View {
       guard scene != .background, let retainOriginal = fileRetention else { return }
       do {
         let url = try result.get()
-        if retainOriginal { try store.importFile(url); notice = .saved }
-        else {
+        do {
           let scoped = url.startAccessingSecurityScopedResource()
           defer { if scoped { url.stopAccessingSecurityScopedResource() } }
           let handle = try FileHandle(forReadingFrom: url)
           defer { try? handle.close() }
           let data = try handle.read(upToCount: GalaxySSIHealthOriginalStore.maximumFileBytes + 1) ?? Data()
-          transientReport = try GalaxySSIHealthTransientReport(name: url.lastPathComponent, data: data)
+          if data.starts(with: Data("%PDF-".utf8)) {
+            if retainOriginal { try store.store(data, name: url.lastPathComponent); notice = .saved }
+            else { transientReport = try GalaxySSIHealthTransientReport(name: url.lastPathComponent, data: data) }
+          } else { quickReport = try store.storeReportImage(data, name: url.lastPathComponent, retainOriginal: retainOriginal) }
         }
       }
       catch { notice = .failed }
@@ -142,6 +145,14 @@ struct GalaxySSIHealthImportView: View {
           } }
       }
       .navigationViewStyle(.stack)
+    }
+    .sheet(item: $quickReport) { job in
+      NavigationView {
+        GalaxySSIHealthRecognitionJobsView(records: records, store: store, automaticReportJob: job.id)
+          .toolbar { ToolbarItem(placement: .cancellationAction) {
+            Button(t("close_review", "Close review")) { quickReport = nil }
+          } }
+      }.navigationViewStyle(.stack)
     }
   }
 

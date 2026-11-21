@@ -38,6 +38,8 @@ enum GalaxySSIHealthRecognitionJobs {
     var runProcess: UUID?
     var reportVision: GalaxySSIHealthReportVision.Result?
     var reportVisionZone: String?
+    var reportImportedSources: Set<String>?
+    var reportImportOutcome: GalaxySSIHealthReportQuickImport.Outcome?
 
     var reviewPages: [Page] { requiresPDFPassword == true && phase != .completed ? [] : pages }
   }
@@ -85,6 +87,9 @@ struct GalaxySSIHealthRecognitionJobsView: View {
   let records: GalaxySSIHealthRecords
   let store: GalaxySSIHealthOriginalStore
   var automaticPhotoBatch: UUID? = nil
+  var automaticReportJob: UUID? = nil
+  @State private var quickReportRoute: UUID?
+  @State private var quickReportOpened = false
   @State private var jobs: [GalaxySSIHealthRecognitionJobs.Job] = []
   @State private var originals: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var task: Task<Void, Never>?
@@ -137,6 +142,13 @@ struct GalaxySSIHealthRecognitionJobsView: View {
     .task(id: scene) { await runPhotoBatch() }
     .navigationTitle(t("title", "Local Report Recognition"))
     .navigationBarTitleDisplayMode(.inline)
+    .background {
+      NavigationLink(isActive: Binding(get: { quickReportRoute != nil }, set: { if !$0 { quickReportRoute = nil } })) {
+        if let id = quickReportRoute {
+          GalaxySSIHealthReportVisionView(records: records, originals: store, jobID: id, automaticallyPreview: true)
+        }
+      } label: { EmptyView() }.hidden()
+    }
     .onAppear(perform: enterQueue)
     .onDisappear { if task != nil { stop(cancelled: false) } }
     .onChange(of: scene) {
@@ -145,6 +157,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
         stop(cancelled: false)
         unlock = nil; unlockFailed = false; restricted = false
         jobs = []; originals = []; failed = false
+        quickReportRoute = nil
         if $0 == .background {
           selectingRepair = false; repairJob = nil; missingSource = nil; removedSources = []
         }
@@ -179,7 +192,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
     List {
       if scene == .active, let job = jobs.first(where: { $0.id == id }) {
         Text(phase(job))
-        if job.original.kind == .image, [.completed, .failed].contains(job.phase) {
+        if job.original.kind == .image, job.captureSource?.mode != .device, [.completed, .failed].contains(job.phase) {
           NavigationLink {
             GalaxySSIHealthReportVisionView(records: records, originals: store, jobID: job.id)
           } label: {
@@ -258,7 +271,12 @@ struct GalaxySSIHealthRecognitionJobsView: View {
 
   private func enterQueue() {
     guard scene == .active else { return }
-    do { try records.reconcileAbandonedRecognitionJobs(); reload() }
+    do {
+      store.releaseCompletedQuickReportOriginals()
+      try records.reconcileAbandonedRecognitionJobs(); reload()
+      if task == nil, let id = automaticReportJob, let job = jobs.first(where: { $0.id == id }),
+         [.queued, .interrupted].contains(job.phase) { run(job) }
+    }
     catch { jobs = []; originals = []; failed = true }
   }
 
@@ -387,6 +405,15 @@ struct GalaxySSIHealthRecognitionJobsView: View {
       let listing = try store.list()
       originals = listing.originals
       removedSources = Set(listing.removed.map(\.id)).union(listing.pendingRemovals)
+      if !quickReportOpened, task == nil {
+        let candidates = jobs.filter {
+          $0.id == automaticReportJob || (automaticPhotoBatch != nil && $0.captureSource?.batchID == automaticPhotoBatch && $0.captureSource?.mode == .report)
+        }
+        if candidates.count == 1, let job = candidates.first, [.completed, .failed].contains(job.phase),
+           originals.contains(job.original) {
+          quickReportOpened = true; quickReportRoute = job.id
+        }
+      }
     } catch {
       jobs = []
       originals = []

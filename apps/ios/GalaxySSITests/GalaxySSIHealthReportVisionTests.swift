@@ -16,6 +16,12 @@ final class GalaxySSIHealthReportVisionTests: XCTestCase {
     XCTAssertEqual(try Vision.parse("```json\n" + response + "\n```"), parsed)
   }
 
+  func testPlainNumericLabResultsAreAcceptedWithoutInventingQualifiers() throws {
+    let parsed = try Vision.parse(response.replacingOccurrences(of: "<3.0", with: "3.0"))
+    XCTAssertEqual(parsed.rows.first?.values["value"], "3.0")
+    XCTAssertEqual(parsed.rows.first?.reference, "3.9-6.1")
+  }
+
   func testRejectsUnknownFieldsWrongTypesDuplicateAndEmptyRows() throws {
     var object = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(response.utf8))
     object["approved"] = .bool(true)
@@ -47,12 +53,10 @@ final class GalaxySSIHealthReportVisionTests: XCTestCase {
     XCTAssertEqual(result.rows.first?.unit, "")
   }
 
-  func testImageOnlineAndMeasurementPermissionsAreIndependentlyRequired() throws {
+  func testOnlineAndMeasurementPermissionsRemainRequiredWithoutImageSetting() throws {
     var archive = GalaxySSIHealthRecords.Archive()
     XCTAssertThrowsError(try Vision.Consent(archive))
     archive.healthOnlinePermission = UUID()
-    XCTAssertThrowsError(try Vision.Consent(archive))
-    archive.reportImagePermission = UUID()
     XCTAssertThrowsError(try Vision.Consent(archive))
     archive.derivesOverview = true
     XCTAssertNoThrow(try Vision.Consent(archive))
@@ -74,14 +78,13 @@ final class GalaxySSIHealthReportVisionTests: XCTestCase {
     XCTAssertThrowsError(try f.records.commitReportVision(result, job: job, consent: f.consent(), zone: "Asia/Shanghai"))
   }
 
-  func testRenewedImagePermissionDoesNotAuthorizeOldSnapshot() throws {
+  func testLegacyImagePermissionDoesNotGateExplicitReportRequests() throws {
     let f = try Fixture()
     let job = try f.completed()
     let old = try f.consent()
     try f.records.setPrivacy(.reportImages, enabled: false)
-    try f.records.setPrivacy(.reportImages, enabled: true)
-    XCTAssertNotEqual(old, try f.consent())
-    XCTAssertThrowsError(try f.records.commitReportVision(Vision.parse(response), job: job, consent: old, zone: "UTC"))
+    XCTAssertEqual(old, try f.consent())
+    XCTAssertNoThrow(try f.records.commitReportVision(Vision.parse(response), job: job, consent: old, zone: "UTC"))
   }
 
   func testOnlineAndMeasurementRevocationBlockCommit() throws {
