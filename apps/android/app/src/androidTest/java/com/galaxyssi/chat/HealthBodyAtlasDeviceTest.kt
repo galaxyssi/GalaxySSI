@@ -53,10 +53,11 @@ class HealthBodyAtlasDeviceTest {
     }
     @Test fun platesHaveCanonicalVisibleMarkersAndDoNotInventHiddenStructures() {
         val data = HealthBodyAtlas.load(context)
-        assertEquals(181, HealthAtlasPlates.all.size)
-        assertEquals(181, HealthAtlasPlates.all.map { it.drawable }.toSet().size)
+        val plates = HealthAtlasPlates.all
+        assertEquals(plates.size, plates.map { it.drawable }.toSet().size)
+        data.items.forEach { assertNotNull("Missing structure artwork for ${it.id}", HealthAtlasPlates.forId(it.id)) }
         assertEquals(HealthAtlasHeartSection.valves, HealthAtlasPlates.forId("heart-valves"))
-        assertEquals("nephron", HealthAtlasPlates.forId("glomerulus")!!.owner)
+        assertTrue(HealthAtlasPlates.viewsForId("glomerulus").any { it.owner == "nephron" })
         assertEquals("cell-podocyte", HealthAtlasPlates.forId("cell-podocyte")?.owner)
         HealthAtlasPlates.all.forEach { plate ->
             assertEquals(plate.markers.size, plate.markers.map { it.id }.toSet().size)
@@ -129,6 +130,10 @@ class HealthBodyAtlasDeviceTest {
             capture(id)
             scenario.onActivity { activity ->
                 activity.view("atlas-hotspot-$child").performClick()
+                val direct = requireNotNull(HealthAtlasRegionalDetailPlates.forId(child))
+                assertTrue(activity.view("atlas-view-0").isSelected)
+                assertTrue(activity.view("atlas-feature-${direct.features.first().marker.id}").isClickable)
+                activity.view("atlas-view-1").performClick()
                 assertTrue(activity.view("atlas-hotspot-$child").isSelected)
                 assertFalse(activity.view("atlas-hotspot-$child").performClick())
                 val data = HealthBodyAtlas.load(activity)
@@ -148,21 +153,25 @@ class HealthBodyAtlasDeviceTest {
         scenario.onActivity { activity ->
             val data = HealthBodyAtlas.load(activity)
             val item = data["renal-pelvis"]!!
-            var openedResource = 0
-            var openedTitle = ""
-            val art = HealthAtlasArtwork(activity, data, item, {}, zoom = { resource, title ->
-                openedResource = resource; openedTitle = title
-            })
-            val picture = requireNotNull(art.tagged("atlas-art-image"))
-            val target = picture.parent as HealthAtlasLabeledImage
-            target.scaleX = 2f; target.scaleY = 2f; target.translationX = 30f
-            art.tagged("atlas-art-reset")!!.performClick()
-            assertEquals(1f, target.scaleX, 0f); assertEquals(1f, target.scaleY, 0f)
-            assertEquals(0f, target.translationX, 0f)
-            assertEquals(1f, (target.parent as GalaxySSIPinchZoomViewport).currentZoomScale, 0f)
-            art.tagged("atlas-fullscreen")!!.performClick()
-            assertEquals(R.drawable.health_atlas_kidney, openedResource)
-            assertTrue(openedTitle.contains(item.name) && openedTitle.contains(data["kidneys"]!!.name))
+            val views = HealthAtlasPlates.viewsForId(item.id)
+            assertEquals(listOf("renal-pelvis", "kidneys"), views.map { it.owner })
+            for (expected in views) {
+                var openedPlate: HealthAtlasPlate? = null
+                var openedTitle = ""
+                val art = HealthAtlasArtwork(activity, data, item, {}, zoom = { plate, title ->
+                    openedPlate = plate; openedTitle = title
+                }, initialView = expected.viewKey)
+                val picture = requireNotNull(art.tagged("atlas-art-image"))
+                val target = picture.parent as HealthAtlasLabeledImage
+                target.scaleX = 2f; target.scaleY = 2f; target.translationX = 30f
+                art.tagged("atlas-art-reset")!!.performClick()
+                assertEquals(1f, target.scaleX, 0f); assertEquals(1f, target.scaleY, 0f)
+                assertEquals(0f, target.translationX, 0f)
+                assertEquals(1f, (target.parent as GalaxySSIPinchZoomViewport).currentZoomScale, 0f)
+                art.tagged("atlas-fullscreen")!!.performClick()
+                assertEquals(expected, openedPlate)
+                assertEquals("${item.name} · ${expected.caption(activity, data, item)}", openedTitle)
+            }
         }
     }
     @Test fun wholeBodyToolsDoNotCoverLabelsAtNarrowWidths() = native { scenario ->
