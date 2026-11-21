@@ -117,8 +117,8 @@ class HealthAtlasSystemOverviewDeviceTest {
         val atlas = HealthBodyAtlas.load(context)
         for (id in listOf("brain", "heart", "lungs", "pancreas", "liver", "kidneys", "alveoli"))
             assertEquals(id, HealthAtlasPlates.forId(id)!!.owner)
-        for (id in listOf("cell-langerhans-cell", "nails"))
-            assertNull(HealthAtlasPlates.forId(id))
+        assertNull(HealthAtlasPlates.forId("nails"))
+        assertEquals("cell-langerhans-cell", HealthAtlasPlates.forId("cell-langerhans-cell")?.owner)
         for (id in listOf("parathyroid-glands", "cell-thyroid-follicular-cell", "thyroid-gland", "pituitary-gland", "adrenal-glands"))
             assertEquals(id, HealthAtlasPlates.forId(id)?.owner)
         assertEquals("pancreatic-islets", HealthAtlasPlates.forId("pancreatic-islets")?.owner)
@@ -194,6 +194,7 @@ class HealthAtlasSystemOverviewDeviceTest {
                 "brain" -> R.string.health_atlas_view_lateral to "atlas-hotspot-cerebrum"
                 "lungs" -> R.string.health_atlas_view_anterior to "atlas-hotspot-bronchi"
                 "thyroid-gland" -> R.string.health_atlas_endocrine_thyroid_section_view to "atlas-hotspot-cell-thyroid-follicular-cell"
+                "sweat-glands" -> R.string.health_atlas_context_sweat_gland_view to "atlas-hotspot-cell-sweat-gland-secretory-cell"
                 else -> null
             }
             fun assertChildPlate(activity: Activity) {

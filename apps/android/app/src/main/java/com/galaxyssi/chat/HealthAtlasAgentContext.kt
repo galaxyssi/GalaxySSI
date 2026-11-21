@@ -63,6 +63,8 @@ internal object HealthAtlasAgentContext {
                 appendLine(context.getString(R.string.health_atlas_sensory_retinal_relay_rod))
                 appendLine(HealthAtlasRetinaPath.SOURCE)
             }
+            if (item.id == HealthAtlasSweatView.OWNER) appendLine(context.getString(R.string.health_atlas_context_sweat_scope))
+            if (item.id == "hair-follicles") appendLine(context.getString(R.string.health_atlas_context_hair_scope))
             if (item.id == HealthAtlasSarcomere.OWNER) {
                 appendLine(context.getString(R.string.health_atlas_sarcomere_ratio,
                     HealthAtlasSarcomere(simulation.stage).relativeLengthPercent))

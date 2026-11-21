@@ -2752,7 +2752,7 @@
         "skin"
       ],
       "related": [],
-      "mechanism": "skin",
+      "mechanism": "sweat-glands",
       "aliases": "health_atlas_sweat_glands_aliases",
       "color": "",
       "icon": ""
@@ -2780,7 +2780,7 @@
         "skin"
       ],
       "related": [],
-      "mechanism": "skin",
+      "mechanism": "hair-follicles",
       "aliases": "health_atlas_hair_follicles_aliases",
       "color": "",
       "icon": ""
@@ -5763,6 +5763,30 @@
         "health_atlas_mechanism_female_3"
       ],
       "chapter": "27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system"
+    },
+    {
+      "id": "sweat-glands",
+      "kind": "skin",
+      "title": "health_atlas_context_sweat_title",
+      "stages": [
+        "health_atlas_context_sweat_stage_0",
+        "health_atlas_context_sweat_stage_1",
+        "health_atlas_context_sweat_stage_2",
+        "health_atlas_context_sweat_stage_3"
+      ],
+      "chapter": "5-2-accessory-structures-of-the-skin"
+    },
+    {
+      "id": "hair-follicles",
+      "kind": "skin",
+      "title": "health_atlas_context_hair_title",
+      "stages": [
+        "health_atlas_context_hair_stage_0",
+        "health_atlas_context_hair_stage_1",
+        "health_atlas_context_hair_stage_2",
+        "health_atlas_context_hair_stage_3"
+      ],
+      "chapter": "5-2-accessory-structures-of-the-skin"
     },
     {
       "id": "skin",
