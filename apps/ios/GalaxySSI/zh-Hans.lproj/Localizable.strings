@@ -7382,3 +7382,14 @@
 "galaxyssi.health.metric_alias.urea" = "尿素";
 "galaxyssi.health.metric_alias.bloodUreaNitrogen" = "血尿素氮";
 "galaxyssi.health.metric_alias.meanCorpuscularHemoglobin" = "平均红细胞血红蛋白含量";
+"galaxyssi.health.key_metrics" = "关键指标";
+"galaxyssi.health.more_menu" = "更多";
+"galaxyssi.health.attention.title" = "待关注";
+"galaxyssi.health.attention.empty" = "暂无待关注事项。";
+"galaxyssi.health.attention.disabled" = "本地测量摘要已关闭。";
+"galaxyssi.health.attention.sort" = "待关注排序";
+"galaxyssi.health.attention.order.CHANGES_FIRST" = "变化优先";
+"galaxyssi.health.attention.order.REVIEW_FIRST" = "审核优先";
+"galaxyssi.health.attention.order.MOST_RECENT" = "最近优先";
+"galaxyssi.health.key_coverage" = "%lld / %lld 项关键指标有近期记录";
+"galaxyssi.health.fresh_today" = "今天";

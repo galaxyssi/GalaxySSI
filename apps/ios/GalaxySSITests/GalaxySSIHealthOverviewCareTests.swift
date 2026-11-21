@@ -5,6 +5,71 @@ import XCTest
 final class GalaxySSIHealthOverviewCareTests: XCTestCase {
   typealias Care = GalaxySSIHealthOverviewCare
 
+  func testOverviewAttentionOrderHasRealCategoryPrioritiesAndStableTies() {
+    typealias Attention = GalaxySSIHealthOverviewAttention
+    let at = Date(timeIntervalSince1970: 100)
+    let items: [Attention.Item] = [.init(id: "change", kind: .change, at: at),
+      .init(id: "report", kind: .report, at: at.addingTimeInterval(1)),
+      .init(id: "table", kind: .table, at: at.addingTimeInterval(1)),
+      .init(id: "connection", kind: .connection, at: at.addingTimeInterval(2))]
+    XCTAssertEqual(Attention.sorted(items, order: .changesFirst).map(\.id), ["change", "connection", "report", "table"])
+    XCTAssertEqual(Attention.sorted(items, order: .reviewFirst).map(\.id), ["report", "table", "connection", "change"])
+    XCTAssertEqual(Attention.sorted(items, order: .mostRecent).map(\.id), ["connection", "report", "table", "change"])
+    XCTAssertEqual(Attention.sorted(Array(items.reversed()), order: .mostRecent).map(\.id), ["connection", "report", "table", "change"])
+  }
+
+  func testOverviewHasFourKeyMetricsAndStepsMustBeFromToday() throws {
+    var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let now = Date(timeIntervalSince1970: 1_800_000_000), today = calendar.startOfDay(for: now)
+    let yesterday = today.addingTimeInterval(-1)
+    let extras: [GalaxySSIHealthReading] = [
+      .init(metric: .temperature, measuredAt: now, value: 37), .init(metric: .oxygenSaturation, measuredAt: now, value: 98),
+      .init(metric: .weight, measuredAt: now, value: 65), .init(metric: .glucose, measuredAt: now, value: 5)]
+    XCTAssertTrue(extras.allSatisfy(\.isValid))
+    let oldSteps = GalaxySSIHealthReading(metric: .steps, measuredAt: yesterday, value: 1_000)
+    let old = GalaxySSIHealthOverview(current: extras + [oldSteps], now: now, calendar: calendar)
+    XCTAssertEqual(old.metrics.map(\.metric), [.bloodPressure, .sleepDuration, .restingHeartRate, .steps])
+    XCTAssertEqual(old.metrics.last?.freshness, .stale); XCTAssertEqual(old.recentCount, 0)
+    let currentSteps = GalaxySSIHealthReading(metric: .steps, measuredAt: today, value: 0)
+    let fresh = GalaxySSIHealthOverview(current: extras + [oldSteps, currentSteps], now: now, calendar: calendar)
+    XCTAssertEqual(fresh.metrics.last?.reading?.id, currentSteps.id); XCTAssertEqual(fresh.recentCount, 1)
+  }
+
+  func testAttentionProjectionDoesNotWriteRecordsOrCreateMissingSleepEpisodes() throws {
+    let f = try Fixture()
+    let before = try Data(contentsOf: f.file)
+    let incident = GalaxySSIHealthSourceAttention.Incident(id: UUID(), scope: .steps, failedAt: f.now)
+    let items = GalaxySSIHealthOverviewAttention.items(archive: try f.records.load(), sources: [incident],
+      now: f.now, calendar: .current)
+    XCTAssertEqual(items.count, 1); XCTAssertEqual(items.first?.incident, incident)
+    XCTAssertEqual(try Data(contentsOf: f.file), before)
+  }
+
+  func testAttentionRejectsRevokedStaleSnoozedAndCompletedSleepChanges() throws {
+    var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let now = Date(timeIntervalSince1970: 1_800_000_000), today = calendar.startOfDay(for: now)
+    var archive = GalaxySSIHealthRecords.Archive(); archive.derivesOverview = true
+    archive.revisions = try (0..<21).map { index in
+      .init(metric: .sleepDuration, measuredAt: try XCTUnwrap(calendar.date(byAdding: .day, value: index - 21, to: today)),
+        value: index < 14 ? 8 : 6)
+    }
+    var ledger = GalaxySSIHealthSleepReminder.Ledger(); ledger.preferences.enabled = true
+    ledger.reconcile(current: archive.current, allowed: true, now: now, calendar: calendar)
+    XCTAssertEqual(ledger.episodes.count, 1); archive.sleepReminders = ledger
+    @MainActor func count(_ value: GalaxySSIHealthRecords.Archive, at date: Date? = nil) -> Int {
+      GalaxySSIHealthOverviewAttention.items(archive: value, sources: [], now: date ?? now, calendar: calendar).count
+    }
+    XCTAssertEqual(count(archive), 1)
+    archive.derivesOverview = false; XCTAssertEqual(count(archive), 0); archive.derivesOverview = true
+    archive.sleepReminders?.episodes[0].snoozedUntil = now.addingTimeInterval(60)
+    XCTAssertEqual(count(archive), 0); archive.sleepReminders = ledger
+    archive.sleepReminders?.episodes[0].completed = true
+    XCTAssertEqual(count(archive), 0); archive.sleepReminders = ledger
+    XCTAssertEqual(count(archive, at: today.addingTimeInterval(86_400)), 0)
+    archive.sleepReminders?.episodes = []
+    XCTAssertEqual(count(archive), 0)
+  }
+
   func testOverviewIsReadOnlyAndDoesNotReconcileMissingConcerns() throws {
     let f = try Fixture(reconcile: false)
     let before = try Data(contentsOf: f.file)
