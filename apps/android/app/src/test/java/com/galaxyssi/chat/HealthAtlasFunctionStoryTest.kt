@@ -34,6 +34,9 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(HealthAtlasFunctionStory.BREATHING, HealthAtlasFunctionStory.forId("trachea"))
         assertEquals(HealthAtlasFunctionStory.CEREBELLAR_COORDINATION, HealthAtlasFunctionStory.forId("cerebellum"))
         assertEquals(HealthAtlasFunctionStory.SYNAPTIC_SIGNAL, HealthAtlasFunctionStory.forId("brain"))
+        assertEquals(HealthAtlasFunctionStory.CEREBRAL_SENSORIMOTOR, HealthAtlasFunctionStory.forId("cerebrum"))
+        assertEquals(HealthAtlasFunctionStory.AUTONOMIC_RELAY, HealthAtlasFunctionStory.forId("autonomic-nerves"))
+        assertEquals(HealthAtlasFunctionStory.CRANIAL_REFLEX, HealthAtlasFunctionStory.forId("cranial-nerves"))
         assertEquals(HealthAtlasFunctionStory.ASTROCYTE_SUPPORT, HealthAtlasFunctionStory.forId("cell-astrocyte"))
         assertEquals(HealthAtlasFunctionStory.MYELIN_SIGNAL, HealthAtlasFunctionStory.forId("cell-oligodendrocyte"))
         assertEquals(HealthAtlasFunctionStory.MELANIN_TRANSFER, HealthAtlasFunctionStory.forId("cell-melanocyte"))
@@ -78,9 +81,16 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(HealthAtlasFunctionStory.ADRENAL_MEDULLA_SIGNAL, HealthAtlasFunctionStory.forId("cell-chromaffin-cell"))
         assertNull(HealthAtlasFunctionStory.forId("cell-adrenocortical-cell"))
         assertEquals(HealthAtlasFunctionStory.GASTRIC_ACID_SECRETION, HealthAtlasFunctionStory.forId("cell-gastric-parietal-cell"))
-        assertNull(HealthAtlasFunctionStory.forId("cell-gastric-chief-cell"))
-        assertEquals(listOf(HealthAtlasFunctionStory.DIGESTION, HealthAtlasFunctionStory.GASTRIC_ACID_SECRETION),
+        assertEquals(HealthAtlasFunctionStory.GASTRIC_CHIEF_SECRETION, HealthAtlasFunctionStory.forId("cell-gastric-chief-cell"))
+        assertEquals(listOf(HealthAtlasFunctionStory.DIGESTION, HealthAtlasFunctionStory.GASTRIC_ACID_SECRETION,
+            HealthAtlasFunctionStory.GASTRIC_CHIEF_SECRETION),
             HealthAtlasFunctionStory.choicesForId("stomach"))
+        assertEquals(HealthAtlasFunctionStory.ACINAR_ENZYME_SECRETION, HealthAtlasFunctionStory.forId("cell-pancreatic-acinar-cell"))
+        assertEquals(listOf("cell-pancreatic-acinar-cell" to HealthAtlasFunctionStory.ACINAR_ENZYME_SECRETION),
+            HealthAtlasFunctionStory.DIGESTION.relatedLessons)
+        assertNull(HealthAtlasFunctionStory.forId("cell-pancreatic-ductal-cell"))
+        assertEquals(HealthAtlasFunctionStory.NAIL_MATRIX_GROWTH, HealthAtlasFunctionStory.forId("nails"))
+        assertEquals(HealthAtlasFunctionStory.TONSILLAR_SAMPLING, HealthAtlasFunctionStory.forId("tonsils"))
         assertEquals(HealthAtlasFunctionStory.MARROW_HEMATOPOIESIS,
             HealthAtlasFunctionStory.forId("cell-hematopoietic-stem-cell"))
         assertEquals(HealthAtlasFunctionStory.RED_CELL_OXYGEN, HealthAtlasFunctionStory.forId("cell-erythrocyte"))
@@ -88,6 +98,7 @@ class HealthAtlasFunctionStoryTest {
 
     @Test fun focusedEntryChaptersAreOnlyDefaultsAndDoNotOverrideSavedPlayback() {
         val items = mapOf(
+            "adenoids" to (HealthAtlasFunctionStory.TONSILLAR_SAMPLING to 1),
             "cell-endometrial-epithelial-cell" to (HealthAtlasFunctionStory.ENDOMETRIUM_RENEWAL to 4),
             "cell-endometrial-stromal-cell" to (HealthAtlasFunctionStory.ENDOMETRIUM_RENEWAL to 1),
             "cell-sebocyte" to (HealthAtlasFunctionStory.SEBUM_RELEASE to 2),

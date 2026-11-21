@@ -1359,6 +1359,114 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    CEREBRAL_SENSORIMOTOR(
+        setOf("cerebrum"),
+        R.string.health_atlas_cerebral_sensorimotor_story_title,
+        R.string.health_atlas_cerebral_sensorimotor_story_scope,
+        listOf(
+            R.string.health_atlas_cerebral_sensorimotor_story_locate to R.string.health_atlas_cerebral_sensorimotor_story_locate_caption,
+            R.string.health_atlas_cerebral_sensorimotor_story_register to R.string.health_atlas_cerebral_sensorimotor_story_register_caption,
+            R.string.health_atlas_cerebral_sensorimotor_story_integrate to R.string.health_atlas_cerebral_sensorimotor_story_integrate_caption,
+            R.string.health_atlas_cerebral_sensorimotor_story_command to R.string.health_atlas_cerebral_sensorimotor_story_command_caption,
+            R.string.health_atlas_cerebral_sensorimotor_story_feedback to R.string.health_atlas_cerebral_sensorimotor_story_feedback_caption,
+        ),
+        listOf(
+            R.string.health_atlas_cerebral_sensorimotor_story_ref_planning to "https://pubmed.ncbi.nlm.nih.gov/20660416/",
+            R.string.health_atlas_cerebral_sensorimotor_story_ref_feedback to "https://pubmed.ncbi.nlm.nih.gov/21964335/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    AUTONOMIC_RELAY(
+        setOf("autonomic-nerves"),
+        R.string.health_atlas_autonomic_relay_story_title,
+        R.string.health_atlas_autonomic_relay_story_scope,
+        listOf(
+            R.string.health_atlas_autonomic_relay_story_output to R.string.health_atlas_autonomic_relay_story_output_caption,
+            R.string.health_atlas_autonomic_relay_story_sympathetic to R.string.health_atlas_autonomic_relay_story_sympathetic_caption,
+            R.string.health_atlas_autonomic_relay_story_target to R.string.health_atlas_autonomic_relay_story_target_caption,
+            R.string.health_atlas_autonomic_relay_story_vagal to R.string.health_atlas_autonomic_relay_story_vagal_caption,
+            R.string.health_atlas_autonomic_relay_story_compare to R.string.health_atlas_autonomic_relay_story_compare_caption,
+        ),
+        listOf(
+            R.string.health_atlas_autonomic_relay_story_ref_anatomy to "https://pubmed.ncbi.nlm.nih.gov/15887046/",
+            R.string.health_atlas_autonomic_relay_story_ref_rate to "https://pubmed.ncbi.nlm.nih.gov/5914852/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    GASTRIC_CHIEF_SECRETION(
+        setOf("cell-gastric-chief-cell"),
+        R.string.health_atlas_gastric_chief_story_title,
+        R.string.health_atlas_gastric_chief_story_scope,
+        listOf(
+            R.string.health_atlas_gastric_chief_story_locate to R.string.health_atlas_gastric_chief_story_locate_caption,
+            R.string.health_atlas_gastric_chief_story_pack to R.string.health_atlas_gastric_chief_story_pack_caption,
+            R.string.health_atlas_gastric_chief_story_release to R.string.health_atlas_gastric_chief_story_release_caption,
+            R.string.health_atlas_gastric_chief_story_activate to R.string.health_atlas_gastric_chief_story_activate_caption,
+            R.string.health_atlas_gastric_chief_story_digest to R.string.health_atlas_gastric_chief_story_digest_caption,
+        ),
+        listOf(
+            R.string.health_atlas_gastric_chief_story_ref_fundic_cells to "https://pmc.ncbi.nlm.nih.gov/articles/PMC477213/",
+            R.string.health_atlas_gastric_chief_story_ref_activation to "https://pubmed.ncbi.nlm.nih.gov/2500427/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    TONSILLAR_SAMPLING(
+        setOf("tonsils", "adenoids"),
+        R.string.health_atlas_tonsil_story_title,
+        R.string.health_atlas_tonsil_story_scope,
+        listOf(
+            R.string.health_atlas_tonsil_story_locate to R.string.health_atlas_tonsil_story_locate_caption,
+            R.string.health_atlas_tonsil_story_compare to R.string.health_atlas_tonsil_story_compare_caption,
+            R.string.health_atlas_tonsil_story_encounter to R.string.health_atlas_tonsil_story_encounter_caption,
+            R.string.health_atlas_tonsil_story_sample to R.string.health_atlas_tonsil_story_sample_caption,
+            R.string.health_atlas_tonsil_story_present to R.string.health_atlas_tonsil_story_present_caption,
+        ),
+        listOf(
+            R.string.health_atlas_tonsil_story_ref_palatine to "https://pubmed.ncbi.nlm.nih.gov/37202490/",
+            R.string.health_atlas_tonsil_story_ref_adenoid to "https://pubmed.ncbi.nlm.nih.gov/10917169/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    ACINAR_ENZYME_SECRETION(
+        setOf("cell-pancreatic-acinar-cell"),
+        R.string.health_atlas_acinar_enzyme_story_title,
+        R.string.health_atlas_acinar_enzyme_story_scope,
+        listOf(
+            R.string.health_atlas_acinar_enzyme_story_locate to R.string.health_atlas_acinar_enzyme_story_locate_caption,
+            R.string.health_atlas_acinar_enzyme_story_package to R.string.health_atlas_acinar_enzyme_story_package_caption,
+            R.string.health_atlas_acinar_enzyme_story_release to R.string.health_atlas_acinar_enzyme_story_release_caption,
+            R.string.health_atlas_acinar_enzyme_story_duct to R.string.health_atlas_acinar_enzyme_story_duct_caption,
+            R.string.health_atlas_acinar_enzyme_story_arrive to R.string.health_atlas_acinar_enzyme_story_arrive_caption,
+        ),
+        listOf(
+            R.string.health_atlas_acinar_enzyme_story_ref_acinar to "https://pmc.ncbi.nlm.nih.gov/articles/PMC2106415/",
+            R.string.health_atlas_acinar_enzyme_story_ref_duct to "https://pubmed.ncbi.nlm.nih.gov/8866361/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    NAIL_MATRIX_GROWTH(
+        setOf("nails"),
+        R.string.health_atlas_nail_story_title,
+        R.string.health_atlas_nail_story_scope,
+        listOf(
+            R.string.health_atlas_nail_story_section to R.string.health_atlas_nail_story_section_caption,
+            R.string.health_atlas_nail_story_division to R.string.health_atlas_nail_story_division_caption,
+            R.string.health_atlas_nail_story_maturation to R.string.health_atlas_nail_story_maturation_caption,
+            R.string.health_atlas_nail_story_advance to R.string.health_atlas_nail_story_advance_caption,
+            R.string.health_atlas_nail_story_edge to R.string.health_atlas_nail_story_edge_caption,
+        ),
+        listOf(
+            R.string.health_atlas_nail_story_ref_matrix to "https://pubmed.ncbi.nlm.nih.gov/15327543/",
+            R.string.health_atlas_nail_story_ref_anatomy to "https://doi.org/10.1002/ar.22660",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -1416,6 +1524,12 @@ internal enum class HealthAtlasFunctionStory(
         ENDOMETRIUM_RENEWAL -> R.string.health_atlas_endometrium_story_choice
         CRANIAL_REFLEX -> R.string.health_atlas_cranial_reflex_story_choice
         SEBUM_RELEASE -> R.string.health_atlas_sebaceous_choice
+        CEREBRAL_SENSORIMOTOR -> R.string.health_atlas_cerebral_sensorimotor_story_choice
+        AUTONOMIC_RELAY -> R.string.health_atlas_autonomic_relay_story_choice
+        GASTRIC_CHIEF_SECRETION -> R.string.health_atlas_gastric_chief_story_choice
+        TONSILLAR_SAMPLING -> R.string.health_atlas_tonsil_story_choice
+        ACINAR_ENZYME_SECRETION -> R.string.health_atlas_acinar_enzyme_story_choice
+        NAIL_MATRIX_GROWTH -> R.string.health_atlas_nail_story_choice
         else -> title
     }
 
@@ -1426,7 +1540,10 @@ internal enum class HealthAtlasFunctionStory(
         SYNAPTIC_SIGNAL -> listOf("cell-oligodendrocyte" to MYELIN_SIGNAL)
         MYELIN_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
         SWEAT_COOLING -> listOf("epidermis" to EPIDERMAL_BARRIER)
-        EPIDERMAL_BARRIER -> listOf("sweat-glands" to SWEAT_COOLING, "sebaceous-glands" to SEBUM_RELEASE)
+        EPIDERMAL_BARRIER -> listOf("sweat-glands" to SWEAT_COOLING, "sebaceous-glands" to SEBUM_RELEASE,
+            "nails" to NAIL_MATRIX_GROWTH)
+        ANTIBODY_RESPONSE -> listOf("tonsils" to TONSILLAR_SAMPLING)
+        DIGESTION -> listOf("cell-pancreatic-acinar-cell" to ACINAR_ENZYME_SECRETION)
         HAIR_FOLLICLE_CYCLE -> listOf("sebaceous-glands" to SEBUM_RELEASE)
         OVUM_TRANSPORT -> listOf("endometrium" to ENDOMETRIUM_RENEWAL)
         VISION -> listOf("cranial-nerves" to CRANIAL_REFLEX)
@@ -1458,7 +1575,7 @@ internal enum class HealthAtlasFunctionStory(
         DENDRITIC_PRESENTATION -> listOf("cell-t-cell" to T_CELL_RESPONSE)
         T_CELL_RESPONSE -> listOf("cell-dendritic-cell" to DENDRITIC_PRESENTATION, "thymus" to THYMIC_SELECTION)
         PLATELET_FORMATION -> listOf("fragment-platelet" to PLATELET_HEMOSTASIS)
-        CEREBELLAR_COORDINATION -> listOf("brain" to SYNAPTIC_SIGNAL)
+        CEREBELLAR_COORDINATION -> listOf("brain" to SYNAPTIC_SIGNAL, "cerebrum" to CEREBRAL_SENSORIMOTOR)
         MELANIN_TRANSFER -> listOf("epidermis" to EPIDERMAL_BARRIER)
         LARYNGEAL_VOICE -> listOf("trachea" to BREATHING)
         ASTROCYTE_SUPPORT -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
@@ -1468,15 +1585,21 @@ internal enum class HealthAtlasFunctionStory(
         BRAINSTEM_RHYTHM -> listOf("diaphragm" to BREATHING)
         FIBROBLAST_MATRIX -> listOf("skin-organ" to EPIDERMAL_BARRIER)
         ARTERIAL_PULSE -> listOf("aorta" to HEARTBEAT, "capillaries" to ENDOTHELIAL_EXCHANGE, "veins" to VENOUS_RETURN)
-        HEARTBEAT -> listOf("coronary-vessels" to CORONARY_PERFUSION)
+        HEARTBEAT -> listOf("coronary-vessels" to CORONARY_PERFUSION, "autonomic-nerves" to AUTONOMIC_RELAY)
         CORONARY_PERFUSION -> listOf("heart" to HEARTBEAT)
         PODOCYTE_BARRIER -> listOf("glomerulus" to NEPHRON)
         ENDOMETRIUM_RENEWAL -> listOf("ovaries" to OVUM_TRANSPORT)
         CRANIAL_REFLEX -> listOf("eye" to VISION)
         SEBUM_RELEASE -> listOf("hair-follicles" to HAIR_FOLLICLE_CYCLE, "epidermis" to EPIDERMAL_BARRIER)
+        CEREBRAL_SENSORIMOTOR -> listOf("cell-neuron" to SYNAPTIC_SIGNAL, "cerebellum" to CEREBELLAR_COORDINATION)
+        AUTONOMIC_RELAY -> listOf("heart" to HEARTBEAT)
+        GASTRIC_CHIEF_SECRETION -> listOf("stomach" to DIGESTION, "cell-gastric-parietal-cell" to GASTRIC_ACID_SECRETION)
+        TONSILLAR_SAMPLING -> listOf("immune" to ANTIBODY_RESPONSE)
+        ACINAR_ENZYME_SECRETION -> listOf("pancreas" to DIGESTION)
+        NAIL_MATRIX_GROWTH -> listOf("epidermis" to EPIDERMAL_BARRIER)
         CHONDROCYTE_MATRIX -> listOf("tissue-hyaline-cartilage" to CARTILAGE_LOAD)
         ADRENAL_MEDULLA_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
-        GASTRIC_ACID_SECRETION -> listOf("stomach" to DIGESTION)
+        GASTRIC_ACID_SECRETION -> listOf("stomach" to DIGESTION, "cell-gastric-chief-cell" to GASTRIC_CHIEF_SECRETION)
         MARROW_HEMATOPOIESIS -> listOf("cell-erythrocyte" to RED_CELL_OXYGEN)
         CARTILAGE_LOAD -> listOf("cell-chondrocyte" to CHONDROCYTE_MATRIX)
         else -> emptyList()
@@ -1513,6 +1636,7 @@ internal enum class HealthAtlasFunctionStory(
             else -> 0
         }
         SEBUM_RELEASE -> if (id == "cell-sebocyte") 2 else 0
+        TONSILLAR_SAMPLING -> if (id == "adenoids") 1 else 0
         else -> 0
     })
 
@@ -1570,6 +1694,12 @@ internal enum class HealthAtlasFunctionStory(
         ENDOMETRIUM_RENEWAL -> HealthAtlasEndometriumStoryView(context)
         CRANIAL_REFLEX -> HealthAtlasCranialReflexStoryView(context)
         SEBUM_RELEASE -> HealthAtlasSebaceousStoryView(context)
+        CEREBRAL_SENSORIMOTOR -> HealthAtlasCerebralSensorimotorStoryView(context)
+        AUTONOMIC_RELAY -> HealthAtlasAutonomicRelayStoryView(context)
+        GASTRIC_CHIEF_SECRETION -> HealthAtlasGastricChiefStoryView(context)
+        TONSILLAR_SAMPLING -> HealthAtlasTonsilStoryView(context)
+        ACINAR_ENZYME_SECRETION -> HealthAtlasAcinarEnzymeStoryView(context)
+        NAIL_MATRIX_GROWTH -> HealthAtlasNailStoryView(context)
         NEUTROPHIL_DEFENSE, EOSINOPHIL_RESPONSE, BASOPHIL_SIGNALING, MONOCYTE_RECRUITMENT,
         DENDRITIC_PRESENTATION, T_CELL_RESPONSE, NK_SURVEILLANCE, PLATELET_FORMATION, MACROPHAGE_CLEARANCE ->
             HealthAtlasCellFunctionArt(context, this, owners.single())
@@ -1609,7 +1739,7 @@ internal enum class HealthAtlasFunctionStory(
                 "cardio", "heart", "ventricles", "tissue-cardiac-muscle" -> listOf(primary, CARDIAC_EXCITATION)
                 "aorta" -> listOf(primary, ARTERIAL_PULSE)
                 "blood-vessels" -> listOf(primary, ENDOTHELIAL_EXCHANGE, VENOUS_RETURN)
-                "stomach" -> listOf(primary, GASTRIC_ACID_SECRETION)
+                "stomach" -> listOf(primary, GASTRIC_ACID_SECRETION, GASTRIC_CHIEF_SECRETION)
                 "salivary-glands", "oral-cavity" -> listOf(primary, SALIVA_SECRETION)
                 "lungs" -> listOf(primary, PLEURAL_COUPLING)
                 "tendons" -> listOf(primary, TENDON_FORCE_TRANSFER)

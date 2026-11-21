@@ -535,6 +535,16 @@ reflex is distinct from vision and the nerve-transit model. The sebaceous
 lesson shows normal hair-associated secretion without replacing hair growth
 or sweat cooling, and the sebocyte opens at lipid accumulation.
 
+The cerebral lesson follows a voluntary reach, with separate sensory
+registration, target integration, motor output and ongoing feedback.
+The autonomic lesson compares the sympathetic and vagal relays to the
+heart without changing the heartbeat, coronary or cranial-reflex lessons.
+Gastric chief-cell secretion is separate from acid secretion. Pancreatic
+acinar cells have a digestive enzyme lesson that is separate from the islet
+and ductal models. The tonsil example distinguishes palatine crypts from
+adenoid folds. The nail example explains formation in the matrix and support
+by the bed, not growth at the free edge.
+
 The pinned Agent action follows the current surface. Public catalogue, mechanism
 and research prompts use `HealthAtlasAgentContext`: selected anatomy, current
 teaching stage, cardiac or other quantitative inputs, assumptions and sources.

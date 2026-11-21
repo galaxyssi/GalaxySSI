@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_autonomic_relay_story_title">自主神经如何调节心率</string>
+    <string name="health_atlas_autonomic_relay_story_choice">通向心脏的自主神经接力</string>
+    <string name="health_atlas_autonomic_relay_story_scope">以正常人体的心率调节为例，定性展示由两个神经元组成的自主神经通路。图中各展示一条通向窦房结的交感和副交感通路。解剖结构和时序均为示意。</string>
+
+    <string name="health_atlas_autonomic_relay_story_output">自主神经信号从中枢发出</string>
+    <string name="health_atlas_autonomic_relay_story_output_caption">自主神经调节心跳快慢，无需有意识地控制。两条通路的第一个神经元起点不同：交感通路始于上胸段脊髓，副交感通路始于脑干。</string>
+    <string name="health_atlas_autonomic_relay_story_sympathetic">在上胸段脊髓旁接力</string>
+    <string name="health_atlas_autonomic_relay_story_sympathetic_caption">较短的节前纤维从上胸段脊髓发出，在附近交感干的一个神经节内把信号传给第二个神经元。第二个神经元发出较长的节后纤维，通向心脏。</string>
+    <string name="health_atlas_autonomic_relay_story_target">交感通路到达心脏起搏点</string>
+    <string name="health_atlas_autonomic_relay_story_target_caption">第二个神经元把交感信号传到窦房结，也就是心脏的天然起搏点。窦房结能自行发出启动心跳的信号。交感输入增强时，窦房结可更频繁地发出信号，使心跳间隔缩短。</string>
+    <string name="health_atlas_autonomic_relay_story_vagal">迷走神经在心脏附近接力</string>
+    <string name="health_atlas_autonomic_relay_story_vagal_caption">来自脑干的较长节前纤维随迷走神经到达心脏附近的一个神经节。第二个神经元发出较短的节后纤维，通向窦房结。迷走神经输入增强时，窦房结发出信号的频率可降低。</string>
+    <string name="health_atlas_autonomic_relay_story_compare">两条通路调节同一个起搏点</string>
+    <string name="health_atlas_autonomic_relay_story_compare_caption">两条通路都由两个神经元接力。在图示的例子中，交感通路在脊髓附近接力，迷走通路则在心脏附近接力。两种输入可以同时存在，强弱也可以各自变化。正常心率受到两者共同调节。</string>
+
+    <string name="health_atlas_autonomic_relay_story_art_brainstem">脑干</string>
+    <string name="health_atlas_autonomic_relay_story_art_cord">脊髓</string>
+    <string name="health_atlas_autonomic_relay_story_art_heart">心脏</string>
+    <string name="health_atlas_autonomic_relay_story_art_thoracic_ganglion">胸交感神经节</string>
+    <string name="health_atlas_autonomic_relay_story_art_cardiac_fiber">通向心脏的纤维</string>
+    <string name="health_atlas_autonomic_relay_story_art_sa_node">窦房结</string>
+    <string name="health_atlas_autonomic_relay_story_art_beat_spacing">心跳间隔</string>
+    <string name="health_atlas_autonomic_relay_story_art_vagus">迷走神经</string>
+    <string name="health_atlas_autonomic_relay_story_art_cardiac_ganglion">心脏神经节</string>
+    <string name="health_atlas_autonomic_relay_story_art_sympathetic">交感神经</string>
+    <string name="health_atlas_autonomic_relay_story_art_parasympathetic">副交感神经</string>
+
+    <string name="health_atlas_autonomic_relay_story_ref_anatomy">研究证据：人体心脏的自主神经通路</string>
+    <string name="health_atlas_autonomic_relay_story_ref_rate">研究证据：自主神经对人体心率的调节</string>
+</resources>
