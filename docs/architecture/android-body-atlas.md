@@ -1264,3 +1264,17 @@ resorption, reversal, osteoid deposition and mineralization. The depth
 and colors make these stages visible but do not estimate bone density,
 timing or individual health. Muscle and bone lessons preserve separate
 playheads and pass only the displayed public chapter to Agent.
+
+## Continuous Lymph Return And Antibody Response
+
+The lymph lesson separates filtration from a blood capillary, uptake
+through the flap-like edges of initial lymphatics, alternating valves in
+a collecting segment, passage through a lymph node, and return to a vein
+through the thoracic duct. The painted node and duct reuse their existing
+anatomic paths. The spleen is not part of this lymph drainage route.
+Valve motion is qualitative and independent of the pressure model.
+
+The antibody lesson shows one T-cell-dependent response: B-cell
+recognition, help, expansion, differentiation, and release of antibodies
+that bind matched antigens. Cell counts and timing are illustrative.
+Existing anatomical hotspots and simulation panels remain available.

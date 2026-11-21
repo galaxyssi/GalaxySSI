@@ -161,6 +161,41 @@ internal enum class HealthAtlasFunctionStory(
             R.string.health_atlas_bone_reversal_source to "https://pubmed.ncbi.nlm.nih.gov/28177141/",
         ),
         18_000L,
+    ),
+    LYMPH_RETURN(
+        setOf("lymphatic-vessels", "lymph-nodes", "thoracic-duct", "cell-lymphatic-endothelial-cell"),
+        R.string.health_atlas_lymph_flow_title,
+        R.string.health_atlas_lymph_flow_scope,
+        listOf(
+            R.string.health_atlas_lymph_flow_tissue to R.string.health_atlas_lymph_flow_tissue_caption,
+            R.string.health_atlas_lymph_flow_entry to R.string.health_atlas_lymph_flow_entry_caption,
+            R.string.health_atlas_lymph_flow_pump to R.string.health_atlas_lymph_flow_pump_caption,
+            R.string.health_atlas_lymph_flow_node to R.string.health_atlas_lymph_flow_node_caption,
+            R.string.health_atlas_lymph_flow_return to R.string.health_atlas_lymph_flow_return_caption,
+        ),
+        listOf(
+            R.string.health_atlas_lymph_flow_anatomy to HealthAtlasLymphOrgans.SOURCE,
+            R.string.health_atlas_lymph_flow_entry_source to "https://pubmed.ncbi.nlm.nih.gov/17846148/",
+        ),
+        20_000L,
+    ),
+    ANTIBODY_RESPONSE(
+        setOf("immune", "cell-b-cell", "cell-plasma-cell"),
+        R.string.health_atlas_antibody_story_title,
+        R.string.health_atlas_antibody_story_scope,
+        listOf(
+            R.string.health_atlas_antibody_story_recognize to R.string.health_atlas_antibody_story_recognize_caption,
+            R.string.health_atlas_antibody_story_help to R.string.health_atlas_antibody_story_help_caption,
+            R.string.health_atlas_antibody_story_expand to R.string.health_atlas_antibody_story_expand_caption,
+            R.string.health_atlas_antibody_story_specialize to R.string.health_atlas_antibody_story_specialize_caption,
+            R.string.health_atlas_antibody_story_release to R.string.health_atlas_antibody_story_release_caption,
+        ),
+        listOf(
+            R.string.health_atlas_antibody_story_source to
+                "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-4-the-adaptive-immune-response-b-lymphocytes-and-antibodies",
+            R.string.health_atlas_antibody_story_helper_source to "https://pmc.ncbi.nlm.nih.gov/articles/PMC5030190/",
+        ),
+        20_000L,
     );
 
     fun chapter(value: Float) = (safePhase(value) * chapters.size).toInt().coerceAtMost(chapters.lastIndex)
@@ -175,6 +210,7 @@ internal enum class HealthAtlasFunctionStory(
         DIGESTION, COLON -> HealthAtlasDigestiveStoryView(context, this)
         VISION, LIGHT_ADAPTATION -> HealthAtlasVisionStoryView(context, this)
         MUSCLE_MOTION, BONE_REMODELING -> HealthAtlasMovementStoryView(context, this)
+        LYMPH_RETURN, ANTIBODY_RESPONSE -> HealthAtlasLymphImmuneStoryView(context, this)
     }
 
     companion object {

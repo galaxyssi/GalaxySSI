@@ -311,8 +311,14 @@ class HealthBodyAtlasActivity : Activity() {
                 ui.add(content, ui.text(getString(R.string.health_atlas_related_process, mechanism.title), 17f, bold = true), 22)
                 mechanism.stages.forEachIndexed { index, stage -> ui.add(content, ui.text("${index + 1}. $stage", 16f), 12) }
                 ui.add(content, ui.text(getString(R.string.health_atlas_process_note), 12f, muted = true), 16)
-                if (story != null && item.kind == HealthAtlasKind.SYSTEM &&
-                    HealthAtlasMusculoskeletalPlates.viewsForId(item.id).size > 1) {
+                val hasAlternateView = item.kind == HealthAtlasKind.SYSTEM &&
+                    HealthAtlasMusculoskeletalPlates.viewsForId(item.id).size > 1
+                val hasLymphImmuneHotspots = when (story) {
+                    HealthAtlasFunctionStory.LYMPH_RETURN, HealthAtlasFunctionStory.ANTIBODY_RESPONSE ->
+                        HealthAtlasPlates.forId(item.id)?.hasLabels == true
+                    else -> false
+                }
+                if (story != null && (hasAlternateView || hasLymphImmuneHotspots)) {
                     ui.add(content, artwork(data, item), 12)
                 }
                 ui.add(content, ui.command(R.string.health_atlas_simulation) { tab = HealthAtlasTab.SIMULATION; scrollY = 0; render() }, 12)

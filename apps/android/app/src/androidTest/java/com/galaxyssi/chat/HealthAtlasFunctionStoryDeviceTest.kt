@@ -59,6 +59,46 @@ class HealthAtlasFunctionStoryDeviceTest {
         }
     }
 
+    @Test fun lymphAndAntibodyStoriesRetainTheDedicatedAnatomyAndSimulations() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-tab-2").performClick()
+                    activity.find<EditText>("atlas-search").setText("lymphatic-vessels")
+                    activity.find<View>("atlas-entry-lymphatic-vessels").performClick()
+                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.find<android.widget.SeekBar>("atlas-physiology-lymph-pressure").progress = 70
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-lymph-return-art")
+                    activity.find<View>("atlas-feature-vessel-0")
+                    repeat(2) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_lymph_flow_pump_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    assertEquals(70, activity.find<android.widget.SeekBar>("atlas-physiology-lymph-pressure").progress)
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.4f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.onBackPressed()
+
+                    openCell(activity, "cell-plasma-cell")
+                    activity.find<View>("atlas-function-antibody-response-art")
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    repeat(4) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_antibody_story_release_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.find<View>("atlas-immune-link-diagram")
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.8f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
     @Test fun elbowMotionAndBoneRemodelingKeepIndependentPlaybackAndSimulation() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
@@ -386,6 +426,11 @@ class HealthAtlasFunctionStoryDeviceTest {
         assertTrue(motion.contains(context.getString(R.string.health_atlas_motion_pull_caption)))
         assertTrue(bone.contains(context.getString(R.string.health_atlas_bone_remove_caption)))
         assertFalse(bone.contains(context.getString(R.string.health_atlas_motion_pull_caption)))
+        val lymph = HealthAtlasAgentContext.prompt(context, atlas, requireNotNull(atlas["lymph-nodes"]), functionPhase = .63f)
+        val antibody = HealthAtlasAgentContext.prompt(context, atlas, requireNotNull(atlas["cell-plasma-cell"]), functionPhase = .84f)
+        assertTrue(lymph.contains(context.getString(R.string.health_atlas_lymph_flow_node_caption)))
+        assertTrue(antibody.contains(context.getString(R.string.health_atlas_antibody_story_release_caption)))
+        assertFalse(antibody.contains(context.getString(R.string.health_atlas_lymph_flow_node_caption)))
     }
 
     private fun openCell(activity: HealthBodyAtlasActivity, id: String) {

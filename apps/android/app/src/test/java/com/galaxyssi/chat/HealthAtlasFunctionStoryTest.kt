@@ -147,6 +147,32 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(movement.erosionDepth(3, .1f), movement.erosionDepth(3, .9f), 0f)
     }
 
+    @Test fun lymphFlowDoesNotRouteThroughTheSpleenAndKeepsTheValvesIndependent() {
+        listOf("lymphatic-vessels", "lymph-nodes", "thoracic-duct", "cell-lymphatic-endothelial-cell").forEach {
+            assertEquals(HealthAtlasFunctionStory.LYMPH_RETURN, HealthAtlasFunctionStory.forId(it))
+        }
+        listOf("immune", "cell-b-cell", "cell-plasma-cell").forEach {
+            assertEquals(HealthAtlasFunctionStory.ANTIBODY_RESPONSE, HealthAtlasFunctionStory.forId(it))
+        }
+        assertNull(HealthAtlasFunctionStory.forId("spleen"))
+        assertNull(HealthAtlasFunctionStory.forId("cell-t-cell"))
+        val pump = HealthAtlasLymphPumpStage
+        assertEquals(0f, pump.cycle(Float.NaN), 0f)
+        assertEquals(0f, pump.expansion(.97f), .00001f)
+        assertEquals(1f, pump.expansion(.57f), .00001f)
+        assertTrue(pump.expansion(.40f) > pump.expansion(.15f))
+        assertTrue(pump.expansion(.60f) > pump.expansion(.90f))
+        assertEquals(HealthAtlasLymphPumpStage.FILLING, pump.at(.24f))
+        assertEquals(HealthAtlasLymphPumpStage.HOLDING, pump.at(.49f))
+        assertEquals(HealthAtlasLymphPumpStage.EMPTYING, pump.at(.65f))
+        for (i in 0..1000) {
+            val cycle = pump.cycle(i / 1000f)
+            val valves = pump.at(cycle)
+            assertFalse(valves.inletOpen && valves.outletOpen)
+            assertTrue(pump.expansion(cycle) in 0f..1f)
+        }
+    }
+
     @Test fun allChaptersScrubToTheirOwnBoundariesAndRejectInvalidState() = HealthAtlasFunctionStory.entries.forEach { story ->
         assertEquals(5, story.chapters.size)
         assertEquals(5, story.chapters.map { it.second }.toSet().size)
