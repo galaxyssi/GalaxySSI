@@ -12,11 +12,13 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         strokeCap = Paint.Cap.ROUND
         textAlign = Paint.Align.CENTER
     }
-    private val diffusion = initial.kind == HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION
-    private val labels = if (diffusion) listOf(R.string.health_atlas_diffusion_air,
-        R.string.health_atlas_diffusion_barrier, R.string.health_atlas_diffusion_blood)
-    else listOf(R.string.health_atlas_compression_unloaded, R.string.health_atlas_compression_loaded)
-    private val guide = if (diffusion) R.string.health_atlas_diffusion_diagram else R.string.health_atlas_compression_diagram
+    private val kind = initial.kind
+    val diagramDescription = when (kind) {
+        HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> R.string.health_atlas_diffusion_diagram
+        HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> R.string.health_atlas_compression_diagram
+        HealthAtlasPhysiologyKind.BONE_BENDING -> R.string.health_atlas_bone_bending_diagram
+        else -> error("Unexpected material response: $kind")
+    }
     private val ink = context.getColor(R.color.text_primary)
     private val blue = 0xff3a778f.toInt()
     private val teal = 0xff3f7770.toInt()
@@ -26,14 +28,18 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         set(value) {
             require(value.kind == field.kind)
             field = value
-            contentDescription = context.getString(guide) + ". " + HealthAtlasPhysiologyText.result(context, value) +
+            contentDescription = context.getString(diagramDescription) + " " + HealthAtlasPhysiologyText.result(context, value) +
                 "; " + HealthAtlasPhysiologyText.companion(context, value)
             invalidate()
         }
 
     init {
-        require(diffusion || initial.kind == HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION)
-        tag = if (diffusion) "atlas-diffusion-layer" else "atlas-cartilage-compression"
+        tag = when (kind) {
+            HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> "atlas-diffusion-layer"
+            HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> "atlas-cartilage-compression"
+            HealthAtlasPhysiologyKind.BONE_BENDING -> "atlas-bone-bending"
+            else -> error("Unexpected material response: $kind")
+        }
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         model = initial
     }
@@ -50,7 +56,12 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         canvas.save()
         canvas.translate((width - 340 * scale) / 2, (height - 156 * scale) / 2)
         canvas.scale(scale, scale)
-        if (diffusion) drawExchange(canvas) else drawCartilage(canvas)
+        when (kind) {
+            HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> drawExchange(canvas)
+            HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> drawCartilage(canvas)
+            HealthAtlasPhysiologyKind.BONE_BENDING -> drawBone(canvas)
+            else -> Unit
+        }
         canvas.restore()
     }
 
@@ -84,9 +95,9 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             arrow(c, from, y, to, y, blue, 1.25f + .14f * model.result.toFloat())
             oval(c, from - 8, y - 2.7f, from - 2, y + 2.7f, blue)
         }
-        label(c, labels[0], 74f, 145f, 116f)
-        label(c, labels[1], 170f, 145f, 64f)
-        label(c, labels[2], 264f, 145f, 116f)
+        label(c, R.string.health_atlas_diffusion_air, 74f, 145f, 116f)
+        label(c, R.string.health_atlas_diffusion_barrier, 170f, 145f, 64f)
+        label(c, R.string.health_atlas_diffusion_blood, 264f, 145f, 116f)
     }
 
     private fun drawCartilage(c: Canvas) {
@@ -112,8 +123,56 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             val y = 57f + model.result.toFloat() * 1.85f
             arrow(c, x, y - (10 + 25 * stress), x, y, 0xffa8613f.toInt(), 1.1f + stress * 1.7f)
         }
-        label(c, labels[0], 87f, 146f, 126f)
-        label(c, labels[1], 253f, 146f, 126f)
+        label(c, R.string.health_atlas_compression_unloaded, 87f, 146f, 126f)
+        label(c, R.string.health_atlas_compression_loaded, 253f, 146f, 126f)
+    }
+
+    private fun drawBone(c: Canvas) {
+        val centerY = 77f
+        val centerX = 91f
+        val radius = (model.input(1) * 1.3).toFloat()
+        val cavity = radius * model.input(2).toFloat()
+        val strength = (model.result / model.kind.maximum).toFloat()
+        val ring = Path().apply {
+            fillType = Path.FillType.EVEN_ODD
+            addCircle(centerX, centerY, radius, Path.Direction.CW)
+            addCircle(centerX, centerY, cavity, Path.Direction.CW)
+        }
+        paint.color = 0xffeed6ab.toInt()
+        c.drawPath(ring, paint)
+        c.save()
+        c.clipPath(ring)
+        rectangle(c, centerX - radius, centerY - radius, centerX + radius, centerY,
+            (0x00ad6554 or ((125 * strength).roundToInt() shl 24)), 0f)
+        rectangle(c, centerX - radius, centerY, centerX + radius, centerY + radius,
+            (0x0051869f or ((125 * strength).roundToInt() shl 24)), 0f)
+        c.restore()
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2f
+        paint.color = 0xffa3896c.toInt()
+        c.drawCircle(centerX, centerY, radius, paint)
+        c.drawCircle(centerX, centerY, cavity, paint)
+        paint.style = Paint.Style.FILL
+        for (dx in -5..5) {
+            val x = centerX + dx * (radius + 9f) / 5
+            line(c, x - 2, centerY, x + 2, centerY, 0xff726e73.toInt(), 1.35f)
+        }
+
+        val axis = 244f
+        val span = 65f * strength
+        val top = centerY - radius
+        val bottom = centerY + radius
+        fun stressLine(y: Float, offset: Float, fill: Int, border: Int) {
+            paint.color = fill
+            c.drawPath(Path().apply { moveTo(axis, centerY); lineTo(axis + offset, y); lineTo(axis, y); close() }, paint)
+            line(c, axis, centerY, axis + offset, y, border, 2.1f)
+        }
+        stressLine(top, -span, 0xffefd2c2.toInt(), 0xffa9614c.toInt())
+        stressLine(bottom, span, 0xffd7e8ef.toInt(), blue)
+        line(c, axis, top - 4, axis, bottom + 4, 0xff7c7476.toInt(), 1.3f)
+        label(c, R.string.health_atlas_bone_bending_neutral, centerX, 148f, 136f)
+        label(c, R.string.health_atlas_bone_bending_compression, axis - 43, 16f, 125f)
+        label(c, R.string.health_atlas_bone_bending_tension, axis + 44, 148f, 94f)
     }
 
     private fun rectangle(c: Canvas, left: Float, top: Float, right: Float, bottom: Float, color: Int, radius: Float = 10f) {

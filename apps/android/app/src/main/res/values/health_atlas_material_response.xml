@@ -20,4 +20,15 @@
     <string name="health_atlas_compression_diagram">Articular cartilage before and under load. Deformation enlarged.</string>
     <string name="health_atlas_compression_unloaded">Unloaded</string>
     <string name="health_atlas_compression_loaded">Under load</string>
+    <string name="health_atlas_bone_bending_title">Example bone bending stress</string>
+    <string name="health_atlas_bone_bending_moment">Bending moment</string>
+    <string name="health_atlas_bone_bending_diameter">Outer diameter</string>
+    <string name="health_atlas_bone_bending_cavity">Inner-to-outer diameter ratio</string>
+    <string name="health_atlas_bone_bending_inertia">Second moment of area: %1$s mm⁴</string>
+    <string name="health_atlas_bone_bending_formula">In this model, outer stress = moment × outer radius ÷ second moment of area.</string>
+    <string name="health_atlas_bone_bending_scope">A hollow circular beam with synthetic dimensions. Actual bones are irregular, with different properties across and along their length. These stresses do not predict bone strength, fracture risk, or safe exercise loads.</string>
+    <string name="health_atlas_bone_bending_diagram">Example bone cross section and stress across its depth.</string>
+    <string name="health_atlas_bone_bending_compression">Compression</string>
+    <string name="health_atlas_bone_bending_tension">Tension</string>
+    <string name="health_atlas_bone_bending_neutral">Neutral axis</string>
 </resources>

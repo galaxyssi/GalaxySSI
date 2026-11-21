@@ -22,7 +22,8 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
     private val alveolar = if (kind == HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE) HealthAtlasAlveolarSurfaceView(activity) else null
     private val villus = if (kind == HealthAtlasPhysiologyKind.VILLUS_AREA) HealthAtlasVillusAreaView(activity) else null
     private val materialResponse = when (kind) {
-        HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION, HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION ->
+        HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION, HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION,
+        HealthAtlasPhysiologyKind.BONE_BENDING ->
             HealthAtlasMaterialResponseView(activity, model)
         else -> null
     }
@@ -42,9 +43,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         }
         materialResponse?.let {
             ui.add(body, it, 8)
-            val diagram = if (kind == HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION) R.string.health_atlas_diffusion_diagram
-                else R.string.health_atlas_compression_diagram
-            ui.add(body, ui.text(activity.getString(diagram), 12f, muted = true), 4)
+            ui.add(body, ui.text(activity.getString(it.diagramDescription), 12f, muted = true), 4)
         }
         val axisKey = kind.inputs[kind.axis].key
         fun addChart() {

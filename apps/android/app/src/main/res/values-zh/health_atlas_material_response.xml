@@ -20,4 +20,15 @@
     <string name="health_atlas_compression_diagram">关节软骨受压前后的对照，图中放大了形变。</string>
     <string name="health_atlas_compression_unloaded">未受压</string>
     <string name="health_atlas_compression_loaded">受压后</string>
+    <string name="health_atlas_bone_bending_title">长骨弯曲应力示例</string>
+    <string name="health_atlas_bone_bending_moment">弯矩</string>
+    <string name="health_atlas_bone_bending_diameter">外径</string>
+    <string name="health_atlas_bone_bending_cavity">内径与外径之比</string>
+    <string name="health_atlas_bone_bending_inertia">截面二次矩：%1$s mm⁴</string>
+    <string name="health_atlas_bone_bending_formula">在此模型中，外缘应力 = 弯矩 × 外半径 ÷ 截面二次矩。</string>
+    <string name="health_atlas_bone_bending_scope">这是使用示例尺寸的空心圆梁模型。真实骨骼形状不规则，横截面和长度方向上的性质也会变化。示例应力不能预测骨强度、骨折风险或安全运动负荷。</string>
+    <string name="health_atlas_bone_bending_diagram">长骨示例横截面及其沿截面深度的应力变化。</string>
+    <string name="health_atlas_bone_bending_compression">受压</string>
+    <string name="health_atlas_bone_bending_tension">受拉</string>
+    <string name="health_atlas_bone_bending_neutral">中性轴</string>
 </resources>

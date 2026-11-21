@@ -4,6 +4,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HealthAtlasPhysiologyTest {
+    @Test fun bendingSeparatesMomentFromTubeGeometryAndUsesConsistentUnits() {
+        val model = requireNotNull(HealthAtlasPhysiology.restore("limb-bones", intArrayOf(6, 20, 60)))
+        val inertia = Math.PI * (20.0 * 20 * 20 * 20 - 12.0 * 12 * 12 * 12) / 64
+        assertEquals(HealthAtlasPhysiologyKind.BONE_BENDING, model.kind)
+        assertEquals(inertia, model.companionValue, 1e-9)
+        assertEquals(6000.0 * 10.0 / inertia, model.result, 1e-9)
+        assertEquals(0.0, model.withInput(0, 0).result, 0.0)
+        assertEquals(model.result * 2, model.withInput(0, 12).result, 1e-9)
+        val wider = model.withInput(1, 40)
+        assertEquals(model.companionValue * 16, wider.companionValue, 1e-8)
+        assertEquals(model.result / 8, wider.result, 1e-9)
+        assertTrue(model.withInput(2, 80).result > model.result)
+        assertNull(HealthAtlasPhysiology.restore("tibia", intArrayOf(6, 20, 100)))
+        assertEquals(HealthAtlasPhysiologyKind.ELBOW_BALANCE, HealthAtlasPhysiologyKind.forItem("radius"))
+    }
+
     @Test fun simplifiedOxygenTransferSeparatesGeometryAndPressureDifference() {
         val model = requireNotNull(HealthAtlasPhysiology.restore("respiratory-membrane", intArrayOf(100, 100, 100)))
         assertEquals(HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION, model.kind)
