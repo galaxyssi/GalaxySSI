@@ -16,13 +16,18 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
   let birthDate: Date?
   let now: Date
   let allowed: Bool
-  @Binding var period: Period?
+  @State private var selection = GalaxySSIHealthMeasurementSelection()
+  private var period: Period? { selection.displayed }
   @State private var abnormal = false
-  let choosePeriod: (Period.Kind) -> Void
-  let compare: () -> Void
+  let compare: (Period?) -> Void
   let edit: (GalaxySSIHealthReading) -> Void
   let manual: (GalaxySSIHealthMetric) -> Void
   @StateObject private var query = GalaxySSIHealthMeasurementQuery()
+  @StateObject private var staged = GalaxySSIHealthMeasurementQuery()
+  @State private var selectionFailure: GalaxySSIHealthMeasurementQuery.Failure?
+  @State private var picker: PickerRequest?
+  @State private var width: CGFloat = 300
+  private struct PickerRequest: Identifiable { let id = UUID(); let kind: Period.Kind }
   @State private var expanded = false
   @State private var visible = false
   private var scope: GalaxySSIHealthMeasurementQuery.Scope {
@@ -56,12 +61,16 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
     VStack(alignment: .leading, spacing: 10) {
       heading
       HStack(alignment: .top, spacing: 12) {
-        Toggle(t("abnormal", "Abnormal only"), isOn: $abnormal).disabled(!allowed)
-        Button(action: compare) {
+        Toggle(t("abnormal", "Abnormal only"), isOn: $abnormal).disabled(!allowed || selection.pending != nil)
+        Button { compare(period) } label: {
           Label(t("comparison", "Period comparison"), systemImage: "arrow.left.arrow.right")
             .fixedSize(horizontal: false, vertical: true).frame(minHeight: 44)
-        }.disabled(!allowed)
+        }.disabled(!allowed || selection.pending != nil)
       }.font(.subheadline)
+      if selection.pending != nil { ProgressView().accessibilityLabel(t("loading", "Loading measurements")) }
+      if let selectionFailure {
+        Text(GalaxySSIHealthMeasurementPeriodText.failure(selectionFailure, language: language)).font(.caption).foregroundColor(.secondary)
+      }
       if let failure = query.failure {
         Text(GalaxySSIHealthMeasurementPeriodText.failure(failure, language: language)).font(.caption).foregroundColor(.secondary)
         Button(t("retry", "Reload")) { reload() }
@@ -74,22 +83,50 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
           }
           if filtered.isEmpty { Text(t("empty", "No matching measurements")).font(.caption).foregroundColor(.secondary).padding(12) }
         }.background(RoundedRectangle(cornerRadius: 8).stroke(Color(uiColor: .separator), lineWidth: 0.5))
-        if filtered.count > previewSize { expansionToggle }
+          .disabled(selection.pending != nil).opacity(selection.pending == nil ? 1 : 0.6)
+        if filtered.count > previewSize { expansionToggle.disabled(selection.pending != nil) }
       }
     }
     .onAppear { visible = true; reload(preserve: true) }
-    .onDisappear { visible = false; query.cancel(clear: false) }
-    .onChange(of: period) { _ in expanded = false; reload() }
-    .onChange(of: timeZone) { _ in reload() }
-    .onChange(of: allowed) { if !$0 { abnormal = false } }
+    .onDisappear { visible = false; cancelSelection(); query.cancel(clear: false) }
+    .onChange(of: timeZone) { _ in picker = nil; reload() }
+    .onChange(of: allowed) { if !$0 { clearPrivate(); reload() } }
     .onChange(of: now) { _ in reload(preserve: true) }
-    .onChange(of: scene) { if $0 == .active { reload() } else { abnormal = false; query.cancel() } }
-    .onChange(of: store.profile.identityFingerprint) { _ in query.cancel() }
+    .onChange(of: scene) { if $0 == .active { reload() } else { clearPrivate() } }
+    .onChange(of: store.profile.identityFingerprint) { _ in clearPrivate() }
+    .onReceive(staged.$output) { value in
+      if value != nil, let request = selection.pending {
+        // Published emits before storage changes; adopt after this actor turn.
+        Task { @MainActor in
+          guard selection.pending == request, staged.output != nil else { return }
+          finishSelection()
+        }
+      }
+    }
+    .onReceive(staged.$failure) { value in
+      if let failure = value, let request = selection.pending {
+        Task { @MainActor in
+          guard selection.pending == request else { return }
+          failSelection(failure)
+        }
+      }
+    }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { changed($0) }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthOriginalStore.indexChanged)) { changed($0) }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in reload() }
-    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in query.cancel() }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in clearPrivate() }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in reload() }
+    .background(GeometryReader { geometry in
+      Color.clear.onAppear { width = geometry.size.width }.onChange(of: geometry.size.width) { width = $0 }
+    })
+    .sheet(item: $picker) { request in
+      NavigationView {
+        GalaxySSIHealthMeasurementPeriodPicker(records: records, initialKind: request.kind, allowsKindChange: false, showsLatest: false) { chosen in
+          guard picker?.id == request.id, visible, scene == .active, store.profile.identityFingerprint == records.owner else { return }
+          select(chosen)
+        }
+      }.navigationViewStyle(.stack)
+    }
   }
   private var heading: some View {
     HStack(alignment: .top, spacing: 12) {
@@ -97,14 +134,17 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
         .font(.subheadline.weight(.semibold)).accessibilityAddTraits(.isHeader).frame(minHeight: 44)
       Spacer(minLength: 0)
       Menu {
-        Button(t("latest", "Latest measurements")) { period = nil; expanded = false }
-        Button(t("weeks", "By week")) { choosePeriod(.week) }.disabled(!allowed)
-        Button(t("months", "By month")) { choosePeriod(.month) }.disabled(!allowed)
+        Button(t("latest", "Latest measurements")) { select(nil) }
+        Button(t("weeks", "By week")) { picker = PickerRequest(kind: .week) }.disabled(!allowed)
+        Button(t("months", "By month")) { picker = PickerRequest(kind: .month) }.disabled(!allowed)
       } label: {
-        Label(period.map { GalaxySSIHealthMeasurementPeriodText.label($0, zone: timeZone, locale: locale) }
-          ?? t("latest", "Latest measurements"), systemImage: "calendar")
-          .font(.subheadline).multilineTextAlignment(.trailing).fixedSize(horizontal: false, vertical: true).frame(minHeight: 44)
-      }.accessibilityIdentifier("health-measurement-period-filter")
+        Text(selectorLabel).font(.subheadline).lineLimit(1).truncationMode(.tail)
+          .padding(.horizontal, 12).padding(.vertical, 4)
+          .frame(minWidth: 48, maxWidth: max(48, min(180, width * 0.6)), minHeight: 48)
+          .fixedSize(horizontal: true, vertical: false)
+          .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+          .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(uiColor: .separator), lineWidth: 0.5))
+      }.accessibilityLabel(selectorLabel).help(selectorLabel).accessibilityIdentifier("health-measurement-period-filter")
     }
   }
   private var expansionToggle: some View {
@@ -156,10 +196,43 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
   }
   private func visibleMetric(_ metric: GalaxySSIHealthMetric) -> Bool { ![.steps, .temperature, .oxygenSaturation].contains(metric) }
   private func reload(preserve: Bool = false) {
+    cancelSelection()
     guard visible else { query.cancel(clear: false); return }
     guard scene == .active else { query.cancel(); return }
     query.load(records: records, scope: scope,
       zone: timeZone, preservingOutput: preserve) { store.profile.identityFingerprint == records.owner }
+  }
+  private var selectorLabel: String {
+    selection.selected.map { GalaxySSIHealthMeasurementPeriodText.label($0, zone: timeZone, locale: locale) } ?? t("latest", "Latest measurements")
+  }
+  private func select(_ value: Period?) {
+    guard visible, scene == .active, store.profile.identityFingerprint == records.owner else { return }
+    picker = nil; selectionFailure = nil
+    let previous = selection.pending
+    guard let request = selection.choose(value) else {
+      if previous != selection.pending { staged.cancel() }
+      return
+    }
+    staged.load(records: records, scope: .overview(period: request.period, abnormal: false, after: nil, expanded: false, outsideIDs: []), zone: timeZone) {
+      visible && scene == .active && store.profile.identityFingerprint == records.owner
+    }
+  }
+  private func finishSelection() {
+    guard visible, scene == .active, store.profile.identityFingerprint == records.owner, let request = selection.pending,
+          staged.hasScope(.overview(period: request.period, abnormal: false, after: nil, expanded: false, outsideIDs: [])) else { return }
+    guard query.adopt(staged, records: records) else { failSelection(.changed); return }
+    if selection.commit(request) { expanded = false }
+    staged.cancel()
+  }
+  private func failSelection(_ failure: GalaxySSIHealthMeasurementQuery.Failure) {
+    guard selection.pending != nil else { return }
+    cancelSelection(); selectionFailure = failure
+    if !query.isCurrent(records: records) { reload() }
+  }
+  private func cancelSelection() { selection.cancel(); staged.cancel() }
+  private func clearPrivate() {
+    picker = nil; cancelSelection(); selection = .init(); selectionFailure = nil
+    abnormal = false; expanded = false; query.cancel()
   }
   private func changed(_ notification: Notification) { if notification.object as? String == records.owner { reload(preserve: true) } }
   private func t(_ key: String, _ fallback: String) -> String { GalaxySSIHealthMeasurementPeriodText.text(key, fallback, language) }

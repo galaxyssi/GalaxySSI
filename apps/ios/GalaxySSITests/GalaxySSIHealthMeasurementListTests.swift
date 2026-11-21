@@ -2,6 +2,40 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthMeasurementListTests: XCTestCase {
+  func testSelectionIsNoOpForSamePeriodAndRollsBackByKeepingDisplayedSnapshot() throws {
+    let week = try GalaxySSIHealthMeasurementPeriod(key: "WEEK:2026-11-02")
+    var state = GalaxySSIHealthMeasurementSelection()
+    XCTAssertNil(state.choose(nil))
+    let request = try XCTUnwrap(state.choose(week))
+    XCTAssertNil(state.displayed)
+    XCTAssertEqual(state.selected, week)
+    XCTAssertNil(state.choose(week))
+    XCTAssertEqual(state.pending, request)
+    XCTAssertTrue(state.commit(request))
+    XCTAssertEqual(state.displayed, week)
+    XCTAssertNil(state.choose(week))
+    let latest = try XCTUnwrap(state.choose(nil))
+    XCTAssertNil(state.selected)
+    XCTAssertEqual(state.displayed, week)
+    state.cancel()
+    XCTAssertEqual(state.selected, week)
+    XCTAssertFalse(state.commit(latest))
+  }
+
+  func testSupersededSelectionCannotPublishAndReselectingDisplayedCancelsPending() throws {
+    let week = try GalaxySSIHealthMeasurementPeriod(key: "WEEK:2026-11-02")
+    let month = try GalaxySSIHealthMeasurementPeriod(key: "MONTH:2026-11-01")
+    var state = GalaxySSIHealthMeasurementSelection()
+    let a = try XCTUnwrap(state.choose(week)), b = try XCTUnwrap(state.choose(month))
+    XCTAssertFalse(state.commit(a))
+    XCTAssertEqual(state.pending, b)
+    XCTAssertTrue(state.commit(b))
+    let old = try XCTUnwrap(state.choose(week))
+    XCTAssertNil(state.choose(month))
+    XCTAssertNil(state.pending)
+    XCTAssertFalse(state.commit(old))
+    XCTAssertEqual(state.displayed, month)
+  }
   typealias List = GalaxySSIHealthMeasurementList
   private func item(_ metric: GalaxySSIHealthMetric, position: GalaxySSIHealthOverviewRange.Position? = nil,
                     recorded: Bool = true) -> List.Item {
