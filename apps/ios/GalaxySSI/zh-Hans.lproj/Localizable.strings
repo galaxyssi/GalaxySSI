@@ -7264,7 +7264,7 @@
 "galaxyssi.health.report_quick.supplement" = "补充报告信息";
 "galaxyssi.health.report_quick.cancel" = "取消";
 "galaxyssi.health.report_quick.released" = "原图已无法用于复核。";
-"galaxyssi.health.report_quick.outcome" = "已保存 %lld 项，关联重复项 %lld 项，待审核 %lld 项";
+"galaxyssi.health.report_quick.outcome" = "上次导入：保存 %lld 项，关联重复项 %lld 项，待审核 %lld 项";
 "galaxyssi.health.report_quick.saved" = "已保存的测量";
 "galaxyssi.health.report_quick.handled" = "已处理";
 "galaxyssi.health.report_quick.pending" = "待审核";

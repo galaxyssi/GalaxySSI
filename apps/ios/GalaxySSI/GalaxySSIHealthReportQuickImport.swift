@@ -175,7 +175,7 @@ extension GalaxySSIHealthRecords {
     }
     if job.reportImportOutcome?.releaseOriginal != true {
       var outcome = job.reportImportOutcome ?? .init()
-      outcome.pending = 0; outcome.releaseOriginal = true
+      outcome.releaseOriginal = true
       archive.recognitionJobs?[index].reportImportOutcome = outcome
       archive.recognitionJobs?[index].version = UUID()
       try persistQuickReport(archive)

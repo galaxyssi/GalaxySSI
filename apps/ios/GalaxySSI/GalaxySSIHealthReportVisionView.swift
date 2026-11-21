@@ -48,7 +48,7 @@ struct GalaxySSIHealthReportVisionView: View {
         if let originalPreview { Image(uiImage: originalPreview).resizable().scaledToFit() }
         if !originalAvailable { Text(q("released", "Original is no longer available for review.")).foregroundColor(.secondary) }
         if let outcome {
-          Text(String(format: q("outcome", "%lld saved, %lld linked duplicates, %lld pending review"),
+          Text(String(format: q("outcome", "Last import: %lld saved, %lld linked duplicates, %lld pending review"),
             Int64(outcome.saved), Int64(outcome.duplicates), Int64(outcome.pending)))
         }
         if let result = job.reportVision {
