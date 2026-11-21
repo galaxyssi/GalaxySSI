@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_erector_support_story_title">How the erector spinae extends and supports the spine</string>
+    <string name="health_atlas_erector_support_story_choice">Spinal extension and support</string>
+    <string name="health_atlas_erector_support_story_scope">A simplified view from behind and from the side, with the front of the body to the right in side views. The scenes show normal anatomy; color changes illustrate relative demand, not measured muscle activity or force.</string>
+    <string name="health_atlas_erector_support_story_columns">Paired columns beside the spine</string>
+    <string name="health_atlas_erector_support_story_columns_caption">Deep to the more superficial back muscles, the erector spinae runs along both sides of the vertebral column. From the midline outward, its columns are spinalis, longissimus and iliocostalis.</string>
+    <string name="health_atlas_erector_support_story_extension">Both sides help extend the spine</string>
+    <string name="health_atlas_erector_support_story_extension_caption">As the trunk moves from slight spinal flexion toward neutral, the two sides of the erector spinae contribute together. The pelvis stays still in this view so the change in spinal curvature is visible.</string>
+    <string name="health_atlas_erector_support_story_supported">Neutral with external support</string>
+    <string name="health_atlas_erector_support_story_supported_caption">The backrest takes some of the demand for holding the trunk in place. The spine keeps its natural curves, and the back muscles can still be active.</string>
+    <string name="health_atlas_erector_support_story_loaded">Neutral under an external load</string>
+    <string name="health_atlas_erector_support_story_loaded_caption">Here a load in front of the trunk tends to bend the spine forward. The spinal extensors can contribute more to resisting that tendency without creating a larger arch or visible spinal extension.</string>
+    <string name="health_atlas_erector_support_story_posterior">Posterior view</string>
+    <string name="health_atlas_erector_support_story_paired">Paired extensors</string>
+    <string name="health_atlas_erector_support_story_fixed_pelvis">Pelvis stays still</string>
+    <string name="health_atlas_erector_support_story_neutral_curve">Unchanged neutral curve</string>
+    <string name="health_atlas_erector_support_story_contact">Backrest contact</string>
+    <string name="health_atlas_erector_support_story_external">External load</string>
+    <string name="health_atlas_erector_support_story_ref_anatomy">OpenStax: Axial muscles of the head, neck, and back</string>
+    <string name="health_atlas_erector_support_story_ref_support">Boudrifa &amp; Davies: Erector activity with different back supports</string>
+    <string name="health_atlas_erector_support_story_ref_load">Schultz et al.: Trunk muscle activity during static loading</string>
+</resources>

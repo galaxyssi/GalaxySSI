@@ -99,9 +99,9 @@ class HealthAtlasTissueContextDeviceTest {
         val chinese = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
         val atlas = HealthBodyAtlas.load(english)
         val plates = HealthAtlasTissueContextPlates.all
-        assertEquals(42, plates.size)
-        assertEquals(124, plates.sumOf { it.features.size })
-        assertEquals(17, plates.sumOf { it.markers.size })
+        assertEquals(54, plates.size)
+        assertEquals(177, plates.sumOf { it.features.size })
+        assertEquals(27, plates.sumOf { it.markers.size })
         for (plate in plates) {
             val owner = requireNotNull(plate.owner)
             assertNotNull(atlas[owner])
@@ -235,6 +235,91 @@ class HealthAtlasTissueContextDeviceTest {
                 (it.view("health-page-title") as TextView).text)
             it.onBackPressed()
             assertNotNull(it.view("atlas-feature-hypothalamus-region"))
+        }
+    }
+
+    @Test fun newRegionalCutawaysLeadToTheirOwnPlayback() = native { scenario ->
+        val direct = listOf(
+            Triple("placenta", "placenta-terminal-villus", "placental-exchange"),
+            Triple("ligaments", "ligaments-acl-tibial-footprint", "ligament-guidance"),
+            Triple("appendix", "appendix-lymphoid-follicle", "gut-lymphoid-sampling"),
+            Triple("rectus-abdominis", "rectus-linea-alba", "rectus-trunk-flexion"),
+            Triple("oblique-abdominal-muscles", "oblique-internal", "oblique-rotation"),
+            Triple("erector-spinae", "erector-spinae-midline", "erector-support"),
+        )
+        for ((owner, feature, animation) in direct) scenario.onActivity { activity ->
+            activity.open(owner)
+            assertNotNull(activity.view("atlas-feature-$feature"))
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-$animation-art"))
+            activity.onBackPressed()
+        }
+        scenario.onActivity { activity ->
+            activity.open("autonomic-nerves")
+            assertNotNull(activity.view("atlas-feature-autonomic-sympathetic-chain"))
+            activity.view("atlas-tab-1").performClick()
+            activity.view("atlas-function-lesson-1").performClick()
+            assertEquals(activity.getString(R.string.health_atlas_ganglion_relay_autonomic_caption),
+                (activity.view("atlas-function-caption") as TextView).text)
+        }
+    }
+
+    @Test fun hairShaftCutawayKeepsTheFollicleAsItsOwnPage() = native { scenario ->
+        scenario.onActivity { it.open("hair") }
+        capture("hair-shaft", scenario.localized(R.string.health_atlas_hair_shaft_view))
+        scenario.onActivity { activity ->
+            assertNotNull(activity.view("atlas-feature-hair-shaft-medulla"))
+            activity.view("atlas-hotspot-hair-follicles").performClick()
+            assertNotNull(activity.view("atlas-feature-hair-section-papilla"))
+            activity.onBackPressed()
+            assertNotNull(activity.view("atlas-feature-hair-shaft-cuticle"))
+        }
+    }
+
+    @Test fun limbBonesOpenUpperAndLowerLimbPagesAndReturnToTheOverview() = native { scenario ->
+        scenario.onActivity { it.open("limb-bones") }
+        capture("limb-bones-overview", scenario.localized(R.string.health_atlas_limb_bones_overview_view))
+        scenario.onActivity { activity ->
+            for (id in listOf("radius", "tibia", "foot-bones")) {
+                activity.view("atlas-hotspot-$id").performClick()
+                assertNotEquals(activity.getString(R.string.health_atlas_limb_bones_name),
+                    (activity.view("health-page-title") as TextView).text)
+                activity.onBackPressed()
+                assertEquals(activity.getString(R.string.health_atlas_limb_bones_name),
+                    (activity.view("health-page-title") as TextView).text)
+            }
+        }
+    }
+
+    @Test fun cranialNerveMapAndReflexPlaybackRemainSeparate() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("cranial-nerves")
+            for (part in listOf("olfactory", "optic", "midbrain", "trigeminal", "pontomedullary",
+                "medullary", "accessory", "hypoglossal"))
+                assertNotNull(activity.view("atlas-feature-cranial-$part-attachment"))
+        }
+        capture("cranial-nerve-map", scenario.localized(R.string.health_atlas_cranial_attach_view))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-cranial-reflex-art"))
+            activity.view("atlas-tab-0").performClick()
+            assertNotNull(activity.view("atlas-feature-cranial-accessory-attachment"))
+        }
+    }
+
+    @Test fun radiusAndOlfactorySectionsOpenTheirOwnNeighboringStructures() = native { scenario ->
+        val cases = listOf(
+            Triple("radius", "ulna", "radius-wrist"),
+            Triple("olfactory-mucosa", "cell-olfactory-receptor-neuron", "olfactory-gland"),
+        )
+        for ((owner, target, feature) in cases) scenario.onActivity { activity ->
+            activity.open(owner)
+            assertNotNull(activity.view("atlas-feature-$feature"))
+            activity.view("atlas-hotspot-$target").performClick()
+            assertNull(activity.window.decorView.tagged("atlas-feature-$feature"))
+            activity.onBackPressed()
+            assertNotNull(activity.view("atlas-feature-$feature"))
+            activity.onBackPressed()
         }
     }
 

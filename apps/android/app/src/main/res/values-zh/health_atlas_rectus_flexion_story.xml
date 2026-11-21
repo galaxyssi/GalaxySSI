@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_rectus_flexion_story_title">腹直肌如何使躯干屈曲</string>
+    <string name="health_atlas_rectus_flexion_story_choice">腹直肌与躯干屈曲</string>
+    <string name="health_atlas_rectus_flexion_story_scope">从侧面观察骨盆保持不动时的正常脊柱屈曲。图中显示位于腹前壁的一侧腹直肌。角度和深浅仅作示意，并非测量值。</string>
+    <string name="health_atlas_rectus_flexion_story_align">从肋软骨到耻骨</string>
+    <string name="health_atlas_rectus_flexion_story_align_caption">两条腹直肌位于腹前正中线两侧，下端附着于耻骨嵴和耻骨联合，上端附着于剑突和第 5 至第 7 肋软骨。</string>
+    <string name="health_atlas_rectus_flexion_story_engage">腹前壁开始缩短</string>
+    <string name="health_atlas_rectus_flexion_story_engage_caption">两侧腹直肌协同参与躯干前屈。骨盆保持不动，下胸廓开始向耻骨靠近。</string>
+    <string name="health_atlas_rectus_flexion_story_flex">躯干向前屈曲</string>
+    <string name="health_atlas_rectus_flexion_story_flex_caption">脊柱向前弯曲时，位于弯曲内侧的腹直肌缩短，肌腹上的腱划彼此靠近。此处骨盆不发生倾斜。</string>
+    <string name="health_atlas_rectus_flexion_story_return">腹直肌逐渐伸长</string>
+    <string name="health_atlas_rectus_flexion_story_return_caption">躯干接近中立位时，胸廓逐渐远离耻骨。腹肌在伸长的同时仍可保持一定活动，以帮助控制回位。</string>
+    <string name="health_atlas_rectus_flexion_story_relax">回到中立位</string>
+    <string name="health_atlas_rectus_flexion_story_relax_caption">下胸廓回到原位，骨盆始终保持不动。腹直肌恢复到起始长度，屈曲时增加的肌肉活动逐渐消退。</string>
+    <string name="health_atlas_rectus_flexion_story_costal">肋软骨</string>
+    <string name="health_atlas_rectus_flexion_story_lumbar">腰椎</string>
+    <string name="health_atlas_rectus_flexion_story_belly">腹直肌</string>
+    <string name="health_atlas_rectus_flexion_story_pubis">耻骨嵴</string>
+    <string name="health_atlas_rectus_flexion_story_pelvis">固定的骨盆</string>
+    <string name="health_atlas_rectus_flexion_story_plate_caption">腹直肌前面观</string>
+    <string name="health_atlas_rectus_flexion_story_plate_costal_detail">腹直肌上端附着于第 5 至第 7 肋软骨及胸骨剑突。</string>
+    <string name="health_atlas_rectus_flexion_story_plate_belly_detail">两条长形腹直肌沿腹前壁正中线两侧纵行。</string>
+    <string name="health_atlas_rectus_flexion_story_plate_linea">腹白线</string>
+    <string name="health_atlas_rectus_flexion_story_plate_linea_detail">这条正中的纤维带将左右腹直肌分隔开。</string>
+    <string name="health_atlas_rectus_flexion_story_plate_intersection">腱划</string>
+    <string name="health_atlas_rectus_flexion_story_plate_intersection_detail">横行的结缔组织带将腹直肌分隔为多个肌段。</string>
+    <string name="health_atlas_rectus_flexion_story_plate_pubis_detail">腹直肌下端附着于骨盆前方的耻骨嵴和耻骨联合。</string>
+    <string name="health_atlas_rectus_flexion_story_ref_anatomy">OpenStax：腹壁肌</string>
+    <string name="health_atlas_rectus_flexion_story_ref_ultrasound">扩展视野超声：卷腹时腹直肌的长度变化</string>
+    <string name="health_atlas_rectus_flexion_story_ref_emg">脊柱屈曲时的肌电图研究</string>
+</resources>

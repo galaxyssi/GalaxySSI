@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_appendix_plate_caption">盲肠旁的阑尾及其管壁的放大横切面</string>
+    <string name="health_atlas_appendix_plate_cecal_attachment">盲肠连接处</string>
+    <string name="health_atlas_appendix_plate_cecal_attachment_detail">阑尾根部连于盲肠，盲肠是大肠起始处的囊状部分。</string>
+    <string name="health_atlas_appendix_plate_blind_tip">封闭的尖端</string>
+    <string name="health_atlas_appendix_plate_blind_tip_detail">阑尾末端封闭，其位置和弯曲程度可因人而异。</string>
+    <string name="health_atlas_appendix_plate_lumen">阑尾管腔</string>
+    <string name="health_atlas_appendix_plate_lumen_detail">狭窄的管腔在阑尾根部与盲肠相通，到封闭的尖端为止。</string>
+    <string name="health_atlas_appendix_plate_lymphoid_follicle">淋巴滤泡</string>
+    <string name="health_atlas_appendix_plate_lymphoid_follicle_detail">淋巴滤泡成簇分布在管腔周围的黏膜和黏膜下层。部分滤泡内有颜色较浅的生发中心。</string>
+    <string name="health_atlas_appendix_plate_muscularis_externa">外肌层</string>
+    <string name="health_atlas_appendix_plate_muscularis_externa_detail">外肌层包绕管壁内层。阑尾的外纵行肌是连续的一层。</string>
+</resources>

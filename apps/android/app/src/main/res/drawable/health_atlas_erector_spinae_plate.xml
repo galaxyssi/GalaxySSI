@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Posterior view with the superficial muscle layers omitted. -->
+    <path android:strokeColor="#A6B9BB" android:strokeWidth="1.3"
+        android:pathData="M161,23 Q180,18 199,23 C202,39 216,45 234,50 C262,57 282,74 285,98 C286,131 260,152 253,176 C247,195 264,221 259,236 C245,254 212,261 180,261 C148,261 115,254 101,236 C96,221 113,195 107,176 C100,152 74,131 75,98 C78,74 98,57 126,50 C144,45 158,39 161,23 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="93" android:startY="25" android:endX="257" android:endY="251"
+                android:startColor="#EAF3F0" android:endColor="#C9DCDD" />
+        </aapt:attr>
+    </path>
+    <group android:name="posterior_ribs">
+        <path android:strokeColor="#A5B5B3" android:strokeWidth="6.8" android:strokeLineCap="round"
+            android:pathData="M180,53 C159,50 125,60 108,81 M180,68 C153,65 117,77 97,100 M180,84 C153,80 119,95 92,119 M180,101 C152,98 119,112 97,137 M180,118 C156,115 126,129 107,152 M180,135 C155,133 133,144 117,164 M180,152 C159,151 139,163 129,174 M180,53 C201,50 235,60 252,81 M180,68 C207,65 243,77 263,100 M180,84 C207,80 241,95 268,119 M180,101 C208,98 241,112 263,137 M180,118 C204,115 234,129 253,152 M180,135 C205,133 227,144 243,164 M180,152 C201,151 221,163 231,174" />
+        <path android:strokeColor="#F2F2E5" android:strokeWidth="4.4" android:strokeLineCap="round"
+            android:pathData="M180,53 C159,50 125,60 108,81 M180,68 C153,65 117,77 97,100 M180,84 C153,80 119,95 92,119 M180,101 C152,98 119,112 97,137 M180,118 C156,115 126,129 107,152 M180,135 C155,133 133,144 117,164 M180,152 C159,151 139,163 129,174 M180,53 C201,50 235,60 252,81 M180,68 C207,65 243,77 263,100 M180,84 C207,80 241,95 268,119 M180,101 C208,98 241,112 263,137 M180,118 C204,115 234,129 253,152 M180,135 C205,133 227,144 243,164 M180,152 C201,151 221,163 231,174" />
+    </group>
+    <path android:strokeColor="#8EA5A4" android:strokeWidth="1.4"
+        android:pathData="M180,220 C155,216 147,198 124,200 Q104,202 112,223 C121,237 144,247 163,238 L180,254 L197,238 C216,247 239,237 248,223 Q256,202 236,200 C213,198 205,216 180,220 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="180" android:startY="199" android:endX="180" android:endY="256"
+                android:startColor="#F7F5E7" android:endColor="#BDD0CD" />
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#DBE4DA" android:strokeColor="#8DA1A1" android:strokeWidth="1.2"
+        android:pathData="M171,201 Q180,196 189,201 L195,229 Q191,241 180,248 Q169,241 165,229 Z" />
+    <path android:strokeColor="#A8B9B1" android:strokeWidth="1.3" android:strokeLineCap="round"
+        android:pathData="M119,209 C136,204 143,224 159,223 M241,209 C224,204 217,224 201,223 M175,226 Q180,228 185,226 M175,233 Q180,235 185,233" />
+    <path android:strokeColor="#96A9A8" android:strokeWidth="15" android:strokeLineCap="round"
+        android:pathData="M180,33 L180,206" />
+    <path android:strokeColor="#F0EFE0" android:strokeWidth="12" android:strokeLineCap="round"
+        android:pathData="M180,33 L180,206" />
+    <path android:fillColor="#CCDACF" android:strokeColor="#98AAA6" android:strokeWidth=".85"
+        android:pathData="M176,42 L184,42 L180,49 Z M176,55 L184,55 L180,62 Z M176,68 L184,68 L180,75 Z M176,81 L184,81 L180,88 Z M176,94 L184,94 L180,101 Z M176,107 L184,107 L180,114 Z M176,120 L184,120 L180,127 Z M176,133 L184,133 L180,140 Z M175,147 L185,147 L180,155 Z M175,161 L185,161 L180,169 Z M174,175 L186,175 L180,183 Z M174,189 L186,189 L180,198 Z" />
+    <!-- Lateral iliocostalis, intermediate longissimus, and medial spinalis. -->
+    <group android:name="right_columns">
+        <path android:strokeColor="#9D6475" android:strokeWidth="1.4"
+            android:pathData="M194,217 C201,204 204,188 208,173 C214,153 220,142 221,123 C220,103 222,91 223,76 C227,83 228,92 229,99 L236,94 L234,109 L242,108 L238,124 L245,124 C238,140 237,153 231,164 C225,183 215,200 199,223 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:startX="211" android:startY="93" android:endX="233" android:endY="172"
+                    android:startColor="#F1CDCA" android:endColor="#CA8796" />
+            </aapt:attr>
+        </path>
+        <path android:strokeColor="#8D6078" android:strokeWidth="1.4"
+            android:pathData="M188,213 C194,193 194,178 193,161 C193,139 196,122 197,100 C198,78 194,54 193,33 C198,36 201,48 203,60 C207,74 211,91 213,104 C216,123 215,148 211,169 C207,192 203,209 194,222 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:startX="195" android:startY="101" android:endX="216" android:endY="175"
+                    android:startColor="#E9C4CB" android:endColor="#B67D96" />
+            </aapt:attr>
+        </path>
+        <path android:strokeColor="#815C79" android:strokeWidth="1.25"
+            android:pathData="M185,162 C187,142 186,126 187,107 Q190,81 186,58 Q193,63 195,80 C198,99 195,127 193,144 Q192,155 185,162 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:startX="187" android:startY="64" android:endX="197" android:endY="149"
+                    android:startColor="#E3CDDE" android:endColor="#A67D9C" />
+            </aapt:attr>
+        </path>
+        <path android:fillColor="#DDD4CB" android:strokeColor="#A5919F" android:strokeWidth="1.2"
+            android:pathData="M185,227 C185,215 189,203 195,193 Q196,207 207,203 Q197,220 192,231 Z" />
+        <path android:strokeColor="#FFF1EC" android:strokeAlpha=".83" android:strokeWidth="1.15"
+            android:strokeLineCap="round"
+            android:pathData="M190,70 C196,89 193,113 190,133 M198,55 C208,91 209,119 203,154 C201,173 202,188 195,203 M207,93 C213,121 208,156 205,173 M225,90 C230,114 223,144 217,160 C211,179 211,189 205,198 M233,113 C231,137 228,152 221,168 Q218,180 211,188 M240,127 Q236,146 230,153 M189,224 Q193,215 200,210" />
+    </group>
+    <group android:name="left_columns" android:pivotX="180" android:scaleX="-1">
+        <path android:strokeColor="#9D6475" android:strokeWidth="1.4"
+            android:pathData="M194,217 C201,204 204,188 208,173 C214,153 220,142 221,123 C220,103 222,91 223,76 C227,83 228,92 229,99 L236,94 L234,109 L242,108 L238,124 L245,124 C238,140 237,153 231,164 C225,183 215,200 199,223 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:startX="211" android:startY="93" android:endX="233" android:endY="172"
+                    android:startColor="#F1CDCA" android:endColor="#CA8796" />
+            </aapt:attr>
+        </path>
+        <path android:strokeColor="#8D6078" android:strokeWidth="1.4"
+            android:pathData="M188,213 C194,193 194,178 193,161 C193,139 196,122 197,100 C198,78 194,54 193,33 C198,36 201,48 203,60 C207,74 211,91 213,104 C216,123 215,148 211,169 C207,192 203,209 194,222 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:startX="195" android:startY="101" android:endX="216" android:endY="175"
+                    android:startColor="#E9C4CB" android:endColor="#B67D96" />
+            </aapt:attr>
+        </path>
+        <path android:strokeColor="#815C79" android:strokeWidth="1.25"
+            android:pathData="M185,162 C187,142 186,126 187,107 Q190,81 186,58 Q193,63 195,80 C198,99 195,127 193,144 Q192,155 185,162 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:startX="187" android:startY="64" android:endX="197" android:endY="149"
+                    android:startColor="#E3CDDE" android:endColor="#A67D9C" />
+            </aapt:attr>
+        </path>
+        <path android:fillColor="#DDD4CB" android:strokeColor="#A5919F" android:strokeWidth="1.2"
+            android:pathData="M185,227 C185,215 189,203 195,193 Q196,207 207,203 Q197,220 192,231 Z" />
+        <path android:strokeColor="#FFF1EC" android:strokeAlpha=".83" android:strokeWidth="1.15"
+            android:strokeLineCap="round"
+            android:pathData="M190,70 C196,89 193,113 190,133 M198,55 C208,91 209,119 203,154 C201,173 202,188 195,203 M207,93 C213,121 208,156 205,173 M225,90 C230,114 223,144 217,160 C211,179 211,189 205,198 M233,113 C231,137 228,152 221,168 Q218,180 211,188 M240,127 Q236,146 230,153 M189,224 Q193,215 200,210" />
+    </group>
+</vector>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gluteal_extension_story_title">How the gluteus maximus extends the hip</string>
+    <string name="health_atlas_gluteal_extension_story_choice">Hip extension</string>
+    <string name="health_atlas_gluteal_extension_story_scope">Simplified side views with the front of the body to the right. The blue arcs indicate hip motion, not measured angles or muscle force.</string>
+    <string name="health_atlas_gluteal_extension_story_attachments">A muscle behind the hip</string>
+    <string name="health_atlas_gluteal_extension_story_attachments_caption">The gluteus maximus spans from the back of the pelvis across the back of the hip. Its lower attachments include the upper femur and tissues along the outer thigh. This view highlights the femoral attachment.</string>
+    <string name="health_atlas_gluteal_extension_story_femur">The thigh moves on the pelvis</string>
+    <string name="health_atlas_gluteal_extension_story_femur_caption">With the pelvis shown still, the femur moves backward relative to it about the center of the hip. The gluteus maximus contributes to this hip extension. The pale outline shows the starting position.</string>
+    <string name="health_atlas_gluteal_extension_story_pelvis">The pelvis moves on the thigh</string>
+    <string name="health_atlas_gluteal_extension_story_pelvis_caption">With the femur held still in this view, the pelvis rotates back around the same hip center. The lower spine moves with the pelvis here without changing its own curve. The hip extends in this view too.</string>
+    <string name="health_atlas_gluteal_extension_story_compare">Hip extension is not spinal extension</string>
+    <string name="health_atlas_gluteal_extension_story_compare_caption">On the left, the angle between the pelvis and femur changes. On the right, the lumbar spine extends while the hip angle stays the same. Both motions can occur together, but they are not the same joint action.</string>
+    <string name="health_atlas_gluteal_extension_story_lateral">Side view (front to the right)</string>
+    <string name="health_atlas_gluteal_extension_story_gluteus">Gluteus maximus</string>
+    <string name="health_atlas_gluteal_extension_story_pelvis_label">Pelvis</string>
+    <string name="health_atlas_gluteal_extension_story_socket">Hip center</string>
+    <string name="health_atlas_gluteal_extension_story_femoral_attachment">Femoral attachment</string>
+    <string name="health_atlas_gluteal_extension_story_pelvis_fixed">Pelvis stays still</string>
+    <string name="health_atlas_gluteal_extension_story_femur_moves">Femur turns</string>
+    <string name="health_atlas_gluteal_extension_story_pelvis_moves">Pelvis turns</string>
+    <string name="health_atlas_gluteal_extension_story_femur_fixed">Femur stays still</string>
+    <string name="health_atlas_gluteal_extension_story_hip_motion">Hip extension</string>
+    <string name="health_atlas_gluteal_extension_story_spine_motion">Spinal extension</string>
+    <string name="health_atlas_gluteal_extension_story_hip_angle_changes">Hip angle changes</string>
+    <string name="health_atlas_gluteal_extension_story_hip_angle_fixed">Hip angle stays fixed</string>
+    <string name="health_atlas_gluteal_extension_story_ref_anatomy">OpenStax: Muscles of the pelvic girdle and lower limb</string>
+    <string name="health_atlas_gluteal_extension_story_ref_attachments">Dissection study: Attachment patterns of the gluteus maximus</string>
+    <string name="health_atlas_gluteal_extension_story_ref_emg">Lieberman et al.: Gluteus maximus activity during walking and running</string>
+</resources>

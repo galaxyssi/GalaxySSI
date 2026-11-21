@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gut_lymphoid_story_title">肠道如何对肠腔内容物取样</string>
+    <string name="health_atlas_gut_lymphoid_story_choice">肠黏膜取样</string>
+    <string name="health_atlas_gut_lymphoid_story_scope">阑尾的淋巴滤泡和回肠的派尔斑（集合淋巴小结）是肠相关淋巴组织（GALT）的两个不同实例。取样特写展示一个回肠派尔斑，IgA 场景则展示正常黏膜防御的另一个环节。大小和时间均为示意。</string>
+
+    <string name="health_atlas_gut_lymphoid_story_locate">找到两个部位</string>
+    <string name="health_atlas_gut_lymphoid_story_locate_caption">阑尾是连在盲肠上的一条细管，末端封闭。回肠末端另有开口通入盲肠。派尔斑位于小肠壁内，在远端回肠尤为丰富。</string>
+    <string name="health_atlas_gut_lymphoid_story_compare">对照两处管壁</string>
+    <string name="health_atlas_gut_lymphoid_story_compare_caption">这张阑尾横切图中，成簇的淋巴滤泡在黏膜和黏膜下层内环绕狭窄的管腔。另一张回肠切面展示一个派尔斑：一组滤泡位于隆起的特化上皮下方，两侧可见绒毛。</string>
+    <string name="health_atlas_gut_lymphoid_story_sample">M 细胞转运少量样本</string>
+    <string name="health_atlas_gut_lymphoid_story_sample_caption">在回肠滤泡表面的上皮中，微皱褶细胞（M 细胞）可将少量物质转运到上皮下方，供附近的免疫细胞接触。图中的琥珀色小点代表少量普通食物蛋白。</string>
+    <string name="health_atlas_gut_lymphoid_story_recognize">T 细胞识别呈递的片段</string>
+    <string name="health_atlas_gut_lymphoid_story_recognize_caption">树突状细胞可呈递所采样蛋白的一小段。附近的 T 细胞可在接触时识别与自身受体匹配的片段。识别普通食物蛋白并不意味着肠道会对它发起防御反应。</string>
+    <string name="health_atlas_gut_lymphoid_story_defend">IgA 到达肠腔表面</string>
+    <string name="health_atlas_gut_lymphoid_story_defend_caption">在肠黏膜的另一处，上皮下方的浆细胞释放二聚体 IgA。上皮细胞利用转运受体将它送入肠腔。分泌型 IgA 有助于减少肠腔内容物与肠上皮接触。这不是前面所示取样过程的即时结果。</string>
+
+    <string name="health_atlas_gut_lymphoid_story_cecum">盲肠</string>
+    <string name="health_atlas_gut_lymphoid_story_ileum">回肠末端</string>
+    <string name="health_atlas_gut_lymphoid_story_appendix">阑尾</string>
+    <string name="health_atlas_gut_lymphoid_story_appendix_wall">阑尾横切面</string>
+    <string name="health_atlas_gut_lymphoid_story_ileal_wall">回肠壁切面</string>
+    <string name="health_atlas_gut_lymphoid_story_appendix_lumen">阑尾管腔</string>
+    <string name="health_atlas_gut_lymphoid_story_follicles">阑尾淋巴滤泡</string>
+    <string name="health_atlas_gut_lymphoid_story_peyer">派尔斑</string>
+    <string name="health_atlas_gut_lymphoid_story_villi">回肠绒毛</string>
+    <string name="health_atlas_gut_lymphoid_story_food_protein">食物蛋白</string>
+    <string name="health_atlas_gut_lymphoid_story_m_cell">M 细胞</string>
+    <string name="health_atlas_gut_lymphoid_story_dendritic">树突状细胞</string>
+    <string name="health_atlas_gut_lymphoid_story_t_cell">T 细胞</string>
+    <string name="health_atlas_gut_lymphoid_story_plasma_cell">浆细胞</string>
+    <string name="health_atlas_gut_lymphoid_story_epithelial_transport">上皮转运</string>
+    <string name="health_atlas_gut_lymphoid_story_secretory_iga">分泌型 IgA</string>
+
+    <string name="health_atlas_gut_lymphoid_story_ref_appendix">利兹大学：人体阑尾组织学</string>
+    <string name="health_atlas_gut_lymphoid_story_ref_ileum">巴塞尔大学：人体回肠末端组织学</string>
+    <string name="health_atlas_gut_lymphoid_story_ref_distribution">研究：人体远端回肠的派尔斑分布</string>
+    <string name="health_atlas_gut_lymphoid_story_ref_m_cells">研究：人体派尔斑的特化上皮</string>
+    <string name="health_atlas_gut_lymphoid_story_ref_iga">免疫生物学：IgA 分泌与黏膜防御</string>
+</resources>

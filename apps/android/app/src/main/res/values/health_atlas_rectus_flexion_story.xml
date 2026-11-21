@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_rectus_flexion_story_title">How the rectus abdominis bends the trunk</string>
+    <string name="health_atlas_rectus_flexion_story_choice">Rectus abdominis and trunk flexion</string>
+    <string name="health_atlas_rectus_flexion_story_scope">A side view of normal spinal flexion with the pelvis held still. One of the two rectus muscles is shown at the front. Angles and shading are illustrative, not measurements.</string>
+    <string name="health_atlas_rectus_flexion_story_align">Between ribs and pubis</string>
+    <string name="health_atlas_rectus_flexion_story_align_caption">The two rectus muscles lie on either side of the front midline. They run between the pubic crest and symphysis below and the xiphoid process and fifth to seventh costal cartilages above.</string>
+    <string name="health_atlas_rectus_flexion_story_engage">The front wall begins to shorten</string>
+    <string name="health_atlas_rectus_flexion_story_engage_caption">Both sides of the rectus abdominis help start forward bending. With the pelvis still, the lower rib cage begins to move toward the pubis.</string>
+    <string name="health_atlas_rectus_flexion_story_flex">The trunk bends forward</string>
+    <string name="health_atlas_rectus_flexion_story_flex_caption">As the spine bends, the rectus shortens along the inside of the curve and its tendinous intersections move closer together. The pelvis does not tilt in this example.</string>
+    <string name="health_atlas_rectus_flexion_story_return">The rectus lengthens again</string>
+    <string name="health_atlas_rectus_flexion_story_return_caption">The rib cage moves away from the pubis as the trunk approaches neutral. Abdominal muscles can stay active as they lengthen to help control the return.</string>
+    <string name="health_atlas_rectus_flexion_story_relax">Back at neutral</string>
+    <string name="health_atlas_rectus_flexion_story_relax_caption">The lower rib cage settles back over the same pelvis. The rectus returns to its starting length and the extra effort used to bend the trunk subsides.</string>
+    <string name="health_atlas_rectus_flexion_story_costal">Costal cartilage</string>
+    <string name="health_atlas_rectus_flexion_story_lumbar">Lumbar spine</string>
+    <string name="health_atlas_rectus_flexion_story_belly">Rectus abdominis</string>
+    <string name="health_atlas_rectus_flexion_story_pubis">Pubic crest</string>
+    <string name="health_atlas_rectus_flexion_story_pelvis">Fixed pelvis</string>
+    <string name="health_atlas_rectus_flexion_story_plate_caption">Rectus abdominis, anterior view</string>
+    <string name="health_atlas_rectus_flexion_story_plate_costal_detail">The upper ends attach to the fifth to seventh costal cartilages and the xiphoid process of the sternum.</string>
+    <string name="health_atlas_rectus_flexion_story_plate_belly_detail">The two long rectus muscles run vertically on either side of the midline of the front abdominal wall.</string>
+    <string name="health_atlas_rectus_flexion_story_plate_linea">Linea alba</string>
+    <string name="health_atlas_rectus_flexion_story_plate_linea_detail">This fibrous midline separates the left and right rectus muscles.</string>
+    <string name="health_atlas_rectus_flexion_story_plate_intersection">Tendinous intersection</string>
+    <string name="health_atlas_rectus_flexion_story_plate_intersection_detail">Transverse bands of connective tissue divide the rectus into a series of muscle segments.</string>
+    <string name="health_atlas_rectus_flexion_story_plate_pubis_detail">The lower ends attach to the pubic crest and pubic symphysis, at the front of the pelvis.</string>
+    <string name="health_atlas_rectus_flexion_story_ref_anatomy">OpenStax: Muscles of the abdominal wall</string>
+    <string name="health_atlas_rectus_flexion_story_ref_ultrasound">Extended-field ultrasound of rectus length during curl-up</string>
+    <string name="health_atlas_rectus_flexion_story_ref_emg">Electromyography during spinal flexion</string>
+</resources>

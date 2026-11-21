@@ -1707,6 +1707,139 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    GANGLION_RELAY(
+        HealthAtlasGanglionRelayAssignment.owners,
+        HealthAtlasGanglionRelayAssignment.title,
+        HealthAtlasGanglionRelayAssignment.scope,
+        HealthAtlasGanglionRelayAssignment.chapters,
+        HealthAtlasGanglionRelayAssignment.references,
+        HealthAtlasGanglionRelayAssignment.durationMs,
+        showStructurePreview = true,
+    ),
+    LIGAMENT_GUIDANCE(
+        setOf("ligaments"),
+        R.string.health_atlas_ligament_guidance_story_title,
+        R.string.health_atlas_ligament_guidance_story_scope,
+        listOf(
+            R.string.health_atlas_ligament_guidance_story_connect to R.string.health_atlas_ligament_guidance_story_connect_caption,
+            R.string.health_atlas_ligament_guidance_story_cross to R.string.health_atlas_ligament_guidance_story_cross_caption,
+            R.string.health_atlas_ligament_guidance_story_anterior to R.string.health_atlas_ligament_guidance_story_anterior_caption,
+            R.string.health_atlas_ligament_guidance_story_posterior to R.string.health_atlas_ligament_guidance_story_posterior_caption,
+            R.string.health_atlas_ligament_guidance_story_coordinate to R.string.health_atlas_ligament_guidance_story_coordinate_caption,
+        ),
+        listOf(
+            R.string.health_atlas_ligament_guidance_story_ref_anatomy to HealthAtlasLigamentsPlate.ANATOMY_SOURCE,
+            R.string.health_atlas_ligament_guidance_story_ref_acl to HealthAtlasLigamentsPlate.ACL_FOOTPRINT_SOURCE,
+            R.string.health_atlas_ligament_guidance_story_ref_pcl to HealthAtlasLigamentsPlate.PCL_FOOTPRINT_SOURCE,
+            R.string.health_atlas_ligament_guidance_story_ref_motion to HealthAtlasLigamentsPlate.MOTION_SOURCE,
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    PLACENTAL_EXCHANGE(
+        setOf("placenta", "cell-trophoblast"),
+        R.string.health_atlas_placental_exchange_story_title,
+        R.string.health_atlas_placental_exchange_story_scope,
+        HealthAtlasPlacentalExchangeLesson.chapters,
+        HealthAtlasPlacentalExchangeLesson.references,
+        20_000L,
+        showStructurePreview = true,
+    ),
+    RECTUS_TRUNK_FLEXION(
+        setOf("rectus-abdominis"),
+        R.string.health_atlas_rectus_flexion_story_title,
+        R.string.health_atlas_rectus_flexion_story_scope,
+        listOf(
+            R.string.health_atlas_rectus_flexion_story_align to R.string.health_atlas_rectus_flexion_story_align_caption,
+            R.string.health_atlas_rectus_flexion_story_engage to R.string.health_atlas_rectus_flexion_story_engage_caption,
+            R.string.health_atlas_rectus_flexion_story_flex to R.string.health_atlas_rectus_flexion_story_flex_caption,
+            R.string.health_atlas_rectus_flexion_story_return to R.string.health_atlas_rectus_flexion_story_return_caption,
+            R.string.health_atlas_rectus_flexion_story_relax to R.string.health_atlas_rectus_flexion_story_relax_caption,
+        ),
+        listOf(
+            R.string.health_atlas_rectus_flexion_story_ref_anatomy to "https://openstax.org/books/anatomy-and-physiology-2e/pages/11-4-axial-muscles-of-the-abdominal-wall-and-thorax",
+            R.string.health_atlas_rectus_flexion_story_ref_ultrasound to "https://pmc.ncbi.nlm.nih.gov/articles/PMC9656726/",
+            R.string.health_atlas_rectus_flexion_story_ref_emg to "https://pubmed.ncbi.nlm.nih.gov/12937449/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    OBLIQUE_ROTATION(
+        setOf("oblique-abdominal-muscles"),
+        R.string.health_atlas_oblique_rotation_story_title,
+        R.string.health_atlas_oblique_rotation_story_scope,
+        listOf(
+            R.string.health_atlas_oblique_rotation_story_align to R.string.health_atlas_oblique_rotation_story_align_caption,
+            R.string.health_atlas_oblique_rotation_story_right to R.string.health_atlas_oblique_rotation_story_right_caption,
+            R.string.health_atlas_oblique_rotation_story_center to R.string.health_atlas_oblique_rotation_story_center_caption,
+            R.string.health_atlas_oblique_rotation_story_left to R.string.health_atlas_oblique_rotation_story_left_caption,
+            R.string.health_atlas_oblique_rotation_story_return to R.string.health_atlas_oblique_rotation_story_return_caption,
+        ),
+        listOf(
+            R.string.health_atlas_oblique_rotation_story_ref_anatomy to "https://openstax.org/books/anatomy-and-physiology-2e/pages/11-4-axial-muscles-of-the-abdominal-wall-and-thorax",
+            R.string.health_atlas_oblique_rotation_story_ref_rotation to "https://pubmed.ncbi.nlm.nih.gov/24804227/",
+            R.string.health_atlas_oblique_rotation_story_ref_variation to "https://pubmed.ncbi.nlm.nih.gov/11884920/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    ERECTOR_SUPPORT(
+        setOf("erector-spinae"),
+        R.string.health_atlas_erector_support_story_title,
+        R.string.health_atlas_erector_support_story_scope,
+        listOf(
+            R.string.health_atlas_erector_support_story_columns to R.string.health_atlas_erector_support_story_columns_caption,
+            R.string.health_atlas_erector_support_story_extension to R.string.health_atlas_erector_support_story_extension_caption,
+            R.string.health_atlas_erector_support_story_supported to R.string.health_atlas_erector_support_story_supported_caption,
+            R.string.health_atlas_erector_support_story_loaded to R.string.health_atlas_erector_support_story_loaded_caption,
+        ),
+        listOf(
+            R.string.health_atlas_erector_support_story_ref_anatomy to "https://openstax.org/books/anatomy-and-physiology-2e/pages/11-3-axial-muscles-of-the-head-neck-and-back",
+            R.string.health_atlas_erector_support_story_ref_support to "https://pubmed.ncbi.nlm.nih.gov/4085485/",
+            R.string.health_atlas_erector_support_story_ref_load to "https://pubmed.ncbi.nlm.nih.gov/7085696/",
+        ),
+        16_000L,
+        showStructurePreview = true,
+    ),
+    GLUTEAL_EXTENSION(
+        setOf("gluteus-maximus"),
+        R.string.health_atlas_gluteal_extension_story_title,
+        R.string.health_atlas_gluteal_extension_story_scope,
+        listOf(
+            R.string.health_atlas_gluteal_extension_story_attachments to R.string.health_atlas_gluteal_extension_story_attachments_caption,
+            R.string.health_atlas_gluteal_extension_story_femur to R.string.health_atlas_gluteal_extension_story_femur_caption,
+            R.string.health_atlas_gluteal_extension_story_pelvis to R.string.health_atlas_gluteal_extension_story_pelvis_caption,
+            R.string.health_atlas_gluteal_extension_story_compare to R.string.health_atlas_gluteal_extension_story_compare_caption,
+        ),
+        listOf(
+            R.string.health_atlas_gluteal_extension_story_ref_anatomy to "https://openstax.org/books/anatomy-and-physiology-2e/pages/11-6-appendicular-muscles-of-the-pelvic-girdle-and-lower-limbs",
+            R.string.health_atlas_gluteal_extension_story_ref_attachments to "https://pubmed.ncbi.nlm.nih.gov/40593049/",
+            R.string.health_atlas_gluteal_extension_story_ref_emg to "https://pubmed.ncbi.nlm.nih.gov/16709916/",
+        ),
+        16_000L,
+        showStructurePreview = true,
+    ),
+    GUT_LYMPHOID_SAMPLING(
+        setOf("appendix", "gut-associated-lymphoid-tissue"),
+        R.string.health_atlas_gut_lymphoid_story_title,
+        R.string.health_atlas_gut_lymphoid_story_scope,
+        listOf(
+            R.string.health_atlas_gut_lymphoid_story_locate to R.string.health_atlas_gut_lymphoid_story_locate_caption,
+            R.string.health_atlas_gut_lymphoid_story_compare to R.string.health_atlas_gut_lymphoid_story_compare_caption,
+            R.string.health_atlas_gut_lymphoid_story_sample to R.string.health_atlas_gut_lymphoid_story_sample_caption,
+            R.string.health_atlas_gut_lymphoid_story_recognize to R.string.health_atlas_gut_lymphoid_story_recognize_caption,
+            R.string.health_atlas_gut_lymphoid_story_defend to R.string.health_atlas_gut_lymphoid_story_defend_caption,
+        ),
+        listOf(
+            R.string.health_atlas_gut_lymphoid_story_ref_appendix to "https://histology.leeds.ac.uk/home/digestive/appendix/",
+            R.string.health_atlas_gut_lymphoid_story_ref_ileum to "https://tales.nmc.unibas.ch/en/histology-12/verdauungsorgane-magen-darm-trakt-anatomische-mikroskopie-55/ileum-human-2-360",
+            R.string.health_atlas_gut_lymphoid_story_ref_distribution to "https://pubmed.ncbi.nlm.nih.gov/11979138/",
+            R.string.health_atlas_gut_lymphoid_story_ref_m_cells to "https://pubmed.ncbi.nlm.nih.gov/4810912/",
+            R.string.health_atlas_gut_lymphoid_story_ref_iga to "https://www.ncbi.nlm.nih.gov/sites/books/NBK27162/",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -1783,6 +1916,14 @@ internal enum class HealthAtlasFunctionStory(
         EPENDYMAL_FLOW -> R.string.health_atlas_ependymal_story_choice
         DELTOID_LIFT -> R.string.health_atlas_deltoid_story_choice
         SCAPULAR_ROTATION -> R.string.health_atlas_scapular_rotation_story_choice
+        GANGLION_RELAY -> HealthAtlasGanglionRelayAssignment.choice
+        LIGAMENT_GUIDANCE -> R.string.health_atlas_ligament_guidance_story_choice
+        PLACENTAL_EXCHANGE -> R.string.health_atlas_placental_exchange_story_choice
+        RECTUS_TRUNK_FLEXION -> R.string.health_atlas_rectus_flexion_story_choice
+        OBLIQUE_ROTATION -> R.string.health_atlas_oblique_rotation_story_choice
+        ERECTOR_SUPPORT -> R.string.health_atlas_erector_support_story_choice
+        GLUTEAL_EXTENSION -> R.string.health_atlas_gluteal_extension_story_choice
+        GUT_LYMPHOID_SAMPLING -> R.string.health_atlas_gut_lymphoid_story_choice
         else -> title
     }
 
@@ -1865,6 +2006,14 @@ internal enum class HealthAtlasFunctionStory(
         EPENDYMAL_FLOW -> listOf("brain" to SYNAPTIC_SIGNAL)
         DELTOID_LIFT -> listOf("trapezius" to SCAPULAR_ROTATION)
         SCAPULAR_ROTATION -> listOf("deltoid" to DELTOID_LIFT)
+        GANGLION_RELAY -> listOf("autonomic-nerves" to AUTONOMIC_RELAY)
+        LIGAMENT_GUIDANCE -> listOf("joints" to KNEE_ARTICULATION)
+        PLACENTAL_EXCHANGE -> listOf("capillaries" to ENDOTHELIAL_EXCHANGE)
+        RECTUS_TRUNK_FLEXION -> listOf("muscle" to MUSCLE_MOTION)
+        OBLIQUE_ROTATION -> listOf("muscle" to MUSCLE_MOTION)
+        ERECTOR_SUPPORT -> listOf("muscle" to MUSCLE_MOTION)
+        GLUTEAL_EXTENSION -> listOf("muscle" to MUSCLE_MOTION)
+        GUT_LYMPHOID_SAMPLING -> listOf("ileum" to INTESTINAL_ABSORPTION)
         CHONDROCYTE_MATRIX -> listOf("tissue-hyaline-cartilage" to CARTILAGE_LOAD)
         ADRENAL_MEDULLA_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
         GASTRIC_ACID_SECRETION -> listOf("stomach" to DIGESTION, "cell-gastric-chief-cell" to GASTRIC_CHIEF_SECRETION)
@@ -1878,6 +2027,10 @@ internal enum class HealthAtlasFunctionStory(
     fun startOf(chapter: Int) = chapter.coerceIn(chapters.indices) / chapters.size.toFloat()
 
     fun entryPhase(id: String): Float = startOf(when (this) {
+        GANGLION_RELAY -> if (id == "autonomic-nerves") HealthAtlasGanglionRelayAssignment.AUTONOMIC
+            else HealthAtlasGanglionRelayAssignment.entryChapter(id)
+        PLACENTAL_EXCHANGE -> if (id == "cell-trophoblast") 2 else 0
+        GUT_LYMPHOID_SAMPLING -> if (id == "gut-associated-lymphoid-tissue") 1 else 0
         PINEAL_DARK_SIGNAL -> if (id == "cell-pinealocyte") 3 else 0
         SCAPULAR_ROTATION -> if (id == "scapula") 2 else 0
         HEARTBEAT -> if (id == "aorta" || id == "pulmonary-trunk") HealthAtlasBeatStage.EJECTION.ordinal else 0
@@ -1983,6 +2136,14 @@ internal enum class HealthAtlasFunctionStory(
         EPENDYMAL_FLOW -> HealthAtlasEpendymalStoryView(context)
         DELTOID_LIFT -> HealthAtlasDeltoidStoryView(context)
         SCAPULAR_ROTATION -> HealthAtlasScapularRotationStoryView(context)
+        GANGLION_RELAY -> HealthAtlasGanglionRelayStoryView(context)
+        LIGAMENT_GUIDANCE -> HealthAtlasLigamentGuidanceStoryView(context)
+        PLACENTAL_EXCHANGE -> HealthAtlasPlacentalExchangeStoryView(context)
+        RECTUS_TRUNK_FLEXION -> HealthAtlasRectusFlexionStoryView(context)
+        OBLIQUE_ROTATION -> HealthAtlasObliqueRotationStoryView(context)
+        ERECTOR_SUPPORT -> HealthAtlasErectorSupportStoryView(context)
+        GLUTEAL_EXTENSION -> HealthAtlasGlutealExtensionStoryView(context)
+        GUT_LYMPHOID_SAMPLING -> HealthAtlasGutLymphoidStoryView(context)
         NEUTROPHIL_DEFENSE, EOSINOPHIL_RESPONSE, BASOPHIL_SIGNALING, MONOCYTE_RECRUITMENT,
         DENDRITIC_PRESENTATION, T_CELL_RESPONSE, NK_SURVEILLANCE, PLATELET_FORMATION, MACROPHAGE_CLEARANCE ->
             HealthAtlasCellFunctionArt(context, this, owners.single())
@@ -1998,6 +2159,8 @@ internal enum class HealthAtlasFunctionStory(
                 "endocrine" -> listOf(primary, GLUCAGON_RESPONSE, THYROID_FEEDBACK)
                 "pancreatic-islets" -> listOf(primary, GLUCAGON_RESPONSE)
                 "biliary-tract" -> listOf(primary, CHOLANGIOCYTE_BILE)
+                "autonomic-nerves" -> listOf(primary, GANGLION_RELAY)
+                "joints" -> listOf(primary, LIGAMENT_GUIDANCE)
                 "nervous", "brain", "spinal-cord", "cell-neuron" -> listOf(primary, MYELIN_SIGNAL)
                 "tissue-central-nervous" -> listOf(primary, MYELIN_SIGNAL, ASTROCYTE_SUPPORT)
                 "tissue-skeletal-muscle" -> listOf(primary, MUSCLE_MOTION)

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_erector_spinae_plate_caption">背部深层肌肉后视图</string>
+    <string name="health_atlas_erector_spinae_plate_spinalis">棘肌</string>
+    <string name="health_atlas_erector_spinae_plate_spinalis_detail">棘肌是最靠近中线的细长肌柱，沿椎骨棘突排列。图中显示的是胸段。</string>
+    <string name="health_atlas_erector_spinae_plate_longissimus">最长肌</string>
+    <string name="health_atlas_erector_spinae_plate_longissimus_detail">最长肌位于棘肌与髂肋肌之间。在胸段，它附着于椎骨的突起与肋骨。</string>
+    <string name="health_atlas_erector_spinae_plate_iliocostalis">髂肋肌</string>
+    <string name="health_atlas_erector_spinae_plate_iliocostalis_detail">髂肋肌是最外侧的肌柱，向外到达肋角，也就是肋骨从背侧转向体侧的弯折处。</string>
+    <string name="health_atlas_erector_spinae_plate_midline">棘突</string>
+    <string name="health_atlas_erector_spinae_plate_midline_detail">这些骨性突起标示椎骨的后方中线，可用来辨认中线两侧各三束肌柱的位置。</string>
+    <string name="health_atlas_erector_spinae_plate_origin">共同肌腱</string>
+    <string name="health_atlas_erector_spinae_plate_origin_detail">下方浅色区域显示竖脊肌共同附着处的一部分，位于骶骨后面及邻近的髂嵴。</string>
+</resources>
