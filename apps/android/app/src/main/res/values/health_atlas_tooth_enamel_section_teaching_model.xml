@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_tooth_enamel_section_title">Enamel share of a crown cross-section</string>
+    <string name="health_atlas_tooth_enamel_section_thickness">Enamel thickness</string>
+    <string name="health_atlas_tooth_enamel_section_radius">Outer crown radius</string>
+    <string name="health_atlas_tooth_enamel_section_companion">Inner tissue area: %1$s mm²</string>
+    <string name="health_atlas_tooth_enamel_section_formula">With outer radius r and enamel thickness t, the inner radius is r − t. Enamel share = 100 × [1 − ((r − t) / r)²], expressed as a percentage of the full cross-section. Inner tissue area = π × (r − t)².</string>
+    <string name="health_atlas_tooth_enamel_section_scope">Enamel covers the tooth crown. Dentin lies beneath the enamel, and pulp occupies the center of the tooth. This model shows a hypothetical circular slice of the crown with a uniform enamel ring; it combines the tissues inside the ring rather than drawing dentin and pulp separately. A thicker ring takes up a larger share at the same crown radius, while a larger radius gives the same thickness a smaller share. Both dimensions are invented for teaching, not measured or typical values. This model cannot diagnose dental conditions or estimate enamel loss for an individual.</string>
+</resources>
