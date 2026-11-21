@@ -179,6 +179,38 @@ final class GalaxySSIHealthCareClarificationRecoveryTests: XCTestCase {
     }
   }
 
+  func testRenewingWithoutQuestionSharingDoesNotReplayQuestionDerivedPlanProse() throws {
+    let f = try HealthModelReviewFixture(plan: true, questionFollowUp: true)
+    let sentinel = "SYNTHETIC_PRIVATE_ANSWER_DERIVED_PLAN"
+    var arguments = try f.planArguments()
+    var actions = try XCTUnwrap(arguments["actions"]?.arrayValue)
+    var action = try XCTUnwrap(actions.first?.objectValue)
+    action["description"] = .string(sentinel)
+    actions[0] = .object(action)
+    arguments["actions"] = .array(actions)
+    try f.records.saveLocalCarePlan(f.approval, arguments: arguments, now: f.now)
+    _ = try f.records.recordLocalCareModelReview(f.approval, arguments: f.arguments(), now: f.now)
+    try f.records.finishLocalCareDiscussionTurn(f.approval, answer: "Synthetic private plan", now: f.now)
+    let plan = try XCTUnwrap(f.records.load().localCarePlans?[f.approval.id.uuidString])
+    XCTAssertFalse(try f.records.localCarePlanAllowsQuestionContext(plan, archive: f.records.load(), includesQuestions: false))
+    XCTAssertTrue(try f.records.localCarePlanAllowsQuestionContext(plan, archive: f.records.load(), includesQuestions: true))
+    func next(sharing: Bool) throws -> GalaxySSIHealthCareDiscussion.Approval {
+      var preview = try f.records.prepareLocalCareDiscussion(id: f.concern.id, metric: .glucose,
+        question: "Review authorized scope", destinationID: "provider", model: XCTUnwrap(f.approval.model),
+        credential: "fixture-api-key", includesQuestions: sharing, now: f.now)
+      preview.allowsStandingQuestionFollowUp = sharing
+      try f.records.authorizeLocalCareResearch(preview, sources: [.labResults], now: f.now)
+      let queued = try XCTUnwrap(f.records.reconcileLocalCareResearch(now: f.now).first?.1)
+      let job = try f.records.transitionLocalCareResearch(queued, concern: f.concern.id, to: .preparing)
+      return try f.records.prepareLocalCareDiscussion(id: f.concern.id, metric: .glucose,
+        question: "Review authorized scope", destinationID: "provider", model: XCTUnwrap(f.approval.model),
+        credential: "fixture-api-key", proposesPlan: true, research: job, now: f.now)
+    }
+    XCTAssertFalse(try next(sharing: false).providerPayload(now: f.now).contains(sentinel))
+    XCTAssertTrue(try next(sharing: true).providerPayload(now: f.now).contains(sentinel))
+    XCTAssertEqual(try f.records.load().localCarePlans?[plan.id.uuidString], plan)
+  }
+
   private func envelope(_ f: HealthModelReviewFixture, questions: AgentMcpJSONValue) throws -> String {
     AgentMcpJSONCodec.stringify(["assessment": .object(try f.arguments()), "plan": .null,
       "questions": questions, "answer": .string("Synthetic initial clarification")])

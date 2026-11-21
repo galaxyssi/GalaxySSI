@@ -1,6 +1,13 @@
 import Foundation
 
 extension GalaxySSIHealthRecords {
+  func localCarePlanAllowsQuestionContext(_ plan: GalaxySSIHealthCarePlan.Proposal,
+      archive: Archive, includesQuestions: Bool) -> Bool {
+    guard let turn = archive.localCareDiscussions?[plan.concernID.uuidString]?.turns.first(where: { $0.proposalID == plan.id })
+    else { return false }
+    return turn.questionContextIncluded != true || includesQuestions
+  }
+
   func allowsReviewedCareQuestionFollowUp(_ concern: GalaxySSIHealthCare.Concern,
       row: GalaxySSIHealthCareQuestions.Row, archive: Archive) -> Bool {
     guard let auth = archive.localCareResearch?.authorizations[concern.id.uuidString],

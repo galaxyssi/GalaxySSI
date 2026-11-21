@@ -32,16 +32,21 @@ and automatic reviews could not retain model-authored questions.
 - Repeating the same current answer leaves row/concern revisions unchanged,
   including at the revision limit. Stale row instances still fail. No third
   research turn is created for an unchanged confirmation.
+- Renewing without question sharing excludes question-derived plan descriptions
+  and action feedback from later model context. Sharing them again explicitly
+  permits their scoped reuse; local user-visible plans are never deleted.
 - Source measurements, saved measurement context, previous assessments and
   conversations remain intact. Reviewing free text does not silently fill a
   structured clinical fact, accept a plan, set a target or create a reminder.
 
 ## Source coverage and verification limits
 
-Eight XCTest source cases exercise production question retention, cloud tool
+Nine XCTest source cases exercise production question retention, cloud tool
 continuation, paired-envelope validation, answer-triggered successor jobs,
 encrypted archive reopen with the original pending binding, repeated-answer
 deduplication, old in-flight reply rejection and legacy consent boundaries.
+They also cover scoped plan-context reuse after withdrawing and regranting
+question sharing.
 The fixtures are isolated synthetic records and in-memory secrets.
 
 Archive reopen is not a new OS process, and synthetic envelopes are not observed

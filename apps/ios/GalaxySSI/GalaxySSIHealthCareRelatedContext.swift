@@ -110,7 +110,10 @@ extension GalaxySSIHealthRecords {
       thread: prior, destination: approval.destinationDigest, savedProfile: localCareProfilePayload(concern),
       actionFeedback: approval.includesActionFeedback ? localCareModelFeedback(concern, thread: prior,
         destination: approval.destinationDigest, archive: archive, includesHistory: approval.feedbackHistoryAllowed,
-        relatedMeasurements: result.relatedMeasurements) : nil, relatedMeasurements: result.relatedMeasurements)
+        relatedMeasurements: result.relatedMeasurements,
+        includesQuestions: approval.questions != nil || (approval.research != nil &&
+          archive.localCareResearch?.authorizations[approval.concernID.uuidString]?.sharesQuestionSnapshot == true)) : nil,
+      relatedMeasurements: result.relatedMeasurements)
     result.relatedPayload = selected.isEmpty ? [:] : ["selected": .array(selected.sorted { $0.rawValue < $1.rawValue }.map {
       .object(Related.measurement($0, archive: archive, now: now).payload)
     }), "complete_health_archive": .bool(false), "other_conversations_included": .bool(false),
