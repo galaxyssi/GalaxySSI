@@ -74,7 +74,13 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
         "https://pmc.ncbi.nlm.nih.gov/articles/PMC8933494/"),
     CALF_PUMP(listOf(HealthAtlasInput("calf-stroke", 0..25, 12), HealthAtlasInput("calf-rate", 0..30, 12),
         HealthAtlasInput("calf-return", 0..100, 0)), 1, "mL/min", 0.0, 750.0,
-        "https://pubmed.ncbi.nlm.nih.gov/24415543/", "https://pubmed.ncbi.nlm.nih.gov/8445740/");
+        "https://pubmed.ncbi.nlm.nih.gov/24415543/", "https://pubmed.ncbi.nlm.nih.gov/8445740/"),
+    PELVIC_SUPPORT(listOf(HealthAtlasInput("pelvis-load", 0..800, 400),
+        HealthAtlasInput("pelvis-position", -100..100, 0)), 1, "N", 0.0, 800.0,
+        "https://openstax.org/books/college-physics-2e/pages/9-3-stability", HealthAtlasLoadTransferPlates.pelvicSource),
+    CUSHION_CONTACT_PRESSURE(listOf(HealthAtlasInput("cushion-load", 0..80, 40),
+        HealthAtlasInput("cushion-area", 10..90, 40)), 1, "kPa", 0.0, 80.0,
+        "https://openstax.org/books/college-physics-2e/pages/11-3-pressure", HealthAtlasLoadTransferPlates.subcutaneousSource);
 
     val sources get() = listOfNotNull(source, extraSource) +
         if (this == VESSEL_FLOW) listOf(HealthAtlasVesselFlow.UNIT_SOURCE) else emptyList()
@@ -107,6 +113,8 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "cartilage", "tissue-hyaline-cartilage", "cell-chondrocyte" -> CARTILAGE_COMPRESSION
             "limb-bones", "femur", "tibia", "fibula" -> BONE_BENDING
             "soleus", "gastrocnemius" -> CALF_PUMP
+            "pelvis" -> PELVIC_SUPPORT
+            "subcutaneous-tissue" -> CUSHION_CONTACT_PRESSURE
             else -> null
         }
     }
@@ -144,6 +152,8 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> 100.0 - result
         HealthAtlasPhysiologyKind.BONE_BENDING -> circularSectionMoment(input(1), input(2))
         HealthAtlasPhysiologyKind.CALF_PUMP -> netStroke(input(0), input(2))
+        HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> supportReaction(input(0), -input(1))
+        HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> 10.0 * input(0) / 40.0
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
@@ -202,8 +212,12 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         // Flexure equation at the outer fiber; 1000 converts N m to N mm.
         HealthAtlasPhysiologyKind.BONE_BENDING -> 500.0 * values[0] * values[1] / circularSectionMoment(values[1], values[2])
         HealthAtlasPhysiologyKind.CALF_PUMP -> values[1] * netStroke(values[0], values[2])
+        HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> supportReaction(values[0], values[1])
+        // N/cm^2 multiplied by 10 gives kPa.
+        HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> 10.0 * values[0] / values[1]
     }
     companion object {
+        private fun supportReaction(load: Double, positionPercent: Double) = load * (100.0 + positionPercent) / 200.0
         private fun netStroke(ejected: Double, returnPercent: Double) = ejected * (100.0 - returnPercent) / 100.0
         private fun circularSectionMoment(diameter: Double, innerRatio: Double) =
             Math.PI * diameter.pow(4) * (1 - innerRatio.pow(4)) / 64.0

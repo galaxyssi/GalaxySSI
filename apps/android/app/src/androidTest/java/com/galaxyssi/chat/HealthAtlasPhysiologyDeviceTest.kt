@@ -132,7 +132,7 @@ class HealthAtlasPhysiologyDeviceTest {
     @Test fun everyQuantitativeMappingUsesAnExistingCanonicalEntry() {
         val atlas = HealthBodyAtlas.load(context)
         val mapped = atlas.items.mapNotNull { item -> HealthAtlasPhysiologyKind.forItem(item.id)?.let { item.id to it } }
-        assertEquals(65, mapped.size)
+        assertEquals(67, mapped.size)
         assertEquals(HealthAtlasPhysiologyKind.entries.toSet(), mapped.map { it.second }.toSet())
         assertEquals(setOf("ventricles", "left-ventricle", "right-ventricle"),
             mapped.filter { it.second == HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION }.map { it.first }.toSet())
@@ -156,6 +156,9 @@ class HealthAtlasPhysiologyDeviceTest {
             mapped.filter { it.second == HealthAtlasPhysiologyKind.BONE_BENDING }.map { it.first }.toSet())
         assertEquals(setOf("soleus", "gastrocnemius"),
             mapped.filter { it.second == HealthAtlasPhysiologyKind.CALF_PUMP }.map { it.first }.toSet())
+        assertEquals(listOf("pelvis"), mapped.filter { it.second == HealthAtlasPhysiologyKind.PELVIC_SUPPORT }.map { it.first })
+        assertEquals(listOf("subcutaneous-tissue"),
+            mapped.filter { it.second == HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE }.map { it.first })
         mapped.forEach { (id, kind) ->
             val model = requireNotNull(HealthAtlasPhysiology.restore(id, kind.inputs.map { it.initial }.toIntArray()))
             assertTrue(HealthAtlasPhysiologyText.context(context, model).length < 3000)
@@ -167,6 +170,8 @@ class HealthAtlasPhysiologyDeviceTest {
             Triple("cartilage", "cartilage-compression", "cartilage-stress"),
             Triple("limb-bones", "bone-bending", "bone-moment"),
             Triple("soleus", "calf-pump", "calf-stroke"),
+            Triple("pelvis", "pelvic-support", "pelvis-load"),
+            Triple("subcutaneous-tissue", "cushion-contact", "cushion-load"),
         )
         for ((id, art, input) in examples) {
             var initial = 0

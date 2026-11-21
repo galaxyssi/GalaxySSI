@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_distal_exchange_title">Selective ion exchange in the distal tubule</string>
+    <string name="health_atlas_distal_exchange_choice">Distal tubule ion exchange</string>
+    <string name="health_atlas_distal_exchange_scope">Educational model of a normal adult early distal convoluted tubule. Symbols, geometry, and timing are schematic, not personal or measured data. Only selected transport routes are shown.</string>
+    <string name="health_atlas_distal_exchange_sides">Two sides of the lining</string>
+    <string name="health_atlas_distal_exchange_sides_caption">Tubular fluid flows past the apical face of the lining. The opposite, basolateral face borders tissue fluid. Transport across the lining is different from fluid flowing along the lumen.</string>
+    <string name="health_atlas_distal_exchange_ncc">Sodium and chloride enter together</string>
+    <string name="health_atlas_distal_exchange_ncc_caption">The apical sodium-chloride cotransporter (NCC) moves one sodium ion and one chloride ion together from the tubule lumen into the cell.</string>
+    <string name="health_atlas_distal_exchange_pump">The pump exchanges in opposite directions</string>
+    <string name="health_atlas_distal_exchange_pump_caption">The basolateral sodium-potassium pump uses ATP to move three sodium ions out to the tissue fluid and two potassium ions into the cell per cycle. Keeping sodium low inside the cell helps drive its entry through NCC.</string>
+    <string name="health_atlas_distal_exchange_chloride">Chloride leaves by a different route</string>
+    <string name="health_atlas_distal_exchange_chloride_caption">Chloride can leave the cell for the tissue fluid through the basolateral ClC-Kb channel. It does not leave through the sodium-potassium pump.</string>
+    <string name="health_atlas_distal_exchange_net">Salt is reclaimed with little water</string>
+    <string name="health_atlas_distal_exchange_net_caption">Together these routes give a net movement of sodium and chloride from the lumen to tissue fluid. The early distal tubule has low water permeability, so water largely stays in the lumen here.</string>
+    <string name="health_atlas_distal_exchange_lumen">Tubule lumen</string>
+    <string name="health_atlas_distal_exchange_tissue">Tissue fluid</string>
+    <string name="health_atlas_distal_exchange_cell">Distal tubule cell</string>
+    <string name="health_atlas_distal_exchange_apical">Apical face</string>
+    <string name="health_atlas_distal_exchange_basolateral">Basolateral face</string>
+    <string name="health_atlas_distal_exchange_ncc_label">NCC</string>
+    <string name="health_atlas_distal_exchange_pump_label">Na+/K+ pump</string>
+    <string name="health_atlas_distal_exchange_channel">ClC-Kb channel</string>
+    <string name="health_atlas_distal_exchange_ref_human">Human distal nephron transport pathways</string>
+    <string name="health_atlas_distal_exchange_ref_transport">Physiology of the distal convoluted tubule</string>
+
+    <string name="health_atlas_urothelial_geometry_title">The bladder lining changes shape</string>
+    <string name="health_atlas_urothelial_geometry_choice">Bladder lining and barrier</string>
+    <string name="health_atlas_urothelial_geometry_scope">Educational cross-section of normal adult bladder urothelium. Shape, spacing, and timing are schematic, not personal or measured data. The model shows the local lining only.</string>
+    <string name="health_atlas_urothelial_geometry_folded">Folds in the relaxed lining</string>
+    <string name="health_atlas_urothelial_geometry_folded_caption">At low filling, the bladder mucosa lies in folds. Dome-shaped umbrella cells face the lumen above layers of intermediate and basal cells.</string>
+    <string name="health_atlas_urothelial_geometry_unfold">Folds smooth out as the bladder fills</string>
+    <string name="health_atlas_urothelial_geometry_unfold_caption">As the bladder fills, the mucosal folds flatten and the same umbrella cells become broader and flatter. The lining appears thinner without shedding its surface layer.</string>
+    <string name="health_atlas_urothelial_geometry_sealed">The barrier stays intact</string>
+    <string name="health_atlas_urothelial_geometry_sealed_caption">Tight junctions remain connected between neighboring umbrella cells. Together with the specialized surface membrane, these junctions limit movement from urine into the underlying tissue even as the lining changes shape.</string>
+    <string name="health_atlas_urothelial_geometry_refold">Less stretch, folds return</string>
+    <string name="health_atlas_urothelial_geometry_refold_caption">As stretch is relieved after emptying, the umbrella cells regain a domed profile and the mucosa gathers into folds again. The surface remains continuous.</string>
+    <string name="health_atlas_urothelial_geometry_lumen">Bladder lumen</string>
+    <string name="health_atlas_urothelial_geometry_support">Underlying connective tissue</string>
+    <string name="health_atlas_urothelial_geometry_fold">Mucosal folds</string>
+    <string name="health_atlas_urothelial_geometry_umbrella">Umbrella cells</string>
+    <string name="health_atlas_urothelial_geometry_junction">Tight junctions</string>
+    <string name="health_atlas_urothelial_geometry_ref_histology">University of Basel bladder histology</string>
+    <string name="health_atlas_urothelial_geometry_ref_junction">Umbrella-cell junctions during filling and voiding</string>
+</resources>

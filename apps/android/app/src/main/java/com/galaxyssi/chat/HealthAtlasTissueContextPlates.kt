@@ -510,7 +510,7 @@ internal object HealthAtlasTissueContextPlates {
         HealthAtlasAxialProtectionAssignment.Vertebral.plate,
         HealthAtlasClitoralSensoryAssignment.plate,
         HealthAtlasVestibularGlandAssignment.plate,
-    ) + HealthAtlasShoulderActionPlates.all
+    ) + HealthAtlasShoulderActionPlates.all + HealthAtlasLoadTransferPlates.all
     private val byId = all.associateBy { it.owner }
     fun forId(id: String?) = byId[id]
 }

@@ -79,7 +79,7 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(HealthAtlasFunctionStory.UTEROCERVICAL_CONTINUITY, HealthAtlasFunctionStory.forId("cervix"))
         assertEquals(HealthAtlasFunctionStory.ADRENAL_MEDULLA_SIGNAL, HealthAtlasFunctionStory.forId("adrenal-glands"))
         assertEquals(HealthAtlasFunctionStory.ADRENAL_MEDULLA_SIGNAL, HealthAtlasFunctionStory.forId("cell-chromaffin-cell"))
-        assertNull(HealthAtlasFunctionStory.forId("cell-adrenocortical-cell"))
+        assertEquals(HealthAtlasFunctionStory.ADRENAL_CORTEX_OUTPUT, HealthAtlasFunctionStory.forId("cell-adrenocortical-cell"))
         assertEquals(HealthAtlasFunctionStory.GASTRIC_ACID_SECRETION, HealthAtlasFunctionStory.forId("cell-gastric-parietal-cell"))
         assertEquals(HealthAtlasFunctionStory.GASTRIC_CHIEF_SECRETION, HealthAtlasFunctionStory.forId("cell-gastric-chief-cell"))
         assertEquals(listOf(HealthAtlasFunctionStory.DIGESTION, HealthAtlasFunctionStory.GASTRIC_ACID_SECRETION,
@@ -208,6 +208,18 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(listOf(sampling), HealthAtlasFunctionStory.choicesForId("gut-associated-lymphoid-tissue"))
         assertEquals(0, sampling.chapter(sampling.entryPhase("appendix")))
         assertEquals(1, sampling.chapter(sampling.entryPhase("gut-associated-lymphoid-tissue")))
+    }
+
+    @Test fun remainingOrganLessonsOpenTheirOwnDiagramsAndRelatedAnatomy() {
+        val ring = HealthAtlasFunctionStory.PELVIC_LOAD_TRANSFER
+        val cushion = HealthAtlasFunctionStory.SUBCUTANEOUS_CUSHION
+        assertEquals(listOf(ring), HealthAtlasFunctionStory.choicesForId("pelvis"))
+        assertEquals(listOf(cushion), HealthAtlasFunctionStory.choicesForId("subcutaneous-tissue"))
+        assertEquals(0, ring.chapter(ring.entryPhase("pelvis")))
+        assertEquals(0, cushion.chapter(cushion.entryPhase("subcutaneous-tissue")))
+        assertEquals(HealthAtlasFunctionStory.VERTEBRAL_MOTION, ring.relatedLessons.toMap()["vertebrae"])
+        assertEquals(HealthAtlasFunctionStory.EPIDERMAL_BARRIER, cushion.relatedLessons.toMap()["skin-organ"])
+        assertNotEquals(ring.chapters, cushion.chapters)
     }
 
     @Test fun pectoralAndLatissimusActionsOpenSeparateAnimations() {
@@ -504,7 +516,7 @@ class HealthAtlasFunctionStoryTest {
             assertEquals(story, HealthAtlasFunctionStory.forId(id))
         }
         assertEquals(HealthAtlasFunctionStory.URINE_ROUTE, HealthAtlasFunctionStory.forId("bladder"))
-        assertNull(HealthAtlasFunctionStory.forId("cell-urothelial-cell"))
+        assertEquals(HealthAtlasFunctionStory.UROTHELIAL_BARRIER_GEOMETRY, HealthAtlasFunctionStory.forId("cell-urothelial-cell"))
         val chapters = HealthAtlasNephronStage.entries.map { it.routes.toSet() }
         assertEquals(5, chapters.toSet().size)
         assertEquals(setOf(HealthAtlasNephronRoute.BLOOD, HealthAtlasNephronRoute.FILTER), chapters[0])
@@ -698,7 +710,7 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(listOf(myelin), HealthAtlasFunctionStory.choicesForId("cell-schwann-cell"))
         assertEquals(listOf(thyroid), HealthAtlasFunctionStory.choicesForId("cell-thyrotroph"))
         assertEquals(listOf(thyroid), HealthAtlasFunctionStory.choicesForId("cell-thyroid-follicular-cell"))
-        assertNull(HealthAtlasFunctionStory.forId("cell-thyroid-parafollicular-cell"))
+        assertEquals(HealthAtlasFunctionStory.THYROID_CALCITONIN, HealthAtlasFunctionStory.forId("cell-thyroid-parafollicular-cell"))
         assertEquals(HealthAtlasFunctionStory.PARATHYROID_FEEDBACK, HealthAtlasFunctionStory.forId("parathyroid-glands"))
         val motion = HealthAtlasSignalMotion
         assertEquals(0f, motion.axonTravel(0f, true), 0f)

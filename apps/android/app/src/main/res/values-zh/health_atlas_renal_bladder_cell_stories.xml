@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_distal_exchange_title">远端小管的选择性离子转运</string>
+    <string name="health_atlas_distal_exchange_choice">远端小管离子转运</string>
+    <string name="health_atlas_distal_exchange_scope">正常成人远曲小管早段的教学模型。符号、形态比例和时间均为示意，不代表个人数据或实测结果。图中仅展示部分转运通路。</string>
+    <string name="health_atlas_distal_exchange_sides">小管上皮的两侧</string>
+    <string name="health_atlas_distal_exchange_sides_caption">小管液沿上皮的顶端面流动，相对的基底外侧面与组织液相邻。离子穿过上皮的转运不同于液体沿管腔的流动。</string>
+    <string name="health_atlas_distal_exchange_ncc">钠和氯一起进入细胞</string>
+    <string name="health_atlas_distal_exchange_ncc_caption">顶端膜上的钠氯同向转运体（NCC）将一个钠离子和一个氯离子一起从小管腔送入细胞。</string>
+    <string name="health_atlas_distal_exchange_pump">钠钾泵向相反方向交换离子</string>
+    <string name="health_atlas_distal_exchange_pump_caption">基底外侧膜上的钠钾泵利用 ATP，每个循环将三个钠离子泵入组织液，同时将两个钾离子泵入细胞。较低的细胞内钠浓度有助于钠通过 NCC 进入细胞。</string>
+    <string name="health_atlas_distal_exchange_chloride">氯离子经另一条通路离开</string>
+    <string name="health_atlas_distal_exchange_chloride_caption">氯离子可通过基底外侧膜上的 ClC-Kb 通道从细胞进入组织液，而不是通过钠钾泵离开。</string>
+    <string name="health_atlas_distal_exchange_net">重吸收盐，水大多留在管腔</string>
+    <string name="health_atlas_distal_exchange_net_caption">这些通路共同使钠离子和氯离子从管腔净转运到组织液。远曲小管早段的水通透性低，因此水在这一段大多留在管腔内。</string>
+    <string name="health_atlas_distal_exchange_lumen">小管腔</string>
+    <string name="health_atlas_distal_exchange_tissue">组织液</string>
+    <string name="health_atlas_distal_exchange_cell">远端小管细胞</string>
+    <string name="health_atlas_distal_exchange_apical">顶端面</string>
+    <string name="health_atlas_distal_exchange_basolateral">基底外侧面</string>
+    <string name="health_atlas_distal_exchange_ncc_label">NCC</string>
+    <string name="health_atlas_distal_exchange_pump_label">钠钾泵</string>
+    <string name="health_atlas_distal_exchange_channel">ClC-Kb 通道</string>
+    <string name="health_atlas_distal_exchange_ref_human">人类远端肾单位的离子与水转运通路</string>
+    <string name="health_atlas_distal_exchange_ref_transport">远曲小管生理</string>
+
+    <string name="health_atlas_urothelial_geometry_title">膀胱尿路上皮的形态变化</string>
+    <string name="health_atlas_urothelial_geometry_choice">膀胱内衬与屏障</string>
+    <string name="health_atlas_urothelial_geometry_scope">正常成人膀胱尿路上皮的教学剖面。形态、间距和时间均为示意，不代表个人数据或实测结果。模型仅展示局部内衬。</string>
+    <string name="health_atlas_urothelial_geometry_folded">松弛时的黏膜皱襞</string>
+    <string name="health_atlas_urothelial_geometry_folded_caption">膀胱充盈程度较低时，黏膜形成皱襞。穹隆状的伞细胞面向膀胱腔，其下方是中间细胞层和基底细胞层。</string>
+    <string name="health_atlas_urothelial_geometry_unfold">充盈时皱襞逐渐展平</string>
+    <string name="health_atlas_urothelial_geometry_unfold_caption">随着膀胱充盈，黏膜皱襞展平，原有的伞细胞变宽、变扁。上皮看起来更薄，但表层并未脱落。</string>
+    <string name="health_atlas_urothelial_geometry_sealed">形态改变，屏障仍完整</string>
+    <string name="health_atlas_urothelial_geometry_sealed_caption">相邻伞细胞之间的紧密连接仍然相连。即使上皮改变形态，这些连接也与特化的表面细胞膜一起，限制尿液中的物质进入下方组织。</string>
+    <string name="health_atlas_urothelial_geometry_refold">牵拉减小，皱襞恢复</string>
+    <string name="health_atlas_urothelial_geometry_refold_caption">膀胱排空后，随着牵拉减小，伞细胞恢复穹隆状，黏膜再次形成皱襞。上皮表面始终连续。</string>
+    <string name="health_atlas_urothelial_geometry_lumen">膀胱腔</string>
+    <string name="health_atlas_urothelial_geometry_support">下方结缔组织</string>
+    <string name="health_atlas_urothelial_geometry_fold">黏膜皱襞</string>
+    <string name="health_atlas_urothelial_geometry_umbrella">伞细胞</string>
+    <string name="health_atlas_urothelial_geometry_junction">紧密连接</string>
+    <string name="health_atlas_urothelial_geometry_ref_histology">巴塞尔大学膀胱组织学</string>
+    <string name="health_atlas_urothelial_geometry_ref_junction">膀胱充盈和排空时的伞细胞连接</string>
+</resources>

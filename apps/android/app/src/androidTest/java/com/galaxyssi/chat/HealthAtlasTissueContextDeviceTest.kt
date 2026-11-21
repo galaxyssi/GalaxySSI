@@ -99,9 +99,9 @@ class HealthAtlasTissueContextDeviceTest {
         val chinese = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
         val atlas = HealthBodyAtlas.load(english)
         val plates = HealthAtlasTissueContextPlates.all
-        assertEquals(72, plates.size)
-        assertEquals(249, plates.sumOf { it.features.size })
-        assertEquals(36, plates.sumOf { it.markers.size })
+        assertEquals(74, plates.size)
+        assertEquals(256, plates.sumOf { it.features.size })
+        assertEquals(41, plates.sumOf { it.markers.size })
         val tenocyteSection = HealthAtlasTenocyteTendonMatrixPlate.plate
         assertEquals(2, HealthAtlasPlates.viewsForId("cell-tenocyte").size)
         for (plate in plates + tenocyteSection) {
