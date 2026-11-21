@@ -5,7 +5,7 @@ enum GalaxySSIHealthFeature: String, CaseIterable, Identifiable {
   var id: String { rawValue }
   var label: (key: String, fallback: String, icon: String) {
     switch self {
-    case .care: return ("care.title", "Care", "heart")
+    case .care: return ("care.title", "Care", "waveform.path.ecg")
     case .agenda: return ("agenda.title", "Health Actions", "checklist")
     case .recordCenter: return ("record_center.title", "Health Record Center", "chart.bar.xaxis")
     case .originals: return ("originals.title", "Health Originals", "doc.on.doc")

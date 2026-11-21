@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct GalaxySSIHealthProfile: Codable {
-  enum ReferenceSex: String, Codable, CaseIterable { case unspecified, female, male, other }
+  enum ReferenceSex: String, Codable, CaseIterable {
+    case unspecified, female, male, other
+    static let editorChoices: [Self] = [.male, .female]
+    var editorSelection: Self? { Self.editorChoices.contains(self) ? self : nil }
+  }
   enum HeightUnit: String, Codable, CaseIterable { case cm, inches }
   enum BackgroundKind: String, Codable, CaseIterable { case history, medication, allergy }
   enum AnalysisField: String, Codable, CaseIterable, Identifiable {
@@ -81,6 +85,11 @@ struct GalaxySSIHealthProfile: Codable {
   var context = ""
   var background: [Background] = []
 
+  mutating func selectEditorSex(_ value: ReferenceSex?) {
+    guard let value, ReferenceSex.editorChoices.contains(value) else { return }
+    referenceSex = value
+  }
+
   func backgroundVersion(_ entry: Background) -> UUID? { entry.analysisRevision ?? revision }
 
   func matchesBackground(_ selected: [UUID: UUID]) -> Bool {
@@ -129,6 +138,7 @@ struct GalaxySSIHealthProfileView: View {
   @State private var notice: Notice?
   @State private var backgroundEditor: GalaxySSIHealthProfile.Background?
   @State private var backgroundLimit = 30
+  @State private var selectingSex = false
 
   private enum Notice: String, Identifiable {
     case invalid, stale, unavailable, erase
@@ -138,6 +148,7 @@ struct GalaxySSIHealthProfileView: View {
   var body: some View {
     Form {
       if scenePhase == .active && loaded {
+        Section { profileHeader }
         Section(t("personal", "Personal details")) {
           TextField(t("name", "Name"), text: $draft.name)
           Toggle(t("birth_date", "Include date of birth"), isOn: Binding(
@@ -146,17 +157,19 @@ struct GalaxySSIHealthProfileView: View {
             DatePicker(t("date", "Date of birth"), selection: Binding(
               get: { draft.birthDate ?? Date() }, set: { draft.birthDate = $0 }), in: ...Date(), displayedComponents: .date)
           }
-          Picker(t("sex", "Medical reference sex"), selection: $draft.referenceSex) {
-            ForEach(GalaxySSIHealthProfile.ReferenceSex.allCases, id: \.self) { sex in
-              Text(sexTitle(sex)).tag(sex)
-            }
-          }
+          Button { selectingSex = true } label: {
+            HStack {
+              Text(t("sex", "Sex")).foregroundColor(.primary)
+              Spacer(minLength: 12)
+              Text(sexTitle(draft.referenceSex)).foregroundColor(.secondary)
+              Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary).accessibilityHidden(true)
+            }.frame(minHeight: 44)
+          }.accessibilityIdentifier("health-profile-sex")
           TextField(t("height", "Height"), text: $height).keyboardType(.decimalPad)
           Picker(t("unit", "Height unit"), selection: $draft.heightUnit) {
             Text("cm").tag(GalaxySSIHealthProfile.HeightUnit.cm)
             Text("in").tag(GalaxySSIHealthProfile.HeightUnit.inches)
           }
-          TextField(t("context", "Physiological context"), text: $draft.context)
         }
         ForEach(GalaxySSIHealthProfile.BackgroundKind.allCases, id: \.self) { kind in
           Section(kindTitle(kind)) {
@@ -188,6 +201,7 @@ struct GalaxySSIHealthProfileView: View {
         draft = GalaxySSIHealthProfile()
         height = ""
         backgroundEditor = nil
+        selectingSex = false
         notice = nil
       }
     }
@@ -195,6 +209,7 @@ struct GalaxySSIHealthProfileView: View {
       BackgroundEditor(entry: entry, alreadySaved: draft.background.contains(where: { $0.id == entry.id }),
                        update: updateBackground, remove: removeBackground)
     }
+    .sheet(isPresented: $selectingSex) { sexPicker }
     .alert(item: $notice) { notice in
       switch notice {
       case .invalid: return Alert(title: Text(t("invalid", "Check the profile fields and lengths.")))
@@ -208,6 +223,40 @@ struct GalaxySSIHealthProfileView: View {
                      secondaryButton: .cancel())
       }
     }
+  }
+
+  private var profileHeader: some View {
+    HStack(spacing: 12) {
+      Image(systemName: GalaxySSIHealthFeature.profile.label.icon).font(.title2)
+        .foregroundColor(GalaxySSIHealthTheme.accent).frame(width: 48, height: 48)
+        .background(GalaxySSIHealthTheme.accent.opacity(0.12), in: Circle()).accessibilityHidden(true)
+      Text(draft.name.isBlank ? t("title", "Health Profile") : draft.name).font(.headline)
+        .fixedSize(horizontal: false, vertical: true)
+    }.padding(.vertical, 4)
+  }
+  private var sexPicker: some View {
+    NavigationView {
+      List {
+        if scenePhase == .active && loaded {
+          ForEach(GalaxySSIHealthProfile.ReferenceSex.editorChoices, id: \.self) { sex in
+            Button {
+              draft.selectEditorSex(sex); selectingSex = false
+            } label: {
+              HStack {
+                Text(sexTitle(sex)).foregroundColor(.primary)
+                Spacer()
+                if draft.referenceSex.editorSelection == sex {
+                  Image(systemName: "checkmark").foregroundColor(GalaxySSIHealthTheme.accent).accessibilityHidden(true)
+                }
+              }.frame(minHeight: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+              .accessibilityAddTraits(draft.referenceSex.editorSelection == sex ? .isSelected : [])
+              .accessibilityIdentifier("health-profile-sex-" + sex.rawValue)
+          }
+        }
+      }.navigationTitle(t("sex", "Sex")).galaxySSIHealthTheme()
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("cancel", "Cancel")) { selectingSex = false } } }
+    }.navigationViewStyle(.stack)
   }
 
   private func updateBackground(_ entry: GalaxySSIHealthProfile.Background) {
@@ -271,10 +320,9 @@ struct GalaxySSIHealthProfileView: View {
 
   private func sexTitle(_ sex: GalaxySSIHealthProfile.ReferenceSex) -> String {
     switch sex {
-    case .unspecified: return t("unspecified", "Not specified")
+    case .unspecified, .other: return t("unspecified", "Not specified")
     case .female: return t("female", "Female")
     case .male: return t("male", "Male")
-    case .other: return t("other", "Other")
     }
   }
 

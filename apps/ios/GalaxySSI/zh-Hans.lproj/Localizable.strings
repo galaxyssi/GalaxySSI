@@ -1302,7 +1302,7 @@
 "galaxyssi.health.profile.name" = "姓名";
 "galaxyssi.health.profile.birth_date" = "填写出生日期";
 "galaxyssi.health.profile.date" = "出生日期";
-"galaxyssi.health.profile.sex" = "医学参考性别";
+"galaxyssi.health.profile.sex" = "性别";
 "galaxyssi.health.profile.unspecified" = "未填写";
 "galaxyssi.health.profile.female" = "女";
 "galaxyssi.health.profile.male" = "男";
