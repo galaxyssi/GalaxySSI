@@ -67,6 +67,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
         NavigationLink(q("answer_drafts", "Review clarification answers")) {
           List { GalaxySSIHealthCareAnswerDraftsView(records: records, concern: concernID, metric: metric) }
             .navigationTitle(q("answer_drafts", "Review clarification answers"))
+            .galaxySSIHealthTheme()
         }
         Toggle(t("online_permission", "Allow approved online health questions"), isOn: Binding(
           get: { allowed }, set: { enable in
@@ -134,7 +135,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
       if scene == .active, failed { Text(t("unavailable", "This discussion or request is no longer available.")) }
     }
     .navigationTitle(t("title", "Private Health Discussion"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .modifier(GalaxySSIHealthCareModelAttentionVisibility(owner: records.owner, concern: concernID, conversation: thread?.id))
     .onAppear { refresh(open: true) }
     .onDisappear { clearSensitive() }
@@ -206,6 +207,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
           }
         }
         .navigationTitle(t("preview", "Review data before sending"))
+        .galaxySSIHealthTheme()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) {
             Button(t("close", "Close")) { approval = nil }

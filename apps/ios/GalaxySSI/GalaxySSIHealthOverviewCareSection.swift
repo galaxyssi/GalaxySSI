@@ -180,7 +180,7 @@ struct GalaxySSIHealthOverviewCareSection: View {
 
   private func navigation<Content: View>(@ViewBuilder content: () -> Content) -> some View {
     NavigationView {
-      content().navigationBarTitleDisplayMode(.inline).toolbar {
+      content().galaxySSIHealthTheme().toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button(health("done", "Done")) { route = nil }
         }

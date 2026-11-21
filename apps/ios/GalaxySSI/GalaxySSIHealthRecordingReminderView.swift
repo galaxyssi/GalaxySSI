@@ -154,7 +154,7 @@ struct GalaxySSIHealthRecordingReminderView: View {
       }
     }
     .navigationTitle(t("title", "Health Recording Reminders"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .toolbar {
       if scene == .active {
         ToolbarItem(placement: .confirmationAction) {
@@ -319,6 +319,7 @@ struct GalaxySSIHealthRecordingReminderView: View {
       }
     }
     .navigationTitle(t("detail", "Recording Reminder"))
+    .galaxySSIHealthTheme()
     .onAppear { reload() }
   }
 

@@ -29,6 +29,7 @@ struct GalaxySSIHealthCareAgendaView: View {
       GalaxySSIHealthCareAgendaRows(records: records, filter: filter, scope: nil)
     }
     .navigationTitle(t("title", "Health Actions"))
+    .galaxySSIHealthTheme()
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -361,6 +362,7 @@ private struct GalaxySSIHealthCareFollowUpEditor: View {
       }
     }
     .navigationTitle(editingOutcome ? t("feedback_record", "Record action feedback") : t("schedule", "Schedule reminder"))
+    .galaxySSIHealthTheme()
     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("close", "Close")) { dismiss() } } }
     .onAppear { if let existing, existing.requestedAt > Date() { time = existing.requestedAt } }
     .onChange(of: scene) { if $0 != .active { note = ""; confirming = false; dismiss() } }
@@ -432,6 +434,7 @@ private struct GalaxySSIHealthCareFeedbackHistory: View {
       if failed { Text(t("feedback_unavailable", "Feedback history is unavailable.")) }
     }
     .navigationTitle(t("feedback_history", "Action feedback history"))
+    .galaxySSIHealthTheme()
     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("close", "Close")) { dismiss() } } }
     .onAppear(perform: reload)
     .onChange(of: scene) { if $0 != .active { clear() } }

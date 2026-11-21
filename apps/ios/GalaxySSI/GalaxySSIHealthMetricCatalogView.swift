@@ -65,7 +65,8 @@ struct GalaxySSIHealthMetricCatalogView: View {
     }
     .searchable(text: $query, prompt: t("search", "Search measurements"))
     .navigationTitle(t("title", "Measurement Catalog"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
+    .galaxySSIHealthFunctionsToolbar()
     .onChange(of: scene) {
       if $0 == .background { query = ""; mode = .daily }
     }
@@ -144,7 +145,7 @@ struct GalaxySSIHealthMetricCatalogView: View {
         }
       }
       .navigationTitle(metric.title(language: language))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .onAppear(perform: reload)
       .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.trendInputsChanged)) {
         if $0.object as? String == records.owner { reload() }

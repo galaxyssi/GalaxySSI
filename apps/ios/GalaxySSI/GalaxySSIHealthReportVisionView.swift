@@ -94,7 +94,7 @@ struct GalaxySSIHealthReportVisionView: View {
       if failed { Text((failure ?? .storage).title(language)).foregroundColor(.secondary) }
     }
     .navigationTitle(q("import_title", "Import report image"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear {
       originals.releaseCompletedQuickReportOriginals()
       reload()
@@ -133,6 +133,7 @@ struct GalaxySSIHealthReportVisionView: View {
           Button(t("send", "Send this image once")) { send(approval) }
         }
         .navigationTitle(t("preview", "Review image before sending"))
+        .galaxySSIHealthTheme()
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("cancel", "Cancel request")) { review = nil } } }
       }.navigationViewStyle(.stack)
     }

@@ -73,7 +73,8 @@ struct GalaxySSIHealthDataFilesView<Metrics: View, Review: View>: View {
       NavigationLink(destination: destination, isActive: $navigating) { EmptyView() }.hidden()
     }
     .navigationTitle(t("title", "Data and Files"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
+    .galaxySSIHealthFunctionsToolbar()
     .confirmationDialog(menuTitle, isPresented: Binding(
       get: { menu != nil }, set: { if !$0 { menu = nil } }
     ), titleVisibility: .visible) { menuActions }
@@ -111,7 +112,7 @@ struct GalaxySSIHealthDataFilesView<Metrics: View, Review: View>: View {
     }
     .padding(16)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(RoundedRectangle(cornerRadius: 8).fill(Color.green.opacity(0.12)))
+    .background(RoundedRectangle(cornerRadius: 8).fill(GalaxySSIHealthTheme.accent.opacity(0.12)))
   }
 
   @ViewBuilder private var stats: some View {
@@ -141,7 +142,7 @@ struct GalaxySSIHealthDataFilesView<Metrics: View, Review: View>: View {
     Button { menu = .imports } label: {
       Label(t("import", "Import"), systemImage: "square.and.arrow.down")
         .frame(maxWidth: .infinity, minHeight: 44)
-    }.buttonStyle(.borderedProminent).tint(.green).foregroundColor(.black)
+    }.buttonStyle(GalaxySSIHealthCommandStyle())
     Button { menu = .exports } label: {
       Label(t("export", "Export"), systemImage: "square.and.arrow.up")
         .frame(maxWidth: .infinity, minHeight: 44)
@@ -402,7 +403,7 @@ struct GalaxySSIHealthMeasurementExportHistoryView: View {
       }
     }
     .navigationTitle(t("export_history", "Measurement export history"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onDisappear { receipts = nil }
     .onChange(of: scene) { _ in reload() }

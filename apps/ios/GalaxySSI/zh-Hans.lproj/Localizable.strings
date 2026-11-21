@@ -7394,6 +7394,8 @@
 "galaxyssi.health.metric_alias.meanCorpuscularHemoglobin" = "平均红细胞血红蛋白含量";
 "galaxyssi.health.key_metrics" = "关键指标";
 "galaxyssi.health.more_menu" = "更多";
+"galaxyssi.health.functions" = "健康功能";
+"galaxyssi.health.sources_retry" = "重试数据来源";
 "galaxyssi.health.attention.title" = "待关注";
 "galaxyssi.health.attention.empty" = "暂无待关注事项。";
 "galaxyssi.health.attention.disabled" = "本地测量摘要已关闭。";

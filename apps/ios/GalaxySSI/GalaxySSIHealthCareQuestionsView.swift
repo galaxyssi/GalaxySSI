@@ -82,6 +82,7 @@ struct GalaxySSIHealthCareQuestionsView: View {
           }
         }
         .navigationTitle(t("title", "Clarification questions"))
+        .galaxySSIHealthTheme()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button(t("close", "Close")) { reviewing = nil; answer = "" } }
         }
@@ -216,6 +217,7 @@ struct GalaxySSIHealthCareAnswerDraftsView: View {
           }
         }
         .navigationTitle(t("answer_drafts", "Review clarification answers"))
+        .galaxySSIHealthTheme()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button(t("close", "Close"), action: clearReview) }
         }

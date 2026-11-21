@@ -50,7 +50,7 @@ struct GalaxySSIHealthMeasurementPeriodPicker: View {
       }
     }
     .listStyle(.plain).navigationTitle(t("choose", "Sampling period"))
-    .navigationBarTitleDisplayMode(.inline).privacySensitive()
+    .galaxySSIHealthTheme().privacySensitive()
     .onAppear {
       if !initialized { initialized = true; kind = initialKind }
       reload()

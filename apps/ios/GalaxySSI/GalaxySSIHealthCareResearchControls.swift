@@ -185,6 +185,7 @@ struct GalaxySSIHealthCareResearchControls: View {
           }
         }
         .navigationTitle(t("review", "Review authorization"))
+        .galaxySSIHealthTheme()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button(t("cancel", "Cancel")) { review = nil } }
         }
@@ -199,6 +200,7 @@ struct GalaxySSIHealthCareResearchControls: View {
           }
         }
         .navigationTitle(GalaxySSILocalization.string("galaxyssi.health.questions.title", fallback: "Clarification questions", language: language))
+        .galaxySSIHealthTheme()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) {
             Button(GalaxySSILocalization.string("galaxyssi.health.questions.close", fallback: "Close", language: language)) {

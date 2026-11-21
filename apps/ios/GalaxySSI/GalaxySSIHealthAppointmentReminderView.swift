@@ -156,7 +156,7 @@ private struct GalaxySSIHealthAppointmentReminderEditor: View {
         Text(t("notice", "This reminder does not book a visit or change your care plan.")).font(.footnote).foregroundColor(.secondary)
       }
       .navigationTitle(t("title", "Appointment reminder"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button(GalaxySSIHealthEncounter.text("cancel", "Cancel", language)) { dismiss() } }
         ToolbarItem(placement: .confirmationAction) {

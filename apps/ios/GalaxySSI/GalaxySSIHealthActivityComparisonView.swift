@@ -55,7 +55,7 @@ struct GalaxySSIHealthActivityComparisonView: View {
         } else { ProgressView().accessibilityLabel(t("loading", "Loading activity history")) }
       }
     }
-    .navigationTitle(t("title", "Activity comparison")).navigationBarTitleDisplayMode(.inline).privacySensitive()
+    .navigationTitle(t("title", "Activity comparison")).galaxySSIHealthTheme().privacySensitive()
     .onAppear {
       visible = true
       if !initialized {
@@ -194,7 +194,7 @@ struct GalaxySSIHealthActivityComparisonView: View {
             }.fixedSize(horizontal: false, vertical: true)
           }
         }
-      }.navigationTitle(t("data", "Chart data")).navigationBarTitleDisplayMode(.inline).privacySensitive()
+      }.navigationTitle(t("data", "Chart data")).galaxySSIHealthTheme().privacySensitive()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) {
             Button { showsData = false } label: { Image(systemName: "xmark") }

@@ -155,6 +155,7 @@ struct GalaxySSIHealthReportEvidenceView: View {
       }
     }
     .navigationTitle(t("evidence", "Linked report evidence"))
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) {
       if $0 == .active { reload() } else { rows = []; confirming = false; if !exporting { document = nil } }
@@ -284,7 +285,7 @@ struct GalaxySSIHealthReportItemEditor: View {
       }
     }
     .navigationTitle(t("item", "Review measurement"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: load)
     .onChange(of: date) { _ in dateConfirmed = false }
     .onChange(of: scene) { if $0 == .background { dismiss() } }
@@ -423,7 +424,7 @@ struct GalaxySSIHealthReportBatchView: View {
       }
     }
     .navigationTitle(t("batch", "Reviewed measurements"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.reviewInputsChanged)) {
       if $0.object as? String == records.owner { reload() }

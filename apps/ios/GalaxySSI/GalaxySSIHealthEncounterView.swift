@@ -97,7 +97,7 @@ struct GalaxySSIHealthEncounterView: View {
       }
     }
     .navigationTitle(entryID == nil ? t("title", "Visit records") : t("detail", "Visit details"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .background {
       NavigationLink(isActive: Binding(get: { selectedEntryID != nil }, set: {
         if !$0 { selectedEntryID = nil }

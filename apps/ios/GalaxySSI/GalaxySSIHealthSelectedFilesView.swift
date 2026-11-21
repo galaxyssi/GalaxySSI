@@ -67,7 +67,7 @@ struct GalaxySSIHealthSelectedFilesView: View {
       }
     }
     .navigationTitle(t("batch_title", "Selected health files"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear {
       reload()
       if !entered { entered = true; approval = selection.approval; start() }

@@ -78,7 +78,7 @@ struct GalaxySSIHealthMeasurementPeriodComparisonView: View {
       }
     }
     .listStyle(.plain).navigationTitle(t("comparison", "Period comparison"))
-    .navigationBarTitleDisplayMode(.inline).privacySensitive()
+    .galaxySSIHealthTheme().privacySensitive()
     .background(GeometryReader { geometry in
       Color.clear.onAppear { width = geometry.size.width }.onChange(of: geometry.size.width) { width = $0 }
     })
