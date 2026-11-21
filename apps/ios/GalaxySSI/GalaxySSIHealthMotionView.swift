@@ -38,7 +38,7 @@ struct GalaxySSIHealthMotionView: View {
             get: { state?.cyclingEnabled != nil }, set: { motion.setEnabled(.cycling, enabled: $0, for: records) }))
             .disabled(state == nil || (state?.cyclingEnabled == nil && (motion.cyclingStatus == .unsupported || motion.cyclingStatus == .restricted)) || motion.stepStatus == .requesting || motion.cyclingStatus == .requesting)
           Text(Self.status(cyclingStatus, language: language)).foregroundColor(.secondary)
-          Text(t("privacy", "Completed rides only. No location or route data.")).font(.caption).foregroundColor(.secondary)
+          Text(t("privacy", "Automatic detection. No location or route data.")).font(.caption).foregroundColor(.secondary)
         }
         if motion.stepStatus == .denied || motion.cyclingStatus == .denied {
           Link(t("system_settings", "System settings"), destination: URL(string: UIApplication.openSettingsURLString)!)
@@ -85,28 +85,39 @@ struct GalaxySSIHealthMotionView: View {
 @MainActor
 struct GalaxySSIHealthCyclingOverviewRow: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @Environment(\.sizeCategory) private var sizeCategory
   @ObservedObject private var motion = GalaxySSIHealthMotionController.shared
   let records: GalaxySSIHealthRecords
   @State private var settings = false
   var body: some View {
-    TimelineView(.everyMinute) { context in
+    TimelineView(.periodic(from: Date(), by: 30)) { context in
       Button { settings = true } label: {
-        HStack {
-          VStack(alignment: .leading, spacing: 4) {
-            Label(t("cycling_today", "Cycling today"), systemImage: "bicycle")
-            Text(detail(context.date)).font(.caption).foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 5) {
+          HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Label(title: { Text(t("cycling_today", "Cycling today")).foregroundColor(.primary) },
+              icon: { Image(systemName: "bicycle").foregroundColor(.green) })
+              .font(.subheadline.weight(.semibold))
+            Spacer(minLength: 4)
+            if !spacious { amount(context.date) }
+            Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
           }
-          Spacer(minLength: 8)
-          Text(duration(context.date)).font(.title3.weight(.semibold)).foregroundColor(.primary)
-        }.frame(minHeight: 54)
+          if spacious { amount(context.date).frame(maxWidth: .infinity, alignment: .trailing) }
+          Text(detail(context.date)).font(.caption).foregroundColor(.secondary)
+        }.frame(maxWidth: .infinity, minHeight: 50, alignment: .leading).contentShape(Rectangle()).padding(.vertical, 5)
       }.buttonStyle(.plain)
     }
     .accessibilityIdentifier("health-overview-cycling")
     .sheet(isPresented: $settings) { NavigationView { GalaxySSIHealthMotionView(records: records) }.navigationViewStyle(.stack) }
   }
+  private var spacious: Bool { sizeCategory.isAccessibilityCategory || [.extraExtraLarge, .extraExtraExtraLarge].contains(sizeCategory) }
+  private func amount(_ date: Date) -> some View {
+    Text(duration(date)).font(.title3.weight(.semibold)).foregroundColor(.primary)
+  }
   private func detail(_ now: Date) -> String {
     guard motion.matches(records), let state = motion.state else { return t("status.failed", "Motion data unavailable. Saved totals are unchanged.") }
-    if motion.cyclingStatus == .active && state.cyclingEnabled != nil && state.cycling.riding(now) { return t("riding", "Cycling detected") }
+    if [.active, .waiting].contains(motion.cyclingStatus) && state.cyclingEnabled != nil {
+      return state.cycling.riding(now) ? t("riding", "Cycling") : t("stopped", "Stopped")
+    }
     return GalaxySSIHealthMotionView.status(motion.cyclingStatus, language: language)
   }
   private func duration(_ now: Date) -> String {

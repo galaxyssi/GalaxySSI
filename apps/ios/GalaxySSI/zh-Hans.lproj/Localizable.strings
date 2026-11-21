@@ -7427,11 +7427,14 @@
 "galaxyssi.health.motion.steps_today" = "今日手机步数";
 "galaxyssi.health.motion.cycling" = "自动骑行识别";
 "galaxyssi.health.motion.cycling_today" = "今日骑行";
-"galaxyssi.health.motion.privacy" = "仅统计已完成骑行，不读取定位或保存路线。";
+"galaxyssi.health.motion.privacy" = "自动识别骑行，不读取定位或保存路线。";
 "galaxyssi.health.motion.system_settings" = "系统设置";
 "galaxyssi.health.motion.retry" = "刷新运动数据";
 "galaxyssi.health.motion.close" = "关闭";
-"galaxyssi.health.motion.riding" = "检测到骑行";
+"galaxyssi.health.motion.riding" = "骑行中";
+"galaxyssi.health.motion.stopped" = "已停止";
+"galaxyssi.health.overview_list.steps_today" = "今日步数";
+"galaxyssi.health.overview_list.no_today_steps" = "今日暂无步数";
 "galaxyssi.health.motion.under_minute" = "不足 1 分钟";
 "galaxyssi.health.motion.minutes" = "%lld 分钟";
 "galaxyssi.health.motion.status.off" = "已关闭";

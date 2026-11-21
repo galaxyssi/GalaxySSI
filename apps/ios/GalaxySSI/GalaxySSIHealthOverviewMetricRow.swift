@@ -22,6 +22,9 @@ struct GalaxySSIHealthOverviewMetricRow: View {
   private var phoneSteps: Int? {
     item.metric == .steps ? motionState?.steps?.today(Date(), calendar: .autoupdatingCurrent) : nil
   }
+  private var staleSteps: Bool {
+    item.metric == .steps && item.reading.map { !Calendar.autoupdatingCurrent.isDateInToday($0.measuredAt) } == true
+  }
   private var canExpand: Bool { item.reading != nil || guidance != nil }
   private var showsStatus: Bool { !item.ranges.isEmpty || guidance == nil && item.metric != .steps }
 
@@ -54,6 +57,8 @@ struct GalaxySSIHealthOverviewMetricRow: View {
           if spacious { value.frame(maxWidth: .infinity, alignment: .trailing) }
           if phoneSteps != nil {
             Text(GalaxySSIHealthMotionView.text("phone_steps", "Phone step counter", language)).font(.caption).foregroundColor(.secondary)
+          } else if staleSteps {
+            Text(t("no_today_steps", "No step count today")).font(.caption).foregroundColor(.secondary)
           } else if let reading = item.reading {
             if spacious {
               provenance(reading)
@@ -72,7 +77,7 @@ struct GalaxySSIHealthOverviewMetricRow: View {
       if let guidance {
         ForEach(guidance.lines, id: \.self) { Text($0).font(.caption).foregroundColor(.secondary) }
       }
-      if phoneSteps == nil { ForEach(Array(item.ranges.enumerated()), id: \.offset) { _, range in
+      if phoneSteps == nil && !staleSteps { ForEach(Array(item.ranges.enumerated()), id: \.offset) { _, range in
         Text(sourceTitle(range.source) + ": " + componentTitle(range.component) + range.bounds + " " + range.unit)
           .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
       } }
@@ -109,7 +114,7 @@ struct GalaxySSIHealthOverviewMetricRow: View {
   }
 
   private var title: String {
-    item.metric == .glucose && item.reading?.conditions == "fasting"
+    item.metric == .steps ? t("steps_today", "Steps today") : item.metric == .glucose && item.reading?.conditions == "fasting"
       ? t("fasting_glucose", "Fasting glucose") : item.metric.title(language: language)
   }
   private var value: Text {
@@ -117,6 +122,7 @@ struct GalaxySSIHealthOverviewMetricRow: View {
       return Text(count.formatted(.number.locale(locale))).font(.title3.weight(.semibold)).foregroundColor(.primary) +
         Text(" " + t("steps_unit", "steps")).font(.caption).foregroundColor(.secondary)
     }
+    if staleSteps { return Text("\u{2014}").foregroundColor(.secondary) }
     guard let reading = item.reading else { return Text("\u{2014}").foregroundColor(.secondary) }
     let first = item.metric == .bloodPressure ? GalaxySSIHealthCareTarget.Component.systolic : .value
     let notation = reading.reportedNotation.flatMap { $0.isBlank ? nil : $0 }
@@ -136,7 +142,8 @@ struct GalaxySSIHealthOverviewMetricRow: View {
       item.ranges.first(where: { $0.component == component })?.position
   }
   private var stepProgress: Double? {
-    guard let goal = motionState?.goal, (try? records.load().derivesOverview) == true else { return nil }
+    guard let goal = motionState?.goal, !staleSteps || phoneSteps != nil,
+          (try? records.load().derivesOverview) == true else { return nil }
     let count = phoneSteps ?? item.reading?.value.flatMap { Int(NSDecimalNumber(decimal: $0).stringValue) }
     return GalaxySSIHealthMotion.progress(goal: goal, steps: count,
       fresh: phoneSteps != nil || item.freshness == .recent, permitted: progressPermitted)
