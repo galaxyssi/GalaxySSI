@@ -291,7 +291,8 @@ final class HealthModelReviewFixture {
       "uncertainty": .string("Current symptoms are unknown; applicability is not clinically verified"),
       "next_step": .string("Review the missing context"), "decision": .string("CLARIFY"),
       "review_events": .array([.string("USER_FEEDBACK")]),
-      "records": .array(GalaxySSIHealthCareModelReview.references(concern).map(\.payload)),
+      "records": .array(records.localCareReviewReferences(concern, related: approval.relatedMeasurements,
+        archive: try records.load(), now: now).map(\.payload)),
       "evidence_ids": .array(approval.evidence.map { .string($0.id.uuidString) }), "plan_id": .string(""),
       "attention_requested": .bool(false), "attention_reason": .string("No notification was requested")]
   }

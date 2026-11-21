@@ -162,14 +162,22 @@ extension GalaxySSIHealthRecords {
   func localCareReviewReferences(_ concern: GalaxySSIHealthCare.Concern,
       related: GalaxySSIHealthCareRelatedContext.Scope, archive: Archive, now: Date)
       -> [GalaxySSIHealthCareModelReview.Reference] {
-    var refs = GalaxySSIHealthCareModelReview.references(concern)
+    var refs = requiredLocalCareReviewReferences(concern, related: related, archive: archive, now: now)
+    for ref in GalaxySSIHealthCareModelReview.references(concern) where !refs.contains(ref) { refs.append(ref) }
+    return Array(refs.prefix(30))
+  }
+
+  func requiredLocalCareReviewReferences(_ concern: GalaxySSIHealthCare.Concern,
+      related: GalaxySSIHealthCareRelatedContext.Scope, archive: Archive, now: Date)
+      -> [GalaxySSIHealthCareModelReview.Reference] {
+    var refs = concern.assessment.record.map { [GalaxySSIHealthCareModelReview.Reference($0)] } ?? []
     for key in related.keys.sorted() {
       guard let metric = GalaxySSIHealthMetric(rawValue: key),
             let record = GalaxySSIHealthCareRelatedContext.measurement(metric, archive: archive, now: now).record else { continue }
       let ref = GalaxySSIHealthCareModelReview.Reference(record)
       if !refs.contains(ref) { refs.append(ref) }
     }
-    return Array(refs.prefix(30))
+    return refs
   }
 
   func relatedLocalCarePlanIsCurrent(_ plan: GalaxySSIHealthCarePlan.Proposal, archive: Archive, now: Date) -> Bool {

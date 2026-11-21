@@ -7,6 +7,10 @@ enum GalaxySSIHealthCareModelReview {
     For this automatic review, record one durable structured assessment with galaxyssi_health_review_record
     before your final answer. Use only exact record_references from research_handoff and current-turn
     native source evidence_ids. Empty evidence_ids means no retrieved support: state that limitation.
+    Include the current sample record of EVERY available, explicitly selected related measurement, even when
+    relevance is limited or measurement context is insufficient. Explain those limitations. These references
+    identify reviewed inputs, not clinical relevance, causation or diagnosis. Do not invent a reference for
+    unavailable data or silently include an unselected measurement. Correct missing references within this turn.
     Separate observations, reasoning and uncertainty. A PROPOSE_PLAN decision needs the plan_id receipt
     from galaxyssi_health_plan_propose in this turn first. Other decisions do not require a plan.
     Use sequential calls, never parallel calls; retain a plan before recording its final assessment.
@@ -148,7 +152,7 @@ enum GalaxySSIHealthCareModelReview {
     switch value {
     case .invalid:
       code = "invalid_health_review"
-      message = "Supply every structured field, exact current record revisions, unique review events and evidence IDs. Do not supply approval flags."
+      message = "Supply every structured field, the primary record and EVERY available selected related sample's exact record ID/revision, unique review events and evidence IDs. Explain limited relevance or missing context; a reference is input provenance, not a clinical conclusion. Correct the request within this turn. Do not supply approval flags."
     case .stale, .permission:
       code = "health_review_scope_changed"
       message = "The approved concern, authorization, evidence or plan changed. Do not reuse another turn or overwrite a retained assessment."

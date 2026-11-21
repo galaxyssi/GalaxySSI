@@ -25,6 +25,8 @@ enum GalaxySSIHealthDesktopResearch {
         "draft is warranted and native_sources are supplied. If plan is present, assessment.plan_id must be " +
         approval.id.uuidString + ". The phone retains the draft before recording the assessment; this does not adopt it. " +
         "Use exact record_references and current evidence IDs. Review events do not schedule anything. " +
+        "Include the current sample record of EVERY available selected related metric, even if relevance is limited. " +
+        "References identify reviewed inputs, not clinical relevance or causation. Never invent references for unavailable inputs. " +
         "Prior assessments are historical model opinions, not verified facts. Assessment schema: " +
         String(decoding: reviewSchema, as: UTF8.self) + ". Optional plan schema: " + String(decoding: planSchema, as: UTF8.self)
     } else if approval.proposesPlan {
