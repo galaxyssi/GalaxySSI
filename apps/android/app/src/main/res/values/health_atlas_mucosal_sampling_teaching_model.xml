@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mucosal_sampling_title">Selected share of a model mucosal surface</string>
+    <string name="health_atlas_mucosal_sampling_selected_tiles">Selected tiles</string>
+    <string name="health_atlas_mucosal_sampling_unselected_tiles">Unselected tiles</string>
+    <string name="health_atlas_mucosal_sampling_companion">Unselected model area: %1$s%%</string>
+    <string name="health_atlas_mucosal_sampling_formula">Selected area share (%) = 100 &#215; selected tiles &#247; (selected tiles + unselected tiles).</string>
+    <string name="health_atlas_mucosal_sampling_scope">Mucosa-associated lymphoid tissue (MALT) lies near mucosal surfaces. The palatine tonsils flank the oropharynx, while the adenoid (pharyngeal tonsil) sits at the roof of the nasopharynx. Lymphoid follicles in the appendix wall and Peyer\'s patches in the ileum are two distinct examples of gut-associated lymphoid tissue (GALT). The model divides one imagined mucosal surface into equal-area tiles that are either selected or unselected. The counts are invented, and the resulting shares describe only the diagram. They do not measure or compare real sites or show what the tissue does.</string>
+</resources>
