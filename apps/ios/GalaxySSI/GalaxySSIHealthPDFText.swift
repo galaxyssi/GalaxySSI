@@ -237,6 +237,8 @@ struct GalaxySSIHealthPDFTextView: View {
   @Environment(\.timeZone) private var timeZone
   let store: GalaxySSIHealthOriginalStore
   var transientReport: GalaxySSIHealthTransientReport?
+  var initialOriginal: GalaxySSIHealthOriginalStore.Original?
+  @State private var initialOriginalOpened = false
   @State private var files: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var selected: GalaxySSIHealthOriginalStore.Original?
   @State private var page = 0
@@ -421,6 +423,9 @@ struct GalaxySSIHealthPDFTextView: View {
     if transientReport != nil { recognize(); return }
     do {
       files = try store.list().originals.filter { $0.kind == .pdf }
+      if !initialOriginalOpened, let initialOriginal, files.contains(initialOriginal) {
+        initialOriginalOpened = true; selected = initialOriginal; recognize(); return
+      }
       status = .idle
     } catch { files = []; status = .unavailable }
   }

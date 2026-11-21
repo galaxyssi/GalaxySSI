@@ -16,7 +16,8 @@ enum GalaxySSIHealthReportVisionProvider {
     collected is a clearly labeled unambiguous collection/measurement time, YYYY-MM-DD HH:mm[:ss] with printed offset
     if present. A clearly labeled collection date without a time may be YYYY-MM-DD. Otherwise use empty.
     Never use report date or birth date. If multiple people or sample times cannot be isolated unambiguously, return no rows.
-    fasting is fasting, non_fasting or after_meal only if explicitly labeled for that glucose sample; otherwise empty.
+    fasting is fasting, non_fasting, after_meal_1h, after_meal_2h or after_meal only if explicitly labeled for that glucose sample; otherwise empty.
+    Preserve an explicit one-hour or two-hour post-meal label; do not collapse it into generic after_meal.
     Never infer fasting from time, values or reference intervals.
     Omit unreadable/unsupported results. partial is true if anything was omitted. At most 80 rows. No personal details. Use only the image. No tools, search or files. Return raw JSON.
     """

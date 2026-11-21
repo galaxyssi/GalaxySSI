@@ -40,6 +40,8 @@ enum GalaxySSIHealthRecognitionJobs {
     var reportVisionZone: String?
     var reportImportedSources: Set<String>?
     var reportImportOutcome: GalaxySSIHealthReportQuickImport.Outcome?
+    var reportBatchID: UUID?
+    var reportModelFirst: Bool?
 
     var reviewPages: [Page] { requiresPDFPassword == true && phase != .completed ? [] : pages }
   }
@@ -88,6 +90,9 @@ struct GalaxySSIHealthRecognitionJobsView: View {
   let store: GalaxySSIHealthOriginalStore
   var automaticPhotoBatch: UUID? = nil
   var automaticReportJob: UUID? = nil
+  var initialLocalReview: UUID? = nil
+  @State private var localReviewRoute: UUID?
+  @State private var localReviewOpened = false
   @State private var quickReportRoute: UUID?
   @State private var quickReportOpened = false
   @State private var jobs: [GalaxySSIHealthRecognitionJobs.Job] = []
@@ -104,10 +109,22 @@ struct GalaxySSIHealthRecognitionJobsView: View {
   @State private var selectingRepair = false
   @State private var missingSource: UUID?
   @State private var removedSources: Set<UUID> = []
+  @State private var selectedBatches: [GalaxySSIHealthSelectedFiles.Selection] = []
 
   var body: some View {
     List {
       if scene == .active {
+        if !selectedBatches.isEmpty {
+          Section(GalaxySSIHealthReportQuickImport.text("batch_title", "Selected health files", language)) {
+            ForEach(selectedBatches) { selection in
+              NavigationLink {
+                GalaxySSIHealthSelectedFilesView(records: records, originals: store, selection: selection)
+              } label: {
+                Text(String(format: GalaxySSIHealthReportQuickImport.text("batch_files", "%lld selected files", language), Int64(selection.entries.count)))
+              }.disabled(task != nil)
+            }
+          }
+        }
         Section(t("jobs", "Recognition jobs")) {
           ForEach(jobs) { job in
             NavigationLink {
@@ -148,16 +165,25 @@ struct GalaxySSIHealthRecognitionJobsView: View {
           GalaxySSIHealthReportVisionView(records: records, originals: store, jobID: id, automaticallyPreview: true)
         }
       } label: { EmptyView() }.hidden()
+      NavigationLink(isActive: Binding(get: { localReviewRoute != nil }, set: { if !$0 { localReviewRoute = nil } })) {
+        if let id = localReviewRoute { detail(id) }
+      } label: { EmptyView() }.hidden()
     }
-    .onAppear(perform: enterQueue)
+    .onAppear {
+      enterQueue()
+      if !localReviewOpened, let id = initialLocalReview, jobs.contains(where: { $0.id == id }) {
+        localReviewOpened = true; localReviewRoute = id
+      }
+    }
     .onDisappear { if task != nil { stop(cancelled: false) } }
     .onChange(of: scene) {
       if $0 == .active { enterQueue() }
       else {
         stop(cancelled: false)
         unlock = nil; unlockFailed = false; restricted = false
-        jobs = []; originals = []; failed = false
+        jobs = []; originals = []; selectedBatches = []; failed = false
         quickReportRoute = nil
+        localReviewRoute = nil
         if $0 == .background {
           selectingRepair = false; repairJob = nil; missingSource = nil; removedSources = []
         }
@@ -401,7 +427,12 @@ struct GalaxySSIHealthRecognitionJobsView: View {
   private func reload() {
     guard scene == .active else { return }
     do {
-      jobs = try records.load().recognitionJobs ?? []
+      let archive = try records.load()
+      jobs = archive.recognitionJobs ?? []
+      let batches = Set(jobs.compactMap(\.reportBatchID) + (archive.tableReviews ?? []).compactMap(\.reportBatchID))
+      selectedBatches = batches.sorted { $0.uuidString < $1.uuidString }.compactMap {
+        try? GalaxySSIHealthSelectedFiles.restore(batch: $0, archive: archive)
+      }
       let listing = try store.list()
       originals = listing.originals
       removedSources = Set(listing.removed.map(\.id)).union(listing.pendingRemovals)
@@ -416,6 +447,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
       }
     } catch {
       jobs = []
+      selectedBatches = []
       originals = []
       removedSources = []
       failed = true

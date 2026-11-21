@@ -356,7 +356,7 @@ struct GalaxySSIHealthTableImportView: View {
     do {
       let draft = GalaxySSIHealthReviewReminders.TableDraft(id: openedReview?.id ?? UUID(),
         name: String(input.name.prefix(180)), at: Date(), data: input.data,
-        mapping: mapping, worksheet: input.worksheet, retainOriginal: input.retainOriginal)
+        mapping: mapping, worksheet: input.worksheet, retainOriginal: input.retainOriginal, reportBatchID: openedReview?.reportBatchID)
       try records.saveTableReview(draft, replacing: openedReview?.version)
       openedReview = draft
       reload()

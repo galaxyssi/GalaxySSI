@@ -71,7 +71,7 @@ struct GalaxySSIHealthCenterView: View {
         }
         NavigationLink {
           GalaxySSIHealthImportView(store: GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets),
-                                    records: records)
+                                    records: records, initialAction: .files)
         } label: {
           Label(t("import.title", "Import Health Data"), systemImage: "square.and.arrow.down")
         }
@@ -601,7 +601,9 @@ struct GalaxySSIHealthCenterView: View {
               Text(GalaxySSIHealthReportQuickImport.text("fasting", "Fasting", language)).tag("fasting")
               Text(GalaxySSIHealthReportQuickImport.text("non_fasting", "Not fasting", language)).tag("non_fasting")
               Text(GalaxySSIHealthReportQuickImport.text("after_meal", "After a meal", language)).tag("after_meal")
-              if !["", "unspecified", "fasting", "non_fasting", "after_meal"].contains(draft.conditions) {
+              Text(GalaxySSIHealthReportBatch.conditionTitle("after_meal_1h", language: language)).tag("after_meal_1h")
+              Text(GalaxySSIHealthReportBatch.conditionTitle("after_meal_2h", language: language)).tag("after_meal_2h")
+              if !draft.conditions.isEmpty && !GalaxySSIHealthReportBatch.conditions.contains(draft.conditions) {
                 Text(draft.conditions).tag(draft.conditions)
               }
             }

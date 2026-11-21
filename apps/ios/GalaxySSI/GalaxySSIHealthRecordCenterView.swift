@@ -53,7 +53,7 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
             Label(t("manual", "Record measurement"), systemImage: "square.and.pencil")
           }
           NavigationLink {
-            GalaxySSIHealthImportView(store: originals, records: records)
+            GalaxySSIHealthImportView(store: originals, records: records, initialAction: .files)
           } label: { Label(t("record_center.files", "Import files"), systemImage: "folder") }
           NavigationLink(destination: devices) {
             Label(t("sources", "Devices & Data Sources"), systemImage: "externaldrive.connected.to.line.below")
