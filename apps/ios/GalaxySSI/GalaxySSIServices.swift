@@ -10125,7 +10125,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func sendRemotePilotMember(prompt: String, runID: String, conversation: String, turn: String,
-      member: String, source: UUID, contactID: String, desktopID: String, fingerprint: String, routeID: String,
+      member: String, transportInstance: String, source: UUID, contactID: String, desktopID: String, fingerprint: String, routeID: String,
       profile: String, selectionConversation: String, selection: AgentModelSelection,
       invocation: [String: String], deadline: UInt64) async throws -> String {
     let current = DispatchTime.now().uptimeNanoseconds
@@ -10133,6 +10133,8 @@ final class MessageCoordinator: ObservableObject {
     let history = AgentTeamExecutionHistoryStore.shared
     guard ProcessInfo.processInfo.environment["GALAXYSSI_REMOTE_PILOT_RUN"] == "1", !Task.isCancelled,
           current < deadline, !prompt.isBlank, prompt.utf8.count <= 60_000,
+          ["draft", "review", "final"].contains(member),
+          transportInstance == "analyst" || (member == "review" && transportInstance == "reviewer"),
           selection.mode == .manual, selection.targetId == contactID,
           AgentModelSelectionSettings.hasStoredSelection(for: selectionConversation, defaults: store.defaults),
           AgentModelSelectionSettings.selection(for: selectionConversation, defaults: store.defaults) == selection,
@@ -10186,7 +10188,7 @@ final class MessageCoordinator: ObservableObject {
     payload["agent_invocation"] = invocation
     payload["agent_team_message"] = true
     payload["team_id"] = scope.team.teamId
-    payload["agent_instance_id"] = member
+    payload["agent_instance_id"] = transportInstance
     payload["delivery_mode"] = AgentDeliveryMode.observe.rawValue
     payload["run_id"] = AgentTeamExecutionRuntime.stableChildRunId(supervisorRunId: runID, instanceId: member)
     let wire = try linkWirePayload(payload, link: link)
