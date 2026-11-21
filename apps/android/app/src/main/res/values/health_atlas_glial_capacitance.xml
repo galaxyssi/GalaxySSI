@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_glial_capacitance_title">Ideal myelin-shell capacitance</string>
+    <string name="health_atlas_glial_capacitance_thickness">Relative shell thickness</string>
+    <string name="health_atlas_glial_capacitance_area">Relative inner surface area</string>
+    <string name="health_atlas_glial_capacitance_formula">Relative capacitance = relative area × ln(1.5) ÷ ln(1 + relative thickness ÷ 2), where ln is the natural logarithm.</string>
+    <string name="health_atlas_glial_capacitance_per_area">Relative capacitance per inner area: %1$s ×</string>
+    <string name="health_atlas_glial_capacitance_scope">Myelinating Schwann cells wrap axons in the peripheral nervous system; oligodendrocytes do so in the central nervous system. This model replaces one myelinated segment with an ideal cylindrical capacitor and holds the inner radius and insulating material fixed. Area changes with segment length. Values are multiples of a synthetic baseline in which shell thickness is half the inner radius. A thicker shell reduces capacitance, so it stores less charge at the same voltage and area. The model does not estimate nerve conduction speed or support diagnosis.</string>
+</resources>
