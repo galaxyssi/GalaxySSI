@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pineal_plate_caption">Medial view of a normal brain, with the front at left. The pineal body projects behind the upper part of the third ventricle, above the midbrain.</string>
+    <string name="health_atlas_pineal_plate_body">Pineal body</string>
+    <string name="health_atlas_pineal_plate_body_detail">This small epithalamic gland is attached to the back of the third ventricle by a short stalk. It lies above the superior colliculi and is separate from the hypothalamus.</string>
+    <string name="health_atlas_pineal_plate_third_ventricle">Third ventricle</string>
+    <string name="health_atlas_pineal_plate_third_ventricle_detail">This narrow midline cavity contains cerebrospinal fluid. The pineal body attaches near the junction of its roof and back wall, outside the main cavity.</string>
+    <string name="health_atlas_pineal_plate_recess">Pineal recess</string>
+    <string name="health_atlas_pineal_plate_recess_detail">A small extension of the third ventricle reaches between the upper and lower parts of the pineal stalk. It is a fluid space, not pineal tissue.</string>
+    <string name="health_atlas_pineal_plate_choroid_plexus">Choroid plexus</string>
+    <string name="health_atlas_pineal_plate_choroid_plexus_detail">This folded, vascular tissue hangs from the roof of the third ventricle and helps make cerebrospinal fluid. It lies above and forward of the pineal body.</string>
+    <string name="health_atlas_pineal_plate_superior_colliculus">Superior colliculus</string>
+    <string name="health_atlas_pineal_plate_superior_colliculus_detail">One of two rounded elevations at the back of the midbrain, just below the pineal region. The colliculi help orient the eyes and head toward stimuli.</string>
+</resources>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_placenta_plate_title">胎盘剖面</string>
+    <string name="health_atlas_placenta_plate_caption">胎盘盘状结构的剖面，上方为胎儿侧，下方为子宫壁</string>
+    <string name="health_atlas_placenta_plate_cord">脐带</string>
+    <string name="health_atlas_placenta_plate_cord_detail">两条脐动脉将胎儿血液送往胎盘，一条脐静脉将血液送回胎儿体内。</string>
+    <string name="health_atlas_placenta_plate_chorionic_plate">绒毛膜板</string>
+    <string name="health_atlas_placenta_plate_chorionic_plate_detail">位于盘状胎盘的胎儿侧。胎儿血管在这里铺展，再分支进入绒毛。</string>
+    <string name="health_atlas_placenta_plate_terminal_villus">终末绒毛</string>
+    <string name="health_atlas_placenta_plate_terminal_villus_detail">绒毛树的细小分支末端，内有胎儿毛细血管，外面覆盖着薄薄的合体滋养层。</string>
+    <string name="health_atlas_placenta_plate_intervillous">绒毛间隙</string>
+    <string name="health_atlas_placenta_plate_intervillous_detail">母体血液在这一间隙中流过绒毛周围。正常交换时，胎儿血液留在绒毛内的血管中。</string>
+    <string name="health_atlas_placenta_plate_spiral_artery">子宫螺旋动脉</string>
+    <string name="health_atlas_placenta_plate_spiral_artery_detail">这条母体血管穿过胎盘的子宫侧，开口通向绒毛间隙。</string>
+</resources>

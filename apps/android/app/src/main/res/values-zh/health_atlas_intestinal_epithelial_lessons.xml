@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_crypt_lumen">隐窝腔</string>
+    <string name="health_atlas_crypt_ref_histology">杜克大学组织学：人小肠</string>
+
+    <string name="health_atlas_paneth_barrier_title">潘氏细胞与隐窝屏障</string>
+    <string name="health_atlas_paneth_barrier_scope">正常成人小肠。本图仅用于教学；形状、颗粒与播放时序均为示意，并非实测或个人数据。</string>
+    <string name="health_atlas_paneth_barrier_choice">潘氏细胞的屏障作用</string>
+    <string name="health_atlas_paneth_barrier_base">位于隐窝底部</string>
+    <string name="health_atlas_paneth_barrier_base_caption">潘氏细胞位于隐窝壁底部，顶端朝向隐窝腔。</string>
+    <string name="health_atlas_paneth_barrier_granules">靠近腔面的分泌颗粒</string>
+    <string name="health_atlas_paneth_barrier_granules_caption">含抗微生物物质的分泌颗粒集中在顶端，细胞核则位于基底侧。</string>
+    <string name="health_atlas_paneth_barrier_release">释放到隐窝腔内</string>
+    <string name="health_atlas_paneth_barrier_release_caption">分泌颗粒与顶端细胞膜融合，将内容物释放到隐窝腔内。</string>
+    <string name="health_atlas_paneth_barrier_local">支持局部屏障</string>
+    <string name="health_atlas_paneth_barrier_local_caption">释放出的物质（包括抗微生物肽）在附近的隐窝腔内扩散，有助于保护上皮表面。</string>
+    <string name="health_atlas_paneth_barrier_cell">潘氏细胞</string>
+    <string name="health_atlas_paneth_barrier_apical">顶端分泌颗粒</string>
+    <string name="health_atlas_paneth_barrier_peptides">释放出的肽</string>
+    <string name="health_atlas_paneth_barrier_ref_tissue">人体组织中潘氏细胞的抗微生物肽</string>
+
+    <string name="health_atlas_enteroendocrine_signal_title">肠内分泌细胞：从肠腔到血液</string>
+    <string name="health_atlas_enteroendocrine_signal_scope">正常成人小肠，图中为开放型细胞。形状、信号与时序仅用于教学示意，并非实测或个人数据。</string>
+    <string name="health_atlas_enteroendocrine_signal_choice">肠内分泌信号</string>
+    <string name="health_atlas_enteroendocrine_signal_sense">感知腔内刺激</string>
+    <string name="health_atlas_enteroendocrine_signal_sense_caption">这种开放型细胞以狭窄的顶端接触隐窝腔，可感知营养物等化学刺激。</string>
+    <string name="health_atlas_enteroendocrine_signal_vesicles">基底侧的分泌囊泡</string>
+    <string name="health_atlas_enteroendocrine_signal_vesicles_caption">腔内刺激激活细胞。含激素的囊泡储存在较宽的基底侧，朝向上皮下方的组织。</string>
+    <string name="health_atlas_enteroendocrine_signal_release">向组织释放激素</string>
+    <string name="health_atlas_enteroendocrine_signal_release_caption">激素从基底侧释放到邻近组织。腔内的刺激物本身并不穿过细胞进入血液。</string>
+    <string name="health_atlas_enteroendocrine_signal_blood">由血液运送激素</string>
+    <string name="health_atlas_enteroendocrine_signal_blood_caption">释放出的激素可进入邻近毛细血管，随血液到达其他部位能响应该激素的细胞。</string>
+    <string name="health_atlas_enteroendocrine_signal_cell">开放型细胞</string>
+    <string name="health_atlas_enteroendocrine_signal_capillary">毛细血管</string>
+    <string name="health_atlas_enteroendocrine_signal_cue">腔内刺激</string>
+    <string name="health_atlas_enteroendocrine_signal_basal">基底侧囊泡</string>
+    <string name="health_atlas_enteroendocrine_signal_hormone">激素</string>
+    <string name="health_atlas_enteroendocrine_signal_ref_open">密歇根大学：开放型细胞的组织学</string>
+    <string name="health_atlas_enteroendocrine_signal_ref_capillary">巴塞尔大学：小肠组织学</string>
+
+    <string name="health_atlas_intestinal_stem_renewal_title">肠干细胞更新小肠上皮</string>
+    <string name="health_atlas_intestinal_stem_renewal_scope">正常成人小肠。本图仅用于教学；细胞数量、距离与时间为示意，未按组织实际比例绘制，也不依据个人测量。</string>
+    <string name="health_atlas_intestinal_stem_renewal_choice">肠上皮更新</string>
+    <string name="health_atlas_intestinal_stem_renewal_niche">隐窝底部的干细胞微环境</string>
+    <string name="health_atlas_intestinal_stem_renewal_niche_caption">肠干细胞位于隐窝底部，与潘氏细胞等相邻。</string>
+    <string name="health_atlas_intestinal_stem_renewal_division">分裂与更新</string>
+    <string name="health_atlas_intestinal_stem_renewal_division_caption">干细胞分裂既维持底部的干细胞群，也产生新的后代细胞。图中展示其中一种更新过程。</string>
+    <string name="health_atlas_intestinal_stem_renewal_upward">沿隐窝壁向上移动</string>
+    <string name="health_atlas_intestinal_stem_renewal_upward_caption">许多后代细胞沿上皮层向绒毛移动，干细胞群则留在隐窝底部附近。</string>
+    <string name="health_atlas_intestinal_stem_renewal_villus">更新绒毛上皮</string>
+    <string name="health_atlas_intestinal_stem_renewal_villus_caption">部分后代细胞成熟为具有刷状缘的吸收细胞，替换绒毛上皮中的老细胞。</string>
+    <string name="health_atlas_intestinal_stem_renewal_cell">肠干细胞</string>
+    <string name="health_atlas_intestinal_stem_renewal_paneth">邻近的潘氏细胞</string>
+    <string name="health_atlas_intestinal_stem_renewal_toward_villus">朝向绒毛</string>
+    <string name="health_atlas_intestinal_stem_renewal_lining">绒毛上皮</string>
+    <string name="health_atlas_intestinal_stem_renewal_ref_lineage">人小肠上皮的细胞谱系</string>
+    <string name="health_atlas_intestinal_stem_renewal_ref_migration">MedCell 组织学：沿绒毛迁移</string>
+</resources>

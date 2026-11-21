@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gut_lymphoid_story_title">How the gut samples its contents</string>
+    <string name="health_atlas_gut_lymphoid_story_choice">Gut mucosal sampling</string>
+    <string name="health_atlas_gut_lymphoid_story_scope">The appendix and ileal Peyer patches are distinct sites of gut-associated lymphoid tissue (GALT). The sampling close-up follows an ileal patch, and the IgA scene shows a separate part of normal mucosal defense. Sizes and timing are schematic.</string>
+
+    <string name="health_atlas_gut_lymphoid_story_locate">Find the two sites</string>
+    <string name="health_atlas_gut_lymphoid_story_locate_caption">The appendix is a narrow, blind-ended tube attached to the cecum. The terminal ileum opens into the cecum separately. Peyer patches lie in the small-intestinal wall and are especially abundant in the distal ileum.</string>
+    <string name="health_atlas_gut_lymphoid_story_compare">Compare the two walls</string>
+    <string name="health_atlas_gut_lymphoid_story_compare_caption">In this appendix cross-section, clusters of lymphoid follicles surround the narrow lumen within the mucosa and submucosa. The separate ileal section shows a Peyer patch: grouped follicles beneath a dome of specialized lining, with villi to either side.</string>
+    <string name="health_atlas_gut_lymphoid_story_sample">An M cell carries a small sample</string>
+    <string name="health_atlas_gut_lymphoid_story_sample_caption">In the lining over an ileal follicle, a microfold cell (M cell) can carry a tiny amount of material across the lining to nearby immune cells. The amber speck represents a bit of ordinary food protein.</string>
+    <string name="health_atlas_gut_lymphoid_story_recognize">A T cell checks a displayed fragment</string>
+    <string name="health_atlas_gut_lymphoid_story_recognize_caption">A dendritic cell can display a small fragment of a sampled protein. A nearby T cell can recognize a matching display during contact. Recognizing an ordinary food protein does not mean the gut mounts a defensive response against it.</string>
+    <string name="health_atlas_gut_lymphoid_story_defend">IgA reaches the gut surface</string>
+    <string name="health_atlas_gut_lymphoid_story_defend_caption">In a separate area of gut lining, a plasma cell beneath the epithelium releases dimeric IgA (two linked units). Epithelial cells carry it into the lumen using a transport receptor. Secretory IgA helps limit contact between luminal material and the gut lining. This is not an immediate outcome of the sample shown earlier.</string>
+
+    <string name="health_atlas_gut_lymphoid_story_cecum">Cecum</string>
+    <string name="health_atlas_gut_lymphoid_story_ileum">Terminal ileum</string>
+    <string name="health_atlas_gut_lymphoid_story_appendix">Appendix</string>
+    <string name="health_atlas_gut_lymphoid_story_appendix_wall">Appendix cross-section</string>
+    <string name="health_atlas_gut_lymphoid_story_ileal_wall">Ileal wall section</string>
+    <string name="health_atlas_gut_lymphoid_story_appendix_lumen">Appendix lumen</string>
+    <string name="health_atlas_gut_lymphoid_story_follicles">Appendiceal follicles</string>
+    <string name="health_atlas_gut_lymphoid_story_peyer">Peyer patch</string>
+    <string name="health_atlas_gut_lymphoid_story_villi">Ileal villi</string>
+    <string name="health_atlas_gut_lymphoid_story_food_protein">Food protein</string>
+    <string name="health_atlas_gut_lymphoid_story_m_cell">M cell</string>
+    <string name="health_atlas_gut_lymphoid_story_dendritic">Dendritic cell</string>
+    <string name="health_atlas_gut_lymphoid_story_t_cell">T cell</string>
+    <string name="health_atlas_gut_lymphoid_story_plasma_cell">Plasma cell</string>
+    <string name="health_atlas_gut_lymphoid_story_epithelial_transport">Epithelial transport</string>
+    <string name="health_atlas_gut_lymphoid_story_secretory_iga">Secretory IgA</string>
+
+    <string name="health_atlas_gut_lymphoid_story_ref_appendix">University of Leeds: human appendix histology</string>
+    <string name="health_atlas_gut_lymphoid_story_ref_ileum">University of Basel: human terminal ileum histology</string>
+    <string name="health_atlas_gut_lymphoid_story_ref_distribution">Study: Peyer patch distribution in the human distal ileum</string>
+    <string name="health_atlas_gut_lymphoid_story_ref_m_cells">Study: specialized lining of human Peyer patches</string>
+    <string name="health_atlas_gut_lymphoid_story_ref_iga">Immunobiology: IgA secretion and mucosal defense</string>
+</resources>

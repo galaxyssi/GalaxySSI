@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_acinar_enzyme_story_title">胰腺腺泡细胞如何分泌消化酶</string>
+    <string name="health_atlas_acinar_enzyme_story_choice">胰腺腺泡细胞分泌消化酶</string>
+    <string name="health_atlas_acinar_enzyme_story_scope">以正常人体胰腺的外分泌功能为例，追踪消化相关蛋白从腺泡细胞到达十二指肠的过程。结构、时间和颗粒数量均为示意。</string>
+
+    <string name="health_atlas_acinar_enzyme_story_locate">在胰腺小叶中找到腺泡</string>
+    <string name="health_atlas_acinar_enzyme_story_locate_caption">胰腺小叶内有许多由分泌细胞组成的小团，称为腺泡。每个腺泡内，细胞较宽的基底部朝外，较窄的顶端朝向共同的腺泡腔；腺泡腔与小导管相通。</string>
+    <string name="health_atlas_acinar_enzyme_story_package">合成并储存消化相关蛋白</string>
+    <string name="health_atlas_acinar_enzyme_story_package_caption">细胞基底部附近的粗面内质网上，核糖体合成消化相关蛋白。这些蛋白经过高尔基体，被装入分泌颗粒，颗粒聚集在细胞顶端附近。</string>
+    <string name="health_atlas_acinar_enzyme_story_release">向腺泡腔释放颗粒内容物</string>
+    <string name="health_atlas_acinar_enzyme_story_release_caption">分泌颗粒与顶端膜融合，将内容物释放到腺泡腔。淀粉酶在分泌时已有活性，而分泌出的胰蛋白酶原是胰蛋白酶的无活性前体。</string>
+    <string name="health_atlas_acinar_enzyme_story_duct">导管细胞加入富含碳酸氢盐的液体</string>
+    <string name="health_atlas_acinar_enzyme_story_duct_caption">多个腺泡分泌的蛋白沿胰管的各级分支流动。腺泡细胞提供这些消化相关蛋白，导管内壁的细胞则向同一股液流加入富含碳酸氢盐的液体。</string>
+    <string name="health_atlas_acinar_enzyme_story_arrive">胰液流入十二指肠</string>
+    <string name="health_atlas_acinar_enzyme_story_arrive_caption">主胰管把胰液送入小肠的第一段，也就是十二指肠。在这里，淀粉酶帮助消化淀粉，胰蛋白酶原等无活性的前体可被激活。</string>
+
+    <string name="health_atlas_acinar_enzyme_story_lobule">胰腺小叶</string>
+    <string name="health_atlas_acinar_enzyme_story_acinus">腺泡</string>
+    <string name="health_atlas_acinar_enzyme_story_lumen">腺泡腔</string>
+    <string name="health_atlas_acinar_enzyme_story_small_duct">小导管</string>
+    <string name="health_atlas_acinar_enzyme_story_rough_er">粗面内质网</string>
+    <string name="health_atlas_acinar_enzyme_story_golgi">高尔基体</string>
+    <string name="health_atlas_acinar_enzyme_story_granules">顶端分泌颗粒</string>
+    <string name="health_atlas_acinar_enzyme_story_membrane">顶端膜</string>
+    <string name="health_atlas_acinar_enzyme_story_enzymes">消化酶</string>
+    <string name="health_atlas_acinar_enzyme_story_precursors">无活性前体</string>
+    <string name="health_atlas_acinar_enzyme_story_acini">腺泡群</string>
+    <string name="health_atlas_acinar_enzyme_story_ductal_cells">导管细胞</string>
+    <string name="health_atlas_acinar_enzyme_story_duct_fluid">富含碳酸氢盐的液体</string>
+    <string name="health_atlas_acinar_enzyme_story_pancreas">胰腺</string>
+    <string name="health_atlas_acinar_enzyme_story_main_duct">主胰管</string>
+    <string name="health_atlas_acinar_enzyme_story_duodenum">十二指肠</string>
+
+    <string name="health_atlas_acinar_enzyme_story_ref_acinar">研究证据：豚鼠胰腺腺泡细胞中的蛋白储存与释放</string>
+    <string name="health_atlas_acinar_enzyme_story_ref_duct">研究证据：豚鼠胰管分泌碳酸氢盐</string>
+</resources>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mammary_section_view">Example lactating lobule and enlarged alveolus</string>
+    <string name="health_atlas_mammary_section_lobule">Lobule</string>
+    <string name="health_atlas_mammary_section_lobule_detail">A lobule contains groups of small milk-producing sacs called alveoli. The right-hand illustration enlarges one sac to show its cell layers.</string>
+    <string name="health_atlas_mammary_section_duct">Branching duct</string>
+    <string name="health_atlas_mammary_section_duct_detail">Small ducts join larger branches that carry milk. This schematic shows one portion of a branching network, not the total number of ducts.</string>
+    <string name="health_atlas_soleus_section_view">Deep calf from behind, superficial muscle removed</string>
+    <string name="health_atlas_soleus_section_arch">Soleal arch</string>
+    <string name="health_atlas_soleus_section_arch_detail">An upper fibrous arch spans between the tibial and fibular attachments of the soleus.</string>
+    <string name="health_atlas_soleus_section_belly">Soleus fibers</string>
+    <string name="health_atlas_soleus_section_belly_detail">The soleus lies under the gastrocnemius. Its fibers angle into broad tendinous sheets rather than running straight to the heel.</string>
+    <string name="health_atlas_soleus_section_sheet">Tendinous sheet</string>
+    <string name="health_atlas_soleus_section_sheet_detail">This example shows a flattened tendinous sheet that collects muscle force and connects with the Achilles tendon below.</string>
+    <string name="health_atlas_soleus_section_heel">Calcaneus</string>
+    <string name="health_atlas_soleus_section_heel_detail">The Achilles tendon attaches here at the heel, transferring calf muscle force to the foot.</string>
+    <string name="health_atlas_clavicle_section_view">Clavicle from above with its two joints</string>
+    <string name="health_atlas_clavicle_section_sternal">Sternal end</string>
+    <string name="health_atlas_clavicle_section_sternal_detail">The thicker, medial end meets the top of the sternum at the sternoclavicular joint.</string>
+    <string name="health_atlas_clavicle_section_shaft">Curved shaft</string>
+    <string name="health_atlas_clavicle_section_shaft_detail">The S-shaped shaft acts as a strut, holding the shoulder away from the chest wall.</string>
+    <string name="health_atlas_clavicle_section_acromial">Acromial end</string>
+    <string name="health_atlas_clavicle_section_acromial_detail">The flatter, lateral end meets the acromion of the scapula. Both joints contribute motion when the arm rises.</string>
+    <string name="health_atlas_fibula_section_view">The fibula alongside the tibia and ankle</string>
+    <string name="health_atlas_fibula_section_head">Fibular head</string>
+    <string name="health_atlas_fibula_section_head_detail">This upper end meets the upper tibia just below the knee. It does not form a joint with the femur.</string>
+    <string name="health_atlas_fibula_section_shaft">Fibular shaft</string>
+    <string name="health_atlas_fibula_section_shaft_detail">The slender bone runs along the outside of the lower leg and provides attachment for muscles.</string>
+    <string name="health_atlas_fibula_section_membrane">Interosseous membrane</string>
+    <string name="health_atlas_fibula_section_membrane_detail">A fibrous sheet connects the shafts of the tibia and fibula.</string>
+    <string name="health_atlas_fibula_section_malleolus">Lateral malleolus</string>
+    <string name="health_atlas_fibula_section_malleolus_detail">The lower end of the fibula forms the bony point on the outside of the ankle and borders the talus.</string>
+</resources>

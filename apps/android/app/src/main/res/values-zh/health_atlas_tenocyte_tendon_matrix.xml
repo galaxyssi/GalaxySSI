@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_tenocyte_tendon_matrix_title">肌腱中的肌腱细胞</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_choice">肌腱细胞与胶原纤维</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_scope">正常肌腱的纵向示意图。大小、位移和时间仅用于示意。</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_alignment">与胶原纤维同向</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_alignment_caption">从肌腱纵向观察，细长的肌腱细胞位于胶原纤维之间。细胞的长轴及其细长的细胞核都沿局部纤维方向排列。</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_pull">沿纤维方向牵拉</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_pull_caption">沿肌腱长轴的牵拉会改变周围胶原基质的形状和间距。成对的标记显示相邻基质部位之间的相对位移。</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_transfer">从基质到细胞</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_transfer_caption">相邻基质部位的位移可以不同。这种不均匀的位移可使肌腱细胞及其细胞核变形。虚线是同一细胞静息时的轮廓，供对照。</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_recovery">逐渐回到静息形态</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_recovery_caption">牵拉减弱后，基质与细胞形态中可逆的变化逐渐消退。这里展示的是形变的机械性恢复，并非组织修复。</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_fibers">胶原纤维</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_nucleus">肌腱细胞核</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_axis">肌腱长轴</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_pull">沿纤维牵拉</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_release">牵拉减弱</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_profile">肌腱细胞轮廓</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_rest">静息轮廓</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_ref_morphology">Pingel 等：人体肌腱内细胞与纤维的排列</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_ref_transfer">Duncan 等：原生肌腱内的局部形变</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_ref_recovery">Silva Barreto 等：大鼠跟腱胶原原纤维的应变恢复</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_plate_caption">肌腱细胞在肌腱中的分布（纵向示意）</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_plate_selector">纵向示意</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_plate_cell">肌腱细胞胞体</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_plate_cell_detail">细长、两端渐细的胞体位于相邻胶原纤维之间的狭窄间隙。</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_plate_nucleus_detail">扁长的细胞核与周围胶原纤维方向一致。</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_plate_fibers_detail">图中大多数纤维沿肌腱长轴排列，邻近的肌腱细胞也沿同一方向伸展。</string>
+</resources>

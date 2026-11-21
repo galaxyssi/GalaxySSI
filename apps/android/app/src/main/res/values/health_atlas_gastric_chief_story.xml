@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gastric_chief_story_title">How gastric chief cells help digest protein</string>
+    <string name="health_atlas_gastric_chief_story_choice">Pepsinogen</string>
+    <string name="health_atlas_gastric_chief_story_scope">A qualitative view of normal human stomach digestion, following pepsinogen from a chief cell to the first steps of protein breakdown. The cutaways, timing, and molecular shapes are schematic.</string>
+
+    <string name="health_atlas_gastric_chief_story_locate">Find chief cells near the gland base</string>
+    <string name="health_atlas_gastric_chief_story_locate_caption">Fundic glands in the upper rounded part and body of the stomach open through pits into the stomach cavity. Chief cells are concentrated deep in these glands, toward the base.</string>
+    <string name="health_atlas_gastric_chief_story_pack">Pack the inactive precursor</string>
+    <string name="health_atlas_gastric_chief_story_pack_caption">A chief cell packages pepsinogen, an inactive precursor of pepsin, into secretory granules. The granules collect near the side that faces the gland lumen, opposite the nucleus.</string>
+    <string name="health_atlas_gastric_chief_story_release">Release pepsinogen into the gland lumen</string>
+    <string name="health_atlas_gastric_chief_story_release_caption">Granule membranes fuse with the chief cell membrane facing the gland lumen. Pepsinogen is released into the lumen, the space inside the gland, while the granule membrane stays with the cell.</string>
+    <string name="health_atlas_gastric_chief_story_activate">The acidic lumen activates pepsinogen</string>
+    <string name="health_atlas_gastric_chief_story_activate_caption">Nearby parietal cells, not chief cells, secrete the acid. In the acidic gland lumen, a piece is cleaved from pepsinogen, leaving the active enzyme pepsin.</string>
+    <string name="health_atlas_gastric_chief_story_digest">Pepsin starts breaking down food protein</string>
+    <string name="health_atlas_gastric_chief_story_digest_caption">Gastric juice carries pepsin into the stomach cavity. There, pepsin cuts long dietary protein chains into shorter pieces called peptides. This begins protein digestion; it does not finish it.</string>
+
+    <string name="health_atlas_gastric_chief_story_stomach">Stomach</string>
+    <string name="health_atlas_gastric_chief_story_pit">Gastric pit</string>
+    <string name="health_atlas_gastric_chief_story_gland_base">Gland base</string>
+    <string name="health_atlas_gastric_chief_story_chief_cells">Chief cells</string>
+    <string name="health_atlas_gastric_chief_story_chief_cell">Chief cell</string>
+    <string name="health_atlas_gastric_chief_story_nucleus">Basal nucleus</string>
+    <string name="health_atlas_gastric_chief_story_granule">Secretory granule</string>
+    <string name="health_atlas_gastric_chief_story_gland_lumen">Gland lumen</string>
+    <string name="health_atlas_gastric_chief_story_membrane">Lumen-facing membrane</string>
+    <string name="health_atlas_gastric_chief_story_pepsinogen">Pepsinogen</string>
+    <string name="health_atlas_gastric_chief_story_parietal_cell">Parietal cell</string>
+    <string name="health_atlas_gastric_chief_story_acidic_lumen">Acidic lumen</string>
+    <string name="health_atlas_gastric_chief_story_activation_site">Activation site</string>
+    <string name="health_atlas_gastric_chief_story_pepsin">Pepsin</string>
+    <string name="health_atlas_gastric_chief_story_protein">Dietary protein</string>
+    <string name="health_atlas_gastric_chief_story_cut_sites">Cut sites</string>
+
+    <string name="health_atlas_gastric_chief_story_ref_fundic_cells">Evidence: cell arrangement in the normal human gastric gland</string>
+    <string name="health_atlas_gastric_chief_story_ref_activation">Evidence: how human pepsinogens become active enzymes</string>
+</resources>

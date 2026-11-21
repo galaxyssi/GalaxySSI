@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_smooth_muscle_story_title">Intestinal peristalsis</string>
+    <string name="health_atlas_smooth_muscle_story_scope">A qualitative model of one normal small-intestinal propulsion pattern. Shape, distances, and timing are not to scale. Other intestinal movements and smooth muscle elsewhere can work differently.</string>
+    <string name="health_atlas_smooth_muscle_story_fill">Fill the lumen</string>
+    <string name="health_atlas_smooth_muscle_story_fill_caption">A bolus, or small mass of intestinal contents, fills and gently widens the lumen. Inner circular muscle wraps around the tube; outer longitudinal muscle runs along its length.</string>
+    <string name="health_atlas_smooth_muscle_story_relax">Relax ahead</string>
+    <string name="health_atlas_smooth_muscle_story_relax_caption">Circular muscle just downstream of the bolus relaxes. The lumen there can widen to receive the contents.</string>
+    <string name="health_atlas_smooth_muscle_story_contract">Squeeze behind</string>
+    <string name="health_atlas_smooth_muscle_story_contract_caption">Circular muscle behind the bolus contracts and narrows the lumen while the region ahead remains relaxed.</string>
+    <string name="health_atlas_smooth_muscle_story_propel">Propel forward</string>
+    <string name="health_atlas_smooth_muscle_story_propel_caption">Successive sections of the wall squeeze behind the bolus and relax ahead of it. This traveling pattern pushes the contents downstream.</string>
+    <string name="health_atlas_smooth_muscle_story_recover">Wall reopens</string>
+    <string name="health_atlas_smooth_muscle_story_recover_caption">The part of the wall that squeezed relaxes and reopens as the bolus continues downstream.</string>
+    <string name="health_atlas_smooth_muscle_story_bolus">Bolus</string>
+    <string name="health_atlas_smooth_muscle_story_circular">Inner circular muscle</string>
+    <string name="health_atlas_smooth_muscle_story_longitudinal">Outer longitudinal muscle</string>
+    <string name="health_atlas_smooth_muscle_story_ahead">Relaxation ahead</string>
+    <string name="health_atlas_smooth_muscle_story_behind">Contraction behind</string>
+    <string name="health_atlas_smooth_muscle_story_reopening">Wall reopening</string>
+    <string name="health_atlas_smooth_muscle_story_downstream">Downstream</string>
+    <string name="health_atlas_smooth_muscle_story_anatomy_source">Human small-intestinal muscle structure (Henrich and Brehler, 1980)</string>
+    <string name="health_atlas_smooth_muscle_story_propulsion_source">Peristaltic coordination in guinea-pig small intestine (Waterman et al., 1994)</string>
+</resources>

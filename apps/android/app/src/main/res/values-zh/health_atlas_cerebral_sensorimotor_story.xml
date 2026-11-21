@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cerebral_sensorimotor_story_title">大脑皮层如何引导伸手动作</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_choice">大脑皮层与伸手动作</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_scope">以一次正常的自主伸手动作为例。伸手过程中，不同脑区可以协同工作；章节和线路不代表固定的处理顺序或精确的神经通路。</string>
+
+    <string name="health_atlas_cerebral_sensorimotor_story_locate">认识感觉运动区</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_locate_caption">在左侧大脑半球外侧面，初级运动皮层紧邻中央沟前方，初级躯体感觉皮层紧邻中央沟后方。在这个例子中，两者都参与引导右手动作。</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_register">感知触碰和手臂位置</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_register_caption">指尖搭在表面上时，皮肤感受器会发出接触信号。肌肉和关节传来的信号也反映手臂的位置。初级躯体感觉皮层处理这两类信息。</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_integrate">规划伸手去碰杯子</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_integrate_caption">后顶叶皮层与运动前区协同工作，利用手的位置和杯子所在的位置，帮助规划伸手动作。</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_command">发出运动指令</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_command_caption">初级运动皮层参与向脊髓下达指令。脊髓运动神经元激活带动肩关节和肘关节的肌肉，使手向杯子移动。</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_feedback">边伸手边接收反馈</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_feedback_caption">手臂移动时，新的位置信息不断传来，大脑可以用这些反馈来更新发出的运动指令。指尖碰到杯子时，皮肤感受器再次发出接触信号。</string>
+
+    <string name="health_atlas_cerebral_sensorimotor_story_central_sulcus">中央沟</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_motor_cortex">初级运动皮层</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_sensory_cortex">躯体感觉皮层</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_premotor">运动前区</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_parietal">后顶叶皮层</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_cup">杯子</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_touch">触觉</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_position">手臂位置</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_reach_plan">伸手计划</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_motor_output">运动输出</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_sensory_feedback">感觉反馈</string>
+
+    <string name="health_atlas_cerebral_sensorimotor_story_ref_planning">研究：大脑皮层如何整合手和目标的位置信息</string>
+    <string name="health_atlas_cerebral_sensorimotor_story_ref_feedback">研究：初级运动皮层中的反馈控制</string>
+</resources>

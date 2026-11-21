@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_accessory_gland_routing_title">Accessory gland duct routes</string>
+    <string name="health_atlas_accessory_gland_routing_scope">A simplified view of normal adult pelvic anatomy. The moving traces show the direction of flow in each duct, not the timing of secretion.</string>
+    <string name="health_atlas_accessory_gland_routing_choice">Trace the gland ducts</string>
+    <string name="health_atlas_accessory_gland_routing_locator">Locate the ducts</string>
+    <string name="health_atlas_accessory_gland_routing_locator_caption">The paired seminal vesicles sit behind the bladder and above the prostate. The ejaculatory ducts pass through the prostate. The bulbourethral glands sit below it and drain farther downstream.</string>
+    <string name="health_atlas_accessory_gland_routing_vesicles">Seminal vesicles</string>
+    <string name="health_atlas_accessory_gland_routing_vesicles_caption">Each seminal vesicle contributes fructose-rich fluid through a short duct. This duct joins the widened end of the vas deferens on the same side to form an ejaculatory duct.</string>
+    <string name="health_atlas_accessory_gland_routing_ejaculatory">Ejaculatory ducts</string>
+    <string name="health_atlas_accessory_gland_routing_ejaculatory_caption">Each ejaculatory duct carries sperm from the vas deferens and fluid from the seminal vesicle. It passes through the prostate and opens into the prostatic urethra.</string>
+    <string name="health_atlas_accessory_gland_routing_prostate">Prostate</string>
+    <string name="health_atlas_accessory_gland_routing_prostate_caption">Multiple small prostatic ducts carry prostate secretions directly into the prostatic urethra. They open separately from the ejaculatory ducts; only a few are shown.</string>
+    <string name="health_atlas_accessory_gland_routing_bulbourethral">Bulbourethral glands</string>
+    <string name="health_atlas_accessory_gland_routing_bulbourethral_caption">The paired glands lie below the prostate beside the membranous urethra. Their long ducts carry lubricating mucus past this segment and open farther downstream in the proximal spongy (bulbar) urethra.</string>
+    <string name="health_atlas_accessory_gland_routing_label_vas">Vas deferens</string>
+    <string name="health_atlas_accessory_gland_routing_label_junction">Duct junction</string>
+    <string name="health_atlas_accessory_gland_routing_label_prostatic">Prostatic urethra</string>
+    <string name="health_atlas_accessory_gland_routing_label_prostate_ducts">Prostatic ducts</string>
+    <string name="health_atlas_accessory_gland_routing_label_membranous">Membranous urethra</string>
+    <string name="health_atlas_accessory_gland_routing_label_long_duct">Bulbourethral duct</string>
+    <string name="health_atlas_accessory_gland_routing_label_bulbar">Bulbar urethra</string>
+    <string name="health_atlas_accessory_gland_routing_ref_ducts">NCI SEER Training: duct system</string>
+    <string name="health_atlas_accessory_gland_routing_ref_anatomy">OpenStax: accessory gland anatomy and physiology</string>
+    <string name="health_atlas_accessory_gland_routing_ref_bulb">Human bulbourethral gland anatomy</string>
+    <string name="health_atlas_bulbourethral_glands_plate_title">Bulbourethral gland section</string>
+    <string name="health_atlas_bulbourethral_glands_plate_caption">Oblique pelvic cutaway, with one bulbourethral duct in focus</string>
+    <string name="health_atlas_bulbourethral_glands_plate_prostate_detail">The prostate surrounds the prostatic urethra, above the level of the bulbourethral glands.</string>
+    <string name="health_atlas_bulbourethral_glands_plate_membranous_detail">This short segment lies between the prostatic and spongy urethra. The bulbourethral glands sit behind and to either side of it; their ducts do not open here.</string>
+    <string name="health_atlas_bulbourethral_glands_plate_gland_detail">One gland is highlighted and its partner is shown behind it. Both are below the prostate in the deep perineal pouch and produce lubricating mucus.</string>
+    <string name="health_atlas_bulbourethral_glands_plate_duct_detail">The long duct passes through the perineal membrane and turns forward alongside the urethra before reaching its opening.</string>
+    <string name="health_atlas_bulbourethral_glands_plate_destination">Proximal spongy urethra</string>
+    <string name="health_atlas_bulbourethral_glands_plate_destination_detail">The duct opens on the floor of the bulbar urethra, the first part of the spongy urethra, downstream of the membranous segment.</string>
+</resources>

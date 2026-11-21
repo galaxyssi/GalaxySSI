@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pleura_story_title">胸膜如何让肺随胸壁运动</string>
+    <string name="health_atlas_pleura_story_choice">胸膜耦合</string>
+    <string name="health_atlas_pleura_story_scope">正常平静呼吸的定性示意图。各层厚度、运动幅度和时间均不按比例。</string>
+
+    <string name="health_atlas_pleura_story_layers">两层胸膜和一层薄液膜</string>
+    <string name="health_atlas_pleura_story_layers_caption">壁层胸膜衬在胸壁内侧，也覆盖膈肌的上表面。脏层胸膜覆盖肺表面。两层胸膜之间的狭窄间隙内有一层薄液膜。</string>
+    <string name="health_atlas_pleura_story_expand">胸廓扩张</string>
+    <string name="health_atlas_pleura_story_expand_caption">平静吸气时，肋骨向上、向外抬起，膈肌收缩、变平并下降。壁层胸膜随胸壁和膈肌一起移动。</string>
+    <string name="health_atlas_pleura_story_follow">肺随之扩张</string>
+    <string name="health_atlas_pleura_story_follow_caption">彼此贴近的两层胸膜使两侧肺分别与移动的胸壁和膈肌形成机械耦合。胸廓扩张时，肺也随之扩张。</string>
+    <string name="health_atlas_pleura_story_slide">两层胸膜相互滑动</string>
+    <string name="health_atlas_pleura_story_slide_caption">两层胸膜彼此贴近却能相互滑动，薄液膜减少摩擦。图中的标记随各自所在的胸膜层移动，滑动方向也会随呼吸改变。</string>
+    <string name="health_atlas_pleura_story_return">平静呼气时肺容积回落</string>
+    <string name="health_atlas_pleura_story_return_caption">膈肌放松并上升，恢复穹隆形。肋骨回落，肺因弹性回缩而趋向静息容积，两层胸膜仍彼此贴近。</string>
+
+    <string name="health_atlas_pleura_story_lung">肺</string>
+    <string name="health_atlas_pleura_story_wall">胸廓</string>
+    <string name="health_atlas_pleura_story_diaphragm">膈肌</string>
+    <string name="health_atlas_pleura_story_detail">胸膜交界处放大图</string>
+    <string name="health_atlas_pleura_story_parietal">壁层胸膜</string>
+    <string name="health_atlas_pleura_story_fluid">薄液膜</string>
+    <string name="health_atlas_pleura_story_visceral">脏层胸膜</string>
+
+    <string name="health_atlas_pleura_story_ref_sliding">研究：兔胸膜的摩擦与润滑</string>
+    <string name="health_atlas_pleura_story_ref_motion">研究：健康成人的胸壁和膈肌运动</string>
+</resources>

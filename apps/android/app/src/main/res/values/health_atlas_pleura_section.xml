@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pleura_section_view">Pleural layers · gap exaggerated</string>
+    <string name="health_atlas_pleura_section_visceral">Visceral pleura</string>
+    <string name="health_atlas_pleura_section_visceral_detail">This thin membrane covers the lung surface and moves with it during breathing.</string>
+    <string name="health_atlas_pleura_section_parietal">Parietal pleura</string>
+    <string name="health_atlas_pleura_section_parietal_detail">This membrane lines the chest wall and also extends over the diaphragm and the side of the mediastinum.</string>
+    <string name="health_atlas_pleura_section_fluid">Pleural fluid film</string>
+    <string name="health_atlas_pleura_section_fluid_detail">In normal breathing, a thin liquid film between the layers lets them slide with little friction. The gap is widened here so both layers can be seen.</string>
+</resources>

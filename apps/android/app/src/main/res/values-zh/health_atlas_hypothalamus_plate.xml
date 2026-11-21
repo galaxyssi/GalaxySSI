@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_hypothalamus_plate_scope">正常解剖的正中矢状面，图左为脑的前方。蓝绿色区域为下丘脑。这是局部示意图，未按比例绘制。</string>
+    <string name="health_atlas_hypothalamus_plate_region">下丘脑</string>
+    <string name="health_atlas_hypothalamus_plate_region_detail">下丘脑位于丘脑下方，部分位于丘脑前方，形成第三脑室的底和部分下部侧壁。</string>
+    <string name="health_atlas_hypothalamus_plate_thalamus">丘脑</string>
+    <string name="health_atlas_hypothalamus_plate_thalamus_detail">丘脑位于下丘脑上方，部分位于其后方。第三脑室壁上的下丘脑沟是两者的分界。</string>
+    <string name="health_atlas_hypothalamus_plate_optic_chiasm">视交叉</string>
+    <string name="health_atlas_hypothalamus_plate_optic_chiasm_detail">部分视神经纤维在此交叉，此处位于脑底、垂体柄前方。</string>
+    <string name="health_atlas_hypothalamus_plate_infundibulum">垂体柄</string>
+    <string name="health_atlas_hypothalamus_plate_infundibulum_detail">垂体柄（漏斗）从下丘脑底部向下延伸，与垂体后叶相连。</string>
+</resources>

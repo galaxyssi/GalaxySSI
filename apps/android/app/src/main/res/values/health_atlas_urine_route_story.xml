@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_urine_route_story_title">The route of urine</string>
+    <string name="health_atlas_urine_route_story_scope">A qualitative illustration of normal urine transport, storage, and emptying after urine has formed. Shapes, fluid levels, and timing are not to scale. This is not a model of nephron function or a guide to diagnosis.</string>
+    <string name="health_atlas_urine_route_story_collect">Collect in the renal pelvis</string>
+    <string name="health_atlas_urine_route_story_collect_caption">Urine already formed in the kidneys drains through the calyces into each renal pelvis, then enters a ureter. The renal pelvis collects urine; it does not make it.</string>
+    <string name="health_atlas_urine_route_story_peristalsis">Propel through the ureter</string>
+    <string name="health_atlas_urine_route_story_peristalsis_caption">A traveling wave of smooth-muscle contraction narrows the ureter behind a small amount of urine. The urine moves toward the bladder through the more relaxed segment ahead.</string>
+    <string name="health_atlas_urine_route_story_junction">Enter through an oblique tunnel</string>
+    <string name="health_atlas_urine_route_story_junction_caption">The ureter passes diagonally through the bladder wall before opening inside. The wall can compress this angled segment, helping limit urine flow back toward the kidney.</string>
+    <string name="health_atlas_urine_route_story_store">Store in the bladder</string>
+    <string name="health_atlas_urine_route_story_store_caption">Urine arrives from both ureters. The bladder expands as it stores urine while the outlet stays closed.</string>
+    <string name="health_atlas_urine_route_story_empty">Empty through the urethra</string>
+    <string name="health_atlas_urine_route_story_empty_caption">During emptying, the bladder muscle contracts as the outlet relaxes and opens. Together these changes let urine leave through the urethra.</string>
+    <string name="health_atlas_urine_route_story_renal_pelvis">Renal pelvis</string>
+    <string name="health_atlas_urine_route_story_ureters">Ureters</string>
+    <string name="health_atlas_urine_route_story_ureter">Ureter</string>
+    <string name="health_atlas_urine_route_story_bladder">Bladder</string>
+    <string name="health_atlas_urine_route_story_urethra">Urethra</string>
+    <string name="health_atlas_urine_route_story_contraction">Traveling squeeze</string>
+    <string name="health_atlas_urine_route_story_to_bladder">Toward the bladder</string>
+    <string name="health_atlas_urine_route_story_oblique_tunnel">Oblique tunnel</string>
+    <string name="health_atlas_urine_route_story_bladder_wall">Bladder wall</string>
+    <string name="health_atlas_urine_route_story_bladder_interior">Bladder interior</string>
+    <string name="health_atlas_urine_route_story_outlet">Bladder outlet</string>
+    <string name="health_atlas_urine_route_story_ref_junction">Human ureter-to-bladder junction (Roshani et al., 1996)</string>
+    <string name="health_atlas_urine_route_story_ref_emptying">Bladder wall motion during emptying (Gonzalez-Pereira et al., 2025)</string>
+</resources>

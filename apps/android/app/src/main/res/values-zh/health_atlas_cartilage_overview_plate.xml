@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cartilage_overview_plate_title">关节软骨切面</string>
+    <string name="health_atlas_cartilage_overview_plate_caption">以关节软骨为例：放大显示关节面上的透明软骨及其下方的骨。各层厚度和细胞大小均为示意。</string>
+    <string name="health_atlas_cartilage_overview_plate_surface">透明软骨关节面</string>
+    <string name="health_atlas_cartilage_overview_plate_surface_detail">这层光滑的表面朝向关节腔。紧贴表面的细胞比深层的细胞更扁平。</string>
+    <string name="health_atlas_cartilage_overview_plate_chondrocytes">软骨细胞</string>
+    <string name="health_atlas_cartilage_overview_plate_chondrocytes_detail">这些细胞位于称为软骨陷窝的小腔中，维持周围的基质。深层的细胞常排列成短柱。</string>
+    <string name="health_atlas_cartilage_overview_plate_matrix">软骨基质</string>
+    <string name="health_atlas_cartilage_overview_plate_matrix_detail">这层组织主要由基质而非细胞构成。基质含有大量水分、蛋白聚糖和细密的Ⅱ型胶原网络。</string>
+    <string name="health_atlas_cartilage_overview_plate_calcified">钙化软骨</string>
+    <string name="health_atlas_cartilage_overview_plate_calcified_detail">在称为潮线的细波状边界下方，软骨基质已矿化。这层软骨位于未钙化软骨和骨之间。</string>
+    <string name="health_atlas_cartilage_overview_plate_bone">软骨下骨</string>
+    <string name="health_atlas_cartilage_overview_plate_bone_detail">致密的骨板从下方支撑软骨，再往深处是呈网状分布的骨小梁。</string>
+</resources>

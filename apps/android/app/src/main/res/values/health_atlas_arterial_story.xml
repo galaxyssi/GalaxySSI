@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_arterial_title">How elastic arteries stretch and recoil</string>
+    <string name="health_atlas_arterial_choice">Arterial pulse and recoil</string>
+    <string name="health_atlas_arterial_scope">Qualitative model of a large elastic artery, illustrated with an aortic segment. Wall motion and blood flow are shown separately. Scale, timing, and the width of the pulse are not measurements.</string>
+    <string name="health_atlas_arterial_locate">Three layers around the lumen</string>
+    <string name="health_atlas_arterial_locate_caption">The aorta carries blood away from the left ventricle. Its inner lining faces the blood, its middle layer contains elastic sheets, and its outer layer supports the wall.</string>
+    <string name="health_atlas_arterial_ejection">Ejection stretches the wall</string>
+    <string name="health_atlas_arterial_ejection_caption">As the left ventricle ejects blood, pressure rises. The elastic wall stretches and temporarily stores part of the energy from ejection.</string>
+    <string name="health_atlas_arterial_wave_front">The pulse wave moves along the artery</string>
+    <string name="health_atlas_arterial_wave_front_caption">The gold mark follows the wave of pressure and wall expansion; the red arrows show blood flow. The traveling wave is not a particular parcel of blood.</string>
+    <string name="health_atlas_arterial_recoil">Between beats the wall recoils</string>
+    <string name="health_atlas_arterial_recoil_caption">After the aortic valve closes and the ventricle relaxes, the expanded aorta recoils. That elastic recoil helps sustain downstream blood flow between ejections.</string>
+    <string name="health_atlas_arterial_smooth">Intermittent ejection, smoother flow</string>
+    <string name="health_atlas_arterial_smooth_caption">Stretch and recoil buffer the heart\'s intermittent output. This sketch shows the overall trend, not the exact flow pattern at every point in the arterial system.</string>
+    <string name="health_atlas_arterial_aortic_arch">Aortic arch</string>
+    <string name="health_atlas_arterial_cross_section">Artery cross-section</string>
+    <string name="health_atlas_arterial_from_heart">From heart</string>
+    <string name="health_atlas_arterial_outer_wall">Outer layer</string>
+    <string name="health_atlas_arterial_elastic_media">Elastic media</string>
+    <string name="health_atlas_arterial_intima">Intima</string>
+    <string name="health_atlas_arterial_lumen">Lumen</string>
+    <string name="health_atlas_arterial_longitudinal">Arterial segment, lengthwise view</string>
+    <string name="health_atlas_arterial_flow">Blood flow</string>
+    <string name="health_atlas_arterial_wave">Pulse wave</string>
+    <string name="health_atlas_arterial_ref_distension">MRI study: aortic distension and recoil during the cardiac cycle</string>
+    <string name="health_atlas_arterial_ref_wave">MRI study: diameter changes, flow and pulse wave in the ascending aorta</string>
+</resources>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_lesson_uptake">葡萄糖摄取</string>
+    <string name="health_atlas_lesson_contraction">肌肉收缩</string>
+    <string name="health_atlas_lesson_digestion">食物消化</string>
+    <string name="health_atlas_lesson_lymph">淋巴回流</string>
+    <string name="health_atlas_lesson_antibodies">抗体产生</string>
+    <string name="health_atlas_lesson_insulin">胰岛素分泌</string>
+    <string name="health_atlas_insulin_story_title">胰岛 β 细胞如何分泌胰岛素</string>
+    <string name="health_atlas_insulin_story_scope">人胰岛 β 细胞的生理示意。时间、颗粒数量与闪动均为示意，不用于判断个人血糖或用药。</string>
+    <string name="health_atlas_insulin_story_glucose">葡萄糖进入 β 细胞</string>
+    <string name="health_atlas_insulin_story_glucose_caption">葡萄糖通过细胞膜上的转运蛋白进入 β 细胞。葡萄糖代谢增强时，细胞内 ATP 相比 ADP 增多。</string>
+    <string name="health_atlas_insulin_story_potassium">ATP 敏感性钾通道关闭</string>
+    <string name="health_atlas_insulin_story_potassium_caption">ATP 与 ADP 的比例升高，可使更多 ATP 敏感性钾通道关闭。钾离子外流减少，膜电位变得没有那么负。</string>
+    <string name="health_atlas_insulin_story_calcium">钙离子进入细胞</string>
+    <string name="health_atlas_insulin_story_calcium_caption">膜去极化使电压门控钙通道开启。钙离子从细胞外进入，尤其在细胞膜内侧形成局部信号。</string>
+    <string name="health_atlas_insulin_story_fusion">储存颗粒融合并释放</string>
+    <string name="health_atlas_insulin_story_fusion_caption">钙信号促使含胰岛素的分泌颗粒与细胞膜融合。颗粒中的胰岛素由开口释放到细胞外。</string>
+    <string name="health_atlas_insulin_story_blood">胰岛素进入血液</string>
+    <string name="health_atlas_insulin_story_blood_caption">胰岛素进入附近毛细血管，随血液到达肌肉等靶组织；胰岛素不是由胰管排入肠道的消化液。</string>
+    <string name="health_atlas_insulin_story_glucose_source">人 β 细胞葡萄糖转运研究</string>
+    <string name="health_atlas_insulin_story_channel_source">人 β 细胞的钾、钙信号实验</string>
+    <string name="health_atlas_insulin_story_secretion_source">人 β 细胞离子通道与胞吐实验</string>
+    <string name="health_atlas_insulin_art_outside">细胞外</string>
+    <string name="health_atlas_insulin_art_inside">β 细胞内</string>
+    <string name="health_atlas_insulin_art_glucose">葡萄糖</string>
+    <string name="health_atlas_insulin_art_transporter">葡萄糖转运蛋白</string>
+    <string name="health_atlas_insulin_art_energy">ATP／ADP 比例升高</string>
+    <string name="health_atlas_insulin_art_potassium">钾离子</string>
+    <string name="health_atlas_insulin_art_k_open">钾通道开启</string>
+    <string name="health_atlas_insulin_art_k_closed">钾通道关闭</string>
+    <string name="health_atlas_insulin_art_calcium">钙离子</string>
+    <string name="health_atlas_insulin_art_ca_gate">电压门控钙通道</string>
+    <string name="health_atlas_insulin_art_hormone">胰岛素</string>
+    <string name="health_atlas_insulin_art_granule">分泌颗粒</string>
+    <string name="health_atlas_insulin_art_beta">β 细胞</string>
+    <string name="health_atlas_insulin_art_capillary">毛细血管</string>
+</resources>

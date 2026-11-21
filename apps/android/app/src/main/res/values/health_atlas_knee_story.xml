@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_knee_title">How the knee bends and straightens</string>
+    <string name="health_atlas_knee_choice">Knee movement</string>
+    <string name="health_atlas_knee_scope">A simplified side view of normal knee movement. The thigh is held still for illustration. Angles, forces, distances and timing are not measurements.</string>
+    <string name="health_atlas_knee_map">Two muscle groups act across the knee</string>
+    <string name="health_atlas_knee_map_caption">The quadriceps sit in front of the thigh and the hamstrings sit behind. Their tendons link the muscles to bones across the knee.</string>
+    <string name="health_atlas_knee_bend">The hamstrings help bend the knee</string>
+    <string name="health_atlas_knee_bend_caption">When the hamstrings pull from behind, the lower leg can bend back relative to the thigh.</string>
+    <string name="health_atlas_knee_glide">The patella glides as the knee bends</string>
+    <string name="health_atlas_knee_glide_caption">As the lower leg bends, the patella moves along the groove at the front of the femur. It stays connected to the knee extensor tendons.</string>
+    <string name="health_atlas_knee_extend">The quadriceps help straighten the knee</string>
+    <string name="health_atlas_knee_extend_caption">The quadriceps pull through the patella and its tendon onto the tibia, helping the lower leg straighten.</string>
+    <string name="health_atlas_knee_return">The knee returns toward its starting position</string>
+    <string name="health_atlas_knee_return_caption">This example separates the main pulls for clarity. In everyday movements the two muscle groups can also be active together.</string>
+    <string name="health_atlas_knee_quadriceps">Quadriceps</string>
+    <string name="health_atlas_knee_hamstrings">Hamstrings</string>
+    <string name="health_atlas_knee_patella">Patella</string>
+    <string name="health_atlas_knee_tibia">Tibia</string>
+    <string name="health_atlas_knee_ref_imaging">Evidence: movement of the knee and patella during dynamic MRI</string>
+    <string name="health_atlas_knee_ref_pull">Evidence: quadriceps and hamstrings during knee movement</string>
+</resources>

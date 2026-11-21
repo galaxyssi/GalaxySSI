@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_oblique_rotation_story_title">How the obliques turn the trunk</string>
+    <string name="health_atlas_oblique_rotation_story_choice">Abdominal obliques and trunk rotation</string>
+    <string name="health_atlas_oblique_rotation_story_scope">Viewed from above with the front at the top; left and right are the person\'s own sides. Rib cage and pelvis are shown together, with the oblique layers opened up. The pelvis stays still. Muscle emphasis is illustrative and varies with the task.</string>
+    <string name="health_atlas_oblique_rotation_story_align">A fixed pelvis, two muscle layers</string>
+    <string name="health_atlas_oblique_rotation_story_align_caption">The external obliques form the outer layer and the internal obliques lie beneath them. The rib cage can begin to turn over the pelvis without the hips turning with it.</string>
+    <string name="health_atlas_oblique_rotation_story_right">Turn to the right</string>
+    <string name="health_atlas_oblique_rotation_story_right_caption">The left external oblique and right internal oblique help turn the rib cage toward the person\'s right. They act from opposite sides of the abdominal wall.</string>
+    <string name="health_atlas_oblique_rotation_story_center">Return to center</string>
+    <string name="health_atlas_oblique_rotation_story_center_caption">The chest turns back over the same pelvis. As it approaches neutral, the emphasis on the right-turning pair fades; other trunk muscles can help control the motion.</string>
+    <string name="health_atlas_oblique_rotation_story_left">Turn to the left</string>
+    <string name="health_atlas_oblique_rotation_story_left_caption">The pairing reverses. The right external oblique and left internal oblique help turn the rib cage toward the person\'s left, with the pelvis still in place.</string>
+    <string name="health_atlas_oblique_rotation_story_return">Settle back to neutral</string>
+    <string name="health_atlas_oblique_rotation_story_return_caption">The rib cage returns to face forward. The left-turning pair is no longer emphasized. Throughout the cycle, the movement is rotation relative to the pelvis.</string>
+    <string name="health_atlas_oblique_rotation_story_anterior">Anterior</string>
+    <string name="health_atlas_oblique_rotation_story_body_left">Body left</string>
+    <string name="health_atlas_oblique_rotation_story_body_right">Body right</string>
+    <string name="health_atlas_oblique_rotation_story_left_external">Left external oblique</string>
+    <string name="health_atlas_oblique_rotation_story_right_external">Right external oblique</string>
+    <string name="health_atlas_oblique_rotation_story_left_internal">Left internal oblique</string>
+    <string name="health_atlas_oblique_rotation_story_right_internal">Right internal oblique</string>
+    <string name="health_atlas_oblique_rotation_story_pelvis">Fixed pelvis</string>
+    <string name="health_atlas_oblique_rotation_story_plate_caption">Abdominal wall from the front: external oblique on the body\'s right, internal oblique exposed on the body\'s left</string>
+    <string name="health_atlas_oblique_rotation_story_plate_external">External oblique</string>
+    <string name="health_atlas_oblique_rotation_story_plate_external_detail">The outer layer runs mostly down and inward from the side of the rib cage toward the front midline and iliac crest.</string>
+    <string name="health_atlas_oblique_rotation_story_plate_internal">Internal oblique</string>
+    <string name="health_atlas_oblique_rotation_story_plate_internal_detail">Most fibers in this exposed part run up and inward from the iliac crest toward the lower ribs and front midline.</string>
+    <string name="health_atlas_oblique_rotation_story_plate_ribs">Lower ribs</string>
+    <string name="health_atlas_oblique_rotation_story_plate_ribs_detail">The external oblique starts on the lower eight ribs. The upper fibers of the internal oblique attach to the lowest ribs.</string>
+    <string name="health_atlas_oblique_rotation_story_plate_crest">Iliac crest</string>
+    <string name="health_atlas_oblique_rotation_story_plate_crest_detail">The upper rim of the hip bone anchors fibers from both oblique layers.</string>
+    <string name="health_atlas_oblique_rotation_story_plate_linea">Linea alba</string>
+    <string name="health_atlas_oblique_rotation_story_plate_linea_detail">The broad tendons of both oblique layers blend toward this fibrous seam at the front midline.</string>
+    <string name="health_atlas_oblique_rotation_story_ref_anatomy">OpenStax: Muscles of the abdominal wall</string>
+    <string name="health_atlas_oblique_rotation_story_ref_rotation">Electromyography during axial trunk rotation</string>
+    <string name="health_atlas_oblique_rotation_story_ref_variation">Fine-wire electromyography across rotation tasks</string>
+</resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pleura_section_view">胸膜双层剖面 · 间隙放大</string>
+    <string name="health_atlas_pleura_section_visceral">脏层胸膜</string>
+    <string name="health_atlas_pleura_section_visceral_detail">这层薄膜紧贴肺表面，呼吸时随肺一起移动。</string>
+    <string name="health_atlas_pleura_section_parietal">壁层胸膜</string>
+    <string name="health_atlas_pleura_section_parietal_detail">这层薄膜衬在胸壁内侧，也覆盖膈肌上方和纵隔的侧面。</string>
+    <string name="health_atlas_pleura_section_fluid">胸膜液膜</string>
+    <string name="health_atlas_pleura_section_fluid_detail">正常呼吸时，两层胸膜之间的薄液膜可减少滑动的摩擦。图中将间隙放大，以便分辨两层胸膜。</string>
+</resources>

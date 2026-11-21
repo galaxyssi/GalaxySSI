@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_biliary_tract_plate_caption">肝外胆管与十二指肠壁。本示意图展示典型的解剖布局，胆管的汇合位置和开口可有变异。</string>
+    <string name="health_atlas_biliary_tract_plate_common_hepatic_duct">肝总管</string>
+    <string name="health_atlas_biliary_tract_plate_common_hepatic_duct_detail">左、右肝管汇合形成肝总管。肝总管将胆汁从肝脏输送至与胆囊管的汇合处。</string>
+    <string name="health_atlas_biliary_tract_plate_cystic_duct">胆囊管</string>
+    <string name="health_atlas_biliary_tract_plate_cystic_duct_detail">这条侧支连接胆囊和胆汁的主通道。胆汁可经此管进入或离开胆囊。</string>
+    <string name="health_atlas_biliary_tract_plate_common_bile_duct">胆总管</string>
+    <string name="health_atlas_biliary_tract_plate_common_bile_duct_detail">肝总管与胆囊管汇合后延续为胆总管。胆总管从十二指肠上部后方经过，通向十二指肠降部的肠壁。</string>
+    <string name="health_atlas_biliary_tract_plate_duodenal_wall">十二指肠壁</string>
+    <string name="health_atlas_biliary_tract_plate_duodenal_wall_detail">剖视图展示了带皱襞的内衬和较厚的外壁。胆总管末端穿过十二指肠降部内侧壁，通向肠腔。</string>
+    <string name="health_atlas_biliary_tract_plate_major_papilla">十二指肠大乳头</string>
+    <string name="health_atlas_biliary_tract_plate_major_papilla_detail">肠壁内衬上的这处小隆起标示通向十二指肠腔的开口。在图示的布局中，胆总管和胰管在开口前不远处汇合。</string>
+</resources>

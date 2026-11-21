@@ -18,7 +18,10 @@ internal enum class HealthAtlasImmuneLink(val owner: String, val portrait: Int, 
 }
 
 internal class HealthAtlasImmuneLinkView(context: Context, val lesson: HealthAtlasImmuneLink,
-    mechanism: HealthAtlasMechanism) : HealthAtlasCellSceneView(context, mechanism, R.string.health_atlas_granulocyte_stage) {
+    stageTitles: List<String>) : HealthAtlasCellSceneView(context, stageTitles, R.string.health_atlas_granulocyte_stage) {
+    constructor(context: Context, lesson: HealthAtlasImmuneLink, mechanism: HealthAtlasMechanism) :
+        this(context, lesson, mechanism.stages)
+
     private val cell = portrait(lesson.portrait)
     private val related = portrait(lesson.relatedPortrait)
     private val teal = 0xff38796b.toInt()

@@ -116,4 +116,14 @@
     <string name="health_atlas_context_hair_stage_1">Their descendants contribute to the keratinized shaft</string>
     <string name="health_atlas_context_hair_stage_2">The lower follicle regresses during transition</string>
     <string name="health_atlas_context_hair_stage_3">The follicle rests before restarting growth</string>
+    <string name="health_atlas_context_nail_section">Nail lengthwise section</string>
+    <string name="health_atlas_context_nail_fold_detail">The proximal nail fold is the skin that overlaps the root of the nail plate. It is separate from the matrix underneath.</string>
+    <string name="health_atlas_context_nail_matrix_detail">The matrix lies under the proximal fold and makes most of the nail plate. New material displaces the existing plate toward the fingertip.</string>
+    <string name="health_atlas_context_nail_plate_detail">The nail plate is a durable sheet of tightly packed keratinized cells. It moves over the nail bed as new material forms at its base.</string>
+    <string name="health_atlas_context_nail_bed_detail">The nail bed is the tissue beneath the attached nail plate. It supports the plate as it moves outward.</string>
+    <string name="health_atlas_context_nail_edge_detail">The free edge is the part of the plate that extends beyond its attachment. It is moved outward by growth nearer the root; it is not the site that makes the plate.</string>
+    <string name="health_atlas_context_sebaceous_section">Sebaceous gland and follicle</string>
+    <string name="health_atlas_context_sebaceous_lobules">Gland lobules</string>
+    <string name="health_atlas_context_sebaceous_lobules_detail">The lobules contain sebocytes at different stages of maturity. The inner cells store more lipids and ultimately contribute their contents to sebum.</string>
+    <string name="health_atlas_context_sebaceous_duct_detail">In this hair-associated example, a short duct carries sebum into the follicular canal, where it can reach the skin surface.</string>
 </resources>

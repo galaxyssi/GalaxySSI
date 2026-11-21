@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pericyte_coverage_title">毛细血管外的周细胞</string>
+    <string name="health_atlas_pericyte_coverage_scope">原创正常毛细血管示意图。大小与时间仅供示意；移动的高亮标出结构，不表示血管口径变化。</string>
+    <string name="health_atlas_pericyte_coverage_choice">周细胞与毛细血管壁</string>
+    <string name="health_atlas_pericyte_coverage_location">位于管腔外</string>
+    <string name="health_atlas_pericyte_coverage_location_caption">内皮细胞衬在管腔内面，血液在管腔中流动。周细胞位于内皮朝向组织的一侧，不在血流通道内。</string>
+    <string name="health_atlas_pericyte_coverage_wrap">部分环绕</string>
+    <string name="health_atlas_pericyte_coverage_wrap_caption">周细胞伸出细长的突起，沿着内皮管延伸，并部分环绕管壁。横切面中移动的高亮沿着一条突起移动。周细胞并不形成连续的套层。</string>
+    <string name="health_atlas_pericyte_coverage_interface">共用的界面</string>
+    <string name="health_atlas_pericyte_coverage_interface_caption">两种细胞共用一层薄薄的支撑结构，称为基底膜。在一些部位，两个细胞表面直接相接，如高亮处所示。</string>
+    <string name="health_atlas_pericyte_coverage_cooperation">共同支持血管壁</string>
+    <string name="health_atlas_pericyte_coverage_cooperation_caption">内皮形成血管内衬，周细胞从外侧帮助支撑小血管壁。两种细胞都参与形成共用的基底膜，并帮助维持血管壁。</string>
+    <string name="health_atlas_pericyte_coverage_art_lengthwise">纵向视图</string>
+    <string name="health_atlas_pericyte_coverage_art_cross_section">横切面</string>
+    <string name="health_atlas_pericyte_coverage_art_detail">管壁局部放大</string>
+    <string name="health_atlas_pericyte_coverage_art_lumen">管腔</string>
+    <string name="health_atlas_pericyte_coverage_art_lining">内皮</string>
+    <string name="health_atlas_pericyte_coverage_art_cell">周细胞</string>
+    <string name="health_atlas_pericyte_coverage_art_extension">细胞突起</string>
+    <string name="health_atlas_pericyte_coverage_art_matrix">基底膜</string>
+    <string name="health_atlas_pericyte_coverage_art_contact">直接接触</string>
+    <string name="health_atlas_pericyte_coverage_ref_shape">Gonzales 等：毛细血管周细胞的形态</string>
+    <string name="health_atlas_pericyte_coverage_ref_interface">Stefanska 等：周细胞与内皮细胞的接触</string>
+    <string name="health_atlas_pericyte_coverage_ref_cooperation">Stratman 等：共用基底膜的形成</string>
+
+    <string name="health_atlas_langerhans_sentinel_title">表皮中的朗格汉斯细胞</string>
+    <string name="health_atlas_langerhans_sentinel_scope">原创表皮免疫细胞示意图。菱形代表采集的物质，不代表单个分子。大小与时间仅供示意。</string>
+    <string name="health_atlas_langerhans_sentinel_choice">朗格汉斯细胞与皮肤免疫</string>
+    <string name="health_atlas_langerhans_sentinel_location">居于表皮</string>
+    <string name="health_atlas_langerhans_sentinel_location_caption">朗格汉斯细胞是皮肤最外层组织中的免疫哨兵。它们的胞体位于表皮角质形成细胞之间，在扁平的表层下方。</string>
+    <string name="health_atlas_langerhans_sentinel_sampling">在邻近细胞间采样</string>
+    <string name="health_atlas_langerhans_sentinel_sampling_caption">这些分支形突起称为树突，可在角质形成细胞之间伸展和回缩。树突帮助细胞对周围环境采样，胞体仍留在表皮内。</string>
+    <string name="health_atlas_langerhans_sentinel_presentation">在细胞表面展示</string>
+    <string name="health_atlas_langerhans_sentinel_presentation_caption">朗格汉斯细胞可在表面展示所采物质的细小片段。这个过程称为抗原呈递，使另一种免疫细胞能够识别有关样本的信息。</string>
+    <string name="health_atlas_langerhans_sentinel_communication">局部免疫交流</string>
+    <string name="health_atlas_langerhans_sentinel_communication_caption">邻近的 T 细胞可在接触时识别呈递的片段。这类相互作用有助于调节局部免疫活动，但并非每次接触都会引起相同的反应。</string>
+    <string name="health_atlas_langerhans_sentinel_art_epidermis">表皮</string>
+    <string name="health_atlas_langerhans_sentinel_art_surface">皮肤表面</string>
+    <string name="health_atlas_langerhans_sentinel_art_keratinocyte">角质形成细胞</string>
+    <string name="health_atlas_langerhans_sentinel_art_cell">朗格汉斯细胞</string>
+    <string name="health_atlas_langerhans_sentinel_art_branch">树突</string>
+    <string name="health_atlas_langerhans_sentinel_art_sample">采集的物质</string>
+    <string name="health_atlas_langerhans_sentinel_art_display">表面呈递</string>
+    <string name="health_atlas_langerhans_sentinel_art_t_cell">T 细胞</string>
+    <string name="health_atlas_langerhans_sentinel_art_contact">细胞接触</string>
+    <string name="health_atlas_langerhans_sentinel_ref_location">Park 等：表皮免疫细胞的分布</string>
+    <string name="health_atlas_langerhans_sentinel_ref_sampling">Nishibu 等：表皮内树突的运动</string>
+    <string name="health_atlas_langerhans_sentinel_ref_communication">Seneschal 等：人类皮肤中的朗格汉斯细胞与驻留 T 细胞</string>
+</resources>

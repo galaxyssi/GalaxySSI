@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Vestibular surface and vaginal opening, with anterior at the top. -->
+    <path android:strokeColor="#B6989D" android:strokeWidth="1.45"
+        android:pathData="M180,49 C204,49 223,70 232,97 C241,124 245,149 239,177 C233,204 214,225 180,232 C146,225 127,204 121,177 C115,149 119,124 128,97 C137,70 156,49 180,49 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="120" android:startY="105" android:endX="240" android:endY="159"
+                android:startColor="#E5C1C1" android:centerColor="#F9E4D8" android:endColor="#DEB9BD" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#F9EAE2" android:strokeWidth="1.9" android:strokeLineCap="round"
+        android:pathData="M164,58 C140,74 129,108 127,143 M195,58 C219,74 231,108 233,143 M158,216 Q180,227 202,216" />
+    <path android:strokeColor="#AC838F" android:strokeWidth="1.4"
+        android:pathData="M180,103 C198,103 211,119 212,145 C213,174 200,195 180,197 C160,195 147,174 148,145 C149,119 162,103 180,103 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startY="103" android:endY="198"
+                android:startColor="#C2969F" android:centerColor="#AB879A" android:endColor="#E2BEBE" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#E1BCBF" android:strokeWidth="1.3"
+        android:pathData="M156,146 C156,127 165,109 180,109 C195,109 204,127 204,146 C205,166 198,184 180,190 C162,184 155,166 156,146 Z" />
+    <!-- The urethral opening is visually and topologically separate from the paired ducts. -->
+    <path android:fillColor="#B5CBD1" android:strokeColor="#7899A2" android:strokeWidth="1.25"
+        android:pathData="M170,82 C170,73 190,73 190,82 C190,91 170,91 170,82 Z" />
+    <path android:fillColor="#567D87"
+        android:pathData="M175,82 Q180,78 185,82 Q180,86 175,82 Z" />
+
+    <!-- Paired main ducts end at the posterolateral margins on the vestibular surface. -->
+    <path android:strokeColor="#61938B" android:strokeWidth="7" android:strokeLineCap="round"
+        android:pathData="M94,195 C113,194 126,180 146,173 M266,195 C247,194 234,180 214,173" />
+    <path android:strokeColor="#C4E0D3" android:strokeWidth="3.1" android:strokeLineCap="round"
+        android:pathData="M94,195 C113,194 126,180 146,173 M266,195 C247,194 234,180 214,173" />
+    <path android:strokeColor="#638F87" android:strokeWidth="1.4"
+        android:pathData="M77,193 C74,187 80,180 85,182 C88,176 98,178 100,182 C107,180 113,185 111,192 C116,198 109,205 103,205 C98,211 92,210 88,207 C80,209 74,200 77,193 Z M283,193 C286,187 280,180 275,182 C272,176 262,178 260,182 C253,180 247,185 249,192 C244,198 251,205 257,205 C262,211 268,210 272,207 C280,209 286,200 283,193 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startY="179" android:endY="210"
+                android:startColor="#D9E9D8" android:centerColor="#B2D3C5" android:endColor="#86B4A8" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#80AA9D" android:strokeWidth="1" android:strokeLineCap="round"
+        android:pathData="M85,184 Q94,189 90,197 M100,184 Q97,194 106,199 M79,195 Q89,194 92,204 M275,184 Q266,189 270,197 M260,184 Q263,194 254,199 M281,195 Q271,194 268,204" />
+    <path android:fillColor="#467972" android:strokeColor="#DBEFE6" android:strokeWidth="1.15"
+        android:pathData="M150,173 a4,4 0 1,1 -8,0 a4,4 0 1,1 8,0 Z M218,173 a4,4 0 1,1 -8,0 a4,4 0 1,1 8,0 Z" />
+</vector>

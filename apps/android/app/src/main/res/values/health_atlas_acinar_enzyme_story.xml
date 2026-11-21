@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_acinar_enzyme_story_title">How pancreatic acinar cells release digestive enzymes</string>
+    <string name="health_atlas_acinar_enzyme_story_choice">Acinar enzyme secretion</string>
+    <string name="health_atlas_acinar_enzyme_story_scope">A qualitative view of the normal human exocrine pancreas, following digestive proteins from an acinar cell to the duodenum. Structures, timing and particle counts are schematic.</string>
+
+    <string name="health_atlas_acinar_enzyme_story_locate">Find an acinus in a pancreatic lobule</string>
+    <string name="health_atlas_acinar_enzyme_story_locate_caption">A pancreatic lobule contains many small clusters of secretory cells called acini. In each acinus, the broad bases of the cells face outward and the narrow apical ends face a shared lumen that opens into a small duct.</string>
+    <string name="health_atlas_acinar_enzyme_story_package">Make and store digestive proteins</string>
+    <string name="health_atlas_acinar_enzyme_story_package_caption">Ribosomes on the rough endoplasmic reticulum near the base make digestive proteins. The proteins pass through the Golgi apparatus and are packaged into secretory granules that accumulate near the apical surface.</string>
+    <string name="health_atlas_acinar_enzyme_story_release">Release cargo into the acinar lumen</string>
+    <string name="health_atlas_acinar_enzyme_story_release_caption">A granule fuses with the apical membrane and empties its contents into the lumen. Amylase is secreted as an active enzyme. Trypsinogen is secreted as an inactive precursor of the enzyme trypsin.</string>
+    <string name="health_atlas_acinar_enzyme_story_duct">Duct cells add bicarbonate-rich fluid</string>
+    <string name="health_atlas_acinar_enzyme_story_duct_caption">Cargo from several acini flows through branches of the pancreatic duct system. Acinar cells supply the digestive proteins; cells lining the ducts add bicarbonate-rich fluid to the same stream.</string>
+    <string name="health_atlas_acinar_enzyme_story_arrive">Pancreatic juice enters the duodenum</string>
+    <string name="health_atlas_acinar_enzyme_story_arrive_caption">The main pancreatic duct delivers pancreatic juice to the duodenum, the first part of the small intestine. There, amylase helps digest starch, and inactive precursors such as trypsinogen can be activated.</string>
+
+    <string name="health_atlas_acinar_enzyme_story_lobule">Pancreatic lobule</string>
+    <string name="health_atlas_acinar_enzyme_story_acinus">Acinus</string>
+    <string name="health_atlas_acinar_enzyme_story_lumen">Acinar lumen</string>
+    <string name="health_atlas_acinar_enzyme_story_small_duct">Small duct</string>
+    <string name="health_atlas_acinar_enzyme_story_rough_er">Rough ER</string>
+    <string name="health_atlas_acinar_enzyme_story_golgi">Golgi apparatus</string>
+    <string name="health_atlas_acinar_enzyme_story_granules">Apical granules</string>
+    <string name="health_atlas_acinar_enzyme_story_membrane">Apical membrane</string>
+    <string name="health_atlas_acinar_enzyme_story_enzymes">Digestive enzymes</string>
+    <string name="health_atlas_acinar_enzyme_story_precursors">Inactive precursors</string>
+    <string name="health_atlas_acinar_enzyme_story_acini">Acini</string>
+    <string name="health_atlas_acinar_enzyme_story_ductal_cells">Ductal cells</string>
+    <string name="health_atlas_acinar_enzyme_story_duct_fluid">Bicarbonate-rich fluid</string>
+    <string name="health_atlas_acinar_enzyme_story_pancreas">Pancreas</string>
+    <string name="health_atlas_acinar_enzyme_story_main_duct">Main pancreatic duct</string>
+    <string name="health_atlas_acinar_enzyme_story_duodenum">Duodenum</string>
+
+    <string name="health_atlas_acinar_enzyme_story_ref_acinar">Evidence: protein storage and release in guinea pig pancreatic acinar cells</string>
+    <string name="health_atlas_acinar_enzyme_story_ref_duct">Evidence: bicarbonate secretion by guinea pig pancreatic ducts</string>
+</resources>

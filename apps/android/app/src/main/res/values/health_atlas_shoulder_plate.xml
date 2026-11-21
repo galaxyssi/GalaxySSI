@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_shoulder_plate_deltoid_view">Deltoid origins and insertion</string>
+    <string name="health_atlas_shoulder_plate_spinal_detail">The rear deltoid arises from the scapular spine and contributes to arm movement, depending on shoulder position.</string>
+    <string name="health_atlas_shoulder_plate_acromial_detail">The middle fibers arise from the acromion and contribute to lifting the arm away from the body.</string>
+    <string name="health_atlas_shoulder_plate_clavicular_detail">The front fibers arise from the lateral clavicle and help lift the upper arm forward.</string>
+    <string name="health_atlas_shoulder_plate_tuberosity_detail">The three regions converge on this bony area on the outer humerus.</string>
+    <string name="health_atlas_shoulder_plate_scapular_view">Trapezius and serratus around the shoulder blade</string>
+    <string name="health_atlas_shoulder_plate_upper_detail">Upper trapezius fibers connect to the lateral clavicle and help lift the shoulder girdle.</string>
+    <string name="health_atlas_shoulder_plate_middle_detail">Middle fibers run toward the scapular spine and help draw and steady the shoulder blade.</string>
+    <string name="health_atlas_shoulder_plate_lower_detail">Lower fibers pull on the medial scapular spine and help the blade rotate upward during elevation.</string>
+    <string name="health_atlas_shoulder_plate_serratus_detail">Serratus anterior follows the rib cage to the inner edge of the scapula and works with trapezius during arm elevation.</string>
+    <string name="health_atlas_shoulder_plate_inferior_angle_detail">The lower tip of the scapula moves outward as the blade rotates upward.</string>
+</resources>

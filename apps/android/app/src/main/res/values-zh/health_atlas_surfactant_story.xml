@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_surfactant_title">肺泡表面活性物质如何发挥作用</string>
+    <string name="health_atlas_surfactant_choice">肺泡表面活性物质</string>
+    <string name="health_atlas_surfactant_scope">正常肺泡的简化剖面。各层厚度、运动幅度和时间均不按比例。细胞分泌的物质逐步补充表面膜，而膜会随每次呼吸铺展和压缩。</string>
+
+    <string name="health_atlas_surfactant_locate">肺泡内壁的两类细胞</string>
+    <string name="health_atlas_surfactant_locate_caption">外形较圆的Ⅱ型肺泡上皮细胞将由脂质和蛋白质组成的表面活性物质储存在板层小体中。扁平的Ⅰ型肺泡上皮细胞构成肺泡壁的薄层，气体通过这层薄壁在肺泡与血液之间扩散。</string>
+    <string name="health_atlas_surfactant_release">Ⅱ型细胞释放表面活性物质</string>
+    <string name="health_atlas_surfactant_release_caption">板层小体与朝向肺泡腔的细胞膜融合，内容物被释放到肺泡内壁的薄液层中，而不是直接进入空气。</string>
+    <string name="health_atlas_surfactant_spread">表面活性物质补充表面膜</string>
+    <string name="health_atlas_surfactant_spread_caption">释放出的表面活性物质可以到达肺泡空气与液层相接的界面，铺展开来并补充原有的膜。这层膜降低了气液界面的表面张力。</string>
+    <string name="health_atlas_surfactant_inhale">吸气：表面膜铺展</string>
+    <string name="health_atlas_surfactant_inhale_caption">吸气时肺泡扩张，气液界面的面积增大，原有的表面活性物质膜随之铺展。</string>
+    <string name="health_atlas_surfactant_exhale">呼气：表面膜压缩</string>
+    <string name="health_atlas_surfactant_exhale_caption">呼气时肺泡变小，膜中的分子排列得更紧密，表面张力随之降低。较低的表面张力有助于肺泡在较低肺容积时保持开放。</string>
+
+    <string name="health_atlas_surfactant_air">肺泡内空气</string>
+    <string name="health_atlas_surfactant_film">表面活性物质膜</string>
+    <string name="health_atlas_surfactant_liquid">肺泡液层</string>
+    <string name="health_atlas_surfactant_type_ii">Ⅱ型细胞</string>
+    <string name="health_atlas_surfactant_type_i">Ⅰ型细胞</string>
+    <string name="health_atlas_surfactant_capillary">毛细血管</string>
+    <string name="health_atlas_surfactant_lamellar_bodies">板层小体</string>
+
+    <string name="health_atlas_surfactant_ref_secretion">研究依据：大鼠Ⅱ型细胞释放表面活性物质</string>
+    <string name="health_atlas_surfactant_ref_film">研究依据：大鼠表面活性物质的膜面积与表面张力</string>
+</resources>

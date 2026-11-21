@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_larynx_story_title">喉如何发出声音</string>
+    <string name="health_atlas_larynx_story_choice">喉发声</string>
+    <string name="health_atlas_larynx_story_scope">呼气时正常发声的定性示意。运动以慢速呈现，未按实际比例绘制。</string>
+
+    <string name="health_atlas_larynx_story_breathe">声门裂张开</string>
+    <string name="health_atlas_larynx_story_breathe_caption">平静呼吸时，空气通过两侧声带之间张开的间隙，这个间隙称为声门裂。吸气时，声门裂变宽。</string>
+    <string name="health_atlas_larynx_story_approach">两侧声带靠拢</string>
+    <string name="health_atlas_larynx_story_approach_caption">发声开始时，喉部肌肉使两侧声带向中线靠拢，声门裂随之变窄。</string>
+    <string name="health_atlas_larynx_story_air">呼出的气流带动声带</string>
+    <string name="health_atlas_larynx_story_air_caption">来自肺部的气流推开彼此靠近的声带，声带组织靠自身弹性向内回弹。呼出的气流与声带相互作用，使振动持续。</string>
+    <string name="health_atlas_larynx_story_pulse">振动产生声音脉冲</string>
+    <string name="health_atlas_larynx_story_pulse_caption">声带振动时，声门裂反复变宽、变窄。气流的脉动产生声波，声波沿声道向上传播。</string>
+    <string name="health_atlas_larynx_story_reopen">声门裂重新张开</string>
+    <string name="health_atlas_larynx_story_reopen_caption">发声结束时，振动逐渐停止。两侧声带分开，声门裂重新张开，恢复平静呼吸时的状态。</string>
+
+    <string name="health_atlas_larynx_story_superior">喉部俯视</string>
+    <string name="health_atlas_larynx_story_larynx">喉</string>
+    <string name="health_atlas_larynx_story_folds">声带</string>
+    <string name="health_atlas_larynx_story_glottis">声门裂</string>
+    <string name="health_atlas_larynx_story_cutaway">冠状切面</string>
+    <string name="health_atlas_larynx_story_airflow">气流</string>
+    <string name="health_atlas_larynx_story_sound">声音脉冲</string>
+    <string name="health_atlas_larynx_story_trachea">气管</string>
+
+    <string name="health_atlas_larynx_story_ref_breathing">研究：呼吸时的声带运动</string>
+    <string name="health_atlas_larynx_story_ref_phonation">研究：发声起始时的声带运动、气流与声音</string>
+</resources>

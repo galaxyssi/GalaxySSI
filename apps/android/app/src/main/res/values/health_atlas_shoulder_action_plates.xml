@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pectoral_plate_title">Chest cutaway</string>
+    <string name="health_atlas_pectoral_plate_caption">Anterior chest cutaway with the pectoral fan on one side and ribs exposed on the other.</string>
+    <string name="health_atlas_pectoral_plate_clavicular">Clavicular part</string>
+    <string name="health_atlas_pectoral_plate_clavicular_detail">The upper part of the fan originates on the front of the inner clavicle.</string>
+    <string name="health_atlas_pectoral_plate_sternocostal">Sternocostal part</string>
+    <string name="health_atlas_pectoral_plate_sternocostal_detail">The broad lower part shown here arises from the sternum and nearby rib cartilages.</string>
+    <string name="health_atlas_pectoral_plate_cartilage">Rib cartilage</string>
+    <string name="health_atlas_pectoral_plate_cartilage_detail">Costal cartilages join the ribs to the sternum here. They are exposed on the side where the pectoral fan has been removed in the drawing.</string>
+    <string name="health_atlas_pectoral_plate_humeral_tendon">Pectoral tendon</string>
+    <string name="health_atlas_pectoral_plate_humeral_tendon_detail">The muscle converges onto the lateral lip of the intertubercular groove of the humerus.</string>
+
+    <string name="health_atlas_latissimus_plate_title">Back cutaway</string>
+    <string name="health_atlas_latissimus_plate_caption">Posterior-oblique back cutaway showing the latissimus sheet narrowing toward its humeral tendon.</string>
+    <string name="health_atlas_latissimus_plate_fascia">Lower back fascia</string>
+    <string name="health_atlas_latissimus_plate_fascia_detail">The thoracolumbar fascia spans the lower back and provides part of the origin of latissimus dorsi.</string>
+    <string name="health_atlas_latissimus_plate_crest">Iliac crest</string>
+    <string name="health_atlas_latissimus_plate_crest_detail">The curved upper rim of the pelvis forms another part of the broad origin.</string>
+    <string name="health_atlas_latissimus_plate_sheet">Muscle sheet</string>
+    <string name="health_atlas_latissimus_plate_sheet_detail">The broad back fibers converge near the back of the armpit before continuing into the tendon.</string>
+    <string name="health_atlas_latissimus_plate_humeral_tendon">Latissimus tendon</string>
+    <string name="health_atlas_latissimus_plate_humeral_tendon_detail">The cutaway reveals the tendon turning toward the front of the upper humerus, where it attaches to the floor of the intertubercular groove.</string>
+</resources>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_nephron_story_title">肾单位如何形成尿液</string>
+    <string name="health_atlas_nephron_story_filter">肾小球滤过</string>
+    <string name="health_atlas_nephron_story_filter_caption">水和小分子溶质从肾小球毛细血管滤入肾小囊。血细胞和多数大分子蛋白质仍留在血液里。</string>
+    <string name="health_atlas_nephron_story_prox">近端小管重吸收</string>
+    <string name="health_atlas_nephron_story_prox_caption">近端小管将滤液中的大量水和盐，以及葡萄糖等营养物质，重新吸收回血液。</string>
+    <string name="health_atlas_nephron_story_loop">髓袢分别转运水和盐</string>
+    <string name="health_atlas_nephron_story_loop_caption">水可从髓袢降支流出；升支把盐转运到周围组织，但水很难通过升支。</string>
+    <string name="health_atlas_nephron_story_distal">小管分泌把物质送进管腔</string>
+    <string name="health_atlas_nephron_story_distal_caption">氢离子等物质可从血液一侧进入小管腔。这是小管分泌，方向和重吸收相反。</string>
+    <string name="health_atlas_nephron_story_collect">集合管继续调节并引流</string>
+    <string name="health_atlas_nephron_story_collect_caption">集合管还能重吸收一部分水。剩下的液体流向肾盂，再经输尿管进入膀胱。</string>
+    <string name="health_atlas_nephron_story_glomerulus">肾小球</string>
+    <string name="health_atlas_nephron_story_blood">血液流动</string>
+    <string name="health_atlas_nephron_story_filtrate">滤液流动</string>
+    <string name="health_atlas_nephron_story_capillary">周围毛细血管</string>
+    <string name="health_atlas_nephron_story_reabsorb">重吸收 → 血液</string>
+    <string name="health_atlas_nephron_story_water">水流出</string>
+    <string name="health_atlas_nephron_story_salt">盐转运出</string>
+    <string name="health_atlas_nephron_story_secretion">分泌 → 管腔</string>
+    <string name="health_atlas_nephron_story_urine">尿液 → 肾盂</string>
+    <string name="health_atlas_nephron_story_scope">肾单位慢速示意。各章突出不同过程，箭头、数量和时长均不代表实测。</string>
+    <string name="health_atlas_nephron_story_kidney_source">资料来源：肾脏如何工作（美国国立卫生研究院）</string>
+    <string name="health_atlas_nephron_story_tubule_source">资料来源：肾小管转运（OpenStax）</string>
+</resources>

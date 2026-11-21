@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_tenocyte_tendon_matrix_title">A tenocyte within tendon</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_choice">Tenocyte and collagen fibers</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_scope">Schematic longitudinal view of normal tendon. Size, motion and timing are illustrative.</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_alignment">Aligned with collagen</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_alignment_caption">In a lengthwise view of tendon, slender tenocytes lie between collagen fibers. The long axis of the cell and its elongated nucleus follow the local direction of the fibers.</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_pull">Pull along the fibers</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_pull_caption">A pull along the tendon changes the shape and spacing of the surrounding collagen matrix. The paired marks track nearby parts of the matrix as they move relative to each other.</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_transfer">From matrix to cell</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_transfer_caption">Nearby parts of the matrix can move by different amounts. That uneven motion can distort the tenocyte and its nucleus. The dashed outline shows the same cell at rest for comparison.</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_recovery">Return toward rest</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_recovery_caption">As the pull eases, reversible changes in the matrix and cell shape recede. The return shown here is mechanical recovery, not tissue repair.</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_fibers">Collagen fibers</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_nucleus">Tenocyte nucleus</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_axis">Tendon axis</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_pull">Pull along fibers</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_release">Pull eases</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_profile">Tenocyte profile</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_art_rest">Resting outline</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_ref_morphology">Pingel et al.: cell and fiber alignment in human tendon</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_ref_transfer">Duncan et al.: local deformation in native tendon</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_ref_recovery">Silva Barreto et al.: fibril strain recovery in rat Achilles tendon</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_plate_caption">Tenocytes in tendon (longitudinal schematic)</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_plate_selector">Longitudinal schematic</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_plate_cell">Tenocyte body</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_plate_cell_detail">The thin, tapered cell body lies in a narrow space between neighboring collagen fibers.</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_plate_nucleus_detail">The flattened, elongated nucleus points in the same direction as the surrounding fibers.</string>
+    <string name="health_atlas_tenocyte_tendon_matrix_plate_fibers_detail">Most fibers in this view run along the tendon. Nearby tenocytes share that orientation.</string>
+</resources>

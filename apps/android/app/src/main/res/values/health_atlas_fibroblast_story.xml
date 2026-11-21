@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_fibroblast_story_title">How fibroblasts maintain the dermal matrix</string>
+    <string name="health_atlas_fibroblast_story_choice">Fibroblasts and the dermal matrix</string>
+    <string name="health_atlas_fibroblast_story_scope">A simplified view of normal human dermal matrix support and repair. The cue and fiber changes are schematic and not to scale.</string>
+    <string name="health_atlas_fibroblast_story_scaffold">The existing collagen network</string>
+    <string name="health_atlas_fibroblast_story_scaffold_caption">Beneath the epidermis, fibroblasts sit among bundles of collagen. These bundles are part of the extracellular matrix, the supporting material around the cells.</string>
+    <string name="health_atlas_fibroblast_story_repair">A local repair cue</string>
+    <string name="health_atlas_fibroblast_story_repair_caption">Local signals during normal tissue repair can prompt nearby fibroblasts to make more matrix. The pulse represents a cue, not a visible wound.</string>
+    <string name="health_atlas_fibroblast_story_deposit">New matrix is deposited</string>
+    <string name="health_atlas_fibroblast_story_deposit_caption">Fibroblasts release collagen precursors and other matrix proteins. Outside the cells, collagen assembles into fibrils that add to the fiber network.</string>
+    <string name="health_atlas_fibroblast_story_arrange">Fibers change their arrangement</string>
+    <string name="health_atlas_fibroblast_story_arrange_caption">As the matrix remodels, fibers can shift and form bundles that run in different directions. The new fibers become part of the existing network.</string>
+    <string name="health_atlas_fibroblast_story_support">Gradual renewal supports the dermis</string>
+    <string name="health_atlas_fibroblast_story_support_caption">Parts of the older matrix are broken down and replaced as new matrix is made. The collagen network helps the dermis resist stretching.</string>
+    <string name="health_atlas_fibroblast_story_epidermis">Epidermis</string>
+    <string name="health_atlas_fibroblast_story_dermis">Dermis</string>
+    <string name="health_atlas_fibroblast_story_collagen">Collagen bundles</string>
+    <string name="health_atlas_fibroblast_story_fibroblast">Fibroblast</string>
+    <string name="health_atlas_fibroblast_story_ref_deposition">Fibroblasts and collagen production during human skin repair</string>
+    <string name="health_atlas_fibroblast_story_ref_structure">Collagen structure and stretch in human dermis</string>
+</resources>

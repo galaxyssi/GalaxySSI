@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_microglia_story_choice">小胶质细胞的巡查</string>
+    <string name="health_atlas_microglia_story_title">小胶质细胞如何巡查脑组织</string>
+    <string name="health_atlas_microglia_story_scope">展示正常的组织巡查和一个局部清理的例子。巡查场景参考小鼠活体成像研究，清理过程参考成年小鼠海马区正常细胞更新的研究。时间和比例均为示意。</string>
+    <string name="health_atlas_microglia_story_reside">脑组织中的常驻细胞</string>
+    <string name="health_atlas_microglia_story_reside_caption">小胶质细胞分布在神经元和其他胶质细胞之间。在日常状态下，小而紧凑的胞体向周围组织伸出许多细长的分支突起。</string>
+    <string name="health_atlas_microglia_story_survey">活动的突起末端巡查周围</string>
+    <string name="health_atlas_microglia_story_survey_caption">即使处于所谓的静息状态，各个突起末端也会错开时间伸出或回缩。胞体可以留在原处，由分支探查周围组织。</string>
+    <string name="health_atlas_microglia_story_approach">分支伸向附近的细胞残片</string>
+    <string name="health_atlas_microglia_story_approach_caption">细胞正常更新时会留下需要清理的物质。在这个例子中，附近的小胶质细胞伸出一条突起，接触一小块残片，整个细胞不必移过去。</string>
+    <string name="health_atlas_microglia_story_engulf">细胞膜包住残片</string>
+    <string name="health_atlas_microglia_story_engulf_caption">突起的细胞膜像小口袋一样裹住残片。口袋闭合后，残片就被包在细胞内。这就是吞噬作用。</string>
+    <string name="health_atlas_microglia_story_digest">细胞分解吞入的物质</string>
+    <string name="health_atlas_microglia_story_digest_caption">放大图显示，吞入细胞的物质逐渐被分解。其他突起末端仍在周围组织中伸缩。</string>
+    <string name="health_atlas_microglia_story_neuron">邻近的神经元</string>
+    <string name="health_atlas_microglia_story_soma">小胶质细胞胞体</string>
+    <string name="health_atlas_microglia_story_process">分支突起</string>
+    <string name="health_atlas_microglia_story_debris">细胞残片</string>
+    <string name="health_atlas_microglia_story_pouch">吞噬小囊</string>
+    <string name="health_atlas_microglia_story_plate_caption">脑组织中的分枝状小胶质细胞</string>
+    <string name="health_atlas_microglia_story_feature_soma">小胶质细胞胞体</string>
+    <string name="health_atlas_microglia_story_feature_soma_detail">小而紧凑的胞体发出多条细长突起，在日常巡查时往往留在原处。</string>
+    <string name="health_atlas_microglia_story_feature_nucleus">细长的细胞核</string>
+    <string name="health_atlas_microglia_story_feature_nucleus_detail">细胞核位于紧凑的胞体内，在组织切片中可呈细长形。</string>
+    <string name="health_atlas_microglia_story_feature_fork">突起的分叉处</string>
+    <string name="health_atlas_microglia_story_feature_fork_detail">较粗的突起分成更细的分支，伸向周围组织的不同位置。</string>
+    <string name="health_atlas_microglia_story_feature_tip">细小的突起末端</string>
+    <string name="health_atlas_microglia_story_feature_tip_detail">即使胞体留在原处，细小的末端也可以伸出或回缩。</string>
+    <string name="health_atlas_microglia_story_feature_neighbor">邻近的神经元</string>
+    <string name="health_atlas_microglia_story_feature_neighbor_detail">小胶质细胞的分支伸入神经元周围的组织，但它们并不属于神经元。</string>
+    <string name="health_atlas_microglia_story_ref_anatomy">得克萨斯大学休斯敦健康科学中心 · 神经组织的细胞类型</string>
+    <string name="health_atlas_microglia_story_ref_surveillance">Nimmerjahn 等 · 活体小鼠中小胶质细胞的日常巡查</string>
+    <string name="health_atlas_microglia_story_ref_clearance">Sierra 等 · 成年小鼠海马区的正常细胞更新</string>
+</resources>
