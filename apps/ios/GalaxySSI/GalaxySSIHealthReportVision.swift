@@ -52,8 +52,9 @@ enum GalaxySSIHealthReportVision {
       for (key, value) in fields {
         guard let text = value.strictStringValue, validText(text, limit: 128), !text.isBlank else { throw invalid }
         if metric.laboratory {
-          guard let parsed = GalaxySSIHealthReportedResult.parse(text, metric: metric),
-                (parsed.kind == .qualitative) == (metric.form == .qualitative) else { throw invalid }
+          let parsed = GalaxySSIHealthReportedResult.parse(text, metric: metric)
+          guard parsed.map({ ($0.kind == .qualitative) == (metric.form == .qualitative) }) ??
+                (metric.form == .laboratory && GalaxySSIHealthReportedResult.number(text) != nil) else { throw invalid }
         } else {
           guard let number = GalaxySSIHealthReportedResult.number(text), number >= 0,
                 metric.form != .positive || number > 0,
