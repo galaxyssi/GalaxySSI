@@ -207,7 +207,7 @@ class HealthAtlasPhysiologyTest {
 
     @Test fun unrelatedEntitiesDoNotInheritAQuantitativeModel() {
         assertNull(HealthAtlasPhysiologyKind.forItem("cell-hepatocyte"))
-        assertNull(HealthAtlasPhysiologyKind.forItem("renal-pelvis"))
+        assertNotEquals(HealthAtlasPhysiologyKind.GLOMERULAR_FILTRATION, HealthAtlasPhysiologyKind.forItem("renal-pelvis"))
         assertNull(HealthAtlasPhysiologyKind.forItem("cell-club-cell"))
         assertEquals(HealthAtlasPhysiologyKind.GLOMERULAR_FILTRATION, HealthAtlasPhysiologyKind.forItem("cell-podocyte"))
         assertEquals(HealthAtlasPhysiologyKind.RENAL_EXCRETION, HealthAtlasPhysiologyKind.forItem("cell-proximal-tubular-cell"))

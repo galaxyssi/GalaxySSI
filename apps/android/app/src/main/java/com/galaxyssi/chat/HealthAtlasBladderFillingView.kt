@@ -1,6 +1,5 @@
 package com.galaxyssi.chat
 
-import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.Context
 import android.graphics.Canvas
@@ -9,28 +8,25 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Shader
 import android.view.View
-import android.view.animation.LinearInterpolator
 import android.widget.LinearLayout
 import kotlin.math.roundToInt
 
 internal class HealthAtlasBladderFillingView(activity: Activity, initial: HealthAtlasPhysiology) : LinearLayout(activity) {
     private val ui = HealthCenterViews(activity)
     private val art = FillingDiagram(activity)
-    private val play = ui.icon(R.drawable.ic_rich_play, R.string.health_atlas_bladder_expansion_play) {
-        if (animator == null) start() else pause()
-    }.apply { tag = "atlas-bladder-filling-play" }
-    private var animator: ValueAnimator? = null
+    private val playback = HealthAtlasTeachingPlayback(activity,
+        R.string.health_atlas_bladder_expansion_play, R.string.health_atlas_bladder_expansion_pause) {
+        art.phase = it
+    }
 
     var model = initial
         set(value) {
             require(value.kind == HealthAtlasPhysiologyKind.BLADDER_EXPANSION)
-            pause()
             field = value
             val start = value.input(0)
             val finish = start + value.input(1)
             art.setVolumes(start, finish)
-            play.isEnabled = start < finish && ValueAnimator.areAnimatorsEnabled()
-            play.alpha = if (play.isEnabled) 1f else .4f
+            playback.showTarget(if (start < finish) 1800L else 0L)
         }
 
     init {
@@ -38,44 +34,14 @@ internal class HealthAtlasBladderFillingView(activity: Activity, initial: Health
         ui.add(this, ui.line().apply {
             addView(ui.text(context.getString(R.string.health_atlas_bladder_expansion_caption), 14f, bold = true),
                 LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-            addView(play)
+            addView(playback.button.apply { tag = "atlas-bladder-filling-play" })
         })
         ui.add(this, art)
         model = initial
     }
 
-    private fun start() {
-        if (!play.isEnabled || !ValueAnimator.areAnimatorsEnabled()) return
-        if (art.phase >= 1f) art.phase = 0f
-        setPlaying(true)
-        val player = ValueAnimator.ofFloat(art.phase, 1f).apply {
-            duration = (1800 * (1f - art.phase)).roundToInt().toLong().coerceAtLeast(1)
-            interpolator = LinearInterpolator()
-            addUpdateListener {
-                art.phase = it.animatedValue as Float
-                if (art.phase == 1f) pause()
-            }
-        }
-        animator = player
-        player.start()
-    }
-
-    private fun pause() {
-        animator?.removeAllUpdateListeners()
-        animator?.cancel()
-        animator = null
-        setPlaying(false)
-    }
-
-    private fun setPlaying(playing: Boolean) {
-        play.setImageResource(if (playing) R.drawable.ic_rich_pause else R.drawable.ic_rich_play)
-        val description = if (playing) R.string.health_atlas_bladder_expansion_pause else R.string.health_atlas_bladder_expansion_play
-        play.contentDescription = context.getString(description)
-        play.tooltipText = play.contentDescription
-    }
-
     override fun onDetachedFromWindow() {
-        pause()
+        playback.pause()
         super.onDetachedFromWindow()
     }
 
@@ -105,7 +71,6 @@ internal class HealthAtlasBladderFillingView(activity: Activity, initial: Health
             endMl = finish
             contentDescription = context.getString(R.string.health_atlas_bladder_expansion_description,
                 HealthAtlasPhysiologyText.number(start, 0), HealthAtlasPhysiologyText.number(finish, 0))
-            phase = 1f
         }
 
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

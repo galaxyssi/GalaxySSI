@@ -117,7 +117,8 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     PLATELET_FRAGMENT_COUNT(HealthAtlasPlateletFragmentCountTeachingModel.spec),
     BILE_STORAGE(HealthAtlasBileStorageTeachingModel.spec),
     BONE_REMODELING_BALANCE(HealthAtlasBoneRemodelingBalanceTeachingModel.spec),
-    CUTANEOUS_SEBUM(HealthAtlasCutaneousSebumTeachingModel.spec);
+    CUTANEOUS_SEBUM(HealthAtlasCutaneousSebumTeachingModel.spec),
+    URETER_DELIVERY(HealthAtlasUreterDeliveryTeachingModel.spec);
 
     constructor(spec: HealthAtlasTeachingModelSpec) : this(spec.inputs.map { it.control }, spec.axis, spec.unit,
         spec.minimum, spec.maximum, spec.source, spec.extraSource, spec)

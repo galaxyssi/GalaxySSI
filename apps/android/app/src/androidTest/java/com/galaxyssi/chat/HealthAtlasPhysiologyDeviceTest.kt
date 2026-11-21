@@ -329,6 +329,48 @@ class HealthAtlasPhysiologyDeviceTest {
             assertFalse(it.view("atlas-bladder-filling-play").isEnabled)
         }
     }
+    @Test fun ureterDiagramSeparatesPlaybackFromModelInputsAndRestoresTheSelection() = native { scenario ->
+        scenario.onActivity { it.open("ureters") }
+        capture("ureter-transport")
+        scenario.onActivity { activity ->
+            val play = activity.view("atlas-ureter-transport-play")
+            val diagram = activity.view("atlas-ureter-transport-diagram")
+            val count = activity.view("atlas-physiology-ureter-delivery-pushes") as SeekBar
+            val perPush = activity.view("atlas-physiology-ureter-delivery-volume") as SeekBar
+            val output = activity.view("atlas-physiology-output") as TextView
+            val original = output.text.toString()
+            diagram.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            diagram.layout(0, 0, diagram.measuredWidth, diagram.measuredHeight)
+            fun draw() = Bitmap.createBitmap(diagram.width, diagram.height, Bitmap.Config.ARGB_8888).also {
+                diagram.draw(Canvas(it))
+            }
+            val selected = draw()
+            try {
+                if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
+                    assertTrue(play.isEnabled)
+                    play.performClick()
+                    assertEquals(activity.getString(R.string.health_atlas_ureter_delivery_pause), play.contentDescription)
+                    play.performClick()
+                    val early = draw()
+                    try { assertFalse(selected.sameAs(early)) } finally { early.recycle() }
+                }
+                assertEquals(original, output.text.toString())
+                assertEquals(3, count.progress)
+                perPush.progress = perPush.max
+                assertNotEquals(original, output.text.toString())
+                val more = draw()
+                try { assertFalse(selected.sameAs(more)) } finally { more.recycle() }
+                count.progress = 2
+            } finally { selected.recycle() }
+        }
+        scenario.recreate()
+        ready(scenario, "atlas-ureter-transport-diagram")
+        scenario.onActivity {
+            assertEquals(2, (it.view("atlas-physiology-ureter-delivery-pushes") as SeekBar).progress)
+            assertNotNull(it.view("atlas-simulation-play"))
+        }
+    }
     @Test fun threePhysiologyScreensShowIndependentModels() = native { scenario ->
         for (id in listOf("lungs", "kidneys", "cell-neuron")) {
             scenario.onActivity { it.open(id, id.startsWith("cell-")) }

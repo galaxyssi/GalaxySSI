@@ -1,0 +1,16 @@
+<resources>
+    <string name="health_atlas_ureter_delivery_title">Ureter transport: delivered volume</string>
+    <string name="health_atlas_ureter_delivery_pushes">Completed model pushes</string>
+    <string name="health_atlas_ureter_delivery_per_push">Model volume per push</string>
+    <string name="health_atlas_ureter_delivery_formula">Delivered volume = completed pushes × volume per push.</string>
+    <string name="health_atlas_ureter_delivery_remaining">Remaining model volume: %1$s mL</string>
+    <string name="health_atlas_ureter_delivery_scope">A contraction of the ureter wall moves behind a packet of fluid. This diagram starts with six equal model packets. Its amounts and speed are illustrative, not estimates of urine flow or kidney function.</string>
+    <string name="health_atlas_ureter_delivery_caption">Contraction wave and fluid transport</string>
+    <string name="health_atlas_ureter_delivery_pelvis">Renal pelvis</string>
+    <string name="health_atlas_ureter_delivery_tube">Ureter</string>
+    <string name="health_atlas_ureter_delivery_bladder">Bladder</string>
+    <string name="health_atlas_ureter_delivery_counter">%1$d of %2$d arrived</string>
+    <string name="health_atlas_ureter_delivery_diagram">A simplified section from the renal pelvis to the bladder. Transported model volume: %1$s mL.</string>
+    <string name="health_atlas_ureter_delivery_play">Play ureter transport</string>
+    <string name="health_atlas_ureter_delivery_pause">Pause ureter transport</string>
+</resources>
