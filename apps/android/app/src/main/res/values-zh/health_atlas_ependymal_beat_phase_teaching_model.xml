@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_ependymal_beat_phase_title">室管膜纤毛摆动相位差</string>
+    <string name="health_atlas_ependymal_beat_phase_frequency">示例摆动频率</string>
+    <string name="health_atlas_ependymal_beat_phase_offset">示例时间偏移</string>
+    <string name="health_atlas_ependymal_beat_phase_scope">脑室内壁室管膜上的运动纤毛可推动附近的脑脊液流动。本模型比较两个以相同虚构频率重复、相隔所选时间的摆动。时间间隔是虚构单位，不是秒。本模型不预测实际摆动频率或脑脊液流动，也不用于指导干预。</string>
+    <string name="health_atlas_ependymal_beat_phase_formula">未折返的相位差（周期）= 示例频率（每时间间隔的周期数）× 时间偏移（时间间隔数）。折返后的相位差只保留小数部分，因此相差任意整数个周期时，与零偏移处于同一相位。</string>
+    <string name="health_atlas_ependymal_beat_phase_wrapped">折返后的相位差：%1$s 个周期</string>
+</resources>
