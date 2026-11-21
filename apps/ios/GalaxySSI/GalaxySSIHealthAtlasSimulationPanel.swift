@@ -4,6 +4,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   let entry: GalaxySSIHealthAtlas.Entry
   let model: GalaxySSIHealthAtlas.Mechanism
   @Binding var simulation: GalaxySSIHealthAtlasSimulation
+  @Binding var physiologyInputs: [Int]?
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -12,9 +13,20 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
   private var cardiac: Bool { ["cardio", "heart"].contains(entry.id) }
   private var lung: Bool { ["lungs", "respiratory"].contains(entry.id) }
+  private var hasPhysiology: Bool {
+    #if GALAXYSSI_ATLAS_PHYSIOLOGY
+    return GalaxySSIHealthAtlasPhysiology.Kind.forEntry(entry.id) != nil
+    #else
+    return false
+    #endif
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
+      #if GALAXYSSI_ATLAS_PHYSIOLOGY
+      GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
+        legacyVentilation: lung ? [simulation.first, simulation.second] : nil)
+      #endif
       Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(model.title, language))).font(.headline)
       Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
       LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
@@ -43,7 +55,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         }.disabled(reduceMotion)
         control("forward.step", "next_step") { playing = false; simulation.phase = Double(min(3, simulation.stage + 1)) / 4 }
         Spacer()
-        Button { playing = false; simulation = .initial(entry.id) } label: {
+        Button { playing = false; simulation = .initial(entry.id); physiologyInputs = nil } label: {
           Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
         }.accessibilityLabel(t("reset")).help(t("reset"))
       }
@@ -51,7 +63,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       Text(t("speed") + " · " + String(format: "%.1f×", simulation.speed))
       Slider(value: $simulation.speed, in: 0.5...2, step: 0.5).accessibilityLabel(t("speed"))
       Text(t("teaching_note")).font(.footnote).foregroundColor(.secondary)
-      if cardiac || lung {
+      if cardiac || (lung && !hasPhysiology) {
         Text(t("parameters")).font(.headline)
         parameter(cardiac ? "heart_rate" : "rate", value: $simulation.first, range: cardiac ? 40...160 : 6...30,
           unit: cardiac ? "bpm" : "/min")
@@ -59,7 +71,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
           range: cardiac ? 30...120 : 200...900, unit: "mL")
         Text(t(cardiac ? "cardiac_output" : "ventilation") + ": " + String(format: "%.2f L/min", simulation.output)).font(.headline)
         Text(t(cardiac ? "cardiac_formula" : "ventilation_formula")).font(.footnote)
-      } else { Text(t("qualitative_note")).font(.footnote) }
+      } else if !hasPhysiology { Text(t("qualitative_note")).font(.footnote) }
     }
     .onReceive(timer) { now in
       guard playing, scene == .active, !reduceMotion else { return }

@@ -36,7 +36,8 @@ struct GalaxySSIHealthAtlasDetail: View {
               Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
               Button(t("simulation")) { selection.wrappedValue.tab = .simulation }
             } else {
-              GalaxySSIHealthAtlasSimulationPanel(entry: entry, model: atlas.model(entry), simulation: selection.simulation)
+              GalaxySSIHealthAtlasSimulationPanel(entry: entry, model: atlas.model(entry), simulation: selection.simulation,
+                physiologyInputs: selection.physiologyInputs)
             }
             Button(t("research")) { research = true }
             Divider()

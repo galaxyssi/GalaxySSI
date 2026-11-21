@@ -8,6 +8,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     var tab = Tab.structure
     var research = Research.physiology
     var simulation = GalaxySSIHealthAtlasSimulation()
+    var physiologyInputs: [Int]?
     var elimination = GalaxySSIHealthAtlasElimination()
     var metric: GalaxySSIHealthMetric?
     var window = GalaxySSIHealthAtlasWindow.month
@@ -26,6 +27,10 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     entries = decoded.filter { atlas.entry($0.key) != nil }.mapValues { $0 }
     for id in Array(entries.keys) {
       entries[id]?.simulation.sanitize(id)
+      #if GALAXYSSI_ATLAS_PHYSIOLOGY
+      let restored = GalaxySSIHealthAtlasPhysiology.restore(id, inputs: entries[id]?.physiologyInputs)?.inputs
+      entries[id]?.physiologyInputs = restored
+      #endif
       entries[id]?.elimination.sanitize()
       if let zoom = entries[id]?.zoom { entries[id]?.zoom = zoom.isFinite ? min(4, max(1, zoom)) : 1 }
       if let metric = entries[id]?.metric, !GalaxySSIHealthAtlasMetrics.forEntry(id).contains(metric) { entries[id]?.metric = nil }

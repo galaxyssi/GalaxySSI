@@ -17,7 +17,8 @@ struct GalaxySSIHealthAtlasResearch: View {
         }.pickerStyle(.segmented)
         switch selection.wrappedValue.research {
         case .physiology:
-          GalaxySSIHealthAtlasSimulationPanel(entry: entry, model: atlas.model(entry), simulation: selection.simulation)
+          GalaxySSIHealthAtlasSimulationPanel(entry: entry, model: atlas.model(entry), simulation: selection.simulation,
+            physiologyInputs: selection.physiologyInputs)
         case .drugs:
           drugs
         case .aging:

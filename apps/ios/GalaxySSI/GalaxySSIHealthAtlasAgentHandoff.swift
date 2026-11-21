@@ -36,16 +36,27 @@ enum GalaxySSIHealthAtlasQuestion {
     let model = atlas.model(entry)
     var prompt = String(format: t("ask_context"), GalaxySSIHealthAtlasText.get(entry.name, language),
       GalaxySSIHealthAtlasText.get(entry.description, language), GalaxySSIHealthAtlasText.get(model.title, language), model.source.absoluteString)
+    #if GALAXYSSI_ATLAS_PHYSIOLOGY
+    let physiology = ((!research && selection.tab == .simulation) || (research && selection.research == .physiology))
+      ? GalaxySSIHealthAtlasPhysiology.resolved(entry.id, inputs: selection.physiologyInputs,
+          legacyVentilation: ["lungs", "respiratory"].contains(entry.id) ? [selection.simulation.first, selection.simulation.second] : nil) : nil
+    let hasAssociatedPhysiology = physiology != nil
+    if let physiology {
+      prompt += "\n" + GalaxySSIHealthAtlasPhysiologyText.context(physiology, language: language)
+    }
+    #else
+    let hasAssociatedPhysiology = false
+    #endif
     if research {
       switch selection.research {
       case .physiology:
         prompt += "\n" + t("teaching_note") + "\n" + t("process_note")
-        if ["heart", "cardio", "lungs", "respiratory"].contains(entry.id) {
+        if !hasAssociatedPhysiology, ["heart", "cardio", "lungs", "respiratory"].contains(entry.id) {
           let cardiac = ["heart", "cardio"].contains(entry.id)
           prompt += "\n" + t(cardiac ? "cardiac_formula" : "ventilation_formula")
           prompt += "\n" + t(cardiac ? "heart_rate" : "rate") + ": \(Int(selection.simulation.first))"
           prompt += "\n" + t(cardiac ? "stroke_volume" : "tidal") + ": \(Int(selection.simulation.second)) mL"
-        } else { prompt += "\n" + t("qualitative_note") }
+        } else if !hasAssociatedPhysiology { prompt += "\n" + t("qualitative_note") }
       case .drugs:
         prompt += "\n" + t("drug_note") + "\n" + t("elimination_assumptions") + "\n" + t("elimination_formula")
         prompt += "\n" + String(format: t("elimination_summary"), Int64(selection.elimination.halfLife), Int64(selection.elimination.elapsed),
