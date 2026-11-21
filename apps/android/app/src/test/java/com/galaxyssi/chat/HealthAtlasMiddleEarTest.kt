@@ -51,7 +51,12 @@ class HealthAtlasMiddleEarTest {
             assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(35, 20)))
             assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(35, 0, 160)))
         }
-        for (id in listOf("external-ear", "inner-ear", "cochlea", "vestibular-apparatus", "cell-inner-ear-hair-cell"))
-            assertNull(HealthAtlasPhysiologyKind.forItem(id))
+        for (id in listOf("external-ear", "vestibular-apparatus"))
+            assertNotEquals(id, kind, HealthAtlasPhysiologyKind.forItem(id))
+        for (id in listOf("inner-ear", "cochlea", "cell-inner-ear-hair-cell")) {
+            assertEquals(id, HealthAtlasPhysiologyKind.COCHLEAR_FREQUENCY, HealthAtlasPhysiologyKind.forItem(id))
+            assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(35, 20, 160)))
+            assertEquals(listOf(50), HealthAtlasPhysiology.restore(id, intArrayOf(50))?.inputs)
+        }
     }
 }
