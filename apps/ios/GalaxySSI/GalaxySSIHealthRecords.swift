@@ -95,6 +95,24 @@ struct GalaxySSIHealthOverview {
   let metrics: [Metric]
   var recentCount: Int { metrics.filter { $0.freshness == .recent }.count }
 
+  struct Day: Identifiable {
+    let date: Date
+    let readings: [GalaxySSIHealthReading]
+    var id: Date { date }
+  }
+
+  static func recent(_ readings: [GalaxySSIHealthReading], metric: GalaxySSIHealthMetric?, now: Date) -> [GalaxySSIHealthReading] {
+    readings.filter { !$0.deleted && $0.isValid && $0.measuredAt <= now && (metric == nil || $0.metric == metric) }
+      .sorted { ($0.measuredAt, $0.id.uuidString) > ($1.measuredAt, $1.id.uuidString) }
+  }
+
+  static func days(_ readings: [GalaxySSIHealthReading], calendar: Calendar) -> [Day] {
+    Dictionary(grouping: readings) { calendar.startOfDay(for: $0.measuredAt) }
+      .map { Day(date: $0.key, readings: $0.value.sorted {
+        ($0.measuredAt, $0.id.uuidString) > ($1.measuredAt, $1.id.uuidString)
+      }) }.sorted { $0.date > $1.date }
+  }
+
   init(current: [GalaxySSIHealthReading], now: Date, calendar: Calendar,
        ranges: [GalaxySSIHealthMetric: [GalaxySSIHealthOverviewRange]] = [:]) {
     let today = calendar.startOfDay(for: now)
@@ -601,6 +619,17 @@ struct GalaxySSIHealthRecords {
     archive.localCareDiscussions = threads
     try persist(archive)
     return thread
+  }
+
+  func overviewDiscussionConcern(reading: GalaxySSIHealthReading, now: Date = Date()) throws -> UUID? {
+    let archive = try load()
+    guard archive.derivesOverview == true, archive.profileAnalysisPermission != nil,
+          GalaxySSIHealthOverview.recent(archive.current, metric: reading.metric, now: now).first == reading,
+          let concern = archive.localCare?.current[reading.metric.rawValue],
+          concern.assessment.record == GalaxySSIHealthCare.Record(reading),
+          localCareProfileIsCurrent(concern.profileScope) else { return nil }
+    _ = try currentDiscussionConcern(id: concern.id, metric: reading.metric, archive: archive, now: now)
+    return concern.id
   }
 
   func setLocalCareProfileScope(_ concern: GalaxySSIHealthCare.Concern, link: GalaxySSIHealthCareProfileScope.Link?,

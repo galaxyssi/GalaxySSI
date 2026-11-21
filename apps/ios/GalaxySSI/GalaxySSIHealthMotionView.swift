@@ -79,6 +79,14 @@ struct GalaxySSIHealthMotionView: View {
   static func text(_ key: String, _ fallback: String, _ language: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.motion." + key, fallback: fallback, language: language)
   }
+  static func cyclingDuration(_ seconds: TimeInterval, language: String) -> String {
+    let minutes = max(0, Int64(seconds / 60))
+    if seconds > 0 && seconds < 60 { return text("under_minute", "Under 1 min", language) }
+    if minutes >= 60 {
+      return String(format: text("hours_minutes", "%lld h %lld min", language), minutes / 60, minutes % 60)
+    }
+    return String(format: text("minutes", "%lld min", language), minutes)
+  }
   private func t(_ key: String, _ fallback: String) -> String { Self.text(key, fallback, language) }
 }
 
@@ -88,6 +96,7 @@ struct GalaxySSIHealthCyclingOverviewRow: View {
   @Environment(\.sizeCategory) private var sizeCategory
   @ObservedObject private var motion = GalaxySSIHealthMotionController.shared
   let records: GalaxySSIHealthRecords
+  var activityTile = false
   @State private var settings = false
   var body: some View {
     TimelineView(.periodic(from: Date(), by: 30)) { context in
@@ -98,10 +107,10 @@ struct GalaxySSIHealthCyclingOverviewRow: View {
               icon: { Image(systemName: "bicycle").foregroundColor(.green) })
               .font(.subheadline.weight(.semibold))
             Spacer(minLength: 4)
-            if !spacious { amount(context.date) }
-            Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary)
+            if !spacious && !activityTile { amount(context.date) }
+            if !activityTile { Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary) }
           }
-          if spacious { amount(context.date).frame(maxWidth: .infinity, alignment: .trailing) }
+          if spacious || activityTile { amount(context.date).frame(maxWidth: .infinity, alignment: activityTile ? .leading : .trailing) }
           Text(detail(context.date)).font(.caption).foregroundColor(.secondary)
         }.frame(maxWidth: .infinity, minHeight: 50, alignment: .leading).contentShape(Rectangle()).padding(.vertical, 5)
       }.buttonStyle(.plain)
@@ -123,8 +132,7 @@ struct GalaxySSIHealthCyclingOverviewRow: View {
   private func duration(_ now: Date) -> String {
     guard motion.matches(records), let state = motion.state else { return "\u{2014}" }
     let seconds = state.cycling.today(now, calendar: .autoupdatingCurrent)
-    return seconds > 0 && seconds < 60 ? t("under_minute", "Under 1 min") :
-      String(format: t("minutes", "%lld min"), Int64(seconds / 60))
+    return GalaxySSIHealthMotionView.cyclingDuration(seconds, language: language)
   }
   private func t(_ key: String, _ fallback: String) -> String { GalaxySSIHealthMotionView.text(key, fallback, language) }
 }
