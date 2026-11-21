@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mammary_duct_delivery_title">Fluid moved from the alveolus into the duct</string>
+    <string name="health_atlas_mammary_duct_delivery_secreted_volume">Volume secreted into the model lumen</string>
+    <string name="health_atlas_mammary_duct_delivery_displaced_share">Share displaced into the model duct</string>
+    <string name="health_atlas_mammary_duct_delivery_companion">Volume left in the model lumen: %1$s VU</string>
+    <string name="health_atlas_mammary_duct_delivery_formula">Volume moved into the duct = secreted volume times (displaced percentage divided by 100). Volume left in the lumen = secreted volume minus the volume moved into the duct.</string>
+    <string name="health_atlas_mammary_duct_delivery_scope">In a lactating mammary gland, secretory luminal cells line the alveolus and release milk into its hollow center, the lumen. The myoepithelial cells around the alveolus contract to move milk into the ducts; they do not secrete it. In the model, one initially empty lumen receives a fictional fluid, then the surrounding contractile layer moves a chosen share into one duct. Nothing else is added or lost. VU is an invented volume unit, and the share is a model setting, not a measure of contraction strength. These settings are not physiological ranges and cannot estimate individual milk production or ejection.</string>
+</resources>
