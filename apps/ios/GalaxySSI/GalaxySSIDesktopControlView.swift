@@ -48,6 +48,7 @@ struct GalaxySSIDesktopControlView: View {
               t: t
             )
             .id(link.desktopId)
+            GalaxySSIDesktopDisconnectView(link: link).id("disconnect:" + link.desktopId)
           } else {
             noPairedComputerSection
           }
@@ -65,6 +66,9 @@ struct GalaxySSIDesktopControlView: View {
       } else if selectedDesktopId.isEmpty {
         selectedDesktopId = desktopLinks.first?.desktopId ?? ""
       }
+    }
+    .onChange(of: desktopLinks.map(\.desktopId)) { ids in
+      if !ids.contains(selectedDesktopId) { selectedDesktopId = ids.first ?? "" }
     }
   }
 
