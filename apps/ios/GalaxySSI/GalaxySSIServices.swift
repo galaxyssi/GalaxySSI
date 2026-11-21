@@ -18094,6 +18094,11 @@ final class MessageCoordinator: ObservableObject {
       )
       return
     }
+    // Private report replies are owned only by the foreground journal-runtime exchange.
+    if appPayload.string("conversation_id").hasPrefix(GalaxySSIHealthReportCodex.prefix) {
+      if !appPayload.string("message_id").isEmpty { deliveryStore.completeIncoming(messageId: appPayload.string("message_id")) }
+      return
+    }
     if shouldValidateAgentTaskIdentity(appPayload),
        !validateAgentTaskIdentity(appPayload, link: link, topic: topic) {
       return
