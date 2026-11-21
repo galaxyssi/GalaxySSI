@@ -80,6 +80,10 @@ class HealthAtlasIllustrationStyleDeviceTest {
             Triple("lungs", 1254, 1254), Triple("liver", 1254, 1254),
             Triple("kidneys", 1254, 1254), Triple("brain", 1254, 1254),
             Triple("gut", 1024, 1536),
+            Triple("pancreas", 1536, 1024), Triple("urinary", 1024, 1536),
+            Triple("nephron", 1173, 1341), Triple("alveoli", 1254, 1254),
+            Triple("cell-pancreatic-beta-cell", 1254, 1254),
+            Triple("cell-erythrocyte", 1254, 1254), Triple("cell-neuron", 1024, 1536),
         )
         var anchors = 0
         for ((id, width, height) in frames) {
@@ -97,7 +101,29 @@ class HealthAtlasIllustrationStyleDeviceTest {
                 }
             } finally { art.recycle() }
         }
-        assertEquals(26, anchors)
+        assertEquals(42, anchors)
+    }
+
+    @Test fun narrowStructuresAndCellDetailsKeepTheirInteriorAndOpenBackground() {
+        val samples = listOf(
+            Triple("pancreas", .90f to .72f, .62f to .30f),
+            Triple("urinary", .50f to .50f, .66f to .53f),
+            Triple("nephron", .77f to .45f, .853f to .644f),
+            Triple("alveoli", .38f to .10f, .48f to .48f),
+            Triple("cell-pancreatic-beta-cell", .95f to .10f, .36f to .39f),
+            Triple("cell-erythrocyte", .50f to .12f, .50f to .50f),
+            Triple("cell-neuron", .08f to .84f, .38f to .31f),
+        )
+        for ((id, background, foreground) in samples) {
+            val plate = requireNotNull(HealthAtlasPlates.forId(id))
+            val art = requireNotNull(BitmapFactory.decodeResource(context.resources, plate.drawable))
+            try {
+                fun alphaAt(point: Pair<Float, Float>) = Color.alpha(
+                    art.getPixel((point.first * art.width).toInt(), (point.second * art.height).toInt()))
+                assertTrue("Visible background in $id", alphaAt(background) <= 4)
+                assertTrue("Missing interior in $id", alphaAt(foreground) >= 200)
+            } finally { art.recycle() }
+        }
     }
 
     @Test fun frontIllustrationKeepsBrainNavigationLive() = native { scenario ->
@@ -109,6 +135,17 @@ class HealthAtlasIllustrationStyleDeviceTest {
             it.onBackPressed()
             assertNotNull(it.view("atlas-whole-art"))
             assertNotNull(it.view("atlas-hotspot-brain"))
+        }
+    }
+
+    @Test fun microscopicIllustrationsRenderInTheNativeAtlas() = native { scenario ->
+        val atlas = HealthBodyAtlas.load(context)
+        for ((id, name) in listOf("pancreas" to "pancreas", "nephron" to "nephron",
+            "cell-pancreatic-beta-cell" to "beta-cell")) {
+            scenario.onActivity { it.open(id) }
+            capture(name, requireNotNull(atlas[id]).name)
+            scenario.onActivity { it.onBackPressed() }
+            ready(scenario, "atlas-search")
         }
     }
 
