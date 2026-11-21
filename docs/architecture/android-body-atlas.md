@@ -202,6 +202,12 @@ measured kinetics. The hair-cell view distinguishes its afferent contact
 from the receptor itself; the rod and cone retain their distinct terminal
 callouts. The rod photon model remains independent of the stage player.
 
+The nervous-system overview uses a posterior painted view of the brain,
+spinal cord, and sample peripheral nerves. Its five existing links are
+calibrated to the painted positions. The circulatory and both reproductive
+overviews use shaded fills while retaining their native anatomy paths,
+viewports, and callout locations.
+
 ## Alimentary Canal Sections
 
 Fourteen digestive entries now have their own source-linked diagrams, from

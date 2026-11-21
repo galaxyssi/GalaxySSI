@@ -89,12 +89,12 @@ class HealthAtlasIllustrationStyleDeviceTest {
             Triple("digestive", 1246, 1263), Triple("endocrine", 1312, 1199),
             Triple("ear", 1536, 1024), Triple("eye", 1536, 1024),
             Triple("cell-inner-ear-hair-cell", 1024, 1536), Triple("cell-rod-photoreceptor", 1024, 1536),
-            Triple("cell-cone-photoreceptor", 1024, 1536),
+            Triple("cell-cone-photoreceptor", 1024, 1536), Triple("nervous", 1024, 1536),
         ).map { (id, width, height) -> requireNotNull(HealthAtlasPlates.forId(id)) to (width to height) } +
             HealthAtlasMusculoskeletalPlates.all.map { plate ->
                 plate to if (plate.viewKey == "skeletal-posterior") (887 to 1774) else (1024 to 1536)
             }
-        assertEquals(29, frames.map { it.first.drawable }.distinct().size)
+        assertEquals(30, frames.map { it.first.drawable }.distinct().size)
         var anchors = 0
         for ((plate, size) in frames) {
             val (width, height) = size
@@ -112,7 +112,7 @@ class HealthAtlasIllustrationStyleDeviceTest {
                 }
             } finally { art.recycle() }
         }
-        assertEquals(108, anchors)
+        assertEquals(113, anchors)
     }
 
     @Test fun muscleMarkersIdentifyThePaintedRegionsRatherThanTheMannequinSurface() {
@@ -133,6 +133,24 @@ class HealthAtlasIllustrationStyleDeviceTest {
                 }
             } finally { art.recycle() }
         }
+    }
+
+    @Test fun nervousCalloutsLandOnThePaintedBrainAndNerves() {
+        val plate = requireNotNull(HealthAtlasPlates.forId("nervous"))
+        val art = requireNotNull(BitmapFactory.decodeResource(context.resources, plate.drawable))
+        try {
+            for (marker in plate.markers) {
+                val x = (marker.x * art.width).toInt()
+                val y = (marker.y * art.height).toInt()
+                val matches = (-1..1).any { dx -> (-1..1).any { dy ->
+                    val color = art.getPixel(x + dx, y + dy)
+                    Color.alpha(color) > 200 && if (marker.id == "brain")
+                        Color.blue(color) > Color.red(color) + 10
+                    else Color.red(color) > Color.blue(color) + 45 && Color.green(color) > Color.blue(color) + 30
+                } }
+                assertTrue("Wrong painted region for ${marker.id}", matches)
+            }
+        } finally { art.recycle() }
     }
 
     @Test fun narrowStructuresAndCellDetailsKeepTheirInteriorAndOpenBackground() {
