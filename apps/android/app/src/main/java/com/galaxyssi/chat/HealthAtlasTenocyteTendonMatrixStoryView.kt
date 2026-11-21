@@ -44,14 +44,14 @@ internal class HealthAtlasTenocyteTendonMatrixStoryView(context: Context, story:
 
     override fun scene(c: Canvas, step: Int, t: Float) {
         val amount = HealthAtlasTenocyteTendonMatrixMotion.deformation(step, t)
-        drawAxis(c, step, amount)
+        drawAxis(c, step, amount, t)
         drawMatrix(c, amount)
         callout(c, string.health_atlas_tenocyte_tendon_matrix_art_fibers, 94f, 84f, 196f, adjacentInk)
         callout(c, string.health_atlas_tenocyte_tendon_matrix_art_nucleus, 251f, 196f, 143f - 2f * amount, nucleusInk)
         drawProfile(c, amount)
     }
 
-    private fun drawAxis(c: Canvas, step: Int, amount: Float) {
+    private fun drawAxis(c: Canvas, step: Int, amount: Float, phase: Float) {
         val text = when (step) {
             ALIGNMENT -> string.health_atlas_tenocyte_tendon_matrix_art_axis
             RECOVERY -> string.health_atlas_tenocyte_tendon_matrix_art_release
@@ -62,6 +62,10 @@ internal class HealthAtlasTenocyteTendonMatrixStoryView(context: Context, story:
         val color = if (step == ALIGNMENT) leaderInk else markerInk
         arrow(c, 125f, 49f, 125f - reach, 49f, color)
         arrow(c, 235f, 49f, 235f + reach, 49f, color)
+        if (step == ALIGNMENT) {
+            disc(c, 125f - reach * phase, 49f, 3.1f, cream, fiberInk)
+            disc(c, 235f + reach * phase, 49f, 3.1f, cream, fiberInk)
+        }
     }
 
     private fun drawMatrix(c: Canvas, amount: Float) {

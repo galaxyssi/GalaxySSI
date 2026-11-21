@@ -3,13 +3,6 @@
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="360dp" android:height="280dp"
     android:viewportWidth="360" android:viewportHeight="280">
-    <path android:pathData="M0,0H360V280H0Z">
-        <aapt:attr name="android:fillColor">
-            <gradient android:startX="131" android:startY="0" android:endX="232" android:endY="280"
-                android:startColor="#EAF4F6" android:endColor="#F9F7F0" />
-        </aapt:attr>
-    </path>
-
     <!-- Posterior vertebral column seen through the anterior arch. -->
     <path android:fillColor="#C2D1D5" android:strokeColor="#A2B4BC" android:strokeWidth="1.1"
         android:pathData="M169,29 Q180,25 191,29 L190,198 Q191,214 194,231 Q180,237 166,231 Q169,214 170,198 Z" />
