@@ -206,7 +206,7 @@ class HealthAtlasCellDeviceTest {
             assertTrue(diagram.contentDescription.contains("75 Pa"))
             val control = it.view("atlas-physiology-alveolar-radius")
             val panel = control.parent as ViewGroup
-            assertTrue(panel.indexOfChild(control) < panel.indexOfChild(it.view("atlas-physiology-chart")))
+            assertTrue(panel.indexOfChild(control) < panel.indexOfChild(it.view("atlas-physiology-curve")))
         }
         capture("pneumocyte-ii-surface")
         scenario.recreate(); await(scenario, "atlas-alveolar-surface-diagram")
