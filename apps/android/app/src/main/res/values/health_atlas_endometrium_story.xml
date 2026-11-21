@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_endometrium_story_title">Endometrial renewal</string>
+    <string name="health_atlas_endometrium_story_choice">Endometrial cycle</string>
+    <string name="health_atlas_endometrium_story_scope">A simplified cross-section of the uterine lining during a normal menstrual cycle. Shapes and motion are not to scale. Chapters show representative changes, not their timing; shedding and repair can overlap. For anatomy education, not for predicting fertility or individual cycles.</string>
+    <string name="health_atlas_endometrium_story_layers">Layers of the uterine lining</string>
+    <string name="health_atlas_endometrium_story_layers_caption">The endometrium lines the uterine cavity. Its functional layer faces the cavity and changes through the cycle. The basal layer lies next to the uterine muscle and stays in place. The moving line locates the enlarged section.</string>
+    <string name="health_atlas_endometrium_story_growth">Growth of the functional layer</string>
+    <string name="health_atlas_endometrium_story_growth_caption">As estrogen rises during the proliferative phase, glands lengthen and the stroma between them expands. Epithelial cells line the gland tubes; stromal cells occupy the supporting tissue around them.</string>
+    <string name="health_atlas_endometrium_story_secretion">Glands in the secretory phase</string>
+    <string name="health_atlas_endometrium_story_secretion_caption">In the secretory phase, progesterone helps change how the glands and stroma behave. Glands become more winding, and glandular epithelial cells release secretions into the gland spaces. Some stromal cells in the surrounding tissue become rounder.</string>
+    <string name="health_atlas_endometrium_story_shedding">Shedding during menstruation</string>
+    <string name="health_atlas_endometrium_story_shedding_caption">As progesterone falls, patches of the functional layer break down and shed into the uterine cavity with blood. The basal layer and the deep portions of glands remain. Some exposed areas can already begin to repair.</string>
+    <string name="health_atlas_endometrium_story_repair">Repair of the surface lining</string>
+    <string name="health_atlas_endometrium_story_repair_caption">Epithelial cells from surviving gland openings and nearby intact lining spread across exposed areas. They restore the surface lining over the stroma before the functional layer has regained its thickness.</string>
+    <string name="health_atlas_endometrium_story_label_uterus">Uterus</string>
+    <string name="health_atlas_endometrium_story_label_cavity">Uterine cavity</string>
+    <string name="health_atlas_endometrium_story_label_functional">Functional layer</string>
+    <string name="health_atlas_endometrium_story_label_basal">Basal layer</string>
+    <string name="health_atlas_endometrium_story_label_muscle">Uterine muscle</string>
+    <string name="health_atlas_endometrium_story_label_stroma">Stroma</string>
+    <string name="health_atlas_endometrium_story_label_gland">Gland lining</string>
+    <string name="health_atlas_endometrium_story_label_gland_base">Gland base</string>
+    <string name="health_atlas_endometrium_story_label_surface">Surface lining</string>
+    <!-- Reference URL: https://pmc.ncbi.nlm.nih.gov/articles/PMC8648563/ -->
+    <string name="health_atlas_endometrium_story_ref_cycle">Garcia-Alonso et al. (2021): Cell types across the human endometrial cycle</string>
+    <!-- Reference URL: https://pubmed.ncbi.nlm.nih.gov/1244749/ -->
+    <string name="health_atlas_endometrium_story_ref_repair">Ferenczy (1976): Surface repair in the human endometrium</string>
+</resources>

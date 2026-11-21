@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pineal_plate_caption">正常脑的正中矢状面，左侧为前方。松果体位于第三脑室后上方，向后伸出，在中脑上方。</string>
+    <string name="health_atlas_pineal_plate_body">松果体</string>
+    <string name="health_atlas_pineal_plate_body_detail">松果体是上丘脑内的小腺体，经短柄连于第三脑室后方。它位于中脑上丘上方，与下丘脑是不同的结构。</string>
+    <string name="health_atlas_pineal_plate_third_ventricle">第三脑室</string>
+    <string name="health_atlas_pineal_plate_third_ventricle_detail">第三脑室是位于脑正中线的狭窄腔隙，内含脑脊液。松果体连于室顶和后壁交界附近，位于主腔之外。</string>
+    <string name="health_atlas_pineal_plate_recess">松果体隐窝</string>
+    <string name="health_atlas_pineal_plate_recess_detail">第三脑室在此向后延伸至松果体柄的上下两层之间。这是充有脑脊液的腔隙，不是松果体组织。</string>
+    <string name="health_atlas_pineal_plate_choroid_plexus">脉络丛</string>
+    <string name="health_atlas_pineal_plate_choroid_plexus_detail">脉络丛是富含血管的褶皱组织，自第三脑室顶伸入室腔，参与生成脑脊液。图示脉络丛位于松果体的前上方。</string>
+    <string name="health_atlas_pineal_plate_superior_colliculus">中脑上丘</string>
+    <string name="health_atlas_pineal_plate_superior_colliculus_detail">上丘是中脑背侧成对的圆形隆起之一，紧邻松果体下方。上丘有助于引导眼睛和头部朝向刺激来源。</string>
+</resources>

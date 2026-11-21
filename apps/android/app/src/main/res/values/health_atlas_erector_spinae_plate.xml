@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_erector_spinae_plate_caption">Deep back muscles from behind</string>
+    <string name="health_atlas_erector_spinae_plate_spinalis">Spinalis</string>
+    <string name="health_atlas_erector_spinae_plate_spinalis_detail">This narrow column lies closest to the midline along the spinous processes. The drawing shows its thoracic portion.</string>
+    <string name="health_atlas_erector_spinae_plate_longissimus">Longissimus</string>
+    <string name="health_atlas_erector_spinae_plate_longissimus_detail">The middle column lies between spinalis and iliocostalis. In the thorax it attaches to vertebral projections and ribs.</string>
+    <string name="health_atlas_erector_spinae_plate_iliocostalis">Iliocostalis</string>
+    <string name="health_atlas_erector_spinae_plate_iliocostalis_detail">The outermost column reaches the angles of the ribs, where the ribs curve away from the back toward the sides.</string>
+    <string name="health_atlas_erector_spinae_plate_midline">Spinous processes</string>
+    <string name="health_atlas_erector_spinae_plate_midline_detail">These bony projections mark the posterior midline of the vertebrae and orient the three paired columns on either side.</string>
+    <string name="health_atlas_erector_spinae_plate_origin">Common tendon</string>
+    <string name="health_atlas_erector_spinae_plate_origin_detail">The pale lower tissue shows part of the broad attachment the erector spinae shares over the back of the sacrum and adjacent iliac crests.</string>
+</resources>

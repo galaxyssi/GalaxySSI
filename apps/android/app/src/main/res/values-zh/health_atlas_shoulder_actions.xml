@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pectoral_action_title">胸大肌：横过胸前</string>
+    <string name="health_atlas_pectoral_action_scope">从上方示意肩关节的水平内收。图中仅展示这一运动，不呈现肩部的全部运动机制，也不测量活动范围。</string>
+    <string name="health_atlas_pectoral_action_origins">胸前的扇形肌束</string>
+    <string name="health_atlas_pectoral_action_origins_caption">锁骨部肌束起于锁骨内侧。胸肋部肌束起于胸骨及邻近的肋软骨。</string>
+    <string name="health_atlas_pectoral_action_insertion">肱骨上的止点</string>
+    <string name="health_atlas_pectoral_action_insertion_caption">扇形肌束汇成肌腱，止于肱骨近端结节间沟的外侧唇。</string>
+    <string name="health_atlas_pectoral_action_sweep">开始水平内收</string>
+    <string name="health_atlas_pectoral_action_sweep_caption">上臂抬向体侧时，胸大肌参与上臂在肩关节处向前的水平转动。</string>
+    <string name="health_atlas_pectoral_action_across">向身体中线转动</string>
+    <string name="health_atlas_pectoral_action_across_caption">肱骨继续横向移过胸前。图中肱骨上的止点随骨移动，而胸部的起点保持固定。</string>
+    <string name="health_atlas_pectoral_action_return">回到体侧</string>
+    <string name="health_atlas_pectoral_action_return_caption">示意图沿原路径返回，以便比较不同位置，不展示哪些肌肉产生回程动作。</string>
+    <string name="health_atlas_pectoral_action_ref_anatomy">华盛顿大学肌肉图谱：胸大肌</string>
+    <string name="health_atlas_pectoral_action_ref_sweep">Kuechle 等：肩关节水平屈曲</string>
+    <string name="health_atlas_pectoral_action_overhead">俯视</string>
+    <string name="health_atlas_pectoral_action_front">胸前</string>
+    <string name="health_atlas_pectoral_action_joint">肩关节</string>
+    <string name="health_atlas_pectoral_action_clavicular">锁骨部肌束</string>
+    <string name="health_atlas_pectoral_action_sternocostal">胸肋部肌束</string>
+    <string name="health_atlas_pectoral_action_tendon">胸大肌肌腱</string>
+
+    <string name="health_atlas_latissimus_action_title">背阔肌：后伸与内收</string>
+    <string name="health_atlas_latissimus_action_scope">从后外侧观察的示意图。图中分开展示肩关节后伸和内收以作比较，不测量活动范围。</string>
+    <string name="health_atlas_latissimus_action_origins">背部的宽阔肌层</string>
+    <string name="health_atlas_latissimus_action_origins_caption">背阔肌起于下段胸椎、胸腰筋膜、髂嵴和下部肋骨。</string>
+    <string name="health_atlas_latissimus_action_insertion">绕向肱骨</string>
+    <string name="health_atlas_latissimus_action_insertion_caption">肌束在腋窝后方汇拢，肌腱绕过大圆肌，止于肱骨近端前侧的结节间沟底。</string>
+    <string name="health_atlas_latissimus_action_extend">后伸：向后移动</string>
+    <string name="health_atlas_latissimus_action_extend_caption">上臂从前外侧相对躯干向后移动。背阔肌参与肩关节后伸。</string>
+    <string name="health_atlas_latissimus_action_adduct">内收：靠近体侧</string>
+    <string name="health_atlas_latissimus_action_adduct_caption">随后上臂向躯干靠拢。背阔肌也参与肩关节内收。</string>
+    <string name="health_atlas_latissimus_action_return">对照回程路径</string>
+    <string name="health_atlas_latissimus_action_return_caption">示意图沿两段路径返回，以便比较不同姿势，不模拟产生回程动作的肌肉。</string>
+    <string name="health_atlas_latissimus_action_ref_anatomy">华盛顿大学肌肉图谱：背阔肌</string>
+    <string name="health_atlas_latissimus_action_ref_route">背阔肌解剖与肌腱走行</string>
+    <string name="health_atlas_latissimus_action_ref_moment">Ackland 等：肩部肌肉力臂</string>
+    <string name="health_atlas_latissimus_action_oblique">后外侧观</string>
+    <string name="health_atlas_latissimus_action_fascia">胸腰筋膜</string>
+    <string name="health_atlas_latissimus_action_tendon">背阔肌肌腱</string>
+    <string name="health_atlas_latissimus_action_forward_pose">前方位置</string>
+    <string name="health_atlas_latissimus_action_side_pose">体侧位置</string>
+</resources>

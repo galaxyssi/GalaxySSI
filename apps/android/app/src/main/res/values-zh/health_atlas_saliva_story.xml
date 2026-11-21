@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_saliva_story_title">唾液腺如何产生唾液</string>
+    <string name="health_atlas_saliva_story_choice">唾液分泌</string>
+    <string name="health_atlas_saliva_story_scope">这是正常人体解剖与生理的定性示意，仅展示头部一侧，并以腮腺为例。图中未展示所有腺体、导管或细胞类型。大小、时间和颗粒数量均为示意，并非测量值。</string>
+
+    <string name="health_atlas_saliva_story_locate">口腔附近的三大唾液腺</string>
+    <string name="health_atlas_saliva_story_locate_caption">头部每一侧，腮腺位于耳旁，下颌下腺位于下颌骨下方，舌下腺位于舌下。画面中的流动轨迹仅标示作为示例的腮腺导管。</string>
+    <string name="health_atlas_saliva_story_acinus">腺泡内部</string>
+    <string name="health_atlas_saliva_story_acinus_caption">腺泡是一个小小的分泌单位，不是整个腺体。腺泡细胞围绕着共同的空腔，称为管腔。以腮腺为例，这些细胞把蛋白质储存在靠近管腔的分泌颗粒中。</string>
+    <string name="health_atlas_saliva_story_release">液体和蛋白质进入管腔</string>
+    <string name="health_atlas_saliva_story_release_caption">腺泡细胞将溶解的离子转运到管腔，水随之进入。细胞也会把分泌颗粒中的蛋白质（如淀粉酶）释放到同一空腔。形成的液体流入小导管。</string>
+    <string name="health_atlas_saliva_story_modify">导管细胞改变液体成分</string>
+    <string name="health_atlas_saliva_story_modify_caption">液体流经腺体时，导管细胞从中吸收钠，并向其中分泌钾。这是液体持续流动时，导管改变其中溶解离子组成的两个例子。</string>
+    <string name="health_atlas_saliva_story_empty">唾液流入口腔</string>
+    <string name="health_atlas_saliva_story_empty_caption">腮腺导管开口位于上后牙附近的颊内侧。唾液从该开口流入口腔，与其他唾液腺通过各自开口排出的分泌液混合。</string>
+
+    <string name="health_atlas_saliva_story_parotid">腮腺</string>
+    <string name="health_atlas_saliva_story_submandibular">下颌下腺</string>
+    <string name="health_atlas_saliva_story_sublingual">舌下腺</string>
+    <string name="health_atlas_saliva_story_cheek_opening">颊内侧开口</string>
+    <string name="health_atlas_saliva_story_example">腮腺剖面：一个腺泡</string>
+    <string name="health_atlas_saliva_story_acinar_cells">腺泡细胞</string>
+    <string name="health_atlas_saliva_story_lumen">管腔</string>
+    <string name="health_atlas_saliva_story_duct">导管</string>
+    <string name="health_atlas_saliva_story_fluid">腺泡分泌液</string>
+    <string name="health_atlas_saliva_story_proteins">分泌的蛋白质</string>
+    <string name="health_atlas_saliva_story_sodium_out">钠移出管腔</string>
+    <string name="health_atlas_saliva_story_potassium_in">钾进入管腔</string>
+    <string name="health_atlas_saliva_story_to_mouth">唾液流向口腔</string>
+
+    <string name="health_atlas_saliva_story_ref_duct">研究证据：大鼠腮腺唾液中的钠和钾</string>
+    <string name="health_atlas_saliva_story_ref_human">研究证据：人类唾液腺分泌液的成分</string>
+</resources>

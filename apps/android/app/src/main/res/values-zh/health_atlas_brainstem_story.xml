@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_brainstem_story_title">脑干如何产生呼吸节律</string>
+    <string name="health_atlas_brainstem_story_choice">自动呼吸节律</string>
+    <string name="health_atlas_brainstem_story_scope">正常平静呼吸的定性示意图。解剖结构和神经通路经过简化，运动幅度和时间不按比例。</string>
+
+    <string name="health_atlas_brainstem_story_locate">脑干的位置</string>
+    <string name="health_atlas_brainstem_story_locate_caption">脑干位于脑的底部，与脊髓相连。脑干下部的延髓内有参与驱动自动呼吸的神经网络。</string>
+    <string name="health_atlas_brainstem_story_rhythm">吸气节律</string>
+    <string name="health_atlas_brainstem_story_rhythm_caption">延髓中的神经细胞网络参与产生周期性的吸气活动。放大图突出显示这一网络，并不表示具体的神经连接。</string>
+    <string name="health_atlas_brainstem_story_relay">信号传到膈肌</string>
+    <string name="health_atlas_brainstem_story_relay_caption">信号从脑干下行，传到颈段脊髓中的运动神经元。膈神经再将信号传到两侧膈肌。</string>
+    <string name="health_atlas_brainstem_story_inhale">膈肌收缩</string>
+    <string name="health_atlas_brainstem_story_inhale_caption">膈肌收缩、变平并下降。胸腔容积增大，肺随之扩张，空气流入。</string>
+    <string name="health_atlas_brainstem_story_exhale">平静呼气与下一次吸气</string>
+    <string name="health_atlas_brainstem_story_exhale_caption">随着吸气驱动减弱，膈肌放松并逐渐恢复穹隆形。弹性回缩使空气被动流出。下一次神经活动启动新的呼吸周期。</string>
+
+    <string name="health_atlas_brainstem_story_stem">脑干</string>
+    <string name="health_atlas_brainstem_story_network">吸气神经网络</string>
+    <string name="health_atlas_brainstem_story_cord">颈段脊髓</string>
+    <string name="health_atlas_brainstem_story_phrenic">膈神经</string>
+    <string name="health_atlas_brainstem_story_lungs">肺</string>
+    <string name="health_atlas_brainstem_story_diaphragm">膈肌</string>
+
+    <string name="health_atlas_brainstem_story_ref_rhythm">研究：哺乳动物脑干如何产生呼吸节律</string>
+    <string name="health_atlas_brainstem_story_ref_diaphragm">研究：健康成人平静呼吸时的膈肌运动</string>
+</resources>

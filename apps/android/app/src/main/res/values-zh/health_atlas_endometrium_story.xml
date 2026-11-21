@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_endometrium_story_title">子宫内膜更新</string>
+    <string name="health_atlas_endometrium_story_choice">子宫内膜周期</string>
+    <string name="health_atlas_endometrium_story_scope">本图以简化剖面展示正常月经周期中的子宫内膜。形态和运动未按比例绘制。各章节展示代表性变化，不代表实际时长；脱落与修复可以同时发生。仅供解剖学习，不用于预测生育能力或个人周期。</string>
+    <string name="health_atlas_endometrium_story_layers">子宫内膜的分层</string>
+    <string name="health_atlas_endometrium_story_layers_caption">子宫内膜覆盖宫腔内壁。功能层朝向宫腔，随周期变化；基底层靠近子宫肌层，保留在原位。移动的引线标示放大剖面的位置。</string>
+    <string name="health_atlas_endometrium_story_growth">功能层增厚</string>
+    <string name="health_atlas_endometrium_story_growth_caption">增殖期雌激素水平升高，内膜腺体伸长，腺体之间的间质也随之扩展。上皮细胞排列在腺管内壁；间质细胞位于腺体周围的支持组织中。</string>
+    <string name="health_atlas_endometrium_story_secretion">分泌期的腺体</string>
+    <string name="health_atlas_endometrium_story_secretion_caption">分泌期，孕激素参与调节腺体和间质的变化。腺体变得更加弯曲，腺上皮细胞将分泌物释放到腺腔内。周围组织中的部分间质细胞逐渐变圆。</string>
+    <string name="health_atlas_endometrium_story_shedding">月经期的脱落</string>
+    <string name="health_atlas_endometrium_story_shedding_caption">随着孕激素水平下降，功能层局部分解，并与血液一起脱落至宫腔。基底层和腺体深部仍然保留。部分裸露区域此时已可开始修复。</string>
+    <string name="health_atlas_endometrium_story_repair">表面上皮的修复</string>
+    <string name="health_atlas_endometrium_story_repair_caption">残留腺体开口处和邻近完好内膜的上皮细胞向裸露区域扩展，在功能层恢复厚度之前，重新覆盖间质表面。</string>
+    <string name="health_atlas_endometrium_story_label_uterus">子宫</string>
+    <string name="health_atlas_endometrium_story_label_cavity">宫腔</string>
+    <string name="health_atlas_endometrium_story_label_functional">功能层</string>
+    <string name="health_atlas_endometrium_story_label_basal">基底层</string>
+    <string name="health_atlas_endometrium_story_label_muscle">子宫肌层</string>
+    <string name="health_atlas_endometrium_story_label_stroma">间质</string>
+    <string name="health_atlas_endometrium_story_label_gland">腺上皮</string>
+    <string name="health_atlas_endometrium_story_label_gland_base">腺体底部</string>
+    <string name="health_atlas_endometrium_story_label_surface">表面上皮</string>
+    <string name="health_atlas_endometrium_story_ref_cycle">Garcia-Alonso 等（2021）：人类子宫内膜周期中的细胞类型</string>
+    <string name="health_atlas_endometrium_story_ref_repair">Ferenczy（1976）：人类子宫内膜的表面修复</string>
+</resources>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_coronary_story_title">心肌如何获得血液供应</string>
+    <string name="health_atlas_coronary_story_choice">冠脉灌注</string>
+    <string name="health_atlas_coronary_story_scope">本图定性展示正常冠脉循环，仅绘出部分血流路径。解剖形态、时序和血流均不按比例表示。</string>
+    <string name="health_atlas_coronary_story_ostia">主动脉根部的两个开口</string>
+    <string name="health_atlas_coronary_story_ostia_caption">主动脉根部的血液经主动脉瓣上方的两个开口进入左、右冠状动脉。这两个开口称为冠状动脉开口。</string>
+    <string name="health_atlas_coronary_story_branch">冠脉分支为心肌供血</string>
+    <string name="health_atlas_coronary_story_branch_caption">右冠状动脉为部分心肌供血。左冠状动脉主干分为左前降支（LAD）和回旋支。更细的分支通向毛细血管，氧由此进入心肌。</string>
+    <string name="health_atlas_coronary_story_systole">收缩时左心室心肌血流受限</string>
+    <string name="health_atlas_coronary_story_systole_caption">在收缩期，左心室心肌挤压室壁内的小血管。即使心脏仍在向主动脉射血，流入左心室心肌的血液也会减少。右心室壁等其他部位此时仍可有血流。</string>
+    <string name="health_atlas_coronary_story_diastole">舒张时心肌血流回升</string>
+    <string name="health_atlas_coronary_story_diastole_caption">在舒张期，左心室壁放松，小血管所受的挤压减轻。主动脉内的压力仍推动血液流过这些血管。左心室心肌的血流主要发生在这一时期。</string>
+    <string name="health_atlas_coronary_story_return">心静脉将血液引流至右心房</string>
+    <string name="health_atlas_coronary_story_return_caption">血液流过毛细血管后进入小静脉，再汇入心静脉。大部分血液经心脏背面的冠状窦流入右心房。</string>
+    <string name="health_atlas_coronary_story_aortic_root">主动脉根部</string>
+    <string name="health_atlas_coronary_story_right_ostium">右冠脉开口</string>
+    <string name="health_atlas_coronary_story_left_ostium">左冠脉开口</string>
+    <string name="health_atlas_coronary_story_rca">右冠状动脉</string>
+    <string name="health_atlas_coronary_story_lca">左冠状动脉</string>
+    <string name="health_atlas_coronary_story_lad">左前降支</string>
+    <string name="health_atlas_coronary_story_circumflex">回旋支</string>
+    <string name="health_atlas_coronary_story_root_section">主动脉根部剖面</string>
+    <string name="health_atlas_coronary_story_aortic_valve">主动脉瓣</string>
+    <string name="health_atlas_coronary_story_lv_wall">左心室壁</string>
+    <string name="health_atlas_coronary_story_arteriole">小动脉</string>
+    <string name="health_atlas_coronary_story_capillaries">毛细血管</string>
+    <string name="health_atlas_coronary_story_venule">小静脉</string>
+    <string name="health_atlas_coronary_story_posterior">心脏背面</string>
+    <string name="health_atlas_coronary_story_right_atrium">右心房</string>
+    <string name="health_atlas_coronary_story_cardiac_vein">心大静脉</string>
+    <string name="health_atlas_coronary_story_sinus">冠状窦</string>
+    <string name="health_atlas_coronary_story_ref_ostia">Nasr 和 El Tahlawi：人体冠状动脉开口及其起源（2018）</string>
+    <string name="health_atlas_coronary_story_ref_flow">Spaan、Breuls 和 Laird：犬心肌挤压与冠脉血流的时相变化（1981）</string>
+</resources>

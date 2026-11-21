@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_coronary_story_title">How the heart muscle gets its own blood supply</string>
+    <string name="health_atlas_coronary_story_choice">Coronary perfusion</string>
+    <string name="health_atlas_coronary_story_scope">A qualitative view of normal coronary circulation. The drawings show selected routes; anatomy, timing, and flow are not to scale.</string>
+    <string name="health_atlas_coronary_story_ostia">Two openings at the aortic root</string>
+    <string name="health_atlas_coronary_story_ostia_caption">Blood in the aortic root enters the right and left coronary arteries through two openings, called ostia, just above the aortic valve.</string>
+    <string name="health_atlas_coronary_story_branch">Branches supply the heart muscle</string>
+    <string name="health_atlas_coronary_story_branch_caption">The right coronary artery supplies part of the heart. The left main divides into the left anterior descending (LAD) and circumflex arteries. Smaller branches feed capillaries, where oxygen passes into muscle.</string>
+    <string name="health_atlas_coronary_story_systole">Contraction limits flow into the left ventricular wall</string>
+    <string name="health_atlas_coronary_story_systole_caption">In systole, the contracting left ventricular muscle squeezes the small vessels within its wall. This limits flow into the muscle even while the heart ejects blood into the aorta. Flow can continue elsewhere, including in the right ventricular wall.</string>
+    <string name="health_atlas_coronary_story_diastole">Relaxation lets flow increase again</string>
+    <string name="health_atlas_coronary_story_diastole_caption">In diastole, the left ventricular wall relaxes and releases its small vessels. Pressure in the aorta still drives blood through them. Most blood flow to the left ventricular muscle occurs in this phase.</string>
+    <string name="health_atlas_coronary_story_return">Cardiac veins drain to the right atrium</string>
+    <string name="health_atlas_coronary_story_return_caption">After passing through capillaries, blood enters venules and then cardiac veins. Most of it drains through the coronary sinus on the back of the heart into the right atrium.</string>
+    <string name="health_atlas_coronary_story_aortic_root">Aortic root</string>
+    <string name="health_atlas_coronary_story_right_ostium">Right ostium</string>
+    <string name="health_atlas_coronary_story_left_ostium">Left ostium</string>
+    <string name="health_atlas_coronary_story_rca">Right coronary</string>
+    <string name="health_atlas_coronary_story_lca">Left coronary</string>
+    <string name="health_atlas_coronary_story_lad">LAD</string>
+    <string name="health_atlas_coronary_story_circumflex">Circumflex</string>
+    <string name="health_atlas_coronary_story_root_section">Aortic root cutaway</string>
+    <string name="health_atlas_coronary_story_aortic_valve">Aortic valve</string>
+    <string name="health_atlas_coronary_story_lv_wall">Left ventricular wall</string>
+    <string name="health_atlas_coronary_story_arteriole">Arteriole</string>
+    <string name="health_atlas_coronary_story_capillaries">Capillaries</string>
+    <string name="health_atlas_coronary_story_venule">Venule</string>
+    <string name="health_atlas_coronary_story_posterior">Back of heart</string>
+    <string name="health_atlas_coronary_story_right_atrium">Right atrium</string>
+    <string name="health_atlas_coronary_story_cardiac_vein">Great cardiac vein</string>
+    <string name="health_atlas_coronary_story_sinus">Coronary sinus</string>
+    <string name="health_atlas_coronary_story_ref_ostia">Nasr and El Tahlawi: Human coronary openings and their origins (2018)</string>
+    <string name="health_atlas_coronary_story_ref_flow">Spaan, Breuls and Laird: Myocardial compression and phasic coronary flow in dogs (1981)</string>
+</resources>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_uterocervical_title">Uterus, cervix and vagina</string>
+    <string name="health_atlas_uterocervical_choice">Trace the connected anatomy</string>
+    <string name="health_atlas_uterocervical_scope">A schematic of typical adult, nonpregnant anatomy. The moving highlight traces anatomical connections, not fluid flow. Sections and magnifications are not to scale.</string>
+    <string name="health_atlas_uterocervical_uterus">Uterine wall</string>
+    <string name="health_atlas_uterocervical_uterus_caption">From the uterine cavity outward: the endometrium lines the cavity, the myometrium forms the thick smooth muscle wall, and the thin perimetrium covers the outer surface where serosa is present.</string>
+    <string name="health_atlas_uterocervical_cervix">Cervical canal</string>
+    <string name="health_atlas_uterocervical_cervix_caption">The internal os connects the uterine cavity to the cervical canal. The external os opens into the vagina. The cervix has a glandular canal lining and a wall rich in collagen, distinct from the thick uterine muscle above.</string>
+    <string name="health_atlas_uterocervical_vagina">Vaginal wall and opening</string>
+    <string name="health_atlas_uterocervical_vagina_caption">The vagina extends from around the cervix to the vaginal opening. Its folded squamous lining can flatten as the wall stretches, above a layer of smooth muscle. The inset illustrates that change in fold depth.</string>
+    <string name="health_atlas_uterocervical_locator">Locator</string>
+    <string name="health_atlas_uterocervical_magnification">Magnified section</string>
+    <string name="health_atlas_uterocervical_locator_uterus">Uterus</string>
+    <string name="health_atlas_uterocervical_locator_cervix">Cervix</string>
+    <string name="health_atlas_uterocervical_locator_vagina">Vagina</string>
+    <string name="health_atlas_uterocervical_endometrium">Endometrium</string>
+    <string name="health_atlas_uterocervical_myometrium">Myometrium</string>
+    <string name="health_atlas_uterocervical_perimetrium">Perimetrium</string>
+    <string name="health_atlas_uterocervical_internal_os">Internal os</string>
+    <string name="health_atlas_uterocervical_canal">Cervical canal</string>
+    <string name="health_atlas_uterocervical_external_os">External os</string>
+    <string name="health_atlas_uterocervical_folds">Mucosal folds</string>
+    <string name="health_atlas_uterocervical_muscle">Smooth muscle</string>
+    <string name="health_atlas_uterocervical_opening">Vaginal opening</string>
+    <string name="health_atlas_uterocervical_uterus_view">Uterine body cutaway</string>
+    <string name="health_atlas_uterocervical_cervix_view">Cervical canal cutaway</string>
+    <string name="health_atlas_uterocervical_endometrium_detail">This inner lining borders the uterine cavity.</string>
+    <string name="health_atlas_uterocervical_myometrium_detail">Interlacing smooth muscle makes up most of the uterine body wall.</string>
+    <string name="health_atlas_uterocervical_perimetrium_detail">This thin serosal coat covers part of the outer uterine surface.</string>
+    <string name="health_atlas_uterocervical_internal_os_detail">The upper narrowing where the uterine cavity meets the cervical canal.</string>
+    <string name="health_atlas_uterocervical_canal_detail">The passage through the cervix has a glandular lining and lies within collagen-rich tissue.</string>
+    <string name="health_atlas_uterocervical_external_os_detail">The lower end of the cervical canal opens into the upper vagina.</string>
+    <string name="health_atlas_uterocervical_ref_anatomy">OpenStax: ovarian reproductive anatomy</string>
+    <string name="health_atlas_uterocervical_ref_cervix">NCI SEER: cervical and pelvic anatomy</string>
+    <string name="health_atlas_uterocervical_ref_wall">MedCell: normal reproductive tract histology</string>
+</resources>

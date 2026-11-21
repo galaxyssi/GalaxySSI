@@ -61,7 +61,20 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     VILLUS_AREA(listOf(HealthAtlasInput("villus-density", 0..24, 12),
         HealthAtlasInput("villus-radius", 25..70, 45, 1000.0),
         HealthAtlasInput("villus-height", 20..120, 60, 100.0)), 0, "\u00d7", 1.0, 14.0,
-        "https://pubmed.ncbi.nlm.nih.gov/24694282/");
+        "https://pubmed.ncbi.nlm.nih.gov/24694282/"),
+    ALVEOLAR_DIFFUSION(listOf(HealthAtlasInput("diffusion-gradient", 0..200, 100, 100.0),
+        HealthAtlasInput("diffusion-area", 50..200, 100, 100.0),
+        HealthAtlasInput("diffusion-thickness", 50..200, 100, 100.0)), 0, "\u00d7", 0.0, 8.0,
+        "https://pubmed.ncbi.nlm.nih.gov/8210754/", "https://pmc.ncbi.nlm.nih.gov/articles/PMC2106384/"),
+    CARTILAGE_COMPRESSION(listOf(HealthAtlasInput("cartilage-stress", 0..64, 32),
+        HealthAtlasInput("cartilage-modulus", 80..240, 160, 100.0)), 0, "%", 0.0, 8.0,
+        "https://pubmed.ncbi.nlm.nih.gov/7054208/", "https://pubmed.ncbi.nlm.nih.gov/7382457/"),
+    BONE_BENDING(listOf(HealthAtlasInput("bone-moment", 0..12, 6), HealthAtlasInput("bone-diameter", 20..40, 30),
+        HealthAtlasInput("bone-cavity", 30..80, 60, 100.0)), 0, "MPa", 0.0, 26.0,
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC8933494/"),
+    CALF_PUMP(listOf(HealthAtlasInput("calf-stroke", 0..25, 12), HealthAtlasInput("calf-rate", 0..30, 12),
+        HealthAtlasInput("calf-return", 0..100, 0)), 1, "mL/min", 0.0, 750.0,
+        "https://pubmed.ncbi.nlm.nih.gov/24415543/", "https://pubmed.ncbi.nlm.nih.gov/8445740/");
 
     val sources get() = listOfNotNull(source, extraSource) +
         if (this == VESSEL_FLOW) listOf(HealthAtlasVesselFlow.UNIT_SOURCE) else emptyList()
@@ -89,6 +102,11 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "sweat-glands" -> SWEAT_EVAPORATION
             "lymphatic-vessels" -> LYMPH_VALVE
             "small-intestine", "jejunum" -> VILLUS_AREA
+            "respiratory-membrane", "pulmonary-capillaries", "tissue-alveolar-epithelium",
+            "cell-type-i-pneumocyte" -> ALVEOLAR_DIFFUSION
+            "cartilage", "tissue-hyaline-cartilage", "cell-chondrocyte" -> CARTILAGE_COMPRESSION
+            "limb-bones", "femur", "tibia", "fibula" -> BONE_BENDING
+            "soleus", "gastrocnemius" -> CALF_PUMP
             else -> null
         }
     }
@@ -122,6 +140,10 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> evaporatedMass(input(0), input(1))
         HealthAtlasPhysiologyKind.LYMPH_VALVE -> input(0) / input(1)
         HealthAtlasPhysiologyKind.VILLUS_AREA -> result - 1.0
+        HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> input(1) / input(2)
+        HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> 100.0 - result
+        HealthAtlasPhysiologyKind.BONE_BENDING -> circularSectionMoment(input(1), input(2))
+        HealthAtlasPhysiologyKind.CALF_PUMP -> netStroke(input(0), input(2))
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
@@ -174,8 +196,17 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> evaporatedMass(values[0], values[1]) * 2426.0 / 60.0
         HealthAtlasPhysiologyKind.LYMPH_VALVE -> maxOf(values[0], 0.0) / values[1]
         HealthAtlasPhysiologyKind.VILLUS_AREA -> 1.0 + values[0] * 2.0 * Math.PI * values[1] * values[2]
+        HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> values[0] * values[1] / values[2]
+        // Convert modulus from MPa to kPa and strain from a fraction to percent.
+        HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> values[0] / (10.0 * values[1])
+        // Flexure equation at the outer fiber; 1000 converts N m to N mm.
+        HealthAtlasPhysiologyKind.BONE_BENDING -> 500.0 * values[0] * values[1] / circularSectionMoment(values[1], values[2])
+        HealthAtlasPhysiologyKind.CALF_PUMP -> values[1] * netStroke(values[0], values[2])
     }
     companion object {
+        private fun netStroke(ejected: Double, returnPercent: Double) = ejected * (100.0 - returnPercent) / 100.0
+        private fun circularSectionMoment(diameter: Double, innerRatio: Double) =
+            Math.PI * diameter.pow(4) * (1 - innerRatio.pow(4)) / 64.0
         private fun evaporatedMass(mass: Double, fractionPercent: Double) = mass * fractionPercent / 100.0
         // 1 mL/min at 20 mmol/L delivers 20 micromoles per minute.
         private fun bicarbonateDelivery(ductFlow: Double, ductConcentration: Double) = 20.0 + ductFlow * ductConcentration

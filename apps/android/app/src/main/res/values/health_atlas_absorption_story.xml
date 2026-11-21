@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_absorption_story_title">How the small intestine absorbs nutrients</string>
+    <string name="health_atlas_absorption_story_choice">Intestinal absorption</string>
+    <string name="health_atlas_absorption_story_scope">A schematic of normal human absorption. The villus and enlarged cell are not to scale, and the paths show direction, not timing or amounts.</string>
+    <string name="health_atlas_absorption_story_villus">A villus projects into the lumen</string>
+    <string name="health_atlas_absorption_story_villus_caption">Villi increase the surface available for absorption. Each villus is lined with epithelium and contains blood capillaries and a small lymphatic vessel called a lacteal.</string>
+    <string name="health_atlas_absorption_story_brush_border">Microvilli form the brush border</string>
+    <string name="health_atlas_absorption_story_brush_border_caption">An enterocyte is one absorptive cell in the lining of a villus. Tiny microvilli on its lumen-facing surface form the brush border and add still more surface area.</string>
+    <string name="health_atlas_absorption_story_blood">Soluble nutrients enter blood</string>
+    <string name="health_atlas_absorption_story_blood_caption">Glucose and amino acids cross enterocytes, leave on the tissue side and enter nearby blood capillaries. Portal blood carries them toward the liver.</string>
+    <string name="health_atlas_absorption_story_package">Enterocytes package long-chain lipids</string>
+    <string name="health_atlas_absorption_story_package_caption">After long-chain fat digestion products enter the cell, the enterocyte rebuilds triglycerides and packages them with other lipids and proteins into chylomicrons.</string>
+    <string name="health_atlas_absorption_story_lymph">Chylomicrons enter lymph first</string>
+    <string name="health_atlas_absorption_story_lymph_caption">Chylomicrons leave the tissue-facing side of enterocytes and enter the lacteal. Lymph carries them to the bloodstream later, unlike the direct capillary route for glucose and amino acids.</string>
+    <string name="health_atlas_absorption_story_label_lumen">Intestinal lumen</string>
+    <string name="health_atlas_absorption_story_label_villus">Villus</string>
+    <string name="health_atlas_absorption_story_label_brush_border">Brush border</string>
+    <string name="health_atlas_absorption_story_label_enterocyte">Enterocyte</string>
+    <string name="health_atlas_absorption_story_label_capillaries">Blood capillaries</string>
+    <string name="health_atlas_absorption_story_label_lacteal">Lacteal</string>
+    <string name="health_atlas_absorption_story_label_solutes">Glucose and amino acids</string>
+    <string name="health_atlas_absorption_story_label_lipid">Fat digestion products</string>
+    <string name="health_atlas_absorption_story_label_chylomicrons">Chylomicrons</string>
+    <string name="health_atlas_absorption_story_soluble_source">Glucose and amino acid absorption in the human small intestine</string>
+    <string name="health_atlas_absorption_story_lipid_source">Lipid particles and lacteal entry in the human small intestine</string>
+</resources>

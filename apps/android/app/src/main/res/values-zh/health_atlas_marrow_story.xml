@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_marrow_story_title">骨髓如何生成血细胞</string>
+    <string name="health_atlas_marrow_story_choice">骨髓中的血细胞生成</string>
+    <string name="health_atlas_marrow_story_scope">定性展示正常成人红骨髓中的造血过程。图中分支只展示部分发育去向，并非固定的层级，也未涵盖所有谱系。大小和时间均未按比例呈现。</string>
+    <string name="health_atlas_marrow_story_niche">骨髓中的造血微环境</string>
+    <string name="health_atlas_marrow_story_niche_caption">在骨小梁之间的红骨髓里，邻近的基质细胞和血管有助于维持造血干细胞。这些周围结构是干细胞微环境的一部分。</string>
+    <string name="health_atlas_marrow_story_renewal">干细胞自我更新</string>
+    <string name="health_atlas_marrow_story_renewal_caption">造血干细胞分裂后，子细胞可以保留干细胞特性。图中的这次分裂补充了干细胞群，但并非每次分裂都会如此。</string>
+    <string name="health_atlas_marrow_story_commitment">祖细胞走向不同谱系</string>
+    <string name="health_atlas_marrow_story_commitment_caption">随着细胞逐渐定向分化，它们能生成的血细胞种类变少。图中以红细胞谱系和生成血小板的巨核细胞谱系为例。分支末端的细胞并非干细胞直接分裂产生的子细胞。</string>
+    <string name="health_atlas_marrow_story_maturation">幼红细胞脱去细胞核</string>
+    <string name="health_atlas_marrow_story_maturation_caption">在红细胞谱系中，幼红细胞逐渐变小，细胞核逐渐凝缩。晚期幼红细胞排出细胞核，成为尚未完全成熟的红细胞，称为网织红细胞。</string>
+    <string name="health_atlas_marrow_story_release">网织红细胞进入血液循环</string>
+    <string name="health_atlas_marrow_story_release_caption">网织红细胞穿过骨髓血窦的内皮，随血流离开骨髓，并在血液循环中继续成熟。</string>
+    <string name="health_atlas_marrow_story_label_bone">骨小梁</string>
+    <string name="health_atlas_marrow_story_label_stroma">基质细胞</string>
+    <string name="health_atlas_marrow_story_label_stem">造血干细胞</string>
+    <string name="health_atlas_marrow_story_label_sinusoid">骨髓血窦</string>
+    <string name="health_atlas_marrow_story_label_pool">干细胞群</string>
+    <string name="health_atlas_marrow_story_label_red_lineage">红细胞谱系</string>
+    <string name="health_atlas_marrow_story_label_mega_lineage">巨核细胞谱系</string>
+    <string name="health_atlas_marrow_story_label_illustrative">分支示意</string>
+    <string name="health_atlas_marrow_story_label_early">早期幼红细胞</string>
+    <string name="health_atlas_marrow_story_label_late">晚期幼红细胞</string>
+    <string name="health_atlas_marrow_story_label_reticulocyte">网织红细胞</string>
+    <string name="health_atlas_marrow_story_label_lining">血窦内皮</string>
+    <string name="health_atlas_marrow_story_ref_lineages">Notta 等（2016）：人骨髓中的造血谱系发育</string>
+    <string name="health_atlas_marrow_story_ref_egress">Yokoyama 等（2002）：健康大鼠的网织红细胞进入血液循环</string>
+</resources>

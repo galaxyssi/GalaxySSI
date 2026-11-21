@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_bronchioles_plate_caption">终末细支气管及其管壁放大切面</string>
+    <string name="health_atlas_bronchioles_plate_terminal_branch">终末分支</string>
+    <string name="health_atlas_bronchioles_plate_terminal_branch_detail">图中的终末细支气管由上游的一条细支气管分出。它们是传导区最末端的气道，管壁没有肺泡开口。再往远端，肺泡开口才出现在呼吸性细支气管的管壁上。</string>
+    <string name="health_atlas_bronchioles_plate_lumen">气道管腔</string>
+    <string name="health_atlas_bronchioles_plate_lumen_detail">空气经由管腔进出气体交换区。终末细支气管的管壁不参与气体交换。</string>
+    <string name="health_atlas_bronchioles_plate_epithelium">上皮衬里</string>
+    <string name="health_atlas_bronchioles_plate_epithelium_detail">管腔由单层立方上皮衬覆。顶端呈圆隆状的 Club 细胞没有纤毛；短小的纤毛簇位于其间的纤毛细胞表面。</string>
+    <string name="health_atlas_bronchioles_plate_smooth_muscle">平滑肌</string>
+    <string name="health_atlas_bronchioles_plate_smooth_muscle_detail">弯曲的平滑肌束环绕上皮衬里，收缩时可使管腔变窄。与支气管不同，细支气管没有软骨板。</string>
+    <string name="health_atlas_bronchioles_plate_elastic_fibers">弹性纤维</string>
+    <string name="health_atlas_bronchioles_plate_elastic_fibers_detail">细小的弹性纤维交织于管壁的结缔组织中，随呼吸时气道形状的变化而伸展和回弹。</string>
+</resources>

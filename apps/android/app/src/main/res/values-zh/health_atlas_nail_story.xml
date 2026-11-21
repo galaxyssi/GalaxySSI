@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_nail_story_title">正常甲板的形成</string>
+    <string name="health_atlas_nail_story_choice">甲板如何生长</string>
+    <string name="health_atlas_nail_story_scope">本图以简化的人体指尖纵剖面展示正常甲板的形成。形态和运动未按比例呈现，各章节时长不代表实际生长时间。仅供解剖学习。</string>
+    <string name="health_atlas_nail_story_section">指尖的纵剖面</string>
+    <string name="health_atlas_nail_story_section_caption">近端甲襞覆盖甲根。甲母质位于甲根处，甲床在更靠近指尖的一段甲板下方，游离缘伸出甲床。移动的高亮沿甲板行进。</string>
+    <string name="health_atlas_nail_story_division">甲母质产生新细胞</string>
+    <string name="health_atlas_nail_story_division_caption">甲根下方的甲母质中，活细胞不断分裂。其中一部分子代细胞移向正在形成的甲板下表面。</string>
+    <string name="health_atlas_nail_story_maturation">细胞成为甲板的一部分</string>
+    <string name="health_atlas_nail_story_maturation_caption">这些细胞在成熟过程中逐渐变扁，充满硬角蛋白并失去细胞核，成为层状甲板的一部分。</string>
+    <string name="health_atlas_nail_story_advance">甲板向指尖移动</string>
+    <string name="health_atlas_nail_story_advance_caption">新材料从甲母质处加入甲板，推动已经形成的甲板向指尖移动。图中的小标记随甲板移动，显示甲板作为整体向前推进。</string>
+    <string name="health_atlas_nail_story_edge">从甲床到游离缘</string>
+    <string name="health_atlas_nail_story_edge_caption">甲床支撑移动中的甲板，而甲板主要由甲母质形成。甲板越过甲床末端后伸出，成为游离缘。甲尖并不形成新的甲板。</string>
+    <string name="health_atlas_nail_story_label_fold">近端甲襞</string>
+    <string name="health_atlas_nail_story_label_matrix">甲母质</string>
+    <string name="health_atlas_nail_story_label_plate">甲板</string>
+    <string name="health_atlas_nail_story_label_bed">甲床</string>
+    <string name="health_atlas_nail_story_label_edge">游离缘</string>
+    <string name="health_atlas_nail_story_ref_matrix">Perrin 等（2004）：成人甲单位中的角蛋白表达</string>
+    <string name="health_atlas_nail_story_ref_anatomy">Fleckman 等（2013）：小鼠与人类甲单位的比较解剖</string>
+</resources>

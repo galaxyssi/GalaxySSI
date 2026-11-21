@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <path android:name="appendix" android:strokeColor="#946374" android:strokeWidth="1.55"
+        android:pathData="M109,175 C113,182 112,194 116,207 C120,223 132,236 150,237 C163,238 178,231 186,220 Q192,212 187,208 Q182,205 177,211 C168,221 156,226 147,224 C134,222 129,211 128,199 C127,189 129,181 123,173 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="126" android:startY="196" android:endX="149" android:endY="237">
+                <item android:offset="0" android:color="#F1C7BB" />
+                <item android:offset="0.50" android:color="#DB9E9C" />
+                <item android:offset="1" android:color="#B77988" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#FFECE0" android:strokeAlpha="0.75" android:strokeWidth="1.6"
+        android:strokeLineCap="round" android:pathData="M117,189 C119,201 121,214 130,223 C141,236 165,229 178,218" />
+    <path android:name="cecum" android:strokeColor="#98666E" android:strokeWidth="1.6"
+        android:pathData="M78,60 C83,47 102,45 120,48 C141,50 158,61 161,76 C162,89 155,102 158,113 C165,122 168,138 162,147 C168,162 158,178 148,185 C145,196 129,202 117,198 C106,206 90,198 86,187 C69,185 62,174 67,162 C59,151 65,141 67,136 C58,123 67,114 69,107 C63,95 68,86 73,80 C69,72 74,65 78,60 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="80" android:startY="76" android:endX="147" android:endY="183">
+                <item android:offset="0" android:color="#F4DAC3" />
+                <item android:offset="0.48" android:color="#EAC2AA" />
+                <item android:offset="0.80" android:color="#D99E98" />
+                <item android:offset="1" android:color="#B7818C" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#A17586" android:fillAlpha="0.21"
+        android:pathData="M144,57 C153,62 159,68 161,76 C162,89 155,103 158,113 C165,122 168,138 162,147 C168,162 159,178 148,185 C145,196 129,201 117,198 C105,205 90,197 86,187 C77,187 70,182 67,175 C83,183 87,176 103,181 C126,191 144,168 143,159 C145,143 137,128 143,108 C149,87 149,70 144,57 Z" />
+    <path android:strokeColor="#AE7C80" android:strokeAlpha="0.68" android:strokeWidth="1.25"
+        android:strokeLineCap="round"
+        android:pathData="M74,79 C92,89 104,81 116,84 C132,88 140,91 155,86 M70,108 C83,114 97,109 108,111 C125,115 141,118 154,111 M68,136 C83,142 97,135 109,137 C128,146 144,138 156,135 M68,162 C83,167 96,158 111,166 C122,170 130,171 140,164 M88,185 Q101,189 111,185" />
+    <path android:strokeColor="#FDE9D7" android:strokeAlpha="0.84" android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:pathData="M82,64 C91,55 105,55 120,58 M76,88 C81,92 91,94 103,90 M73,117 C81,121 94,118 106,119 M73,145 C84,148 92,144 102,145 M74,174 Q82,181 93,178" />
+    <path android:fillColor="#B9878B" android:strokeColor="#9F6F7B" android:strokeWidth="1.2"
+        android:pathData="M147,120 C153,113 161,114 168,120 C178,128 176,143 170,153 C165,161 154,161 148,151 C143,143 142,128 147,120 Z" />
+    <path android:name="terminal_ileum" android:strokeColor="#A17076" android:strokeWidth="1.55"
+        android:pathData="M153,123 C175,125 199,121 222,113 C253,102 282,98 305,104 C322,107 330,120 326,131 C322,141 312,145 299,142 C275,137 252,140 227,150 C201,160 177,162 156,152 C148,149 146,128 153,123 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="218" android:startY="106" android:endX="232" android:endY="159">
+                <item android:offset="0" android:color="#F5DAC4" />
+                <item android:offset="0.52" android:color="#EAC0AB" />
+                <item android:offset="1" android:color="#C58989" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#AD7B88" android:fillAlpha="0.3"
+        android:pathData="M153,143 C191,157 222,137 253,132 C276,127 300,140 325,130 C322,141 312,145 299,142 C275,137 252,140 227,150 C201,160 177,162 156,152 Z" />
+    <path android:strokeColor="#FBE8DA" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M160,130 C181,134 205,126 226,119 C255,109 281,105 304,111 M310,113 Q320,117 321,123" />
+    <path android:strokeColor="#AF7D82" android:strokeAlpha="0.53" android:strokeWidth="1"
+        android:strokeLineCap="round"
+        android:pathData="M171,139 Q188,140 205,133 M211,131 Q230,124 247,121 M255,119 Q276,114 290,118 M297,120L306,123 M129,191 Q139,186 142,181" />
+</vector>

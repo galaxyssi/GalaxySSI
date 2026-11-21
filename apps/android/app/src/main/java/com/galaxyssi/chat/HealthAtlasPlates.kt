@@ -91,14 +91,21 @@ internal object HealthAtlasPlates {
         HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all + HealthAtlasTissuePlates.all +
         HealthAtlasHeartSection.section + HealthAtlasImmunePlates.all + HealthAtlasCoreCellPlates.all +
         HealthAtlasTransportCellPlates.all + HealthAtlasDigestivePlates.all + HealthAtlasEndocrinePlates.all +
-        HealthAtlasSensoryPlates.all + HealthAtlasTissueContextPlates.all + HealthAtlasLymphOrgans.all + HealthAtlasGutSections.all
+        HealthAtlasSensoryPlates.all + HealthAtlasTissueContextPlates.all + HealthAtlasLymphOrgans.all + HealthAtlasGutSections.all +
+        HealthAtlasTenocyteTendonMatrixPlate.plate
 
     private val retinaContext = eye.copy(viewKey = "retina-eye-context", selectorLabel = R.string.health_atlas_sensory_retinal_eye_location)
 
     fun viewsForId(id: String?): List<HealthAtlasPlate> = when (id) {
         "heart" -> listOf(heart, HealthAtlasHeartSection.section)
         "retina" -> listOf(requireNotNull(HealthAtlasSensoryPlates.forId(id)), retinaContext)
-        else -> HealthAtlasMusculoskeletalPlates.viewsForId(id).ifEmpty { listOfNotNull(defaultForId(id)) }
+        HealthAtlasTenocyteTendonMatrixAssignment.ID -> listOf(
+            requireNotNull(HealthAtlasTissueContextPlates.forId(id)), HealthAtlasTenocyteTendonMatrixPlate.plate,
+        )
+        else -> HealthAtlasMusculoskeletalPlates.viewsForId(id).let { context ->
+            if (context.isEmpty()) listOfNotNull(defaultForId(id))
+            else listOfNotNull(HealthAtlasTissueContextPlates.forId(id)) + context
+        }
     }
 
     fun forId(id: String?, viewKey: String? = null): HealthAtlasPlate? = viewsForId(id).let { views ->

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_microglia_story_choice">Microglial surveillance</string>
+    <string name="health_atlas_microglia_story_title">How microglia patrol brain tissue</string>
+    <string name="health_atlas_microglia_story_scope">Normal surveillance and one example of local cleanup. Live imaging in mice informs the surveillance scene; the cleanup sequence is based on normal cell turnover in the adult mouse hippocampus. Timing and scale are schematic.</string>
+    <string name="health_atlas_microglia_story_reside">A resident in brain tissue</string>
+    <string name="health_atlas_microglia_story_reside_caption">Microglia live among neurons and other glial cells. At baseline, a compact cell body sends out thin, branching processes into the surrounding tissue.</string>
+    <string name="health_atlas_microglia_story_survey">Moving tips survey the surroundings</string>
+    <string name="health_atlas_microglia_story_survey_caption">Even in the so-called resting state, the tips extend and retract at different times. The cell body can stay in place while the branches sample nearby tissue.</string>
+    <string name="health_atlas_microglia_story_approach">A branch reaches local debris</string>
+    <string name="health_atlas_microglia_story_approach_caption">Normal cell turnover leaves material to clear. In this example, a nearby microglial process reaches a small piece of that material without the whole cell moving toward it.</string>
+    <string name="health_atlas_microglia_story_engulf">A pouch closes around the debris</string>
+    <string name="health_atlas_microglia_story_engulf_caption">The process wraps a pocket of its membrane around the material. When the pocket closes, it holds the debris inside the cell. This is phagocytosis.</string>
+    <string name="health_atlas_microglia_story_digest">The cell breaks down what it took up</string>
+    <string name="health_atlas_microglia_story_digest_caption">The inset shows the captured material being broken down inside the cell. Other tips keep moving through their local surroundings.</string>
+    <string name="health_atlas_microglia_story_neuron">Nearby neuron</string>
+    <string name="health_atlas_microglia_story_soma">Microglial cell body</string>
+    <string name="health_atlas_microglia_story_process">Branching process</string>
+    <string name="health_atlas_microglia_story_debris">Cellular debris</string>
+    <string name="health_atlas_microglia_story_pouch">Engulfing pouch</string>
+    <string name="health_atlas_microglia_story_plate_caption">Ramified microglia in brain tissue</string>
+    <string name="health_atlas_microglia_story_feature_soma">Microglial cell body</string>
+    <string name="health_atlas_microglia_story_feature_soma_detail">The compact cell body gives rise to several thin processes and often stays in place during baseline surveillance.</string>
+    <string name="health_atlas_microglia_story_feature_nucleus">Elongated nucleus</string>
+    <string name="health_atlas_microglia_story_feature_nucleus_detail">The nucleus sits within the compact cell body; it can appear elongated in a tissue section.</string>
+    <string name="health_atlas_microglia_story_feature_fork">Process fork</string>
+    <string name="health_atlas_microglia_story_feature_fork_detail">A larger process divides into finer branches that reach different parts of the surrounding tissue.</string>
+    <string name="health_atlas_microglia_story_feature_tip">Fine process tip</string>
+    <string name="health_atlas_microglia_story_feature_tip_detail">Fine ends can extend and retract even while the cell body stays put.</string>
+    <string name="health_atlas_microglia_story_feature_neighbor">Nearby neuron</string>
+    <string name="health_atlas_microglia_story_feature_neighbor_detail">Microglial branches reach into the neural tissue around neurons; they are not extensions of the neurons themselves.</string>
+    <string name="health_atlas_microglia_story_ref_anatomy">UTHealth · Cell types in nervous tissue</string>
+    <string name="health_atlas_microglia_story_ref_surveillance">Nimmerjahn et al. · Baseline surveillance in living mice</string>
+    <string name="health_atlas_microglia_story_ref_clearance">Sierra et al. · Normal cell turnover in the adult mouse hippocampus</string>
+</resources>

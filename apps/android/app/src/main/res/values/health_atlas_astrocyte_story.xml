@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_astrocyte_story_choice">Astrocyte support</string>
+    <string name="health_atlas_astrocyte_story_title">How an astrocyte supports a synapse</string>
+    <string name="health_atlas_astrocyte_story_scope">Normal support around one excitatory synapse. The paths are schematic and not to scale.</string>
+    <string name="health_atlas_astrocyte_story_signal">A neuron sends a message</string>
+    <string name="health_atlas_astrocyte_story_signal_caption">Glutamate carries the message from one neuron to the next. A nearby astrocyte has branches alongside the synapse and an endfoot resting against a capillary.</string>
+    <string name="health_atlas_astrocyte_story_capture">The astrocyte takes up glutamate</string>
+    <string name="health_atlas_astrocyte_story_capture_caption">After the signal, a nearby astrocyte branch takes up some of the released glutamate, helping clear it from the space around the synapse.</string>
+    <string name="health_atlas_astrocyte_story_convert">Glutamate becomes glutamine</string>
+    <string name="health_atlas_astrocyte_story_convert_caption">Inside the astrocyte, some of the captured glutamate is converted to glutamine.</string>
+    <string name="health_atlas_astrocyte_story_recycle">Glutamine returns to the neuron</string>
+    <string name="health_atlas_astrocyte_story_recycle_caption">Glutamine passes back to the sending neuron, which can turn it into glutamate for future messages. This return is recycling, not a new signal.</string>
+    <string name="health_atlas_astrocyte_story_balance">The astrocyte steadies the surroundings</string>
+    <string name="health_atlas_astrocyte_story_balance_caption">The astrocyte also takes up some potassium from the space around active neurons, helping limit local changes in potassium levels.</string>
+    <string name="health_atlas_astrocyte_story_sending_neuron">Sending neuron</string>
+    <string name="health_atlas_astrocyte_story_receiving_neuron">Receiving neuron</string>
+    <string name="health_atlas_astrocyte_story_synaptic_cleft">Synaptic cleft</string>
+    <string name="health_atlas_astrocyte_story_astrocyte">Astrocyte</string>
+    <string name="health_atlas_astrocyte_story_capillary">Capillary</string>
+    <string name="health_atlas_astrocyte_story_endfoot">Astrocyte endfoot</string>
+    <string name="health_atlas_astrocyte_story_glutamate">Glutamate</string>
+    <string name="health_atlas_astrocyte_story_glutamine">Glutamine</string>
+    <string name="health_atlas_astrocyte_story_potassium">Potassium</string>
+    <string name="health_atlas_astrocyte_story_ref_cycle">Lebon et al. · Glutamate recycling in the human brain</string>
+    <string name="health_atlas_astrocyte_story_ref_buffer">Djukic et al. · Glial uptake of potassium and glutamate</string>
+</resources>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_tooth_mastication_story_title">How teeth bite and chew</string>
+    <string name="health_atlas_tooth_mastication_story_choice">Biting and chewing</string>
+    <string name="health_atlas_tooth_mastication_story_scope">A qualitative view of normal adult teeth and chewing. The drawings show selected teeth and simplified jaw motion. Size and pacing are schematic.</string>
+
+    <string name="health_atlas_tooth_mastication_story_arch">Meet the dental arch</string>
+    <string name="health_atlas_tooth_mastication_story_arch_caption">In this view of the upper teeth from below, incisors line the front. A pointed canine sits on either side, followed by premolars and then broad molars. The highlight follows this order.</string>
+    <string name="health_atlas_tooth_mastication_story_cut">Incisors cut a bite</string>
+    <string name="health_atlas_tooth_mastication_story_cut_caption">The lower jaw rises toward the upper teeth. The thin incisor edges meet the food from above and below, cutting off a piece.</string>
+    <string name="health_atlas_tooth_mastication_story_tear">Canines can help tear</string>
+    <string name="health_atlas_tooth_mastication_story_tear_caption">A pointed canine can grip tough or fibrous food. When the food is pulled against the tooth, the fibers can stretch and part. This is one way a bite can separate.</string>
+    <string name="health_atlas_tooth_mastication_story_grind">Back teeth crush and grind</string>
+    <string name="health_atlas_tooth_mastication_story_grind_caption">Premolars and molars have broader chewing surfaces. The lower jaw rises and shifts slightly sideways. The back teeth press and slide against food between them, breaking it into smaller pieces.</string>
+    <string name="health_atlas_tooth_mastication_story_bolus">Tongue and saliva help form a bolus</string>
+    <string name="health_atlas_tooth_mastication_story_bolus_caption">As the jaw opens, the tongue can guide food back onto the chewing surfaces. Saliva moistens the pieces so they can gather into a soft mass called a bolus. Teeth break food down mechanically; they do not digest it chemically.</string>
+
+    <string name="health_atlas_tooth_mastication_story_incisors">Incisors</string>
+    <string name="health_atlas_tooth_mastication_story_canines">Canines</string>
+    <string name="health_atlas_tooth_mastication_story_premolars">Premolars</string>
+    <string name="health_atlas_tooth_mastication_story_molars">Molars</string>
+    <string name="health_atlas_tooth_mastication_story_jaw">Lower jaw</string>
+    <string name="health_atlas_tooth_mastication_story_tongue">Tongue</string>
+    <string name="health_atlas_tooth_mastication_story_saliva">Saliva</string>
+
+    <string name="health_atlas_tooth_mastication_story_ref_motion">Evidence: tongue and jaw coordination during chewing</string>
+    <string name="health_atlas_tooth_mastication_story_ref_bolus">Evidence: saliva mixing and bolus formation during chewing</string>
+</resources>

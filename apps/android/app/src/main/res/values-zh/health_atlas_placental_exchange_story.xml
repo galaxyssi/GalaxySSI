@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_placental_exchange_story_title">胎盘如何交换气体和营养物质</string>
+    <string name="health_atlas_placental_exchange_story_choice">胎盘物质交换</string>
+    <string name="health_atlas_placental_exchange_story_scope">以妊娠晚期正常的人体胎盘为例。图示和动画均为示意，不按实际比例绘制，也不代表血流或物质转运的测量结果。</string>
+
+    <string name="health_atlas_placental_exchange_story_orient">找到物质交换的表面</string>
+    <string name="health_atlas_placental_exchange_story_orient_caption">胎盘贴在子宫壁上，经脐带与胎儿相连。绒毛膜绒毛从胎儿侧呈树状分支，伸入充满母体血液的间隙。圆圈标出一个细小的分支末端，称为终末绒毛。</string>
+    <string name="health_atlas_placental_exchange_story_routes">沿两条独立的血流路径观察</string>
+    <string name="health_atlas_placental_exchange_story_routes_caption">母体血液经子宫螺旋动脉进入绒毛间隙，流过绒毛周围，再流入子宫静脉。胎儿血液经两条脐动脉流入绒毛内的毛细血管，再经一条脐静脉回到胎儿体内。正常交换过程中，两股血流不直接混合。</string>
+    <string name="health_atlas_placental_exchange_story_interface">放大观察绒毛表面</string>
+    <string name="health_atlas_placental_exchange_story_interface_caption">绒毛最外层是连续的合体滋养层，含有多个细胞核，直接接触母体血液。胎儿血液则留在毛细血管内皮围成的管腔内。毛细血管贴近绒毛表面的地方，两股血流之间的组织很薄。</string>
+    <string name="health_atlas_placental_exchange_story_gases">氧和二氧化碳通过扩散交换</string>
+    <string name="health_atlas_placental_exchange_story_gases_caption">氧的净移动方向是从母体血液到胎儿血液，二氧化碳则相反。两种气体各自沿分压梯度扩散，通过薄薄的绒毛屏障。箭头表示气体净转移的方向，不是血细胞的运动方向。</string>
+    <string name="health_atlas_placental_exchange_story_nutrients">葡萄糖借助转运蛋白通过</string>
+    <string name="health_atlas_placental_exchange_story_nutrients_caption">葡萄糖是净转移方向朝向胎儿血液的一种营养物质。合体滋养层两侧的 GLUT1 转运蛋白帮助葡萄糖以易化扩散的方式通过这一层。不同营养物质可以采用不同的转运方式。</string>
+
+    <string name="health_atlas_placental_exchange_story_cord">脐带</string>
+    <string name="health_atlas_placental_exchange_story_chorionic_plate">绒毛膜板</string>
+    <string name="health_atlas_placental_exchange_story_basal_plate">基底板</string>
+    <string name="health_atlas_placental_exchange_story_terminal_villus">终末绒毛</string>
+    <string name="health_atlas_placental_exchange_story_intervillous">绒毛间隙</string>
+    <string name="health_atlas_placental_exchange_story_syncytium">合体滋养层</string>
+    <string name="health_atlas_placental_exchange_story_capillary">胎儿毛细血管</string>
+    <string name="health_atlas_placental_exchange_story_endothelium">毛细血管内皮</string>
+    <string name="health_atlas_placental_exchange_story_maternal_in">来自螺旋动脉</string>
+    <string name="health_atlas_placental_exchange_story_maternal_out">流向子宫静脉</string>
+    <string name="health_atlas_placental_exchange_story_fetal_in">来自脐动脉</string>
+    <string name="health_atlas_placental_exchange_story_fetal_out">流向脐静脉</string>
+    <string name="health_atlas_placental_exchange_story_oxygen">氧</string>
+    <string name="health_atlas_placental_exchange_story_carbon_dioxide">二氧化碳</string>
+    <string name="health_atlas_placental_exchange_story_glucose">葡萄糖</string>
+    <string name="health_atlas_placental_exchange_story_glut1">GLUT1 转运蛋白</string>
+
+    <string name="health_atlas_placental_exchange_story_ref_anatomy">解剖与物质交换：绒毛膜绒毛与脐带血液循环（OpenStax）</string>
+    <string name="health_atlas_placental_exchange_story_ref_flow">观察研究：子宫内的人体胎盘血流（Dellschaft 等）</string>
+    <string name="health_atlas_placental_exchange_story_ref_interface">观察研究：人体胎盘绒毛的薄层交换区域（Burton 和 Tham）</string>
+    <string name="health_atlas_placental_exchange_story_ref_glucose">观察研究：足月人体胎盘绒毛中 GLUT1 的分布（Takata 等）</string>
+</resources>

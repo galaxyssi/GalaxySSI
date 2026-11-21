@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_scapular_rotation_story_title">肌肉如何带动肩胛骨转动</string>
+    <string name="health_atlas_scapular_rotation_story_choice">肩胛骨上回旋</string>
+    <string name="health_atlas_scapular_rotation_story_scope">这是正常抬臂时右肩的简化后视图。彩色箭头表示肌肉牵拉的大致方向，不表示力的大小；蓝色标记表示位置或运动。图中未展示其他三维运动。</string>
+    <string name="health_atlas_scapular_rotation_story_regions">斜方肌三部与前锯肌</string>
+    <string name="health_atlas_scapular_rotation_story_regions_caption">斜方肌上束连到锁骨外侧，中束连到肩峰和肩胛冈，下束连到肩胛冈的内侧端。前锯肌从肋骨绕到肩胛骨内侧缘的前面。</string>
+    <string name="health_atlas_scapular_rotation_story_clavicle">肩带获得支撑</string>
+    <string name="health_atlas_scapular_rotation_story_clavicle_caption">斜方肌上束帮助抬起锁骨外侧。中束向内牵拉，在其他肌肉带动肩胛骨转动时帮助稳定它。这些作用相互重叠，并非依次启动。</string>
+    <string name="health_atlas_scapular_rotation_story_coupling">不同方向的牵拉相互配合</string>
+    <string name="health_atlas_scapular_rotation_story_coupling_caption">斜方肌下束把肩胛冈内侧端向下、向内拉，前锯肌则拉着肩胛骨下部沿肋骨向外绕转。两者共同帮助肩胛骨上回旋，斜方肌上束通过锁骨提供支持。</string>
+    <string name="health_atlas_scapular_rotation_story_rotation">关节盂向上转</string>
+    <string name="health_atlas_scapular_rotation_story_rotation_caption">肩胛骨转动时，下角沿胸廓向外移，关节盂也随手臂抬高而朝上转。浅色轮廓表示肩胛骨的起始位置。</string>
+    <string name="health_atlas_scapular_rotation_story_return">肩胛骨随手臂回位</string>
+    <string name="health_atlas_scapular_rotation_story_return_caption">手臂放下时，肩胛骨向起始位置转回。肌肉仍在相互配合；图中没有设定固定的运动幅度或肌肉负荷。</string>
+    <string name="health_atlas_scapular_rotation_story_upper">斜方肌上束</string>
+    <string name="health_atlas_scapular_rotation_story_middle">斜方肌中束</string>
+    <string name="health_atlas_scapular_rotation_story_lower">斜方肌下束</string>
+    <string name="health_atlas_scapular_rotation_story_serratus">前锯肌</string>
+    <string name="health_atlas_scapular_rotation_story_clavicle_label">锁骨外侧</string>
+    <string name="health_atlas_scapular_rotation_story_inferior_angle">肩胛骨下角</string>
+    <string name="health_atlas_scapular_rotation_story_socket">肩关节盂</string>
+    <string name="health_atlas_scapular_rotation_story_ref_anatomy">OpenStax：肩带与上肢肌肉</string>
+    <string name="health_atlas_scapular_rotation_story_ref_trapezius">基于解剖的斜方肌结构与作用研究</string>
+    <string name="health_atlas_scapular_rotation_story_ref_coupling">主动与被动抬臂时的肌肉活动与肩胛骨运动</string>
+    <string name="health_atlas_scapular_rotation_story_ref_kinematics">肩胛骨三维运动的直接测量</string>
+</resources>

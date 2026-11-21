@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ganglion_relay_title">神经节：通路与接力</string>
+    <string name="health_atlas_ganglion_relay_scope">从三个视角认识正常的周围神经节。细胞大小、结构间距和动画时序均为示意。</string>
+    <string name="health_atlas_ganglion_relay_choice">神经节通路</string>
+    <string name="health_atlas_ganglion_relay_sensory">穿过感觉神经节</string>
+    <string name="health_atlas_ganglion_relay_sensory_caption">在背根神经节内，感觉神经元胞体伸出一条突起，在 T 形分叉处分成两支。来自外周的神经冲动沿同一个假单极神经元进入中枢支，传向脊髓。冲动不必经过胞体，也不在神经节内通过突触换接。</string>
+    <string name="health_atlas_ganglion_relay_autonomic">跨过自主神经节内的突触</string>
+    <string name="health_atlas_ganglion_relay_autonomic_caption">来自中枢神经系统的节前轴突终止于神经节内。信号从轴突末梢跨越突触间隙传给另一个神经元，图中接收部位为树突。随后，神经冲动可沿节后神经元的轴突传向靶组织。</string>
+    <string name="health_atlas_ganglion_relay_satellite">胞体周围的卫星胶质细胞</string>
+    <string name="health_atlas_ganglion_relay_satellite_caption">在背根神经节内，扁平的卫星胶质细胞在感觉神经元胞体周围形成薄鞘，帮助调节紧邻胞体的细胞外环境，包括局部钾离子水平。图中放大并突出显示了这层间隙。卫星胶质鞘不是轴突髓鞘，也不是神经元之间的中继站。</string>
+    <string name="health_atlas_ganglion_relay_art_drg">背根神经节</string>
+    <string name="health_atlas_ganglion_relay_art_soma">感觉神经元胞体</string>
+    <string name="health_atlas_ganglion_relay_art_junction">T 形分叉</string>
+    <string name="health_atlas_ganglion_relay_art_central">脊髓</string>
+    <string name="health_atlas_ganglion_relay_art_peripheral">外周支</string>
+    <string name="health_atlas_ganglion_relay_art_pre">节前轴突</string>
+    <string name="health_atlas_ganglion_relay_art_synapse">突触间隙</string>
+    <string name="health_atlas_ganglion_relay_art_dendrite">接收信号的树突</string>
+    <string name="health_atlas_ganglion_relay_art_post_soma">节后神经元胞体</string>
+    <string name="health_atlas_ganglion_relay_art_post">节后轴突</string>
+    <string name="health_atlas_ganglion_relay_art_sheath">卫星胶质鞘</string>
+    <string name="health_atlas_ganglion_relay_art_glial_nucleus">胶质细胞核</string>
+    <string name="health_atlas_ganglion_relay_art_perisomatic">胞体周围间隙</string>
+    <string name="health_atlas_ganglion_relay_art_matrix">结缔组织</string>
+    <string name="health_atlas_ganglion_relay_ref_drg">NCBI Bookshelf：背根神经节解剖</string>
+    <string name="health_atlas_ganglion_relay_ref_sensory">Shorey 等：斑马鱼感觉神经元分支</string>
+    <string name="health_atlas_ganglion_relay_ref_autonomic">OpenStax：自主神经系统的分部</string>
+    <string name="health_atlas_ganglion_relay_ref_synapse">Elfvin：猫自主神经节的超微结构</string>
+    <string name="health_atlas_ganglion_relay_ref_sheath">Martinelli 等：兔卫星胶质鞘的电镜观察</string>
+    <string name="health_atlas_ganglion_relay_ref_local">Tang 等：小鼠卫星胶质细胞的钾电导</string>
+    <string name="health_atlas_autonomic_outflows_view">自主神经传出通路（示意）</string>
+    <string name="health_atlas_autonomic_outflows_thoracolumbar">胸腰段传出</string>
+    <string name="health_atlas_autonomic_outflows_thoracolumbar_detail">交感节前纤维起于胸段和上腰段脊髓，通常为 T1 至 L2 节段。图中仅画出代表性连接。</string>
+    <string name="health_atlas_autonomic_outflows_chain">交感神经链</string>
+    <string name="health_atlas_autonomic_outflows_chain_detail">两条由神经节串成的交感干位于脊柱两侧。纤维可在进入的节段换接，也可沿交感干上行或下行，或穿过交感干进入椎前神经节。</string>
+    <string name="health_atlas_autonomic_outflows_cranial">脑干传出</string>
+    <string name="health_atlas_autonomic_outflows_cranial_detail">副交感纤维随第 III、VII、IX 和 X 对脑神经离开脑干。第 X 对是迷走神经，通往胸腔及腹腔内的许多器官。图中合并显示了部分通路。</string>
+    <string name="health_atlas_autonomic_outflows_sacral">骶段传出</string>
+    <string name="health_atlas_autonomic_outflows_sacral_detail">副交感纤维起于脊髓 S2 至 S4 节段，经盆内脏神经通往远端肠道和盆腔器官。</string>
+    <string name="health_atlas_autonomic_outflows_terminal">终末神经节</string>
+    <string name="health_atlas_autonomic_outflows_terminal_detail">副交感纤维通常在靶器官附近或器官壁内换接。图中神经节之后的一小段表示节后纤维。</string>
+</resources>

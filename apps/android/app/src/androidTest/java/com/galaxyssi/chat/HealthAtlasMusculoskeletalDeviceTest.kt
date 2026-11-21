@@ -78,10 +78,10 @@ class HealthAtlasMusculoskeletalDeviceTest {
         for (plate in HealthAtlasMusculoskeletalPlates.all) for (marker in plate.markers) {
             val views = HealthAtlasPlates.viewsForId(marker.id)
             assertTrue(views.contains(plate))
-            assertTrue(views.all { it.markers.any { target -> target.id == marker.id } })
+            assertTrue(views.all { it.owner == marker.id || it.markers.any { target -> target.id == marker.id } })
         }
-        for (id in listOf("erector-spinae", "soleus", "cartilage", "ligaments", "radius")) assertNull(id, HealthAtlasPlates.forId(id))
-        for (id in listOf("cell-skeletal-myocyte", "cell-osteoblast", "cell-chondrocyte"))
+        for (id in listOf("erector-spinae", "soleus", "cartilage", "ligaments", "radius",
+            "cell-skeletal-myocyte", "cell-osteoblast", "cell-chondrocyte"))
             assertEquals(id, HealthAtlasPlates.forId(id)!!.owner)
         assertEquals("respiratory", HealthAtlasPlates.forId("diaphragm")!!.owner)
         assertEquals("bone-marrow", HealthAtlasPlates.forId("bone-marrow")!!.owner)
@@ -122,12 +122,17 @@ class HealthAtlasMusculoskeletalDeviceTest {
         scenario.onActivity {
             it.open("skeletal"); it.view("atlas-view-1").performClick()
             it.view("atlas-hotspot-vertebrae").performClick()
+            assertTrue(it.view("atlas-view-0").isSelected)
+            assertNotNull(it.view("atlas-feature-lumbar-segment-facet"))
+            it.view("atlas-view-1").performClick()
             assertTrue(it.view("atlas-hotspot-vertebrae").isSelected)
-            assertNull(it.window.decorView.tagged("atlas-view-0"))
         }
         scenario.recreate(); ready(scenario, "atlas-hotspot-vertebrae")
         scenario.onActivity {
+            assertTrue(it.view("atlas-view-1").isSelected)
             assertTrue(it.view("atlas-hotspot-vertebrae").isSelected)
+            it.view("atlas-view-0").performClick()
+            assertNotNull(it.view("atlas-feature-lumbar-segment-facet"))
             it.onBackPressed(); assertTrue(it.view("atlas-view-1").isSelected)
         }
         scenario.recreate(); ready(scenario, "atlas-view-1")

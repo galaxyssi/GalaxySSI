@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_melanin_story_choice">Pigment transfer</string>
+    <string name="health_atlas_melanin_story_title">Melanin transfer in the epidermis</string>
+    <string name="health_atlas_melanin_story_scope">A qualitative view of normal human epidermis. Sizes, timing, and paths are schematic; pigment distribution varies, and the transfer shown is one proposed route.</string>
+    <string name="health_atlas_melanin_story_neighborhood">The cell neighborhood</string>
+    <string name="health_atlas_melanin_story_neighborhood_caption">A melanocyte sits in the basal layer of the epidermis. Its branching dendrites reach between neighboring keratinocytes.</string>
+    <string name="health_atlas_melanin_story_packaging">Pigment in melanosomes</string>
+    <string name="health_atlas_melanin_story_packaging_caption">Inside the melanocyte, melanin is made and accumulates in membrane-bound compartments called melanosomes.</string>
+    <string name="health_atlas_melanin_story_transport">Along the dendrites</string>
+    <string name="health_atlas_melanin_story_transport_caption">Some melanosomes move from the cell body along the dendrites toward their tips, bringing pigment close to keratinocytes.</string>
+    <string name="health_atlas_melanin_story_transfer">Passing pigment to a neighbor</string>
+    <string name="health_atlas_melanin_story_transfer_caption">One proposed route is shown: the melanocyte releases a melanin core, and a keratinocyte takes it up. Other proposed routes involve membrane-wrapped pigment packets or uptake of part of a dendrite tip.</string>
+    <string name="health_atlas_melanin_story_shielding">A partial UV shield</string>
+    <string name="health_atlas_melanin_story_shielding_caption">Pigment can remain dispersed in a keratinocyte or gather over the nucleus on the side facing the skin surface. This cap can reduce UV reaching nuclear DNA, but it does not block all UV.</string>
+    <string name="health_atlas_melanin_story_label_surface">Skin surface</string>
+    <string name="health_atlas_melanin_story_label_keratinocyte">Keratinocyte</string>
+    <string name="health_atlas_melanin_story_label_melanocyte">Melanocyte</string>
+    <string name="health_atlas_melanin_story_label_basement">Basement membrane</string>
+    <string name="health_atlas_melanin_story_label_dendrite">Dendrite</string>
+    <string name="health_atlas_melanin_story_label_melanosome">Melanosome</string>
+    <string name="health_atlas_melanin_story_label_core">Melanin core</string>
+    <string name="health_atlas_melanin_story_label_cap">Pigment cap</string>
+    <string name="health_atlas_melanin_story_reference_transfer">Tarafder et al. (2014): Melanin release and uptake</string>
+    <string name="health_atlas_melanin_story_reference_uv">Kobayashi et al. (1998): Melanin caps and UV effects on DNA</string>
+</resources>

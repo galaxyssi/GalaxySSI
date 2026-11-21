@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_endothelium_title">How capillary endothelium regulates exchange</string>
+    <string name="health_atlas_endothelium_scope">A simplified view of a normal continuous blood capillary in tissue. Exchange varies by tissue; paths, sizes and timing are not to scale. For education, not medical advice.</string>
+    <string name="health_atlas_endothelium_choice">Capillary exchange</string>
+    <string name="health_atlas_endothelium_boundary">A lining between blood and tissue</string>
+    <string name="health_atlas_endothelium_boundary_caption">A thin layer of endothelial cells lines the capillary. It forms a selective boundary between the lumen, where blood flows, and the interstitium, the space around tissue cells.</string>
+    <string name="health_atlas_endothelium_filtration">Some water filters out</string>
+    <string name="health_atlas_endothelium_filtration_caption">In many tissues, the balance of pressures lets some water filter from the blood into the tissue space. This outward flow is called filtration.</string>
+    <string name="health_atlas_endothelium_diffusion">Small solutes diffuse across</string>
+    <string name="health_atlas_endothelium_diffusion_caption">Small dissolved substances can diffuse across the lining in either direction. The net movement of each solute is from higher to lower concentration. This is not bulk fluid flow.</string>
+    <string name="health_atlas_endothelium_retention">Larger molecules mostly stay in blood</string>
+    <string name="health_atlas_endothelium_retention_caption">Many large molecules, such as the plasma protein albumin, cross less readily than small solutes. Most albumin stays in the blood as it passes through, but some can cross.</string>
+    <string name="health_atlas_endothelium_drainage">Excess tissue fluid enters lymphatics</string>
+    <string name="health_atlas_endothelium_drainage_caption">Excess fluid from the tissue space enters nearby lymphatic capillaries. Once inside, it is called lymph. This route does not depend on ongoing fluid uptake at the venous end of the blood capillary.</string>
+    <string name="health_atlas_endothelium_lumen">Blood lumen</string>
+    <string name="health_atlas_endothelium_lining">Endothelial lining</string>
+    <string name="health_atlas_endothelium_interstitium">Interstitium</string>
+    <string name="health_atlas_endothelium_lymph_capillary">Lymphatic capillary</string>
+    <string name="health_atlas_endothelium_water">Water</string>
+    <string name="health_atlas_endothelium_solutes">Small solutes</string>
+    <string name="health_atlas_endothelium_proteins">Plasma proteins</string>
+    <string name="health_atlas_endothelium_ref_filtration">Evidence: capillary fluid filtration</string>
+    <string name="health_atlas_endothelium_ref_diffusion">Evidence: small-solute permeability</string>
+    <string name="health_atlas_endothelium_ref_albumin">Evidence: albumin exchange in the human forearm</string>
+    <string name="health_atlas_endothelium_ref_lymph">Evidence: uptake into initial lymphatic vessels</string>
+</resources>

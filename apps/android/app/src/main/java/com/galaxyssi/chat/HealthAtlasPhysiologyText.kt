@@ -22,6 +22,10 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> R.string.health_atlas_context_evap_title
         HealthAtlasPhysiologyKind.LYMPH_VALVE -> R.string.health_atlas_lymph_valve_model_title
         HealthAtlasPhysiologyKind.VILLUS_AREA -> R.string.health_atlas_gut_section_area_title
+        HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> R.string.health_atlas_diffusion_title
+        HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> R.string.health_atlas_compression_title
+        HealthAtlasPhysiologyKind.BONE_BENDING -> R.string.health_atlas_bone_bending_title
+        HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_title
     }
     fun scope(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_scope
@@ -41,6 +45,10 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> R.string.health_atlas_context_evap_scope
         HealthAtlasPhysiologyKind.LYMPH_VALVE -> R.string.health_atlas_lymph_valve_model_scope
         HealthAtlasPhysiologyKind.VILLUS_AREA -> R.string.health_atlas_gut_section_area_scope
+        HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> R.string.health_atlas_diffusion_scope
+        HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> R.string.health_atlas_compression_scope
+        HealthAtlasPhysiologyKind.BONE_BENDING -> R.string.health_atlas_bone_bending_scope
+        HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_scope
     }
     fun formula(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_formula
@@ -60,6 +68,10 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> R.string.health_atlas_context_evap_formula
         HealthAtlasPhysiologyKind.LYMPH_VALVE -> R.string.health_atlas_lymph_valve_model_formula
         HealthAtlasPhysiologyKind.VILLUS_AREA -> R.string.health_atlas_gut_section_area_formula
+        HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> R.string.health_atlas_diffusion_formula
+        HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> R.string.health_atlas_compression_formula
+        HealthAtlasPhysiologyKind.BONE_BENDING -> R.string.health_atlas_bone_bending_formula
+        HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_formula
     }
     fun label(key: String) = when (key) {
         "rate" -> R.string.health_atlas_rate
@@ -103,6 +115,17 @@ internal object HealthAtlasPhysiologyText {
         "villus-density" -> R.string.health_atlas_gut_section_area_density
         "villus-radius" -> R.string.health_atlas_gut_section_area_radius
         "villus-height" -> R.string.health_atlas_gut_section_area_height
+        "diffusion-gradient" -> R.string.health_atlas_diffusion_gradient
+        "diffusion-area" -> R.string.health_atlas_diffusion_area
+        "diffusion-thickness" -> R.string.health_atlas_diffusion_thickness
+        "cartilage-stress" -> R.string.health_atlas_compression_stress
+        "cartilage-modulus" -> R.string.health_atlas_compression_modulus
+        "bone-moment" -> R.string.health_atlas_bone_bending_moment
+        "bone-diameter" -> R.string.health_atlas_bone_bending_diameter
+        "bone-cavity" -> R.string.health_atlas_bone_bending_cavity
+        "calf-stroke" -> R.string.health_atlas_calf_pump_stroke
+        "calf-rate" -> R.string.health_atlas_calf_pump_rate
+        "calf-return" -> R.string.health_atlas_calf_pump_return
         else -> error("Unknown physiology input: $key")
     }
     fun unit(key: String) = when (key) {
@@ -138,6 +161,15 @@ internal object HealthAtlasPhysiologyText {
         "lymph-resistance" -> "mmHg\u00b7min/mL"
         "villus-density" -> "/mm\u00b2"
         "villus-radius", "villus-height" -> "mm"
+        "diffusion-gradient", "diffusion-area", "diffusion-thickness" -> "\u00d7"
+        "cartilage-stress" -> "kPa"
+        "cartilage-modulus" -> "MPa"
+        "bone-moment" -> "N\u00b7m"
+        "bone-diameter" -> "mm"
+        "bone-cavity" -> ""
+        "calf-stroke" -> "mL"
+        "calf-rate" -> "/min"
+        "calf-return" -> "%"
         else -> error("Unknown physiology input: $key")
     }
     fun number(value: Double, digits: Int = 2): String = NumberFormat.getNumberInstance().apply {
@@ -178,6 +210,10 @@ internal object HealthAtlasPhysiologyText {
             else -> R.string.health_atlas_lymph_valve_model_balance
         }
         HealthAtlasPhysiologyKind.VILLUS_AREA -> R.string.health_atlas_gut_section_area_extra
+        HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> R.string.health_atlas_diffusion_conductance
+        HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> R.string.health_atlas_compression_remaining
+        HealthAtlasPhysiologyKind.BONE_BENDING -> R.string.health_atlas_bone_bending_inertia
+        HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_net_stroke
     }, number(model.companionValue, if (model.kind == HealthAtlasPhysiologyKind.POTASSIUM) 4 else 2))
     }
     fun sourceTitle(kind: HealthAtlasPhysiologyKind, index: Int): Int = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING) {

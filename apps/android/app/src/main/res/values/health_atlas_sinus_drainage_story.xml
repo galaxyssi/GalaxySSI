@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_sinus_drainage_title">How the paranasal sinuses clear mucus</string>
+    <string name="health_atlas_sinus_drainage_choice">Sinus mucus clearance</string>
+    <string name="health_atlas_sinus_drainage_scope">Two views locate the four sinus groups, then a simplified cutaway follows normal mucus clearance in one maxillary sinus. The layers, movements, and timing are not to scale.</string>
+
+    <string name="health_atlas_sinus_drainage_locate">Four groups around the nose</string>
+    <string name="health_atlas_sinus_drainage_locate_caption">The frontal sinuses sit above the eyes, the ethmoid air cells between them, and the maxillary sinuses beneath them. The side view shows the sphenoid sinuses deep behind the ethmoid cells.</string>
+    <string name="health_atlas_sinus_drainage_zoom">The opening sits high</string>
+    <string name="health_atlas_sinus_drainage_zoom_caption">In this front-facing slice, the natural opening is high on the wall nearest the nose, well above the sinus floor. With the head upright, mucus has to move up to reach it. Gravity alone cannot do that.</string>
+    <string name="health_atlas_sinus_drainage_secrete">The lining makes mucus</string>
+    <string name="health_atlas_sinus_drainage_secrete_caption">Mucus from secretory cells joins a thin film over the sinus lining. Tiny, hairlike cilia on neighboring cells beat just beneath that film.</string>
+    <string name="health_atlas_sinus_drainage_sweep">Cilia sweep mucus uphill</string>
+    <string name="health_atlas_sinus_drainage_sweep_caption">Coordinated cilia move the mucus film along the lining, up the walls toward the natural opening. The cutaway highlights one of those surface routes.</string>
+    <string name="health_atlas_sinus_drainage_enter">Mucus enters the nasal passage</string>
+    <string name="health_atlas_sinus_drainage_enter_caption">Mucus passes through the natural opening and a short channel into the middle meatus, a passage under the middle nasal turbinate. Nasal cilia carry it onward along the lining.</string>
+
+    <string name="health_atlas_sinus_drainage_frontal">Frontal sinuses</string>
+    <string name="health_atlas_sinus_drainage_ethmoid">Ethmoid air cells</string>
+    <string name="health_atlas_sinus_drainage_sphenoid">Sphenoid sinus</string>
+    <string name="health_atlas_sinus_drainage_maxillary_pair">Maxillary sinuses</string>
+    <string name="health_atlas_sinus_drainage_maxillary">Maxillary sinus</string>
+    <string name="health_atlas_sinus_drainage_front_view">Front view</string>
+    <string name="health_atlas_sinus_drainage_side_view">Side cutaway</string>
+    <string name="health_atlas_sinus_drainage_coronal_view">Coronal cutaway</string>
+    <string name="health_atlas_sinus_drainage_opening">Natural opening</string>
+    <string name="health_atlas_sinus_drainage_floor">Sinus floor</string>
+    <string name="health_atlas_sinus_drainage_nasal_passage">Nasal passage</string>
+    <string name="health_atlas_sinus_drainage_mucus_film">Mucus film</string>
+    <string name="health_atlas_sinus_drainage_secretory_cell">Secretory cell</string>
+    <string name="health_atlas_sinus_drainage_cilia">Cilia</string>
+
+    <string name="health_atlas_sinus_drainage_ref_opening">Evidence: location of the natural maxillary opening</string>
+    <string name="health_atlas_sinus_drainage_ref_clearance">Evidence: mucus clearance in healthy maxillary sinuses</string>
+</resources>

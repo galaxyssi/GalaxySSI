@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_radius_section_view">桡骨和尺骨 · 手掌朝前</string>
+    <string name="health_atlas_radius_section_head">桡骨头</string>
+    <string name="health_atlas_radius_section_head_detail">肘部的盘状桡骨头，可在前臂旋转时相对尺骨转动。</string>
+    <string name="health_atlas_radius_section_shaft">桡骨干</string>
+    <string name="health_atlas_radius_section_shaft_detail">在这个视角中，桡骨干位于拇指侧。两根骨之间的纤维膜连接桡骨干和尺骨干。</string>
+    <string name="health_atlas_radius_section_wrist">桡骨远端</string>
+    <string name="health_atlas_radius_section_wrist_detail">较宽的桡骨腕端与近排的部分腕骨相接。</string>
+    <string name="health_atlas_radius_section_styloid">桡骨茎突</string>
+    <string name="health_atlas_radius_section_styloid_detail">这处骨性突起位于手腕的拇指侧。</string>
+    <string name="health_atlas_olfactory_mucosa_view">嗅黏膜放大剖面 · 非等比例</string>
+    <string name="health_atlas_olfactory_mucosa_mucus">黏液薄层</string>
+    <string name="health_atlas_olfactory_mucosa_mucus_detail">气味分子先进入黏膜表面的薄湿层，再接触感觉纤毛上的受体。</string>
+    <string name="health_atlas_olfactory_mucosa_cilia">嗅觉纤毛</string>
+    <string name="health_atlas_olfactory_mucosa_cilia_detail">从嗅感觉神经元延伸到黏液中的结构，负责感受气味，不像鼻腔其他部位的运动纤毛那样扫动黏液。</string>
+    <string name="health_atlas_olfactory_mucosa_support">支持细胞</string>
+    <string name="health_atlas_olfactory_mucosa_support_detail">这些上皮细胞围绕嗅感觉神经元，帮助维持其周围的组织环境。</string>
+    <string name="health_atlas_olfactory_mucosa_gland">嗅腺</string>
+    <string name="health_atlas_olfactory_mucosa_gland_detail">上皮下方的腺体经细小导管把分泌物送到表面。</string>
+    <string name="health_atlas_cranial_attach_view">脑神经连接位置 · 从脑底看</string>
+    <string name="health_atlas_cranial_attach_one">Ⅰ · 嗅神经</string>
+    <string name="health_atlas_cranial_attach_one_detail">来自鼻腔嗅黏膜的嗅神经纤维进入前脑下方的嗅球。</string>
+    <string name="health_atlas_cranial_attach_two">Ⅱ · 视神经</string>
+    <string name="health_atlas_cranial_attach_two_detail">来自双眼的视神经在视交叉相遇，部分纤维在此交叉到对侧。</string>
+    <string name="health_atlas_cranial_attach_mid">Ⅲ、Ⅳ · 中脑</string>
+    <string name="health_atlas_cranial_attach_mid_detail">动眼神经（Ⅲ）从中脑底面出现。滑车神经（Ⅳ）从背面出来后绕过侧面，图中用断线表示。</string>
+    <string name="health_atlas_cranial_attach_pons">Ⅴ · 三叉神经</string>
+    <string name="health_atlas_cranial_attach_pons_detail">三叉神经根主要连接在脑桥侧面，传递大部分面部感觉，并参与咀嚼动作。</string>
+    <string name="health_atlas_cranial_attach_border">Ⅵ–Ⅷ · 脑桥边界</string>
+    <string name="health_atlas_cranial_attach_border_detail">在脑桥与延髓的交界，展神经（Ⅵ）靠近中线，面神经（Ⅶ）和前庭蜗神经（Ⅷ）更靠外侧。</string>
+    <string name="health_atlas_cranial_attach_lower">Ⅸ、Ⅹ · 延髓</string>
+    <string name="health_atlas_cranial_attach_lower_detail">舌咽神经（Ⅸ）和迷走神经（Ⅹ）的细小神经根位于延髓侧面。</string>
+    <string name="health_atlas_cranial_attach_accessory">Ⅺ · 副神经</string>
+    <string name="health_atlas_cranial_attach_accessory_detail">副神经的主要脊髓部分沿上段颈髓向上走行，不从脑桥发出。</string>
+    <string name="health_atlas_cranial_attach_tongue">Ⅻ · 舌下神经</string>
+    <string name="health_atlas_cranial_attach_tongue_detail">舌下神经的细根从延髓更靠近中线的沟发出。它支配大多数舌肌。</string>
+    <string name="health_atlas_limb_bones_overview_view">上肢骨与下肢骨 · 并排示意</string>
+    <string name="health_atlas_hair_shaft_view">毛干及其分层 · 放大示意</string>
+    <string name="health_atlas_hair_shaft_cuticle">毛小皮</string>
+    <string name="health_atlas_hair_shaft_cuticle_detail">扁平细胞像鳞片一样相互覆盖，形成保护毛干的薄外层。</string>
+    <string name="health_atlas_hair_shaft_cortex">皮质</string>
+    <string name="health_atlas_hair_shaft_cortex_detail">较厚的中间层，含有角蛋白纤维，为毛干提供大部分强度。</string>
+    <string name="health_atlas_hair_shaft_medulla">髓质</string>
+    <string name="health_atlas_hair_shaft_medulla_detail">中央区域，可能连续、断续或缺如。图示为可见髓质的例子。</string>
+</resources>

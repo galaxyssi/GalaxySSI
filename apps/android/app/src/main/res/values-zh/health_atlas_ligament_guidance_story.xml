@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ligament_guidance_story_title">韧带如何引导关节运动</string>
+    <string name="health_atlas_ligament_guidance_story_choice">韧带的引导作用</string>
+    <string name="health_atlas_ligament_guidance_story_scope">右膝的简化斜视图。省略髌骨和关节囊前部，以显露两条韧带。箭头仅标示韧带所限制的滑动方向，不代表骨的移动距离或韧带的受力大小。</string>
+    <string name="health_atlas_ligament_guidance_story_connect">韧带把骨与骨连接起来</string>
+    <string name="health_atlas_ligament_guidance_story_connect_caption">韧带是富含胶原纤维的组织带，有助于稳定关节。它不像肌肉那样主动收缩来带动骨骼，而是在纤维受牵拉、产生张力时限制某些运动。</string>
+    <string name="health_atlas_ligament_guidance_story_cross">两条韧带在膝关节内交叉</string>
+    <string name="health_atlas_ligament_guidance_story_cross_caption">前交叉韧带（ACL）从股骨外侧髁朝向髁间窝的一面，连到胫骨髁间区的前部。后交叉韧带（PCL）从股骨内侧髁朝向髁间窝的一面，连到胫骨髁间区后缘的斜面。</string>
+    <string name="health_atlas_ligament_guidance_story_anterior">前交叉韧带限制向前滑动</string>
+    <string name="health_atlas_ligament_guidance_story_anterior_caption">前交叉韧带有助于限制胫骨相对于股骨向前滑动。韧带两端都附着在骨上，受牵拉时产生张力，抵抗这种滑动。</string>
+    <string name="health_atlas_ligament_guidance_story_posterior">后交叉韧带限制向后滑动</string>
+    <string name="health_atlas_ligament_guidance_story_posterior_caption">后交叉韧带有助于限制胫骨相对于股骨向后滑动。由于附着位置不同，它所抵抗的滑动方向与前交叉韧带相反。</string>
+    <string name="health_atlas_ligament_guidance_story_coordinate">两条韧带共同引导运动，并不锁住关节</string>
+    <string name="health_atlas_ligament_guidance_story_coordinate_caption">膝关节仍然可以屈伸。随着姿势和负荷变化，不同纤维承受的张力也会变化。交叉韧带与骨的形态及膝关节周围的其他组织共同发挥作用，并不把关节固定不动。</string>
+    <string name="health_atlas_ligament_guidance_story_femur">股骨</string>
+    <string name="health_atlas_ligament_guidance_story_tibia">胫骨</string>
+    <string name="health_atlas_ligament_guidance_story_acl">前交叉韧带</string>
+    <string name="health_atlas_ligament_guidance_story_pcl">后交叉韧带</string>
+    <string name="health_atlas_ligament_guidance_story_direction_key">韧带所限制的胫骨滑动方向</string>
+    <string name="health_atlas_ligament_guidance_story_forward_slide">向前滑动</string>
+    <string name="health_atlas_ligament_guidance_story_backward_slide">向后滑动</string>
+    <string name="health_atlas_ligament_guidance_story_ref_anatomy">教材：膝关节韧带与关节运动</string>
+    <string name="health_atlas_ligament_guidance_story_ref_acl">解剖研究：前交叉韧带的附着部位</string>
+    <string name="health_atlas_ligament_guidance_story_ref_pcl">解剖研究：后交叉韧带的附着部位</string>
+    <string name="health_atlas_ligament_guidance_story_ref_motion">影像研究：负重屈膝时的交叉韧带</string>
+</resources>

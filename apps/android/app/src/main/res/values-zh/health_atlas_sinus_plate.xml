@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_sinus_plate_caption">鼻腔与鼻窦（简化冠状切面）</string>
+    <string name="health_atlas_sinus_plate_frontal">额窦</string>
+    <string name="health_atlas_sinus_plate_frontal_detail">额窦是位于额骨内的一对含气腔，处在两侧眼眶内侧部分的上方。左右额窦的形状和大小常不相同。</string>
+    <string name="health_atlas_sinus_plate_ethmoid">筛窦气房</string>
+    <string name="health_atlas_sinus_plate_ethmoid_detail">鼻腔上部两侧各有一簇小含气腔，紧邻眼眶内侧。各气房之间由薄骨壁分隔。</string>
+    <string name="health_atlas_sinus_plate_maxillary">上颌窦</string>
+    <string name="health_atlas_sinus_plate_maxillary_detail">这对较大的含气腔位于上颌骨内，处在眼眶下方、鼻腔两侧。</string>
+    <string name="health_atlas_sinus_plate_nasal_cavity">鼻腔</string>
+    <string name="health_atlas_sinus_plate_nasal_cavity_detail">空气经鼻甲周围的空隙通过。鼻中隔将鼻腔分成左右两侧，硬腭构成鼻腔底。</string>
+    <string name="health_atlas_sinus_plate_inferior_conchae">下鼻甲</string>
+    <string name="health_atlas_sinus_plate_inferior_conchae_detail">下鼻甲是从鼻腔外侧壁向内突出的最低一对弯曲骨片。覆盖其表面的湿润黏膜有助于温暖、湿润吸入的空气。</string>
+</resources>

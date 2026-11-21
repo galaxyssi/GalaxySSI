@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_adrenal_medulla_story_title">肾上腺髓质如何释放激素</string>
+    <string name="health_atlas_adrenal_medulla_story_choice">肾上腺髓质信号传递</string>
+    <string name="health_atlas_adrenal_medulla_story_scope">定性展示正常人体肾上腺髓质的功能：从接收交感神经信号、释放激素，到激素水平趋近静息水平。肾上腺皮质只用于标示位置。解剖结构、时长和粒子数量均为示意。</string>
+
+    <string name="health_atlas_adrenal_medulla_story_locate">在肾上腺内找到髓质</string>
+    <string name="health_atlas_adrenal_medulla_story_locate_caption">两侧肾脏上方各有一个肾上腺。在这个单侧肾上腺的剖面中，外层皮质包围着内层髓质，嗜铬细胞位于髓质内。</string>
+    <string name="health_atlas_adrenal_medulla_story_signal">交感神经信号到达</string>
+    <string name="health_atlas_adrenal_medulla_story_signal_caption">交感神经节前纤维将信号传到髓质。神经末梢释放乙酰胆碱，后者穿过狭小的间隙，激活嗜铬细胞上的受体。</string>
+    <string name="health_atlas_adrenal_medulla_story_release">囊泡释放所储存的物质</string>
+    <string name="health_atlas_adrenal_medulla_story_release_caption">嗜铬细胞被激活后，钙离子进入细胞。细胞内钙离子增多，促使囊泡与细胞膜融合，将储存的儿茶酚胺释放到细胞外。</string>
+    <string name="health_atlas_adrenal_medulla_story_circulate">血液将激素带走</string>
+    <string name="health_atlas_adrenal_medulla_story_circulate_caption">肾上腺素和去甲肾上腺素进入附近的毛细血管。血流将这两种儿茶酚胺激素带到肾上腺以外。</string>
+    <string name="health_atlas_adrenal_medulla_story_settle">激素水平逐渐接近静息水平</string>
+    <string name="health_atlas_adrenal_medulla_story_settle_caption">随着交感神经信号减弱，髓质释放的儿茶酚胺减少。身体仍在清除血液中的儿茶酚胺，因此其水平逐渐接近静息水平，而不是降到零。</string>
+
+    <string name="health_atlas_adrenal_medulla_story_art_gland">肾上腺</string>
+    <string name="health_atlas_adrenal_medulla_story_art_kidney">肾脏</string>
+    <string name="health_atlas_adrenal_medulla_story_art_cortex">皮质</string>
+    <string name="health_atlas_adrenal_medulla_story_art_medulla">髓质</string>
+    <string name="health_atlas_adrenal_medulla_story_art_nerve">交感神经</string>
+    <string name="health_atlas_adrenal_medulla_story_art_transmitter">乙酰胆碱</string>
+    <string name="health_atlas_adrenal_medulla_story_art_cell">嗜铬细胞</string>
+    <string name="health_atlas_adrenal_medulla_story_art_vesicle">分泌囊泡</string>
+    <string name="health_atlas_adrenal_medulla_story_art_fusion">融合处</string>
+    <string name="health_atlas_adrenal_medulla_story_art_catecholamines">儿茶酚胺</string>
+    <string name="health_atlas_adrenal_medulla_story_art_capillary">毛细血管</string>
+    <string name="health_atlas_adrenal_medulla_story_art_blood">血流</string>
+    <string name="health_atlas_adrenal_medulla_story_art_level">血液中的激素水平</string>
+    <string name="health_atlas_adrenal_medulla_story_art_baseline">静息水平</string>
+    <string name="health_atlas_adrenal_medulla_story_art_time">时间</string>
+
+    <string name="health_atlas_adrenal_medulla_story_ref_exocytosis">研究证据：小鼠肾上腺髓质中与神经信号相关的囊泡释放</string>
+    <string name="health_atlas_adrenal_medulla_story_ref_recovery">研究证据：人体血液中的儿茶酚胺趋近静息水平</string>
+</resources>

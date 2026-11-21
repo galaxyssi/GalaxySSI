@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_venous_return_story_title">How the calf muscle pump helps venous return</string>
+    <string name="health_atlas_venous_return_story_choice">Calf muscle pump</string>
+    <string name="health_atlas_venous_return_story_scope">Qualitative illustration of one lower-leg vein segment with two valves. Not all veins have valves. Anatomy, valve spacing, motion, and timing are not to scale. The drawing omits other venous routes and is not health advice.</string>
+    <string name="health_atlas_venous_return_story_locate">Two valves along a vein</string>
+    <string name="health_atlas_venous_return_story_locate_caption">The gastrocnemius and soleus are at the back of the calf. The cutaway shows two valves spaced apart in one representative lower-leg vein.</string>
+    <string name="health_atlas_venous_return_story_squeeze">Calf muscles squeeze the vein</string>
+    <string name="health_atlas_venous_return_story_squeeze_caption">As the calf muscles contract, they compress nearby veins. The illustrated segment narrows as the valve toward the foot closes and the valve toward the heart opens.</string>
+    <string name="health_atlas_venous_return_story_propel">The proximal valve lets blood through</string>
+    <string name="health_atlas_venous_return_story_propel_caption">Blood moves toward the heart through the open proximal valve. A pressure difference opens the leaflets; the valve does not pump.</string>
+    <string name="health_atlas_venous_return_story_limit">The distal valve limits backflow</string>
+    <string name="health_atlas_venous_return_story_limit_caption">The leaflets of the distal valve meet, limiting flow back toward the foot while blood can still pass through the proximal valve.</string>
+    <string name="health_atlas_venous_return_story_refill">The calf relaxes and the vein refills</string>
+    <string name="health_atlas_venous_return_story_refill_caption">As the calf relaxes, the vein widens. In this example, the proximal valve closes and the distal valve reopens, allowing blood from farther down the leg to refill the segment.</string>
+    <string name="health_atlas_venous_return_story_calf">Calf (back view)</string>
+    <string name="health_atlas_venous_return_story_cutaway">Vein cutaway</string>
+    <string name="health_atlas_venous_return_story_gastrocnemius">Gastrocnemius</string>
+    <string name="health_atlas_venous_return_story_soleus">Soleus</string>
+    <string name="health_atlas_venous_return_story_heartward">Toward the heart</string>
+    <string name="health_atlas_venous_return_story_proximal_valve">Proximal valve</string>
+    <string name="health_atlas_venous_return_story_distal_valve">Distal valve</string>
+    <string name="health_atlas_venous_return_story_ref_pump">Calf muscle pump function and popliteal venous flow during contraction</string>
+    <string name="health_atlas_venous_return_story_ref_valves">Venous valve closure and its role in circulation</string>
+</resources>

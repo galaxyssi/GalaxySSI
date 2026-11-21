@@ -116,4 +116,14 @@
     <string name="health_atlas_context_hair_stage_1">后代细胞参与形成角化毛干</string>
     <string name="health_atlas_context_hair_stage_2">退行期毛囊下部回缩</string>
     <string name="health_atlas_context_hair_stage_3">毛囊进入休止期，之后可重新生长</string>
+    <string name="health_atlas_context_nail_section">指甲纵剖面</string>
+    <string name="health_atlas_context_nail_fold_detail">近端甲襞是覆盖甲板根部的一层皮肤，和下方形成甲板的甲母质不是同一结构。</string>
+    <string name="health_atlas_context_nail_matrix_detail">甲母质位于近端甲襞下方，形成甲板的大部分。新形成的甲板逐渐将原有甲板推向指尖。</string>
+    <string name="health_atlas_context_nail_plate_detail">甲板由紧密排列的角化细胞构成。底部形成新的甲板材料时，甲板沿甲床向指尖移动。</string>
+    <string name="health_atlas_context_nail_bed_detail">甲床位于附着的甲板下方，在甲板向外移动时提供支撑。</string>
+    <string name="health_atlas_context_nail_edge_detail">游离缘是甲板伸出附着区的部分。它随甲板向外移动，本身不是形成新甲板的位置。</string>
+    <string name="health_atlas_context_sebaceous_section">皮脂腺与毛囊剖面</string>
+    <string name="health_atlas_context_sebaceous_lobules">皮脂腺腺泡</string>
+    <string name="health_atlas_context_sebaceous_lobules_detail">腺泡中有处于不同成熟阶段的皮脂细胞。内部细胞积累较多脂滴，成熟后其内容物成为皮脂的一部分。</string>
+    <string name="health_atlas_context_sebaceous_duct_detail">在这个与毛囊相连的例子中，短导管把皮脂排到毛囊通道，皮脂可沿毛干到达皮肤表面。</string>
 </resources>

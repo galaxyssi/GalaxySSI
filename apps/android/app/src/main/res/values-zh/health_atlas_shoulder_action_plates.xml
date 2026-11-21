@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pectoral_plate_title">胸部剖视图</string>
+    <string name="health_atlas_pectoral_plate_caption">胸部前面剖视图：一侧保留扇形胸大肌，另一侧显露肋骨。</string>
+    <string name="health_atlas_pectoral_plate_clavicular">锁骨部</string>
+    <string name="health_atlas_pectoral_plate_clavicular_detail">扇形肌束的上部起于锁骨内侧的前面。</string>
+    <string name="health_atlas_pectoral_plate_sternocostal">胸肋部</string>
+    <string name="health_atlas_pectoral_plate_sternocostal_detail">图中较宽的下部起于胸骨及邻近的肋软骨。</string>
+    <string name="health_atlas_pectoral_plate_cartilage">肋软骨</string>
+    <string name="health_atlas_pectoral_plate_cartilage_detail">此处的肋软骨将肋骨与胸骨相连。图中移去一侧胸大肌，以显露其下方的肋软骨。</string>
+    <string name="health_atlas_pectoral_plate_humeral_tendon">胸大肌肌腱</string>
+    <string name="health_atlas_pectoral_plate_humeral_tendon_detail">肌束汇成肌腱，止于肱骨结节间沟的外侧唇。</string>
+
+    <string name="health_atlas_latissimus_plate_title">背部剖视图</string>
+    <string name="health_atlas_latissimus_plate_caption">背部后外侧剖视图，展示背阔肌逐渐汇拢至肱骨止点的肌腱。</string>
+    <string name="health_atlas_latissimus_plate_fascia">胸腰筋膜</string>
+    <string name="health_atlas_latissimus_plate_fascia_detail">胸腰筋膜覆盖背部下段，构成背阔肌的部分起点。</string>
+    <string name="health_atlas_latissimus_plate_crest">髂嵴</string>
+    <string name="health_atlas_latissimus_plate_crest_detail">骨盆弯曲的上缘也是背阔肌广泛起点的一部分。</string>
+    <string name="health_atlas_latissimus_plate_sheet">背阔肌肌层</string>
+    <string name="health_atlas_latissimus_plate_sheet_detail">背部宽阔的肌束在腋窝后方附近汇拢，延续为肌腱。</string>
+    <string name="health_atlas_latissimus_plate_humeral_tendon">背阔肌肌腱</string>
+    <string name="health_atlas_latissimus_plate_humeral_tendon_detail">剖视图显露绕向肱骨近端前侧的肌腱，其止点位于结节间沟底。</string>
+</resources>

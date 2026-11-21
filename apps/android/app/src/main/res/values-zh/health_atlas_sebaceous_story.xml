@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_sebaceous_title">皮脂腺怎样分泌皮脂</string>
+    <string name="health_atlas_sebaceous_choice">皮脂分泌</string>
+    <string name="health_atlas_sebaceous_scope">以正常的毛囊相关皮脂腺为例。过程经过加速，图示不按比例，脂滴数量不代表实测值。</string>
+    <string name="health_atlas_sebaceous_locate">定位毛囊旁的皮脂腺</string>
+    <string name="health_atlas_sebaceous_locate_caption">毛囊相关的皮脂腺位于真皮，腺体由多个腺泡组成。一条短导管把腺体连到毛囊通道。</string>
+    <string name="health_atlas_sebaceous_renew">腺泡边缘补充新细胞</string>
+    <string name="health_atlas_sebaceous_renew_caption">腺泡边缘的小型基底细胞分裂，补充向内成熟的细胞。剖面以其中一个细胞为例。</string>
+    <string name="health_atlas_sebaceous_store">成熟中的细胞积累脂滴</string>
+    <string name="health_atlas_sebaceous_store_caption">皮脂细胞向腺泡内部成熟时，脂滴逐渐积累，占据细胞内更多空间。</string>
+    <string name="health_atlas_sebaceous_release">成熟细胞释放内容物</string>
+    <string name="health_atlas_sebaceous_release_caption">靠近导管的成熟细胞解体，脂质与其他细胞内容物一起成为皮脂的一部分，这叫全浆分泌。</string>
+    <string name="health_atlas_sebaceous_surface_flow">皮脂到达皮肤表面</string>
+    <string name="health_atlas_sebaceous_surface_flow_caption">皮脂经短导管进入毛囊通道，沿毛干外侧到达皮肤表面。</string>
+    <string name="health_atlas_sebaceous_skin_view">皮肤剖面</string>
+    <string name="health_atlas_sebaceous_acinar_view">腺泡放大</string>
+    <string name="health_atlas_sebaceous_follicle">毛囊</string>
+    <string name="health_atlas_sebaceous_surface">皮肤表面</string>
+    <string name="health_atlas_sebaceous_young">基底细胞</string>
+    <string name="health_atlas_sebaceous_mature">富含脂滴的细胞</string>
+    <string name="health_atlas_sebaceous_duct">皮脂腺导管</string>
+    <string name="health_atlas_sebaceous_lipids">脂质</string>
+    <string name="health_atlas_sebaceous_ref_histology">人体组织研究：毛囊相关皮脂腺的结构</string>
+    <string name="health_atlas_sebaceous_ref_maturation">人皮脂细胞研究：成熟过程中的细胞变化</string>
+</resources>

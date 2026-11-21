@@ -253,6 +253,13 @@ are separate scenes. The resting platelet is an anucleate fragment; its
 activated form is drawn separately in the plug example. The new stage shapes
 and timings do not model a patient, a drug or a coagulation test.
 
+The 14 alimentary section plates and 14 related digestive-cell or gland
+plates now use softer colors. The tooth and jejunal villi use painted
+cutaways with recalibrated markers and a square lesson frame. The other
+plates retain their exact vector paths, marker destinations and teaching
+coordinates while broad tissue surfaces are shaded and fine structures
+remain visible. Existing bolus and bowel paths are unchanged.
+
 ## Alimentary Canal Sections
 
 Fourteen digestive entries now have their own source-linked diagrams, from
@@ -433,6 +440,116 @@ Research references:
 - https://pubmed.ncbi.nlm.nih.gov/19485966/
 
 ## Design Coverage and Remaining Work
+
+The Function tab for skeletal muscle tissue, white adipose tissue and
+adipocytes includes a five-chapter continuously drawn insulin and GLUT4
+lesson. Skeletal myocytes offer it alongside their default contraction lesson.
+Structures stay in view as the ligand approaches, the PI3K-dependent lipid
+signal recruits AKT, and the vesicle opens and flattens into the cell membrane.
+Illustrated glucose crosses GLUT4 only after fusion is complete. The
+five-chapter playhead is independent of the four-step
+physiology model. Playback pauses on navigation or backgrounding; the
+current chapter and two primary sources go into the public Agent preview.
+The pancreatic beta cell keeps its own secretion mechanism rather than
+inheriting the target-cell lesson. The animation is qualitative and does not
+convert playback time or particle count into physiological measurements.
+
+Evidence: https://pubmed.ncbi.nlm.nih.gov/19188436/ and
+https://pmc.ncbi.nlm.nih.gov/articles/PMC1899973/.
+
+The conducting airway has a separate five-stage mucus clearance lesson:
+particle capture, goblet-cell secretion, coordinated cilia, conveyance
+toward the throat, and swallowing. A lung locator stays visible above the
+animated cross-section. Trachea and bronchi keep their breathing lesson;
+the airway lining and its ciliated cells open mucus clearance by default.
+Alveolar gas exchange is not depicted as having a mucus conveyor.
+Evidence: https://pmc.ncbi.nlm.nih.gov/articles/PMC3633213/ and
+https://pmc.ncbi.nlm.nih.gov/articles/PMC4504973/.
+
+The tissue catalogue links cardiac muscle, alveolar lining and renal
+tubular epithelium to matching organ lessons. Separate five-stage lessons
+show capillary exchange, platelet plug formation, intestinal smooth muscle
+propulsion, tendon force transfer, articular cartilage loading and recovery,
+alveolar surfactant and intestinal absorption. The absorption lesson
+distinguishes soluble nutrients going to blood from lipid particles taking
+the lymphatic route. Organ entries preserve their default lessons and
+expose the focused mechanisms as additional choices. Structure and
+quantitative simulations remain independent of visual playback.
+
+The knee-motion lesson links the joint, femur, tibia, quadriceps and
+hamstrings. It maintains the same side cutaway through flexion, patellar
+glide and extension, with a separate cartilage loading lesson on the
+patella. Playback pose and highlighted pull directions are illustrative, not
+measurements or exercise prescriptions.
+
+The heart and cardiac muscle offer an electrical-signaling lesson alongside
+the existing pumping cycle. Its five chapters keep the cardiac conduction
+path and a ventricular muscle cell visible, then distinguish activation,
+calcium-linked filament sliding and relaxation. The standalone
+cardiomyocyte entry opens this process directly.
+
+New focused entries for aortic and pulmonary outflow, type I alveolar cells
+and renal structures start at their relevant chapter in a shared lesson.
+Users can return to the beginning or select another chapter. A saved
+playhead, including zero, always takes precedence over this initial chapter.
+
+The regional lessons also show oxygen transport in red cells, the calf
+venous pump, pleural coupling, urine transport and storage, salivary
+secretion, the hair follicle cycle, parathyroid calcium feedback and milk
+production and release. These are separate qualitative explanations, not
+clinical models. Salivary and mammary cells open at their own role in the
+process; nephron filtration, whole-lung ventilation and other broader
+lessons retain their independent playheads.
+
+Nine existing painted cell mechanisms also run in the Function player.
+Each retains its own four-stage artwork and headings, with localized
+captions, timeline playback and source links. The Function and Simulation
+screens use separate renderer instances and store their playheads
+independently. Platelet production remains distinct from the platelet
+fragment's hemostasis lesson.
+
+Dedicated lessons cover cerebellar coordination, astrocyte support,
+brainstem breathing rhythm, voice production, melanin transfer, dermal
+matrix renewal, spleen filtration and thymic selection. These qualitative
+lessons open from their matching organs, tissues or cells. They do not
+replace the broader mechanisms for ventilation, skin barrier and immunity.
+
+The arterial lesson pairs an aortic locator with cross-section and
+lengthwise cutaways. Wall expansion, pulse-wave travel and blood flow are
+separately marked. The aorta's original ejection lesson remains available;
+the vessel-family entry also links to venous return and capillary exchange.
+The cutaways use qualitative motion, not personal flow or pressure values.
+
+Separate close-ups show articular chondrocytes maintaining their matrix,
+chromaffin cells releasing hormones in the adrenal medulla, gastric
+parietal cells secreting acid, and blood cells forming in red marrow.
+Related entries link to these lessons without reassigning unrelated cells.
+The coronary lesson links to the heartbeat while separately showing perfusion
+during contraction and relaxation and drainage through the coronary sinus.
+The podocyte lesson shows the three layers of the filtration barrier rather
+than attributing whole-nephron transport to one cell.
+
+The endometrial lesson separates epithelial repair from stromal growth and
+uses different starting chapters for the two cells. The bilateral pupil
+reflex is distinct from vision and the nerve-transit model. The sebaceous
+lesson shows normal hair-associated secretion without replacing hair growth
+or sweat cooling, and the sebocyte opens at lipid accumulation.
+
+The cerebral lesson follows a voluntary reach, with separate sensory
+registration, target integration, motor output and ongoing feedback.
+The autonomic lesson compares the sympathetic and vagal relays to the
+heart without changing the heartbeat, coronary or cranial-reflex lessons.
+Gastric chief-cell secretion is separate from acid secretion. Pancreatic
+acinar cells have a digestive enzyme lesson that is separate from the islet
+and ductal models. The tonsil example distinguishes palatine crypts from
+adenoid folds. The nail example explains formation in the matrix and support
+by the bed, not growth at the free edge.
+The nail and sebaceous-gland Structure tabs have dedicated two-sided
+cutaneous cutaways. Their callouts explain local anatomy; the sebaceous
+plate also opens the matching follicle and sebocyte entries.
+The sinus lesson locates the four sinus groups before showing clearance
+in one maxillary sinus. The tooth lesson shows cutting and grinding without
+changing the existing mouth and digestion lessons.
 
 The pinned Agent action follows the current surface. Public catalogue, mechanism
 and research prompts use `HealthAtlasAgentContext`: selected anatomy, current
@@ -1164,3 +1281,190 @@ active settings to hearing physiology only.
 - Hearing and vestibular mechanisms: https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception
 - Pressure-transformer equation and fuller model: https://pmc.ncbi.nlm.nih.gov/articles/PMC4570511/
 - Frequency-dependent human temporal-bone measurements: https://pubmed.ncbi.nlm.nih.gov/28079680/
+
+## Continuous Heart Function
+
+The Function tab for the cardiovascular system, heart, chambers and valves
+uses the existing painted section. Its shared five-chapter player animates
+filling, atrial contraction, pressure rise, ejection and early relaxation.
+Directional tracers follow ventricular inflow or outflow only during the
+corresponding phase; illustrated leaflets signal open and closed valves. The
+mesh narrows visibly during ejection, not during either isovolumic phase.
+Colored tracers encode relative oxygen content, not actual blood color.
+This lesson does not calculate cardiac output, valve pressure or transit
+times. Personal measurements and the separate simulation are unaffected.
+
+## Continuous Breathing And Gas Exchange
+
+The Function lesson connects chest-scale airflow and diaphragm motion to a
+painted alveolar close-up. The close-up depicts flowing red blood cells and
+simultaneous oxygen and carbon dioxide diffusion in opposite directions.
+Chapters change focus, not the underlying order of gas exchange. Arrows,
+breath and vessel timing are illustrative; the fixed gas-gradient teaching
+examples remain in Simulation and are not plotted as personal measurements.
+
+## Continuous Hearing
+
+The Function lesson uses the painted ear cutaway, hair cell and brain.
+Moving pressure bands in the ear canal, motion of the eardrum and ossicles,
+the traveling wave on an unrolled basilar membrane, tilting of the hair
+bundle, and propagating marks on a schematic neural pathway are distinct
+scenes. A simplified path to cortex shows a brainstem/relay stop; it is not
+a projection of exact internal anatomy onto the lateral illustration.
+No audio, microphone, frequency measurement or hearing test is involved.
+The vestibular catalogue entry and the separate middle-ear simulation
+retain their own behavior.
+
+## Continuous Nephron Function
+
+The Function lesson layers directed markers onto the painted nephron:
+filtration, proximal reabsorption, water and salt transport in the loop,
+distal secretion, and collecting-duct transport. Filtrate and blood are
+distinct; nearby capillary paths are schematic. This view is qualitative
+and independent of personal measurements and the solute-balance model.
+The Function player puts the button row and timeline before the illustration
+and limits canvas height in short windows so playback remains reachable.
+
+## Continuous Digestion And Water Recovery
+
+The meal lesson follows a bolus through swallowing, esophageal propulsion,
+stomach mixing, and duodenal digestive secretions before zooming to the
+painted villi. Separate paths illustrate blood uptake of sugars and amino
+acids and lymphatic transport of most long-chain fats. A second lesson
+shows ileocecal entry, local mixing versus propulsive contractions, water
+recovery, and rectal storage. The two entry groups retain separate playback
+positions; the villus geometry model and individual cell lessons are
+unchanged. Neither animation estimates a transit time or nutrient intake.
+
+## Continuous Vision And Light Adaptation
+
+The vision Function lesson separates refraction in the painted eye,
+reduced transmitter release in response to light, a representative cone
+relay and optic nerve output. The brain drawing supports a schematic
+route, not a precise map of the chiasm or deep structures. The rod and
+cone entries have a separate light adaptation lesson with illustrative
+brightness and contribution cues, not calibrated thresholds. The thin
+lens and retinal circuit simulations remain independent.
+
+## Continuous Skeletal Muscle Motion And Bone Remodeling
+
+The muscle lesson follows a motor nerve signal to a muscle fiber, calcium
+release, sliding filaments of fixed length, and tendon-driven elbow
+motion. Elbow extension uses the antagonist rather than treating biceps
+relaxation as a force. The illustrated joint motion is not the lever-force
+simulation. The glucose uptake lesson on skeletal muscle tissue remains
+unchanged.
+
+The bone lesson follows a local bone surface from osteocyte signaling to
+resorption, reversal, osteoid deposition and mineralization. The depth
+and colors make these stages visible but do not estimate bone density,
+timing or individual health. Muscle and bone lessons preserve separate
+playheads and pass only the displayed public chapter to Agent.
+
+## Continuous Lymph Return And Antibody Response
+
+The lymph lesson separates filtration from a blood capillary, uptake
+through the flap-like edges of initial lymphatics, alternating valves in
+a collecting segment, passage through a lymph node, and return to a vein
+through the thoracic duct. The painted node and duct reuse their existing
+anatomic paths. The spleen is not part of this lymph drainage route.
+Valve motion is qualitative and independent of the pressure model.
+
+The antibody lesson shows one T-cell-dependent response: B-cell
+recognition, help, expansion, differentiation, and release of antibodies
+that bind matched antigens. Cell counts and timing are illustrative.
+Existing anatomical hotspots and simulation panels remain available.
+
+## Insulin Secretion And Multiple Function Lessons
+
+An illustrative human beta cell shows glucose entry, reduced potassium
+efflux through ATP-sensitive channels, voltage-gated calcium entry,
+granule fusion, and release to a local capillary. This is distinct from
+the GLUT4 uptake animation in skeletal muscle and fat. Related lesson
+links connect secretion to uptake without implying that GLUT4 triggers
+the beta cell. Neither lesson estimates a glucose level or medication dose.
+
+Pancreas, skeletal muscle tissue, and the immune system can switch lessons
+in place. Saved activity state separates each entry and lesson; old
+single-lesson playheads restore into the default lesson. Agent receives
+only the public chapter and references from the selected lesson.
+
+## Glucagon Counter-Regulation And Evaporative Cooling
+
+The glucagon lesson follows secretion from an alpha cell and receptor
+signaling on a liver cell. The hormone and glucose are different tracers:
+hepatic glycogen breakdown and transport provide glucose, not conversion
+of the hormone into fuel. Pancreas, endocrine system and islets expose
+separate insulin and glucagon lessons; the pancreatic digestive lesson
+remains the default.
+
+The eccrine sweat lesson reuses the anatomical duct path. It distinguishes
+secretion, ductal salt recovery, liquid on skin and evaporation. A drier
+and a more humid case start with equal visible sweat. The comparison is
+qualitative and independent of the existing simulation; it cannot predict
+core temperature, fluid loss or personal glucose.
+
+## Neuronal Transmission, Myelin, And Thyroid Feedback
+
+The synapse lesson distinguishes a voltage signal along the axon from
+chemical signaling across the cleft. In the selected excitatory example,
+calcium entry precedes vesicle fusion and transmitter release. A separate
+myelin lesson compares oligodendrocytes and Schwann cells, highlights
+regeneration at exposed nodes, and shows local current inside the axon
+rather than a jump through extracellular space.
+
+The thyroid lesson uses the anterior pituitary portal route for TRH and
+bloodstream transport for TSH and thyroid hormones. The final stage shows
+negative feedback to two upstream sites. The lessons do not compute
+clinical hormone values or an absolute conduction speed. The original
+endocrine pathway, potassium model, structure plates, and personal
+measurement flow are unchanged.
+
+## Epidermal Barrier And Gamete Transit
+
+The surface-barrier lesson follows epidermal cells from the basal layer
+to flattened corneocytes. An inset shows lipids released into the gaps
+between cells. The water comparison holds the observation window fixed
+and illustrates a relative difference rather than a measured rate. Skin
+keeps sweat cooling as the other lesson; neither substitutes for a skin
+assessment.
+
+The male lesson separates formation in the seminiferous tubules, fluid
+transport into the epididymis, maturation, storage, and muscular
+propulsion through the vas deferens. The female lesson follows follicle
+development, rupture, pickup by the separate fimbrial opening, ciliary
+and muscular transport, and arrival at the ampulla. It does not equate
+ovulation with fertilization or implantation. The existing germline
+chromosome-count diagrams remain available independently of the
+animations; neither animation predicts fertility or timing for a person.
+
+## Sensory And Alimentary Overview Lessons
+
+The sensory overview opens a compact named picker for visual, auditory,
+vestibular, olfactory, taste, and touch lessons. The entry keeps a
+separate playhead for each lesson. The alimentary overview links the
+meal and colon chapters without conflating them with the lesson on
+digestive glands.
+
+The nasal cutaway distinguishes inhaled molecules from signals passing
+through the cribriform plate. The taste example models sweet-responsive
+type II cells, not a map of the tongue or a single mechanism for all
+tastes. The touch example contrasts onset and sustained firing in a
+Merkel-cell and sensory-nerve complex. The vestibular lesson separates
+canal fluid lag, cupula displacement, otolith movement, and compensatory
+eye rotation. These are educational paths, not personal sensitivity
+measurements or clinical tests.
+
+## Ocular Cell Lessons
+
+The additional ocular scenes separate three processes: retinoid exchange
+between rods and the retinal pigment epithelium, the AII relay into ON
+and OFF pathways in the inner retina, and normal corneal surface renewal.
+The rod relay distinguishes electrical coupling from glycinergic
+inhibition. Corneal surface renewal shows inward migration separately
+from movement through the epithelial layers. Its colored routes are
+schematic and do not model injury, recovery time or corrective optics.
+
+Retina, rod and cornea entries retain their earlier vision or light
+adaptation animations as the default. The existing optics simulation and
+structural plates remain separate from the new cell-function scenes.

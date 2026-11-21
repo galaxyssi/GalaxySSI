@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_taste_buds_plate_caption">Taste bud in tongue epithelium</string>
+    <string name="health_atlas_taste_buds_plate_pore">Taste pore</string>
+    <string name="health_atlas_taste_buds_plate_pore_detail">This small opening in the tongue epithelium lets substances dissolved in saliva reach the tips of taste cells.</string>
+    <string name="health_atlas_taste_buds_plate_microvilli">Apical microvilli</string>
+    <string name="health_atlas_taste_buds_plate_microvilli_detail">These tiny projections extend from the tips of taste cells into the pore. On sensory cells, they are where dissolved substances can be detected.</string>
+    <string name="health_atlas_taste_buds_plate_sensory_cell">Sensory taste cell</string>
+    <string name="health_atlas_taste_buds_plate_sensory_cell_detail">This elongated cell detects taste stimuli at its tip and signals to sensory nerve fibers farther down in the bud.</string>
+    <string name="health_atlas_taste_buds_plate_supporting_cell">Supporting cell</string>
+    <string name="health_atlas_taste_buds_plate_supporting_cell_detail">Supporting cells extend slender processes between neighboring cells and help maintain the local environment inside the bud.</string>
+    <string name="health_atlas_taste_buds_plate_afferent">Afferent nerve contact</string>
+    <string name="health_atlas_taste_buds_plate_afferent_detail">Sensory nerve fibers enter the base of the bud and branch to contact taste cells. They carry taste signals toward the brain.</string>
+</resources>

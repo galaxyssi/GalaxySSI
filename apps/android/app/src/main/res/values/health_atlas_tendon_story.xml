@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_tendon_story_title">How tendons transfer muscle force</string>
+    <string name="health_atlas_tendon_story_choice">Tendon force transfer</string>
+    <string name="health_atlas_tendon_story_scope">Qualitative illustration of a normal muscle, tendon, and bone. Crimp and motion are exaggerated; anatomy and timing are not to scale. No patient measurements or calculated forces are shown.</string>
+    <string name="health_atlas_tendon_story_link">Muscle, tendon, and bone</string>
+    <string name="health_atlas_tendon_story_link_caption">The tendon links skeletal muscle to bone. Its collagen bundles run mostly lengthwise and have a gentle waviness called crimp at low load.</string>
+    <string name="health_atlas_tendon_story_load">Muscle applies a pull</string>
+    <string name="health_atlas_tendon_story_load_caption">The muscle contracts and pulls on the tendon. Tension rises along the tendon, which begins to lengthen slightly.</string>
+    <string name="health_atlas_tendon_story_uncrimp">Collagen crimp flattens</string>
+    <string name="health_atlas_tendon_story_uncrimp_caption">As the tendon stretches under tension, the aligned collagen bundles become less wavy. The magnified view exaggerates this change.</string>
+    <string name="health_atlas_tendon_story_transfer">Tension pulls on bone</string>
+    <string name="health_atlas_tendon_story_transfer_caption">The loaded tendon transmits the muscle pull to its attachment on bone. The arrow shows the direction of the pull, not the direction of bone movement.</string>
+    <string name="health_atlas_tendon_story_recoil">Tendon recoils as load falls</string>
+    <string name="health_atlas_tendon_story_recoil_caption">As tension falls, elastic recoil returns the tendon toward its resting length and the crimp becomes more visible again. The tendon does not actively contract.</string>
+    <string name="health_atlas_tendon_story_muscle">Muscle</string>
+    <string name="health_atlas_tendon_story_tendon">Tendon</string>
+    <string name="health_atlas_tendon_story_bone">Bone</string>
+    <string name="health_atlas_tendon_story_pull">Pull on bone</string>
+    <string name="health_atlas_tendon_story_collagen">Collagen bundles, magnified</string>
+    <string name="health_atlas_tendon_story_tension">Tension</string>
+    <string name="health_atlas_tendon_story_ref_crimp">Crimp morphology in relaxed and stretched rat Achilles tendon</string>
+    <string name="health_atlas_tendon_story_ref_loading">Quantifying mechanical loading and elastic strain energy of the human Achilles tendon during walking and running</string>
+</resources>

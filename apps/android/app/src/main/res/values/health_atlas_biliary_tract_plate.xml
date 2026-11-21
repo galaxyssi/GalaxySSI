@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_biliary_tract_plate_caption">Extrahepatic bile ducts and the duodenal wall. This schematic shows a typical arrangement; duct junctions and openings can vary.</string>
+    <string name="health_atlas_biliary_tract_plate_common_hepatic_duct">Common hepatic duct</string>
+    <string name="health_atlas_biliary_tract_plate_common_hepatic_duct_detail">The right and left hepatic ducts unite to form this channel. It carries bile from the liver to the junction with the cystic duct.</string>
+    <string name="health_atlas_biliary_tract_plate_cystic_duct">Cystic duct</string>
+    <string name="health_atlas_biliary_tract_plate_cystic_duct_detail">This side branch connects the gallbladder to the main route. Bile can pass through it into or out of the gallbladder.</string>
+    <string name="health_atlas_biliary_tract_plate_common_bile_duct">Common bile duct</string>
+    <string name="health_atlas_biliary_tract_plate_common_bile_duct_detail">Below the cystic duct junction, the channel continues as the common bile duct. It passes behind the upper duodenum and continues toward the wall of the descending duodenum.</string>
+    <string name="health_atlas_biliary_tract_plate_duodenal_wall">Duodenal wall</string>
+    <string name="health_atlas_biliary_tract_plate_duodenal_wall_detail">The cutaway shows the folded lining and thicker outer wall. The end of the bile duct runs through the inner side of the descending segment to reach the space inside the intestine.</string>
+    <string name="health_atlas_biliary_tract_plate_major_papilla">Major duodenal papilla</string>
+    <string name="health_atlas_biliary_tract_plate_major_papilla_detail">This small mound in the lining marks the opening into the duodenum. In the arrangement shown, the bile duct and pancreatic duct join shortly before the opening.</string>
+</resources>

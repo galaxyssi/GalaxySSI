@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_uterocervical_title">子宫、宫颈与阴道</string>
+    <string name="health_atlas_uterocervical_choice">观察连续的解剖结构</string>
+    <string name="health_atlas_uterocervical_scope">成年非妊娠期典型解剖示意。移动的高亮线标示结构之间的连通关系，并不表示液体流动。切面与放大图不按比例绘制。</string>
+    <string name="health_atlas_uterocervical_uterus">子宫壁</string>
+    <string name="health_atlas_uterocervical_uterus_caption">从宫腔向外依次是子宫内膜、厚实的子宫肌层及薄薄的子宫外膜。内膜衬在宫腔表面，肌层由平滑肌组成，外膜覆盖有浆膜的外表面。</string>
+    <string name="health_atlas_uterocervical_cervix">宫颈管</string>
+    <string name="health_atlas_uterocervical_cervix_caption">宫颈内口连接宫腔与宫颈管，宫颈外口通向阴道。宫颈管内衬腺上皮，宫颈壁富含胶原，与上方厚实的子宫肌层不同。</string>
+    <string name="health_atlas_uterocervical_vagina">阴道壁与阴道口</string>
+    <string name="health_atlas_uterocervical_vagina_caption">阴道从宫颈周围延伸至阴道口。其内衬为有皱襞的鳞状上皮，深部有平滑肌。放大图示意阴道壁伸展时皱襞变浅。</string>
+    <string name="health_atlas_uterocervical_locator">位置示意</string>
+    <string name="health_atlas_uterocervical_magnification">放大切面</string>
+    <string name="health_atlas_uterocervical_locator_uterus">子宫</string>
+    <string name="health_atlas_uterocervical_locator_cervix">宫颈</string>
+    <string name="health_atlas_uterocervical_locator_vagina">阴道</string>
+    <string name="health_atlas_uterocervical_endometrium">子宫内膜</string>
+    <string name="health_atlas_uterocervical_myometrium">子宫肌层</string>
+    <string name="health_atlas_uterocervical_perimetrium">子宫外膜</string>
+    <string name="health_atlas_uterocervical_internal_os">宫颈内口</string>
+    <string name="health_atlas_uterocervical_canal">宫颈管</string>
+    <string name="health_atlas_uterocervical_external_os">宫颈外口</string>
+    <string name="health_atlas_uterocervical_folds">黏膜皱襞</string>
+    <string name="health_atlas_uterocervical_muscle">平滑肌</string>
+    <string name="health_atlas_uterocervical_opening">阴道口</string>
+    <string name="health_atlas_uterocervical_uterus_view">子宫体剖面</string>
+    <string name="health_atlas_uterocervical_cervix_view">宫颈管剖面</string>
+    <string name="health_atlas_uterocervical_endometrium_detail">子宫内膜衬在宫腔表面。</string>
+    <string name="health_atlas_uterocervical_myometrium_detail">交错排列的平滑肌构成子宫体壁的主体。</string>
+    <string name="health_atlas_uterocervical_perimetrium_detail">这层薄浆膜覆盖子宫外表面的一部分。</string>
+    <string name="health_atlas_uterocervical_internal_os_detail">宫腔与宫颈管相接处的上端狭窄开口。</string>
+    <string name="health_atlas_uterocervical_canal_detail">宫颈内的通道有腺上皮衬里，周围组织富含胶原。</string>
+    <string name="health_atlas_uterocervical_external_os_detail">宫颈管的下端开口通向阴道上部。</string>
+    <string name="health_atlas_uterocervical_ref_anatomy">OpenStax：卵巢生殖系统解剖</string>
+    <string name="health_atlas_uterocervical_ref_cervix">美国国家癌症研究所 SEER：宫颈与盆腔解剖</string>
+    <string name="health_atlas_uterocervical_ref_wall">MedCell：正常生殖道组织学</string>
+</resources>

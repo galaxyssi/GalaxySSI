@@ -7,26 +7,28 @@ import android.graphics.Path
 import android.graphics.PathMeasure
 import android.view.View
 
+internal fun eccrineDuctPath() = Path().apply {
+    moveTo(173f, 66f)
+    lineTo(173f, 83f)
+    quadTo(152f, 93f, 173f, 103f)
+    quadTo(194f, 113f, 170f, 125f)
+    quadTo(149f, 136f, 174f, 145f)
+    lineTo(174f, 170f)
+    quadTo(145f, 181f, 144f, 199f)
+    quadTo(145f, 227f, 181f, 230f)
+    quadTo(214f, 231f, 210f, 204f)
+    quadTo(208f, 183f, 183f, 190f)
+    quadTo(159f, 194f, 168f, 211f)
+    quadTo(177f, 223f, 192f, 216f)
+}
+
 /** Educational visualization of an eccrine duct, with motion tied to the atlas playback controls. */
 internal class HealthAtlasSweatView(context: Context, private val mechanism: HealthAtlasMechanism) : View(context) {
     private val diagram = requireNotNull(context.getDrawable(R.drawable.health_atlas_cell_sweat_gland_section)).mutate()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val droplet = 0xff206782.toInt()
     private val point = FloatArray(2)
-    private val duct = PathMeasure(Path().apply {
-        moveTo(173f, 66f)
-        lineTo(173f, 83f)
-        quadTo(152f, 93f, 173f, 103f)
-        quadTo(194f, 113f, 170f, 125f)
-        quadTo(149f, 136f, 174f, 145f)
-        lineTo(174f, 170f)
-        quadTo(145f, 181f, 144f, 199f)
-        quadTo(145f, 227f, 181f, 230f)
-        quadTo(214f, 231f, 210f, 204f)
-        quadTo(208f, 183f, 183f, 190f)
-        quadTo(159f, 194f, 168f, 211f)
-        quadTo(177f, 223f, 192f, 216f)
-    }, false)
+    private val duct = PathMeasure(eccrineDuctPath(), false)
     var phase = 0f
         set(value) {
             val previous = stage

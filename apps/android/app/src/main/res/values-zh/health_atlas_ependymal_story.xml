@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ependymal_story_choice">室管膜纤毛与局部液流</string>
+    <string name="health_atlas_ependymal_story_title">脑室纤毛如何带动附近的液体</string>
+    <string name="health_atlas_ependymal_story_scope">示意正常脑室内衬和附近的脑脊液。局部液流的例子参考小鼠研究。大小和运动速度不按实际比例绘制。</string>
+    <string name="health_atlas_ependymal_story_line">内衬面向脑脊液</string>
+    <string name="health_atlas_ependymal_story_line_caption">室管膜细胞沿脑室壁并排排列。细胞的顶端表面朝向充满脑脊液的脑室腔，细胞下方是脑组织。</string>
+    <string name="health_atlas_ependymal_story_beat">纤毛划动，再弯曲回摆</string>
+    <string name="health_atlas_ependymal_story_beat_caption">每个细胞都有多根运动纤毛伸入脑室腔。纤毛的根部固定，先朝一个方向划动，再弯曲回摆。</string>
+    <string name="health_atlas_ependymal_story_wave">依次摆动形成行波</string>
+    <string name="health_atlas_ependymal_story_wave_caption">相邻纤毛的摆动略有先后，形成称为异时波的行波。沿内衬传播的是摆动的节律，纤毛仍固定在各自的细胞上。</string>
+    <string name="health_atlas_ependymal_story_drift">脑脊液沿脑室壁移动</string>
+    <string name="health_atlas_ependymal_story_drift_caption">纤毛一起摆动，可以带动靠近内衬的一层脑脊液。图中的小点只显示这一局部流动，不代表整个脑室的液流。</string>
+    <string name="health_atlas_ependymal_story_routes">不同区域引导不同方向的液流</string>
+    <string name="health_atlas_ependymal_story_routes_caption">小鼠第三脑室的研究发现，不同区域的纤毛可将附近的液体引向不同方向。大部分脑脊液由脉络丛产生；搏动等其他因素也会影响整体流动。</string>
+    <string name="health_atlas_ependymal_story_lumen">脑室腔</string>
+    <string name="health_atlas_ependymal_story_ventricles">脑室</string>
+    <string name="health_atlas_ependymal_story_lining">室管膜内衬</string>
+    <string name="health_atlas_ependymal_story_cilia">运动纤毛</string>
+    <string name="health_atlas_ependymal_story_apical_surface">细胞顶端表面</string>
+    <string name="health_atlas_ependymal_story_wave_front">纤毛依次摆动</string>
+    <string name="health_atlas_ependymal_story_near_wall">近壁液流</string>
+    <string name="health_atlas_ependymal_story_local_routes">局部液流路径</string>
+    <string name="health_atlas_ependymal_story_plate_caption">带纤毛的室管膜内衬切面</string>
+    <string name="health_atlas_ependymal_story_feature_lumen">脑室腔</string>
+    <string name="health_atlas_ependymal_story_feature_lumen_detail">这里充满脑脊液。图中只展示一处脑室壁的小区域。</string>
+    <string name="health_atlas_ependymal_story_feature_cilia">运动纤毛</string>
+    <string name="health_atlas_ependymal_story_feature_cilia_detail">成簇的纤毛伸入脑脊液，协调摆动会影响近壁液流。</string>
+    <string name="health_atlas_ependymal_story_feature_bases">纤毛根部</string>
+    <string name="health_atlas_ependymal_story_feature_bases_detail">每根纤毛都固定在细胞朝向脑室腔的一侧，也就是顶端表面。</string>
+    <string name="health_atlas_ependymal_story_feature_lining">室管膜细胞层</string>
+    <string name="health_atlas_ependymal_story_feature_lining_detail">相邻细胞并排相接，在这个切面中形成一层细胞厚的内衬。</string>
+    <string name="health_atlas_ependymal_story_feature_tissue">下方的脑组织</string>
+    <string name="health_atlas_ependymal_story_feature_tissue_detail">在背向脑室腔的一侧，室管膜内衬直接与神经组织相邻。</string>
+    <string name="health_atlas_ependymal_story_ref_anatomy">得克萨斯大学休斯敦健康科学中心 · 室管膜内衬的解剖结构</string>
+    <string name="health_atlas_ependymal_story_ref_wave">Meng 等 · 室管膜纤毛的协调摆动</string>
+    <string name="health_atlas_ependymal_story_ref_flow">Faubel 等 · 小鼠第三脑室内的局部液流</string>
+    <string name="health_atlas_ependymal_story_ref_csf">OpenStax · 脑脊液的生成与循环</string>
+</resources>

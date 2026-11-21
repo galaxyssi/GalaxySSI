@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_intercalated_story_title">How a type A intercalated cell helps excrete acid</string>
+    <string name="health_atlas_intercalated_story_choice">Intercalated cell acid handling</string>
+    <string name="health_atlas_intercalated_story_scope">One type A intercalated cell in a normal cortical collecting duct. The drawing shows directions of movement, not amounts or rates. Structures and particles are not to scale.</string>
+    <string name="health_atlas_intercalated_story_orientation">Two sides of one cell</string>
+    <string name="health_atlas_intercalated_story_orientation_caption">The apical side of the type A intercalated cell faces the duct lumen. Its basolateral side faces the tissue between the duct and nearby blood vessels. Neighboring principal cells mainly handle salt and water.</string>
+    <string name="health_atlas_intercalated_story_protons">Protons enter the lumen</string>
+    <string name="health_atlas_intercalated_story_protons_caption">An apical proton pump (H⁺-ATPase) moves hydrogen ions (H⁺) from the type A cell into the tubular fluid. Type B intercalated cells differ: they can secrete bicarbonate into the lumen.</string>
+    <string name="health_atlas_intercalated_story_bicarbonate">Bicarbonate returns toward blood</string>
+    <string name="health_atlas_intercalated_story_bicarbonate_caption">On the opposite side, the AE1 exchanger moves bicarbonate (HCO₃⁻) out of the cell in exchange for chloride. Bicarbonate passes through the space between the duct and nearby capillary on its way back to the blood.</string>
+    <string name="health_atlas_intercalated_story_buffers">Buffers take up protons</string>
+    <string name="health_atlas_intercalated_story_buffers_caption">In tubular fluid, a proton can bind to ammonia to form ammonium (NH₄⁺). Hydrogen phosphate can also take up a proton, forming dihydrogen phosphate (H₂PO₄⁻).</string>
+    <string name="health_atlas_intercalated_story_excretion">Buffered acid leaves in urine</string>
+    <string name="health_atlas_intercalated_story_excretion_caption">Ammonium and protonated phosphate travel downstream in the tubular fluid and leave in urine, carrying acid out of the body. Meanwhile, bicarbonate from the type A cell returns toward the blood.</string>
+    <string name="health_atlas_intercalated_story_label_duct">Cortical collecting duct</string>
+    <string name="health_atlas_intercalated_story_label_lumen">Duct lumen</string>
+    <string name="health_atlas_intercalated_story_label_apical">Apical side</string>
+    <string name="health_atlas_intercalated_story_label_principal">Principal cell</string>
+    <string name="health_atlas_intercalated_story_label_type_a">Type A cell</string>
+    <string name="health_atlas_intercalated_story_label_basolateral">Basolateral side</string>
+    <string name="health_atlas_intercalated_story_label_blood">Nearby capillary</string>
+    <string name="health_atlas_intercalated_story_label_urine">Toward urine</string>
+    <string name="health_atlas_intercalated_story_label_h">H⁺</string>
+    <string name="health_atlas_intercalated_story_label_hco3">HCO₃⁻</string>
+    <string name="health_atlas_intercalated_story_label_nh4">NH₄⁺</string>
+    <string name="health_atlas_intercalated_story_label_h2po4">H₂PO₄⁻</string>
+    <string name="health_atlas_intercalated_story_ref_polarity">Kim et al. (1999): Intercalated cell subtypes in the rat and mouse</string>
+    <string name="health_atlas_intercalated_story_ref_buffers">Pitts et al. (1948): How the human kidney acidifies urine</string>
+</resources>

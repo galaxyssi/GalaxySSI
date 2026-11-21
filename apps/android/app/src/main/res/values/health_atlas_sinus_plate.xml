@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_sinus_plate_caption">Nasal cavity and paranasal sinuses, simplified coronal view</string>
+    <string name="health_atlas_sinus_plate_frontal">Frontal sinuses</string>
+    <string name="health_atlas_sinus_plate_frontal_detail">These paired air spaces lie in the forehead bone above the inner parts of the eye sockets. The two sides often differ in shape and size.</string>
+    <string name="health_atlas_sinus_plate_ethmoid">Ethmoid air cells</string>
+    <string name="health_atlas_sinus_plate_ethmoid_detail">A cluster of small air spaces lies between the upper nasal cavity and the eye socket on each side. Thin bony walls separate the cells.</string>
+    <string name="health_atlas_sinus_plate_maxillary">Maxillary sinuses</string>
+    <string name="health_atlas_sinus_plate_maxillary_detail">These large air spaces lie inside the upper jaw, beneath the eye sockets and to either side of the nasal cavity.</string>
+    <string name="health_atlas_sinus_plate_nasal_cavity">Nasal cavity</string>
+    <string name="health_atlas_sinus_plate_nasal_cavity_detail">Air passes through the spaces around the nasal conchae. The septum separates the two sides, and the hard palate forms the floor.</string>
+    <string name="health_atlas_sinus_plate_inferior_conchae">Inferior nasal conchae</string>
+    <string name="health_atlas_sinus_plate_inferior_conchae_detail">These lowest curved shelves project inward from the outer walls of the nasal cavity. Their moist lining helps warm and humidify incoming air.</string>
+</resources>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_tonsil_story_title">扁桃体如何对周围物质取样</string>
+    <string name="health_atlas_tonsil_story_choice">扁桃体抗原取样</string>
+    <string name="health_atlas_tonsil_story_scope">腭扁桃体和腺样体都能在黏膜表面对接触到的物质取样。细胞特写展示的是一个腭扁桃体隐窝，而不是腺样体皱襞。大小和时序均为示意。</string>
+
+    <string name="health_atlas_tonsil_story_locate">找到两处扁桃体</string>
+    <string name="health_atlas_tonsil_story_locate_caption">咽扁桃体又称腺样体，位于鼻腔后方的高处。成对的腭扁桃体位置较低，分居口腔后方咽部的两侧。侧视图画出的是靠近观察者的一侧。</string>
+    <string name="health_atlas_tonsil_story_compare">比较隐窝和皱襞</string>
+    <string name="health_atlas_tonsil_story_compare_caption">腭扁桃体隐窝是由表面组织向内凹入形成的深袋。腺样体表面主要形成黏膜皱襞，不像腭扁桃体那样以深隐窝为特征。两处表面都紧邻淋巴组织。</string>
+    <string name="health_atlas_tonsil_story_encounter">物质进入一个隐窝</string>
+    <string name="health_atlas_tonsil_story_encounter_caption">经过口腔的物质可以进入腭扁桃体隐窝，并接触隐窝的内衬。图中的琥珀色小点代表一小块无害的食物蛋白，免疫系统可以将它识别为抗原。</string>
+    <string name="health_atlas_tonsil_story_sample">少量样本到达局部细胞</string>
+    <string name="health_atlas_tonsil_story_sample_caption">少量样本可以到达隐窝内衬附近的树突状细胞。特写示意的是取样过程，并不表示样本只会沿一条固定路线穿过内衬。</string>
+    <string name="health_atlas_tonsil_story_present">树突状细胞与T细胞接触</string>
+    <string name="health_atlas_tonsil_story_present_caption">树突状细胞可以展示采到的蛋白质的一小段。附近的T细胞可在接触时识别所展示的片段。取样并不一定会引发免疫应答。</string>
+
+    <string name="health_atlas_tonsil_story_pharyngeal">咽扁桃体</string>
+    <string name="health_atlas_tonsil_story_adenoids">腺样体</string>
+    <string name="health_atlas_tonsil_story_palatine">腭扁桃体</string>
+    <string name="health_atlas_tonsil_story_crypt">腭扁桃体隐窝</string>
+    <string name="health_atlas_tonsil_story_folds">黏膜皱襞</string>
+    <string name="health_atlas_tonsil_story_antigen">环境抗原</string>
+    <string name="health_atlas_tonsil_story_lumen">隐窝开口</string>
+    <string name="health_atlas_tonsil_story_lymphoid">淋巴组织</string>
+    <string name="health_atlas_tonsil_story_lining">隐窝内衬</string>
+    <string name="health_atlas_tonsil_story_dendritic">树突状细胞</string>
+    <string name="health_atlas_tonsil_story_t_cell">T细胞</string>
+
+    <string name="health_atlas_tonsil_story_ref_palatine">研究：人腭扁桃体的内衬与邻近免疫细胞</string>
+    <string name="health_atlas_tonsil_story_ref_adenoid">研究：人腺样体表面的抗原摄取</string>
+</resources>

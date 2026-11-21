@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_penile_urinary_title">阴茎：排尿路径</string>
+    <string name="health_atlas_penile_urinary_choice">阴茎内的排尿路径</string>
+    <string name="health_atlas_penile_urinary_scope">正常成人解剖。尿道海绵体部位于尿道海绵体内，与成对的阴茎海绵体分开。剖面简化了组织边界，并省略部分周围结构。动态标记仅表示流向，不表示流速或尿量。</string>
+    <string name="health_atlas_penile_urinary_section">阴茎体横切面</string>
+    <string name="health_atlas_penile_urinary_section_caption">横切面上，成对的阴茎海绵体位于背侧。单个尿道海绵体位于腹侧，包绕金色标出的尿道海绵体部管腔。</string>
+    <string name="health_atlas_penile_urinary_proximal">从膀胱出发</string>
+    <string name="health_atlas_penile_urinary_proximal_caption">尿液离开膀胱后，先通过尿道前列腺部，再经短小的尿道膜部进入尿道海绵体部。图中的弯曲形态与长度仅作示意。</string>
+    <string name="health_atlas_penile_urinary_distal">沿尿道海绵体部</string>
+    <string name="health_atlas_penile_urinary_distal_caption">尿道海绵体部在尿道海绵体内延伸，直至阴茎头处的尿道外口。背侧的两个阴茎海绵体是独立的组织，不是尿液通道。</string>
+    <string name="health_atlas_penile_urinary_dorsal">背侧</string>
+    <string name="health_atlas_penile_urinary_bladder">膀胱</string>
+    <string name="health_atlas_penile_urinary_prostatic">尿道前列腺部</string>
+    <string name="health_atlas_penile_urinary_membranous">尿道膜部</string>
+    <string name="health_atlas_penile_urinary_cavernosa">阴茎海绵体</string>
+    <string name="health_atlas_penile_urinary_cavernosa_detail">淡紫色表示背侧两个较大的阴茎海绵体，两者均不含尿道管腔。</string>
+    <string name="health_atlas_penile_urinary_spongiosum">尿道海绵体</string>
+    <string name="health_atlas_penile_urinary_spongiosum_detail">腹侧的单个尿道海绵体包绕尿道海绵体部。珊瑚色表示周围组织，而非尿道管腔。</string>
+    <string name="health_atlas_penile_urinary_spongy">尿道海绵体部</string>
+    <string name="health_atlas_penile_urinary_spongy_detail">横切面中的金色开口是尿道管腔，对应下方纵切面中的通道。</string>
+    <string name="health_atlas_penile_urinary_meatus">尿道外口</string>
+    <string name="health_atlas_penile_urinary_meatus_detail">尿道外口是尿道海绵体部的终点，也是尿液排出体外的位置。</string>
+    <string name="health_atlas_penile_urinary_plate_title">阴茎排尿路径剖面</string>
+    <string name="health_atlas_penile_urinary_plate_caption">阴茎内部简化剖面：上方为横切面，下方为排尿路径。不按比例绘制。</string>
+    <string name="health_atlas_penile_urinary_ref_anatomy">OpenStax：阴茎横切解剖</string>
+    <string name="health_atlas_penile_urinary_ref_route">OpenStax：排尿通路的大体解剖</string>
+</resources>

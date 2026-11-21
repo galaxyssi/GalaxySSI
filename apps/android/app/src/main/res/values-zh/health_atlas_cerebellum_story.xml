@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cerebellum_story_title">小脑如何协助协调伸手动作</string>
+    <string name="health_atlas_cerebellum_story_choice">小脑与运动协调</string>
+    <string name="health_atlas_cerebellum_story_scope">以正常伸手动作为例作定性说明；轨迹与时间仅为示意。</string>
+
+    <string name="health_atlas_cerebellum_story_plan">规划伸手动作</string>
+    <string name="health_atlas_cerebellum_story_plan_caption">大脑根据目标的位置规划伸手动作，并预测肩和肘配合时手臂会怎样移动。</string>
+    <string name="health_atlas_cerebellum_story_feedback">感觉反馈传来</string>
+    <string name="health_atlas_cerebellum_story_feedback_caption">手移动时，视觉信息以及来自肌肉和关节的信号提示手臂的位置。这些反馈的传递和脑内处理都需要时间。</string>
+    <string name="health_atlas_cerebellum_story_compare">比较预测与实际动作</string>
+    <string name="health_atlas_cerebellum_story_compare_caption">小脑协助脑将预测的动作与感觉反馈进行比较。这一次伸手时，手略微偏离了预测轨迹。</string>
+    <string name="health_atlas_cerebellum_story_correct">边伸手边调整</string>
+    <string name="health_atlas_cerebellum_story_correct_caption">脑可以结合持续传来的反馈与运动预测，调整手臂的动作，让手向目标靠近。</string>
+    <string name="health_atlas_cerebellum_story_recalibrate">根据经验重新校准</string>
+    <string name="health_atlas_cerebellum_story_recalibrate_caption">重复伸手时，小脑有助于校准对后续动作的预测。示意中，手后来的轨迹更接近预期，途中所需的调整也更少。</string>
+
+    <string name="health_atlas_cerebellum_story_cerebrum">大脑</string>
+    <string name="health_atlas_cerebellum_story_cerebellum">小脑</string>
+    <string name="health_atlas_cerebellum_story_brainstem">脑干</string>
+    <string name="health_atlas_cerebellum_story_arm">伸出的手臂</string>
+    <string name="health_atlas_cerebellum_story_target">目标</string>
+    <string name="health_atlas_cerebellum_story_predicted">预测轨迹</string>
+    <string name="health_atlas_cerebellum_story_actual">实际轨迹</string>
+    <string name="health_atlas_cerebellum_story_vision">视觉</string>
+    <string name="health_atlas_cerebellum_story_position">手臂位置</string>
+    <string name="health_atlas_cerebellum_story_mismatch">预测与实际的偏差</string>
+    <string name="health_atlas_cerebellum_story_earlier">先前的伸手动作</string>
+    <string name="health_atlas_cerebellum_story_later">后续的伸手动作</string>
+
+    <string name="health_atlas_cerebellum_story_ref_estimation">研究：伸手时对手臂位置的估计</string>
+    <string name="health_atlas_cerebellum_story_ref_adaptation">研究：伸手时如何根据预测误差学习</string>
+</resources>

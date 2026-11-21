@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Anterior coronal teaching section; superior at the top. -->
+    <path android:strokeColor="#728698" android:strokeWidth="1.7" android:strokeLineJoin="round"
+        android:pathData="M180,18 C209,16 237,21 259,32 C282,44 298,61 313,80 C325,96 335,116 333,132 C333,145 324,153 316,160 C305,170 300,186 292,201 C283,217 270,225 253,231 C241,236 239,247 225,251 C210,255 192,253 180,253 C165,253 149,256 134,252 C121,249 117,238 106,233 C89,226 76,219 66,202 C57,187 54,172 43,162 C34,154 25,146 26,130 C26,110 36,91 51,74 C71,50 89,38 111,29 C133,21 154,18 180,18 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="145" android:startY="27" android:endX="213" android:endY="253"
+                android:startColor="#FBF9F1" android:centerColor="#EAEFF0" android:endColor="#C9D5E0" />
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#A7BDCE" android:fillAlpha="0.32"
+        android:pathData="M27,132 C31,147 41,151 51,159 C62,169 66,185 74,198 C81,211 95,221 111,227 C124,232 128,241 139,244 Q150,247 163,245 Q183,243 201,245 Q219,248 230,241 C238,232 246,226 258,222 C279,214 287,199 294,183 C300,170 305,161 315,153 Q328,143 332,130 C333,143 326,151 316,160 C305,170 300,186 292,201 C283,217 270,225 253,231 C241,236 239,247 225,251 C210,255 192,253 180,253 C165,253 149,256 134,252 C121,249 117,238 106,233 C89,226 76,219 66,202 C57,187 54,172 43,162 C34,154 27,147 27,132 Z" />
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="1.6" android:strokeAlpha="0.83" android:strokeLineCap="round"
+        android:pathData="M43,98 C62,68 91,44 124,33 C150,24 184,23 212,26 C249,29 280,48 301,74 M39,124 Q35,135 40,143 M307,82 Q321,101 324,115" />
+    <path android:strokeColor="#A4B5C1" android:strokeWidth="0.8" android:strokeAlpha="0.72" android:strokeLineCap="round"
+        android:pathData="M60,77 q12,-14 30,-24 M73,73 l7,-6 M87,63 l11,-7 M103,47 q10,-5 24,-8 M105,59 l7,-4 M230,37 q16,3 28,9 M242,47 l10,4 M259,56 l11,6 M274,51 q12,8 21,18 M280,68 l7,5 M33,121 l4,-9 M34,134 l2,-4 M318,105 l3,8 M323,124 l1,6 M54,171 l4,5 M67,191 l5,8 M76,203 l6,7 M91,216 l11,5 M108,225 l9,5 M118,235 l7,4 M302,173 l4,-5 M294,189 l4,-8 M281,208 l7,-9 M262,221 l10,-5 M245,229 l8,-5 M234,239 l6,-5" />
+
+    <!-- Orbits are muted landmarks, not sinus spaces. -->
+    <path android:strokeColor="#8795A7" android:strokeWidth="1.35" android:strokeLineJoin="round"
+        android:pathData="M49,113 C55,96 73,81 95,76 C107,73 119,76 128,81 C131,85 130,91 129,99 L125,131 Q123,140 112,141 C95,139 76,142 61,136 C50,131 46,123 49,113 Z M231,83 C239,75 251,74 264,77 C284,81 304,96 311,111 C316,123 311,132 300,137 C287,142 266,140 248,142 Q236,142 234,133 C232,122 231,107 229,96 Q228,88 231,83 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="180" android:startY="78" android:endX="180" android:endY="143"
+                android:startColor="#BDC7D7" android:centerColor="#E6E5EE" android:endColor="#D8D9E6" />
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#F3F1F7" android:fillAlpha="0.75"
+        android:pathData="M51,119 C60,124 74,129 89,130 C104,132 116,128 126,124 L125,132 Q123,139 112,140 C94,138 76,141 62,135 Q51,131 51,119 Z M233,124 C246,131 255,131 272,130 C288,130 300,126 312,118 Q313,130 300,136 C286,141 266,139 248,141 Q238,141 235,133 Z" />
+    <path android:strokeColor="#A1AEC0" android:strokeWidth="0.8" android:strokeAlpha="0.69" android:strokeLineCap="round"
+        android:pathData="M56,109 C67,93 87,84 104,83 Q116,83 124,87 M63,110 Q80,96 99,94 M64,126 Q83,135 108,133 M236,88 Q249,81 263,85 C279,88 298,100 305,113 M258,95 Q280,97 298,112 M251,134 Q283,137 304,127" />
+
+    <!-- Frontal air spaces lie above the medial orbital roofs. -->
+    <path android:name="frontal_sinuses" android:strokeColor="#587F94" android:strokeWidth="1.45" android:strokeLineJoin="round"
+        android:pathData="M168,35 C174,36 176,43 176,52 L175,68 C174,72 171,76 165,75 C158,73 158,67 153,65 C148,62 142,65 137,62 C130,60 129,55 133,50 C138,43 144,46 149,42 C155,37 159,38 168,35 Z M184,46 C185,37 192,35 199,40 C205,44 209,40 215,44 C220,47 226,51 226,57 C226,63 219,65 212,65 C207,65 203,60 198,63 C193,66 193,74 187,74 C181,74 181,69 182,62 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="175" android:startY="35" android:endX="186" android:endY="75"
+                android:startColor="#DDF7F7" android:centerColor="#BEE6EE" android:endColor="#8BB8D0" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#F2FCFC" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M136,53 C141,48 147,49 152,45 Q159,41 167,40 M187,50 Q189,39 197,43 Q204,48 212,47 M215,49 q6,2 8,7" />
+
+    <!-- The two ethmoid labyrinths have thin walls between irregular air cells. -->
+    <path android:fillColor="#C7DCE4" android:strokeColor="#899FAC" android:strokeWidth="1.1"
+        android:pathData="M132,82 C141,77 154,77 165,80 C174,82 173,92 170,101 C166,115 158,126 149,135 C143,139 133,141 126,137 L131,106 Q133,94 132,82 Z M195,81 C203,77 218,77 227,82 C227,94 229,109 230,120 L234,137 C226,142 217,137 211,132 C203,125 199,117 195,109 Q189,92 195,81 Z" />
+    <path android:name="ethmoid_air_cells" android:strokeColor="#638497" android:strokeWidth="1.05" android:strokeLineJoin="round"
+        android:pathData="M135,85 Q142,81 149,83 C153,84 153,88 151,93 Q146,99 135,96 Z M156,85 Q162,81 167,85 C171,89 167,98 163,103 C160,105 154,104 151,101 C149,98 154,94 155,90 Z M135,100 C139,100 143,97 147,100 C148,103 147,109 151,113 C155,119 149,122 142,121 Q136,120 132,123 Z M131,127 C134,123 140,125 144,125 C148,125 147,131 143,133 Q137,137 130,135 Z M197,86 Q203,82 209,84 C211,86 209,92 207,96 Q204,100 199,98 Q196,93 197,86 Z M214,85 Q220,82 225,86 L226,97 C222,100 218,98 214,96 Q210,93 214,85 Z M210,101 C214,98 219,103 225,102 L228,115 C225,119 219,120 213,117 C209,115 204,106 210,101 Z M214,122 C218,122 224,123 228,119 L231,133 C227,136 220,133 217,130 Q213,126 214,122 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="179" android:startY="82" android:endX="179" android:endY="137"
+                android:startColor="#E3F8F6" android:centerColor="#B2DCE6" android:endColor="#9ABDD0" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#EFFCFB" android:strokeWidth="0.95" android:strokeLineCap="round"
+        android:pathData="M137,88 q5,-3 10,-2 M158,87 q4,-3 7,0 M136,104 q6,-3 9,-2 M134,129 q4,-2 8,-2 M199,88 q4,-3 8,-2 M216,87 q3,-1 7,1 M211,104 q3,-2 8,1 M217,125 q5,1 9,-2" />
+
+    <!-- Broad maxillary roofs under the orbits and tapered lateral recesses. -->
+    <path android:name="maxillary_sinuses" android:strokeColor="#5C8298" android:strokeWidth="1.55" android:strokeLineJoin="round"
+        android:pathData="M49,156 C58,151 69,150 83,150 C97,150 109,146 119,146 C124,146 127,150 126,157 C124,169 124,185 123,201 C122,212 119,224 112,226 C103,229 90,219 83,212 C72,201 68,192 61,180 C55,169 49,167 47,161 Q46,158 49,156 Z M236,150 C243,145 255,150 269,150 C283,150 297,146 308,153 C315,157 309,165 303,171 C295,179 290,193 283,204 C274,216 260,224 249,226 C240,227 236,218 236,207 C236,191 235,177 233,163 Q231,154 236,150 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="158" android:startY="146" android:endX="190" android:endY="229"
+                android:startColor="#D3EDF2" android:centerColor="#A5D3E2" android:endColor="#84AAC5" />
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#E5F5F7" android:fillAlpha="0.72"
+        android:pathData="M51,159 C65,153 79,154 93,153 C104,153 114,148 121,150 Q125,152 122,160 C109,155 103,161 89,161 C75,161 65,159 54,164 Z M236,155 C243,149 256,154 268,154 C284,154 296,149 306,156 Q309,158 305,163 C295,159 286,164 272,163 C255,163 248,157 237,162 Z" />
+    <path android:strokeColor="#6999B5" android:strokeWidth="1.1" android:strokeAlpha="0.62" android:strokeLineCap="round"
+        android:pathData="M58,168 C67,181 70,193 83,206 C91,214 102,223 110,222 Q117,221 119,204 M117,180 l1,-13 M302,168 C290,180 287,194 278,204 C268,214 257,221 249,222 Q241,222 240,207 M239,195 q0,-17 -2,-28" />
+    <path android:strokeColor="#EDF9FB" android:strokeWidth="1" android:strokeAlpha="0.64" android:strokeLineCap="round"
+        android:pathData="M67,169 Q78,168 89,169 M96,168 l10,-1 M250,167 q13,4 25,2 M282,168 l10,-2" />
+
+    <path android:name="nasal_cavity" android:strokeColor="#637A92" android:strokeWidth="1.5" android:strokeLineJoin="round"
+        android:pathData="M180,87 C174,87 169,92 167,102 C164,117 160,123 149,132 C139,140 137,151 136,165 C135,182 131,192 131,207 C131,220 138,231 150,233 C160,234 170,232 181,232 C198,233 216,235 225,226 C233,219 231,207 229,196 L223,159 C221,147 215,138 207,131 C198,123 196,109 193,100 C190,91 186,87 180,87 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="180" android:startY="89" android:endX="179" android:endY="234"
+                android:startColor="#839DB7" android:centerColor="#9CB9D0" android:endColor="#C7E6EE" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#E7F5F8" android:strokeWidth="1.2" android:strokeAlpha="0.78" android:strokeLineCap="round"
+        android:pathData="M135,211 q2,15 16,18 q9,1 20,-1 M191,228 C203,229 215,231 222,222 Q227,217 227,207" />
+
+    <!-- Middle and inferior conchae project from the lateral nasal walls. -->
+    <path android:name="middle_conchae" android:strokeColor="#797F98" android:strokeWidth="1.2" android:strokeLineJoin="round"
+        android:pathData="M166,106 C167,115 161,124 163,132 C164,139 171,141 172,147 C174,153 169,157 163,156 C153,155 149,147 151,141 C153,134 156,126 155,126 C160,121 164,114 166,106 Z M195,107 C196,114 200,123 205,129 C204,135 210,142 210,149 C211,155 204,159 198,156 C192,153 191,147 195,143 C202,135 194,126 194,121 Q193,115 195,107 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="177" android:startY="107" android:endX="183" android:endY="157"
+                android:startColor="#E2E8F2" android:centerColor="#D1CBE2" android:endColor="#BCACC8" />
+        </aapt:attr>
+    </path>
+    <path android:name="inferior_conchae" android:strokeColor="#797F98" android:strokeWidth="1.35" android:strokeLineJoin="round"
+        android:pathData="M135,174 C143,170 149,168 156,171 C163,174 168,181 169,189 C171,197 167,203 161,204 C152,204 147,201 145,195 C142,188 143,182 134,183 Z M225,175 C218,170 211,169 205,172 C198,175 193,182 193,191 C193,199 198,204 205,203 C213,202 216,197 216,191 C216,185 219,182 227,184 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="178" android:startY="169" android:endX="182" android:endY="206"
+                android:startColor="#E9E6F1" android:centerColor="#D8CCE3" android:endColor="#B7A7C6" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#FAF5FC" android:strokeWidth="1.15" android:strokeLineCap="round"
+        android:pathData="M158,135 Q157,144 164,148 M203,135 Q207,141 205,149 M140,176 C150,171 160,174 164,185 M198,187 Q203,173 218,176" />
+    <path android:strokeColor="#A094B2" android:strokeWidth="0.9" android:strokeLineCap="round"
+        android:pathData="M156,143 q1,7 9,9 M202,143 q-5,6 0,10 M148,182 Q149,196 160,199 Q165,199 165,193 M212,182 Q210,184 211,191 Q211,197 205,199 Q200,199 199,194" />
+
+    <!-- Midline septum and the hard palate at the floor of the nasal cavity. -->
+    <path android:strokeColor="#7D91A4" android:strokeWidth="1.15" android:strokeLineJoin="round"
+        android:pathData="M177,89 Q180,86 183,89 C183,105 185,121 184,137 C183,158 186,176 185,195 L186,224 Q187,230 191,232 L171,232 Q177,229 177,224 L177,190 C178,167 175,150 177,132 C178,115 176,101 177,89 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="175" android:startY="150" android:endX="186" android:endY="150"
+                android:startColor="#F4F0F4" android:endColor="#C8C3D6" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#F8F7FA" android:strokeWidth="0.9" android:strokeLineCap="round"
+        android:pathData="M179,97 C178,113 181,119 179,134 C177,153 181,168 180,184 M180,195 l0,28" />
+    <path android:fillColor="#E5EAED" android:strokeColor="#91A4B3" android:strokeWidth="1.05" android:strokeLineJoin="round"
+        android:pathData="M118,231 Q133,235 148,235 C160,235 170,232 181,232 C197,233 213,237 227,230 Q234,227 241,225 C236,233 229,239 221,241 C207,245 194,241 180,241 C164,241 151,245 138,242 Q126,240 118,231 Z" />
+    <path android:strokeColor="#FAFCFB" android:strokeWidth="1.1" android:strokeLineCap="round"
+        android:pathData="M133,237 Q146,240 160,237 Q181,233 199,237 Q213,240 224,235" />
+    <path android:strokeColor="#A0B1BE" android:strokeWidth="0.8" android:strokeLineCap="round"
+        android:pathData="M134,246 l5,2 M143,248 l7,1 M161,247 l6,-1 M173,246 l5,0 M190,246 l8,1 M209,249 l7,-1 M221,247 l5,-2" />
+</vector>

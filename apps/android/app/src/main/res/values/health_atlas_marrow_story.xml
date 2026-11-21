@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_marrow_story_title">How bone marrow makes blood cells</string>
+    <string name="health_atlas_marrow_story_choice">Blood cell formation in bone marrow</string>
+    <string name="health_atlas_marrow_story_scope">A qualitative view of normal adult human blood cell formation in red marrow. The illustrated branches show selected outcomes, not a fixed hierarchy or every lineage. Sizes and timing are not to scale.</string>
+    <string name="health_atlas_marrow_story_niche">The marrow niche</string>
+    <string name="health_atlas_marrow_story_niche_caption">In red marrow between bony trabeculae, nearby stromal cells and blood vessels help maintain blood-forming stem cells. These surroundings are part of the stem cell niche.</string>
+    <string name="health_atlas_marrow_story_renewal">Stem cells self-renew</string>
+    <string name="health_atlas_marrow_story_renewal_caption">When a blood-forming stem cell divides, a daughter cell can retain stem cell identity. The division shown adds to the stem cell pool; not every division has this outcome.</string>
+    <string name="health_atlas_marrow_story_commitment">Progenitors take different paths</string>
+    <string name="health_atlas_marrow_story_commitment_caption">As cells commit to a lineage, the kinds of blood cells they can produce become more limited. Two examples are the red cell lineage and the megakaryocyte lineage, which produces platelets. The cells at the ends of the branches are not immediate daughters of the stem cell.</string>
+    <string name="health_atlas_marrow_story_maturation">A red cell precursor loses its nucleus</string>
+    <string name="health_atlas_marrow_story_maturation_caption">Along the red cell lineage, erythroblasts become smaller and their nuclei condense. A late erythroblast expels its nucleus, leaving a young red cell called a reticulocyte.</string>
+    <string name="health_atlas_marrow_story_release">Young red cells enter the bloodstream</string>
+    <string name="health_atlas_marrow_story_release_caption">Reticulocytes cross the lining of a marrow sinusoid and are carried away by the flowing blood. They continue maturing in circulation.</string>
+    <string name="health_atlas_marrow_story_label_bone">Trabecular bone</string>
+    <string name="health_atlas_marrow_story_label_stroma">Stromal cell</string>
+    <string name="health_atlas_marrow_story_label_stem">Blood stem cell</string>
+    <string name="health_atlas_marrow_story_label_sinusoid">Marrow sinusoid</string>
+    <string name="health_atlas_marrow_story_label_pool">Stem cell pool</string>
+    <string name="health_atlas_marrow_story_label_red_lineage">Red cell lineage</string>
+    <string name="health_atlas_marrow_story_label_mega_lineage">Megakaryocyte lineage</string>
+    <string name="health_atlas_marrow_story_label_illustrative">Illustrative branches</string>
+    <string name="health_atlas_marrow_story_label_early">Early erythroblast</string>
+    <string name="health_atlas_marrow_story_label_late">Late erythroblast</string>
+    <string name="health_atlas_marrow_story_label_reticulocyte">Reticulocyte</string>
+    <string name="health_atlas_marrow_story_label_lining">Sinusoid lining</string>
+    <string name="health_atlas_marrow_story_ref_lineages">Notta et al. (2016): Lineage development in human bone marrow</string>
+    <string name="health_atlas_marrow_story_ref_egress">Yokoyama et al. (2002): Reticulocyte entry into the bloodstream in healthy rats</string>
+</resources>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cholangiocyte_story_title">胆管细胞如何调节胆汁</string>
+    <string name="health_atlas_cholangiocyte_story_choice">胆管细胞与胆汁</string>
+    <string name="health_atlas_cholangiocyte_story_scope">正常生理过程的示意图。结构、时序和移动的标记仅作示意，并非按比例绘制。</string>
+
+    <string name="health_atlas_cholangiocyte_story_enter">胆汁进入胆管</string>
+    <string name="health_atlas_cholangiocyte_story_enter_caption">肝细胞生成初始胆汁。细小的胆管汇集胆汁，再汇入较大的胆管。胆管内衬的细胞可在胆汁流经时改变其成分。</string>
+    <string name="health_atlas_cholangiocyte_story_line">认识胆管内衬</string>
+    <string name="health_atlas_cholangiocyte_story_line_caption">胆管细胞构成胆管的内衬。它们的顶端面朝向管腔，也就是胆汁流过的空间；相对的一面朝向周围组织。</string>
+    <string name="health_atlas_cholangiocyte_story_exchange">碳酸氢根进入管腔</string>
+    <string name="health_atlas_cholangiocyte_story_exchange_caption">胆管细胞可借助 AE2 交换蛋白向胆汁添加碳酸氢根。在细胞顶端面，AE2 将碳酸氢根移出细胞并送入管腔，同时将氯离子移入细胞。</string>
+    <string name="health_atlas_cholangiocyte_story_water">水通过渗透进入管腔</string>
+    <string name="health_atlas_cholangiocyte_story_water_caption">溶质进入管腔后，形成的渗透梯度可使水从组织侧移向胆汁。水可通过称为水通道蛋白的通道穿过细胞。</string>
+    <string name="health_atlas_cholangiocyte_story_carry">调节后的胆汁继续流动</string>
+    <string name="health_atlas_cholangiocyte_story_carry_caption">新加入的水和碳酸氢根与胆管内原有的胆汁混合。胆管内衬负责调节胆汁，而不是从头生成胆汁。胆汁可经胆总管继续流向十二指肠。</string>
+
+    <string name="health_atlas_cholangiocyte_story_liver">肝组织</string>
+    <string name="health_atlas_cholangiocyte_story_small_duct">细小胆管</string>
+    <string name="health_atlas_cholangiocyte_story_larger_duct">较大胆管</string>
+    <string name="health_atlas_cholangiocyte_story_lumen">胆管管腔</string>
+    <string name="health_atlas_cholangiocyte_story_cell">胆管细胞</string>
+    <string name="health_atlas_cholangiocyte_story_apical">顶端面</string>
+    <string name="health_atlas_cholangiocyte_story_bicarbonate">碳酸氢根</string>
+    <string name="health_atlas_cholangiocyte_story_chloride">氯离子</string>
+    <string name="health_atlas_cholangiocyte_story_exchanger">AE2 交换蛋白</string>
+    <string name="health_atlas_cholangiocyte_story_water_channel">水通道</string>
+    <string name="health_atlas_cholangiocyte_story_tissue_side">组织侧</string>
+    <string name="health_atlas_cholangiocyte_story_modified_bile">调节后的胆汁</string>
+    <string name="health_atlas_cholangiocyte_story_duodenum">十二指肠</string>
+
+    <string name="health_atlas_cholangiocyte_story_ref_exchange">研究证据：小鼠胆管细胞的碳酸氢根交换</string>
+    <string name="health_atlas_cholangiocyte_story_ref_water">研究证据：大鼠胆管中水的渗透转运</string>
+</resources>

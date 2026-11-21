@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <path android:strokeColor="#9AB0AD" android:strokeWidth="1.4"
+        android:pathData="M116,28 C140,15 157,20 180,24 C203,20 220,15 244,28 C268,42 271,69 263,98 C257,124 246,146 249,168 C252,186 261,201 264,217 C267,239 253,251 228,254 C207,257 192,267 180,266 C168,267 153,257 132,254 C107,251 93,239 96,217 C99,201 108,186 111,168 C114,146 103,124 97,98 C89,69 92,42 116,28 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="0" android:startY="26" android:endX="0" android:endY="266"
+                android:startColor="#EDF5EF" android:endColor="#CBDDD8" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#AC9B87" android:strokeWidth="1.3"
+        android:pathData="M104,49 Q138,37 175,58 L185,58 Q222,37 256,49 C257,73 254,92 245,110 C227,117 216,108 204,99 Q185,80 180,95 Q175,80 156,99 C144,108 133,117 115,110 C106,92 103,73 104,49 Z M108,202 C127,191 142,198 156,214 Q172,224 180,236 Q188,224 204,214 C218,198 233,191 252,202 C259,215 251,234 234,240 Q212,249 194,249 Q180,260 166,249 Q148,249 126,240 C109,234 101,215 108,202 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="0" android:startY="42" android:endX="0" android:endY="255"
+                android:startColor="#FCF7E9" android:endColor="#DED0BB" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#C7B69E" android:strokeWidth="3.8" android:strokeLineCap="round"
+        android:pathData="M107,58 C130,53 152,59 174,70 M253,58 C230,53 208,59 186,70 M109,71 C129,65 153,77 171,81 M251,71 C231,65 207,77 189,81 M112,85 C130,79 145,91 158,94 M248,85 C230,79 215,91 202,94 M116,99 Q137,95 149,103 M244,99 Q223,95 211,103" />
+    <path android:fillColor="#F6EAD7" android:strokeColor="#AB9B86" android:strokeWidth="1.25"
+        android:pathData="M175,51 Q180,47 185,51 L185,80 Q184,91 180,97 Q175,91 175,80 Z M159,234 Q169,229 179,235 Q191,229 201,234 L196,244 Q188,244 181,249 Q173,246 164,246 Z" />
+    <path android:fillColor="#D9DFD3" android:strokeColor="#B5B8A6" android:strokeWidth="1.05"
+        android:pathData="M138,82 Q178,77 221,82 C223,125 227,171 214,207 Q208,226 190,239 L170,239 Q152,226 146,207 C133,171 137,125 138,82 Z" />
+    <path android:strokeColor="#9D6167" android:strokeWidth="1.45"
+        android:pathData="M145,85 C153,80 164,77 174,84 C177,106 175,127 176,148 C176,181 175,214 176,234 Q169,239 164,234 C154,220 147,199 144,174 C140,142 140,110 145,85 Z M215,85 C207,80 196,77 186,84 C183,106 185,127 184,148 C184,181 185,214 184,234 Q191,239 196,234 C206,220 213,199 216,174 C220,142 220,110 215,85 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="0" android:startY="80" android:endX="0" android:endY="238"
+                android:startColor="#F0CCC2" android:endColor="#C3888B" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#BC8B84" android:strokeWidth="1.05" android:strokeLineCap="round"
+        android:pathData="M151,89 C147,140 153,196 169,230 M159,86 C156,144 160,203 171,230 M167,86 C165,139 167,202 174,229 M209,89 C213,140 207,196 191,230 M201,86 C204,144 200,203 189,230 M193,86 C195,139 193,202 186,229" />
+    <path android:strokeColor="#F7E2D5" android:strokeWidth="3.4" android:strokeLineCap="round"
+        android:pathData="M142,111 Q154,106 175,113 M185,115 Q201,107 218,111 M143,147 Q158,153 175,147 M185,148 Q200,152 217,146 M149,184 Q163,178 175,183 M185,184 Q198,179 211,185" />
+    <path android:strokeColor="#F8EBDC" android:strokeWidth="3.25" android:strokeLineCap="round"
+        android:pathData="M180,99 C181,134 178,174 180,213 L180,233" />
+    <path android:strokeColor="#EEF4E9" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M104,154 Q117,172 109,193 M256,154 Q243,172 251,193 M114,208 Q129,201 143,210 M246,208 Q231,201 217,210" />
+</vector>

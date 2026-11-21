@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_diffusion_title">相对氧转移速率</string>
+    <string name="health_atlas_diffusion_gradient">氧分压差</string>
+    <string name="health_atlas_diffusion_area">交换面积</string>
+    <string name="health_atlas_diffusion_thickness">气血屏障厚度</string>
+    <string name="health_atlas_diffusion_conductance">相对膜扩散能力：%1$s 倍</string>
+    <string name="health_atlas_diffusion_formula">相对转移速率 = 相对面积 × 相对分压差 ÷ 相对厚度。</string>
+    <string name="health_atlas_diffusion_scope">各输入均为示例基线的倍数。此平面薄层模型固定氧的扩散性质，不计算血流或血红蛋白结合，不能估算血氧或临床肺功能。</string>
+    <string name="health_atlas_diffusion_diagram">肺泡空气 → 气血屏障 → 毛细血管血液</string>
+    <string name="health_atlas_diffusion_air">肺泡空气</string>
+    <string name="health_atlas_diffusion_barrier">气血屏障</string>
+    <string name="health_atlas_diffusion_blood">毛细血管血液</string>
+    <string name="health_atlas_compression_title">关节软骨受压示例</string>
+    <string name="health_atlas_compression_stress">施加压应力</string>
+    <string name="health_atlas_compression_modulus">示例弹性模量</string>
+    <string name="health_atlas_compression_remaining">剩余厚度：%1$s%%</string>
+    <string name="health_atlas_compression_formula">压缩应变（百分比）= 100 × 压应力 ÷ 弹性模量，两者使用相同单位。</string>
+    <string name="health_atlas_compression_scope">该示例将关节软骨简化为均匀的小应变弹性材料，不考虑液体流动、时间效应或组织分层。它描述组织而不是单个软骨细胞，不能推断损伤或关节健康。</string>
+    <string name="health_atlas_compression_diagram">关节软骨受压前后的对照，图中放大了形变。</string>
+    <string name="health_atlas_compression_unloaded">未受压</string>
+    <string name="health_atlas_compression_loaded">受压后</string>
+    <string name="health_atlas_bone_bending_title">长骨弯曲应力示例</string>
+    <string name="health_atlas_bone_bending_moment">弯矩</string>
+    <string name="health_atlas_bone_bending_diameter">外径</string>
+    <string name="health_atlas_bone_bending_cavity">内径与外径之比</string>
+    <string name="health_atlas_bone_bending_inertia">截面二次矩：%1$s mm⁴</string>
+    <string name="health_atlas_bone_bending_formula">在此模型中，外缘应力 = 弯矩 × 外半径 ÷ 截面二次矩。</string>
+    <string name="health_atlas_bone_bending_scope">这是使用示例尺寸的空心圆梁模型。真实骨骼形状不规则，横截面和长度方向上的性质也会变化。示例应力不能预测骨强度、骨折风险或安全运动负荷。</string>
+    <string name="health_atlas_bone_bending_diagram">长骨示例横截面及其沿截面深度的应力变化。</string>
+    <string name="health_atlas_bone_bending_compression">受压</string>
+    <string name="health_atlas_bone_bending_tension">受拉</string>
+    <string name="health_atlas_bone_bending_neutral">中性轴</string>
+    <string name="health_atlas_calf_pump_title">小腿肌泵净流量示例</string>
+    <string name="health_atlas_calf_pump_stroke">每次挤出量</string>
+    <string name="health_atlas_calf_pump_rate">每分钟挤压次数</string>
+    <string name="health_atlas_calf_pump_return">示例回流比例</string>
+    <string name="health_atlas_calf_pump_net_stroke">每次净流量：%1$s mL</string>
+    <string name="health_atlas_calf_pump_formula">净流量 = 每次挤出量 × 每分钟挤压次数 × 未回流的比例。</string>
+    <string name="health_atlas_calf_pump_scope">这是使用示例参数的理想单腔模型。真实小腿静脉有多条通路和瓣膜，压力也会改变。该模型不能估算个人血液循环或诊断瓣膜功能。</string>
+    <string name="health_atlas_calf_pump_diagram">示意单个泵腔，以及正向流动和回流。</string>
+    <string name="health_atlas_calf_pump_chamber_label">一次挤压</string>
+    <string name="health_atlas_calf_pump_forward_label">每分钟正向流量</string>
+    <string name="health_atlas_calf_pump_return_label">每分钟回流量</string>
+</resources>

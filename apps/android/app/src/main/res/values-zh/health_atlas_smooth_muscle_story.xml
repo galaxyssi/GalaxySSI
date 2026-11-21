@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_smooth_muscle_story_title">小肠蠕动</string>
+    <string name="health_atlas_smooth_muscle_story_scope">这是正常小肠推进运动中一种模式的定性示意。形态、距离和时间均未按比例呈现。肠道还有其他运动方式，其他部位的平滑肌也不一定这样运动。</string>
+    <string name="health_atlas_smooth_muscle_story_fill">肠腔充盈</string>
+    <string name="health_atlas_smooth_muscle_story_fill_caption">团状肠内容物充盈肠腔，使肠壁略微扩张。内层环形肌绕肠腔排列，外层纵行肌沿肠管长度方向排列。</string>
+    <string name="health_atlas_smooth_muscle_story_relax">前方舒张</string>
+    <string name="health_atlas_smooth_muscle_story_relax_caption">内容物下游紧邻的一段环形肌舒张，肠腔可随之扩大，为内容物腾出空间。</string>
+    <string name="health_atlas_smooth_muscle_story_contract">后方收缩</string>
+    <string name="health_atlas_smooth_muscle_story_contract_caption">内容物后方的环形肌收缩，使肠腔变窄；前方仍保持舒张。</string>
+    <string name="health_atlas_smooth_muscle_story_propel">向下游推进</string>
+    <string name="health_atlas_smooth_muscle_story_propel_caption">肠壁各段依次在内容物后方收缩、在前方舒张。这一向前传递的波将内容物推向下游。</string>
+    <string name="health_atlas_smooth_muscle_story_recover">肠腔重新张开</string>
+    <string name="health_atlas_smooth_muscle_story_recover_caption">内容物继续向下游移动，先前收缩的那段肠壁舒张，肠腔重新张开。</string>
+    <string name="health_atlas_smooth_muscle_story_bolus">团状内容物</string>
+    <string name="health_atlas_smooth_muscle_story_circular">内层环形肌</string>
+    <string name="health_atlas_smooth_muscle_story_longitudinal">外层纵行肌</string>
+    <string name="health_atlas_smooth_muscle_story_ahead">前方舒张</string>
+    <string name="health_atlas_smooth_muscle_story_behind">后方收缩</string>
+    <string name="health_atlas_smooth_muscle_story_reopening">肠腔重新张开</string>
+    <string name="health_atlas_smooth_muscle_story_downstream">下游方向</string>
+    <string name="health_atlas_smooth_muscle_story_anatomy_source">人小肠肌层的结构（Henrich 与 Brehler，1980）</string>
+    <string name="health_atlas_smooth_muscle_story_propulsion_source">豚鼠小肠蠕动中的协调机制（Waterman 等，1994）</string>
+</resources>

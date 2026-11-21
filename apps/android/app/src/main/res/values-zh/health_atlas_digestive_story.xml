@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_meal_title">食物怎样被消化和吸收</string>
+    <string name="health_atlas_meal_scope">消化过程示意。路径、数量和时间不代表实际测量值。</string>
+    <string name="health_atlas_meal_swallow">舌推动食团进入咽部</string>
+    <string name="health_atlas_meal_swallow_caption">咀嚼和唾液把食物变成柔软的食团。吞咽时，舌把食团推向咽部，气道入口短暂受到保护，食团进入食管。</string>
+    <string name="health_atlas_meal_esophagus">食管蠕动推送食团</string>
+    <string name="health_atlas_meal_esophagus_caption">食团后方的肌肉收缩，前方放松。收缩波推动食团前进，到达胃入口时，下食管括约肌放松让它通过。</string>
+    <string name="health_atlas_meal_stomach">胃搅拌食物，形成食糜</string>
+    <string name="health_atlas_meal_stomach_caption">胃壁搅拌食物，使它与胃酸和消化酶混合。消化酶开始分解蛋白质，形成的食糜分批通过幽门。</string>
+    <string name="health_atlas_meal_duodenum">胆汁和胰液进入十二指肠</string>
+    <string name="health_atlas_meal_duodenum_caption">胆汁把脂肪分散成小油滴。胰酶帮助分解脂肪、碳水化合物和蛋白质，小肠自己的消化酶继续参与。</string>
+    <string name="health_atlas_meal_villus">营养经肠绒毛吸收</string>
+    <string name="health_atlas_meal_villus_caption">单糖和氨基酸进入毛细血管。吸收后的大部分长链脂肪在肠上皮细胞内重新包装，随后进入淋巴管。</string>
+    <string name="health_atlas_meal_bolus">食团</string>
+    <string name="health_atlas_meal_contraction">肌肉收缩</string>
+    <string name="health_atlas_meal_chyme">食糜搅拌</string>
+    <string name="health_atlas_meal_enzymes">胰液</string>
+    <string name="health_atlas_meal_bile">胆汁</string>
+    <string name="health_atlas_meal_blood">单糖、氨基酸 → 血液</string>
+    <string name="health_atlas_meal_lymph">大部分长链脂肪 → 淋巴</string>
+    <string name="health_atlas_meal_main_source">资料来源：消化系统如何工作（美国国立卫生研究院）</string>
+    <string name="health_atlas_meal_absorb_source">资料来源：消化与吸收（OpenStax）</string>
+    <string name="health_atlas_colon_story_title">大肠如何回收水分</string>
+    <string name="health_atlas_colon_story_cecum">剩余物进入盲肠</string>
+    <string name="health_atlas_colon_story_cecum_caption">小肠吸收大部分营养后，剩余液体和未消化物质从回肠进入盲肠。</string>
+    <string name="health_atlas_colon_story_mix">局部收缩搅拌内容物</string>
+    <string name="health_atlas_colon_story_mix_caption">结肠不同小段交替收缩，搅拌内容物，让它们更多接触肠壁。</string>
+    <string name="health_atlas_colon_story_water">肠壁吸收水和盐</string>
+    <string name="health_atlas_colon_story_water_caption">结肠吸收剩余内容物中的一部分水和盐。随着水分被吸收，内容物逐渐变稠。</string>
+    <string name="health_atlas_colon_story_propulsion">较强的收缩向前推送</string>
+    <string name="health_atlas_colon_story_propulsion_caption">有时会出现较强的推进性收缩，把内容物沿结肠推向直肠，和原地搅拌不同。</string>
+    <string name="health_atlas_colon_story_rectum">直肠储存，随后排出</string>
+    <string name="health_atlas_colon_story_rectum_caption">直肠暂时储存粪便。排便时，直肠收缩、出口处的括约肌放松，粪便才可排出。</string>
+    <string name="health_atlas_colon_story_water_key">水分 → 肠壁</string>
+    <string name="health_atlas_colon_story_contents">肠道内容物</string>
+    <string name="health_atlas_colon_story_source">资料来源：小肠与大肠（OpenStax）</string>
+</resources>
