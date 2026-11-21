@@ -135,7 +135,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     selection.research = .drugs
     let question = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: heart, selection: selection, research: true, language: "en")
     XCTAssertTrue(question.contains("single-compartment"))
-    XCTAssertTrue(question.contains("25.0"))
+    XCTAssertTrue(question.contains("after 8 h, 25"))
     XCTAssertTrue(question.contains("pharmacologyeducation.org"))
     XCTAssertTrue(question.contains("not personal health data"))
     XCTAssertFalse(question.contains("measuredAt"))

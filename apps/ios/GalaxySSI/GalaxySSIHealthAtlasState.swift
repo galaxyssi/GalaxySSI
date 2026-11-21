@@ -16,6 +16,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     var zoom: Double = 1
   }
   @Published var entries: [String: Selection] = [:]
+  @Published var previewPresented = false
 
   func binding(_ entry: GalaxySSIHealthAtlas.Entry) -> Binding<Selection> {
     Binding(get: { self.entries[entry.id] ?? Selection(simulation: .initial(entry.id)) },
@@ -70,7 +71,6 @@ struct GalaxySSIHealthAtlasView: View {
               if let entry = atlas.entry(id) { link(entry, atlas: atlas) }
             }
             Text(t("category_note")).font(.footnote).foregroundColor(.secondary)
-            GalaxySSIHealthAtlasAsk(atlas: atlas, entry: nil, selection: .init())
             NavigationLink(GalaxySSIHealthBodyText.string("entry", language: language)) {
               GalaxySSIHealthBodyView {
                 GalaxySSIHealthTrendView(records: records, fixedMetric: .bloodPressure)
@@ -105,6 +105,9 @@ struct GalaxySSIHealthAtlasView: View {
     }
     .navigationTitle(t("whole"))
     .navigationBarTitleDisplayMode(.inline)
+    .safeAreaInset(edge: .bottom) {
+      if let atlas { GalaxySSIHealthAtlasAsk(atlas: atlas, entry: nil, selection: .init()).padding(.horizontal) }
+    }
     .galaxySSIHealthTheme()
     .onAppear { if atlas == nil { load() } }
     .onChange(of: state.serialized) { saved = $0 }

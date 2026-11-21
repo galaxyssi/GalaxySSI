@@ -5,6 +5,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   let model: GalaxySSIHealthAtlas.Mechanism
   @Binding var simulation: GalaxySSIHealthAtlasSimulation
   @Binding var physiologyInputs: [Int]?
+  @Binding var previewPresented: Bool
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -52,7 +53,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         control(playing ? "pause.fill" : "play.fill", playing ? "pause" : "play") {
           if simulation.phase >= 1 { simulation.phase = 0 }
           playing.toggle(); lastTick = nil
-        }.disabled(reduceMotion)
+        }.disabled(reduceMotion || previewPresented)
         control("forward.step", "next_step") { playing = false; simulation.phase = Double(min(3, simulation.stage + 1)) / 4 }
         Spacer()
         Button { playing = false; simulation = .initial(entry.id); physiologyInputs = nil } label: {
@@ -74,7 +75,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       } else if !hasPhysiology { Text(t("qualitative_note")).font(.footnote) }
     }
     .onReceive(timer) { now in
-      guard playing, scene == .active, !reduceMotion else { return }
+      guard playing, scene == .active, !reduceMotion, !previewPresented else { return }
       defer { lastTick = now }
       guard let lastTick else { return }
       simulation.phase = min(1, simulation.phase + min(0.2, now.timeIntervalSince(lastTick)) * simulation.speed / 8)
@@ -82,6 +83,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
     }
     .onChange(of: scene) { _ in playing = false; lastTick = nil }
     .onChange(of: reduceMotion) { _ in playing = false; lastTick = nil }
+    .onChange(of: previewPresented) { _ in playing = false; lastTick = nil }
     .onDisappear { playing = false; lastTick = nil }
   }
   private func parameter(_ key: String, value: Binding<Double>, range: ClosedRange<Double>, unit: String) -> some View {

@@ -32,6 +32,35 @@ enum GalaxySSIHealthAtlasQuestion {
   static func build(atlas: GalaxySSIHealthAtlas, entry: GalaxySSIHealthAtlas.Entry?,
                     selection: GalaxySSIHealthAtlasState.Selection, research: Bool, language: String) -> String {
     func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
+    #if GALAXYSSI_ATLAS_AGENT_CONTEXT
+    let screen: GalaxySSIHealthAtlasAgentContext.Screen
+    if research {
+      switch selection.research { case .physiology: screen = .physiology; case .drugs: screen = .drugs; case .aging: screen = .aging }
+    } else {
+      switch selection.tab { case .structure: screen = .structure; case .function: screen = .function; case .values: screen = .values; case .simulation: screen = .simulation }
+    }
+    let anatomy = entry.map { item in
+      GalaxySSIHealthAtlasAgentContext.Anatomy(id: item.id, name: GalaxySSIHealthAtlasText.get(item.name, language),
+        description: GalaxySSIHealthAtlasText.get(item.description, language),
+        mechanism: GalaxySSIHealthAtlasText.get(atlas.model(item).title, language),
+        stages: atlas.model(item).stages.map { GalaxySSIHealthAtlasText.get($0, language) }, source: atlas.model(item).source)
+    }
+    var quantitative: GalaxySSIHealthAtlasAgentContext.Quantitative? = nil
+    #if GALAXYSSI_ATLAS_PHYSIOLOGY
+    if let entry, screen.includesPhysiology,
+       let model = GalaxySSIHealthAtlasPhysiology.resolved(entry.id, inputs: selection.physiologyInputs,
+         legacyVentilation: ["lungs", "respiratory"].contains(entry.id) ? [selection.simulation.first, selection.simulation.second] : nil) {
+      quantitative = .init(entryID: entry.id, context: GalaxySSIHealthAtlasPhysiologyText.context(model, language: language))
+    }
+    #endif
+    let simulation = entry.flatMap { item in
+      GalaxySSIHealthAtlasAgentContext.Simulation(entryID: item.id, phase: selection.simulation.phase,
+        first: selection.simulation.first, second: selection.simulation.second)
+    }
+    let elimination = GalaxySSIHealthAtlasAgentContext.Elimination(halfLife: selection.elimination.halfLife, elapsed: selection.elimination.elapsed)
+    return GalaxySSIHealthAtlasAgentContext.prompt(anatomy: anatomy, screen: screen, simulation: simulation,
+      quantitative: quantitative, elimination: elimination, locale: GalaxySSILocalization.interfaceLocale(language: language), text: t) ?? ""
+    #else
     guard let entry else { return t("ask_whole_context") }
     let model = atlas.model(entry)
     var prompt = String(format: t("ask_context"), GalaxySSIHealthAtlasText.get(entry.name, language),
@@ -68,6 +97,7 @@ enum GalaxySSIHealthAtlasQuestion {
       }
     }
     return prompt
+    #endif
   }
 }
 
@@ -77,6 +107,8 @@ struct GalaxySSIHealthAtlasAsk: View {
   let entry: GalaxySSIHealthAtlas.Entry?
   let selection: GalaxySSIHealthAtlasState.Selection
   var includesResearch = false
+  var selectionSnapshot: (() -> GalaxySSIHealthAtlasState.Selection)? = nil
+  var onPreviewStateChange: ((Bool) -> Void)? = nil
   @EnvironmentObject private var store: GalaxySSIStore
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
@@ -86,8 +118,12 @@ struct GalaxySSIHealthAtlasAsk: View {
   private var isPreviewPresented: Binding<Bool> { Binding(get: { preview != nil }, set: { if !$0 { preview = nil } }) }
   var body: some View {
     Button(t("ask")) {
-      preview = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: entry, selection: selection, research: includesResearch, language: language)
-    }.frame(minHeight: 44)
+      onPreviewStateChange?(true)
+      let question = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: entry, selection: selectionSnapshot?() ?? selection,
+        research: includesResearch, language: language)
+      if question.isEmpty { onPreviewStateChange?(false) } else { preview = question }
+    }.frame(maxWidth: .infinity, minHeight: 48).disabled(scene != .active)
+    .buttonStyle(GalaxySSIHealthCommandStyle())
     .sheet(isPresented: isPreviewPresented) {
       NavigationView {
         ScrollView { Text(preview ?? "").frame(maxWidth: .infinity, alignment: .leading).padding() }
@@ -108,6 +144,8 @@ struct GalaxySSIHealthAtlasAsk: View {
     } label: { EmptyView() }.hidden())
     .alert(t("load_error"), isPresented: $failed) { Button(t("retry")) { failed = false } }
     .onChange(of: scene) { value in if value != .active { preview = nil } }
+    .onChange(of: preview != nil) { onPreviewStateChange?($0) }
+    .onDisappear { onPreviewStateChange?(false) }
   }
   private func open() {
     guard scene == .active, UIApplication.shared.isProtectedDataAvailable, let prompt = preview,

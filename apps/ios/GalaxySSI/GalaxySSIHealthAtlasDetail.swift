@@ -37,18 +37,24 @@ struct GalaxySSIHealthAtlasDetail: View {
               Button(t("simulation")) { selection.wrappedValue.tab = .simulation }
             } else {
               GalaxySSIHealthAtlasSimulationPanel(entry: entry, model: atlas.model(entry), simulation: selection.simulation,
-                physiologyInputs: selection.physiologyInputs)
+                physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented)
             }
             Button(t("research")) { research = true }
             Divider()
             Link(t("evidence"), destination: atlas.model(entry).source)
             Text(t("art_note")).font(.footnote).foregroundColor(.secondary)
-            GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: selection.wrappedValue)
           }.padding()
         }
       }
     }
     .navigationTitle(name).navigationBarTitleDisplayMode(.inline)
+    .safeAreaInset(edge: .bottom) {
+      if selection.wrappedValue.tab != .values {
+        GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: selection.wrappedValue,
+          selectionSnapshot: { selection.wrappedValue }, onPreviewStateChange: { state.previewPresented = $0 })
+          .padding(.horizontal)
+      }
+    }
     .background(NavigationLink(isActive: $research) {
       GalaxySSIHealthAtlasResearch(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
     } label: { EmptyView() }.hidden())
@@ -89,10 +95,18 @@ struct GalaxySSIHealthAtlasValues: View {
             Text(metric.title(language: language)).tag(metric)
           }
         }.padding(.horizontal)
-        GalaxySSIHealthTrendView(records: records, fixedMetric: selection.metric ?? first,
-          atlasWindow: $selection.window).id(selection.metric ?? first)
+        trend(first)
       }.privacySensitive()
     } else { Text(t("no_metrics")).padding() }
+  }
+  @ViewBuilder private func trend(_ first: GalaxySSIHealthMetric) -> some View {
+    #if GALAXYSSI_ATLAS_AGENT_CONTEXT
+    GalaxySSIHealthTrendView(records: records, fixedMetric: selection.metric ?? first,
+      atlasWindow: $selection.window).id(selection.metric ?? first).environment(\.galaxySSIAtlasPinnedAnalysis, true)
+    #else
+    GalaxySSIHealthTrendView(records: records, fixedMetric: selection.metric ?? first,
+      atlasWindow: $selection.window).id(selection.metric ?? first)
+    #endif
   }
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
 }

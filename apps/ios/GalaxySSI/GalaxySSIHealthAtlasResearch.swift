@@ -18,17 +18,21 @@ struct GalaxySSIHealthAtlasResearch: View {
         switch selection.wrappedValue.research {
         case .physiology:
           GalaxySSIHealthAtlasSimulationPanel(entry: entry, model: atlas.model(entry), simulation: selection.simulation,
-            physiologyInputs: selection.physiologyInputs)
+            physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented)
         case .drugs:
           drugs
         case .aging:
           aging
         }
         Link(t("structure_source"), destination: atlas.model(entry).source)
-        GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: selection.wrappedValue, includesResearch: true)
       }.padding()
     }
     .navigationTitle(t("research")).navigationBarTitleDisplayMode(.inline).galaxySSIHealthTheme()
+    .safeAreaInset(edge: .bottom) {
+      GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: selection.wrappedValue, includesResearch: true,
+        selectionSnapshot: { selection.wrappedValue }, onPreviewStateChange: { state.previewPresented = $0 })
+        .padding(.horizontal)
+    }
   }
   private var drugs: some View {
     VStack(alignment: .leading, spacing: 16) {
