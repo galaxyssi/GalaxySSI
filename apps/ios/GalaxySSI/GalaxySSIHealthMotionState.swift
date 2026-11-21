@@ -29,51 +29,6 @@ enum GalaxySSIHealthMotion {
       day == calendar.startOfDay(for: now) && zone == calendar.timeZone.identifier ? total : nil
     }
   }
-  struct Cycling: Codable, Equatable {
-    struct Day: Codable, Equatable { let start: Date; let zone: String; var seconds: TimeInterval }
-    enum Kind: Equatable { case cycling, inactive, uncertain }
-    struct Event { let at: Date; let kind: Kind }
-    var epoch = UUID()
-    var cursor: Date?
-    var lastEvent: Date?
-    var started: Date?
-    var zone = ""
-    var days: [Day] = []
-
-    mutating func observe(_ event: Event, now: Date, calendar: Calendar) {
-      guard event.at.timeIntervalSinceReferenceDate.isFinite, event.at <= now,
-            lastEvent.map({ event.at > $0 }) != false else { return }
-      lastEvent = event.at
-      cursor = max(cursor ?? event.at, event.at)
-      let today = calendar.startOfDay(for: now)
-      let floor = calendar.date(byAdding: .day, value: -7, to: today) ?? today
-      days = days.filter { $0.start >= floor && $0.start <= now }
-      switch event.kind {
-      case .cycling:
-        if started.map({ event.at.timeIntervalSince($0) <= 43_200 }) != true { started = event.at }
-      case .uncertain: started = nil
-      case .inactive:
-        let begin = started; started = nil
-        guard let begin else { return }
-        let duration = event.at.timeIntervalSince(begin)
-        guard (30...43_200).contains(duration) else { return }
-        for offset in 0..<8 {
-          guard let date = calendar.date(byAdding: .day, value: -offset, to: today),
-                let interval = calendar.dateInterval(of: .day, for: date) else { continue }
-          let part = max(0, min(event.at, interval.end).timeIntervalSince(max(begin, interval.start)))
-          guard part > 0 else { continue }
-          if let index = days.firstIndex(where: { $0.start == date && $0.zone == calendar.timeZone.identifier }) {
-            days[index].seconds = min(interval.duration, days[index].seconds + part)
-          } else { days.append(.init(start: date, zone: calendar.timeZone.identifier, seconds: min(interval.duration, part))) }
-        }
-        days = Array(days.sorted { $0.start > $1.start }.prefix(8))
-      }
-    }
-    func today(_ now: Date, calendar: Calendar) -> TimeInterval {
-      days.first { $0.start == calendar.startOfDay(for: now) && $0.zone == calendar.timeZone.identifier }?.seconds ?? 0
-    }
-    func riding(_ now: Date) -> Bool { started.map { (0...43_200).contains(now.timeIntervalSince($0)) } ?? false }
-  }
   struct State: Codable, Equatable {
     var revision = UUID()
     var goal: Int?
@@ -99,7 +54,9 @@ enum GalaxySSIHealthMotion {
         } else if steps?.start == nil { steps?.resume(now: now, calendar: calendar) }
       }
       if changedClock || cycling.zone != calendar.timeZone.identifier || cycling.cursor.map({ $0 > now }) == true {
-        cycling.started = nil; cycling.lastEvent = nil
+        var previous = calendar
+        previous.timeZone = TimeZone(identifier: cycling.zone) ?? calendar.timeZone
+        cycling.settle(now: now, calendar: previous); cycling.lastEvent = nil
         cycling.cursor = rebooted ? min(now, max(cycling.cursor ?? recoveryFloor, now.addingTimeInterval(-uptime))) : now
         cycling.epoch = UUID()
         if let enabled = cyclingEnabled { cyclingEnabled = min(enabled, now) }
@@ -115,19 +72,22 @@ enum GalaxySSIHealthMotion {
       } else { steps?.start = nil; steps?.segment = UUID() }
     }
     mutating func enableCycling(_ enabled: Bool, now: Date, calendar: Calendar) {
+      cycling.settle(now: now, calendar: calendar)
       cyclingEnabled = enabled ? now : nil
-      cycling.started = nil; cycling.lastEvent = nil; cycling.cursor = now
+      cycling.lastEvent = nil; cycling.cursor = now
       cycling.zone = calendar.timeZone.identifier; cycling.epoch = UUID()
     }
     func validate() throws {
       let invalid = GalaxySSIHealthRecords.Failure.invalid
       guard goal.map({ (1...GalaxySSIHealthMotion.maximumGoal).contains($0) }) != false,
-            [stepsEnabled, cyclingEnabled, clockWall, cycling.cursor, cycling.lastEvent, cycling.started].compactMap({ $0 })
+            [stepsEnabled, cyclingEnabled, clockWall, cycling.cursor, cycling.lastEvent, cycling.started, cycling.evidence,
+             cycling.gap, cycling.stillSince, cycling.candidate].compactMap({ $0 })
               .allSatisfy({ $0.timeIntervalSinceReferenceDate.isFinite }),
             clockUptime.map({ $0.isFinite && $0 >= 0 }) != false, cycling.days.count <= 8 else { throw invalid }
-      guard stepsEnabled != nil || steps?.start == nil, cyclingEnabled != nil || cycling.started == nil,
+      guard stepsEnabled != nil || steps?.start == nil, cyclingEnabled != nil || (cycling.started == nil && cycling.candidate == nil),
             cyclingEnabled == nil || (cycling.cursor != nil && TimeZone(identifier: cycling.zone) != nil),
             stepsEnabled == nil || (steps != nil && steps?.start != nil) else { throw invalid }
+      try cycling.validate()
       if let steps {
         guard steps.day.timeIntervalSinceReferenceDate.isFinite, let zone = TimeZone(identifier: steps.zone),
               (0...GalaxySSIHealthMotion.maximumSteps).contains(steps.total), (0...steps.total).contains(steps.base),

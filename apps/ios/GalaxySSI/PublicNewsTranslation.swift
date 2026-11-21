@@ -208,6 +208,7 @@ enum PublicNewsTranslation {
   static func run(
     _ initial: PublicNewsBodyCheckpoint, store: PublicNewsBodyStore = .shared,
     workClass: LocalModelWorkClass = .interactive, deadlineUptime: TimeInterval? = nil,
+    budgetCheck: (() async throws -> Void)? = nil,
     progress: @MainActor (PublicNewsBodyCheckpoint) -> Void
   ) async throws -> PublicNewsBodyCheckpoint {
     var checkpoint = initial
@@ -215,6 +216,7 @@ enum PublicNewsTranslation {
     let profile = LocalModelRuntimeSettings.selectedProfile()
     for index in initial.segments.indices where checkpoint.translated[index] == nil {
       try checkBudget(deadlineUptime)
+      try await budgetCheck?()
       let source = initial.segments[index]
       let translated: String
       if isChinese(source) {
@@ -233,7 +235,7 @@ enum PublicNewsTranslation {
           userPrompt: String(decoding: input, as: UTF8.self),
           maximumTokens: 960, temperature: 0, thinkingMode: .noThink, workClass: workClass
         )
-        try checkBudget(deadlineUptime)
+        try Task.checkCancellation()
         guard let parsed = try? JSONDecoder().decode(ModelReply.self, from: Data(reply.text.utf8)) else {
           throw PublicNewsArticleBodyError.invalidTranslation
         }
@@ -243,6 +245,8 @@ enum PublicNewsTranslation {
         translated, index: index, articleID: initial.articleID, fingerprint: initial.fingerprint
       )
       await progress(checkpoint)
+      try checkBudget(deadlineUptime)
+      try await budgetCheck?()
     }
     return checkpoint
   }

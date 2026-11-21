@@ -9,6 +9,7 @@ final class PublicNewsBacklogWorker: ObservableObject {
   @Published private(set) var running = false
   @Published private(set) var stoppedForResources = false
   @Published private(set) var storageFailed = false
+  @Published private(set) var waitingUntil: Date?
   private var work: Task<Void, Never>?
 
   private enum Preparation {
@@ -35,11 +36,25 @@ final class PublicNewsBacklogWorker: ObservableObject {
     guard work == nil else { return }
     storageFailed = false
     stoppedForResources = false
+    waitingUntil = nil
     running = true
     work = Task { @MainActor in
-      await run(archive)
+      while !Task.isCancelled {
+        await run(archive)
+        guard !storageFailed, !Task.isCancelled else { break }
+        do {
+          let pending = try await archive.articleBacklog.load().nextEligible(
+            articleIDs: Set(Self.eligible(archive).map(\.id)), now: Date())
+          guard let pending else { break }
+          let delay = max(pending.timeIntervalSinceNow, max(archive.newsBudget.articleDelay(), archive.newsBudget.pressure()))
+          waitingUntil = delay > 0 ? Date(timeIntervalSinceNow: delay) : nil
+          try await Task.sleep(nanoseconds: UInt64(max(1, min(30, delay)) * 1_000_000_000))
+        } catch is CancellationError { break }
+        catch { storageFailed = true; break }
+      }
       work = nil
       running = false
+      waitingUntil = nil
       Task { @MainActor in await updateCounts(archive) }
     }
   }
@@ -50,18 +65,26 @@ final class PublicNewsBacklogWorker: ObservableObject {
     guard await archive.prepareArticleRetryPolicy() else { storageFailed = true; return }
     let candidates = Self.eligible(archive)
     let ids = Set(candidates.map(\.id))
-    let deadline = ProcessInfo.processInfo.systemUptime + 120
+    let budget = archive.newsBudget, profile = archive.newsBudget.profile()
+    let deadline = ProcessInfo.processInfo.systemUptime + profile.articleTime
     let bodies = archive.articleBodies
     var cachedReady = await bodies.completedIDs(ids)
     var attempted = 0
     let ledger = archive.articleBacklog
     do {
       try await ledger.reconcileReady(ids, cached: cachedReady)
-      while !Task.isCancelled && attempted < 12 && ProcessInfo.processInfo.systemUptime < deadline {
-        guard Self.canWork else { stoppedForResources = true; return }
+      guard let next = try await ledger.load().nextEligible(articleIDs: ids, now: Date()), next <= Date() else { return }
+      guard budget.pressure() == 0 else { stoppedForResources = true; return }
+      guard budget.articleDelay() == 0 else { return }
+      stoppedForResources = false; waitingUntil = nil
+      budget.articleBoundary()
+      var published = false
+      defer { budget.articleBoundary(published: published) }
+      while !Task.isCancelled && attempted < profile.articleLimit && ProcessInfo.processInfo.systemUptime < deadline {
+        guard budget.pressure() == 0 else { stoppedForResources = true; return }
         let retained = Set(archive.articles.map(\.id))
         let available = candidates.filter { retained.contains($0.id) && !archive.notRelevantIDs.contains($0.id) }
-        let claims = try await ledger.claim(available, count: min(2, 12 - attempted), now: Date())
+        let claims = try await ledger.claim(available, count: min(profile.charging ? 2 : 1, profile.articleLimit - attempted), now: Date())
         if claims.isEmpty { return }
         counts = try await ledger.load().counts(articleIDs: ids, cachedReady: cachedReady, now: Date())
         attempted += claims.count
@@ -79,10 +102,10 @@ final class PublicNewsBacklogWorker: ObservableObject {
           for await (id, result) in group { results[id] = result }
           return results
         }
-        if !Self.canWork { stoppedForResources = true }
+        if budget.pressure() > 0 { stoppedForResources = true }
         var stop = false
         for claim in claims {
-          let canContinue = !stop && !Task.isCancelled && Self.canWork &&
+          let canContinue = !stop && !Task.isCancelled && budget.pressure() == 0 &&
             ProcessInfo.processInfo.systemUptime < deadline && !archive.notRelevantIDs.contains(claim.articleID) &&
             archive.articles.contains { $0.id == claim.articleID }
           var outcome = PublicNewsBacklogLedger.Outcome.released
@@ -92,6 +115,7 @@ final class PublicNewsBacklogWorker: ObservableObject {
               switch prepared[claim.articleID] ?? .failed("article_extraction_failed") {
               case .cached(let saved): checkpoint = saved
               case .html(let html):
+                try budget.check()
                 let body = try await PublicNewsArticleBody.extract(html, articleURL: byID[claim.articleID]?.url)
                 checkpoint = try await bodies.install(
                   body, articleID: claim.articleID, retaining: Set(archive.articles.map(\.id))
@@ -99,10 +123,14 @@ final class PublicNewsBacklogWorker: ObservableObject {
               case .failed(let reason): throw PublicNewsArticleAttemptFailure(reason: reason)
               }
               let final = try await PublicNewsTranslation.run(
-                checkpoint, store: bodies, workClass: .background, deadlineUptime: deadline, progress: { _ in }
+                checkpoint, store: bodies, workClass: .background, deadlineUptime: deadline,
+                budgetCheck: { try await budget.check() }, progress: { _ in }
               )
               outcome = final.completed == nil ? .failure("article_translation_incomplete") : .ready
-              if final.completed != nil { cachedReady.insert(claim.articleID) }
+              if final.completed != nil { cachedReady.insert(claim.articleID); published = true }
+            } catch is PublicNewsBudgetYield {
+              stoppedForResources = true
+              stop = true
             } catch is CancellationError {
               stop = true
             } catch PublicNewsArticleBodyError.modelUnavailable {
@@ -134,9 +162,6 @@ final class PublicNewsBacklogWorker: ObservableObject {
     archive.eligibleArticles.filter { PublicNewsArticleBody.supports($0.url) }
   }
 
-  private static var canWork: Bool {
-    AgentIOSBackgroundLoad.current().deferSeconds == 0
-  }
   nonisolated private static func retryReason(_ error: Error) -> String {
     if let error = error as? PublicNewsArticleAttemptFailure { return error.reason }
     if let failure = error as? PublicNewsArticleBodyError {
