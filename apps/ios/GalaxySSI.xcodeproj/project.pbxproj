@@ -1422,6 +1422,10 @@
     A10000000000000000000296 /* AgentIOSDesktopRemoteNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000296 /* AgentIOSDesktopRemoteNativeToolTests.swift */; };
     A10000000000000000000297 /* AgentIOSMcpNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000297 /* AgentIOSMcpNativeToolTests.swift */; };
     A10000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift */; };
+    BD68373A70EC821C60758ECF /* GalaxySSIHealthAtlasPhysiology.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05EA412281059396FCCFC26D /* GalaxySSIHealthAtlasPhysiology.swift */; };
+    2ECF4259194968FFE9A65DA6 /* GalaxySSIHealthAtlasPhysiologyText.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE041305DEF774444B2536EE /* GalaxySSIHealthAtlasPhysiologyText.swift */; };
+    BF37730E4012C7208E81DC84 /* GalaxySSIHealthAtlasPhysiologyPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BEF2B56A05F06056BCC4CF5 /* GalaxySSIHealthAtlasPhysiologyPanel.swift */; };
+    8E5409A2688CCA620859616F /* GalaxySSIHealthAtlasPhysiologyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EF107B122E10D994EC957C5 /* GalaxySSIHealthAtlasPhysiologyTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -2840,6 +2844,10 @@
     A20000000000000000000297 /* AgentIOSMcpNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSMcpNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOnDeviceRuntimeNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000350 /* AgentProviderHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderHealth.swift; sourceTree = "<group>"; };
+    05EA412281059396FCCFC26D /* GalaxySSIHealthAtlasPhysiology.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPhysiology.swift; sourceTree = "<group>"; };
+    FE041305DEF774444B2536EE /* GalaxySSIHealthAtlasPhysiologyText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPhysiologyText.swift; sourceTree = "<group>"; };
+    5BEF2B56A05F06056BCC4CF5 /* GalaxySSIHealthAtlasPhysiologyPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPhysiologyPanel.swift; sourceTree = "<group>"; };
+    6EF107B122E10D994EC957C5 /* GalaxySSIHealthAtlasPhysiologyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPhysiologyTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -3932,6 +3940,9 @@
         A20000000000000000001761 /* GalaxySSIContactRowView.swift */,
         A20000000000000000001760 /* GalaxySSIContactAvatarView.swift */,
         F23000000000000000000001 /* GalaxySSIChatHistoryDatabase.swift */,
+        05EA412281059396FCCFC26D /* GalaxySSIHealthAtlasPhysiology.swift */,
+        FE041305DEF774444B2536EE /* GalaxySSIHealthAtlasPhysiologyText.swift */,
+        5BEF2B56A05F06056BCC4CF5 /* GalaxySSIHealthAtlasPhysiologyPanel.swift */,
       );
       path = GalaxySSI;
       sourceTree = "<group>";
@@ -4281,6 +4292,7 @@
         A20000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift */,
         A20000000000000000000797 /* AgentRuntimePackInstallerTests.swift */,
         A20000000000000000000407 /* AgentDirectNativeToolPlannerTests.swift */,
+        6EF107B122E10D994EC957C5 /* GalaxySSIHealthAtlasPhysiologyTests.swift */,
       );
       path = GalaxySSITests;
       sourceTree = "<group>";
@@ -5483,6 +5495,9 @@
         A10000000000000000001761 /* GalaxySSIContactRowView.swift in Sources */,
         A10000000000000000001760 /* GalaxySSIContactAvatarView.swift in Sources */,
         F13000000000000000000001 /* GalaxySSIChatHistoryDatabase.swift in Sources */,
+        BD68373A70EC821C60758ECF /* GalaxySSIHealthAtlasPhysiology.swift in Sources */,
+        2ECF4259194968FFE9A65DA6 /* GalaxySSIHealthAtlasPhysiologyText.swift in Sources */,
+        BF37730E4012C7208E81DC84 /* GalaxySSIHealthAtlasPhysiologyPanel.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
@@ -5832,6 +5847,7 @@
         A10000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift in Sources */,
         A10000000000000000000797 /* AgentRuntimePackInstallerTests.swift in Sources */,
         A10000000000000000000407 /* AgentDirectNativeToolPlannerTests.swift in Sources */,
+        8E5409A2688CCA620859616F /* GalaxySSIHealthAtlasPhysiologyTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
@@ -6045,7 +6061,7 @@
         GALAXYSSI_NATIVE_WHISPER = 1;
         GALAXYSSI_REALTIME_ASR_CREDENTIAL_BROKER_URL = "";
         SWIFT_EMIT_LOC_STRINGS = YES;
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG GALAXYSSI_NATIVE_LLAMA GALAXYSSI_NATIVE_WHISPER $(GALAXYSSI_HEALTHKIT_CONDITION)";
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG GALAXYSSI_NATIVE_LLAMA GALAXYSSI_NATIVE_WHISPER GALAXYSSI_ATLAS_PHYSIOLOGY $(GALAXYSSI_HEALTHKIT_CONDITION)";
         INFOPLIST_KEY_NSHealthShareUsageDescription = "Preview and import only the Apple Health measurements you select into your local health archive.";
         LIBRARY_SEARCH_PATHS = (
           "$(inherited)",
@@ -6111,7 +6127,7 @@
         GALAXYSSI_NATIVE_WHISPER = 1;
         GALAXYSSI_REALTIME_ASR_CREDENTIAL_BROKER_URL = "";
         SWIFT_EMIT_LOC_STRINGS = YES;
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS = "GALAXYSSI_NATIVE_LLAMA GALAXYSSI_NATIVE_WHISPER $(GALAXYSSI_HEALTHKIT_CONDITION)";
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS = "GALAXYSSI_NATIVE_LLAMA GALAXYSSI_NATIVE_WHISPER GALAXYSSI_ATLAS_PHYSIOLOGY $(GALAXYSSI_HEALTHKIT_CONDITION)";
         INFOPLIST_KEY_NSHealthShareUsageDescription = "Preview and import only the Apple Health measurements you select into your local health archive.";
         LIBRARY_SEARCH_PATHS = (
           "$(inherited)",
