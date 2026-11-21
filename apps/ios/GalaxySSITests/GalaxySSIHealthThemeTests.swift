@@ -18,6 +18,38 @@ final class GalaxySSIHealthThemeTests: XCTestCase {
     }
   }
 
+  func testOwnedCellResourcePackResolvesStagesCaptionsAndImageRatios() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self)
+    let data = try XCTUnwrap(NSDataAsset(name: "HealthAtlasCellProcesses", bundle: bundle)?.data)
+    let pack = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(pack["schema"] as? Int, 1)
+    let mechanisms = try XCTUnwrap(pack["mechanisms"] as? [[String: Any]])
+    let assignments = try XCTUnwrap(pack["entryMechanisms"] as? [String: String])
+    let english = try XCTUnwrap(pack["english"] as? [String: String])
+    XCTAssertEqual(mechanisms.count, 30); XCTAssertEqual(assignments.count, 30); XCTAssertEqual(english.count, 152)
+    let chinese = try XCTUnwrap(Bundle(path: XCTUnwrap(bundle.path(forResource: "zh-Hans", ofType: "lproj"))))
+    for mechanism in mechanisms {
+      let id = try XCTUnwrap(mechanism["id"] as? String)
+      XCTAssertEqual(mechanism["kind"] as? String, "cell"); XCTAssertEqual(assignments[id], id)
+      let title = try XCTUnwrap(mechanism["title"] as? String)
+      let stages = try XCTUnwrap(mechanism["stages"] as? [String]); XCTAssertEqual(stages.count, 4)
+      for key in [title] + stages {
+        XCTAssertFalse(try XCTUnwrap(english[key]).isEmpty)
+        XCTAssertNotEqual(chinese.localizedString(forKey: key, value: key, table: nil), key)
+      }
+    }
+    let plates = try XCTUnwrap(pack["plates"] as? [[String: Any]])
+    XCTAssertEqual(plates.compactMap { $0["owner"] as? String }, ["cell-erythrocyte", "cell-neuron"])
+    for plate in plates {
+      let owner = try XCTUnwrap(plate["owner"] as? String), name = try XCTUnwrap(plate["asset"] as? String)
+      XCTAssertEqual(plate["entryIDs"] as? [String], [owner])
+      let image = try XCTUnwrap(UIImage(named: name, in: bundle, compatibleWith: nil)?.cgImage)
+      XCTAssertEqual(try XCTUnwrap(plate["aspectRatio"] as? Double), Double(image.width) / Double(image.height), accuracy: 1e-9)
+      let caption = try XCTUnwrap(plate["viewLabel"] as? String)
+      XCTAssertNotNil(english[caption]); XCTAssertNotEqual(chinese.localizedString(forKey: caption, value: caption, table: nil), caption)
+    }
+  }
+
   func testAdaptiveAccentAndActionInkMatchAndroidHealthColors() {
     let light = UITraitCollection(userInterfaceStyle: .light), dark = UITraitCollection(userInterfaceStyle: .dark)
     let lightAccent = components(GalaxySSIHealthTheme.accentUIColor.resolvedColor(with: light))
