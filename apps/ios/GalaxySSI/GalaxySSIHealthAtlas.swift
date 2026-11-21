@@ -15,6 +15,10 @@ struct GalaxySSIHealthAtlas: Decodable {
     let aliases: String
     let color: String
     let icon: String
+    func replacing(mechanism: String? = nil, related: [String]? = nil) -> Self {
+      Self(id: id, kind: kind, name: name, description: description, systems: systems, related: related ?? self.related,
+        mechanism: mechanism ?? self.mechanism, aliases: aliases, color: color, icon: icon)
+    }
   }
   struct Mechanism: Decodable, Identifiable {
     let id: String
@@ -29,12 +33,14 @@ struct GalaxySSIHealthAtlas: Decodable {
   let mechanisms: [Mechanism]
   enum Invalid: Error { case catalogue }
 
-  static func load(bundle: Bundle = .main, includeArtworkPack: Bool = true) throws -> Self {
+  static func load(bundle: Bundle = .main, includeExtensions: Bool = true) throws -> Self {
     guard let url = bundle.url(forResource: "body-atlas", withExtension: "json", subdirectory: "body-atlas")
     else { throw Invalid.catalogue }
-    let base = try validated(JSONDecoder().decode(Self.self, from: Data(contentsOf: url)))
-    guard includeArtworkPack, let pack = try ArtworkPack.read(bundle: bundle) else { return base }
-    return try pack.applying(to: base, bundle: bundle)
+    var result = try validated(JSONDecoder().decode(Self.self, from: Data(contentsOf: url)))
+    guard includeExtensions else { return result }
+    if let pack = try ArtworkPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try CellPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    return result
   }
 
   static func validated(_ atlas: Self) throws -> Self {
@@ -50,6 +56,11 @@ struct GalaxySSIHealthAtlas: Decodable {
         model.stages.count == 4 && model.stages.allSatisfy({ !$0.isEmpty }) &&
         model.chapter.range(of: "^[a-z0-9-]+$", options: .regularExpression) != nil
       }) else { throw Invalid.catalogue }
+    guard atlas.mechanisms.filter({ $0.kind == "cell" }).allSatisfy({ mechanism in
+      atlas.entry(mechanism.id).map { $0.kind == .cell && $0.mechanism == mechanism.id } == true
+    }), atlas.entries.allSatisfy({ entry in
+      atlas.model(entry).kind != "cell" || entry.mechanism == entry.id
+    }) else { throw Invalid.catalogue }
     return atlas
   }
 
@@ -106,28 +117,59 @@ struct GalaxySSIHealthAtlas: Decodable {
       guard schema == 1, entries.count <= 100, additions.count == entries.count,
         additions.isDisjoint(with: existing), Set(insertAfter.keys) == additions,
         insertAfter.values.allSatisfy(existing.contains), relatedAdditions.keys.allSatisfy(existing.contains),
-        plates.count <= 64, Set(plates.map(\.id)).count == plates.count,
-        Set(plates.flatMap(\.entryIDs)).count == plates.flatMap(\.entryIDs).count,
         english.count <= 1000, english.keys.allSatisfy({ $0.hasPrefix("health_atlas_") }) else { throw Invalid.catalogue }
       let combined = base.entries.flatMap { entry -> [Entry] in
         let related = (relatedAdditions[entry.id] ?? []).filter { !entry.related.contains($0) } + entry.related
-        let revised = Entry(id: entry.id, kind: entry.kind, name: entry.name, description: entry.description,
-          systems: entry.systems, related: related, mechanism: entry.mechanism, aliases: entry.aliases, color: entry.color, icon: entry.icon)
+        let revised = entry.replacing(related: related)
         return [revised] + entries.filter { insertAfter[$0.id] == entry.id }
       }
       let result = try GalaxySSIHealthAtlas.validated(.init(schema: base.schema, entries: combined, mechanisms: base.mechanisms))
+      try GalaxySSIHealthAtlas.validatePlates(plates, in: result, bundle: bundle)
+      return result
+    }
+  }
+  struct CellPack: Decodable {
+    let schema: Int
+    let mechanisms: [Mechanism]
+    let entryMechanisms: [String: String]
+    let plates: [Plate]
+    let english: [String: String]
+    static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
+    static func read(bundle: Bundle) throws -> Self? {
+      guard let asset = NSDataAsset(name: "HealthAtlasCellProcesses", bundle: bundle) else { return nil }
+      guard asset.data.count <= 512_000 else { throw Invalid.catalogue }
+      return try JSONDecoder().decode(Self.self, from: asset.data)
+    }
+    func applying(to base: GalaxySSIHealthAtlas, bundle: Bundle) throws -> GalaxySSIHealthAtlas {
+      let ids = Set(mechanisms.map(\.id))
+      guard schema == 1, !mechanisms.isEmpty, mechanisms.count <= 300, ids.count == mechanisms.count, Set(entryMechanisms.keys) == ids,
+        Set(entryMechanisms.values) == ids, entryMechanisms.allSatisfy({ $0.key == $0.value && base.entry($0.key)?.kind == .cell }),
+        mechanisms.allSatisfy({ $0.kind == "cell" }), ids.isDisjoint(with: Set(base.mechanisms.map(\.id))),
+        english.count <= 2000, english.keys.allSatisfy({ $0.hasPrefix("health_atlas_process_") || $0.hasPrefix("health_atlas_view_") })
+      else { throw Invalid.catalogue }
+      let revised = base.entries.map { $0.replacing(mechanism: entryMechanisms[$0.id]) }
+      let result = try GalaxySSIHealthAtlas.validated(.init(schema: base.schema, entries: revised, mechanisms: base.mechanisms + mechanisms))
+      try GalaxySSIHealthAtlas.validatePlates(plates, in: result, bundle: bundle)
       guard plates.allSatisfy({ plate in
-        !plate.entryIDs.isEmpty && plate.entryIDs.allSatisfy({ $0.isEmpty || result.entry($0) != nil }) &&
-        (plate.owner == nil || result.entry(plate.owner!) != nil) &&
-        plate.asset.hasPrefix("HealthAtlas") && UIImage(named: plate.asset, in: bundle, compatibleWith: nil) != nil &&
-        plate.aspectRatio.isFinite && (0.1...3).contains(plate.aspectRatio) &&
-        plate.markers.allSatisfy({ result.entry($0.id) != nil && $0.x.isFinite && $0.y.isFinite &&
-          (0...1).contains($0.x) && (0...1).contains($0.y) })
+        plate.owner.map { result.entry($0)?.kind == .cell && plate.entryIDs == [$0] } == true
       }) else { throw Invalid.catalogue }
       return result
     }
   }
+  private static func validatePlates(_ plates: [Plate], in atlas: Self, bundle: Bundle) throws {
+    guard plates.count <= 64, Set(plates.map(\.id)).count == plates.count,
+      Set(plates.flatMap(\.entryIDs)).count == plates.flatMap(\.entryIDs).count,
+      plates.allSatisfy({ plate in
+        !plate.entryIDs.isEmpty && plate.entryIDs.allSatisfy({ $0.isEmpty || atlas.entry($0) != nil }) &&
+        (plate.owner == nil || atlas.entry(plate.owner!) != nil) &&
+        plate.asset.hasPrefix("HealthAtlas") && UIImage(named: plate.asset, in: bundle, compatibleWith: nil) != nil &&
+        plate.aspectRatio.isFinite && (0.1...3).contains(plate.aspectRatio) &&
+        plate.markers.allSatisfy({ atlas.entry($0.id) != nil && $0.x.isFinite && $0.y.isFinite &&
+          (0...1).contains($0.x) && (0...1).contains($0.y) })
+      }) else { throw Invalid.catalogue }
+  }
   func plate(for id: String?) -> Plate? {
+    if let pack = try? CellPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     if let pack = try? ArtworkPack.bundled.get() {
       return pack.plates.first { $0.entryIDs.contains(id ?? "") }
     }
@@ -152,9 +194,11 @@ struct GalaxySSIHealthAtlas: Decodable {
 enum GalaxySSIHealthAtlasText {
   static func get(_ key: String, _ language: String) -> String {
     let name = LanguagePolicySettings.resolveInterface(language) == LanguagePolicySettings.zhCN ? "zh-Hans" : "en"
-    let pack = try? GalaxySSIHealthAtlas.ArtworkPack.bundled.get()
-    let english = pack?.english[key] ?? localized(key, locale: "en", fallback: key)
-    return localized(key, locale: name, fallback: english, table: pack?.english[key] == nil ? "BodyAtlas" : "Localizable")
+    let organ = try? GalaxySSIHealthAtlas.ArtworkPack.bundled.get()
+    let cells = try? GalaxySSIHealthAtlas.CellPack.bundled.get()
+    let extensionText = cells?.english[key] ?? organ?.english[key]
+    let english = extensionText ?? localized(key, locale: "en", fallback: key)
+    return localized(key, locale: name, fallback: english, table: extensionText == nil ? "BodyAtlas" : "Localizable")
   }
   private static func localized(_ key: String, locale: String, fallback: String, table: String = "BodyAtlas") -> String {
     guard let path = Bundle.main.path(forResource: locale, ofType: "lproj"), let bundle = Bundle(path: path) else { return fallback }
@@ -169,6 +213,11 @@ struct GalaxySSIHealthAtlasSimulation: Equatable, Codable {
   var speed: Double = 1
   var stage: Int { min(3, max(0, Int(phase * 4))) }
   var output: Double { first * second / 1000 }
+  @discardableResult mutating func selectStage(_ index: Int) -> Bool {
+    guard (0..<4).contains(index) else { return false }
+    phase = Double(index) / 4
+    return true
+  }
   static func initial(_ id: String) -> Self {
     ["lungs", "respiratory"].contains(id) ? Self(first: 12, second: 500) : Self()
   }

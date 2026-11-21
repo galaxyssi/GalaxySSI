@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class GalaxySSIHealthAtlasTests: XCTestCase {
   private func catalogue() throws -> GalaxySSIHealthAtlas {
-    try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self), includeArtworkPack: false)
+    try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self), includeExtensions: false)
   }
 
   func testFrozenCatalogueCountsAndCanonicalGraph() throws {
@@ -52,6 +52,37 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("cell-pancreatic-beta-cell"), [.glucose, .hba1c])
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("fragment-platelet"), [.platelets])
     XCTAssertTrue(GalaxySSIHealthAtlasMetrics.forEntry("brain").isEmpty)
+  }
+
+  func testCellMechanismsMustBeOwnedByTheirCanonicalCell() throws {
+    let base = try catalogue()
+    let cell = GalaxySSIHealthAtlas.Mechanism(id: "cell-neuron", kind: "cell", title: "Cell process",
+      stages: ["Receive", "Integrate", "Conduct", "Signal"], chapter: "12-2-nervous-tissue")
+    func candidate(_ entries: [GalaxySSIHealthAtlas.Entry]) -> GalaxySSIHealthAtlas {
+      .init(schema: 1, entries: entries, mechanisms: base.mechanisms + [cell])
+    }
+    XCTAssertThrowsError(try GalaxySSIHealthAtlas.validated(candidate(base.entries)))
+    let owned = base.entries.map { $0.id == cell.id ? $0.replacing(mechanism: cell.id) : $0 }
+    XCTAssertNoThrow(try GalaxySSIHealthAtlas.validated(candidate(owned)))
+    for foreign in ["cell-erythrocyte", "heart"] {
+      let misplaced = owned.map { $0.id == foreign ? $0.replacing(mechanism: cell.id) : $0 }
+      XCTAssertThrowsError(try GalaxySSIHealthAtlas.validated(candidate(misplaced)))
+    }
+  }
+
+  func testStageSelectionOnlyChangesPhaseAndRestoresWithoutChangingInputs() throws {
+    var simulation = GalaxySSIHealthAtlasSimulation(first: 100, second: 60, phase: 0.8, speed: 2)
+    for index in 0..<4 {
+      XCTAssertTrue(simulation.selectStage(index))
+      XCTAssertEqual(simulation.stage, index)
+      XCTAssertEqual(simulation.phase, Double(index) / 4)
+      XCTAssertEqual(simulation.first, 100); XCTAssertEqual(simulation.second, 60); XCTAssertEqual(simulation.speed, 2)
+      let restored = try JSONDecoder().decode(GalaxySSIHealthAtlasSimulation.self, from: JSONEncoder().encode(simulation))
+      XCTAssertEqual(restored, simulation)
+    }
+    let saved = simulation
+    XCTAssertFalse(simulation.selectStage(-1)); XCTAssertFalse(simulation.selectStage(4))
+    XCTAssertEqual(simulation, saved)
   }
 
   func testBundledArtworkPackIsAdditiveAndValidatesCoordinates() throws {

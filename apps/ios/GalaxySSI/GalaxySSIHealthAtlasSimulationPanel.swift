@@ -32,7 +32,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
       LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
         ForEach(0..<4) { stage in
-          Button { playing = false; simulation.phase = Double(stage) / 4 } label: {
+          Button { playing = false; simulation.selectStage(stage) } label: {
             VStack(spacing: 8) {
               Text("\(stage + 1)").font(.headline).frame(width: 32, height: 32)
                 .background(stage <= simulation.stage ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.08)).clipShape(Circle())
@@ -41,6 +41,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
             }.frame(maxWidth: .infinity, minHeight: 44).padding(8)
           }.accessibilityLabel(GalaxySSIHealthAtlasText.get(model.stages[stage], language))
             .accessibilityAddTraits(stage == simulation.stage ? .isSelected : [])
+            .accessibilityIdentifier("health-atlas-stage-" + entry.id + "-" + String(stage))
         }
       }
       ProgressView(value: simulation.phase).accessibilityLabel(t("phase"))
@@ -49,12 +50,12 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       Slider(value: $simulation.phase, in: 0...1, onEditingChanged: { _ in playing = false })
         .accessibilityLabel(t("phase"))
       HStack {
-        control("backward.step", "previous_step") { playing = false; simulation.phase = Double(max(0, simulation.stage - 1)) / 4 }
+        control("backward.step", "previous_step") { playing = false; simulation.selectStage(max(0, simulation.stage - 1)) }
         control(playing ? "pause.fill" : "play.fill", playing ? "pause" : "play") {
           if simulation.phase >= 1 { simulation.phase = 0 }
           playing.toggle(); lastTick = nil
         }.disabled(reduceMotion || previewPresented)
-        control("forward.step", "next_step") { playing = false; simulation.phase = Double(min(3, simulation.stage + 1)) / 4 }
+        control("forward.step", "next_step") { playing = false; simulation.selectStage(min(3, simulation.stage + 1)) }
         Spacer()
         Button { playing = false; simulation = .initial(entry.id); physiologyInputs = nil } label: {
           Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
