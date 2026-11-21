@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vaginal_ruga_span_title">Vaginal wall fold: straight-line span</string>
+    <string name="health_atlas_vaginal_ruga_span_height">Example fold height</string>
+    <string name="health_atlas_vaginal_ruga_span_companion">Extra span at full flattening: %1$s u</string>
+    <string name="health_atlas_vaginal_ruga_span_formula">For a fold height h, each half of the span is the base of a right triangle with height h and hypotenuse 5 u. Span = 2 &#215; square root of (5&#178; minus h&#178;). Extra span at full flattening = 10 u minus the current span.</string>
+    <string name="health_atlas_vaginal_ruga_span_scope">The vaginal lining has transverse folds called rugae. They can flatten as the wall expands. Imagine a profile along the canal that crosses one ridge. The model draws that ridge as a single peak with two straight sides of 5 u each. The span is the straight distance between the two feet of the fold. Lowering the peak increases that span without lengthening either side. All lengths are invented in arbitrary units (u); the model does not measure the canal, tissue elasticity, or how much a real wall can expand.</string>
+</resources>

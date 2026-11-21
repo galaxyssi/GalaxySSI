@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_thyroid_c_cell_release_grid_title">C-cell icons moved toward a vessel</string>
+    <string name="health_atlas_thyroid_c_cell_release_grid_moved">Icons moved per row</string>
+    <string name="health_atlas_thyroid_c_cell_release_grid_rows">Rows of five icons</string>
+    <string name="health_atlas_thyroid_c_cell_release_grid_companion">Icons still inside the C-cell sketch: %1$s</string>
+    <string name="health_atlas_thyroid_c_cell_release_grid_formula">Icons moved = rows &#215; icons moved per row. Icons still inside = rows &#215; (5 &#8722; icons moved per row). The chart rounds the controls to whole numbers.</string>
+    <string name="health_atlas_thyroid_c_cell_release_grid_scope">Thyroid parafollicular cells (C cells) lie in the outer part of the follicular wall or between follicles. They release calcitonin into the blood, not into the colloid-filled follicle. In this sketch, five icons start in each row inside the C cell. The same number moves from each row toward a nearby vessel on the tissue side. The grid and counts are invented and do not represent real granule counts, secretion rates, or blood levels.</string>
+</resources>

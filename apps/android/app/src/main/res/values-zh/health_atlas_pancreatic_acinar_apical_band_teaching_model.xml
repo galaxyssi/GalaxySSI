@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pancreatic_acinar_apical_band_title">胰腺腺泡细胞侧面轮廓中顶端区的面积占比</string>
+    <string name="health_atlas_pancreatic_acinar_apical_band_depth">从腺泡腔一侧量起的顶端区深度</string>
+    <string name="health_atlas_pancreatic_acinar_apical_band_companion">图示顶端区面积：%1$s u&#178;</string>
+    <string name="health_atlas_pancreatic_acinar_apical_band_formula">设顶端区深度为 d，该处宽度 w = 2 +（6 − 2）× d / 6。顶端区面积 = d ×（2 + w）/ 2。顶端区面积占比 = 100 × 顶端区面积 / 24，以整个侧面轮廓面积的百分比表示。</string>
+    <string name="health_atlas_pancreatic_acinar_apical_band_scope">胰腺腺泡细胞朝向共同的小腺泡腔的一端较窄，分泌颗粒聚集在这个顶端附近，细胞核则靠近较宽的基底部。侧面示意图是一个梯形，高 6 个绘图单位（u），腺泡腔一侧宽 2 u，基底部宽 6 u。阴影从腺泡腔一侧的边缘向细胞内延伸。面积只反映虚构图形，不表示真实细胞的尺寸、颗粒数量或分泌量。</string>
+</resources>

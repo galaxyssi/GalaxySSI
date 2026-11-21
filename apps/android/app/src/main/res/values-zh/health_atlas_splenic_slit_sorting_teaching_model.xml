@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_splenic_slit_sorting_title">通过脾血窦裂隙的示意颗粒数</string>
+    <string name="health_atlas_splenic_slit_sorting_width">示意裂隙宽度</string>
+    <string name="health_atlas_splenic_slit_sorting_companion">留在脾索一侧的示意颗粒数：%1$s</string>
+    <string name="health_atlas_splenic_slit_sorting_formula">12 个颗粒所需的最小宽度分别为 1、2、2、3、3、3、4、4、5、6、7 和 8 u。所需宽度小于或等于示意裂隙宽度的颗粒，每个都计为通过。留在脾索一侧的颗粒数 = 12 &#8722; 通过的颗粒数。</string>
+    <string name="health_atlas_splenic_slit_sorting_scope">在脾红髓中，红细胞可通过变形，从脾索挤过脾血窦壁的裂隙。变形能力较弱的红细胞可能被留在脾索一侧。设想左侧是脾索，中间是裂隙，右侧是脾血窦。每个虚构颗粒通过裂隙都需要一定的最小宽度，以示意单位（u）表示。图中统计到达脾血窦一侧的颗粒数。这条只看宽度的规则仅用于演示一条路径上的筛选；数值不是真实的裂隙尺寸、细胞测量值或滞留率。</string>
+</resources>

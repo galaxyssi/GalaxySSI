@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_enteroendocrine_polarity_title">从基底侧量起的颗粒标记位置</string>
+    <string name="health_atlas_enteroendocrine_polarity_basal_offset">基底缘到标记点的距离</string>
+    <string name="health_atlas_enteroendocrine_polarity_cell_height">基底缘到顶端的距离</string>
+    <string name="health_atlas_enteroendocrine_polarity_companion">顶端到标记点的距离：%1$s u</string>
+    <string name="health_atlas_enteroendocrine_polarity_formula">设图示高度为 H，基底缘到标记点的距离为 d。从基底缘量起，标记位置占总高度的百分比 = 100 × d / H。顶端到标记点的距离 = H − d。</string>
+    <string name="health_atlas_enteroendocrine_polarity_scope">本模型以肠上皮中的开放型肠内分泌细胞为例。细胞狭窄的顶端接触肠腔，而分泌颗粒集中在朝向组织的一侧，细胞也从这一侧释放信号。图中用同一条线连接基底缘和顶端，以基底缘为零点。一个圆点代表颗粒所在区域，始终位于靠近基底缘的半段。长度使用任意绘图单位（u），不用于测量真实的细胞尺寸、颗粒分布或激素释放。</string>
+</resources>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_penile_path_trace_title">Drawn distance from the penile bulb</string>
+    <string name="health_atlas_penile_path_trace_position">Position along the drawn path</string>
+    <string name="health_atlas_penile_path_trace_companion">Drawn distance left to the urethral opening: %1$s u</string>
+    <string name="health_atlas_penile_path_trace_formula">Trace position is a percentage: 0 at the bulb and 100 at the opening. Distance traced (u) = 10 &#215; position / 100. Distance left (u) = 10 &#8722; distance traced.</string>
+    <string name="health_atlas_penile_path_trace_scope">Trace only the spongy urethra, the urine passage inside the corpus spongiosum. Start at the penile bulb, follow the shaft, and end at the external urethral opening at the tip of the glans. The path is drawn as a single line of 10 drawing units (u), not to scale. The trace measures position on the drawing, not body length, elapsed time, or urine flow.</string>
+</resources>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pancreatic_acinar_apical_band_title">Apical band share of an acinar cell profile</string>
+    <string name="health_atlas_pancreatic_acinar_apical_band_depth">Band depth from the lumen edge</string>
+    <string name="health_atlas_pancreatic_acinar_apical_band_companion">Band area in the drawing: %1$s u&#178;</string>
+    <string name="health_atlas_pancreatic_acinar_apical_band_formula">At band depth d, the drawing is w = 2 + (6 &#8722; 2) &#215; d / 6 units wide. Band area = d &#215; (2 + w) / 2. Band share = 100 &#215; band area / 24, as a percentage of the whole profile.</string>
+    <string name="health_atlas_pancreatic_acinar_apical_band_scope">A pancreatic acinar cell tapers toward a small shared lumen. Secretory granules gather near that apical end, while the nucleus lies toward the broader base. The side-on drawing is a trapezoid 6 drawing units (u) tall, 2 u wide at the lumen and 6 u wide at the base. A shaded band starts at the lumen edge and extends inward. Its area is a property of the invented drawing, not a real cell measurement, granule count, or estimate of secretion.</string>
+</resources>

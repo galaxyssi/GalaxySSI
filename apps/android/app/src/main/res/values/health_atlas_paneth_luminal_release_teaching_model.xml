@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_paneth_luminal_release_title">Paneth cell release icons in the crypt lumen</string>
+    <string name="health_atlas_paneth_luminal_release_selected">Release arrows selected (one icon each)</string>
+    <string name="health_atlas_paneth_luminal_release_starting">Starting icons at the apical side</string>
+    <string name="health_atlas_paneth_luminal_release_companion">Icons still on the cell side: %1$s</string>
+    <string name="health_atlas_paneth_luminal_release_formula">Luminal icon count = the smaller of the selected arrow count and the starting icon count. Icons left on the cell side = starting icons minus luminal icons. The chart rounds selections to whole counts.</string>
+    <string name="health_atlas_paneth_luminal_release_scope">Paneth cells sit at the base of small-intestinal crypts. Their apical granules release material toward the crypt lumen, helping protect the nearby lining. In this drawing, a line separates the apical cell side from the crypt lumen. Each selected arrow can move one available icon across the line. The icons are bookkeeping symbols: they do not depict intact granules crossing the surface, actual quantities, or how much protection the lining receives.</string>
+</resources>

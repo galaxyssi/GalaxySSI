@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_dendritic_cell_outline_title">树突状细胞：外缘标记数</string>
+    <string name="health_atlas_dendritic_cell_outline_tabs">示意图上的突起（块方格）</string>
+    <string name="health_atlas_dendritic_cell_outline_scope">树突状细胞可具有突起，并在细胞表面呈递小片段。这张平面示意图以 3 × 3 的方格阵列为主体，每侧中央最多再接一块方格。沿外轮廓，每条方格边记一个标记。每接一块方格，就遮住一条原有边，并露出三条新边。这些虚构数字只用于说明轮廓，不代表真实的细胞大小、表面积或呈递量。</string>
+    <string name="health_atlas_dendritic_cell_outline_formula">外缘标记数 = 12 个起始标记加上每块新增方格带来的 2 个标记。图中方格总数 = 9 块起始方格加上新增方格数。</string>
+    <string name="health_atlas_dendritic_cell_outline_companion">图中方格总数：%1$s</string>
+</resources>

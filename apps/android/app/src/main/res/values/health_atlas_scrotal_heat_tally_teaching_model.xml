@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_scrotal_heat_tally_title">Scrotal heat exchange: transferred heat</string>
+    <string name="health_atlas_scrotal_heat_tally_surplus">Example arterial heat surplus</string>
+    <string name="health_atlas_scrotal_heat_tally_share">Share of surplus transferred</string>
+    <string name="health_atlas_scrotal_heat_tally_companion">Arterial surplus left: %1$s hu</string>
+    <string name="health_atlas_scrotal_heat_tally_formula">Transferred heat = arterial surplus &#215; transfer share / 100, with the share entered as a percentage. Arterial surplus left = starting surplus minus transferred heat.</string>
+    <string name="health_atlas_scrotal_heat_tally_scope">Near each testis in the scrotum, the testicular artery and the pampiniform veins of the spermatic cord carry blood in opposite directions. Heat can pass from warmer arterial blood to cooler venous blood without the blood mixing. In a two-arrow sketch, the artery points toward the testis and the veins point away; a cross-arrow shows heat transfer. The model simply moves a chosen share of a fictional arterial surplus into the venous tally. The arbitrary heat units (hu) and share are teaching inputs, not temperatures, measured exchange efficiencies, or fertility predictions.</string>
+</resources>

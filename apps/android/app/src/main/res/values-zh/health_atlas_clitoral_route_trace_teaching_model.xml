@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_clitoral_route_trace_title">阴蒂感觉通路：示意路径追踪进度</string>
+    <string name="health_atlas_clitoral_route_trace_links">已追踪的箭头数</string>
+    <string name="health_atlas_clitoral_route_trace_companion">尚未追踪的箭头数：%1$s</string>
+    <string name="health_atlas_clitoral_route_trace_formula">已追踪的箭头数为 0 到 4 的整数。追踪进度（百分比）= 100 × 已追踪的箭头数 / 4。尚未追踪的箭头数 = 4 减去已追踪的箭头数。图表对输入值四舍五入后按整支箭头计数。</string>
+    <string name="health_atlas_clitoral_route_trace_scope">来自阴蒂头的感觉神经纤维经阴蒂背神经传导，阴蒂背神经是阴部神经的分支。示意路径沿一侧追踪：阴蒂头 → 阴蒂背神经 → 阴部神经 → 骶脊神经 → 经后根进入脊髓。四支箭头在计数时权重相同，只概括路径经过的结构，不表示突触。百分比只表示示意路径的追踪进度，不表示距离、时间或感觉敏感度。</string>
+</resources>

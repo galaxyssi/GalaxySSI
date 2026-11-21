@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_aii_amacrine_relay_title">AII 中继：ON 支路变化</string>
+    <string name="health_atlas_aii_amacrine_relay_input">视杆双极细胞输入变化</string>
+    <string name="health_atlas_aii_amacrine_relay_companion">OFF 支路变化：%1$s u</string>
+    <string name="health_atlas_aii_amacrine_relay_formula">若图中的输入变化量为 s，则 ON 支路变化 = s，OFF 支路变化 = &#8722;s。零表示相对于示意基准无变化。两支路的变化幅度设为相同，便于比较正负号，不代表实测增益，也不是对同一信号的份额分配。</string>
+    <string name="health_atlas_aii_amacrine_relay_scope">在弱光下的主要视杆通路中，视杆双极细胞向 AII 无长突细胞传递信号。从 AII 看两条连接：通向 ON 型视锥双极细胞的电性缝隙连接保留变化的正负号；在此示意中，通向 OFF 型视锥双极细胞的甘氨酸能抑制性突触反转变化的正负号。图中仅展示由视杆输入驱动的中继方向。数值采用虚构的示意单位（u），不代表光照水平、电压、放电频率或视觉预测。</string>
+</resources>

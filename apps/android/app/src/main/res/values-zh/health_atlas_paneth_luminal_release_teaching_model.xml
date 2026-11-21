@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_paneth_luminal_release_title">潘氏细胞释放到隐窝腔的图标数</string>
+    <string name="health_atlas_paneth_luminal_release_selected">选定的释放箭头数（每个对应一个图标）</string>
+    <string name="health_atlas_paneth_luminal_release_starting">细胞顶端的初始图标数</string>
+    <string name="health_atlas_paneth_luminal_release_companion">细胞侧剩余图标数：%1$s</string>
+    <string name="health_atlas_paneth_luminal_release_formula">隐窝腔内的图标数 = 选定的箭头数和初始图标数中较小的一个。细胞侧剩余图标数 = 初始图标数减去隐窝腔内的图标数。图表将选定的数量四舍五入为整数。</string>
+    <string name="health_atlas_paneth_luminal_release_scope">潘氏细胞位于小肠隐窝底部。其顶端颗粒向隐窝腔释放物质，有助于保护附近的上皮。图中用一条线分隔细胞顶端与隐窝腔。每个选定的箭头可以将一个可用图标移到线的另一侧。图标只用来计数，不表示完整颗粒穿过细胞表面，也不代表真实释放量或上皮所获的保护程度。</string>
+</resources>

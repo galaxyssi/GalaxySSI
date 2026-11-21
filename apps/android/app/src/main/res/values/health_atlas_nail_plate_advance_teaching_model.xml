@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_nail_plate_advance_title">Nail plate advance in the drawing</string>
+    <string name="health_atlas_nail_plate_advance_steps">Drawing steps (n)</string>
+    <string name="health_atlas_nail_plate_advance_addition">Length added at the matrix per step (a)</string>
+    <string name="health_atlas_nail_plate_advance_mark">Plate mark from the matrix: %1$s u</string>
+    <string name="health_atlas_nail_plate_advance_formula">Advance = n &#215; a, where n counts drawing steps and a is the length added in one step. Mark position = 4 u + advance. The nail bed ends at 10 u on this drawing; beyond that line the mark is on the free edge.</string>
+    <string name="health_atlas_nail_plate_advance_scope">The nail matrix at the root forms most of the plate. As new plate material joins at the root, a mark on the older plate moves with it toward the fingertip, over the nail bed and then onto the free edge. The drawing places the matrix at 0 u and the mark initially at 4 u. These lengths are invented drawing units (u), and steps are not days. This is not a growth measurement or prediction.</string>
+</resources>

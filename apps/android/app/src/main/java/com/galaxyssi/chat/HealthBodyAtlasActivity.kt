@@ -303,6 +303,11 @@ class HealthBodyAtlasActivity : Activity() {
             HealthAtlasTab.FUNCTION -> {
                 val choices = HealthAtlasFunctionStory.choicesForId(item.id)
                 if (choices.isEmpty()) ui.add(content, artwork(data, item)) else functionLessons(data, item, choices)
+                ui.add(content, ui.navigationRow(R.drawable.ic_health_data_chart, R.string.health_atlas_open_quantitative_model) {
+                    tab = HealthAtlasTab.SIMULATION
+                    scrollY = 0
+                    render()
+                }.apply { tag = "atlas-open-simulation" }, 12)
                 ui.add(content, ui.text(item.description, 17f), 12)
                 val mechanism = data.mechanism(item)
                 ui.add(content, ui.text(getString(R.string.health_atlas_related_process, mechanism.title), 17f, bold = true), 22)
@@ -315,7 +320,6 @@ class HealthBodyAtlasActivity : Activity() {
                 if (choices.isNotEmpty() && (hasAlternateView || hasLessonHotspots)) {
                     ui.add(content, artwork(data, item), 12)
                 }
-                ui.add(content, ui.command(R.string.health_atlas_simulation) { tab = HealthAtlasTab.SIMULATION; scrollY = 0; render() }, 12)
                 ui.add(content, ui.row(getString(R.string.health_atlas_research)) { openResearch() }.apply { tag = "atlas-open-research" }, 12)
             }
             HealthAtlasTab.VALUES -> {

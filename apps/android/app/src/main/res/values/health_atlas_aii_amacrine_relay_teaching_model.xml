@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_aii_amacrine_relay_title">AII relay: ON branch change</string>
+    <string name="health_atlas_aii_amacrine_relay_input">Rod bipolar input change</string>
+    <string name="health_atlas_aii_amacrine_relay_companion">OFF branch change: %1$s u</string>
+    <string name="health_atlas_aii_amacrine_relay_formula">For a diagram input change s, ON change = s and OFF change = &#8722;s. Zero means no change from the diagram reference. Matching sizes make the signs easy to compare; these are not measured gains or shares of a divided signal.</string>
+    <string name="health_atlas_aii_amacrine_relay_scope">In the main dim-light rod pathway, a rod bipolar cell sends input to an AII amacrine cell. Follow two connections out from AII: an electrical gap junction to an ON cone bipolar cell preserves the sign of the change; a glycinergic inhibitory synapse to an OFF cone bipolar cell reverses it in this sketch. The diagram shows only the rod-driven direction of the relay. The numbers are invented diagram units (u), not light levels, voltages, firing rates, or visual predictions.</string>
+</resources>

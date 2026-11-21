@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vestibular_gland_volume_title">Greater vestibular glands: combined example volume</string>
+    <string name="health_atlas_vestibular_gland_volume_a">Example volume at outlet A</string>
+    <string name="health_atlas_vestibular_gland_volume_b">Example volume at outlet B</string>
+    <string name="health_atlas_vestibular_gland_volume_companion">Difference between example volumes: %1$s vu</string>
+    <string name="health_atlas_vestibular_gland_volume_formula">Combined volume = volume at outlet A + volume at outlet B. Difference = the larger example volume minus the smaller one.</string>
+    <string name="health_atlas_vestibular_gland_volume_scope">The paired greater vestibular (Bartholin) glands supply mucus that helps moisten the vestibule beside the vaginal opening. In a two-branch sketch, each gland has its own duct and its own vestibular outlet, labeled A or B. The ducts do not empty into the vaginal canal or urethra. The chart adds fictional mucus volumes for one example interval in arbitrary volume units (vu). It does not estimate all lubrication, actual secretion rates, or gland function in a person.</string>
+</resources>

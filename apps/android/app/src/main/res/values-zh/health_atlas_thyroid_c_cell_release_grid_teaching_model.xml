@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_thyroid_c_cell_release_grid_title">甲状腺 C 细胞朝血管移出的图标数</string>
+    <string name="health_atlas_thyroid_c_cell_release_grid_moved">每行移出的图标数</string>
+    <string name="health_atlas_thyroid_c_cell_release_grid_rows">图标行数（每行 5 个）</string>
+    <string name="health_atlas_thyroid_c_cell_release_grid_companion">C 细胞示意图中仍留在胞内的图标数：%1$s</string>
+    <string name="health_atlas_thyroid_c_cell_release_grid_formula">移出的图标数 = 行数 &#215; 每行移出的图标数。留在胞内的图标数 = 行数 &#215;（5 &#8722; 每行移出的图标数）。图表将控件数值四舍五入为整数。</string>
+    <string name="health_atlas_thyroid_c_cell_release_grid_scope">甲状腺滤泡旁细胞（C 细胞）位于滤泡壁的外侧部分或滤泡之间。它们将降钙素分泌入血，而不是释放到充满胶质的滤泡腔。在示意图中，C 细胞内每行起初有 5 个图标。每行有相同数量的图标朝组织侧附近的血管移动。网格和数量都是假设的，不代表真实颗粒数、分泌速率或血液浓度。</string>
+</resources>

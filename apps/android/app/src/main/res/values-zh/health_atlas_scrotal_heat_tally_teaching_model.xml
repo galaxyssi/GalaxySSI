@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_scrotal_heat_tally_title">阴囊热交换：传递的热量</string>
+    <string name="health_atlas_scrotal_heat_tally_surplus">示例动脉热量盈余</string>
+    <string name="health_atlas_scrotal_heat_tally_share">盈余热量传递比例</string>
+    <string name="health_atlas_scrotal_heat_tally_companion">动脉剩余热量盈余：%1$s hu</string>
+    <string name="health_atlas_scrotal_heat_tally_formula">传递的热量 = 动脉热量盈余 × 传递比例 / 100，其中比例以百分数输入。动脉剩余热量盈余 = 初始盈余减去传递的热量。</string>
+    <string name="health_atlas_scrotal_heat_tally_scope">在阴囊内各睾丸附近，精索中的睾丸动脉与蔓状静脉丛内血流方向相反。热量可从较暖的动脉血传给较冷的静脉血，两者并不混合。示意图中，动脉箭头指向睾丸，静脉箭头背离睾丸，横跨两者的箭头表示传热。模型仅将虚构的动脉热量盈余按选定比例计入静脉一侧。任意热量单位（hu）和传递比例均为教学设定，不代表体温或实测换热效率，也不能预测生育能力。</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_intestinal_stem_model_title">肠干细胞后代图标占据的上皮格数</string>
+    <string name="health_atlas_intestinal_stem_model_steps">示意图中的更新步数</string>
+    <string name="health_atlas_intestinal_stem_model_base_icons">隐窝底部的干细胞图标数</string>
+    <string name="health_atlas_intestinal_stem_model_companion">图中未填的上皮格数：%1$s</string>
+    <string name="health_atlas_intestinal_stem_model_formula">已填格数 = 12 和（底部图标数 × 步数）中较小的一个。未填格数 = 12 减去已填格数。图表将步数四舍五入为整数，格子填满后不再添加图标。</string>
+    <string name="health_atlas_intestinal_stem_model_scope">小肠隐窝底部附近的干细胞能维持自身群体并产生后代细胞。许多后代细胞沿上皮向绒毛移动。示意图中的干细胞图标留在底部，每一步各产生一个后代图标，填入沿途 12 个初始空格中的一个。格子是虚构的，步数没有时间单位，不用于模拟真实的分裂方式、细胞数量或组织更新速率。</string>
+</resources>

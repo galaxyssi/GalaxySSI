@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vaginal_ruga_span_title">阴道壁皱襞：直线跨度</string>
+    <string name="health_atlas_vaginal_ruga_span_height">示例皱襞高度</string>
+    <string name="health_atlas_vaginal_ruga_span_companion">完全展平后增加的跨度：%1$s u</string>
+    <string name="health_atlas_vaginal_ruga_span_formula">设皱襞高度为 h，跨度的一半是直角三角形的底边，三角形的高为 h、斜边长为 5 u。跨度 = 2 × √(5² − h²)。完全展平后增加的跨度 = 10 u 减去当前跨度。</string>
+    <string name="health_atlas_vaginal_ruga_span_scope">阴道黏膜有横向皱襞，管壁扩张时皱襞可展平。设想沿阴道管纵向观察一道横向皱襞的轮廓，模型将其简化为两条直边组成的单个峰，两边各长 5 u。跨度指皱襞两侧基底之间的直线距离。两边长度不变时，峰顶越低，跨度越大。所有长度都是以任意单位（u）表示的虚构数值，不用于测量阴道管、组织弹性或真实管壁的扩张幅度。</string>
+</resources>

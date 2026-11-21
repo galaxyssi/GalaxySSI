@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_microglia_surveillance_title">小胶质细胞突起末端扫查过的不同格子数</string>
+    <string name="health_atlas_microglia_surveillance_width">每帧扫查格数</string>
+    <string name="health_atlas_microglia_surveillance_offset">第二帧向右偏移（格）</string>
+    <string name="health_atlas_microglia_surveillance_companion">两帧均扫查到的格数：%1$s</string>
+    <string name="health_atlas_microglia_surveillance_formula">若每帧扫查 n 格，第二帧偏移 d 格，则重叠格数为 max(0, n &#8722; d)。不同格子总数 = 2 &#215; n &#8722; 重叠格数。两帧都扫查到的格子只计一次。曲线上的输入值四舍五入到整格。</string>
+    <string name="health_atlas_microglia_surveillance_scope">小胶质细胞的胞体可以保持不动，而突起末端仍会伸出和缩回。示意图用一排 12 个格子代表附近的一小块组织。第一帧从最左侧标出一段连续的格子；第二帧将同样宽的一段向右平移。这是虚构的局部区域，仅用来比较两帧，不描述真实突起移动的距离、速度、两帧之间的变化或实际清除量。</string>
+</resources>

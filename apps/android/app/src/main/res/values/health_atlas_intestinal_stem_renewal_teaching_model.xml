@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_intestinal_stem_model_title">Lining slots filled by intestinal stem-cell descendant icons</string>
+    <string name="health_atlas_intestinal_stem_model_steps">Diagram renewal steps</string>
+    <string name="health_atlas_intestinal_stem_model_base_icons">Stem-cell icons at the crypt base</string>
+    <string name="health_atlas_intestinal_stem_model_companion">Empty lining slots in the drawing: %1$s</string>
+    <string name="health_atlas_intestinal_stem_model_formula">Filled slots = the smaller of 12 and (base icons &#215; steps). Empty slots = 12 minus filled slots. The chart rounds steps to whole counts and stops adding icons once the drawing is full.</string>
+    <string name="health_atlas_intestinal_stem_model_scope">Stem cells near the base of small-intestinal crypts renew their population and produce descendants. Many descendants move within the lining toward a villus. In this illustration, stem-cell icons stay at the base and each makes one descendant icon per diagram step to fill one of 12 initially empty slots on the way up. The slots are invented and the steps have no time unit. This is not a model of actual division patterns, cell numbers, or tissue turnover rates.</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_astrocyte_recycling_title">Starting markers returned as glutamine</string>
+    <string name="health_atlas_astrocyte_recycling_uptake">Share of starting markers taken up</string>
+    <string name="health_atlas_astrocyte_recycling_return">Share of taken-up markers returned</string>
+    <string name="health_atlas_astrocyte_recycling_companion">Starting markers left outside the cells: %1$s%%</string>
+    <string name="health_atlas_astrocyte_recycling_formula">If uptake is U percent of the starting pool and return is R percent of the taken-up share, the returned percentage of the starting pool is U &#215; R / 100. The percentage left outside is 100 &#8722; U.</string>
+    <string name="health_atlas_astrocyte_recycling_scope">Near an excitatory synapse, an astrocyte process takes up some released glutamate. The astrocyte can convert some to glutamine and return it to the sending neuron for reuse. In this schematic, markers move from the space around the synapse into the astrocyte, then a share returns to the neuron. The returned markers represent recycling, not a new signal. The percentages are invented; they do not represent measured amounts, timing, or biological rates.</string>
+</resources>

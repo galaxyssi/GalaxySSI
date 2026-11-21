@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_astrocyte_recycling_title">以谷氨酰胺形式返回的起始标记比例</string>
+    <string name="health_atlas_astrocyte_recycling_uptake">摄取量占起始标记的比例</string>
+    <string name="health_atlas_astrocyte_recycling_return">返回量占已摄取标记的比例</string>
+    <string name="health_atlas_astrocyte_recycling_companion">留在细胞外的起始标记比例：%1$s%%</string>
+    <string name="health_atlas_astrocyte_recycling_formula">若起始标记被摄取的百分比为 U，已摄取标记被送回的百分比为 R，则返回量占起始标记的百分比为 U &#215; R / 100，留在细胞外的百分比为 100 &#8722; U。</string>
+    <string name="health_atlas_astrocyte_recycling_scope">在兴奋性突触附近，星形胶质细胞的突起会摄取一部分释放出的谷氨酸。细胞可将其中一部分转化为谷氨酰胺，送回发送信号的神经元以供再利用。示意图中的标记从突触周围进入星形胶质细胞，其中一部分再返回神经元。返回的标记表示回收利用，不是一次新的信号传递。百分比为虚构数值，不代表实测量、时间或生理速率。</string>
+</resources>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_penile_path_trace_title">从阴茎球起算的图示距离</string>
+    <string name="health_atlas_penile_path_trace_position">沿图示路径的位置</string>
+    <string name="health_atlas_penile_path_trace_companion">距尿道外口的剩余图示距离：%1$s u</string>
+    <string name="health_atlas_penile_path_trace_formula">路径位置用百分比表示：阴茎球为 0，尿道外口为 100。已描绘的距离（u）= 10 &#215; 位置 / 100。剩余距离（u）= 10 &#8722; 已描绘的距离。</string>
+    <string name="health_atlas_penile_path_trace_scope">只沿尿道海绵体部描绘路径。这是位于尿道海绵体内的尿液通道，从阴茎球起，沿阴茎体延伸至阴茎头顶端的尿道外口。示意图用一条长 10 个图示单位（u）的线表示这段路径，不按比例绘制。这里量的是图上的位置，不是人体长度、经过的时间或尿液流量。</string>
+</resources>

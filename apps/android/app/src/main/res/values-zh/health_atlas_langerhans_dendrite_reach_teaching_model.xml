@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_langerhans_dendrite_reach_title">朗格汉斯细胞任一树突触及的格数</string>
+    <string name="health_atlas_langerhans_dendrite_reach_left">从左侧触及的格数</string>
+    <string name="health_atlas_langerhans_dendrite_reach_right">从右侧触及的格数</string>
+    <string name="health_atlas_langerhans_dendrite_reach_companion">两条树突都触及的格数：%1$s</string>
+    <string name="health_atlas_langerhans_dendrite_reach_formula">先将左右两侧的格数相加。总数超过 10 的部分就是重叠格数。触及的不同格数 = 总数减去重叠格数，因此每格只计一次。图表将控件数值四舍五入为整数。</string>
+    <string name="health_atlas_langerhans_dendrite_reach_scope">表皮中的朗格汉斯细胞具有分支状突起（树突），可伸到角质形成细胞之间，帮助细胞对周围环境采样。为说明重叠，设想在邻近细胞之间画一排 10 个编号格。图中同一细胞的两条树突分别从一排格子的两端向内伸，各自触及连续的格子。每格是图上的一个位置，不是皮肤面积单位。布局和格数均为假设，不能用来衡量采样或预测免疫反应。</string>
+</resources>
