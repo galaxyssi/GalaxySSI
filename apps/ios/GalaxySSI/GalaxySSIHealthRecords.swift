@@ -87,13 +87,16 @@ struct GalaxySSIHealthOverview {
     let metric: GalaxySSIHealthMetric
     let reading: GalaxySSIHealthReading?
     let freshness: Freshness
+    var ranges: [GalaxySSIHealthOverviewRange] = []
+    var outsideRange: Bool { ranges.contains(where: \.outside) }
     var id: GalaxySSIHealthMetric { metric }
   }
 
   let metrics: [Metric]
   var recentCount: Int { metrics.filter { $0.freshness == .recent }.count }
 
-  init(current: [GalaxySSIHealthReading], now: Date, calendar: Calendar) {
+  init(current: [GalaxySSIHealthReading], now: Date, calendar: Calendar,
+       ranges: [GalaxySSIHealthMetric: [GalaxySSIHealthOverviewRange]] = [:]) {
     let today = calendar.startOfDay(for: now)
     let cutoff = calendar.date(byAdding: .day, value: -6, to: today) ?? today
     var latest: [GalaxySSIHealthMetric: GalaxySSIHealthReading] = [:]
@@ -102,11 +105,21 @@ struct GalaxySSIHealthOverview {
       latest[reading.metric] = reading
     }
     let overviewMetrics: [GalaxySSIHealthMetric] = [.bloodPressure, .sleepDuration, .restingHeartRate, .steps]
-    metrics = overviewMetrics.map { metric in
-      let reading = latest[metric]
-      return Metric(metric: metric, reading: reading,
-                    freshness: reading.map { $0.measuredAt >= (metric == .steps ? today : cutoff) ? .recent : .stale } ?? .missing)
+    let candidates = overviewMetrics + GalaxySSIHealthMetric.allCases.filter {
+      !overviewMetrics.contains($0) && $0 != .temperature && $0 != .oxygenSaturation && latest[$0] != nil
     }
+    metrics = candidates.enumerated().map { index, metric in
+      let reading = latest[metric]
+      return (index, Metric(metric: metric, reading: reading,
+        freshness: reading.map { $0.measuredAt >= (metric == .steps ? today : cutoff) ? .recent : .stale } ?? .missing,
+        ranges: reading == nil ? [] : ranges[metric] ?? []))
+    }.filter { overviewMetrics.contains($0.1.metric) || $0.1.outsideRange }.sorted {
+      if $0.1.outsideRange != $1.1.outsideRange { return $0.1.outsideRange }
+      if $0.1.outsideRange, $0.1.reading?.measuredAt != $1.1.reading?.measuredAt {
+        return ($0.1.reading?.measuredAt ?? .distantPast) > ($1.1.reading?.measuredAt ?? .distantPast)
+      }
+      return $0.0 < $1.0
+    }.map { $0.1 }
   }
 }
 
