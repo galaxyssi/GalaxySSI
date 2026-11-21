@@ -379,6 +379,19 @@ final class GalaxySSIHealthReportQuickImportTests: XCTestCase {
     XCTAssertNil(outcome.skipped); XCTAssertNil(outcome.imageBytes); XCTAssertNil(outcome.recordIDs)
   }
 
+  func testLegacyCompleteReceiptMigratesAfterTemporaryOriginalWasReleased() throws {
+    let f = try Fixture(retain: false)
+    try f.recognize(rows: [row()])
+    _ = try f.save(f.plan())
+    f.originals.releaseCompletedQuickReportOriginals()
+    XCTAssertTrue(try f.originals.list().originals.isEmpty)
+    let readings = try f.records.load().current
+    let receipt = try f.records.finishAutomaticReport(job: f.id, originals: f.originals, now: f.now, active: { true })
+    XCTAssertEqual(receipt.saved, 1); XCTAssertEqual(receipt.skipped, 0)
+    XCTAssertEqual(receipt.recordIDs, readings.map(\.id))
+    XCTAssertEqual(try f.records.load().current, readings)
+  }
+
   @MainActor private final class Fixture {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let file: URL

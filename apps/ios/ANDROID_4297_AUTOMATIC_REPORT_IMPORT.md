@@ -20,6 +20,6 @@ New receipt properties are optional so existing encrypted jobs and outcomes deco
 
 ## Validation
 
-Added 13 XCTest regression source methods for atomic success/cancellation, receipt replay, missing fasting/date, conflicting/unknown values, revocation, the exact byte limit at commit and transport, duplicates, empty results, original release, legacy local completion and receipt decoding. Updated the parser contract test for zero-row outcomes.
+Added 14 XCTest regression source methods for atomic success/cancellation, receipt replay, missing fasting/date, conflicting/unknown values, revocation, the exact byte limit at commit and transport, duplicates, empty results, original release, legacy local completion (including released images) and receipt decoding. Updated the parser contract test for zero-row outcomes.
 
 Windows validation is limited to project/static checks and Swift grammar parsing. Xcode build, XCTest execution, simulator/device UI, live paired transport and compression quality on real reports have not been verified here.

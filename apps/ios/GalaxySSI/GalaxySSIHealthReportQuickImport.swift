@@ -136,6 +136,24 @@ extension GalaxySSIHealthRecords {
     guard active(), !Task.isCancelled, let job = archive.recognitionJobs?.first(where: { $0.id == id }) else { throw Failure.stale }
     if let outcome = job.reportImportOutcome, outcome.skipped != nil { return outcome }
     let plan = try GalaxySSIHealthReportQuickImport.plan(job: job, archive: archive, now: now, automatic: true)
+    if plan.items.isEmpty, var receipt = job.reportImportOutcome,
+       let index = archive.recognitionJobs?.firstIndex(where: { $0 == job }) {
+      // An already committed legacy import may have released its image. Migrate only the receipt, never recreate data.
+      let live = Set(archive.current.map(\.id))
+      var ids: [UUID] = []
+      for row in job.reportVision?.rows ?? [] {
+        let source = GalaxySSIHealthReportVision.source(row, job: job)
+        let target = archive.revisions.last(where: { $0.reportSource == source && live.contains($0.id) })?.id ??
+          archive.reportEvidence?.first(where: { $0.source == source && live.contains($0.target.record) })?.target.record
+        if let target, !ids.contains(target) { ids.append(target) }
+      }
+      receipt.skipped = receipt.pending; receipt.pending = 0; receipt.imageBytes = 0; receipt.recordIDs = ids
+      archive.recognitionJobs?[index].reportImportOutcome = receipt
+      archive.recognitionJobs?[index].version = UUID()
+      guard active(), !Task.isCancelled else { throw Failure.stale }
+      try persistQuickReport(archive)
+      return receipt
+    }
     return try applyQuickReport(plan, supplement: .init(), originals: originals, now: now,
       automatic: true, imageBytes: 0, archive: &archive, active: active)
   }

@@ -180,8 +180,7 @@ struct GalaxySSIHealthReportVisionView: View {
       guard let current = archive.recognitionJobs?.first(where: { $0.id == jobID }) else { throw GalaxySSIHealthRecords.Failure.stale }
       let listing = try originals.list()
       originalAvailable = listing.originals.contains(current.original)
-      guard originalAvailable || (current.reportImportOutcome?.releaseOriginal == true &&
-        (listing.removed.contains(current.original) || listing.pendingRemovals.contains(current.original.id))) else { throw GalaxySSIHealthRecords.Failure.stale }
+      guard originalAvailable || current.reportImportOutcome?.releaseOriginal == true else { throw GalaxySSIHealthRecords.Failure.stale }
       job = current
       outcome = metrics ? current.reportImportOutcome : nil
       let live = Dictionary(archive.current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
