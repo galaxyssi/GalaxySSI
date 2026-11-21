@@ -132,7 +132,7 @@ struct GalaxySSIHealthReportVisionView: View {
       guard let current = archive.recognitionJobs?.first(where: { $0.id == jobID }),
             try originals.list().originals.contains(current.original) else { throw GalaxySSIHealthRecords.Failure.stale }
       job = current
-      if originalPreview == nil { originalPreview = UIImage(data: try GalaxySSIHealthReportVisionProvider.jpeg(input(current))) }
+      if originalPreview == nil { originalPreview = try GalaxySSIHealthReportVisionProvider.preview(input(current)) }
     } catch { job = nil; originalPreview = nil; failed = true }
   }
   private func input(_ job: GalaxySSIHealthRecognitionJobs.Job) throws -> Data {

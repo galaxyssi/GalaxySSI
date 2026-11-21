@@ -19,6 +19,16 @@ enum GalaxySSIHealthReportVisionProvider {
     """
   }
 
+  @MainActor static func preview(_ data: Data) throws -> UIImage {
+    let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 1600]
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+      throw GalaxySSIHealthRecords.Failure.invalid
+    }
+    return UIImage(cgImage: image)
+  }
+
   @MainActor static func jpeg(_ data: Data) throws -> Data {
     guard let source = CGImageSourceCreateWithData(data as CFData, nil),
           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
