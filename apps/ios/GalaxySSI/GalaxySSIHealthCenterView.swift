@@ -27,7 +27,10 @@ struct GalaxySSIHealthCenterView: View {
   @State private var overviewDestination: OverviewDestination?
   @State private var overviewNotice: Notice?
   @State private var overviewWidth: CGFloat = 0
-  @State private var measurementBatch: String?
+  @State private var measurementPeriod: GalaxySSIHealthMeasurementPeriod?
+  @State private var measurementAbnormal = false
+  @State private var measurementKind = GalaxySSIHealthMeasurementPeriod.Kind.week
+  @State private var measurementSelection = UUID()
 
   private enum OverviewDestination: String, Identifiable {
     case weekly, assistant, files, sleep, reviews, records, devices, originals, pdf, profile, crop
@@ -112,7 +115,7 @@ struct GalaxySSIHealthCenterView: View {
         }
       } else {
         overviewDestination = nil
-        measurementBatch = nil
+        measurementPeriod = nil; measurementAbnormal = false
         overviewNotice = nil
         editor = nil
         alert = nil
@@ -366,21 +369,19 @@ struct GalaxySSIHealthCenterView: View {
     let ranges = (try? records.overviewRanges(expected: snapshot, now: now)) ?? [:]
     let birth = try? records.overviewBirthDate(expected: snapshot)
     let overview = GalaxySSIHealthOverview(current: snapshot.current, now: now, calendar: local, ranges: ranges)
-    let recentCutoff = local.date(byAdding: .day, value: -6, to: local.startOfDay(for: now)) ?? now
-    let batch: GalaxySSIHealthMeasurementBatches.Snapshot? = {
-      guard let measurementBatch, snapshot.derivesOverview == true,
-            let group = GalaxySSIHealthMeasurementBatches.groups(snapshot).first(where: { $0.id == measurementBatch }) else { return nil }
-      return try? GalaxySSIHealthMeasurementBatches.snapshot(group, archive: snapshot, now: now)
-    }()
-    let metrics = measurementBatch == nil ? overview.metrics.filter { $0.metric != .steps } :
-      (batch?.readings ?? []).filter { $0.metric != .steps }.map {
-        GalaxySSIHealthOverview.Metric(metric: $0.metric, reading: $0, freshness: $0.measuredAt >= recentCutoff ? .recent : .stale,
-          ranges: [GalaxySSIHealthOverviewRange.report($0)].compactMap { $0 })
-      }
     let stackActivity = overviewWidth < 312 || sizeCategory.isAccessibilityCategory ||
       [.extraExtraLarge, .extraExtraExtraLarge].contains(sizeCategory)
     return VStack(alignment: .leading, spacing: 12) {
-      Text(now, style: .date).font(.caption).foregroundColor(.secondary)
+      HStack(alignment: .center, spacing: 8) {
+        Text(now, style: .date).font(.caption).foregroundColor(.secondary)
+        Spacer(minLength: 0)
+        Button { overviewDestination = .activityComparison } label: {
+          HStack(spacing: 4) {
+            Text(t("activity_comparison.title", "Activity comparison"))
+            Image(systemName: "chevron.right")
+          }.font(.subheadline).multilineTextAlignment(.trailing).fixedSize(horizontal: false, vertical: true).frame(minHeight: 48)
+        }.buttonStyle(.plain).foregroundColor(.green).accessibilityIdentifier("health-activity-comparison")
+      }
       LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: stackActivity ? 1 : 2), spacing: 8) {
         if let steps = overview.metrics.first(where: { $0.metric == .steps }) {
           GalaxySSIHealthOverviewMetricRow(item: steps, records: records, open: openOverviewReading,
@@ -392,46 +393,14 @@ struct GalaxySSIHealthCenterView: View {
           .padding(11).frame(maxWidth: .infinity, minHeight: 102, alignment: .topLeading)
           .background(RoundedRectangle(cornerRadius: 8).stroke(Color(uiColor: .separator), lineWidth: 0.5))
       }
-      Button { overviewDestination = .activityComparison } label: {
-        Label(t("activity_comparison.title", "Activity comparison"), systemImage: "chart.bar.xaxis")
-          .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-      }.buttonStyle(.plain).accessibilityIdentifier("health-activity-comparison")
       if snapshot.current.isEmpty {
         Text(t("first_use.title", "No confirmed measurements yet")).font(.caption).foregroundColor(.secondary)
       }
-      HStack {
-        Text(t("overview_list.heading", "Measurements")).font(.subheadline.weight(.semibold))
-          .accessibilityAddTraits(.isHeader)
-        Spacer()
-        Button(t("overview_list.view_all", "All records")) { overviewDestination = .timeline }
-          .font(.subheadline).frame(minHeight: 44)
-      }
-      HStack(alignment: .top, spacing: 12) {
-        Menu {
-          Button(t("measurement_comparison.latest", "Latest measurements")) { measurementBatch = nil }
-          Button(t("measurement_comparison.choose_source", "Choose import group")) { overviewDestination = .measurementPicker }
-        } label: {
-          Label(measurementBatch == nil ? t("measurement_comparison.latest", "Latest measurements") : t("measurement_comparison.selected", "Selected import group"),
-            systemImage: "line.3.horizontal.decrease.circle")
-            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        }
-        Button { overviewDestination = .measurementComparison } label: {
-          Label(t("measurement_comparison.compare", "Compare"), systemImage: "arrow.left.arrow.right")
-            .fixedSize(horizontal: false, vertical: true).frame(minHeight: 44)
-        }
-      }.font(.subheadline)
-      if measurementBatch != nil && batch == nil {
-        Text(t("measurement_comparison.unavailable", "The selected sources or measurements changed. Reload and select again.")).font(.caption).foregroundColor(.secondary)
-      }
-      VStack(spacing: 0) {
-      ForEach(metrics) { item in
-        GalaxySSIHealthOverviewMetricRow(item: item, records: records, open: openOverviewReading, manual: { startManual($0) },
-          birthDate: birth, progressPermitted: snapshot.derivesOverview == true, openRecordInsteadOfMetric: measurementBatch != nil)
-          .padding(.horizontal, 12)
-        Divider()
-      }
-      }
-      .background(RoundedRectangle(cornerRadius: 8).stroke(Color(uiColor: .separator), lineWidth: 0.5))
+      GalaxySSIHealthMeasurementOverviewView(records: records, latestMetrics: overview.metrics, birthDate: birth, now: now,
+        allowed: snapshot.derivesOverview == true, period: $measurementPeriod, abnormal: $measurementAbnormal,
+        choosePeriod: { kind in measurementKind = kind; overviewDestination = .measurementPicker },
+        compare: { overviewDestination = .measurementComparison }, edit: openOverviewReading, manual: { startManual($0) })
+        .id(measurementSelection)
     }
     .background(GeometryReader { geometry in
       Color.clear.onAppear { overviewWidth = geometry.size.width }
@@ -689,7 +658,10 @@ struct GalaxySSIHealthCenterView: View {
 
   private func reload() {
     guard scenePhase == .active else { return }
-    do { archive = try records.load(); if archive?.derivesOverview != true { measurementBatch = nil } }
+    do {
+      archive = try records.load()
+      if archive?.derivesOverview != true { measurementPeriod = nil; measurementAbnormal = false }
+    }
     catch { archive = nil }
     if let id = initialRecordID, let archive {
       initialRecordID = nil
@@ -741,10 +713,11 @@ struct GalaxySSIHealthCenterView: View {
     case .movement: GalaxySSIHealthMotionView(records: records)
     case .activityComparison: GalaxySSIHealthActivityComparisonView(records: records)
     case .measurementPicker:
-      GalaxySSIHealthMeasurementBatchesView(records: records, initialBatch: measurementBatch) { selected in
-        measurementBatch = selected; overviewDestination = nil; reload()
+      GalaxySSIHealthMeasurementPeriodPicker(records: records, initialKind: measurementKind, allowsKindChange: false, showsLatest: false) { selected in
+        measurementPeriod = selected; measurementSelection = UUID(); overviewDestination = nil; reload()
       }
-    case .measurementComparison: GalaxySSIHealthMeasurementBatchesView(records: records, initialBatch: measurementBatch)
+    case .measurementComparison:
+      GalaxySSIHealthMeasurementPeriodComparisonView(records: records, initialPeriod: measurementPeriod, edit: openOverviewReading)
     case .care: GalaxySSIHealthCareView(records: records)
     case .agenda: GalaxySSIHealthCareAgendaView(records: records)
     }

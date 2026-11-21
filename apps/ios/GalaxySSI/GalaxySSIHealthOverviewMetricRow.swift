@@ -14,10 +14,14 @@ struct GalaxySSIHealthOverviewMetricRow: View {
   var progressPermitted = false
   var detailed = false
   var openRecordInsteadOfMetric = false
+  var summaryOnly = false
+  var showsGuidance = true
+  var caption: String? = nil
   @ObservedObject private var motion = GalaxySSIHealthMotionController.shared
   @State private var motionSettings = false
   private var guidance: GalaxySSIHealthOverviewGuidance.Reference? {
-    GalaxySSIHealthOverviewGuidance.reference(metric: item.metric,
+    guard showsGuidance else { return nil }
+    return GalaxySSIHealthOverviewGuidance.reference(metric: item.metric,
       age: GalaxySSIHealthOverviewGuidance.age(birth: birthDate, on: item.reading?.measuredAt ?? Date(), calendar: .autoupdatingCurrent), language: language)
   }
   private var motionState: GalaxySSIHealthMotion.State? { motion.matches(records) ? motion.state : nil }
@@ -45,6 +49,7 @@ struct GalaxySSIHealthOverviewMetricRow: View {
     Group {
       if detailed { detailContent }
       else if item.metric == .steps { stepTile }
+      else if summaryOnly { compactContent }
       else if openRecordInsteadOfMetric, let reading = item.reading {
         NavigationLink {
           GalaxySSIHealthOverviewRecordView(records: records, record: reading, edit: open)
@@ -78,6 +83,7 @@ struct GalaxySSIHealthOverviewMetricRow: View {
           if status != nil { statusText.multilineTextAlignment(.trailing) }
         }
       }
+      if let caption, !caption.isEmpty { Text(caption).font(.caption2).foregroundColor(.secondary) }
     }.frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
       .padding(.vertical, 8).contentShape(Rectangle())
   }
@@ -233,7 +239,7 @@ struct GalaxySSIHealthOverviewMetricRow: View {
 }
 
 @MainActor
-private struct GalaxySSIHealthOverviewMetricDetailView: View {
+struct GalaxySSIHealthOverviewMetricDetailView: View {
   @EnvironmentObject private var store: GalaxySSIStore
   @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var language
@@ -421,7 +427,7 @@ struct GalaxySSIHealthOverviewHistoryView: View {
 }
 
 @MainActor
-private struct GalaxySSIHealthOverviewRecordView: View {
+struct GalaxySSIHealthOverviewRecordView: View {
   @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   let records: GalaxySSIHealthRecords
