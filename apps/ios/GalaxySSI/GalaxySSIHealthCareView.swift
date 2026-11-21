@@ -487,6 +487,8 @@ struct GalaxySSIHealthCareDetail: View {
       Text(t("clarification.collection.fasting", "Fasting")).tag(Optional(Collection.fasting))
       Text(GalaxySSIHealthReportQuickImport.text("non_fasting", "Not fasting", language)).tag(Optional(Collection.nonFasting))
       Text(t("clarification.collection.after_meal", "After a meal")).tag(Optional(Collection.afterMeal))
+      Text(GalaxySSIHealthReportBatch.conditionTitle("after_meal_1h", language: language)).tag(Optional(Collection.afterMeal1h))
+      Text(GalaxySSIHealthReportBatch.conditionTitle("after_meal_2h", language: language)).tag(Optional(Collection.afterMeal2h))
       Text(t("clarification.collection.resting", "Resting")).tag(Optional(Collection.resting))
       Text(t("clarification.collection.after_activity", "After activity")).tag(Optional(Collection.afterActivity))
     }

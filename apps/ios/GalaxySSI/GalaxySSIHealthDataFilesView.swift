@@ -256,7 +256,7 @@ struct GalaxySSIHealthDataFilesView<Metrics: View, Review: View>: View {
 
   @ViewBuilder private var destination: some View {
     switch route {
-    case .measurementsImport: GalaxySSIHealthImportView(store: store, records: records)
+    case .measurementsImport: GalaxySSIHealthImportView(store: store, records: records, initialAction: .files)
     case .originalsImport: GalaxySSIHealthOriginalsView(store: store, pickOnAppear: true)
     case .measurementsExport: GalaxySSIHealthMeasurementExportView(records: records)
     case .originalsExport: GalaxySSIHealthOriginalsView(store: store)

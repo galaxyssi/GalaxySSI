@@ -266,18 +266,20 @@ final class GalaxySSIHealthReportQuickImportTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: f.file), bytes)
   }
 
-  func testAutomaticMissingFastingIsNotInventedOrPrompted() throws {
+  func testAutomaticMissingFastingWaitsForOneLocalContextConfirmation() throws {
     let f = try Fixture()
     let outcome = try f.automatic(rows: [row()], fasting: "")
-    XCTAssertEqual(outcome.saved, 1); XCTAssertEqual(outcome.skipped, 0)
-    XCTAssertEqual(try f.records.load().current.first?.conditions, "")
+    XCTAssertEqual(outcome.saved, 0); XCTAssertEqual(outcome.skipped, 0)
+    XCTAssertEqual(outcome.pendingConfirmation, true)
+    XCTAssertTrue(try f.records.load().current.isEmpty)
     XCTAssertTrue(try f.records.load().reportReview?.isEmpty ?? true)
   }
 
-  func testAutomaticUndatedResultsAreSkippedWithoutDraftsAndRetainOriginal() throws {
+  func testAutomaticUndatedResultsWaitWithoutDraftsAndRetainOriginal() throws {
     let f = try Fixture(retain: false)
     let outcome = try f.automatic(rows: [row()], collected: "")
-    XCTAssertEqual(outcome.saved, 0); XCTAssertEqual(outcome.skipped, 1)
+    XCTAssertEqual(outcome.saved, 0); XCTAssertEqual(outcome.skipped, 0)
+    XCTAssertEqual(outcome.pendingConfirmation, true)
     XCTAssertEqual(outcome.pending, 0)
     XCTAssertTrue(try f.records.load().current.isEmpty)
     XCTAssertTrue(try f.records.load().reportReview?.isEmpty ?? true)
@@ -362,12 +364,13 @@ final class GalaxySSIHealthReportQuickImportTests: XCTestCase {
     XCTAssertEqual(try f.records.load().current.count, 1)
   }
 
-  func testLegacyRecognitionCanFinishLocallyWithoutSupplementOrResending() throws {
+  func testLegacyRecognitionWaitsForLocalContextWithoutResending() throws {
     let f = try Fixture()
     try f.recognize(rows: [row()], collected: "")
     let before = try f.job().reportVision
     let outcome = try f.records.finishAutomaticReport(job: f.id, originals: f.originals, now: f.now, active: { true })
-    XCTAssertEqual(outcome.skipped, 1); XCTAssertEqual(outcome.imageBytes, 0)
+    XCTAssertEqual(outcome.skipped, 0); XCTAssertEqual(outcome.imageBytes, 0)
+    XCTAssertEqual(outcome.pendingConfirmation, true)
     XCTAssertEqual(try f.job().reportVision, before)
     XCTAssertTrue(try f.records.load().reportReview?.isEmpty ?? true)
   }

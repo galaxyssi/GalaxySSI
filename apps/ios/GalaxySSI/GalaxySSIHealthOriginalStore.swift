@@ -140,7 +140,8 @@ struct GalaxySSIHealthOriginalStore {
     try store(readImport(url), name: url.lastPathComponent)
   }
 
-  func storeReportImage(_ data: Data, name: String, retainOriginal: Bool) throws -> GalaxySSIHealthRecognitionJobs.Job {
+  func storeReportImage(_ data: Data, name: String, retainOriginal: Bool, batchID: UUID? = nil,
+      modelFirst: Bool = false) throws -> GalaxySSIHealthRecognitionJobs.Job {
     guard try Self.format(of: data).0 == .image else { throw Failure.invalid }
     var chosen: GalaxySSIHealthRecognitionJobs.Job?
     try withRestoreLease { lease in
@@ -152,11 +153,13 @@ struct GalaxySSIHealthOriginalStore {
         archive.reviewOnlyReportOriginals = temporary
         var jobs = archive.recognitionJobs ?? []
         if let job = jobs.first(where: { $0.original == original && [.queued, .running, .interrupted].contains($0.phase) &&
-          $0.captureSource?.mode != .device && $0.reportVision == nil }) {
+          $0.captureSource?.mode != .device && $0.reportVision == nil && $0.reportBatchID == batchID &&
+          ($0.reportModelFirst == true) == modelFirst }) {
           chosen = job; return
         }
         guard jobs.count < GalaxySSIHealthRecognitionJobs.maximumJobs else { throw Failure.limit }
-        let job = GalaxySSIHealthRecognitionJobs.Job(original: original, addedAt: Date(), pageCount: 1)
+        var job = GalaxySSIHealthRecognitionJobs.Job(original: original, addedAt: Date(), pageCount: 1)
+        job.reportBatchID = batchID; job.reportModelFirst = modelFirst
         jobs.insert(job, at: 0); archive.recognitionJobs = jobs; chosen = job
       })
     }
@@ -164,6 +167,24 @@ struct GalaxySSIHealthOriginalStore {
     NotificationCenter.default.post(name: Self.indexChanged, object: owner)
     NotificationCenter.default.post(name: GalaxySSIHealthRecords.recordsChanged, object: owner)
     return chosen
+  }
+
+  func storeSelectedPDF(_ data: Data, name: String, retainOriginal: Bool) throws -> Original {
+    guard try Self.format(of: data).0 == .pdf else { throw Failure.invalid }
+    var selected: Original?
+    try withRestoreLease { lease in
+      try reconcileRestores(lease: lease)
+      try store(data, name: name, acquisition: .uploaded, lease: lease, reportUpdate: true, updateDraft: { archive, original in
+        selected = original
+        var temporary = archive.reviewOnlyReportOriginals ?? []
+        if retainOriginal { temporary.remove(original.id) }
+        else if archive.originalIndex?.originals[original.id] == nil { temporary.insert(original.id) }
+        archive.reviewOnlyReportOriginals = temporary
+      })
+    }
+    guard let selected else { throw Failure.invalid }
+    NotificationCenter.default.post(name: Self.indexChanged, object: owner)
+    return selected
   }
 
   func releaseCompletedQuickReportOriginals() {

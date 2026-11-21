@@ -22,6 +22,7 @@ enum GalaxySSIHealthCare {
     struct Answers: Codable, Equatable {
       enum Collection: String, Codable, Hashable, CaseIterable {
         case fasting, nonFasting = "non_fasting", afterMeal = "after_meal", resting, afterActivity = "after_activity"
+        case afterMeal1h = "after_meal_1h", afterMeal2h = "after_meal_2h"
       }
       enum Specimen: String, Codable, Hashable, CaseIterable {
         case labPlasma = "lab_plasma", homeCapillary = "home_capillary", interstitial
@@ -52,7 +53,7 @@ enum GalaxySSIHealthCare {
       var conflictsWithApplicable: Bool {
         adult == false || pregnant == true || diagnosedDiabetes == true ||
           specimen.map { $0 != .labPlasma } == true || fastingHours.map { $0 < 8 } == true ||
-          collection == .nonFasting || collection == .afterMeal
+          collection.map { GalaxySSIHealthReportBatch.nonFasting.contains($0.rawValue) } == true
       }
     }
     let record: Record
@@ -198,7 +199,7 @@ enum GalaxySSIHealthCare {
     }
     var guideline: String?
     if latest.metric == .glucose, let value,
-       !["after_meal", "non_fasting"].contains(latest.conditions) || context?.record == record,
+       !GalaxySSIHealthReportBatch.nonFasting.contains(latest.conditions) || context?.record == record,
        value >= (latest.unit == "mg/dL" ? Decimal(100) : Decimal(string: "5.6")!) {
       switch context?.record == record ? context?.applicability : nil {
       case .applicable: signals.append(.guidelineReview); guideline = "ADA 2026"

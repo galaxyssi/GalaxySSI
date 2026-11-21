@@ -13,6 +13,7 @@ enum GalaxySSIHealthReviewReminders {
     let mapping: GalaxySSIHealthTableImport.Mapping
     let worksheet: GalaxySSIHealthXLSX.Selection?
     let retainOriginal: Bool
+    var reportBatchID: UUID? = nil
   }
 
   enum Action: Codable, Equatable {

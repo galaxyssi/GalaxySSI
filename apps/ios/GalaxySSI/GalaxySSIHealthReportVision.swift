@@ -42,7 +42,7 @@ enum GalaxySSIHealthReportVision {
           validText(collected, limit: 80), case .bool(let partial)? = object["partial"] else { throw invalid }
     let fasting: String?
     if let value = object["fasting"] {
-      guard let text = value.strictStringValue, ["", "fasting", "non_fasting", "after_meal"].contains(text) else { throw invalid }
+      guard let text = value.strictStringValue, text.isEmpty || GalaxySSIHealthReportBatch.conditions.contains(text) else { throw invalid }
       fasting = text
     } else { fasting = nil }
     let rows = try raw.map { value -> Row in
