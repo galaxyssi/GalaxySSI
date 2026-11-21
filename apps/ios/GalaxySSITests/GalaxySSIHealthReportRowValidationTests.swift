@@ -203,6 +203,20 @@ final class GalaxySSIHealthReportRowValidationTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthOCRLabRow.parse("Urine albumin 40 g/L"))
   }
 
+  func testCommonChineseMCHLabelIsItsOwnMeasurementNeverHemoglobin() throws {
+    let label = "\u{5E73}\u{5747}\u{7EA2}\u{7EC6}\u{80DE}\u{8840}\u{7EA2}\u{86CB}\u{767D}\u{542B}\u{91CF}"
+    for text in ["Mean corpuscular hemoglobin 30 pg", label + " 30 pg", "MCH 30 pg"] {
+      let row = try XCTUnwrap(GalaxySSIHealthOCRLabRow.parse(text), text)
+      XCTAssertEqual(row.metric, .meanCorpuscularHemoglobin)
+      XCTAssertEqual(row.notation, "30"); XCTAssertEqual(row.unit, "pg")
+      XCTAssertNotEqual(row.metric, .hemoglobin)
+    }
+    XCTAssertTrue(GalaxySSIHealthMetric.meanCorpuscularHemoglobin.matches(label))
+    XCTAssertTrue(GalaxySSIHealthReportVisionProvider.instructions.contains(label))
+    XCTAssertEqual(GalaxySSIHealthOCRLabRow.parse("Hemoglobin A1c 5.6 %")?.metric, .hba1c)
+    XCTAssertEqual(GalaxySSIHealthOCRLabRow.parse("Hemoglobin 140 g/L")?.metric, .hemoglobin)
+  }
+
   private var row: AgentMcpJSONObject {
     ["metric": .string("glucose"), "values": .object(["value": .string("<3.0")]), "unit": .string("mmol/L"),
       "reference": .string("3.9-6.1"), "source": .string("GLU <3.0 mmol/L")]

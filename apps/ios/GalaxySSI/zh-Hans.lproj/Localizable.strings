@@ -7381,3 +7381,4 @@
 "galaxyssi.health.metric_alias.gammaGlutamylTransferase" = "谷氨酰转肽酶";
 "galaxyssi.health.metric_alias.urea" = "尿素";
 "galaxyssi.health.metric_alias.bloodUreaNitrogen" = "血尿素氮";
+"galaxyssi.health.metric_alias.meanCorpuscularHemoglobin" = "平均红细胞血红蛋白含量";
