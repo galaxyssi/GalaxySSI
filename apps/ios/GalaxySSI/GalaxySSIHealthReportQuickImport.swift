@@ -12,6 +12,9 @@ enum GalaxySSIHealthReportQuickImport {
     var pending = 0
     var partial = false
     var releaseOriginal = false
+    var skipped: Int? = nil
+    var imageBytes: Int? = nil
+    var recordIDs: [UUID]? = nil
   }
   struct Plan: Equatable, Identifiable {
     let job: GalaxySSIHealthRecognitionJobs.Job
@@ -24,7 +27,8 @@ enum GalaxySSIHealthReportQuickImport {
     var needsSupplement: Bool { needsDate || needsFasting }
   }
 
-  static func plan(job: GalaxySSIHealthRecognitionJobs.Job, archive: GalaxySSIHealthRecords.Archive, now: Date) throws -> Plan {
+  static func plan(job: GalaxySSIHealthRecognitionJobs.Job, archive: GalaxySSIHealthRecords.Archive, now: Date,
+      automatic: Bool = false) throws -> Plan {
     guard let result = job.reportVision, job.original.kind == .image, job.captureSource?.mode != .device,
           [.completed, .failed].contains(job.phase),
           let zone = job.reportVisionZone.flatMap(TimeZone.init(identifier:)) else { throw GalaxySSIHealthRecords.Failure.stale }
@@ -42,7 +46,7 @@ enum GalaxySSIHealthReportQuickImport {
       guard job.reportImportedSources?.contains(source.regionIdentity) != true,
             !archive.revisions.contains(where: { $0.reportSource == source }),
             archive.reportEvidence?.contains(where: { $0.source == source && live.contains($0.target.record) }) != true else { return nil }
-      if let edited = archive.reportReview?.first(where: { $0.source == source }) { return edited }
+      if !automatic, let edited = archive.reportReview?.first(where: { $0.source == source }) { return edited }
       let recordID = try MqttPeerChatProjection.stableID(["model-report-reading", job.id.uuidString, source.regionIdentity])
       let version = try MqttPeerChatProjection.stableID(["model-report-draft", job.id.uuidString, source.regionIdentity])
       guard let id = UUID(uuidString: recordID), let token = UUID(uuidString: version) else { throw GalaxySSIHealthRecords.Failure.invalid }
@@ -101,16 +105,54 @@ extension GalaxySSIHealthRecords {
 
   func saveQuickReport(_ expected: GalaxySSIHealthReportQuickImport.Plan, supplement: GalaxySSIHealthReportQuickImport.Supplement,
       originals: GalaxySSIHealthOriginalStore, now: Date = Date(), active: () -> Bool) throws -> GalaxySSIHealthReportQuickImport.Outcome {
+    var archive = try load()
+    return try applyQuickReport(expected, supplement: supplement, originals: originals, now: now,
+      automatic: false, imageBytes: 0, archive: &archive, active: active)
+  }
+
+  func commitAutomaticReportVision(_ result: GalaxySSIHealthReportVision.Result, job: GalaxySSIHealthRecognitionJobs.Job,
+      consent: GalaxySSIHealthReportVision.Consent, zone: String, imageBytes: Int,
+      originals: GalaxySSIHealthOriginalStore, now: Date = Date(), active: () -> Bool)
+      throws -> GalaxySSIHealthReportQuickImport.Outcome {
+    var archive = try load()
+    guard active(), !Task.isCancelled, try GalaxySSIHealthReportVision.Consent(archive) == consent,
+          (1...GalaxySSIHealthReportCodex.maximumImageBytes).contains(imageBytes),
+          TimeZone(identifier: zone) != nil, GalaxySSIHealthReportVision.eligible(job),
+          let index = archive.recognitionJobs?.firstIndex(where: { $0 == job }) else { throw Failure.stale }
+    _ = try GalaxySSIHealthReportVision.parse(String(decoding: JSONEncoder().encode(result), as: UTF8.self))
+    var completed = job
+    completed.reportVision = result; completed.reportVisionZone = zone; completed.version = UUID()
+    archive.recognitionJobs?[index] = completed
+    let plan = try GalaxySSIHealthReportQuickImport.plan(job: completed, archive: archive, now: now, automatic: true)
+    // Result, measurement revisions, evidence links and receipt share one encrypted archive replacement.
+    return try applyQuickReport(plan, supplement: .init(), originals: originals, now: now,
+      automatic: true, imageBytes: imageBytes, archive: &archive, active: active)
+  }
+
+  func finishAutomaticReport(job id: UUID, originals: GalaxySSIHealthOriginalStore, now: Date = Date(),
+      active: () -> Bool) throws -> GalaxySSIHealthReportQuickImport.Outcome {
+    var archive = try load()
+    _ = try GalaxySSIHealthReportVision.Consent(archive)
+    guard active(), !Task.isCancelled, let job = archive.recognitionJobs?.first(where: { $0.id == id }) else { throw Failure.stale }
+    if let outcome = job.reportImportOutcome, outcome.skipped != nil { return outcome }
+    let plan = try GalaxySSIHealthReportQuickImport.plan(job: job, archive: archive, now: now, automatic: true)
+    return try applyQuickReport(plan, supplement: .init(), originals: originals, now: now,
+      automatic: true, imageBytes: 0, archive: &archive, active: active)
+  }
+
+  private func applyQuickReport(_ expected: GalaxySSIHealthReportQuickImport.Plan,
+      supplement: GalaxySSIHealthReportQuickImport.Supplement, originals: GalaxySSIHealthOriginalStore, now: Date,
+      automatic: Bool, imageBytes: Int, archive: inout Archive, active: () -> Bool)
+      throws -> GalaxySSIHealthReportQuickImport.Outcome {
     typealias Quick = GalaxySSIHealthReportQuickImport
     guard active(), !Task.isCancelled, now.timeIntervalSince1970.isFinite, now.timeIntervalSince1970 > 0 else { throw Failure.stale }
     try quickReportSource(expected.job, originals: originals)
-    var archive = try load()
     guard let index = archive.recognitionJobs?.firstIndex(where: { $0 == expected.job }),
-          try Quick.plan(job: expected.job, archive: archive, now: now) == expected,
-          !expected.needsDate || supplement.measuredAt.map({ Quick.validSupplementDate($0, plan: expected, now: now) }) == true,
-          !expected.needsFasting || ["fasting", "non_fasting", "unspecified"].contains(supplement.fasting)
+          try Quick.plan(job: expected.job, archive: archive, now: now, automatic: automatic) == expected,
+          automatic || !expected.needsDate || supplement.measuredAt.map({ Quick.validSupplementDate($0, plan: expected, now: now) }) == true,
+          automatic || !expected.needsFasting || ["fasting", "non_fasting", "unspecified"].contains(supplement.fasting)
     else { throw Failure.stale }
-    if expected.items.isEmpty { return Quick.Outcome(partial: expected.job.reportVision?.partial == true) }
+    if !automatic && expected.items.isEmpty { return Quick.Outcome(partial: expected.job.reportVision?.partial == true) }
     var items = expected.items
     for i in items.indices {
       var reading = items[i].reading
@@ -118,8 +160,10 @@ extension GalaxySSIHealthRecords {
       if reading.metric == .glucose, ["", "unspecified"].contains(reading.conditions), !supplement.fasting.isEmpty {
         reading.conditions = supplement.fasting
       }
-      guard reading.measuredAt.timeIntervalSince1970 > 0, reading.measuredAt <= now,
-            reading.measuredAt.timeIntervalSince1970.isFinite else { throw Failure.invalid }
+      if !automatic {
+        guard reading.measuredAt.timeIntervalSince1970 > 0, reading.measuredAt <= now,
+              reading.measuredAt.timeIntervalSince1970.isFinite else { throw Failure.invalid }
+      }
       items[i] = .init(version: items[i].version, source: items[i].source, excerpt: items[i].excerpt, reading: reading, stagedAt: now)
     }
     let ambiguous = Set(Dictionary(grouping: items, by: { $0.reading.metric }).filter {
@@ -129,6 +173,7 @@ extension GalaxySSIHealthRecords {
     var evidence = archive.reportEvidence ?? []
     var imported = expected.job.reportImportedSources ?? []
     var outcome = Quick.Outcome(partial: expected.job.reportVision?.partial == true)
+    if automatic { outcome.skipped = 0; outcome.imageBytes = imageBytes; outcome.recordIDs = [] }
     for item in items {
       guard active(), !Task.isCancelled, item.source.recognition == .model, item.reading.revision == 0,
             item.reading.reportSource == item.source, !item.reading.deleted else { throw Failure.stale }
@@ -136,25 +181,33 @@ extension GalaxySSIHealthRecords {
       let duplicates = archive.current.filter { $0.measuredAt == reading.measuredAt &&
         Quick.conditionKey($0.conditions) == Quick.conditionKey(reading.conditions) && $0.sameMeasurement(as: reading) }
       pending.removeAll { $0.source == item.source }
-      if ambiguous.contains(reading.metric) || !reading.isValid || duplicates.count > 1 {
-        guard pending.count < 300 else { throw Failure.invalid }
-        pending.append(item); outcome.pending += 1
+      if ambiguous.contains(reading.metric) || !reading.isValid || duplicates.count > 1 ||
+          reading.measuredAt.timeIntervalSince1970 <= 0 || reading.measuredAt > now {
+        if automatic {
+          outcome.skipped = (outcome.skipped ?? 0) + 1
+          imported.insert(item.source.regionIdentity)
+        } else {
+          guard pending.count < 300 else { throw Failure.invalid }
+          pending.append(item); outcome.pending += 1
+        }
         continue
       }
       if let previous = duplicates.first {
         guard evidence.count < 5000 else { throw Failure.invalid }
         evidence.append(.init(target: .init(record: previous.id, revision: previous.revision), source: item.source, excerpt: item.excerpt))
         outcome.duplicates += 1
+        if automatic, outcome.recordIDs?.contains(previous.id) == false { outcome.recordIDs?.append(previous.id) }
       } else {
         guard !archive.revisions.contains(where: { $0.id == reading.id }) else { throw Failure.stale }
         reading.revision = 1
         archive.revisions.append(reading); outcome.saved += 1
+        if automatic { outcome.recordIDs?.append(reading.id) }
       }
       imported.insert(item.source.regionIdentity)
     }
     archive.reportEvidence = evidence
     archive.reportReview = pending
-    outcome.releaseOriginal = !expected.items.isEmpty && outcome.pending == 0 && !outcome.partial &&
+    outcome.releaseOriginal = !expected.items.isEmpty && outcome.pending == 0 && (outcome.skipped ?? 0) == 0 && !outcome.partial &&
       archive.reviewOnlyReportOriginals?.contains(expected.job.original.id) == true
     archive.recognitionJobs?[index].reportImportedSources = imported
     archive.recognitionJobs?[index].reportImportOutcome = outcome
@@ -171,6 +224,7 @@ extension GalaxySSIHealthRecords {
           let job = archive.recognitionJobs?[index] else { return false }
     if job.phase != .cancelled {
       guard job.reportVision?.partial == false,
+            (job.reportImportOutcome?.skipped ?? 0) == 0,
             try GalaxySSIHealthReportQuickImport.plan(job: job, archive: archive, now: Date()).items.isEmpty else { return false }
     }
     if job.reportImportOutcome?.releaseOriginal != true {

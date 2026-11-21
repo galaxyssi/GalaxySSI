@@ -252,6 +252,133 @@ final class GalaxySSIHealthReportQuickImportTests: XCTestCase {
   }
   private func stamp(_ value: String) throws -> Date { try XCTUnwrap(ISO8601DateFormatter().date(from: value)) }
 
+  func testAutomaticResultMeasurementsAndReceiptAreCommittedTogether() throws {
+    let f = try Fixture()
+    let outcome = try f.automatic(rows: [row(), row("weight", "70", "kg")])
+    let archive = try f.records.load()
+    XCTAssertEqual(outcome.saved, 2); XCTAssertEqual(outcome.skipped, 0); XCTAssertEqual(outcome.pending, 0)
+    XCTAssertEqual(outcome.imageBytes, 1_000)
+    XCTAssertEqual(Set(outcome.recordIDs ?? []), Set(archive.current.map(\.id)))
+    XCTAssertEqual(try f.job().reportImportOutcome, outcome)
+    XCTAssertEqual(try f.job().reportVision?.rows.count, 2)
+    let bytes = try Data(contentsOf: f.file)
+    XCTAssertEqual(try f.records.finishAutomaticReport(job: f.id, originals: f.originals, now: f.now, active: { true }), outcome)
+    XCTAssertEqual(try Data(contentsOf: f.file), bytes)
+  }
+
+  func testAutomaticMissingFastingIsNotInventedOrPrompted() throws {
+    let f = try Fixture()
+    let outcome = try f.automatic(rows: [row()], fasting: "")
+    XCTAssertEqual(outcome.saved, 1); XCTAssertEqual(outcome.skipped, 0)
+    XCTAssertEqual(try f.records.load().current.first?.conditions, "")
+    XCTAssertTrue(try f.records.load().reportReview?.isEmpty ?? true)
+  }
+
+  func testAutomaticUndatedResultsAreSkippedWithoutDraftsAndRetainOriginal() throws {
+    let f = try Fixture(retain: false)
+    let outcome = try f.automatic(rows: [row()], collected: "")
+    XCTAssertEqual(outcome.saved, 0); XCTAssertEqual(outcome.skipped, 1)
+    XCTAssertEqual(outcome.pending, 0)
+    XCTAssertTrue(try f.records.load().current.isEmpty)
+    XCTAssertTrue(try f.records.load().reportReview?.isEmpty ?? true)
+    f.originals.releaseCompletedQuickReportOriginals()
+    XCTAssertEqual(try f.originals.list().originals.count, 1)
+    XCTAssertFalse(try XCTUnwrap(f.job().reportImportOutcome).releaseOriginal)
+  }
+
+  func testAutomaticUnknownUnitsAndConflictingRowsAreSkippedNotManuallyStaged() throws {
+    let f = try Fixture(retain: false)
+    let outcome = try f.automatic(rows: [row("glucose", "5.7", ""), row("weight", "70", "kg"), row("weight", "72", "kg")])
+    XCTAssertEqual(outcome.skipped, 3); XCTAssertEqual(outcome.saved, 0)
+    XCTAssertTrue(try f.records.load().reportReview?.isEmpty ?? true)
+    f.originals.releaseCompletedQuickReportOriginals()
+    XCTAssertEqual(try f.originals.list().originals.count, 1)
+  }
+
+  func testAutomaticCancellationBetweenRowsDoesNotCommitModelResultOrReceipt() throws {
+    let f = try Fixture()
+    let job = try f.ready()
+    let before = try Data(contentsOf: f.file)
+    let result = try f.result(rows: [row(), row("weight", "70", "kg")])
+    var checks = 0
+    XCTAssertThrowsError(try f.records.commitAutomaticReportVision(result, job: job, consent: .init(f.records.load()),
+      zone: "UTC", imageBytes: 1_000, originals: f.originals, now: f.now, active: { checks += 1; return checks <= 3 }))
+    XCTAssertEqual(try Data(contentsOf: f.file), before)
+    XCTAssertNil(try f.job().reportVision)
+    XCTAssertNil(try f.job().reportImportOutcome)
+    XCTAssertTrue(try f.records.load().current.isEmpty)
+  }
+
+  func testAutomaticConsentRevocationInvalidatesResponseBeforeCommit() throws {
+    let f = try Fixture()
+    let job = try f.ready()
+    let consent = try GalaxySSIHealthReportVision.Consent(f.records.load())
+    try f.records.setHealthOnlinePermission(false)
+    let before = try Data(contentsOf: f.file)
+    XCTAssertThrowsError(try f.records.commitAutomaticReportVision(f.result(rows: [row()]), job: job, consent: consent,
+      zone: "UTC", imageBytes: 1_000, originals: f.originals, now: f.now, active: { true }))
+    XCTAssertEqual(try Data(contentsOf: f.file), before)
+    XCTAssertNil(try f.job().reportVision)
+  }
+
+  func testAutomaticPayloadOver100000BytesCannotCreateAnyRecords() throws {
+    let f = try Fixture()
+    let job = try f.ready()
+    let before = try Data(contentsOf: f.file)
+    XCTAssertEqual(GalaxySSIHealthReportCodex.maximumImageBytes, 100_000)
+    XCTAssertThrowsError(try f.records.commitAutomaticReportVision(f.result(rows: [row()]), job: job,
+      consent: .init(f.records.load()), zone: "UTC", imageBytes: 100_001, originals: f.originals, now: f.now, active: { true }))
+    XCTAssertEqual(try Data(contentsOf: f.file), before)
+  }
+
+  func testAutomaticDuplicateReceiptLinksExactExistingRecordWithoutOverwrite() throws {
+    let f = try Fixture()
+    try f.records.write(.init(metric: .glucose, measuredAt: stamp("2020-01-02T08:30:00Z"), value: Decimal(string: "5.7"),
+      conditions: "fasting", notes: "Retain note", unitOverride: "mmol/L"))
+    let existing = try XCTUnwrap(f.records.load().current.first)
+    let outcome = try f.automatic(rows: [row()])
+    XCTAssertEqual(outcome.saved, 0); XCTAssertEqual(outcome.duplicates, 1)
+    XCTAssertEqual(outcome.recordIDs, [existing.id])
+    XCTAssertEqual(try f.records.load().current, [existing])
+    XCTAssertEqual(try f.records.load().reportEvidence?.first?.target.record, existing.id)
+  }
+
+  func testAutomaticEmptyResultProducesDurableZeroImportOutcome() throws {
+    let f = try Fixture()
+    let outcome = try f.automatic(rows: [], partial: true)
+    XCTAssertEqual(outcome.saved, 0); XCTAssertEqual(outcome.skipped, 0)
+    XCTAssertEqual(outcome.recordIDs, [])
+    XCTAssertTrue(outcome.partial)
+    XCTAssertEqual(try f.job().reportImportOutcome, outcome)
+  }
+
+  func testAutomaticCompleteImportReleasesOnlyTemporaryOriginalAndKeepsReceipt() throws {
+    let f = try Fixture(retain: false)
+    let outcome = try f.automatic(rows: [row()])
+    XCTAssertTrue(outcome.releaseOriginal)
+    f.originals.releaseCompletedQuickReportOriginals()
+    XCTAssertTrue(try f.originals.list().originals.isEmpty)
+    XCTAssertEqual(try f.job().reportImportOutcome?.recordIDs, outcome.recordIDs)
+    XCTAssertEqual(try f.records.load().current.count, 1)
+  }
+
+  func testLegacyRecognitionCanFinishLocallyWithoutSupplementOrResending() throws {
+    let f = try Fixture()
+    try f.recognize(rows: [row()], collected: "")
+    let before = try f.job().reportVision
+    let outcome = try f.records.finishAutomaticReport(job: f.id, originals: f.originals, now: f.now, active: { true })
+    XCTAssertEqual(outcome.skipped, 1); XCTAssertEqual(outcome.imageBytes, 0)
+    XCTAssertEqual(try f.job().reportVision, before)
+    XCTAssertTrue(try f.records.load().reportReview?.isEmpty ?? true)
+  }
+
+  func testLegacyOutcomeDecodesWithoutAutomaticReceiptFields() throws {
+    let data = Data(#"{"saved":1,"duplicates":0,"pending":2,"partial":true,"releaseOriginal":false}"#.utf8)
+    let outcome = try JSONDecoder().decode(Quick.Outcome.self, from: data)
+    XCTAssertEqual(outcome.pending, 2)
+    XCTAssertNil(outcome.skipped); XCTAssertNil(outcome.imageBytes); XCTAssertNil(outcome.recordIDs)
+  }
+
   @MainActor private final class Fixture {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let file: URL
@@ -278,12 +405,26 @@ final class GalaxySSIHealthReportQuickImportTests: XCTestCase {
     func job() throws -> GalaxySSIHealthRecognitionJobs.Job { try XCTUnwrap(records.load().recognitionJobs?.first { $0.id == id }) }
     func recognize(rows: [[String: Any]], collected: String = "2020-01-02 08:30:00Z", fasting: String = "fasting",
                    partial: Bool = false, zone: String = "UTC") throws {
+      _ = try ready()
+      try records.commitReportVision(result(rows: rows, collected: collected, fasting: fasting, partial: partial),
+        job: job(), consent: .init(records.load()), zone: zone)
+    }
+    func ready() throws -> GalaxySSIHealthRecognitionJobs.Job {
       let original = try job()
       let run = try records.beginRecognitionJob(id: id, expected: original.version)
       try records.commitRecognitionPage(id: id, run: run, page: .init(index: 0, fromOCR: true, lines: []))
+      return try job()
+    }
+    func result(rows: [[String: Any]], collected: String = "2020-01-02 08:30:00Z", fasting: String = "fasting",
+        partial: Bool = false) throws -> GalaxySSIHealthReportVision.Result {
       let object: [String: Any] = ["rows": rows, "collected": collected, "fasting": fasting, "partial": partial]
-      let result = try GalaxySSIHealthReportVision.parse(String(decoding: JSONSerialization.data(withJSONObject: object), as: UTF8.self))
-      try records.commitReportVision(result, job: job(), consent: .init(records.load()), zone: zone)
+      return try GalaxySSIHealthReportVision.parse(String(decoding: JSONSerialization.data(withJSONObject: object), as: UTF8.self))
+    }
+    func automatic(rows: [[String: Any]], collected: String = "2020-01-02 08:30:00Z", fasting: String = "fasting",
+        partial: Bool = false) throws -> Quick.Outcome {
+      let original = try ready()
+      return try records.commitAutomaticReportVision(result(rows: rows, collected: collected, fasting: fasting, partial: partial),
+        job: original, consent: .init(records.load()), zone: "UTC", imageBytes: 1_000, originals: originals, now: now, active: { true })
     }
     func plan() throws -> Quick.Plan { try records.quickReportPlan(job: id, originals: originals, now: now) }
     func save(_ plan: Quick.Plan, supplement: Quick.Supplement = .init()) throws -> Quick.Outcome {
