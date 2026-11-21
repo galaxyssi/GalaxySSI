@@ -2139,6 +2139,23 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
+  func disconnectDesktopKeepingHistory(desktopId: String, fingerprint: String) -> Bool {
+    let id = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let link = GalaxySSIPairingLifecycle.disconnectTarget(desktopId: id, fingerprint: fingerprint,
+      links: store.serverLinks) else { return false }
+    // Never send client_revoked: Desktop interprets that packet as a history deletion.
+    let removed = removeDesktopPairingState(desktopId: id, deleteMessages: false, preserveHistory: true)
+    blobRelayConfigurationStore.remove(desktopId: id)
+    remoteWhisperNodeRegistry.remove(desktopID: id)
+    recordPairingRevocation(contactIds: removed)
+    if !usesLegacyMqtt {
+      do { try journalMqttRuntime?.finishDesktopRevocation(link) }
+      catch { lastError = GalaxySSIError.transportUnavailable.localizedDescription }
+    }
+    return true
+  }
+
+  @discardableResult
   func revokeDesktopPairing(desktopId: String, deleteMessages: Bool = true) async -> Bool {
     let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanDesktopId.isEmpty else { return false }
@@ -2203,13 +2220,15 @@ final class MessageCoordinator: ObservableObject {
   @discardableResult
   private func removeDesktopPairingState(
     desktopId: String,
-    deleteMessages: Bool = true
+    deleteMessages: Bool = true,
+    preserveHistory: Bool = false
   ) -> Set<String> {
     desktopControlLiveFrames.removeValue(forKey: desktopId)
     desktopControlFrameUpdates.send(desktopId)
     return GalaxySSIPairingLifecycle.remove(
       desktopId: desktopId,
       deleteMessages: deleteMessages,
+      preserveHistory: preserveHistory,
       store: store,
       mqttClient: mqttClient,
       deliveryStore: deliveryStore,

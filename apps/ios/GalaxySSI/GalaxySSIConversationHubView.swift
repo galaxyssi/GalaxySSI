@@ -869,7 +869,7 @@ struct GalaxySSIConversationHubView: View {
     )
     var sourceConversations = page.items
     let sourceContacts = store.contactList(matching: "")
-    let sourceChatContacts = store.chatContacts(matching: "")
+    let sourceChatContacts = store.conversationHistoryContacts
     let query = searchText
     let archived = showingArchived
     if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -896,12 +896,12 @@ struct GalaxySSIConversationHubView: View {
       }
     }
     let agentItems = sourceConversations.map { agentHubItem($0) }
-    let archivedCount = store.agentSessionCount(status: .archived)
     let contactSummaries = GalaxySSIConversationHubModels.contactSummaries(
       contacts: sourceChatContacts,
       summary: store.conversationSummary(for:),
       isPinned: store.isContactPinned
     )
+    let archivedCount = store.agentSessionCount(status: .archived) + contactSummaries.filter(\.archived).count
     let prepared = await Task.detached(priority: .userInitiated) {
       GalaxySSIConversationHubPreparedContent(
         conversations: GalaxySSIConversationHubModels.unifiedConversations(
@@ -946,7 +946,7 @@ struct GalaxySSIConversationHubView: View {
     conversationPageCursor = page.nextCursor
     conversationPageHasMore = page.hasMore
     let contactSummaries = GalaxySSIConversationHubModels.contactSummaries(
-      contacts: store.chatContacts(matching: ""),
+      contacts: store.conversationHistoryContacts,
       summary: store.conversationSummary(for:),
       isPinned: store.isContactPinned
     )

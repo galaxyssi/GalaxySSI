@@ -7,6 +7,8 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    C43060000000000000000011 /* GalaxySSIDesktopDisconnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43060000000000000000012 /* GalaxySSIDesktopDisconnectView.swift */; };
+    C43060000000000000000021 /* GalaxySSIDesktopDisconnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43060000000000000000022 /* GalaxySSIDesktopDisconnectTests.swift */; };
     C43030000000000000000031 /* GalaxySSIHealthOverviewRangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43030000000000000000032 /* GalaxySSIHealthOverviewRangeTests.swift */; };
     C43030000000000000000011 /* GalaxySSIHealthOverviewRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43030000000000000000012 /* GalaxySSIHealthOverviewRange.swift */; };
     C43030000000000000000021 /* GalaxySSIHealthOverviewMetricRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43030000000000000000022 /* GalaxySSIHealthOverviewMetricRow.swift */; };
@@ -1387,6 +1389,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    C43060000000000000000012 /* GalaxySSIDesktopDisconnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDesktopDisconnectView.swift; sourceTree = "<group>"; };
+    C43060000000000000000022 /* GalaxySSIDesktopDisconnectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDesktopDisconnectTests.swift; sourceTree = "<group>"; };
     C43030000000000000000032 /* GalaxySSIHealthOverviewRangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOverviewRangeTests.swift; sourceTree = "<group>"; };
     C43030000000000000000012 /* GalaxySSIHealthOverviewRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOverviewRange.swift; sourceTree = "<group>"; };
     C43030000000000000000022 /* GalaxySSIHealthOverviewMetricRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOverviewMetricRow.swift; sourceTree = "<group>"; };
@@ -3619,6 +3623,7 @@
         C43020000000000000000012 /* GalaxySSIHealthOverviewAttention.swift */,
         C43030000000000000000012 /* GalaxySSIHealthOverviewRange.swift */,
         C43030000000000000000022 /* GalaxySSIHealthOverviewMetricRow.swift */,
+        C43060000000000000000012 /* GalaxySSIDesktopDisconnectView.swift */,
         C42990000000000000000012 /* GalaxySSIHealthReportDelivery.swift */,
         C42990000000000000000022 /* GalaxySSIHealthReportFailure.swift */,
         C42950000000000000000012 /* GalaxySSIHealthReportQuickImport.swift */,
@@ -4104,6 +4109,7 @@
         C42980000000000000000052 /* GalaxySSIHealthReportBatchTests.swift */,
         C42990000000000000000032 /* GalaxySSIHealthReportRowValidationTests.swift */,
         C43030000000000000000032 /* GalaxySSIHealthOverviewRangeTests.swift */,
+        C43060000000000000000022 /* GalaxySSIDesktopDisconnectTests.swift */,
         C42990000000000000000042 /* GalaxySSIHealthReportDeliveryTests.swift */,
         D24251000000000000000005 /* GalaxySSIHealthVisitJournalDiscussionTests.swift */,
         B42840000000000000000014 /* GalaxySSIHealthCareModelAttentionTests.swift */,
@@ -5133,6 +5139,7 @@
         C43020000000000000000011 /* GalaxySSIHealthOverviewAttention.swift in Sources */,
         C43030000000000000000011 /* GalaxySSIHealthOverviewRange.swift in Sources */,
         C43030000000000000000021 /* GalaxySSIHealthOverviewMetricRow.swift in Sources */,
+        C43060000000000000000011 /* GalaxySSIDesktopDisconnectView.swift in Sources */,
         C42990000000000000000021 /* GalaxySSIHealthReportFailure.swift in Sources */,
         C42950000000000000000011 /* GalaxySSIHealthReportQuickImport.swift in Sources */,
         C42980000000000000000011 /* GalaxySSIHealthReportBatch.swift in Sources */,
@@ -5617,6 +5624,7 @@
         C42980000000000000000051 /* GalaxySSIHealthReportBatchTests.swift in Sources */,
         C42990000000000000000031 /* GalaxySSIHealthReportRowValidationTests.swift in Sources */,
         C43030000000000000000031 /* GalaxySSIHealthOverviewRangeTests.swift in Sources */,
+        C43060000000000000000021 /* GalaxySSIDesktopDisconnectTests.swift in Sources */,
         C42990000000000000000041 /* GalaxySSIHealthReportDeliveryTests.swift in Sources */,
         D14251000000000000000005 /* GalaxySSIHealthVisitJournalDiscussionTests.swift in Sources */,
         B42840000000000000000013 /* GalaxySSIHealthCareModelAttentionTests.swift in Sources */,

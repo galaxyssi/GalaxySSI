@@ -580,6 +580,10 @@ final class GalaxySSIStore: ObservableObject {
     chatContacts.filter { contactMatchesSearch($0, query: query) }
   }
 
+  var conversationHistoryContacts: [GalaxySSIContact] {
+    chatContacts.filter { !$0.isDesktopHistoryOnly } + contacts.filter(\.isDesktopHistoryOnly)
+  }
+
   func contactList(matching query: String) -> [GalaxySSIContact] {
     contacts
       .filter { !$0.deleted && $0.id != "system" }
@@ -2395,6 +2399,11 @@ final class GalaxySSIStore: ObservableObject {
       contacts[contactIndex].trustState = .verified
       contacts[contactIndex].setupStatus = "ready"
       contacts[contactIndex].setupDetail = "GalaxySSI Link is paired"
+      if contacts[contactIndex].isDesktopHistoryOnly {
+        contacts[contactIndex].desktop_disconnected = nil
+        contacts[contactIndex].deleted = false
+        contacts[contactIndex].deletedAt = nil
+      }
       contacts[contactIndex].updatedAt = Date()
     }
     save()
@@ -2437,6 +2446,9 @@ final class GalaxySSIStore: ObservableObject {
       .ifBlank(link?.desktopFingerprint ?? "")
     let now = Date()
     let existingContact = contact(id: desktopId)
+    if existingContact?.isDesktopHistoryOnly == true &&
+        !serverLinks.contains(where: { $0.desktopId == desktopId && $0.paired &&
+          $0.desktopFingerprint.caseInsensitiveCompare(fingerprint) == .orderedSame }) { return false }
     let storedDefaultName = deviceDefaultDisplayName(for: desktopId)
     let previousDefaultName = storedDefaultName
       .ifBlank(existingContact?.desktopName ?? "")
@@ -2473,6 +2485,7 @@ final class GalaxySSIStore: ObservableObject {
       contact.displayName = defaultName
     }
     contact.galaxySSIId = desktopId
+    contact.desktop_disconnected = nil
     contact.type = "device"
     contact.agentKind = "device"
     contact.agentId = "desktop"
@@ -2595,6 +2608,7 @@ final class GalaxySSIStore: ObservableObject {
   func removeDesktopPairing(
     desktopId: String,
     deleteMessages: Bool = true,
+    preserveHistory: Bool = false,
     now: Date = Date()
   ) -> Set<String> {
     let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2602,7 +2616,7 @@ final class GalaxySSIStore: ObservableObject {
     AgentInvocationProfile.clearMetadataCache()
     let prefix = "\(cleanDesktopId):"
     let matchingContacts = contacts.filter { contact in
-      contact.id != "system" && contact.id != "hermes" && (
+      contact.id != "system" && contact.id != "hermes" && (!contact.isDesktopHistoryOnly || preserveHistory) && (
         contact.desktopId == cleanDesktopId ||
         contact.id == cleanDesktopId ||
         contact.id.hasPrefix(prefix) ||
@@ -2619,17 +2633,26 @@ final class GalaxySSIStore: ObservableObject {
       .filter { $0 == cleanDesktopId || $0.hasPrefix(prefix) }
       .forEach { removedIds.insert($0) }
 
-    matchingContacts.flatMap(\.cloudModels).forEach { secrets.delete(account: $0.keychainAccount) }
+    if !preserveHistory { matchingContacts.flatMap(\.cloudModels).forEach { secrets.delete(account: $0.keychainAccount) } }
     let matchingContactIds = Set(matchingContacts.map(\.id))
-    contacts.removeAll { matchingContactIds.contains($0.id) }
+    if preserveHistory {
+      for index in contacts.indices where matchingContactIds.contains(contacts[index].id) {
+        contacts[index].desktop_disconnected = true
+        contacts[index].deleted = true; contacts[index].deletedAt = now
+        contacts[index].trustState = .unverified
+        contacts[index].setupStatus = "disconnected"; contacts[index].setupDetail = ""
+        contacts[index].updatedAt = now
+      }
+    } else { contacts.removeAll { matchingContactIds.contains($0.id) } }
     for index in friendRequests.indices where removedIds.contains(friendRequests[index].id) ||
       removedIds.contains(friendRequests[index].galaxySSIId) {
       friendRequests[index].status = .deleted
       friendRequests[index].deletedAt = now
       friendRequests[index].readdRequired = true
     }
-    if deleteMessages {
-      removedIds.forEach {
+    if deleteMessages && !preserveHistory {
+      let retainedIds = Set(contacts.filter(\.isDesktopHistoryOnly).flatMap { [$0.id, $0.galaxySSIId] })
+      removedIds.subtracting(retainedIds).forEach {
         deletePrivateAttachmentCopies(in: chatHistoryDatabase.messages(contactId: $0))
         chatHistoryDatabase.deleteContact($0)
         messagesByContact.removeValue(forKey: $0)
@@ -2781,6 +2804,11 @@ final class GalaxySSIStore: ObservableObject {
         createdAt: now,
         updatedAt: now
       )
+      if contact.isDesktopHistoryOnly && !(isPaired && serverLinks.contains(where: {
+        $0.desktopId == desktopId && $0.paired && $0.routes == link?.routes &&
+          $0.desktopFingerprint == link?.desktopFingerprint
+      })) { return }
+      contact.desktop_disconnected = nil
       contact.galaxySSIId = contactId
       contact.name = displayName
       contact.displayName = displayName
