@@ -503,6 +503,55 @@ class HealthAtlasFunctionStoryDeviceTest {
         } finally { clearHealthOverviewFixture(context, fixture) }
     }
 
+    @Test fun skinAndGameteLessonsKeepIndependentPlaybackAndGermlineCounts() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<EditText>("atlas-search").setText("skin")
+                    activity.find<View>("atlas-entry-skin").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-sweat-cooling-art")
+                    activity.find<View>("atlas-function-next").performClick()
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    activity.find<View>("atlas-function-epidermal-barrier-art")
+                    activity.find<View>("atlas-hotspot-epidermis")
+                    repeat(3) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_barrier_water_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-function-lesson-0").performClick()
+                    assertEquals(.2f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    assertEquals(.6f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.onBackPressed()
+
+                    openCell(activity, "cell-spermatocyte")
+                    activity.find<View>("atlas-function-sperm-transport-art")
+                    activity.find<View>("atlas-function-next").performClick()
+                    activity.find<View>("atlas-tab-3").performClick()
+                    val swimCounts = activity.find<HealthAtlasGermlineView>("atlas-germline").counts
+                    assertEquals(HealthAtlasGermline.counts("cell-spermatocyte", 0), swimCounts)
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.2f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.onBackPressed()
+
+                    openCell(activity, "cell-oocyte-or-ovum")
+                    activity.find<View>("atlas-function-ovum-transport-art")
+                    repeat(4) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_ovum_flow_ampulla_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    assertEquals(HealthAtlasGermline.counts("cell-oocyte-or-ovum", 0),
+                        activity.find<HealthAtlasGermlineView>("atlas-germline").counts)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
     @Test fun legacyPlayheadIsRestoredOnlyIntoTheDefaultLesson() {
         val old = android.os.Bundle().apply { putFloat("pancreas", .44f) }
         val first = HealthAtlasFunctionState().apply { restore(null, old) }
@@ -548,6 +597,15 @@ class HealthAtlasFunctionStoryDeviceTest {
             functionStory = HealthAtlasFunctionStory.THYROID_FEEDBACK)
         assertTrue(thyroid.contains(context.getString(R.string.health_atlas_signal_thyroid_feedback_caption)))
         assertFalse(thyroid.contains(context.getString(R.string.health_atlas_insulin_story_blood_caption)))
+        val skin = requireNotNull(atlas["skin"])
+        val barrier = HealthAtlasAgentContext.prompt(context, atlas, skin, functionPhase = .64f,
+            functionStory = HealthAtlasFunctionStory.EPIDERMAL_BARRIER)
+        assertTrue(barrier.contains(context.getString(R.string.health_atlas_barrier_water_caption)))
+        assertFalse(barrier.contains(context.getString(R.string.health_atlas_home_sweat_story_surface_caption)))
+        val ovum = HealthAtlasAgentContext.prompt(context, atlas, requireNotNull(atlas["uterine-tubes"]),
+            functionPhase = .46f)
+        assertTrue(ovum.contains(context.getString(R.string.health_atlas_ovum_flow_pickup_caption)))
+        assertFalse(ovum.contains(context.getString(R.string.health_atlas_sperm_flow_mature_caption)))
         assertFalse(HealthAtlasAgentContext.prompt(context, atlas, beta, functionPhase = .91f,
             functionStory = HealthAtlasFunctionStory.GLUCOSE).contains(glucoseSource))
         assertFalse(HealthAtlasAgentContext.prompt(context, atlas, adipocyte, topic = HealthAtlasResearchTopic.DRUGS,

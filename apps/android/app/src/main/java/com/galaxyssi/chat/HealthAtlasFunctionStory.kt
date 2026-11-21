@@ -308,6 +308,63 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    EPIDERMAL_BARRIER(
+        setOf("skin-organ", "epidermis", "tissue-epidermal", "cell-keratinocyte"),
+        R.string.health_atlas_barrier_title,
+        R.string.health_atlas_barrier_scope,
+        listOf(
+            R.string.health_atlas_barrier_birth to R.string.health_atlas_barrier_birth_caption,
+            R.string.health_atlas_barrier_flatten to R.string.health_atlas_barrier_flatten_caption,
+            R.string.health_atlas_barrier_lipids to R.string.health_atlas_barrier_lipids_caption,
+            R.string.health_atlas_barrier_water to R.string.health_atlas_barrier_water_caption,
+            R.string.health_atlas_barrier_shed to R.string.health_atlas_barrier_shed_caption,
+        ),
+        listOf(
+            R.string.health_atlas_barrier_source_lipids to "https://pubmed.ncbi.nlm.nih.gov/23345770/",
+            R.string.health_atlas_barrier_source_secretion to "https://doi.org/10.1002/ar.1091890404",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    SPERM_TRANSPORT(
+        setOf("male", "testes", "epididymis", "vas-deferens", "cell-spermatozoon",
+            "cell-sertoli-cell", "cell-spermatogonium", "cell-spermatocyte"),
+        R.string.health_atlas_sperm_flow_title,
+        R.string.health_atlas_sperm_flow_scope,
+        listOf(
+            R.string.health_atlas_sperm_flow_form to R.string.health_atlas_sperm_flow_form_caption,
+            R.string.health_atlas_sperm_flow_transfer to R.string.health_atlas_sperm_flow_transfer_caption,
+            R.string.health_atlas_sperm_flow_mature to R.string.health_atlas_sperm_flow_mature_caption,
+            R.string.health_atlas_sperm_flow_store to R.string.health_atlas_sperm_flow_store_caption,
+            R.string.health_atlas_sperm_flow_move to R.string.health_atlas_sperm_flow_move_caption,
+        ),
+        listOf(
+            R.string.health_atlas_sperm_flow_source_mature to "https://pubmed.ncbi.nlm.nih.gov/7431338/",
+            R.string.health_atlas_sperm_flow_source_storage to "https://pubmed.ncbi.nlm.nih.gov/9739420/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    OVUM_TRANSPORT(
+        setOf("female", "ovaries", "uterine-tubes", "cell-oocyte-or-ovum",
+            "cell-granulosa-cell", "cell-ciliated-oviduct-cell"),
+        R.string.health_atlas_ovum_flow_title,
+        R.string.health_atlas_ovum_flow_scope,
+        listOf(
+            R.string.health_atlas_ovum_flow_grow to R.string.health_atlas_ovum_flow_grow_caption,
+            R.string.health_atlas_ovum_flow_release to R.string.health_atlas_ovum_flow_release_caption,
+            R.string.health_atlas_ovum_flow_pickup to R.string.health_atlas_ovum_flow_pickup_caption,
+            R.string.health_atlas_ovum_flow_cilia to R.string.health_atlas_ovum_flow_cilia_caption,
+            R.string.health_atlas_ovum_flow_ampulla to R.string.health_atlas_ovum_flow_ampulla_caption,
+        ),
+        listOf(
+            R.string.health_atlas_ovum_flow_source_release to "https://pubmed.ncbi.nlm.nih.gov/7211967/",
+            R.string.health_atlas_ovum_flow_source_human_cilia to "https://pubmed.ncbi.nlm.nih.gov/11870107/",
+            R.string.health_atlas_ovum_flow_source_pickup to "https://pubmed.ncbi.nlm.nih.gov/34039711/",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -321,6 +378,8 @@ internal enum class HealthAtlasFunctionStory(
         SYNAPTIC_SIGNAL -> R.string.health_atlas_signal_lesson_neuro
         MYELIN_SIGNAL -> R.string.health_atlas_signal_lesson_myelin
         THYROID_FEEDBACK -> R.string.health_atlas_signal_lesson_thyroid
+        SWEAT_COOLING -> R.string.health_atlas_barrier_choice_sweat
+        EPIDERMAL_BARRIER -> R.string.health_atlas_barrier_choice
         else -> title
     }
 
@@ -330,6 +389,8 @@ internal enum class HealthAtlasFunctionStory(
         GLUCOSE -> listOf("cell-pancreatic-beta-cell" to INSULIN_SECRETION)
         SYNAPTIC_SIGNAL -> listOf("cell-oligodendrocyte" to MYELIN_SIGNAL)
         MYELIN_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
+        SWEAT_COOLING -> listOf("epidermis" to EPIDERMAL_BARRIER)
+        EPIDERMAL_BARRIER -> listOf("sweat-glands" to SWEAT_COOLING)
         else -> emptyList()
     }
 
@@ -349,6 +410,8 @@ internal enum class HealthAtlasFunctionStory(
         INSULIN_SECRETION -> HealthAtlasInsulinStoryView(context)
         GLUCAGON_RESPONSE, SWEAT_COOLING -> HealthAtlasHomeostasisStoryView(context, this)
         SYNAPTIC_SIGNAL, MYELIN_SIGNAL, THYROID_FEEDBACK -> HealthAtlasSignalStoryView(context, this)
+        EPIDERMAL_BARRIER -> HealthAtlasBarrierStoryView(context)
+        SPERM_TRANSPORT, OVUM_TRANSPORT -> HealthAtlasGameteStoryView(context, this)
     }
 
     companion object {
@@ -363,6 +426,7 @@ internal enum class HealthAtlasFunctionStory(
                 "nervous", "brain", "spinal-cord", "cell-neuron", "tissue-central-nervous" -> listOf(primary, MYELIN_SIGNAL)
                 "tissue-skeletal-muscle" -> listOf(primary, MUSCLE_MOTION)
                 "immune" -> listOf(primary, LYMPH_RETURN)
+                "skin" -> listOf(primary, EPIDERMAL_BARRIER)
                 else -> listOf(primary)
             }
         }

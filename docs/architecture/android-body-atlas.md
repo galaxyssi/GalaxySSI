@@ -1323,3 +1323,21 @@ negative feedback to two upstream sites. The lessons do not compute
 clinical hormone values or an absolute conduction speed. The original
 endocrine pathway, potassium model, structure plates, and personal
 measurement flow are unchanged.
+
+## Epidermal Barrier And Gamete Transit
+
+The surface-barrier lesson follows epidermal cells from the basal layer
+to flattened corneocytes. An inset shows lipids released into the gaps
+between cells. The water comparison holds the observation window fixed
+and illustrates a relative difference rather than a measured rate. Skin
+keeps sweat cooling as the other lesson; neither substitutes for a skin
+assessment.
+
+The male lesson separates formation in the seminiferous tubules, fluid
+transport into the epididymis, maturation, storage, and muscular
+propulsion through the vas deferens. The female lesson follows follicle
+development, rupture, pickup by the separate fimbrial opening, ciliary
+and muscular transport, and arrival at the ampulla. It does not equate
+ovulation with fertilization or implantation. The existing germline
+chromosome-count diagrams remain available independently of the
+animations; neither animation predicts fertility or timing for a person.

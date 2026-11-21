@@ -275,6 +275,41 @@ class HealthAtlasFunctionStoryTest {
         assertTrue(motion.synapticRelease(.61f, 0) > motion.synapticRelease(.61f, 3))
     }
 
+    @Test fun barrierAndGameteLessonsAreScopedAndHaveOrderedMotion() {
+        val barrier = HealthAtlasFunctionStory.EPIDERMAL_BARRIER
+        val sperm = HealthAtlasFunctionStory.SPERM_TRANSPORT
+        val ovum = HealthAtlasFunctionStory.OVUM_TRANSPORT
+        assertEquals(listOf(HealthAtlasFunctionStory.SWEAT_COOLING, barrier), HealthAtlasFunctionStory.choicesForId("skin"))
+        for (id in listOf("skin-organ", "epidermis", "tissue-epidermal", "cell-keratinocyte")) {
+            assertEquals(listOf(barrier), HealthAtlasFunctionStory.choicesForId(id))
+        }
+        for (id in listOf("male", "testes", "epididymis", "vas-deferens", "cell-spermatozoon",
+            "cell-sertoli-cell", "cell-spermatogonium", "cell-spermatocyte")) {
+            assertEquals(listOf(sperm), HealthAtlasFunctionStory.choicesForId(id))
+        }
+        for (id in listOf("female", "ovaries", "uterine-tubes", "cell-oocyte-or-ovum",
+            "cell-granulosa-cell", "cell-ciliated-oviduct-cell")) {
+            assertEquals(listOf(ovum), HealthAtlasFunctionStory.choicesForId(id))
+        }
+        for (id in listOf("dermis", "prostate", "uterus", "cell-trophoblast")) {
+            assertNull(HealthAtlasFunctionStory.forId(id))
+        }
+        val water = HealthAtlasBarrierMotion
+        val flow = HealthAtlasGameteMotion
+        assertTrue(water.ascent(1f) < water.ascent(0f))
+        assertEquals(0f, water.escape(0f, true, 0), 0f)
+        for (i in 0..5) {
+            assertTrue(water.escape(.65f, true, i) > water.escape(.65f, false, i))
+        }
+        assertEquals(0f, flow.release(flow.FOLLICLE_OPENS), 0f)
+        assertEquals(1f, flow.release(1f), .000001f)
+        assertEquals(0f, flow.pickup(Float.NaN), 0f)
+        assertEquals(1f, flow.pickup(1f), 0f)
+        assertTrue(flow.pickup(.65f) > flow.pickup(.35f))
+        assertTrue(flow.ductRadius(180f, .5f) < flow.ductRadius(65f, .5f))
+        assertTrue(flow.ductRadius(180f, .5f) < flow.ductRadius(180f, .1f))
+    }
+
     @Test fun allChaptersScrubToTheirOwnBoundariesAndRejectInvalidState() = HealthAtlasFunctionStory.entries.forEach { story ->
         assertEquals(5, story.chapters.size)
         assertEquals(5, story.chapters.map { it.second }.toSet().size)
