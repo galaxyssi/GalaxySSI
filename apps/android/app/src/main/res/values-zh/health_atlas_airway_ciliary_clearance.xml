@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_airway_ciliary_clearance_title">气道黏液纤毛清除</string>
+    <string name="health_atlas_airway_ciliary_clearance_cycles">模拟摆动周期数</string>
+    <string name="health_atlas_airway_ciliary_clearance_advance">标记物每周期前进距离</string>
+    <string name="health_atlas_airway_ciliary_clearance_scope">运动纤毛协调摆动，推动黏液沿有纤毛的呼吸道黏膜移动。在鼻腔内，纤毛将黏液推向咽部；在鼻旁窦内，纤毛将黏液推向通往鼻腔的自然开口。本示例仅涉及有纤毛的呼吸道黏膜，不涉及外鼻或鼻腔内其他类型的上皮。每个周期内，虚拟标记物都按选定的固定距离前进。示例数值不用于测量或预测实际的黏液输送。</string>
+    <string name="health_atlas_airway_ciliary_clearance_formula">标记物移动距离（u）= 摆动周期数 × 每周期前进距离（u/周期）。u 是虚构的距离单位，示意轨道全长为 60 u。</string>
+    <string name="health_atlas_airway_ciliary_clearance_progress">已走过的示意轨道比例：%1$s%%</string>
+</resources>
