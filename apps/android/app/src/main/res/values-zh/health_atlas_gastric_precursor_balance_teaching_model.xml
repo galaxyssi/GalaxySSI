@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gastric_precursor_balance_title">胃内前体平衡：已转化量</string>
+    <string name="health_atlas_gastric_precursor_balance_amount">前体初始量</string>
+    <string name="health_atlas_gastric_precursor_balance_converted_percent">假设转化百分比</string>
+    <string name="health_atlas_gastric_precursor_balance_companion">剩余前体：%1$s MU</string>
+    <string name="health_atlas_gastric_precursor_balance_formula">将所选百分数除以 100，得到转化比例。用初始量乘以转化比例，得到已转化量。用初始量减去已转化量，得到剩余前体量。</string>
+    <string name="health_atlas_gastric_precursor_balance_scope">胃腺主细胞分泌一种无活性的酶前体。壁细胞分泌胃酸，形成有助于前体转化为活性形式的环境。模型把假设的初始量分为已转化和未转化两部分，均以模型单位（MU）表示。所选百分比不代表酸度或酶活性。本模型仅供教学，不用于预测消化或胃排空。</string>
+</resources>
