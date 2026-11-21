@@ -1,10 +1,17 @@
 package com.galaxyssi.chat
 
-internal enum class HealthAtlasValve(val id: String, val x: Float, val y: Float, private val filling: Boolean) {
-    TRICUSPID("tricuspid-valve", 171f, 266f, true),
-    MITRAL("mitral-valve", 324f, 248f, true),
-    PULMONARY("pulmonary-valve", 228f, 222f, false),
-    AORTIC("aortic-valve", 275f, 215f, false);
+private const val HEART_SECTION_SIZE = 1254f
+
+private fun heartSectionMarker(id: String, x: Int, y: Int) =
+    HealthAtlasMarker(id, x / HEART_SECTION_SIZE, y / HEART_SECTION_SIZE)
+
+internal enum class HealthAtlasValve(val id: String, x: Int, y: Int, private val filling: Boolean) {
+    TRICUSPID("tricuspid-valve", 451, 707, true),
+    MITRAL("mitral-valve", 859, 659, true),
+    PULMONARY("pulmonary-valve", 599, 603, false),
+    AORTIC("aortic-valve", 708, 589, false);
+
+    val marker = heartSectionMarker(id, x, y)
 
     fun openAt(stage: Int): Boolean {
         require(stage in 0..3)
@@ -21,16 +28,15 @@ internal object HealthAtlasHeartSection {
     const val CYCLE_SOURCE = "https://openstax.org/books/anatomy-and-physiology-2e/pages/19-3-cardiac-cycle"
     const val EJECTION_SOURCE = "https://openstax.org/books/anatomy-and-physiology-2e/pages/19-4-cardiac-physiology"
 
-    private fun marker(id: String, x: Float, y: Float) = HealthAtlasMarker(id, x / 480f, y / 460f)
     val section = HealthAtlasPlate(R.drawable.health_atlas_heart_section, "heart",
         R.string.health_atlas_view_cardiac_section, listOf(
-            marker("aorta", 336f, 55f), marker("pulmonary-trunk", 237f, 153f),
-            marker("left-atrium", 336f, 193f), marker("right-atrium", 171f, 207f),
-            marker("right-ventricle", 198f, 303f), marker("left-ventricle", 321f, 298f),
+            heartSectionMarker("aorta", 885, 177), heartSectionMarker("pulmonary-trunk", 613, 459),
+            heartSectionMarker("left-atrium", 860, 531), heartSectionMarker("right-atrium", 423, 563),
+            heartSectionMarker("right-ventricle", 443, 838), heartSectionMarker("left-ventricle", 788, 885),
         ), ANATOMY_SOURCE, "heart-section", R.string.health_atlas_cardiac_section)
 
     val valves = section.copy(viewLabel = R.string.health_atlas_view_cardiac_valves,
-        markers = HealthAtlasValve.entries.map { marker(it.id, it.x, it.y) },
+        markers = HealthAtlasValve.entries.map(HealthAtlasValve::marker),
         viewKey = null, selectorLabel = null)
 
     fun forId(id: String): HealthAtlasPlate? = when {
