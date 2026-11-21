@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_oral_marker_dilution_title">口腔液体中的示踪物稀释</string>
+    <string name="health_atlas_oral_marker_dilution_marker_stream">含示踪物的液体体积</string>
+    <string name="health_atlas_oral_marker_dilution_added_water">加入的水量</string>
+    <string name="health_atlas_oral_marker_dilution_companion">混合后体积：%1$s VU</string>
+    <string name="health_atlas_oral_marker_dilution_formula">一股液体始终含有 8 TU 的溶解示踪物，另一股加入的水不含示踪物。混合后体积 = 含示踪物的液体体积 + 加入的水量。示踪物浓度 = 8 TU 除以混合后体积。</string>
+    <string name="health_atlas_oral_marker_dilution_scope">在口腔中，呈味物质溶于唾液，可经舌上味蕾的味孔接触味觉受体细胞。这些细胞受到刺激后，味觉神经将信号传至大脑。模型中，两股液体均匀混合，形成一个理想化的局部液体样本。TU 和 VU 分别是示踪物量和液体体积的虚构单位。图中只显示溶液浓度，不表示真实呈味物质的剂量、受体或神经反应，也不表示感知到的味觉强度。</string>
+</resources>
