@@ -36,6 +36,8 @@ class HealthAtlasHeartTest {
         assertEquals(model.kind, HealthAtlasPhysiologyKind.forItem("right-ventricle"))
         assertNull(HealthAtlasPhysiology.restore("right-ventricle", intArrayOf(90, 0)))
         for (id in listOf("left-atrium", "aorta", "mitral-valve", "heart-valves", "tissue-cardiac-muscle"))
-            assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(90, 60)))
+            assertNotEquals(id, model.kind, HealthAtlasPhysiology.restore(id, intArrayOf(90, 60))?.kind)
+        assertEquals(HealthAtlasPhysiologyKind.CARDIAC_PHASE_TIME,
+            HealthAtlasPhysiology.restore("left-atrium", intArrayOf(90, 60))?.kind)
     }
 }
