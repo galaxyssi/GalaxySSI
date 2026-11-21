@@ -36,6 +36,57 @@ final class GalaxySSIHealthThemeTests: XCTestCase {
     }
   }
 
+  func testSexEditorHasOnlyTwoChoicesWithoutConvertingLegacyValues() throws {
+    typealias Sex = GalaxySSIHealthProfile.ReferenceSex
+    XCTAssertEqual(Sex.editorChoices, [.male, .female])
+    XCTAssertEqual(Sex.male.editorSelection, .male)
+    XCTAssertEqual(Sex.female.editorSelection, .female)
+    XCTAssertNil(Sex.other.editorSelection)
+    XCTAssertNil(Sex.unspecified.editorSelection)
+    for legacy in [Sex.other, .unspecified] {
+      var profile = GalaxySSIHealthProfile()
+      profile.referenceSex = legacy; profile.context = "Retained legacy context"
+      profile.selectEditorSex(nil)
+      XCTAssertEqual(profile.referenceSex, legacy)
+      profile.selectEditorSex(.other)
+      XCTAssertEqual(profile.referenceSex, legacy)
+      let decoded = try JSONDecoder().decode(GalaxySSIHealthProfile.self, from: JSONEncoder().encode(profile))
+      XCTAssertEqual(decoded.referenceSex, legacy)
+      XCTAssertEqual(decoded.context, profile.context)
+    }
+  }
+
+  func testBothChoicesAndUnrelatedEditsPreserveEncryptedLegacyContext() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let records = GalaxySSIHealthRecords(owner: "profile-fixture", secrets: HealthThemeProfileSecrets(),
+      isolatedFile: root.appendingPathComponent("records"))
+    var profile = GalaxySSIHealthProfile()
+    profile.name = "Fixture"; profile.context = "Previously recorded context"; profile.referenceSex = .other
+    try records.writeProfile(profile)
+    profile = try records.loadProfile()
+    profile.name = "Updated fixture"; profile.selectEditorSex(nil)
+    try records.writeProfile(profile)
+    XCTAssertEqual(try records.loadProfile().referenceSex, .other)
+    for choice in GalaxySSIHealthProfile.ReferenceSex.editorChoices {
+      profile = try records.loadProfile()
+      profile.selectEditorSex(choice)
+      try records.writeProfile(profile)
+      let saved = try records.loadProfile()
+      XCTAssertEqual(saved.referenceSex.editorSelection, choice)
+      XCTAssertEqual(saved.context, "Previously recorded context")
+      XCTAssertEqual(saved.name, "Updated fixture")
+    }
+  }
+
+  func testHealthFeatureSymbolsAreDistinctAndAvailable() {
+    let icons = [GalaxySSIHealthFeature.care, .profile, .body].map { $0.label.icon }
+    XCTAssertEqual(icons, ["waveform.path.ecg", "person.text.rectangle", "figure.stand"])
+    XCTAssertEqual(Set(icons).count, 3)
+    for icon in icons { XCTAssertNotNil(UIImage(systemName: icon)) }
+  }
+
   private func components(_ color: UIColor) -> [Double] {
     var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
     XCTAssertTrue(color.getRed(&r, green: &g, blue: &b, alpha: &a))
@@ -49,4 +100,11 @@ final class GalaxySSIHealthThemeTests: XCTestCase {
     let x = luminance(a), y = luminance(b)
     return (max(x, y) + 0.05) / (min(x, y) + 0.05)
   }
+}
+
+private final class HealthThemeProfileSecrets: GalaxySSISecretStore {
+  private var values: [String: String] = [:]
+  func string(account: String) -> String? { values[account] }
+  func setString(_ value: String, account: String) throws { values[account] = value }
+  func delete(account: String) { values.removeValue(forKey: account) }
 }
