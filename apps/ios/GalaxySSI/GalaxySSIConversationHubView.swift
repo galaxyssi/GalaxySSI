@@ -1329,11 +1329,13 @@ struct GalaxySSIConversationHubView: View {
     // Published delivers the new array before store.contacts changes; use that array directly.
     let visible = preparedHubContent.cachedConversations.pinned + preparedHubContent.cachedConversations.recent
     let titles = Dictionary(visible.filter { $0.kind == .contact }.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+    var changed = false
     for contact in contacts where titles[contact.id] != nil && titles[contact.id] != contact.displayName {
       preparedHubContent.cachedConversations = GalaxySSIConversationHubModels.renamedRows(preparedHubContent.cachedConversations,
         kind: .contact, id: contact.id, title: contact.displayName, query: "")
+      changed = true
     }
-    preparedHubContent.conversations = GalaxySSIConversationHubModels.filteredRows(preparedHubContent.cachedConversations, query: searchText)
+    if changed { preparedHubContent.conversations = GalaxySSIConversationHubModels.filteredRows(preparedHubContent.cachedConversations, query: searchText) }
   }
 
   private func bulkDeleteToolbar(visible sessions: [AgentConversation]) -> some View {

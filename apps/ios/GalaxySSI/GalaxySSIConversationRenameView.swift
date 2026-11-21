@@ -23,7 +23,7 @@ struct GalaxySSIConversationRenameView: View {
   var body: some View {
     NavigationView {
       VStack(alignment: .leading, spacing: 12) {
-        Text(target.title).font(.subheadline).foregroundColor(.secondary).lineLimit(2)
+        Text(scene == .active ? target.title : "").font(.subheadline).foregroundColor(.secondary).lineLimit(2)
         TextField(target.kind == .contact ? t("contact_remark_name", "Remark name") : t("galaxyssi.conversation_actions.hint", "Conversation name"), text: $value)
           .textInputAutocapitalization(.sentences).disableAutocorrection(true).focused($focused)
           .submitLabel(.done).onSubmit(submit).padding(12).frame(minHeight: 48)
