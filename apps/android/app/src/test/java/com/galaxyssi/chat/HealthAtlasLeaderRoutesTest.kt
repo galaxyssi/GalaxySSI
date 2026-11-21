@@ -29,6 +29,17 @@ class HealthAtlasLeaderRoutesTest {
     @Test fun overlappingEndpointsDoNotDrawAnAmbiguousConnection() {
         assertTrue(HealthAtlasLeaderRoutes.route(p(0f, 0f), p(100f, 0f), listOf(p(0f, 1f)), 10f).isEmpty())
     }
+    @Test fun boundedLeadersDetourWithoutCrossingTheOtherHalf() {
+        val start = p(60f, 0f)
+        val end = p(110f, 0f)
+        val obstacle = p(80f, 0f)
+        val path = HealthAtlasLeaderRoutes.route(start, end, listOf(obstacle), 8f, minX = 55f, maxX = 120f)
+        assertEquals(start, path.first())
+        assertEquals(end, path.last())
+        assertTrue(path.size > 2 && path.all { it.x in 55f..120f })
+        assertTrue(path.zipWithNext().all { (a, b) -> HealthAtlasLeaderRoutes.segmentDistance(obstacle, a, b) >= 8f })
+        assertTrue(HealthAtlasLeaderRoutes.route(start, p(45f, 0f), emptyList(), 8f, minX = 55f).isEmpty())
+    }
     @Test fun degenerateSegmentsAndInvalidInputsAreHandled() {
         assertEquals(5f, HealthAtlasLeaderRoutes.segmentDistance(p(3f, 4f), p(0f, 0f), p(0f, 0f)), .001f)
         assertThrows(IllegalArgumentException::class.java) { HealthAtlasLeaderRoutes.route(p(0f, 0f), p(1f, 1f), emptyList(), 0f) }

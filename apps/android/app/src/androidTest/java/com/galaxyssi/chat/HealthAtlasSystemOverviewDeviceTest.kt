@@ -136,7 +136,8 @@ class HealthAtlasSystemOverviewDeviceTest {
             for (locale in listOf(java.util.Locale.ENGLISH, java.util.Locale.SIMPLIFIED_CHINESE)) {
                 val config = Configuration(activity.resources.configuration).apply { setLocale(locale) }
                 val atlas = HealthBodyAtlas.load(activity.createConfigurationContext(config))
-                for (plate in HealthAtlasSystemPlates.all) for (width in listOf(720, 1080, 1600)) {
+                val plates = HealthAtlasSystemPlates.all + listOf("ear", "eye").map { requireNotNull(HealthAtlasPlates.forId(it)) }
+                for (plate in plates) for (width in listOf(720, 1080, 1600)) {
                     var selected = ""
                     val view = HealthAtlasLabeledImage(activity, plate, plate.owner!!, atlas, plate.owner) { selected = it.id }
                     val labels = (0 until view.childCount).map { view.getChildAt(it) }.filterIsInstance<TextView>()
@@ -144,21 +145,35 @@ class HealthAtlasSystemOverviewDeviceTest {
                     view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                         View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
                     view.layout(0, 0, width, view.measuredHeight)
-                    var bottom = 0
-                    for (label in labels.sortedBy { it.top }) {
-                        assertTrue(label.top >= bottom && label.bottom <= view.height && label.right <= width)
-                        assertTrue(label.height >= label.layout.height + label.compoundPaddingTop + label.compoundPaddingBottom)
-                        bottom = label.bottom
-                        label.performClick(); assertEquals(label.tag.toString().removePrefix("atlas-hotspot-"), selected)
+                    val rails = labels.groupBy { it.left }
+                    if (plate.splitCallouts) {
+                        assertEquals(2, rails.size)
+                        assertTrue(view.image.width >= width / 2)
                     }
-                    if (plate.owner in listOf("skin", "immune")) {
+                    for (rail in rails.values) {
+                        var bottom = 0
+                        for (label in rail.sortedBy { it.top }) {
+                            assertTrue(label.top >= bottom && label.bottom <= view.height && label.right <= width)
+                            assertTrue(label.height >= label.layout.height + label.compoundPaddingTop + label.compoundPaddingBottom)
+                            bottom = label.bottom
+                            label.performClick(); assertEquals(label.tag.toString().removePrefix("atlas-hotspot-"), selected)
+                        }
+                    }
+                    if (plate.splitCallouts || plate.owner == "skin") {
                         val imageBounds = android.graphics.RectF(0f, 0f, view.image.drawable.intrinsicWidth.toFloat(),
                             view.image.drawable.intrinsicHeight.toFloat())
                         view.image.imageMatrix.mapRect(imageBounds)
+                        imageBounds.offset(view.image.left.toFloat(), 0f)
                         val points = plate.markers.associate { it.id to android.graphics.PointF(
                             imageBounds.left + imageBounds.width() * it.x, imageBounds.top + imageBounds.height() * it.y) }
                         for ((otherId, path) in view.leaderPaths) {
                             assertTrue("Missing leader: $otherId", path.size >= 2)
+                            if (plate.splitCallouts) {
+                                val left = plate.markers.single { it.id == otherId }.x < .5f
+                                val label = labels.single { it.tag == "atlas-hotspot-$otherId" }
+                                assertEquals((if (left) label.right else label.left).toFloat(), path.last().x, 0f)
+                                assertTrue(path.all { if (left) it.x <= imageBounds.centerX() else it.x >= imageBounds.centerX() })
+                            }
                             for ((id, point) in points.filterKeys { it != otherId }) for ((start, end) in path.zipWithNext()) {
                                 val dx = end.x - start.x; val dy = end.y - start.y
                                 val t = (((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)).coerceIn(0f, 1f)
@@ -166,6 +181,10 @@ class HealthAtlasSystemOverviewDeviceTest {
                                 assertTrue("$id obscured by $otherId at $width", distance > HealthCenterViews(activity).dp(5))
                             }
                         }
+                    }
+                    if (plate.splitCallouts) {
+                        assertSplitPlateRendersItsArtwork(view, "${plate.owner}/${locale.language}/$width")
+                        continue
                     }
                     for (background in listOf(Color.WHITE, Color.rgb(18, 20, 22))) {
                         val rendered = Bitmap.createBitmap(width, view.height, Bitmap.Config.ARGB_8888)
@@ -180,6 +199,26 @@ class HealthAtlasSystemOverviewDeviceTest {
                 }
             }
         }
+    }
+
+    private fun assertSplitPlateRendersItsArtwork(view: HealthAtlasLabeledImage, case: String) {
+        val art = view.image
+        val silhouette = Bitmap.createBitmap(art.width, art.height, Bitmap.Config.ARGB_8888)
+        val rendered = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        try {
+            art.draw(Canvas(silhouette))
+            val samples = buildList {
+                for (y in 0 until silhouette.height step 8) for (x in 0 until silhouette.width step 8)
+                    if (Color.alpha(silhouette.getPixel(x, y)) > 224) add(x to y)
+            }
+            assertTrue("$case needs a substantial visible illustration", samples.size >= 300)
+            for (background in listOf(Color.WHITE, Color.rgb(18, 20, 22))) {
+                rendered.eraseColor(background)
+                view.draw(Canvas(rendered))
+                val visible = samples.count { (x, y) -> rendered.getPixel(x + art.left, y + art.top) != background }
+                assertTrue("$case displayed only $visible of ${samples.size} artwork samples", visible >= samples.size * .95)
+            }
+        } finally { silhouette.recycle(); rendered.recycle() }
     }
 
     @Test fun everySystemCanOpenAChildAndRestoreTheCorrectPlate() = native { scenario ->

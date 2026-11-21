@@ -187,6 +187,14 @@ also use shaded plates for rods, cones, bipolar cells, AII amacrine cells,
 ganglion cells, and the pigment epithelium; their native geometry and
 semantic callouts are unchanged.
 
+The painted eye cross-section also retains a transparent 3:2 composition.
+The eye structure, fullscreen, and retinal location views share the plate;
+the cornea, lens, and retinal lining links are recalibrated to the artwork.
+The optical ray model remains separate. For this plate, the ear, and the
+multi-panel sensory, immune, and endocrine overviews, callouts use separately
+measured left and right rails. Leader detours stay in the half of the image
+that contains their target, and labels retain their native touch targets.
+
 ## Alimentary Canal Sections
 
 Fourteen digestive entries now have their own source-linked diagrams, from

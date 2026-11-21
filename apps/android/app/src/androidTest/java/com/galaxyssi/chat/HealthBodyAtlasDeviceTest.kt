@@ -91,12 +91,12 @@ class HealthBodyAtlasDeviceTest {
                 view.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(2400, View.MeasureSpec.AT_MOST))
                 view.layout(0, 0, view.measuredWidth, view.measuredHeight)
-                var bottom = 0
+                val bottoms = mutableMapOf<Int, Int>()
                 labels.sortedBy { it.top }.forEach { label ->
                     assertTrue("Clipped or overlapping label: ${label.text}, ${label.top}..${label.bottom} in ${view.height}",
-                        label.top >= bottom && label.bottom <= view.height)
+                        label.top >= (bottoms[label.left] ?: 0) && label.bottom <= view.height)
                     assertTrue(label.height >= label.layout.height + label.compoundPaddingTop + label.compoundPaddingBottom)
-                    bottom = label.bottom
+                    bottoms[label.left] = label.bottom
                     val key = label.tag.toString()
                     if (key.startsWith("atlas-feature-")) assertTrue(label.isClickable && label.isFocusable)
                     else if (label.isSelected) { assertFalse(label.performClick()); assertNull(tapped) }
@@ -107,7 +107,7 @@ class HealthBodyAtlasDeviceTest {
                         tapped = null
                     }
                 }
-                if (plate.owner == null) assertTrue(bottom <= view.height - HealthCenterViews(activity).dp(144))
+                if (plate.owner == null) assertTrue((bottoms.values.maxOrNull() ?: 0) <= view.height - HealthCenterViews(activity).dp(144))
             }
         }
     }

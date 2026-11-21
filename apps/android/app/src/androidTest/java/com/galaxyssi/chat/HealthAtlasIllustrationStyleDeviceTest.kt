@@ -86,12 +86,13 @@ class HealthAtlasIllustrationStyleDeviceTest {
             Triple("cell-erythrocyte", 1254, 1254), Triple("cell-neuron", 1024, 1536),
             Triple("skin", 1536, 1024), Triple("sensory", 1199, 1312),
             Triple("immune", 1312, 1199), Triple("respiratory", 1145, 1374),
-            Triple("digestive", 1246, 1263), Triple("endocrine", 1312, 1199), Triple("ear", 1536, 1024),
+            Triple("digestive", 1246, 1263), Triple("endocrine", 1312, 1199),
+            Triple("ear", 1536, 1024), Triple("eye", 1536, 1024),
         ).map { (id, width, height) -> requireNotNull(HealthAtlasPlates.forId(id)) to (width to height) } +
             HealthAtlasMusculoskeletalPlates.all.map { plate ->
                 plate to if (plate.viewKey == "skeletal-posterior") (887 to 1774) else (1024 to 1536)
             }
-        assertEquals(25, frames.map { it.first.drawable }.distinct().size)
+        assertEquals(26, frames.map { it.first.drawable }.distinct().size)
         var anchors = 0
         for ((plate, size) in frames) {
             val (width, height) = size
@@ -109,7 +110,7 @@ class HealthAtlasIllustrationStyleDeviceTest {
                 }
             } finally { art.recycle() }
         }
-        assertEquals(105, anchors)
+        assertEquals(108, anchors)
     }
 
     @Test fun muscleMarkersIdentifyThePaintedRegionsRatherThanTheMannequinSurface() {

@@ -9,8 +9,11 @@ internal data class HealthAtlasLeaderPoint(val x: Float, val y: Float) {
 /** Small visibility graph for label leaders. Recomputed on layout, never on animation frames. */
 internal object HealthAtlasLeaderRoutes {
     fun route(start: HealthAtlasLeaderPoint, end: HealthAtlasLeaderPoint,
-        obstacles: List<HealthAtlasLeaderPoint>, clearance: Float): List<HealthAtlasLeaderPoint> {
+        obstacles: List<HealthAtlasLeaderPoint>, clearance: Float,
+        minX: Float = Float.NEGATIVE_INFINITY, maxX: Float = Float.POSITIVE_INFINITY): List<HealthAtlasLeaderPoint> {
         require(clearance.isFinite() && clearance > 0f)
+        require(minX <= maxX)
+        if (start.x !in minX..maxX || end.x !in minX..maxX) return emptyList()
         fun distance(a: HealthAtlasLeaderPoint, b: HealthAtlasLeaderPoint) = hypot(a.x - b.x, a.y - b.y)
         fun visible(a: HealthAtlasLeaderPoint, b: HealthAtlasLeaderPoint) = obstacles.all {
             segmentDistance(it, a, b) >= clearance
@@ -22,7 +25,9 @@ internal object HealthAtlasLeaderRoutes {
         val candidates = obstacles.flatMap { p -> listOf(
             HealthAtlasLeaderPoint(p.x - offset, p.y - offset), HealthAtlasLeaderPoint(p.x + offset, p.y - offset),
             HealthAtlasLeaderPoint(p.x + offset, p.y + offset), HealthAtlasLeaderPoint(p.x - offset, p.y + offset)) }
-        val points = listOf(start, end) + candidates.distinct().filter { point -> obstacles.all { distance(point, it) >= clearance } }
+        val points = listOf(start, end) + candidates.distinct().filter { point ->
+            point.x in minX..maxX && obstacles.all { distance(point, it) >= clearance }
+        }
         val costs = Array(points.size) { FloatArray(points.size) { Float.POSITIVE_INFINITY } }
         for (i in points.indices) for (j in 0 until i) if (visible(points[i], points[j])) {
             val cost = distance(points[i], points[j]); costs[i][j] = cost; costs[j][i] = cost
