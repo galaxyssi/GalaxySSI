@@ -73,7 +73,9 @@
     F12666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */; };
     F12666000000000000000003 /* AgentInteractiveProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22666000000000000000003 /* AgentInteractiveProgressTests.swift */; };
     F12680000000000000000001 /* AgentDirectVisionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22680000000000000000001 /* AgentDirectVisionPolicy.swift */; };
+    C43130000000000000000011 /* AgentPeerAttachmentPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43130000000000000000012 /* AgentPeerAttachmentPreview.swift */; };
     F12680000000000000000002 /* AgentDirectVisionPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */; };
+    C43130000000000000000021 /* AgentPeerAttachmentPreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43130000000000000000022 /* AgentPeerAttachmentPreviewTests.swift */; };
     F12678000000000000000001 /* AgentReplySpeechController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000001 /* AgentReplySpeechController.swift */; };
     F13234000000000000000001 /* MqttRouteAdvertisement.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000001 /* MqttRouteAdvertisement.swift */; };
     F13234000000000000000002 /* MqttRouteState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000002 /* MqttRouteState.swift */; };
@@ -1456,7 +1458,9 @@
     F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentInteractiveProgressView.swift; sourceTree = "<group>"; };
     F22666000000000000000003 /* AgentInteractiveProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInteractiveProgressTests.swift; sourceTree = "<group>"; };
     F22680000000000000000001 /* AgentDirectVisionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectVisionPolicy.swift; sourceTree = "<group>"; };
+    C43130000000000000000012 /* AgentPeerAttachmentPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPeerAttachmentPreview.swift; sourceTree = "<group>"; };
     F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectVisionPolicyTests.swift; sourceTree = "<group>"; };
+    C43130000000000000000022 /* AgentPeerAttachmentPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPeerAttachmentPreviewTests.swift; sourceTree = "<group>"; };
     F22678000000000000000001 /* AgentReplySpeechController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplySpeechController.swift; sourceTree = "<group>"; };
     F23234000000000000000001 /* MqttRouteAdvertisement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttRouteAdvertisement.swift; sourceTree = "<group>"; };
     F23234000000000000000002 /* MqttRouteState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttRouteState.swift; sourceTree = "<group>"; };
@@ -2823,6 +2827,7 @@
         F22666000000000000000001 /* AgentInteractiveProgress.swift */,
         F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */,
         F22680000000000000000001 /* AgentDirectVisionPolicy.swift */,
+        C43130000000000000000012 /* AgentPeerAttachmentPreview.swift */,
         F22678000000000000000001 /* AgentReplySpeechController.swift */,
         F23234000000000000000001 /* MqttRouteAdvertisement.swift */,
         F23234000000000000000002 /* MqttRouteState.swift */,
@@ -3891,6 +3896,7 @@
         D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */,
         F22666000000000000000003 /* AgentInteractiveProgressTests.swift */,
         F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */,
+        C43130000000000000000022 /* AgentPeerAttachmentPreviewTests.swift */,
         F22678000000000000000004 /* AgentReplySpeechControllerTests.swift */,
         D36650000000000000000002 /* AgentReplySpeechFooterTests.swift */,
         F23234000000000000000004 /* MqttPeerRouteSessionTests.swift */,
@@ -4609,6 +4615,7 @@
         A100000000000000000009F0 /* VoiceReminderSnapshot.swift in Sources */,
         A10000000000000000000587 /* VoiceReplySpeechService.swift in Sources */,
         F12680000000000000000001 /* AgentDirectVisionPolicy.swift in Sources */,
+        C43130000000000000000011 /* AgentPeerAttachmentPreview.swift in Sources */,
         F12678000000000000000001 /* AgentReplySpeechController.swift in Sources */,
         F13234000000000000000001 /* MqttRouteAdvertisement.swift in Sources */,
         F13234000000000000000002 /* MqttRouteState.swift in Sources */,
@@ -5425,6 +5432,7 @@
         F12661000000000000000002 /* ScannedAgentConversationPolicyTests.swift in Sources */,
         F12662000000000000000003 /* AgentRichSelectableParagraphsTests.swift in Sources */,
         F12680000000000000000002 /* AgentDirectVisionPolicyTests.swift in Sources */,
+        C43130000000000000000021 /* AgentPeerAttachmentPreviewTests.swift in Sources */,
         F12678000000000000000004 /* AgentReplySpeechControllerTests.swift in Sources */,
         D36650000000000000000001 /* AgentReplySpeechFooterTests.swift in Sources */,
         F13234000000000000000004 /* MqttPeerRouteSessionTests.swift in Sources */,

@@ -5705,6 +5705,13 @@
 "rich_output_loading" = "正在加载预览";
 "rich_output_load_failed" = "无法显示预览";
 "rich_output_attachment_reference_unavailable" = "引用的附件不可用。";
+"galaxyssi.peer_attachment.title" = "附件";
+"galaxyssi.peer_attachment.opening" = "正在打开附件";
+"galaxyssi.peer_attachment.unreadable" = "无法读取附件，文件可能已不可用。";
+"galaxyssi.peer_attachment.failed" = "未能打开附件，请重试。";
+"galaxyssi.peer_attachment.save_failed" = "未能保存附件，原文件未改变。";
+"galaxyssi.peer_attachment.no_reader" = "此附件暂时无法预览，你可以手动将副本保存到文件。";
+"galaxyssi.peer_attachment.save" = "存储到文件";
 "rich_output_actions" = "操作";
 "rich_output_input_required" = "需要输入";
 "rich_output_submit" = "提交";
