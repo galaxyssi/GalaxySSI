@@ -61,7 +61,14 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     VILLUS_AREA(listOf(HealthAtlasInput("villus-density", 0..24, 12),
         HealthAtlasInput("villus-radius", 25..70, 45, 1000.0),
         HealthAtlasInput("villus-height", 20..120, 60, 100.0)), 0, "\u00d7", 1.0, 14.0,
-        "https://pubmed.ncbi.nlm.nih.gov/24694282/");
+        "https://pubmed.ncbi.nlm.nih.gov/24694282/"),
+    ALVEOLAR_DIFFUSION(listOf(HealthAtlasInput("diffusion-gradient", 0..200, 100, 100.0),
+        HealthAtlasInput("diffusion-area", 50..200, 100, 100.0),
+        HealthAtlasInput("diffusion-thickness", 50..200, 100, 100.0)), 0, "\u00d7", 0.0, 8.0,
+        "https://pubmed.ncbi.nlm.nih.gov/8210754/", "https://pmc.ncbi.nlm.nih.gov/articles/PMC2106384/"),
+    CARTILAGE_COMPRESSION(listOf(HealthAtlasInput("cartilage-stress", 0..64, 32),
+        HealthAtlasInput("cartilage-modulus", 80..240, 160, 100.0)), 0, "%", 0.0, 8.0,
+        "https://pubmed.ncbi.nlm.nih.gov/7054208/", "https://pubmed.ncbi.nlm.nih.gov/7382457/");
 
     val sources get() = listOfNotNull(source, extraSource) +
         if (this == VESSEL_FLOW) listOf(HealthAtlasVesselFlow.UNIT_SOURCE) else emptyList()
@@ -89,6 +96,9 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "sweat-glands" -> SWEAT_EVAPORATION
             "lymphatic-vessels" -> LYMPH_VALVE
             "small-intestine", "jejunum" -> VILLUS_AREA
+            "respiratory-membrane", "pulmonary-capillaries", "tissue-alveolar-epithelium",
+            "cell-type-i-pneumocyte" -> ALVEOLAR_DIFFUSION
+            "cartilage", "tissue-hyaline-cartilage", "cell-chondrocyte" -> CARTILAGE_COMPRESSION
             else -> null
         }
     }
@@ -122,6 +132,8 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> evaporatedMass(input(0), input(1))
         HealthAtlasPhysiologyKind.LYMPH_VALVE -> input(0) / input(1)
         HealthAtlasPhysiologyKind.VILLUS_AREA -> result - 1.0
+        HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> input(1) / input(2)
+        HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> 100.0 - result
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
@@ -174,6 +186,9 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> evaporatedMass(values[0], values[1]) * 2426.0 / 60.0
         HealthAtlasPhysiologyKind.LYMPH_VALVE -> maxOf(values[0], 0.0) / values[1]
         HealthAtlasPhysiologyKind.VILLUS_AREA -> 1.0 + values[0] * 2.0 * Math.PI * values[1] * values[2]
+        HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> values[0] * values[1] / values[2]
+        // Convert modulus from MPa to kPa and strain from a fraction to percent.
+        HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> values[0] / (10.0 * values[1])
     }
     companion object {
         private fun evaporatedMass(mass: Double, fractionPercent: Double) = mass * fractionPercent / 100.0

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_diffusion_title">相对氧转移速率</string>
+    <string name="health_atlas_diffusion_gradient">氧分压差</string>
+    <string name="health_atlas_diffusion_area">交换面积</string>
+    <string name="health_atlas_diffusion_thickness">气血屏障厚度</string>
+    <string name="health_atlas_diffusion_conductance">相对膜扩散能力：%1$s 倍</string>
+    <string name="health_atlas_diffusion_formula">相对转移速率 = 相对面积 × 相对分压差 ÷ 相对厚度。</string>
+    <string name="health_atlas_diffusion_scope">各输入均为示例基线的倍数。此平面薄层模型固定氧的扩散性质，不计算血流或血红蛋白结合，不能估算血氧或临床肺功能。</string>
+    <string name="health_atlas_diffusion_diagram">肺泡空气 → 气血屏障 → 毛细血管血液</string>
+    <string name="health_atlas_diffusion_air">肺泡空气</string>
+    <string name="health_atlas_diffusion_barrier">气血屏障</string>
+    <string name="health_atlas_diffusion_blood">毛细血管血液</string>
+    <string name="health_atlas_compression_title">关节软骨受压示例</string>
+    <string name="health_atlas_compression_stress">施加压应力</string>
+    <string name="health_atlas_compression_modulus">示例弹性模量</string>
+    <string name="health_atlas_compression_remaining">剩余厚度：%1$s%%</string>
+    <string name="health_atlas_compression_formula">压缩应变（百分比）= 100 × 压应力 ÷ 弹性模量，两者使用相同单位。</string>
+    <string name="health_atlas_compression_scope">该示例将关节软骨简化为均匀的小应变弹性材料，不考虑液体流动、时间效应或组织分层。它描述组织而不是单个软骨细胞，不能推断损伤或关节健康。</string>
+    <string name="health_atlas_compression_diagram">关节软骨受压前后的对照，图中放大了形变。</string>
+    <string name="health_atlas_compression_unloaded">未受压</string>
+    <string name="health_atlas_compression_loaded">受压后</string>
+</resources>

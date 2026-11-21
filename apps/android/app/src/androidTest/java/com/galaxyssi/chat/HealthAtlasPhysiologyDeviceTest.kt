@@ -132,7 +132,7 @@ class HealthAtlasPhysiologyDeviceTest {
     @Test fun everyQuantitativeMappingUsesAnExistingCanonicalEntry() {
         val atlas = HealthBodyAtlas.load(context)
         val mapped = atlas.items.mapNotNull { item -> HealthAtlasPhysiologyKind.forItem(item.id)?.let { item.id to it } }
-        assertEquals(52, mapped.size)
+        assertEquals(59, mapped.size)
         assertEquals(HealthAtlasPhysiologyKind.entries.toSet(), mapped.map { it.second }.toSet())
         assertEquals(setOf("ventricles", "left-ventricle", "right-ventricle"),
             mapped.filter { it.second == HealthAtlasPhysiologyKind.VENTRICULAR_EJECTION }.map { it.first }.toSet())
@@ -148,9 +148,49 @@ class HealthAtlasPhysiologyDeviceTest {
         assertEquals(listOf("lymphatic-vessels"), mapped.filter { it.second == HealthAtlasPhysiologyKind.LYMPH_VALVE }.map { it.first })
         assertEquals(setOf("small-intestine", "jejunum"),
             mapped.filter { it.second == HealthAtlasPhysiologyKind.VILLUS_AREA }.map { it.first }.toSet())
+        assertEquals(setOf("respiratory-membrane", "pulmonary-capillaries", "tissue-alveolar-epithelium", "cell-type-i-pneumocyte"),
+            mapped.filter { it.second == HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION }.map { it.first }.toSet())
+        assertEquals(setOf("cartilage", "tissue-hyaline-cartilage", "cell-chondrocyte"),
+            mapped.filter { it.second == HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION }.map { it.first }.toSet())
         mapped.forEach { (id, kind) ->
             val model = requireNotNull(HealthAtlasPhysiology.restore(id, kind.inputs.map { it.initial }.toIntArray()))
             assertTrue(HealthAtlasPhysiologyText.context(context, model).length < 3000)
+        }
+    }
+    @Test fun newMaterialDiagramsShowChangesAndRestoreSyntheticInputs() = native { scenario ->
+        val examples = listOf(
+            Triple("respiratory-membrane", "diffusion-layer", "diffusion-gradient"),
+            Triple("cartilage", "cartilage-compression", "cartilage-stress"),
+        )
+        for ((id, art, input) in examples) {
+            var initial = 0
+            scenario.onActivity { activity ->
+                activity.open(id)
+                val seek = activity.view("atlas-physiology-$input") as SeekBar
+                initial = seek.progress
+                val diagram = activity.view("atlas-$art")
+                diagram.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                diagram.layout(0, 0, diagram.measuredWidth, diagram.measuredHeight)
+                fun draw() = Bitmap.createBitmap(diagram.width, diagram.height, Bitmap.Config.ARGB_8888).also { diagram.draw(Canvas(it)) }
+                val before = draw()
+                seek.progress = 0
+                val after = draw()
+                try {
+                    assertFalse("$id illustration did not respond", before.sameAs(after))
+                    assertTrue(diagram.contentDescription.contains("0 "))
+                } finally { before.recycle(); after.recycle() }
+            }
+            scenario.recreate()
+            ready(scenario, "atlas-$art")
+            scenario.onActivity { activity ->
+                val seek = activity.view("atlas-physiology-$input") as SeekBar
+                assertEquals(id, 0, seek.progress)
+                activity.view("atlas-physiology-reset").performClick()
+                assertEquals(id, initial, seek.progress)
+            }
+            capture(id)
+            scenario.onActivity { it.onBackPressed() }
         }
     }
     @Test fun threePhysiologyScreensShowIndependentModels() = native { scenario ->

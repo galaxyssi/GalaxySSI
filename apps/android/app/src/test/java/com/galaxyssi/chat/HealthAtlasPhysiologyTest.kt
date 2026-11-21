@@ -4,6 +4,35 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HealthAtlasPhysiologyTest {
+    @Test fun simplifiedOxygenTransferSeparatesGeometryAndPressureDifference() {
+        val model = requireNotNull(HealthAtlasPhysiology.restore("respiratory-membrane", intArrayOf(100, 100, 100)))
+        assertEquals(HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION, model.kind)
+        assertEquals(1.0, model.result, 0.0)
+        assertEquals(0.0, model.withInput(0, 0).result, 0.0)
+        assertEquals(2.0, model.withInput(0, 200).result, 0.0)
+        assertEquals(2.0, model.withInput(1, 200).result, 0.0)
+        assertEquals(.5, model.withInput(2, 200).result, 0.0)
+        val thicker = model.withInput(1, 200).withInput(2, 200)
+        assertEquals(model.result, thicker.result, 0.0)
+        assertEquals(1.0, thicker.companionValue, 0.0)
+        assertNull(HealthAtlasPhysiology.restore("respiratory-membrane", intArrayOf(100, 100, 0)))
+        assertEquals(HealthAtlasPhysiologyKind.VENTILATION, HealthAtlasPhysiologyKind.forItem("alveoli"))
+        assertEquals(HealthAtlasPhysiologyKind.ALVEOLAR_SURFACE, HealthAtlasPhysiologyKind.forItem("cell-type-ii-pneumocyte"))
+    }
+
+    @Test fun cartilageCompressionUsesConsistentStressUnitsAndKeepsTheBaseline() {
+        val model = requireNotNull(HealthAtlasPhysiology.restore("cartilage", intArrayOf(32, 160)))
+        assertEquals(HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION, model.kind)
+        assertEquals(2.0, model.result, 0.0)
+        assertEquals(98.0, model.companionValue, 0.0)
+        assertEquals(0.0, model.withInput(0, 0).result, 0.0)
+        assertEquals(4.0, model.withInput(0, 64).result, 0.0)
+        assertEquals(4.0, model.withInput(1, 80).result, 0.0)
+        assertEquals(100.0, model.withInput(0, 0).companionValue, 0.0)
+        assertNull(HealthAtlasPhysiology.restore("cartilage", intArrayOf(32, 0)))
+        assertNull(HealthAtlasPhysiology.restore("ligaments", intArrayOf(32, 160)))
+    }
+
     @Test fun ventilationSeparatesTotalFlowFromDeadSpace() {
         val model = HealthAtlasPhysiology(HealthAtlasPhysiologyKind.VENTILATION)
         assertEquals(4.2, model.result, 1e-9)
@@ -87,7 +116,7 @@ class HealthAtlasPhysiologyTest {
     @Test fun unrelatedEntitiesDoNotInheritAQuantitativeModel() {
         assertNull(HealthAtlasPhysiologyKind.forItem("cell-hepatocyte"))
         assertNull(HealthAtlasPhysiologyKind.forItem("renal-pelvis"))
-        assertNull(HealthAtlasPhysiologyKind.forItem("cell-type-i-pneumocyte"))
+        assertNull(HealthAtlasPhysiologyKind.forItem("cell-club-cell"))
         assertNull(HealthAtlasPhysiologyKind.forItem("cell-podocyte"))
         assertEquals(HealthAtlasPhysiologyKind.RENAL_EXCRETION, HealthAtlasPhysiologyKind.forItem("cell-proximal-tubular-cell"))
     }
