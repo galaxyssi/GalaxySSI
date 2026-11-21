@@ -135,6 +135,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
     }
     .navigationTitle(t("title", "Private Health Discussion"))
     .navigationBarTitleDisplayMode(.inline)
+    .modifier(GalaxySSIHealthCareModelAttentionVisibility(owner: records.owner, concern: concernID, conversation: thread?.id))
     .onAppear { refresh(open: true) }
     .onDisappear { clearSensitive() }
     .onChange(of: scene) { phase in

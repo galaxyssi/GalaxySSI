@@ -234,7 +234,7 @@ final class GalaxySSIHealthCareModelReviewTests: XCTestCase {
 }
 
 @MainActor
-private final class HealthModelReviewFixture {
+final class HealthModelReviewFixture {
   let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   let secrets = InMemorySecretStore()
   let records: GalaxySSIHealthRecords

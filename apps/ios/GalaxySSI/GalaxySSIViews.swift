@@ -136,6 +136,7 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     GalaxySSIRuntimePlaintextProtection.clearKnownTemporaryFiles()
     UNUserNotificationCenter.current().delegate = self
     GalaxySSIContactReminderNotification.register()
+    GalaxySSIHealthCareModelAttentionBackground.register()
     return true
   }
 
@@ -144,6 +145,12 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
+    if GalaxySSIHealthCareModelAttention.isIdentifier(notification.request.identifier) {
+      Task { @MainActor in
+        completionHandler(await GalaxySSIHealthCareModelAttentionRuntime.shared.presentation(notification.request))
+      }
+      return
+    }
     if GalaxySSIContactReminderNotification.reminderID(notification.request.identifier) != nil {
       let quiet = notification.request.content.userInfo[GalaxySSIContactReminderNotification.quietKey] as? Bool == true
       completionHandler(quiet ? [.list] : [])
@@ -178,6 +185,19 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
+    let modelRequest = response.notification.request
+    if GalaxySSIHealthCareModelAttention.isIdentifier(modelRequest.identifier) {
+      if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+         let raw = modelRequest.content.userInfo[GalaxySSIHealthCareModelAttention.turnKey] as? String,
+         let turn = UUID(uuidString: raw) {
+        UserDefaults.standard.set(modelRequest.identifier + "|" + turn.uuidString, forKey: GalaxySSIHealthCareModelAttention.pendingKey)
+        DispatchQueue.main.async {
+          NotificationCenter.default.post(name: GalaxySSIHealthCareModelAttention.openNotification, object: nil)
+        }
+      }
+      completionHandler()
+      return
+    }
     if let reminderID = GalaxySSIContactReminderNotification.reminderID(response.notification.request.identifier) {
       GalaxySSIContactReminderNotification.recordAction(id: reminderID, action: response.actionIdentifier)
       completionHandler()
@@ -386,6 +406,7 @@ private struct GalaxySSIRuntimeRoot: View {
       .modifier(GalaxySSIHealthReviewNotificationLifecycle(store: runtime.store))
       .modifier(GalaxySSIHealthCareFollowUpLifecycle(store: runtime.store))
       .modifier(GalaxySSIHealthCareResearchLifecycle(store: runtime.store, coordinator: runtime.coordinator))
+      .modifier(GalaxySSIHealthCareModelAttentionLifecycle(store: runtime.store, coordinator: runtime.coordinator))
       .galaxySSITextScale(runtime.store.displaySettings)
       .modifier(GalaxySSIHealthRecordingNotificationLifecycle(store: runtime.store))
       .modifier(GalaxySSIHealthSyncNotificationLifecycle(store: runtime.store))

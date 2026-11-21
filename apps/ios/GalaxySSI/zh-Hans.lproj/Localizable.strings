@@ -48,6 +48,8 @@
 "galaxyssi.health.questions.conflict" = "与已保存事实冲突";
 "galaxyssi.health.questions.stale" = "来源已变化";
 "galaxyssi.health.research.title" = "自动查阅资料";
+"galaxyssi.health.model_attention.notice" = "健康复核有更新，打开 GalaxySSI 查看。";
+"galaxyssi.health.recording_reminder.model_reviews" = "Agent 评估更新";
 "galaxyssi.health.research.assessment_missing" = "回复已保留，但模型未保存结构化评估，本次复核尚未完成。";
 "galaxyssi.health.model_review.title" = "模型评估";
 "galaxyssi.health.model_review.historical" = "此评估对应较早的数据或授权，请结合当前资料复核。";
