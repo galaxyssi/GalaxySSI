@@ -127,7 +127,13 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     FOLLICLE_SURFACE(HealthAtlasFollicleSurfaceTeachingModel.spec),
     JOINT_ARTICULAR_ARC(HealthAtlasJointArticularArcTeachingModel.spec),
     SWEAT_DUCT_BALANCE(HealthAtlasSweatDuctBalanceTeachingModel.spec),
-    VOCAL_CYCLES(HealthAtlasVocalCycleTeachingModel.spec);
+    VOCAL_CYCLES(HealthAtlasVocalCycleTeachingModel.spec),
+    VERTEBRAL_SERIES(HealthAtlasVertebralSeriesTeachingModel.spec),
+    ORAL_MARKER_DILUTION(HealthAtlasOralMarkerDilutionTeachingModel.spec),
+    OLFACTORY_SURFACE_RETENTION(HealthAtlasOlfactorySurfaceRetentionTeachingModel.spec),
+    CIRCADIAN_LIGHT_WINDOW(HealthAtlasCircadianLightWindowTeachingModel.spec),
+    ADIPOSE_VOLUME_SHARE(HealthAtlasAdiposeVolumeShareTeachingModel.spec),
+    THYMIC_BRANCHING(HealthAtlasThymicBranchingTeachingModel.spec);
 
     constructor(spec: HealthAtlasTeachingModelSpec) : this(spec.inputs.map { it.control }, spec.axis, spec.unit,
         spec.minimum, spec.maximum, spec.source, spec.extraSource, spec)

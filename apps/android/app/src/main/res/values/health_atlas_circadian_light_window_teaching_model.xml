@@ -6,4 +6,7 @@
     <string name="health_atlas_circadian_light_window_companion">Phase within the current cycle: %1$s°</string>
     <string name="health_atlas_circadian_light_window_formula">Elapsed phase = 360° × elapsed time ÷ cycle length. The chart counts every turn. The within-cycle phase is the remainder after full turns: 0° to below 180° marks the example light window, and 180° to below 360° marks the dark window.</string>
     <string name="health_atlas_circadian_light_window_scope">Light signals from the retina help synchronize the suprachiasmatic nucleus (SCN) in the hypothalamus. The SCN regulates the timing of melatonin release by pinealocytes in the pineal gland through an indirect nerve pathway. Release typically rises during the biological night. Here, equal light and dark windows are made-up cues, not a model of how light shifts the biological clock. This model does not estimate personal circadian phase, melatonin levels or timing, or sleep timing. It does not recommend light exposure or other interventions.</string>
+    <string name="health_atlas_circadian_light_window_diagram">The pointer marks the phase within one model cycle. Gold and blue show the example light and dark windows.</string>
+    <string name="health_atlas_circadian_light_window_dial_light">Example light window</string>
+    <string name="health_atlas_circadian_light_window_dial_dark">Example dark window</string>
 </resources>

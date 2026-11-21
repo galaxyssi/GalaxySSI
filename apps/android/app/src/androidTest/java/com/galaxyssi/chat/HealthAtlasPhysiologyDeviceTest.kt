@@ -230,11 +230,13 @@ class HealthAtlasPhysiologyDeviceTest {
             Triple("aorta", "arterial-continuity", "arterial-lumen-diameter"),
             Triple("nasal-cavity", "airway-cilia-track", "airway-ciliary-clearance-cycles"),
             Triple("cornea", "corneal-rays", "corneal-refraction-incident-angle"),
+            Triple("pineal-gland", "circadian-dial", "circadian-light-window-elapsed"),
+            Triple("cell-adipocyte", "adipose-volume-share", "adipose-volume-share-radius-ratio"),
         )
         for ((id, art, input) in examples) {
             var initial = 0
             scenario.onActivity { activity ->
-                activity.open(id)
+                activity.open(id, cell = id.startsWith("cell-"))
                 val seek = activity.view("atlas-physiology-$input") as SeekBar
                 initial = seek.progress
                 val diagram = activity.view("atlas-$art")

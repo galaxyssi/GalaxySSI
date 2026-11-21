@@ -29,7 +29,8 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         HealthAtlasPhysiologyKind.BONE_BENDING, HealthAtlasPhysiologyKind.CALF_PUMP,
         HealthAtlasPhysiologyKind.PELVIC_SUPPORT, HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE,
         HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT, HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY,
-        HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE, HealthAtlasPhysiologyKind.CORNEAL_REFRACTION ->
+        HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE, HealthAtlasPhysiologyKind.CORNEAL_REFRACTION,
+        HealthAtlasPhysiologyKind.CIRCADIAN_LIGHT_WINDOW, HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE ->
             HealthAtlasMaterialResponseView(activity, model)
         else -> null
     }
