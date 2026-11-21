@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_uterine_lining_area_title">子宫内膜表面积：圆柱类比</string>
+    <string name="health_atlas_uterine_lining_area_radius">模型内半径</string>
+    <string name="health_atlas_uterine_lining_area_length">模型圆柱长度</string>
+    <string name="health_atlas_uterine_lining_area_companion">模型内周长：%1$s LU</string>
+    <string name="health_atlas_uterine_lining_area_formula">模型侧面积（LU²）= 2π × 内半径（LU）× 长度（LU）。长度不变时，半径越大，侧面积越大；半径不变时，长度越长，侧面积越大。</string>
+    <string name="health_atlas_uterine_lining_area_scope">子宫体腔面由子宫内膜上皮细胞覆盖，这些细胞是子宫内膜的一部分。宫颈管的内衬是分泌黏液的柱状上皮，并非子宫内膜。两处都有内表面，可类比为两端开口的管道内衬。此模型只计算光滑圆柱的内侧曲面面积，不计两端。模型采用虚构的长度单位（LU），不代表这两处腔隙的真实形状或大小。</string>
+</resources>

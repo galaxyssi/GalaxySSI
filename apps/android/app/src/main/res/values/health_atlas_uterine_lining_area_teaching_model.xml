@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_uterine_lining_area_title">Uterine lining area: a cylinder analogy</string>
+    <string name="health_atlas_uterine_lining_area_radius">Model inner radius</string>
+    <string name="health_atlas_uterine_lining_area_length">Model cylinder length</string>
+    <string name="health_atlas_uterine_lining_area_companion">Model inner circumference: %1$s LU</string>
+    <string name="health_atlas_uterine_lining_area_formula">Model side area (LU²) = 2π × inner radius (LU) × length (LU). At a fixed length, a larger radius gives more area. At a fixed radius, a longer cylinder gives more area.</string>
+    <string name="health_atlas_uterine_lining_area_scope">Endometrial epithelial cells cover the inner surface of the uterine body as part of the endometrium. The cervical canal has its own mucus-secreting columnar lining, not endometrium. Both have an inner surface, like a lining inside an open tube. This model counts only the curved inner wall of a smooth cylinder, not either end. Its dimensions use invented length units (LU) and do not represent the shape or size of either anatomical space.</string>
+</resources>
