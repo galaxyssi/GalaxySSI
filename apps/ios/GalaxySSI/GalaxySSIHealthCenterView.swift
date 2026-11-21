@@ -28,7 +28,6 @@ struct GalaxySSIHealthCenterView: View {
   @State private var overviewNotice: Notice?
   @State private var overviewWidth: CGFloat = 0
   @State private var measurementPeriod: GalaxySSIHealthMeasurementPeriod?
-  @State private var measurementAbnormal = false
   @State private var measurementKind = GalaxySSIHealthMeasurementPeriod.Kind.week
   @State private var measurementSelection = UUID()
 
@@ -115,7 +114,7 @@ struct GalaxySSIHealthCenterView: View {
         }
       } else {
         overviewDestination = nil
-        measurementPeriod = nil; measurementAbnormal = false
+        measurementPeriod = nil
         overviewNotice = nil
         editor = nil
         alert = nil
@@ -397,7 +396,7 @@ struct GalaxySSIHealthCenterView: View {
         Text(t("first_use.title", "No confirmed measurements yet")).font(.caption).foregroundColor(.secondary)
       }
       GalaxySSIHealthMeasurementOverviewView(records: records, latestMetrics: overview.metrics, birthDate: birth, now: now,
-        allowed: snapshot.derivesOverview == true, period: $measurementPeriod, abnormal: $measurementAbnormal,
+        allowed: snapshot.derivesOverview == true, period: $measurementPeriod,
         choosePeriod: { kind in measurementKind = kind; overviewDestination = .measurementPicker },
         compare: { overviewDestination = .measurementComparison }, edit: openOverviewReading, manual: { startManual($0) })
         .id(measurementSelection)
@@ -660,7 +659,7 @@ struct GalaxySSIHealthCenterView: View {
     guard scenePhase == .active else { return }
     do {
       archive = try records.load()
-      if archive?.derivesOverview != true { measurementPeriod = nil; measurementAbnormal = false }
+      if archive?.derivesOverview != true { measurementPeriod = nil }
     }
     catch { archive = nil }
     if let id = initialRecordID, let archive {
