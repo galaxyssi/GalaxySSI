@@ -21,6 +21,8 @@ final class MqttMultipathPolicy {
     case inflightPacketLimit = "inflight_packet_limit"
     case inflightByteLimit = "inflight_byte_limit"
     case peerByteLimit = "peer_byte_limit"
+    case chunkWindowLimit = "chunk_window_limit"
+    case pathPacketLimitReserved = "path_packet_limit_reserved"
 
     var code: String { "attempt_" + rawValue }
   }
@@ -153,6 +155,8 @@ final class MqttMultipathPolicy {
       let common = readyBrokers(receiveTopics: receiveTopics).intersection(route.receiveBrokers)
         .filter { broker in
           guard let path = paths[broker], wireBytes <= path.packetBytes else { return false }
+          guard pathHeadroom(broker: broker, traffic: traffic),
+                traffic != .chunk || chunks.canSend(peer: peer, broker: broker, bytes: wireBytes) else { return false }
           return eligible.map { $0[broker] == path.generation } ?? true
         }
       let unused = common.subtracting(attempted)
@@ -162,12 +166,13 @@ final class MqttMultipathPolicy {
         if left != right { return left < right }
         return tie(peer, messageID, $0) < tie(peer, messageID, $1)
       }
-      if traffic == .receipt, let ingress, candidates.contains(ingress) {
+      if traffic == .receipt, let ingress, let best = candidates.first, candidates.contains(ingress),
+         pathBacklog(broker: ingress) <= pathBacklog(broker: best) {
         candidates.removeAll { $0 == ingress }
         candidates.insert(ingress, at: 0)
       }
       guard let first = candidates.first else { return [] }
-      if traffic == .control, wireBytes <= 65_536 {
+      if traffic == .receipt || (traffic == .control && wireBytes <= 65_536) {
         return candidates.map { Dispatch(brokerID: $0, generation: paths[$0]!.generation, delayMillis: 0) }
       }
       var result = [Dispatch(brokerID: first, generation: paths[first]!.generation, delayMillis: 0)]
@@ -199,6 +204,9 @@ final class MqttMultipathPolicy {
       guard let path = paths[attempt.brokerID], path.connected, path.generation == attempt.generation
       else { return .pathUnavailable }
       guard attempt.wireBytes <= path.packetBytes else { return .pathPacketLimit }
+      chunks.expire(now: attempt.startedAt)
+      guard attempt.traffic != .chunk || chunks.canSend(peer: attempt.peer, broker: attempt.brokerID, bytes: attempt.wireBytes)
+      else { return .chunkWindowLimit }
       guard attempts[attemptID] == nil else { return .duplicateAttempt }
       guard attempts.count < (priority ? 4096 : 4094) else { return .trackingLimit }
       guard !attempts.values.contains(where: {
@@ -206,6 +214,7 @@ final class MqttMultipathPolicy {
       }) else { return .messageContentConflict }
       let active = attempts.values.filter(\.slotHeld)
       guard active.count < (priority ? 12 : 10) else { return .inflightPacketLimit }
+      guard pathHeadroom(broker: attempt.brokerID, traffic: attempt.traffic) else { return .pathPacketLimitReserved }
       guard active.reduce(0, { $0 + $1.wireBytes }) + attempt.wireBytes <= 8_388_608 - reserveBytes else { return .inflightByteLimit }
       guard active.filter({ $0.peer == attempt.peer }).reduce(0, { $0 + $1.wireBytes }) + attempt.wireBytes <= 2_097_152 - reserveBytes
       else { return .peerByteLimit }
@@ -280,6 +289,19 @@ final class MqttMultipathPolicy {
       chunks.track(peer: peer, chunk: chunk, broker: broker, generation: generation, bytes: bytes, now: now)
     }
   }
+  func reserveChunk(attemptID: String, attempt: Attempt, chunk: MqttChunkThroughput.Chunk) -> Bool {
+    locked {
+      guard attempt.traffic == .chunk, chunk.index >= 0, routes[attempt.peer] != nil,
+            !chunks.pending(peer: attempt.peer, chunk: chunk, now: attempt.startedAt),
+            reserveReason(attemptID: attemptID, attempt: attempt) == nil else { return false }
+      chunks.track(peer: attempt.peer, chunk: chunk, broker: attempt.brokerID, generation: attempt.generation,
+        bytes: attempt.wireBytes, now: attempt.startedAt)
+      return true
+    }
+  }
+  func chunkPending(peer: String, chunk: MqttChunkThroughput.Chunk, now: Int64) -> Bool {
+    locked { chunks.pending(peer: peer, chunk: chunk, now: now) }
+  }
   func discardChunk(peer: String, chunk: MqttChunkThroughput.Chunk) { locked { chunks.discard(peer: peer, chunk: chunk) } }
   func confirmChunkState(peer: String, transfer: String, request: String, indices: Set<Int>, now: Int64) {
     locked {
@@ -319,9 +341,19 @@ final class MqttMultipathPolicy {
   private func score(peer: String, broker: String, traffic: Traffic, bytes: Int, now: Int64) -> Double {
     let values = samples(peer: peer, broker: broker, now: now)
     let latency = values.isEmpty ? 500 : values.reduce(0.0) { $0 + Double($1) } / Double(values.count)
-    let load = attempts.values.filter { $0.brokerID == broker && $0.slotHeld }.reduce(0) { $0 + $1.wireBytes }
-    if traffic == .chunk { return latency + Double(bytes + max(load, chunks.pendingBytes(broker: broker))) * 1000 / chunks.rate(peer: peer, broker: broker) }
-    return latency * (1 + Double(load) / 2_097_152)
+    let queued = pathBacklog(broker: broker) + (traffic == .chunk ? bytes : 0)
+    return latency + Double(queued) * 1000 / chunks.rate(peer: peer, broker: broker)
+  }
+  private func pathBacklog(broker: String) -> Int {
+    let physical = attempts.values.filter { $0.brokerID == broker && $0.slotHeld }.reduce(0) { $0 + $1.wireBytes }
+    return max(physical, chunks.pendingBytes(broker: broker))
+  }
+  private func pathHeadroom(broker: String, traffic: Traffic) -> Bool {
+    let priority = [Traffic.control, .receipt, .final].contains(traffic)
+    let others = paths.filter { $0.key != broker && $0.value.connected && !$0.value.topics.isEmpty }.count
+    let limit = 12 - (priority && others == 0 ? 0 : 2)
+    let fairShare = priority ? (12 + others) / (others + 1) : 1
+    return attempts.values.filter { $0.slotHeld && $0.brokerID == broker }.count < max(fairShare, limit - others)
   }
   private func tie(_ peer: String, _ message: String, _ broker: String) -> String {
     MqttRouteProtocol.digest(tieSeed + Data("\(peer)\0\(message)\0\(broker)".utf8))

@@ -35,13 +35,16 @@ final class MqttMultipathPolicyTests: XCTestCase {
     let policy = ready()
     XCTAssertEqual(plan(policy).map(\.delayMillis), [0, 2000, 4000])
     XCTAssertEqual(plan(policy, traffic: .control).map(\.delayMillis), [0, 0, 0])
-    for traffic in [MqttMultipathPolicy.Traffic.progress, .chunk, .receipt] {
+    for traffic in [MqttMultipathPolicy.Traffic.progress, .chunk] {
       XCTAssertEqual(plan(policy, traffic: traffic).count, 1)
     }
     for traffic in [MqttMultipathPolicy.Traffic.message, .final, .control] {
       XCTAssertEqual(plan(policy, traffic: traffic, size: 65_537).count, 1)
     }
-    for broker in brokers { XCTAssertEqual(plan(policy, traffic: .receipt, ingress: broker).map(\.brokerID), [broker]) }
+    for broker in brokers {
+      XCTAssertEqual(plan(policy, traffic: .receipt, ingress: broker).first?.brokerID, broker)
+      XCTAssertEqual(Set(plan(policy, traffic: .receipt, ingress: broker).map(\.brokerID)), brokers)
+    }
   }
 
   func testDisconnectedOrUnsubscribedPathsCannotBeSelected() {
@@ -154,7 +157,10 @@ final class MqttMultipathPolicyTests: XCTestCase {
 
   func testControlAndFinalMessagesKeepReservedPacketSlots() {
     let policy = ready()
-    for index in 0..<10 { XCTAssertTrue(policy.reserve(attemptID: String(index), attempt: attempt(message: String(index)))) }
+    let paths = brokers.sorted()
+    for index in 0..<10 {
+      XCTAssertTrue(policy.reserve(attemptID: String(index), attempt: attempt(broker: paths[index % paths.count], message: String(index))))
+    }
     XCTAssertEqual(policy.reserveReason(attemptID: "ordinary", attempt: attempt(message: "ordinary")), .inflightPacketLimit)
     XCTAssertTrue(policy.reserve(attemptID: "control", attempt: attempt(message: "control", traffic: .control)))
     XCTAssertTrue(policy.reserve(attemptID: "final", attempt: attempt(message: "final", traffic: .final)))
@@ -231,6 +237,29 @@ final class MqttMultipathPolicyTests: XCTestCase {
       policy.confirmChunkState(peer: "peer", transfer: "transfer", request: "request", indices: [index], now: Int64(index) * 1000 + 100)
     }
     XCTAssertNotEqual(plan(policy, traffic: .chunk, size: 400_000, now: 3000).first?.brokerID, "emqx")
+  }
+
+  func testBrokerACKDoesNotReleasePeerWindowAndControlCanStillPass() {
+    let policy = ready()
+    let chunk = MqttChunkThroughput.Chunk(transfer: "transfer", request: "request", index: 0, sampleEligible: true)
+    XCTAssertTrue(policy.reserveChunk(attemptID: "chunk", attempt: attempt(size: 256 * 1024, traffic: .chunk), chunk: chunk))
+    XCTAssertTrue(policy.brokerAck(attemptID: "chunk", broker: "emqx", generation: 1))
+    XCTAssertEqual(policy.reserveReason(attemptID: "blocked", attempt: attempt(size: 1, traffic: .chunk)), .chunkWindowLimit)
+    XCTAssertFalse(plan(policy, traffic: .chunk).contains { $0.brokerID == "emqx" })
+    XCTAssertTrue(policy.reserve(attemptID: "control", attempt: attempt(message: "control", traffic: .control)))
+    policy.confirmChunkState(peer: "other", transfer: "transfer", request: "request", indices: [0], now: 100)
+    XCTAssertEqual(policy.reserveReason(attemptID: "still-blocked", attempt: attempt(size: 1, traffic: .chunk)), .chunkWindowLimit)
+    policy.confirmChunkState(peer: "peer", transfer: "transfer", request: "request", indices: [0], now: 100)
+    XCTAssertTrue(policy.reserve(attemptID: "released", attempt: attempt(size: 1, traffic: .chunk)))
+  }
+
+  func testSmallMessagesAndReceiptsAvoidUnconfirmedImageBacklog() {
+    let policy = ready()
+    let chunk = MqttChunkThroughput.Chunk(transfer: "transfer", request: "request", index: 0, sampleEligible: true)
+    XCTAssertTrue(policy.reserveChunk(attemptID: "chunk", attempt: attempt(size: 256 * 1024, traffic: .chunk), chunk: chunk))
+    policy.brokerAck(attemptID: "chunk", broker: "emqx", generation: 1)
+    XCTAssertNotEqual(plan(policy).first?.brokerID, "emqx")
+    XCTAssertNotEqual(plan(policy, traffic: .receipt, ingress: "emqx").first?.brokerID, "emqx")
   }
 
   func testAttemptExpirationAndDisconnectReleaseCapacity() {

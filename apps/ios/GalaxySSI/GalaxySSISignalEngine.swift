@@ -367,10 +367,15 @@ final class GalaxySSISignalEngine {
           }
           return existing
         }
+        let attachmentChunk = try request.attachmentChunk()
+        if let attachmentChunk,
+           let existing = try journal.outbox.pendingAttachmentChunk(identity: request.identity, part: attachmentChunk, transaction: token) {
+          return existing
+        }
         if request.attachmentDependencies.isEmpty {
           let wire = try outgoingWire(request, now: now)
           try journal.outbox.enqueue(identity: request.identity, message: request.pendingMessage(wire: wire, now: now),
-            traffic: request.traffic, requestHash: hash, transaction: token)
+            traffic: request.traffic, requestHash: hash, attachmentChunk: attachmentChunk, transaction: token)
         } else {
           try journal.outbox.enqueueDeferred(request, now: now, transaction: token)
         }

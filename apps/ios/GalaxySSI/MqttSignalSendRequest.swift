@@ -69,6 +69,18 @@ struct MqttSignalSendRequest: Codable {
     return value
   }
 
+  func attachmentChunk() throws -> MqttBusinessOutbox.AttachmentChunk? {
+    let object = try applicationPayload()
+    guard object["type"] as? String == "input_attachment_chunk" else { return nil }
+    let index = try MqttRouteProtocol.integer(object, "chunk_index")
+    guard let transfer = object["transfer_id"] as? String, transfer == attachmentTransferID,
+          MqttRouteProtocol.hex(transfer, count: 64), (0...MqttRouteProtocol.maximumInteger).contains(index),
+          let digest = object["chunk_sha256"] as? String, MqttRouteProtocol.hex(digest, count: 64),
+          let encoded = object["data_b64"] as? String, let data = Data(base64Encoded: encoded),
+          MqttRouteProtocol.digest(data) == digest else { throw MqttRouteError.invalidPayload }
+    return .init(transfer: transfer, index: Int(index), digest: digest)
+  }
+
   func digest() throws -> String {
     try validate()
     let encoder = JSONEncoder()

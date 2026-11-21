@@ -17,6 +17,7 @@ final class MqttBusinessTransportRuntime {
   private let receipts: MqttBusinessReceipts
   private let completions: MqttBusinessDeliveryDrain
   private let receiptRetry = MqttReceiptRetry()
+  private let chunkFeedback = MqttChunkFeedback()
   private let projectInbound: @MainActor (MqttBusinessInbox.Pending) async throws -> Void
   private let monotonic: () -> Int64
   private let onFailure: @MainActor (Error) -> Void
@@ -358,6 +359,9 @@ final class MqttBusinessTransportRuntime {
           zip(retained, configuredDirectPeers).contains(where: { $0.0.binding != $0.1.binding }) else { return }
     let removed = retained.count != configuredDirectPeers.count
     let retainedIdentities = try retained.map { try MqttBusinessIdentity($0.binding) }
+    for identity in identities where !retainedIdentities.contains(identity) {
+      chunkFeedback.forget(scope: identity.scope)
+    }
     try routes.replace(retained.map(\.binding))
     configuredDirectPeers = retained
     identities = retainedIdentities
@@ -423,6 +427,7 @@ final class MqttBusinessTransportRuntime {
     guard !stopped else { return }
     await dispatcher.tick()
     await receiptRetry.drain(now: monotonic())
+    for send in chunkFeedback.drain(now: monotonic()) { await send() }
     guard !stopped else { return }
     let outbound = try await sends.drain(identities: identities, validatedNetwork: validatedNetwork) { [weak self] entry in
       try await self?.authorizeConnectorSend(entry) ?? false
@@ -636,6 +641,7 @@ final class MqttBusinessTransportRuntime {
     await completions.close()
     await dispatcher.close()
     await receiptRetry.clear()
+    chunkFeedback.clear()
     await worker?.value
   }
 
@@ -682,7 +688,15 @@ final class MqttBusinessTransportRuntime {
       try storeChunks(packet, identity: identity, remoteName: remoteName, probe: probe)
     }
     if let state {
-      _ = try await routes.publishIngressReply(packet, payload: state)
+      let feedback = try MqttChunkReceipts.parseState(state)
+      let send = chunkFeedback.offer(scope: packet.scope, transfer: feedback.query.transfer,
+        request: feedback.query.request, revision: feedback.revision, now: monotonic(),
+        urgent: proof != nil || probe || feedback.storedIndices.count == feedback.query.count) {
+          [weak self] in
+          guard let self, !self.stopped else { return false }
+          return (try? await self.routes.publishIngressReply(packet, payload: state)) == true
+        }
+      await send?()
     }
     if !stopped, let proof { await offerLogicalReceipt(packet, proof: proof, remoteName: remoteName) }
   }
@@ -710,7 +724,7 @@ final class MqttBusinessTransportRuntime {
     }
     let destination = try peerChatProjection?.currentDestination(proof.identity)
     let peerChat = destination?.desktop == false
-    let payload: [String: Any]? = try routes.withCurrentIdentity(packet) { identity in
+    let payload: [String: Any]? = try routes.withReceiptIdentity(packet) { identity in
       guard identity == proof.identity, try stillValid() else { return nil }
       if cache.payload == nil {
         cache.payload = try engine.makeStoredReceiptWire(identity: identity, messageID: proof.messageID,
