@@ -29,10 +29,10 @@ class HealthAtlasFunctionStoryDeviceTest {
     private val context get() = instrumentation.targetContext
 
     @Test fun allLessonsAnimateWithinEveryChapterAtPhoneAndTabletWidths() {
-        instrumentation.runOnMainSync {
-            for (locale in listOf(Locale.ENGLISH, Locale.SIMPLIFIED_CHINESE)) {
-                val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
-                for (story in HealthAtlasFunctionStory.entries) {
+        for (locale in listOf(Locale.ENGLISH, Locale.SIMPLIFIED_CHINESE)) {
+            val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
+            for (story in HealthAtlasFunctionStory.entries) {
+                instrumentation.runOnMainSync {
                     val art = story.createArt(localized)
                     for (size in listOf(480, 1080, 1600)) {
                         art.measure(View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY),
