@@ -17,6 +17,7 @@ struct GalaxySSIHealthCareResearchControls: View {
   @State private var job: Research.Job?
   @State private var assessment: GalaxySSIHealthCareModelReview.Review?
   @State private var historicalAssessment = false
+  @State private var questionReview: GalaxySSIHealthCareModelReview.Review?
   @State private var provider = ""
   @State private var desktopModel = ""
   @State private var desktopEffort = AgentModelReasoningEffort.automatic
@@ -112,7 +113,8 @@ struct GalaxySSIHealthCareResearchControls: View {
           Text(t("online_off", "Online Health discussion is off.")).foregroundColor(.secondary)
         }
         if let assessment {
-          GalaxySSIHealthCareModelReviewView(review: assessment, historical: historicalAssessment)
+          GalaxySSIHealthCareModelReviewView(review: assessment, historical: historicalAssessment,
+            onQuestions: { questionReview = assessment })
         }
         if failed { Text(t("unavailable", "Research authorization is no longer available.")) }
       }
@@ -187,6 +189,24 @@ struct GalaxySSIHealthCareResearchControls: View {
           ToolbarItem(placement: .cancellationAction) { Button(t("cancel", "Cancel")) { review = nil } }
         }
       }.navigationViewStyle(.stack)
+    }
+    .sheet(item: $questionReview) { selected in
+      NavigationView {
+        List {
+          if canRead {
+            GalaxySSIHealthCareQuestionsView(records: records, concern: selected.authorization.concern,
+              metric: selected.authorization.metric, assessment: selected)
+          }
+        }
+        .navigationTitle(GalaxySSILocalization.string("galaxyssi.health.questions.title", fallback: "Clarification questions", language: language))
+        .toolbar {
+          ToolbarItem(placement: .cancellationAction) {
+            Button(GalaxySSILocalization.string("galaxyssi.health.questions.close", fallback: "Close", language: language)) {
+              questionReview = nil
+            }
+          }
+        }
+      }.navigationViewStyle(.stack).environmentObject(store)
     }
   }
 
@@ -264,7 +284,7 @@ struct GalaxySSIHealthCareResearchControls: View {
 
   private func clear() {
     online = false; authorization = nil; job = nil; review = nil; confirmed = false; failed = false
-    assessment = nil; historicalAssessment = false
+    assessment = nil; historicalAssessment = false; questionReview = nil
     provider = ""; sources = []
     desktopModel = ""; desktopEffort = .automatic
     shareQuestions = false

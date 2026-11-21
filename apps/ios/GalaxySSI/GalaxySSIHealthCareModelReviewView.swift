@@ -3,6 +3,7 @@ import SwiftUI
 struct GalaxySSIHealthCareModelReviewView: View {
   let review: GalaxySSIHealthCareModelReview.Review
   let historical: Bool
+  var onQuestions: (() -> Void)? = nil
   @Environment(\.galaxySSIInterfaceLanguage) private var language
 
   var body: some View {
@@ -16,6 +17,11 @@ struct GalaxySSIHealthCareModelReviewView: View {
       field(t("uncertainty", "Uncertainty"), review.input.uncertainty)
       field(t("next", "Proposed next step"), review.input.nextStep)
       field(t("decision", "Recommendation"), t("decision." + review.input.decision.rawValue, decision))
+      if let onQuestions, let questions = review.input.questions, !questions.isEmpty {
+        Button(action: onQuestions) {
+          Label(String(format: t("questions", "Review questions (%d)"), questions.count), systemImage: "questionmark.bubble")
+        }.buttonStyle(.borderless)
+      }
       field(t("events", "Review conditions"), review.input.events.map { t("event." + $0.rawValue, event($0)) }.joined(separator: " / "))
       if review.input.attentionRequested {
         field(t("attention", "Suggested attention, not a sent notification"), review.input.attentionReason)

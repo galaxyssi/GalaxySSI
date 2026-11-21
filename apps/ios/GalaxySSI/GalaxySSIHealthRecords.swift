@@ -1384,6 +1384,7 @@ struct GalaxySSIHealthRecords {
             (previous.relatedMeasurements ?? [:]) == approval.relatedMeasurements else { throw Failure.stale }
       return previous
     }
+    try validateCareReviewQuestions(input, approval: approval, concern: concern, archive: archive)
     let review = Review.Review(id: approval.id, owner: owner, authorization: authorization, revision: concern.revision,
       trigger: job.trigger, inputVersion: version, createdAt: now, input: input,
       relatedMeasurements: approval.relatedMeasurements.isEmpty ? nil : approval.relatedMeasurements)

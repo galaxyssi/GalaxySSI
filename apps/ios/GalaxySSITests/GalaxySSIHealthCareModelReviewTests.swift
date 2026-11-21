@@ -7,7 +7,7 @@ final class GalaxySSIHealthCareModelReviewTests: XCTestCase {
   func testStrictInputRejectsApprovalFlagsCoercionDuplicatesAndMissingPlanReceipt() throws {
     let f = try HealthModelReviewFixture()
     let valid = try f.arguments()
-    XCTAssertEqual(try GalaxySSIHealthCareModelReview.Input(valid).decision, .clarify)
+    XCTAssertEqual(try GalaxySSIHealthCareModelReview.Input(valid).decision, .observe)
     var changed = valid
     changed["approved"] = .bool(true)
     XCTAssertThrowsError(try GalaxySSIHealthCareModelReview.Input(changed))
@@ -290,7 +290,7 @@ final class HealthModelReviewFixture {
   func arguments() throws -> AgentMcpJSONObject {
     ["summary": .string("Synthetic scoped model assessment"), "rationale": .string("Only supplied data were considered"),
       "uncertainty": .string("Current symptoms are unknown; applicability is not clinically verified"),
-      "next_step": .string("Review the missing context"), "decision": .string("CLARIFY"),
+      "next_step": .string("Review the missing context"), "decision": .string("OBSERVE"), "questions": .array([]),
       "review_events": .array([.string("USER_FEEDBACK")]),
       "records": .array(records.localCareReviewReferences(concern, related: approval.relatedMeasurements,
         archive: try records.load(), now: now).map(\.payload)),
