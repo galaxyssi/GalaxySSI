@@ -12496,8 +12496,7 @@ final class MessageCoordinator: ObservableObject {
 
   func privateHealthReportCodexTarget() -> GalaxySSIHealthReportCodex.Target? {
     guard !usesLegacyMqtt, journalMqttRuntime != nil, UIApplication.shared.isProtectedDataAvailable else { return nil }
-    for contact in store.contacts where contact.isCommunicable && contact.connectorAgentId == "codex" &&
-        contact.deliveryMode.isGalaxySSILinkFamily && contact.private_health_report_vision_v1 == true {
+    for contact in store.contacts where GalaxySSIHealthReportCodex.supports(contact) {
       let configured = AgentModelSelectionSettings.configurationForTarget(conversationId: "health-report-vision",
         targetId: contact.id, defaults: store.defaults) ??
         AgentModelSelectionSettings.configurationForTarget(conversationId: "health-report-vision", targetId: "codex", defaults: store.defaults)

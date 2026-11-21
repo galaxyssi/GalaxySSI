@@ -280,7 +280,7 @@ struct GalaxySSIHealthCenterView: View {
             get: { self.archive?.profileAnalysisPermission != nil }, set: { changePrivacy(.profileAnalysis, enabled: $0) }))
         }
         Section(t("privacy.imports", "New imports")) {
-          Toggle(GalaxySSIHealthReportVision.text("permission", "Allow report images in explicitly confirmed cloud requests", language), isOn: Binding(
+          Toggle(GalaxySSIHealthReportVision.text("permission", "Allow report images in explicitly confirmed online requests", language), isOn: Binding(
             get: { self.archive?.reportImagePermission != nil }, set: { changePrivacy(.reportImages, enabled: $0) }))
           Toggle(t("privacy.import_originals", "Keep originals of new imports"), isOn: Binding(
             get: { self.archive?.keepsNewImportOriginals == true },
@@ -355,7 +355,7 @@ struct GalaxySSIHealthCenterView: View {
     case .overview: return t("overview", "Measurement overview")
     case .weeklyReport: return t("weekly.title", "Weekly Health Report")
     case .importOriginals: return t("privacy.import_originals", "Keep originals of new imports")
-    case .reportImages: return GalaxySSIHealthReportVision.text("permission", "Allow report images in explicitly confirmed cloud requests", language)
+    case .reportImages: return GalaxySSIHealthReportVision.text("permission", "Allow report images in explicitly confirmed online requests", language)
     case .profileAnalysis: return t("assistant.profile_permission", "Allow selected profile fields in local analysis")
     case .localCare: return t("care.permission", "Allow local health review")
     }

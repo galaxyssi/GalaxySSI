@@ -5,6 +5,11 @@ enum GalaxySSIHealthReportCodex {
   static let maximumImageBytes = 224 * 1024
   static let maximumReplyBytes = 131_072
 
+  static func supports(_ contact: GalaxySSIContact, now: Date = Date()) -> Bool {
+    contact.isCommunicable && contact.connectorAgentId == "codex" && contact.deliveryMode.isGalaxySSILinkFamily &&
+      contact.private_health_report_vision_v1 == true && AgentConnectorAvailability.desktopAgentReady(contact: contact, now: now)
+  }
+
   struct Target: Equatable {
     let route: GalaxySSIHealthDesktopResearch.Route
     let authority: String
@@ -28,7 +33,8 @@ enum GalaxySSIHealthReportCodex {
       guard (1...maximumImageBytes).contains(jpeg.count), jpeg.starts(with: [0xff, 0xd8]),
             !instructions.isBlank, instructions.utf8.count <= 16_384,
             let invocation = AgentInvocationRequestJsonCodec.encode(modelId: target.route.connector.modelId,
-              reasoningEffort: target.route.connector.reasoningEffort) else { throw MqttRouteError.invalidPayload }
+              reasoningEffort: target.route.connector.reasoningEffort), invocation["model_id"] == target.route.connector.modelId
+      else { throw MqttRouteError.invalidPayload }
       return ["type": "text", "message_id": id.uuidString, "content": instructions,
         "request_kind": "screen_analysis", "execution_mode": "auto_complete", "response_language": "auto",
         "contact_id": target.route.connector.contactId, "desktop_id": target.route.connector.desktopId,
@@ -81,10 +87,10 @@ enum GalaxySSIHealthReportCodex {
         "client_message_id", "attachments", "agent_invocation"]), payload.string("request_kind") == "screen_analysis",
         payload.string("execution_mode") == "auto_complete", payload.string("response_language") == "auto",
         !payload.string("content").isBlank, payload.string("content").utf8.count <= 16_384,
-        payload.int("client_message_id") == Int(payload.string("source_message_id")),
+        String(payload.int("client_message_id")) == payload.string("source_message_id"),
         let invocation = payload["agent_invocation"] as? [String: String], Set(invocation.keys) == ["model_id", "reasoning_effort"],
-        !invocation.string("model_id").isBlank, invocation.string("model_id").utf8.count <= 200,
-        AgentModelReasoningEffort(rawValue: invocation.string("reasoning_effort")) != nil,
+        !(invocation["model_id"] ?? "").isBlank, (invocation["model_id"] ?? "").utf8.count <= 200,
+        AgentModelReasoningEffort(rawValue: invocation["reasoning_effort"] ?? "") != nil,
         let attachments = payload["attachments"] as? [[String: Any]], attachments.count == 1, let image = attachments.first,
         Set(image.keys) == ["id", "name", "mime_type", "size", "transport_size", "data_b64"],
         image.string("id") == id.uuidString, image.string("name") == "report.jpg", image.string("mime_type") == "image/jpeg",
@@ -130,11 +136,16 @@ final class GalaxySSIHealthReportCodexExchange {
     else if payload.string("type") == "text", status == "completed" {
       let content = payload.string("content").ifBlank(payload.string("text"))
       pending.outcome = payload["success"] as? Bool != false && !content.isBlank &&
-        content.utf8.count <= GalaxySSIHealthReportCodex.maximumReplyBytes && payload.string("rich_output").isEmpty &&
-        payload.string("rich_output_json").isEmpty && ((payload["attachments"] as? [Any])?.isEmpty ?? true) ? .result(content) : .failed
+        content.utf8.count <= GalaxySSIHealthReportCodex.maximumReplyBytes && emptyText(payload["rich_output"]) &&
+        emptyText(payload["rich_output_json"]) && (payload["attachments"] == nil || payload["attachments"] is NSNull ||
+          (payload["attachments"] as? [Any])?.isEmpty == true) ? .result(content) : .failed
     }
     active[key] = pending
     guard pending.outcome != nil, payload.string("type") == "text" else { return nil }
     return AgentResultReceipt.fromPayload(payload, desktopId: desktop)
+  }
+
+  private func emptyText(_ value: Any?) -> Bool {
+    value == nil || value is NSNull || (value as? String)?.isEmpty == true
   }
 }

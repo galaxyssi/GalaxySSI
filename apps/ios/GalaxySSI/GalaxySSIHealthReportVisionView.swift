@@ -1,4 +1,3 @@
-import CryptoKit
 import SwiftUI
 import UIKit
 
@@ -14,7 +13,6 @@ struct GalaxySSIHealthReportVisionView: View {
   let originals: GalaxySSIHealthOriginalStore
   let jobID: UUID
   @State private var job: GalaxySSIHealthRecognitionJobs.Job?
-  @State private var provider = ""
   @State private var online = false
   @State private var images = false
   @State private var metrics = false
@@ -29,16 +27,9 @@ struct GalaxySSIHealthReportVisionView: View {
     let id = UUID()
     let job: GalaxySSIHealthRecognitionJobs.Job
     let consent: Vision.Consent
-    let contact: GalaxySSIContact
-    let model: CloudModelConfig
-    let keyDigest: SHA256.Digest
+    let target: GalaxySSIHealthReportCodex.Target
     let jpeg: Data
     let zone: String
-  }
-  private var targets: [GalaxySSIContact] {
-    store.contacts.filter { !$0.deleted && $0.deliveryMode == .cloudAPI }.map {
-      CloudModelRequestRoutingPolicy.resolve(contact: $0, requestedModelId: "", hasImageInput: true)
-    }.filter { $0.selectedCloudModel.flatMap(GalaxySSIHealthCareDiscussion.endpoint(for:)) != nil }
   }
   private var accessible: Bool {
     scene == .active && UIApplication.shared.isProtectedDataAvailable && store.profile.identityFingerprint == records.owner
@@ -72,18 +63,16 @@ struct GalaxySSIHealthReportVisionView: View {
           Toggle(t("online", "Allow confirmed online health requests"), isOn: Binding(get: { online }, set: { value in
             change { try records.setHealthOnlinePermission(value) }
           }))
-          Toggle(t("permission", "Allow report images in explicitly confirmed cloud requests"), isOn: Binding(get: { images }, set: { value in
+          Toggle(t("permission", "Allow report images in explicitly confirmed online requests"), isOn: Binding(get: { images }, set: { value in
             change { try records.setPrivacy(.reportImages, enabled: value) }
           }))
           Toggle(t("metrics", "Allow health measurement processing"), isOn: Binding(get: { metrics }, set: { value in
             change { try records.setPrivacy(.overview, enabled: value) }
           }))
-          Picker(t("model", "Vision model"), selection: $provider) {
-            Text(t("choose", "Choose a configured model")).tag("")
-            ForEach(targets) { contact in Text(contact.name + " / " + (contact.selectedCloudModel?.modelId ?? "")).tag(contact.id) }
-          }.disabled(task != nil)
+          if let target = coordinator.privateHealthReportCodexTarget() { Text(target.title) }
+          else { Text(t("codex_unavailable", "Pair a ready Desktop with private report transcription support.")).foregroundColor(.secondary) }
           Button(t("preview", "Review image before sending"), action: prepare)
-            .disabled(task != nil || !online || !images || !metrics || provider.isEmpty || !Vision.eligible(job))
+            .disabled(task != nil || !online || !images || !metrics || coordinator.privateHealthReportCodexTarget() == nil || !Vision.eligible(job))
           if task != nil {
             ProgressView()
             Button(t("cancel", "Cancel request"), role: .destructive) { cancel() }
@@ -116,10 +105,9 @@ struct GalaxySSIHealthReportVisionView: View {
       NavigationView {
         List {
           if let image = UIImage(data: approval.jpeg) { Image(uiImage: image).resizable().scaledToFit() }
-          Text(approval.contact.name + " / " + approval.model.modelId)
-          Text(approval.model.endpoint).font(.footnote)
+          Text(approval.target.title)
           Text(String(format: t("bytes", "One image, %lld bytes"), Int64(approval.jpeg.count)))
-          Text(t("disclosure", "This image may contain personal details. Send only this image for transcription; no chat history or other health records are included. Results remain unconfirmed drafts."))
+          Text(t("paired_disclosure", "Send this single image to the paired Desktop's Codex in a separate temporary read-only thread. No history, tools, search, offline queue or provider fallback. Results remain unconfirmed."))
           Button(t("send", "Send this image once")) { send(approval) }
         }
         .navigationTitle(t("preview", "Review image before sending"))
@@ -161,52 +149,40 @@ struct GalaxySSIHealthReportVisionView: View {
     guard accessible, task == nil else { return }
     do {
       reload()
-      guard let job, Vision.eligible(job), let contact = targets.first(where: { $0.id == provider }),
-            let model = contact.selectedCloudModel, let key = store.apiKey(for: model), CloudModelCredentialPolicy.isStoredCredential(key)
+      guard let job, Vision.eligible(job), let target = coordinator.privateHealthReportCodexTarget()
       else { throw GalaxySSIHealthRecords.Failure.invalid }
-      review = Review(job: job, consent: try .init(records.load()), contact: contact, model: model,
-        keyDigest: SHA256.hash(data: Data(key.utf8)), jpeg: try GalaxySSIHealthReportVisionProvider.jpeg(input(job)), zone: zone.identifier)
+      review = Review(job: job, consent: try .init(records.load()), target: target,
+        jpeg: try GalaxySSIHealthReportVisionProvider.jpeg(input(job)), zone: zone.identifier)
       failed = false
     } catch { review = nil; failed = true }
   }
-  private func current(_ approval: Review) throws -> String {
-    guard accessible, !Task.isCancelled, provider == approval.contact.id, zone.identifier == approval.zone,
-          targets.first(where: { $0.id == provider })?.selectedCloudModel == approval.model,
+  private func current(_ approval: Review) throws {
+    guard accessible, !Task.isCancelled, zone.identifier == approval.zone,
+          coordinator.privateHealthReportCodexTarget() == approval.target,
           try Vision.Consent(records.load()) == approval.consent,
           try records.load().recognitionJobs?.contains(approval.job) == true,
           try originals.list().originals.contains(approval.job.original),
-          let key = store.apiKey(for: approval.model), SHA256.hash(data: Data(key.utf8)) == approval.keyDigest,
-          !coordinator.healthDisclosureStore.blockedDestinationIds().contains(approval.contact.id) else {
+          !coordinator.healthDisclosureStore.blockedDestinationIds().contains(approval.target.route.connector.contactId) else {
       throw GalaxySSIHealthRecords.Failure.stale
     }
     _ = try input(approval.job)
-    return key
   }
   private func send(_ approval: Review) {
     guard review?.id == approval.id, task == nil else { return }
     do {
-      let key = try current(approval)
-      let request = try GalaxySSIHealthReportVisionProvider.request(approval.model, key: key, jpeg: approval.jpeg)
-      let ledger = coordinator.healthDisclosureStore
-      let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: ledger, destination: .init(contact: approval.contact),
-        text: GalaxySSIHealthReportVisionProvider.instructions, systemInstructions: true, purpose: "Explicit report image transcription",
-        attachments: [.init(displayName: "report.jpg", mimeType: "image/jpeg", sizeBytes: Int64(approval.jpeg.count))])
-      guard ticket.allowed else { failed = true; review = nil; return }
+      try current(approval)
       let id = UUID(); run = id; activeReview = approval; review = nil; failed = false
       task = Task {
-        var status: AgentDisclosureStatus = .failed
         defer {
-          AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: status,
-            failureReason: status == .failed ? "health_image_request_not_completed" : "")
           if run == id { run = nil; task = nil; activeReview = nil }
         }
         do {
-          _ = try current(approval)
-          let data = try await GalaxySSIHealthSummaryTransport.responseBytes(request, limit: 196_608, mimeTypes: ["application/json"])
-          status = .sent
-          _ = try current(approval)
+          try current(approval)
+          let response = try await coordinator.transcribePrivateHealthReport(target: approval.target, jpeg: approval.jpeg,
+            instructions: GalaxySSIHealthReportVisionProvider.instructions, valid: { (try? current(approval)) != nil })
+          try current(approval)
           guard run == id else { throw CancellationError() }
-          let result = try Vision.parse(GalaxySSIHealthFollowUpTransport.output(data, style: approval.model.apiStyle))
+          let result = try Vision.parse(response)
           try records.commitReportVision(result, job: approval.job, consent: approval.consent, zone: approval.zone)
           reload()
         } catch { if run == id, !Task.isCancelled { failed = true } }
