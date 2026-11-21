@@ -1,0 +1,15 @@
+<resources>
+    <string name="health_atlas_vocal_cycles_title">Vocal-fold cycles in the selected time</string>
+    <string name="health_atlas_vocal_cycles_frequency">Model frequency</string>
+    <string name="health_atlas_vocal_cycles_duration">Model time window</string>
+    <string name="health_atlas_vocal_cycles_formula">Cycles = frequency × time in seconds. One cycle lasts 1,000 ÷ frequency milliseconds.</string>
+    <string name="health_atlas_vocal_cycles_period">One cycle: %1$s ms</string>
+    <string name="health_atlas_vocal_cycles_scope">Airflow can set the vocal folds vibrating during phonation. The opening curve here is idealized and shown in slow motion. It is not a recording, a sound-pressure waveform, or an estimate of your voice.</string>
+    <string name="health_atlas_vocal_cycles_caption">Glottal opening in slow motion</string>
+    <string name="health_atlas_vocal_cycles_top_view">Vocal folds from above</string>
+    <string name="health_atlas_vocal_cycles_opening">Relative opening</string>
+    <string name="health_atlas_vocal_cycles_position">Position in the model time window</string>
+    <string name="health_atlas_vocal_cycles_diagram">A top view of both vocal folds and a curve of their opening. The model shows %1$s cycles.</string>
+    <string name="health_atlas_vocal_cycles_play">Play vocal-fold motion</string>
+    <string name="health_atlas_vocal_cycles_pause">Pause vocal-fold motion</string>
+</resources>

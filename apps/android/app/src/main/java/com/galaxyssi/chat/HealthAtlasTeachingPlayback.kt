@@ -33,6 +33,11 @@ internal class HealthAtlasTeachingPlayback(
         setPlaying(false)
     }
 
+    fun seek(position: Float) {
+        pause()
+        show(position.coerceIn(0f, 1f))
+    }
+
     private fun start() {
         if (!button.isEnabled || !ValueAnimator.areAnimatorsEnabled()) return
         if (phase >= 1f) show(0f)

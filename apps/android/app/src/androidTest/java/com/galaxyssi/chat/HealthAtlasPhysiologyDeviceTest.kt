@@ -373,6 +373,47 @@ class HealthAtlasPhysiologyDeviceTest {
             assertNotNull(it.view("atlas-simulation-play"))
         }
     }
+    @Test fun vocalFoldScrubbingUpdatesTheDrawingWithoutChangingFrequencyOrTime() = native { scenario ->
+        scenario.onActivity { it.open("larynx") }
+        capture("vocal-cycle")
+        scenario.onActivity { activity ->
+            val visual = activity.view("atlas-vocal-cycle-diagram")
+            val position = activity.view("atlas-vocal-cycle-position") as SeekBar
+            val frequency = activity.view("atlas-physiology-vocal-cycle-frequency") as SeekBar
+            val output = activity.view("atlas-physiology-output") as TextView
+            val play = activity.view("atlas-vocal-cycle-play")
+            val displayed = output.text.toString()
+            val oldFrequency = frequency.progress
+            visual.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            visual.layout(0, 0, visual.measuredWidth, visual.measuredHeight)
+            fun draw() = Bitmap.createBitmap(visual.width, visual.height, Bitmap.Config.ARGB_8888).also {
+                visual.draw(Canvas(it))
+            }
+            val end = draw()
+            try {
+                val seek = android.os.Bundle().apply {
+                    putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE, 179f)
+                }
+                assertTrue(position.performAccessibilityAction(
+                    android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id, seek))
+                assertEquals(179, position.progress)
+                val opened = draw()
+                try { assertFalse(end.sameAs(opened)) } finally { opened.recycle() }
+                assertEquals(displayed, output.text.toString())
+                assertEquals(oldFrequency, frequency.progress)
+                if (play.isEnabled) {
+                    play.performClick()
+                    assertEquals(activity.getString(R.string.health_atlas_vocal_cycles_pause), play.contentDescription)
+                    play.performClick()
+                }
+                frequency.progress = frequency.max
+                assertEquals(position.max, position.progress)
+                assertNotEquals(displayed, output.text.toString())
+                assertNotNull(activity.view("atlas-simulation-play"))
+            } finally { end.recycle() }
+        }
+    }
     @Test fun threePhysiologyScreensShowIndependentModels() = native { scenario ->
         for (id in listOf("lungs", "kidneys", "cell-neuron")) {
             scenario.onActivity { it.open(id, id.startsWith("cell-")) }
