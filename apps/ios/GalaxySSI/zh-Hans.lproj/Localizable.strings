@@ -7462,7 +7462,8 @@
 "galaxyssi.health.activity_comparison.minutes" = "分钟";
 "galaxyssi.health.activity_comparison.loading" = "正在读取活动历史";
 "galaxyssi.health.activity_comparison.retry" = "重新加载";
-"galaxyssi.health.activity_comparison.invalid_dates" = "请选择 1 至 366 个已结束的自然日。";
+"galaxyssi.health.activity_comparison.invalid_dates" = "请选择 1 至 366 个自然日，结束日期不能晚于今天。";
+"galaxyssi.health.activity_comparison.close" = "关闭";
 "galaxyssi.health.activity_comparison.permission" = "请在健康隐私中开启本地测量概览后比较活动。";
 "galaxyssi.health.activity_comparison.unavailable" = "无法读取活动历史，已保存总量未改变。";
 "galaxyssi.health.overview_list.photo" = "拍照";

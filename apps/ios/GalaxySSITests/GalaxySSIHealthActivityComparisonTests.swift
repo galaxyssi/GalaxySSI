@@ -27,7 +27,9 @@ final class GalaxySSIHealthActivityComparisonTests: XCTestCase {
     XCTAssertEqual(result.pairs[1].current, 0)
     XCTAssertNil(result.pairs[2].previous)
     XCTAssertNil(result.pairs[3].current)
-    XCTAssertThrowsError(try GalaxySSIHealthActivityComparison(first: first, last: now, now: now,
+    XCTAssertNoThrow(try GalaxySSIHealthActivityComparison(first: first, last: now, now: now,
+      calendar: calendar, rows: [], kind: .steps))
+    XCTAssertThrowsError(try GalaxySSIHealthActivityComparison(first: first, last: now.addingTimeInterval(86400), now: now,
       calendar: calendar, rows: [], kind: .steps))
   }
 
@@ -44,6 +46,88 @@ final class GalaxySSIHealthActivityComparisonTests: XCTestCase {
     XCTAssertTrue(GalaxySSIHealthActivityComparison.validDay("2024-02-29"))
     XCTAssertFalse(GalaxySSIHealthActivityComparison.validDay("2026-02-29"))
     XCTAssertFalse(GalaxySSIHealthActivityComparison.validDay("2026-13-01"))
+  }
+
+  func testPresetsIncludeTodayAcrossYearLeapAndDSTBoundaries() throws {
+    for key in ["2026-01-01", "2024-03-01", "2026-03-09"] {
+      var calendar = utcCalendar
+      calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+      let today = try date(key, calendar: calendar)
+      for days in [7, 30, 90] {
+        let range = try GalaxySSIHealthActivityComparison.trailing(days: days, now: today, calendar: calendar)
+        XCTAssertEqual(range.upperBound, today)
+        XCTAssertEqual(calendar.dateComponents([.day], from: range.lowerBound, to: range.upperBound).day, days - 1)
+        let result = try GalaxySSIHealthActivityComparison(first: range.lowerBound, last: range.upperBound,
+          now: today, calendar: calendar, rows: [], kind: .steps)
+        XCTAssertEqual(result.pairs.count, days)
+        XCTAssertEqual(result.coverage, 0)
+      }
+    }
+    XCTAssertThrowsError(try GalaxySSIHealthActivityComparison.trailing(days: 367, now: Date(), calendar: utcCalendar))
+  }
+
+  func testTodayOverlayPreservesUnknownZeroAndPreviousPeriod() throws {
+    let today = try date("2026-11-20", calendar: utcCalendar)
+    let base = try GalaxySSIHealthActivityComparison(first: today, last: today, now: today,
+      calendar: utcCalendar, rows: [.init(kind: .steps, day: "2026-11-19", total: 80)], kind: .steps)
+    XCTAssertEqual(try base.withDay(nil, kind: .steps, zone: utcCalendar.timeZone), base)
+    XCTAssertNil(base.pairs.first?.current)
+    let zero = try base.withDay(.init(kind: .steps, day: "2026-11-20", total: 0), kind: .steps, zone: utcCalendar.timeZone)
+    XCTAssertEqual(zero.coverage, 1)
+    XCTAssertEqual(zero.pairs.first?.current, 0)
+    XCTAssertEqual(zero.pairs.first?.previous, 80)
+    let observed = try base.withDay(.init(kind: .steps, day: "2026-11-20", total: 100), kind: .steps, zone: utcCalendar.timeZone)
+    XCTAssertEqual(try observed.withDay(.init(kind: .steps, day: "2026-11-20", total: 20), kind: .steps,
+      zone: utcCalendar.timeZone).pairs.first?.current, 100)
+    XCTAssertEqual(try base.withDay(.init(kind: .steps, day: "2026-11-21", total: 100), kind: .steps, zone: utcCalendar.timeZone), base)
+    XCTAssertThrowsError(try base.withDay(.init(kind: .steps, day: "2026-11-20", total: -1), kind: .steps, zone: utcCalendar.timeZone))
+  }
+
+  func testUnobservedStepsStayUnknownButRealZeroAndPausedTotalsRemain() throws {
+    let today = try date("2026-11-20", calendar: utcCalendar), now = today.addingTimeInterval(3600)
+    var state = GalaxySSIHealthMotion.State(steps: .init(day: today, zone: utcCalendar.timeZone.identifier))
+    XCTAssertNil(GalaxySSIHealthActivityComparison.today(nil, kind: .steps, now: now, calendar: utcCalendar))
+    XCTAssertNil(GalaxySSIHealthActivityComparison.today(state, kind: .steps, now: now, calendar: utcCalendar))
+    state.steps?.sampledThrough = now
+    XCTAssertEqual(GalaxySSIHealthActivityComparison.today(state, kind: .steps, now: now, calendar: utcCalendar)?.total, 0)
+    state.steps?.total = 250; state.steps?.sampledThrough = nil
+    XCTAssertEqual(GalaxySSIHealthActivityComparison.today(state, kind: .steps, now: now, calendar: utcCalendar)?.total, 250)
+    XCTAssertNil(GalaxySSIHealthActivityComparison.today(state, kind: .steps, now: now.addingTimeInterval(86400), calendar: utcCalendar))
+  }
+
+  func testOngoingCyclingIsDisplayOnlyAndCanBeCorrected() throws {
+    let today = try date("2026-11-20", calendar: utcCalendar), now = today.addingTimeInterval(7200)
+    var state = GalaxySSIHealthMotion.State()
+    XCTAssertNil(GalaxySSIHealthActivityComparison.today(state, kind: .cycling, now: now, calendar: utcCalendar))
+    state.enableCycling(true, now: today, calendar: utcCalendar)
+    XCTAssertEqual(GalaxySSIHealthActivityComparison.today(state, kind: .cycling, now: now, calendar: utcCalendar)?.total, 0)
+    state.cycling.started = now.addingTimeInterval(-1800)
+    state.cycling.evidence = now; state.cycling.lastEvent = now
+    state.cycling.days = [.init(start: today, zone: utcCalendar.timeZone.identifier, seconds: 600)]
+    let before = state
+    XCTAssertEqual(GalaxySSIHealthActivityComparison.today(state, kind: .cycling, now: now.addingTimeInterval(300), calendar: utcCalendar)?.total, 2_400_000)
+    XCTAssertEqual(state, before)
+    XCTAssertEqual(GalaxySSIHealthActivityComparison.checkpoints(state).map(\.total), [600_000])
+    let base = try GalaxySSIHealthActivityComparison(first: today, last: today, now: now, calendar: utcCalendar, rows: [], kind: .cycling)
+    let first = try base.withDay(GalaxySSIHealthActivityComparison.today(state, kind: .cycling, now: now, calendar: utcCalendar),
+      kind: .cycling, zone: utcCalendar.timeZone)
+    state.cycling.gap = now.addingTimeInterval(-900)
+    state.cycling.evidence = state.cycling.gap
+    try state.validate()
+    let corrected = try base.withDay(GalaxySSIHealthActivityComparison.today(state, kind: .cycling, now: now, calendar: utcCalendar),
+      kind: .cycling, zone: utcCalendar.timeZone)
+    XCTAssertEqual(first.currentTotal, 2_400_000)
+    XCTAssertEqual(corrected.currentTotal, 1_500_000)
+    XCTAssertEqual(state.cycling.days.first?.seconds, 600)
+  }
+
+  func testCyclingAcrossMidnightCountsOnlyCurrentLocalDay() throws {
+    let today = try date("2026-11-20", calendar: utcCalendar), now = today.addingTimeInterval(3600)
+    var state = GalaxySSIHealthMotion.State()
+    state.enableCycling(true, now: today.addingTimeInterval(-3600), calendar: utcCalendar)
+    state.cycling.started = today.addingTimeInterval(-3600); state.cycling.evidence = now; state.cycling.lastEvent = now
+    XCTAssertEqual(GalaxySSIHealthActivityComparison.today(state, kind: .cycling, now: now, calendar: utcCalendar)?.total, 3_600_000)
+    XCTAssertTrue(GalaxySSIHealthActivityComparison.checkpoints(state).isEmpty)
   }
 
   func testEncryptedHistoryIsMonotonicAndRetainedAcrossReopening() throws {
