@@ -13,6 +13,8 @@ enum GalaxySSIHealthDesktopResearch {
       A deadline is not new evidence. Use the existing plan when only a deadline changed. Treat unknown and unselected facts as unknown.
       Latest action feedback is self-reported execution, not a new measurement, clinical improvement, or treatment approval.
       Partial progress and barriers leave the action open. Discuss feasible changes for user review without changing the plan.
+      Use only explicitly selected related measurements. Preserve each unit, time and measurement context; do not
+      infer simultaneous sampling or causality. Supplied history is paged and may be incomplete. Do not invent missing pages.
       """
     let format: String
     if approval.requiresStructuredReview {

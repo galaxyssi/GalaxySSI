@@ -63,6 +63,7 @@ enum GalaxySSIHealthCareQuestions {
     var revision = 1
     var state = State.open
     var answer: String?
+    var relatedMeasurements: Set<String>?
 
     func displayedState(basis current: String, known: AgentMcpJSONValue?) -> State {
       if basis != current { return .stale }
@@ -116,8 +117,11 @@ enum GalaxySSIHealthCareQuestions {
   struct Ledger: Codable {
     var revisions: [String: [Row]] = [:]
 
-    func page(scope: String, basis: String, known: AgentMcpJSONObject, after: UUID?) throws -> Page {
-      let current = revisions.values.compactMap(\.last).filter { $0.scope == scope }.sorted {
+    func page(scope: String, basis: String, known: AgentMcpJSONObject, after: UUID?,
+              allowedRelatedMeasurements: Set<String>? = nil) throws -> Page {
+      let current = revisions.values.compactMap(\.last).filter { row in
+        row.scope == scope && (allowedRelatedMeasurements.map { $0.isSuperset(of: row.relatedMeasurements ?? []) } ?? true)
+      }.sorted {
         ($0.createdAt, $0.id.uuidString) > ($1.createdAt, $1.id.uuidString)
       }
       let start: Int
@@ -132,12 +136,13 @@ enum GalaxySSIHealthCareQuestions {
     }
 
     mutating func propose(_ values: [Proposal], scope: String, basis: String, known: AgentMcpJSONObject,
-                          turn: UUID, now: Date) throws {
+                          turn: UUID, now: Date, relatedMeasurements: Set<String> = []) throws {
       let existing = Set(revisions.values.compactMap(\.last).filter { $0.scope == scope }.map(\.proposal.key))
       let new = values.filter { known[$0.key] == nil && !existing.contains($0.key) }
       guard revisions.count + new.count <= maximumQuestions else { throw GalaxySSIHealthRecords.Failure.invalid }
       for value in new {
-        let row = Row(proposal: value, scope: scope, basis: basis, turn: turn, createdAt: now, updatedAt: now)
+        let row = Row(proposal: value, scope: scope, basis: basis, turn: turn, createdAt: now, updatedAt: now,
+          relatedMeasurements: relatedMeasurements.isEmpty ? nil : relatedMeasurements)
         revisions[row.id.uuidString] = [row]
       }
     }
