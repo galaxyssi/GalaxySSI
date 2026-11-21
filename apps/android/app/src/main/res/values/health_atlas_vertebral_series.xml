@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vertebral_series_title">Disc-pad shortening in series</string>
+    <string name="health_atlas_vertebral_series_pad_count">Number of modeled disc pads</string>
+    <string name="health_atlas_vertebral_series_shortening_per_pad">Shortening per pad</string>
+    <string name="health_atlas_vertebral_series_scope">Intervertebral discs are fibrocartilage pads between adjacent vertebral bodies. Their thickness varies by spinal level. This demo lines up identical pads and shortens each by the same amount to show how the pads alone contribute to the length of a spine section. The inputs are fictional, not personal measurements. The model does not predict actual disc compression or changes in stature, guide loading, or diagnose conditions.</string>
+    <string name="health_atlas_vertebral_series_formula">ΔL = N × s\nL = N × (t₀ − s)\nN: number of modeled pads; s: shortening per pad (mm); t₀: synthetic starting thickness of 5 mm per pad. ΔL is total pad shortening and L is total remaining pad thickness, both in mm.</string>
+    <string name="health_atlas_vertebral_series_remaining_pad_thickness">Total remaining pad thickness: %1$s mm</string>
+</resources>

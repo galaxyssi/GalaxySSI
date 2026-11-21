@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vertebral_series_title">串联椎间盘垫片的缩短量</string>
+    <string name="health_atlas_vertebral_series_pad_count">示意椎间盘垫片数</string>
+    <string name="health_atlas_vertebral_series_shortening_per_pad">每片垫片的缩短量</string>
+    <string name="health_atlas_vertebral_series_scope">椎间盘是相邻椎体之间的纤维软骨垫，厚度随脊柱节段而异。此演示将相同的示意垫片沿直线串联，并设定每片缩短相同的距离，仅展示垫片对该段脊柱长度的贡献。输入均为虚构的教学数值，不是个人测量值；结果不能预测真实的椎间盘受压变形或身高变化，也不能用于指导负重或诊断。</string>
+    <string name="health_atlas_vertebral_series_formula">ΔL = N × s\nL = N × (t₀ − s)\nN：示意垫片数；s：每片缩短量（毫米）；t₀：每片设定的初始厚度，为 5 毫米。ΔL 为垫片总缩短量，L 为垫片剩余总厚度，单位均为毫米。</string>
+    <string name="health_atlas_vertebral_series_remaining_pad_thickness">垫片剩余总厚度：%1$s mm</string>
+</resources>
