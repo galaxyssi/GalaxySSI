@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_testis_tubule_section_title">Wall share of a seminiferous tubule cross-section</string>
+    <string name="health_atlas_testis_tubule_section_radius">Outer radius</string>
+    <string name="health_atlas_testis_tubule_section_thickness">Wall thickness</string>
+    <string name="health_atlas_testis_tubule_section_companion">Lumen area: %1$s u&#178;</string>
+    <string name="health_atlas_testis_tubule_section_formula">With outer radius r and wall thickness t, the inner radius is r &#8722; t. Inner area = &#960; &#215; (r &#8722; t)&#178;. Wall share = 100 &#215; [1 &#8722; ((r &#8722; t) / r)&#178;], expressed as a percentage of the whole section.</string>
+    <string name="health_atlas_testis_tubule_section_scope">In the testis, spermatogonia lie along the basement membrane of seminiferous tubules. Spermatocytes are a later germ-cell stage and are found farther inward as they develop, still within the epithelium. Sertoli cells extend from the basement membrane to the lumen and support developing germ cells. Leydig cells lie outside the tubule in the interstitial tissue between tubules, so they are not included in either area. The model simplifies one tubule to a circular section with a uniform wall. At a fixed outer radius, a thicker wall takes up more of the section and leaves less inner area. The dimensions are invented and use arbitrary units (u). The model does not measure real cell size or count, assess fertility, or predict assay results.</string>
+</resources>
