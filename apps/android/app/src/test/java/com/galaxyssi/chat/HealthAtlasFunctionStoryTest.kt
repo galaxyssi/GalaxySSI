@@ -87,9 +87,9 @@ class HealthAtlasFunctionStoryTest {
             HealthAtlasFunctionStory.choicesForId("stomach"))
         assertEquals(HealthAtlasFunctionStory.ACINAR_ENZYME_SECRETION, HealthAtlasFunctionStory.forId("cell-pancreatic-acinar-cell"))
         assertEquals(listOf("cell-pancreatic-acinar-cell" to HealthAtlasFunctionStory.ACINAR_ENZYME_SECRETION,
+            "cell-pancreatic-ductal-cell" to HealthAtlasFunctionStory.PANCREATIC_DUCT_BUFFER,
             "teeth" to HealthAtlasFunctionStory.TOOTH_MASTICATION),
             HealthAtlasFunctionStory.DIGESTION.relatedLessons)
-        assertNull(HealthAtlasFunctionStory.forId("cell-pancreatic-ductal-cell"))
         assertEquals(HealthAtlasFunctionStory.NAIL_MATRIX_GROWTH, HealthAtlasFunctionStory.forId("nails"))
         assertEquals(HealthAtlasFunctionStory.TONSILLAR_SAMPLING, HealthAtlasFunctionStory.forId("tonsils"))
         assertEquals(HealthAtlasFunctionStory.OLFACTION, HealthAtlasFunctionStory.forId("nasal-cavity"))
@@ -99,6 +99,25 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(HealthAtlasFunctionStory.MARROW_HEMATOPOIESIS,
             HealthAtlasFunctionStory.forId("cell-hematopoietic-stem-cell"))
         assertEquals(HealthAtlasFunctionStory.RED_CELL_OXYGEN, HealthAtlasFunctionStory.forId("cell-erythrocyte"))
+    }
+
+    @Test fun specializedCellStoriesKeepTheirOrganRoutesAndOpenFromTheParentLesson() {
+        val routes = listOf(
+            Triple("cell-mesangial-cell", HealthAtlasFunctionStory.MESANGIAL_SUPPORT, "glomerulus" to HealthAtlasFunctionStory.NEPHRON),
+            Triple("cell-collecting-duct-intercalated-cell", HealthAtlasFunctionStory.INTERCALATED_BALANCE,
+                "collecting-ducts" to HealthAtlasFunctionStory.NEPHRON),
+            Triple("cell-club-cell", HealthAtlasFunctionStory.CLUB_CELL_AIRWAY, "bronchioles" to HealthAtlasFunctionStory.BREATHING),
+            Triple("cell-pancreatic-ductal-cell", HealthAtlasFunctionStory.PANCREATIC_DUCT_BUFFER, "pancreatic-duct" to HealthAtlasFunctionStory.DIGESTION),
+        )
+        for ((cell, story, organ) in routes) {
+            assertEquals(listOf(story), HealthAtlasFunctionStory.choicesForId(cell))
+            assertEquals(organ.second, HealthAtlasFunctionStory.forId(organ.first))
+            assertEquals(listOf(organ), story.relatedLessons)
+            assertTrue(cell to story in organ.second.relatedLessons)
+            assertEquals(5, story.chapters.size)
+            assertEquals(2, story.references.size)
+            assertNotEquals(story.title, story.choiceTitle)
+        }
     }
 
     @Test fun focusedEntryChaptersAreOnlyDefaultsAndDoNotOverrideSavedPlayback() {

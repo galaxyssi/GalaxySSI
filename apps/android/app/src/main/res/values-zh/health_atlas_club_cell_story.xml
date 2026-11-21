@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_club_cell_story_title">Club 细胞如何保护小气道</string>
+    <string name="health_atlas_club_cell_story_choice">Club 细胞分泌与上皮修复</string>
+    <string name="health_atlas_club_cell_story_scope">定性展示正常人体细支气管中的 Club 细胞，从细胞形态讲到蛋白质分泌。末章以小鼠细支气管为例，展示上皮的局部更新与修复，并非已在人类证实的过程。形态和时序均为示意。</string>
+
+    <string name="health_atlas_club_cell_story_locate">在小细支气管中找到 Club 细胞</string>
+    <string name="health_atlas_club_cell_story_locate_caption">细支气管横断面显示开放的气道管腔和环绕管腔的薄层细胞。Club 细胞与其他细胞一起位于这一层，处在气道壁平滑肌的内侧。</string>
+    <string name="health_atlas_club_cell_story_dome_chapter">比较穹顶与相邻细胞</string>
+    <string name="health_atlas_club_cell_story_dome_chapter_caption">细胞朝向气道的一侧称为顶端，其表面呈穹顶状隆起。与相邻的纤毛细胞不同，Club 细胞没有摆动的纤毛。致密的分泌颗粒位于穹顶下方。</string>
+    <string name="health_atlas_club_cell_story_release">从穹顶处释放蛋白质</string>
+    <string name="health_atlas_club_cell_story_release_caption">分泌颗粒移向细胞朝向气道的表面，颗粒膜与细胞膜融合。颗粒将蛋白质释放到覆盖气道表面的薄层液体中，其中包括 Club 细胞分泌蛋白（SCGB1A1）。</string>
+    <string name="health_atlas_club_cell_story_spread">蛋白质在气道表面液中扩散</string>
+    <string name="health_atlas_club_cell_story_spread_caption">SCGB1A1 等蛋白质释放后在气道表面的液体中扩散，而不是在空气中扩散。这些分泌物有助于保护气道上皮。</string>
+    <string name="health_atlas_club_cell_story_renew">局部更新一小片上皮</string>
+    <string name="health_atlas_club_cell_story_renew_caption">在小鼠细支气管中，Club 细胞可以产生新的 Club 细胞和纤毛细胞，帮助维持和修复局部上皮。动画展示的是一个例子，这条更新途径尚未在人类细支气管中得到证实。</string>
+
+    <string name="health_atlas_club_cell_story_lumen">气道管腔</string>
+    <string name="health_atlas_club_cell_story_bronchiole">小细支气管</string>
+    <string name="health_atlas_club_cell_story_club">Club 细胞</string>
+    <string name="health_atlas_club_cell_story_muscle">平滑肌</string>
+    <string name="health_atlas_club_cell_story_dome">顶端穹顶</string>
+    <string name="health_atlas_club_cell_story_cilia">纤毛</string>
+    <string name="health_atlas_club_cell_story_granule">分泌颗粒</string>
+    <string name="health_atlas_club_cell_story_ciliated">纤毛细胞</string>
+    <string name="health_atlas_club_cell_story_surface">顶端细胞膜</string>
+    <string name="health_atlas_club_cell_story_fluid">气道表面液</string>
+    <string name="health_atlas_club_cell_story_protein">已分泌的蛋白质</string>
+    <string name="health_atlas_club_cell_story_epithelium">气道上皮</string>
+    <string name="health_atlas_club_cell_story_mouse">小鼠细支气管</string>
+    <string name="health_atlas_club_cell_story_new_ciliated">新生纤毛细胞</string>
+
+    <string name="health_atlas_club_cell_story_ref_human">研究证据：人小气道 Club 细胞的结构与分泌特征（Zuo 等）</string>
+    <string name="health_atlas_club_cell_story_ref_mouse">研究证据：小鼠细支气管上皮的维持与修复（Rawlins 等）</string>
+</resources>

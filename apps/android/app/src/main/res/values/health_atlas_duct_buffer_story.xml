@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_duct_buffer_story_title">How pancreatic ducts help buffer stomach acid</string>
+    <string name="health_atlas_duct_buffer_story_choice">Pancreatic duct buffering</string>
+    <string name="health_atlas_duct_buffer_story_scope">A qualitative view of normal human digestion, from a signal in the duodenum to bicarbonate-rich fluid from the pancreatic ducts. Structures, timing and moving marks are schematic.</string>
+
+    <string name="health_atlas_duct_buffer_story_orient">Follow an acinus into a duct</string>
+    <string name="health_atlas_duct_buffer_story_orient_caption">An acinus is a cluster of cells that releases digestive enzymes and their precursors into a shared space. That space drains into a small duct. Cells lining the duct have a different job: they add bicarbonate-rich fluid.</string>
+    <string name="health_atlas_duct_buffer_story_signal">Acidic contents prompt a signal</string>
+    <string name="health_atlas_duct_buffer_story_signal_caption">When acidic contents from the stomach reach the duodenum, S cells in its lining release the hormone secretin into the blood. The blood carries the signal to the pancreatic duct cells.</string>
+    <string name="health_atlas_duct_buffer_story_secrete">Duct cells add bicarbonate-rich fluid</string>
+    <string name="health_atlas_duct_buffer_story_secrete_caption">Secretin stimulates duct cells to move bicarbonate into the duct lumen, the space inside the duct. Water follows. The duct cells add this fluid, not the digestive enzymes supplied by acinar cells.</string>
+    <string name="health_atlas_duct_buffer_story_deliver">Pancreatic juice flows to the duodenum</string>
+    <string name="health_atlas_duct_buffer_story_deliver_caption">Small ducts drain into larger ducts. The main pancreatic duct carries the combined pancreatic juice to the duodenum, the first part of the small intestine.</string>
+    <string name="health_atlas_duct_buffer_story_buffer">Bicarbonate helps buffer the acid</string>
+    <string name="health_atlas_duct_buffer_story_buffer_caption">Pancreatic juice mixes with acidic stomach contents in the duodenum. Bicarbonate helps neutralize some of the acid, making the contents less acidic.</string>
+
+    <string name="health_atlas_duct_buffer_story_acinus">Acinus</string>
+    <string name="health_atlas_duct_buffer_story_acinar_lumen">Acinar lumen</string>
+    <string name="health_atlas_duct_buffer_story_small_duct">Small duct</string>
+    <string name="health_atlas_duct_buffer_story_acidic_contents">Acidic contents</string>
+    <string name="health_atlas_duct_buffer_story_s_cell">S cell</string>
+    <string name="health_atlas_duct_buffer_story_blood_signal">Secretin in blood</string>
+    <string name="health_atlas_duct_buffer_story_duct_cells">Duct cells</string>
+    <string name="health_atlas_duct_buffer_story_duct_lumen">Duct lumen</string>
+    <string name="health_atlas_duct_buffer_story_rich_fluid">Bicarbonate-rich fluid</string>
+    <string name="health_atlas_duct_buffer_story_pancreas">Pancreas</string>
+    <string name="health_atlas_duct_buffer_story_main_duct">Main pancreatic duct</string>
+    <string name="health_atlas_duct_buffer_story_duodenum">Duodenum</string>
+    <string name="health_atlas_duct_buffer_story_duodenal_lumen">Duodenal lumen</string>
+
+    <string name="health_atlas_duct_buffer_story_ref_secretin">Evidence: acid and secretin release in humans</string>
+    <string name="health_atlas_duct_buffer_story_ref_duct_fluid">Evidence: bicarbonate and fluid secretion by guinea pig pancreatic ducts</string>
+</resources>

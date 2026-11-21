@@ -1503,6 +1503,72 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    MESANGIAL_SUPPORT(
+        setOf("cell-mesangial-cell"),
+        R.string.health_atlas_mesangial_story_title,
+        R.string.health_atlas_mesangial_story_scope,
+        listOf(
+            R.string.health_atlas_mesangial_story_locate to R.string.health_atlas_mesangial_story_locate_caption,
+            R.string.health_atlas_mesangial_story_boundary to R.string.health_atlas_mesangial_story_boundary_caption,
+            R.string.health_atlas_mesangial_story_support to R.string.health_atlas_mesangial_story_support_caption,
+            R.string.health_atlas_mesangial_story_uptake to R.string.health_atlas_mesangial_story_uptake_caption,
+            R.string.health_atlas_mesangial_story_tension to R.string.health_atlas_mesangial_story_tension_caption,
+        ),
+        listOf(
+            R.string.health_atlas_mesangial_story_ref_structure to "https://pubmed.ncbi.nlm.nih.gov/3631536/",
+            R.string.health_atlas_mesangial_story_ref_uptake to "https://pubmed.ncbi.nlm.nih.gov/33837218/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    INTERCALATED_BALANCE(
+        setOf("cell-collecting-duct-intercalated-cell"),
+        R.string.health_atlas_intercalated_story_title,
+        R.string.health_atlas_intercalated_story_scope,
+        HealthAtlasIntercalatedStage.entries.map { it.title to it.caption },
+        listOf(
+            R.string.health_atlas_intercalated_story_ref_polarity to "https://pubmed.ncbi.nlm.nih.gov/9890303/",
+            R.string.health_atlas_intercalated_story_ref_buffers to "https://www.jci.org/articles/view/101923",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    CLUB_CELL_AIRWAY(
+        setOf("cell-club-cell"),
+        R.string.health_atlas_club_cell_story_title,
+        R.string.health_atlas_club_cell_story_scope,
+        listOf(
+            R.string.health_atlas_club_cell_story_locate to R.string.health_atlas_club_cell_story_locate_caption,
+            R.string.health_atlas_club_cell_story_dome_chapter to R.string.health_atlas_club_cell_story_dome_chapter_caption,
+            R.string.health_atlas_club_cell_story_release to R.string.health_atlas_club_cell_story_release_caption,
+            R.string.health_atlas_club_cell_story_spread to R.string.health_atlas_club_cell_story_spread_caption,
+            R.string.health_atlas_club_cell_story_renew to R.string.health_atlas_club_cell_story_renew_caption,
+        ),
+        listOf(
+            R.string.health_atlas_club_cell_story_ref_human to "https://pubmed.ncbi.nlm.nih.gov/29874100/",
+            R.string.health_atlas_club_cell_story_ref_mouse to "https://pubmed.ncbi.nlm.nih.gov/19497281/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    PANCREATIC_DUCT_BUFFER(
+        setOf("cell-pancreatic-ductal-cell"),
+        R.string.health_atlas_duct_buffer_story_title,
+        R.string.health_atlas_duct_buffer_story_scope,
+        listOf(
+            R.string.health_atlas_duct_buffer_story_orient to R.string.health_atlas_duct_buffer_story_orient_caption,
+            R.string.health_atlas_duct_buffer_story_signal to R.string.health_atlas_duct_buffer_story_signal_caption,
+            R.string.health_atlas_duct_buffer_story_secrete to R.string.health_atlas_duct_buffer_story_secrete_caption,
+            R.string.health_atlas_duct_buffer_story_deliver to R.string.health_atlas_duct_buffer_story_deliver_caption,
+            R.string.health_atlas_duct_buffer_story_buffer to R.string.health_atlas_duct_buffer_story_buffer_caption,
+        ),
+        listOf(
+            R.string.health_atlas_duct_buffer_story_ref_secretin to "https://pubmed.ncbi.nlm.nih.gov/930532/",
+            R.string.health_atlas_duct_buffer_story_ref_duct_fluid to "https://pubmed.ncbi.nlm.nih.gov/9706019/",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -1568,6 +1634,10 @@ internal enum class HealthAtlasFunctionStory(
         NAIL_MATRIX_GROWTH -> R.string.health_atlas_nail_story_choice
         SINUS_DRAINAGE -> R.string.health_atlas_sinus_drainage_choice
         TOOTH_MASTICATION -> R.string.health_atlas_tooth_mastication_story_choice
+        MESANGIAL_SUPPORT -> R.string.health_atlas_mesangial_story_choice
+        INTERCALATED_BALANCE -> R.string.health_atlas_intercalated_story_choice
+        CLUB_CELL_AIRWAY -> R.string.health_atlas_club_cell_story_choice
+        PANCREATIC_DUCT_BUFFER -> R.string.health_atlas_duct_buffer_story_choice
         else -> title
     }
 
@@ -1581,7 +1651,8 @@ internal enum class HealthAtlasFunctionStory(
         EPIDERMAL_BARRIER -> listOf("sweat-glands" to SWEAT_COOLING, "sebaceous-glands" to SEBUM_RELEASE,
             "nails" to NAIL_MATRIX_GROWTH)
         ANTIBODY_RESPONSE -> listOf("tonsils" to TONSILLAR_SAMPLING)
-        DIGESTION -> listOf("cell-pancreatic-acinar-cell" to ACINAR_ENZYME_SECRETION, "teeth" to TOOTH_MASTICATION)
+        DIGESTION -> listOf("cell-pancreatic-acinar-cell" to ACINAR_ENZYME_SECRETION,
+            "cell-pancreatic-ductal-cell" to PANCREATIC_DUCT_BUFFER, "teeth" to TOOTH_MASTICATION)
         HAIR_FOLLICLE_CYCLE -> listOf("sebaceous-glands" to SEBUM_RELEASE)
         OVUM_TRANSPORT -> listOf("endometrium" to ENDOMETRIUM_RENEWAL)
         VISION -> listOf("cranial-nerves" to CRANIAL_REFLEX)
@@ -1592,7 +1663,7 @@ internal enum class HealthAtlasFunctionStory(
         RPE_VISUAL_CYCLE -> listOf("cell-retinal-aii-amacrine-cell" to DIM_LIGHT_RELAY)
         DIM_LIGHT_RELAY -> listOf("cell-rod-photoreceptor" to LIGHT_ADAPTATION)
         CORNEAL_SURFACE_RENEWAL -> listOf("cornea" to VISION)
-        BREATHING -> listOf("tissue-respiratory-epithelium" to AIRWAY_CLEARANCE)
+        BREATHING -> listOf("tissue-respiratory-epithelium" to AIRWAY_CLEARANCE, "cell-club-cell" to CLUB_CELL_AIRWAY)
         AIRWAY_CLEARANCE -> listOf("lungs" to BREATHING)
         ENDOTHELIAL_EXCHANGE -> listOf("lymphatic-vessels" to LYMPH_RETURN)
         PLATELET_HEMOSTASIS -> listOf("capillaries" to ENDOTHELIAL_EXCHANGE)
@@ -1605,7 +1676,8 @@ internal enum class HealthAtlasFunctionStory(
         RED_CELL_OXYGEN -> listOf("pulmonary-capillaries" to BREATHING, "bone-marrow" to MARROW_HEMATOPOIESIS)
         SALIVA_SECRETION -> listOf("oral-cavity" to DIGESTION)
         VENOUS_RETURN -> listOf("heart" to HEARTBEAT)
-        NEPHRON -> listOf("renal-pelvis" to URINE_ROUTE, "cell-podocyte" to PODOCYTE_BARRIER)
+        NEPHRON -> listOf("renal-pelvis" to URINE_ROUTE, "cell-podocyte" to PODOCYTE_BARRIER,
+            "cell-mesangial-cell" to MESANGIAL_SUPPORT, "cell-collecting-duct-intercalated-cell" to INTERCALATED_BALANCE)
         URINE_ROUTE -> listOf("nephron" to NEPHRON)
         PLEURAL_COUPLING -> listOf("lungs" to BREATHING)
         PARATHYROID_FEEDBACK -> listOf("renal-cortex" to NEPHRON, "small-intestine" to INTESTINAL_ABSORPTION)
@@ -1637,6 +1709,10 @@ internal enum class HealthAtlasFunctionStory(
         NAIL_MATRIX_GROWTH -> listOf("epidermis" to EPIDERMAL_BARRIER)
         SINUS_DRAINAGE -> listOf("nasal-cavity" to OLFACTION)
         TOOTH_MASTICATION -> listOf("oral-cavity" to DIGESTION)
+        MESANGIAL_SUPPORT -> listOf("glomerulus" to NEPHRON)
+        INTERCALATED_BALANCE -> listOf("collecting-ducts" to NEPHRON)
+        CLUB_CELL_AIRWAY -> listOf("bronchioles" to BREATHING)
+        PANCREATIC_DUCT_BUFFER -> listOf("pancreatic-duct" to DIGESTION)
         CHONDROCYTE_MATRIX -> listOf("tissue-hyaline-cartilage" to CARTILAGE_LOAD)
         ADRENAL_MEDULLA_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
         GASTRIC_ACID_SECRETION -> listOf("stomach" to DIGESTION, "cell-gastric-chief-cell" to GASTRIC_CHIEF_SECRETION)
@@ -1742,6 +1818,10 @@ internal enum class HealthAtlasFunctionStory(
         NAIL_MATRIX_GROWTH -> HealthAtlasNailStoryView(context)
         SINUS_DRAINAGE -> HealthAtlasSinusDrainageStoryView(context)
         TOOTH_MASTICATION -> HealthAtlasToothMasticationStoryView(context)
+        MESANGIAL_SUPPORT -> HealthAtlasMesangialStoryView(context)
+        INTERCALATED_BALANCE -> HealthAtlasIntercalatedStoryView(context)
+        CLUB_CELL_AIRWAY -> HealthAtlasClubCellStoryView(context)
+        PANCREATIC_DUCT_BUFFER -> HealthAtlasDuctBufferStoryView(context)
         NEUTROPHIL_DEFENSE, EOSINOPHIL_RESPONSE, BASOPHIL_SIGNALING, MONOCYTE_RECRUITMENT,
         DENDRITIC_PRESENTATION, T_CELL_RESPONSE, NK_SURVEILLANCE, PLATELET_FORMATION, MACROPHAGE_CLEARANCE ->
             HealthAtlasCellFunctionArt(context, this, owners.single())

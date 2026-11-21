@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mesangial_story_title">How mesangial cells support the glomerulus</string>
+    <string name="health_atlas_mesangial_story_choice">Mesangial cell support</string>
+    <string name="health_atlas_mesangial_story_scope">A qualitative close-up of a mesangial cell between capillary loops in a healthy glomerulus. Structures, debris and motion are schematic and not to scale.</string>
+    <string name="health_atlas_mesangial_story_locate">Between the capillary loops</string>
+    <string name="health_atlas_mesangial_story_locate_caption">The glomerulus is a tuft of small blood vessels. Inside the tuft, mesangial cells and their surrounding matrix occupy the spaces between capillary loops, outside the blood channel.</string>
+    <string name="health_atlas_mesangial_story_boundary">The mesangium and the filtration wall</string>
+    <string name="health_atlas_mesangial_story_boundary_caption">At the outer capillary wall, podocyte foot processes rest on the glomerular basement membrane. The mesangial cell sits between loops and is not a layer of the filtration barrier.</string>
+    <string name="health_atlas_mesangial_story_support">Supporting neighboring loops</string>
+    <string name="health_atlas_mesangial_story_support_caption">Mesangial cell processes connect through the nearby matrix to the capillary walls where the loops meet the mesangium. Those connections help the loops hold their shape as blood flows.</string>
+    <string name="health_atlas_mesangial_story_uptake">Taking up local debris</string>
+    <string name="health_atlas_mesangial_story_uptake_caption">Mesangial cells can take up some large molecules and debris already in the local matrix. Here, a fragment is shown entering a small compartment in the cell rather than passing into the urinary space.</string>
+    <string name="health_atlas_mesangial_story_tension">Local tension and loop size</string>
+    <string name="health_atlas_mesangial_story_tension_caption">As mesangial tension changes, a nearby capillary loop can become a little narrower or wider, changing how much of its wall is available for filtration. A single mesangial cell does not set the filtration rate of the whole glomerulus.</string>
+    <string name="health_atlas_mesangial_story_label_glomerulus">Glomerulus</string>
+    <string name="health_atlas_mesangial_story_label_podocyte">Podocyte</string>
+    <string name="health_atlas_mesangial_story_label_loop">Capillary loop</string>
+    <string name="health_atlas_mesangial_story_label_basement">Basement</string>
+    <string name="health_atlas_mesangial_story_label_membrane">membrane</string>
+    <string name="health_atlas_mesangial_story_label_cell">Mesangial cell</string>
+    <string name="health_atlas_mesangial_story_label_matrix">Mesangial matrix</string>
+    <string name="health_atlas_mesangial_story_label_debris">Local debris</string>
+    <string name="health_atlas_mesangial_story_ref_structure">Sakai and Kriz (1987): Mesangial cell attachments and capillary shape</string>
+    <string name="health_atlas_mesangial_story_ref_uptake">He et al. (2021): Mesangial cell identity and macromolecule uptake</string>
+</resources>

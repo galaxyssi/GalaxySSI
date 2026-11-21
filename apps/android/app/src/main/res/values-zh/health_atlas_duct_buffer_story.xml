@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_duct_buffer_story_title">胰管如何帮助缓冲胃酸</string>
+    <string name="health_atlas_duct_buffer_story_choice">胰管缓冲作用</string>
+    <string name="health_atlas_duct_buffer_story_scope">定性展示人体正常消化过程：从十二指肠发出信号，到胰管分泌富含碳酸氢盐的液体。结构、时序和动态标记均为示意。</string>
+
+    <string name="health_atlas_duct_buffer_story_orient">从胰腺腺泡找到胰管</string>
+    <string name="health_atlas_duct_buffer_story_orient_caption">胰腺腺泡由一簇细胞组成，这些细胞把消化酶及其前体释放到共同的腺泡腔中。腺泡腔与小胰管相通。胰管内壁细胞的作用不同：它们分泌富含碳酸氢盐的液体。</string>
+    <string name="health_atlas_duct_buffer_story_signal">酸性内容物触发信号</string>
+    <string name="health_atlas_duct_buffer_story_signal_caption">胃里的酸性内容物进入十二指肠后，十二指肠黏膜中的 S 细胞把促胰液素这种激素释放到血液中。血液将信号传递给胰管细胞。</string>
+    <string name="health_atlas_duct_buffer_story_secrete">胰管细胞分泌富含碳酸氢盐的液体</string>
+    <string name="health_atlas_duct_buffer_story_secrete_caption">促胰液素刺激胰管细胞将碳酸氢盐转运至胰管腔，水也随之进入。胰管细胞加入的是这种液体；消化酶由腺泡细胞提供。</string>
+    <string name="health_atlas_duct_buffer_story_deliver">胰液流向十二指肠</string>
+    <string name="health_atlas_duct_buffer_story_deliver_caption">小胰管汇入较大的胰管。主胰管把汇集的胰液送入小肠的第一段，也就是十二指肠。</string>
+    <string name="health_atlas_duct_buffer_story_buffer">碳酸氢盐帮助缓冲酸</string>
+    <string name="health_atlas_duct_buffer_story_buffer_caption">胰液在十二指肠内与来自胃的酸性内容物混合。碳酸氢盐帮助中和其中一部分酸，使内容物的酸性减弱。</string>
+
+    <string name="health_atlas_duct_buffer_story_acinus">胰腺腺泡</string>
+    <string name="health_atlas_duct_buffer_story_acinar_lumen">腺泡腔</string>
+    <string name="health_atlas_duct_buffer_story_small_duct">小胰管</string>
+    <string name="health_atlas_duct_buffer_story_acidic_contents">酸性内容物</string>
+    <string name="health_atlas_duct_buffer_story_s_cell">S 细胞</string>
+    <string name="health_atlas_duct_buffer_story_blood_signal">血液中的促胰液素</string>
+    <string name="health_atlas_duct_buffer_story_duct_cells">胰管细胞</string>
+    <string name="health_atlas_duct_buffer_story_duct_lumen">胰管腔</string>
+    <string name="health_atlas_duct_buffer_story_rich_fluid">富含碳酸氢盐的液体</string>
+    <string name="health_atlas_duct_buffer_story_pancreas">胰腺</string>
+    <string name="health_atlas_duct_buffer_story_main_duct">主胰管</string>
+    <string name="health_atlas_duct_buffer_story_duodenum">十二指肠</string>
+    <string name="health_atlas_duct_buffer_story_duodenal_lumen">十二指肠腔</string>
+
+    <string name="health_atlas_duct_buffer_story_ref_secretin">研究证据：酸与人体促胰液素的释放</string>
+    <string name="health_atlas_duct_buffer_story_ref_duct_fluid">研究证据：豚鼠胰管分泌碳酸氢盐和液体</string>
+</resources>
