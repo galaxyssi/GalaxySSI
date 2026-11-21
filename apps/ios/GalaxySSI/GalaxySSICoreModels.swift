@@ -116,13 +116,16 @@ struct GalaxySSIContact: Codable, Identifiable, Equatable, Hashable {
   var deviceHostName: String? = nil
   // Keep the Android contact JSON key without changing older iOS keys.
   var cloud_research_limits: CloudResearchConfiguration? = nil
+  var desktop_disconnected: Bool? = nil
+
+  var isDesktopHistoryOnly: Bool { desktop_disconnected == true }
 
   var selectedCloudModel: CloudModelConfig? {
     cloudModels.first { $0.modelId == selectedCloudModelId } ?? cloudModels.first
   }
 
   var isCommunicable: Bool {
-    !deleted && trustState == .verified
+    !deleted && !isDesktopHistoryOnly && trustState == .verified
   }
 
   var isDesktopDeviceContact: Bool {

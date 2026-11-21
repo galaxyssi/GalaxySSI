@@ -7416,6 +7416,11 @@
 "galaxyssi.health.overview_list.revision" = "修订 %lld";
 "galaxyssi.health.overview_list.recorded_reference" = "记录参考范围";
 "galaxyssi.health.overview_list.edit" = "编辑测量";
+"galaxyssi.desktop_disconnect.title" = "断开 Desktop，保留聊天记录";
+"galaxyssi.desktop_disconnect.action" = "断开连接";
+"galaxyssi.desktop_disconnect.confirmation" = "要断开 %@ 吗？\n\n指纹：%@\n\n消息将保留在归档会话中，不影响其他电脑。";
+"galaxyssi.desktop_disconnect.failed" = "无法断开连接，Desktop 身份可能已变更。";
+"galaxyssi.desktop_disconnect.history_only" = "Desktop 已断开，此会话仅供查看历史记录。";
 "galaxyssi.health.motion.title" = "运动";
 "galaxyssi.health.motion.goal" = "每日步数目标";
 "galaxyssi.health.motion.set_goal" = "设置每日步数目标";
