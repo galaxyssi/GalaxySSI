@@ -7397,7 +7397,11 @@
 "galaxyssi.health.key_coverage" = "%lld / %lld 项关键指标有近期记录";
 "galaxyssi.health.fresh_today" = "今天";
 "galaxyssi.health.overview_list.heading" = "测量指标";
-"galaxyssi.health.overview_list.view_all" = "查看全部";
+"galaxyssi.health.overview_list.view_all" = "全部记录";
+"galaxyssi.health.overview_list.all_records" = "全部记录";
+"galaxyssi.health.overview_list.recent_records" = "近期记录";
+"galaxyssi.health.overview_list.compare_note" = "可对照在相同条件下取得的历史记录。";
+"galaxyssi.health.overview_list.discuss_metric" = "在独立健康会话中讨论";
 "galaxyssi.health.overview_list.photo" = "拍照";
 "galaxyssi.health.overview_list.import" = "导入文件";
 "galaxyssi.health.overview_list.devices" = "连接设备";
@@ -7445,6 +7449,7 @@
 "galaxyssi.health.overview_list.no_today_steps" = "今日暂无步数";
 "galaxyssi.health.motion.under_minute" = "不足 1 分钟";
 "galaxyssi.health.motion.minutes" = "%lld 分钟";
+"galaxyssi.health.motion.hours_minutes" = "%lld 小时 %lld 分";
 "galaxyssi.health.motion.status.off" = "已关闭";
 "galaxyssi.health.motion.status.active" = "自动采集已开启";
 "galaxyssi.health.motion.status.waiting" = "等待运动数据";

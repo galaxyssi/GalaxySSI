@@ -26,10 +26,11 @@ struct GalaxySSIHealthCenterView: View {
   @State private var initialRecordID: UUID?
   @State private var overviewDestination: OverviewDestination?
   @State private var overviewNotice: Notice?
+  @State private var overviewWidth: CGFloat = 0
 
   private enum OverviewDestination: String, Identifiable {
     case weekly, assistant, files, sleep, reviews, records, devices, originals, pdf, profile, crop
-    case export, privacy, backup, trends, catalog, recording, body, imports, photo, movement, care, agenda
+    case export, privacy, backup, trends, catalog, recording, body, imports, photo, movement, care, agenda, timeline
     var id: String { rawValue }
   }
 
@@ -46,38 +47,16 @@ struct GalaxySSIHealthCenterView: View {
   }
 
   var body: some View {
-    List {
+    ScrollView {
       if scenePhase == .active, let archive {
-        if archive.current.isEmpty {
-          Section {
-            Label(t("first_use.title", "No confirmed measurements yet"), systemImage: "heart.text.square")
-              .font(.headline)
-            Button { overviewDestination = .profile } label: {
-              Label(t("profile.title", "Health Profile"), systemImage: "person.text.rectangle")
-            }
-            Button { overviewDestination = .devices } label: {
-              Label(t("sources", "Devices & Data Sources"), systemImage: "externaldrive.connected.to.line.below")
-            }
-          }
-        }
-        Section {
-          TimelineView(.everyMinute) { context in
-            overview(archive, now: context.date)
-          }
-        } header: {
-          HStack {
-            Text(t("overview_list.heading", "Measurements"))
-            Spacer()
-            Button(t("overview_list.view_all", "View all")) { overviewDestination = .catalog }
-              .textCase(nil)
-          }
-        }
+        TimelineView(.everyMinute) { context in
+          overview(archive, now: context.date)
+        }.padding(.horizontal, 16).padding(.vertical, 8)
       } else if scenePhase == .active {
         Text(t("unavailable", "Health records could not be accessed."))
         Button(t("retry", "Reload records"), action: reload)
       }
     }
-    .listStyle(.plain)
     .privacySensitive()
     .safeAreaInset(edge: .bottom, spacing: 0) { bottomActions }
     .alert(item: $overviewNotice, content: editorAlert)
@@ -380,14 +359,45 @@ struct GalaxySSIHealthCenterView: View {
     let ranges = (try? records.overviewRanges(expected: snapshot, now: now)) ?? [:]
     let birth = try? records.overviewBirthDate(expected: snapshot)
     let overview = GalaxySSIHealthOverview(current: snapshot.current, now: now, calendar: local, ranges: ranges)
-    return VStack(alignment: .leading, spacing: 0) {
-      ForEach(overview.metrics) { item in
+    let stackActivity = overviewWidth < 312 || sizeCategory.isAccessibilityCategory ||
+      [.extraExtraLarge, .extraExtraExtraLarge].contains(sizeCategory)
+    return VStack(alignment: .leading, spacing: 12) {
+      Text(now, style: .date).font(.caption).foregroundColor(.secondary)
+      LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: stackActivity ? 1 : 2), spacing: 8) {
+        if let steps = overview.metrics.first(where: { $0.metric == .steps }) {
+          GalaxySSIHealthOverviewMetricRow(item: steps, records: records, open: openOverviewReading,
+            manual: { startManual($0) }, birthDate: birth, progressPermitted: snapshot.derivesOverview == true)
+            .padding(11).frame(maxWidth: .infinity, minHeight: 102, alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: 8).stroke(Color(uiColor: .separator), lineWidth: 0.5))
+        }
+        GalaxySSIHealthCyclingOverviewRow(records: records, activityTile: true)
+          .padding(11).frame(maxWidth: .infinity, minHeight: 102, alignment: .topLeading)
+          .background(RoundedRectangle(cornerRadius: 8).stroke(Color(uiColor: .separator), lineWidth: 0.5))
+      }
+      if snapshot.current.isEmpty {
+        Text(t("first_use.title", "No confirmed measurements yet")).font(.caption).foregroundColor(.secondary)
+      }
+      HStack {
+        Text(t("overview_list.heading", "Measurements")).font(.subheadline.weight(.semibold))
+          .accessibilityAddTraits(.isHeader)
+        Spacer()
+        Button(t("overview_list.view_all", "All records")) { overviewDestination = .timeline }
+          .font(.subheadline).frame(minHeight: 44)
+      }
+      VStack(spacing: 0) {
+      ForEach(overview.metrics.filter { $0.metric != .steps }) { item in
         GalaxySSIHealthOverviewMetricRow(item: item, records: records, open: openOverviewReading, manual: { startManual($0) },
           birthDate: birth, progressPermitted: snapshot.derivesOverview == true)
+          .padding(.horizontal, 12)
         Divider()
-        if item.metric == .steps { GalaxySSIHealthCyclingOverviewRow(records: records); Divider() }
       }
+      }
+      .background(RoundedRectangle(cornerRadius: 8).stroke(Color(uiColor: .separator), lineWidth: 0.5))
     }
+    .background(GeometryReader { geometry in
+      Color.clear.onAppear { overviewWidth = geometry.size.width }
+        .onChange(of: geometry.size.width) { overviewWidth = $0 }
+    })
   }
 
   private var bluetoothSourceStatus: some View {
@@ -667,6 +677,7 @@ struct GalaxySSIHealthCenterView: View {
     case .sleep: GalaxySSIHealthSleepReminderView(records: records)
     case .reviews: GalaxySSIHealthReviewReminderView(records: records)
     case .records: recordCenter
+    case .timeline: GalaxySSIHealthOverviewHistoryView(records: records, open: openOverviewReading)
     case .devices: sourceOverview
     case .originals: GalaxySSIHealthOriginalsView(store: originals)
     case .pdf: GalaxySSIHealthPDFTextView(store: originals, reviewRecords: records)

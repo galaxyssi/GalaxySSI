@@ -4798,6 +4798,69 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(overview.metrics.first { $0.metric == .bloodPressure }?.freshness, .missing)
   }
 
+  func testOverviewRecentRecordsExcludeFutureDeletedInvalidAndOtherMetrics() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let latest = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 5)
+    let older = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 6)
+    let other = GalaxySSIHealthReading(metric: .sleepDuration, measuredAt: now, value: 7)
+    let future = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(1), value: 8)
+    let deleted = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 9, deleted: true)
+    let invalid = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: -1)
+    let input = [older, future, deleted, invalid, latest, other]
+    XCTAssertEqual(GalaxySSIHealthOverview.recent(input, metric: .glucose, now: now).map(\.id), [latest.id, older.id])
+    XCTAssertEqual(Set(GalaxySSIHealthOverview.recent(input, metric: nil, now: now).map(\.id)),
+      Set([latest.id, older.id, other.id]))
+  }
+
+  func testOverviewHistoryGroupsByLocalDateAcrossDaylightSavingAndPagination() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let dates = try [(7, 23), (8, 1), (8, 3), (9, 1)].map { day, hour in
+      try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: day, hour: hour)))
+    }
+    let input = dates.map { GalaxySSIHealthReading(metric: .glucose, measuredAt: $0, value: 5) }
+    let groups = GalaxySSIHealthOverview.days(input, calendar: calendar)
+    XCTAssertEqual(groups.map { $0.readings.count }, [1, 2, 1])
+    XCTAssertEqual(groups.flatMap(\.readings).map(\.measuredAt), Array(dates.reversed()))
+    let page = GalaxySSIHealthOverview.days(Array(groups.flatMap(\.readings).prefix(2)), calendar: calendar)
+    XCTAssertEqual(page.map { $0.readings.count }, [1, 1])
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+    XCTAssertNotEqual(GalaxySSIHealthOverview.days(input, calendar: calendar).map(\.date), groups.map(\.date))
+  }
+
+  @MainActor
+  func testOverviewDiscussionRequiresCurrentReadingAndLocalPermissions() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-300),
+      value: 110, unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(reading)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    XCTAssertNil(try records.overviewDiscussionConcern(reading: reading, now: now))
+    try records.setOverviewPermission(true)
+    try records.setPrivacy(.profileAnalysis, enabled: true)
+    let id = try XCTUnwrap(records.load().localCare?.current["glucose"]?.id)
+    let saved = try XCTUnwrap(records.load().current.first { $0.id == reading.id })
+    XCTAssertEqual(try records.overviewDiscussionConcern(reading: saved, now: now), id)
+    var revision = saved
+    revision.value = 112
+    try records.write(revision)
+    XCTAssertNil(try records.overviewDiscussionConcern(reading: saved, now: now))
+    try records.setOverviewPermission(false)
+    XCTAssertNil(try records.overviewDiscussionConcern(reading: revision, now: now))
+  }
+
+  @MainActor
+  func testCyclingOverviewUsesHoursOnlyAfterAFullHour() {
+    XCTAssertEqual(GalaxySSIHealthMotionView.cyclingDuration(59, language: "en"), "Under 1 min")
+    XCTAssertEqual(GalaxySSIHealthMotionView.cyclingDuration(60, language: "en"), "1 min")
+    XCTAssertEqual(GalaxySSIHealthMotionView.cyclingDuration(3599, language: "en"), "59 min")
+    XCTAssertEqual(GalaxySSIHealthMotionView.cyclingDuration(3660, language: "en"), "1 h 1 min")
+  }
+
   @MainActor
   func testOverviewPermissionIsOptInAndSurvivesReopening() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
