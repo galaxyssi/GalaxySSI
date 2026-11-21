@@ -118,7 +118,8 @@ internal class HealthAtlasChemicalSenseStoryView(context: Context, story: Health
         oval(c, 34f, 58f, 326f, 110f, flesh, coral)
         rounded(c, 24f, 126f, 336f, 148f, 7f, 0xffdcc49e)
         label(c, R.string.health_atlas_sense_smell_bulb_label, 180f, 43f, 164f)
-        label(c, R.string.health_atlas_sense_smell_plate, 180f, 166f, 145f)
+        label(c, R.string.health_atlas_sense_smell_plate, 222f, 170f, 83f)
+        line(c, 222f, 155f, 222f, 148f, sienna, 1.25f)
         for (i in 0..2) {
             val x = 79f + i * 94f
             val color = if (i in variants) listOf(blue, violet, teal)[i] else 0xffa1b4ae
@@ -201,8 +202,8 @@ internal class HealthAtlasChemicalSenseStoryView(context: Context, story: Health
             disc(c, 176f + i * 4f + 2f * wave(t + i), 248f + 24f * f, 3.5f, violet, cream)
         }
         if (step == 4) particles(c, tasteTrack, t, blue, 4)
-        if (step <= 2) leader(c, R.string.health_atlas_sense_taste_pore_label, 280f, 45f, 198f, 85f, sienna)
-        if (step == 2) leader(c, R.string.health_atlas_sense_taste_cell, 271f, 126f, 189f, 160f, teal)
+        if (step <= 2) leader(c, R.string.health_atlas_sense_taste_pore_label, 280f, 45f, 180f, 85f, sienna)
+        if (step == 2) leader(c, R.string.health_atlas_sense_taste_cell, 273f, 273f, 187f, 174f, teal)
         if (step >= 3) {
             label(c, R.string.health_atlas_sense_taste_nerve, 275f, 343f, 153f)
             leader(c, R.string.health_atlas_sense_taste_atp_label, 98f, 294f, 171f, 260f, violet)
