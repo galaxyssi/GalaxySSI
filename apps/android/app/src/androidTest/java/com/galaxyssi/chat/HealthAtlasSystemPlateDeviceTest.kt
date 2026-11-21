@@ -131,8 +131,9 @@ class HealthAtlasSystemPlateDeviceTest {
         }
     }
 
-    @Test fun sharedPlateSelectionRestoresAcrossRecreationAndBack() = native { scenario ->
-        for ((owner, child) in listOf("urinary" to "bladder", "gut" to "stomach", "pancreas" to "pancreatic-duct")) {
+    @Test fun overviewSelectionRestoresForSharedAndDedicatedPlates() = native { scenario ->
+        for ((owner, child) in listOf("urinary" to "bladder", "eye" to "cornea", "pancreas" to "pancreatic-duct")) {
+            assertEquals(owner, HealthAtlasPlates.forId(child)?.owner)
             scenario.onActivity {
                 it.open(owner); assertNotNull(it.view("atlas-source-structure"))
                 it.view("atlas-hotspot-$child").performClick()
@@ -149,6 +150,18 @@ class HealthAtlasSystemPlateDeviceTest {
                 assertFalse(it.view("atlas-hotspot-$child").isSelected)
                 it.onBackPressed(); assertNotNull(it.view("atlas-search"))
             }
+        }
+        scenario.onActivity {
+            it.open("gut")
+            it.view("atlas-hotspot-stomach").performClick()
+            assertNotNull(it.view("atlas-feature-stomach-0"))
+            assertEquals(it.getString(R.string.health_atlas_gut_section_stomach_view),
+                (it.view("atlas-art-caption") as TextView).text.toString())
+        }
+        scenario.recreate(); ready(scenario, "atlas-feature-stomach-0")
+        scenario.onActivity {
+            it.onBackPressed()
+            assertFalse(it.view("atlas-hotspot-stomach").isSelected)
         }
     }
 

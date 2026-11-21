@@ -57,7 +57,11 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
         "https://pubmed.ncbi.nlm.nih.gov/23459754/"),
     LYMPH_VALVE(listOf(HealthAtlasInput("lymph-pressure", -40..40, 20, 10.0),
         HealthAtlasInput("lymph-resistance", 20..200, 40, 10.0)), 0, "mL/min", 0.0, 2.0,
-        "https://pmc.ncbi.nlm.nih.gov/articles/PMC4500195/");
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC4500195/"),
+    VILLUS_AREA(listOf(HealthAtlasInput("villus-density", 0..24, 12),
+        HealthAtlasInput("villus-radius", 25..70, 45, 1000.0),
+        HealthAtlasInput("villus-height", 20..120, 60, 100.0)), 0, "\u00d7", 1.0, 14.0,
+        "https://pubmed.ncbi.nlm.nih.gov/24694282/");
 
     val sources get() = listOfNotNull(source, extraSource) +
         if (this == VESSEL_FLOW) listOf(HealthAtlasVesselFlow.UNIT_SOURCE) else emptyList()
@@ -84,6 +88,7 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
             "cell-rod-photoreceptor" -> PHOTON_CAPTURE
             "sweat-glands" -> SWEAT_EVAPORATION
             "lymphatic-vessels" -> LYMPH_VALVE
+            "small-intestine", "jejunum" -> VILLUS_AREA
             else -> null
         }
     }
@@ -116,6 +121,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         HealthAtlasPhysiologyKind.PHOTON_CAPTURE -> 100.0 * kotlin.math.exp(-input(0))
         HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> evaporatedMass(input(0), input(1))
         HealthAtlasPhysiologyKind.LYMPH_VALVE -> input(0) / input(1)
+        HealthAtlasPhysiologyKind.VILLUS_AREA -> result - 1.0
     }
     val oxygenAmounts: HealthAtlasOxygen.Amounts? get() = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING)
         HealthAtlasOxygen.amounts(input(0), input(1), input(2)) else null
@@ -167,6 +173,7 @@ internal data class HealthAtlasPhysiology(val kind: HealthAtlasPhysiologyKind,
         // Convert g/min to g/s and apply the example latent heat at 30 C.
         HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> evaporatedMass(values[0], values[1]) * 2426.0 / 60.0
         HealthAtlasPhysiologyKind.LYMPH_VALVE -> maxOf(values[0], 0.0) / values[1]
+        HealthAtlasPhysiologyKind.VILLUS_AREA -> 1.0 + values[0] * 2.0 * Math.PI * values[1] * values[2]
     }
     companion object {
         private fun evaporatedMass(mass: Double, fractionPercent: Double) = mass * fractionPercent / 100.0

@@ -21,6 +21,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.PHOTON_CAPTURE -> R.string.health_atlas_sensory_photon_title
         HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> R.string.health_atlas_context_evap_title
         HealthAtlasPhysiologyKind.LYMPH_VALVE -> R.string.health_atlas_lymph_valve_model_title
+        HealthAtlasPhysiologyKind.VILLUS_AREA -> R.string.health_atlas_gut_section_area_title
     }
     fun scope(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_scope
@@ -39,6 +40,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.PHOTON_CAPTURE -> R.string.health_atlas_sensory_photon_scope
         HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> R.string.health_atlas_context_evap_scope
         HealthAtlasPhysiologyKind.LYMPH_VALVE -> R.string.health_atlas_lymph_valve_model_scope
+        HealthAtlasPhysiologyKind.VILLUS_AREA -> R.string.health_atlas_gut_section_area_scope
     }
     fun formula(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_formula
@@ -57,6 +59,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.PHOTON_CAPTURE -> R.string.health_atlas_sensory_photon_formula
         HealthAtlasPhysiologyKind.SWEAT_EVAPORATION -> R.string.health_atlas_context_evap_formula
         HealthAtlasPhysiologyKind.LYMPH_VALVE -> R.string.health_atlas_lymph_valve_model_formula
+        HealthAtlasPhysiologyKind.VILLUS_AREA -> R.string.health_atlas_gut_section_area_formula
     }
     fun label(key: String) = when (key) {
         "rate" -> R.string.health_atlas_rate
@@ -97,6 +100,9 @@ internal object HealthAtlasPhysiologyText {
         "sweat-evaporated" -> R.string.health_atlas_context_evap_fraction
         "lymph-pressure" -> R.string.health_atlas_lymph_valve_pressure
         "lymph-resistance" -> R.string.health_atlas_lymph_valve_resistance
+        "villus-density" -> R.string.health_atlas_gut_section_area_density
+        "villus-radius" -> R.string.health_atlas_gut_section_area_radius
+        "villus-height" -> R.string.health_atlas_gut_section_area_height
         else -> error("Unknown physiology input: $key")
     }
     fun unit(key: String) = when (key) {
@@ -130,6 +136,8 @@ internal object HealthAtlasPhysiologyText {
         "sweat-evaporated" -> "%"
         "lymph-pressure" -> "mmHg"
         "lymph-resistance" -> "mmHg\u00b7min/mL"
+        "villus-density" -> "/mm\u00b2"
+        "villus-radius", "villus-height" -> "mm"
         else -> error("Unknown physiology input: $key")
     }
     fun number(value: Double, digits: Int = 2): String = NumberFormat.getNumberInstance().apply {
@@ -142,7 +150,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.EYE_FOCUS -> HealthAtlasEyeOpticsText.offsetNumber(value)
         else -> number(value)
     }
-    fun inputNumber(key: String, value: Double) = number(value, if (key == "vessel-radius") 3 else 2)
+    fun inputNumber(key: String, value: Double) = number(value, if (key == "vessel-radius" || key == "villus-radius") 3 else 2)
     fun companion(context: Context, model: HealthAtlasPhysiology): String {
         model.oxygenAmounts?.let {
             return context.getString(R.string.health_atlas_model_oxygen_content,
@@ -169,6 +177,7 @@ internal object HealthAtlasPhysiologyText {
             model.input(0) < 0.0 -> R.string.health_atlas_lymph_valve_model_closed
             else -> R.string.health_atlas_lymph_valve_model_balance
         }
+        HealthAtlasPhysiologyKind.VILLUS_AREA -> R.string.health_atlas_gut_section_area_extra
     }, number(model.companionValue, if (model.kind == HealthAtlasPhysiologyKind.POTASSIUM) 4 else 2))
     }
     fun sourceTitle(kind: HealthAtlasPhysiologyKind, index: Int): Int = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING) {

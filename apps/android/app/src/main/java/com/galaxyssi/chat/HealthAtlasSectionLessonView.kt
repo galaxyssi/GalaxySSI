@@ -3,30 +3,15 @@ package com.galaxyssi.chat
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.PathMeasure
 import android.view.View
 
-internal class HealthAtlasLymphLessonView(context: Context, val lesson: HealthAtlasLymphOrgans.Lesson,
+internal class HealthAtlasSectionLessonView(context: Context, val lesson: HealthAtlasSectionLesson,
     private val mechanism: HealthAtlasMechanism) : View(context) {
     private val art = requireNotNull(context.getDrawable(lesson.plate.drawable)).mutate()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val point = FloatArray(2)
-    private val routes = when (lesson.owner) {
-        "lymph-nodes" -> listOf(
-            path(94f, 40f) { cubicTo(92f, 69f, 94f, 82f, 100f, 103f) },
-            path(100f, 103f) { cubicTo(98f, 123f, 104f, 148f, 123f, 170f) },
-            path(123f, 170f) { cubicTo(146f, 192f, 166f, 199f, 200f, 183f) },
-            path(200f, 183f) { cubicTo(222f, 174f, 252f, 181f, 272f, 188f); quadTo(295f, 191f, 320f, 169f) },
-        )
-        "thoracic-duct" -> listOf(
-            path(126f, 230f) { quadTo(140f, 221f, 163f, 224f) },
-            path(163f, 224f) { quadTo(153f, 214f, 164f, 198f); cubicTo(178f, 177f, 173f, 145f, 180f, 139f) },
-            path(180f, 139f) { cubicTo(184f, 124f, 192f, 110f, 205f, 99f) },
-            path(205f, 99f) { quadTo(214f, 76f, 231f, 61f) },
-        )
-        else -> emptyList()
-    }
+    private val routes = lesson.tracks.map { PathMeasure(it(), false) }
     var phase = 0f
         set(value) {
             val previous = stage
@@ -37,7 +22,7 @@ internal class HealthAtlasLymphLessonView(context: Context, val lesson: HealthAt
     val stage get() = (phase * 4f).toInt().coerceIn(0, 3)
 
     init {
-        tag = "atlas-lymph-diagram"
+        tag = "atlas-section-diagram"
         art.setBounds(0, 0, 360, 280)
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         describe()
@@ -84,6 +69,4 @@ internal class HealthAtlasLymphLessonView(context: Context, val lesson: HealthAt
         canvas.restore()
     }
 
-    private fun path(x: Float, y: Float, draw: Path.() -> Unit) =
-        PathMeasure(Path().apply { moveTo(x, y); draw() }, false)
 }
