@@ -20,6 +20,11 @@ struct GalaxySSIHealthReportPickerApproval {
 }
 
 enum GalaxySSIHealthSelectedFiles {
+  static func canContinue(_ job: GalaxySSIHealthRecognitionJobs.Job, batch: UUID) -> Bool {
+    job.reportBatchID == batch && job.reportModelFirst == true && job.reportVision == nil &&
+      job.original.kind == .image && job.pageCount == 1 && job.captureSource?.mode != .device &&
+      job.run == nil && job.phase != .running && job.phase != .cancelled
+  }
   struct Entry: Identifiable {
     var id = UUID()
     let name: String
@@ -151,12 +156,12 @@ extension GalaxySSIHealthRecords {
     try persistQuickReport(archive)
   }
 
-  func failSelectedReportJob(id: UUID, batch: UUID) throws {
+  func failSelectedReportJob(id: UUID, batch: UUID, problem: GalaxySSIHealthReportFailure = .storage) throws {
     var archive = try load()
     guard let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.reportBatchID == batch }),
           var job = archive.recognitionJobs?[index], job.run == nil, job.reportVision == nil,
           job.phase != .cancelled else { throw Failure.stale }
-    job.phase = .failed; job.version = UUID(); archive.recognitionJobs?[index] = job
+    job.phase = .failed; job.reportFailure = problem; job.version = UUID(); archive.recognitionJobs?[index] = job
     try persistQuickReport(archive)
   }
 

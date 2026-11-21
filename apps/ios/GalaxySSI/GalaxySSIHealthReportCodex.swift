@@ -51,6 +51,24 @@ enum GalaxySSIHealthReportCodex {
        "task_id": identity.taskId, "turn_id": identity.turnId, "source_message_id": String(source)]
     }
 
+    func admissionQuery(nonce: String) -> [String: Any]? {
+      guard UUID(uuidString: nonce)?.uuidString == nonce, let binding = evidenceBinding else { return nil }
+      return ["type": "agent_task_recovery_request", "request_id": nonce, "message_id": nonce,
+        "desktop_id": target.route.connector.desktopId, "client_route_id": identity.clientRouteId,
+        "items": [binding.fields]]
+    }
+
+    func acceptsAdmissionQuery(_ payload: [String: Any], nonce: String, desktop: String, route: String) -> Bool {
+      guard Set(payload.keys) == ["type", "request_id", "message_id", "desktop_id", "client_route_id", "items"],
+            payload.string("type") == "agent_task_recovery_request", UUID(uuidString: nonce)?.uuidString == nonce,
+            payload.string("request_id") == nonce, payload.string("message_id") == nonce,
+            desktop == target.route.connector.desktopId, payload.string("desktop_id") == desktop,
+            route == identity.clientRouteId, payload.string("client_route_id") == route,
+            let rows = payload["items"] as? [[String: Any]], rows.count == 1, let binding = evidenceBinding,
+            Set(rows[0].keys) == Set(binding.fields.keys), binding.matches(rows[0]) else { return false }
+      return true
+    }
+
     func matches(_ payload: [String: Any], desktop: String, route: String) -> Bool {
       desktop == target.route.connector.desktopId && route == identity.clientRouteId &&
         payload.string("client_route_id") == identity.clientRouteId &&
@@ -113,7 +131,12 @@ enum GalaxySSIHealthReportCodex {
 @MainActor
 final class GalaxySSIHealthReportCodexExchange {
   enum Outcome: Equatable { case result(String), failed }
-  private struct Pending { let request: GalaxySSIHealthReportCodex.Request; var outcome: Outcome? }
+  private struct Probe {
+    let nonce: String
+    let started: UInt64
+    var admission: GalaxySSIHealthReportDelivery.Admission?
+  }
+  private struct Pending { let request: GalaxySSIHealthReportCodex.Request; var outcome: Outcome?; var probe: Probe? }
   private var active: [String: Pending] = [:]
 
   func begin(_ request: GalaxySSIHealthReportCodex.Request) throws {
@@ -123,6 +146,61 @@ final class GalaxySSIHealthReportCodexExchange {
   func outcome(_ request: GalaxySSIHealthReportCodex.Request) -> Outcome? { active[request.identity.conversationId]?.outcome }
   func finish(_ request: GalaxySSIHealthReportCodex.Request) { active.removeValue(forKey: request.identity.conversationId) }
   func removeAll() { active.removeAll() }
+
+  func beginAdmission(_ request: GalaxySSIHealthReportCodex.Request, nonce: String = UUID().uuidString,
+      now: UInt64 = DispatchTime.now().uptimeNanoseconds) -> String? {
+    let key = request.identity.conversationId
+    guard var pending = active[key], pending.request == request, pending.outcome == nil,
+          pending.probe == nil, request.admissionQuery(nonce: nonce) != nil else { return nil }
+    pending.probe = .init(nonce: nonce, started: now); active[key] = pending
+    return nonce
+  }
+
+  func admission(_ request: GalaxySSIHealthReportCodex.Request, nonce: String) -> GalaxySSIHealthReportDelivery.Admission? {
+    guard let pending = active[request.identity.conversationId], pending.request == request, pending.probe?.nonce == nonce else { return nil }
+    return pending.probe?.admission
+  }
+
+  func finishAdmission(_ request: GalaxySSIHealthReportCodex.Request, nonce: String) {
+    let key = request.identity.conversationId
+    guard var pending = active[key], pending.request == request, pending.probe?.nonce == nonce else { return }
+    pending.probe = nil; active[key] = pending
+  }
+
+  func handlesAdmission(_ payload: [String: Any]) -> Bool {
+    guard payload.string("type") == "agent_task_recovery_result" else { return false }
+    return active.values.contains { $0.probe?.nonce == payload.string("request_id") } ||
+      (payload["items"] as? [[String: Any]])?.contains { $0.string("conversation_id").hasPrefix(GalaxySSIHealthReportCodex.prefix) } == true
+  }
+
+  @discardableResult
+  func receiveAdmission(_ payload: [String: Any], desktop: String, route: String,
+      now: UInt64 = DispatchTime.now().uptimeNanoseconds) -> Bool {
+    guard payload.string("type") == "agent_task_recovery_result",
+          payload["peer_chat"] == nil || payload["peer_chat"] as? Bool == false,
+          let key = active.first(where: { $0.value.probe?.nonce == payload.string("request_id") })?.key,
+          var pending = active[key], pending.outcome == nil, let probe = pending.probe, probe.admission == nil,
+          now >= probe.started, now - probe.started <= 8_000_000_000,
+          desktop == pending.request.target.route.connector.desktopId, route == pending.request.identity.clientRouteId,
+          payload.string("client_route_id") == route, payload.string("desktop_id").ifBlank(desktop) == desktop,
+          let items = payload["items"] as? [[String: Any]], items.count == 1,
+          pending.request.evidenceBinding?.matches(items[0]) == true,
+          let raw = items[0]["status"] as? String else { return false }
+    let status = AgentRemoteTaskStatusPolicy.normalize(raw)
+    if let value = items[0]["execution_generation"] {
+      guard let generation = AgentDesktopReplyRecovery.integer(value, minimum: 0),
+            status == "unavailable" ? generation <= 1 : generation == 1 else { return false }
+    }
+    let admission: GalaxySSIHealthReportDelivery.Admission
+    switch status {
+    case "unavailable": admission = .missing
+    case "failed", "cancelled", "timed_out": admission = .terminalFailure
+    case "accepted", "queued", "starting", "recovering", "running", "waiting_input", "waiting_approval", "completed": admission = .active
+    default: admission = .unknown
+    }
+    pending.probe?.admission = admission; active[key] = pending
+    return true
+  }
 
   func receive(_ payload: [String: Any], desktop: String, route: String) -> AgentResultReceipt? {
     let key = payload.string("conversation_id")

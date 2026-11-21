@@ -42,6 +42,7 @@ enum GalaxySSIHealthRecognitionJobs {
     var reportImportOutcome: GalaxySSIHealthReportQuickImport.Outcome?
     var reportBatchID: UUID?
     var reportModelFirst: Bool?
+    var reportFailure: GalaxySSIHealthReportFailure?
 
     var reviewPages: [Page] { requiresPDFPassword == true && phase != .completed ? [] : pages }
   }

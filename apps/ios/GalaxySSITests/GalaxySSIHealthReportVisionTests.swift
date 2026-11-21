@@ -22,7 +22,7 @@ final class GalaxySSIHealthReportVisionTests: XCTestCase {
     XCTAssertEqual(parsed.rows.first?.reference, "3.9-6.1")
   }
 
-  func testRejectsUnknownFieldsWrongTypesAndDuplicateRowsButAllowsEmptyOutcome() throws {
+  func testRejectsUnknownFieldsWrongTypesAndEmptyRowsButKeepsOneDuplicateRow() throws {
     var object = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(response.utf8))
     object["approved"] = .bool(true)
     XCTAssertThrowsError(try parse(object))
@@ -32,9 +32,10 @@ final class GalaxySSIHealthReportVisionTests: XCTestCase {
     object["partial"] = .bool(false)
     let row = try XCTUnwrap(object["rows"]?.arrayValue?.first)
     object["rows"] = .array([row, row])
-    XCTAssertThrowsError(try parse(object))
+    XCTAssertEqual(try parse(object).rows.count, 1)
+    XCTAssertEqual(try parse(object).rejectedRows?["duplicate"], 1)
     object["rows"] = .array([])
-    XCTAssertTrue(try parse(object).rows.isEmpty)
+    XCTAssertThrowsError(try parse(object))
     XCTAssertThrowsError(try Vision.parse(response + " trailing"))
   }
 

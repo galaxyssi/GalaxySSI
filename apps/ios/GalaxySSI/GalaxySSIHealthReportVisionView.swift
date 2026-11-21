@@ -21,6 +21,7 @@ struct GalaxySSIHealthReportVisionView: View {
   @State private var task: Task<Void, Never>?
   @State private var run: UUID?
   @State private var failed = false
+  @State private var failure: GalaxySSIHealthReportFailure?
   @State private var originalAvailable = true
   @State private var previewStarted = false
   @State private var outcome: GalaxySSIHealthReportQuickImport.Outcome?
@@ -86,11 +87,11 @@ struct GalaxySSIHealthReportVisionView: View {
           }))
           if let target = coordinator.privateHealthReportCodexTarget() { Text(target.title) }
           else { Text(t("codex_unavailable", "Pair a ready Desktop with private report transcription support.")).foregroundColor(.secondary) }
-          Button(t("preview", "Review image before sending"), action: prepare)
+          Button(failure == nil ? t("preview", "Review image before sending") : t("continue", "Continue recognition"), action: prepare)
             .disabled(task != nil || !online || !metrics || coordinator.privateHealthReportCodexTarget() == nil || !Vision.eligible(job))
         }
       }
-      if failed { Text(t("failed", "Nothing was confirmed. The image, permission or provider may have changed, or the reply was invalid.")).foregroundColor(.secondary) }
+      if failed { Text((failure ?? .storage).title(language)).foregroundColor(.secondary) }
     }
     .navigationTitle(q("import_title", "Import report image"))
     .navigationBarTitleDisplayMode(.inline)
@@ -161,7 +162,14 @@ struct GalaxySSIHealthReportVisionView: View {
         Text(String(format: q("skipped_count", "%lld unreadable, ambiguous or undated results skipped"), Int64(skipped)))
           .font(.caption).foregroundColor(.secondary)
       }
-      if outcome.partial { Text(t("partial", "Some results were omitted or unreadable.")).font(.caption).foregroundColor(.secondary) }
+      if outcome.partial, job?.reportVision?.rejectedRows?.isEmpty != false {
+        Text(t("partial", "Some results were omitted or unreadable.")).font(.caption).foregroundColor(.secondary)
+      }
+      ForEach(Vision.RowIssue.allCases, id: \.rawValue) { issue in
+        if let count = job?.reportVision?.rejectedRows?[issue.rawValue], count > 0 {
+          Text(issue.title(count: count, language: language)).font(.caption).foregroundColor(.secondary)
+        }
+      }
       deferredRows(outcome)
       Text(q("saved_unverified", "Model transcription is not clinician verification. Saved measurements can be reviewed in Health Records."))
         .font(.caption).foregroundColor(.secondary)
@@ -218,10 +226,11 @@ struct GalaxySSIHealthReportVisionView: View {
       originalAvailable = listing.originals.contains(current.original)
       guard originalAvailable || current.reportImportOutcome?.releaseOriginal == true else { throw GalaxySSIHealthRecords.Failure.stale }
       job = current
+      if task == nil, let problem = current.reportFailure, current.reportVision == nil { failed = true; failure = problem }
       outcome = metrics ? current.reportImportOutcome : nil
       let live = Dictionary(archive.current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
       savedRecords = (outcome?.recordIDs ?? []).compactMap { live[$0] }
-    } catch { job = nil; outcome = nil; savedRecords = []; failed = true }
+    } catch { job = nil; outcome = nil; savedRecords = []; failed = true; failure = .classify(error) }
   }
   private func input(_ job: GalaxySSIHealthRecognitionJobs.Job) throws -> Data {
     _ = try originals.read(job.original)
@@ -242,13 +251,14 @@ struct GalaxySSIHealthReportVisionView: View {
       await Task.yield()
       do {
         reload()
-        guard accessible, run == token, !Task.isCancelled, let job, Vision.eligible(job),
+        guard accessible, run == token, !Task.isCancelled, let selected = job, Vision.eligible(selected),
               let target = coordinator.privateHealthReportCodexTarget() else { throw GalaxySSIHealthRecords.Failure.stale }
+        let job = try records.prepareReportContinuation(selected)
         let approval = Review(job: job, consent: try .init(records.load()), target: target,
           jpeg: try GalaxySSIHealthReportVisionProvider.jpeg(input(job)), zone: zone.identifier)
         try current(approval)
-        review = approval; failed = false
-      } catch { if run == token, !Task.isCancelled { review = nil; failed = true } }
+        review = approval; failed = false; failure = nil
+      } catch { if run == token, !Task.isCancelled { review = nil; failed = true; failure = .classify(error, fallback: .image) } }
     }
   }
   private func current(_ approval: Review) throws {
@@ -267,10 +277,12 @@ struct GalaxySSIHealthReportVisionView: View {
     do {
       try current(approval)
       let id = UUID(); run = id; activeReview = approval; review = nil; failed = false; stage = .sending
+      failure = nil
       task = Task {
         defer {
           if run == id { run = nil; task = nil; activeReview = nil; stage = nil }
         }
+        var fallback = GalaxySSIHealthReportFailure.remoteFailure
         do {
           try current(approval)
           let response = try await coordinator.transcribePrivateHealthReport(target: approval.target, jpeg: approval.jpeg,
@@ -278,6 +290,7 @@ struct GalaxySSIHealthReportVisionView: View {
           try current(approval)
           guard run == id else { throw CancellationError() }
           let result = try Vision.parse(response)
+          fallback = .storage
           stage = .saving
           await Task.yield()
           try current(approval)
@@ -289,13 +302,20 @@ struct GalaxySSIHealthReportVisionView: View {
           originals.releaseCompletedQuickReportOriginals()
           reload()
           if outcome?.pendingConfirmation == true, !contextPrompted { prepareContext() }
-        } catch { if run == id, !Task.isCancelled { failed = true } }
+        } catch {
+          if run == id, !Task.isCancelled {
+            let problem = GalaxySSIHealthReportFailure.classify(error, fallback: fallback)
+            activeReview = nil
+            try? records.recordReportFailure(approval.job, problem: problem)
+            failed = true; failure = problem
+          }
+        }
       }
-    } catch { review = nil; failed = true }
+    } catch { review = nil; failed = true; failure = .classify(error) }
   }
   private func cancel() { task?.cancel(); task = nil; run = nil; activeReview = nil; stage = nil }
   private func clearSensitive() {
-    cancel(); review = nil; contextReview = nil; job = nil; outcome = nil; savedRecords = []
+    cancel(); review = nil; contextReview = nil; job = nil; outcome = nil; savedRecords = []; failure = nil; failed = false
   }
   private func beginQuickImport() {
     guard accessible, task == nil else { return }
@@ -308,7 +328,7 @@ struct GalaxySSIHealthReportVisionView: View {
         originals.releaseCompletedQuickReportOriginals()
         reload(); failed = false
         if outcome?.pendingConfirmation == true, !contextPrompted { prepareContext() }
-      } catch { if run == token, !Task.isCancelled { failed = true } }
+      } catch { if run == token, !Task.isCancelled { failed = true; failure = .classify(error) } }
     }
   }
   private func prepareContext() {
@@ -317,7 +337,7 @@ struct GalaxySSIHealthReportVisionView: View {
       let selection = try records.reportBatchReview(ids: [jobID], originals: originals, zone: zone)
       contextPrompted = true
       contextReview = selection
-    } catch { failed = true }
+    } catch { failed = true; failure = .classify(error) }
   }
   private var batchSelection: GalaxySSIHealthSelectedFiles.Selection? {
     guard let batch = job?.reportBatchID else { return nil }

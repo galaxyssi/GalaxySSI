@@ -345,13 +345,22 @@ final class GalaxySSIHealthReportQuickImportTests: XCTestCase {
     XCTAssertEqual(try f.records.load().reportEvidence?.first?.target.record, existing.id)
   }
 
-  func testAutomaticEmptyResultProducesDurableZeroImportOutcome() throws {
+  func testAutomaticEmptyReplyDoesNotCreateARecognitionReceiptOrMeasurements() throws {
     let f = try Fixture()
-    let outcome = try f.automatic(rows: [], partial: true)
-    XCTAssertEqual(outcome.saved, 0); XCTAssertEqual(outcome.skipped, 0)
-    XCTAssertEqual(outcome.recordIDs, [])
-    XCTAssertTrue(outcome.partial)
-    XCTAssertEqual(try f.job().reportImportOutcome, outcome)
+    XCTAssertThrowsError(try f.automatic(rows: [], partial: true))
+    XCTAssertTrue(try f.records.load().current.isEmpty)
+    XCTAssertNil(try f.job().reportVision)
+    XCTAssertNil(try f.job().reportImportOutcome)
+  }
+
+  func testAcceptedRowsImportAndKeepOriginalWhenOtherRowsAreRejected() throws {
+    let f = try Fixture(retain: false)
+    let outcome = try f.automatic(rows: [row("weight", "70", "kg"), row("unsupported", "1", "kg")])
+    XCTAssertEqual(outcome.saved, 1); XCTAssertTrue(outcome.partial)
+    XCTAssertEqual(try f.records.load().current.first?.metric, .weight)
+    XCTAssertEqual(try f.job().reportVision?.rejectedRows?["unsupported_metric"], 1)
+    f.originals.releaseCompletedQuickReportOriginals()
+    XCTAssertEqual(try f.originals.list().originals.count, 1)
   }
 
   func testAutomaticCompleteImportReleasesOnlyTemporaryOriginalAndKeepsReceipt() throws {
