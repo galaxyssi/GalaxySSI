@@ -84,7 +84,7 @@ class HealthAtlasMusculoskeletalDeviceTest {
         for (id in listOf("cell-skeletal-myocyte", "cell-osteoblast", "cell-chondrocyte"))
             assertEquals(id, HealthAtlasPlates.forId(id)!!.owner)
         assertEquals("respiratory", HealthAtlasPlates.forId("diaphragm")!!.owner)
-        assertEquals("immune", HealthAtlasPlates.forId("bone-marrow")!!.owner)
+        assertEquals("bone-marrow", HealthAtlasPlates.forId("bone-marrow")!!.owner)
         assertEquals("muscle-posterior", HealthAtlasPlates.forId("trapezius", "muscle-anterior")!!.viewKey)
         assertEquals("skeletal-anterior", HealthAtlasPlates.forId("skeletal", "muscle-posterior")!!.viewKey)
     }

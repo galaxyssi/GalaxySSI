@@ -89,7 +89,7 @@ internal object HealthAtlasPlates {
         HealthAtlasSystemPlates.all + HealthAtlasMusculoskeletalPlates.all + HealthAtlasTissuePlates.all +
         HealthAtlasHeartSection.section + HealthAtlasImmunePlates.all + HealthAtlasCoreCellPlates.all +
         HealthAtlasTransportCellPlates.all + HealthAtlasDigestivePlates.all + HealthAtlasEndocrinePlates.all +
-        HealthAtlasSensoryPlates.all + HealthAtlasTissueContextPlates.all
+        HealthAtlasSensoryPlates.all + HealthAtlasTissueContextPlates.all + HealthAtlasLymphOrgans.all
 
     private val retinaContext = eye.copy(viewKey = "retina-eye-context", selectorLabel = R.string.health_atlas_sensory_retinal_eye_location)
 
@@ -125,6 +125,6 @@ internal object HealthAtlasPlates {
             HealthAtlasImmunePlates.forId(id) ?: HealthAtlasCoreCellPlates.forId(id) ?:
             HealthAtlasTransportCellPlates.forId(id) ?: HealthAtlasDigestivePlates.forId(id) ?:
             HealthAtlasEndocrinePlates.forId(id) ?: HealthAtlasSensoryPlates.forId(id) ?:
-            HealthAtlasTissueContextPlates.forId(id) ?: HealthAtlasSystemPlates.forId(id)
+            HealthAtlasTissueContextPlates.forId(id) ?: HealthAtlasLymphOrgans[id]?.plate ?: HealthAtlasSystemPlates.forId(id)
     }
 }
