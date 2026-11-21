@@ -35,7 +35,7 @@ enum GalaxySSIHealthReportQuickImport {
     guard let result = job.reportVision, job.original.kind == .image, job.captureSource?.mode != .device,
           [.completed, .failed].contains(job.phase),
           let zone = job.reportVisionZone.flatMap(TimeZone.init(identifier:)) else { throw GalaxySSIHealthRecords.Failure.stale }
-    _ = try GalaxySSIHealthReportVision.parse(String(decoding: JSONEncoder().encode(result), as: UTF8.self))
+    try GalaxySSIHealthReportVision.validateStored(result, allowLegacyEmpty: true)
     let context = GalaxySSIHealthOCRSourceContext.inspect(["Collected at: " + result.collected], timeZone: zone)
     let sampled = context.sample?.date
     let date = sampled.flatMap { $0 > Date(timeIntervalSince1970: 0) && $0 <= now ? $0 : nil }
@@ -122,9 +122,10 @@ extension GalaxySSIHealthRecords {
           (1...GalaxySSIHealthReportCodex.maximumImageBytes).contains(imageBytes),
           TimeZone(identifier: zone) != nil, GalaxySSIHealthReportVision.eligible(job),
           let index = archive.recognitionJobs?.firstIndex(where: { $0 == job }) else { throw Failure.stale }
-    _ = try GalaxySSIHealthReportVision.parse(String(decoding: JSONEncoder().encode(result), as: UTF8.self))
+    try GalaxySSIHealthReportVision.validateStored(result)
     var completed = job
     completed.reportVision = result; completed.reportVisionZone = zone; completed.version = UUID()
+    completed.phase = .completed; completed.reportFailure = nil
     archive.recognitionJobs?[index] = completed
     let plan = try GalaxySSIHealthReportQuickImport.plan(job: completed, archive: archive, now: now, automatic: true)
     if holdForBatch || GalaxySSIHealthReportBatch.scope(plan, now: now).needed {

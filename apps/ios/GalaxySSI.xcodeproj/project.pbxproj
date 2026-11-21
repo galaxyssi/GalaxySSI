@@ -7,6 +7,10 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    C42990000000000000000011 /* GalaxySSIHealthReportDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42990000000000000000012 /* GalaxySSIHealthReportDelivery.swift */; };
+    C42990000000000000000021 /* GalaxySSIHealthReportFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42990000000000000000022 /* GalaxySSIHealthReportFailure.swift */; };
+    C42990000000000000000031 /* GalaxySSIHealthReportRowValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42990000000000000000032 /* GalaxySSIHealthReportRowValidationTests.swift */; };
+    C42990000000000000000041 /* GalaxySSIHealthReportDeliveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42990000000000000000042 /* GalaxySSIHealthReportDeliveryTests.swift */; };
     C42980000000000000000011 /* GalaxySSIHealthReportBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42980000000000000000012 /* GalaxySSIHealthReportBatch.swift */; };
     C42980000000000000000021 /* GalaxySSIHealthReportContextForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42980000000000000000022 /* GalaxySSIHealthReportContextForm.swift */; };
     C42980000000000000000031 /* GalaxySSIHealthSelectedFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42980000000000000000032 /* GalaxySSIHealthSelectedFiles.swift */; };
@@ -1379,6 +1383,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    C42990000000000000000012 /* GalaxySSIHealthReportDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportDelivery.swift; sourceTree = "<group>"; };
+    C42990000000000000000022 /* GalaxySSIHealthReportFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportFailure.swift; sourceTree = "<group>"; };
+    C42990000000000000000032 /* GalaxySSIHealthReportRowValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportRowValidationTests.swift; sourceTree = "<group>"; };
+    C42990000000000000000042 /* GalaxySSIHealthReportDeliveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportDeliveryTests.swift; sourceTree = "<group>"; };
     C42980000000000000000012 /* GalaxySSIHealthReportBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportBatch.swift; sourceTree = "<group>"; };
     C42980000000000000000022 /* GalaxySSIHealthReportContextForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportContextForm.swift; sourceTree = "<group>"; };
     C42980000000000000000032 /* GalaxySSIHealthSelectedFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthSelectedFiles.swift; sourceTree = "<group>"; };
@@ -3600,6 +3608,8 @@
         C42930000000000000000022 /* GalaxySSIHealthReportVisionProvider.swift */,
         C42930000000000000000032 /* GalaxySSIHealthReportVisionView.swift */,
         C42940000000000000000012 /* GalaxySSIHealthReportCodex.swift */,
+        C42990000000000000000012 /* GalaxySSIHealthReportDelivery.swift */,
+        C42990000000000000000022 /* GalaxySSIHealthReportFailure.swift */,
         C42950000000000000000012 /* GalaxySSIHealthReportQuickImport.swift */,
         C42980000000000000000012 /* GalaxySSIHealthReportBatch.swift */,
         C42980000000000000000022 /* GalaxySSIHealthReportContextForm.swift */,
@@ -4081,6 +4091,8 @@
         C42950000000000000000032 /* GalaxySSIHealthReportQuickImportTests.swift */,
         C42960000000000000000032 /* GalaxySSIHealthOverviewCareTests.swift */,
         C42980000000000000000052 /* GalaxySSIHealthReportBatchTests.swift */,
+        C42990000000000000000032 /* GalaxySSIHealthReportRowValidationTests.swift */,
+        C42990000000000000000042 /* GalaxySSIHealthReportDeliveryTests.swift */,
         D24251000000000000000005 /* GalaxySSIHealthVisitJournalDiscussionTests.swift */,
         B42840000000000000000014 /* GalaxySSIHealthCareModelAttentionTests.swift */,
         B42860000000000000000004 /* GalaxySSIHealthCareRelatedContextTests.swift */,
@@ -5105,6 +5117,8 @@
         C42930000000000000000021 /* GalaxySSIHealthReportVisionProvider.swift in Sources */,
         C42930000000000000000031 /* GalaxySSIHealthReportVisionView.swift in Sources */,
         C42940000000000000000011 /* GalaxySSIHealthReportCodex.swift in Sources */,
+        C42990000000000000000011 /* GalaxySSIHealthReportDelivery.swift in Sources */,
+        C42990000000000000000021 /* GalaxySSIHealthReportFailure.swift in Sources */,
         C42950000000000000000011 /* GalaxySSIHealthReportQuickImport.swift in Sources */,
         C42980000000000000000011 /* GalaxySSIHealthReportBatch.swift in Sources */,
         C42980000000000000000021 /* GalaxySSIHealthReportContextForm.swift in Sources */,
@@ -5586,6 +5600,8 @@
         C42950000000000000000031 /* GalaxySSIHealthReportQuickImportTests.swift in Sources */,
         C42960000000000000000031 /* GalaxySSIHealthOverviewCareTests.swift in Sources */,
         C42980000000000000000051 /* GalaxySSIHealthReportBatchTests.swift in Sources */,
+        C42990000000000000000031 /* GalaxySSIHealthReportRowValidationTests.swift in Sources */,
+        C42990000000000000000041 /* GalaxySSIHealthReportDeliveryTests.swift in Sources */,
         D14251000000000000000005 /* GalaxySSIHealthVisitJournalDiscussionTests.swift in Sources */,
         B42840000000000000000013 /* GalaxySSIHealthCareModelAttentionTests.swift in Sources */,
         B42860000000000000000003 /* GalaxySSIHealthCareRelatedContextTests.swift in Sources */,

@@ -14,15 +14,18 @@ struct GalaxySSIHealthSelectedFilesView: View {
   let selection: Files.Selection
   @State private var jobs: [UUID: GalaxySSIHealthRecognitionJobs.Job] = [:]
   @State private var failures: Set<UUID> = []
+  @State private var failureCodes: [UUID: GalaxySSIHealthReportFailure] = [:]
   @State private var approval: GalaxySSIHealthReportPickerApproval?
   @State private var pendingApproval: GalaxySSIHealthReportPickerApproval?
   @State private var authorizing = false
+  @State private var pendingRetryID: UUID?
   @State private var task: Task<Void, Never>?
   @State private var token: UUID?
   @State private var activeID: UUID?
   @State private var stage = ""
   @State private var contextReview: GalaxySSIHealthReportBatch.Review?
   @State private var prompted = false
+  @State private var failedConfirmations: Set<String> = []
   @State private var entered = false
   @State private var unavailable = false
   @State private var metrics = false
@@ -41,7 +44,7 @@ struct GalaxySSIHealthSelectedFilesView: View {
             ProgressView(stage)
             Button(t("cancel", "Cancel"), role: .destructive) { stop(); approval = nil }
           } else if waitingModelImages {
-            Button(t("resume_selected", "Recognize remaining selected images")) { requestApproval() }
+            Button(t("resume_selected", "Recognize remaining selected images")) { requestApproval(only: nil) }
           } else if !failures.isEmpty || unfinishedLocalJobs {
             Button(t("retry_files", "Retry local files")) { failures = []; start() }
           }
@@ -52,7 +55,10 @@ struct GalaxySSIHealthSelectedFilesView: View {
         }
         ForEach(selection.entries) { entry in
           Section(entry.name) {
-            if failures.contains(entry.id) {
+            if activeID != entry.id,
+               let problem = failureCodes[entry.id] ?? (jobs[entry.id]?.phase == .failed ? jobs[entry.id]?.reportFailure : nil) {
+              Text(problem.title(language)).foregroundColor(.secondary)
+            } else if failures.contains(entry.id) {
               Text(t("file_failed", "Could not process this file. Other files are unchanged.")).foregroundColor(.secondary)
             }
             row(entry)
@@ -66,15 +72,17 @@ struct GalaxySSIHealthSelectedFilesView: View {
       reload()
       if !entered { entered = true; approval = selection.approval; start() }
     }
-    .onDisappear { stop(); approval = nil; contextReview = nil; jobs = [:] }
+    .onDisappear { stop(); approval = nil; pendingApproval = nil; pendingRetryID = nil; authorizing = false; contextReview = nil; jobs = [:] }
     .onChange(of: scene) {
       if $0 == .active { reload() }
-      else { stop(); approval = nil; pendingApproval = nil; contextReview = nil; jobs = [:] }
+      else { stop(); approval = nil; pendingApproval = nil; pendingRetryID = nil; authorizing = false; contextReview = nil; jobs = [:] }
     }
-    .onChange(of: zone) { _ in stop(); approval = nil; contextReview = nil; reload() }
-    .onChange(of: app.profile.identityFingerprint) { _ in stop(); approval = nil; contextReview = nil; jobs = [:] }
+    .onChange(of: zone) { _ in stop(); approval = nil; pendingApproval = nil; pendingRetryID = nil; authorizing = false; contextReview = nil; reload() }
+    .onChange(of: app.profile.identityFingerprint) { _ in
+      stop(); approval = nil; pendingApproval = nil; pendingRetryID = nil; authorizing = false; contextReview = nil; jobs = [:]
+    }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
-      stop(); approval = nil; pendingApproval = nil; contextReview = nil; jobs = [:]
+      stop(); approval = nil; pendingApproval = nil; pendingRetryID = nil; authorizing = false; contextReview = nil; jobs = [:]
     }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in reload() }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
@@ -85,21 +93,37 @@ struct GalaxySSIHealthSelectedFilesView: View {
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthOriginalStore.indexChanged)) {
-      if $0.object as? String == records.owner { stop(); approval = nil; contextReview = nil; reload() }
-    }
-    .confirmationDialog(t("resume_selected", "Recognize remaining selected images"), isPresented: $authorizing, titleVisibility: .visible) {
-      Button(t("resume_selected", "Recognize remaining selected images")) {
-        approval = pendingApproval; pendingApproval = nil; failures = []; start()
+      if $0.object as? String == records.owner {
+        stop(); approval = nil; pendingApproval = nil; pendingRetryID = nil; authorizing = false; contextReview = nil; reload()
       }
-      Button(t("cancel", "Cancel"), role: .cancel) { pendingApproval = nil }
+    }
+    .confirmationDialog(pendingRetryID == nil ? t("resume_selected", "Recognize remaining selected images") :
+      GalaxySSIHealthReportVision.text("continue", "Continue recognition", language), isPresented: $authorizing, titleVisibility: .visible) {
+      Button(GalaxySSIHealthReportVision.text("continue", "Continue recognition", language)) {
+        let chosen = pendingRetryID
+        approval = pendingApproval; pendingApproval = nil; pendingRetryID = nil
+        if let chosen { failures.remove(chosen); failureCodes.removeValue(forKey: chosen) }
+        else { failures = []; failureCodes = [:] }
+        start(only: chosen)
+      }
+      Button(t("cancel", "Cancel"), role: .cancel) { pendingApproval = nil; pendingRetryID = nil }
     } message: {
-      Text((pendingApproval?.target.title ?? "") + "\n" + t("batch_disclosure", "Send only the remaining selected report images to paired Desktop Codex. Each is limited to 100 KB. No history, tools, offline queue or provider fallback. Sampling confirmation is local and does not resend images."))
+      Text((pendingRetryID.flatMap { jobs[$0]?.original.name }.map { $0 + "\n" } ?? "") +
+        (pendingApproval?.target.title ?? "") + "\n" + (pendingRetryID == nil
+          ? t("batch_disclosure", "Send only the remaining selected report images to paired Desktop Codex. Each is limited to 100 KB. No history, tools, offline queue or provider fallback. Sampling confirmation is local and does not resend images.")
+          : GalaxySSIHealthReportVision.text("continue_disclosure", "Send only this failed file to the selected paired Desktop. Successful files are not sent again. The 100 KB limit, private read-only transport and local sampling confirmation still apply.", language)))
     }
     .sheet(item: $contextReview) { review in
       GalaxySSIHealthReportContextForm(review: review) { input in
         guard accessible else { throw GalaxySSIHealthRecords.Failure.permission }
-        _ = try records.completeReportBatch(review, supplement: input, originals: originals, confirmed: true, zone: zone)
-        originals.releaseCompletedQuickReportOriginals(); reload()
+        do {
+          _ = try records.completeReportBatch(review, supplement: input, originals: originals, confirmed: true, zone: zone)
+          failedConfirmations.remove(confirmationKey(review.plans.map { $0.job.id }))
+          originals.releaseCompletedQuickReportOriginals(); reload()
+        } catch {
+          failedConfirmations.insert(confirmationKey(review.plans.map { $0.job.id }))
+          throw error
+        }
       }
     }
   }
@@ -137,6 +161,8 @@ struct GalaxySSIHealthSelectedFilesView: View {
         } else if job.reportModelFirst == true {
           Text(t("interrupted", "Waiting for authorization to recognize this image")).foregroundColor(.secondary)
           if task == nil {
+            Button(GalaxySSIHealthReportVision.text("continue", "Continue recognition", language)) { continueImage(id) }
+              .accessibilityIdentifier("health-batch-file-" + id.uuidString)
             Button(t("skip_image", "Skip this image"), role: .destructive) {
               do {
                 try records.skipSelectedReportImage(job); reload()
@@ -191,15 +217,26 @@ struct GalaxySSIHealthSelectedFilesView: View {
       metrics = archive.derivesOverview == true
       let ids = Set(selection.entries.compactMap { entry -> UUID? in if case .job(let id) = entry.kind { return id }; return nil })
       jobs = Dictionary((archive.recognitionJobs ?? []).filter { ids.contains($0.id) }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+      failureCodes = failureCodes.filter { jobs[$0.key]?.reportVision == nil && jobs[$0.key]?.phase == .failed }
       if archive.derivesOverview != true { contextReview = nil }
     } catch { jobs = [:]; unavailable = true }
   }
 
-  private func requestApproval() {
+  private func requestApproval(only id: UUID?) {
     guard accessible, let consent = try? GalaxySSIHealthReportVision.Consent(records.load()),
           let target = coordinator.privateHealthReportCodexTarget() else { unavailable = true; return }
     pendingApproval = .init(owner: records.owner, consent: consent, target: target, expires: Date().addingTimeInterval(1800))
+    pendingRetryID = id
     authorizing = true
+  }
+
+  private func continueImage(_ id: UUID) {
+    guard accessible, task == nil, let job = jobs[id], Files.canContinue(job, batch: selection.id) else { return }
+    if let approved = approval, (failureCodes[id] ?? job.reportFailure) != .privacy,
+       let consent = try? GalaxySSIHealthReportVision.Consent(records.load()),
+       approved.matches(owner: records.owner, consent: consent, target: coordinator.privateHealthReportCodexTarget()) {
+      failures.remove(id); failureCodes.removeValue(forKey: id); start(only: id)
+    } else { requestApproval(only: id) }
   }
 
   private func valid(_ approved: GalaxySSIHealthReportPickerApproval, job: GalaxySSIHealthRecognitionJobs.Job,
@@ -214,7 +251,7 @@ struct GalaxySSIHealthSelectedFilesView: View {
     return true
   }
 
-  private func start() {
+  private func start(only selectedID: UUID? = nil) {
     guard accessible, task == nil else { return }
     let run = UUID(); token = run; unavailable = false
     task = Task {
@@ -224,35 +261,45 @@ struct GalaxySSIHealthSelectedFilesView: View {
       for entry in selection.entries {
         guard accessible, token == run, !Task.isCancelled else { return }
         guard case .job(let id) = entry.kind else { continue }
+        if let selectedID, selectedID != id { continue }
+        var fallback = GalaxySSIHealthReportFailure.storage
         do {
           guard let current = try records.load().recognitionJobs?.first(where: { $0.id == id }) else { throw GalaxySSIHealthRecords.Failure.stale }
           if current.reportVision != nil || current.phase == .cancelled { continue }
           if current.reportModelFirst == true && approval == nil { continue }
           activeID = id; stage = t("preparing_file", "Preparing file")
+          failureCodes.removeValue(forKey: id)
           if current.phase != .completed && current.pages.count < current.pageCount { try await recognizeLocal(current, run: run) }
           if current.reportModelFirst == true, let approved = approval {
-            guard let job = try records.load().recognitionJobs?.first(where: { $0.id == id }) else { throw GalaxySSIHealthRecords.Failure.stale }
+            guard let selected = try records.load().recognitionJobs?.first(where: { $0.id == id }) else { throw GalaxySSIHealthRecords.Failure.stale }
+            let job = try records.prepareReportContinuation(selected)
             let requestZone = zone.identifier
             guard valid(approved, job: job, requestZone: requestZone, run: run) else { throw GalaxySSIHealthRecords.Failure.stale }
             stage = t("compressing", "Compressing image"); await Task.yield()
+            fallback = .image
             let bytes: Data
             if job.captureSource?.cropRevision != nil, let crop = try originals.readCrop(for: job.original) { bytes = crop.png }
             else { bytes = try originals.read(job.original) }
             let jpeg = try GalaxySSIHealthReportVisionProvider.jpeg(bytes)
             guard valid(approved, job: job, requestZone: requestZone, run: run) else { throw GalaxySSIHealthRecords.Failure.stale }
             stage = t("sending", "Recognizing report")
+            fallback = .remoteFailure
             let response = try await coordinator.transcribePrivateHealthReport(target: approved.target, jpeg: jpeg,
               instructions: GalaxySSIHealthReportVisionProvider.instructions,
               valid: { valid(approved, job: job, requestZone: requestZone, run: run) })
             guard valid(approved, job: job, requestZone: requestZone, run: run) else { throw GalaxySSIHealthRecords.Failure.stale }
             stage = t("holding", "Holding results for batch confirmation")
-            _ = try records.commitAutomaticReportVision(GalaxySSIHealthReportVision.parse(response), job: job,
+            let result = try GalaxySSIHealthReportVision.parse(response)
+            fallback = .storage
+            _ = try records.commitAutomaticReportVision(result, job: job,
               consent: approved.consent, zone: requestZone, imageBytes: jpeg.count, originals: originals, holdForBatch: true,
               active: { valid(approved, job: job, requestZone: requestZone, run: run) })
           }
         } catch {
           if Task.isCancelled || token != run { return }
-          try? records.failSelectedReportJob(id: id, batch: selection.id)
+          let problem = GalaxySSIHealthReportFailure.classify(error, fallback: fallback)
+          try? records.failSelectedReportJob(id: id, batch: selection.id, problem: problem)
+          failureCodes[id] = problem
           failures.insert(id)
         }
         reload()
@@ -287,17 +334,22 @@ struct GalaxySSIHealthSelectedFilesView: View {
   }
 
   private func prepareContext(force: Bool) {
-    guard accessible, !pendingIDs.isEmpty, force || !prompted else { return }
+    guard accessible, !pendingIDs.isEmpty else { return }
+    let ids = pendingIDs, key = confirmationKey(ids)
     do {
-      let review = try records.reportBatchReview(ids: pendingIDs, originals: originals, zone: zone)
-      prompted = true
+      let review = try records.reportBatchReview(ids: ids, originals: originals, zone: zone)
+      guard force || ((!review.scope.needed || !prompted) && !failedConfirmations.contains(key)) else { return }
+      if review.scope.needed { prompted = true }
       if review.scope.needed || force { contextReview = review }
       else {
         _ = try records.completeReportBatch(review, supplement: .init(), originals: originals, confirmed: true, zone: zone)
+        failedConfirmations.remove(key)
         originals.releaseCompletedQuickReportOriginals(); reload()
       }
-    } catch { unavailable = true }
+    } catch { failedConfirmations.insert(key); unavailable = true }
   }
+
+  private func confirmationKey(_ ids: [UUID]) -> String { ids.map(\.uuidString).sorted().joined(separator: ":") }
 
   private func stop() { task?.cancel(); task = nil; token = nil; activeID = nil; stage = "" }
   private func t(_ key: String, _ fallback: String) -> String { GalaxySSIHealthReportQuickImport.text(key, fallback, language) }

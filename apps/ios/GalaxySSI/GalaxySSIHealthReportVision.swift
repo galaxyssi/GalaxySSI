@@ -2,6 +2,20 @@ import CryptoKit
 import Foundation
 
 enum GalaxySSIHealthReportVision {
+  enum RowIssue: String, Codable, CaseIterable {
+    case unsupportedMetric = "unsupported_metric", invalidUnit = "invalid_unit", invalidFields = "invalid_fields", duplicate
+    func title(count: Int, language: String) -> String {
+      let fallback: String
+      switch self {
+      case .unsupportedMetric: fallback = "%lld rows use unsupported measurements"
+      case .invalidUnit: fallback = "%lld rows have unsupported units"
+      case .invalidFields: fallback = "%lld rows have invalid or unreadable fields"
+      case .duplicate: fallback = "%lld repeated rows were omitted"
+      }
+      return String(format: GalaxySSIHealthReportVision.text("rejected_" + rawValue, fallback, language), Int64(count))
+    }
+  }
+  enum ReplyProblem: String, Error { case format, noSupportedRows, invalidRows }
   struct Row: Codable, Equatable, Identifiable {
     let metric: GalaxySSIHealthMetric
     let values: [String: String]
@@ -15,6 +29,8 @@ enum GalaxySSIHealthReportVision {
     let collected: String
     let partial: Bool
     var fasting: String? = nil
+    var rejectedRows: [String: Int]? = nil
+    enum CodingKeys: String, CodingKey { case rows, collected, partial, fasting; case rejectedRows = "rejected_rows" }
   }
   struct Consent: Equatable {
     let online: UUID
@@ -32,21 +48,64 @@ enum GalaxySSIHealthReportVision {
   }
 
   static func parse(_ response: String) throws -> Result {
-    let invalid = GalaxySSIHealthRecords.Failure.invalid
-    guard response.utf8.count <= 131_072 else { throw invalid }
+    guard response.utf8.count <= GalaxySSIHealthReportCodex.maximumReplyBytes, response.utf16.count <= 100_000 else { throw ReplyProblem.format }
     var text = response.trimmingCharacters(in: .whitespacesAndNewlines)
-    if text.hasPrefix("```json\n"), text.hasSuffix("\n```") { text = String(text.dropFirst(8).dropLast(4)) }
-    let object = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(text.utf8))
+    if text.hasPrefix("```"), text.hasSuffix("```") {
+      guard let newline = text.firstIndex(of: "\n"),
+            ["```", "```json"].contains(String(text[..<newline]).trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+      else { throw ReplyProblem.format }
+      text = String(text[text.index(after: newline)...].dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    guard let object = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(text.utf8)) else { throw ReplyProblem.format }
     guard Set(object.keys).subtracting(["fasting"]) == ["rows", "collected", "partial"], case .array(let raw)? = object["rows"],
           (0...80).contains(raw.count), let collected = object["collected"]?.strictStringValue,
-          validText(collected, limit: 80), case .bool(let partial)? = object["partial"] else { throw invalid }
+          validText(collected, limit: 80), case .bool(let partial)? = object["partial"] else { throw ReplyProblem.format }
     let fasting: String?
     if let value = object["fasting"] {
-      guard let text = value.strictStringValue, text.isEmpty || GalaxySSIHealthReportBatch.conditions.contains(text) else { throw invalid }
+      guard let text = value.strictStringValue, text.isEmpty || GalaxySSIHealthReportBatch.conditions.contains(text) else { throw ReplyProblem.format }
       fasting = text
     } else { fasting = nil }
-    let rows = try raw.map { value -> Row in
-      guard let row = value.objectValue, Set(row.keys) == ["metric", "values", "unit", "reference", "source"],
+    var rows: [Row] = [], seen = Set<String>(), rejected: [String: Int] = [:]
+    for value in raw {
+      let issue: RowIssue?
+      if let item = value.objectValue, let metricID = item["metric"]?.strictStringValue, !metricID.isBlank,
+         let unit = item["unit"]?.strictStringValue {
+        if let metric = GalaxySSIHealthMetric(rawValue: metricID) {
+          if !unit.isEmpty && !metric.units.contains(unit) { issue = .invalidUnit }
+          else if let row = try? decodeRow(value) {
+            if seen.insert(row.id).inserted { rows.append(row); issue = nil }
+            else { issue = .duplicate }
+          } else { issue = .invalidFields }
+        } else { issue = .unsupportedMetric }
+      } else { issue = .invalidFields }
+      if let issue { rejected[issue.rawValue, default: 0] += 1 }
+    }
+    guard !rows.isEmpty else {
+      throw raw.isEmpty || Set(rejected.keys) == [RowIssue.unsupportedMetric.rawValue]
+        ? ReplyProblem.noSupportedRows : ReplyProblem.invalidRows
+    }
+    return Result(rows: rows, collected: collected, partial: partial || !rejected.isEmpty, fasting: fasting,
+      rejectedRows: rejected.isEmpty ? nil : rejected)
+  }
+
+  // Stored rejection counts are trusted only after local validation; a model may never supply this field.
+  static func validateStored(_ result: Result, allowLegacyEmpty: Bool = false) throws {
+    let invalid = GalaxySSIHealthRecords.Failure.invalid
+    let rejected = result.rejectedRows ?? [:]
+    guard result.rows.count <= 80, !result.rows.isEmpty || (allowLegacyEmpty && rejected.isEmpty),
+          validText(result.collected, limit: 80), result.fasting.map({ $0.isEmpty || GalaxySSIHealthReportBatch.conditions.contains($0) }) != false,
+          rejected.allSatisfy({ RowIssue(rawValue: $0.key) != nil && (1...80).contains($0.value) }),
+          result.rows.count + rejected.values.reduce(0, +) <= 80, rejected.isEmpty || result.partial else { throw invalid }
+    let encoded = try JSONEncoder().encode(result)
+    guard encoded.count <= GalaxySSIHealthReportCodex.maximumReplyBytes * 2,
+          case .array(let rows)? = try JSONDecoder().decode(AgentMcpJSONObject.self, from: encoded)["rows"],
+          Set(result.rows.map(\.id)).count == result.rows.count else { throw invalid }
+    for (raw, row) in zip(rows, result.rows) { guard try decodeRow(raw) == row else { throw invalid } }
+  }
+
+  private static func decodeRow(_ value: AgentMcpJSONValue) throws -> Row {
+    let invalid = GalaxySSIHealthRecords.Failure.invalid
+    guard let row = value.objectValue, Set(row.keys) == ["metric", "values", "unit", "reference", "source"],
             let name = row["metric"]?.strictStringValue, let metric = GalaxySSIHealthMetric(rawValue: name),
             let fields = row["values"]?.objectValue,
             Set(fields.keys) == (metric == .bloodPressure ? ["value", "diastolic"] : ["value"]),
@@ -69,9 +128,6 @@ enum GalaxySSIHealthReportVision {
         values[key] = text
       }
       return Row(metric: metric, values: values, unit: unit, reference: reference, source: source)
-    }
-    guard Set(rows.map(\.id)).count == rows.count else { throw invalid }
-    return Result(rows: rows, collected: collected, partial: partial, fasting: fasting)
   }
 
   private static func validText(_ value: String, limit: Int) -> Bool {
@@ -91,6 +147,29 @@ enum GalaxySSIHealthReportVision {
 }
 
 extension GalaxySSIHealthRecords {
+  func prepareReportContinuation(_ expected: GalaxySSIHealthRecognitionJobs.Job) throws -> GalaxySSIHealthRecognitionJobs.Job {
+    var archive = try load()
+    guard GalaxySSIHealthReportVision.eligible(expected), expected.run == nil,
+          let index = archive.recognitionJobs?.firstIndex(where: { $0 == expected }) else { throw Failure.stale }
+    var job = expected
+    if job.pages.count == job.pageCount { job.phase = .completed }
+    job.reportFailure = nil
+    if job == expected { return job }
+    job.version = UUID(); archive.recognitionJobs?[index] = job
+    try persistReportVision(archive)
+    return job
+  }
+
+  func recordReportFailure(_ expected: GalaxySSIHealthRecognitionJobs.Job, problem: GalaxySSIHealthReportFailure) throws {
+    var archive = try load()
+    guard GalaxySSIHealthReportVision.eligible(expected), expected.run == nil,
+          let index = archive.recognitionJobs?.firstIndex(where: { $0 == expected }) else { throw Failure.stale }
+    archive.recognitionJobs?[index].phase = .failed
+    archive.recognitionJobs?[index].reportFailure = problem
+    archive.recognitionJobs?[index].version = UUID()
+    try persistReportVision(archive)
+  }
+
   func commitReportVision(_ result: GalaxySSIHealthReportVision.Result, job: GalaxySSIHealthRecognitionJobs.Job,
       consent: GalaxySSIHealthReportVision.Consent, zone: String) throws {
     var archive = try load()
@@ -98,10 +177,11 @@ extension GalaxySSIHealthRecords {
           TimeZone(identifier: zone) != nil, GalaxySSIHealthReportVision.eligible(job),
           let index = archive.recognitionJobs?.firstIndex(where: { $0 == job })
     else { throw Failure.stale }
-    let encoded = try JSONEncoder().encode(result)
-    _ = try GalaxySSIHealthReportVision.parse(String(decoding: encoded, as: UTF8.self))
+    try GalaxySSIHealthReportVision.validateStored(result)
     archive.recognitionJobs?[index].reportVision = result
     archive.recognitionJobs?[index].reportVisionZone = zone
+    archive.recognitionJobs?[index].phase = .completed
+    archive.recognitionJobs?[index].reportFailure = nil
     archive.recognitionJobs?[index].version = UUID()
     try persistReportVision(archive)
   }

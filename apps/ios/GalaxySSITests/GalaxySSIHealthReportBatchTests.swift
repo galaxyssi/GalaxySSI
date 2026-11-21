@@ -303,6 +303,40 @@ final class GalaxySSIHealthReportBatchTests: XCTestCase {
     XCTAssertEqual(try f.records.load().current.count, 1)
   }
 
+  func testContinuingFailedImageRearmsBarrierAndPreservesOtherReceipt() throws {
+    let f = try Fixture()
+    let first = try f.stage(value: "5.7"), second = try f.prepare()
+    try f.records.failSelectedReportJob(id: second, batch: f.batch, problem: .replyTimeout)
+    let receipt = try f.job(first).reportImportOutcome
+    let failed = try f.job(second)
+    XCTAssertEqual(failed.reportFailure, .replyTimeout)
+    XCTAssertTrue(GalaxySSIHealthSelectedFiles.canContinue(failed, batch: f.batch))
+    let retried = try f.records.prepareReportContinuation(failed)
+    XCTAssertNil(retried.reportFailure); XCTAssertEqual(retried.phase, .completed)
+    XCTAssertThrowsError(try f.review([first]))
+    XCTAssertEqual(try f.job(first).reportImportOutcome, receipt)
+    let result = GalaxySSIHealthReportVision.Result(rows: [.init(metric: .weight, values: ["value": "70"], unit: "kg",
+      reference: "", source: "Synthetic retry")], collected: "2020-01-02 08:30:00Z", partial: false, fasting: "fasting")
+    _ = try f.records.commitAutomaticReportVision(result, job: retried, consent: .init(f.records.load()), zone: f.zone.identifier,
+      imageBytes: 1_000, originals: f.originals, now: f.now, holdForBatch: true, active: { true })
+    XCTAssertEqual(try f.job(first).reportImportOutcome, receipt)
+    XCTAssertNil(try f.job(second).reportFailure)
+    XCTAssertTrue(try f.records.load().current.isEmpty)
+    _ = try f.complete(f.review([first, second]))
+    XCTAssertEqual(try f.records.load().current.count, 2)
+  }
+
+  func testContinuationPolicyRejectsSuccessfulOtherGroupAndSkippedFiles() throws {
+    let f = try Fixture()
+    let completed = try f.stage(value: "5.7"), pending = try f.prepare()
+    XCTAssertFalse(try GalaxySSIHealthSelectedFiles.canContinue(f.job(completed), batch: f.batch))
+    let job = try f.job(pending)
+    XCTAssertTrue(GalaxySSIHealthSelectedFiles.canContinue(job, batch: f.batch))
+    XCTAssertFalse(GalaxySSIHealthSelectedFiles.canContinue(job, batch: UUID()))
+    try f.records.skipSelectedReportImage(job)
+    XCTAssertFalse(try GalaxySSIHealthSelectedFiles.canContinue(f.job(pending), batch: f.batch))
+  }
+
   private func stamp(_ value: String) throws -> Date { try XCTUnwrap(ISO8601DateFormatter().date(from: value)) }
 
   @MainActor private final class Fixture {
