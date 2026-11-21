@@ -23,7 +23,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
     private val villus = if (kind == HealthAtlasPhysiologyKind.VILLUS_AREA) HealthAtlasVillusAreaView(activity) else null
     private val materialResponse = when (kind) {
         HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION, HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION,
-        HealthAtlasPhysiologyKind.BONE_BENDING ->
+        HealthAtlasPhysiologyKind.BONE_BENDING, HealthAtlasPhysiologyKind.CALF_PUMP ->
             HealthAtlasMaterialResponseView(activity, model)
         else -> null
     }

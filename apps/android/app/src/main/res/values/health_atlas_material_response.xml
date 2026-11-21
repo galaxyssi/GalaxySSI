@@ -31,4 +31,15 @@
     <string name="health_atlas_bone_bending_compression">Compression</string>
     <string name="health_atlas_bone_bending_tension">Tension</string>
     <string name="health_atlas_bone_bending_neutral">Neutral axis</string>
+    <string name="health_atlas_calf_pump_title">Example calf pump net flow</string>
+    <string name="health_atlas_calf_pump_stroke">Ejected per squeeze</string>
+    <string name="health_atlas_calf_pump_rate">Squeezes per minute</string>
+    <string name="health_atlas_calf_pump_return">Example returning fraction</string>
+    <string name="health_atlas_calf_pump_net_stroke">Net per squeeze: %1$s mL</string>
+    <string name="health_atlas_calf_pump_formula">Net flow = ejected volume × squeezes per minute × fraction not returning.</string>
+    <string name="health_atlas_calf_pump_scope">An idealized single chamber with synthetic inputs. Actual calf veins have multiple paths, valves and changing pressures. This model does not estimate an individual’s circulation or diagnose valve function.</string>
+    <string name="health_atlas_calf_pump_diagram">Single pump chamber and forward and returning flow.</string>
+    <string name="health_atlas_calf_pump_chamber_label">One squeeze</string>
+    <string name="health_atlas_calf_pump_forward_label">Forward per minute</string>
+    <string name="health_atlas_calf_pump_return_label">Returning per minute</string>
 </resources>

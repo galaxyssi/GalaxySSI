@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_scrotal_heat_title">Scrotum: heat exchange</string>
+    <string name="health_atlas_scrotal_heat_choice">Scrotal heat exchange</string>
+    <string name="health_atlas_scrotal_heat_scope">Normal adult anatomy. The scrotum houses the testes, and neighboring vessels in the spermatic cord exchange heat. The section omits some coverings; the exchange diagram separates normally intertwined vessels. Colors and motion are qualitative, not temperature or flow measurements.</string>
+    <string name="health_atlas_scrotal_heat_compartments">Two compartments</string>
+    <string name="health_atlas_scrotal_heat_compartments_caption">The scrotal septum divides the sac into two compartments, each containing a testis. A spermatic cord reaches each testis from above and carries its blood vessels alongside other structures.</string>
+    <string name="health_atlas_scrotal_heat_coverings">Wall and testis coverings</string>
+    <string name="health_atlas_scrotal_heat_coverings_caption">Dartos is a smooth-muscle layer beneath the scrotal skin and contributes to the septum. The tunica vaginalis is a separate serous covering around most of each testis. The fine layers are simplified here.</string>
+    <string name="health_atlas_scrotal_heat_exchange">Countercurrent exchange</string>
+    <string name="health_atlas_scrotal_heat_exchange_caption">Blood heads toward the testis in the artery and returns in the pampiniform veins. Heat moves from the warmer arterial blood to the cooler venous blood, helping cool the arterial inflow. The gold arrows represent heat transfer, not blood crossing between vessels.</string>
+    <string name="health_atlas_scrotal_heat_testes">Testes</string>
+    <string name="health_atlas_scrotal_heat_septum">Scrotal septum</string>
+    <string name="health_atlas_scrotal_heat_dartos">Dartos layer</string>
+    <string name="health_atlas_scrotal_heat_dartos_detail">The rose line under the outer edge marks the dartos. It sits in the scrotal wall, not directly on the testis.</string>
+    <string name="health_atlas_scrotal_heat_tunica">Tunica vaginalis</string>
+    <string name="health_atlas_scrotal_heat_tunica_detail">The thin teal outline represents the serous covering around most of the testis. Its two layers are drawn together in this simplified section.</string>
+    <string name="health_atlas_scrotal_heat_cord">Spermatic cord</string>
+    <string name="health_atlas_scrotal_heat_cord_detail">Each cord bundles the testicular vessels with the vas deferens and other structures. The enlarged cord region isolates the nearby artery and veins for clarity.</string>
+    <string name="health_atlas_scrotal_heat_plexus">Pampiniform plexus</string>
+    <string name="health_atlas_scrotal_heat_plexus_detail">These returning veins form a network around the testicular artery. They are placed beside the artery in the inset to separate the opposite flow directions and show heat transfer.</string>
+    <string name="health_atlas_scrotal_heat_artery">Testicular artery</string>
+    <string name="health_atlas_scrotal_heat_heat_transfer">Heat transfer</string>
+    <string name="health_atlas_scrotal_heat_to_testis">Toward the testis</string>
+    <string name="health_atlas_scrotal_heat_from_testis">From the testis</string>
+    <string name="health_atlas_scrotal_heat_plate_title">Scrotal section and cord</string>
+    <string name="health_atlas_scrotal_heat_plate_caption">Scrotal compartments at left and an enlarged cord diagram at right. The gold arrows show heat transfer between vessels. Not to scale.</string>
+    <string name="health_atlas_scrotal_heat_ref_anatomy">OpenStax: scrotum, testes, and coverings</string>
+    <string name="health_atlas_scrotal_heat_ref_vessels">Human anatomy study: testicular artery and pampiniform veins</string>
+    <string name="health_atlas_scrotal_heat_ref_physiology">Endotext: testicular circulation and heat exchange</string>
+</resources>

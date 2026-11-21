@@ -4,6 +4,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HealthAtlasPhysiologyTest {
+    @Test fun idealCalfPumpConservesForwardAndReturningVolume() {
+        val model = requireNotNull(HealthAtlasPhysiology.restore("soleus", intArrayOf(12, 12, 0)))
+        assertEquals(HealthAtlasPhysiologyKind.CALF_PUMP, model.kind)
+        assertEquals(144.0, model.result, 1e-9)
+        assertEquals(12.0, model.companionValue, 1e-9)
+        for (returnPercent in 0..100) {
+            val example = model.withInput(2, returnPercent)
+            val returned = example.input(0) * example.input(1) * returnPercent / 100.0
+            assertEquals(144.0, example.result + returned, 1e-9)
+            assertEquals(example.result, example.companionValue * example.input(1), 1e-9)
+        }
+        assertEquals(0.0, model.withInput(0, 0).result, 0.0)
+        assertEquals(0.0, model.withInput(1, 0).result, 0.0)
+        assertEquals(0.0, model.withInput(2, 100).result, 0.0)
+        assertNull(HealthAtlasPhysiology.restore("gastrocnemius", intArrayOf(12, 12, 101)))
+        assertEquals(HealthAtlasPhysiologyKind.VESSEL_FLOW, HealthAtlasPhysiologyKind.forItem("veins"))
+    }
+
     @Test fun bendingSeparatesMomentFromTubeGeometryAndUsesConsistentUnits() {
         val model = requireNotNull(HealthAtlasPhysiology.restore("limb-bones", intArrayOf(6, 20, 60)))
         val inertia = Math.PI * (20.0 * 20 * 20 * 20 - 12.0 * 12 * 12 * 12) / 64

@@ -76,7 +76,7 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(HealthAtlasFunctionStory.VISION, HealthAtlasFunctionStory.forId("eye"))
         assertEquals(HealthAtlasFunctionStory.CRANIAL_REFLEX, HealthAtlasFunctionStory.forId("cranial-nerves"))
         assertEquals(HealthAtlasFunctionStory.ENDOMETRIUM_RENEWAL, HealthAtlasFunctionStory.forId("endometrium"))
-        assertNull(HealthAtlasFunctionStory.forId("cervix"))
+        assertEquals(HealthAtlasFunctionStory.UTEROCERVICAL_CONTINUITY, HealthAtlasFunctionStory.forId("cervix"))
         assertEquals(HealthAtlasFunctionStory.ADRENAL_MEDULLA_SIGNAL, HealthAtlasFunctionStory.forId("adrenal-glands"))
         assertEquals(HealthAtlasFunctionStory.ADRENAL_MEDULLA_SIGNAL, HealthAtlasFunctionStory.forId("cell-chromaffin-cell"))
         assertNull(HealthAtlasFunctionStory.forId("cell-adrenocortical-cell"))
@@ -162,6 +162,8 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(lift, HealthAtlasFunctionStory.forId("deltoid"))
         assertEquals(rotation, HealthAtlasFunctionStory.forId("trapezius"))
         assertEquals(rotation, HealthAtlasFunctionStory.forId("scapula"))
+        assertEquals(rotation, HealthAtlasFunctionStory.forId("clavicle"))
+        assertEquals(1, rotation.chapter(rotation.entryPhase("clavicle")))
         assertEquals(2, rotation.chapter(rotation.entryPhase("scapula")))
         assertEquals(listOf("trapezius" to rotation), lift.relatedLessons)
         assertEquals(listOf("deltoid" to lift), rotation.relatedLessons)
@@ -206,6 +208,42 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(listOf(sampling), HealthAtlasFunctionStory.choicesForId("gut-associated-lymphoid-tissue"))
         assertEquals(0, sampling.chapter(sampling.entryPhase("appendix")))
         assertEquals(1, sampling.chapter(sampling.entryPhase("gut-associated-lymphoid-tissue")))
+    }
+
+    @Test fun pectoralAndLatissimusActionsOpenSeparateAnimations() {
+        val pectoral = HealthAtlasFunctionStory.PECTORAL_HORIZONTAL_ADDUCTION
+        val latissimus = HealthAtlasFunctionStory.LATISSIMUS_EXTENSION_ADDUCTION
+        assertEquals(listOf(pectoral), HealthAtlasFunctionStory.choicesForId("pectoralis-major"))
+        assertEquals(listOf(latissimus), HealthAtlasFunctionStory.choicesForId("latissimus-dorsi"))
+        assertEquals(0f, pectoral.entryPhase("pectoralis-major"), 0f)
+        assertEquals(0f, latissimus.entryPhase("latissimus-dorsi"), 0f)
+        assertNotEquals(pectoral.chapters, latissimus.chapters)
+    }
+
+    @Test fun tenocyteHasItsOwnPlaybackAndLinksBackToTendonTissue() {
+        val cellular = HealthAtlasFunctionStory.TENOCYTE_TENDON_MATRIX
+        val tissue = HealthAtlasFunctionStory.TENDON_FORCE_TRANSFER
+        assertEquals(listOf(cellular), HealthAtlasFunctionStory.choicesForId("cell-tenocyte"))
+        assertEquals(tissue, HealthAtlasFunctionStory.forId("tissue-dense-regular-connective"))
+        assertEquals(listOf("tissue-dense-regular-connective" to tissue), cellular.relatedLessons)
+        assertEquals(0f, cellular.entryPhase("cell-tenocyte"), 0f)
+    }
+
+    @Test fun externalFoldEntriesStartWithTheirOwnStructuralFocus() {
+        val lesson = HealthAtlasFunctionStory.VULVAR_PROTECTIVE_FOLDS
+        listOf("vulva", "labia-majora", "labia-minora").forEachIndexed { chapter, id ->
+            assertEquals(listOf(lesson), HealthAtlasFunctionStory.choicesForId(id))
+            assertEquals(chapter, lesson.chapter(lesson.entryPhase(id)))
+        }
+    }
+
+    @Test fun fibulaSupportsAnIndependentAnkleLessonWithoutReplacingKneeActions() {
+        val ankle = HealthAtlasFunctionStory.ANKLE_MORTISE
+        val knee = HealthAtlasFunctionStory.KNEE_ARTICULATION
+        assertEquals(listOf(ankle), HealthAtlasFunctionStory.choicesForId("fibula"))
+        assertEquals(listOf(knee, ankle), HealthAtlasFunctionStory.choicesForId("tibia"))
+        assertEquals(listOf("tibia" to knee), ankle.relatedLessons)
+        assertEquals(5, ankle.chapters.size)
     }
 
     @Test fun focusedEntryChaptersAreOnlyDefaultsAndDoNotOverrideSavedPlayback() {
@@ -695,9 +733,20 @@ class HealthAtlasFunctionStoryTest {
             "cell-granulosa-cell", "cell-ciliated-oviduct-cell")) {
             assertEquals(listOf(ovum), HealthAtlasFunctionStory.choicesForId(id))
         }
-        for (id in listOf("prostate", "uterus")) {
-            assertNull(HealthAtlasFunctionStory.forId(id))
+        val glands = HealthAtlasFunctionStory.ACCESSORY_GLAND_ROUTING
+        listOf("seminal-vesicles", "ejaculatory-ducts", "prostate", "bulbourethral-glands").forEachIndexed { index, id ->
+            assertEquals(glands, HealthAtlasFunctionStory.forId(id))
+            assertEquals(index + 1, glands.chapter(glands.entryPhase(id)))
         }
+        val continuity = HealthAtlasFunctionStory.UTEROCERVICAL_CONTINUITY
+        listOf("uterus", "cervix", "vagina").forEachIndexed { index, id ->
+            assertEquals(continuity, HealthAtlasFunctionStory.forId(id))
+            assertEquals(index, continuity.chapter(continuity.entryPhase(id)))
+        }
+        assertEquals(HealthAtlasFunctionStory.PENILE_URINARY_ROUTE, HealthAtlasFunctionStory.forId("penis"))
+        assertEquals(HealthAtlasFunctionStory.SCROTAL_HEAT_EXCHANGE, HealthAtlasFunctionStory.forId("scrotum"))
+        assertEquals(HealthAtlasFunctionStory.CLITORAL_SENSORY_PATH, HealthAtlasFunctionStory.forId("clitoris"))
+        assertEquals(HealthAtlasFunctionStory.VESTIBULAR_GLAND_SECRETION, HealthAtlasFunctionStory.forId("greater-vestibular-glands"))
         assertEquals(HealthAtlasFunctionStory.PLACENTAL_EXCHANGE, HealthAtlasFunctionStory.forId("cell-trophoblast"))
         val water = HealthAtlasBarrierMotion
         val flow = HealthAtlasGameteMotion
@@ -774,8 +823,14 @@ class HealthAtlasFunctionStoryTest {
 
     @Test fun allChaptersScrubToTheirOwnBoundariesAndRejectInvalidState() = HealthAtlasFunctionStory.entries.forEach { story ->
         val count = story.chapters.size
-        if (story == HealthAtlasFunctionStory.GANGLION_RELAY) assertEquals(3, count)
-        else assertTrue("$story chapter count: $count", count in 4..5)
+        when (story) {
+            HealthAtlasFunctionStory.GANGLION_RELAY,
+            HealthAtlasFunctionStory.UTEROCERVICAL_CONTINUITY,
+            HealthAtlasFunctionStory.PENILE_URINARY_ROUTE,
+            HealthAtlasFunctionStory.SCROTAL_HEAT_EXCHANGE,
+            HealthAtlasFunctionStory.VERTEBRAL_MOTION -> assertEquals(3, count)
+            else -> assertTrue("$story chapter count: $count", count in 4..5)
+        }
         assertEquals(count, story.chapters.map { it.second }.toSet().size)
         for (i in story.chapters.indices) {
             val start = story.startOf(i)

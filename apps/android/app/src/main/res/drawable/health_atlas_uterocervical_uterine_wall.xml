@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Coronal schematic. The lower neck is context; the three layer anchors are on the body. -->
+    <path android:strokeColor="#825463" android:strokeWidth="1.65" android:strokeLineJoin="round"
+        android:pathData="M77,69 C99,61 111,36 178,36 C240,36 257,58 282,68 C270,84 267,110 256,132 C245,155 214,169 208,193 C204,209 214,232 198,242 Q182,251 163,244 C143,237 153,207 149,193 C142,172 120,155 105,138 C88,118 89,90 77,69 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="108" android:startY="42" android:endX="218" android:endY="228"
+                android:startColor="#FAD8BF" android:centerColor="#E6A593" android:endColor="#AC788B" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#AB7075" android:strokeWidth="1.1" android:strokeLineJoin="round"
+        android:pathData="M87,72 C110,60 126,45 178,44 C231,44 252,62 272,72 C260,92 258,116 248,132 C233,156 208,163 202,188 C196,211 203,224 195,236 Q181,245 167,237 C157,231 160,208 156,189 C151,169 126,152 113,134 C98,115 98,91 87,72 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="132" android:startY="51" android:endX="239" android:endY="218"
+                android:startColor="#EFB5A4" android:centerColor="#D48D91" android:endColor="#AD7186" />
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#FFF1D8" android:fillAlpha="0.23"
+        android:pathData="M91,74 C121,60 141,50 182,50 C220,50 243,66 263,74 C227,69 206,66 177,66 C141,66 111,70 99,97 Z" />
+    <path android:strokeColor="#AE6875" android:strokeAlpha="0.68" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M99,78 C113,92 110,114 127,133 C138,148 153,157 159,178 M110,76 C123,89 122,111 138,130 C150,147 163,154 167,173 M127,72 Q161,56 205,63 C225,66 237,72 249,77 M260,78 C246,96 251,114 234,134 C225,145 203,157 199,177 M249,80 C234,94 238,112 224,130 C214,143 196,154 193,176 M232,86 C221,102 222,114 213,129 Q202,145 190,154 M119,106 Q123,130 143,145 M236,112 Q229,133 208,146 M110,115 Q124,126 135,127 M224,139 Q239,129 243,123 M160,57 Q177,54 199,58" />
+    <path android:strokeColor="#FFF1DA" android:strokeAlpha="0.83" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M88,67 C110,55 126,41 161,40 M197,40 C227,41 248,52 268,63 M105,126 Q116,145 138,164 M251,131 Q239,149 218,166" />
+    <path android:strokeColor="#AA6977" android:strokeWidth="1.25" android:strokeLineJoin="round"
+        android:pathData="M111,78 C136,80 155,87 178,87 C202,88 222,78 249,79 C234,87 226,106 216,122 C204,142 188,153 185,175 Q181,183 176,177 C171,156 154,146 143,127 C133,109 129,91 111,78 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="180" android:startY="78" android:endX="177" android:endY="177"
+                android:startColor="#F9CDBB" android:endColor="#E3A094" />
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#FFEDDC" android:strokeColor="#B4797C" android:strokeWidth="1.25"
+        android:strokeLineJoin="round"
+        android:pathData="M125,84 C145,88 159,96 179,96 C202,96 215,88 236,84 C220,98 217,113 207,126 C196,142 184,150 183,177 C184,195 189,215 185,240 L178,240 C176,223 180,200 176,177 C173,152 158,144 149,127 C139,108 140,99 125,84 Z" />
+    <path android:strokeColor="#C17C82" android:strokeWidth="1.1" android:strokeLineCap="round"
+        android:pathData="M139,98 q-5,0 -4,6 M145,109 q-5,0 -3,6 M150,122 q-5,0 -2,6 M157,134 q-4,1 -1,6 M165,144 q-4,1 -1,5 M222,101 q5,0 4,5 M218,111 q5,0 2,6 M213,122 q4,0 2,5 M203,136 q4,0 1,5 M194,148 q4,0 1,5" />
+    <path android:strokeColor="#744E60" android:strokeAlpha="0.64" android:strokeWidth="1.15" android:strokeLineCap="round"
+        android:pathData="M162,188 Q173,193 175,200 M163,204 Q173,208 175,213 M165,220 Q173,222 175,227 M197,190 Q190,193 186,201 M198,206 Q190,209 187,214 M196,221 Q190,224 188,228" />
+</vector>

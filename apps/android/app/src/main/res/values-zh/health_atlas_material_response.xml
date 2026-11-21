@@ -31,4 +31,15 @@
     <string name="health_atlas_bone_bending_compression">受压</string>
     <string name="health_atlas_bone_bending_tension">受拉</string>
     <string name="health_atlas_bone_bending_neutral">中性轴</string>
+    <string name="health_atlas_calf_pump_title">小腿肌泵净流量示例</string>
+    <string name="health_atlas_calf_pump_stroke">每次挤出量</string>
+    <string name="health_atlas_calf_pump_rate">每分钟挤压次数</string>
+    <string name="health_atlas_calf_pump_return">示例回流比例</string>
+    <string name="health_atlas_calf_pump_net_stroke">每次净流量：%1$s mL</string>
+    <string name="health_atlas_calf_pump_formula">净流量 = 每次挤出量 × 每分钟挤压次数 × 未回流的比例。</string>
+    <string name="health_atlas_calf_pump_scope">这是使用示例参数的理想单腔模型。真实小腿静脉有多条通路和瓣膜，压力也会改变。该模型不能估算个人血液循环或诊断瓣膜功能。</string>
+    <string name="health_atlas_calf_pump_diagram">示意单个泵腔，以及正向流动和回流。</string>
+    <string name="health_atlas_calf_pump_chamber_label">一次挤压</string>
+    <string name="health_atlas_calf_pump_forward_label">每分钟正向流量</string>
+    <string name="health_atlas_calf_pump_return_label">每分钟回流量</string>
 </resources>

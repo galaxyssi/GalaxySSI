@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ankle_mortise_title">腓骨如何参与构成踝关节</string>
+    <string name="health_atlas_ankle_mortise_choice">踝穴与腓骨运动</string>
+    <string name="health_atlas_ankle_mortise_scope">用简化的正面与侧面图展示正常踝关节。为便于分辨，放大了腓骨的细小运动；角度和距离不是测量值。</string>
+    <string name="health_atlas_ankle_mortise_locate">找到腓骨</string>
+    <string name="health_atlas_ankle_mortise_locate_caption">小腿外侧较细的一根骨是腓骨。它下端伸到距骨旁边，参与形成踝穴的外侧壁。</string>
+    <string name="health_atlas_ankle_mortise_cradle">认识踝穴</string>
+    <string name="health_atlas_ankle_mortise_cradle_caption">胫骨与腓骨下端围住距骨上部。两根小腿骨之间的韧带连接使它们相互约束，同时允许细小调整。</string>
+    <string name="health_atlas_ankle_mortise_roll">观察距骨运动</string>
+    <string name="health_atlas_ankle_mortise_roll_caption">从侧面看，脚尖上抬时，距骨相对小腿发生运动。图中只表现主要方向，不代表关节的全部运动。</string>
+    <string name="health_atlas_ankle_mortise_adapt">腓骨随之调整</string>
+    <string name="health_atlas_ankle_mortise_adapt_caption">踝关节向上弯曲时，腓骨下端可以发生细小的移位和转动。图中放大其中一个向外的位移分量，便于观察。</string>
+    <string name="health_atlas_ankle_mortise_return">回到接近中立位</string>
+    <string name="health_atlas_ankle_mortise_return_caption">脚回到接近起始的位置。两根小腿骨相互协调，距骨仍处于踝穴内。</string>
+    <string name="health_atlas_ankle_mortise_tibia">胫骨</string>
+    <string name="health_atlas_ankle_mortise_fibula">腓骨</string>
+    <string name="health_atlas_ankle_mortise_ankle">踝关节</string>
+    <string name="health_atlas_ankle_mortise_talus">距骨</string>
+    <string name="health_atlas_ankle_mortise_syndesmosis">下胫腓连接</string>
+    <string name="health_atlas_ankle_mortise_dorsiflex">脚尖向上</string>
+    <string name="health_atlas_ankle_mortise_neutral">回到接近中立位</string>
+    <string name="health_atlas_ankle_mortise_exaggerated">细小位移已放大</string>
+    <string name="health_atlas_ankle_mortise_ref_anatomy">OpenStax · 下肢骨结构</string>
+    <string name="health_atlas_ankle_mortise_ref_position">磁共振研究 · 未受伤踝关节的不同姿势</string>
+    <string name="health_atlas_ankle_mortise_ref_motion">人体原位研究 · 踝关节与腓骨运动</string>
+</resources>

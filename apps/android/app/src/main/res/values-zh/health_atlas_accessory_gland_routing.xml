@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_accessory_gland_routing_title">附属腺导管通路</string>
+    <string name="health_atlas_accessory_gland_routing_scope">正常成人盆腔解剖示意。动画仅表示各导管内的流动方向，不表示分泌的先后或持续时间。</string>
+    <string name="health_atlas_accessory_gland_routing_choice">查看附属腺导管走向</string>
+    <string name="health_atlas_accessory_gland_routing_locator">定位各条导管</string>
+    <string name="health_atlas_accessory_gland_routing_locator_caption">成对的精囊位于膀胱后方、前列腺上方。射精管穿过前列腺。尿道球腺位于前列腺下方，其导管在更下游处开口。</string>
+    <string name="health_atlas_accessory_gland_routing_vesicles">精囊</string>
+    <string name="health_atlas_accessory_gland_routing_vesicles_caption">每侧精囊经一条短导管排出富含果糖的分泌液。精囊导管与同侧输精管膨大的末端汇合，形成射精管。</string>
+    <string name="health_atlas_accessory_gland_routing_ejaculatory">射精管</string>
+    <string name="health_atlas_accessory_gland_routing_ejaculatory_caption">每条射精管输送来自输精管的精子和来自精囊的分泌液，穿过前列腺，开口于尿道前列腺部。</string>
+    <string name="health_atlas_accessory_gland_routing_prostate">前列腺</string>
+    <string name="health_atlas_accessory_gland_routing_prostate_caption">多条细小的前列腺导管将前列腺分泌液直接排入尿道前列腺部。这些导管与射精管分别开口，图中只示出其中几条。</string>
+    <string name="health_atlas_accessory_gland_routing_bulbourethral">尿道球腺</string>
+    <string name="health_atlas_accessory_gland_routing_bulbourethral_caption">成对的尿道球腺位于前列腺下方、尿道膜部两侧。细长的导管输送起润滑作用的黏液，越过尿道膜部，在更下游的尿道海绵体部近端（球部）开口。</string>
+    <string name="health_atlas_accessory_gland_routing_label_vas">输精管</string>
+    <string name="health_atlas_accessory_gland_routing_label_junction">导管汇合处</string>
+    <string name="health_atlas_accessory_gland_routing_label_prostatic">尿道前列腺部</string>
+    <string name="health_atlas_accessory_gland_routing_label_prostate_ducts">前列腺导管</string>
+    <string name="health_atlas_accessory_gland_routing_label_membranous">尿道膜部</string>
+    <string name="health_atlas_accessory_gland_routing_label_long_duct">尿道球腺导管</string>
+    <string name="health_atlas_accessory_gland_routing_label_bulbar">尿道球部</string>
+    <string name="health_atlas_accessory_gland_routing_ref_ducts">美国国家癌症研究所 SEER 培训：导管系统</string>
+    <string name="health_atlas_accessory_gland_routing_ref_anatomy">OpenStax：附属腺解剖与生理</string>
+    <string name="health_atlas_accessory_gland_routing_ref_bulb">人体尿道球腺解剖</string>
+    <string name="health_atlas_bulbourethral_glands_plate_title">尿道球腺剖面</string>
+    <string name="health_atlas_bulbourethral_glands_plate_caption">盆腔局部斜切示意，突出显示一侧尿道球腺导管</string>
+    <string name="health_atlas_bulbourethral_glands_plate_prostate_detail">前列腺包绕尿道前列腺部，位置高于尿道球腺。</string>
+    <string name="health_atlas_bulbourethral_glands_plate_membranous_detail">尿道膜部是前列腺部与海绵体部之间的一小段。尿道球腺位于其后外侧，导管并不在此开口。</string>
+    <string name="health_atlas_bulbourethral_glands_plate_gland_detail">图中突出显示一侧腺体，另一侧位于图示腺体后方。两腺均位于前列腺下方的会阴深隙，分泌具有润滑作用的黏液。</string>
+    <string name="health_atlas_bulbourethral_glands_plate_duct_detail">细长的导管穿过会阴膜，再沿尿道向前走行，直至开口。</string>
+    <string name="health_atlas_bulbourethral_glands_plate_destination">尿道海绵体部近端</string>
+    <string name="health_atlas_bulbourethral_glands_plate_destination_detail">导管开口于尿道球部的底壁。尿道球部是尿道海绵体部的起始段，位于尿道膜部下游。</string>
+</resources>

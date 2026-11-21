@@ -8,6 +8,56 @@ internal object HealthAtlasTissueContextPlates {
         HealthAtlasPlate(art, id, caption, markers, source, features = features.toList(), splitCallouts = splitCallouts)
 
     val all = listOf(
+        plate("fibula", R.drawable.health_atlas_fibula_section,
+            "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-4-bones-of-the-lower-limb",
+            R.string.health_atlas_fibula_section_view,
+            feature("fibula-head", 216, 63, R.string.health_atlas_fibula_section_head,
+                R.string.health_atlas_fibula_section_head_detail),
+            feature("fibula-shaft", 206, 140, R.string.health_atlas_fibula_section_shaft,
+                R.string.health_atlas_fibula_section_shaft_detail),
+            feature("fibula-membrane", 188, 117, R.string.health_atlas_fibula_section_membrane,
+                R.string.health_atlas_fibula_section_membrane_detail),
+            feature("fibula-malleolus", 211, 227, R.string.health_atlas_fibula_section_malleolus,
+                R.string.health_atlas_fibula_section_malleolus_detail),
+            markers = listOf(
+                HealthAtlasMarker("tibia", 147 / 360f, 116 / 280f),
+                HealthAtlasMarker("foot-bones", 156 / 360f, 244 / 280f)),
+            splitCallouts = true),
+        plate("clavicle", R.drawable.health_atlas_clavicle_section,
+            "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-1-the-pectoral-girdle",
+            R.string.health_atlas_clavicle_section_view,
+            feature("clavicle-sternal", 105, 104, R.string.health_atlas_clavicle_section_sternal,
+                R.string.health_atlas_clavicle_section_sternal_detail),
+            feature("clavicle-shaft", 174, 121, R.string.health_atlas_clavicle_section_shaft,
+                R.string.health_atlas_clavicle_section_shaft_detail),
+            feature("clavicle-acromial", 270, 115, R.string.health_atlas_clavicle_section_acromial,
+                R.string.health_atlas_clavicle_section_acromial_detail),
+            markers = listOf(
+                HealthAtlasMarker("sternum", 60 / 360f, 143 / 280f),
+                HealthAtlasMarker("scapula", 290 / 360f, 165 / 280f)),
+            splitCallouts = true),
+        plate("mammary-glands", R.drawable.health_atlas_mammary_gland_section,
+            "https://pmc.ncbi.nlm.nih.gov/articles/PMC1571528/", R.string.health_atlas_mammary_section_view,
+            feature("mammary-lobule", 70, 120, R.string.health_atlas_mammary_section_lobule,
+                R.string.health_atlas_mammary_section_lobule_detail),
+            feature("mammary-duct", 122, 172, R.string.health_atlas_mammary_section_duct,
+                R.string.health_atlas_mammary_section_duct_detail),
+            markers = listOf(
+                HealthAtlasMarker("cell-mammary-luminal-cell", 255 / 360f, 103 / 280f),
+                HealthAtlasMarker("cell-myoepithelial-cell", 320 / 360f, 161 / 280f)),
+            splitCallouts = true),
+        plate("soleus", R.drawable.health_atlas_soleus_section,
+            "https://pubmed.ncbi.nlm.nih.gov/32783229/", R.string.health_atlas_soleus_section_view,
+            feature("soleus-arch", 160, 93, R.string.health_atlas_soleus_section_arch,
+                R.string.health_atlas_soleus_section_arch_detail),
+            feature("soleus-fibers", 204, 128, R.string.health_atlas_soleus_section_belly,
+                R.string.health_atlas_soleus_section_belly_detail),
+            feature("soleus-aponeurosis", 182, 165, R.string.health_atlas_soleus_section_sheet,
+                R.string.health_atlas_soleus_section_sheet_detail),
+            feature("soleus-calcaneus", 203, 254, R.string.health_atlas_soleus_section_heel,
+                R.string.health_atlas_soleus_section_heel_detail),
+            markers = listOf(HealthAtlasMarker("tendons", 184 / 360f, 225 / 280f)),
+            splitCallouts = true),
         plate("rectus-abdominis", R.drawable.health_atlas_muscle_rectus_abdominis,
             "https://openstax.org/books/anatomy-and-physiology-2e/pages/11-4-axial-muscles-of-the-abdominal-wall-and-thorax", R.string.health_atlas_rectus_flexion_story_plate_caption,
             feature("rectus-costal", 198, 79, R.string.health_atlas_rectus_flexion_story_costal,
@@ -452,7 +502,15 @@ internal object HealthAtlasTissueContextPlates {
                 HealthAtlasMarker("hair-follicles", 129 / 360f, 169 / 280f),
                 HealthAtlasMarker("cell-sebocyte", 240 / 360f, 157 / 280f)),
             splitCallouts = true)
-    )
+    ) + HealthAtlasVulvarProtectionPlates.all + HealthAtlasUterocervicalPlates.all + listOf(
+        HealthAtlasBulbourethralGlandsPlate.plate,
+        HealthAtlasPenileUrinaryAssignment.plate,
+        HealthAtlasScrotalHeatAssignment.plate,
+        HealthAtlasAxialProtectionAssignment.Skull.plate,
+        HealthAtlasAxialProtectionAssignment.Vertebral.plate,
+        HealthAtlasClitoralSensoryAssignment.plate,
+        HealthAtlasVestibularGlandAssignment.plate,
+    ) + HealthAtlasShoulderActionPlates.all
     private val byId = all.associateBy { it.owner }
     fun forId(id: String?) = byId[id]
 }

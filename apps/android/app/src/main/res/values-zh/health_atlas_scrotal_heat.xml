@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_scrotal_heat_title">阴囊：热交换</string>
+    <string name="health_atlas_scrotal_heat_choice">阴囊热交换</string>
+    <string name="health_atlas_scrotal_heat_scope">正常成人解剖。阴囊容纳睾丸，精索内相邻的血管之间发生热交换。剖面省略了部分被覆层；热交换图将实际相互缠绕的血管分开显示。颜色和动态仅用于定性示意，不表示温度或血流测量值。</string>
+    <string name="health_atlas_scrotal_heat_compartments">两个分隔腔</string>
+    <string name="health_atlas_scrotal_heat_compartments_caption">阴囊中隔将阴囊分为两腔，每腔容纳一个睾丸。两条精索分别从上方到达各侧睾丸，内含睾丸血管及其他结构。</string>
+    <string name="health_atlas_scrotal_heat_coverings">阴囊壁与睾丸被膜</string>
+    <string name="health_atlas_scrotal_heat_coverings_caption">肉膜是阴囊皮肤下的平滑肌层，并参与构成阴囊中隔。睾丸鞘膜是包覆大部分睾丸表面的独立浆膜。图中简化了细薄的各层。</string>
+    <string name="health_atlas_scrotal_heat_exchange">逆流热交换</string>
+    <string name="health_atlas_scrotal_heat_exchange_caption">血液经睾丸动脉流向睾丸，经蔓状静脉丛回流。热量从较暖的动脉血传向较冷的静脉血，使流向睾丸的动脉血降温。金色箭头表示热量传递，不表示血液在血管间流动。</string>
+    <string name="health_atlas_scrotal_heat_testes">睾丸</string>
+    <string name="health_atlas_scrotal_heat_septum">阴囊中隔</string>
+    <string name="health_atlas_scrotal_heat_dartos">肉膜</string>
+    <string name="health_atlas_scrotal_heat_dartos_detail">外缘下的玫瑰色线表示肉膜。它位于阴囊壁内，不直接贴在睾丸表面。</string>
+    <string name="health_atlas_scrotal_heat_tunica">睾丸鞘膜</string>
+    <string name="health_atlas_scrotal_heat_tunica_detail">青绿色细线表示包覆大部分睾丸表面的浆膜。本简化剖面将鞘膜的两层合并绘出。</string>
+    <string name="health_atlas_scrotal_heat_cord">精索</string>
+    <string name="health_atlas_scrotal_heat_cord_detail">每条精索内含睾丸血管、输精管等结构。放大图单独显示相邻的动脉和静脉，以便辨认。</string>
+    <string name="health_atlas_scrotal_heat_plexus">蔓状静脉丛</string>
+    <string name="health_atlas_scrotal_heat_plexus_detail">这些回流静脉在睾丸动脉周围形成静脉网。放大图将其画在动脉旁，以区分相反的血流方向并显示热量传递。</string>
+    <string name="health_atlas_scrotal_heat_artery">睾丸动脉</string>
+    <string name="health_atlas_scrotal_heat_heat_transfer">热量传递</string>
+    <string name="health_atlas_scrotal_heat_to_testis">流向睾丸</string>
+    <string name="health_atlas_scrotal_heat_from_testis">从睾丸回流</string>
+    <string name="health_atlas_scrotal_heat_plate_title">阴囊剖面与精索</string>
+    <string name="health_atlas_scrotal_heat_plate_caption">左侧为阴囊分隔腔，右侧为精索放大示意图。金色箭头表示血管间的热量传递。不按比例绘制。</string>
+    <string name="health_atlas_scrotal_heat_ref_anatomy">OpenStax：阴囊、睾丸及被覆结构</string>
+    <string name="health_atlas_scrotal_heat_ref_vessels">人体解剖研究：睾丸动脉与蔓状静脉丛</string>
+    <string name="health_atlas_scrotal_heat_ref_physiology">Endotext：睾丸血液循环与热交换</string>
+</resources>
