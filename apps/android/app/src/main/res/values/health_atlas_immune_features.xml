@@ -6,6 +6,10 @@
     <string name="health_atlas_feature_context">Illustrated cell features: %1$s</string>
     <string name="health_atlas_phagocytosis_scope">The diagram follows an example particle. Stages are qualitative and do not represent measured lengths or times.</string>
     <string name="health_atlas_phagocytosis_visual_stage">Phagocytosis diagram: %1$s</string>
+    <string name="health_atlas_granulocyte_stage">Cell response: %1$s</string>
+    <string name="health_atlas_neutrophil_scope">Teaching view: movement through a vessel wall, followed by uptake and handling of an example target. Size and timing are illustrative.</string>
+    <string name="health_atlas_eosinophil_scope">Teaching view: contact and granule release at an example target surface. Size and timing are illustrative.</string>
+    <string name="health_atlas_basophil_scope">Teaching view: mediator release and a local vessel response. Size and timing are illustrative.</string>
     <string name="health_atlas_feature_lobulated">Segmented nucleus</string>
     <string name="health_atlas_feature_lobulated_detail">Mature neutrophils usually have several nuclear lobes joined by thin strands.</string>
     <string name="health_atlas_feature_fine_granules">Fine granules</string>

@@ -228,6 +228,15 @@ macrophage stage player shares the painted cell and moves a generic particle
 and teaching overlays along the existing playhead. The visual sequence is
 qualitative: its timing, geometry, colors and particle size are illustrative.
 
+Eosinophil and basophil portraits distinguish coral granules and a connected
+bilobed nucleus from dark granules that partly cover the basophil nucleus.
+Three distinct illustrated scenes follow the existing granulocyte lessons:
+neutrophil migration and uptake, eosinophil contact and granule release, and
+basophil mediator release with a local vessel response. Each scene follows the
+current playhead, restores per entry, and reports the current stage to
+accessibility services. None models clinical doses, timing or measurements.
+The public Agent handoff retains the scope of just the selected scene.
+
 ## Alimentary Canal Sections
 
 Fourteen digestive entries now have their own source-linked diagrams, from
