@@ -81,7 +81,7 @@ internal object HealthAtlasNeuralRegionalPlates {
                 feature("spinal-cord-section-ventral-horn", 133, 174,
                     R.string.health_atlas_spinal_cord_section_ventral_horn,
                     R.string.health_atlas_spinal_cord_section_ventral_horn_detail),
-                feature("spinal-cord-section-anterior-fissure", 180, 198,
+                feature("spinal-cord-section-anterior-fissure", 185, 198,
                     R.string.health_atlas_spinal_cord_section_anterior_fissure,
                     R.string.health_atlas_spinal_cord_section_anterior_fissure_detail),
             ),
