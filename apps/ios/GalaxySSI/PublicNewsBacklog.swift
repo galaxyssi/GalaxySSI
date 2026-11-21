@@ -28,6 +28,14 @@ struct PublicNewsBacklogLedger: Codable, Equatable {
   private(set) var nextLane = 0
   private(set) var entries: [String: Entry] = [:]
 
+  func nextEligible(articleIDs: Set<String>, now: Date) -> Date? {
+    articleIDs.compactMap { id -> Date? in
+      guard let entry = entries[id] else { return now }
+      guard !entry.ready else { return nil }
+      return max(now, max(entry.claim?.expires ?? now, entry.retryAt ?? now))
+    }.min()
+  }
+
   mutating func reconcile(_ articleIDs: Set<String>, now: Date) {
     entries = entries.filter { articleIDs.contains($0.key) }
     for id in Array(entries.keys) {

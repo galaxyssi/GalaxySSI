@@ -18,10 +18,14 @@ struct GalaxySSIPublicNewsBacklogView: View {
       }
       Section {
         if worker.running {
-          ProgressView()
+          if let next = worker.waitingUntil {
+            Label(title: {
+              Text(t("public_news_backlog_next", "Next batch")) + Text(" ") + Text(next, style: .time)
+            }, icon: { Image(systemName: "clock") })
+          } else { ProgressView() }
           Button(t("common_cancel", "Cancel"), action: worker.cancel)
         } else {
-          Button(t("public_news_backlog_start", "Prepare a batch")) { worker.start(archive) }
+          Button(t("public_news_backlog_start", "Prepare articles")) { worker.start(archive) }
             .disabled(scenePhase != .active)
         }
         if worker.stoppedForResources {

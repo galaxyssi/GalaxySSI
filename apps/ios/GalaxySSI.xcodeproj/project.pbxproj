@@ -7,6 +7,8 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    C43070000000000000000011 /* PublicNewsBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43070000000000000000012 /* PublicNewsBudget.swift */; };
+    C43070000000000000000021 /* PublicNewsBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43070000000000000000022 /* PublicNewsBudgetTests.swift */; };
     C43060000000000000000011 /* GalaxySSIDesktopDisconnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43060000000000000000012 /* GalaxySSIDesktopDisconnectView.swift */; };
     C43060000000000000000021 /* GalaxySSIDesktopDisconnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43060000000000000000022 /* GalaxySSIDesktopDisconnectTests.swift */; };
     C43040000000000000000051 /* GalaxySSIHealthMotionLedgerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43040000000000000000052 /* GalaxySSIHealthMotionLedgerTests.swift */; };
@@ -1399,6 +1401,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    C43070000000000000000012 /* PublicNewsBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBudget.swift; sourceTree = "<group>"; };
+    C43070000000000000000022 /* PublicNewsBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBudgetTests.swift; sourceTree = "<group>"; };
     C43060000000000000000012 /* GalaxySSIDesktopDisconnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDesktopDisconnectView.swift; sourceTree = "<group>"; };
     C43060000000000000000022 /* GalaxySSIDesktopDisconnectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDesktopDisconnectTests.swift; sourceTree = "<group>"; };
     C43040000000000000000052 /* GalaxySSIHealthMotionLedgerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMotionLedgerTests.swift; sourceTree = "<group>"; };
@@ -3643,6 +3647,7 @@
         C42940000000000000000012 /* GalaxySSIHealthReportCodex.swift */,
         C43020000000000000000012 /* GalaxySSIHealthOverviewAttention.swift */,
         C43030000000000000000012 /* GalaxySSIHealthOverviewRange.swift */,
+        C43070000000000000000012 /* PublicNewsBudget.swift */,
         C43030000000000000000022 /* GalaxySSIHealthOverviewMetricRow.swift */,
         C43060000000000000000012 /* GalaxySSIDesktopDisconnectView.swift */,
         C43040000000000000000012 /* GalaxySSIHealthMotionState.swift */,
@@ -4135,6 +4140,7 @@
         C42980000000000000000052 /* GalaxySSIHealthReportBatchTests.swift */,
         C42990000000000000000032 /* GalaxySSIHealthReportRowValidationTests.swift */,
         C43030000000000000000032 /* GalaxySSIHealthOverviewRangeTests.swift */,
+        C43070000000000000000022 /* PublicNewsBudgetTests.swift */,
         C43060000000000000000022 /* GalaxySSIDesktopDisconnectTests.swift */,
         C43040000000000000000052 /* GalaxySSIHealthMotionLedgerTests.swift */,
         C43050000000000000000022 /* GalaxySSIHealthCyclingSessionTests.swift */,
@@ -5169,6 +5175,7 @@
         C42990000000000000000011 /* GalaxySSIHealthReportDelivery.swift in Sources */,
         C43020000000000000000011 /* GalaxySSIHealthOverviewAttention.swift in Sources */,
         C43030000000000000000011 /* GalaxySSIHealthOverviewRange.swift in Sources */,
+        C43070000000000000000011 /* PublicNewsBudget.swift in Sources */,
         C43030000000000000000021 /* GalaxySSIHealthOverviewMetricRow.swift in Sources */,
         C43060000000000000000011 /* GalaxySSIDesktopDisconnectView.swift in Sources */,
         C43040000000000000000011 /* GalaxySSIHealthMotionState.swift in Sources */,
@@ -5660,6 +5667,7 @@
         C42980000000000000000051 /* GalaxySSIHealthReportBatchTests.swift in Sources */,
         C42990000000000000000031 /* GalaxySSIHealthReportRowValidationTests.swift in Sources */,
         C43030000000000000000031 /* GalaxySSIHealthOverviewRangeTests.swift in Sources */,
+        C43070000000000000000021 /* PublicNewsBudgetTests.swift in Sources */,
         C43060000000000000000021 /* GalaxySSIDesktopDisconnectTests.swift in Sources */,
         C43040000000000000000051 /* GalaxySSIHealthMotionLedgerTests.swift in Sources */,
         C43050000000000000000021 /* GalaxySSIHealthCyclingSessionTests.swift in Sources */,
