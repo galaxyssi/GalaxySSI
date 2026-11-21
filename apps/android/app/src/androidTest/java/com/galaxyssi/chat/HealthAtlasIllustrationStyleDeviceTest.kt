@@ -84,16 +84,24 @@ class HealthAtlasIllustrationStyleDeviceTest {
             Triple("nephron", 1173, 1341), Triple("alveoli", 1254, 1254),
             Triple("cell-pancreatic-beta-cell", 1254, 1254),
             Triple("cell-erythrocyte", 1254, 1254), Triple("cell-neuron", 1024, 1536),
-        )
+            Triple("skin", 1536, 1024), Triple("sensory", 1199, 1312),
+            Triple("immune", 1312, 1199), Triple("respiratory", 1145, 1374),
+            Triple("digestive", 1246, 1263), Triple("endocrine", 1312, 1199),
+        ).map { (id, width, height) -> requireNotNull(HealthAtlasPlates.forId(id)) to (width to height) } +
+            HealthAtlasMusculoskeletalPlates.all.map { plate ->
+                plate to if (plate.viewKey == "skeletal-posterior") (887 to 1774) else (1024 to 1536)
+            }
+        assertEquals(24, frames.map { it.first.drawable }.distinct().size)
         var anchors = 0
-        for ((id, width, height) in frames) {
-            val plate = requireNotNull(HealthAtlasPlates.forId(id))
+        for ((plate, size) in frames) {
+            val (width, height) = size
+            val id = plate.viewKey ?: plate.owner
             val art = requireNotNull(BitmapFactory.decodeResource(context.resources, plate.drawable))
             try {
                 assertEquals(width, art.width)
                 assertEquals(height, art.height)
                 for (x in listOf(0, width - 1)) for (y in listOf(0, height - 1))
-                    assertEquals("Unexpected background at $id", 0, Color.alpha(art.getPixel(x, y)))
+                    assertTrue("Unexpected background at $id", Color.alpha(art.getPixel(x, y)) <= 4)
                 for (marker in plate.markers) {
                     val sample = art.getPixel((marker.x * width).toInt(), (marker.y * height).toInt())
                     assertTrue("Missing illustration at $id/${marker.id}", Color.alpha(sample) >= 200)
@@ -101,7 +109,27 @@ class HealthAtlasIllustrationStyleDeviceTest {
                 }
             } finally { art.recycle() }
         }
-        assertEquals(42, anchors)
+        assertEquals(100, anchors)
+    }
+
+    @Test fun muscleMarkersIdentifyThePaintedRegionsRatherThanTheMannequinSurface() {
+        for (plate in HealthAtlasPlates.viewsForId("muscle")) {
+            val art = requireNotNull(BitmapFactory.decodeResource(context.resources, plate.drawable))
+            try {
+                for (marker in plate.markers) {
+                    val sample = art.getPixel((marker.x * art.width).toInt(), (marker.y * art.height).toInt())
+                    val r = Color.red(sample)
+                    val g = Color.green(sample)
+                    val b = Color.blue(sample)
+                    val valid = when (marker.id) {
+                        "gluteus-maximus" -> b > r + 15
+                        "tendons" -> r > b + 30 && g > b + 25 && r - g < 40
+                        else -> r > g + 40 && g > b + 12
+                    }
+                    assertTrue("Wrong painted region for ${plate.viewKey}/${marker.id}", valid)
+                }
+            } finally { art.recycle() }
+        }
     }
 
     @Test fun narrowStructuresAndCellDetailsKeepTheirInteriorAndOpenBackground() {

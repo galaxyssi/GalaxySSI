@@ -11,12 +11,12 @@ internal object HealthAtlasSystemPlates {
     private val respiratory = HealthAtlasPlate(R.drawable.health_atlas_system_respiratory, "respiratory",
         R.string.health_atlas_view_system_respiratory, listOf(
             HealthAtlasMarker("nasal-cavity", .42f, .15f), HealthAtlasMarker("pharynx", .52f, .23f),
-            HealthAtlasMarker("larynx", .48f, .33f), HealthAtlasMarker("trachea", .49f, .45f),
+            HealthAtlasMarker("larynx", .489f, .353f), HealthAtlasMarker("trachea", .49f, .45f),
             HealthAtlasMarker("lungs", .68f, .64f), HealthAtlasMarker("diaphragm", .51f, .83f)),
         BOOK + "22-1-organs-and-structures-of-the-respiratory-system")
     private val digestive = HealthAtlasPlate(R.drawable.health_atlas_system_digestive, "digestive",
         R.string.health_atlas_view_system_digestive, listOf(
-            HealthAtlasMarker("parotid-glands", .60f, .18f), HealthAtlasMarker("sublingual-glands", .38f, .29f),
+            HealthAtlasMarker("parotid-glands", .60f, .18f), HealthAtlasMarker("sublingual-glands", .38f, .30f),
             HealthAtlasMarker("submandibular-glands", .51f, .33f), HealthAtlasMarker("liver", .42f, .49f),
             HealthAtlasMarker("gallbladder", .35f, .63f), HealthAtlasMarker("pancreas", .63f, .73f)),
         BOOK + "23-1-overview-of-the-digestive-system")

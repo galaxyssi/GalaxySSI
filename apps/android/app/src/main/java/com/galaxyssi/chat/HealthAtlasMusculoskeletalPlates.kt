@@ -18,14 +18,14 @@ internal object HealthAtlasMusculoskeletalPlates {
                 HealthAtlasMarker("foot-bones", .66f, .97f)), SKELETAL_SOURCE, "skeletal-posterior"),
         HealthAtlasPlate(R.drawable.health_atlas_muscle_front, "muscle", R.string.health_atlas_muscle_front,
             listOf(HealthAtlasMarker("deltoid", .66f, .22f), HealthAtlasMarker("pectoralis-major", .57f, .24f),
-                HealthAtlasMarker("biceps-brachii", .68f, .30f), HealthAtlasMarker("rectus-abdominis", .54f, .35f),
-                HealthAtlasMarker("oblique-abdominal-muscles", .61f, .38f), HealthAtlasMarker("quadriceps-femoris", .59f, .58f)),
+                HealthAtlasMarker("biceps-brachii", .68f, .30f), HealthAtlasMarker("rectus-abdominis", .53f, .365f),
+                HealthAtlasMarker("oblique-abdominal-muscles", .585f, .37f), HealthAtlasMarker("quadriceps-femoris", .59f, .58f)),
             MUSCLE_SOURCE, "muscle-anterior"),
         HealthAtlasPlate(R.drawable.health_atlas_muscle_back, "muscle", R.string.health_atlas_muscle_back,
-            listOf(HealthAtlasMarker("trapezius", .57f, .20f), HealthAtlasMarker("triceps-brachii", .67f, .29f),
+            listOf(HealthAtlasMarker("trapezius", .54f, .19f), HealthAtlasMarker("triceps-brachii", .67f, .29f),
                 HealthAtlasMarker("latissimus-dorsi", .60f, .31f), HealthAtlasMarker("gluteus-maximus", .58f, .46f),
-                HealthAtlasMarker("hamstrings", .59f, .58f), HealthAtlasMarker("gastrocnemius", .60f, .77f),
-                HealthAtlasMarker("tendons", .60f, .90f)), MUSCLE_SOURCE, "muscle-posterior")
+                HealthAtlasMarker("hamstrings", .59f, .58f), HealthAtlasMarker("gastrocnemius", .64f, .765f),
+                HealthAtlasMarker("tendons", .661f, .884f)), MUSCLE_SOURCE, "muscle-posterior")
     )
 
     fun viewsForId(id: String?) = all.filter { it.owner == id || it.markers.any { marker -> marker.id == id } }
