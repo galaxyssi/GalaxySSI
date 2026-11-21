@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_outer_ear_selector">Ear canal cutaway</string>
+    <string name="health_atlas_outer_ear_view">Auricle and ear canal, from the outer rim to the eardrum</string>
+    <string name="health_atlas_outer_ear_helix">Helix</string>
+    <string name="health_atlas_outer_ear_helix_detail">This rolled cartilage rim curves around the upper and back edges of the auricle.</string>
+    <string name="health_atlas_outer_ear_concha">Concha</string>
+    <string name="health_atlas_outer_ear_concha_detail">This deep bowl of the auricle funnels sound toward the opening of the ear canal, beside the tragus.</string>
+    <string name="health_atlas_outer_ear_canal">Ear canal</string>
+    <string name="health_atlas_outer_ear_canal_detail">The canal curves inward from the concha. Its outer portion is supported by cartilage; its inner portion runs through the temporal bone.</string>
+    <string name="health_atlas_outer_ear_eardrum">Eardrum</string>
+    <string name="health_atlas_outer_ear_eardrum_detail">The thin, slanted tympanic membrane closes the inner end of the canal and separates it from the middle ear.</string>
+
+    <string name="health_atlas_outer_inner_ear_selector">Bony labyrinth</string>
+    <string name="health_atlas_outer_inner_ear_view">Inner ear in oblique view: canals, vestibule, cochlea and nerve</string>
+    <string name="health_atlas_outer_inner_ear_loops">Semicircular canals</string>
+    <string name="health_atlas_outer_inner_ear_loops_detail">Three bony loops lie in different planes and house ducts that sense head rotation. The two upright canals share one limb near the vestibule.</string>
+    <string name="health_atlas_outer_inner_ear_vestibule">Vestibule</string>
+    <string name="health_atlas_outer_inner_ear_vestibule_detail">This chamber lies between the semicircular canals and cochlea. It houses the utricle and saccule, which sense linear motion and head tilt.</string>
+    <string name="health_atlas_outer_inner_ear_nerve">Vestibulocochlear nerve</string>
+    <string name="health_atlas_outer_inner_ear_nerve_detail">Vestibular and cochlear fibers run together through the internal acoustic canal toward the brainstem, carrying balance and hearing signals.</string>
+
+    <string name="health_atlas_outer_nose_selector">Nasal wall cutaway</string>
+    <string name="health_atlas_outer_nose_view">Side view of the nose, with the septum removed to reveal one lateral wall</string>
+    <string name="health_atlas_outer_nose_vestibule">Nasal vestibule</string>
+    <string name="health_atlas_outer_nose_vestibule_detail">Just inside the nostril, this short skin-lined entrance leads back into the nasal cavity.</string>
+    <string name="health_atlas_outer_nose_middle_concha">Middle nasal concha</string>
+    <string name="health_atlas_outer_nose_middle_concha_detail">This curved shelf on the side wall lies between the smaller superior concha and the larger inferior concha. The passage directly beneath it is the middle meatus.</string>
+    <string name="health_atlas_outer_nose_inferior_concha">Inferior nasal concha</string>
+    <string name="health_atlas_outer_nose_inferior_concha_detail">The lowest and largest shelf runs above the hard palate. The nasal passage opens behind it into the nasopharynx.</string>
+
+    <string name="health_atlas_outer_tongue_selector">Dorsal cutaway</string>
+    <string name="health_atlas_outer_tongue_view">Tongue from above, with the root at the top and a muscle cutaway along one side</string>
+    <string name="health_atlas_outer_tongue_tonsil">Lingual tonsil</string>
+    <string name="health_atlas_outer_tongue_tonsil_detail">Small clusters of lymphoid tissue form low nodules in the mucosa of the tongue root, behind the terminal sulcus.</string>
+    <string name="health_atlas_outer_tongue_sulcus">Terminal sulcus</string>
+    <string name="health_atlas_outer_tongue_sulcus_detail">This V-shaped groove points back toward the throat. It separates the front two-thirds of the tongue from the root.</string>
+    <string name="health_atlas_outer_tongue_vallate">Vallate papillae</string>
+    <string name="health_atlas_outer_tongue_vallate_detail">These large, ringed papillae form a row just in front of the terminal sulcus. They contain microscopic taste buds, as do the smaller fungiform papillae scattered farther forward.</string>
+    <string name="health_atlas_outer_tongue_muscle">Intrinsic tongue muscle</string>
+    <string name="health_atlas_outer_tongue_muscle_detail">Lengthwise, crosswise and vertical muscle fibers interweave beneath the surface. These fibers change the shape of the tongue.</string>
+</resources>

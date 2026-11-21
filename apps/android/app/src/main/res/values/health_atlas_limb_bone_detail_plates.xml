@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_femur_landmarks_selector">Anterior landmarks</string>
+    <string name="health_atlas_femur_landmarks_caption">Right femur, anterior view</string>
+    <string name="health_atlas_femur_landmarks_head">Femoral head</string>
+    <string name="health_atlas_femur_landmarks_head_detail">The rounded head fits into the hip socket.</string>
+    <string name="health_atlas_femur_landmarks_neck">Femoral neck</string>
+    <string name="health_atlas_femur_landmarks_neck_detail">This narrowed segment angles from the head toward the shaft.</string>
+    <string name="health_atlas_femur_landmarks_trochanter">Greater trochanter</string>
+    <string name="health_atlas_femur_landmarks_trochanter_detail">This large outer projection provides attachment for several hip muscles.</string>
+    <string name="health_atlas_femur_landmarks_shaft">Femoral shaft</string>
+    <string name="health_atlas_femur_landmarks_shaft_detail">The long central portion angles inward from the hip toward the knee.</string>
+    <string name="health_atlas_femur_landmarks_patellar_surface">Patellar surface</string>
+    <string name="health_atlas_femur_landmarks_patellar_surface_detail">The kneecap glides along this smooth groove on the front of the lower femur.</string>
+
+    <string name="health_atlas_patella_landmarks_selector">Patellar facets</string>
+    <string name="health_atlas_patella_landmarks_caption">Right patella, posterior view with side detail at the knee</string>
+    <string name="health_atlas_patella_landmarks_base">Patellar base</string>
+    <string name="health_atlas_patella_landmarks_base_detail">The quadriceps tendon attaches along this broad upper edge.</string>
+    <string name="health_atlas_patella_landmarks_medial_facet">Medial facet</string>
+    <string name="health_atlas_patella_landmarks_medial_facet_detail">This smooth area on the inner side faces the medial side of the femoral groove.</string>
+    <string name="health_atlas_patella_landmarks_lateral_facet">Lateral facet</string>
+    <string name="health_atlas_patella_landmarks_lateral_facet_detail">This outer joint surface is usually broader than the medial facet.</string>
+    <string name="health_atlas_patella_landmarks_ridge">Vertical ridge</string>
+    <string name="health_atlas_patella_landmarks_ridge_detail">This ridge separates the two main facets and tracks along the femoral groove.</string>
+    <string name="health_atlas_patella_landmarks_apex">Patellar apex</string>
+    <string name="health_atlas_patella_landmarks_apex_detail">The pointed lower tip gives attachment to the patellar ligament.</string>
+
+    <string name="health_atlas_foot_bones_landmarks_selector">Dorsal landmarks</string>
+    <string name="health_atlas_foot_bones_landmarks_caption">Bones of the right foot, viewed from above</string>
+    <string name="health_atlas_foot_bones_landmarks_phalanges">Toe phalanges</string>
+    <string name="health_atlas_foot_bones_landmarks_phalanges_detail">The great toe has two phalanges; each of the other toes typically has three.</string>
+    <string name="health_atlas_foot_bones_landmarks_metatarsals">Metatarsals</string>
+    <string name="health_atlas_foot_bones_landmarks_metatarsals_detail">Five long bones link the tarsal bones to the bases of the toes.</string>
+    <string name="health_atlas_foot_bones_landmarks_navicular">Navicular</string>
+    <string name="health_atlas_foot_bones_landmarks_navicular_detail">This curved bone lies between the head of the talus and the three cuneiform bones.</string>
+    <string name="health_atlas_foot_bones_landmarks_talus">Talus</string>
+    <string name="health_atlas_foot_bones_landmarks_talus_detail">The talus sits over the heel bone and meets the tibia and fibula at the ankle.</string>
+    <string name="health_atlas_foot_bones_landmarks_calcaneus">Calcaneus</string>
+    <string name="health_atlas_foot_bones_landmarks_calcaneus_detail">The largest tarsal bone forms the heel beneath and behind the talus.</string>
+
+    <string name="health_atlas_ulna_landmarks_selector">Lateral landmarks</string>
+    <string name="health_atlas_ulna_landmarks_caption">Right ulna, lateral view with front view of the forearm bones</string>
+    <string name="health_atlas_ulna_landmarks_olecranon">Olecranon</string>
+    <string name="health_atlas_ulna_landmarks_olecranon_detail">This upper projection forms the bony tip of the elbow.</string>
+    <string name="health_atlas_ulna_landmarks_trochlear_notch">Trochlear notch</string>
+    <string name="health_atlas_ulna_landmarks_trochlear_notch_detail">This curved surface cups the trochlea of the humerus at the elbow.</string>
+    <string name="health_atlas_ulna_landmarks_coronoid">Coronoid process</string>
+    <string name="health_atlas_ulna_landmarks_coronoid_detail">This forward-pointing lip forms the lower rim of the trochlear notch.</string>
+    <string name="health_atlas_ulna_landmarks_head">Ulnar head</string>
+    <string name="health_atlas_ulna_landmarks_head_detail">The rounded wrist end of the ulna meets the radius at the distal radioulnar joint.</string>
+    <string name="health_atlas_ulna_landmarks_styloid">Ulnar styloid</string>
+    <string name="health_atlas_ulna_landmarks_styloid_detail">This small projection extends from the back of the ulnar head near the wrist.</string>
+</resources>

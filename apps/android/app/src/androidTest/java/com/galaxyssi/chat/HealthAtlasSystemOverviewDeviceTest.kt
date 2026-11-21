@@ -253,19 +253,27 @@ class HealthAtlasSystemOverviewDeviceTest {
                 "sweat-glands" -> R.string.health_atlas_context_sweat_gland_view to "atlas-hotspot-cell-sweat-gland-secretory-cell"
                 else -> null
             }
+            val regionalFeature = HealthAtlasRegionalDetailPlates.forId(child)?.features?.firstOrNull()?.let {
+                "atlas-feature-${it.marker.id}"
+            }
             fun assertChildPlate(activity: Activity) {
                 if (dedicated != null) {
                     assertEquals(context.getString(dedicated.first),
                         (activity.view("atlas-art-caption") as TextView).text.toString())
                     assertNotNull(activity.view(dedicated.second))
                     activity.window.decorView.tagged("atlas-hotspot-$child")?.let { assertTrue(it.isSelected) }
+                } else if (regionalFeature != null) {
+                    assertEquals(child, HealthAtlasPlates.forId(child)?.owner)
+                    assertTrue(activity.view(regionalFeature).isClickable)
+                    assertTrue(activity.view("atlas-view-0").isSelected)
                 } else assertTrue(activity.view("atlas-hotspot-$child").isSelected)
             }
             scenario.onActivity {
                 it.open(owner); it.view("atlas-hotspot-$child").performClick()
                 assertChildPlate(it)
             }
-            scenario.recreate(); ready(scenario, dedicated?.second ?: "atlas-hotspot-$child")
+            scenario.recreate()
+            ready(scenario, dedicated?.second ?: regionalFeature ?: "atlas-hotspot-$child")
             scenario.onActivity {
                 assertChildPlate(it)
                 it.onBackPressed(); assertFalse(it.view("atlas-hotspot-$child").isSelected)
@@ -277,6 +285,8 @@ class HealthAtlasSystemOverviewDeviceTest {
     @Test fun systemToOrganToCellBackStackDoesNotAssignACellTheSkinPlate() = native { scenario ->
         scenario.onActivity {
             it.open("skin"); it.view("atlas-hotspot-epidermis").performClick()
+            assertNotNull(it.view("atlas-feature-skin-layers-lucidum"))
+            it.view("atlas-view-1").performClick()
             it.view("atlas-entry-cell-keratinocyte").performClick()
             assertNotNull(it.view("atlas-feature-keratin-filaments"))
             assertNull(it.window.decorView.tagged("atlas-hotspot-epidermis"))

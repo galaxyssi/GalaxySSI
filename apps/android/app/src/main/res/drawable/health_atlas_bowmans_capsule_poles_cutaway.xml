@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Outer wall and its cut face taper continuously into the proximal tubule. -->
+    <path android:fillColor="#927186" android:strokeColor="#724F62" android:strokeWidth="1.8"
+        android:pathData="M75,92 C95,51 145,34 195,42 C234,49 259,75 267,108 C272,128 265,149 284,151 L323,152 L323,210 L281,209 C255,206 243,219 215,232 C169,253 117,243 89,215 C65,191 57,148 63,114Z" />
+    <path android:fillColor="#D2A8A3"
+        android:pathData="M73,95 C93,60 140,38 188,44 C233,47 259,77 266,112 C269,130 266,149 283,150 L323,151 L323,200 L282,200 C250,196 236,212 208,223 C173,238 126,234 95,210 C62,184 57,133 73,95Z" />
+    <path android:fillColor="#F8D8BB" android:strokeColor="#9F6270" android:strokeWidth="2"
+        android:pathData="M74,96 C97,57 143,40 188,44 C228,47 254,75 260,111 C264,134 260,153 281,158 L323,162 L323,190 L282,190 C250,187 235,205 207,216 C169,231 130,223 103,203 C71,178 60,136 74,96Z" />
+    <path android:fillColor="#FBEDD8" android:strokeColor="#786B85" android:strokeWidth="2.8"
+        android:pathData="M80,102 C102,66 144,47 188,51 C222,54 247,80 253,114 C257,136 253,158 279,165 Q300,171 325,167 L325,185 Q298,188 280,183 C247,181 231,199 204,209 C170,222 134,218 108,197 C79,175 69,137 80,102Z" />
+    <path android:fillColor="#F5E2C3"
+        android:pathData="M201,175 Q225,153 237,115 Q249,112 253,131 C256,143 253,159 279,165 Q300,171 326,167 L326,185 Q298,188 280,183 C247,181 231,199 204,209 Q153,229 113,201 C146,212 184,201 201,175Z" />
+    <path android:strokeColor="#B3A2AB" android:strokeWidth="3.8" android:strokeLineCap="round"
+        android:pathData="M102,75 Q112,67 124,63 M139,57 Q151,53 160,53 M181,52 Q190,51 201,54 M219,63 Q230,69 236,78 M245,93 Q250,103 251,110 M97,185 Q105,198 115,202 M125,208 Q131,211 140,214 M154,217 Q167,219 176,217 M191,214 Q202,210 211,207 M227,200 Q235,195 242,191 M251,187 Q259,184 264,184" />
+
+    <!-- The vascular pole sits opposite the tubule outlet. -->
+    <path android:strokeColor="#854755" android:strokeWidth="19"
+        android:pathData="M34,100 Q66,96 97,112 L130,118" />
+    <path android:strokeColor="#D78A86" android:strokeWidth="15"
+        android:pathData="M34,100 Q66,96 97,112 L130,118" />
+    <path android:strokeColor="#824755" android:strokeWidth="15"
+        android:pathData="M133,140 Q103,135 81,140 Q62,145 35,139" />
+    <path android:strokeColor="#AE6572" android:strokeWidth="11"
+        android:pathData="M133,140 Q103,135 81,140 Q62,145 35,139" />
+    <path android:strokeColor="#F4AF9E" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M36,95 Q66,92 94,107 M37,136 Q63,141 76,137" />
+
+    <!-- A recessed tuft leaves a visible continuous space between capillaries and wall. -->
+    <path android:fillColor="#B77880" android:strokeColor="#9D6475" android:strokeWidth="2"
+        android:pathData="M86,118 C101,95 118,86 133,88 C137,77 152,73 163,79 C175,70 186,75 194,80 C211,78 224,90 225,105 C238,113 235,133 225,142 C225,157 207,174 190,171 C181,186 158,186 147,175 C133,185 111,174 111,160 C95,158 89,150 94,140 Q80,136 86,118Z" />
+    <path android:strokeColor="#A45969" android:strokeWidth="17" android:strokeLineCap="round"
+        android:pathData="M105,115 C112,94 141,93 144,111 C149,130 124,133 124,146 C122,165 147,177 158,161 C171,146 150,129 158,116 C169,101 193,113 193,132 C193,152 175,153 171,171 M151,104 C150,84 179,78 190,92 C198,102 193,114 210,116 C224,118 226,134 212,146 Q201,155 190,151 M104,133 Q108,153 123,154" />
+    <path android:strokeColor="#DD9790" android:strokeWidth="11" android:strokeLineCap="round"
+        android:pathData="M105,115 C112,94 141,93 144,111 C149,130 124,133 124,146 C122,165 147,177 158,161 C171,146 150,129 158,116 C169,101 193,113 193,132 C193,152 175,153 171,171 M151,104 C150,84 179,78 190,92 C198,102 193,114 210,116 C224,118 226,134 212,146 Q201,155 190,151 M104,133 Q108,153 123,154" />
+    <path android:strokeColor="#F3B5A4" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M112,107 Q126,92 138,106 M149,159 Q159,153 151,140 M167,114 Q178,107 186,121 M158,92 Q171,82 185,89 M209,113 Q225,119 220,132 M109,138 Q114,147 121,149" />
+    <path android:fillColor="#8D5364" android:strokeColor="#EDB0A0" android:strokeWidth="3"
+        android:pathData="M118,114 C119,106 130,104 136,108 C142,113 137,123 130,125 C124,126 117,121 118,114Z M158,143 C158,136 167,132 173,135 C181,139 179,149 173,153 C165,156 156,151 158,143Z M194,98 C194,92 202,90 207,93 C213,96 212,103 208,106 C202,110 194,105 194,98Z" />
+
+    <!-- Visceral cells hug capillary loops; they do not form a second detached wall. -->
+    <path android:strokeColor="#77758D" android:strokeWidth="3.2" android:strokeLineCap="round"
+        android:pathData="M195,80 Q183,78 177,87 L176,94 M196,80 Q193,88 197,93 L203,95 M198,80 Q206,80 211,86 L213,91 M219,146 Q215,139 219,132 M219,146 Q210,147 207,153 M219,146 Q222,151 215,157 M143,175 Q138,168 140,161 M143,175 Q152,174 156,169 M116,94 Q119,98 124,101 M116,94 Q110,96 105,104" />
+    <path android:fillColor="#8F8FA8" android:strokeColor="#686781" android:strokeWidth="1"
+        android:pathData="M188,78 C190,72 202,73 204,78 C205,83 195,87 191,83Z M215,144 C218,139 224,139 225,144 C227,149 219,153 216,150Z M136,173 C138,169 147,170 149,174 C150,179 139,181 136,177Z M111,93 C111,89 118,87 121,90 C125,93 120,98 116,98 Q111,97 111,93Z" />
+    <path android:fillColor="#C8B7C7"
+        android:pathData="M193,78 C195,76 200,77 200,79 C199,81 194,82 193,80Z M218,144 Q222,142 222,146 Q218,149 218,144Z M140,175 Q145,172 146,176 Q141,179 140,175Z" />
+
+    <!-- A widening cut wall and cell seams mark the change to proximal epithelium. -->
+    <path android:strokeColor="#A76D77" android:strokeWidth="1.4"
+        android:pathData="M275,155 L271,163 M286,158 L284,167 M299,160 L298,169 M312,161 L312,169 M277,183 L277,191 M288,185 L286,190 M301,187 L300,191 M313,187 L314,190" />
+    <path android:fillColor="#DFA497" android:strokeColor="#865668" android:strokeWidth="1.7"
+        android:pathData="M323,151 C335,152 339,170 335,188 C333,199 328,204 323,200 C314,193 314,154 323,151Z" />
+    <path android:fillColor="#F6E5C8" android:strokeColor="#AB7881" android:strokeWidth="1.6"
+        android:pathData="M324,163 C330,163 333,178 330,188 C329,193 324,191 322,182 C320,176 320,165 324,163Z" />
+    <path android:strokeColor="#916F67" android:strokeWidth="2.2" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M242,153 C248,165 264,174 283,175 M277,171 L283,175 L277,178" />
+</vector>

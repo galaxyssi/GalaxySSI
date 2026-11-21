@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ra_cutaway_selector">右心房剖视</string>
+    <string name="health_atlas_ra_cutaway_view">右心房 · 切开展平，前壁在图左</string>
+    <string name="health_atlas_ra_svc">上腔静脉口</string>
+    <string name="health_atlas_ra_svc_detail">上腔静脉从上方汇入右心房后部的光滑区，带回来自头部、颈部、上肢和胸部的血液。</string>
+    <string name="health_atlas_ra_pectinate">梳状肌</string>
+    <string name="health_atlas_ra_pectinate_detail">这些梳齿状的肌嵴在前壁和右心耳内呈扇形分布。隆起的界嵴将梳状肌区与接纳腔静脉的光滑区分隔开。</string>
+    <string name="health_atlas_ra_fossa">卵圆窝</string>
+    <string name="health_atlas_ra_fossa_detail">这个浅椭圆形凹陷位于房间隔上，对应胎儿时期连通左右心房的卵圆孔所在位置。</string>
+    <string name="health_atlas_ra_ivc">下腔静脉口</string>
+    <string name="health_atlas_ra_ivc_detail">下腔静脉从下方汇入右心房，带回来自腹部、盆部和下肢的血液。较小的冠状窦口位于其略上方，偏向房间隔。</string>
+
+    <string name="health_atlas_la_cutaway_selector">左心房剖视</string>
+    <string name="health_atlas_la_cutaway_view">左心房 · 从前方切开，人体左侧在图右</string>
+    <string name="health_atlas_la_right_veins">右肺静脉</string>
+    <string name="health_atlas_la_right_veins_detail">这一侧通常有两个开口，接收来自右肺的富氧血液。上方是右上肺静脉口，下方是右下肺静脉口。</string>
+    <string name="health_atlas_la_left_veins">左肺静脉</string>
+    <string name="health_atlas_la_left_veins_detail">来自左肺的左上肺静脉和左下肺静脉通常在左心耳后方各有一个开口。</string>
+    <string name="health_atlas_la_appendage">左心耳</string>
+    <string name="health_atlas_la_appendage_detail">左心耳是一个狭长的肌性囊袋。它的内壁有梳齿状的梳状肌，这些肌嵴局限在心耳内。</string>
+    <string name="health_atlas_la_posterior_wall">光滑后壁</string>
+    <string name="health_atlas_la_posterior_wall_detail">四个肺静脉口周围的后壁是光滑的。血液从这里进入左心房，再向下经二尖瓣流入左心室。</string>
+
+    <string name="health_atlas_rv_cutaway_selector">右心室剖视</string>
+    <string name="health_atlas_rv_cutaway_view">右心室 · 从前方切开，流入道在图左</string>
+    <string name="health_atlas_rv_infundibulum">流出道</string>
+    <string name="health_atlas_rv_infundibulum_detail">光滑的肌性流出道又称漏斗部，向上逐渐变窄，通向肺动脉瓣。血液经肺动脉瓣进入肺动脉干。</string>
+    <string name="health_atlas_rv_moderator_band">节制索</string>
+    <string name="health_atlas_rv_moderator_band_detail">这条肌束横跨心室腔，从室间隔连到靠近右心室游离壁的前乳头肌基部。</string>
+    <string name="health_atlas_rv_trabeculae">肉柱</string>
+    <string name="health_atlas_rv_trabeculae_detail">粗大的肌嵴分布在心室下部的内壁上，使这里凹凸不平，与上方光滑的流出道形成对比。</string>
+
+    <string name="health_atlas_lv_cutaway_selector">左心室剖视</string>
+    <string name="health_atlas_lv_cutaway_view">左心室 · 斜向长轴剖视，心尖在图右下方</string>
+    <string name="health_atlas_lv_myocardium">厚肌壁</string>
+    <string name="health_atlas_lv_myocardium_detail">左心室的肌壁比右心室厚，围绕着狭长的心室腔，心室腔朝心尖逐渐变窄。</string>
+    <string name="health_atlas_lv_chordae">腱索</string>
+    <string name="health_atlas_lv_chordae_detail">这些细索连接二尖瓣瓣叶和乳头肌。心室收缩时，腱索帮助维持瓣叶的位置。主动脉瓣没有腱索。</string>
+    <string name="health_atlas_lv_papillary">乳头肌</string>
+    <string name="health_atlas_lv_papillary_detail">两组乳头肌从心室壁突入心室腔。它们的尖端固定连向两片二尖瓣瓣叶的腱索。</string>
+</resources>

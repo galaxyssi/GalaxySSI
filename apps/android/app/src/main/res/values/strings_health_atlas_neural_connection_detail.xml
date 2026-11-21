@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cerebrum_medial_cutaway_selector">Medial cutaway</string>
+    <string name="health_atlas_cerebrum_medial_cutaway_view">Medial view of one cerebral hemisphere, with the front at left. A small cutaway in the frontal lobe reveals white matter beneath the cortex.</string>
+    <string name="health_atlas_cerebrum_medial_cortex">Cerebral cortex</string>
+    <string name="health_atlas_cerebrum_medial_cortex_detail">Cortical gray matter forms the folded outer layer of the hemisphere. Its ridges are gyri, and the grooves between them are sulci.</string>
+    <string name="health_atlas_cerebrum_medial_white_matter">Subcortical white matter</string>
+    <string name="health_atlas_cerebrum_medial_white_matter_detail">Beneath the cortex, bundles of axons connect different regions of the same hemisphere, the opposite hemisphere, and deeper structures.</string>
+    <string name="health_atlas_cerebrum_medial_callosum">Corpus callosum</string>
+    <string name="health_atlas_cerebrum_medial_callosum_detail">This curved bundle of white matter crosses the midline to connect the left and right cerebral hemispheres.</string>
+    <string name="health_atlas_cerebrum_medial_cingulate">Cingulate gyrus</string>
+    <string name="health_atlas_cerebrum_medial_cingulate_detail">This fold of cortex follows the upper curve of the corpus callosum. The cingulate sulcus lies just above it.</string>
+    <string name="health_atlas_cerebrum_medial_parieto_occipital">Parieto-occipital sulcus</string>
+    <string name="health_atlas_cerebrum_medial_parieto_occipital_detail">This deep groove marks the boundary between the parietal and occipital lobes on the medial surface.</string>
+
+    <string name="health_atlas_peripheral_nerve_fascicle_cutaway_selector">Nerve cutaway</string>
+    <string name="health_atlas_peripheral_nerve_fascicle_cutaway_view">A peripheral nerve trunk opened along its length and across its end. One fascicle is shown with individual fibers exposed.</string>
+    <string name="health_atlas_peripheral_nerve_epineurium">Epineurium</string>
+    <string name="health_atlas_peripheral_nerve_epineurium_detail">This outer connective tissue encloses the whole nerve and extends between its fascicles.</string>
+    <string name="health_atlas_peripheral_nerve_fascicle">Nerve fascicle</string>
+    <string name="health_atlas_peripheral_nerve_fascicle_detail">A fascicle is a bundle of nerve fibers that runs lengthwise within the nerve.</string>
+    <string name="health_atlas_peripheral_nerve_perineurium">Perineurium</string>
+    <string name="health_atlas_peripheral_nerve_perineurium_detail">This layered sheath encloses a single fascicle, not the entire nerve.</string>
+    <string name="health_atlas_peripheral_nerve_endoneurium">Endoneurium</string>
+    <string name="health_atlas_peripheral_nerve_endoneurium_detail">This delicate connective tissue surrounds individual nerve fibers within a fascicle. It lies outside the Schwann cells associated with the axons.</string>
+
+    <string name="health_atlas_spinal_nerve_roots_and_rami_selector">Roots and rami</string>
+    <string name="health_atlas_spinal_nerve_roots_and_rami_view">One side of a spinal cord segment, with the back at the top. The two roots meet in a short spinal nerve, which then divides into two primary branches, or rami.</string>
+    <string name="health_atlas_spinal_nerve_dorsal_root">Dorsal root</string>
+    <string name="health_atlas_spinal_nerve_dorsal_root_detail">Sensory fibers enter the back of the spinal cord through this root. Their neuron cell bodies lie in the swelling along it, the dorsal root ganglion.</string>
+    <string name="health_atlas_spinal_nerve_ventral_root">Ventral root</string>
+    <string name="health_atlas_spinal_nerve_ventral_root_detail">Motor fibers leave the front of the spinal cord through this root. It has no ganglion and joins the dorsal root beyond the dorsal root ganglion.</string>
+    <string name="health_atlas_spinal_nerve_mixed_trunk">Mixed spinal nerve</string>
+    <string name="health_atlas_spinal_nerve_mixed_trunk_detail">Where the two roots unite, their sensory and motor fibers run together in a short trunk before it branches.</string>
+    <string name="health_atlas_spinal_nerve_dorsal_ramus">Dorsal ramus</string>
+    <string name="health_atlas_spinal_nerve_dorsal_ramus_detail">This smaller mixed branch supplies deep back muscles and carries sensation from skin over the back.</string>
+    <string name="health_atlas_spinal_nerve_ventral_ramus">Ventral ramus</string>
+    <string name="health_atlas_spinal_nerve_ventral_ramus_detail">This larger mixed branch carries fibers to and from the front and sides of the trunk and, at limb levels, to and from the limbs.</string>
+
+    <string name="health_atlas_dorsal_root_ganglion_cutaway_selector">Sensory ganglion</string>
+    <string name="health_atlas_dorsal_root_ganglion_cutaway_view">A dorsal root ganglion opened lengthwise, with the spinal cord side at left and the spinal nerve side at right. This is one example of a sensory ganglion.</string>
+    <string name="health_atlas_dorsal_root_ganglion_capsule">Connective tissue capsule</string>
+    <string name="health_atlas_dorsal_root_ganglion_capsule_detail">A connective tissue coat surrounds the ganglion and continues along the dorsal root at its ends.</string>
+    <string name="health_atlas_dorsal_root_ganglion_soma">Sensory neuron cell body</string>
+    <string name="health_atlas_dorsal_root_ganglion_soma_detail">Most of these large, round cell bodies lie near the outer part of the ganglion. Satellite glial cells form a thin coat around each cell body.</string>
+    <string name="health_atlas_dorsal_root_ganglion_fiber_bundles">Sensory fiber bundles</string>
+    <string name="health_atlas_dorsal_root_ganglion_fiber_bundles_detail">Bundles of sensory axons pass mainly through the center of the ganglion and continue toward the spinal cord on one side and the spinal nerve on the other.</string>
+    <string name="health_atlas_dorsal_root_ganglion_t_junction">T-shaped sensory axon</string>
+    <string name="health_atlas_dorsal_root_ganglion_t_junction_detail">A single process leaves the cell body and divides into two branches. One extends to the periphery, and the other enters the spinal cord. The sensory signal does not need a synapse in the ganglion.</string>
+</resources>

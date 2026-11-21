@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cerebrum_medial_cutaway_selector">大脑内侧剖视</string>
+    <string name="health_atlas_cerebrum_medial_cutaway_view">一侧大脑半球的内侧面，左侧为前方。额叶的局部剖面显示皮质下方的白质。</string>
+    <string name="health_atlas_cerebrum_medial_cortex">大脑皮质</string>
+    <string name="health_atlas_cerebrum_medial_cortex_detail">大脑半球外层由折叠的皮质灰质构成。隆起称为脑回，脑回之间的沟槽称为脑沟。</string>
+    <string name="health_atlas_cerebrum_medial_white_matter">皮质下白质</string>
+    <string name="health_atlas_cerebrum_medial_white_matter_detail">皮质下方的轴突束连接同一半球的不同区域、对侧半球及更深部的结构。</string>
+    <string name="health_atlas_cerebrum_medial_callosum">胼胝体</string>
+    <string name="health_atlas_cerebrum_medial_callosum_detail">这束弓形白质纤维跨越正中线，将左右大脑半球相连。</string>
+    <string name="health_atlas_cerebrum_medial_cingulate">扣带回</string>
+    <string name="health_atlas_cerebrum_medial_cingulate_detail">这条脑回沿胼胝体上缘弯曲，扣带沟就在其上方。</string>
+    <string name="health_atlas_cerebrum_medial_parieto_occipital">顶枕沟</string>
+    <string name="health_atlas_cerebrum_medial_parieto_occipital_detail">这条深沟在大脑半球内侧面分隔顶叶和枕叶。</string>
+
+    <string name="health_atlas_peripheral_nerve_fascicle_cutaway_selector">神经剖视</string>
+    <string name="health_atlas_peripheral_nerve_fascicle_cutaway_view">一段周围神经干，显示纵向剖开处与末端的横切面。其中一束神经纤维被剖开，露出单根纤维。</string>
+    <string name="health_atlas_peripheral_nerve_epineurium">神经外膜</string>
+    <string name="health_atlas_peripheral_nerve_epineurium_detail">最外层的结缔组织包裹整条神经，并延伸至各神经束之间。</string>
+    <string name="health_atlas_peripheral_nerve_fascicle">神经束</string>
+    <string name="health_atlas_peripheral_nerve_fascicle_detail">神经束由成束的神经纤维组成，沿神经干纵向延伸。</string>
+    <string name="health_atlas_peripheral_nerve_perineurium">神经束膜</string>
+    <string name="health_atlas_peripheral_nerve_perineurium_detail">这层多层排列的鞘膜包裹单个神经束，而非整条神经。</string>
+    <string name="health_atlas_peripheral_nerve_endoneurium">神经内膜</string>
+    <string name="health_atlas_peripheral_nerve_endoneurium_detail">这种纤细的结缔组织包绕神经束内的单根神经纤维，位于与轴突相伴的施万细胞外侧。</string>
+
+    <string name="health_atlas_spinal_nerve_roots_and_rami_selector">神经根与神经支</string>
+    <string name="health_atlas_spinal_nerve_roots_and_rami_view">脊髓一个节段的一侧，上方为背侧。两条神经根汇合成一小段脊神经，随后分成两条主支。</string>
+    <string name="health_atlas_spinal_nerve_dorsal_root">脊神经后根</string>
+    <string name="health_atlas_spinal_nerve_dorsal_root_detail">感觉纤维经后根从背侧进入脊髓。这些感觉神经元的胞体位于后根上的膨大处，即背根神经节。</string>
+    <string name="health_atlas_spinal_nerve_ventral_root">脊神经前根</string>
+    <string name="health_atlas_spinal_nerve_ventral_root_detail">运动纤维经前根从腹侧离开脊髓。前根没有神经节，在背根神经节的远侧与后根汇合。</string>
+    <string name="health_atlas_spinal_nerve_mixed_trunk">混合性脊神经</string>
+    <string name="health_atlas_spinal_nerve_mixed_trunk_detail">两条神经根汇合后，感觉与运动纤维在一段短干内并行，随后分支。</string>
+    <string name="health_atlas_spinal_nerve_dorsal_ramus">脊神经后支</string>
+    <string name="health_atlas_spinal_nerve_dorsal_ramus_detail">较细的后支含有感觉和运动纤维，支配背部深层肌肉，并传递背部皮肤的感觉信息。</string>
+    <string name="health_atlas_spinal_nerve_ventral_ramus">脊神经前支</string>
+    <string name="health_atlas_spinal_nerve_ventral_ramus_detail">较粗的前支含有感觉和运动纤维，分布于躯干前壁和侧壁；与四肢相应节段的前支也分布于四肢。</string>
+
+    <string name="health_atlas_dorsal_root_ganglion_cutaway_selector">感觉神经节</string>
+    <string name="health_atlas_dorsal_root_ganglion_cutaway_view">背根神经节的纵向剖视图，左侧朝向脊髓，右侧朝向脊神经。背根神经节是感觉神经节的一种。</string>
+    <string name="health_atlas_dorsal_root_ganglion_capsule">结缔组织被膜</string>
+    <string name="health_atlas_dorsal_root_ganglion_capsule_detail">结缔组织被膜包裹神经节，并在两端沿脊神经后根延续。</string>
+    <string name="health_atlas_dorsal_root_ganglion_soma">感觉神经元胞体</string>
+    <string name="health_atlas_dorsal_root_ganglion_soma_detail">这些较大而圆的胞体多数靠近神经节外侧。卫星胶质细胞在每个胞体周围形成一层薄鞘。</string>
+    <string name="health_atlas_dorsal_root_ganglion_fiber_bundles">感觉纤维束</string>
+    <string name="health_atlas_dorsal_root_ganglion_fiber_bundles_detail">成束的感觉轴突主要穿过神经节中央，一端朝向脊髓，另一端朝向脊神经。</string>
+    <string name="health_atlas_dorsal_root_ganglion_t_junction">T 形分支的感觉轴突</string>
+    <string name="health_atlas_dorsal_root_ganglion_t_junction_detail">胞体伸出一条突起，随后分成两支。一支通向外周，另一支进入脊髓。感觉信号无需在神经节内经过突触传递。</string>
+</resources>

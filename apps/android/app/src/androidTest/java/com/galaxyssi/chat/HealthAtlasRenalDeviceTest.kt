@@ -77,7 +77,9 @@ class HealthAtlasRenalDeviceTest {
             assertEquals("cell", atlas.mechanism(atlas[id]!!).kind)
             assertEquals(id, HealthAtlasPlates.forId(id)?.owner)
         }
-        assertEquals("nephron", HealthAtlasPlates.forId("glomerulus")!!.owner)
+        val glomerulus = HealthAtlasPlates.viewsForId("glomerulus")
+        assertEquals("glomerulus", glomerulus.first().owner)
+        assertEquals("nephron", glomerulus[1].owner)
     }
     @Test fun nephronBitmapHasTransparentMarginAndMarkersOnVisibleStructures() {
         val plate = HealthAtlasPlates.forId("nephron")!!
@@ -95,6 +97,8 @@ class HealthAtlasRenalDeviceTest {
         scenario.onActivity {
             it.open("kidneys"); it.view("atlas-entry-nephron").performClick()
             it.view("atlas-hotspot-proximal-tubule").performClick()
+            assertTrue(it.view("atlas-view-0").isSelected)
+            it.view("atlas-view-1").performClick()
             assertTrue(it.view("atlas-hotspot-proximal-tubule").isSelected)
             it.view("atlas-entry-cell-proximal-tubular-cell").performClick()
             assertNotNull(it.view("atlas-feature-prox-brush"))

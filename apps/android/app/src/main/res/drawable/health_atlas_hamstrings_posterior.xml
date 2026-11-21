@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Right thigh from behind: the fibula is lateral (right). -->
+    <path android:fillColor="#E5C9A9" android:strokeColor="#8C7464" android:strokeWidth="1.7"
+        android:pathData="M111,24 Q142,12 169,20 Q192,26 195,43 Q196,54 181,63 Q175,67 174,75 Q167,85 153,81 Q143,77 143,66 Q138,59 127,57 Q113,56 108,45 Q104,34 111,24Z"/>
+    <path android:fillColor="#F2DDBE"
+        android:pathData="M112,28 Q137,15 162,23 Q181,27 187,39 Q176,33 161,35 Q144,36 134,48 Q120,50 112,42Z"/>
+    <path android:fillColor="#C99F86"
+        android:pathData="M150,66 Q157,59 168,63 Q177,66 171,76 Q164,83 155,78 Q151,74 150,66Z"/>
+    <path android:fillColor="#B4C5B4" android:strokeColor="#7C9489" android:strokeWidth="1.3"
+        android:pathData="M172,43 Q183,41 191,46 Q199,51 195,59 Q191,67 181,65 Q171,64 167,57 Q164,50 172,43Z"/>
+    <path android:fillColor="#E4C3A3" android:strokeColor="#8C7464" android:strokeWidth="1.7"
+        android:pathData="M177,49 C187,42 195,52 202,57 Q207,61 212,53 Q219,49 226,56 Q234,69 223,84 Q213,96 210,116 C202,145 194,172 198,190 Q199,203 208,212 Q217,224 208,233 Q197,241 185,234 Q176,229 171,234 Q160,240 151,233 Q141,227 148,214 Q154,202 160,194 C168,179 172,158 179,136 C185,117 189,98 189,84 Q188,76 179,73 Q164,66 177,49Z"/>
+    <path android:fillColor="#C59A80"
+        android:pathData="M201,83 Q214,78 222,67 C216,86 207,99 205,115 C198,148 185,179 190,204 Q185,208 178,206 C174,185 187,148 193,121 Q197,98 201,83Z"/>
+    <path android:strokeColor="#F2DABB" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M215,57 Q225,55 226,66 M185,85 Q191,98 184,117"/>
+    <path android:fillColor="#B5C6B5" android:strokeColor="#7C9489" android:strokeWidth="1.4"
+        android:pathData="M150,221 Q155,214 164,214 Q174,214 174,225 Q173,233 164,235 Q155,237 149,232 Q146,227 150,221Z M190,220 Q195,214 205,216 Q213,221 211,229 Q206,237 197,236 Q190,234 186,229 Q185,224 190,220Z"/>
+    <path android:fillColor="#E6C7A7" android:strokeColor="#8C7464" android:strokeWidth="1.7"
+        android:pathData="M144,234 Q152,231 163,236 Q175,241 187,235 Q201,232 206,241 Q211,248 202,252 L191,257 L190,267 Q177,273 164,267 L160,260 Q155,253 143,249 Q137,244 144,234Z"/>
+    <path android:fillColor="#B5C6B5" android:strokeColor="#7C9489" android:strokeWidth="1.2"
+        android:pathData="M146,235 Q154,232 163,237 Q177,242 187,236 Q199,233 204,239 Q207,242 201,246 Q192,249 181,246 Q170,249 160,245 Q150,245 144,241Z"/>
+    <path android:fillColor="#E4C4A4" android:strokeColor="#8C7464" android:strokeWidth="1.6"
+        android:pathData="M213,235 Q220,229 226,235 Q233,242 227,249 Q224,255 225,265 Q221,271 213,267 L213,251 Q208,245 213,235Z"/>
+    <path android:strokeColor="#F5DFC0" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M219,247 Q220,255 218,264 M173,254 Q176,260 177,265"/>
+    <!-- The semimembranosus is deeper and its distal tendon ends on the posterior medial condyle. -->
+    <path android:fillColor="#DBC4B5" android:strokeColor="#9C807B" android:strokeWidth="1.4"
+        android:pathData="M158,65 Q162,62 167,65 C163,78 156,96 152,111 L140,112 C143,93 150,77 158,65Z"/>
+    <path android:fillColor="#BD7B81" android:strokeColor="#86545F" android:strokeWidth="1.8"
+        android:pathData="M146,99 Q152,94 156,103 C161,120 161,141 154,163 C149,178 145,199 153,213 L148,226 C133,219 123,202 122,184 C118,159 129,134 140,111Z"/>
+    <path android:fillColor="#A56773"
+        android:pathData="M147,106 Q156,102 157,114 C162,137 154,153 149,174 Q141,202 153,213 L147,223 C133,204 134,184 139,165 Q148,138 147,106Z"/>
+    <path android:fillColor="#E6D3C3" android:strokeColor="#9C807B" android:strokeWidth="1.4"
+        android:pathData="M139,208 Q146,211 151,207 Q154,216 157,220 C159,226 160,230 165,234 Q168,238 163,241 Q158,244 154,239 C150,228 146,219 139,208Z"/>
+    <!-- Short head starts on the lateral lip of the linea aspera, below the hip. -->
+    <path android:fillColor="#CB8787" android:strokeColor="#976361" android:strokeWidth="1.7"
+        android:pathData="M197,119 Q204,114 206,121 C204,146 202,161 209,181 Q214,198 222,215 L214,225 Q200,215 192,197 C182,182 178,168 182,151 C184,139 191,130 197,119Z"/>
+    <path android:strokeColor="#E6A699" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M188,145 Q180,171 195,190 M192,150 Q186,171 198,188"/>
+    <!-- The long head and semitendinosus diverge from the common proximal attachment. -->
+    <path android:fillColor="#EEDED0" android:strokeColor="#9C807B" android:strokeWidth="1.5"
+        android:pathData="M159,70 Q166,65 171,71 Q175,78 187,89 L180,100 Q172,94 165,85 Q162,88 157,97 L147,94 Q153,80 159,70Z"/>
+    <path android:fillColor="#D78E87" android:strokeColor="#976361" android:strokeWidth="1.8"
+        android:pathData="M173,80 Q178,75 183,81 C198,90 214,109 222,130 C230,152 230,169 226,185 Q224,200 224,213 L216,226 C211,203 202,182 192,163 C183,144 178,127 177,111 C175,98 169,92 173,80Z"/>
+    <path android:fillColor="#B97575"
+        android:pathData="M183,86 C204,101 227,130 228,155 Q230,166 225,189 Q222,206 223,214 L218,220 Q213,194 215,170 C218,143 205,112 183,86Z"/>
+    <path android:fillColor="#E8AA9A" android:strokeColor="#976361" android:strokeWidth="1.8"
+        android:pathData="M152,84 Q157,79 162,85 C174,95 178,115 173,132 C168,148 155,161 149,177 L139,176 C135,162 137,148 143,132 C149,115 144,98 152,84Z"/>
+    <path android:fillColor="#CF867E"
+        android:pathData="M162,89 Q178,107 173,128 C169,145 155,162 149,176 L144,175 C145,158 156,142 161,125 Q166,112 162,89Z"/>
+    <path android:strokeColor="#F3BAA7" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M184,90 Q196,104 198,121 Q201,142 211,158 M188,109 Q187,126 200,151 M208,118 Q220,139 220,159 M153,94 Q151,109 152,120 Q150,137 145,149 M159,95 Q166,113 158,132 Q151,148 149,160 M133,148 Q123,170 128,189 Q131,201 138,207"/>
+    <path android:fillColor="#EEDED0" android:strokeColor="#9C807B" android:strokeWidth="1.5"
+        android:pathData="M210,200 Q218,207 225,200 Q223,212 224,227 Q226,233 223,239 Q219,242 215,238 Q216,229 214,224 Q211,214 210,200Z"/>
+    <path android:fillColor="#EEDED0" android:strokeColor="#9C807B" android:strokeWidth="1.5"
+        android:pathData="M137,163 Q142,171 151,167 C145,184 140,201 140,220 C140,236 144,244 151,251 Q149,256 143,254 C132,246 131,233 131,219 Q132,190 137,163Z"/>
+    <path android:strokeColor="#FFF0D9" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M141,177 Q135,203 135,227 Q135,240 143,249 M218,214 Q221,225 219,235"/>
+</vector>

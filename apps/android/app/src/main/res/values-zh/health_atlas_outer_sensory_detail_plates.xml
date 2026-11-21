@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_outer_ear_selector">外耳道剖面</string>
+    <string name="health_atlas_outer_ear_view">耳廓与外耳道：从耳轮到鼓膜</string>
+    <string name="health_atlas_outer_ear_helix">耳轮</string>
+    <string name="health_atlas_outer_ear_helix_detail">卷曲的软骨缘环绕耳廓的上缘和后缘。</string>
+    <string name="health_atlas_outer_ear_concha">耳甲</string>
+    <string name="health_atlas_outer_ear_concha_detail">耳廓上这处深凹将声音汇向耳屏旁的外耳道口。</string>
+    <string name="health_atlas_outer_ear_canal">外耳道</string>
+    <string name="health_atlas_outer_ear_canal_detail">外耳道从耳甲弯曲向内，外段由软骨支撑，内段穿行于颞骨中。</string>
+    <string name="health_atlas_outer_ear_eardrum">鼓膜</string>
+    <string name="health_atlas_outer_ear_eardrum_detail">这层薄膜斜置于外耳道内端，将外耳道与中耳分隔开。</string>
+
+    <string name="health_atlas_outer_inner_ear_selector">骨迷路</string>
+    <string name="health_atlas_outer_inner_ear_view">内耳斜视图：半规管、前庭、耳蜗和神经</string>
+    <string name="health_atlas_outer_inner_ear_loops">半规管</string>
+    <string name="health_atlas_outer_inner_ear_loops_detail">三个骨性半规管位于不同平面，内含感受头部转动的膜性管道。两个近于垂直的半规管在前庭附近共用一段管道。</string>
+    <string name="health_atlas_outer_inner_ear_vestibule">前庭</string>
+    <string name="health_atlas_outer_inner_ear_vestibule_detail">前庭位于半规管与耳蜗之间，内有椭圆囊和球囊，可感受直线运动和头部倾斜。</string>
+    <string name="health_atlas_outer_inner_ear_nerve">前庭蜗神经</string>
+    <string name="health_atlas_outer_inner_ear_nerve_detail">前庭神经纤维与蜗神经纤维一同经内耳道通向脑干，分别传递平衡和听觉信号。</string>
+
+    <string name="health_atlas_outer_nose_selector">鼻腔外侧壁剖面</string>
+    <string name="health_atlas_outer_nose_view">鼻的侧视图：移去鼻中隔后可见一侧鼻腔外侧壁</string>
+    <string name="health_atlas_outer_nose_vestibule">鼻前庭</string>
+    <string name="health_atlas_outer_nose_vestibule_detail">鼻前庭紧邻鼻孔，内衬皮肤，是向后通入鼻腔的一段短通道。</string>
+    <string name="health_atlas_outer_nose_middle_concha">中鼻甲</string>
+    <string name="health_atlas_outer_nose_middle_concha_detail">中鼻甲是鼻腔外侧壁上的弯曲突起，位于较小的上鼻甲与较大的下鼻甲之间。紧贴其下的通道称为中鼻道。</string>
+    <string name="health_atlas_outer_nose_inferior_concha">下鼻甲</string>
+    <string name="health_atlas_outer_nose_inferior_concha_detail">下鼻甲是最低、最大的鼻甲，位于硬腭上方。鼻腔在其后方通向鼻咽。</string>
+
+    <string name="health_atlas_outer_tongue_selector">舌背剖视</string>
+    <string name="health_atlas_outer_tongue_view">舌的俯视图：舌根在上，一侧剖开以显示舌肌</string>
+    <string name="health_atlas_outer_tongue_tonsil">舌扁桃体</string>
+    <string name="health_atlas_outer_tongue_tonsil_detail">界沟后方的舌根黏膜内有成簇的淋巴组织，在表面形成低矮的小结节。</string>
+    <string name="health_atlas_outer_tongue_sulcus">界沟</string>
+    <string name="health_atlas_outer_tongue_sulcus_detail">这条沟呈 V 形，尖端朝向咽部，将舌的前三分之二与舌根分开。</string>
+    <string name="health_atlas_outer_tongue_vallate">轮廓乳头</string>
+    <string name="health_atlas_outer_tongue_vallate_detail">这些较大的乳头周围有环形沟，沿界沟前方排列。它们含有微小的味蕾，散布在更前方的较小菌状乳头中也有味蕾。</string>
+    <string name="health_atlas_outer_tongue_muscle">舌内肌</string>
+    <string name="health_atlas_outer_tongue_muscle_detail">纵向、横向和垂直走行的肌纤维在舌表面下相互交织，能够改变舌的形状。</string>
+</resources>

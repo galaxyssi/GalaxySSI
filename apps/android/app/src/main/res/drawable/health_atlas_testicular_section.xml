@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Vas deferens turns up from the inferior tail, behind the epididymal body. -->
+    <path android:strokeColor="#6C4B65" android:strokeWidth="12" android:strokeLineCap="round"
+        android:pathData="M204,231 C222,250 253,249 258,225 C267,188 262,155 265,126 C266,102 269,70 270,40"/>
+    <path android:strokeColor="#B48297" android:strokeWidth="8.5" android:strokeLineCap="round"
+        android:pathData="M204,231 C222,250 253,249 258,225 C267,188 262,155 265,126 C266,102 269,70 270,40"/>
+    <path android:strokeColor="#EAC1B8" android:strokeWidth="2.3" android:strokeLineCap="round"
+        android:pathData="M226,243 Q252,249 257,222 M262,203 Q265,179 263,160 M266,122 Q269,78 271,46"/>
+    <path android:fillColor="#6C4B65" android:strokeColor="#D9A7AB" android:strokeWidth="1.3"
+        android:pathData="M265,40 C265,36 275,36 275,40 C275,44 265,44 265,40Z"/>
+    <!-- Posterior depth and pale capsule at the cut face. -->
+    <path android:fillColor="#BA7A83" android:strokeColor="#784B5C" android:strokeWidth="2"
+        android:pathData="M160,33 C205,29 234,65 238,112 C242,154 230,210 205,235 C179,261 137,254 111,232 C79,205 78,156 90,108 C100,61 121,36 160,33Z"/>
+    <path android:fillColor="#F5CBB2" android:strokeColor="#8E5A69" android:strokeWidth="2"
+        android:pathData="M157,31 C121,29 97,61 88,110 C79,155 84,201 108,228 C127,249 159,250 182,233 C211,210 226,159 227,112 C229,64 203,34 157,31Z"/>
+    <path android:fillColor="#E09B92" android:strokeColor="#B77780" android:strokeWidth="1.5"
+        android:pathData="M156,39 C124,37 103,67 95,112 C86,155 91,197 114,222 C132,242 157,241 178,225 C204,204 219,156 220,111 C221,69 201,41 156,39Z"/>
+    <path android:strokeColor="#FFE4C9" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M155,35 Q120,33 102,76 Q99,82 97,86 M94,96 Q84,133 88,169 M92,188 Q101,219 122,234 Q138,244 156,239"/>
+    <!-- Several wedge-shaped lobules converge toward the posterior mediastinum. -->
+    <path android:fillColor="#EFB0A0"
+        android:pathData="M156,40 Q183,40 202,56 L205,111 Q171,85 127,61 Q139,43 156,40Z M107,90 Q147,109 200,125 L197,145 Q145,139 92,146 Q94,115 107,90Z M93,152 Q145,147 197,151 L194,171 Q141,182 106,207 Q96,187 93,152Z M109,211 Q148,186 193,177 Q188,199 175,220 Q135,252 109,211Z"/>
+    <path android:strokeColor="#F8CAA9" android:strokeWidth="4" android:strokeLineCap="round"
+        android:pathData="M124,59 Q151,74 204,116 M107,91 Q139,105 201,127 M93,148 Q137,142 199,148 M108,209 Q145,182 194,172"/>
+    <path android:strokeColor="#B57880" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M123,62 Q155,79 198,113 M105,94 Q144,110 196,128 M93,151 Q134,145 195,150 M110,211 Q145,186 189,176"/>
+    <!-- Representative coiled tubules, with narrow straight segments approaching the rete. -->
+    <path android:strokeColor="#A95E72" android:strokeWidth="5.6" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M197,109 C178,94 175,83 157,72 C148,66 145,54 157,49 C169,45 179,51 178,59 C178,68 163,64 165,57 Q167,52 171,56 M194,118 C173,109 167,99 151,91 C136,84 133,98 124,93 C110,86 128,72 140,79 Q147,82 149,86 M194,134 C171,126 163,121 153,116 C143,111 132,110 127,117 C123,123 132,128 141,123 Q145,121 151,124 M193,142 C165,136 153,137 140,136 C127,135 119,131 118,123 C117,115 107,112 105,122 Q103,131 111,136 M192,157 C173,153 163,157 150,161 C137,165 125,162 128,156 Q130,151 139,154 M191,165 C173,165 164,174 150,177 C138,179 133,174 125,177 C116,181 118,188 112,191 C102,194 102,182 108,175 C114,168 119,161 113,158 Q106,155 102,163 M185,184 C166,191 160,204 145,205 C131,205 125,202 120,211 C115,222 133,227 143,218 C149,213 155,211 164,213 Q170,214 172,208 M164,223 C158,232 141,234 135,229"/>
+    <path android:strokeColor="#F8CFB2" android:strokeWidth="1.7" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M197,109 C178,94 175,83 157,72 C148,66 145,54 157,49 C169,45 179,51 178,59 C178,68 163,64 165,57 Q167,52 171,56 M194,118 C173,109 167,99 151,91 C136,84 133,98 124,93 C110,86 128,72 140,79 Q147,82 149,86 M194,134 C171,126 163,121 153,116 C143,111 132,110 127,117 C123,123 132,128 141,123 Q145,121 151,124 M193,142 C165,136 153,137 140,136 C127,135 119,131 118,123 C117,115 107,112 105,122 Q103,131 111,136 M192,157 C173,153 163,157 150,161 C137,165 125,162 128,156 Q130,151 139,154 M191,165 C173,165 164,174 150,177 C138,179 133,174 125,177 C116,181 118,188 112,191 C102,194 102,182 108,175 C114,168 119,161 113,158 Q106,155 102,163 M185,184 C166,191 160,204 145,205 C131,205 125,202 120,211 C115,222 133,227 143,218 C149,213 155,211 164,213 Q170,214 172,208 M164,223 C158,232 141,234 135,229"/>
+    <path android:fillColor="#F3C9AE" android:strokeColor="#BB7E83" android:strokeWidth="1.4"
+        android:pathData="M208,63 Q221,82 220,113 C219,143 211,176 194,200 Q183,210 185,193 C192,176 197,159 198,140 C199,114 205,91 203,77 Q201,68 208,63Z"/>
+    <path android:strokeColor="#B16D7F" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M197,109L207,115 M194,118L206,124 M194,134L206,135 M193,142L204,143 M192,157L204,152 M191,165L202,163 M185,184L198,178"/>
+    <path android:strokeColor="#80546C" android:strokeWidth="2.6" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M207,83 Q216,102 209,117 Q205,124 211,128 Q215,132 208,142 Q201,151 205,157 Q204,166 197,179 M210,105 Q214,115 214,125 Q214,138 208,145 Q206,151 204,152 M209,117 Q214,121 211,128 Q206,130 205,136 Q202,144 205,157 M205,159 Q198,164 198,173 L197,179"/>
+    <!-- Efferent ductules pass from the rete to the superior epididymal head. -->
+    <path android:strokeColor="#915B73" android:strokeWidth="2.7" android:strokeLineCap="round"
+        android:pathData="M207,87 C213,76 199,70 207,62 Q211,58 216,59 M209,94 Q219,82 215,75 Q210,69 220,65 M210,102 Q221,88 221,80 Q219,74 225,71"/>
+    <path android:fillColor="#A9748B" android:strokeColor="#754E67" android:strokeWidth="2"
+        android:pathData="M198,52 C203,41 220,41 234,51 C242,57 242,72 241,86 C241,103 250,116 249,137 C249,157 243,172 240,192 C238,214 231,236 216,243 C205,248 192,244 191,236 C189,230 199,224 205,223 Q221,215 224,194 C227,170 235,155 235,136 C234,116 225,102 227,84 Q230,77 222,72 C211,65 195,65 198,52Z"/>
+    <path android:strokeColor="#E7B3B1" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M201,53 Q213,47 228,55 M202,58 Q217,53 233,61 M209,62 Q225,58 235,66 M218,66 Q231,63 236,73 M228,75 Q232,72 238,78 M230,84 Q236,81 241,87 M231,91 Q237,89 241,95 M232,101 Q238,98 242,105 M235,111 Q239,107 245,114 M238,122 Q242,118 247,125 M239,134 Q244,130 247,136 M239,145 Q243,141 247,146 M237,156 Q241,152 245,157 M234,166 Q238,163 242,167 M230,178 Q234,174 239,178 M228,189 Q232,186 237,190 M226,201 Q231,198 236,201 M222,211 Q227,207 233,211 M217,220 Q223,217 229,221 M209,226 Q217,224 223,230 M202,231 Q214,230 217,236 M196,236 Q206,235 208,241"/>
+    <path android:strokeColor="#765463" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M52,254H100 M52,250V258 M100,250V258"/>
+</vector>

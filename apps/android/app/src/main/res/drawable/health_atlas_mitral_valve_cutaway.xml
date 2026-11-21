@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Oblique left-heart window: mural side at left, aortic side at right. -->
+    <path android:fillColor="#CD7B7B" android:strokeColor="#7E414F" android:strokeWidth="2.5"
+        android:pathData="M66,58 C81,27 119,19 162,22 C198,24 225,41 244,66 Q259,78 270,70 C294,89 305,115 299,142 C295,186 261,232 209,254 C179,267 154,263 127,246 C82,218 59,174 58,135 Q56,116 63,98 Q57,76 66,58 Z" />
+    <path android:fillColor="#E39B8F"
+        android:pathData="M63,135 C64,176 91,222 130,244 C156,259 177,262 207,249 C258,228 287,184 293,151 C285,178 251,212 216,228 C175,248 140,225 122,206 C95,181 87,149 87,128 Z" />
+    <path android:fillColor="#8F495C" android:strokeColor="#F0B2A1" android:strokeWidth="4"
+        android:pathData="M79,61 C97,35 126,32 161,34 Q213,36 238,78 Q252,92 270,86 C287,104 290,122 284,145 C275,184 252,211 209,233 C179,247 157,241 134,226 C99,203 82,170 78,134 C76,122 80,108 81,100 Q70,79 79,61 Z" />
+    <path android:name="mitral_atrial_lumen" android:fillColor="#AC6170"
+        android:pathData="M79,61 C97,35 126,32 161,34 Q206,37 235,75 C202,68 174,69 141,75 Q107,82 81,100 Q70,79 79,61 Z" />
+    <path android:fillColor="#A95B6B"
+        android:pathData="M260,121 Q281,119 285,133 C279,168 261,190 238,204 Q216,220 197,226 C212,205 214,181 225,166 C237,146 251,145 260,121 Z" />
+    <path android:strokeColor="#C17F86" android:strokeWidth="2.8" android:strokeLineCap="round"
+        android:pathData="M93,61 Q126,42 166,49 M98,73 Q120,61 150,60 M84,151 Q92,176 110,188 M91,170 Q104,193 121,201 M264,156 Q258,174 239,188 M256,180 Q248,194 222,209 M142,220 Q162,234 180,233" />
+    <path android:strokeColor="#F3B2A0" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M66,131 Q68,164 82,188 M99,215 Q132,252 164,255 M220,243 Q267,217 282,185" />
+
+    <!-- Two papillary groups, each with chordae to both leaflets. -->
+    <path android:name="mitral_papillary" android:fillColor="#C4777E" android:strokeColor="#7E4357" android:strokeWidth="2"
+        android:pathData="M104,199 Q111,197 116,186 C120,180 126,184 129,193 C132,202 140,215 150,230 Q123,220 104,199 Z M201,236 C211,222 215,208 216,193 C218,184 224,181 228,189 Q233,197 241,198 L248,207 Q224,228 201,236 Z" />
+    <path android:strokeColor="#E69A91" android:strokeWidth="2.8" android:strokeLineCap="round"
+        android:pathData="M117,200 Q120,194 122,188 M213,221 Q220,206 222,190" />
+    <path android:name="mitral_chordae" android:strokeColor="#F1D4B1" android:strokeWidth="1.9"
+        android:strokeLineCap="round"
+        android:pathData="M122,185 Q113,159 98,130 M123,185 Q129,166 121,141 M125,187 Q144,165 149,144 M126,188 Q155,164 176,154 M126,188 Q152,175 193,155 M223,187 Q217,179 205,160 M223,186 Q226,169 223,147 M224,187 Q239,165 250,132 M223,186 Q207,174 176,153 M222,187 Q200,177 156,146" />
+
+    <!-- The anterior sail shares a fibrous hinge with the aortic side. -->
+    <path android:fillColor="#69384D" android:strokeColor="#D69B92" android:strokeWidth="4.5"
+        android:pathData="M82,108 C108,92 141,80 174,82 C209,83 236,87 259,98 C253,125 230,144 200,152 C153,164 100,146 82,108 Z" />
+    <path android:fillColor="#D2A28F" android:strokeColor="#8A545F" android:strokeWidth="1.9"
+        android:pathData="M112,134 Q124,137 137,143 Q150,149 160,148 L170,157 C149,157 126,148 112,134 Z" />
+    <path android:name="mitral_posterior" android:fillColor="#EBC4A3" android:strokeColor="#8A545F" android:strokeWidth="1.9"
+        android:pathData="M83,108 C101,96 121,90 145,85 Q166,81 192,84 C170,88 152,96 138,106 Q135,110 140,115 C133,116 124,120 128,125 Q129,130 135,134 Q125,135 121,141 C104,134 90,123 83,108 Z" />
+    <path android:fillColor="#CAA08F"
+        android:pathData="M89,111 Q106,110 117,118 Q109,124 121,141 Q100,133 89,111 Z" />
+    <path android:name="mitral_anterior" android:fillColor="#F8D8B1" android:strokeColor="#8A545F" android:strokeWidth="2"
+        android:pathData="M190,84 C218,83 241,89 260,98 C256,119 242,140 220,153 C199,166 175,161 152,149 C174,144 181,127 180,112 C180,101 183,92 190,84 Z" />
+    <path android:fillColor="#DCAB91"
+        android:pathData="M254,103 C249,124 232,147 211,155 C191,163 174,156 160,150 C181,154 200,150 215,139 Q235,127 254,103 Z" />
+    <path android:strokeColor="#FFF0CF" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M92,108 Q121,92 148,89 M191,89 Q222,86 252,98 M170,153 Q196,164 221,150" />
+    <path android:strokeColor="#F3CDB2" android:strokeWidth="5" android:strokeLineCap="round"
+        android:pathData="M215,87 Q242,88 260,98 Q273,99 277,105" />
+</vector>

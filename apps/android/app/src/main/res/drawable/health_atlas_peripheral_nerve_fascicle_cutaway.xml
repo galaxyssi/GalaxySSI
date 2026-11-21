@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <group android:rotation="25" android:pivotX="180" android:pivotY="140">
+        <!-- The outer epineurium continues from the length of the trunk onto its cut rim. -->
+        <path android:fillColor="#C99179" android:strokeColor="#875663" android:strokeWidth="2.2"
+            android:pathData="M48,87 C90,83 124,96 156,95 Q196,94 231,90 L237,192 Q209,194 182,200 C138,204 94,188 47,193 Q35,187 35,175 C24,159 31,145 33,136 Q30,120 39,105 Q39,96 48,87Z"/>
+        <path android:fillColor="#E7AE8A"
+            android:pathData="M48,91 C90,88 123,101 157,100 Q194,99 225,95 L221,151 Q189,157 154,154 Q118,150 88,155 Q66,159 34,154 Q34,142 38,136 Q34,119 44,105 Q43,97 48,91Z"/>
+        <path android:fillColor="#AD6F68"
+            android:pathData="M35,169 Q65,167 87,169 C129,170 156,188 198,178 Q219,173 232,166 L237,191 Q210,193 181,198 C133,202 93,186 50,191 Q39,188 35,169Z"/>
+        <path android:strokeColor="#E3A684" android:strokeWidth="2.1" android:strokeLineCap="round"
+            android:pathData="M43,174 C82,172 91,175 130,183 Q178,196 207,183 M48,183 Q81,181 119,190 M124,174 Q175,190 207,176"/>
+        <path android:strokeColor="#F9CC9F" android:strokeWidth="2.3" android:strokeLineCap="round"
+            android:pathData="M47,99 C75,96 92,103 111,103 M48,110 Q64,106 86,109 M161,105 Q186,105 212,101 M39,153 Q57,155 74,152 M46,160 Q67,160 89,156 Q120,151 156,159 Q183,164 208,155"/>
+        <!-- Longitudinal window: separate fascicles are continuous with the end face. -->
+        <path android:fillColor="#8D595E" android:strokeColor="#A66A65" android:strokeWidth="2"
+            android:pathData="M69,116 C96,103 120,108 150,111 C178,115 206,109 226,104 L223,156 C194,162 175,151 147,152 Q112,146 83,151 Q67,148 61,137 Q58,124 69,116Z"/>
+        <path android:fillColor="#CE8D75"
+            android:pathData="M74,120 C98,110 125,114 152,117 C177,121 208,115 222,109 L220,151 C193,157 176,148 144,147 Q113,142 85,147 Q71,143 67,137 Q65,127 74,120Z"/>
+        <path android:strokeColor="#9C645D" android:strokeWidth="10" android:strokeLineCap="round"
+            android:pathData="M81,125 C107,117 132,123 153,124 Q188,128 223,111 M75,136 Q112,128 150,136 Q191,145 220,132 M103,141 Q133,139 151,145 Q187,153 222,149"/>
+        <path android:strokeColor="#E3A17E" android:strokeWidth="7.2" android:strokeLineCap="round"
+            android:pathData="M81,125 C107,117 132,123 153,124 Q188,128 223,111 M75,136 Q112,128 150,136 Q191,145 220,132 M103,141 Q133,139 151,145 Q187,153 222,149"/>
+        <path android:strokeColor="#FFDAA8" android:strokeWidth="1.4" android:strokeLineCap="round"
+            android:pathData="M84,124 Q106,118 132,122 Q180,129 217,112 M80,135 Q115,129 148,136 Q187,144 215,133 M112,140 Q135,140 153,145 Q185,151 214,149"/>
+        <path android:strokeColor="#F2BE97" android:strokeWidth="1.8" android:strokeLineCap="round"
+            android:pathData="M67,118 C95,102 122,110 144,111 M73,144 Q79,148 84,148 Q110,143 135,147 M151,152 Q173,157 195,159"/>
+        <path android:fillColor="#F4C7A0" android:strokeColor="#875663" android:strokeWidth="2.1"
+            android:pathData="M230,90 C248,90 260,111 260,140 C261,167 253,190 237,192 C221,194 207,171 206,145 C204,117 214,91 230,90Z"/>
+        <path android:fillColor="#D49982" android:strokeColor="#FFE0B6" android:strokeWidth="1.7"
+            android:pathData="M230,96 C244,96 255,116 255,141 C256,166 248,185 237,186 C224,188 212,168 211,145 C209,120 218,97 230,96Z"/>
+        <!-- The dark individual rims are perineurium. -->
+        <path android:fillColor="#F5C495" android:strokeColor="#A16062" android:strokeWidth="2.9"
+            android:pathData="M221,111 C222,103 230,100 236,104 C241,107 242,113 237,118 C231,122 220,120 221,111Z M238,133 C233,127 238,120 244,122 C250,123 252,131 249,136 Q244,141 238,133Z M215,138 C213,130 218,125 225,125 C232,126 234,133 231,138 Q225,145 215,138Z M217,156 C215,149 220,144 225,144 C231,144 235,151 232,156 Q227,164 217,156Z M228,174 C227,167 232,162 240,162 C247,163 249,170 245,176 Q236,183 228,174Z"/>
+        <path android:strokeColor="#FBE1BA" android:strokeWidth="1.2" android:strokeLineCap="round"
+            android:pathData="M225,108 Q232,102 237,110 M216,134 Q222,126 229,131 M240,127 Q243,124 247,127 M219,153 Q223,146 230,150 M231,170 Q236,164 243,166"/>
+        <path android:strokeColor="#B87965" android:strokeWidth="2" android:strokeLineCap="round"
+            android:pathData="M227,111h0.1 M231,108h0.1 M234,114h0.1 M228,116h0.1 M223,131h0.1 M226,135h0.1 M220,137h0.1 M243,127h0.1 M247,131h0.1 M243,133h0.1 M222,151h0.1 M227,154h0.1 M223,156h0.1 M235,169h0.1 M241,169h0.1 M238,173h0.1 M242,174h0.1"/>
+        <!-- One opened fascicle: the pale halos outside the fibers denote endoneurium. -->
+        <path android:fillColor="#D68F77" android:strokeColor="#985865" android:strokeWidth="1.9"
+            android:pathData="M239,141 C247,137 260,139 270,142 Q275,148 269,159 C258,162 245,161 239,157 Q233,150 239,141Z"/>
+        <path android:fillColor="#F3BD96"
+            android:pathData="M240,143 Q253,140 267,144 Q262,149 267,155 Q251,159 241,155 Q237,151 240,143Z"/>
+        <path android:strokeColor="#FADEB6" android:strokeWidth="7" android:strokeLineCap="round"
+            android:pathData="M253,146 Q270,144 281,137 Q291,130 310,131 M252,151 Q274,150 290,148 Q309,146 326,151 M253,155 Q272,156 285,161 Q300,166 314,164"/>
+        <path android:strokeColor="#A86265" android:strokeWidth="2.3" android:strokeLineCap="round"
+            android:pathData="M253,146 Q270,144 281,137 Q291,130 310,131 M252,151 Q274,150 290,148 Q309,146 326,151 M253,155 Q272,156 285,161 Q300,166 314,164"/>
+        <path android:strokeColor="#397A79" android:strokeWidth="5.2" android:strokeLineCap="round"
+            android:pathData="M290,148 Q294,147 300,147 M306,148 Q311,148 316,149"/>
+        <path android:strokeColor="#A8C8AE" android:strokeWidth="1.2" android:strokeLineCap="round"
+            android:pathData="M290,147 Q293,146 299,146 M306,147 Q311,147 315,148"/>
+    </group>
+</vector>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ra_cutaway_selector">Right atrium cutaway</string>
+    <string name="health_atlas_ra_cutaway_view">Right atrium · Opened and spread, front wall at image left</string>
+    <string name="health_atlas_ra_svc">Upper caval opening</string>
+    <string name="health_atlas_ra_svc_detail">The superior vena cava enters from above, returning blood from the head, neck, upper limbs, and chest to the smooth back of the atrium.</string>
+    <string name="health_atlas_ra_pectinate">Pectinate muscles</string>
+    <string name="health_atlas_ra_pectinate_detail">These comb-like ridges fan across the front wall and right atrial appendage. The raised terminal crest separates them from the smooth region that receives the venae cavae.</string>
+    <string name="health_atlas_ra_fossa">Fossa ovalis</string>
+    <string name="health_atlas_ra_fossa_detail">This shallow oval depression lies in the wall between the atria. It marks the former site of the fetal opening between the two chambers.</string>
+    <string name="health_atlas_ra_ivc">Lower caval opening</string>
+    <string name="health_atlas_ra_ivc_detail">The inferior vena cava enters from below, returning blood from the abdomen, pelvis, and lower limbs. The smaller coronary sinus opening lies just above and toward the septum.</string>
+
+    <string name="health_atlas_la_cutaway_selector">Left atrium cutaway</string>
+    <string name="health_atlas_la_cutaway_view">Left atrium · Opened from the front, body left at image right</string>
+    <string name="health_atlas_la_right_veins">Right pulmonary veins</string>
+    <string name="health_atlas_la_right_veins_detail">The two openings on this side usually receive oxygen-rich blood from the right lung. The upper opening is for the superior vein and the lower opening is for the inferior vein.</string>
+    <string name="health_atlas_la_left_veins">Left pulmonary veins</string>
+    <string name="health_atlas_la_left_veins_detail">The superior and inferior veins from the left lung usually enter through separate openings behind the left atrial appendage.</string>
+    <string name="health_atlas_la_appendage">Atrial appendage</string>
+    <string name="health_atlas_la_appendage_detail">The left atrial appendage is a narrow muscular pouch. Its inner surface has comb-like pectinate ridges that stay within the pouch.</string>
+    <string name="health_atlas_la_posterior_wall">Smooth back wall</string>
+    <string name="health_atlas_la_posterior_wall_detail">The back wall around the four pulmonary vein openings is smooth. Blood entering here passes through the atrium and down through the mitral valve to the left ventricle.</string>
+
+    <string name="health_atlas_rv_cutaway_selector">Right ventricle cutaway</string>
+    <string name="health_atlas_rv_cutaway_view">Right ventricle · Opened from the front, inlet at image left</string>
+    <string name="health_atlas_rv_infundibulum">Outflow tract</string>
+    <string name="health_atlas_rv_infundibulum_detail">The smooth muscular outflow tract, or infundibulum, narrows upward to the pulmonary valve. Blood passes through that valve into the pulmonary trunk.</string>
+    <string name="health_atlas_rv_moderator_band">Moderator band</string>
+    <string name="health_atlas_rv_moderator_band_detail">This muscular bridge crosses from the wall between the ventricles to the base of the anterior papillary muscle on the free-wall side.</string>
+    <string name="health_atlas_rv_trabeculae">Trabeculae carneae</string>
+    <string name="health_atlas_rv_trabeculae_detail">Coarse muscle ridges line the lower part of the chamber. They give its inner surface a rough texture unlike the smooth upper outflow tract.</string>
+
+    <string name="health_atlas_lv_cutaway_selector">Left ventricle cutaway</string>
+    <string name="health_atlas_lv_cutaway_view">Left ventricle · Oblique long-axis cutaway, apex at lower right</string>
+    <string name="health_atlas_lv_myocardium">Thick muscle wall</string>
+    <string name="health_atlas_lv_myocardium_detail">The muscular wall is thicker than in the right ventricle. It surrounds the long chamber, which tapers toward the apex of the heart.</string>
+    <string name="health_atlas_lv_chordae">Tendinous cords</string>
+    <string name="health_atlas_lv_chordae_detail">These fine cords join the mitral leaflets to the papillary muscles. They help hold the leaflets in place when the ventricle contracts. The aortic valve has no such cords.</string>
+    <string name="health_atlas_lv_papillary">Papillary muscles</string>
+    <string name="health_atlas_lv_papillary_detail">Two groups of papillary muscles project from the ventricular wall. Their tips anchor the cords attached to both mitral leaflets.</string>
+</resources>

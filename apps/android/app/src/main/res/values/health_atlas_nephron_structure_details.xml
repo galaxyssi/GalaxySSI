@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_glomerulus_tuft_selector">Capillary tuft</string>
+    <string name="health_atlas_glomerulus_tuft_view">Glomerular tuft and its blood vessels</string>
+    <string name="health_atlas_glomerulus_afferent">Afferent arteriole</string>
+    <string name="health_atlas_glomerulus_afferent_detail">Blood enters at the vascular pole through this arteriole, which branches into the capillary tuft.</string>
+    <string name="health_atlas_glomerulus_efferent">Efferent arteriole</string>
+    <string name="health_atlas_glomerulus_efferent_detail">Capillary branches reunite and blood leaves through this arteriole at the same pole.</string>
+    <string name="health_atlas_glomerulus_loops">Capillary loops</string>
+    <string name="health_atlas_glomerulus_loops_detail">The tuft is a branching network of capillaries. Their porous endothelial lining, basement membrane, and the podocyte foot processes together form the filtration barrier.</string>
+
+    <string name="health_atlas_bowmans_capsule_poles_selector">Capsule layers</string>
+    <string name="health_atlas_bowmans_capsule_poles_view">Bowman\'s capsule and its urinary pole</string>
+    <string name="health_atlas_bowmans_capsule_parietal">Parietal layer</string>
+    <string name="health_atlas_bowmans_capsule_parietal_detail">A single layer of flat cells forms the outer wall. At the urinary pole it becomes continuous with the lining of the proximal tubule.</string>
+    <string name="health_atlas_bowmans_capsule_visceral">Visceral layer</string>
+    <string name="health_atlas_bowmans_capsule_visceral_detail">Podocytes form the inner layer. Their branching processes wrap individual glomerular capillaries rather than lining the outer wall.</string>
+    <string name="health_atlas_bowmans_capsule_space">Capsular space</string>
+    <string name="health_atlas_bowmans_capsule_space_detail">Filtrate collects in the gap between the two layers and enters the proximal tubule at the urinary pole, opposite the vascular pole.</string>
+
+    <string name="health_atlas_proximal_tubule_brush_selector">Brush border</string>
+    <string name="health_atlas_proximal_tubule_brush_view">Proximal tubule: cortical coils and open wall</string>
+    <string name="health_atlas_proximal_tubule_coil">Cortical coil</string>
+    <string name="health_atlas_proximal_tubule_coil_detail">The proximal convoluted tubule begins at the urinary pole. It winds through the cortex and continues as a straighter segment before narrowing into the thin descending limb.</string>
+    <string name="health_atlas_proximal_tubule_cuboidal">Cuboidal lining</string>
+    <string name="health_atlas_proximal_tubule_cuboidal_detail">A single layer of cuboidal cells surrounds the lumen. Their apical surfaces face inward, and their bases rest on a basement membrane.</string>
+    <string name="health_atlas_proximal_tubule_microvilli">Brush border</string>
+    <string name="health_atlas_proximal_tubule_microvilli_detail">Dense microvilli project from the apical surface into the lumen. They give the lining a brush-like edge and increase its surface area.</string>
+
+    <string name="health_atlas_nephron_loop_limb_selector">Loop limbs</string>
+    <string name="health_atlas_nephron_loop_limb_view">Long nephron loop from cortex to medulla and back</string>
+    <string name="health_atlas_nephron_loop_thin_descending">Thin descending limb</string>
+    <string name="health_atlas_nephron_loop_thin_descending_detail">Below the proximal straight segment, the tubule narrows. A single layer of flat cells lines this limb as it runs deeper into the medulla.</string>
+    <string name="health_atlas_nephron_loop_thin_ascending">Thin ascending limb</string>
+    <string name="health_atlas_nephron_loop_thin_ascending_detail">At the hairpin turn of this long loop, the thin-walled tubule reverses direction. The thin ascending limb runs back toward the cortex before its wall thickens.</string>
+    <string name="health_atlas_nephron_loop_thick_ascending">Thick ascending limb</string>
+    <string name="health_atlas_nephron_loop_thick_ascending_detail">The ascending wall becomes a single layer of cuboidal cells. The thick limb continues into the cortex and then becomes the distal convoluted tubule.</string>
+</resources>

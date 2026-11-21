@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Coronal locator of the uterus; the wall sample is from the body, not the cervix. -->
+    <path android:fillColor="#D79B98" android:strokeColor="#955D6E" android:strokeWidth="1.6"
+        android:pathData="M25,118 C39,122 47,108 65,108 C78,108 84,113 94,118 L104,117 Q101,125 94,132 C90,140 92,148 83,160 C76,168 76,177 78,185 Q80,193 72,198 L57,198 Q50,193 52,185 C54,177 53,169 46,160 C37,149 36,139 32,131Z"/>
+    <path android:fillColor="#EEB39F" android:strokeColor="#BB7880" android:strokeWidth="1.3"
+        android:pathData="M34,124 Q53,118 65,120 Q79,119 92,124 Q75,139 70,155 Q66,168 70,190 L61,191 Q64,172 59,157 Q54,141 34,124Z"/>
+    <path android:fillColor="#8D4D65"
+        android:pathData="M45,127 Q63,126 82,126 Q67,142 65,158 Q64,176 66,188 L64,188 Q65,170 63,158 Q59,139 45,127Z"/>
+    <path android:strokeColor="#9A647D" android:strokeWidth="1.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M72,139 L78,143 L74,153 L68,150Z M78,143L87,134 M90,131L95,126 M98,123L103,118"/>
+    <!-- Layered wall block with the cavity-facing surface on top. -->
+    <path android:fillColor="#9C586B" android:strokeColor="#794657" android:strokeWidth="1.8"
+        android:pathData="M285,87 L331,61 L331,209 Q314,229 286,244Z"/>
+    <path android:fillColor="#C67D82" android:strokeColor="#A36170" android:strokeWidth="1.4"
+        android:pathData="M285,87 L331,61 L331,157 Q311,176 286,190Z"/>
+    <path android:fillColor="#DA9390"
+        android:pathData="M287,88 L329,62 L329,134 Q313,151 287,164Z"/>
+    <path android:fillColor="#BA6F7B" android:strokeColor="#804B5D" android:strokeWidth="1.8"
+        android:pathData="M106,91 Q132,83 163,86 Q192,91 222,87 Q256,80 286,87 L286,244 Q247,248 216,242 Q189,238 156,244 Q129,249 106,239Z"/>
+    <path android:fillColor="#D88E89" android:strokeColor="#AC6573" android:strokeWidth="1.3"
+        android:pathData="M106,91 Q132,83 163,86 Q192,91 222,87 Q256,80 286,87 L286,193 Q270,197 256,193 Q238,189 223,193 Q204,197 188,192 Q173,187 156,194 Q127,202 106,191Z"/>
+    <path android:fillColor="#F0B298"
+        android:pathData="M107,92 Q133,84 163,87 Q192,92 222,88 Q256,81 285,88 L285,165 Q268,165 252,161 Q241,159 227,164 Q208,171 194,165 Q179,159 159,166 Q138,173 107,168Z"/>
+    <path android:fillColor="#E7A092"
+        android:pathData="M107,165 Q130,170 157,164 Q178,158 194,164 Q209,169 226,162 Q241,157 255,161 Q269,165 285,163 L285,174 Q271,175 254,170 Q240,167 226,173 Q210,179 193,173 Q180,168 157,175 Q131,181 107,175Z"/>
+    <path android:strokeColor="#EBA89C" android:strokeWidth="3.5" android:strokeLineCap="round"
+        android:pathData="M115,205 Q131,214 148,202 M144,215 Q169,199 190,207 M113,223 Q134,231 153,221 Q174,213 189,222 M120,235 Q136,239 154,232 M164,236 Q187,227 211,230 Q233,232 247,224 M202,204 Q221,200 244,208 Q256,213 276,206 M197,219 Q209,213 220,216 M239,239 Q256,233 279,237 M260,220 Q269,217 279,216 M294,207 Q310,197 325,181 M295,219 Q317,202 326,197 M304,225 Q317,213 325,207"/>
+    <path android:strokeColor="#A65971" android:strokeWidth="2.1" android:strokeLineCap="round"
+        android:pathData="M114,216 Q135,222 149,212 M151,231 Q171,220 187,227 M172,204 Q187,200 200,206 M212,216 Q226,213 239,218 Q252,223 271,213 M218,236 Q235,235 246,230 M258,205 Q268,200 279,199 M291,199 Q310,187 325,170 M290,228 Q306,215 324,203"/>
+    <!-- Subtle stromal stipple, denser near the deeper gland bases. -->
+    <path android:strokeColor="#D69186" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M114,121h0.5 M120,138h0.5 M143,108h0.5 M140,148h0.5 M150,152h0.5 M161,103h0.5 M182,126h0.5 M191,140h0.5 M200,111h0.5 M201,151h0.5 M227,125h0.5 M240,109h0.5 M246,145h0.5 M250,120h0.5 M266,137h0.5 M280,116h0.5 M272,153h0.5 M297,117h0.5 M306,105h0.5 M321,113h0.5 M316,130h0.5"/>
+    <path android:strokeColor="#BC7482" android:strokeWidth="2.7" android:strokeLineCap="round"
+        android:pathData="M114,181h0.5 M122,187h0.5 M142,183h0.5 M150,175h0.5 M157,187h0.5 M180,180h0.5 M193,179h0.5 M200,185h0.5 M213,183h0.5 M226,182h0.5 M240,178h0.5 M252,174h0.5 M259,184h0.5 M279,179h0.5 M297,169h0.5 M311,158h0.5 M321,147h0.5"/>
+    <!-- Branching vascular supply: small straight basal branches and spirals toward the surface. -->
+    <path android:strokeColor="#A85D72" android:strokeWidth="2.7" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M154,221 Q155,208 152,195 Q147,182 147,172 Q149,165 145,159 C138,153 149,149 149,143 C149,138 139,140 140,135 Q140,131 146,130 C153,129 150,124 146,122 Q140,118 150,112 Q153,109 153,104 M151,195 Q140,189 138,180 M236,218 Q236,205 231,193 Q227,183 229,175 Q230,169 226,161 C223,157 230,154 234,151 C240,146 227,144 229,139 C230,134 239,133 239,129 C241,122 230,123 233,117 Q234,113 239,111 M233,199 Q246,194 246,183 M278,223 Q268,204 272,187 Q275,174 272,167"/>
+    <!-- Glands open at the top and terminate in the basal stroma. -->
+    <path android:strokeColor="#B56C7A" android:strokeWidth="9" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M124,87 C124,106 134,121 129,140 C125,154 134,166 130,179 Q127,185 123,185 M167,88 C168,100 173,108 171,121 C169,132 166,138 170,150 C174,163 168,173 172,181 M170,164 Q162,170 163,179 M201,89 C204,106 207,120 204,135 C201,151 214,165 208,177 Q206,181 204,183 M255,85 C251,98 254,114 259,129 C265,144 252,154 259,167 Q263,175 266,178 M258,156 Q252,164 253,169"/>
+    <path android:strokeColor="#FFDFC0" android:strokeWidth="3.3" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M124,87 C124,106 134,121 129,140 C125,154 134,166 130,179 Q127,185 123,185 M167,88 C168,100 173,108 171,121 C169,132 166,138 170,150 C174,163 168,173 172,181 M170,164 Q162,170 163,179 M201,89 C204,106 207,120 204,135 C201,151 214,165 208,177 Q206,181 204,183 M255,85 C251,98 254,114 259,129 C265,144 252,154 259,167 Q263,175 266,178 M258,156 Q252,164 253,169"/>
+    <path android:strokeColor="#A96276" android:strokeWidth="5.5" android:strokeLineCap="round"
+        android:pathData="M303,77 Q302,99 306,113 Q308,124 302,136 Q299,145 302,156 M321,67 Q321,87 324,94 Q327,104 322,117 Q319,124 321,138"/>
+    <path android:strokeColor="#F4BAA2" android:strokeWidth="2.1" android:strokeLineCap="round"
+        android:pathData="M303,77 Q302,99 306,113 Q308,124 302,136 Q299,145 302,156 M321,67 Q321,87 324,94 Q327,104 322,117 Q319,124 321,138"/>
+    <!-- Luminal epithelium and gland mouths; top plane recedes toward the cavity. -->
+    <path android:fillColor="#EDAE9F" android:strokeColor="#A36174" android:strokeWidth="1.5"
+        android:pathData="M106,91 Q124,78 149,63 Q169,56 202,61 Q236,66 260,60 Q296,52 331,61 L286,87 Q256,80 222,87 Q192,91 163,86 Q132,83 106,91Z"/>
+    <path android:strokeColor="#FFE0BD" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M106,91 Q132,83 163,86 Q192,91 222,87 Q256,80 286,87 L331,61 M137,78 Q160,66 183,68 Q207,69 220,71 M262,68 Q280,63 300,64"/>
+    <path android:fillColor="#A35F76" android:strokeColor="#F8C5AB" android:strokeWidth="1.3"
+        android:pathData="M118,86 Q122,83 128,85 Q132,88 126,90 Q121,91 118,86Z M162,85 Q167,81 173,85 Q176,88 169,90 Q163,90 162,85Z M196,88 Q200,84 206,87 Q210,90 203,92 Q196,92 196,88Z M250,84 Q254,80 259,82 Q263,85 257,88 Q251,89 250,84Z M155,71 Q159,68 165,69 Q168,71 164,73 Q159,75 155,71Z M215,75 Q221,71 228,74 Q229,76 224,78 Q220,79 215,75Z M265,66 Q270,63 276,64 Q280,66 273,69 Q268,69 265,66Z M299,77 Q303,74 306,74 Q310,76 305,79 Q301,81 299,77Z M318,66 Q321,63 324,64 Q327,66 323,68 Q320,70 318,66Z"/>
+    <path android:strokeColor="#CE8590" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M110,91L110,95 M115,90L115,93 M133,87L133,92 M138,87L138,92 M143,87L143,91 M148,86L148,91 M153,87L153,92 M158,87L158,92 M177,89L177,94 M182,89L182,94 M187,90L187,94 M192,90L192,94 M211,89L211,93 M216,88L216,92 M221,87L221,92 M226,87L226,91 M232,86L232,90 M237,85L237,89 M242,85L242,89 M262,85L262,90 M267,86L267,90 M273,86L273,91 M279,87L279,92"/>
+</vector>

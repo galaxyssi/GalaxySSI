@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Profile and cut bony framework: anterior at left, hard palate below the cavity. -->
+    <path android:fillColor="#D39384" android:strokeColor="#8B5861" android:strokeWidth="2"
+        android:pathData="M126,34 Q142,25 156,32 L179,43 Q201,52 227,44 Q248,37 273,45 L306,59 Q324,67 324,86 Q320,114 320,151 Q327,186 316,222 L308,241 Q300,253 288,246 Q278,237 269,237 Q247,240 227,220 L200,201 Q189,191 173,191 L111,192 Q94,193 81,201 Q72,206 66,197 Q63,192 66,181 Q56,178 47,179 Q35,178 33,166 Q30,154 42,144 L77,111 Q93,96 101,78 L117,44 Q120,38 126,34Z"/>
+    <path android:fillColor="#EBB297"
+        android:pathData="M127,39 Q142,30 154,37 L179,48 Q199,60 230,51 Q254,43 277,53 L305,65 Q318,71 318,86 Q314,122 315,149 Q321,183 312,219 L303,239 Q297,246 291,241 Q278,231 269,232 Q250,234 231,215 L203,195 Q191,185 173,186 L110,186 Q93,189 78,195 Q72,198 72,191 L73,177 Q59,174 47,175 Q39,174 38,165 Q36,156 46,148 L81,114 Q99,96 107,76 L121,48Z"/>
+    <path android:fillColor="#EDC6A1" android:strokeColor="#B68773" android:strokeWidth="1.5"
+        android:pathData="M126,48 Q143,40 160,47 Q190,65 214,59 Q245,49 273,57 L302,70 Q313,75 313,89 L307,113 Q304,128 309,152 Q314,181 304,222 L297,235 Q287,225 276,225 C260,227 247,219 231,205 Q202,180 176,179 L113,181 Q103,182 91,186 Q85,180 90,170 L104,141 L108,105 Q110,88 117,75Z"/>
+    <path android:fillColor="#F6DDAC"
+        android:pathData="M121,80 L131,54 Q145,47 159,53 Q189,71 217,66 Q243,56 272,63 Q293,71 301,77 L301,90 Q282,89 269,79 Q246,70 219,75 Q187,80 157,65 Q141,59 130,72Z"/>
+    <path android:strokeColor="#C4977A" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M134,55 l5,-2 M146,53 l5,2 M160,57 l5,3 M175,65 l6,2 M189,70 l6,2 M208,71 l6,-1 M223,69 l6,-1 M239,65 l7,-1 M255,65 l5,1 M268,68 l6,2 M281,73 l6,3 M293,80 l6,3 M300,127 l4,-5 M302,140 l4,-5 M307,156 l3,-5 M307,189 l-3,7 M303,207 l-2,6"/>
+    <!-- One continuous airspace from the nostril through the choana to the nasopharynx. -->
+    <path android:fillColor="#916570" android:strokeColor="#895768" android:strokeWidth="1.9"
+        android:pathData="M45,161 Q45,152 61,149 Q77,147 85,137 Q96,124 105,112 Q118,96 129,83 Q144,67 164,73 Q189,82 216,75 Q249,70 270,80 Q292,87 299,103 Q302,113 295,129 Q288,145 294,164 Q301,193 288,221 Q282,228 273,223 Q259,215 260,205 Q263,189 255,180 Q250,173 233,172 L125,174 Q106,175 88,174 Q71,177 61,173 Q47,173 45,161Z"/>
+    <path android:fillColor="#B57F84"
+        android:pathData="M65,157 Q83,149 98,129 Q119,104 133,87 Q144,76 163,81 Q187,89 217,82 Q249,78 269,88 Q285,94 290,104 Q295,113 284,131 C274,147 278,160 283,176 Q292,198 283,212 Q278,220 272,214 Q269,210 270,204 Q272,184 259,174 Q252,167 233,166 L122,168 Q97,170 82,167 Q70,170 65,157Z"/>
+    <path android:fillColor="#CA9090"
+        android:pathData="M105,135 Q119,112 139,91 Q150,81 164,87 Q189,96 219,87 Q248,84 267,93 Q283,99 284,110 Q283,122 277,129 Q268,140 269,153 Q260,160 245,157 C210,152 137,171 106,161 Q99,154 105,135Z"/>
+    <path android:fillColor="#AD7378"
+        android:pathData="M49,158 Q54,152 67,152 Q83,150 96,136 Q100,134 107,137 Q101,149 105,157 Q102,168 94,168 Q78,170 67,166 Q54,171 49,158Z"/>
+    <path android:strokeColor="#E5A89A" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M64,154 Q87,152 98,141 M74,168 Q87,172 103,165 M273,155 Q270,171 277,185 Q282,197 278,206"/>
+    <!-- The three scrolls project from the lateral wall; meatuses remain visible below them. -->
+    <path android:fillColor="#B8797A" android:strokeColor="#8E5767" android:strokeWidth="1.45"
+        android:pathData="M182,98 C204,84 232,89 257,99 Q273,106 277,116 Q264,115 252,109 Q229,98 205,103 Q193,106 183,104 Q178,103 182,98Z"/>
+    <path android:strokeColor="#EAB59C" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M189,99 Q218,88 247,99 Q260,103 270,111"/>
+    <path android:fillColor="#C78883" android:strokeColor="#8E5664" android:strokeWidth="1.7"
+        android:pathData="M132,116 C150,100 178,102 203,103 Q238,105 260,119 Q274,127 275,136 Q265,130 257,127 C232,117 210,118 185,122 C166,126 144,136 134,130 Q125,126 132,116Z"/>
+    <path android:fillColor="#DDA18E"
+        android:pathData="M135,117 C150,105 177,106 202,107 Q237,108 256,119 Q237,114 208,115 Q172,115 151,124 Q138,129 133,125 Q131,123 135,117Z"/>
+    <path android:strokeColor="#F1BCA0" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M138,117 Q153,107 180,109 Q209,107 229,113 M150,126 Q169,119 184,119"/>
+    <path android:fillColor="#BE7E80" android:strokeColor="#8E5664" android:strokeWidth="1.7"
+        android:pathData="M113,148 C127,133 151,134 175,134 Q212,131 243,137 Q263,141 270,151 Q262,154 252,151 C222,145 197,149 174,154 C149,160 127,166 116,163 Q105,159 113,148Z"/>
+    <path android:fillColor="#E1A591"
+        android:pathData="M116,150 C131,138 153,138 176,138 Q209,135 240,140 Q251,142 259,146 Q233,142 206,145 Q172,149 143,156 Q128,161 118,159 Q110,157 116,150Z"/>
+    <path android:strokeColor="#F2BCA1" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M119,150 Q135,139 161,141 Q190,138 215,140 M123,158 Q138,156 150,153 M220,141 Q241,141 251,145"/>
+    <!-- Olfactory mucosa is a restricted patch high at the nasal roof. -->
+    <path android:fillColor="#BD925E" android:strokeColor="#9E7556" android:strokeWidth="1"
+        android:pathData="M132,80 Q144,71 159,74 Q170,76 186,80 Q183,86 175,86 Q158,81 147,83 Q137,87 132,85Z"/>
+    <path android:strokeColor="#F3CE89" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M137,81 Q149,74 165,79 L180,83 M142,81 l2,2 M153,78 l2,3 M164,80 l2,3 M174,82 l2,2"/>
+    <path android:fillColor="#694D5F"
+        android:pathData="M40,164 Q44,155 56,156 Q65,155 73,159 Q72,164 66,166 Q56,165 49,170 Q42,170 40,164Z"/>
+    <path android:strokeColor="#F9C5A5" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M42,152 Q56,139 69,127 M85,110 Q100,95 105,86 M45,173 Q54,175 63,172"/>
+    <path android:fillColor="#F9DEB1" android:strokeColor="#B68572" android:strokeWidth="1.35"
+        android:pathData="M86,179 Q100,174 126,175 L228,174 Q241,175 246,181 Q238,185 225,184 L125,185 Q99,184 88,188Z"/>
+    <path android:strokeColor="#CB9B7E" android:strokeWidth="1.1" android:strokeLineCap="round"
+        android:pathData="M102,181 l6,-2 M116,181 l7,-2 M135,182 l7,-3 M154,182 l6,-3 M172,182 l6,-3 M190,182 l6,-3 M211,182 l6,-3 M229,181 l6,-2"/>
+    <path android:fillColor="#C88783" android:strokeColor="#A46B73" android:strokeWidth="1.45"
+        android:pathData="M226,184 Q239,182 250,186 C267,191 272,202 268,209 Q264,212 261,207 Q256,201 248,199 Q234,194 226,184Z"/>
+</vector>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_valve_detail_tricuspid_selector">Tricuspid valve cutaway</string>
+    <string name="health_atlas_valve_detail_tricuspid_view">Right-heart inflow · Oblique cutaway, right atrium above</string>
+    <string name="health_atlas_valve_detail_tricuspid_anterior">Anterior leaflet</string>
+    <string name="health_atlas_valve_detail_tricuspid_anterior_detail">The broad anterior leaflet hinges along the front of the right atrioventricular opening. It opens into the right ventricle as blood enters from the right atrium.</string>
+    <string name="health_atlas_valve_detail_tricuspid_septal">Septal leaflet</string>
+    <string name="health_atlas_valve_detail_tricuspid_septal_detail">This leaflet hinges beside the wall that separates the ventricles. Some of its chordae attach directly to that wall.</string>
+    <string name="health_atlas_valve_detail_tricuspid_posterior">Posterior leaflet</string>
+    <string name="health_atlas_valve_detail_tricuspid_posterior_detail">Also called the inferior leaflet, it hinges along the lower part of the opening. Here it forms the near rim of the gap between the three open leaflets.</string>
+    <string name="health_atlas_valve_detail_tricuspid_chordae">Chordae tendineae</string>
+    <string name="health_atlas_valve_detail_tricuspid_chordae_detail">These thin cords run from papillary muscles to the ventricular side of the leaflets. They keep the closing leaflets from folding back into the atrium when the right ventricle contracts.</string>
+
+    <string name="health_atlas_valve_detail_mitral_selector">Mitral valve cutaway</string>
+    <string name="health_atlas_valve_detail_mitral_view">Left-heart inflow · Oblique cutaway, left atrium above</string>
+    <string name="health_atlas_valve_detail_mitral_anterior">Anterior leaflet</string>
+    <string name="health_atlas_valve_detail_mitral_anterior_detail">The longer, sail-shaped leaflet hinges beside the left ventricular outflow tract. Its base shares a fibrous connection with the aortic valve.</string>
+    <string name="health_atlas_valve_detail_mitral_posterior">Posterior leaflet</string>
+    <string name="health_atlas_valve_detail_mitral_posterior_detail">This shorter leaflet wraps around more of the opening, along the ventricular free wall. Its free edge has scallops rather than a single smooth curve.</string>
+    <string name="health_atlas_valve_detail_mitral_chordae">Chordae tendineae</string>
+    <string name="health_atlas_valve_detail_mitral_chordae_detail">Cords from each papillary muscle group reach both leaflets. They help hold the leaflet edges together when the left ventricle contracts.</string>
+    <string name="health_atlas_valve_detail_mitral_papillary">Papillary muscles</string>
+    <string name="health_atlas_valve_detail_mitral_papillary_detail">Two groups, anterolateral and posteromedial, project from the left ventricular wall. The chordae rise from their tips to the leaflets.</string>
+
+    <string name="health_atlas_valve_detail_pulmonary_selector">Pulmonary valve cutaway</string>
+    <string name="health_atlas_valve_detail_pulmonary_view">Pulmonary root · Oblique view from above and in front, cusps open</string>
+    <string name="health_atlas_valve_detail_pulmonary_right">Right cusp</string>
+    <string name="health_atlas_valve_detail_pulmonary_right_detail">The right cusp is at image left in this anterior view. A shallow sinus lies between the cusp and the pulmonary trunk wall on its arterial side.</string>
+    <string name="health_atlas_valve_detail_pulmonary_left">Left cusp</string>
+    <string name="health_atlas_valve_detail_pulmonary_left_detail">The left cusp is at image right. Like the right cusp, it faces the nearby aortic root, which lies behind the pulmonary root and is not shown.</string>
+    <string name="health_atlas_valve_detail_pulmonary_anterior">Anterior cusp</string>
+    <string name="health_atlas_valve_detail_pulmonary_anterior_detail">The front cusp borders the near side of the opening. All three cusps open toward the pulmonary trunk as the right ventricle ejects blood. They have no chordae.</string>
+
+    <string name="health_atlas_valve_detail_aortic_selector">Aortic valve cutaway</string>
+    <string name="health_atlas_valve_detail_aortic_view">Aortic root · Oblique view from above and behind, cusps closed</string>
+    <string name="health_atlas_valve_detail_aortic_left">Left coronary cusp</string>
+    <string name="health_atlas_valve_detail_aortic_left_detail">The left cusp sits beneath the left aortic sinus, a pocket in the root wall. The left coronary artery begins at an opening in that sinus, not in the cusp itself.</string>
+    <string name="health_atlas_valve_detail_aortic_right">Right coronary cusp</string>
+    <string name="health_atlas_valve_detail_aortic_right_detail">The right cusp sits beneath the right aortic sinus. The dark opening just above this cusp leads into the right coronary artery.</string>
+    <string name="health_atlas_valve_detail_aortic_noncoronary">Noncoronary cusp</string>
+    <string name="health_atlas_valve_detail_aortic_noncoronary_detail">The posterior cusp borders a sinus with no coronary opening. Its free edge meets the other two as the ventricle relaxes, closing the route back into the left ventricle.</string>
+    <string name="health_atlas_valve_detail_aortic_ostium">Left coronary ostium</string>
+    <string name="health_atlas_valve_detail_aortic_ostium_detail">This small opening in the sinus wall is the entrance to the left coronary artery. A second opening above the right cusp leads to the right coronary artery.</string>
+</resources>

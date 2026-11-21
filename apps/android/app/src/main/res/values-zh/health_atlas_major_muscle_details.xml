@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_biceps_brachii_anterior_selector">肱二头肌两头</string>
+    <string name="health_atlas_biceps_brachii_anterior_caption">右上臂前面：肱二头肌的两头在肘上方汇合。</string>
+    <string name="health_atlas_biceps_brachii_long_head">长头</string>
+    <string name="health_atlas_biceps_brachii_long_head_detail">位于外侧的长头起自肩胛骨关节盂的上缘，其肌腱沿肱骨前方的沟通过。</string>
+    <string name="health_atlas_biceps_brachii_short_head">短头</string>
+    <string name="health_atlas_biceps_brachii_short_head_detail">位于内侧的短头起自肩胛骨的喙突，并在靠近肘部处与长头汇合。</string>
+    <string name="health_atlas_biceps_brachii_distal_tendon">远端肌腱</string>
+    <string name="health_atlas_biceps_brachii_distal_tendon_detail">这条肌腱经过肘关节前方，止于桡骨上端附近的桡骨粗隆。肱二头肌能屈肘，并帮助将掌心转向上方。</string>
+
+    <string name="health_atlas_triceps_brachii_posterior_selector">肱三头肌三头</string>
+    <string name="health_atlas_triceps_brachii_posterior_caption">右上臂后面：深层的内侧头在肘部附近可见。</string>
+    <string name="health_atlas_triceps_brachii_long_head">长头</string>
+    <string name="health_atlas_triceps_brachii_long_head_detail">长头起自肩胛骨关节盂下方，跨过肩关节和肘关节。</string>
+    <string name="health_atlas_triceps_brachii_lateral_head">外侧头</string>
+    <string name="health_atlas_triceps_brachii_lateral_head_detail">外侧头位于浅层，起自肱骨后面的上部，构成肱三头肌的外侧部分。</string>
+    <string name="health_atlas_triceps_brachii_medial_head">内侧头</string>
+    <string name="health_atlas_triceps_brachii_medial_head_detail">内侧头起自肱骨后面较低的位置。它的大部分被另外两头覆盖，只有靠近肘部的一部分露出。</string>
+    <string name="health_atlas_triceps_brachii_distal_tendon">肱三头肌腱</string>
+    <string name="health_atlas_triceps_brachii_distal_tendon_detail">肌腱止于尺骨鹰嘴，也就是肘后突出的骨点。肱三头肌牵拉此处，使肘伸直。</string>
+
+    <string name="health_atlas_quadriceps_femoris_anterior_selector">股四头肌分层</string>
+    <string name="health_atlas_quadriceps_femoris_anterior_caption">右大腿前面：小图单独显示位于深层的股中间肌。</string>
+    <string name="health_atlas_quadriceps_rectus_femoris">股直肌</string>
+    <string name="health_atlas_quadriceps_rectus_femoris_detail">这块细长的肌肉位于大腿前侧中央，覆盖股中间肌。它起自骨盆，既能帮助屈髋，也能伸膝。</string>
+    <string name="health_atlas_quadriceps_vastus_lateralis">股外侧肌</string>
+    <string name="health_atlas_quadriceps_vastus_lateralis_detail">这块宽大的肌肉起自股骨，构成股四头肌的外侧部分，并帮助伸膝。</string>
+    <string name="health_atlas_quadriceps_vastus_medialis">股内侧肌</string>
+    <string name="health_atlas_quadriceps_vastus_medialis_detail">这块肌肉构成股四头肌的内侧部分，下部肌纤维在髌骨内上方形成圆隆。</string>
+    <string name="health_atlas_quadriceps_vastus_intermedius">股中间肌</string>
+    <string name="health_atlas_quadriceps_vastus_intermedius_detail">小图省略了覆盖在上方的股直肌，显示股骨前面的股中间肌。它和另外三块肌肉一样，能帮助伸膝。</string>
+    <string name="health_atlas_quadriceps_tendon">股四头肌腱</string>
+    <string name="health_atlas_quadriceps_tendon_detail">四块肌肉在髌骨上方汇合成这条肌腱。髌骨下方的髌韧带继续向下连至胫骨。</string>
+
+    <string name="health_atlas_hamstrings_posterior_selector">腘绳肌各部分</string>
+    <string name="health_atlas_hamstrings_posterior_caption">右大腿后面：腘绳肌的肌腱分别从膝关节两侧经过。</string>
+    <string name="health_atlas_hamstrings_biceps_femoris_long_head">股二头肌长头</string>
+    <string name="health_atlas_hamstrings_biceps_femoris_long_head_detail">位于外侧的股二头肌长头起自坐骨结节，其肌腱向下连到膝外侧的腓骨头。</string>
+    <string name="health_atlas_hamstrings_biceps_femoris_short_head">股二头肌短头</string>
+    <string name="health_atlas_hamstrings_biceps_femoris_short_head_detail">短头起自股骨后面而非骨盆，部分位于长头深面，并在膝附近汇入长头的肌腱。</string>
+    <string name="health_atlas_hamstrings_semitendinosus">半腱肌</string>
+    <string name="health_atlas_hamstrings_semitendinosus_detail">半腱肌与股二头肌长头有共同的坐骨结节附着处。它下端的长肌腱绕向胫骨上端的内侧。</string>
+    <string name="health_atlas_hamstrings_semimembranosus">半膜肌</string>
+    <string name="health_atlas_hamstrings_semimembranosus_detail">半膜肌较宽，位于半腱肌的深面，止于膝关节附近的胫骨内侧髁后方。</string>
+</resources>

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_femur_landmarks_selector">前面骨性标志</string>
+    <string name="health_atlas_femur_landmarks_caption">右股骨，前面观</string>
+    <string name="health_atlas_femur_landmarks_head">股骨头</string>
+    <string name="health_atlas_femur_landmarks_head_detail">圆形的股骨头嵌入髋臼，构成髋关节。</string>
+    <string name="health_atlas_femur_landmarks_neck">股骨颈</string>
+    <string name="health_atlas_femur_landmarks_neck_detail">这段较细的骨颈斜向连接股骨头与股骨干。</string>
+    <string name="health_atlas_femur_landmarks_trochanter">大转子</string>
+    <string name="health_atlas_femur_landmarks_trochanter_detail">这个位于外侧的大突起是多块髋部肌肉的附着处。</string>
+    <string name="health_atlas_femur_landmarks_shaft">股骨干</string>
+    <string name="health_atlas_femur_landmarks_shaft_detail">股骨中部细长，从髋部向膝部略向内侧倾斜。</string>
+    <string name="health_atlas_femur_landmarks_patellar_surface">髌面</string>
+    <string name="health_atlas_femur_landmarks_patellar_surface_detail">髌骨沿股骨下端前方的这条光滑沟槽滑动。</string>
+
+    <string name="health_atlas_patella_landmarks_selector">髌骨关节面</string>
+    <string name="health_atlas_patella_landmarks_caption">右髌骨，后面观及膝部侧面局部图</string>
+    <string name="health_atlas_patella_landmarks_base">髌底</string>
+    <string name="health_atlas_patella_landmarks_base_detail">股四头肌腱附着于这条宽阔的上缘。</string>
+    <string name="health_atlas_patella_landmarks_medial_facet">内侧关节面</string>
+    <string name="health_atlas_patella_landmarks_medial_facet_detail">这片光滑的内侧关节面与股骨滑车沟的内侧相对。</string>
+    <string name="health_atlas_patella_landmarks_lateral_facet">外侧关节面</string>
+    <string name="health_atlas_patella_landmarks_lateral_facet_detail">外侧关节面通常比内侧关节面更宽。</string>
+    <string name="health_atlas_patella_landmarks_ridge">纵嵴</string>
+    <string name="health_atlas_patella_landmarks_ridge_detail">纵嵴分隔两个主要关节面，并沿股骨滑车沟滑动。</string>
+    <string name="health_atlas_patella_landmarks_apex">髌尖</string>
+    <string name="health_atlas_patella_landmarks_apex_detail">下端尖部是髌韧带的附着处。</string>
+
+    <string name="health_atlas_foot_bones_landmarks_selector">足背骨性标志</string>
+    <string name="health_atlas_foot_bones_landmarks_caption">右足骨，足背观</string>
+    <string name="health_atlas_foot_bones_landmarks_phalanges">趾骨</string>
+    <string name="health_atlas_foot_bones_landmarks_phalanges_detail">大脚趾有两节趾骨，其余每个脚趾通常有三节。</string>
+    <string name="health_atlas_foot_bones_landmarks_metatarsals">跖骨</string>
+    <string name="health_atlas_foot_bones_landmarks_metatarsals_detail">五根长骨连接跗骨与各脚趾的基部。</string>
+    <string name="health_atlas_foot_bones_landmarks_navicular">足舟骨</string>
+    <string name="health_atlas_foot_bones_landmarks_navicular_detail">这块弯曲的骨位于距骨头与三块楔骨之间。</string>
+    <string name="health_atlas_foot_bones_landmarks_talus">距骨</string>
+    <string name="health_atlas_foot_bones_landmarks_talus_detail">距骨位于跟骨上方，与胫骨和腓骨构成踝关节。</string>
+    <string name="health_atlas_foot_bones_landmarks_calcaneus">跟骨</string>
+    <string name="health_atlas_foot_bones_landmarks_calcaneus_detail">这块最大的跗骨位于距骨的后下方，构成足跟。</string>
+
+    <string name="health_atlas_ulna_landmarks_selector">外侧骨性标志</string>
+    <string name="health_atlas_ulna_landmarks_caption">右尺骨，外侧观及前臂骨前面观</string>
+    <string name="health_atlas_ulna_landmarks_olecranon">鹰嘴</string>
+    <string name="health_atlas_ulna_landmarks_olecranon_detail">上端的鹰嘴形成肘部可触及的骨性尖端。</string>
+    <string name="health_atlas_ulna_landmarks_trochlear_notch">滑车切迹</string>
+    <string name="health_atlas_ulna_landmarks_trochlear_notch_detail">这个弧形关节面在肘关节处包绕肱骨滑车。</string>
+    <string name="health_atlas_ulna_landmarks_coronoid">冠突</string>
+    <string name="health_atlas_ulna_landmarks_coronoid_detail">这个朝前的突起构成滑车切迹的下缘。</string>
+    <string name="health_atlas_ulna_landmarks_head">尺骨头</string>
+    <string name="health_atlas_ulna_landmarks_head_detail">尺骨靠近手腕的圆形末端与桡骨构成远侧桡尺关节。</string>
+    <string name="health_atlas_ulna_landmarks_styloid">尺骨茎突</string>
+    <string name="health_atlas_ulna_landmarks_styloid_detail">这个小突起从靠近手腕的尺骨头后方伸出。</string>
+</resources>

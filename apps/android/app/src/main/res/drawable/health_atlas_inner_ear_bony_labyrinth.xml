@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Recessed rim of the petrous temporal bone; the labyrinth is exposed in relief. -->
+    <path android:fillColor="#EDD2AC" android:strokeColor="#C3967F" android:strokeWidth="1.5"
+        android:pathData="M32,156 Q34,115 58,96 Q70,85 83,84 L101,105 L135,104 L175,87 Q200,77 224,70 L251,58 Q269,47 289,53 L324,67 L335,94 L334,119 L322,137 Q313,147 309,172 Q308,208 280,234 C255,256 223,258 198,247 Q167,235 148,218 Q127,203 102,200 C72,196 53,192 42,177Z"/>
+    <path android:fillColor="#F7E0B9"
+        android:pathData="M37,154 Q43,120 62,101 Q72,91 82,90 L99,114 L136,113 Q172,92 200,87 Q227,78 254,64 Q270,54 288,60 L319,73 L329,94 L329,114 Q313,121 303,138 Q297,154 296,176 Q294,214 267,235 Q238,254 208,243 Q176,231 158,215 Q135,194 106,190 Q65,185 48,172Z"/>
+    <path android:strokeColor="#D6AC8C" android:strokeWidth="1.25" android:strokeLineCap="round"
+        android:pathData="M45,155 l6,5 M51,165 l7,5 M62,172 l7,4 M70,179 l8,3 M80,174 l7,5 M101,182 l8,2 M114,189 l7,2 M144,201 l7,3 M158,210 l6,4 M180,231 l8,3 M191,235 l8,4 M211,243 l7,3 M289,217 l4,-7 M299,201 l4,-8 M308,168 l2,-7 M322,126 l5,-5 M323,82 l-5,-6 M301,68 l-7,-4 M278,58 l-7,2 M262,62 l-6,3 M247,72 l-8,3"/>
+    <!-- Two branches of CN VIII approach the internal acoustic canal from the vestibule and modiolus. -->
+    <path android:fillColor="#A78679" android:strokeColor="#A17A6F" android:strokeWidth="1.3"
+        android:pathData="M232,99 Q245,72 286,75 Q313,76 329,91 L330,108 Q314,117 291,116 Q263,119 237,134Z"/>
+    <path android:fillColor="#DEAB72" android:strokeColor="#A57959" android:strokeWidth="1.6"
+        android:pathData="M150,132 C178,112 197,107 215,108 C241,108 251,92 276,91 Q302,88 321,93 L324,103 Q315,111 292,111 C258,111 245,125 220,128 Q189,132 167,151Z"/>
+    <path android:fillColor="#E8B97D" android:strokeColor="#A57959" android:strokeWidth="1.6"
+        android:pathData="M220,161 C231,144 232,132 247,119 Q264,101 285,100 Q306,98 321,95 L324,102 Q314,109 291,110 Q268,113 259,130 C250,149 240,157 232,168Z"/>
+    <path android:strokeColor="#FFE1A4" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M177,126 C192,118 204,115 220,115 Q238,116 254,106 Q274,92 302,96 M227,156 Q241,128 261,117 Q281,105 311,103 M180,134 Q199,121 219,123 M262,108 Q277,100 290,101"/>
+    <!-- Posterior and superior canals share a crus. The flattened lateral loop crosses in front. -->
+    <path android:strokeColor="#675267" android:strokeWidth="17" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M143,149 C106,185 57,164 51,129 C43,94 57,62 77,54 C94,48 100,74 104,88 Q107,98 112,103 L137,134 M112,103 C91,80 84,58 96,42 C125,9 166,40 166,78 C167,96 164,115 157,135"/>
+    <path android:strokeColor="#AA747D" android:strokeWidth="13.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M143,149 C106,185 57,164 51,129 C43,94 57,62 77,54 C94,48 100,74 104,88 Q107,98 112,103 L137,134 M112,103 C91,80 84,58 96,42 C125,9 166,40 166,78 C167,96 164,115 157,135"/>
+    <path android:strokeColor="#ECC0A0" android:strokeWidth="4.5" android:strokeLineCap="round"
+        android:pathData="M56,126 C49,99 59,69 77,58 Q90,52 97,75 M107,99 Q116,111 130,125 M98,77 Q87,54 101,41 C128,14 160,44 161,77 Q163,102 154,125 M67,150 Q88,171 114,159"/>
+    <path android:strokeColor="#695568" android:strokeWidth="18" android:strokeLineCap="round"
+        android:pathData="M158,143 C140,116 97,112 72,122 C49,132 73,151 101,154 Q123,156 145,150"/>
+    <path android:strokeColor="#BE8387" android:strokeWidth="14" android:strokeLineCap="round"
+        android:pathData="M158,143 C140,116 97,112 72,122 C49,132 73,151 101,154 Q123,156 145,150"/>
+    <path android:strokeColor="#F4CAA8" android:strokeWidth="4" android:strokeLineCap="round"
+        android:pathData="M147,134 Q117,109 77,123 Q65,127 65,133 M73,141 Q92,156 125,150"/>
+    <path android:fillColor="#B78183" android:strokeColor="#74566B" android:strokeWidth="1.8"
+        android:pathData="M139,127 C145,125 148,130 151,131 Q159,125 165,129 Q173,134 172,142 Q183,147 184,158 Q185,174 172,180 Q155,187 143,176 Q133,166 132,155 Q124,150 128,142 Q130,135 139,127Z"/>
+    <path android:fillColor="#DDA699"
+        android:pathData="M140,133 Q145,131 151,137 Q158,133 166,135 Q170,139 168,146 Q179,151 178,161 Q177,173 165,176 Q153,178 144,169 Q136,161 138,151 Q134,147 136,142Z"/>
+    <path android:strokeColor="#F3C8A6" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M143,144 Q149,138 158,141 M143,154 Q143,163 150,167 M169,150 Q177,156 173,165"/>
+    <!-- The cochlea is opened along its spiral. The broad basal turn adjoins the vestibule. -->
+    <path android:fillColor="#CB946C" android:strokeColor="#8C625C" android:strokeWidth="2"
+        android:pathData="M171,163 Q179,153 191,158 Q208,144 228,142 C269,135 302,151 307,181 C312,218 284,241 249,246 C216,251 190,236 179,215 C171,202 169,190 171,179 Q165,174 171,163Z"/>
+    <path android:fillColor="#F1C796"
+        android:pathData="M176,167 Q182,159 190,164 Q207,147 231,146 C266,141 295,153 301,181 C308,210 285,234 251,240 C219,245 194,231 183,211 Q172,194 176,179 Q171,173 176,167Z"/>
+    <path android:strokeColor="#A97564" android:strokeWidth="16" android:strokeLineCap="round"
+        android:pathData="M177,171 C187,172 183,193 195,208 C210,228 247,232 273,213 C295,198 290,174 271,163 C251,151 222,153 206,168 C190,181 203,205 223,210 C243,215 266,203 266,187 C266,175 251,167 239,171 C226,174 221,185 227,191 Q235,199 246,191"/>
+    <path android:strokeColor="#E4AA7A" android:strokeWidth="10" android:strokeLineCap="round"
+        android:pathData="M177,171 C187,172 183,193 195,208 C210,228 247,232 273,213 C295,198 290,174 271,163 C251,151 222,153 206,168 C190,181 203,205 223,210 C243,215 266,203 266,187 C266,175 251,167 239,171 C226,174 221,185 227,191 Q235,199 246,191"/>
+    <path android:strokeColor="#FFE0AD" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M188,196 C197,216 217,226 242,223 Q269,221 284,199 M278,172 C266,158 244,157 228,160 Q208,164 201,179 M211,201 Q225,214 248,205 M260,193 Q267,178 247,173 M232,177 Q224,184 230,190"/>
+</vector>

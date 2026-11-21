@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_glomerulus_tuft_selector">毛细血管丛</string>
+    <string name="health_atlas_glomerulus_tuft_view">肾小球毛细血管丛及进出血管</string>
+    <string name="health_atlas_glomerulus_afferent">入球小动脉</string>
+    <string name="health_atlas_glomerulus_afferent_detail">血液经这条小动脉从血管极进入肾小球。小动脉分支形成毛细血管丛。</string>
+    <string name="health_atlas_glomerulus_efferent">出球小动脉</string>
+    <string name="health_atlas_glomerulus_efferent_detail">毛细血管分支重新汇合，血液经出球小动脉从同一血管极流出。</string>
+    <string name="health_atlas_glomerulus_loops">毛细血管袢</string>
+    <string name="health_atlas_glomerulus_loops_detail">肾小球由分支相连的毛细血管袢组成。有窗孔的毛细血管内皮、基膜及足细胞的足突共同构成滤过屏障。</string>
+
+    <string name="health_atlas_bowmans_capsule_poles_selector">肾小囊分层</string>
+    <string name="health_atlas_bowmans_capsule_poles_view">肾小囊及其尿极</string>
+    <string name="health_atlas_bowmans_capsule_parietal">壁层</string>
+    <string name="health_atlas_bowmans_capsule_parietal_detail">肾小囊外壁由一层扁平细胞构成，在尿极处与近端小管的上皮相延续。</string>
+    <string name="health_atlas_bowmans_capsule_visceral">脏层</string>
+    <string name="health_atlas_bowmans_capsule_visceral_detail">足细胞构成肾小囊的脏层。它们的分支突起包绕各条肾小球毛细血管，而不覆盖囊的外壁。</string>
+    <string name="health_atlas_bowmans_capsule_space">肾小囊腔</string>
+    <string name="health_atlas_bowmans_capsule_space_detail">滤液汇入壁层与脏层之间的囊腔，再经尿极流入近端小管。尿极位于血管极的对侧。</string>
+
+    <string name="health_atlas_proximal_tubule_brush_selector">刷状缘</string>
+    <string name="health_atlas_proximal_tubule_brush_view">近端小管：皮质内的弯曲段与管壁剖面</string>
+    <string name="health_atlas_proximal_tubule_coil">皮质弯曲段</string>
+    <string name="health_atlas_proximal_tubule_coil_detail">近曲小管起于尿极，在肾皮质内迂曲走行，随后延续为较直的管段，最后变细并接入细降支。</string>
+    <string name="health_atlas_proximal_tubule_cuboidal">立方上皮</string>
+    <string name="health_atlas_proximal_tubule_cuboidal_detail">单层立方上皮细胞围成管腔。细胞的顶端面朝向管腔，基底部附于基膜。</string>
+    <string name="health_atlas_proximal_tubule_microvilli">刷状缘</string>
+    <string name="health_atlas_proximal_tubule_microvilli_detail">密集的微绒毛从细胞顶端伸入管腔，形成刷状缘，并增大上皮的表面积。</string>
+
+    <string name="health_atlas_nephron_loop_limb_selector">髓袢分段</string>
+    <string name="health_atlas_nephron_loop_limb_view">长髓袢：从肾皮质深入髓质再返回</string>
+    <string name="health_atlas_nephron_loop_thin_descending">细降支</string>
+    <string name="health_atlas_nephron_loop_thin_descending_detail">近端直小管向下延续时管径变细，形成细降支。此段由一层扁平细胞衬覆，并向髓质深部走行。</string>
+    <string name="health_atlas_nephron_loop_thin_ascending">细升支</string>
+    <string name="health_atlas_nephron_loop_thin_ascending_detail">这条长髓袢的薄壁小管在发夹弯处调转方向。细升支朝肾皮质上行，随后管壁增厚。</string>
+    <string name="health_atlas_nephron_loop_thick_ascending">粗升支</string>
+    <string name="health_atlas_nephron_loop_thick_ascending_detail">升支的管壁转为单层立方上皮。粗升支继续上行进入肾皮质，随后延续为远曲小管。</string>
+</resources>

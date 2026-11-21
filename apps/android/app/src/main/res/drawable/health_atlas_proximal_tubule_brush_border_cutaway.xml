@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- The tubule winds away from the urinary pole before straightening. -->
+    <path android:strokeColor="#845366" android:strokeWidth="42" android:strokeLineJoin="round"
+        android:pathData="M86,75 C103,83 108,66 122,56 C143,41 176,45 201,60 C224,74 244,67 264,59 C298,45 326,66 313,92 C300,118 262,112 226,106 C184,99 143,98 116,110 C95,120 92,140 111,151 C122,157 133,155 146,155 L248,155 C278,155 300,179 299,209" />
+    <path android:strokeColor="#CE897D" android:strokeWidth="37" android:strokeLineJoin="round"
+        android:pathData="M86,75 C103,83 108,66 122,56 C143,41 176,45 201,60 C224,74 244,67 264,59 C298,45 326,66 313,92 C300,118 262,112 226,106 C184,99 143,98 116,110 C95,120 92,140 111,151 C122,157 133,155 146,155 L248,155 C278,155 300,179 299,209" />
+    <path android:strokeColor="#E5AA94" android:strokeWidth="24" android:strokeLineCap="round"
+        android:pathData="M92,71 C107,76 110,61 126,51 C146,39 177,42 204,55 C224,66 243,64 262,55 C292,42 314,59 311,77 C307,107 270,107 229,100 C185,93 139,91 112,105 C92,116 89,138 111,148 Q126,151 147,150 L248,150 C274,149 300,173 300,201" />
+    <path android:strokeColor="#F6CAB0" android:strokeWidth="3.2" android:strokeLineCap="round"
+        android:pathData="M113,55 Q139,27 176,39 Q193,43 204,51 M229,57 Q247,57 266,48 Q288,38 302,48 M282,99 Q304,96 310,82 M114,94 Q149,81 183,89 M90,121 Q86,138 99,148 M271,151 Q289,163 295,177" />
+    <path android:strokeColor="#B97573" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M122,67 L127,75 M145,61 L146,65 M167,63 L166,68 M189,69 L186,75 M225,77 L225,83 M249,78 L251,81 M274,71 L278,77 M296,70 L301,72 M303,89 L309,92 M273,112 L274,118 M248,109 L246,125 M209,112 L206,120 M178,108 L178,116 M151,108 L152,115 M121,117 L125,126 M104,135 L115,133" />
+
+    <!-- Cutaway window: one cell layer, apical microvilli, and a continuous lumen. -->
+    <path android:fillColor="#F1B697" android:strokeColor="#895C6A" android:strokeWidth="1.9"
+        android:pathData="M112,143 Q121,135 141,133 C173,131 219,131 248,133 Q265,135 275,147 C271,155 267,166 270,175 Q256,181 241,180 L134,181 Q117,180 111,171 C120,162 121,151 112,143Z" />
+    <path android:fillColor="#F7C6A5"
+        android:pathData="M117,142 Q129,134 148,135 L243,135 Q256,135 270,145 Q265,151 264,156 L123,156 Q123,149 117,142Z" />
+    <path android:fillColor="#D99380"
+        android:pathData="M118,170 Q124,164 123,157 L265,157 Q264,164 267,173 Q254,178 241,178 L136,179 Q125,178 118,170Z" />
+    <path android:strokeColor="#B57773" android:strokeWidth="1.5"
+        android:pathData="M132,136 Q136,141 135,146 M147,135 Q150,140 148,145 M163,134 L165,144 M180,134 L180,143 M196,134 L196,144 M212,134 L212,144 M229,134 L228,145 M245,134 L243,146 M258,138 L255,147 M131,177 Q136,172 136,164 M146,180 L148,163 M162,179 L164,163 M179,179 L179,163 M196,179 L195,163 M214,179 L212,163 M231,179 L229,163 M248,179 L245,163 M260,176 L257,162" />
+    <path android:fillColor="#F9E9CD" android:strokeColor="#A97877" android:strokeWidth="1.2"
+        android:pathData="M118,151 Q130,144 147,145 Q170,142 196,144 Q230,142 248,146 Q259,146 269,151 L265,158 Q254,162 242,162 Q225,165 204,164 L145,164 Q128,163 118,158Z" />
+    <path android:strokeColor="#BB8568" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M128,148l1,4 m3,-5l1,4 m3,-5l0,4 m4,-5l1,4 m3,-4l1,4 m3,-5l0,4 m4,-4l0,4 m4,-4l0,3 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-4l0,4 m4,-3l-1,4 m5,-4l0,4 m4,-4l-1,4 m5,-3l-1,4 m5,-4l-1,4 m5,-3l-1,4 M128,161l1,-3 m3,4l1,-4 m3,4l1,-4 m3,5l1,-4 m3,4l1,-4 m3,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,4l0,-4 m4,3l0,-4 m4,4l0,-4 m4,4l0,-4 m4,3l0,-4 m4,4l-1,-4 m5,4l-1,-4 m5,3l-1,-4 m5,3l-1,-4 m5,3l-1,-3" />
+    <path android:strokeColor="#9D6674" android:strokeWidth="2.7" android:strokeLineCap="round"
+        android:pathData="M126,143h3 M138,140h3 M154,140h3 M170,138h3 M186,138h3 M202,138h3 M219,138h3 M235,139h3 M251,142h3 M139,171h3 M153,174h3 M170,172h3 M186,173h3 M202,173h3 M220,172h3 M236,172h3 M253,170h3" />
+    <path android:strokeColor="#936E61" android:strokeWidth="1.9" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M166,155 L189,155 M184,152 L189,155 L184,158 M218,155 L242,155 M237,152 L242,155 L237,158" />
+    <path android:strokeColor="#F6CDB4" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M130,184 Q149,188 168,184 M181,185 L234,184 M245,184 Q257,183 264,180" />
+
+    <!-- The straight proximal segment narrows into the thin descending limb. -->
+    <path android:fillColor="#D69483"
+        android:pathData="M281,197 Q296,191 317,197 L317,214 C317,223 308,226 307,234 L307,251 Q299,257 291,251 L291,234 C289,227 280,223 280,215Z" />
+    <path android:strokeColor="#845366" android:strokeWidth="2.1"
+        android:pathData="M317,195 L317,214 C317,223 308,226 307,234 L307,251 M280,196 L280,215 C280,223 289,227 291,234 L291,251" />
+    <path android:fillColor="#F2BA9C"
+        android:pathData="M283,196 Q294,197 304,194 L304,214 C302,221 298,225 298,233 L298,251 L293,252 L293,234 C291,227 283,221 283,214Z" />
+    <path android:strokeColor="#A1676F" android:strokeWidth="1.8"
+        android:pathData="M285,214 Q299,209 312,214 M289,224 Q298,221 309,224 M292,235 Q299,231 306,235 M292,244 Q299,241 306,244" />
+    <path android:fillColor="#DDA08F" android:strokeColor="#845366" android:strokeWidth="1.5"
+        android:pathData="M291,251 C291,245 307,245 307,251 C307,258 291,258 291,251Z" />
+    <path android:fillColor="#F9E8CB"
+        android:pathData="M295,251 C295,248 303,248 303,251 C303,254 295,254 295,251Z" />
+
+    <!-- Small corpuscle section for upstream context. -->
+    <path android:fillColor="#B18790" android:strokeColor="#855967" android:strokeWidth="1.9"
+        android:pathData="M35,73 C31,52 45,40 63,39 C81,38 91,49 93,61 Q95,69 105,70 L105,85 Q91,86 86,93 C77,104 63,111 48,102 Q36,95 35,73Z" />
+    <path android:fillColor="#F5DDC4" android:strokeColor="#B07D89" android:strokeWidth="1.9"
+        android:pathData="M41,72 C37,53 51,44 64,44 C79,43 86,55 88,65 Q91,74 101,76 L101,80 Q89,81 82,91 C70,102 58,103 49,96 Q42,90 41,72Z" />
+    <path android:strokeColor="#A75D6B" android:strokeWidth="6.8" android:strokeLineCap="round"
+        android:pathData="M37,61 Q48,62 54,66 Q50,57 61,54 Q71,52 74,60 Q78,68 67,69 Q58,73 64,82 Q71,90 79,80 Q84,72 75,70 M38,79 Q48,76 55,82 Q60,91 67,87 M51,63 Q58,70 57,77" />
+    <path android:strokeColor="#E69F95" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M55,63 Q55,55 64,55 Q70,54 73,60 M64,78 Q66,87 74,84 M52,80 L58,84" />
+    <path android:fillColor="#F5DDC4"
+        android:pathData="M87,75 C97,77 103,75 115,70 Q112,76 109,79 Q100,81 87,82Z" />
+</vector>

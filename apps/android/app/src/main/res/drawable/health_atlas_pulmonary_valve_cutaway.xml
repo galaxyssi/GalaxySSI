@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Oblique anterior window through the trunk and smooth infundibulum. -->
+    <path android:fillColor="#A36B80" android:strokeColor="#65455F" android:strokeWidth="2.5"
+        android:pathData="M112,133 C135,121 204,119 243,137 C259,147 268,167 261,188 C251,218 220,237 170,249 C121,260 75,251 59,228 C55,219 60,207 67,196 Q92,163 112,133 Z" />
+    <path android:fillColor="#D69799"
+        android:pathData="M65,204 C83,192 97,181 110,163 C102,195 80,213 91,225 C112,248 186,235 220,221 C202,240 149,255 105,248 Q68,243 60,226 Q57,219 65,204 Z" />
+    <path android:name="pulmonary_rv_outflow" android:fillColor="#506987" android:strokeColor="#82A6BF" android:strokeWidth="3.2"
+        android:pathData="M118,141 C147,129 207,132 235,147 C252,157 254,174 247,191 C234,213 199,228 161,235 C117,243 83,236 76,222 C72,212 90,198 106,177 Q118,160 118,141 Z" />
+    <path android:fillColor="#6386A3"
+        android:pathData="M123,163 Q158,181 231,162 C234,182 213,203 180,214 C155,222 121,228 99,224 C114,209 120,185 123,163 Z" />
+    <path android:strokeColor="#9CBCCE" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M104,213 C123,204 130,190 136,178 M165,222 Q213,206 233,181 M82,222 Q111,238 149,231" />
+
+    <!-- The vessel wall splays into three sinus pockets above the cusp hinges. -->
+    <path android:fillColor="#6F98B9" android:strokeColor="#3C5777" android:strokeWidth="2.5"
+        android:pathData="M146,34 C164,16 233,13 271,25 Q289,30 290,44 C285,62 270,78 267,98 C276,119 272,140 254,158 C225,187 172,195 131,180 C102,170 95,148 102,126 C112,103 132,84 135,65 Q136,46 146,34 Z" />
+    <path android:name="pulmonary_trunk_lumen" android:fillColor="#466685" android:strokeColor="#A7C1D6" android:strokeWidth="2.4"
+        android:pathData="M153,36 C182,24 231,23 264,31 C272,33 279,37 278,43 C271,59 256,77 251,99 C261,115 258,135 241,150 C216,173 175,181 144,172 C117,163 110,148 116,130 C126,106 144,89 146,67 Q146,47 153,36 Z" />
+    <path android:fillColor="#597E9D"
+        android:pathData="M149,71 C181,81 226,74 256,58 C244,75 239,88 236,100 C218,95 201,99 188,110 C178,97 155,93 132,106 Q146,87 149,71 Z" />
+    <path android:fillColor="#83A8C2"
+        android:pathData="M147,36 C174,20 226,20 260,26 C240,29 199,29 171,38 C155,51 156,80 142,102 Q128,118 120,140 Q108,153 115,162 C105,154 99,140 105,126 C114,105 132,84 136,63 Q138,44 147,36 Z M273,39 Q282,35 288,41 C287,57 270,78 266,97 C271,106 274,117 269,130 Q265,141 257,148 C261,126 250,113 251,99 C251,82 265,53 273,39 Z" />
+    <path android:strokeColor="#C1D3DE" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M149,38 Q177,24 212,24 M149,52 Q146,85 129,104 M280,51 Q265,76 260,96" />
+    <path android:fillColor="#648AA8"
+        android:pathData="M120,127 C131,104 164,94 184,107 C172,110 154,124 151,143 Q128,145 120,127 Z M189,107 C205,95 233,90 250,105 C258,120 251,135 235,148 Q211,121 189,107 Z" />
+
+    <!-- Far-side right/left cusps leave a triangular outflow opening above the near cusp. -->
+    <path android:name="pulmonary_right_cusp" android:fillColor="#D8DAD0" android:strokeColor="#587086" android:strokeWidth="1.8"
+        android:pathData="M123,128 C130,115 145,104 165,101 Q174,101 185,108 C168,110 158,117 155,129 C153,137 154,141 155,148 C140,150 130,143 123,128 Z" />
+    <path android:name="pulmonary_left_cusp" android:fillColor="#F5E1BA" android:strokeColor="#587086" android:strokeWidth="1.8"
+        android:pathData="M185,108 C207,96 231,98 249,110 C251,123 242,140 229,146 C224,133 215,124 204,119 Q195,114 185,108 Z" />
+    <path android:fillColor="#D3BD9F"
+        android:pathData="M193,107 Q222,102 244,111 C238,117 226,121 216,124 Q205,113 193,107 Z" />
+    <path android:name="pulmonary_anterior_cusp" android:fillColor="#E9D3AF" android:strokeColor="#536B80" android:strokeWidth="1.8"
+        android:pathData="M123,128 C134,141 149,148 166,151 C186,154 208,151 229,146 C222,162 201,173 176,175 C150,176 131,165 123,151 Q119,143 123,128 Z" />
+    <path android:fillColor="#B6B6A6"
+        android:pathData="M132,146 Q165,171 215,156 C201,170 176,176 158,172 Q140,168 132,146 Z" />
+    <path android:strokeColor="#FFF0D3" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M127,127 Q149,106 174,105 M201,105 Q229,99 245,110 M133,140 C160,158 196,156 222,148" />
+    <path android:strokeColor="#B7CDDA" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M105,140 C100,164 128,185 167,187 C206,188 243,170 259,149" />
+</vector>

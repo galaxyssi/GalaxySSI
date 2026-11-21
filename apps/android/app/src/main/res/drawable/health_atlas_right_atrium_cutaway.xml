@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Short caval cuffs enter the same posterior strip from opposite ends. -->
+    <path android:fillColor="#5D91A9" android:strokeColor="#3D657E" android:strokeWidth="2"
+        android:pathData="M119,25 Q141,15 167,24 C163,43 165,57 175,74 L121,80 Q128,53 119,25 Z M129,208 Q150,193 173,209 C176,227 177,248 170,262 Q147,270 124,259 C131,243 132,223 129,208 Z" />
+    <path android:fillColor="#8DB4C3"
+        android:pathData="M126,28 Q132,25 139,26 Q146,50 136,72 L127,73 Q135,49 126,28 Z M138,218 L147,223 Q147,244 140,259 L131,258 Q139,239 138,218 Z" />
+    <path android:fillColor="#ACCCD1" android:strokeColor="#3D657E" android:strokeWidth="1.6"
+        android:pathData="M119,25 C118,16 167,15 167,24 C168,32 121,34 119,25 Z M124,259 C126,250 172,253 170,262 C167,270 123,267 124,259 Z" />
+    <path android:fillColor="#36546B"
+        android:pathData="M124,24 C128,20 159,19 162,24 C161,28 128,30 124,24 Z M130,259 C133,255 163,257 164,261 C160,265 133,263 130,259 Z" />
+
+    <!-- Spread interior: pectinate wall, smooth venous strip and medial septum. -->
+    <path android:fillColor="#B36E78" android:strokeColor="#754552" android:strokeWidth="2"
+        android:pathData="M52,95 C58,73 76,66 96,78 Q105,82 113,84 C128,58 166,49 199,59 C232,65 270,94 283,132 C297,171 280,211 253,229 Q223,248 186,234 C162,230 151,233 132,229 C92,219 62,197 56,163 Q50,143 56,128 C51,117 48,107 52,95 Z" />
+    <path android:fillColor="#527991" android:strokeColor="#F3BAA6" android:strokeWidth="3"
+        android:pathData="M61,98 C66,82 79,77 95,86 Q108,94 121,91 C133,68 164,61 194,68 C227,75 258,98 272,133 C285,165 270,203 246,220 Q220,237 184,222 C166,217 147,222 133,219 C98,209 71,189 66,160 Q61,140 67,125 C60,115 57,106 61,98 Z" />
+    <path android:fillColor="#6896A9"
+        android:pathData="M136,80 C150,65 175,69 197,79 Q184,94 180,123 C173,152 183,179 175,205 Q169,221 151,221 Q133,217 128,207 C126,184 141,166 143,142 Q151,103 136,80 Z" />
+    <path android:fillColor="#65829B"
+        android:pathData="M191,80 C218,83 248,102 264,130 Q274,151 266,179 C252,172 234,177 220,185 Q195,188 186,172 C174,149 179,100 191,80 Z" />
+    <path android:strokeColor="#8DB3BD" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M155,92 C166,109 163,132 158,155 Q155,171 157,181 M184,84 Q173,103 174,119" />
+    <path android:fillColor="#7097AA" android:strokeColor="#456981" android:strokeWidth="2"
+        android:pathData="M120,70 C121,57 135,52 147,53 C163,53 172,60 168,73 C163,84 147,88 134,83 Q123,80 120,70 Z M128,214 C129,204 143,196 157,200 C171,203 177,213 173,222 C168,231 149,233 137,226 Q128,222 128,214 Z" />
+    <path android:fillColor="#344F67"
+        android:pathData="M124,69 C124,61 136,57 147,57 C158,57 166,61 164,69 C161,79 149,83 136,79 Q126,76 124,69 Z M132,215 C133,207 145,201 156,204 C166,206 172,213 169,220 C164,227 150,228 140,223 Q132,220 132,215 Z" />
+    <path android:strokeColor="#C5D9D7" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M125,73 Q141,90 161,77 M135,219 Q150,231 168,222" />
+
+    <!-- The terminal crest gives rise to the fan of pectinate ridges. -->
+    <path android:strokeColor="#3E6078" android:strokeWidth="7" android:strokeLineCap="round"
+        android:pathData="M126,91 C146,120 133,163 124,184 Q121,194 127,205 M131,111 Q111,92 80,92 M134,123 Q109,107 68,105 M135,137 Q107,124 77,123 M132,152 Q104,142 73,141 M129,167 Q99,162 80,162 M124,184 Q102,184 91,182 M124,196 Q113,197 106,196" />
+    <path android:strokeColor="#92B6C0" android:strokeWidth="3.2" android:strokeLineCap="round"
+        android:pathData="M125,89 C144,117 132,158 123,182 Q119,194 125,203 M130,109 Q111,90 80,90 M133,121 Q109,105 68,103 M134,135 Q107,122 77,121 M131,150 Q104,140 73,139 M128,165 Q99,160 80,160 M123,182 Q102,182 91,180 M123,194 Q113,195 106,194" />
+
+    <!-- A shallow septal depression and the smaller coronary sinus ostium. -->
+    <path android:fillColor="#648097" android:strokeColor="#43617B" android:strokeWidth="2.3"
+        android:pathData="M200,112 C210,102 230,103 239,115 C247,127 240,144 229,152 C218,159 199,154 194,140 Q188,125 200,112 Z" />
+    <path android:fillColor="#4F6985"
+        android:pathData="M203,117 C212,109 228,109 235,119 C242,130 235,142 226,147 C215,154 202,146 199,137 Q196,126 203,117 Z" />
+    <path android:strokeColor="#9EB9C3" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M196,139 C191,128 197,116 207,111 Q221,104 232,112" />
+    <path android:fillColor="#344F67" android:strokeColor="#9AB3BD" android:strokeWidth="1.8"
+        android:pathData="M177,186 C181,181 192,181 196,187 C200,194 189,200 181,197 Q172,194 177,186 Z" />
+
+    <!-- Oblique tricuspid inlet, seen from the atrial side. -->
+    <path android:fillColor="#364D63" android:strokeColor="#D49A8D" android:strokeWidth="3"
+        android:pathData="M202,199 C211,184 242,176 259,182 C271,189 260,208 249,217 C232,229 205,224 200,215 Q196,208 202,199 Z" />
+    <path android:fillColor="#F1C8AD" android:strokeColor="#825466" android:strokeWidth="1.3"
+        android:pathData="M203,199 Q214,186 233,185 Q230,198 220,207 Q211,205 203,199 Z M233,185 Q250,179 261,185 Q256,198 243,204 Q234,198 233,185 Z M204,214 Q214,215 221,209 Q234,211 243,205 Q248,205 254,213 C241,226 214,225 204,214 Z" />
+    <path android:strokeColor="#FFE0C4" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M205,199 Q213,204 219,206 M236,189 Q237,198 243,202 M211,216 Q223,218 234,205 Q243,211 251,212" />
+</vector>

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Posterior-oblique root window; a short left ventricular outflow cuff lies below. -->
+    <path android:fillColor="#C7797F" android:strokeColor="#7C4554" android:strokeWidth="2.5"
+        android:pathData="M99,163 Q166,146 263,153 C259,177 262,199 271,213 C263,233 229,250 194,254 C160,259 119,246 102,228 C112,207 109,184 99,163 Z" />
+    <path android:fillColor="#E6A299"
+        android:pathData="M112,181 Q131,192 138,220 C160,238 207,242 235,222 Q251,212 261,211 C256,231 223,247 194,250 Q144,251 110,229 Q118,208 112,181 Z" />
+    <path android:fillColor="#8E4658" android:strokeColor="#F3B1A4" android:strokeWidth="2.5"
+        android:pathData="M119,171 Q184,155 247,162 Q237,189 253,217 C232,242 160,251 122,223 C129,203 125,187 119,171 Z" />
+    <path android:strokeColor="#C4777D" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M132,208 Q144,229 176,232 M148,213 Q166,225 193,225 M240,207 Q228,220 209,225" />
+
+    <!-- Two coronary origins exit the lateral sinus walls; the ascending cuff is above. -->
+    <path android:fillColor="#BF6270" android:strokeColor="#813D50" android:strokeWidth="2"
+        android:pathData="M55,111 C74,105 79,90 104,90 L116,112 C89,113 80,126 63,132 Q54,130 55,111 Z M253,96 C273,92 280,101 301,100 Q309,106 303,121 C284,127 272,115 253,119 Z" />
+    <path android:strokeColor="#EF9B8F" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M60,116 Q80,104 99,98 M269,103 Q286,110 298,106" />
+    <path android:fillColor="#D27B7B" android:strokeColor="#853C50" android:strokeWidth="2.5"
+        android:pathData="M99,36 C116,14 193,13 224,24 C240,29 243,40 240,50 Q236,67 247,81 C272,99 284,117 279,142 C274,171 248,193 212,202 C175,212 130,201 104,182 C80,164 71,138 81,112 C90,90 103,81 100,64 Q96,48 99,36 Z" />
+    <path android:name="aortic_ascending_lumen" android:fillColor="#94465A" android:strokeColor="#F4B2A0" android:strokeWidth="3"
+        android:pathData="M111,39 C133,25 187,22 217,31 Q230,35 228,44 C222,66 231,81 240,91 C260,107 268,124 263,142 C257,165 236,182 207,191 C177,199 140,189 118,175 C97,161 87,140 96,117 C103,99 116,89 113,70 Q108,52 111,39 Z" />
+    <path android:fillColor="#AE5A67"
+        android:pathData="M112,43 C137,28 189,27 216,34 Q224,37 226,41 C202,40 175,46 155,56 C140,63 130,68 114,66 Q110,55 112,43 Z M112,76 C143,87 198,70 224,66 Q227,76 235,88 C202,87 177,97 169,108 C150,98 130,95 105,102 Q113,91 112,76 Z" />
+    <path android:strokeColor="#EDA698" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M103,43 Q100,55 105,67 M105,77 Q105,89 92,106 M234,51 Q230,69 239,82 M88,136 C84,163 114,190 147,198 M220,192 Q260,180 272,152" />
+    <path android:fillColor="#B9616C"
+        android:pathData="M96,124 C100,107 112,93 129,91 C145,90 159,99 169,109 C150,121 139,138 125,153 C110,152 99,139 96,124 Z M170,109 C184,92 214,87 235,91 C255,107 266,122 261,139 Q250,157 231,160 Q206,127 170,109 Z M122,157 C142,145 217,141 248,153 C236,174 211,188 182,189 Q143,185 122,157 Z" />
+    <path android:strokeColor="#DA8990" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M112,77 C144,88 197,73 225,71 M102,122 C110,104 131,102 145,106 M191,101 Q213,92 231,97" />
+    <path android:name="aortic_coronary_ostia" android:fillColor="#643245" android:strokeColor="#EA9A8C" android:strokeWidth="2"
+        android:pathData="M110,110 C111,104 122,99 127,103 C132,107 124,115 116,117 Q110,117 110,110 Z M236,103 C242,99 251,103 253,109 C255,115 247,117 240,112 Q233,107 236,103 Z" />
+
+    <!-- Three cupped cusps meet at the center; the posterior one has no coronary opening. -->
+    <path android:name="aortic_left_cusp" android:fillColor="#E9BB9E" android:strokeColor="#844A59" android:strokeWidth="1.8"
+        android:pathData="M104,121 C113,116 129,114 143,111 Q159,107 170,107 C168,121 173,131 179,143 C158,142 139,145 125,154 C113,148 106,137 104,121 Z" />
+    <path android:fillColor="#F9D4B1"
+        android:pathData="M110,122 C131,115 150,116 166,112 Q166,127 175,140 C148,133 124,141 110,122 Z" />
+    <path android:name="aortic_right_cusp" android:fillColor="#F4CAA6" android:strokeColor="#844A59" android:strokeWidth="1.8"
+        android:pathData="M170,107 C200,109 220,115 250,118 C248,134 239,145 230,154 C213,144 196,140 179,143 C174,134 167,121 170,107 Z" />
+    <path android:fillColor="#D8A38E"
+        android:pathData="M181,139 Q212,134 244,123 C240,136 234,145 230,153 Q207,142 181,143 Z" />
+    <path android:name="aortic_noncoronary_cusp" android:fillColor="#F7D6B0" android:strokeColor="#844A59" android:strokeWidth="1.9"
+        android:pathData="M125,154 C146,149 163,139 179,141 C199,136 218,146 230,154 C218,172 197,181 176,179 C155,178 134,169 125,154 Z" />
+    <path android:fillColor="#D6A890"
+        android:pathData="M130,156 C158,168 185,176 222,160 C207,176 187,180 173,177 Q146,175 130,156 Z" />
+    <path android:strokeColor="#FFF0D0" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M107,122 Q133,116 164,110 M174,109 Q218,117 245,119 M131,154 Q161,142 178,142 Q201,138 225,153" />
+    <path android:strokeColor="#F4B2A0" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M122,174 Q158,198 204,189 Q233,183 250,163" />
+</vector>

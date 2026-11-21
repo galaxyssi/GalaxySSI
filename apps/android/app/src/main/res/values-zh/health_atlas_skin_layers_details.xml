@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_skin_cross_section">皮肤切面</string>
+    <string name="health_atlas_epidermis_thick_layers">掌跖厚皮的表皮</string>
+    <string name="health_atlas_dermis_two_layers">真皮分层</string>
+    <string name="health_atlas_skin_layers_follicle">毛囊</string>
+    <string name="health_atlas_skin_layers_follicle_detail">上皮向真皮内延伸形成管状结构，包绕毛根。</string>
+    <string name="health_atlas_skin_layers_sweat_duct">汗腺导管</string>
+    <string name="health_atlas_skin_layers_sweat_duct_detail">小汗腺的导管将盘曲部分分泌的汗液送到皮肤表面的开口。</string>
+    <string name="health_atlas_skin_layers_vessels">真皮血管</string>
+    <string name="health_atlas_skin_layers_vessels_detail">血管分布在真皮，上方的表皮内没有血管。</string>
+    <string name="health_atlas_skin_layers_corneum">角质层</string>
+    <string name="health_atlas_skin_layers_corneum_detail">扁平的角质细胞及其周围的脂质构成外层屏障，减少水分流失。</string>
+    <string name="health_atlas_skin_layers_lucidum">透明层</string>
+    <string name="health_atlas_skin_layers_lucidum_detail">手掌和足底的厚皮中，角质层下可见一层颜色较浅的透明层。</string>
+    <string name="health_atlas_skin_layers_granulosum">颗粒层</string>
+    <string name="health_atlas_skin_layers_granulosum_detail">角质形成细胞逐渐成熟、变扁，内部可见颗粒。</string>
+    <string name="health_atlas_skin_layers_spinosum">棘层</string>
+    <string name="health_atlas_skin_layers_spinosum_detail">细胞连接让相邻的角质形成细胞贴合，也使它们在显微镜下呈现棘状外观。</string>
+    <string name="health_atlas_skin_layers_basale">基底层</string>
+    <string name="health_atlas_skin_layers_basale_detail">表皮底部分裂的细胞不断为上方补充新的角质形成细胞。</string>
+    <string name="health_atlas_skin_layers_papillary">真皮乳头层</string>
+    <string name="health_atlas_skin_layers_papillary_detail">浅层的疏松结缔组织形成许多小突起，伸向表皮底部。</string>
+    <string name="health_atlas_skin_layers_capillary_loop">毛细血管袢</string>
+    <string name="health_atlas_skin_layers_capillary_loop_detail">毛细血管袢伸入真皮乳头，营养物质可从真皮扩散到上方的表皮。</string>
+    <string name="health_atlas_skin_layers_reticular">真皮网状层</string>
+    <string name="health_atlas_skin_layers_reticular_detail">较粗的胶原纤维束与弹性纤维共同让深层真皮既结实又有弹性。</string>
+    <string name="health_atlas_skin_layers_sensory_fiber">感觉神经纤维</string>
+    <string name="health_atlas_skin_layers_sensory_fiber_detail">感觉神经的分支穿行于真皮，传递来自皮肤感受器的信号。</string>
+</resources>
