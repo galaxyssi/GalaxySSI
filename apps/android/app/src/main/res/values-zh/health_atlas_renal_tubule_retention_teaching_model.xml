@@ -6,4 +6,8 @@
     <string name="health_atlas_renal_tubule_retention_companion">标记物总回收量：%1$s a.u.</string>
     <string name="health_atlas_renal_tubule_retention_formula">标记物起始量为 100 个任意单位（a.u.）。A 段后剩余量 = 100 ×（1 − A ÷ 100）。B 段后剩余量 = A 段后剩余量 ×（1 − B ÷ 100）。A 和 B 为所选的回收百分比。每段的回收量等于进入量减去流出量。总回收量 = 100 − B 段后剩余量。</string>
     <string name="health_atlas_renal_tubule_retention_scope">在真实的肾脏中，肾小管上皮会重吸收水和溶质。肾小管可从肾皮质进入肾髓质，再返回肾皮质。不同肾单位的袢伸入深度不一，各管段对水和溶质的转运也不同。模型开始时，虚构的惰性标记物已在管腔内。A 段和 B 段仅用于演示，不对应特定的解剖结构或肾脏区域。两个滑块均不代表区域清除率或其他肾功能指标。模型不模拟肾小球滤过、肾小管分泌或尿量。</string>
+    <string name="health_atlas_renal_tubule_retention_diagram">圆形的填充面积表示虚拟标记物在起始、通过第一段和通过第二段后的剩余量。</string>
+    <string name="health_atlas_renal_tubule_retention_start">起始</string>
+    <string name="health_atlas_renal_tubule_retention_after_a">第一段后</string>
+    <string name="health_atlas_renal_tubule_retention_after_b">第二段后</string>
 </resources>

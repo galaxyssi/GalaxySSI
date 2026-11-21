@@ -136,7 +136,13 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     THYMIC_BRANCHING(HealthAtlasThymicBranchingTeachingModel.spec),
     GASTRIC_PRECURSOR_BALANCE(HealthAtlasGastricPrecursorBalanceTeachingModel.spec),
     MELANIN_DISTRIBUTION(HealthAtlasMelaninDistributionTeachingModel.spec),
-    PLACENTAL_MARKER(HealthAtlasPlacentalMarkerTeachingModel.spec);
+    PLACENTAL_MARKER(HealthAtlasPlacentalMarkerTeachingModel.spec),
+    RENAL_TUBULE_RETENTION(HealthAtlasRenalTubuleRetentionTeachingModel.spec),
+    MERKEL_CONTACT(HealthAtlasMerkelContactTeachingModel.spec),
+    TOOTH_ENAMEL_SECTION(HealthAtlasToothEnamelSectionTeachingModel.spec),
+    MUCOSAL_SAMPLING(HealthAtlasMucosalSamplingTeachingModel.spec),
+    MAMMARY_DUCT_DELIVERY(HealthAtlasMammaryDuctDeliveryTeachingModel.spec),
+    RECTAL_RESERVOIR(HealthAtlasRectalReservoirTeachingModel.spec);
 
     constructor(spec: HealthAtlasTeachingModelSpec) : this(spec.inputs.map { it.control }, spec.axis, spec.unit,
         spec.minimum, spec.maximum, spec.source, spec.extraSource, spec)

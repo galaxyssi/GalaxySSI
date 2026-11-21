@@ -31,7 +31,8 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         HealthAtlasPhysiologyKind.PELVIC_SUPPORT, HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE,
         HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT, HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY,
         HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE, HealthAtlasPhysiologyKind.CORNEAL_REFRACTION,
-        HealthAtlasPhysiologyKind.CIRCADIAN_LIGHT_WINDOW, HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE ->
+        HealthAtlasPhysiologyKind.CIRCADIAN_LIGHT_WINDOW, HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE,
+        HealthAtlasPhysiologyKind.TOOTH_ENAMEL_SECTION, HealthAtlasPhysiologyKind.RENAL_TUBULE_RETENTION ->
             HealthAtlasMaterialResponseView(activity, model)
         else -> null
     }

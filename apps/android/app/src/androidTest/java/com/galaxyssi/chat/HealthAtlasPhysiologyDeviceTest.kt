@@ -232,6 +232,8 @@ class HealthAtlasPhysiologyDeviceTest {
             Triple("cornea", "corneal-rays", "corneal-refraction-incident-angle"),
             Triple("pineal-gland", "circadian-dial", "circadian-light-window-elapsed"),
             Triple("cell-adipocyte", "adipose-volume-share", "adipose-volume-share-radius-ratio"),
+            Triple("teeth", "tooth-enamel-section", "tooth-enamel-section-thickness"),
+            Triple("renal-cortex", "renal-tubule-retention", "renal-tubule-retention-segment-b"),
         )
         for ((id, art, input) in examples) {
             var initial = 0

@@ -161,7 +161,8 @@ class HealthAtlasPhysiologyTest {
                             HealthAtlasPhysiologyKind.CUTANEOUS_SEBUM,
                             HealthAtlasPhysiologyKind.EXTERNAL_EAR_RESONANCE,
                             HealthAtlasPhysiologyKind.SWEAT_DUCT_BALANCE,
-                            HealthAtlasPhysiologyKind.ORAL_MARKER_DILUTION -> y <= value + 1e-9
+                            HealthAtlasPhysiologyKind.ORAL_MARKER_DILUTION,
+                            HealthAtlasPhysiologyKind.RENAL_TUBULE_RETENTION -> y <= value + 1e-9
                             else -> y >= value - 1e-9
                         })
                     }

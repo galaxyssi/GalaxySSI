@@ -30,6 +30,8 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         HealthAtlasPhysiologyKind.CORNEAL_REFRACTION -> R.string.health_atlas_model_corneal_refraction_diagram
         HealthAtlasPhysiologyKind.CIRCADIAN_LIGHT_WINDOW -> R.string.health_atlas_circadian_light_window_diagram
         HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE -> R.string.health_atlas_adipose_volume_share_diagram
+        HealthAtlasPhysiologyKind.TOOTH_ENAMEL_SECTION -> R.string.health_atlas_tooth_enamel_section_diagram
+        HealthAtlasPhysiologyKind.RENAL_TUBULE_RETENTION -> R.string.health_atlas_renal_tubule_retention_diagram
         else -> error("Unexpected material response: $kind")
     }
     private val ink = context.getColor(R.color.text_primary)
@@ -60,6 +62,8 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.CORNEAL_REFRACTION -> "atlas-corneal-rays"
             HealthAtlasPhysiologyKind.CIRCADIAN_LIGHT_WINDOW -> "atlas-circadian-dial"
             HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE -> "atlas-adipose-volume-share"
+            HealthAtlasPhysiologyKind.TOOTH_ENAMEL_SECTION -> "atlas-tooth-enamel-section"
+            HealthAtlasPhysiologyKind.RENAL_TUBULE_RETENTION -> "atlas-renal-tubule-retention"
             else -> error("Unexpected material response: $kind")
         }
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
@@ -91,6 +95,8 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.CORNEAL_REFRACTION -> drawRefraction(canvas)
             HealthAtlasPhysiologyKind.CIRCADIAN_LIGHT_WINDOW -> drawCircadianDial(canvas)
             HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE -> drawAdiposeShare(canvas)
+            HealthAtlasPhysiologyKind.TOOTH_ENAMEL_SECTION -> drawEnamelSection(canvas)
+            HealthAtlasPhysiologyKind.RENAL_TUBULE_RETENTION -> drawTubuleMarker(canvas)
             else -> Unit
         }
         canvas.restore()
@@ -475,6 +481,52 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             360f * model.result.toFloat() / 100f, true, paint)
         label(c, R.string.health_atlas_adipose_volume_share_cell_view, x, 145f, 142f)
         label(c, R.string.health_atlas_adipose_volume_share_tissue_view, center, 145f, 155f)
+    }
+
+    private fun drawEnamelSection(c: Canvas) {
+        val x = 94f
+        val y = 70f
+        val exterior = (9.5 * model.input(1)).toFloat()
+        val interior = exterior - (9.5 * model.input(0)).toFloat()
+        val enamel = 0xffd1e7df.toInt()
+        val remainder = 0xffdca989.toInt()
+        val rim = 0xff698e89.toInt()
+        oval(c, x - exterior - 1.5f, y - exterior - 1.5f, x + exterior + 1.5f, y + exterior + 1.5f, rim)
+        oval(c, x - exterior, y - exterior, x + exterior, y + exterior, enamel)
+        oval(c, x - interior, y - interior, x + interior, y + interior, remainder)
+        val from = x + interior
+        val to = x + exterior
+        line(c, from, y, to, y, 0xff325751.toInt(), 1.7f)
+        line(c, from, y - 4, from, y + 4, 0xff325751.toInt(), 1.7f)
+        line(c, to, y - 4, to, y + 4, 0xff325751.toInt(), 1.7f)
+        rectangle(c, 178f, 46f, 195f, 57f, enamel, 3f)
+        rectangle(c, 178f, 82f, 195f, 93f, remainder, 3f)
+        label(c, R.string.health_atlas_tooth_enamel_section_enamel, 261f, 56f, 116f)
+        label(c, R.string.health_atlas_tooth_enamel_section_inside, 261f, 92f, 116f)
+        label(c, R.string.health_atlas_tooth_enamel_section_crown, x, 148f, 155f)
+    }
+
+    private fun drawTubuleMarker(c: Canvas) {
+        val amount = HealthAtlasRenalTubuleRetentionTeachingModel.amounts(model.input(0), model.input(1))
+        val nodes = listOf(
+            R.string.health_atlas_renal_tubule_retention_start to amount.starting,
+            R.string.health_atlas_renal_tubule_retention_after_a to amount.afterA,
+            R.string.health_atlas_renal_tubule_retention_after_b to amount.remaining,
+        )
+        arrow(c, 86f, 78f, 136f, 78f, teal, 1.9f)
+        arrow(c, 204f, 78f, 254f, 78f, teal, 1.9f)
+        for ((index, node) in nodes.withIndex()) {
+            val (caption, value) = node
+            val x = 52f + index * 118f
+            val r = 29f
+            oval(c, x - r, 78f - r, x + r, 78f + r, 0xffc9dfdf.toInt())
+            val marker = r * sqrt(value.toFloat() / amount.starting.toFloat())
+            oval(c, x - marker, 78f - marker, x + marker, 78f + marker, 0xff659d9d.toInt())
+            paint.color = ink
+            paint.textSize = 13f
+            c.drawText(HealthAtlasPhysiologyText.number(value, 1), x, 128f, paint)
+            label(c, caption, x, 147f, 102f)
+        }
     }
 
     private fun rectangle(c: Canvas, left: Float, top: Float, right: Float, bottom: Float, color: Int, radius: Float = 10f) {
