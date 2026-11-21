@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_bone_section_title">名义轴向压应力</string>
+    <string name="health_atlas_bone_section_force">轴向压缩力</string>
+    <string name="health_atlas_bone_section_wall_thickness">骨皮质厚度</string>
+    <string name="health_atlas_bone_section_area">骨皮质横截面积：%1$s mm²</string>
+    <string name="health_atlas_bone_section_formula">外半径固定为 5 mm。内半径 = 外半径 − 骨皮质厚度。骨皮质横截面积 = π ×（外半径² − 内半径²）。名义压应力 = 轴向压缩力 ÷ 骨皮质横截面积（1 N/mm² = 1 MPa）。</string>
+    <string name="health_atlas_bone_section_scope">在长骨骨干中，密质骨（骨皮质）构成包绕骨髓腔的壁。本模型仅将一小段骨干简化为直圆管，例如锁骨中段的一小段，或手部一根掌骨、足部一根跖骨的骨干片段。压缩力沿圆管的中心轴线作用。压缩力相同时，骨皮质越厚，承载面积越大，平均压应力越低。数值均为教学示例。本模型不考虑形状变化、弯曲或扭转，不能估算真实骨骼的应力或骨折风险。</string>
+</resources>
