@@ -2925,6 +2925,8 @@
 "galaxyssi.agent.shortcuts.chats" = "会话";
 "galaxyssi.agent.shortcuts.photo" = "拍照";
 "galaxyssi.agent.shortcuts.files" = "文件";
+"galaxyssi.agent.shortcuts.health" = "健康";
+"galaxyssi.agent.shortcuts.scan" = "扫一扫";
 "galaxyssi.agent.insight.ready" = "原生工具调用链路已就绪。";
 "galaxyssi.agent.insight.unread" = "你有 %d 条未读 Agent 消息。";
 "galaxyssi.agent.status" = "Agent";
