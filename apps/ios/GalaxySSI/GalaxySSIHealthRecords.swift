@@ -651,7 +651,7 @@ struct GalaxySSIHealthRecords {
     return try scope.snapshot(loadProfile(), measuredAt: date)
   }
 
-  private func localCareEncounterScope(id: UUID, metric: GalaxySSIHealthMetric, archive: Archive, now: Date)
+  func localCareEncounterScope(id: UUID, metric: GalaxySSIHealthMetric, archive: Archive, now: Date)
       throws -> (GalaxySSIHealthCare.Concern, GalaxySSIHealthEncounter.Stamp) {
     guard archive.localCareAllowed == true, let permission = archive.localCarePermission else { throw Failure.permission }
     guard let concern = archive.localCare?.current[metric.rawValue], concern.id == id else { throw Failure.stale }
@@ -2047,7 +2047,10 @@ struct GalaxySSIHealthRecords {
   func cancelLocalCareFollowUp(_ reminder: GalaxySSIHealthCareFollowUp.Reminder) throws {
     var archive = try load()
     guard archive.localCareFollowUps?[reminder.actionID]?.id == reminder.id else { throw Failure.stale }
-    archive.localCareFollowUps?.removeValue(forKey: reminder.actionID)
+    if reminder.appointment != nil {
+      guard archive.localCareFollowUps?[reminder.actionID]?.appointmentState != .cancelled else { return }
+      archive.localCareFollowUps?[reminder.actionID]?.appointmentState = .cancelled
+    } else { archive.localCareFollowUps?.removeValue(forKey: reminder.actionID) }
     try persist(archive)
   }
 
@@ -2131,12 +2134,18 @@ struct GalaxySSIHealthRecords {
 
   func localCareFollowUpDelivery(pending: [String: Date], delivered: Set<String>, permitted: Bool,
       calendar: Calendar, now: Date) throws -> GalaxySSIHealthCareFollowUp.DeliveryPlan {
+    try reconcileAppointmentReminders(now: now)
     let archive = try load()
     let reminders = (archive.localCareFollowUps ?? [:]).values.filter {
       careReminderIsCurrent($0, archive: archive, now: now)
     }
-    return GalaxySSIHealthCareFollowUp.deliveryPlan(reminders: reminders, preferences: Self.careFollowUpPreferences(archive),
+    let actions = GalaxySSIHealthCareFollowUp.deliveryPlan(reminders: reminders.filter { $0.appointment == nil }, preferences: Self.careFollowUpPreferences(archive),
       permitted: permitted, pending: pending, delivered: delivered, calendar: calendar, now: now)
+    let visits = GalaxySSIHealthCareFollowUp.deliveryPlan(reminders: reminders.filter { $0.appointment != nil }, preferences: Self.appointmentReminderPreferences(archive),
+      permitted: permitted, pending: pending, delivered: delivered, calendar: calendar, now: now)
+    return .init(pending: Array((actions.pending + visits.pending).sorted {
+      ($0.due, $0.reminder.identifier) < ($1.due, $1.reminder.identifier)
+    }.prefix(GalaxySSIHealthCareFollowUp.maximumPending)), keepDelivered: actions.keepDelivered.union(visits.keepDelivered))
   }
 
   func markLocalCareFollowUpSubmitted(_ delivery: GalaxySSIHealthCareFollowUp.Delivery,
@@ -2146,8 +2155,9 @@ struct GalaxySSIHealthRecords {
     guard var reminder = archive.localCareFollowUps?[expected.actionID], reminder.id == expected.id,
           reminder.submittedFor == expected.submittedFor || reminder.submittedFor == delivery.due,
           delivery.due >= reminder.requestedAt.addingTimeInterval(-1),
-          let preferences = Self.careFollowUpPreferences(archive),
+          let preferences = Self.followUpPreferences(reminder, archive: archive),
           preferences.nextAllowed(delivery.due, calendar: calendar) == delivery.due,
+          reminder.appointment.map({ delivery.due < $0.plannedAt }) ?? true,
           careReminderIsCurrent(reminder, archive: archive, now: now) else { throw Failure.stale }
     guard reminder.submittedFor != delivery.due else { return }
     reminder.submittedFor = delivery.due
@@ -2157,8 +2167,8 @@ struct GalaxySSIHealthRecords {
 
   func localCareFollowUpTarget(token: UUID, now: Date) throws -> GalaxySSIHealthCareFollowUp.Reminder? {
     let archive = try load()
-    guard Self.careFollowUpPreferences(archive) != nil,
-          let reminder = archive.localCareFollowUps?.values.first(where: { $0.id == token }),
+    guard let reminder = archive.localCareFollowUps?.values.first(where: { $0.id == token }),
+          Self.followUpPreferences(reminder, archive: archive) != nil,
           reminder.submittedFor.map({ $0 <= now.addingTimeInterval(2) }) == true,
           careReminderIsCurrent(reminder, archive: archive, now: now) else { return nil }
     if let visit = reminder.journalReview?.visit,
@@ -2175,6 +2185,7 @@ struct GalaxySSIHealthRecords {
 
   private func careReminderIsCurrent(_ reminder: GalaxySSIHealthCareFollowUp.Reminder, archive: Archive,
       now: Date, verifyOriginal: Bool = true) -> Bool {
+    if reminder.appointment != nil { return appointmentReminderIsCurrent(reminder, archive: archive, now: now) }
     if reminder.journalReview != nil { return visitReviewIsCurrent(reminder, archive: archive) }
     return careFollowUpIsCurrent(concernID: reminder.concernID, metric: reminder.metric, actionID: reminder.actionID,
       archive: archive, now: now, verifyOriginal: verifyOriginal)
@@ -3415,15 +3426,26 @@ struct GalaxySSIHealthRecords {
   }
 
   func persistModelAttention(_ archive: Archive) throws { try persist(archive, notify: false) }
+  func persistAppointmentReminder(_ archive: Archive) throws { try persist(archive) }
 
   private func persist(_ archive: Archive, notify: Bool = true) throws {
     var archive = archive
     if let reminders = archive.localCareFollowUps, !reminders.isEmpty {
       let now = Date()
       let enabled = Self.careFollowUpPreferences(archive) != nil
-      archive.localCareFollowUps = reminders.filter {
-        enabled && $0.key == $0.value.actionID && careReminderIsCurrent($0.value, archive: archive, now: now,
-          verifyOriginal: false)
+      archive.localCareFollowUps = reminders.reduce(into: [:]) { kept, pair in
+        let (key, value) = pair
+        guard key == value.actionID else { return }
+        if let ref = value.appointment {
+          var current = value
+          if current.appointmentState != .cancelled, current.appointmentState != .expired,
+             !appointmentReminderIsCurrent(current, archive: archive, now: now) {
+            current.appointmentState = ref.plannedAt <= now ? .expired : .cancelled
+          }
+          kept[key] = current
+        } else if enabled, careReminderIsCurrent(value, archive: archive, now: now, verifyOriginal: false) {
+          kept[key] = value
+        }
       }
     }
     if archive.localCareAllowed == true, !(archive.localCare?.current.values.contains { concern in

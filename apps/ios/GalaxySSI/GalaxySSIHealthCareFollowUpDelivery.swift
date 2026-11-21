@@ -17,6 +17,7 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
     let owner: String
     let metric: GalaxySSIHealthMetric
     let visit: UUID?
+    var appointment = false
   }
 
   func body(content: Content) -> some View {
@@ -37,6 +38,9 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
       }
       .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthCareFollowUp.openNotification)) { _ in
         generation = UUID()
+      }
+      .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecordingReminders.changed)) {
+        if $0.object as? String == store.profile.identityFingerprint { generation = UUID() }
       }
       .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
         generation = UUID()
@@ -63,13 +67,25 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
         generation = UUID()
       }
       .sheet(item: $destination) { route in
-        if let visit = route.visit {
+        if route.appointment, let visit = route.visit {
+          appointment(route, visit: visit)
+        } else if let visit = route.visit {
           GalaxySSIHealthVisitJournalView(records: .init(owner: route.owner, secrets: store.secrets),
             concern: route.concern, metric: route.metric, visit: visit)
         } else {
           followUps(route)
         }
       }
+  }
+
+  private func appointment(_ route: Destination, visit: UUID) -> some View {
+    NavigationView {
+      GalaxySSIHealthEncounterView(records: .init(owner: route.owner, secrets: store.secrets), concern: route.concern,
+        metric: route.metric, entryID: visit)
+        .toolbar { ToolbarItem(placement: .cancellationAction) {
+          Button(GalaxySSILocalization.string("galaxyssi.common.close", fallback: "Close", language: language)) { destination = nil }
+        } }
+    }.navigationViewStyle(.stack).environmentObject(store)
   }
 
   private func followUps(_ route: Destination) -> some View {
@@ -101,6 +117,11 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
     let delivered = await center.deliveredNotifications()
     guard !Task.isCancelled, store.profile.identityFingerprint == owner,
           UIApplication.shared.isProtectedDataAvailable else { return }
+    do {
+      let expiry = try records.appointmentCleanupDeadline()
+      if let expiry { maintenanceDeadline = maintenanceDeadline.map { min($0, expiry) } ?? expiry }
+      GalaxySSIHealthAppointmentBackground.schedule(expiry)
+    } catch { /* Keep the prior cleanup request when protected state cannot be read. */ }
     let prefix = GalaxySSIHealthCareFollowUp.prefix
     let ours = scheduled.filter { $0.identifier.hasPrefix(prefix) }
     let visible = delivered.map(\.request.identifier).filter { $0.hasPrefix(prefix) }
@@ -118,6 +139,11 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
     let desired = Set(selected.map(\.reminder.identifier))
     center.removePendingNotificationRequests(withIdentifiers: ours.map(\.identifier).filter { !desired.contains($0) })
     center.removeDeliveredNotifications(withIdentifiers: visible.filter { !plan.keepDelivered.contains($0) })
+    for id in visible where plan.keepDelivered.contains(id) {
+      if let token = UUID(uuidString: String(id.dropFirst(prefix.count))) {
+        try? records.markAppointmentDelivered(token: token, now: now)
+      }
+    }
     guard scene == .active else { return }
     openPending(records: records, permitted: GalaxySSIHealthReviewDelivery.permitted(authorized), now: now)
     for delivery in selected {
@@ -131,7 +157,9 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
       let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, delivery.due.timeIntervalSinceNow), repeats: false)
       do {
         if pending[id].map({ abs($0.timeIntervalSince(delivery.due)) < 1 }) != true {
-          try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+          let request = delivery.reminder.appointment != nil ? GalaxySSIHealthAppointmentNotifications.request(delivery, language: language)
+            : UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+          try await center.add(request)
         }
         guard store.profile.identityFingerprint == owner, UIApplication.shared.isProtectedDataAvailable
         else { throw GalaxySSIHealthRecords.Failure.stale }
@@ -154,6 +182,6 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
     guard permitted, let token = UUID(uuidString: raw),
           let reminder = try? records.localCareFollowUpTarget(token: token, now: now) else { return }
     destination = .init(id: reminder.id, concern: reminder.concernID, owner: records.owner, metric: reminder.metric,
-      visit: reminder.journalReview?.visit)
+      visit: reminder.appointment?.visit ?? reminder.journalReview?.visit, appointment: reminder.appointment != nil)
   }
 }
