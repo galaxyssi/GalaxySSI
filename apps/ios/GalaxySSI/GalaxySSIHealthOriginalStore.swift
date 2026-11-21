@@ -151,7 +151,9 @@ struct GalaxySSIHealthOriginalStore {
         else if archive.originalIndex?.originals[original.id] == nil { temporary.insert(original.id) }
         archive.reviewOnlyReportOriginals = temporary
         var jobs = archive.recognitionJobs ?? []
-        if let job = jobs.first(where: { $0.original == original }) { chosen = job; return }
+        if let job = jobs.first(where: { $0.original == original && $0.phase != .cancelled && $0.captureSource?.mode != .device }) {
+          chosen = job; return
+        }
         guard jobs.count < GalaxySSIHealthRecognitionJobs.maximumJobs else { throw Failure.limit }
         let job = GalaxySSIHealthRecognitionJobs.Job(original: original, addedAt: Date(), pageCount: 1)
         jobs.insert(job, at: 0); archive.recognitionJobs = jobs; chosen = job

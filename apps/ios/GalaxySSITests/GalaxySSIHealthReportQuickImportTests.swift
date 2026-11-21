@@ -190,6 +190,29 @@ final class GalaxySSIHealthReportQuickImportTests: XCTestCase {
     XCTAssertTrue(try f.originals.list().originals.isEmpty)
   }
 
+  func testExplicitReimportCreatesNewJobAfterRetainedJobCancellation() throws {
+    let f = try Fixture()
+    let old = try f.job()
+    try f.records.cancelRecognitionJob(id: old.id, expected: old.version)
+    let next = try f.originals.storeReportImage(f.image, name: "again.png", retainOriginal: true)
+    XCTAssertNotEqual(next.id, old.id)
+    XCTAssertEqual(next.phase, .queued)
+    XCTAssertEqual(try f.originals.list().originals.count, 1)
+    XCTAssertEqual(try f.records.load().recognitionJobs?.first(where: { $0.id == old.id })?.phase, .cancelled)
+  }
+
+  func testExplicitFileReportImportDoesNotReuseDeviceModeJob() throws {
+    let f = try Fixture()
+    var archive = try f.records.load()
+    archive.recognitionJobs?[0].captureSource = .init(batchID: UUID(), mode: .device, order: 1, cropRevision: nil)
+    try f.records.persistQuickReport(archive)
+    let next = try f.originals.storeReportImage(f.image, name: "report.png", retainOriginal: true)
+    XCTAssertNotEqual(next.id, f.id)
+    XCTAssertNil(next.captureSource)
+    XCTAssertEqual(next.phase, .queued)
+    XCTAssertEqual(try f.records.load().recognitionJobs?.first(where: { $0.id == f.id })?.captureSource?.mode, .device)
+  }
+
   func testFastingSchemaIsOptionalForLegacyButInvalidLabelsAreRejected() throws {
     let object: [String: Any] = ["rows": [row()], "collected": "", "partial": false]
     let legacy = try GalaxySSIHealthReportVision.parse(String(decoding: JSONSerialization.data(withJSONObject: object), as: UTF8.self))
