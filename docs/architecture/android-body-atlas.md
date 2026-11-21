@@ -1307,3 +1307,19 @@ secretion, ductal salt recovery, liquid on skin and evaporation. A drier
 and a more humid case start with equal visible sweat. The comparison is
 qualitative and independent of the existing simulation; it cannot predict
 core temperature, fluid loss or personal glucose.
+
+## Neuronal Transmission, Myelin, And Thyroid Feedback
+
+The synapse lesson distinguishes a voltage signal along the axon from
+chemical signaling across the cleft. In the selected excitatory example,
+calcium entry precedes vesicle fusion and transmitter release. A separate
+myelin lesson compares oligodendrocytes and Schwann cells, highlights
+regeneration at exposed nodes, and shows local current inside the axon
+rather than a jump through extracellular space.
+
+The thyroid lesson uses the anterior pituitary portal route for TRH and
+bloodstream transport for TSH and thyroid hormones. The final stage shows
+negative feedback to two upstream sites. The lessons do not compute
+clinical hormone values or an absolute conduction speed. The original
+endocrine pathway, potassium model, structure plates, and personal
+measurement flow are unchanged.

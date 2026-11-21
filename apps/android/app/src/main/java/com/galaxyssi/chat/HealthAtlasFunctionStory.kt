@@ -254,6 +254,60 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    SYNAPTIC_SIGNAL(
+        setOf("nervous", "brain", "spinal-cord", "cell-neuron", "tissue-central-nervous"),
+        R.string.health_atlas_signal_neuro_title,
+        R.string.health_atlas_signal_neuro_scope,
+        listOf(
+            R.string.health_atlas_signal_neuro_inputs to R.string.health_atlas_signal_neuro_inputs_caption,
+            R.string.health_atlas_signal_neuro_travel to R.string.health_atlas_signal_neuro_travel_caption,
+            R.string.health_atlas_signal_neuro_calcium to R.string.health_atlas_signal_neuro_calcium_caption,
+            R.string.health_atlas_signal_neuro_release to R.string.health_atlas_signal_neuro_release_caption,
+            R.string.health_atlas_signal_neuro_response to R.string.health_atlas_signal_neuro_response_caption,
+        ),
+        listOf(
+            R.string.health_atlas_signal_neuro_calcium_source to "https://pubmed.ncbi.nlm.nih.gov/11160426/",
+            R.string.health_atlas_signal_neuro_clearance_source to "https://pmc.ncbi.nlm.nih.gov/articles/PMC6725141/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    MYELIN_SIGNAL(
+        setOf("spinal-nerves", "peripheral-nerves", "cell-schwann-cell", "cell-oligodendrocyte"),
+        R.string.health_atlas_signal_myelin_title,
+        R.string.health_atlas_signal_myelin_scope,
+        listOf(
+            R.string.health_atlas_signal_myelin_central to R.string.health_atlas_signal_myelin_central_caption,
+            R.string.health_atlas_signal_myelin_peripheral to R.string.health_atlas_signal_myelin_peripheral_caption,
+            R.string.health_atlas_signal_myelin_nodes to R.string.health_atlas_signal_myelin_nodes_caption,
+            R.string.health_atlas_signal_myelin_relay to R.string.health_atlas_signal_myelin_relay_caption,
+            R.string.health_atlas_signal_myelin_compare to R.string.health_atlas_signal_myelin_compare_caption,
+        ),
+        listOf(
+            R.string.health_atlas_signal_myelin_source to "https://pubmed.ncbi.nlm.nih.gov/18144923/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    THYROID_FEEDBACK(
+        setOf("thyroid-gland", "hypothalamus", "pituitary-gland", "cell-thyrotroph", "cell-thyroid-follicular-cell"),
+        R.string.health_atlas_signal_thyroid_title,
+        R.string.health_atlas_signal_thyroid_scope,
+        listOf(
+            R.string.health_atlas_signal_thyroid_trh to R.string.health_atlas_signal_thyroid_trh_caption,
+            R.string.health_atlas_signal_thyroid_tsh to R.string.health_atlas_signal_thyroid_tsh_caption,
+            R.string.health_atlas_signal_thyroid_secrete to R.string.health_atlas_signal_thyroid_secrete_caption,
+            R.string.health_atlas_signal_thyroid_convert to R.string.health_atlas_signal_thyroid_convert_caption,
+            R.string.health_atlas_signal_thyroid_feedback to R.string.health_atlas_signal_thyroid_feedback_caption,
+        ),
+        listOf(
+            R.string.health_atlas_signal_thyroid_trh_source to "https://pubmed.ncbi.nlm.nih.gov/828584/",
+            R.string.health_atlas_signal_thyroid_conversion_source to "https://pubmed.ncbi.nlm.nih.gov/6841556/",
+            R.string.health_atlas_signal_thyroid_feedback_source to "https://pubmed.ncbi.nlm.nih.gov/815265/",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -264,6 +318,9 @@ internal enum class HealthAtlasFunctionStory(
         ANTIBODY_RESPONSE -> R.string.health_atlas_lesson_antibodies
         INSULIN_SECRETION -> R.string.health_atlas_lesson_insulin
         GLUCAGON_RESPONSE -> R.string.health_atlas_home_lesson_glucagon
+        SYNAPTIC_SIGNAL -> R.string.health_atlas_signal_lesson_neuro
+        MYELIN_SIGNAL -> R.string.health_atlas_signal_lesson_myelin
+        THYROID_FEEDBACK -> R.string.health_atlas_signal_lesson_thyroid
         else -> title
     }
 
@@ -271,6 +328,8 @@ internal enum class HealthAtlasFunctionStory(
         INSULIN_SECRETION -> listOf("tissue-skeletal-muscle" to GLUCOSE, "cell-pancreatic-alpha-cell" to GLUCAGON_RESPONSE)
         GLUCAGON_RESPONSE -> listOf("cell-pancreatic-beta-cell" to INSULIN_SECRETION)
         GLUCOSE -> listOf("cell-pancreatic-beta-cell" to INSULIN_SECRETION)
+        SYNAPTIC_SIGNAL -> listOf("cell-oligodendrocyte" to MYELIN_SIGNAL)
+        MYELIN_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
         else -> emptyList()
     }
 
@@ -289,6 +348,7 @@ internal enum class HealthAtlasFunctionStory(
         LYMPH_RETURN, ANTIBODY_RESPONSE -> HealthAtlasLymphImmuneStoryView(context, this)
         INSULIN_SECRETION -> HealthAtlasInsulinStoryView(context)
         GLUCAGON_RESPONSE, SWEAT_COOLING -> HealthAtlasHomeostasisStoryView(context, this)
+        SYNAPTIC_SIGNAL, MYELIN_SIGNAL, THYROID_FEEDBACK -> HealthAtlasSignalStoryView(context, this)
     }
 
     companion object {
@@ -298,7 +358,9 @@ internal enum class HealthAtlasFunctionStory(
             val primary = forId(id) ?: return emptyList()
             return when (id) {
                 "pancreas" -> listOf(primary, INSULIN_SECRETION, GLUCAGON_RESPONSE)
-                "endocrine", "pancreatic-islets" -> listOf(primary, GLUCAGON_RESPONSE)
+                "endocrine" -> listOf(primary, GLUCAGON_RESPONSE, THYROID_FEEDBACK)
+                "pancreatic-islets" -> listOf(primary, GLUCAGON_RESPONSE)
+                "nervous", "brain", "spinal-cord", "cell-neuron", "tissue-central-nervous" -> listOf(primary, MYELIN_SIGNAL)
                 "tissue-skeletal-muscle" -> listOf(primary, MUSCLE_MOTION)
                 "immune" -> listOf(primary, LYMPH_RETURN)
                 else -> listOf(primary)

@@ -223,9 +223,10 @@ class HealthAtlasFunctionStoryTest {
         for (id in listOf("cell-pancreatic-alpha-cell", "liver", "cell-hepatocyte")) {
             assertEquals(glucagon, HealthAtlasFunctionStory.forId(id))
         }
-        for (id in listOf("pancreatic-islets", "endocrine")) {
-            assertEquals(listOf(HealthAtlasFunctionStory.INSULIN_SECRETION, glucagon), HealthAtlasFunctionStory.choicesForId(id))
-        }
+        assertEquals(listOf(HealthAtlasFunctionStory.INSULIN_SECRETION, glucagon),
+            HealthAtlasFunctionStory.choicesForId("pancreatic-islets"))
+        assertEquals(listOf(HealthAtlasFunctionStory.INSULIN_SECRETION, glucagon, HealthAtlasFunctionStory.THYROID_FEEDBACK),
+            HealthAtlasFunctionStory.choicesForId("endocrine"))
         assertEquals(listOf(HealthAtlasFunctionStory.DIGESTION), HealthAtlasFunctionStory.choicesForId("gallbladder"))
         for (id in listOf("skin", "sweat-glands", "cell-sweat-gland-secretory-cell")) {
             assertEquals(sweat, HealthAtlasFunctionStory.forId(id))
@@ -244,6 +245,34 @@ class HealthAtlasFunctionStoryTest {
             assertTrue(motion.glycogenRemaining(now) in 0f..1f)
             assertTrue(motion.glycogenRemaining(now) < motion.glycogenRemaining(previous))
         }
+    }
+
+    @Test fun axonAndThyroidStoriesKeepSeparateOwnersAndOrderedMotion() {
+        val synapse = HealthAtlasFunctionStory.SYNAPTIC_SIGNAL
+        val myelin = HealthAtlasFunctionStory.MYELIN_SIGNAL
+        val thyroid = HealthAtlasFunctionStory.THYROID_FEEDBACK
+        assertEquals(listOf(synapse, myelin), HealthAtlasFunctionStory.choicesForId("cell-neuron"))
+        assertEquals(listOf(synapse, myelin), HealthAtlasFunctionStory.choicesForId("nervous"))
+        assertEquals(listOf(myelin), HealthAtlasFunctionStory.choicesForId("cell-oligodendrocyte"))
+        assertEquals(listOf(myelin), HealthAtlasFunctionStory.choicesForId("cell-schwann-cell"))
+        assertEquals(listOf(thyroid), HealthAtlasFunctionStory.choicesForId("cell-thyrotroph"))
+        assertEquals(listOf(thyroid), HealthAtlasFunctionStory.choicesForId("cell-thyroid-follicular-cell"))
+        assertNull(HealthAtlasFunctionStory.forId("cell-thyroid-parafollicular-cell"))
+        assertNull(HealthAtlasFunctionStory.forId("parathyroid-glands"))
+        val motion = HealthAtlasSignalMotion
+        assertEquals(0f, motion.axonTravel(0f, true), 0f)
+        assertEquals(0f, motion.axonTravel(0f, false), 0f)
+        assertEquals(1f, motion.upstreamDrive(0f), 0f)
+        for (frame in 1..100) {
+            val t = frame / 100f
+            assertTrue(motion.axonTravel(t, true) > motion.axonTravel(t, false))
+            assertTrue(motion.upstreamDrive(t) < motion.upstreamDrive((frame - 1) / 100f))
+            for (index in 0..4) {
+                assertTrue(motion.synapticRelease(t, index) in 0f..1f)
+                if (t <= .35f) assertEquals(0f, motion.synapticRelease(t, index), 0f)
+            }
+        }
+        assertTrue(motion.synapticRelease(.61f, 0) > motion.synapticRelease(.61f, 3))
     }
 
     @Test fun allChaptersScrubToTheirOwnBoundariesAndRejectInvalidState() = HealthAtlasFunctionStory.entries.forEach { story ->

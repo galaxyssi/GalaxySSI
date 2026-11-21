@@ -430,6 +430,53 @@ class HealthAtlasFunctionStoryDeviceTest {
         } finally { clearHealthOverviewFixture(context, fixture) }
     }
 
+    @Test fun nerveAndThyroidAnimationsKeepTheirAnatomyAndQuantitativeModes() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<EditText>("atlas-search").setText("nervous")
+                    activity.find<View>("atlas-entry-nervous").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-synaptic-signal-art")
+                    activity.find<View>("atlas-hotspot-spinal-cord")
+                    repeat(2) { activity.find<View>("atlas-function-next").performClick() }
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    activity.find<View>("atlas-function-myelin-signal-art")
+                    repeat(3) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_signal_myelin_relay_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-function-lesson-0").performClick()
+                    assertEquals(.4f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.find<View>("atlas-physiology-outside")
+                    activity.onBackPressed()
+
+                    activity.find<View>("atlas-tab-2").performClick()
+                    activity.find<EditText>("atlas-search").setText("thyroid-gland")
+                    activity.find<View>("atlas-entry-thyroid-gland").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-thyroid-feedback-art")
+                    activity.find<View>("atlas-hotspot-cell-thyroid-follicular-cell")
+                    repeat(4) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_signal_thyroid_feedback_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.find<View>("atlas-endocrine-path")
+                    activity.find<android.widget.SeekBar>("atlas-physiology-feedback-gain").progress = 200
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.8f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    assertEquals(200, activity.find<android.widget.SeekBar>("atlas-physiology-feedback-gain").progress)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
     @Test fun sweatAnimationKeepsThePoreHotspotAndTheSeparateEccrineSimulation() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
@@ -491,6 +538,16 @@ class HealthAtlasFunctionStoryDeviceTest {
             functionStory = HealthAtlasFunctionStory.GLUCAGON_RESPONSE)
         assertTrue(counter.contains(context.getString(R.string.health_atlas_home_glucagon_story_glycogen_caption)))
         assertFalse(counter.contains(context.getString(R.string.health_atlas_insulin_story_fusion_caption)))
+        val neuron = requireNotNull(atlas["cell-neuron"])
+        val myelin = HealthAtlasAgentContext.prompt(context, atlas, neuron, functionPhase = .63f,
+            functionStory = HealthAtlasFunctionStory.MYELIN_SIGNAL)
+        assertTrue(myelin.contains(context.getString(R.string.health_atlas_signal_myelin_relay_caption)))
+        assertFalse(myelin.contains(context.getString(R.string.health_atlas_signal_neuro_release_caption)))
+        val endocrine = requireNotNull(atlas["endocrine"])
+        val thyroid = HealthAtlasAgentContext.prompt(context, atlas, endocrine, functionPhase = .86f,
+            functionStory = HealthAtlasFunctionStory.THYROID_FEEDBACK)
+        assertTrue(thyroid.contains(context.getString(R.string.health_atlas_signal_thyroid_feedback_caption)))
+        assertFalse(thyroid.contains(context.getString(R.string.health_atlas_insulin_story_blood_caption)))
         assertFalse(HealthAtlasAgentContext.prompt(context, atlas, beta, functionPhase = .91f,
             functionStory = HealthAtlasFunctionStory.GLUCOSE).contains(glucoseSource))
         assertFalse(HealthAtlasAgentContext.prompt(context, atlas, adipocyte, topic = HealthAtlasResearchTopic.DRUGS,
