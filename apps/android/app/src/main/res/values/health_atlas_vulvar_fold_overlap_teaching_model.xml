@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vulvar_fold_overlap_title">Vulvar fold overlap (model)</string>
+    <string name="health_atlas_vulvar_fold_overlap_angle">Model outer-flap angle</string>
+    <string name="health_atlas_vulvar_fold_overlap_length">Outer flap length / reference span</string>
+    <string name="health_atlas_vulvar_fold_overlap_companion">Outer flap projected reach: %1$s%% of the reference span</string>
+    <string name="health_atlas_vulvar_fold_overlap_formula">On a reference line from 0 to 1, the fixed inner flap spans 0.25 to 0.75. The outer flap starts at 0. Its projected reach is P = L * cos(angle), where L is its length relative to the reference span and the angle is measured from the line. The plot shows the percentage of the inner flap covered in projection: 100 * (P - 0.25) / 0.50, limited to the range 0 to 100.</string>
+    <string name="health_atlas_vulvar_fold_overlap_scope">The labia majora provide outer covering. The labia minora are distinct inner folds that border and help protect the vestibule. The two flaps are hypothetical: projected overlap does not represent tissue motion, contact, or degree of protection. The settings and results do not describe actual dimensions, pressure, sensitivity, or individual appearance, and cannot support clinical inference.</string>
+</resources>
