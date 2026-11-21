@@ -99,9 +99,9 @@ class HealthAtlasTissueContextDeviceTest {
         val chinese = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
         val atlas = HealthBodyAtlas.load(english)
         val plates = HealthAtlasTissueContextPlates.all
-        assertEquals(31, plates.size)
-        assertEquals(76, plates.sumOf { it.features.size })
-        assertEquals(10, plates.sumOf { it.markers.size })
+        assertEquals(42, plates.size)
+        assertEquals(124, plates.sumOf { it.features.size })
+        assertEquals(17, plates.sumOf { it.markers.size })
         for (plate in plates) {
             val owner = requireNotNull(plate.owner)
             assertNotNull(atlas[owner])
@@ -235,6 +235,88 @@ class HealthAtlasTissueContextDeviceTest {
                 (it.view("health-page-title") as TextView).text)
             it.onBackPressed()
             assertNotNull(it.view("atlas-feature-hypothalamus-region"))
+        }
+    }
+
+    @Test fun ribsDefaultToTheDetailAndRetainTheSkeletonContext() = native { scenario ->
+        assertEquals(listOf("ribs", "skeletal"), HealthAtlasPlates.viewsForId("ribs").map { it.owner })
+        scenario.onActivity { activity ->
+            activity.open("ribs")
+            assertNotNull(activity.view("atlas-feature-ribs-posterior-joint"))
+            assertNotNull(activity.view("atlas-feature-ribs-floating-tip"))
+        }
+        capture("rib-attachments", scenario.localized(R.string.health_atlas_ribs_attachments_plate_caption))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-thoracic-frame-art"))
+            activity.view("atlas-related-lesson-lungs").performClick()
+            activity.onBackPressed()
+            assertNotNull(activity.view("atlas-function-thoracic-frame-art"))
+        }
+    }
+
+    @Test fun pinealCutawayAndNightSignalDoNotReplaceTheHypothalamusPage() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("pineal-gland")
+            assertNotNull(activity.view("atlas-feature-pineal-plate-body"))
+            assertNotNull(activity.view("atlas-feature-pineal-third-ventricle"))
+            assertNull(activity.window.decorView.tagged("atlas-feature-hypothalamus-region"))
+        }
+        capture("pineal-sagittal", scenario.localized(R.string.health_atlas_pineal_plate_caption))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-pineal-dark-signal-art"))
+        }
+    }
+
+    @Test fun cartilageAndJointUseDistinctCutawaysAndCartilageSimulatesCompression() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("cartilage")
+            assertNotNull(activity.view("atlas-feature-cartilage-articular-surface"))
+            assertNotNull(activity.view("atlas-hotspot-cell-chondrocyte"))
+        }
+        capture("cartilage-overview", scenario.localized(R.string.health_atlas_cartilage_overview_plate_caption))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-3").performClick()
+            assertNotNull(activity.view("atlas-cartilage-compression"))
+            activity.onBackPressed()
+            activity.open("joints")
+            assertNotNull(activity.view("atlas-feature-synovial-joint-cavity"))
+            assertNotNull(activity.view("atlas-hotspot-tissue-hyaline-cartilage"))
+        }
+        capture("synovial-joint", scenario.localized(R.string.health_atlas_synovial_joint_plate_caption))
+    }
+
+    @Test fun biliaryPlateAndCellPlaybackAreAvailableFromTheSameEntry() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("biliary-tract")
+            assertNotNull(activity.view("atlas-feature-biliary-common-bile-duct"))
+            assertNotNull(activity.view("atlas-feature-biliary-major-papilla"))
+        }
+        capture("biliary-tract", scenario.localized(R.string.health_atlas_biliary_tract_plate_caption))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-1").performClick()
+            activity.view("atlas-function-lesson-1").performClick()
+            assertNotNull(activity.view("atlas-function-cholangiocyte-bile-art"))
+        }
+    }
+
+    @Test fun vesselComparisonLinksToAnArteryWithItsOwnWallLayers() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("blood-vessels")
+            assertNotNull(activity.view("atlas-hotspot-veins"))
+            assertNotNull(activity.view("atlas-hotspot-capillaries"))
+        }
+        capture("vessel-comparison", scenario.localized(R.string.health_atlas_vessel_comparison_caption))
+        scenario.onActivity { activity ->
+            activity.view("atlas-hotspot-arteries").performClick()
+            for (id in listOf("outer-layer", "middle-layer", "inner-layer", "lumen"))
+                assertNotNull(activity.view("atlas-feature-artery-$id"))
+        }
+        capture("artery-wall", scenario.localized(R.string.health_atlas_artery_layers_caption))
+        scenario.onActivity { activity ->
+            activity.onBackPressed()
+            assertNotNull(activity.view("atlas-hotspot-arteries"))
         }
     }
 

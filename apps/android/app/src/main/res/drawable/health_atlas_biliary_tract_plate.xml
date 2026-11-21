@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+
+    <!-- Anterior overview with a translucent liver margin and pancreatic head. -->
+    <path android:strokeColor="#9E98A9" android:strokeWidth="1.2"
+        android:pathData="M35,56 C54,33 95,23 137,22 C162,21 175,34 192,34 C227,34 257,22 306,34 C330,40 332,53 312,66 C281,86 235,85 205,88 C187,89 176,98 157,103 C120,115 96,113 55,116 C30,116 17,104 20,85 C22,73 26,65 35,56 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="100" android:startY="21" android:endX="171" android:endY="112">
+                <item android:offset="0" android:color="#F1E9ED" />
+                <item android:offset="0.48" android:color="#E3D6E3" />
+                <item android:offset="1" android:color="#C7BACE" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#FFF9FA" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M32,74 C44,52 85,33 136,29 M198,41 C232,41 271,32 295,39" />
+    <path android:strokeColor="#A393AC" android:strokeAlpha="0.65" android:strokeWidth="1.1"
+        android:strokeLineCap="round"
+        android:pathData="M168,39 C173,54 172,68 165,80 M29,98 C46,111 82,98 110,100 M225,78 C263,72 291,75 310,58" />
+    <path android:fillColor="#B09AB5" android:fillAlpha="0.25"
+        android:pathData="M26,102 C62,112 105,94 135,96 C165,97 178,82 203,81 C240,79 279,79 310,67 C277,87 224,83 204,89 C186,90 176,99 157,103 C120,115 96,113 55,116 C40,116 30,111 26,102 Z" />
+
+    <path android:strokeColor="#B5A7A5" android:strokeWidth="1.1"
+        android:pathData="M77,188 C92,178 105,187 120,179 C130,170 144,177 155,172 C171,164 185,170 200,165 C211,160 218,169 227,168 C238,167 247,173 252,184 C264,190 263,203 256,216 C248,228 232,235 219,229 C206,232 194,225 183,225 C177,226 164,222 151,219 C134,222 125,211 116,213 C98,214 97,203 85,201 C76,201 71,195 77,188 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="167" android:startY="166" android:endX="173" android:endY="229">
+                <item android:offset="0" android:color="#F6ECE7" />
+                <item android:offset="0.62" android:color="#EADBD7" />
+                <item android:offset="1" android:color="#D7C1C1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#B3999E" android:strokeAlpha="0.61" android:strokeWidth="1.15"
+        android:strokeLineCap="round"
+        android:pathData="M104,185q-6,6 -2,12 M129,180q-5,5 -3,12 M153,175q-7,6 -6,13 M177,171q-5,5 -5,13 M204,171q-6,6 -5,12 M90,200q7,-5 14,-2 M136,211q4,-7 9,-6 M166,217q-3,-6 4,-8 M192,222q-1,-7 5,-10 M222,224q-4,-5 1,-12" />
+
+    <!-- Descending duodenum in longitudinal cutaway; the upper limb overlaps the duct. -->
+    <path android:strokeColor="#917687" android:strokeWidth="46" android:strokeLineCap="round"
+        android:pathData="M144,141 C169,127 186,138 212,139 C241,139 252,140 264,154 C277,169 284,183 280,202 C276,224 261,237 235,242 C197,251 166,240 138,248" />
+    <path android:strokeColor="#C7A7AF" android:strokeWidth="43" android:strokeLineCap="round"
+        android:pathData="M144,141 C169,127 186,138 212,139 C241,139 252,140 264,154 C277,169 284,183 280,202 C276,224 261,237 235,242 C197,251 166,240 138,248" />
+    <path android:strokeColor="#E9CDD0" android:strokeWidth="35" android:strokeLineCap="round"
+        android:pathData="M144,141 C169,127 186,138 212,139 C241,139 252,140 264,154 C277,169 284,183 280,202 C276,224 261,237 235,242 C197,251 166,240 138,248" />
+    <path android:strokeColor="#F8E9E6" android:strokeWidth="24" android:strokeLineCap="round"
+        android:pathData="M144,141 C169,127 186,138 212,139 C241,139 252,140 264,154 C277,169 284,183 280,202 C276,224 261,237 235,242 C197,251 166,240 138,248" />
+    <path android:strokeColor="#FFFAF5" android:strokeWidth="1.35" android:strokeLineCap="round"
+        android:pathData="M154,124 C168,119 184,124 201,126 M237,122 Q255,122 268,135 M291,171 Q302,193 294,210 M285,228 Q276,245 251,255 M234,258 Q212,263 189,260 M178,259 Q160,257 149,262" />
+    <path android:strokeColor="#B38999" android:strokeAlpha="0.8" android:strokeWidth="1.45" android:strokeLineCap="round"
+        android:pathData="M243,129q-5,9 -3,16 M254,134q-8,6 -7,13 M264,141q-7,5 -9,11 M273,150q-7,3 -9,10 M280,160q-7,0 -12,6 M286,170q-6,-1 -13,4 M290,181q-8,-2 -12,3 M292,192q-7,-4 -13,0 M291,204q-6,-5 -13,-3 M289,214q-5,-5 -13,-5 M283,223q-5,-7 -12,-7 M276,231q-4,-8 -12,-8 M268,239q-2,-8 -11,-10 M258,246q-1,-8 -8,-13 M246,250q0,-8 -5,-13 M234,253q2,-8 -3,-13 M220,255q4,-7 -1,-13 M206,254q3,-6 -1,-12 M191,254q3,-6 -1,-12 M175,253q4,-7 -1,-13 M158,253q4,-6 0,-12" />
+
+    <!-- The pancreatic duct is context, not a separate feature; it meets the CBD at the wall. -->
+    <path android:strokeColor="#91888F" android:strokeWidth="5" android:strokeLineCap="round"
+        android:pathData="M94,195 C128,204 149,193 172,194 C207,196 232,201 253,189" />
+    <path android:strokeColor="#E9E8ED" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M94,195 C128,204 149,193 172,194 C207,196 232,201 253,189" />
+    <path android:strokeColor="#AC9CAA" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M112,184q4,7 13,14 M147,207q3,-8 10,-12 M183,183q4,7 9,12 M205,212q4,-9 13,-15" />
+
+    <!-- Gallbladder and the common hepatic/cystic junction, with a continuous lumen. -->
+    <path android:strokeColor="#517F7C" android:strokeWidth="1.35"
+        android:pathData="M119,107 C106,107 99,114 91,122 C80,131 71,145 72,155 C72,166 82,175 93,173 C108,171 118,158 120,145 C122,134 119,128 129,122 C135,118 129,108 119,107 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="86" android:startY="124" android:endX="114" android:endY="162">
+                <item android:offset="0" android:color="#D6E9CE" />
+                <item android:offset="0.50" android:color="#ABCDB6" />
+                <item android:offset="1" android:color="#6B9E96" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#ECF5DA" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M80,152 C83,143 93,128 102,122 C109,117 115,115 121,116" />
+    <path android:strokeColor="#538179" android:strokeAlpha="0.57" android:strokeWidth="1.25" android:strokeLineCap="round"
+        android:pathData="M82,161 C89,167 98,161 104,154 C113,144 110,135 116,128" />
+    <path android:strokeColor="#658C87" android:strokeWidth="5.2" android:strokeLineCap="round"
+        android:pathData="M106,52 Q120,63 139,63 M129,41 Q136,55 146,64 M239,51 Q228,59 211,68 M257,60 Q247,69 224,65" />
+    <path android:strokeColor="#CFE1CD" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M106,52 Q120,63 139,63 M129,41 Q136,55 146,64 M239,51 Q228,59 211,68 M257,60 Q247,69 224,65" />
+    <path android:strokeColor="#4F7C79" android:strokeWidth="12" android:strokeLineCap="round"
+        android:pathData="M136,63 C163,65 181,68 192,84 C206,68 216,63 239,62 M192,84 C193,93 194,96 194,102 C195,112 200,119 203,126 C206,133 208,138 209,143 M122,118 C137,110 142,124 153,120 C168,115 178,118 203,126" />
+    <path android:strokeColor="#8CB6A4" android:strokeWidth="9.2" android:strokeLineCap="round"
+        android:pathData="M136,63 C163,65 181,68 192,84 C206,68 216,63 239,62 M192,84 C193,93 194,96 194,102 C195,112 200,119 203,126 C206,133 208,138 209,143 M122,118 C137,110 142,124 153,120 C168,115 178,118 203,126" />
+    <path android:strokeColor="#E0EAD0" android:strokeWidth="4.7" android:strokeLineCap="round"
+        android:pathData="M136,63 C163,65 181,68 192,84 C206,68 216,63 239,62 M192,84 C193,93 194,96 194,102 C195,112 200,119 203,126 C206,133 208,138 209,143 M122,118 C137,110 142,124 153,120 C168,115 178,118 203,126" />
+    <path android:strokeColor="#698F87" android:strokeWidth="1.25" android:strokeLineCap="round"
+        android:pathData="M130,114q1,3 -1,5 M138,115q0,3 -2,5 M146,118q-1,3 -3,4 M155,118q-1,2 -2,5 M165,116q-1,3 -3,5 M176,116q-2,3 -3,5" />
+
+    <!-- Fade the retroduodenal segment into the foreground wall, then reveal it below. -->
+    <path android:strokeColor="#EED1D3" android:strokeAlpha="0.65" android:strokeWidth="13" android:strokeLineCap="round"
+        android:pathData="M207,136 Q209,142 211,150" />
+    <path android:strokeColor="#76938D" android:strokeAlpha="0.60" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M209,141l1.5,4 M212.5,151l1.7,4.3" />
+    <path android:strokeColor="#4C7977" android:strokeWidth="11.5" android:strokeLineCap="round"
+        android:pathData="M217,160 Q219,164 222,167 C230,176 240,182 253,189 Q261,194 269,196" />
+    <path android:strokeColor="#8BB6A6" android:strokeWidth="8.8" android:strokeLineCap="round"
+        android:pathData="M217,160 Q219,164 222,167 C230,176 240,182 253,189 Q261,194 269,196" />
+    <path android:strokeColor="#DFEAD1" android:strokeWidth="4.6" android:strokeLineCap="round"
+        android:pathData="M217,160 Q219,164 222,167 C230,176 240,182 253,189 Q261,194 269,196" />
+    <path android:strokeColor="#EAD2D2" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M212,160 Q216,156 222,158" />
+    <path android:fillColor="#EAC4C4" android:strokeColor="#A77C8C" android:strokeWidth="1.05"
+        android:pathData="M263,190 C267,189 272,192 273,195 C274,200 268,203 264,201 C266,199 265,194 263,190 Z" />
+    <path android:fillColor="#648A80" android:pathData="M270.8,196 C270.8,197 270,197.8 269,197.8 C268,197.8 267.2,197 267.2,196 C267.2,195 268,194.2 269,194.2 C270,194.2 270.8,195 270.8,196 Z" />
+</vector>

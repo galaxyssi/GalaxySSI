@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- The lateral face carries the same layers around the corner of the cut block. -->
+    <path android:strokeColor="#526A72" android:strokeWidth="1.4" android:strokeLineJoin="round"
+        android:pathData="M281,85 L319,52 L319,211 L281,243 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="281" android:startY="80" android:endX="317" android:endY="216">
+                <item android:offset="0" android:color="#A1CCC8" />
+                <item android:offset="0.62" android:color="#7298AC" />
+                <item android:offset="1" android:color="#9F9284" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#A99DAD" android:strokeColor="#68798B" android:strokeWidth="1"
+        android:pathData="M281,176 Q299,160 319,145 L319,159 Q298,175 281,191 Z" />
+    <path android:fillColor="#C6B7A5" android:strokeColor="#89796E" android:strokeWidth="1"
+        android:pathData="M281,191 Q299,174 319,159 L319,211 L281,243 Z" />
+    <path android:fillColor="#9E8C82"
+        android:pathData="M289,214 Q299,198 305,198 Q307,207 298,220 Q292,225 289,222 Z M307,186 Q313,180 315,183 Q317,190 310,196 Q307,198 307,186 Z" />
+    <path android:strokeColor="#DCCFC0" android:strokeWidth="1.1" android:strokeLineCap="round"
+        android:pathData="M287,197 Q299,183 315,173 M287,204 Q293,199 302,190 M303,218 L315,205" />
+    <path android:strokeColor="#C0DDDB" android:strokeWidth="1" android:strokeAlpha="0.65" android:strokeLineCap="round"
+        android:pathData="M286,96 Q300,81 314,71 M286,102 Q300,88 314,78 M290,163 Q295,148 291,132 M308,148 Q313,134 310,116 M298,157 Q303,143 300,128" />
+    <path android:fillColor="#6A7E9A" android:fillAlpha="0.68"
+        android:pathData="M293,108 q4,-5 6,-3 q2,3 -2,7 q-5,3 -4,-4 Z M304,118 q4,-5 6,-2 q1,4 -3,7 q-4,2 -3,-5 Z M288,145 q4,-4 5,0 q0,5 -4,8 q-3,0 -1,-8 Z M309,132 q4,-5 5,-2 q1,4 -3,9 q-4,1 -2,-7 Z" />
+
+    <!-- Joint-facing surface: a continuous, smooth cap with no enclosing membrane. -->
+    <path android:strokeColor="#5D7D83" android:strokeWidth="1.4" android:strokeLineJoin="round"
+        android:pathData="M44,91 L79,58 C141,28 239,24 319,52 L281,85 C198,58 108,63 44,91 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="138" android:startY="31" android:endX="175" android:endY="93">
+                <item android:offset="0" android:color="#B7DBD4" />
+                <item android:offset="0.55" android:color="#E4F3E9" />
+                <item android:offset="1" android:color="#B9DCD5" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#FBFFEF" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M75,70 C135,40 227,35 291,52 M106,70 C159,53 215,53 265,67" />
+    <path android:strokeColor="#80B5AD" android:strokeAlpha="0.5" android:strokeWidth="1" android:strokeLineCap="round"
+        android:pathData="M100,58 C134,44 172,40 206,40 M216,40 Q249,41 269,46 M140,63 Q164,58 191,60 M261,72 L290,78" />
+
+    <!-- Uncalcified matrix: tangential lines near the surface and deeper radial strands. -->
+    <path android:strokeColor="#5B7889" android:strokeWidth="1.35" android:strokeLineJoin="round"
+        android:pathData="M44,91 C108,63 198,58 281,85 L281,176 Q259,165 240,164 Q218,161 205,157 Q192,153 171,153 Q150,158 132,157 Q114,156 95,162 C81,166 68,166 44,175 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="156" android:startY="70" android:endX="163" android:endY="178">
+                <item android:offset="0" android:color="#DDF2EB" />
+                <item android:offset="0.34" android:color="#BCDEDC" />
+                <item android:offset="0.68" android:color="#ACC9D8" />
+                <item android:offset="1" android:color="#91A9C3" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#D7F0E8" android:fillAlpha="0.36"
+        android:pathData="M45,99 C109,77 191,69 280,93 L280,110 C205,87 115,96 45,121 Z" />
+    <path android:strokeColor="#F2FFF1" android:strokeWidth="1.55" android:strokeLineCap="round"
+        android:pathData="M47,91 C109,65 198,59 279,85 M51,98 Q101,81 143,79 M155,78 Q213,76 267,89" />
+    <path android:strokeColor="#6EA9A7" android:strokeAlpha="0.56" android:strokeWidth="0.85" android:strokeLineCap="round"
+        android:pathData="M52,105 Q72,97 91,94 M106,92 Q120,88 146,87 M156,87 C179,83 191,87 207,87 M215,87 Q238,89 262,96 M59,114 Q86,105 112,101 M132,98 Q156,94 172,96 M188,96 Q209,96 222,99 M242,101 Q259,104 272,110" />
+    <path android:strokeColor="#EDF9F2" android:strokeAlpha="0.67" android:strokeWidth="1.15" android:strokeLineCap="round"
+        android:pathData="M55,148 Q60,128 74,127 M61,161 Q66,140 76,138 M96,150 Q88,134 96,116 M104,156 Q98,142 103,132 M130,150 Q137,135 132,114 M143,145 Q150,128 145,115 M166,147 Q173,128 168,110 M177,145 Q183,131 180,121 M199,146 Q195,134 202,119 M210,153 Q206,137 214,119 M226,158 Q221,139 229,118 M252,163 Q244,146 253,124 M267,163 Q260,149 268,126" />
+    <path android:strokeColor="#6D93AA" android:strokeAlpha="0.51" android:strokeWidth="0.9" android:strokeLineCap="round"
+        android:pathData="M50,159 Q58,145 54,133 M82,123 Q76,137 81,161 M89,124 Q84,136 90,151 M121,149 Q125,138 121,133 M153,149 Q160,131 156,112 M186,147 Q192,134 189,116 M213,143 Q212,125 221,113 M235,159 Q231,144 237,131 M258,163 Q252,151 257,138 M272,167 Q267,153 275,138" />
+
+    <!-- Lacunar halos, cell bodies and nuclei, with changing profiles through depth. -->
+    <path android:fillColor="#DFD5E7" android:strokeColor="#889DB2" android:strokeWidth="0.85"
+        android:pathData="M54,108 q7,-5 15,-4 q5,2 -1,4 q-8,4 -14,2 Z M89,96 q9,-5 16,-3 q4,2 -1,4 q-10,4 -15,1 Z M124,89 q9,-4 17,-2 q4,3 -2,4 q-13,3 -15,-2 Z M160,84 q10,-3 16,0 q5,3 -2,4 q-11,2 -14,-2 Z M196,84 q10,-2 16,2 q3,3 -3,3 q-11,1 -13,-3 Z M236,90 q10,-1 16,3 q3,4 -4,3 q-10,0 -12,-4 Z M263,98 q8,0 13,4 q2,3 -4,3 q-8,-1 -9,-5 Z M68,121 a7,5 0,1 0,14,-1 a7,5 0,1 0,-14,1 Z M104,121 C105,114 111,112 117,113 C124,113 128,118 126,125 C124,131 117,133 111,131 C105,130 102,125 104,121 Z M146,105 a7,5.5 0,1 0,14,0 a7,5.5 0,1 0,-14,0 Z M177,112 a8,6.5 0,1 0,16,-1 a8,6.5 0,1 0,-16,1 Z M227,107 a8.5,6.5 0,1 0,17,3 a8.5,6.5 0,1 0,-17,-3 Z M251,122 a7,5.5 0,1 0,14,1 a7,5.5 0,1 0,-14,-1 Z M71,142 a5,7 0,1 0,10,-1 a5,7 0,1 0,-10,1 Z M72,156 a5,6 0,1 0,10,-1 a5,6 0,1 0,-10,1 Z M115,142 a5,6 0,1 0,10,-1 a5,6 0,1 0,-10,1 Z M114,153 a5,4.5 0,1 0,10,-1 a5,4.5 0,1 0,-10,1 Z M151,129 a5.5,6 0,1 0,11,-1 a5.5,6 0,1 0,-11,1 Z M152,142 a5,6 0,1 0,10,-1 a5,6 0,1 0,-10,1 Z M188,134 a5,6 0,1 0,10,0 a5,6 0,1 0,-10,0 Z M187,146 a5,5 0,1 0,10,0 a5,5 0,1 0,-10,0 Z M237,140 a5,6 0,1 0,10,0 a5,6 0,1 0,-10,0 Z M237,153 a5,6 0,1 0,10,1 a5,6 0,1 0,-10,-1 Z M261,149 a4.5,6 0,1 0,9,1 a4.5,6 0,1 0,-9,-1 Z M261,162 a4.5,5 0,1 0,9,1 a4.5,5 0,1 0,-9,-1 Z" />
+    <path android:fillColor="#AA7899"
+        android:pathData="M57,108 q4,-3 10,-2 q0,2 -9,3 Z M92,96 q5,-3 11,-2 q0,2 -10,3 Z M127,89 q6,-2 12,-1 q0,3 -11,2 Z M162,85 q6,-2 12,0 q0,2 -11,2 Z M198,85 q5,-1 11,2 q0,2 -10,1 Z M238,92 q5,-2 11,2 q1,2 -9,0 Z M266,100 q5,0 9,3 q-2,2 -8,-1 Z M71,121 a4.5,3.3 0,1 0,9,-1 a4.5,3.3 0,1 0,-9,1 Z M108,121 C109,117 113,115 117,116 C122,116 125,121 122,125 C119,130 112,129 109,126 Q107,124 108,121 Z M149,105 a4.5,3.3 0,1 0,9,0 a4.5,3.3 0,1 0,-9,0 Z M180,111 a5,4.4 0,1 0,10,0 a5,4.4 0,1 0,-10,0 Z M230,108 a5.5,4.6 0,1 0,11,2 a5.5,4.6 0,1 0,-11,-2 Z M254,122 a4,3.5 0,1 0,8,1 a4,3.5 0,1 0,-8,-1 Z M73,142 a3,5 0,1 0,6,-1 a3,5 0,1 0,-6,1 Z M74,155 a3,4 0,1 0,6,0 a3,4 0,1 0,-6,0 Z M117,142 a3,4 0,1 0,6,-1 a3,4 0,1 0,-6,1 Z M116,152 a3,3 0,1 0,6,0 a3,3 0,1 0,-6,0 Z M154,129 a3,4 0,1 0,6,-1 a3,4 0,1 0,-6,1 Z M154,141 a3,4 0,1 0,6,0 a3,4 0,1 0,-6,0 Z M190,134 a3,4 0,1 0,6,0 a3,4 0,1 0,-6,0 Z M189,146 a3,3 0,1 0,6,0 a3,3 0,1 0,-6,0 Z M239,140 a3,4 0,1 0,6,0 a3,4 0,1 0,-6,0 Z M239,153 a3,4 0,1 0,6,0 a3,4 0,1 0,-6,0 Z M263,149 a2.5,4 0,1 0,5,1 a2.5,4 0,1 0,-5,-1 Z M263,162 a2.5,3 0,1 0,5,1 a2.5,3 0,1 0,-5,-1 Z" />
+    <path android:strokeColor="#644E73" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M75,121h0.4 M114,122h2 M153,105h0.3 M185,111h0.4 M234,109h1.1 M258,123h0.2 M76,141v0.7 M77,155v0.6 M120,141v0.5 M119,152v0.4 M157,128v0.8 M157,141v0.6 M193,133v0.8 M192,146v0.4 M242,139v0.7 M242,153v0.6 M265,149v0.5 M265,163v0.4" />
+
+    <!-- Tidemark and calcified transition are separate from the dense bone plate. -->
+    <path android:strokeColor="#6A748A" android:strokeWidth="1.35"
+        android:pathData="M44,175 C68,166 81,166 95,162 Q114,156 132,157 Q150,158 171,153 Q192,153 205,157 Q218,161 240,164 Q259,165 281,176 L281,191 Q261,184 239,180 Q224,179 209,174 Q190,169 170,171 Q152,170 135,175 Q119,173 100,180 Q77,181 44,192 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="158" android:startY="151" android:endX="164" android:endY="189">
+                <item android:offset="0" android:color="#B8B8D2" />
+                <item android:offset="1" android:color="#9898B7" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#D9D6E8" android:strokeWidth="1" android:strokeLineCap="round"
+        android:pathData="M50,180 Q70,173 87,171 M97,169 Q113,164 125,165 M136,164 Q149,162 156,161 M166,160 Q183,159 196,161 M221,169 Q237,172 248,173 M256,174 Q267,178 276,182" />
+    <path android:strokeColor="#7A718E" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M65,179l2,-1 M116,168h2 M148,166h1 M177,165l1,0.5 M230,171h1 M270,183l2,0.7" />
+
+    <path android:strokeColor="#82796E" android:strokeWidth="1.4" android:strokeLineJoin="round"
+        android:pathData="M44,192 Q77,181 100,180 Q119,173 135,175 Q152,170 170,171 Q190,169 209,174 Q224,179 239,180 Q261,184 281,191 L281,243 C207,221 115,221 44,244 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="155" android:startY="170" android:endX="170" android:endY="244">
+                <item android:offset="0" android:color="#F0E2C9" />
+                <item android:offset="0.53" android:color="#DDCDB7" />
+                <item android:offset="1" android:color="#BFA999" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#F5EADB" android:fillAlpha="0.58"
+        android:pathData="M45,193 Q77,181 100,180 Q119,174 135,176 Q152,171 170,172 Q190,170 209,175 Q224,180 239,181 Q261,185 280,192 L280,207 C210,184 118,180 45,209 Z" />
+    <path android:fillColor="#A99387" android:strokeColor="#9D877A" android:strokeWidth="0.9"
+        android:pathData="M54,223 C56,215 64,211 73,210 Q81,208 78,216 Q70,227 58,230 Q52,229 54,223 Z M87,210 Q97,203 108,203 Q112,209 102,219 Q93,228 86,226 Q80,223 87,210 Z M116,219 Q124,205 135,204 Q144,205 147,215 Q141,221 130,221 Z M156,212 Q156,203 168,203 Q181,203 184,212 Q179,219 170,218 Q160,222 156,212 Z M194,213 Q196,203 205,203 Q214,204 216,215 Q219,225 210,224 Q196,222 194,213 Z M224,210 Q232,202 241,211 Q249,220 245,228 Q234,229 226,220 Z M250,222 Q251,213 260,215 Q274,220 273,232 Q269,238 258,231 Z" />
+    <path android:strokeColor="#F4E7D4" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M50,205 Q78,193 107,190 M121,189 Q154,182 189,184 M199,185 Q231,187 267,197 M79,222 Q83,215 83,207 M106,222 Q117,214 118,204 M149,220 Q152,213 148,204 M184,201 Q187,213 189,221 M215,205 Q219,208 220,219 M247,210 L250,217" />
+    <path android:strokeColor="#98897D" android:strokeAlpha="0.77" android:strokeWidth="0.9" android:strokeLineCap="round"
+        android:pathData="M53,197 Q77,188 94,187 M111,184 Q130,182 143,182 M150,180 Q172,178 189,179 M203,181 Q221,184 229,185 M238,186 Q251,187 270,195 M50,235 Q84,225 107,226 M124,226 Q141,224 154,225 M188,225 Q207,226 219,229 M233,229 Q256,232 273,238" />
+</vector>

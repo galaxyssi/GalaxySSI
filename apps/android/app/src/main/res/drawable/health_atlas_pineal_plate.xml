@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Medial right hemisphere; anterior is left. -->
+    <path android:strokeColor="#8496A9" android:strokeWidth="1.55" android:strokeLineJoin="round"
+        android:pathData="M31,119 C34,108 39,105 41,95 C44,84 54,78 60,70 C67,60 79,60 87,51 C94,43 107,44 116,38 C127,33 137,36 148,31 C160,27 170,30 181,28 C196,25 207,30 218,29 C234,29 243,36 256,38 C271,40 277,49 289,53 C303,57 310,70 320,79 C333,91 334,106 330,120 C326,135 314,148 299,152 C281,157 274,147 264,138 C252,128 240,125 230,130 C220,135 221,152 194,158 C171,156 159,167 141,178 C119,191 97,194 77,190 C60,187 54,176 57,165 C42,161 30,151 28,136 C27,129 28,124 31,119 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="92" android:startY="31" android:endX="228" android:endY="186">
+                <item android:offset="0" android:color="#F3F5F8" />
+                <item android:offset="0.55" android:color="#DCE5EC" />
+                <item android:offset="1" android:color="#A7BACB" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#F0F5F8"
+        android:pathData="M36,121 C51,91 82,77 117,66 C151,52 181,46 220,48 C258,49 294,59 319,88 C285,72 256,66 222,66 C182,66 145,73 109,89 C80,101 60,108 36,121 Z" />
+    <path android:strokeColor="#A4B4C3" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M39,143 C52,146 54,130 63,126 C75,121 72,109 84,104 C94,100 98,103 103,94 M41,111 C54,112 54,100 63,94 C76,86 83,92 90,81 M66,75 C77,76 84,72 90,65 C99,56 112,62 120,53 C127,46 133,46 142,47 M122,38 C123,42 121,49 118,54 M150,47 C159,48 167,43 173,40 C182,35 188,42 198,38 C204,36 207,34 213,32 M190,51 C201,49 207,54 217,52 C231,48 232,44 244,47 M249,39 C247,46 255,51 263,51 C273,50 279,55 284,60 M275,72 C285,75 288,70 299,77 C308,83 307,92 318,95 C325,97 328,101 331,104 M298,94 C303,101 301,109 308,115 C312,119 320,118 322,125 M291,119 C292,133 301,132 306,140 M70,168 C78,157 88,158 97,150 M82,179 C96,176 100,181 110,176 M120,179 C127,169 135,167 145,164" />
+    <path android:strokeColor="#F9FCFD" android:strokeWidth="1.25" android:strokeLineCap="round"
+        android:pathData="M45,141 C52,140 55,130 63,128 M69,92 C77,90 82,93 88,87 M101,62 C111,63 117,61 124,54 M162,49 C168,46 174,43 179,43 M224,53 C232,51 237,47 243,49 M273,54 C280,55 284,57 289,62 M304,82 C310,87 312,94 319,97 M309,116 C316,118 320,119 324,124 M73,168 C80,162 86,163 92,159" />
+    <path android:strokeColor="#9AAEBF" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M77,139 C85,123 87,103 104,90 C129,72 160,65 197,64 C225,63 257,66 275,76 C291,85 292,101 286,111" />
+
+    <!-- Cerebellar vermis and the medial brainstem. -->
+    <path android:strokeColor="#8A9EAF" android:strokeWidth="1.45"
+        android:pathData="M244,177 C250,164 265,153 278,154 C288,155 287,162 300,163 C315,163 321,170 319,177 C332,179 335,187 331,192 C340,197 338,206 333,212 C337,222 329,230 318,231 C314,240 302,243 290,238 C280,242 270,236 265,229 C256,228 248,218 249,208 C243,202 241,187 244,177 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="258" android:startY="159" android:endX="308" android:endY="239"
+                android:startColor="#E7EEF2" android:endColor="#BBCDD7" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#A1B6C3" android:strokeWidth="1.35" android:strokeLineCap="round"
+        android:pathData="M247,181 C257,167 272,162 286,165 M252,186 C270,175 292,167 314,174 M251,193 C275,182 303,177 323,184 M252,199 C273,192 306,181 330,190 M254,206 C277,201 309,190 333,199 M257,212 C282,210 309,198 332,207 M266,219 C287,219 314,206 331,215 M273,226 C292,228 316,212 330,222 M284,232 C299,233 309,226 320,226" />
+    <path android:strokeColor="#F1F6F8" android:strokeWidth="2.35" android:strokeLineCap="round"
+        android:pathData="M252,197 Q264,195 274,195 Q287,189 301,183 M273,195 Q288,198 309,194 M272,196 Q290,209 310,205 M265,196 Q279,212 293,219 M261,195 Q267,204 270,215" />
+    <path android:strokeColor="#778DA3" android:strokeWidth="1.45" android:strokeLineJoin="round"
+        android:pathData="M196,144 C205,140 217,145 223,151 C229,157 237,152 243,155 C251,157 253,163 249,168 C257,169 259,175 253,181 C243,189 237,198 237,209 C237,222 233,227 236,240 L245,253 Q232,259 218,251 C211,239 215,232 204,222 C194,216 181,211 181,198 C181,190 188,184 193,180 C200,170 194,157 196,144 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="200" android:startY="153" android:endX="231" android:endY="245"
+                android:startColor="#A7BBCF" android:endColor="#E6EDF2" />
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#B7CBD9" android:strokeColor="#8299B0" android:strokeWidth="1"
+        android:pathData="M226,161 Q230,153 240,155 Q249,155 251,162 Q250,168 242,171 Q234,171 226,167 Z" />
+    <path android:strokeColor="#E2EBF1" android:strokeWidth="1.55" android:strokeLineCap="round"
+        android:pathData="M233,160 Q239,156 245,160 M236,176 Q244,171 250,175 M189,195 Q197,187 210,186 M187,200 Q196,194 212,193 M189,205 Q203,200 215,200 M195,211 Q208,206 216,207 M215,222 Q227,222 231,217" />
+    <path android:fillColor="#EEF8FA" android:strokeColor="#7E9FB1" android:strokeWidth="1.0"
+        android:pathData="M235,216 Q238,196 250,187 Q246,196 248,204 Q247,213 239,222 L237,230 Z" />
+    <path android:strokeColor="#738EA3" android:strokeWidth="4.4" android:strokeLineCap="round"
+        android:pathData="M205,151 C213,158 216,166 223,173 Q236,186 241,203" />
+    <path android:strokeColor="#EBF9FB" android:strokeWidth="2.8" android:strokeLineCap="round"
+        android:pathData="M205,151 C213,158 216,166 223,173 Q236,186 241,203" />
+
+    <!-- Callosal arch, fornix, and the ventricular roof. -->
+    <path android:strokeColor="#869AAF" android:strokeWidth="1.45"
+        android:pathData="M93,143 C86,135 88,121 97,111 C110,94 131,83 153,78 C183,69 218,71 244,76 C267,80 281,90 282,100 C283,110 274,115 265,113 C256,111 252,104 241,101 C211,92 184,91 157,96 C134,100 117,111 110,122 C103,133 109,140 119,137 L125,134 C119,147 102,152 93,143 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="170" android:startY="73" android:endX="189" android:endY="134"
+                android:startColor="#FCFCFC" android:endColor="#CCD8E3" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="1.45" android:strokeLineCap="round"
+        android:pathData="M94,132 C95,112 125,91 156,83 C187,75 220,77 245,83 Q272,90 276,100" />
+    <path android:fillColor="#DDE5EC" android:strokeColor="#94A5B6" android:strokeWidth="1"
+        android:pathData="M113,133 Q123,115 141,106 C168,93 197,96 227,104 C238,107 245,111 251,117 C230,109 217,109 200,108 C169,102 150,110 139,120 Q126,132 126,140 Z" />
+    <path android:fillColor="#B6CDD7" android:strokeColor="#829DAC" android:strokeWidth="1"
+        android:pathData="M139,111 C172,98 210,103 251,118 C268,123 274,126 281,132 C262,128 248,128 233,125 C211,118 179,109 139,115 Z" />
+    <path android:strokeColor="#708CA8" android:strokeWidth="3.7" android:strokeLineCap="round"
+        android:pathData="M163,106 C193,104 211,108 234,114 C253,119 268,118 283,125 Q289,127 297,127" />
+    <path android:strokeColor="#C7D9E8" android:strokeWidth="1.15" android:strokeLineCap="round"
+        android:pathData="M174,105 Q204,106 234,113 Q260,119 276,122" />
+
+    <!-- The pineal recess is a small continuation of the third ventricular lumen. -->
+    <path android:fillColor="#DAEFF2" android:strokeColor="#7199A9" android:strokeWidth="1.35"
+        android:pathData="M122,121 Q132,113 150,112 C179,109 193,113 214,120 C220,122 224,124 232,125 Q228,130 219,130 Q220,136 226,140 L234,143 Q229,147 220,146 Q215,151 209,157 Q206,160 201,156 C185,155 174,149 160,152 Q142,158 130,155 L119,162 Q113,161 114,155 C114,145 115,132 122,121 Z" />
+    <path android:strokeColor="#C9DEE4" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M122,144 Q124,133 128,128 M124,149 Q137,154 152,149 M194,147 Q203,151 209,149" />
+    <path android:fillColor="#AAC2D1" android:strokeColor="#839EB0" android:strokeWidth="1.1"
+        android:pathData="M151,130 C156,125 169,125 174,130 C179,137 172,143 164,143 C155,144 146,138 151,130 Z" />
+    <path android:strokeColor="#D3E2E9" android:strokeWidth="1" android:strokeLineCap="round"
+        android:pathData="M154,132 Q161,127 169,130" />
+    <path android:fillColor="#CEAAAD" android:strokeColor="#987D88" android:strokeWidth="0.9"
+        android:pathData="M136,113 C138,109 144,111 147,109 C150,105 155,107 157,108 C160,104 165,104 169,107 C174,104 179,106 181,109 C185,106 190,108 192,111 C197,109 201,112 203,114 C207,113 212,115 214,119 C211,123 205,120 202,119 C198,121 193,118 191,116 C188,119 183,116 180,114 C176,117 172,113 169,113 C165,117 161,115 157,113 C155,117 151,116 147,114 C145,117 139,117 136,113 Z" />
+    <path android:strokeColor="#F7DDDE" android:strokeWidth="1.05" android:strokeLineCap="round"
+        android:pathData="M142,113 L145,112 M152,111 L155,110 M162,109 L166,109 M174,110 L177,110 M184,111 L188,112 M194,114 L198,114 M204,116 L208,117" />
+    <path android:fillColor="#BEC8D6" android:strokeColor="#8B9EB2" android:strokeWidth="1"
+        android:pathData="M115,155 Q123,154 130,156 C147,155 159,152 174,154 C185,155 197,160 206,159 C194,166 180,173 163,173 Q154,176 145,170 L131,166 Q128,166 125,173 L123,179 Q119,182 118,178 L118,166 Q111,168 108,164 Q108,158 115,155 Z" />
+    <path android:fillColor="#E7EDF1" android:strokeColor="#8399AA" android:strokeWidth="0.9"
+        android:pathData="M106,164 Q115,161 121,164 Q120,168 115,169 L105,170 Q101,166 106,164 Z" />
+
+    <!-- Two stalk lips bound the recess; the body projects above the tectum. -->
+    <path android:fillColor="#998DB1" android:strokeColor="#726B8D" android:strokeWidth="1"
+        android:pathData="M217,133 Q224,133 229,136 L240,137 L239,143 L233,144 Q226,141 221,140 Q218,137 217,133 Z M218,149 Q221,145 227,146 L239,143 L239,150 Q231,152 224,154 Q220,155 218,149 Z" />
+    <path android:strokeColor="#775B87" android:strokeWidth="1.55" android:strokeLineJoin="round"
+        android:pathData="M232,139 C238,135 246,135 251,138 Q260,141 264,146 Q269,151 263,154 C256,158 248,154 242,152 C237,150 234,148 232,145 Q229,142 232,139 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="239" android:startY="136" android:endX="255" android:endY="155">
+                <item android:offset="0" android:color="#EBDCF3" />
+                <item android:offset="0.55" android:color="#C8A9DC" />
+                <item android:offset="1" android:color="#A183BA" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#F5E9FC" android:strokeWidth="1.3" android:strokeLineCap="round"
+        android:pathData="M235,141 Q243,137 250,140 Q255,142 257,144" />
+    <path android:strokeColor="#A183B2" android:strokeWidth="0.85" android:strokeLineCap="round"
+        android:pathData="M241,143 Q240,146 244,148 M249,143 Q247,147 252,150 M257,147 L260,150" />
+</vector>

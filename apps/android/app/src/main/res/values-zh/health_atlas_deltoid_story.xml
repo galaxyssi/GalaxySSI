@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_deltoid_story_title">三角肌如何抬起手臂</string>
+    <string name="health_atlas_deltoid_story_choice">三角肌与手臂抬举</string>
+    <string name="health_atlas_deltoid_story_scope">这是正常抬臂动作的简化侧视图。为同时显示三部分，图中展开了部分重叠结构。各姿势仅作示意，不代表实测角度或固定的肌肉激活顺序。</string>
+    <string name="health_atlas_deltoid_story_parts">三个部分，共同止点</string>
+    <string name="health_atlas_deltoid_story_parts_caption">前部起于锁骨外侧，中部起于肩峰，后部起于肩胛冈。三部分的肌纤维汇聚于肱骨的三角肌粗隆。</string>
+    <string name="health_atlas_deltoid_story_lift">上臂向侧方抬起</string>
+    <string name="health_atlas_deltoid_story_lift_caption">手臂向侧方抬起时，三角肌中部帮助肱骨向上转动。肩袖帮助肱骨头保持在关节盂中央。三角肌各部分的相对作用随抬臂方向而变化。</string>
+    <string name="health_atlas_deltoid_story_coordinate">肩胛骨随手臂转动</string>
+    <string name="health_atlas_deltoid_story_coordinate_caption">肱骨在肩关节处抬起，肩胛骨也随之上回旋，使关节盂朝上转动。锁骨也随肩带活动。这些动作相互重叠，并随抬臂路径而变化。</string>
+    <string name="health_atlas_deltoid_story_return">手臂平稳放下</string>
+    <string name="health_atlas_deltoid_story_return_caption">放下手臂时，上臂和肩胛骨协调回位。主动控制下落速度时，抬臂肌群可以在拉长的同时继续发力，减缓重力带来的下落。</string>
+    <string name="health_atlas_deltoid_story_spinal">肩胛冈部</string>
+    <string name="health_atlas_deltoid_story_acromial">肩峰部</string>
+    <string name="health_atlas_deltoid_story_clavicular">锁骨部</string>
+    <string name="health_atlas_deltoid_story_tuberosity">三角肌粗隆</string>
+    <string name="health_atlas_deltoid_story_blade">肩胛骨</string>
+    <string name="health_atlas_deltoid_story_ref_anatomy">天普大学出版社：肩与上臂解剖</string>
+    <string name="health_atlas_deltoid_story_ref_moment_arms">三角肌及其他肩部肌肉的力臂</string>
+    <string name="health_atlas_deltoid_story_ref_coordination">抬臂时肩部的三维运动</string>
+    <string name="health_atlas_deltoid_story_ref_lowering">抬臂和放下手臂时的肩部运动与肌肉活动</string>
+</resources>

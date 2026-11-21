@@ -562,7 +562,7 @@ internal enum class HealthAtlasFunctionStory(
         showStructurePreview = true,
     ),
     CARTILAGE_LOAD(
-        setOf("tissue-hyaline-cartilage", "patella"),
+        setOf("tissue-hyaline-cartilage", "patella", "cartilage"),
         R.string.health_atlas_cartilage_story_title,
         R.string.health_atlas_cartilage_story_scope,
         listOf(
@@ -1569,6 +1569,144 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    CHOLANGIOCYTE_BILE(
+        setOf("cell-cholangiocyte"),
+        R.string.health_atlas_cholangiocyte_story_title,
+        R.string.health_atlas_cholangiocyte_story_scope,
+        listOf(
+            R.string.health_atlas_cholangiocyte_story_enter to R.string.health_atlas_cholangiocyte_story_enter_caption,
+            R.string.health_atlas_cholangiocyte_story_line to R.string.health_atlas_cholangiocyte_story_line_caption,
+            R.string.health_atlas_cholangiocyte_story_exchange to R.string.health_atlas_cholangiocyte_story_exchange_caption,
+            R.string.health_atlas_cholangiocyte_story_water to R.string.health_atlas_cholangiocyte_story_water_caption,
+            R.string.health_atlas_cholangiocyte_story_carry to R.string.health_atlas_cholangiocyte_story_carry_caption,
+        ),
+        listOf(
+            R.string.health_atlas_cholangiocyte_story_ref_exchange to "https://pubmed.ncbi.nlm.nih.gov/20041402/",
+            R.string.health_atlas_cholangiocyte_story_ref_water to "https://pubmed.ncbi.nlm.nih.gov/7528928/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    PINEAL_DARK_SIGNAL(
+        setOf("pineal-gland", "cell-pinealocyte"),
+        R.string.health_atlas_pineal_story_title,
+        R.string.health_atlas_pineal_story_scope,
+        listOf(
+            R.string.health_atlas_pineal_story_orient to R.string.health_atlas_pineal_story_orient_caption,
+            R.string.health_atlas_pineal_story_retina to R.string.health_atlas_pineal_story_retina_caption,
+            R.string.health_atlas_pineal_story_relay to R.string.health_atlas_pineal_story_relay_caption,
+            R.string.health_atlas_pineal_story_production to R.string.health_atlas_pineal_story_production_caption,
+            R.string.health_atlas_pineal_story_rhythm to R.string.health_atlas_pineal_story_rhythm_caption,
+        ),
+        listOf(
+            R.string.health_atlas_pineal_story_ref_anatomy to "https://pmc.ncbi.nlm.nih.gov/articles/PMC3675249/",
+            R.string.health_atlas_pineal_story_ref_retina to "https://pubmed.ncbi.nlm.nih.gov/11834835/",
+            R.string.health_atlas_pineal_story_ref_relay to "https://pubmed.ncbi.nlm.nih.gov/10469465/",
+            R.string.health_atlas_pineal_story_ref_aanat to "https://pubmed.ncbi.nlm.nih.gov/8770929/",
+            R.string.health_atlas_pineal_story_ref_rhythm to "https://pubmed.ncbi.nlm.nih.gov/9124558/",
+            R.string.health_atlas_pineal_story_ref_light to "https://pubmed.ncbi.nlm.nih.gov/7434030/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    THORACIC_FRAME(
+        setOf("ribs", "sternum"),
+        R.string.health_atlas_thoracic_frame_story_title,
+        R.string.health_atlas_thoracic_frame_story_scope,
+        listOf(
+            R.string.health_atlas_thoracic_frame_story_frame to R.string.health_atlas_thoracic_frame_story_frame_caption,
+            R.string.health_atlas_thoracic_frame_story_pump to R.string.health_atlas_thoracic_frame_story_pump_caption,
+            R.string.health_atlas_thoracic_frame_story_bucket to R.string.health_atlas_thoracic_frame_story_bucket_caption,
+            R.string.health_atlas_thoracic_frame_story_expand to R.string.health_atlas_thoracic_frame_story_expand_caption,
+            R.string.health_atlas_thoracic_frame_story_recoil to R.string.health_atlas_thoracic_frame_story_recoil_caption,
+        ),
+        listOf(
+            R.string.health_atlas_thoracic_frame_story_ref_anatomy to "https://openstax.org/books/anatomy-and-physiology-2e/pages/7-4-the-thoracic-cage",
+            R.string.health_atlas_thoracic_frame_story_ref_breathing to "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-3-the-process-of-breathing",
+            R.string.health_atlas_thoracic_frame_story_ref_rib_motion to "https://pubmed.ncbi.nlm.nih.gov/34013751/",
+            R.string.health_atlas_thoracic_frame_story_ref_chest_motion to "https://pmc.ncbi.nlm.nih.gov/articles/PMC9785439/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    MICROGLIA_SURVEILLANCE(
+        setOf("cell-microglia"),
+        R.string.health_atlas_microglia_story_title,
+        R.string.health_atlas_microglia_story_scope,
+        listOf(
+            R.string.health_atlas_microglia_story_reside to R.string.health_atlas_microglia_story_reside_caption,
+            R.string.health_atlas_microglia_story_survey to R.string.health_atlas_microglia_story_survey_caption,
+            R.string.health_atlas_microglia_story_approach to R.string.health_atlas_microglia_story_approach_caption,
+            R.string.health_atlas_microglia_story_engulf to R.string.health_atlas_microglia_story_engulf_caption,
+            R.string.health_atlas_microglia_story_digest to R.string.health_atlas_microglia_story_digest_caption,
+        ),
+        listOf(
+            R.string.health_atlas_microglia_story_ref_anatomy to "https://nba.uth.tmc.edu/neuroscience/m/s1/chapter08.html",
+            R.string.health_atlas_microglia_story_ref_surveillance to "https://pubmed.ncbi.nlm.nih.gov/15831717/",
+            R.string.health_atlas_microglia_story_ref_clearance to "https://pmc.ncbi.nlm.nih.gov/articles/PMC4008496/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    EPENDYMAL_FLOW(
+        setOf("cell-ependymal-cell"),
+        R.string.health_atlas_ependymal_story_title,
+        R.string.health_atlas_ependymal_story_scope,
+        listOf(
+            R.string.health_atlas_ependymal_story_line to R.string.health_atlas_ependymal_story_line_caption,
+            R.string.health_atlas_ependymal_story_beat to R.string.health_atlas_ependymal_story_beat_caption,
+            R.string.health_atlas_ependymal_story_wave to R.string.health_atlas_ependymal_story_wave_caption,
+            R.string.health_atlas_ependymal_story_drift to R.string.health_atlas_ependymal_story_drift_caption,
+            R.string.health_atlas_ependymal_story_routes to R.string.health_atlas_ependymal_story_routes_caption,
+        ),
+        listOf(
+            R.string.health_atlas_ependymal_story_ref_anatomy to "https://nba.uth.tmc.edu/neuroscience/m/s1/chapter08.html",
+            R.string.health_atlas_ependymal_story_ref_wave to "https://pmc.ncbi.nlm.nih.gov/articles/PMC10774353/",
+            R.string.health_atlas_ependymal_story_ref_flow to "https://pubmed.ncbi.nlm.nih.gov/27387952/",
+            R.string.health_atlas_ependymal_story_ref_csf to "https://openstax.org/books/anatomy-and-physiology-2e/pages/13-3-circulation-and-the-central-nervous-system",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    DELTOID_LIFT(
+        setOf("deltoid"),
+        R.string.health_atlas_deltoid_story_title,
+        R.string.health_atlas_deltoid_story_scope,
+        listOf(
+            R.string.health_atlas_deltoid_story_parts to R.string.health_atlas_deltoid_story_parts_caption,
+            R.string.health_atlas_deltoid_story_lift to R.string.health_atlas_deltoid_story_lift_caption,
+            R.string.health_atlas_deltoid_story_coordinate to R.string.health_atlas_deltoid_story_coordinate_caption,
+            R.string.health_atlas_deltoid_story_return to R.string.health_atlas_deltoid_story_return_caption,
+        ),
+        listOf(
+            R.string.health_atlas_deltoid_story_ref_anatomy to "https://temple.manifoldapp.org/read/hands-on-anatomy-c6538f97-bc62-44ae-96ff-0f1f97d6c977/section/9967a151-8e94-450d-90e8-c84aad0aca9f",
+            R.string.health_atlas_deltoid_story_ref_moment_arms to "https://pubmed.ncbi.nlm.nih.gov/18691376/",
+            R.string.health_atlas_deltoid_story_ref_coordination to "https://pubmed.ncbi.nlm.nih.gov/19181982/",
+            R.string.health_atlas_deltoid_story_ref_lowering to "https://pubmed.ncbi.nlm.nih.gov/19427233/",
+        ),
+        16_000L,
+        showStructurePreview = true,
+    ),
+    SCAPULAR_ROTATION(
+        setOf("trapezius", "scapula"),
+        R.string.health_atlas_scapular_rotation_story_title,
+        R.string.health_atlas_scapular_rotation_story_scope,
+        listOf(
+            R.string.health_atlas_scapular_rotation_story_regions to R.string.health_atlas_scapular_rotation_story_regions_caption,
+            R.string.health_atlas_scapular_rotation_story_clavicle to R.string.health_atlas_scapular_rotation_story_clavicle_caption,
+            R.string.health_atlas_scapular_rotation_story_coupling to R.string.health_atlas_scapular_rotation_story_coupling_caption,
+            R.string.health_atlas_scapular_rotation_story_rotation to R.string.health_atlas_scapular_rotation_story_rotation_caption,
+            R.string.health_atlas_scapular_rotation_story_return to R.string.health_atlas_scapular_rotation_story_return_caption,
+        ),
+        listOf(
+            R.string.health_atlas_scapular_rotation_story_ref_anatomy to "https://openstax.org/books/anatomy-and-physiology/pages/11-5-muscles-of-the-pectoral-girdle-and-upper-limbs",
+            R.string.health_atlas_scapular_rotation_story_ref_trapezius to "https://pubmed.ncbi.nlm.nih.gov/23916077/",
+            R.string.health_atlas_scapular_rotation_story_ref_coupling to "https://pubmed.ncbi.nlm.nih.gov/15935534/",
+            R.string.health_atlas_scapular_rotation_story_ref_kinematics to "https://pubmed.ncbi.nlm.nih.gov/11408911/",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -1638,6 +1776,13 @@ internal enum class HealthAtlasFunctionStory(
         INTERCALATED_BALANCE -> R.string.health_atlas_intercalated_story_choice
         CLUB_CELL_AIRWAY -> R.string.health_atlas_club_cell_story_choice
         PANCREATIC_DUCT_BUFFER -> R.string.health_atlas_duct_buffer_story_choice
+        CHOLANGIOCYTE_BILE -> R.string.health_atlas_cholangiocyte_story_choice
+        PINEAL_DARK_SIGNAL -> R.string.health_atlas_pineal_story_choice
+        THORACIC_FRAME -> R.string.health_atlas_thoracic_frame_story_choice
+        MICROGLIA_SURVEILLANCE -> R.string.health_atlas_microglia_story_choice
+        EPENDYMAL_FLOW -> R.string.health_atlas_ependymal_story_choice
+        DELTOID_LIFT -> R.string.health_atlas_deltoid_story_choice
+        SCAPULAR_ROTATION -> R.string.health_atlas_scapular_rotation_story_choice
         else -> title
     }
 
@@ -1713,6 +1858,13 @@ internal enum class HealthAtlasFunctionStory(
         INTERCALATED_BALANCE -> listOf("collecting-ducts" to NEPHRON)
         CLUB_CELL_AIRWAY -> listOf("bronchioles" to BREATHING)
         PANCREATIC_DUCT_BUFFER -> listOf("pancreatic-duct" to DIGESTION)
+        CHOLANGIOCYTE_BILE -> listOf("biliary-tract" to DIGESTION)
+        PINEAL_DARK_SIGNAL -> listOf("retina" to VISION)
+        THORACIC_FRAME -> listOf("lungs" to BREATHING)
+        MICROGLIA_SURVEILLANCE -> listOf("cell-astrocyte" to ASTROCYTE_SUPPORT)
+        EPENDYMAL_FLOW -> listOf("brain" to SYNAPTIC_SIGNAL)
+        DELTOID_LIFT -> listOf("trapezius" to SCAPULAR_ROTATION)
+        SCAPULAR_ROTATION -> listOf("deltoid" to DELTOID_LIFT)
         CHONDROCYTE_MATRIX -> listOf("tissue-hyaline-cartilage" to CARTILAGE_LOAD)
         ADRENAL_MEDULLA_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
         GASTRIC_ACID_SECRETION -> listOf("stomach" to DIGESTION, "cell-gastric-chief-cell" to GASTRIC_CHIEF_SECRETION)
@@ -1726,6 +1878,8 @@ internal enum class HealthAtlasFunctionStory(
     fun startOf(chapter: Int) = chapter.coerceIn(chapters.indices) / chapters.size.toFloat()
 
     fun entryPhase(id: String): Float = startOf(when (this) {
+        PINEAL_DARK_SIGNAL -> if (id == "cell-pinealocyte") 3 else 0
+        SCAPULAR_ROTATION -> if (id == "scapula") 2 else 0
         HEARTBEAT -> if (id == "aorta" || id == "pulmonary-trunk") HealthAtlasBeatStage.EJECTION.ordinal else 0
         BREATHING -> if (id == "cell-type-i-pneumocyte") HealthAtlasBreathingStage.DIFFUSE.ordinal else 0
         SALIVA_SECRETION -> if (id == "cell-salivary-acinar-cell") 1 else 0
@@ -1822,6 +1976,13 @@ internal enum class HealthAtlasFunctionStory(
         INTERCALATED_BALANCE -> HealthAtlasIntercalatedStoryView(context)
         CLUB_CELL_AIRWAY -> HealthAtlasClubCellStoryView(context)
         PANCREATIC_DUCT_BUFFER -> HealthAtlasDuctBufferStoryView(context)
+        CHOLANGIOCYTE_BILE -> HealthAtlasCholangiocyteStoryView(context, this)
+        PINEAL_DARK_SIGNAL -> HealthAtlasPinealStoryView(context)
+        THORACIC_FRAME -> HealthAtlasThoracicFrameStoryView(context)
+        MICROGLIA_SURVEILLANCE -> HealthAtlasMicrogliaStoryView(context)
+        EPENDYMAL_FLOW -> HealthAtlasEpendymalStoryView(context)
+        DELTOID_LIFT -> HealthAtlasDeltoidStoryView(context)
+        SCAPULAR_ROTATION -> HealthAtlasScapularRotationStoryView(context)
         NEUTROPHIL_DEFENSE, EOSINOPHIL_RESPONSE, BASOPHIL_SIGNALING, MONOCYTE_RECRUITMENT,
         DENDRITIC_PRESENTATION, T_CELL_RESPONSE, NK_SURVEILLANCE, PLATELET_FORMATION, MACROPHAGE_CLEARANCE ->
             HealthAtlasCellFunctionArt(context, this, owners.single())
@@ -1836,6 +1997,7 @@ internal enum class HealthAtlasFunctionStory(
                 "pancreas" -> listOf(primary, INSULIN_SECRETION, GLUCAGON_RESPONSE)
                 "endocrine" -> listOf(primary, GLUCAGON_RESPONSE, THYROID_FEEDBACK)
                 "pancreatic-islets" -> listOf(primary, GLUCAGON_RESPONSE)
+                "biliary-tract" -> listOf(primary, CHOLANGIOCYTE_BILE)
                 "nervous", "brain", "spinal-cord", "cell-neuron" -> listOf(primary, MYELIN_SIGNAL)
                 "tissue-central-nervous" -> listOf(primary, MYELIN_SIGNAL, ASTROCYTE_SUPPORT)
                 "tissue-skeletal-muscle" -> listOf(primary, MUSCLE_MOTION)

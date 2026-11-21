@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_thoracic_frame_story_title">How the ribs and sternum move with breathing</string>
+    <string name="health_atlas_thoracic_frame_story_choice">Ribs and sternum in motion</string>
+    <string name="health_atlas_thoracic_frame_story_scope">A qualitative view of normal quiet breathing. Motion is enlarged for clarity; angles, dimensions, and timing are not measurements.</string>
+
+    <string name="health_atlas_thoracic_frame_story_frame">A connected rib cage</string>
+    <string name="health_atlas_thoracic_frame_story_frame_caption">The ribs attach to the thoracic spine at the back. At the front, the top seven pairs reach the sternum through their own costal cartilages. The next three join the costal margin; the last two pairs have no front attachment.</string>
+    <string name="health_atlas_thoracic_frame_story_pump">The sternum lifts and moves forward</string>
+    <string name="health_atlas_thoracic_frame_story_pump_caption">As you breathe in, the front ends of the upper ribs rise and carry the sternum up and forward. This pump-handle component increases the depth of the chest from front to back.</string>
+    <string name="health_atlas_thoracic_frame_story_bucket">The sides of the ribs swing outward</string>
+    <string name="health_atlas_thoracic_frame_story_bucket_caption">During the same breath, the curved sides of the ribs lift and swing outward, widening the chest from left to right. This bucket-handle component is easy to see along the lower ribs. Each rib can combine both kinds of motion around an oblique axis near the spine.</string>
+    <string name="health_atlas_thoracic_frame_story_expand">The chest gains room in three directions</string>
+    <string name="health_atlas_thoracic_frame_story_expand_caption">The rib cage deepens and widens while the contracting diaphragm descends and flattens, adding height to the chest cavity. Together these changes increase chest volume, and the lungs expand with it.</string>
+    <string name="health_atlas_thoracic_frame_story_recoil">The chest returns during quiet exhalation</string>
+    <string name="health_atlas_thoracic_frame_story_recoil_caption">Quiet exhalation is mostly passive. The diaphragm relaxes and rises into a dome. The chest returns toward its resting size through elastic recoil, and air flows out. The lungs do not empty completely.</string>
+
+    <string name="health_atlas_thoracic_frame_story_art_sternum">Sternum</string>
+    <string name="health_atlas_thoracic_frame_story_art_ribs">Rib shaft</string>
+    <string name="health_atlas_thoracic_frame_story_art_cartilage">Costal cartilage</string>
+    <string name="health_atlas_thoracic_frame_story_art_front">Front view</string>
+    <string name="health_atlas_thoracic_frame_story_art_joint">Rib-spine joint</string>
+    <string name="health_atlas_thoracic_frame_story_art_side">Side view</string>
+    <string name="health_atlas_thoracic_frame_story_art_side_ribs">Curved side of rib</string>
+    <string name="health_atlas_thoracic_frame_story_art_chest_space">Lung in chest cavity</string>
+    <string name="health_atlas_thoracic_frame_story_art_diaphragm">Diaphragm</string>
+    <string name="health_atlas_thoracic_frame_story_art_depth">Front to back</string>
+    <string name="health_atlas_thoracic_frame_story_art_width">Left to right</string>
+    <string name="health_atlas_thoracic_frame_story_art_height">Top to bottom</string>
+
+    <string name="health_atlas_thoracic_frame_story_ref_anatomy">OpenStax: the thoracic cage</string>
+    <string name="health_atlas_thoracic_frame_story_ref_breathing">OpenStax: the process of breathing</string>
+    <string name="health_atlas_thoracic_frame_story_ref_rib_motion">CT study: components of rib motion</string>
+    <string name="health_atlas_thoracic_frame_story_ref_chest_motion">MRI study: chest wall and diaphragm in quiet breathing</string>
+</resources>

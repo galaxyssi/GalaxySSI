@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_scapular_rotation_story_title">How muscles turn the shoulder blade</string>
+    <string name="health_atlas_scapular_rotation_story_choice">Scapular upward rotation</string>
+    <string name="health_atlas_scapular_rotation_story_scope">A simplified back view of the right shoulder during normal arm elevation. Colored arrows indicate approximate directions of muscle pull, not force values. Blue marks show position or motion. Other three-dimensional motions are not shown.</string>
+    <string name="health_atlas_scapular_rotation_story_regions">Three regions and a partner</string>
+    <string name="health_atlas_scapular_rotation_story_regions_caption">The upper trapezius reaches the outer clavicle, the middle region reaches the acromion and scapular spine, and the lower region reaches the inner end of that spine. The serratus anterior wraps from the ribs to the front side of the inner edge of the scapula.</string>
+    <string name="health_atlas_scapular_rotation_story_clavicle">Support at the shoulder girdle</string>
+    <string name="health_atlas_scapular_rotation_story_clavicle_caption">The upper trapezius helps elevate the outer clavicle. The middle region pulls inward and helps steady the scapula as the other muscles turn it. These actions overlap rather than switching on in order.</string>
+    <string name="health_atlas_scapular_rotation_story_coupling">Pulls work together</string>
+    <string name="health_atlas_scapular_rotation_story_coupling_caption">The lower trapezius pulls the inner end of the scapular spine down and inward. The serratus anterior draws the lower part of the blade around the ribs. Together these pulls help turn the blade upward, with support from the upper trapezius through the clavicle.</string>
+    <string name="health_atlas_scapular_rotation_story_rotation">The socket turns upward</string>
+    <string name="health_atlas_scapular_rotation_story_rotation_caption">As the blade rotates, its lower tip swings outward around the rib cage and its socket turns upward with the rising arm. The pale outline shows the starting position of the blade.</string>
+    <string name="health_atlas_scapular_rotation_story_return">The blade follows the arm down</string>
+    <string name="health_atlas_scapular_rotation_story_return_caption">As the arm lowers, the blade turns back toward its starting position. The muscles continue to coordinate; the drawing does not assign fixed amounts of motion or muscle load.</string>
+    <string name="health_atlas_scapular_rotation_story_upper">Upper trapezius</string>
+    <string name="health_atlas_scapular_rotation_story_middle">Mid trapezius</string>
+    <string name="health_atlas_scapular_rotation_story_lower">Lower trapezius</string>
+    <string name="health_atlas_scapular_rotation_story_serratus">Serratus anterior</string>
+    <string name="health_atlas_scapular_rotation_story_clavicle_label">Outer clavicle</string>
+    <string name="health_atlas_scapular_rotation_story_inferior_angle">Inferior angle</string>
+    <string name="health_atlas_scapular_rotation_story_socket">Shoulder socket</string>
+    <string name="health_atlas_scapular_rotation_story_ref_anatomy">OpenStax: Muscles of the pectoral girdle and upper limb</string>
+    <string name="health_atlas_scapular_rotation_story_ref_trapezius">Dissection-based anatomy and actions of the trapezius</string>
+    <string name="health_atlas_scapular_rotation_story_ref_coupling">Muscle activity and scapular motion during active and passive arm elevation</string>
+    <string name="health_atlas_scapular_rotation_story_ref_kinematics">Direct measurement of three-dimensional scapular motion</string>
+</resources>

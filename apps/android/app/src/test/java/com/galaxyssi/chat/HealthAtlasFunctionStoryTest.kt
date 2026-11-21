@@ -120,6 +120,53 @@ class HealthAtlasFunctionStoryTest {
         }
     }
 
+    @Test fun bileDuctAndCartilageExposeTheirSpecializedMotion() {
+        val bile = HealthAtlasFunctionStory.CHOLANGIOCYTE_BILE
+        val digestion = HealthAtlasFunctionStory.DIGESTION
+        assertEquals(listOf(bile), HealthAtlasFunctionStory.choicesForId("cell-cholangiocyte"))
+        assertEquals(listOf(digestion, bile), HealthAtlasFunctionStory.choicesForId("biliary-tract"))
+        assertEquals(listOf("biliary-tract" to digestion), bile.relatedLessons)
+        assertEquals(listOf(HealthAtlasFunctionStory.CARTILAGE_LOAD), HealthAtlasFunctionStory.choicesForId("cartilage"))
+    }
+
+    @Test fun pinealGlandAndPinealocyteStartAtDifferentScalesOfTheSamePathway() {
+        val story = HealthAtlasFunctionStory.PINEAL_DARK_SIGNAL
+        assertEquals(story, HealthAtlasFunctionStory.forId("pineal-gland"))
+        assertEquals(story, HealthAtlasFunctionStory.forId("cell-pinealocyte"))
+        assertEquals(0, story.chapter(story.entryPhase("pineal-gland")))
+        assertEquals(3, story.chapter(story.entryPhase("cell-pinealocyte")))
+        assertEquals(listOf("retina" to HealthAtlasFunctionStory.VISION), story.relatedLessons)
+    }
+
+    @Test fun thoracicFrameLessonConnectsRibsAndSternumToBreathing() {
+        val frame = HealthAtlasFunctionStory.THORACIC_FRAME
+        assertEquals(listOf(frame), HealthAtlasFunctionStory.choicesForId("ribs"))
+        assertEquals(listOf(frame), HealthAtlasFunctionStory.choicesForId("sternum"))
+        assertEquals(listOf("lungs" to HealthAtlasFunctionStory.BREATHING), frame.relatedLessons)
+        assertEquals(5, frame.chapters.size)
+    }
+
+    @Test fun glialCellLessonsKeepSeparateFunctionsAndSurroundingContext() {
+        val surveillance = HealthAtlasFunctionStory.MICROGLIA_SURVEILLANCE
+        val flow = HealthAtlasFunctionStory.EPENDYMAL_FLOW
+        assertEquals(listOf(surveillance), HealthAtlasFunctionStory.choicesForId("cell-microglia"))
+        assertEquals(listOf(flow), HealthAtlasFunctionStory.choicesForId("cell-ependymal-cell"))
+        assertEquals(listOf("cell-astrocyte" to HealthAtlasFunctionStory.ASTROCYTE_SUPPORT), surveillance.relatedLessons)
+        assertEquals(listOf("brain" to HealthAtlasFunctionStory.SYNAPTIC_SIGNAL), flow.relatedLessons)
+        assertTrue(surveillance.chapters.map { it.first }.intersect(flow.chapters.map { it.first }.toSet()).isEmpty())
+    }
+
+    @Test fun shoulderMuscleRolesStayDistinctFromTheShoulderBladeEntry() {
+        val lift = HealthAtlasFunctionStory.DELTOID_LIFT
+        val rotation = HealthAtlasFunctionStory.SCAPULAR_ROTATION
+        assertEquals(lift, HealthAtlasFunctionStory.forId("deltoid"))
+        assertEquals(rotation, HealthAtlasFunctionStory.forId("trapezius"))
+        assertEquals(rotation, HealthAtlasFunctionStory.forId("scapula"))
+        assertEquals(2, rotation.chapter(rotation.entryPhase("scapula")))
+        assertEquals(listOf("trapezius" to rotation), lift.relatedLessons)
+        assertEquals(listOf("deltoid" to lift), rotation.relatedLessons)
+    }
+
     @Test fun focusedEntryChaptersAreOnlyDefaultsAndDoNotOverrideSavedPlayback() {
         val items = mapOf(
             "adenoids" to (HealthAtlasFunctionStory.TONSILLAR_SAMPLING to 1),

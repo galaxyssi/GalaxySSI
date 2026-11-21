@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cholangiocyte_story_title">How bile duct cells modify bile</string>
+    <string name="health_atlas_cholangiocyte_story_choice">Bile duct cells and bile</string>
+    <string name="health_atlas_cholangiocyte_story_scope">A schematic view of normal physiology. Structures, timing and moving marks are illustrative, not to scale.</string>
+
+    <string name="health_atlas_cholangiocyte_story_enter">Bile enters the ducts</string>
+    <string name="health_atlas_cholangiocyte_story_enter_caption">Liver cells called hepatocytes make the initial bile. Small ducts collect it and join larger ducts. This is where cells in the duct lining can change the bile as it flows.</string>
+    <string name="health_atlas_cholangiocyte_story_line">Meet the bile duct lining</string>
+    <string name="health_atlas_cholangiocyte_story_line_caption">Cholangiocytes are the cells that line bile ducts. Their apical surface faces the lumen, the space that carries bile. Their opposite side faces the surrounding tissue.</string>
+    <string name="health_atlas_cholangiocyte_story_exchange">Bicarbonate enters the lumen</string>
+    <string name="health_atlas_cholangiocyte_story_exchange_caption">One way these cells add bicarbonate to bile is through the exchanger AE2. At the apical surface, it moves bicarbonate out into the lumen in exchange for chloride moving into the cell.</string>
+    <string name="health_atlas_cholangiocyte_story_water">Water follows by osmosis</string>
+    <string name="health_atlas_cholangiocyte_story_water_caption">As dissolved particles are added to the lumen, the resulting osmotic gradient can draw water from the tissue side into bile. Water can cross the cell through water channels called aquaporins.</string>
+    <string name="health_atlas_cholangiocyte_story_carry">Modified bile flows onward</string>
+    <string name="health_atlas_cholangiocyte_story_carry_caption">The added water and bicarbonate mix with bile already in the duct. The duct lining modifies bile rather than making it from scratch. Bile can flow onward through the common bile duct to the duodenum.</string>
+
+    <string name="health_atlas_cholangiocyte_story_liver">Liver tissue</string>
+    <string name="health_atlas_cholangiocyte_story_small_duct">Small bile duct</string>
+    <string name="health_atlas_cholangiocyte_story_larger_duct">Larger bile duct</string>
+    <string name="health_atlas_cholangiocyte_story_lumen">Duct lumen</string>
+    <string name="health_atlas_cholangiocyte_story_cell">Cholangiocyte</string>
+    <string name="health_atlas_cholangiocyte_story_apical">Apical surface</string>
+    <string name="health_atlas_cholangiocyte_story_bicarbonate">Bicarbonate</string>
+    <string name="health_atlas_cholangiocyte_story_chloride">Chloride</string>
+    <string name="health_atlas_cholangiocyte_story_exchanger">AE2 exchanger</string>
+    <string name="health_atlas_cholangiocyte_story_water_channel">Water channel</string>
+    <string name="health_atlas_cholangiocyte_story_tissue_side">Tissue side</string>
+    <string name="health_atlas_cholangiocyte_story_modified_bile">Modified bile</string>
+    <string name="health_atlas_cholangiocyte_story_duodenum">Duodenum</string>
+
+    <string name="health_atlas_cholangiocyte_story_ref_exchange">Evidence: bicarbonate exchange in mouse bile duct cells</string>
+    <string name="health_atlas_cholangiocyte_story_ref_water">Evidence: osmotic water movement in rat bile ducts</string>
+</resources>

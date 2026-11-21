@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_artery_layers_caption">动脉壁剖面 · 三层结构</string>
+    <string name="health_atlas_artery_layers_adventitia">外膜</string>
+    <string name="health_atlas_artery_layers_adventitia_detail">结缔组织支撑血管外壁，并帮助将血管固定在周围组织中。</string>
+    <string name="health_atlas_artery_layers_media">中膜</string>
+    <string name="health_atlas_artery_layers_media_detail">平滑肌和弹性成分帮助血管承受并适应压力变化。两者比例会随动脉类型变化。</string>
+    <string name="health_atlas_artery_layers_intima">内膜</string>
+    <string name="health_atlas_artery_layers_intima_detail">最内侧的一层，包括直接面向流动血液的血管内皮。</string>
+    <string name="health_atlas_artery_layers_lumen">管腔</string>
+    <string name="health_atlas_artery_layers_lumen_detail">血液流经管腔，动脉将血液从心脏送出。</string>
+</resources>

@@ -98,6 +98,8 @@ internal object HealthAtlasPlates {
     fun viewsForId(id: String?): List<HealthAtlasPlate> = when (id) {
         "heart" -> listOf(heart, HealthAtlasHeartSection.section)
         "retina" -> listOf(requireNotNull(HealthAtlasSensoryPlates.forId(id)), retinaContext)
+        "ribs", "deltoid", "trapezius" -> listOf(requireNotNull(HealthAtlasTissueContextPlates.forId(id))) +
+            HealthAtlasMusculoskeletalPlates.viewsForId(id)
         else -> HealthAtlasMusculoskeletalPlates.viewsForId(id).ifEmpty { listOfNotNull(defaultForId(id)) }
     }
 
