@@ -8,7 +8,7 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(HealthAtlasFunctionStory.GLUCOSE, HealthAtlasFunctionStory.forId("tissue-skeletal-muscle"))
         assertEquals(HealthAtlasFunctionStory.GLUCOSE, HealthAtlasFunctionStory.forId("cell-adipocyte"))
         assertEquals(HealthAtlasFunctionStory.INSULIN_SECRETION, HealthAtlasFunctionStory.forId("cell-pancreatic-beta-cell"))
-        assertNull(HealthAtlasFunctionStory.forId("liver"))
+        assertEquals(HealthAtlasFunctionStory.GLUCAGON_RESPONSE, HealthAtlasFunctionStory.forId("liver"))
         assertNull(HealthAtlasFunctionStory.forId(null))
     }
 
@@ -177,16 +177,19 @@ class HealthAtlasFunctionStoryTest {
         val insulin = HealthAtlasFunctionStory.INSULIN_SECRETION
         val uptake = HealthAtlasFunctionStory.GLUCOSE
         val motion = HealthAtlasFunctionStory.MUSCLE_MOTION
-        assertEquals(listOf(HealthAtlasFunctionStory.DIGESTION, insulin), HealthAtlasFunctionStory.choicesForId("pancreas"))
+        val glucagon = HealthAtlasFunctionStory.GLUCAGON_RESPONSE
+        assertEquals(listOf(HealthAtlasFunctionStory.DIGESTION, insulin, glucagon), HealthAtlasFunctionStory.choicesForId("pancreas"))
         assertEquals(listOf(uptake, motion), HealthAtlasFunctionStory.choicesForId("tissue-skeletal-muscle"))
         assertEquals(listOf(HealthAtlasFunctionStory.ANTIBODY_RESPONSE, HealthAtlasFunctionStory.LYMPH_RETURN),
             HealthAtlasFunctionStory.choicesForId("immune"))
         assertEquals(listOf(insulin), HealthAtlasFunctionStory.choicesForId("cell-pancreatic-beta-cell"))
-        assertTrue(HealthAtlasFunctionStory.choicesForId("cell-pancreatic-alpha-cell").isEmpty())
-        for (story in listOf(insulin, uptake)) {
-            val (id, related) = requireNotNull(story.relatedLesson)
-            assertTrue(related in HealthAtlasFunctionStory.choicesForId(id))
-            assertNotEquals(story, related)
+        assertEquals(listOf(glucagon), HealthAtlasFunctionStory.choicesForId("cell-pancreatic-alpha-cell"))
+        for (story in listOf(insulin, uptake, glucagon)) {
+            assertTrue(story.relatedLessons.isNotEmpty())
+            for ((id, related) in story.relatedLessons) {
+                assertTrue(related in HealthAtlasFunctionStory.choicesForId(id))
+                assertNotEquals(story, related)
+            }
         }
         val state = HealthAtlasFunctionState()
         state.savePhase("tissue-skeletal-muscle", uptake, .6f)
@@ -211,6 +214,35 @@ class HealthAtlasFunctionStoryTest {
         for (i in 0..2) {
             assertEquals(0f, diagram.release(diagram.FUSION_START, i), 0f)
             assertTrue(diagram.release(.85f, i) > diagram.release(.58f, i))
+        }
+    }
+
+    @Test fun glucagonAndSweatUseSeparatePhysiologyAndQualitativeComparisons() {
+        val glucagon = HealthAtlasFunctionStory.GLUCAGON_RESPONSE
+        val sweat = HealthAtlasFunctionStory.SWEAT_COOLING
+        for (id in listOf("cell-pancreatic-alpha-cell", "liver", "cell-hepatocyte")) {
+            assertEquals(glucagon, HealthAtlasFunctionStory.forId(id))
+        }
+        for (id in listOf("pancreatic-islets", "endocrine")) {
+            assertEquals(listOf(HealthAtlasFunctionStory.INSULIN_SECRETION, glucagon), HealthAtlasFunctionStory.choicesForId(id))
+        }
+        assertEquals(listOf(HealthAtlasFunctionStory.DIGESTION), HealthAtlasFunctionStory.choicesForId("gallbladder"))
+        for (id in listOf("skin", "sweat-glands", "cell-sweat-gland-secretory-cell")) {
+            assertEquals(sweat, HealthAtlasFunctionStory.forId(id))
+        }
+        assertNull(HealthAtlasFunctionStory.forId("sebaceous-glands"))
+        val motion = HealthAtlasHomeostasisMotion
+        assertEquals(1f, motion.liquidRemaining(0f, false), 0f)
+        assertEquals(1f, motion.liquidRemaining(0f, true), 0f)
+        assertEquals(1f, motion.liquidRemaining(Float.NaN, true), 0f)
+        for (frame in 1..100) {
+            val now = frame / 100f
+            val previous = (frame - 1) / 100f
+            assertTrue(motion.liquidRemaining(now, true) > motion.liquidRemaining(now, false))
+            assertTrue(motion.liquidRemaining(now, true) < motion.liquidRemaining(previous, true))
+            assertTrue(motion.liquidRemaining(now, false) < motion.liquidRemaining(previous, false))
+            assertTrue(motion.glycogenRemaining(now) in 0f..1f)
+            assertTrue(motion.glycogenRemaining(now) < motion.glycogenRemaining(previous))
         }
     }
 

@@ -309,8 +309,7 @@ class HealthBodyAtlasActivity : Activity() {
                 ui.add(content, ui.text(getString(R.string.health_atlas_process_note), 12f, muted = true), 16)
                 val hasAlternateView = item.kind == HealthAtlasKind.SYSTEM &&
                     HealthAtlasMusculoskeletalPlates.viewsForId(item.id).size > 1
-                val hasLessonHotspots = choices.any { it == HealthAtlasFunctionStory.LYMPH_RETURN ||
-                    it == HealthAtlasFunctionStory.ANTIBODY_RESPONSE || it == HealthAtlasFunctionStory.INSULIN_SECRETION } &&
+                val hasLessonHotspots = choices.any { it.showStructurePreview } &&
                     HealthAtlasPlates.forId(item.id)?.hasLabels == true
                 if (choices.isNotEmpty() && (hasAlternateView || hasLessonHotspots)) {
                     ui.add(content, artwork(data, item), 12)
@@ -363,8 +362,8 @@ class HealthBodyAtlasActivity : Activity() {
             val player = HealthAtlasFunctionPlayer(this, story, functionState.loadPhase(item.id, story), ::source)
             functionPlayer = player
             ui.add(panel, player, if (choices.size > 1) 10 else 0)
-            story.relatedLesson?.let { (id, next) ->
-                val target = data[id] ?: return@let
+            story.relatedLessons.forEach { (id, next) ->
+                val target = data[id] ?: return@forEach
                 ui.add(panel, ui.row(getString(next.title), target.name) {
                     functionState.choose(id, next)
                     select(target, HealthAtlasTab.FUNCTION)

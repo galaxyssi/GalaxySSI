@@ -10,6 +10,7 @@ internal enum class HealthAtlasFunctionStory(
     val chapters: List<Pair<Int, Int>>,
     val references: List<Pair<Int, String>>,
     val durationMs: Long,
+    val showStructurePreview: Boolean = false,
 ) {
     GLUCOSE(
         setOf("tissue-skeletal-muscle", "cell-adipocyte"),
@@ -178,6 +179,7 @@ internal enum class HealthAtlasFunctionStory(
             R.string.health_atlas_lymph_flow_entry_source to "https://pubmed.ncbi.nlm.nih.gov/17846148/",
         ),
         20_000L,
+        showStructurePreview = true,
     ),
     ANTIBODY_RESPONSE(
         setOf("immune", "cell-b-cell", "cell-plasma-cell"),
@@ -196,6 +198,7 @@ internal enum class HealthAtlasFunctionStory(
             R.string.health_atlas_antibody_story_helper_source to "https://pmc.ncbi.nlm.nih.gov/articles/PMC5030190/",
         ),
         20_000L,
+        showStructurePreview = true,
     ),
     INSULIN_SECRETION(
         setOf("endocrine", "pancreatic-islets", "cell-pancreatic-beta-cell"),
@@ -214,6 +217,43 @@ internal enum class HealthAtlasFunctionStory(
             R.string.health_atlas_insulin_story_secretion_source to "https://pubmed.ncbi.nlm.nih.gov/18390794/",
         ),
         20_000L,
+        showStructurePreview = true,
+    ),
+    GLUCAGON_RESPONSE(
+        setOf("cell-pancreatic-alpha-cell", "liver", "cell-hepatocyte"),
+        R.string.health_atlas_home_glucagon_story_title,
+        R.string.health_atlas_home_glucagon_story_scope,
+        listOf(
+            R.string.health_atlas_home_glucagon_story_signal to R.string.health_atlas_home_glucagon_story_signal_caption,
+            R.string.health_atlas_home_glucagon_story_release to R.string.health_atlas_home_glucagon_story_release_caption,
+            R.string.health_atlas_home_glucagon_story_liver to R.string.health_atlas_home_glucagon_story_liver_caption,
+            R.string.health_atlas_home_glucagon_story_glycogen to R.string.health_atlas_home_glucagon_story_glycogen_caption,
+            R.string.health_atlas_home_glucagon_story_export to R.string.health_atlas_home_glucagon_story_export_caption,
+        ),
+        listOf(
+            R.string.health_atlas_home_glucagon_source_alpha to "https://pmc.ncbi.nlm.nih.gov/articles/PMC13147482/",
+            R.string.health_atlas_home_glucagon_source_liver to "https://pubmed.ncbi.nlm.nih.gov/7859939/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    SWEAT_COOLING(
+        setOf("skin", "sweat-glands", "cell-sweat-gland-secretory-cell"),
+        R.string.health_atlas_home_sweat_story_title,
+        R.string.health_atlas_home_sweat_story_scope,
+        listOf(
+            R.string.health_atlas_home_sweat_story_signal to R.string.health_atlas_home_sweat_story_signal_caption,
+            R.string.health_atlas_home_sweat_story_fluid to R.string.health_atlas_home_sweat_story_fluid_caption,
+            R.string.health_atlas_home_sweat_story_salt to R.string.health_atlas_home_sweat_story_salt_caption,
+            R.string.health_atlas_home_sweat_story_surface to R.string.health_atlas_home_sweat_story_surface_caption,
+            R.string.health_atlas_home_sweat_story_evaporate to R.string.health_atlas_home_sweat_story_evaporate_caption,
+        ),
+        listOf(
+            R.string.health_atlas_home_sweat_source_fluid to "https://pubmed.ncbi.nlm.nih.gov/29745799/",
+            R.string.health_atlas_home_sweat_source_evaporation to "https://pubmed.ncbi.nlm.nih.gov/438022/",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -223,13 +263,15 @@ internal enum class HealthAtlasFunctionStory(
         LYMPH_RETURN -> R.string.health_atlas_lesson_lymph
         ANTIBODY_RESPONSE -> R.string.health_atlas_lesson_antibodies
         INSULIN_SECRETION -> R.string.health_atlas_lesson_insulin
+        GLUCAGON_RESPONSE -> R.string.health_atlas_home_lesson_glucagon
         else -> title
     }
 
-    val relatedLesson get() = when (this) {
-        INSULIN_SECRETION -> "tissue-skeletal-muscle" to GLUCOSE
-        GLUCOSE -> "cell-pancreatic-beta-cell" to INSULIN_SECRETION
-        else -> null
+    val relatedLessons get() = when (this) {
+        INSULIN_SECRETION -> listOf("tissue-skeletal-muscle" to GLUCOSE, "cell-pancreatic-alpha-cell" to GLUCAGON_RESPONSE)
+        GLUCAGON_RESPONSE -> listOf("cell-pancreatic-beta-cell" to INSULIN_SECRETION)
+        GLUCOSE -> listOf("cell-pancreatic-beta-cell" to INSULIN_SECRETION)
+        else -> emptyList()
     }
 
     fun chapter(value: Float) = (safePhase(value) * chapters.size).toInt().coerceAtMost(chapters.lastIndex)
@@ -246,6 +288,7 @@ internal enum class HealthAtlasFunctionStory(
         MUSCLE_MOTION, BONE_REMODELING -> HealthAtlasMovementStoryView(context, this)
         LYMPH_RETURN, ANTIBODY_RESPONSE -> HealthAtlasLymphImmuneStoryView(context, this)
         INSULIN_SECRETION -> HealthAtlasInsulinStoryView(context)
+        GLUCAGON_RESPONSE, SWEAT_COOLING -> HealthAtlasHomeostasisStoryView(context, this)
     }
 
     companion object {
@@ -253,13 +296,13 @@ internal enum class HealthAtlasFunctionStory(
 
         fun choicesForId(id: String?): List<HealthAtlasFunctionStory> {
             val primary = forId(id) ?: return emptyList()
-            val additional = when (id) {
-                "pancreas" -> INSULIN_SECRETION
-                "tissue-skeletal-muscle" -> MUSCLE_MOTION
-                "immune" -> LYMPH_RETURN
-                else -> null
+            return when (id) {
+                "pancreas" -> listOf(primary, INSULIN_SECRETION, GLUCAGON_RESPONSE)
+                "endocrine", "pancreatic-islets" -> listOf(primary, GLUCAGON_RESPONSE)
+                "tissue-skeletal-muscle" -> listOf(primary, MUSCLE_MOTION)
+                "immune" -> listOf(primary, LYMPH_RETURN)
+                else -> listOf(primary)
             }
-            return listOfNotNull(primary, additional)
         }
 
         fun safePhase(value: Float) = if (value.isFinite()) value.coerceIn(0f, 1f) else 0f

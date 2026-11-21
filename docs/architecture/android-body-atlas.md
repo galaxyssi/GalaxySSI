@@ -1292,3 +1292,18 @@ Pancreas, skeletal muscle tissue, and the immune system can switch lessons
 in place. Saved activity state separates each entry and lesson; old
 single-lesson playheads restore into the default lesson. Agent receives
 only the public chapter and references from the selected lesson.
+
+## Glucagon Counter-Regulation And Evaporative Cooling
+
+The glucagon lesson follows secretion from an alpha cell and receptor
+signaling on a liver cell. The hormone and glucose are different tracers:
+hepatic glycogen breakdown and transport provide glucose, not conversion
+of the hormone into fuel. Pancreas, endocrine system and islets expose
+separate insulin and glucagon lessons; the pancreatic digestive lesson
+remains the default.
+
+The eccrine sweat lesson reuses the anatomical duct path. It distinguishes
+secretion, ductal salt recovery, liquid on skin and evaporation. A drier
+and a more humid case start with equal visible sweat. The comparison is
+qualitative and independent of the existing simulation; it cannot predict
+core temperature, fluid loss or personal glucose.

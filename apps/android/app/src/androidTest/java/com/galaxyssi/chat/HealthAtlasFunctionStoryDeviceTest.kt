@@ -378,7 +378,7 @@ class HealthAtlasFunctionStoryDeviceTest {
         } finally { clearHealthOverviewFixture(context, fixture) }
     }
 
-    @Test fun twoLessonsSwitchInPlaceAndKeepTheirOwnProgressAfterRecreationAndRelatedNavigation() {
+    @Test fun multipleLessonsSwitchInPlaceAndKeepTheirOwnProgressAfterRecreationAndRelatedNavigation() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
         val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
@@ -401,6 +401,12 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(3) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_insulin_story_fusion_caption),
                         activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-function-lesson-2").performClick()
+                    activity.find<View>("atlas-function-glucagon-response-art")
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    repeat(4) { activity.find<View>("atlas-function-next").performClick() }
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    assertEquals(.6f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
                 }
                 scenario.recreate()
                 waitFor(scenario, "atlas-function-insulin-secretion-art")
@@ -408,6 +414,8 @@ class HealthAtlasFunctionStoryDeviceTest {
                     assertEquals(.6f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
                     activity.find<View>("atlas-function-lesson-0").performClick()
                     assertEquals(.2f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.find<View>("atlas-function-lesson-2").performClick()
+                    assertEquals(.8f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
                     activity.find<View>("atlas-function-lesson-1").performClick()
                     activity.find<View>("atlas-related-lesson-tissue-skeletal-muscle").performClick()
                     activity.find<View>("atlas-function-uptake-art")
@@ -417,6 +425,32 @@ class HealthAtlasFunctionStoryDeviceTest {
                     assertEquals(HealthAtlasFunctionStory.INSULIN_SECRETION,
                         activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").story)
                     assertEquals(.6f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
+    @Test fun sweatAnimationKeepsThePoreHotspotAndTheSeparateEccrineSimulation() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-tab-2").performClick()
+                    activity.find<EditText>("atlas-search").setText("sweat-glands")
+                    activity.find<View>("atlas-entry-sweat-glands").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-sweat-cooling-art")
+                    activity.find<View>("atlas-feature-sweat-pore")
+                    repeat(4) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_home_sweat_story_evaporate_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.find<HealthAtlasSweatView>("atlas-sweat-diagram")
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.8f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
                 }
             }
         } finally { clearHealthOverviewFixture(context, fixture) }
@@ -453,6 +487,10 @@ class HealthAtlasFunctionStoryDeviceTest {
             functionStory = HealthAtlasFunctionStory.INSULIN_SECRETION)
         assertTrue(secretion.contains(context.getString(R.string.health_atlas_insulin_story_fusion_caption)))
         assertFalse(secretion.contains(context.getString(R.string.health_atlas_meal_duodenum_caption)))
+        val counter = HealthAtlasAgentContext.prompt(context, atlas, pancreas, functionPhase = .64f,
+            functionStory = HealthAtlasFunctionStory.GLUCAGON_RESPONSE)
+        assertTrue(counter.contains(context.getString(R.string.health_atlas_home_glucagon_story_glycogen_caption)))
+        assertFalse(counter.contains(context.getString(R.string.health_atlas_insulin_story_fusion_caption)))
         assertFalse(HealthAtlasAgentContext.prompt(context, atlas, beta, functionPhase = .91f,
             functionStory = HealthAtlasFunctionStory.GLUCOSE).contains(glucoseSource))
         assertFalse(HealthAtlasAgentContext.prompt(context, atlas, adipocyte, topic = HealthAtlasResearchTopic.DRUGS,
