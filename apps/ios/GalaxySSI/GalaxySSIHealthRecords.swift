@@ -3567,6 +3567,36 @@ struct GalaxySSIHealthRecords {
 
   static let recordsChanged = Notification.Name("galaxyssi.health.records.changed")
 
+  static let motionChanged = Notification.Name("galaxyssi.health.motion.changed")
+  private var motionContext: Data { Data("galaxyssi.health.motion.v1:\(owner)".utf8) }
+  private var motionAccount: String { "health.motion.v1." + owner }
+  func loadMotion() throws -> GalaxySSIHealthMotion.State {
+    let location = try storageFile(context: motionContext, fixtureExtension: "motion")
+    let encrypted: Data
+    do { encrypted = try Data(contentsOf: location) }
+    catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile { return .init() }
+    guard encrypted.count <= 65_536 else { throw Failure.invalid }
+    let payload = try AES.GCM.open(AES.GCM.SealedBox(combined: encrypted),
+      using: key(create: false, account: motionAccount), authenticating: motionContext)
+    let state = try JSONDecoder().decode(GalaxySSIHealthMotion.State.self, from: payload)
+    try state.validate()
+    return state
+  }
+  @discardableResult
+  func updateMotion(_ change: (inout GalaxySSIHealthMotion.State) throws -> Void) throws -> GalaxySSIHealthMotion.State {
+    var state = try loadMotion()
+    let previous = state
+    try change(&state); try state.validate()
+    guard state != previous else { return previous }
+    state.revision = UUID()
+    let payload = try JSONEncoder().encode(state)
+    guard let encrypted = try AES.GCM.seal(payload, using: key(create: true, account: motionAccount),
+      authenticating: motionContext).combined else { throw Failure.unavailable }
+    try encrypted.write(to: storageFile(context: motionContext, fixtureExtension: "motion"), options: [.atomic, .completeFileProtection])
+    NotificationCenter.default.post(name: Self.motionChanged, object: owner)
+    return state
+  }
+
   private func key(create: Bool, account override: String? = nil) throws -> SymmetricKey {
     let account = override ?? self.account
     if let encoded = secrets.string(account: account) {

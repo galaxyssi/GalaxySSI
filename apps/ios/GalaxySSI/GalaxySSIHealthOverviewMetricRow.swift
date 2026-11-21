@@ -9,7 +9,24 @@ struct GalaxySSIHealthOverviewMetricRow: View {
   let records: GalaxySSIHealthRecords
   let open: (GalaxySSIHealthReading) -> Void
   let manual: (GalaxySSIHealthMetric) -> Void
+  var birthDate: Date? = nil
+  var progressPermitted = false
+  @ObservedObject private var motion = GalaxySSIHealthMotionController.shared
   @State private var expanded = false
+  @State private var motionSettings = false
+  private var guidance: GalaxySSIHealthOverviewGuidance.Reference? {
+    GalaxySSIHealthOverviewGuidance.reference(metric: item.metric,
+      age: GalaxySSIHealthOverviewGuidance.age(birth: birthDate, on: item.reading?.measuredAt ?? Date(), calendar: .autoupdatingCurrent), language: language)
+  }
+  private var motionState: GalaxySSIHealthMotion.State? { motion.matches(records) ? motion.state : nil }
+  private var phoneSteps: Int? {
+    item.metric == .steps ? motionState?.steps?.today(Date(), calendar: .autoupdatingCurrent) : nil
+  }
+  private var staleSteps: Bool {
+    item.metric == .steps && item.reading.map { !Calendar.autoupdatingCurrent.isDateInToday($0.measuredAt) } == true
+  }
+  private var canExpand: Bool { item.reading != nil || guidance != nil }
+  private var showsStatus: Bool { !item.ranges.isEmpty || guidance == nil && item.metric != .steps }
 
   private var spacious: Bool { sizeCategory.isAccessibilityCategory || [.extraExtraLarge, .extraExtraExtraLarge].contains(sizeCategory) }
   private var status: GalaxySSIHealthOverviewRange? {
@@ -27,25 +44,29 @@ struct GalaxySSIHealthOverviewMetricRow: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Button {
-        if item.reading == nil { manual(item.metric) } else { expanded.toggle() }
+        if canExpand { expanded.toggle() } else { manual(item.metric) }
       } label: {
         VStack(alignment: .leading, spacing: 5) {
           HStack(alignment: .firstTextBaseline, spacing: 8) {
             Label(title, systemImage: icon).font(.subheadline.weight(.semibold)).foregroundColor(.primary)
             Spacer(minLength: 4)
             if !spacious { value }
-            Image(systemName: item.reading == nil ? "chevron.right" : (expanded ? "chevron.up" : "chevron.down"))
+            Image(systemName: !canExpand ? "chevron.right" : (expanded ? "chevron.up" : "chevron.down"))
               .font(.caption).foregroundColor(.secondary)
           }
           if spacious { value.frame(maxWidth: .infinity, alignment: .trailing) }
-          if let reading = item.reading {
+          if phoneSteps != nil {
+            Text(GalaxySSIHealthMotionView.text("phone_steps", "Phone step counter", language)).font(.caption).foregroundColor(.secondary)
+          } else if staleSteps {
+            Text(t("no_today_steps", "No step count today")).font(.caption).foregroundColor(.secondary)
+          } else if let reading = item.reading {
             if spacious {
               provenance(reading)
-              statusText.frame(maxWidth: .infinity, alignment: .trailing)
+              if showsStatus { statusText.frame(maxWidth: .infinity, alignment: .trailing) }
             } else {
               HStack(alignment: .top, spacing: 6) {
                 provenance(reading).frame(maxWidth: .infinity, alignment: .leading)
-                statusText.multilineTextAlignment(.trailing)
+                if showsStatus { statusText.multilineTextAlignment(.trailing) }
               }
             }
           } else { Text(t("unrecorded", "Not recorded")).font(.caption).foregroundColor(.secondary) }
@@ -53,9 +74,22 @@ struct GalaxySSIHealthOverviewMetricRow: View {
       }
       .buttonStyle(.plain)
       .accessibilityIdentifier("health-overview-" + item.metric.rawValue)
-      ForEach(Array(item.ranges.enumerated()), id: \.offset) { _, range in
+      if let guidance {
+        ForEach(guidance.lines, id: \.self) { Text($0).font(.caption).foregroundColor(.secondary) }
+      }
+      if phoneSteps == nil && !staleSteps { ForEach(Array(item.ranges.enumerated()), id: \.offset) { _, range in
         Text(sourceTitle(range.source) + ": " + componentTitle(range.component) + range.bounds + " " + range.unit)
           .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+      } }
+      if item.metric == .steps {
+        Button { motionSettings = true } label: {
+          Label(GalaxySSIHealthMotionView.status(motion.matches(records) ? motion.stepStatus : .off, language: language), systemImage: "figure.walk")
+        }.frame(minHeight: 44).buttonStyle(.borderless)
+        Button { motionSettings = true } label: {
+          Text(motionState?.goal.map { String(format: GalaxySSIHealthMotionView.text("goal_value", "Daily goal: %lld steps", language), Int64($0)) } ??
+            GalaxySSIHealthMotionView.text("set_goal", "Set a daily step goal", language))
+        }.frame(minHeight: 44).buttonStyle(.borderless)
+        if let ratio = stepProgress { Text(ratio.formatted(.percent)).font(.caption).foregroundColor(.secondary) }
       }
       if expanded, let reading = item.reading {
         NavigationLink {
@@ -67,17 +101,28 @@ struct GalaxySSIHealthOverviewMetricRow: View {
         } label: { Text(t("metric_history", "Measurement history")) }
         .frame(minHeight: 44)
       }
+      if expanded, let guidance {
+        if item.reading == nil { Button(t("manual", "Record measurement")) { manual(item.metric) }.frame(minHeight: 44) }
+        Text(guidance.detail).font(.caption).foregroundColor(.secondary)
+        Link(guidance.source, destination: guidance.url).font(.caption).frame(minHeight: 44)
+      }
     }
     .padding(.vertical, 5)
     .onChange(of: item.reading?.id) { _ in expanded = false }
     .onChange(of: item.reading?.revision) { _ in expanded = false }
+    .sheet(isPresented: $motionSettings) { NavigationView { GalaxySSIHealthMotionView(records: records) }.navigationViewStyle(.stack) }
   }
 
   private var title: String {
-    item.metric == .glucose && item.reading?.conditions == "fasting"
+    item.metric == .steps ? t("steps_today", "Steps today") : item.metric == .glucose && item.reading?.conditions == "fasting"
       ? t("fasting_glucose", "Fasting glucose") : item.metric.title(language: language)
   }
   private var value: Text {
+    if let count = phoneSteps {
+      return Text(count.formatted(.number.locale(locale))).font(.title3.weight(.semibold)).foregroundColor(.primary) +
+        Text(" " + t("steps_unit", "steps")).font(.caption).foregroundColor(.secondary)
+    }
+    if staleSteps { return Text("\u{2014}").foregroundColor(.secondary) }
     guard let reading = item.reading else { return Text("\u{2014}").foregroundColor(.secondary) }
     let first = item.metric == .bloodPressure ? GalaxySSIHealthCareTarget.Component.systolic : .value
     let notation = reading.reportedNotation.flatMap { $0.isBlank ? nil : $0 }
@@ -95,6 +140,13 @@ struct GalaxySSIHealthOverviewMetricRow: View {
   private func position(_ component: GalaxySSIHealthCareTarget.Component) -> GalaxySSIHealthOverviewRange.Position? {
     item.ranges.first(where: { $0.component == component && $0.outside })?.position ??
       item.ranges.first(where: { $0.component == component })?.position
+  }
+  private var stepProgress: Double? {
+    guard let goal = motionState?.goal, !staleSteps || phoneSteps != nil,
+          (try? records.load().derivesOverview) == true else { return nil }
+    let count = phoneSteps ?? item.reading?.value.flatMap { Int(NSDecimalNumber(decimal: $0).stringValue) }
+    return GalaxySSIHealthMotion.progress(goal: goal, steps: count,
+      fresh: phoneSteps != nil || item.freshness == .recent, permitted: progressPermitted)
   }
   private func ink(_ position: GalaxySSIHealthOverviewRange.Position?) -> Color {
     switch position {
