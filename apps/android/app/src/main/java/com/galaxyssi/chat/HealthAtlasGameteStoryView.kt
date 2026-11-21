@@ -152,8 +152,8 @@ internal class HealthAtlasGameteStoryView(context: Context, story: HealthAtlasFu
             label(c, R.string.health_atlas_sperm_flow_efferent, 145f, 51f, 122f)
         }
         if (step >= 2) {
-            line(c, 284f, 65f, 275f, 103f, sienna, 1.3f)
-            label(c, R.string.health_atlas_sperm_flow_head, 277f, 59f, 150f)
+            line(c, 290f, 47f, 275f, 103f, sienna, 1.3f)
+            label(c, R.string.health_atlas_sperm_flow_head, 287f, 36f, 130f)
         }
         if (step == 3) {
             line(c, 275f, 318f, 275f, 299f, teal, 1.3f)
