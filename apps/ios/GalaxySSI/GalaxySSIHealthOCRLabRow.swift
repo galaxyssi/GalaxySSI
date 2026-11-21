@@ -6,7 +6,8 @@ struct GalaxySSIHealthOCRLabRow: Equatable {
   let unit: String?
   let reference: String?
 
-  private static let ambiguous: Set<String> = ["cr", "ua", "pro", "chol", "gpt", "got", "hb"]
+  private static let ambiguous: Set<String> = ["cr", "ua", "pro", "chol", "gpt", "got", "hb", "rbc", "alb", "tp",
+    "\u{7EA2}\u{7EC6}\u{80DE}", "\u{767D}\u{86CB}\u{767D}", "\u{603B}\u{86CB}\u{767D}"]
   private static let labels: [String: GalaxySSIHealthMetric] = {
     var labels: [String: GalaxySSIHealthMetric] = ["glucose": .glucose, "hemoglobin a1c": .hba1c]
     for metric in GalaxySSIHealthMetric.allCases where metric.laboratory {
@@ -38,6 +39,9 @@ struct GalaxySSIHealthOCRLabRow: Equatable {
     "%": #"[%\uFF05]"#, "mmol/mol": #"mmol\s*/\s*mol"#,
     "10^9/L": #"(?:[x\u00D7]\s*)?10(?:\^\s*9|\u2079)\s*/\s*l"#,
     "10^3/uL": #"(?:[x\u00D7]\s*)?10(?:\^\s*3|\u00B3)\s*/\s*[u\u00B5\u03BC]l"#,
+    "10^12/L": #"(?:[x\u00D7]\s*)?10(?:\^\s*12|\u00B9\u00B2)\s*/\s*l"#,
+    "10^6/uL": #"(?:[x\u00D7]\s*)?10(?:\^\s*6|\u2076)\s*/\s*[u\u00B5\u03BC]l"#,
+    "L/L": #"l\s*/\s*l"#, "fL": "fl", "pg": "pg",
     "U/L": #"u\s*/\s*l"#, "umol/L": #"[u\u00B5\u03BC]mol\s*/\s*l"#, "mg/L": #"mg\s*/\s*l"#,
     "mIU/L": #"miu\s*/\s*l"#, "uIU/mL": #"[u\u00B5\u03BC]iu\s*/\s*ml"#
   ].mapValues { unit in

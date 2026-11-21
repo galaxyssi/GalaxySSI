@@ -2,6 +2,7 @@ import Foundation
 
 enum GalaxySSIHealthReportFailure: String, Codable {
   case notSent, notAccepted, replyTimeout, remoteFailure, replyFormat, noSupportedRows, invalidRows
+  case unsupportedMetrics, unreadableImage, ambiguousSample
   case privacy, sourceChanged, image, storage
 
   static func classify(_ error: Error, fallback: Self = .storage) -> Self {
@@ -18,6 +19,9 @@ enum GalaxySSIHealthReportFailure: String, Codable {
       case .format: return .replyFormat
       case .noSupportedRows: return .noSupportedRows
       case .invalidRows: return .invalidRows
+      case .unsupportedMetrics: return .unsupportedMetrics
+      case .unreadableImage: return .unreadableImage
+      case .ambiguousSample: return .ambiguousSample
       }
     }
     if error is AgentDataDisclosureBlockedError { return .privacy }
@@ -43,6 +47,9 @@ enum GalaxySSIHealthReportFailure: String, Codable {
     case .replyFormat: fallback = "The model reply was not a valid report result."
     case .noSupportedRows: fallback = "No supported measurement rows were found."
     case .invalidRows: fallback = "None of the returned measurement rows could be validated."
+    case .unsupportedMetrics: fallback = "The report contains readable tests outside the supported catalog. No unknown measurements were saved."
+    case .unreadableImage: fallback = "The report image is too unclear to read. Retake a sharper image and continue."
+    case .ambiguousSample: fallback = "The image contains multiple people or sample times that cannot be separated. Select one sample."
     case .privacy: fallback = "Health processing or destination authorization is unavailable."
     case .sourceChanged: fallback = "The image, account, permissions or destination changed. Review the file again."
     case .image: fallback = "The image could not be prepared within the 100 KB limit."

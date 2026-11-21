@@ -45,7 +45,7 @@ final class GalaxySSIHealthReportDeliveryTests: XCTestCase {
     for state in [Delivery.Admission.unknown, .active] {
       let h = Harness(); h.observed = state
       await expect(h, .replyTimeout)
-      XCTAssertEqual(h.publications, 1); XCTAssertEqual(h.probes, 1)
+      XCTAssertEqual(h.publications, 1); XCTAssertEqual(h.probes, 2)
     }
   }
 
@@ -53,6 +53,48 @@ final class GalaxySSIHealthReportDeliveryTests: XCTestCase {
     let h = Harness(); h.observed = .terminalFailure
     await expect(h, .remoteFailure)
     XCTAssertEqual(h.publications, 1)
+  }
+
+  func testDeadlineActiveOrCompletedGetsOneBoundedGraceWithoutResending() async {
+    for status in [Delivery.Admission.active, .completed] {
+      let h = Harness()
+      h.onProbe = { [unowned h] in h.probes == 1 ? .unknown : status }
+      await expect(h, .replyTimeout)
+      XCTAssertEqual(h.publications, 1); XCTAssertEqual(h.probes, 2)
+      XCTAssertEqual(h.clock, 3)
+    }
+  }
+
+  func testReplyArrivingDuringDeadlineProbeWinsWithoutGraceOrResend() async throws {
+    let h = Harness()
+    h.onProbe = { [unowned h] in
+      if h.probes == 2 { h.reply = .result("deadline reply") }
+      return .unknown
+    }
+    let text = try await h.run()
+    XCTAssertEqual(text, "deadline reply")
+    XCTAssertEqual(h.publications, 1); XCTAssertEqual(h.probes, 2)
+  }
+
+  func testReplyDuringBoundedGraceIsAcceptedAndGraceDoesNotRepeat() async throws {
+    let h = Harness(); h.observed = .completed
+    h.onSleep = { [unowned h] in if h.probes == 2 { h.reply = .result("grace reply") } }
+    let text = try await h.run()
+    XCTAssertEqual(text, "grace reply"); XCTAssertEqual(h.publications, 1); XCTAssertEqual(h.probes, 2)
+  }
+
+  func testDeadlineTerminalFailureIsNotPhoneTimeout() async {
+    let h = Harness()
+    h.onProbe = { [unowned h] in h.probes == 1 ? .active : .terminalFailure }
+    await expect(h, .remoteFailure)
+    XCTAssertEqual(h.publications, 1); XCTAssertEqual(h.probes, 2)
+  }
+
+  func testMissingAtDeadlineDoesNotResubmitAnAlreadyAdmittedRequest() async {
+    let h = Harness()
+    h.onProbe = { [unowned h] in h.probes == 1 ? .active : .missing }
+    await expect(h, .replyTimeout)
+    XCTAssertEqual(h.publications, 1); XCTAssertEqual(h.probes, 2)
   }
 
   func testTerminalReplyWinsOverAMissingAdmissionObservation() async throws {
@@ -178,6 +220,19 @@ final class GalaxySSIHealthReportDeliveryTests: XCTestCase {
     XCTAssertFalse(exchange.receiveAdmission(admission(request, nonce: nonce), desktop: "desktop", route: "route", now: 11))
   }
 
+  func testOnlyKnownRunningStatusesGetGraceAndCompletedIsDistinct() throws {
+    for (status, expected) in [("completed", Delivery.Admission.completed), ("running", .active),
+                              ("waiting_input", .unknown), ("waiting_approval", .unknown), ("future_status", .unknown)] {
+      let request = request(), exchange = GalaxySSIHealthReportCodexExchange(), nonce = UUID().uuidString
+      try exchange.begin(request); _ = exchange.beginAdmission(request, nonce: nonce, now: 10)
+      var payload = admission(request, nonce: nonce)
+      var item = try XCTUnwrap((payload["items"] as? [[String: Any]])?.first)
+      item["status"] = status; item["execution_generation"] = 1; payload["items"] = [item]
+      XCTAssertTrue(exchange.receiveAdmission(payload, desktop: "desktop", route: "route", now: 11))
+      XCTAssertEqual(exchange.admission(request, nonce: nonce), expected)
+    }
+  }
+
   func testFailureCategoriesPreserveDeliveryAndResultDistinctions() {
     XCTAssertEqual(GalaxySSIHealthReportFailure.classify(Delivery.Problem.notSent), .notSent)
     XCTAssertEqual(GalaxySSIHealthReportFailure.classify(Delivery.Problem.notAccepted), .notAccepted)
@@ -186,6 +241,9 @@ final class GalaxySSIHealthReportDeliveryTests: XCTestCase {
     XCTAssertEqual(GalaxySSIHealthReportFailure.classify(GalaxySSIHealthReportVision.ReplyProblem.format), .replyFormat)
     XCTAssertEqual(GalaxySSIHealthReportFailure.classify(GalaxySSIHealthReportVision.ReplyProblem.noSupportedRows), .noSupportedRows)
     XCTAssertEqual(GalaxySSIHealthReportFailure.classify(GalaxySSIHealthReportVision.ReplyProblem.invalidRows), .invalidRows)
+    XCTAssertEqual(GalaxySSIHealthReportFailure.classify(GalaxySSIHealthReportVision.ReplyProblem.unsupportedMetrics), .unsupportedMetrics)
+    XCTAssertEqual(GalaxySSIHealthReportFailure.classify(GalaxySSIHealthReportVision.ReplyProblem.unreadableImage), .unreadableImage)
+    XCTAssertEqual(GalaxySSIHealthReportFailure.classify(GalaxySSIHealthReportVision.ReplyProblem.ambiguousSample), .ambiguousSample)
     XCTAssertEqual(GalaxySSIHealthReportFailure.classify(AgentDataDisclosureBlockedError(destination: "Codex")), .privacy)
   }
 
@@ -215,11 +273,12 @@ final class GalaxySSIHealthReportDeliveryTests: XCTestCase {
     var allowed = true, cancelSleep = false
     var onPublish: ((Int) -> Bool)?
     var onProbe: (() -> Delivery.Admission)?
+    var onSleep: (() -> Void)?
     func run() async throws -> String {
       try await Delivery.receive(publish: { self.publications += 1; return self.onPublish?(self.publications) ?? true },
         probe: { self.probes += 1; return self.onProbe?() ?? self.observed }, outcome: { self.reply }, valid: { self.allowed },
-        timing: .init(earlyWait: 1, responseWait: 1, retryDelay: 0, poll: 1), now: { self.clock },
-        sleep: { if self.cancelSleep { throw CancellationError() }; self.clock += $0 })
+        timing: .init(earlyWait: 1, responseWait: 1, retryDelay: 0, poll: 1, activeGrace: 1, completedGrace: 1), now: { self.clock },
+        sleep: { if self.cancelSleep { throw CancellationError() }; self.clock += $0; self.onSleep?() })
     }
   }
 }

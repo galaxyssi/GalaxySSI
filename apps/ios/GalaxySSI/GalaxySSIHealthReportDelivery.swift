@@ -2,12 +2,14 @@ import Foundation
 
 enum GalaxySSIHealthReportDelivery {
   enum Problem: String, Error { case notSent, notAccepted, replyTimeout, remoteFailure }
-  enum Admission: Equatable { case missing, active, terminalFailure, unknown }
+  enum Admission: Equatable { case missing, active, completed, terminalFailure, unknown }
   struct Timing {
     var earlyWait: UInt64 = 20_000_000_000
     var responseWait: UInt64 = 160_000_000_000
     var retryDelay: UInt64 = 500_000_000
     var poll: UInt64 = 200_000_000
+    var activeGrace: UInt64 = 90_000_000_000
+    var completedGrace: UInt64 = 30_000_000_000
   }
 
   @MainActor static func receive(publish: () async throws -> Bool, probe: () async throws -> Admission,
@@ -54,9 +56,21 @@ enum GalaxySSIHealthReportDelivery {
         case .missing:
           if attempt == 1 { throw Problem.notAccepted }
         case .terminalFailure: throw Problem.remoteFailure
-        case .active, .unknown:
+        case .active, .completed, .unknown:
           let late = try await wait(timing.responseWait)
           if let late { return late }
+          let deadlineAdmission = try await probe()
+          try current()
+          if let text = try resolved() { return text }
+          let grace: UInt64
+          switch deadlineAdmission {
+          case .active: grace = timing.activeGrace
+          case .completed: grace = timing.completedGrace
+          case .terminalFailure: throw Problem.remoteFailure
+          case .missing, .unknown: grace = 0
+          }
+          let final = try await wait(grace)
+          if let final { return final }
           throw Problem.replyTimeout
         }
       } else if attempt == 1 { throw published ? Problem.notAccepted : Problem.notSent }

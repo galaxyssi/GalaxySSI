@@ -3,7 +3,7 @@ import Foundation
 
 enum GalaxySSIHealthReportVision {
   enum RowIssue: String, Codable, CaseIterable {
-    case unsupportedMetric = "unsupported_metric", invalidUnit = "invalid_unit", invalidFields = "invalid_fields", duplicate
+    case unsupportedMetric = "unsupported_metric", invalidUnit = "invalid_unit", invalidFields = "invalid_fields", duplicate, unreadable
     func title(count: Int, language: String) -> String {
       let fallback: String
       switch self {
@@ -11,11 +11,12 @@ enum GalaxySSIHealthReportVision {
       case .invalidUnit: fallback = "%lld rows have unsupported units"
       case .invalidFields: fallback = "%lld rows have invalid or unreadable fields"
       case .duplicate: fallback = "%lld repeated rows were omitted"
+      case .unreadable: fallback = "%lld rows were too unclear to read"
       }
       return String(format: GalaxySSIHealthReportVision.text("rejected_" + rawValue, fallback, language), Int64(count))
     }
   }
-  enum ReplyProblem: String, Error { case format, noSupportedRows, invalidRows }
+  enum ReplyProblem: String, Error { case format, noSupportedRows, unsupportedMetrics, unreadableImage, ambiguousSample, invalidRows }
   struct Row: Codable, Equatable, Identifiable {
     let metric: GalaxySSIHealthMetric
     let values: [String: String]
@@ -57,7 +58,7 @@ enum GalaxySSIHealthReportVision {
       text = String(text[text.index(after: newline)...].dropLast(3)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
     guard let object = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(text.utf8)) else { throw ReplyProblem.format }
-    guard Set(object.keys).subtracting(["fasting"]) == ["rows", "collected", "partial"], case .array(let raw)? = object["rows"],
+    guard Set(object.keys).subtracting(["fasting", "omitted", "ambiguous_sample"]) == ["rows", "collected", "partial"], case .array(let raw)? = object["rows"],
           (0...80).contains(raw.count), let collected = object["collected"]?.strictStringValue,
           validText(collected, limit: 80), case .bool(let partial)? = object["partial"] else { throw ReplyProblem.format }
     let fasting: String?
@@ -65,24 +66,42 @@ enum GalaxySSIHealthReportVision {
       guard let text = value.strictStringValue, text.isEmpty || GalaxySSIHealthReportBatch.conditions.contains(text) else { throw ReplyProblem.format }
       fasting = text
     } else { fasting = nil }
-    var rows: [Row] = [], seen = Set<String>(), rejected: [String: Int] = [:]
+    let ambiguous: Bool
+    if let value = object["ambiguous_sample"] {
+      guard case .bool(let flag) = value, !flag || raw.isEmpty else { throw ReplyProblem.format }
+      ambiguous = flag
+    } else { ambiguous = false }
+    var rejected: [String: Int] = [:]
+    if let omitted = object["omitted"] {
+      guard let counts = omitted.objectValue, Set(counts.keys) == ["unsupported_metric", "unreadable"],
+            case .int(let unsupported)? = counts["unsupported_metric"], case .int(let unreadable)? = counts["unreadable"],
+            (0...80).contains(unsupported), (0...80).contains(unreadable), unsupported + unreadable <= 80 else { throw ReplyProblem.format }
+      if unsupported > 0 { rejected[RowIssue.unsupportedMetric.rawValue] = Int(unsupported) }
+      if unreadable > 0 { rejected[RowIssue.unreadable.rawValue] = Int(unreadable) }
+    }
+    if ambiguous { throw ReplyProblem.ambiguousSample }
+    var rows: [Row] = [], seen = Set<String>()
     for value in raw {
       let issue: RowIssue?
       if let item = value.objectValue, let metricID = item["metric"]?.strictStringValue, !metricID.isBlank,
          let unit = item["unit"]?.strictStringValue {
         if let metric = GalaxySSIHealthMetric(rawValue: metricID) {
-          if !unit.isEmpty && !metric.units.contains(unit) { issue = .invalidUnit }
-          else if let row = try? decodeRow(value) {
-            if seen.insert(row.id).inserted { rows.append(row); issue = nil }
-            else { issue = .duplicate }
-          } else { issue = .invalidFields }
+          if let canonical = canonicalUnit(unit, metric: metric) {
+            var normalized = item; normalized["unit"] = .string(canonical)
+            if let row = try? decodeRow(.object(normalized)) {
+              if seen.insert(row.id).inserted { rows.append(row); issue = nil }
+              else { issue = .duplicate }
+            } else { issue = .invalidFields }
+          } else { issue = .invalidUnit }
         } else { issue = .unsupportedMetric }
       } else { issue = .invalidFields }
       if let issue { rejected[issue.rawValue, default: 0] += 1 }
     }
     guard !rows.isEmpty else {
-      throw raw.isEmpty || Set(rejected.keys) == [RowIssue.unsupportedMetric.rawValue]
-        ? ReplyProblem.noSupportedRows : ReplyProblem.invalidRows
+      if rejected[RowIssue.invalidFields.rawValue] != nil || rejected[RowIssue.invalidUnit.rawValue] != nil { throw ReplyProblem.invalidRows }
+      if rejected[RowIssue.unreadable.rawValue] != nil { throw ReplyProblem.unreadableImage }
+      if rejected[RowIssue.unsupportedMetric.rawValue] != nil { throw ReplyProblem.unsupportedMetrics }
+      throw ReplyProblem.noSupportedRows
     }
     return Result(rows: rows, collected: collected, partial: partial || !rejected.isEmpty, fasting: fasting,
       rejectedRows: rejected.isEmpty ? nil : rejected)
@@ -94,8 +113,8 @@ enum GalaxySSIHealthReportVision {
     let rejected = result.rejectedRows ?? [:]
     guard result.rows.count <= 80, !result.rows.isEmpty || (allowLegacyEmpty && rejected.isEmpty),
           validText(result.collected, limit: 80), result.fasting.map({ $0.isEmpty || GalaxySSIHealthReportBatch.conditions.contains($0) }) != false,
-          rejected.allSatisfy({ RowIssue(rawValue: $0.key) != nil && (1...80).contains($0.value) }),
-          result.rows.count + rejected.values.reduce(0, +) <= 80, rejected.isEmpty || result.partial else { throw invalid }
+          rejected.allSatisfy({ RowIssue(rawValue: $0.key) != nil && (1...160).contains($0.value) }),
+          result.rows.count + rejected.values.reduce(0, +) <= 160, rejected.isEmpty || result.partial else { throw invalid }
     let encoded = try JSONEncoder().encode(result)
     guard encoded.count <= GalaxySSIHealthReportCodex.maximumReplyBytes * 2,
           case .array(let rows)? = try JSONDecoder().decode(AgentMcpJSONObject.self, from: encoded)["rows"],
@@ -132,6 +151,22 @@ enum GalaxySSIHealthReportVision {
 
   private static func validText(_ value: String, limit: Int) -> Bool {
     value.utf16.count <= limit && value.rangeOfCharacter(from: .controlCharacters) == nil
+  }
+
+  // Normalize spelling only: never convert a value, magnitude, specimen or measurement.
+  static func canonicalUnit(_ raw: String, metric: GalaxySSIHealthMetric) -> String? {
+    guard validText(raw, limit: 40) else { return nil }
+    if raw.isEmpty { return "" }
+    func key(_ unit: String) -> String {
+      unit.replacingOccurrences(of: #"[\u00B9\u00B2\u00B3\u2070\u2074-\u2079]+"#, with: "^$0", options: .regularExpression)
+        .precomposedStringWithCompatibilityMapping.filter { !$0.isWhitespace }
+        .replacingOccurrences(of: "\u{03BC}", with: "u").replacingOccurrences(of: "\u{00B5}", with: "u")
+        .replacingOccurrences(of: #"^[x\u00D7](?=10\^)"#, with: "", options: .regularExpression)
+        .replacingOccurrences(of: #"(?<=10)\*(?=[0-9])"#, with: "^", options: .regularExpression)
+        .replacingOccurrences(of: #"/([dmu]?)l$"#, with: "/$1L", options: .regularExpression)
+    }
+    let candidates = metric.units.filter { !$0.isEmpty && key($0) == key(raw) }
+    return candidates.count == 1 ? candidates[0] : nil
   }
 
   static func source(_ row: Row, job: GalaxySSIHealthRecognitionJobs.Job) -> GalaxySSIHealthReportReview.Source {
