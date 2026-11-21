@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_adipose_volume_share_title">脂滴占模型组织体积的比例</string>
+    <string name="health_atlas_adipose_volume_share_radius_ratio">脂滴半径与细胞半径之比</string>
+    <string name="health_atlas_adipose_volume_share_cell_percent">白色脂肪细胞占模型组织体积的比例</string>
+    <string name="health_atlas_adipose_volume_share_companion">脂滴占单个模型细胞体积的比例：%1$s%%</string>
+    <string name="health_atlas_adipose_volume_share_formula">若脂滴和细胞均视为球体，脂滴占单个细胞体积的比例为 r 的三次方，其中 r 是脂滴半径与固定细胞半径之比。若这些细胞占模型组织总体积的 p%，其脂滴占组织总体积的百分数就是 p 乘以 r 的三次方。</string>
+    <string name="health_atlas_adipose_volume_share_scope">成熟的白色脂肪细胞通常含有一个大脂滴。本教学模型将这些细胞简化为半径相同且固定的球体，每个细胞含一个球形脂滴。两个滑块的比例均为虚构设定，模型组织的其余部分不计入任何脂滴。此几何模型不用于估算个人的细胞尺寸、体脂质量、肥胖状况或代谢当量（MET）。</string>
+</resources>
