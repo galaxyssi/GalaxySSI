@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_biliary_flow_tally_title">Outflow at a duct junction</string>
+    <string name="health_atlas_biliary_flow_tally_per_channel">Inflow per channel</string>
+    <string name="health_atlas_biliary_flow_tally_channel_count">Number of source channels</string>
+    <string name="health_atlas_biliary_flow_tally_companion">Total volume entering in 4 demo minutes: %1$s VU</string>
+    <string name="health_atlas_biliary_flow_tally_formula">Outflow = inflow per channel times the number of channels. With nothing added, removed or stored at the junction, the same total volume enters and leaves over 4 demo minutes.</string>
+    <string name="health_atlas_biliary_flow_tally_scope">Hepatocytes release bile into tiny channels that drain into bile ducts. Smaller ducts join into larger ones; for example, the right and left hepatic ducts join to form the common hepatic duct. Cholangiocytes line the ducts and modify bile as it passes. This model isolates the joining step: identical channels carry a fictional fluid into one outlet, with no duct modification or gallbladder storage. VU is an imaginary volume unit. All settings are fictional and unrelated to personal records; the model does not predict actual bile flow or the effects of disease or drugs.</string>
+</resources>

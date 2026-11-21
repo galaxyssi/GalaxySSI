@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_biliary_flow_tally_title">胆管汇合后的出口流量</string>
+    <string name="health_atlas_biliary_flow_tally_per_channel">单条通道的流入流量</string>
+    <string name="health_atlas_biliary_flow_tally_channel_count">流入通道数</string>
+    <string name="health_atlas_biliary_flow_tally_companion">模拟 4 分钟内流入的总体积：%1$s VU</string>
+    <string name="health_atlas_biliary_flow_tally_formula">出口流量 = 单条通道的流入流量 × 通道数。汇合处不增加、不移除也不储存液体，因此模拟 4 分钟内流入和流出的总体积相等。</string>
+    <string name="health_atlas_biliary_flow_tally_scope">肝细胞将胆汁分泌到细小的胆小管中，胆汁再流入胆管。较小的胆管汇合成较大的胆管，例如左、右肝管汇合形成肝总管。胆管上皮细胞排列在胆管内壁，并改变流经胆管的胆汁成分。本模型只演示汇合过程：流量相同的通道将虚构液体汇入同一个出口，不模拟胆管对胆汁的改变或胆囊储存。VU 是虚构的体积单位。所有设定均为虚构，与个人健康记录无关；模型不预测真实胆汁流量，也不预测疾病或药物的影响。</string>
+</resources>
