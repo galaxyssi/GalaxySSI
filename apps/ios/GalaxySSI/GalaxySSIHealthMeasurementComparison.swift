@@ -13,7 +13,8 @@ enum GalaxySSIHealthMeasurementComparison {
     [.report, .table].contains(source(reading))
   }
   static func accepts(_ reading: GalaxySSIHealthReading, anchor: GalaxySSIHealthReading) -> Bool {
-    guard reading.metric == anchor.metric, reading.unit == anchor.unit, reading.conditions == anchor.conditions,
+    guard reading.metric == anchor.metric, reading.unit == anchor.unit,
+          reading.normalizedMeasurementCondition == anchor.normalizedMeasurementCondition,
           reading.normalizedMeasurementSide == anchor.normalizedMeasurementSide, source(reading) == source(anchor) else { return false }
     if source(anchor) == .bluetooth { return reading.bluetoothReceipt?.device == anchor.bluetoothReceipt?.device }
     if source(anchor) == .healthKit {

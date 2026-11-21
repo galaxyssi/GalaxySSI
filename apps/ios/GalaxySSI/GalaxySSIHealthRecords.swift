@@ -25,6 +25,7 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   var unit: String { unitOverride ?? metric.unit }
   var resultKind: String { reported?.kind.rawValue ?? "number" }
   var normalizedMeasurementSide: String { measurementSide ?? "unspecified" }
+  var normalizedMeasurementCondition: String { conditions.isBlank ? "unspecified" : conditions }
 
   var isValid: Bool {
     func positive(_ number: Decimal) -> Bool {
@@ -59,7 +60,8 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
     if let device = bluetoothReceipt?.device, let otherDevice = other.bluetoothReceipt?.device,
        device != otherDevice { return false }
     return metric == other.metric && abs(measuredAt.timeIntervalSince(other.measuredAt)) < 60 &&
-      unit == other.unit && conditions == other.conditions && normalizedMeasurementSide == other.normalizedMeasurementSide &&
+      unit == other.unit && normalizedMeasurementCondition == other.normalizedMeasurementCondition &&
+      normalizedMeasurementSide == other.normalizedMeasurementSide &&
       value == other.value && reported?.canonical == other.reported?.canonical &&
       diastolic == other.diastolic && pulse == other.pulse
   }
@@ -137,7 +139,7 @@ struct GalaxySSIHealthOverview {
       return (index, Metric(metric: metric, reading: reading,
         freshness: reading.map { $0.measuredAt >= (metric == .steps ? today : cutoff) ? .recent : .stale } ?? .missing,
         ranges: reading == nil ? [] : ranges[metric] ?? []))
-    }.filter { overviewMetrics.contains($0.1.metric) || $0.1.outsideRange }.sorted {
+    }.filter { overviewMetrics.contains($0.1.metric) || $0.1.reading != nil }.sorted {
       if $0.1.outsideRange != $1.1.outsideRange { return $0.1.outsideRange }
       if $0.1.outsideRange, $0.1.reading?.measuredAt != $1.1.reading?.measuredAt {
         return ($0.1.reading?.measuredAt ?? .distantPast) > ($1.1.reading?.measuredAt ?? .distantPast)
