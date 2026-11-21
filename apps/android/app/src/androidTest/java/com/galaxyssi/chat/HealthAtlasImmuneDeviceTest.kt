@@ -7,11 +7,13 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.os.Bundle
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.EditText
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
@@ -223,6 +225,15 @@ class HealthAtlasImmuneDeviceTest {
                 assertFalse(other.contains(scope))
                 assertFalse(lessonPrompt.contains(localized.getString(R.string.health_atlas_phagocytosis_scope)))
             }
+            for (lesson in HealthAtlasImmuneLink.entries) {
+                val scope = localized.getString(lesson.scope)
+                val selected = requireNotNull(atlas[lesson.owner])
+                val lessonPrompt = HealthAtlasAgentContext.prompt(localized, atlas, selected,
+                    simulation = HealthAtlasSimulation(phase = .5f))
+                assertTrue(lessonPrompt.contains(atlas.mechanism(selected).stages[2]))
+                assertTrue(lessonPrompt.contains(scope))
+                assertFalse(prompt.contains(scope))
+            }
         }
     }
 
@@ -282,6 +293,38 @@ class HealthAtlasImmuneDeviceTest {
                     } finally { frames.forEach { it.recycle() }; rewind.recycle() }
                 }
             }
+        }
+    }
+
+    @Test fun immuneSceneLinksOpenCanonicalCellsAndRestoreTheOriginalPlayhead() = native { scenario ->
+        val atlas = HealthBodyAtlas.load(context)
+        for (lesson in HealthAtlasImmuneLink.entries) {
+            val item = requireNotNull(atlas[lesson.owner])
+            val target = requireNotNull(atlas[lesson.relatedId])
+            scenario.onActivity { activity ->
+                activity.open(item.id)
+                activity.view("atlas-tab-3").performClick()
+                val row = activity.view("atlas-immune-related-${target.id}")
+                val diagram = activity.view("atlas-immune-link-diagram") as HealthAtlasImmuneLinkView
+                assertEquals(lesson, diagram.lesson)
+                val progress = activity.view("atlas-simulation-progress") as SeekBar
+                val seek = Bundle().apply { putFloat(AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE, 830f) }
+                assertTrue(progress.performAccessibilityAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id, seek))
+                assertEquals(3, diagram.stage)
+                assertEquals(.83f, diagram.phase, .001f)
+                assertTrue(diagram.contentDescription.contains(atlas.mechanism(item).stages[3]))
+                assertTrue(row.performClick())
+                assertEquals(target.name, (activity.view("health-page-title") as TextView).text.toString())
+                activity.onBackPressed()
+            }
+            ready(scenario, "atlas-immune-link-diagram")
+            scenario.onActivity { activity ->
+                val restored = activity.view("atlas-immune-link-diagram") as HealthAtlasImmuneLinkView
+                assertEquals(lesson, restored.lesson)
+                assertEquals(.83f, restored.phase, .001f)
+                activity.onBackPressed()
+            }
+            ready(scenario, "atlas-search")
         }
     }
 }
