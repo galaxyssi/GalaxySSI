@@ -30,6 +30,8 @@ class HealthBodyAtlasActivity : Activity() {
     private var section = 0
     private var showTissueCatalogue = false
     private var selection = ""
+    private var wholeFocus = "heart"
+    private var revealTrend = false
     private var system = ""
     private var query = ""
     private var tab = HealthAtlasTab.STRUCTURE
@@ -72,6 +74,8 @@ class HealthBodyAtlasActivity : Activity() {
         section = state?.getInt("section")?.coerceIn(0, 3) ?: 0
         showTissueCatalogue = state?.getBoolean("showTissueCatalogue") == true
         selection = state?.getString("selection").orEmpty()
+        wholeFocus = state?.getString("wholeFocus") ?: "heart"
+        revealTrend = state?.getBoolean("revealTrend") == true
         system = state?.getString("system").orEmpty()
         query = state?.getString("query").orEmpty().take(100)
         tab = HealthAtlasTab.entries.firstOrNull { it.name == state?.getString("tab") } ?: HealthAtlasTab.STRUCTURE
@@ -150,6 +154,7 @@ class HealthBodyAtlasActivity : Activity() {
         saveResearch()
         saveMeasurementSelection()
         out.putInt("section", section); out.putString("selection", selection); out.putString("system", system)
+        out.putString("wholeFocus", wholeFocus); out.putBoolean("revealTrend", revealTrend)
         out.putBoolean("showTissueCatalogue", showTissueCatalogue)
         out.putBundle("structureLayersV1", Bundle().apply { structureLayers.forEach { (id, layer) -> putString(id, layer.name) } })
         out.putString("query", query); out.putString("tab", tab.name)
@@ -190,9 +195,11 @@ class HealthBodyAtlasActivity : Activity() {
     }
     private fun select(item: HealthAtlasItem) = select(item, HealthAtlasTab.STRUCTURE)
 
-    private fun select(item: HealthAtlasItem, destination: HealthAtlasTab) {
+    private fun select(item: HealthAtlasItem, destination: HealthAtlasTab, showTrend: Boolean = false) {
+        if (selection.isEmpty() && section == 0) wholeFocus = item.id
         if (selection.isNotEmpty()) { history.add(Destination(selection, tab, researchTopic, scroller?.scrollY ?: 0)); if (history.size > 32) history.removeAt(0) }
         selection = item.id; tab = destination; scrollY = 0
+        revealTrend = showTrend
         researchTopic = null
         (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(root.windowToken, 0)
         render()
@@ -223,6 +230,7 @@ class HealthBodyAtlasActivity : Activity() {
             if (researchTopic == null) "atlas-tab" else "atlas-research-tab") { index ->
             if (researchTopic != null) researchTopic = HealthAtlasResearchTopic.entries[index]
             else if (item == null) { section = index; query = ""; limit = 24 } else tab = HealthAtlasTab.entries[index]
+            revealTrend = false
             scrollY = 0; render()
         })
         content = ui.column().apply { setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(16)) }
@@ -231,7 +239,7 @@ class HealthBodyAtlasActivity : Activity() {
         if (item == null) catalogue(data) else if (researchTopic != null) researchPage(data, item) else detail(data, item)
         val personal = item != null && researchTopic == null && tab == HealthAtlasTab.VALUES
         root.addView(ui.command(if (personal) R.string.health_atlas_compare else R.string.health_atlas_ask) {
-            if (personal) measurements?.analyze() else ask(item)
+            if (personal) measurements?.analyze() else ask(item ?: if (section == 0) wholeItem(data) else null)
         }.apply {
             tag = "atlas-ask"
             if (personal) { measurementAction = this; isEnabled = measurements?.canAnalyze == true }
@@ -239,12 +247,17 @@ class HealthBodyAtlasActivity : Activity() {
         scroll.post { if (scroller === scroll) scroll.scrollTo(0, scrollY) }
     }
 
+    private fun wholeItem(data: HealthBodyAtlas) = data[wholeFocus] ?: requireNotNull(data["heart"])
+
     private fun catalogue(data: HealthBodyAtlas) {
         if (section == 0) {
             ui.add(content, HealthAtlasArtwork(this, data, null, ::select,
                 { plate, title -> zoomAnatomy(data, null, plate, title) }).apply { tag = "atlas-whole-art" })
-            ui.add(content, ui.row(data["heart"]!!.name, data["cardio"]!!.name) { select(data["heart"]!!) })
-            ui.add(content, ui.row(data["cell-pancreatic-beta-cell"]!!.name, data["endocrine"]!!.name) { select(data["cell-pancreatic-beta-cell"]!!) })
+            val focus = wholeItem(data)
+            ui.add(content, HealthAtlasUi.wholeBodyActions(this, data, focus,
+                structure = { select(focus) },
+                metrics = { select(focus, HealthAtlasTab.VALUES) },
+                trend = { select(focus, HealthAtlasTab.VALUES, showTrend = true) }), 8)
             ui.add(content, ui.text(getString(R.string.health_atlas_counts, data.systems.size,
                 data.items.count { it.kind == HealthAtlasKind.ORGAN }, data.tissues.size,
                 data.items.count { it.kind == HealthAtlasKind.CELL }), 12f, muted = true), 8)
@@ -324,8 +337,10 @@ class HealthBodyAtlasActivity : Activity() {
             }
             HealthAtlasTab.VALUES -> {
                 measurementItem = item.id
-                if (started) measurements = HealthAtlasMeasurements(this, content, item, measurementSelections[item.id]) {
-                    measurementAction?.isEnabled = it && started
+                if (started) {
+                    measurements = HealthAtlasMeasurements(this, content, item, measurementSelections[item.id],
+                        revealTrend = revealTrend) { measurementAction?.isEnabled = it && started }
+                    revealTrend = false
                 }
                 else content.addView(ui.text(getString(R.string.health_loading)))
             }

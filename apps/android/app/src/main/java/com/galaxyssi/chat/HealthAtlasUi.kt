@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -63,6 +64,52 @@ internal object HealthAtlasUi {
         }
     }
     fun art(item: HealthAtlasItem?): Int? = HealthAtlasPlates.forId(item?.id)?.drawable
+
+    fun wholeBodyActions(activity: Activity, data: HealthBodyAtlas, item: HealthAtlasItem,
+        structure: () -> Unit, metrics: () -> Unit, trend: () -> Unit): LinearLayout {
+        val ui = HealthCenterViews(activity)
+        val card = ui.card().apply {
+            tag = "atlas-whole-selection"
+            setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4))
+        }
+        val context = item.systems.mapNotNull(data::get).filterNot { it.id == item.id }.joinToString(" · ") { it.name }
+        ui.add(card, ui.row(item.name, context, structure).apply {
+            tag = "atlas-whole-structure-${item.id}"
+            addView(ImageView(activity).apply {
+                val artwork = art(item)
+                setImageResource(artwork ?: icon(item))
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                if (artwork == null) imageTintList = ColorStateList.valueOf(activity.getColor(R.color.health_overview_green))
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, 0, LinearLayout.LayoutParams(ui.dp(38), ui.dp(38)).apply { marginEnd = ui.dp(10) })
+        })
+        card.addView(View(activity).apply { setBackgroundColor(activity.getColor(R.color.separator)) },
+            LinearLayout.LayoutParams(-1, ui.dp(1)))
+        val actions = ui.line().apply { gravity = Gravity.TOP; tag = "atlas-whole-actions" }
+        fun action(id: String, label: Int, drawable: Int, enabled: Boolean = true, click: () -> Unit) {
+            val accent = activity.getColor(R.color.health_overview_green)
+            actions.addView(Button(activity, null, android.R.attr.borderlessButtonStyle).apply {
+                tag = "atlas-whole-action-$id"
+                text = activity.getString(label); isAllCaps = false; textSize = 13f; letterSpacing = 0f
+                setTextColor(activity.getColor(if (enabled) R.color.text_primary else R.color.text_secondary))
+                setPadding(ui.dp(2), ui.dp(5), ui.dp(2), ui.dp(5)); minimumWidth = 0; minimumHeight = ui.dp(48)
+                compoundDrawablePadding = ui.dp(3)
+                val image = activity.getDrawable(drawable)?.mutate()?.apply {
+                    setTint(if (enabled) accent else activity.getColor(R.color.text_secondary))
+                    setBounds(0, 0, ui.dp(16), ui.dp(16))
+                }
+                setCompoundDrawablesRelative(null, image, null, null)
+                isEnabled = enabled
+                if (enabled) setOnClickListener { click() }
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        action("structure", R.string.health_atlas_structure, R.drawable.ic_input_menu_layers, click = structure)
+        action("metrics", R.string.health_atlas_quick_metrics, R.drawable.ic_health_profile, click = metrics)
+        action("trend", R.string.health_atlas_quick_trend, R.drawable.ic_health_data_chart,
+            enabled = HealthAtlasMetrics.forItem(item).isNotEmpty(), click = trend)
+        ui.add(card, actions)
+        return card
+    }
 }
 
 internal class HealthAtlasArtwork(

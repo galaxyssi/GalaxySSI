@@ -3,6 +3,7 @@ package com.galaxyssi.chat
 import android.app.Activity
 import android.app.KeyguardManager
 import android.content.Intent
+import android.graphics.Rect
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
@@ -21,18 +22,103 @@ class HealthBodyAtlasDeviceTest {
     private fun View.tagged(value: String): View? = if (tag == value) this else if (this is ViewGroup)
         (0 until childCount).firstNotNullOfOrNull { getChildAt(it).tagged(value) } else null
     private fun Activity.view(tag: String): View = requireNotNull(window.decorView.tagged(tag)) { tag }
+    private fun await(scenario: ActivityScenario<HealthBodyAtlasActivity>, reason: String,
+        predicate: (HealthBodyAtlasActivity) -> Boolean) {
+        val until = SystemClock.elapsedRealtime() + 15_000
+        var ready = false
+        while (!ready && SystemClock.elapsedRealtime() < until) {
+            scenario.onActivity { ready = predicate(it) }
+            if (!ready) SystemClock.sleep(40)
+        }
+        assertTrue(reason, ready)
+    }
+
     private fun native(names: HealthOverviewDatabases = HealthOverviewDatabases(java.util.UUID.randomUUID().toString()),
         block: (ActivityScenario<HealthBodyAtlasActivity>) -> Unit) {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         try { ActivityScenario.launch<HealthBodyAtlasActivity>(Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(names)).use { scenario ->
-            val until = SystemClock.elapsedRealtime() + 15_000
-            var loaded = false
-            while (!loaded && SystemClock.elapsedRealtime() < until) {
-                scenario.onActivity { loaded = it.window.decorView.tagged("atlas-whole-art") != null }
-                if (!loaded) SystemClock.sleep(40)
-            }
-            assertTrue("Atlas did not load", loaded); block(scenario)
+            await(scenario, "Atlas did not load") { it.window.decorView.tagged("atlas-whole-art") != null }
+            block(scenario)
         } } finally { clearHealthOverviewFixture(context, names) }
+    }
+
+    @Test fun wholeBodyPanelKeepsTheSelectedOrganAndOpensItsScopedTrend() {
+        val names = HealthOverviewDatabases(java.util.UUID.randomUUID().toString())
+        native(names) { scenario ->
+            scenario.onActivity { activity ->
+                assertNotNull(activity.view("atlas-whole-structure-heart"))
+                activity.view("atlas-whole-action-structure").performClick()
+                assertTrue(activity.view("atlas-tab-0").isSelected)
+                activity.onBackPressed()
+                activity.view("atlas-whole-action-metrics").performClick()
+                assertTrue(activity.view("atlas-tab-2").isSelected)
+                assertNotNull(activity.view("atlas-metric-selector"))
+                activity.onBackPressed()
+                activity.view("atlas-hotspot-liver").performClick()
+                activity.onBackPressed()
+                assertNotNull(activity.view("atlas-whole-structure-liver"))
+            }
+            scenario.recreate()
+            await(scenario, "Whole-body organ selection was lost") {
+                it.window.decorView.tagged("atlas-whole-structure-liver") != null
+            }
+            scenario.onActivity { it.view("atlas-whole-action-trend").performClick() }
+            await(scenario, "Trend shortcut did not reveal the chart") { activity ->
+                val chart = activity.window.decorView.tagged("atlas-personal-chart")
+                val visible = Rect()
+                chart != null && chart.height > 0 && chart.getLocalVisibleRect(visible) && visible.height() == chart.height
+            }
+            HealthPrivacyStore(context, names.privacy).use { privacy ->
+                assertTrue(privacy.page().entries.any {
+                    it.scope.purpose == HealthAccessPurpose.TREND && it.scope.metrics == setOf(HealthMetric.ALT)
+                })
+            }
+            scenario.onActivity {
+                it.onBackPressed()
+                it.view("atlas-hotspot-brain").performClick()
+                it.onBackPressed()
+                assertFalse(it.view("atlas-whole-action-trend").isEnabled)
+            }
+        }
+    }
+
+    @Test fun wholeBodyTrendShortcutRespectsDeniedMetricAccess() {
+        val names = HealthOverviewDatabases(java.util.UUID.randomUUID().toString())
+        native(names) { scenario ->
+            HealthPrivacyStore(context, names.privacy).use {
+                it.change(HealthPrivacyOption.CONFIRMED_METRICS, false, it.policy().version)
+            }
+            scenario.onActivity { it.view("atlas-whole-action-trend").performClick() }
+            await(scenario, "Trend permission denial was not surfaced") {
+                it.window.decorView.tagged("atlas-personal-blocked") != null
+            }
+            scenario.onActivity {
+                assertNull(it.window.decorView.tagged("atlas-personal-chart"))
+                assertFalse(it.view("atlas-ask").isEnabled)
+            }
+        }
+    }
+
+    @Test fun wholeBodyQuickActionsFitLargeLabelsAtPhoneWidth() = native { scenario ->
+        scenario.onActivity { activity ->
+            val atlas = HealthBodyAtlas.load(activity)
+            val panel = HealthAtlasUi.wholeBodyActions(activity, atlas, requireNotNull(atlas["heart"]), {}, {}, {})
+            val row = panel.tagged("atlas-whole-actions") as ViewGroup
+            val ui = HealthCenterViews(activity)
+            val width = ui.dp(300)
+            val buttons = (0 until row.childCount).map { row.getChildAt(it) as TextView }
+            buttons.forEach { it.textSize = 26f }
+            panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            panel.layout(0, 0, width, panel.measuredHeight)
+            assertEquals(3, buttons.size)
+            for (button in buttons) {
+                assertTrue(button.left >= 0 && button.right <= row.width)
+                assertTrue(button.height >= ui.dp(48))
+                assertTrue(button.layout.height + button.compoundPaddingTop + button.compoundPaddingBottom <= button.height)
+            }
+            assertTrue(buttons.zipWithNext().all { (left, right) -> left.right <= right.left })
+        }
     }
     @Test fun completeCatalogueHasCanonicalStructuresAndSeparatePlateletFragments() {
         val data = HealthBodyAtlas.load(context)
