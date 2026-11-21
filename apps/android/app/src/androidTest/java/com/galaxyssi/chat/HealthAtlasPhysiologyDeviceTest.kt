@@ -229,6 +229,7 @@ class HealthAtlasPhysiologyDeviceTest {
             Triple("diaphragm", "diaphragm-displacement", "diaphragm-descent"),
             Triple("aorta", "arterial-continuity", "arterial-lumen-diameter"),
             Triple("nasal-cavity", "airway-cilia-track", "airway-ciliary-clearance-cycles"),
+            Triple("cornea", "corneal-rays", "corneal-refraction-incident-angle"),
         )
         for ((id, art, input) in examples) {
             var initial = 0

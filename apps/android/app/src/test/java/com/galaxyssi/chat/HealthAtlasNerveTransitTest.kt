@@ -26,7 +26,8 @@ class HealthAtlasNerveTransitTest {
             assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(75, 0)))
         }
         assertEquals(HealthAtlasPhysiologyKind.POTASSIUM, HealthAtlasPhysiologyKind.forItem("spinal-cord"))
-        assertNull(HealthAtlasPhysiologyKind.forItem("ganglia"))
-        assertNull(HealthAtlasPhysiologyKind.forItem("ovaries"))
+        assertEquals(HealthAtlasPhysiologyKind.NEURAL_RELAY_DELAYS, HealthAtlasPhysiologyKind.forItem("ganglia"))
+        assertEquals(HealthAtlasPhysiologyKind.FOLLICLE_SURFACE, HealthAtlasPhysiologyKind.forItem("ovaries"))
+        assertNull(HealthAtlasPhysiology.restore("ganglia", intArrayOf(75, 30)))
     }
 }

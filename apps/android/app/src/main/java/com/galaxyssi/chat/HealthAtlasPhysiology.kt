@@ -118,7 +118,13 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     BILE_STORAGE(HealthAtlasBileStorageTeachingModel.spec),
     BONE_REMODELING_BALANCE(HealthAtlasBoneRemodelingBalanceTeachingModel.spec),
     CUTANEOUS_SEBUM(HealthAtlasCutaneousSebumTeachingModel.spec),
-    URETER_DELIVERY(HealthAtlasUreterDeliveryTeachingModel.spec);
+    URETER_DELIVERY(HealthAtlasUreterDeliveryTeachingModel.spec),
+    CORNEAL_REFRACTION(HealthAtlasCornealRefractionTeachingModel.spec),
+    EXTERNAL_EAR_RESONANCE(HealthAtlasExternalEarResonanceTeachingModel.spec),
+    NEURAL_RELAY_DELAYS(HealthAtlasNeuralRelayDelaysTeachingModel.spec),
+    BILIARY_FLOW_TALLY(HealthAtlasBiliaryFlowTallyTeachingModel.spec),
+    PARATHYROID_SIGNAL_OCCUPANCY(HealthAtlasParathyroidSignalOccupancyTeachingModel.spec),
+    FOLLICLE_SURFACE(HealthAtlasFollicleSurfaceTeachingModel.spec);
 
     constructor(spec: HealthAtlasTeachingModelSpec) : this(spec.inputs.map { it.control }, spec.axis, spec.unit,
         spec.minimum, spec.maximum, spec.source, spec.extraSource, spec)

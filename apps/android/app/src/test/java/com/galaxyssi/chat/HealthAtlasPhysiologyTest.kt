@@ -158,7 +158,8 @@ class HealthAtlasPhysiologyTest {
                             HealthAtlasPhysiologyKind.ENDOCRINE_DILUTION,
                             HealthAtlasPhysiologyKind.GASTRIC_LIQUID_EMPTYING,
                             HealthAtlasPhysiologyKind.BONE_REMODELING_BALANCE,
-                            HealthAtlasPhysiologyKind.CUTANEOUS_SEBUM -> y <= value + 1e-9
+                            HealthAtlasPhysiologyKind.CUTANEOUS_SEBUM,
+                            HealthAtlasPhysiologyKind.EXTERNAL_EAR_RESONANCE -> y <= value + 1e-9
                             else -> y >= value - 1e-9
                         })
                     }
@@ -205,9 +206,9 @@ class HealthAtlasPhysiologyTest {
         }
     }
 
-    @Test fun unrelatedEntitiesDoNotInheritAQuantitativeModel() {
-        assertNull(HealthAtlasPhysiologyKind.forItem("cell-hepatocyte"))
-        assertNotEquals(HealthAtlasPhysiologyKind.GLOMERULAR_FILTRATION, HealthAtlasPhysiologyKind.forItem("renal-pelvis"))
+    @Test fun unrelatedEntitiesDoNotInheritAnotherStructuresModel() {
+        assertEquals(HealthAtlasPhysiologyKind.BILIARY_FLOW_TALLY, HealthAtlasPhysiologyKind.forItem("cell-hepatocyte"))
+        assertEquals(HealthAtlasPhysiologyKind.URETER_DELIVERY, HealthAtlasPhysiologyKind.forItem("renal-pelvis"))
         assertNull(HealthAtlasPhysiologyKind.forItem("cell-club-cell"))
         assertEquals(HealthAtlasPhysiologyKind.GLOMERULAR_FILTRATION, HealthAtlasPhysiologyKind.forItem("cell-podocyte"))
         assertEquals(HealthAtlasPhysiologyKind.RENAL_EXCRETION, HealthAtlasPhysiologyKind.forItem("cell-proximal-tubular-cell"))
