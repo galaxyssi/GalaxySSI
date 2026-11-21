@@ -153,7 +153,9 @@ class HealthAtlasMusculoskeletalDeviceTest {
 
     @Test fun returningToADedicatedCutawayRemainsSelectedAfterRecreation() = native { scenario ->
         scenario.onActivity {
-            it.open("trapezius")
+            it.open("muscle")
+            it.view("atlas-view-1").performClick()
+            it.view("atlas-hotspot-trapezius").performClick()
             assertTrue(it.view("atlas-view-0").isSelected)
             it.view("atlas-view-1").performClick()
             assertTrue(it.view("atlas-view-1").isSelected)
