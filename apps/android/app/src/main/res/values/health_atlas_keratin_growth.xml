@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_keratin_growth_title">Hair shaft length added</string>
+    <string name="health_atlas_keratin_growth_time">Elapsed demo time</string>
+    <string name="health_atlas_keratin_growth_rate">Example growth rate</string>
+    <string name="health_atlas_keratin_growth_scope">During active growth, hair matrix cells divide in the follicle. Some of the new cells become part of the keratinized shaft as it moves outward. This demo assumes a constant rate and does not model the hair cycle. The rate and time are invented for teaching and do not measure or predict individual hair growth.</string>
+    <string name="health_atlas_keratin_growth_formula">Added shaft length (mm) = example growth rate (mm/d) × elapsed demo time (d).</string>
+    <string name="health_atlas_keratin_growth_companion">Demo time to add 1 mm: %1$s d</string>
+</resources>

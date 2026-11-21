@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_keratin_growth_title">毛干增长长度</string>
+    <string name="health_atlas_keratin_growth_time">示例经过时间</string>
+    <string name="health_atlas_keratin_growth_rate">示例生长速率</string>
+    <string name="health_atlas_keratin_growth_scope">在生长期，毛母质细胞在毛囊内分裂。部分新生细胞在毛干向外推进的过程中角化，成为毛干的一部分。本示例假设生长速率恒定，不模拟毛发生长周期。速率和时间均为虚构的教学参数，不用于测量或预测个人的毛发生长。</string>
+    <string name="health_atlas_keratin_growth_formula">毛干增长长度（毫米）= 示例生长速率（毫米/天）× 示例经过时间（天）。</string>
+    <string name="health_atlas_keratin_growth_companion">示例中长出 1 毫米所需的时间：%1$s 天</string>
+</resources>
