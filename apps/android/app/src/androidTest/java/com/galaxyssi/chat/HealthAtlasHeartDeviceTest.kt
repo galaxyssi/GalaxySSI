@@ -59,6 +59,18 @@ class HealthAtlasHeartDeviceTest {
             for (marker in HealthAtlasHeartSection.section.markers) {
                 it.view("atlas-hotspot-${marker.id}").performClick()
                 assertEquals(atlas[marker.id]!!.name, it.label("health-page-title"))
+                val views = HealthAtlasPlates.viewsForId(marker.id)
+                val locator = views.indexOfFirst { plate ->
+                    plate.drawable == HealthAtlasHeartSection.section.drawable &&
+                        plate.markers == HealthAtlasHeartSection.section.markers
+                }
+                assertTrue("Missing heart locator for ${marker.id}", locator >= 0)
+                if (locator > 0) {
+                    assertTrue(it.view("atlas-view-0").isSelected)
+                    val feature = views.first().features.first()
+                    assertTrue(it.view("atlas-feature-${feature.marker.id}").isClickable)
+                    it.view("atlas-view-$locator").performClick()
+                }
                 assertTrue(it.view("atlas-hotspot-${marker.id}").isSelected)
                 it.onBackPressed()
                 assertTrue(it.view("atlas-view-1").isSelected)
