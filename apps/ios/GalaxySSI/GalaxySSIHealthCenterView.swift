@@ -692,9 +692,6 @@ struct GalaxySSIHealthCenterView: View {
     menuEntry(.records, "record_center.title", "Health Record Center", "square.and.pencil")
     menuEntry(.catalog, "catalog.title", "Measurement Catalog", "list.bullet.rectangle")
     menuEntry(.trends, "trend.title", "Measurement Trends", "chart.xyaxis.line")
-    menuEntry(.reviews, "review_reminder.title", "Health Review Reminders", "doc.text.magnifyingglass")
-    menuEntry(.recording, "recording_reminder.title", "Health Recording Reminders", "bell")
-    menuEntry(.sleep, "sleep_reminder.title", "Sleep Change Reminders", "moon.zzz")
     menuEntry(.body, "body.title", "Body Explorer", "figure.stand")
     }
     Group {
