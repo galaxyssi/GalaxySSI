@@ -3599,6 +3599,16 @@ struct GalaxySSIHealthRecords {
   static let motionChanged = Notification.Name("galaxyssi.health.motion.changed")
   private var motionContext: Data { Data("galaxyssi.health.motion.v1:\(owner)".utf8) }
   private var motionAccount: String { "health.motion.v1." + owner }
+  func activityHistoryStore() throws -> GalaxySSIHealthActivityHistoryStore {
+    let context = Data("galaxyssi.health.activity-history.v1:\(owner)".utf8)
+    return try GalaxySSIHealthActivityHistoryStore(
+      file: storageFile(context: context, fixtureExtension: "activity.sqlite"), owner: owner, secrets: secrets)
+  }
+  private func archiveMotionActivity(_ state: GalaxySSIHealthMotion.State) throws {
+    let rows = GalaxySSIHealthActivityComparison.checkpoints(state)
+    guard !rows.isEmpty else { return }
+    try activityHistoryStore().save(rows)
+  }
   func loadMotion() throws -> GalaxySSIHealthMotion.State {
     let location = try storageFile(context: motionContext, fixtureExtension: "motion")
     let encrypted: Data
@@ -3609,6 +3619,7 @@ struct GalaxySSIHealthRecords {
       using: key(create: false, account: motionAccount), authenticating: motionContext)
     let state = try JSONDecoder().decode(GalaxySSIHealthMotion.State.self, from: payload)
     try state.validate()
+    try archiveMotionActivity(state)
     return state
   }
   @discardableResult
@@ -3617,6 +3628,7 @@ struct GalaxySSIHealthRecords {
     let previous = state
     try change(&state); try state.validate()
     guard state != previous else { return previous }
+    try archiveMotionActivity(state)
     state.revision = UUID()
     let payload = try JSONEncoder().encode(state)
     guard let encrypted = try AES.GCM.seal(payload, using: key(create: true, account: motionAccount),

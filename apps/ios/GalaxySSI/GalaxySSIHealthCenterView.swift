@@ -31,6 +31,7 @@ struct GalaxySSIHealthCenterView: View {
   private enum OverviewDestination: String, Identifiable {
     case weekly, assistant, files, sleep, reviews, records, devices, originals, pdf, profile, crop
     case export, privacy, backup, trends, catalog, recording, body, imports, photo, movement, care, agenda, timeline
+    case activityComparison
     var id: String { rawValue }
   }
 
@@ -374,6 +375,10 @@ struct GalaxySSIHealthCenterView: View {
           .padding(11).frame(maxWidth: .infinity, minHeight: 102, alignment: .topLeading)
           .background(RoundedRectangle(cornerRadius: 8).stroke(Color(uiColor: .separator), lineWidth: 0.5))
       }
+      Button { overviewDestination = .activityComparison } label: {
+        Label(t("activity_comparison.title", "Activity comparison"), systemImage: "chart.bar.xaxis")
+          .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+      }.buttonStyle(.plain).accessibilityIdentifier("health-activity-comparison")
       if snapshot.current.isEmpty {
         Text(t("first_use.title", "No confirmed measurements yet")).font(.caption).foregroundColor(.secondary)
       }
@@ -693,6 +698,7 @@ struct GalaxySSIHealthCenterView: View {
     case .imports: GalaxySSIHealthImportView(store: originals, records: records, initialAction: .files)
     case .photo: GalaxySSIHealthPhotoCaptureView(records: records, originals: originals, initialCamera: true)
     case .movement: GalaxySSIHealthMotionView(records: records)
+    case .activityComparison: GalaxySSIHealthActivityComparisonView(records: records)
     case .care: GalaxySSIHealthCareView(records: records)
     case .agenda: GalaxySSIHealthCareAgendaView(records: records)
     }
@@ -718,6 +724,7 @@ struct GalaxySSIHealthCenterView: View {
     menuEntry(.privacy, "privacy.title", "Health Privacy", "lock.shield")
     menuEntry(.backup, "backup.title", "Health Backup", "externaldrive")
     menuEntry(.movement, "motion.title", "Movement", "figure.walk")
+    menuEntry(.activityComparison, "activity_comparison.title", "Activity comparison", "chart.bar.xaxis")
     }
     Group {
       menuEntry(.care, "care.title", "Care", "heart.text.square")
