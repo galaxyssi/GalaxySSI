@@ -7921,7 +7921,8 @@ final class MessageCoordinator: ObservableObject {
         turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
         executionMode: executionMode,
         hasAttachments: !attachments.isEmpty,
-        allowsDirectResponse: executionMode != .planOnly && attachments.isEmpty && !compositePhoneStatus,
+        allowsDirectResponse: executionMode != .planOnly &&
+          attachments.allSatisfy { $0.historicalSourceTurnId != nil } && !compositePhoneStatus,
         completionRequirements: nil,
         plannerConfigurationSha256: plannerSnapshot?.configurationSha256
           ?? initialPlannerConfigurationSha256(conversationId: outgoing.conversationId),
@@ -12861,14 +12862,15 @@ final class MessageCoordinator: ObservableObject {
     let timerCheckpoint = AgentIOSTimerCheckpointStore.shared.current(conversationId: outgoing.conversationId)
       .flatMap { checkpoint -> [String: String]? in
         guard !outgoing.readOnlyAnalysis, outgoing.isMine, outgoing.sourceConversationId.isBlank else { return nil }
-        let explicitlyTimer = requestText.range(of: #"(?i)\b(?:timer|countdown)\b|\u8BA1\u65F6\u5668|\u5012\u8BA1\u65F6"#,
+        let intentGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(requestText)
+        let explicitlyTimer = intentGoal.range(of: #"(?i)\b(?:timer|countdown)\b|\u8BA1\u65F6\u5668|\u5012\u8BA1\u65F6"#,
           options: .regularExpression) != nil
-        let previous = AgentOwnedOperationContext.wantsContext(request: requestText, priorGoal: "phone timer")
+        let previous = AgentOwnedOperationContext.wantsContext(request: intentGoal, priorGoal: "phone timer")
           ? AgentOwnedOperationContext.previousRequest(before: outgoing, in: store.agentSessionMessages(outgoing.conversationId))
           : nil
         let previousTurn = previous.map { $0.turnId.ifBlank($0.id.uuidString) }
         guard checkpoint.sourceTurnId == turnId || checkpoint.lastControlTurnId == turnId ||
-          (explicitlyTimer && AgentTaskIntentClassifier.classify(goal: requestText).intent == .phoneControl) ||
+          (explicitlyTimer && AgentTaskIntentClassifier.classify(goal: intentGoal).intent == .phoneControl) ||
           previousTurn == checkpoint.sourceTurnId ||
           (previousTurn != nil && previousTurn == checkpoint.lastControlTurnId) else { return nil }
         return checkpoint.evidence(now: Int64(Date().timeIntervalSince1970 * 1_000))
@@ -12972,7 +12974,8 @@ final class MessageCoordinator: ObservableObject {
           )
         ),
       hasAttachments: hasAttachments,
-      allowsDirectResponse: allowsDirectResponse && !hasAttachments && executionMode != .planOnly,
+      allowsDirectResponse: allowsDirectResponse &&
+        attachments.allSatisfy { $0.historicalSourceTurnId != nil } && executionMode != .planOnly,
       phoneOwnsExecution: true,
       timerCheckpoint: timerCheckpoint
     )
@@ -15096,17 +15099,9 @@ final class MessageCoordinator: ObservableObject {
       sourceId: "\(conversationId)/\(turnId)",
       content: manifest.joined(separator: "\n")
     )
-    let instruction = hasUserGoal
-      ? "Use the attached content when completing the request."
-      : "Inspect the attached content, infer the user's most likely intent from the content and conversation, and complete the most helpful relevant action."
-    let directVisionInstruction = AgentDirectVisionPolicy.instruction(attachments)
-    return [
-      baseGoal,
-      directVisionInstruction,
-      "Attached input:\n\(evidence)\n\(instruction)",
-    ]
-    .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    .joined(separator: "\n\n")
+    return AgentDirectVisionPolicy.goalWithAttachmentEvidence(
+      userGoal: baseGoal, attachments: attachments, evidence: evidence, hasUserGoal: hasUserGoal
+    )
   }
 
   private func recordLocalNativeActionResult(

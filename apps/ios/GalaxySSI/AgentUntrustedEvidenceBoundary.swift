@@ -85,12 +85,12 @@ enum AgentUntrustedEvidenceBoundary {
   }
 
   static func trustedInstructionPrefix(_ text: String) -> String {
-    var prefix = text.components(separatedBy: textMarker).first ?? text
-    prefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
-    if prefix.hasSuffix("Attached input:") {
-      prefix.removeLast("Attached input:".count)
+    guard let marker = text.range(of: textMarker) else {
+      return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    return prefix.trimmingCharacters(in: .whitespacesAndNewlines)
+    let prefix = String(text[..<marker.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+    return AgentDirectVisionPolicy.userGoalBeforeAttachmentEvidence(prefix)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   static func compactMarker() -> String {
