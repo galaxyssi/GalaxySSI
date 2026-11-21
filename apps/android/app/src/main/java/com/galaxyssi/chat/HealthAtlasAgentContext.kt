@@ -8,7 +8,8 @@ internal object HealthAtlasAgentContext {
         simulation: HealthAtlasSimulation? = null, quantitative: HealthAtlasPhysiology? = null,
         topic: HealthAtlasResearchTopic? = null, elimination: HealthAtlasElimination? = null,
         drugs: HealthAtlasDrugState? = null, artworkView: String? = null,
-        aging: HealthAtlasAgingSelection? = null, functionPhase: Float? = null): String = buildString {
+        aging: HealthAtlasAgingSelection? = null, functionPhase: Float? = null,
+        functionStory: HealthAtlasFunctionStory? = null): String = buildString {
         if (item == null) {
             append(context.getString(R.string.health_atlas_ask_whole_context))
             return@buildString
@@ -30,7 +31,9 @@ internal object HealthAtlasAgentContext {
         }
         val physiology = topic == null || topic == HealthAtlasResearchTopic.PHYSIOLOGY
         if (topic == null && functionPhase != null) {
-            HealthAtlasFunctionStory.forId(item.id)?.let { story ->
+            val allowed = HealthAtlasFunctionStory.choicesForId(item.id)
+            val activeStory = if (functionStory == null) allowed.firstOrNull() else functionStory.takeIf(allowed::contains)
+            activeStory?.let { story ->
                 val chapter = story.chapter(functionPhase)
                 val (title, detail) = story.chapters[chapter]
                 appendLine(); appendLine(context.getString(story.title))

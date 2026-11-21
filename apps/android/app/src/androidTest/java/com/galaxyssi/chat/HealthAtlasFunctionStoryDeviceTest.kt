@@ -339,7 +339,7 @@ class HealthAtlasFunctionStoryDeviceTest {
         } finally { clearHealthOverviewFixture(context, fixture) }
     }
 
-    @Test fun functionPlayerRestoresPausedWithoutChangingTheSimulationOrBetaCell() {
+    @Test fun uptakeRestoresPausedAndDoesNotReplaceTheBetaCellLesson() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
         val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
@@ -371,10 +371,70 @@ class HealthAtlasFunctionStoryDeviceTest {
                     assertEquals(saved, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, .001f)
                     activity.onBackPressed()
                     openCell(activity, "cell-pancreatic-beta-cell")
-                    assertNull(activity.window.decorView.findViewWithTag<View>("atlas-function-player"))
+                    activity.find<View>("atlas-function-insulin-secretion-art")
+                    assertNull(activity.window.decorView.findViewWithTag<View>("atlas-function-uptake-art"))
                 }
             }
         } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
+    @Test fun twoLessonsSwitchInPlaceAndKeepTheirOwnProgressAfterRecreationAndRelatedNavigation() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-tab-2").performClick()
+                    activity.find<EditText>("atlas-search").setText("pancreas")
+                    activity.find<View>("atlas-entry-pancreas").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    val scroller = activity.find<View>("atlas-scroll")
+                    assertEquals(HealthAtlasFunctionStory.DIGESTION,
+                        activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").story)
+                    activity.find<View>("atlas-function-next").performClick()
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    assertSame(scroller, activity.find<View>("atlas-scroll"))
+                    activity.find<View>("atlas-function-insulin-secretion-art")
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    repeat(3) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_insulin_story_fusion_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                }
+                scenario.recreate()
+                waitFor(scenario, "atlas-function-insulin-secretion-art")
+                scenario.onActivity { activity ->
+                    assertEquals(.6f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.find<View>("atlas-function-lesson-0").performClick()
+                    assertEquals(.2f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    activity.find<View>("atlas-related-lesson-tissue-skeletal-muscle").performClick()
+                    activity.find<View>("atlas-function-uptake-art")
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    activity.find<View>("atlas-function-muscle-motion-art")
+                    activity.onBackPressed()
+                    assertEquals(HealthAtlasFunctionStory.INSULIN_SECRETION,
+                        activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").story)
+                    assertEquals(.6f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
+    @Test fun legacyPlayheadIsRestoredOnlyIntoTheDefaultLesson() {
+        val old = android.os.Bundle().apply { putFloat("pancreas", .44f) }
+        val first = HealthAtlasFunctionState().apply { restore(null, old) }
+        val digestive = HealthAtlasFunctionStory.DIGESTION
+        val insulin = HealthAtlasFunctionStory.INSULIN_SECRETION
+        assertEquals(.44f, first.loadPhase("pancreas", digestive), 0f)
+        assertEquals(0f, first.loadPhase("pancreas", insulin), 0f)
+        first.choose("pancreas", insulin)
+        first.savePhase("pancreas", insulin, .8f)
+        val restored = HealthAtlasFunctionState().apply { restore(first.snapshot(), null) }
+        assertEquals(insulin, restored.current("pancreas"))
+        assertEquals(.44f, restored.loadPhase("pancreas", digestive), 0f)
+        assertEquals(.8f, restored.loadPhase("pancreas", insulin), 0f)
     }
 
     @Test fun agentContextOnlyReceivesTheActivePublicChapter() {
@@ -388,6 +448,13 @@ class HealthAtlasFunctionStoryDeviceTest {
         assertTrue(prompt.contains(glucoseSource))
         assertFalse(prompt.contains(context.getString(R.string.health_atlas_uptake_bind_caption)))
         assertFalse(HealthAtlasAgentContext.prompt(context, atlas, beta, functionPhase = .91f).contains(glucoseSource))
+        val pancreas = requireNotNull(atlas["pancreas"])
+        val secretion = HealthAtlasAgentContext.prompt(context, atlas, pancreas, functionPhase = .64f,
+            functionStory = HealthAtlasFunctionStory.INSULIN_SECRETION)
+        assertTrue(secretion.contains(context.getString(R.string.health_atlas_insulin_story_fusion_caption)))
+        assertFalse(secretion.contains(context.getString(R.string.health_atlas_meal_duodenum_caption)))
+        assertFalse(HealthAtlasAgentContext.prompt(context, atlas, beta, functionPhase = .91f,
+            functionStory = HealthAtlasFunctionStory.GLUCOSE).contains(glucoseSource))
         assertFalse(HealthAtlasAgentContext.prompt(context, atlas, adipocyte, topic = HealthAtlasResearchTopic.DRUGS,
             functionPhase = .91f).contains(glucoseSource))
         val beat = HealthAtlasAgentContext.prompt(context, atlas, heart, functionPhase = .67f)

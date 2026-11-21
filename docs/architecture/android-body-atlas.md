@@ -1278,3 +1278,17 @@ The antibody lesson shows one T-cell-dependent response: B-cell
 recognition, help, expansion, differentiation, and release of antibodies
 that bind matched antigens. Cell counts and timing are illustrative.
 Existing anatomical hotspots and simulation panels remain available.
+
+## Insulin Secretion And Multiple Function Lessons
+
+An illustrative human beta cell shows glucose entry, reduced potassium
+efflux through ATP-sensitive channels, voltage-gated calcium entry,
+granule fusion, and release to a local capillary. This is distinct from
+the GLUT4 uptake animation in skeletal muscle and fat. Related lesson
+links connect secretion to uptake without implying that GLUT4 triggers
+the beta cell. Neither lesson estimates a glucose level or medication dose.
+
+Pancreas, skeletal muscle tissue, and the immune system can switch lessons
+in place. Saved activity state separates each entry and lesson; old
+single-lesson playheads restore into the default lesson. Agent receives
+only the public chapter and references from the selected lesson.

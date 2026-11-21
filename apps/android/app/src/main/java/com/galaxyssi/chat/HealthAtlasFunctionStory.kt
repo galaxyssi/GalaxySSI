@@ -196,7 +196,41 @@ internal enum class HealthAtlasFunctionStory(
             R.string.health_atlas_antibody_story_helper_source to "https://pmc.ncbi.nlm.nih.gov/articles/PMC5030190/",
         ),
         20_000L,
+    ),
+    INSULIN_SECRETION(
+        setOf("endocrine", "pancreatic-islets", "cell-pancreatic-beta-cell"),
+        R.string.health_atlas_insulin_story_title,
+        R.string.health_atlas_insulin_story_scope,
+        listOf(
+            R.string.health_atlas_insulin_story_glucose to R.string.health_atlas_insulin_story_glucose_caption,
+            R.string.health_atlas_insulin_story_potassium to R.string.health_atlas_insulin_story_potassium_caption,
+            R.string.health_atlas_insulin_story_calcium to R.string.health_atlas_insulin_story_calcium_caption,
+            R.string.health_atlas_insulin_story_fusion to R.string.health_atlas_insulin_story_fusion_caption,
+            R.string.health_atlas_insulin_story_blood to R.string.health_atlas_insulin_story_blood_caption,
+        ),
+        listOf(
+            R.string.health_atlas_insulin_story_glucose_source to "https://pubmed.ncbi.nlm.nih.gov/38775784/",
+            R.string.health_atlas_insulin_story_channel_source to "https://pubmed.ncbi.nlm.nih.gov/7821725/",
+            R.string.health_atlas_insulin_story_secretion_source to "https://pubmed.ncbi.nlm.nih.gov/18390794/",
+        ),
+        20_000L,
     );
+
+    val choiceTitle get() = when (this) {
+        GLUCOSE -> R.string.health_atlas_lesson_uptake
+        MUSCLE_MOTION -> R.string.health_atlas_lesson_contraction
+        DIGESTION -> R.string.health_atlas_lesson_digestion
+        LYMPH_RETURN -> R.string.health_atlas_lesson_lymph
+        ANTIBODY_RESPONSE -> R.string.health_atlas_lesson_antibodies
+        INSULIN_SECRETION -> R.string.health_atlas_lesson_insulin
+        else -> title
+    }
+
+    val relatedLesson get() = when (this) {
+        INSULIN_SECRETION -> "tissue-skeletal-muscle" to GLUCOSE
+        GLUCOSE -> "cell-pancreatic-beta-cell" to INSULIN_SECRETION
+        else -> null
+    }
 
     fun chapter(value: Float) = (safePhase(value) * chapters.size).toInt().coerceAtMost(chapters.lastIndex)
     fun fraction(value: Float) = (safePhase(value) * chapters.size - chapter(value)).coerceIn(0f, 1f)
@@ -211,10 +245,23 @@ internal enum class HealthAtlasFunctionStory(
         VISION, LIGHT_ADAPTATION -> HealthAtlasVisionStoryView(context, this)
         MUSCLE_MOTION, BONE_REMODELING -> HealthAtlasMovementStoryView(context, this)
         LYMPH_RETURN, ANTIBODY_RESPONSE -> HealthAtlasLymphImmuneStoryView(context, this)
+        INSULIN_SECRETION -> HealthAtlasInsulinStoryView(context)
     }
 
     companion object {
         fun forId(id: String?) = if (id == null) null else entries.firstOrNull { id in it.owners }
+
+        fun choicesForId(id: String?): List<HealthAtlasFunctionStory> {
+            val primary = forId(id) ?: return emptyList()
+            val additional = when (id) {
+                "pancreas" -> INSULIN_SECRETION
+                "tissue-skeletal-muscle" -> MUSCLE_MOTION
+                "immune" -> LYMPH_RETURN
+                else -> null
+            }
+            return listOfNotNull(primary, additional)
+        }
+
         fun safePhase(value: Float) = if (value.isFinite()) value.coerceIn(0f, 1f) else 0f
     }
 }

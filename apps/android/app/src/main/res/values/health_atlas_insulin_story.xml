@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_lesson_uptake">Glucose uptake</string>
+    <string name="health_atlas_lesson_contraction">Muscle motion</string>
+    <string name="health_atlas_lesson_digestion">Digestion</string>
+    <string name="health_atlas_lesson_lymph">Lymph return</string>
+    <string name="health_atlas_lesson_antibodies">Antibodies</string>
+    <string name="health_atlas_lesson_insulin">Insulin release</string>
+    <string name="health_atlas_insulin_story_title">How beta cells release insulin</string>
+    <string name="health_atlas_insulin_story_scope">Physiology of a human islet beta cell. Timing and particles are illustrative; this is not a personal glucose or medication model.</string>
+    <string name="health_atlas_insulin_story_glucose">Glucose enters the beta cell</string>
+    <string name="health_atlas_insulin_story_glucose_caption">Glucose enters through transporters in the beta-cell membrane. As glucose metabolism increases, ATP rises relative to ADP.</string>
+    <string name="health_atlas_insulin_story_potassium">ATP-sensitive potassium channels close</string>
+    <string name="health_atlas_insulin_story_potassium_caption">A rise in the ATP-to-ADP ratio can close more ATP-sensitive potassium channels. Less potassium leaves, making the membrane potential less negative.</string>
+    <string name="health_atlas_insulin_story_calcium">Calcium enters the cell</string>
+    <string name="health_atlas_insulin_story_calcium_caption">Membrane depolarization opens voltage-gated calcium channels. Calcium enters from outside and creates a local signal near the inner membrane.</string>
+    <string name="health_atlas_insulin_story_fusion">Stored granules fuse and release insulin</string>
+    <string name="health_atlas_insulin_story_fusion_caption">The calcium signal promotes fusion of insulin-containing granules with the cell membrane. Insulin leaves through the resulting opening.</string>
+    <string name="health_atlas_insulin_story_blood">Insulin enters the blood</string>
+    <string name="health_atlas_insulin_story_blood_caption">Insulin enters nearby capillaries and circulates to targets including muscle. It is not a digestive secretion that enters the intestine through the pancreatic duct.</string>
+    <string name="health_atlas_insulin_story_glucose_source">Glucose transport in human beta cells</string>
+    <string name="health_atlas_insulin_story_channel_source">Potassium and calcium signals in human beta cells</string>
+    <string name="health_atlas_insulin_story_secretion_source">Ion channels and exocytosis in human beta cells</string>
+    <string name="health_atlas_insulin_art_outside">Outside cell</string>
+    <string name="health_atlas_insulin_art_inside">Inside beta cell</string>
+    <string name="health_atlas_insulin_art_glucose">Glucose</string>
+    <string name="health_atlas_insulin_art_transporter">Glucose transporter</string>
+    <string name="health_atlas_insulin_art_energy">ATP-to-ADP ratio rises</string>
+    <string name="health_atlas_insulin_art_potassium">Potassium ions</string>
+    <string name="health_atlas_insulin_art_k_open">Potassium channel open</string>
+    <string name="health_atlas_insulin_art_k_closed">Potassium channel closed</string>
+    <string name="health_atlas_insulin_art_calcium">Calcium ions</string>
+    <string name="health_atlas_insulin_art_ca_gate">Voltage-gated calcium channel</string>
+    <string name="health_atlas_insulin_art_hormone">Insulin</string>
+    <string name="health_atlas_insulin_art_granule">Secretory granule</string>
+    <string name="health_atlas_insulin_art_beta">Beta cell</string>
+    <string name="health_atlas_insulin_art_capillary">Capillary</string>
+</resources>

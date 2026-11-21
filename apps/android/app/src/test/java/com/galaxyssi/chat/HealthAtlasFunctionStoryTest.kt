@@ -7,7 +7,7 @@ class HealthAtlasFunctionStoryTest {
     @Test fun onlySupportedTargetsShareTheGlucoseUptakeStory() {
         assertEquals(HealthAtlasFunctionStory.GLUCOSE, HealthAtlasFunctionStory.forId("tissue-skeletal-muscle"))
         assertEquals(HealthAtlasFunctionStory.GLUCOSE, HealthAtlasFunctionStory.forId("cell-adipocyte"))
-        assertNull(HealthAtlasFunctionStory.forId("cell-pancreatic-beta-cell"))
+        assertEquals(HealthAtlasFunctionStory.INSULIN_SECRETION, HealthAtlasFunctionStory.forId("cell-pancreatic-beta-cell"))
         assertNull(HealthAtlasFunctionStory.forId("liver"))
         assertNull(HealthAtlasFunctionStory.forId(null))
     }
@@ -100,7 +100,7 @@ class HealthAtlasFunctionStoryTest {
             assertEquals(colon, HealthAtlasFunctionStory.forId(it))
         }
         assertNull(HealthAtlasFunctionStory.forId("appendix"))
-        assertNull(HealthAtlasFunctionStory.forId("pancreatic-islets"))
+        assertEquals(HealthAtlasFunctionStory.INSULIN_SECRETION, HealthAtlasFunctionStory.forId("pancreatic-islets"))
         assertEquals(HealthAtlasDigestionStage.VILLUS.caption, meal.chapters.last().second)
         assertEquals(HealthAtlasDigestionStage.WATER.caption, colon.chapters[2].second)
         assertTrue(meal.chapters.toSet().intersect(colon.chapters.toSet()).isEmpty())
@@ -170,6 +170,47 @@ class HealthAtlasFunctionStoryTest {
             val valves = pump.at(cycle)
             assertFalse(valves.inletOpen && valves.outletOpen)
             assertTrue(pump.expansion(cycle) in 0f..1f)
+        }
+    }
+
+    @Test fun insulinReleaseAndUptakeStaySeparateWithValidatedMultipleLessons() {
+        val insulin = HealthAtlasFunctionStory.INSULIN_SECRETION
+        val uptake = HealthAtlasFunctionStory.GLUCOSE
+        val motion = HealthAtlasFunctionStory.MUSCLE_MOTION
+        assertEquals(listOf(HealthAtlasFunctionStory.DIGESTION, insulin), HealthAtlasFunctionStory.choicesForId("pancreas"))
+        assertEquals(listOf(uptake, motion), HealthAtlasFunctionStory.choicesForId("tissue-skeletal-muscle"))
+        assertEquals(listOf(HealthAtlasFunctionStory.ANTIBODY_RESPONSE, HealthAtlasFunctionStory.LYMPH_RETURN),
+            HealthAtlasFunctionStory.choicesForId("immune"))
+        assertEquals(listOf(insulin), HealthAtlasFunctionStory.choicesForId("cell-pancreatic-beta-cell"))
+        assertTrue(HealthAtlasFunctionStory.choicesForId("cell-pancreatic-alpha-cell").isEmpty())
+        for (story in listOf(insulin, uptake)) {
+            val (id, related) = requireNotNull(story.relatedLesson)
+            assertTrue(related in HealthAtlasFunctionStory.choicesForId(id))
+            assertNotEquals(story, related)
+        }
+        val state = HealthAtlasFunctionState()
+        state.savePhase("tissue-skeletal-muscle", uptake, .6f)
+        state.choose("tissue-skeletal-muscle", motion)
+        state.savePhase("tissue-skeletal-muscle", motion, .2f)
+        state.choose("tissue-skeletal-muscle", insulin)
+        assertEquals(motion, state.current("tissue-skeletal-muscle"))
+        assertEquals(.6f, state.loadPhase("tissue-skeletal-muscle", uptake), 0f)
+        assertEquals(.2f, state.loadPhase("tissue-skeletal-muscle", motion), 0f)
+        assertEquals(0f, state.loadPhase("cell-adipocyte", uptake), 0f)
+    }
+
+    @Test fun betaGranulesDoNotReleaseBeforeFusionAndTheIonChannelsChangeOppositely() {
+        val diagram = HealthAtlasInsulinDiagram
+        assertEquals(1f, diagram.potassiumOpen(0f), 0f)
+        assertEquals(0f, diagram.potassiumOpen(1f), 0f)
+        assertEquals(0f, diagram.calciumOpen(0f), 0f)
+        assertEquals(1f, diagram.calciumOpen(1f), 0f)
+        assertEquals(1f, diagram.approach(diagram.FUSION_START), 0f)
+        assertEquals(0f, diagram.aperture(diagram.FUSION_START), 0f)
+        assertTrue(diagram.aperture(.70f) > diagram.aperture(.57f))
+        for (i in 0..2) {
+            assertEquals(0f, diagram.release(diagram.FUSION_START, i), 0f)
+            assertTrue(diagram.release(.85f, i) > diagram.release(.58f, i))
         }
     }
 

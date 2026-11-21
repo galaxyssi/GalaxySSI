@@ -8,7 +8,7 @@ import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.SeekBar
 
-internal class HealthAtlasFunctionPlayer(activity: Activity, private val story: HealthAtlasFunctionStory,
+internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAtlasFunctionStory,
     initial: Float, openSource: (String) -> Unit) : LinearLayout(activity) {
     private val ui = HealthCenterViews(activity)
     private val art = story.createArt(activity)
