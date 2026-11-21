@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_thymus_story_title">T 细胞如何在胸腺中成熟</string>
+    <string name="health_atlas_thymus_story_choice">胸腺选择</string>
+    <string name="health_atlas_thymus_story_scope">以人体胸腺的一个小叶为例，展示常规 T 细胞的一条典型发育路径。细胞数量、大小和过程用时均为示意。</string>
+
+    <string name="health_atlas_thymus_story_enter">前体细胞进入胸腺</string>
+    <string name="health_atlas_thymus_story_enter_caption">胸腺位于胸骨后方。早期 T 细胞前体随血液到达皮质与髓质的交界处附近，随后移入外层皮质。</string>
+    <string name="health_atlas_thymus_story_positive_selection">在皮质中进行阳性选择</string>
+    <string name="health_atlas_thymus_story_positive_selection_caption">皮质上皮细胞通过自身 MHC 分子呈递蛋白质片段。发育中的 T 细胞若能通过受体获得适当的信号，就能在阳性选择中存活；信号过弱则无法存活。</string>
+    <string name="health_atlas_thymus_story_to_medulla">通过阳性选择的细胞移向髓质</string>
+    <string name="health_atlas_thymus_story_to_medulla_caption">阳性选择后，发育中的 T 细胞从外层皮质向内移向髓质，在那里继续成熟。</string>
+    <string name="health_atlas_thymus_story_negative_selection">在髓质中进行阴性选择</string>
+    <string name="health_atlas_thymus_story_negative_selection_caption">在髓质中，发育中的 T 细胞会接触到种类更广的自身肽。对自身反应过强的细胞通常会被清除，但其中一部分可分化为调节性 T 细胞。</string>
+    <string name="health_atlas_thymus_story_exit">成熟的初始 T 细胞离开胸腺</string>
+    <string name="health_atlas_thymus_story_exit_caption">成熟的初始 T 细胞离开胸腺并进入血液。它们已经成熟，但尚未活化。活化是另一个过程，可能在离开胸腺后发生。</string>
+
+    <string name="health_atlas_thymus_story_thymus">胸腺</string>
+    <string name="health_atlas_thymus_story_lobule">胸腺小叶</string>
+    <string name="health_atlas_thymus_story_cortex">皮质</string>
+    <string name="health_atlas_thymus_story_medulla">髓质</string>
+    <string name="health_atlas_thymus_story_blood_vessel">血管</string>
+    <string name="health_atlas_thymus_story_precursor">T 细胞前体</string>
+    <string name="health_atlas_thymus_story_self_mhc">自身 MHC</string>
+    <string name="health_atlas_thymus_story_cortical_epithelium">皮质上皮细胞</string>
+    <string name="health_atlas_thymus_story_selected_cell">通过阳性选择的 T 细胞</string>
+    <string name="health_atlas_thymus_story_self_reactive_cell">对自身反应过强</string>
+    <string name="health_atlas_thymus_story_maturing_cell">继续成熟</string>
+    <string name="health_atlas_thymus_story_naive_cell">成熟的初始 T 细胞</string>
+
+    <string name="health_atlas_thymus_story_ref_spatial">研究：人体胸腺空间细胞图谱</string>
+    <string name="health_atlas_thymus_story_ref_emigration">研究：人体初始 T 细胞与近期离开胸腺的 T 细胞</string>
+</resources>

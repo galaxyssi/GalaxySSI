@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_thymus_story_title">How T cells mature in the thymus</string>
+    <string name="health_atlas_thymus_story_choice">Thymic selection</string>
+    <string name="health_atlas_thymus_story_scope">One typical route for conventional T cells in a human thymic lobule. Cell numbers, sizes and timing are schematic.</string>
+
+    <string name="health_atlas_thymus_story_enter">Precursors enter the thymus</string>
+    <string name="health_atlas_thymus_story_enter_caption">The thymus sits behind the breastbone. Early T-cell precursors arrive in the blood near the boundary between the cortex and medulla, then move into the outer cortex.</string>
+    <string name="health_atlas_thymus_story_positive_selection">Positive selection in the cortex</string>
+    <string name="health_atlas_thymus_story_positive_selection_caption">Cortical epithelial cells display protein fragments on self MHC molecules. Developing T cells survive positive selection if their receptors receive a suitable signal from this display. Too little signal means they do not survive.</string>
+    <string name="health_atlas_thymus_story_to_medulla">Selected cells move toward the medulla</string>
+    <string name="health_atlas_thymus_story_to_medulla_caption">After positive selection, developing T cells move inward from the outer cortex toward the medulla, where they continue to mature.</string>
+    <string name="health_atlas_thymus_story_negative_selection">Negative selection in the medulla</string>
+    <string name="health_atlas_thymus_story_negative_selection_caption">In the medulla, developing T cells encounter a wider range of self peptides. Cells that react too strongly are generally removed, although some become regulatory T cells.</string>
+    <string name="health_atlas_thymus_story_exit">Mature naive T cells leave</string>
+    <string name="health_atlas_thymus_story_exit_caption">Mature naive T cells leave the thymus and enter the blood. They have matured but are not yet activated. Activation is a separate step that can occur later outside the thymus.</string>
+
+    <string name="health_atlas_thymus_story_thymus">Thymus</string>
+    <string name="health_atlas_thymus_story_lobule">Thymic lobule</string>
+    <string name="health_atlas_thymus_story_cortex">Cortex</string>
+    <string name="health_atlas_thymus_story_medulla">Medulla</string>
+    <string name="health_atlas_thymus_story_blood_vessel">Blood vessel</string>
+    <string name="health_atlas_thymus_story_precursor">T-cell precursor</string>
+    <string name="health_atlas_thymus_story_self_mhc">Self MHC</string>
+    <string name="health_atlas_thymus_story_cortical_epithelium">Cortical epithelial cell</string>
+    <string name="health_atlas_thymus_story_selected_cell">Selected T cell</string>
+    <string name="health_atlas_thymus_story_self_reactive_cell">Strongly self-reactive</string>
+    <string name="health_atlas_thymus_story_maturing_cell">Continuing to mature</string>
+    <string name="health_atlas_thymus_story_naive_cell">Mature naive T cell</string>
+
+    <string name="health_atlas_thymus_story_ref_spatial">Study: a spatial atlas of the human thymus</string>
+    <string name="health_atlas_thymus_story_ref_emigration">Study: naive T cells and recent thymic emigrants in humans</string>
+</resources>

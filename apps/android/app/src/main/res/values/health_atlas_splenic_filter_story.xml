@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_splenic_filter_story_title">How the spleen filters red blood cells</string>
+    <string name="health_atlas_splenic_filter_story_choice">Splenic red cell filtration</string>
+    <string name="health_atlas_splenic_filter_story_scope">A qualitative view of one red cell route through normal human splenic red pulp. Sizes and timing are schematic.</string>
+
+    <string name="health_atlas_splenic_filter_story_locate">Inside the red pulp</string>
+    <string name="health_atlas_splenic_filter_story_locate_caption">The spleen sits beneath the left ribs. Its red pulp contains splenic cords and venous sinuses. The close-up shows red cells flowing through a cord toward a sinus.</string>
+    <string name="health_atlas_splenic_filter_story_squeeze">Flexible red cells squeeze through</string>
+    <string name="health_atlas_splenic_filter_story_squeeze_caption">A flexible red cell changes shape to squeeze through a narrow slit between cells in the sinus wall. It relaxes back toward its usual shape inside the sinus.</string>
+    <string name="health_atlas_splenic_filter_story_retain">Less flexible red cells may stay behind</string>
+    <string name="health_atlas_splenic_filter_story_retain_caption">A red cell that deforms poorly may not fit through a slit. It can be held back on the cord side of the sinus wall.</string>
+    <string name="health_atlas_splenic_filter_story_engulf">A red pulp macrophage takes up a cell</string>
+    <string name="health_atlas_splenic_filter_story_engulf_caption">A macrophage in the splenic red pulp can engulf a retained red cell and break it down.</string>
+    <string name="health_atlas_splenic_filter_story_recycle">Iron returns for reuse</string>
+    <string name="health_atlas_splenic_filter_story_recycle_caption">As the red cell is broken down, iron is recovered from its hemoglobin. Released iron is carried in the blood and can be reused to make new red cells.</string>
+
+    <string name="health_atlas_splenic_filter_story_label_spleen">Spleen</string>
+    <string name="health_atlas_splenic_filter_story_label_red_pulp">Red pulp</string>
+    <string name="health_atlas_splenic_filter_story_label_cord">Splenic cord</string>
+    <string name="health_atlas_splenic_filter_story_label_sinus">Venous sinus</string>
+    <string name="health_atlas_splenic_filter_story_label_slit">Sinus slit</string>
+    <string name="health_atlas_splenic_filter_story_label_macrophage">Red pulp macrophage</string>
+    <string name="health_atlas_splenic_filter_story_label_red_cell">Red blood cell</string>
+    <string name="health_atlas_splenic_filter_story_label_less_flexible">Less flexible red cell</string>
+    <string name="health_atlas_splenic_filter_story_label_iron">Recycled iron</string>
+
+    <string name="health_atlas_splenic_filter_story_ref_filtration">Study: red cell deformability and retention in human spleens</string>
+    <string name="health_atlas_splenic_filter_story_ref_recycling">Mouse study: red pulp macrophages and iron recycling</string>
+</resources>

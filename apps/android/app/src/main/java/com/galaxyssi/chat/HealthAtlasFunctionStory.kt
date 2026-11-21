@@ -895,6 +895,296 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    NEUTROPHIL_DEFENSE(
+        setOf("cell-neutrophil"),
+        R.string.health_atlas_process_neutrophil_title, R.string.health_atlas_neutrophil_scope,
+        listOf(
+            R.string.health_atlas_process_neutrophil_0 to R.string.health_atlas_cell_play_neutrophil_0_caption,
+            R.string.health_atlas_process_neutrophil_1 to R.string.health_atlas_cell_play_neutrophil_1_caption,
+            R.string.health_atlas_process_neutrophil_2 to R.string.health_atlas_cell_play_neutrophil_2_caption,
+            R.string.health_atlas_process_neutrophil_3 to R.string.health_atlas_cell_play_neutrophil_3_caption,
+        ),
+        listOf(R.string.health_atlas_reference_openstax to
+            "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets"),
+        16_000L,
+        showStructurePreview = true,
+    ),
+    EOSINOPHIL_RESPONSE(
+        setOf("cell-eosinophil"),
+        R.string.health_atlas_process_eosinophil_title, R.string.health_atlas_eosinophil_scope,
+        listOf(
+            R.string.health_atlas_process_eosinophil_0 to R.string.health_atlas_cell_play_eosinophil_0_caption,
+            R.string.health_atlas_process_eosinophil_1 to R.string.health_atlas_cell_play_eosinophil_1_caption,
+            R.string.health_atlas_process_eosinophil_2 to R.string.health_atlas_cell_play_eosinophil_2_caption,
+            R.string.health_atlas_process_eosinophil_3 to R.string.health_atlas_cell_play_eosinophil_3_caption,
+        ),
+        listOf(R.string.health_atlas_reference_openstax to
+            "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets"),
+        16_000L,
+        showStructurePreview = true,
+    ),
+    BASOPHIL_SIGNALING(
+        setOf("cell-basophil"),
+        R.string.health_atlas_process_basophil_title, R.string.health_atlas_basophil_scope,
+        listOf(
+            R.string.health_atlas_process_basophil_0 to R.string.health_atlas_cell_play_basophil_0_caption,
+            R.string.health_atlas_process_basophil_1 to R.string.health_atlas_cell_play_basophil_1_caption,
+            R.string.health_atlas_process_basophil_2 to R.string.health_atlas_cell_play_basophil_2_caption,
+            R.string.health_atlas_process_basophil_3 to R.string.health_atlas_cell_play_basophil_3_caption,
+        ),
+        listOf(R.string.health_atlas_reference_openstax to
+            "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets"),
+        16_000L,
+        showStructurePreview = true,
+    ),
+    MONOCYTE_RECRUITMENT(
+        setOf("cell-monocyte"),
+        R.string.health_atlas_process_monocyte_title, R.string.health_atlas_monocyte_lesson_scope,
+        listOf(
+            R.string.health_atlas_process_monocyte_0 to R.string.health_atlas_cell_play_monocyte_0_caption,
+            R.string.health_atlas_process_monocyte_1 to R.string.health_atlas_cell_play_monocyte_1_caption,
+            R.string.health_atlas_process_monocyte_2 to R.string.health_atlas_cell_play_monocyte_2_caption,
+            R.string.health_atlas_process_monocyte_3 to R.string.health_atlas_cell_play_monocyte_3_caption,
+        ),
+        listOf(R.string.health_atlas_reference_openstax to
+            "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets"),
+        16_000L,
+        showStructurePreview = true,
+    ),
+    DENDRITIC_PRESENTATION(
+        setOf("cell-dendritic-cell"),
+        R.string.health_atlas_process_cell_dendritic_cell_title, R.string.health_atlas_dendritic_lesson_scope,
+        listOf(
+            R.string.health_atlas_process_cell_dendritic_cell_0 to R.string.health_atlas_cell_play_dendritic_0_caption,
+            R.string.health_atlas_process_cell_dendritic_cell_1 to R.string.health_atlas_cell_play_dendritic_1_caption,
+            R.string.health_atlas_process_cell_dendritic_cell_2 to R.string.health_atlas_cell_play_dendritic_2_caption,
+            R.string.health_atlas_process_cell_dendritic_cell_3 to R.string.health_atlas_cell_play_dendritic_3_caption,
+        ),
+        listOf(R.string.health_atlas_reference_openstax to
+            "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types"),
+        16_000L,
+        showStructurePreview = true,
+    ),
+    T_CELL_RESPONSE(
+        setOf("cell-t-cell"),
+        R.string.health_atlas_process_t_cell_title, R.string.health_atlas_t_lesson_scope,
+        listOf(
+            R.string.health_atlas_process_t_cell_0 to R.string.health_atlas_cell_play_t_cell_0_caption,
+            R.string.health_atlas_process_t_cell_1 to R.string.health_atlas_cell_play_t_cell_1_caption,
+            R.string.health_atlas_process_t_cell_2 to R.string.health_atlas_cell_play_t_cell_2_caption,
+            R.string.health_atlas_process_t_cell_3 to R.string.health_atlas_cell_play_t_cell_3_caption,
+        ),
+        listOf(R.string.health_atlas_reference_openstax to
+            "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types"),
+        16_000L,
+        showStructurePreview = true,
+    ),
+    NK_SURVEILLANCE(
+        setOf("cell-natural-killer-cell"),
+        R.string.health_atlas_process_natural_killer_cell_title, R.string.health_atlas_nk_lesson_scope,
+        listOf(
+            R.string.health_atlas_process_natural_killer_cell_0 to R.string.health_atlas_cell_play_nk_0_caption,
+            R.string.health_atlas_process_natural_killer_cell_1 to R.string.health_atlas_cell_play_nk_1_caption,
+            R.string.health_atlas_process_natural_killer_cell_2 to R.string.health_atlas_cell_play_nk_2_caption,
+            R.string.health_atlas_process_natural_killer_cell_3 to R.string.health_atlas_cell_play_nk_3_caption,
+        ),
+        listOf(R.string.health_atlas_reference_openstax to
+            "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-2-barrier-defenses-and-the-innate-immune-response"),
+        16_000L,
+        showStructurePreview = true,
+    ),
+    PLATELET_FORMATION(
+        setOf("cell-megakaryocyte"),
+        R.string.health_atlas_process_cell_megakaryocyte_title, R.string.health_atlas_mega_lesson_scope,
+        listOf(
+            R.string.health_atlas_process_cell_megakaryocyte_0 to R.string.health_atlas_cell_play_megakaryocyte_0_caption,
+            R.string.health_atlas_process_cell_megakaryocyte_1 to R.string.health_atlas_cell_play_megakaryocyte_1_caption,
+            R.string.health_atlas_process_cell_megakaryocyte_2 to R.string.health_atlas_cell_play_megakaryocyte_2_caption,
+            R.string.health_atlas_process_cell_megakaryocyte_3 to R.string.health_atlas_cell_play_megakaryocyte_3_caption,
+        ),
+        listOf(R.string.health_atlas_reference_openstax to
+            "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets"),
+        16_000L,
+        showStructurePreview = true,
+    ),
+    CEREBELLAR_COORDINATION(
+        setOf("cerebellum"),
+        R.string.health_atlas_cerebellum_story_title,
+        R.string.health_atlas_cerebellum_story_scope,
+        listOf(
+            R.string.health_atlas_cerebellum_story_plan to R.string.health_atlas_cerebellum_story_plan_caption,
+            R.string.health_atlas_cerebellum_story_feedback to R.string.health_atlas_cerebellum_story_feedback_caption,
+            R.string.health_atlas_cerebellum_story_compare to R.string.health_atlas_cerebellum_story_compare_caption,
+            R.string.health_atlas_cerebellum_story_correct to R.string.health_atlas_cerebellum_story_correct_caption,
+            R.string.health_atlas_cerebellum_story_recalibrate to R.string.health_atlas_cerebellum_story_recalibrate_caption,
+        ),
+        listOf(
+            R.string.health_atlas_cerebellum_story_ref_estimation to "https://journals.plos.org/plosbiology/article?id=10.1371/journal.pbio.0050316",
+            R.string.health_atlas_cerebellum_story_ref_adaptation to "https://pubmed.ncbi.nlm.nih.gov/17507504/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    MELANIN_TRANSFER(
+        setOf("cell-melanocyte"),
+        R.string.health_atlas_melanin_story_title,
+        R.string.health_atlas_melanin_story_scope,
+        listOf(
+            R.string.health_atlas_melanin_story_neighborhood to
+                R.string.health_atlas_melanin_story_neighborhood_caption,
+            R.string.health_atlas_melanin_story_packaging to
+                R.string.health_atlas_melanin_story_packaging_caption,
+            R.string.health_atlas_melanin_story_transport to
+                R.string.health_atlas_melanin_story_transport_caption,
+            R.string.health_atlas_melanin_story_transfer to
+                R.string.health_atlas_melanin_story_transfer_caption,
+            R.string.health_atlas_melanin_story_shielding to
+                R.string.health_atlas_melanin_story_shielding_caption,
+        ),
+        listOf(
+            R.string.health_atlas_melanin_story_reference_transfer to "https://pubmed.ncbi.nlm.nih.gov/24141907/",
+            R.string.health_atlas_melanin_story_reference_uv to "https://pubmed.ncbi.nlm.nih.gov/9579550/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    LARYNGEAL_VOICE(
+        setOf("larynx"),
+        R.string.health_atlas_larynx_story_title,
+        R.string.health_atlas_larynx_story_scope,
+        listOf(
+            R.string.health_atlas_larynx_story_breathe to
+                R.string.health_atlas_larynx_story_breathe_caption,
+            R.string.health_atlas_larynx_story_approach to
+                R.string.health_atlas_larynx_story_approach_caption,
+            R.string.health_atlas_larynx_story_air to
+                R.string.health_atlas_larynx_story_air_caption,
+            R.string.health_atlas_larynx_story_pulse to
+                R.string.health_atlas_larynx_story_pulse_caption,
+            R.string.health_atlas_larynx_story_reopen to
+                R.string.health_atlas_larynx_story_reopen_caption,
+        ),
+        listOf(
+            R.string.health_atlas_larynx_story_ref_breathing to "https://pubmed.ncbi.nlm.nih.gov/6863086/",
+            R.string.health_atlas_larynx_story_ref_phonation to "https://pmc.ncbi.nlm.nih.gov/articles/PMC11048587/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    ASTROCYTE_SUPPORT(
+        setOf("cell-astrocyte"),
+        R.string.health_atlas_astrocyte_story_title,
+        R.string.health_atlas_astrocyte_story_scope,
+        listOf(
+            R.string.health_atlas_astrocyte_story_signal to
+                R.string.health_atlas_astrocyte_story_signal_caption,
+            R.string.health_atlas_astrocyte_story_capture to
+                R.string.health_atlas_astrocyte_story_capture_caption,
+            R.string.health_atlas_astrocyte_story_convert to
+                R.string.health_atlas_astrocyte_story_convert_caption,
+            R.string.health_atlas_astrocyte_story_recycle to
+                R.string.health_atlas_astrocyte_story_recycle_caption,
+            R.string.health_atlas_astrocyte_story_balance to
+                R.string.health_atlas_astrocyte_story_balance_caption,
+        ),
+        listOf(
+            R.string.health_atlas_astrocyte_story_ref_cycle to "https://pubmed.ncbi.nlm.nih.gov/11880482/",
+            R.string.health_atlas_astrocyte_story_ref_buffer to "https://pubmed.ncbi.nlm.nih.gov/17942730/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    SPLENIC_FILTER(
+        setOf("spleen"),
+        R.string.health_atlas_splenic_filter_story_title,
+        R.string.health_atlas_splenic_filter_story_scope,
+        listOf(
+            R.string.health_atlas_splenic_filter_story_locate to
+                R.string.health_atlas_splenic_filter_story_locate_caption,
+            R.string.health_atlas_splenic_filter_story_squeeze to
+                R.string.health_atlas_splenic_filter_story_squeeze_caption,
+            R.string.health_atlas_splenic_filter_story_retain to
+                R.string.health_atlas_splenic_filter_story_retain_caption,
+            R.string.health_atlas_splenic_filter_story_engulf to
+                R.string.health_atlas_splenic_filter_story_engulf_caption,
+            R.string.health_atlas_splenic_filter_story_recycle to
+                R.string.health_atlas_splenic_filter_story_recycle_caption,
+        ),
+        listOf(
+            R.string.health_atlas_splenic_filter_story_ref_filtration to "https://pmc.ncbi.nlm.nih.gov/articles/PMC6199658/",
+            R.string.health_atlas_splenic_filter_story_ref_recycling to "https://pmc.ncbi.nlm.nih.gov/articles/PMC2756102/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    MACROPHAGE_CLEARANCE(
+        setOf("cell-macrophage"),
+        R.string.health_atlas_process_macrophage_title, R.string.health_atlas_phagocytosis_scope,
+        listOf(
+            R.string.health_atlas_process_macrophage_0 to R.string.health_atlas_cell_play_macrophage_0_caption,
+            R.string.health_atlas_process_macrophage_1 to R.string.health_atlas_cell_play_macrophage_1_caption,
+            R.string.health_atlas_process_macrophage_2 to R.string.health_atlas_cell_play_macrophage_2_caption,
+            R.string.health_atlas_process_macrophage_3 to R.string.health_atlas_cell_play_macrophage_3_caption,
+        ),
+        listOf(R.string.health_atlas_reference_openstax to
+            "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets"),
+        16_000L,
+        showStructurePreview = true,
+    ),
+    THYMIC_SELECTION(
+        setOf("thymus"),
+        R.string.health_atlas_thymus_story_title,
+        R.string.health_atlas_thymus_story_scope,
+        listOf(
+            R.string.health_atlas_thymus_story_enter to R.string.health_atlas_thymus_story_enter_caption,
+            R.string.health_atlas_thymus_story_positive_selection to R.string.health_atlas_thymus_story_positive_selection_caption,
+            R.string.health_atlas_thymus_story_to_medulla to R.string.health_atlas_thymus_story_to_medulla_caption,
+            R.string.health_atlas_thymus_story_negative_selection to R.string.health_atlas_thymus_story_negative_selection_caption,
+            R.string.health_atlas_thymus_story_exit to R.string.health_atlas_thymus_story_exit_caption,
+        ),
+        listOf(
+            R.string.health_atlas_thymus_story_ref_spatial to "https://pmc.ncbi.nlm.nih.gov/articles/PMC11578893/",
+            R.string.health_atlas_thymus_story_ref_emigration to "https://pmc.ncbi.nlm.nih.gov/articles/PMC5367636/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    BRAINSTEM_RHYTHM(
+        setOf("brainstem"),
+        R.string.health_atlas_brainstem_story_title,
+        R.string.health_atlas_brainstem_story_scope,
+        listOf(
+            R.string.health_atlas_brainstem_story_locate to R.string.health_atlas_brainstem_story_locate_caption,
+            R.string.health_atlas_brainstem_story_rhythm to R.string.health_atlas_brainstem_story_rhythm_caption,
+            R.string.health_atlas_brainstem_story_relay to R.string.health_atlas_brainstem_story_relay_caption,
+            R.string.health_atlas_brainstem_story_inhale to R.string.health_atlas_brainstem_story_inhale_caption,
+            R.string.health_atlas_brainstem_story_exhale to R.string.health_atlas_brainstem_story_exhale_caption,
+        ),
+        listOf(
+            R.string.health_atlas_brainstem_story_ref_rhythm to "https://pmc.ncbi.nlm.nih.gov/articles/PMC3209964/",
+            R.string.health_atlas_brainstem_story_ref_diaphragm to "https://pmc.ncbi.nlm.nih.gov/articles/PMC9785439/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    FIBROBLAST_MATRIX(
+        setOf("cell-fibroblast", "dermis"),
+        R.string.health_atlas_fibroblast_story_title,
+        R.string.health_atlas_fibroblast_story_scope,
+        listOf(
+            R.string.health_atlas_fibroblast_story_scaffold to R.string.health_atlas_fibroblast_story_scaffold_caption,
+            R.string.health_atlas_fibroblast_story_repair to R.string.health_atlas_fibroblast_story_repair_caption,
+            R.string.health_atlas_fibroblast_story_deposit to R.string.health_atlas_fibroblast_story_deposit_caption,
+            R.string.health_atlas_fibroblast_story_arrange to R.string.health_atlas_fibroblast_story_arrange_caption,
+            R.string.health_atlas_fibroblast_story_support to R.string.health_atlas_fibroblast_story_support_caption,
+        ),
+        listOf(
+            R.string.health_atlas_fibroblast_story_ref_deposition to "https://pmc.ncbi.nlm.nih.gov/articles/PMC7655599/",
+            R.string.health_atlas_fibroblast_story_ref_structure to "https://pmc.ncbi.nlm.nih.gov/articles/PMC11101527/",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -934,6 +1224,14 @@ internal enum class HealthAtlasFunctionStory(
         VENOUS_RETURN -> R.string.health_atlas_venous_return_story_choice
         PLEURAL_COUPLING -> R.string.health_atlas_pleura_story_choice
         PARATHYROID_FEEDBACK -> R.string.health_atlas_calcium_feedback_story_choice
+        CEREBELLAR_COORDINATION -> R.string.health_atlas_cerebellum_story_choice
+        MELANIN_TRANSFER -> R.string.health_atlas_melanin_story_choice
+        LARYNGEAL_VOICE -> R.string.health_atlas_larynx_story_choice
+        ASTROCYTE_SUPPORT -> R.string.health_atlas_astrocyte_story_choice
+        SPLENIC_FILTER -> R.string.health_atlas_splenic_filter_story_choice
+        THYMIC_SELECTION -> R.string.health_atlas_thymus_story_choice
+        BRAINSTEM_RHYTHM -> R.string.health_atlas_brainstem_story_choice
+        FIBROBLAST_MATRIX -> R.string.health_atlas_fibroblast_story_choice
         else -> title
     }
 
@@ -970,6 +1268,18 @@ internal enum class HealthAtlasFunctionStory(
         PLEURAL_COUPLING -> listOf("lungs" to BREATHING)
         PARATHYROID_FEEDBACK -> listOf("renal-cortex" to NEPHRON, "small-intestine" to INTESTINAL_ABSORPTION)
         THYROID_FEEDBACK -> listOf("parathyroid-glands" to PARATHYROID_FEEDBACK)
+        DENDRITIC_PRESENTATION -> listOf("cell-t-cell" to T_CELL_RESPONSE)
+        T_CELL_RESPONSE -> listOf("cell-dendritic-cell" to DENDRITIC_PRESENTATION, "thymus" to THYMIC_SELECTION)
+        PLATELET_FORMATION -> listOf("fragment-platelet" to PLATELET_HEMOSTASIS)
+        CEREBELLAR_COORDINATION -> listOf("brain" to SYNAPTIC_SIGNAL)
+        MELANIN_TRANSFER -> listOf("epidermis" to EPIDERMAL_BARRIER)
+        LARYNGEAL_VOICE -> listOf("trachea" to BREATHING)
+        ASTROCYTE_SUPPORT -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
+        SPLENIC_FILTER -> listOf("cell-erythrocyte" to RED_CELL_OXYGEN, "cell-macrophage" to MACROPHAGE_CLEARANCE)
+        MONOCYTE_RECRUITMENT -> listOf("cell-macrophage" to MACROPHAGE_CLEARANCE)
+        THYMIC_SELECTION -> listOf("cell-t-cell" to T_CELL_RESPONSE)
+        BRAINSTEM_RHYTHM -> listOf("diaphragm" to BREATHING)
+        FIBROBLAST_MATRIX -> listOf("skin-organ" to EPIDERMAL_BARRIER)
         else -> emptyList()
     }
 
@@ -1037,6 +1347,17 @@ internal enum class HealthAtlasFunctionStory(
         PLEURAL_COUPLING -> HealthAtlasPleuraStoryView(context)
         PARATHYROID_FEEDBACK -> HealthAtlasCalciumFeedbackStoryView(context)
         MAMMARY_MILK_FLOW -> HealthAtlasMammaryStoryView(context)
+        CEREBELLAR_COORDINATION -> HealthAtlasCerebellumStoryView(context)
+        MELANIN_TRANSFER -> HealthAtlasMelaninStoryView(context)
+        LARYNGEAL_VOICE -> HealthAtlasLarynxStoryView(context)
+        ASTROCYTE_SUPPORT -> HealthAtlasAstrocyteStoryView(context)
+        SPLENIC_FILTER -> HealthAtlasSplenicFilterStoryView(context)
+        THYMIC_SELECTION -> HealthAtlasThymusStoryView(context)
+        BRAINSTEM_RHYTHM -> HealthAtlasBrainstemRhythmStoryView(context)
+        FIBROBLAST_MATRIX -> HealthAtlasFibroblastStoryView(context)
+        NEUTROPHIL_DEFENSE, EOSINOPHIL_RESPONSE, BASOPHIL_SIGNALING, MONOCYTE_RECRUITMENT,
+        DENDRITIC_PRESENTATION, T_CELL_RESPONSE, NK_SURVEILLANCE, PLATELET_FORMATION, MACROPHAGE_CLEARANCE ->
+            HealthAtlasCellFunctionArt(context, this, owners.single())
     }
 
     companion object {
@@ -1048,12 +1369,14 @@ internal enum class HealthAtlasFunctionStory(
                 "pancreas" -> listOf(primary, INSULIN_SECRETION, GLUCAGON_RESPONSE)
                 "endocrine" -> listOf(primary, GLUCAGON_RESPONSE, THYROID_FEEDBACK)
                 "pancreatic-islets" -> listOf(primary, GLUCAGON_RESPONSE)
-                "nervous", "brain", "spinal-cord", "cell-neuron", "tissue-central-nervous" -> listOf(primary, MYELIN_SIGNAL)
+                "nervous", "brain", "spinal-cord", "cell-neuron" -> listOf(primary, MYELIN_SIGNAL)
+                "tissue-central-nervous" -> listOf(primary, MYELIN_SIGNAL, ASTROCYTE_SUPPORT)
                 "tissue-skeletal-muscle" -> listOf(primary, MUSCLE_MOTION)
                 "cell-skeletal-myocyte" -> listOf(primary, GLUCOSE)
                 "immune" -> listOf(primary, LYMPH_RETURN)
                 "skin" -> listOf(primary, EPIDERMAL_BARRIER, TOUCH_SIGNAL)
-                "skin-organ", "epidermis" -> listOf(primary, TOUCH_SIGNAL)
+                "skin-organ" -> listOf(primary, TOUCH_SIGNAL)
+                "epidermis" -> listOf(primary, TOUCH_SIGNAL, MELANIN_TRANSFER)
                 "sensory" -> listOf(primary, HEARING, VESTIBULAR_BALANCE, OLFACTION, TASTE_SIGNAL, TOUCH_SIGNAL)
                 "ear", "inner-ear", "cell-inner-ear-hair-cell" -> listOf(primary, VESTIBULAR_BALANCE)
                 "tongue" -> listOf(primary, TASTE_SIGNAL)

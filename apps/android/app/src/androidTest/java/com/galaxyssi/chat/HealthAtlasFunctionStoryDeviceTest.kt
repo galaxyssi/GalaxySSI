@@ -28,6 +28,34 @@ class HealthAtlasFunctionStoryDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
+    @Test fun fourChapterImmunePlaybackAndStageSimulationKeepSeparatePositions() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    openCell(activity, "cell-t-cell")
+                    activity.find<View>("atlas-function-cell-t-cell")
+                    repeat(4) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(.75f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    assertEquals(activity.getString(R.string.health_atlas_cell_play_t_cell_3_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    val simulation = activity.find<HealthAtlasBloodDefenseView>("atlas-blood-defense-diagram")
+                    assertEquals(0, simulation.stage)
+                    activity.find<View>("atlas-process-stage-1").performClick()
+                    assertEquals(1, simulation.stage)
+                    activity.find<View>("atlas-tab-1").performClick()
+                    assertEquals(.75f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.find<View>("atlas-tab-3").performClick()
+                    assertEquals(1, activity.find<HealthAtlasBloodDefenseView>("atlas-blood-defense-diagram").stage)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
     @Test fun everyAnimationIsReachableFromTheBundledCatalogue() {
         val atlas = HealthBodyAtlas.load(context)
         val reached = linkedSetOf<HealthAtlasFunctionStory>()
@@ -162,6 +190,7 @@ class HealthAtlasFunctionStoryDeviceTest {
     }
 
     @Test fun allLessonsAnimateWithinEveryChapterAtPhoneAndTabletWidths() {
+        val staticChapters = mutableListOf<String>()
         for (locale in listOf(Locale.ENGLISH, Locale.SIMPLIFIED_CHINESE)) {
             val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
             for (story in HealthAtlasFunctionStory.entries) {
@@ -183,7 +212,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                                 val early = render(start + .05f)
                                 val late = render(start + .13f)
                                 try {
-                                    assertFalse("$story chapter ${index + 1} at $size did not move", early.sameAs(late))
+                                    if (early.sameAs(late)) staticChapters += "$story chapter ${index + 1}, $size px, $locale"
                                     assertEquals(localized.getString(caption), art.contentDescription)
                                 } finally { early.recycle(); late.recycle() }
                             }
@@ -194,6 +223,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                 }
             }
         }
+        assertTrue(staticChapters.joinToString(prefix = "Static chapters: "), staticChapters.isEmpty())
     }
 
     @Test fun lymphAndAntibodyStoriesRetainTheDedicatedAnatomyAndSimulations() {
@@ -1033,6 +1063,11 @@ class HealthAtlasFunctionStoryDeviceTest {
         assertTrue(lymph.contains(context.getString(R.string.health_atlas_lymph_flow_node_caption)))
         assertTrue(antibody.contains(context.getString(R.string.health_atlas_antibody_story_release_caption)))
         assertFalse(antibody.contains(context.getString(R.string.health_atlas_lymph_flow_node_caption)))
+        val tCell = HealthAtlasAgentContext.prompt(context, atlas, requireNotNull(atlas["cell-t-cell"]), functionPhase = .79f)
+        assertTrue(tCell.contains(context.getString(R.string.health_atlas_stage, 4, 4,
+            context.getString(R.string.health_atlas_process_t_cell_3))))
+        assertTrue(tCell.contains(context.getString(R.string.health_atlas_cell_play_t_cell_3_caption)))
+        assertFalse(tCell.contains(context.getString(R.string.health_atlas_cell_play_t_cell_0_caption)))
     }
 
     private fun openCell(activity: HealthBodyAtlasActivity, id: String) {

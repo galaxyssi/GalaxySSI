@@ -4,6 +4,47 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HealthAtlasFunctionStoryTest {
+    @Test fun cellPlaybackPreservesAllFourDedicatedMechanisms() {
+        val routes = mapOf(
+            "cell-neutrophil" to HealthAtlasFunctionStory.NEUTROPHIL_DEFENSE,
+            "cell-eosinophil" to HealthAtlasFunctionStory.EOSINOPHIL_RESPONSE,
+            "cell-basophil" to HealthAtlasFunctionStory.BASOPHIL_SIGNALING,
+            "cell-monocyte" to HealthAtlasFunctionStory.MONOCYTE_RECRUITMENT,
+            "cell-macrophage" to HealthAtlasFunctionStory.MACROPHAGE_CLEARANCE,
+            "cell-dendritic-cell" to HealthAtlasFunctionStory.DENDRITIC_PRESENTATION,
+            "cell-t-cell" to HealthAtlasFunctionStory.T_CELL_RESPONSE,
+            "cell-natural-killer-cell" to HealthAtlasFunctionStory.NK_SURVEILLANCE,
+            "cell-megakaryocyte" to HealthAtlasFunctionStory.PLATELET_FORMATION,
+        )
+        for ((id, story) in routes) {
+            assertEquals(id, listOf(story), HealthAtlasFunctionStory.choicesForId(id))
+            assertEquals(id, 4, story.chapters.size)
+            assertEquals(id, .75f, story.startOf(3), 0f)
+        }
+        assertEquals(listOf(HealthAtlasFunctionStory.ANTIBODY_RESPONSE), HealthAtlasFunctionStory.choicesForId("cell-b-cell"))
+        assertEquals(listOf(HealthAtlasFunctionStory.PLATELET_HEMOSTASIS), HealthAtlasFunctionStory.choicesForId("fragment-platelet"))
+    }
+
+    @Test fun specializedOrganAndCellLessonsKeepNeighboringMechanismsDistinct() {
+        assertEquals(HealthAtlasFunctionStory.THYMIC_SELECTION, HealthAtlasFunctionStory.forId("thymus"))
+        assertEquals(HealthAtlasFunctionStory.T_CELL_RESPONSE, HealthAtlasFunctionStory.forId("cell-t-cell"))
+        assertEquals(HealthAtlasFunctionStory.SPLENIC_FILTER, HealthAtlasFunctionStory.forId("spleen"))
+        assertEquals(HealthAtlasFunctionStory.RED_CELL_OXYGEN, HealthAtlasFunctionStory.forId("cell-erythrocyte"))
+        assertEquals(HealthAtlasFunctionStory.LARYNGEAL_VOICE, HealthAtlasFunctionStory.forId("larynx"))
+        assertEquals(HealthAtlasFunctionStory.BREATHING, HealthAtlasFunctionStory.forId("trachea"))
+        assertEquals(HealthAtlasFunctionStory.CEREBELLAR_COORDINATION, HealthAtlasFunctionStory.forId("cerebellum"))
+        assertEquals(HealthAtlasFunctionStory.SYNAPTIC_SIGNAL, HealthAtlasFunctionStory.forId("brain"))
+        assertEquals(HealthAtlasFunctionStory.ASTROCYTE_SUPPORT, HealthAtlasFunctionStory.forId("cell-astrocyte"))
+        assertEquals(HealthAtlasFunctionStory.MYELIN_SIGNAL, HealthAtlasFunctionStory.forId("cell-oligodendrocyte"))
+        assertEquals(HealthAtlasFunctionStory.MELANIN_TRANSFER, HealthAtlasFunctionStory.forId("cell-melanocyte"))
+        assertEquals(HealthAtlasFunctionStory.BRAINSTEM_RHYTHM, HealthAtlasFunctionStory.forId("brainstem"))
+        assertEquals(HealthAtlasFunctionStory.BREATHING, HealthAtlasFunctionStory.forId("diaphragm"))
+        assertEquals(HealthAtlasFunctionStory.FIBROBLAST_MATRIX, HealthAtlasFunctionStory.forId("cell-fibroblast"))
+        assertEquals(HealthAtlasFunctionStory.FIBROBLAST_MATRIX, HealthAtlasFunctionStory.forId("dermis"))
+        assertEquals(listOf(HealthAtlasFunctionStory.EPIDERMAL_BARRIER, HealthAtlasFunctionStory.TOUCH_SIGNAL,
+            HealthAtlasFunctionStory.MELANIN_TRANSFER), HealthAtlasFunctionStory.choicesForId("epidermis"))
+    }
+
     @Test fun focusedEntryChaptersAreOnlyDefaultsAndDoNotOverrideSavedPlayback() {
         val items = mapOf(
             "aorta" to (HealthAtlasFunctionStory.HEARTBEAT to HealthAtlasBeatStage.EJECTION.ordinal),
@@ -347,8 +388,8 @@ class HealthAtlasFunctionStoryTest {
         listOf("immune", "cell-b-cell", "cell-plasma-cell").forEach {
             assertEquals(HealthAtlasFunctionStory.ANTIBODY_RESPONSE, HealthAtlasFunctionStory.forId(it))
         }
-        assertNull(HealthAtlasFunctionStory.forId("spleen"))
-        assertNull(HealthAtlasFunctionStory.forId("cell-t-cell"))
+        assertEquals(HealthAtlasFunctionStory.SPLENIC_FILTER, HealthAtlasFunctionStory.forId("spleen"))
+        assertEquals(HealthAtlasFunctionStory.T_CELL_RESPONSE, HealthAtlasFunctionStory.forId("cell-t-cell"))
         val pump = HealthAtlasLymphPumpStage
         assertEquals(0f, pump.cycle(Float.NaN), 0f)
         assertEquals(0f, pump.expansion(.97f), .00001f)
@@ -485,7 +526,7 @@ class HealthAtlasFunctionStoryTest {
             "cell-granulosa-cell", "cell-ciliated-oviduct-cell")) {
             assertEquals(listOf(ovum), HealthAtlasFunctionStory.choicesForId(id))
         }
-        for (id in listOf("dermis", "prostate", "uterus", "cell-trophoblast")) {
+        for (id in listOf("prostate", "uterus", "cell-trophoblast")) {
             assertNull(HealthAtlasFunctionStory.forId(id))
         }
         val water = HealthAtlasBarrierMotion
@@ -562,19 +603,20 @@ class HealthAtlasFunctionStoryTest {
     }
 
     @Test fun allChaptersScrubToTheirOwnBoundariesAndRejectInvalidState() = HealthAtlasFunctionStory.entries.forEach { story ->
-        assertEquals(5, story.chapters.size)
-        assertEquals(5, story.chapters.map { it.second }.toSet().size)
+        val count = story.chapters.size
+        assertTrue(count in 4..5)
+        assertEquals(count, story.chapters.map { it.second }.toSet().size)
         for (i in story.chapters.indices) {
             val start = story.startOf(i)
             assertEquals(i, story.chapter(start))
             assertEquals(0f, story.fraction(start), .00001f)
-            assertEquals(.5f, story.fraction(start + .1f), .00001f)
+            assertEquals(.5f, story.fraction(start + .5f / count), .00001f)
         }
-        assertEquals(4, story.chapter(1f))
+        assertEquals(count - 1, story.chapter(1f))
         assertEquals(1f, story.fraction(1f), 0f)
         assertEquals(0f, HealthAtlasFunctionStory.safePhase(Float.NaN), 0f)
         assertEquals(0f, HealthAtlasFunctionStory.safePhase(Float.POSITIVE_INFINITY), 0f)
         assertEquals(0f, story.startOf(-1), 0f)
-        assertEquals(.8f, story.startOf(5), 0f)
+        assertEquals((count - 1) / count.toFloat(), story.startOf(count), 0f)
     }
 }

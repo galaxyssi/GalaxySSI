@@ -501,6 +501,19 @@ clinical models. Salivary and mammary cells open at their own role in the
 process; nephron filtration, whole-lung ventilation and other broader
 lessons retain their independent playheads.
 
+Nine existing painted cell mechanisms also run in the Function player.
+Each retains its own four-stage artwork and headings, with localized
+captions, timeline playback and source links. The Function and Simulation
+screens use separate renderer instances and store their playheads
+independently. Platelet production remains distinct from the platelet
+fragment's hemostasis lesson.
+
+Dedicated lessons cover cerebellar coordination, astrocyte support,
+brainstem breathing rhythm, voice production, melanin transfer, dermal
+matrix renewal, spleen filtration and thymic selection. These qualitative
+lessons open from their matching organs, tissues or cells. They do not
+replace the broader mechanisms for ventilation, skin barrier and immunity.
+
 The pinned Agent action follows the current surface. Public catalogue, mechanism
 and research prompts use `HealthAtlasAgentContext`: selected anatomy, current
 teaching stage, cardiac or other quantitative inputs, assumptions and sources.

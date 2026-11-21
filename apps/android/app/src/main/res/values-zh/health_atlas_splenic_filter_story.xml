@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_splenic_filter_story_title">脾脏如何筛滤红细胞</string>
+    <string name="health_atlas_splenic_filter_story_choice">脾脏筛滤红细胞</string>
+    <string name="health_atlas_splenic_filter_story_scope">定性展示正常人体脾红髓中的一条红细胞通路。大小和时间仅为示意。</string>
+
+    <string name="health_atlas_splenic_filter_story_locate">脾红髓内部</string>
+    <string name="health_atlas_splenic_filter_story_locate_caption">脾脏位于左侧肋骨下方。脾红髓含有脾索和脾血窦。放大图中，红细胞在脾索中流向脾血窦。</string>
+    <string name="health_atlas_splenic_filter_story_squeeze">易变形的红细胞挤过裂隙</string>
+    <string name="health_atlas_splenic_filter_story_squeeze_caption">易变形的红细胞改变形状，挤过窦壁细胞之间的狭窄裂隙。进入脾血窦后，红细胞逐渐恢复原来的形状。</string>
+    <string name="health_atlas_splenic_filter_story_retain">不易变形的红细胞可能被滞留</string>
+    <string name="health_atlas_splenic_filter_story_retain_caption">变形能力较差的红细胞可能无法挤过裂隙，因而滞留在窦壁靠脾索的一侧。</string>
+    <string name="health_atlas_splenic_filter_story_engulf">红髓巨噬细胞吞入红细胞</string>
+    <string name="health_atlas_splenic_filter_story_engulf_caption">脾红髓中的巨噬细胞可吞噬被滞留的红细胞，并将其分解。</string>
+    <string name="health_atlas_splenic_filter_story_recycle">回收的铁再次利用</string>
+    <string name="health_atlas_splenic_filter_story_recycle_caption">红细胞分解时，血红蛋白中的铁被回收。释放的铁经血液运送，可以再次用于生成新的红细胞。</string>
+
+    <string name="health_atlas_splenic_filter_story_label_spleen">脾脏</string>
+    <string name="health_atlas_splenic_filter_story_label_red_pulp">红髓</string>
+    <string name="health_atlas_splenic_filter_story_label_cord">脾索</string>
+    <string name="health_atlas_splenic_filter_story_label_sinus">脾血窦</string>
+    <string name="health_atlas_splenic_filter_story_label_slit">窦壁裂隙</string>
+    <string name="health_atlas_splenic_filter_story_label_macrophage">红髓巨噬细胞</string>
+    <string name="health_atlas_splenic_filter_story_label_red_cell">红细胞</string>
+    <string name="health_atlas_splenic_filter_story_label_less_flexible">不易变形的红细胞</string>
+    <string name="health_atlas_splenic_filter_story_label_iron">回收的铁</string>
+
+    <string name="health_atlas_splenic_filter_story_ref_filtration">研究：红细胞变形能力与在人脾中的滞留</string>
+    <string name="health_atlas_splenic_filter_story_ref_recycling">小鼠研究：红髓巨噬细胞与铁回收</string>
+</resources>

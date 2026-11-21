@@ -23,7 +23,10 @@ internal enum class HealthAtlasBloodDefense(val owner: String, val art: Int, val
 }
 
 internal class HealthAtlasBloodDefenseView(context: Context, val lesson: HealthAtlasBloodDefense,
-    mechanism: HealthAtlasMechanism) : HealthAtlasCellSceneView(context, mechanism, R.string.health_atlas_granulocyte_stage) {
+    stageTitles: List<String>) : HealthAtlasCellSceneView(context, stageTitles, R.string.health_atlas_granulocyte_stage) {
+    constructor(context: Context, lesson: HealthAtlasBloodDefense, mechanism: HealthAtlasMechanism) :
+        this(context, lesson, mechanism.stages)
+
     private val cell = portrait(lesson.art)
     private val related = lesson.relatedArt?.let(::portrait)
     private val helper = if (lesson == HealthAtlasBloodDefense.B_CELL)

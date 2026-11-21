@@ -97,7 +97,12 @@ internal class HealthAtlasSurfactantStoryView(context: Context) :
         lamellarBody(c, 110f, 244f, 6f)
         lamellarBody(c, 147f, 252f, 5f)
         when (step) {
-            0 -> lamellarBody(c, domeX, 233f, 7f)
+            0 -> {
+                lamellarBody(c, domeX, 233f, 7f)
+                // Animate the cutaway highlight, not the size or location of the stored packet.
+                ink(guide, 1.25f)
+                c.drawArc(domeX - 11f, 222f, domeX + 11f, 244f, -90f, 45f + 290f * t, false, paint)
+            }
             1 -> release(c, t)
             2 -> if (t < .2f) releasedMaterial(c, 1f + t)
         }

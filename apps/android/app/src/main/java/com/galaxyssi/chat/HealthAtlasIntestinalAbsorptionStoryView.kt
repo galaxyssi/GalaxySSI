@@ -22,6 +22,8 @@ internal class HealthAtlasIntestinalAbsorptionStoryView(context: Context) :
         cubicTo(177f, 253f, 182f, 282f, 198f, 294f)
     }
     private val villus = Path(surface).apply { close() }
+    private val villusOutline = track(surface)
+    private val villusTrace = Path()
     private val cellBoundaries = Path()
     private val nuclei = Path()
     private val microvilli = Path()
@@ -86,12 +88,11 @@ internal class HealthAtlasIntestinalAbsorptionStoryView(context: Context) :
 
     init {
         tag = "atlas-function-intestinal-absorption-art"
-        val outline = track(surface)
         val point = FloatArray(2)
         val tangent = FloatArray(2)
         // Normal to the villus silhouette: cell bodies on the inside, microvilli on the lumen side.
         for (index in 8..128) {
-            if (!outline.getPosTan(outline.length * index / 136f, point, tangent)) continue
+            if (!villusOutline.getPosTan(villusOutline.length * index / 136f, point, tangent)) continue
             val x = point[0]
             val y = point[1]
             val nx = -tangent[1]
@@ -110,8 +111,8 @@ internal class HealthAtlasIntestinalAbsorptionStoryView(context: Context) :
     }
 
     override fun scene(c: Canvas, step: Int, t: Float) {
-        drawVillus(c, step == 1)
-        drawInset(c, step == 1)
+        drawVillus(c, step == 1, t.takeIf { step == 0 })
+        drawInset(c, t.takeIf { step == 1 })
         if (step == 2 || step == 4) {
             flow(c, bloodRoute, t)
             flow(c, cellSolutes, t)
@@ -132,7 +133,7 @@ internal class HealthAtlasIntestinalAbsorptionStoryView(context: Context) :
         }
     }
 
-    private fun drawVillus(c: Canvas, highlightBrush: Boolean) {
+    private fun drawVillus(c: Canvas, highlightBrush: Boolean, outlineProgress: Float?) {
         ink(peach)
         paint.shader = tissueFill
         c.drawPath(villus, paint)
@@ -154,6 +155,11 @@ internal class HealthAtlasIntestinalAbsorptionStoryView(context: Context) :
         c.restore()
         stroke(c, surface, coral, 1.4f)
         stroke(c, microvilli, if (highlightBrush) teal else brushInk, if (highlightBrush) 1.45f else .9f)
+        outlineProgress?.let { progress ->
+            villusTrace.rewind()
+            villusOutline.getSegment(0f, villusOutline.length * progress, villusTrace, true)
+            stroke(c, villusTrace, teal, 2.2f)
+        }
         line(c, 29f, 294f, 198f, 294f, coral, 1.2f)
 
         label(c, R.string.health_atlas_absorption_story_label_lumen, 118f, 38f, 112f)
@@ -165,8 +171,9 @@ internal class HealthAtlasIntestinalAbsorptionStoryView(context: Context) :
         line(c, 152f, 305f, 137f, 288f, teal, 1f)
     }
 
-    private fun drawInset(c: Canvas, highlightBrush: Boolean) {
+    private fun drawInset(c: Canvas, brushProgress: Float?) {
         // The selected epithelium is enlarged with its lumen-facing edge turned upward.
+        val highlightBrush = brushProgress != null
         val accent = if (highlightBrush) teal else leaderInk
         oval(c, 162f, 114f, 179f, 132f, 0x22fff8eb, accent)
         line(c, 180f, 122f, 208f, 91f, accent, 1f)
@@ -180,7 +187,13 @@ internal class HealthAtlasIntestinalAbsorptionStoryView(context: Context) :
         c.drawPath(enterocyte, paint)
         paint.shader = null
         stroke(c, enterocyte, if (highlightBrush) teal else coral, 1.4f)
-        stroke(c, insetBrush, if (highlightBrush) teal else brushInk, 1.8f)
+        stroke(c, insetBrush, brushInk, 1.8f)
+        brushProgress?.let { progress ->
+            c.save()
+            c.clipRect(218f, 94f, 218f + 128f * progress, 110f)
+            stroke(c, insetBrush, teal, 2.35f)
+            c.restore()
+        }
         oval(c, 270f, 177f, 292f, 199f, 0xffbd90ad, violet)
         oval(c, 223f, 181f, 236f, 199f, 0xffbd90ad, violet)
         oval(c, 326f, 181f, 340f, 199f, 0xffbd90ad, violet)
