@@ -227,6 +227,7 @@ class HealthAtlasPhysiologyDeviceTest {
             Triple("pelvis", "pelvic-support", "pelvis-load"),
             Triple("subcutaneous-tissue", "cushion-contact", "cushion-load"),
             Triple("diaphragm", "diaphragm-displacement", "diaphragm-descent"),
+            Triple("aorta", "arterial-continuity", "arterial-lumen-diameter"),
         )
         for ((id, art, input) in examples) {
             var initial = 0

@@ -1,0 +1,11 @@
+<resources>
+    <string name="health_atlas_arterial_continuity_title">动脉管腔流动</string>
+    <string name="health_atlas_arterial_continuity_diameter">示例管腔直径</string>
+    <string name="health_atlas_arterial_continuity_flow">示例容积流量</string>
+    <string name="health_atlas_arterial_continuity_formula">平均流速＝容积流量 ÷ 管腔面积。圆形管腔面积＝π ×（直径 ÷ 2）²。</string>
+    <string name="health_atlas_arterial_continuity_area">管腔面积：%1$s cm²</string>
+    <string name="health_atlas_arterial_continuity_scope">用理想的刚性圆管演示主动脉或肺动脉干某一截面的稳定流动。不模拟心跳、管壁运动或压力，也不代表个人测量结果。</string>
+    <string name="health_atlas_arterial_continuity_diagram">圆形代表管腔截面。箭头长短表示平均流速，不代表单个细胞或管腔内各处的速度。</string>
+    <string name="health_atlas_arterial_continuity_section">管腔截面</string>
+    <string name="health_atlas_arterial_continuity_speed">平均流速</string>
+</resources>

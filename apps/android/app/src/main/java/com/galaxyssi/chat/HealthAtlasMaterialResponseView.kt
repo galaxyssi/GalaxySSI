@@ -23,6 +23,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> R.string.health_atlas_pelvis_model_diagram
         HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> R.string.health_atlas_cushion_model_diagram
         HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT -> R.string.health_atlas_diaphragm_demo_diagram
+        HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY -> R.string.health_atlas_arterial_continuity_diagram
         else -> error("Unexpected material response: $kind")
     }
     private val ink = context.getColor(R.color.text_primary)
@@ -48,6 +49,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> "atlas-pelvic-support"
             HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> "atlas-cushion-contact"
             HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT -> "atlas-diaphragm-displacement"
+            HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY -> "atlas-arterial-continuity"
             else -> error("Unexpected material response: $kind")
         }
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
@@ -74,6 +76,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> drawPelvicSupport(canvas)
             HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> drawCushionContact(canvas)
             HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT -> drawDiaphragm(canvas)
+            HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY -> drawArterialContinuity(canvas)
             else -> Unit
         }
         canvas.restore()
@@ -312,6 +315,32 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         line(c, 184f, 143f, 206f, 143f, teal, 3f)
         label(c, R.string.health_atlas_diaphragm_demo_resting, 111f, 147f, 98f)
         label(c, R.string.health_atlas_diaphragm_demo_current, 261f, 147f, 98f)
+    }
+
+    private fun drawArterialContinuity(c: Canvas) {
+        val x = 77f
+        val y = 67f
+        val radius = model.input(0).toFloat() * 1.15f
+        val speed = (model.result / model.kind.maximum).toFloat()
+        val outer = radius + 8f
+        oval(c, x - outer, y - outer, x + outer, y + outer, 0xffba8290.toInt())
+        oval(c, x - radius, y - radius, x + radius, y + radius, 0xffefc8cb.toInt())
+        line(c, x - radius, y, x + radius, y, 0xff775565.toInt(), 1.7f)
+        repeat(2) {
+            val edge = if (it == 0) x - radius else x + radius
+            line(c, edge, y - 4f, edge, y + 4f, 0xff775565.toInt(), 1.7f)
+        }
+        val start = 156f
+        val end = 315f
+        line(c, start, y, end, y, 0xffbfd6d7.toInt(), 3f)
+        for (mark in 0..4) {
+            val tick = start + (end - start) * mark / 4f
+            line(c, tick, y - 5f, tick, y + 5f, 0xff759397.toInt(), 1.5f)
+        }
+        if (speed > 0f) arrow(c, start, y, start + ((end - start) * speed).coerceAtLeast(8f), y, teal, 3.3f)
+        else oval(c, start - 3f, y - 3f, start + 3f, y + 3f, teal)
+        label(c, R.string.health_atlas_arterial_continuity_section, x, 145f, 134f)
+        label(c, R.string.health_atlas_arterial_continuity_speed, (start + end) / 2, 145f, 172f)
     }
 
     private fun rectangle(c: Canvas, left: Float, top: Float, right: Float, bottom: Float, color: Int, radius: Float = 10f) {

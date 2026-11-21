@@ -1,0 +1,11 @@
+<resources>
+    <string name="health_atlas_arterial_continuity_title">Flow through an arterial section</string>
+    <string name="health_atlas_arterial_continuity_diameter">Model lumen diameter</string>
+    <string name="health_atlas_arterial_continuity_flow">Model volume flow</string>
+    <string name="health_atlas_arterial_continuity_formula">Mean speed = volume flow ÷ lumen area. For a round lumen, area = π × (diameter ÷ 2)².</string>
+    <string name="health_atlas_arterial_continuity_area">Lumen area: %1$s cm²</string>
+    <string name="health_atlas_arterial_continuity_scope">A rigid circular tube illustrates steady flow in one section of the aorta or pulmonary trunk. The example does not model the heartbeat, vessel wall motion, pressure, or a personal measurement.</string>
+    <string name="health_atlas_arterial_continuity_diagram">The circle shows the lumen cross-section. The arrow length represents mean speed, not individual cells or the speed at each point in the lumen.</string>
+    <string name="health_atlas_arterial_continuity_section">Lumen cross-section</string>
+    <string name="health_atlas_arterial_continuity_speed">Mean flow speed</string>
+</resources>

@@ -99,7 +99,8 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     IMMUNE_COMPOSITION(HealthAtlasImmuneCompositionTeachingModel.spec),
     DUCT_TRANSIT(HealthAtlasDuctTransitTeachingModel.spec),
     OVIDUCT_CILIARY_CYCLES(HealthAtlasOviductCiliaryCyclesTeachingModel.spec),
-    KNEE_MOMENT(HealthAtlasKneeMomentTeachingModel.spec);
+    KNEE_MOMENT(HealthAtlasKneeMomentTeachingModel.spec),
+    ARTERIAL_CONTINUITY(HealthAtlasArterialContinuityTeachingModel.spec);
 
     constructor(spec: HealthAtlasTeachingModelSpec) : this(spec.inputs.map { it.control }, spec.axis, spec.unit,
         spec.minimum, spec.maximum, spec.source, spec.extraSource, spec)
