@@ -91,10 +91,16 @@ struct MqttSignalSendRequest: Codable {
   }
 
   func pendingMessage(wire: String, now: Date) -> PendingLinkMessage {
-    PendingLinkMessage(messageId: messageID, topic: topic, wirePayload: wire, status: "queued", attempts: 0,
+    var message = PendingLinkMessage(messageId: messageID, topic: topic, wirePayload: wire, status: "queued", attempts: 0,
       nextAttemptAt: now, createdAt: now, updatedAt: now, requiresValidatedNetwork: requiresValidatedNetwork,
       blockedByAttachmentTransferIds: attachmentDependencies, attachmentTransferId: attachmentTransferID,
       clientSourceMessageId: sourceMessageID, contactId: contactID)
+    if traffic == .control, sourceMessageID.isEmpty, attachmentTransferID.isEmpty, attachmentDependencies.isEmpty,
+       let payload = try? applicationPayload(), payload.string("client_route_id") == clientRouteID,
+       payload.string("desktop_id") == remoteName, payload.string("desktop_fingerprint") == identity.remote {
+      message.capabilitySnapshot = LinkCapabilitySnapshot(payload: payload, binding: identity.binding)
+    }
+    return message
   }
 
   func matches(_ message: PendingLinkMessage, allowRotatedTopic: Bool = false) -> Bool {
