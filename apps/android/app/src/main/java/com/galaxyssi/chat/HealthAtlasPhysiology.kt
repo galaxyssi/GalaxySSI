@@ -144,7 +144,8 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     MAMMARY_DUCT_DELIVERY(HealthAtlasMammaryDuctDeliveryTeachingModel.spec),
     RECTAL_RESERVOIR(HealthAtlasRectalReservoirTeachingModel.spec),
     STROMAL_MATRIX(HealthAtlasStromalMatrixTeachingModel.spec),
-    MUCUS_FILM_THICKNESS(HealthAtlasMucusFilmThicknessTeachingModel.spec);
+    MUCUS_FILM_THICKNESS(HealthAtlasMucusFilmThicknessTeachingModel.spec),
+    PLEURAL_SLIDE(HealthAtlasPleuralSlideTeachingModel.spec);
 
     constructor(spec: HealthAtlasTeachingModelSpec) : this(spec.inputs.map { it.control }, spec.axis, spec.unit,
         spec.minimum, spec.maximum, spec.source, spec.extraSource, spec)
