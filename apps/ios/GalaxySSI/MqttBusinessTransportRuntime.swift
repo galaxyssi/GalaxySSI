@@ -18,6 +18,7 @@ final class MqttBusinessTransportRuntime {
   private let completions: MqttBusinessDeliveryDrain
   private let receiptRetry = MqttReceiptRetry()
   private let chunkFeedback = MqttChunkFeedback()
+  private let privateReports = GalaxySSIHealthReportCodexExchange()
   private let projectInbound: @MainActor (MqttBusinessInbox.Pending) async throws -> Void
   private let monotonic: () -> Int64
   private let onFailure: @MainActor (Error) -> Void
@@ -523,6 +524,67 @@ final class MqttBusinessTransportRuntime {
     } != nil
   }
 
+  private func publishPrivateReport(_ request: GalaxySSIHealthReportCodex.Request, payload: [String: Any]) async -> Bool {
+    guard !stopped, let binding = request.evidenceBinding else { return false }
+    do {
+      try refreshDirectPeerBindings()
+      guard let target = evidenceDestination(binding),
+            GalaxySSIHealthReportCodex.acceptsOutgoing(payload, desktop: target.peer.remoteSignalName, route: target.routeId)
+      else { return false }
+      let outgoing = try MqttSignalSendRequest(identity: MqttBusinessIdentity(target.peer.binding), payload: payload,
+        remoteName: target.peer.remoteSignalName, topic: target.peer.binding.sendTopic, clientRouteID: target.routeId,
+        traffic: .control, contactID: request.target.route.connector.contactId)
+      let wire = try routes.withOutgoing(identity: outgoing.identity, topics: [outgoing.topic]) {
+        try engine.makePrivateHealthReportWire(outgoing)
+      }
+      return await routes.publishTransientControl(topic: outgoing.topic, wire: wire, secret: target.peer.binding.secret) == .published
+    } catch { return false }
+  }
+
+  func transcribePrivateHealthReport(_ request: GalaxySSIHealthReportCodex.Request, jpeg: Data,
+      instructions: String, published: () -> Void, valid: () -> Bool) async throws -> String {
+    guard started, !stopped, valid(), !Task.isCancelled, let binding = request.evidenceBinding else {
+      throw MqttRouteError.identityChanged
+    }
+    let payload = try request.payload(jpeg: jpeg, instructions: instructions)
+    let waiting = DispatchTime.now().uptimeNanoseconds
+    while evidenceDestination(binding) == nil {
+      guard valid(), !stopped, DispatchTime.now().uptimeNanoseconds - waiting < 12_000_000_000 else {
+        throw MqttRouteError.identityChanged
+      }
+      try Task.checkCancellation()
+      try refreshDirectPeerBindings()
+      try await Task.sleep(nanoseconds: 200_000_000)
+    }
+    try privateReports.begin(request)
+    var attempted = false
+    var completed = false
+    defer {
+      privateReports.finish(request)
+      if attempted, !completed {
+        Task { @MainActor [weak self] in _ = await self?.publishPrivateReport(request, payload: request.cancellation) }
+      }
+    }
+    guard valid(), !Task.isCancelled else { throw CancellationError() }
+    attempted = true
+    guard await publishPrivateReport(request, payload: payload) else { throw MqttRouteError.identityChanged }
+    published()
+    let startedAt = DispatchTime.now().uptimeNanoseconds
+    while true {
+      try Task.checkCancellation()
+      guard valid(), !stopped, evidenceDestination(binding) != nil,
+            DispatchTime.now().uptimeNanoseconds - startedAt < 180_000_000_000 else { throw MqttRouteError.identityChanged }
+      if let outcome = privateReports.outcome(request) {
+        completed = true
+        switch outcome {
+        case .result(let text): return text
+        case .failed: throw MqttRouteError.invalidPayload
+        }
+      }
+      try await Task.sleep(nanoseconds: 200_000_000)
+    }
+  }
+
   func queryDesktopEvidence(_ request: AgentDesktopToolEvidenceWire.Request,
                             payload: AgentMcpJSONObject,
                             timeoutNanoseconds: UInt64 = 8_000_000_000) async -> AgentDesktopEvidenceReply? {
@@ -631,6 +693,7 @@ final class MqttBusinessTransportRuntime {
   func stop() async {
     guard !stopped else { return }
     stopped = true
+    privateReports.removeAll()
     evidenceQueries.removeAll()
     let worker = ingressTask
     worker?.cancel()
@@ -946,6 +1009,21 @@ final class MqttBusinessTransportRuntime {
     guard let target = try projection.currentDestination(item.identity),
           payload["message_id"] as? String == item.messageID else { throw MqttRouteError.identityChanged }
     let type = payload.string("type")
+    if target.desktop, payload.string("conversation_id").hasPrefix(GalaxySSIHealthReportCodex.prefix) {
+      if let receipt = privateReports.receive(payload, desktop: target.peer.remoteSignalName, route: target.routeId),
+         let id = UUID(uuidString: String(payload.string("conversation_id").dropFirst(GalaxySSIHealthReportCodex.prefix.count))),
+         let contact = projection.store.contact(id: payload.string("contact_id")),
+         let link = projection.store.serverLinks.first(where: { $0.desktopId == target.peer.remoteSignalName && $0.paired }) {
+        let route = GalaxySSIHealthDesktopResearch.Route(connector: .init(contactId: contact.id, desktopId: link.desktopId,
+          clientRouteId: target.routeId, modelId: contact.connectorInvocationProfile.defaultModelId, reasoningEffort: .automatic),
+          desktopFingerprint: link.desktopFingerprint)
+        let request = GalaxySSIHealthReportCodex.Request(target: .init(route: route, authority: contact.desktopName), id: id)
+        var acknowledgement = receipt.payload
+        acknowledgement["message_id"] = UUID().uuidString
+        _ = await publishPrivateReport(request, payload: acknowledgement)
+      }
+      return
+    }
     if type == "pairing_revoked" {
       guard MqttPeerChatProjection.acceptsDesktopRevocation(payload, target: target),
             let receiveDesktopRevocation else { throw MqttRouteError.identityChanged }
