@@ -124,6 +124,22 @@ class HealthAtlasTissueDeviceTest {
     }
 
     @Test fun localizedTissuesOnlyUseExplicitExamplesAndPublicAgentContext() {
+        val examples = mapOf(
+            "tissue-epidermal" to HealthAtlasPhysiologyKind.SKIN_WATER_BARRIER,
+            "tissue-respiratory-epithelium" to HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE,
+            "tissue-alveolar-epithelium" to HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION,
+            "tissue-vascular-endothelium" to HealthAtlasPhysiologyKind.CAPILLARY_EXCHANGE,
+            "tissue-skeletal-muscle" to HealthAtlasPhysiologyKind.MUSCLE_SHORTENING,
+            "tissue-cardiac-muscle" to HealthAtlasPhysiologyKind.CARDIAC_PHASE_TIME,
+            "tissue-smooth-muscle" to HealthAtlasPhysiologyKind.PERISTALTIC_TRAVEL,
+            "tissue-dense-regular-connective" to HealthAtlasPhysiologyKind.TENDON_ELONGATION,
+            "tissue-compact-bone" to HealthAtlasPhysiologyKind.BONE_SECTION,
+            "tissue-hyaline-cartilage" to HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION,
+            "tissue-central-nervous" to HealthAtlasPhysiologyKind.NEURAL_RELAY_DELAYS,
+            "tissue-white-adipose" to HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE,
+            "tissue-intestinal-epithelium" to HealthAtlasPhysiologyKind.MUCUS_FILM_THICKNESS,
+            "tissue-renal-tubular-epithelium" to HealthAtlasPhysiologyKind.RENAL_TUBULE_RETENTION,
+        )
         for (locale in listOf(Locale.ENGLISH, Locale.SIMPLIFIED_CHINESE)) {
             val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
             val atlas = HealthBodyAtlas.load(localized)
@@ -135,7 +151,7 @@ class HealthAtlasTissueDeviceTest {
                 assertEquals(item.related, atlas.cells(item).map { it.id })
                 assertTrue(item.locatedIn.all { item in atlas.tissues(atlas[it]!!) })
                 assertTrue(HealthAtlasMetrics.forItem(item).isEmpty())
-                assertNull(HealthAtlasPhysiologyKind.forItem(item.id))
+                assertEquals(item.id, examples[item.id], HealthAtlasPhysiologyKind.forItem(item.id))
                 assertTrue(item.related.all { HealthAtlasTissuePlates.forId(it) == null })
             }
             val item = atlas[cardiac]!!
