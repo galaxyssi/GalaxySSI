@@ -11,6 +11,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   enum Kind: String, CaseIterable, Sendable {
     case ventilation, renal, potassium
+    #if GALAXYSSI_ATLAS_OXYGEN
+    case oxygen
+    #endif
     var inputs: [Input] {
       switch self {
       case .ventilation:
@@ -24,17 +27,47 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       case .potassium:
         return [.init(key: "model_outside", range: 10...200, initial: 40, scale: 10, unit: "mmol/L"),
           .init(key: "model_inside", range: 50...200, initial: 140, unit: "mmol/L")]
+      #if GALAXYSSI_ATLAS_OXYGEN
+      case .oxygen:
+        return [.init(key: "model_oxygen_pressure", range: 0...150, initial: 100, unit: "mmHg"),
+          .init(key: "model_p50", range: 150...400, initial: 268, scale: 10, unit: "mmHg"),
+          .init(key: "model_hemoglobin", range: 50...200, initial: 150, unit: "g/L")]
+      #endif
       }
     }
-    var axis: Int { self == .potassium ? 0 : 1 }
-    var unit: String { self == .ventilation ? "L/min" : self == .renal ? "mg/min" : "mV" }
-    var bounds: ClosedRange<Double> { self == .ventilation ? 0...27 : self == .renal ? 0...300 : -150...0 }
+    var axis: Int {
+      #if GALAXYSSI_ATLAS_OXYGEN
+      if self == .oxygen { return 0 }
+      #endif
+      return self == .potassium ? 0 : 1
+    }
+    var unit: String {
+      #if GALAXYSSI_ATLAS_OXYGEN
+      if self == .oxygen { return "%" }
+      #endif
+      return self == .ventilation ? "L/min" : self == .renal ? "mg/min" : "mV"
+    }
+    var bounds: ClosedRange<Double> {
+      #if GALAXYSSI_ATLAS_OXYGEN
+      if self == .oxygen { return 0...100 }
+      #endif
+      return self == .ventilation ? 0...27 : self == .renal ? 0...300 : -150...0
+    }
     var source: URL {
       switch self {
       case .ventilation: return URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-3-the-process-of-breathing")!
       case .renal: return URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption")!
       case .potassium: return URL(string: "https://neurotext.library.stonybrook.edu/C2/C2_4/C2_4.html")!
+      #if GALAXYSSI_ATLAS_OXYGEN
+      case .oxygen: return GalaxySSIHealthAtlasOxygen.bindingSource
+      #endif
       }
+    }
+    var sources: [URL] {
+      #if GALAXYSSI_ATLAS_OXYGEN
+      if self == .oxygen { return GalaxySSIHealthAtlasOxygen.sources }
+      #endif
+      return [source]
     }
     static func forEntry(_ id: String) -> Self? {
       switch id {
@@ -42,6 +75,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       case "urinary", "kidneys", "nephron", "renal-tubules", "collecting-ducts", "cell-proximal-tubular-cell",
            "cell-distal-tubular-cell", "cell-collecting-duct-principal-cell", "cell-collecting-duct-intercalated-cell": return .renal
       case "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron": return .potassium
+      #if GALAXYSSI_ATLAS_OXYGEN
+      case "blood", "cell-erythrocyte": return .oxygen
+      #endif
       default: return nil
       }
     }
@@ -71,8 +107,16 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case .ventilation: return input(0) * input(1) / 1000
     case .renal: return input(0) * input(1) / 100
     case .potassium: return input(0) / input(1)
+    #if GALAXYSSI_ATLAS_OXYGEN
+    case .oxygen: return oxygenAmounts!.total
+    #endif
     }
   }
+  #if GALAXYSSI_ATLAS_OXYGEN
+  var oxygenAmounts: GalaxySSIHealthAtlasOxygen.Amounts? {
+    kind == .oxygen ? GalaxySSIHealthAtlasOxygen.amounts(pressure: input(0), p50: input(1), hemoglobinGramsPerLiter: input(2)) : nil
+  }
+  #endif
   var axisRange: ClosedRange<Double> {
     let spec = kind.inputs[kind.axis]
     return Double(spec.range.lowerBound) / spec.scale...Double(spec.range.upperBound) / spec.scale
@@ -92,6 +136,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case .ventilation: return values[0] * (values[1] - values[2]) / 1000
     case .renal: return values[0] * (1 - values[1] / 100) + values[2]
     case .potassium: return Self.potassiumPotential(outside: values[0], inside: values[1])!
+    #if GALAXYSSI_ATLAS_OXYGEN
+    case .oxygen: return 100 * GalaxySSIHealthAtlasOxygen.saturation(pressure: values[0], p50: values[1])!
+    #endif
     }
   }
   static func potassiumPotential(outside: Double, inside: Double) -> Double? {

@@ -2,6 +2,9 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    #if GALAXYSSI_ATLAS_OXYGEN
+    if let value = GalaxySSIHealthAtlasOxygenText.string(key, language: language) { return value }
+    #endif
     let resource = "health_atlas_" + key
     return GalaxySSILocalization.string(resource, fallback: english[resource] ?? resource, language: language)
   }
@@ -20,15 +23,36 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + number(model.result, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    #if GALAXYSSI_ATLAS_OXYGEN
+    if let amounts = model.oxygenAmounts {
+      return String(format: string("model_oxygen_content", language: language), number(amounts.total, language: language),
+        number(amounts.bound, language: language), number(amounts.dissolved, language: language))
+    }
+    #endif
     let key = model.kind == .ventilation ? "model_total_ventilation" : model.kind == .renal ? "model_reabsorbed_amount" : "model_concentration_ratio"
     return String(format: string(key, language: language),
       number(model.companionValue, digits: model.kind == .potassium ? 4 : 2, language: language))
+  }
+  static func sourceTitle(_ kind: GalaxySSIHealthAtlasPhysiology.Kind, index: Int, language: String) -> String {
+    #if GALAXYSSI_ATLAS_OXYGEN
+    if kind == .oxygen {
+      return string(index == 0 ? "model_oxygen_binding_source" : "model_oxygen_content_source", language: language)
+    }
+    #endif
+    return string("model_source", language: language)
+  }
+  static func processNote(language: String) -> String? {
+    #if GALAXYSSI_ATLAS_OXYGEN
+    return GalaxySSIHealthAtlasOxygenText.string("model_process_note", language: language)
+    #else
+    return nil
+    #endif
   }
   static func context(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
     ([string("model_synthetic", language: language), string("model_" + model.kind.rawValue + "_scope", language: language)] +
       model.inputs.indices.map { input(model, index: $0, language: language) } +
       [result(model, language: language), companion(model, language: language),
-       string("model_" + model.kind.rawValue + "_formula", language: language), model.kind.source.absoluteString])
+       string("model_" + model.kind.rawValue + "_formula", language: language)] + model.kind.sources.map(\.absoluteString))
       .joined(separator: "\n")
   }
   private static let english: [String: String] = [

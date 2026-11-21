@@ -32,7 +32,10 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
         }.accessibilityLabel(t("reset")).help(t("reset"))
         Text(t("model_" + model.kind.rawValue + "_formula")).font(.footnote)
         Text(t("model_" + model.kind.rawValue + "_scope")).font(.footnote).foregroundColor(.secondary)
-        Link(t("model_source"), destination: model.kind.source).frame(minHeight: 44)
+        ForEach(Array(model.kind.sources.enumerated()), id: \.offset) { index, source in
+          Link(GalaxySSIHealthAtlasPhysiologyText.sourceTitle(model.kind, index: index, language: language), destination: source)
+            .frame(minHeight: 44)
+        }
       }
       .onAppear { inputs = model.inputs }
     }
