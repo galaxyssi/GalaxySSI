@@ -1,0 +1,16 @@
+<resources>
+    <string name="health_atlas_placental_marker_title">Placental exchange: marker reaching the fetal side</string>
+    <string name="health_atlas_placental_marker_amount">Starting marker on the maternal side</string>
+    <string name="health_atlas_placental_marker_equilibration">Progress toward equal shares</string>
+    <string name="health_atlas_placental_marker_formula">Two equal model volumes start with marker only on one side. Transferred marker = half the starting amount × selected progress toward equal shares.</string>
+    <string name="health_atlas_placental_marker_remaining">Remaining on the maternal side: %1$s model units</string>
+    <string name="health_atlas_placental_marker_scope">The placenta keeps maternal and fetal blood in separate circulations while some substances cross the exchange surface. This equal-volume example tracks a fictional marker only. It does not estimate transfer for any real substance, pregnancy, or medication.</string>
+    <string name="health_atlas_placental_marker_caption">Two sides of the exchange surface</string>
+    <string name="health_atlas_placental_marker_maternal">Maternal side</string>
+    <string name="health_atlas_placental_marker_fetal">Fetal side</string>
+    <string name="health_atlas_placental_marker_barrier">Villous barrier</string>
+    <string name="health_atlas_placental_marker_amount_label">%1$s units</string>
+    <string name="health_atlas_placental_marker_diagram">Blood stays on its own side. At the selected finish: %1$s marker units on the maternal side, %2$s on the fetal side.</string>
+    <string name="health_atlas_placental_marker_play">Play placental marker transfer</string>
+    <string name="health_atlas_placental_marker_pause">Pause placental marker transfer</string>
+</resources>

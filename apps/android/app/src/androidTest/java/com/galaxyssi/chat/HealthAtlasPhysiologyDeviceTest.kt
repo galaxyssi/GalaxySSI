@@ -417,6 +417,48 @@ class HealthAtlasPhysiologyDeviceTest {
             } finally { end.recycle() }
         }
     }
+    @Test fun placentalExchangePlaybackKeepsItsTwoSidesAndStoresSettingsPerEntry() = native { scenario ->
+        scenario.onActivity { it.open("placenta") }
+        capture("placental-exchange")
+        scenario.onActivity { activity ->
+            val diagram = activity.view("atlas-placental-marker-diagram")
+            val play = activity.view("atlas-placental-marker-play")
+            val share = activity.view("atlas-physiology-placental-marker-equilibration") as SeekBar
+            val output = activity.view("atlas-physiology-output") as TextView
+            val previous = output.text.toString()
+            diagram.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            diagram.layout(0, 0, diagram.measuredWidth, diagram.measuredHeight)
+            fun draw() = Bitmap.createBitmap(diagram.width, diagram.height, Bitmap.Config.ARGB_8888).also {
+                diagram.draw(Canvas(it))
+            }
+            val selected = draw()
+            try {
+                if (play.isEnabled) {
+                    play.performClick()
+                    assertEquals(activity.getString(R.string.health_atlas_placental_marker_pause), play.contentDescription)
+                    play.performClick()
+                    val start = draw()
+                    try { assertFalse(selected.sameAs(start)) } finally { start.recycle() }
+                }
+                assertEquals(previous, output.text.toString())
+                share.progress = 0
+                assertFalse(play.isEnabled)
+                val none = draw()
+                try { assertFalse(selected.sameAs(none)) } finally { none.recycle() }
+                share.progress = 25
+            } finally { selected.recycle() }
+        }
+        scenario.recreate()
+        ready(scenario, "atlas-placental-marker-diagram")
+        scenario.onActivity {
+            assertEquals(25, (it.view("atlas-physiology-placental-marker-equilibration") as SeekBar).progress)
+            it.onBackPressed()
+            it.open("cell-trophoblast", cell = true)
+            assertEquals(50, (it.view("atlas-physiology-placental-marker-equilibration") as SeekBar).progress)
+            assertNotNull(it.view("atlas-simulation-play"))
+        }
+    }
     @Test fun threePhysiologyScreensShowIndependentModels() = native { scenario ->
         for (id in listOf("lungs", "kidneys", "cell-neuron")) {
             scenario.onActivity { it.open(id, id.startsWith("cell-")) }
