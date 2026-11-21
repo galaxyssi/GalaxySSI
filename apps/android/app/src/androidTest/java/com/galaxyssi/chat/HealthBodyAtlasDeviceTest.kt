@@ -52,7 +52,7 @@ class HealthBodyAtlasDeviceTest {
                 activity.onBackPressed()
                 activity.view("atlas-whole-action-metrics").performClick()
                 assertTrue(activity.view("atlas-tab-2").isSelected)
-                assertNotNull(activity.view("atlas-metric-selector"))
+                assertNotNull(activity.view("atlas-metric-BLOOD_PRESSURE"))
                 activity.onBackPressed()
                 activity.view("atlas-hotspot-liver").performClick()
                 activity.onBackPressed()
@@ -94,6 +94,7 @@ class HealthBodyAtlasDeviceTest {
             }
             scenario.onActivity {
                 assertNull(it.window.decorView.tagged("atlas-personal-chart"))
+                assertNull(it.window.decorView.tagged("atlas-metric-reading-BLOOD_PRESSURE"))
                 assertFalse(it.view("atlas-ask").isEnabled)
             }
         }
@@ -118,6 +119,48 @@ class HealthBodyAtlasDeviceTest {
                 assertTrue(button.layout.height + button.compoundPaddingTop + button.compoundPaddingBottom <= button.height)
             }
             assertTrue(buttons.zipWithNext().all { (left, right) -> left.right <= right.left })
+        }
+    }
+
+    @Test fun relatedMeasurementsShowOnlyMappedLatestReadingsAndKeepTrendsScopedToTheirOwnPeriod() {
+        val names = HealthOverviewDatabases(java.util.UUID.randomUUID().toString())
+        val now = System.currentTimeMillis()
+        val pressure = HealthDraft(HealthMetric.BLOOD_PRESSURE, mapOf("systolic" to "119", "diastolic" to "77"), "mmHg", now)
+        val ldl = HealthDraft(HealthMetric.LDL, mapOf("ldl" to "2.7"), "mmol/L", now - 45L * 24 * 60 * 60 * 1_000)
+        val unrelated = HealthDraft(HealthMetric.ALT, mapOf("alt" to "55"), "U/L", now)
+        HealthRecordStore(context, names.records).use { store ->
+            listOf(pressure, ldl, unrelated).forEach { assertTrue(store.save(it) is HealthSaveResult.Saved) }
+        }
+        native(names) { scenario ->
+            scenario.onActivity { it.view("atlas-whole-action-metrics").performClick() }
+            await(scenario, "Latest real readings were not shown together") { activity ->
+                val decor = activity.window.decorView
+                (decor.tagged("atlas-metric-reading-BLOOD_PRESSURE") as? TextView)?.text == healthDisplayValue(pressure) &&
+                    (decor.tagged("atlas-metric-reading-LDL") as? TextView)?.text == healthDisplayValue(ldl)
+            }
+            scenario.onActivity { activity ->
+                assertNull(activity.window.decorView.tagged("atlas-metric-ALT"))
+                val row = activity.view("atlas-metric-LDL") as ViewGroup
+                val details = (row.getChildAt(0) as ViewGroup).getChildAt(1) as TextView
+                assertTrue(details.text.contains(activity.getString(healthRecordSourceResource("manual"))))
+                row.performClick()
+            }
+            await(scenario, "Selected LDL trend did not load") { activity ->
+                activity.view("atlas-metric-LDL").isSelected &&
+                    activity.window.decorView.tagged("atlas-personal-chart") != null
+            }
+            scenario.onActivity { activity ->
+                assertFalse(activity.view("atlas-ask").isEnabled)
+                assertEquals(activity.getString(R.string.health_atlas_metric_trend_title, activity.getString(HealthMetric.LDL.titleResource())),
+                    (activity.view("atlas-personal-trend-title") as TextView).text)
+                activity.view("atlas-period-2").performClick()
+            }
+            await(scenario, "Yearly LDL trend did not include the older reading") { it.view("atlas-ask").isEnabled }
+            HealthPrivacyStore(context, names.privacy).use { privacy ->
+                val events = privacy.page().entries
+                assertTrue(events.any { it.scope.purpose == HealthAccessPurpose.TREND && it.scope.metrics == setOf(HealthMetric.LDL) })
+                assertTrue(events.filter { it.scope.purpose == HealthAccessPurpose.OVERVIEW }.all { HealthMetric.ALT !in it.scope.metrics })
+            }
         }
     }
     @Test fun completeCatalogueHasCanonicalStructuresAndSeparatePlateletFragments() {

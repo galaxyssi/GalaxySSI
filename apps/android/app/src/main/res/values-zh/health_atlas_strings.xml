@@ -39,6 +39,10 @@
     <string name="health_atlas_process_note">该关联过程可能涉及多个结构，不表示当前条目独立承担每一步。</string>
     <string name="health_atlas_parameters">教学参数</string>
     <string name="health_atlas_measurements">我的指标</string>
+    <string name="health_atlas_related_metrics">相关指标</string>
+    <string name="health_atlas_metric_trend_title">%1$s趋势</string>
+    <string name="health_atlas_reading_source">%1$s · %2$s</string>
+    <string name="health_atlas_no_reading">暂无记录</string>
     <string name="health_atlas_no_metrics">该结构暂未关联可记录的检测指标，不代表其功能正常或异常。</string>
     <string name="health_atlas_records_note">相关检测记录不能直接代表单个器官或细胞的功能。</string>
     <string name="health_atlas_teaching_note">输入是教学设定，不是个人实测。动画时间不等于生理时间。</string>

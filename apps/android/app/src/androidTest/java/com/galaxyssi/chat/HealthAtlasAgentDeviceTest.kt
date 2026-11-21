@@ -8,7 +8,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inspector.WindowInspector
 import android.widget.SeekBar
-import android.widget.ListView
 import android.widget.TextView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
@@ -145,21 +144,14 @@ class HealthAtlasAgentDeviceTest {
     }
     @Test fun changingToAnEmptyMetricDoesNotReuseThePreviousRecord() = native { _, scenario ->
         scenario.onActivity { it.view("atlas-tab-2").performClick() }; ready(scenario)
-        fun choose(index: Int) {
-            scenario.onActivity { it.view("atlas-metric-selector").performClick() }
-            instrumentation.waitForIdleSync()
-            fun lists(view: View): List<ListView> = if (view is ListView) listOf(view) else if (view is ViewGroup)
-                (0 until view.childCount).flatMap { lists(view.getChildAt(it)) } else emptyList()
-            instrumentation.runOnMainSync {
-                val list = WindowInspector.getGlobalWindowViews().flatMap(::lists).single()
-                list.performItemClick(list.getChildAt(index), index, list.adapter.getItemId(index))
-            }
+        fun choose(metric: HealthMetric) {
+            scenario.onActivity { it.view("atlas-metric-${metric.name}").performClick() }
         }
-        choose(1)
+        choose(HealthMetric.RESTING_HEART_RATE)
         await { var loaded = false; scenario.onActivity { loaded = it.window.decorView.tagged("atlas-personal-chart") != null }; loaded }
         scenario.onActivity { assertFalse(it.view("atlas-ask").isEnabled) }
         capture("empty-metric")
-        choose(0); ready(scenario)
+        choose(HealthMetric.BLOOD_PRESSURE); ready(scenario)
     }
     @Test fun permissionRevocationAndBackgroundClearThePinnedAction() = native { names, scenario ->
         scenario.onActivity { it.view("atlas-tab-2").performClick() }; ready(scenario)
