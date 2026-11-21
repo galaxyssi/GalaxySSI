@@ -18,6 +18,9 @@ Android merge: `3ef61a098cb35ed6c23dd12e9db3cf92d3e13a2f`.
   single report-mode photo batches do likewise. Device mode, multipage batches and
   PDFs retain their existing local recognition/review flow. No image is sent merely
   because it was selected: the per-image preview still requires confirmation.
+  Explicitly selecting a completed/cancelled image again creates a fresh report job
+  and consent flow; merely reopening an existing result never retransmits it. An old
+  device-mode task cannot silently replace an explicitly selected report import.
 - After transcription, save all supported results without another per-row checkbox.
   Ask for missing sample date/time and glucose fasting status in one form. A printed
   date is preserved while the user supplies its time. Reject future/invalid/ambiguous

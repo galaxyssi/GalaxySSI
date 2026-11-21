@@ -201,6 +201,16 @@ final class GalaxySSIHealthReportQuickImportTests: XCTestCase {
     XCTAssertEqual(try f.records.load().recognitionJobs?.first(where: { $0.id == old.id })?.phase, .cancelled)
   }
 
+  func testExplicitReimportOfCompletedReportStartsFreshConsentFlow() throws {
+    let f = try Fixture()
+    try f.recognize(rows: [row()]); _ = try f.save(f.plan())
+    let next = try f.originals.storeReportImage(f.image, name: "again.png", retainOriginal: true)
+    XCTAssertNotEqual(next.id, f.id)
+    XCTAssertNil(next.reportVision)
+    XCTAssertEqual(next.phase, .queued)
+    XCTAssertEqual(try f.records.load().current.count, 1)
+  }
+
   func testExplicitFileReportImportDoesNotReuseDeviceModeJob() throws {
     let f = try Fixture()
     var archive = try f.records.load()
