@@ -420,8 +420,16 @@ struct GalaxySSIHealthRecords {
 
   func setHealthOnlinePermission(_ enabled: Bool) throws {
     var archive = try load()
-    guard (archive.healthOnlinePermission != nil) != enabled else { return }
-    archive.healthOnlinePermission = enabled ? UUID() : nil
+    let changed = (archive.healthOnlinePermission != nil) != enabled
+    let previousResearch = archive.localCareResearch
+    if changed { archive.healthOnlinePermission = enabled ? UUID() : nil }
+    if !enabled, var research = archive.localCareResearch {
+      // Persist the exact cancellation with consent withdrawal, before any lifecycle wake or process exit.
+      let now = Date()
+      for authorization in Array(research.authorizations.values) { research.revoke(authorization.concern, now: now) }
+      archive.localCareResearch = research
+    }
+    guard changed || archive.localCareResearch != previousResearch else { return }
     try persist(archive)
     NotificationCenter.default.post(name: Self.trendInputsChanged, object: owner)
   }
