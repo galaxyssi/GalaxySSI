@@ -81,7 +81,7 @@ struct GalaxySSIHealthSelectedFilesView: View {
       if $0.object as? String == records.owner {
         reload()
         if let contextReview,
-           (try? GalaxySSIHealthReportVision.Consent(records.load())) != contextReview.consent { self.contextReview = nil }
+           (try? GalaxySSIHealthReportBatch.Consent(records.load())) != contextReview.consent { self.contextReview = nil }
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthOriginalStore.indexChanged)) {

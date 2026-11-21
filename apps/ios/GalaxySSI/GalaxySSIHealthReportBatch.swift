@@ -23,12 +23,22 @@ enum GalaxySSIHealthReportBatch {
     var condition = "unspecified"
   }
 
+  struct Consent: Equatable {
+    let metrics: UUID?
+    let online: UUID?
+    init(_ archive: GalaxySSIHealthRecords.Archive) throws {
+      guard archive.derivesOverview == true else { throw GalaxySSIHealthRecords.Failure.permission }
+      metrics = archive.privacyEvents?.last(where: { $0.scope == .overview })?.id
+      online = archive.healthOnlinePermission
+    }
+  }
+
   struct Review: Identifiable {
     let id = UUID()
     let owner: String
     let plans: [Quick.Plan]
     let scope: Scope
-    let consent: GalaxySSIHealthReportVision.Consent
+    let consent: Consent
     let recordsVersion: String
     let zone: String
     let expires: Date
@@ -135,7 +145,7 @@ extension GalaxySSIHealthRecords {
     typealias Batch = GalaxySSIHealthReportBatch
     guard !ids.isEmpty, ids.count <= GalaxySSIHealthRecognitionJobs.maximumJobs, Set(ids).count == ids.count,
           originals.owner == owner, originals.restoreRecordsFile == isolatedFile else { throw Failure.invalid }
-    let archive = try load(), consent = try GalaxySSIHealthReportVision.Consent(archive)
+    let archive = try load(), consent = try Batch.Consent(archive)
     var scope = Batch.Scope()
     let plans = try ids.map { id -> GalaxySSIHealthReportQuickImport.Plan in
       guard let job = archive.recognitionJobs?.first(where: { $0.id == id }),
@@ -159,7 +169,7 @@ extension GalaxySSIHealthRecords {
           review.plans.count <= GalaxySSIHealthRecognitionJobs.maximumJobs,
           Set(review.plans.map { $0.job.id }).count == review.plans.count,
           Batch.ready(review.plans, archive: archive),
-          try GalaxySSIHealthReportVision.Consent(archive) == review.consent,
+          try Batch.Consent(archive) == review.consent,
           Batch.recordsVersion(archive) == review.recordsVersion else { throw Failure.stale }
     // Preflight every job and all local times before applying any measurement. Confirmation is local, with no await or resend.
     let inputs = try review.plans.map { plan -> GalaxySSIHealthReportQuickImport.Supplement in

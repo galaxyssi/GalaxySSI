@@ -291,6 +291,18 @@ final class GalaxySSIHealthReportBatchTests: XCTestCase {
     XCTAssertTrue(try f.records.load().recognitionJobs?.isEmpty ?? true)
   }
 
+  func testReceivedReportsCanBeConfirmedLocallyWithOnlineRequestsDisabled() throws {
+    let f = try Fixture()
+    let id = try f.stage(value: "5.7")
+    let vision = try f.job(id).reportVision
+    try f.records.setHealthOnlinePermission(false)
+    let result = try f.complete(f.review([id]))
+    XCTAssertEqual(result.first?.saved, 1)
+    XCTAssertNil(try f.records.load().healthOnlinePermission)
+    XCTAssertEqual(try f.job(id).reportVision, vision)
+    XCTAssertEqual(try f.records.load().current.count, 1)
+  }
+
   private func stamp(_ value: String) throws -> Date { try XCTUnwrap(ISO8601DateFormatter().date(from: value)) }
 
   @MainActor private final class Fixture {

@@ -76,7 +76,7 @@ struct GalaxySSIHealthReportVisionView: View {
           }
         } else if job.reportVision != nil, metrics {
           Button(q("finish", "Finish saved report import"), action: beginQuickImport)
-            .disabled(!online || !metrics || !originalAvailable)
+            .disabled(!metrics || !originalAvailable)
         } else {
           Toggle(t("online", "Allow confirmed online health requests"), isOn: Binding(get: { online }, set: { value in
             change { try records.setHealthOnlinePermission(value) }
@@ -98,7 +98,7 @@ struct GalaxySSIHealthReportVisionView: View {
       originals.releaseCompletedQuickReportOriginals()
       reload()
       if outcome?.pendingConfirmation == true, !contextPrompted { prepareContext() }
-      if job?.reportVision != nil, outcome?.skipped == nil, online, metrics { beginQuickImport() }
+      if job?.reportVision != nil, outcome?.skipped == nil, metrics { beginQuickImport() }
       if automaticallyPreview, !previewStarted {
         previewStarted = true
         if job?.reportVision == nil, online, metrics { prepare() }
@@ -115,7 +115,7 @@ struct GalaxySSIHealthReportVisionView: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { event in
       if event.object as? String == records.owner {
         reload()
-        if let contextReview, (try? Vision.Consent(records.load())) != contextReview.consent { self.contextReview = nil }
+        if let contextReview, (try? GalaxySSIHealthReportBatch.Consent(records.load())) != contextReview.consent { self.contextReview = nil }
         if let activeReview, (try? current(activeReview)) == nil { cancel() }
       }
     }

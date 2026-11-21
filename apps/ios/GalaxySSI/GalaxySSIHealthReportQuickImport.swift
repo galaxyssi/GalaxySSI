@@ -144,7 +144,7 @@ extension GalaxySSIHealthRecords {
   func finishAutomaticReport(job id: UUID, originals: GalaxySSIHealthOriginalStore, now: Date = Date(),
       active: () -> Bool) throws -> GalaxySSIHealthReportQuickImport.Outcome {
     var archive = try load()
-    _ = try GalaxySSIHealthReportVision.Consent(archive)
+    _ = try GalaxySSIHealthReportBatch.Consent(archive)
     guard active(), !Task.isCancelled, let job = archive.recognitionJobs?.first(where: { $0.id == id }) else { throw Failure.stale }
     if let outcome = job.reportImportOutcome, outcome.skipped != nil { return outcome }
     let plan = try GalaxySSIHealthReportQuickImport.plan(job: job, archive: archive, now: now, automatic: true)

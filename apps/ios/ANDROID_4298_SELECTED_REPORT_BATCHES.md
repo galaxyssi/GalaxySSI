@@ -16,7 +16,7 @@ Android merge: `b084370a801bb71bb8087ab5a2bf8b3e8bd67277`.
 - A single form after the batch requests only missing sampling date/time and glucose context. It preserves each report's printed date, complete timestamp and explicit collection condition.
 - One clock selection may fill multiple date-only reports while keeping their separate dates. Missing dates use the selected day. Ambiguous/nonexistent local times and future samples fail validation rather than choosing a DST offset silently.
 - Pending results and their group IDs survive reopening. Job Center links back to the batch. The persistence host itself rejects confirmation while another batch member is still processing; terminal failures/cancellations do not prevent review of successful results.
-- Confirmation performs no network operation. All jobs, sources/crops, consent epochs, record versions, time zones and the review lease are checked before applying the entire local archive update. A stale last member or invalid time cannot leave a half-saved batch.
+- Confirmation performs no network operation and does not require enabling online requests again for already received results. Local-summary permission remains required. All jobs, sources/crops, consent epochs, record versions, time zones and the review lease are checked before applying the entire local archive update. A stale last member or invalid time cannot leave a half-saved batch.
 - Confirmation receipts are durable and replay-resistant. Completed/deleted measurements are not recreated. Skipped rows retain source-specific reasons, and pending/partial/skipped originals cannot be cleaned up as successful complete imports.
 
 ## Measurement Boundaries
@@ -27,6 +27,6 @@ Android merge: `b084370a801bb71bb8087ab5a2bf8b3e8bd67277`.
 
 ## Validation Boundary
 
-Added 22 XCTest source methods covering whole-batch hold, mixed printed dates/timestamps, local confirmation, DST rollback, pending retention, consent/record/job/lease invalidation, replay/deletion, nearby updates and exclusions, post-meal context, encrypted table staging, group restoration, selection bounds, approval scope, deferred reasons, explicitly skipping unrecognized images and cancellation before asynchronous file preparation. Updated the previous automatic-import tests for the new pending-confirmation contract.
+Added 23 XCTest source methods covering whole-batch hold, mixed printed dates/timestamps, local/offline confirmation, DST rollback, pending retention, consent/record/job/lease invalidation, replay/deletion, nearby updates and exclusions, post-meal context, encrypted table staging, group restoration, selection bounds, approval scope, deferred reasons, explicitly skipping unrecognized images and cancellation before asynchronous file preparation. Updated the previous automatic-import tests for the new pending-confirmation contract.
 
 Windows checks cover project registration, added-text localization placement, Swift grammar and Git diff/merge structure only. Xcode compilation, XCTest execution, native picker rendering, actual device lifecycle, live paired recognition and notification delivery have not been verified here. No Android/Desktop edits, version bump, IPA or auto-merge are included.
