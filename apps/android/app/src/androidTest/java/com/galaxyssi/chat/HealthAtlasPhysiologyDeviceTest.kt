@@ -272,7 +272,8 @@ class HealthAtlasPhysiologyDeviceTest {
             "cell-oligodendrocyte", "cell-pancreatic-beta-cell", "cell-retinal-bipolar-cell", "cell-skeletal-myocyte",
             "stomach", "vestibular-apparatus", "cell-megakaryocyte", "cell-osteoblast", "cell-sebocyte",
             "external-ear", "liver", "joints", "cell-granulosa-cell", "cell-sweat-gland-secretory-cell",
-            "vertebrae", "taste-buds", "olfactory-mucosa", "thymus", "cell-gastric-chief-cell", "cell-melanocyte")
+            "vertebrae", "taste-buds", "olfactory-mucosa", "thymus", "cell-gastric-chief-cell", "cell-melanocyte",
+            "appendix", "rectum", "mammary-glands", "pharynx", "cell-fibroblast", "cell-merkel-cell")
         for (id in examples) scenario.onActivity { activity ->
             activity.open(id, cell = id.startsWith("cell-"))
             val kind = requireNotNull(HealthAtlasPhysiologyKind.forItem(id))
