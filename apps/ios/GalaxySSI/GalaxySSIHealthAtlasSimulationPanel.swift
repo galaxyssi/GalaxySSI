@@ -30,6 +30,11 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       #endif
       Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(model.title, language))).font(.headline)
       Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
+      #if GALAXYSSI_ATLAS_PHYSIOLOGY
+      if hasPhysiology, let note = GalaxySSIHealthAtlasPhysiologyText.processNote(language: language) {
+        Text(note).font(.footnote).foregroundColor(.secondary)
+      }
+      #endif
       LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
         ForEach([0, 1, 3, 2], id: \.self) { stage in
           Button { playing = false; simulation.selectStage(stage) } label: {
