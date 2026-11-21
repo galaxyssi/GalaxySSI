@@ -10,6 +10,7 @@ enum GalaxySSIHealthScopedReadTransport {
     typealias Tool = GalaxySSIHealthCareHistoryTool
     typealias Questions = GalaxySSIHealthCareQuestions
     typealias Feedback = GalaxySSIHealthCareFeedbackTool
+    var review = review
     var bytes = initial
     var history = review.history?.recent
     var relatedHistory: [String: Tool.Output] = [:]
@@ -23,17 +24,36 @@ enum GalaxySSIHealthScopedReadTransport {
     var reviewCalls = 0
     var planRecorded = false
     var reviewRecorded = false
+    var questionCalls = 0
+    var questionsRecorded = false
     while true {
       try Task.checkCancellation()
       guard let contact = currentDestination() else { throw CancellationError() }
       try records.validateLocalCareDiscussionTurn(review)
       guard let call = try Tool.call(bytes, style: style, proposesPlan: review.proposesPlan,
         allowsQuestionRead: review.questions != nil, asksQuestions: review.asksQuestions, allowsFeedbackRead: feedbackCursor != nil,
-        allowsReview: review.requiresStructuredReview)
+        allowsReview: review.requiresStructuredReview,
+        allowsAutomaticQuestions: review.canProposeAutomaticQuestions && !reviewRecorded)
       else { return bytes }
       let payload: AgentMcpJSONObject
       let purpose: String
-      if call.name == GalaxySSIHealthCareModelReview.function {
+      if call.name == Questions.tool {
+        guard review.canProposeAutomaticQuestions, !reviewRecorded, questionCalls < 2 else {
+          throw GalaxySSIHealthRecords.Failure.permission
+        }
+        questionCalls += 1
+        do {
+          let result = try records.retainAutomaticCareQuestions(review, arguments: call.arguments)
+          review = result.approval
+          questionCursor = review.questionCursor
+          payload = result.receipt
+          questionsRecorded = true
+        } catch GalaxySSIHealthRecords.Failure.invalid {
+          payload = ["stored": .bool(false), "error": .string("invalid_health_questions"),
+            "message": .string("Supply at most eight necessary questions with exact key, question and purpose fields. Do not supply answers. Correct within this turn.")]
+        }
+        purpose = "Retained scoped Health clarification questions without user answers"
+      } else if call.name == GalaxySSIHealthCareModelReview.function {
         guard reviewCalls < 3 else { throw GalaxySSIHealthRecords.Failure.permission }
         reviewCalls += 1
         do {
@@ -97,7 +117,8 @@ enum GalaxySSIHealthScopedReadTransport {
         historyAvailable: historyRemaining > 0 && (history?.cursor != nil || !relatedEntries.isEmpty || relatedHistory.values.contains { $0.cursor != nil }),
         allowsMaintenance: review.history != nil,
         questionsAvailable: questionCursor != nil, asksQuestions: review.asksQuestions,
-        feedbackAvailable: feedbackCursor != nil, reviewAvailable: review.requiresStructuredReview, reviewRecorded: reviewRecorded)
+        feedbackAvailable: feedbackCursor != nil, reviewAvailable: review.requiresStructuredReview, reviewRecorded: reviewRecorded,
+        automaticQuestionsAvailable: review.canProposeAutomaticQuestions && !questionsRecorded && !reviewRecorded)
       let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: ledger, destination: .init(contact: contact),
         text: "", purpose: purpose,
         textSummary: .init(characters: request.httpBody?.count ?? 0, kinds: [.messageText, .systemInstructions, .toolOutput]))

@@ -20,7 +20,11 @@ enum GalaxySSIHealthDesktopResearch {
     if approval.requiresStructuredReview {
       let reviewSchema = try JSONSerialization.data(withJSONObject: GalaxySSIHealthCareModelReview.schema, options: [.sortedKeys])
       let planSchema = try JSONSerialization.data(withJSONObject: GalaxySSIHealthCarePlan.schema, options: [.sortedKeys])
-      format = "Return only one JSON object with exactly assessment, plan and answer. " +
+      let fields = approval.canProposeAutomaticQuestions ? "assessment, plan, questions and answer" : "assessment, plan and answer"
+      let clarification = approval.canProposeAutomaticQuestions
+        ? " questions is an array of necessary unresolved clarification objects with exactly key, question and purpose, up to eight entries; use [] if none remain. Do not answer for the user or repeat answered/deferred/declined items. The phone retains questions before the assessment. "
+        : ""
+      format = "Return only one JSON object with exactly " + fields + ". " + clarification +
         "assessment follows the schema below; answer is concise plain text. plan is null unless an optional source-cited " +
         "draft is warranted and native_sources are supplied. If plan is present, assessment.plan_id must be " +
         approval.id.uuidString + ". The phone retains the draft before recording the assessment; this does not adopt it. " +
@@ -51,11 +55,16 @@ enum GalaxySSIHealthDesktopResearch {
     guard approval.pairedDesktop != nil, approval.requiresStructuredReview,
           reply.utf8.count <= 48_000 else { throw GalaxySSIHealthRecords.Failure.invalid }
     let value = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(reply.utf8))
-    guard Set(value.keys) == ["assessment", "plan", "answer"], let arguments = value["assessment"]?.objectValue,
+    let keys: Set<String> = approval.canProposeAutomaticQuestions ? ["assessment", "plan", "questions", "answer"] : ["assessment", "plan", "answer"]
+    guard Set(value.keys) == keys, let arguments = value["assessment"]?.objectValue,
           let answer = value["answer"]?.strictStringValue, !answer.isBlank, answer.utf8.count <= 6_144,
           value["plan"] == .null || value["plan"]?.objectValue != nil else { throw GalaxySSIHealthRecords.Failure.invalid }
     let input = try GalaxySSIHealthCareModelReview.Input(arguments)
     try records.validateLocalCareDiscussionTurn(approval, now: now)
+    if approval.canProposeAutomaticQuestions {
+      guard let questions = value["questions"]?.arrayValue else { throw GalaxySSIHealthRecords.Failure.invalid }
+      _ = try records.retainAutomaticCareQuestions(approval, arguments: ["questions": .array(questions)], now: now)
+    }
     if let plan = value["plan"]?.objectValue {
       guard approval.proposesPlan, input.planID == approval.id else { throw GalaxySSIHealthRecords.Failure.permission }
       try records.saveLocalCarePlan(approval, arguments: plan, now: now)

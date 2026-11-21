@@ -163,7 +163,9 @@ struct GalaxySSIHealthCareResearchControls: View {
               Text(t("action_feedback_scope", "This model may receive the latest eligible self-reported action notes for this concern, including future notes, but not their history."))
             }
             if let questions = proposed.approval.questions {
-              if proposed.approval.allowsStandingQuestionPages {
+              if proposed.approval.allowsStandingQuestionFollowUp {
+                Text(t("question_follow_up_scope", "The model may save necessary clarification questions without answering them for you. Each automatic review may include the reviewed clarification record, including future answers. When you review an answer, this authorization may start one follow-up in the same private conversation. Repeating the same answer does not start another review. Plans and reminders still require separate confirmation."))
+              } else if proposed.approval.allowsStandingQuestionPages {
                 Text(t("question_pages_scope", "Each automatic review may include the first page and read up to four more pages for this concern. A changed reviewed reply requires new authorization."))
               } else {
                 Text(t("questions_scope", "Each automatic review may include the first page of this concern's clarification record. A changed reviewed reply requires new authorization."))
@@ -217,6 +219,7 @@ struct GalaxySSIHealthCareResearchControls: View {
         approval = try records.prepareLocalCareDesktopDiscussion(id: concern, metric: metric, question: question, route: paired,
           includesQuestions: shareQuestions, includesActionFeedback: shareActionFeedback)
       } else { throw GalaxySSIHealthRecords.Failure.permission }
+      approval.allowsStandingQuestionFollowUp = shareQuestions
       approval = try records.approveRelatedLocalCareMeasurements(approval, selected: selectedMeasurements)
       confirmed = false
       review = .init(approval: approval, sources: sources)

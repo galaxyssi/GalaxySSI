@@ -59,7 +59,8 @@ enum GalaxySSIHealthCareHistoryTool {
   static func configure(_ body: inout [String: Any], style: GalaxySSICloudAPIStyle,
                         proposesPlan: Bool, historyAvailable: Bool, allowsMaintenance: Bool = false,
                         questionsAvailable: Bool = false, asksQuestions: Bool = false, feedbackAvailable: Bool = false,
-                        journalAvailable: Bool = false, reviewAvailable: Bool = false, reviewRecorded: Bool = false) {
+                        journalAvailable: Bool = false, reviewAvailable: Bool = false, reviewRecorded: Bool = false,
+                        automaticQuestionsAvailable: Bool = false) {
     for key in ["tools", "tool_choice", "toolConfig", "parallel_tool_calls"] { body.removeValue(forKey: key) }
     let plan = GalaxySSIHealthCarePlan.tool
     let schema: [String: Any] = [
@@ -79,7 +80,7 @@ enum GalaxySSIHealthCareHistoryTool {
       let feedback = GalaxySSIHealthCareFeedbackTool.self
       tools.append((feedback.function, feedback.instructions, feedback.schema))
     }
-    if asksQuestions {
+    if asksQuestions || automaticQuestionsAvailable {
       tools.append((GalaxySSIHealthCareQuestions.tool, GalaxySSIHealthCareQuestions.instruction, GalaxySSIHealthCareQuestions.schema))
     }
     if proposesPlan {
@@ -92,7 +93,7 @@ enum GalaxySSIHealthCareHistoryTool {
     }
     guard !tools.isEmpty else { return }
     let reads = historyAvailable || questionsAvailable || feedbackAvailable || journalAvailable
-    let required = reads || reviewRecorded || (reviewAvailable && proposesPlan) ? nil : tools.first?.0
+    let required = reads || reviewRecorded || automaticQuestionsAvailable || (reviewAvailable && proposesPlan) ? nil : tools.first?.0
     switch style {
     case .openAICompatible:
       body["tools"] = tools.map {
@@ -124,7 +125,8 @@ enum GalaxySSIHealthCareHistoryTool {
   static func call(_ bytes: Data, style: GalaxySSICloudAPIStyle, proposesPlan: Bool,
                    allowsQuestionRead: Bool = false, asksQuestions: Bool = false,
                    allowsAnswerDraft: Bool = false, allowsFeedbackRead: Bool = false,
-                   allowsJournalRead: Bool = false, allowsReview: Bool = false) throws -> Call? {
+                   allowsJournalRead: Bool = false, allowsReview: Bool = false,
+                   allowsAutomaticQuestions: Bool = false) throws -> Call? {
     let root = try JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes)
     let message: AgentMcpJSONObject
     let calls: [AgentMcpJSONObject]
@@ -171,6 +173,7 @@ enum GalaxySSIHealthCareHistoryTool {
     guard name == function || (allowsQuestionRead && name == GalaxySSIHealthCareQuestions.readTool) ||
           answerDraft || (allowsFeedbackRead && name == GalaxySSIHealthCareFeedbackTool.function) ||
           (allowsJournalRead && name == GalaxySSIHealthVisitJournalRead.providerName) ||
+          (allowsAutomaticQuestions && name == GalaxySSIHealthCareQuestions.tool) ||
           (allowsReview && (name == GalaxySSIHealthCareModelReview.function ||
             (proposesPlan && name == GalaxySSIHealthCarePlan.tool))) else { throw invalid }
     let id = entry["id"]?.strictStringValue
@@ -201,7 +204,7 @@ enum GalaxySSIHealthCareHistoryTool {
   static func continuing(_ request: URLRequest, with call: Call, payload: AgentMcpJSONObject, style: GalaxySSICloudAPIStyle,
       proposesPlan: Bool, historyAvailable: Bool, allowsMaintenance: Bool, questionsAvailable: Bool = false,
       asksQuestions: Bool = false, feedbackAvailable: Bool = false, journalAvailable: Bool = false,
-      reviewAvailable: Bool = false, reviewRecorded: Bool = false) throws -> URLRequest {
+      reviewAvailable: Bool = false, reviewRecorded: Bool = false, automaticQuestionsAvailable: Bool = false) throws -> URLRequest {
     guard let bytes = request.httpBody, var body = try JSONSerialization.jsonObject(with: bytes) as? [String: Any]
     else { throw invalid }
     let channel = style == .gemini ? "contents" : "messages"
@@ -227,7 +230,7 @@ enum GalaxySSIHealthCareHistoryTool {
     configure(&body, style: style, proposesPlan: proposesPlan, historyAvailable: historyAvailable,
       allowsMaintenance: allowsMaintenance, questionsAvailable: questionsAvailable, asksQuestions: asksQuestions,
       feedbackAvailable: feedbackAvailable, journalAvailable: journalAvailable,
-      reviewAvailable: reviewAvailable, reviewRecorded: reviewRecorded)
+      reviewAvailable: reviewAvailable, reviewRecorded: reviewRecorded, automaticQuestionsAvailable: automaticQuestionsAvailable)
     let data = try JSONSerialization.data(withJSONObject: body)
     guard data.count <= requestBudget else { throw invalid }
     var next = request

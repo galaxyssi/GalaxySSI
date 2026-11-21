@@ -243,7 +243,7 @@ final class HealthModelReviewFixture {
   let approval: GalaxySSIHealthCareDiscussion.Approval
   let quote = "This fictional laboratory paragraph is a fixture for testing extraction and exact passage matching only."
 
-  init(plan: Bool = false, paired: Bool = false, selected: Set<GalaxySSIHealthMetric> = []) throws {
+  init(plan: Bool = false, paired: Bool = false, selected: Set<GalaxySSIHealthMetric> = [], questionFollowUp: Bool = false) throws {
     let records = GalaxySSIHealthRecords(owner: "review-fixture", secrets: secrets, isolatedFile: file)
     self.records = records
     try records.write(.init(metric: .glucose, measuredAt: now.addingTimeInterval(-120), value: 110, unitOverride: "mg/dL"))
@@ -266,8 +266,9 @@ final class HealthModelReviewFixture {
     let route = GalaxySSIHealthDesktopResearch.Route(connector: .init(contactId: "desktop:codex", desktopId: "desktop",
       clientRouteId: "client", modelId: "fixture", reasoningEffort: .automatic), desktopFingerprint: "pinned")
     var preview = try paired ? records.prepareLocalCareDesktopDiscussion(id: concern.id, metric: .glucose,
-      question: "Review exact scope", route: route, now: now) : records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose,
-      question: "Review exact scope", destinationID: "provider", model: model, credential: "fixture-api-key", now: now)
+      question: "Review exact scope", route: route, includesQuestions: questionFollowUp, now: now) : records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose,
+      question: "Review exact scope", destinationID: "provider", model: model, credential: "fixture-api-key", includesQuestions: questionFollowUp, now: now)
+    preview.allowsStandingQuestionFollowUp = questionFollowUp
     preview = try records.approveRelatedLocalCareMeasurements(preview, selected: selected, now: now)
     try records.authorizeLocalCareResearch(preview, sources: [.labResults], now: now)
     let queued = try XCTUnwrap(records.reconcileLocalCareResearch(now: now).first?.1)
