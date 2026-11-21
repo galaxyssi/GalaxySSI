@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_vestibular_tilt_title">Otolith cue angle</string>
+    <string name="health_atlas_vestibular_tilt_lateral">Lateral component magnitude (L)</string>
+    <string name="health_atlas_vestibular_tilt_downward">Head-down component (D)</string>
+    <string name="health_atlas_vestibular_tilt_formula">Cue angle from head-down (degrees) = atan2(L, D) × 180 / π. Vector magnitude (g) = √(L² + D²). Both components are in g (multiples of standard gravity). L has no left or right sign; D is positive along the down axis of the head.</string>
+    <string name="health_atlas_vestibular_tilt_magnitude">Vector magnitude: %1$s g</string>
+    <string name="health_atlas_vestibular_tilt_scope">The otolith organs sense a combined cue. In this convention, the gravito-inertial vector is gravitational acceleration minus linear acceleration of the head. Head tilt changes how gravity projects onto the axes of the head. For an upright head accelerating to the right, the lateral cue points left. The vector alone cannot separate tilt from linear acceleration. These synthetic values describe the cue, not actual head tilt, perceived tilt, or balance, and are not for diagnosis.</string>
+</resources>
