@@ -7268,3 +7268,16 @@
 "galaxyssi.health.report_quick.saved" = "已保存的测量";
 "galaxyssi.health.report_quick.handled" = "已处理";
 "galaxyssi.health.report_quick.pending" = "待审核";
+
+"galaxyssi.health.overview_care.actions" = "今日行动";
+"galaxyssi.health.overview_care.pending" = "请到健康行动中核对待审核行动。";
+"galaxyssi.health.overview_care.empty" = "今天没有已安排的行动";
+"galaxyssi.health.overview_care.concerns" = "持续关注";
+"galaxyssi.health.overview_care.unavailable" = "暂时无法读取照护概览。";
+"galaxyssi.health.overview_care.privacy" = "开启本地健康摘要后，可在此查看照护信息。";
+"galaxyssi.health.overview_care.disabled" = "本地健康回顾已关闭。";
+"galaxyssi.health.overview_care.source_changed" = "来源已变化，需重新核对";
+"galaxyssi.health.overview_care.visits" = "就诊跟进";
+"galaxyssi.health.overview_care.next" = "下一项行动";
+"galaxyssi.health.overview_care.overdue" = "已过期";
+"galaxyssi.health.overview_care.due" = "已安排";

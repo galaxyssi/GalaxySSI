@@ -42,16 +42,7 @@ struct GalaxySSIHealthCenterView: View {
       } label: {
         Label(t("record_center.title", "Health Record Center"), systemImage: "square.and.pencil")
       }
-      NavigationLink {
-        GalaxySSIHealthCareView(records: records)
-      } label: {
-        Label(t("care.title", "Health Care"), systemImage: "heart.text.square")
-      }
-      NavigationLink {
-        GalaxySSIHealthCareAgendaView(records: records)
-      } label: {
-        Label(t("agenda.title", "Health Actions"), systemImage: "checklist")
-      }
+      GalaxySSIHealthOverviewCareSection(records: records)
       NavigationLink {
         GalaxySSIHealthDataFilesView(records: records, metrics: { metricCatalog }, review: { recordCenter })
       } label: {
