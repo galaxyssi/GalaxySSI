@@ -5483,7 +5483,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(Set(archive.current.compactMap { $0.reported?.kind.rawValue }), ["comparison", "range", "qualitative"])
     let trend = GalaxySSIHealthTrend(current: archive.current, metric: .glucose, component: .value,
       now: date, dayCount: 7, calendar: .current)
-    XCTAssertEqual(trend.mean, 6)
+    XCTAssertNil(trend.mean)
+    XCTAssertEqual(trend.chartData(.latest, component: .value).map(\.value), [6])
     XCTAssertEqual(trend.points.last?.readings.map(\.id), [items[3].reading.id])
   }
 

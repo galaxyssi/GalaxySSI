@@ -20,15 +20,18 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
   var referenceInterval: String?
   var healthKitSource: GalaxySSIHealthKitImport.Source?
   var reportSource: GalaxySSIHealthReportReview.Source?
+  var measurementSide: String?
 
   var unit: String { unitOverride ?? metric.unit }
   var resultKind: String { reported?.kind.rawValue ?? "number" }
+  var normalizedMeasurementSide: String { measurementSide ?? "unspecified" }
 
   var isValid: Bool {
     func positive(_ number: Decimal) -> Bool {
       !number.isNaN && number > 0
     }
-    guard measuredAt.timeIntervalSinceReferenceDate.isFinite,
+    guard measurementSide.map({ ["left", "right", "unspecified"].contains($0) }) != false,
+          measuredAt.timeIntervalSinceReferenceDate.isFinite,
           conditions.utf8.count <= 512, notes.utf8.count <= 4096,
           (reportedNotation?.utf8.count ?? 0) <= 128,
           (referenceInterval?.utf8.count ?? 0) <= 512 else { return false }
@@ -56,7 +59,8 @@ struct GalaxySSIHealthReading: Codable, Identifiable, Equatable {
     if let device = bluetoothReceipt?.device, let otherDevice = other.bluetoothReceipt?.device,
        device != otherDevice { return false }
     return metric == other.metric && abs(measuredAt.timeIntervalSince(other.measuredAt)) < 60 &&
-      unit == other.unit && value == other.value && reported?.canonical == other.reported?.canonical &&
+      unit == other.unit && conditions == other.conditions && normalizedMeasurementSide == other.normalizedMeasurementSide &&
+      value == other.value && reported?.canonical == other.reported?.canonical &&
       diastolic == other.diastolic && pulse == other.pulse
   }
 }
@@ -73,9 +77,11 @@ struct GalaxySSIHealthDraft: Codable, Identifiable {
   var notes = ""
   var unitOverride: String?
   var referenceInterval: String?
+  var measurementSide: String?
 
   var fitsStorageLimits: Bool {
-    [value, diastolic, pulse].allSatisfy { $0.utf8.count <= 128 } &&
+    measurementSide.map({ ["left", "right", "unspecified"].contains($0) }) != false &&
+      [value, diastolic, pulse].allSatisfy { $0.utf8.count <= 128 } &&
       conditions.utf8.count <= 512 && notes.utf8.count <= 4096 && (referenceInterval?.utf8.count ?? 0) <= 512
   }
 }

@@ -13,6 +13,7 @@ struct GalaxySSIHealthOverviewMetricRow: View {
   var birthDate: Date? = nil
   var progressPermitted = false
   var detailed = false
+  var openRecordInsteadOfMetric = false
   @ObservedObject private var motion = GalaxySSIHealthMotionController.shared
   @State private var motionSettings = false
   private var guidance: GalaxySSIHealthOverviewGuidance.Reference? {
@@ -44,6 +45,12 @@ struct GalaxySSIHealthOverviewMetricRow: View {
     Group {
       if detailed { detailContent }
       else if item.metric == .steps { stepTile }
+      else if openRecordInsteadOfMetric, let reading = item.reading {
+        NavigationLink {
+          GalaxySSIHealthOverviewRecordView(records: records, record: reading, edit: open)
+        } label: { compactContent }
+          .buttonStyle(.plain).accessibilityIdentifier("health-overview-" + item.metric.rawValue)
+      }
       else {
         NavigationLink {
           GalaxySSIHealthOverviewMetricDetailView(records: records, metric: item.metric, open: open, manual: manual)
@@ -112,6 +119,11 @@ struct GalaxySSIHealthOverviewMetricRow: View {
       if let reading = item.reading {
         provenance(reading)
         if !reading.conditions.isBlank { Text(reading.conditions).font(.caption).foregroundColor(.secondary) }
+        if let side = reading.measurementSide {
+          Text(GalaxySSILocalization.string("galaxyssi.health.measurement_comparison.side_" + side,
+            fallback: side == "left" ? "Left" : side == "right" ? "Right" : "Not specified", language: language))
+            .font(.caption).foregroundColor(.secondary)
+        }
       } else { Text(t("unrecorded", "Not recorded")).foregroundColor(.secondary) }
       ForEach(Array(item.ranges.enumerated()), id: \.offset) { _, range in
         Text(sourceTitle(range.source) + ": " + componentTitle(range.component) + range.bounds + " " + range.unit)
@@ -289,7 +301,7 @@ private struct GalaxySSIHealthOverviewMetricDetailView: View {
       if let discussion { GalaxySSIHealthCareDiscussionView(records: records, concernID: discussion, metric: metric) }
     } label: { EmptyView() }.hidden())
     .onAppear(perform: reload)
-    .onDisappear { item = nil; recent = []; birth = nil; concern = nil }
+    // Pushing a child must not remove its source NavigationLink. Privacy observers clear inactive data.
     .onChange(of: scene) { if $0 == .active { reload() } else { clear() } }
     .onChange(of: timeZone) { _ in reload() }
     .onChange(of: store.profile.identityFingerprint) { _ in clear() }
@@ -385,7 +397,6 @@ struct GalaxySSIHealthOverviewHistoryView: View {
     .navigationBarTitleDisplayMode(.inline)
     .privacySensitive()
     .onAppear(perform: reload)
-    .onDisappear { readings = []; failed = false }
     .onChange(of: scene) { if $0 == .active { reload() } else { readings = []; failed = false } }
     .onChange(of: timeZone) { _ in reload() }
     .onChange(of: store.profile.identityFingerprint) { _ in readings = [] }
@@ -432,9 +443,15 @@ private struct GalaxySSIHealthOverviewRecordView: View {
             Text(selected.measuredAt.formatted(date: .abbreviated, time: .shortened))
             Text(GalaxySSIHealthOverviewMetricRow.origin(selected, language: language)).foregroundColor(.secondary)
             Text(String(format: t("overview_list.revision", "Revision %lld"), Int64(selected.revision)))
-            if let reference = selected.referenceInterval, !reference.isBlank { Text(t("overview_list.recorded_reference", "Recorded reference") + ": " + reference) }
-            if !selected.conditions.isBlank { Text(selected.conditions) }
-            if !selected.notes.isBlank { Text(selected.notes) }
+            Group {
+              if let reference = selected.referenceInterval, !reference.isBlank { Text(t("overview_list.recorded_reference", "Recorded reference") + ": " + reference) }
+              if !selected.conditions.isBlank { Text(selected.conditions) }
+              if let side = selected.measurementSide {
+                Text(GalaxySSILocalization.string("galaxyssi.health.measurement_comparison.side_" + side,
+                  fallback: side == "left" ? "Left" : side == "right" ? "Right" : "Not specified", language: language))
+              }
+              if !selected.notes.isBlank { Text(selected.notes) }
+            }
             Button(t("overview_list.edit", "Edit measurement")) { edit(selected) }.disabled(!canEdit)
           }
           Section(t("history", "Revision history")) {

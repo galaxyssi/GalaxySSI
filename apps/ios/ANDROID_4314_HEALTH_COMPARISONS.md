@@ -3,12 +3,12 @@
 Source: https://github.com/galaxyssi/GalaxySSI/pull/4314
 Android merge: `e2bf99432f61f6658e98f545d6072ac8a7b9ccc8`
 
-## Development Status
+## Implementation Scope
 
-This branch is still in development and is not a submitted or completed parity
-PR. Activity history and comparison are implemented below; report/measurement
-selection and source-aware trend changes still require integration before the
-corresponding formal PR is created.
+This change maps Android #4314's activity history, import/report selection,
+two-group measurement comparison and source-aware trend behavior to the native
+iOS Health Center. It does not include Android #4315's subsequent replacement of
+import groups by sampling periods; that is a separate Android/iOS parity item.
 
 ## Implemented Activity Mapping
 
@@ -37,16 +37,46 @@ corresponding formal PR is created.
 Added XCTest source for monotonic/reopened history, owner/date authentication,
 invalid and over-wide query bounds, migration before checkpoint replacement,
 unknown-versus-zero dates, paired-only arithmetic and DST boundaries. Tests were
-not executed, as requested. Project structure, whitespace and Swift grammar
-checks are static checks only, not Xcode type checking or device verification.
+not executed, as requested. Additional XCTest source covers authenticated report
+and table associations, selected report boundaries, exact secondary-link
+revisions, pending original removal, unknown side compatibility, side/condition/
+unit separation, source-pinned trend versions and report trend facts without
+invented means or deltas. Updated the prior OCR trend expectation to require an
+actual latest reading rather than a report average.
 
-## Remaining Android Scope
+Project structure, whitespace, scoped localization-key and Swift grammar checks
+are static checks only, not Xcode type checking or device verification. No
+simulator screenshots or native interaction verification are claimed on Windows.
 
-- Select report/import groups and authenticated primary/secondary report links;
-  compare actual measurements without confusing upload and sampling timestamps.
-- Preserve units, collection conditions and source/device identity in comparable
-  trend routes; retain actual report results rather than fabricating averages or
-  connecting unverified laboratory methods.
-- Review Android #4315's subsequent replacement of upload batches by clinical
-  sampling periods separately. This document does not claim those later changes
-  are implemented by the activity-history work above.
+## Measurement And Trend Mapping
+
+- Add a paged import/report selector, optional single-report scope, two-group
+  comparison, out-of-range filter, original reference ranges and actual sampling
+  timestamps. The overview can switch between latest measurements and a selected
+  group without changing the live Steps/Cycling controls or capture actions.
+- Derive capture/import identity from authenticated saved job/batch IDs, not the
+  date of upload. Preserve report SHA-256 checks and exact current revisions for
+  secondary links. Resolve table aliases against retained source bytes and their
+  digest; undone imports and pending original removals cannot enter the view.
+- Add backward-compatible optional measurement side metadata, explicit side
+  selection in manual blood-pressure entry and normalized legacy unknown sides.
+  Duplicate detection and comparable trend scope now keep side and collection
+  conditions separate. Unknown side is never inferred to be left or right.
+- Anchor comparable trends to the selected sampling date, initially spanning six
+  calendar months. Pin unit, collection condition, side and source/device origin
+  to that current reading. A changed anchor revision invalidates its cohort.
+- Add latest-actual-reading aggregation. Do not average report/table results,
+  draw continuous lines between unverified methods, or send invented numeric
+  deltas/means in trend explanation facts. Actual values, source counts and point
+  audit remain available. iOS has no verified laboratory-method field, so these
+  report/table deltas remain unavailable rather than being guessed.
+  Retain authenticated secondary-link provenance separately from a reading's
+  primary source, so a previously manual reading linked to a report cannot bypass
+  those unverified-method restrictions in comparison or trend explanations.
+- Preserve source NavigationLinks while a child is pushed; clear sensitive
+  projections through identity, foreground, consent and protected-data observers.
+
+The iOS measurement projection uses the existing authenticated encrypted archive;
+picker rendering is paged in groups of 30. This is not a claim that measurement
+storage itself was migrated to Android's SQLite import-library schema. The new
+permanent activity history, separately, uses indexed bounded SQLite queries.
