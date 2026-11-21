@@ -6,10 +6,43 @@ import org.junit.Test
 class HealthAtlasFunctionStoryTest {
     @Test fun onlySupportedTargetsShareTheGlucoseUptakeStory() {
         assertEquals(HealthAtlasFunctionStory.GLUCOSE, HealthAtlasFunctionStory.forId("tissue-skeletal-muscle"))
+        assertEquals(HealthAtlasFunctionStory.GLUCOSE, HealthAtlasFunctionStory.forId("tissue-white-adipose"))
         assertEquals(HealthAtlasFunctionStory.GLUCOSE, HealthAtlasFunctionStory.forId("cell-adipocyte"))
+        assertEquals(listOf(HealthAtlasFunctionStory.MUSCLE_MOTION, HealthAtlasFunctionStory.GLUCOSE),
+            HealthAtlasFunctionStory.choicesForId("cell-skeletal-myocyte"))
         assertEquals(HealthAtlasFunctionStory.INSULIN_SECRETION, HealthAtlasFunctionStory.forId("cell-pancreatic-beta-cell"))
         assertEquals(HealthAtlasFunctionStory.GLUCAGON_RESPONSE, HealthAtlasFunctionStory.forId("liver"))
         assertNull(HealthAtlasFunctionStory.forId(null))
+    }
+
+    @Test fun glut4DocksAndFlattensContinuouslyBeforeGlucoseCrossesTheMembrane() {
+        val radius = HealthAtlasUptakeMotion.RADIUS
+        val surface = HealthAtlasUptakeMotion.SURFACE
+        val start = HealthAtlasUptakeMotion(3, 0f)
+        val dock = HealthAtlasUptakeMotion(3, .58f)
+        val justBefore = HealthAtlasUptakeMotion(3, .579f)
+        val justAfter = HealthAtlasUptakeMotion(3, .581f)
+        val open = HealthAtlasUptakeMotion(3, .80f)
+        val fused = HealthAtlasUptakeMotion(3, 1f)
+        assertEquals(HealthAtlasUptakeMotion(2, 1f).transporterX, start.transporterX, 0f)
+        assertEquals(HealthAtlasUptakeMotion(2, 1f).transporterY, start.transporterY, 0f)
+        assertTrue(start.vesicleY + radius < surface)
+        assertEquals(surface, dock.vesicleY + radius, .0001f)
+        assertEquals(justBefore.transporterX, justAfter.transporterX, .002f)
+        assertEquals(justBefore.transporterY, justAfter.transporterY, .002f)
+        assertTrue(open.opening > 0f)
+        assertTrue(open.radiusY in 0f..radius)
+        assertEquals(0f, fused.radiusY, 0f)
+        assertEquals(surface, fused.transporterY, 0f)
+        assertEquals(fused.transporterY, HealthAtlasUptakeMotion(4, 0f).transporterY, 0f)
+        for (index in 0..2) {
+            for (step in 0..10) {
+                assertEquals(0f, HealthAtlasUptakeMotion(3, step / 10f).glucoseTravel(index), 0f)
+            }
+            assertEquals(1f, HealthAtlasUptakeMotion(4, 1f).glucoseTravel(index), 0f)
+        }
+        assertTrue(HealthAtlasUptakeMotion(4, .50f).glucoseTravel(0) >
+            HealthAtlasUptakeMotion(4, .50f).glucoseTravel(1))
     }
 
     @Test fun heartbeatIsScopedAndValvesNeverAllowConflictingVentricularFlow() {
@@ -56,6 +89,23 @@ class HealthAtlasFunctionStoryTest {
         assertTrue(stage.first().expansion(.75f) > stage.first().expansion(.25f))
         assertTrue(stage.last().expansion(.75f) < stage.last().expansion(.25f))
         assertEquals(1f, HealthAtlasBreathingStage.DIFFUSE.closeUp(.5f), 0f)
+    }
+
+    @Test fun airwayClearanceTracksTrappedParticlesWithoutReplacingGasExchange() {
+        val airway = HealthAtlasFunctionStory.AIRWAY_CLEARANCE
+        val breathing = HealthAtlasFunctionStory.BREATHING
+        for (id in listOf("tissue-respiratory-epithelium", "cell-ciliated-airway-cell", "cell-goblet-cell")) {
+            assertEquals(airway, HealthAtlasFunctionStory.forId(id))
+        }
+        for (id in listOf("respiratory", "trachea", "bronchi")) {
+            assertEquals(listOf(breathing, airway), HealthAtlasFunctionStory.choicesForId(id))
+        }
+        assertEquals(listOf(breathing), HealthAtlasFunctionStory.choicesForId("alveoli"))
+        assertTrue(HealthAtlasAirwayMotion.fall(0, .6f, 0) > HealthAtlasAirwayMotion.fall(0, .6f, 2))
+        for (step in 0..2) assertEquals(0f, HealthAtlasAirwayMotion.surfaceTravel(step, 1f), 0f)
+        assertEquals(1f, HealthAtlasAirwayMotion.fall(0, 1f, 2), 0f)
+        assertEquals(HealthAtlasAirwayMotion.surfaceTravel(3, 1f), HealthAtlasAirwayMotion.surfaceTravel(4, 0f), 0f)
+        assertEquals(1f, HealthAtlasAirwayMotion.surfaceTravel(4, 1f), 0f)
     }
 
     @Test fun hearingStoryIsScopedAndItsWaveTravelsFromBaseTowardApex() {

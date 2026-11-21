@@ -13,7 +13,7 @@ internal enum class HealthAtlasFunctionStory(
     val showStructurePreview: Boolean = false,
 ) {
     GLUCOSE(
-        setOf("tissue-skeletal-muscle", "cell-adipocyte"),
+        setOf("tissue-skeletal-muscle", "tissue-white-adipose", "cell-adipocyte"),
         R.string.health_atlas_uptake_title,
         R.string.health_atlas_uptake_scope,
         listOf(
@@ -25,7 +25,7 @@ internal enum class HealthAtlasFunctionStory(
         ),
         listOf(
             R.string.health_atlas_uptake_reference to "https://pubmed.ncbi.nlm.nih.gov/19188436/",
-            R.string.health_atlas_uptake_pathway_reference to "https://pmc.ncbi.nlm.nih.gov/articles/PMC507006/",
+            R.string.health_atlas_uptake_pathway_reference to "https://pmc.ncbi.nlm.nih.gov/articles/PMC1899973/",
         ),
         15_000L,
     ),
@@ -491,6 +491,24 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    AIRWAY_CLEARANCE(
+        setOf("tissue-respiratory-epithelium", "cell-ciliated-airway-cell", "cell-goblet-cell"),
+        R.string.health_atlas_airway_title,
+        R.string.health_atlas_airway_scope,
+        listOf(
+            R.string.health_atlas_airway_catch to R.string.health_atlas_airway_catch_caption,
+            R.string.health_atlas_airway_secrete to R.string.health_atlas_airway_secrete_caption,
+            R.string.health_atlas_airway_beat to R.string.health_atlas_airway_beat_caption,
+            R.string.health_atlas_airway_move to R.string.health_atlas_airway_move_caption,
+            R.string.health_atlas_airway_clear to R.string.health_atlas_airway_clear_caption,
+        ),
+        listOf(
+            R.string.health_atlas_airway_ref_layers to "https://pmc.ncbi.nlm.nih.gov/articles/PMC3633213/",
+            R.string.health_atlas_airway_ref_motion to "https://pmc.ncbi.nlm.nih.gov/articles/PMC4504973/",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -517,6 +535,7 @@ internal enum class HealthAtlasFunctionStory(
         RPE_VISUAL_CYCLE -> R.string.health_atlas_ocular_choice_pigment
         DIM_LIGHT_RELAY -> R.string.health_atlas_ocular_choice_relay
         CORNEAL_SURFACE_RENEWAL -> R.string.health_atlas_ocular_choice_cornea
+        AIRWAY_CLEARANCE -> R.string.health_atlas_airway_choice
         else -> title
     }
 
@@ -535,6 +554,8 @@ internal enum class HealthAtlasFunctionStory(
         RPE_VISUAL_CYCLE -> listOf("cell-retinal-aii-amacrine-cell" to DIM_LIGHT_RELAY)
         DIM_LIGHT_RELAY -> listOf("cell-rod-photoreceptor" to LIGHT_ADAPTATION)
         CORNEAL_SURFACE_RENEWAL -> listOf("cornea" to VISION)
+        BREATHING -> listOf("tissue-respiratory-epithelium" to AIRWAY_CLEARANCE)
+        AIRWAY_CLEARANCE -> listOf("lungs" to BREATHING)
         else -> emptyList()
     }
 
@@ -559,6 +580,7 @@ internal enum class HealthAtlasFunctionStory(
         OLFACTION, TASTE_SIGNAL -> HealthAtlasChemicalSenseStoryView(context, this)
         TOUCH_SIGNAL, VESTIBULAR_BALANCE -> HealthAtlasMotionSenseStoryView(context, this)
         RPE_VISUAL_CYCLE, DIM_LIGHT_RELAY, CORNEAL_SURFACE_RENEWAL -> HealthAtlasOcularStoryView(context, this)
+        AIRWAY_CLEARANCE -> HealthAtlasAirwayStoryView(context)
     }
 
     companion object {
@@ -572,6 +594,7 @@ internal enum class HealthAtlasFunctionStory(
                 "pancreatic-islets" -> listOf(primary, GLUCAGON_RESPONSE)
                 "nervous", "brain", "spinal-cord", "cell-neuron", "tissue-central-nervous" -> listOf(primary, MYELIN_SIGNAL)
                 "tissue-skeletal-muscle" -> listOf(primary, MUSCLE_MOTION)
+                "cell-skeletal-myocyte" -> listOf(primary, GLUCOSE)
                 "immune" -> listOf(primary, LYMPH_RETURN)
                 "skin" -> listOf(primary, EPIDERMAL_BARRIER, TOUCH_SIGNAL)
                 "skin-organ", "epidermis" -> listOf(primary, TOUCH_SIGNAL)
@@ -583,6 +606,7 @@ internal enum class HealthAtlasFunctionStory(
                 "cell-rod-photoreceptor" -> listOf(primary, DIM_LIGHT_RELAY, RPE_VISUAL_CYCLE)
                 "cell-retinal-bipolar-cell" -> listOf(primary, DIM_LIGHT_RELAY)
                 "cornea" -> listOf(primary, CORNEAL_SURFACE_RENEWAL)
+                "respiratory", "trachea", "bronchi" -> listOf(primary, AIRWAY_CLEARANCE)
                 else -> listOf(primary)
             }
         }

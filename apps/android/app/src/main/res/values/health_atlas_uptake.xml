@@ -6,7 +6,7 @@
     <string name="health_atlas_uptake_irs">The receptor signals to IRS</string>
     <string name="health_atlas_uptake_irs_caption">Inside the cell, the activated receptor phosphorylates an insulin receptor substrate (IRS).</string>
     <string name="health_atlas_uptake_akt">PI3K and AKT relay the signal</string>
-    <string name="health_atlas_uptake_akt_caption">IRS helps recruit PI3K, which generates the membrane signal PIP3. PIP3 helps recruit proteins that activate AKT.</string>
+    <string name="health_atlas_uptake_akt_caption">IRS helps recruit PI3K. PI3K changes the membrane lipid PIP2 into PIP3, which helps recruit and activate AKT.</string>
     <string name="health_atlas_uptake_fuse">A GLUT4 vesicle fuses with the membrane</string>
     <string name="health_atlas_uptake_fuse_caption">The signal promotes fusion of GLUT4-containing vesicles with the cell membrane, increasing the amount of GLUT4 at the surface.</string>
     <string name="health_atlas_uptake_transport">Glucose enters through GLUT4</string>
@@ -18,5 +18,5 @@
     <string name="health_atlas_uptake_glucose">Glucose</string>
     <string name="health_atlas_uptake_scope">Simplified skeletal muscle and fat cell pathway. Shapes, distances and playback time are not to scale; this is not a blood glucose prediction.</string>
     <string name="health_atlas_uptake_reference">Evidence: GLUT4 movement in muscle</string>
-    <string name="health_atlas_uptake_pathway_reference">Evidence: insulin signaling and GLUT4</string>
+    <string name="health_atlas_uptake_pathway_reference">Evidence: imaging GLUT4 vesicle fusion</string>
 </resources>

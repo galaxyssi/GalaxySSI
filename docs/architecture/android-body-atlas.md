@@ -441,11 +441,13 @@ Research references:
 
 ## Design Coverage and Remaining Work
 
-The Function tab for skeletal muscle tissue and adipocytes includes a
-five-chapter continuously drawn insulin and GLUT4 lesson. Marked structures
-stay in view while the ligand approaches, intracellular signals travel, a
-vesicle merges with the membrane and glucose crosses the illustrated
-transporter. The five-chapter playhead is independent of the four-step
+The Function tab for skeletal muscle tissue, white adipose tissue and
+adipocytes includes a five-chapter continuously drawn insulin and GLUT4
+lesson. Skeletal myocytes offer it alongside their default contraction lesson.
+Structures stay in view as the ligand approaches, the PI3K-dependent lipid
+signal recruits AKT, and the vesicle opens and flattens into the cell membrane.
+Illustrated glucose crosses GLUT4 only after fusion is complete. The
+five-chapter playhead is independent of the four-step
 physiology model. Playback pauses on navigation or backgrounding; the
 current chapter and two primary sources go into the public Agent preview.
 The pancreatic beta cell keeps its own secretion mechanism rather than
@@ -453,7 +455,16 @@ inheriting the target-cell lesson. The animation is qualitative and does not
 convert playback time or particle count into physiological measurements.
 
 Evidence: https://pubmed.ncbi.nlm.nih.gov/19188436/ and
-https://pmc.ncbi.nlm.nih.gov/articles/PMC507006/.
+https://pmc.ncbi.nlm.nih.gov/articles/PMC1899973/.
+
+The conducting airway has a separate five-stage mucus clearance lesson:
+particle capture, goblet-cell secretion, coordinated cilia, conveyance
+toward the throat, and swallowing. A lung locator stays visible above the
+animated cross-section. Trachea and bronchi keep their breathing lesson;
+the airway lining and its ciliated cells open mucus clearance by default.
+Alveolar gas exchange is not depicted as having a mucus conveyor.
+Evidence: https://pmc.ncbi.nlm.nih.gov/articles/PMC3633213/ and
+https://pmc.ncbi.nlm.nih.gov/articles/PMC4504973/.
 
 The pinned Agent action follows the current surface. Public catalogue, mechanism
 and research prompts use `HealthAtlasAgentContext`: selected anatomy, current

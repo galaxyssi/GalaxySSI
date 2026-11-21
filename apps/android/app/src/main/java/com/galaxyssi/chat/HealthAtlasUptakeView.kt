@@ -8,9 +8,36 @@ import android.graphics.Path
 import android.graphics.PathMeasure
 import android.graphics.RectF
 import android.graphics.Shader
-import kotlin.math.atan2
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+
+internal data class HealthAtlasUptakeMotion(val chapter: Int, val fraction: Float) {
+    val approach = if (chapter >= 3) ease(if (chapter == 3) fraction / .58f else 1f) else 0f
+    val flatten = if (chapter >= 3) ease(if (chapter == 3) (fraction - .58f) / .42f else 1f) else 0f
+    val radiusY = RADIUS * (1f - flatten)
+    val opening = 90f * flatten
+    val vesicleX = 158f + 87f * approach
+    val vesicleY = 210f + (SURFACE - RADIUS - 210f) * approach +
+        RADIUS - radiusY * cos(opening * DEGREES)
+    val transporterX = vesicleX + RADIUS
+    val transporterY = vesicleY
+    val transporterRotation = -90f * (1f - flatten)
+
+    fun glucoseTravel(index: Int) =
+        if (chapter == 4) ease(fraction * 1.63f - index * .21f) else 0f
+
+    private fun ease(value: Float): Float {
+        val bounded = value.coerceIn(0f, 1f)
+        return bounded * bounded * (3f - 2f * bounded)
+    }
+
+    companion object {
+        const val SURFACE = 275f
+        const val RADIUS = 23f
+        const val DEGREES = .017453293f
+    }
+}
 
 internal class HealthAtlasUptakeView(context: Context) : HealthAtlasFunctionArt(context, HealthAtlasFunctionStory.GLUCOSE) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
@@ -18,16 +45,15 @@ internal class HealthAtlasUptakeView(context: Context) : HealthAtlasFunctionArt(
     private val trace = Path()
     private val point = FloatArray(2)
     private val bounds = RectF()
-    private val field = LinearGradient(0f, 0f, 0f, 344f, intArrayOf(0xffe5f3f8.toInt(), 0xfffff4df.toInt(), 0xffe5f3f8.toInt()),
-        floatArrayOf(0f, .46f, 1f), Shader.TileMode.CLAMP)
-    private val membrane = LinearGradient(0f, -2f, 0f, 12f, 0xffdcaa54.toInt(), 0xffffe4a2.toInt(), Shader.TileMode.CLAMP)
+    private val field = LinearGradient(0f, 0f, 0f, 344f, intArrayOf(0xffdceef7.toInt(), 0xfffff8e8.toInt(), 0xffe4f1f7.toInt()),
+        floatArrayOf(0f, .54f, 1f), Shader.TileMode.CLAMP)
     private val receptor = LinearGradient(0f, 35f, 0f, 74f, 0xff9c91d6.toInt(), 0xff52488a.toInt(), Shader.TileMode.CLAMP)
     private val channel = LinearGradient(-16f, 0f, 16f, 0f, 0xff237084.toInt(), 0xff74c5cb.toInt(), Shader.TileMode.MIRROR)
     private val routes = listOf(
-        route { moveTo(79f, 42f); cubicTo(126f, 14f, 150f, 19f, 171f, 48f) },
-        route { moveTo(171f, 105f); cubicTo(165f, 127f, 138f, 134f, 109f, 139f) },
-        route { moveTo(103f, 153f); cubicTo(100f, 180f, 115f, 188f, 146f, 188f); lineTo(276f, 188f) },
-        route { moveTo(275f, 204f); cubicTo(278f, 224f, 259f, 234f, 244f, 242f) },
+        route { moveTo(87f, 40f); cubicTo(119f, 14f, 151f, 21f, 169f, 45f) },
+        route { moveTo(171f, 98f); cubicTo(170f, 114f, 142f, 113f, 127f, 114f) },
+        route { moveTo(123f, 124f); cubicTo(132f, 126f, 138f, 133f, 138f, 165f) },
+        route { moveTo(293f, 179f); cubicTo(293f, 203f, 228f, 186f, 228f, 214f) },
     )
     init { tag = "atlas-function-uptake-art" }
 
@@ -35,6 +61,7 @@ internal class HealthAtlasUptakeView(context: Context) : HealthAtlasFunctionArt(
         super.onDraw(canvas)
         val chapter = story.chapter(phase)
         val t = story.fraction(phase)
+        val motion = HealthAtlasUptakeMotion(chapter, t)
         val scale = minOf(width, height) / 344f
         canvas.save()
         canvas.translate((width - 344f * scale) / 2f, (height - 344f * scale) / 2f)
@@ -45,82 +72,76 @@ internal class HealthAtlasUptakeView(context: Context) : HealthAtlasFunctionArt(
         canvas.drawRoundRect(bounds, 8f, 8f, paint)
         paint.shader = null
 
-        val fused = chapter >= 4 || chapter == 3 && t >= .64f
-        val neck = if (chapter == 3 && fused) (1f - t) * 123f else 0f
-        bilayer(canvas, 75f, 0f)
-        bilayer(canvas, 279f, neck)
-        receptor(canvas, chapter > 0 || t >= .88f)
+        bilayer(canvas, 71f)
+        bilayer(canvas, HealthAtlasUptakeMotion.SURFACE, motion)
+        if (motion.flatten == 0f) vesicle(canvas, motion.vesicleX, motion.vesicleY)
+        val bound = chapter > 0 || t >= .95f
+        receptor(canvas, bound)
         val insulinRoute = routes[0]
-        insulinRoute.getPosTan(insulinRoute.length * if (chapter == 0) t else 1f, point, null)
+        insulinRoute.getPosTan(insulinRoute.length * if (chapter == 0) minOf(t / .95f, 1f) else 1f, point, null)
         insulin(canvas, point[0], point[1])
-        label(canvas, context.getString(R.string.health_atlas_uptake_insulin), 14f, 57f, true)
-        label(canvas, context.getString(R.string.health_atlas_uptake_receptor), 211f, 60f, true)
-        node(canvas, "IRS", 80f, 126f, 57f, chapter >= 1)
-        if (chapter >= 1) dot(canvas, 129f, 128f, 4f, 0xffe3a436.toInt())
-        node(canvas, "PI3K", 113f, 173f, 63f, chapter >= 2)
-        node(canvas, "PIP3", 181f, 173f, 58f, chapter > 2 || chapter == 2 && t >= .55f)
-        node(canvas, "AKT", 246f, 173f, 63f, chapter > 2 || chapter == 2 && t >= .86f)
-        arrow(canvas, 175f, 207f, 206f, 207f)
-        arrow(canvas, 239f, 207f, 272f, 207f)
-        if (chapter in 1..3) signal(canvas, routes[chapter], t)
-        if (!fused) {
-            val move = if (chapter == 3) t / .64f else 0f
-            val centerX = 181f + 78f * move
-            val centerY = 232f + 22f * move
-            vesicle(canvas, centerX, centerY)
-            label(canvas, "GLUT4", centerX - 70f, centerY + 11f, true)
-        } else {
-            transporter(canvas, 259f, 283f - neck, 1f)
-            label(canvas, "GLUT4", 286f, 263f, true)
+        label(canvas, context.getString(R.string.health_atlas_uptake_insulin), 14f, 48f, true)
+        label(canvas, context.getString(R.string.health_atlas_uptake_receptor), 217f, 62f, true)
+
+        val irsActive = chapter > 1 || chapter == 1 && t >= .82f
+        val relay = if (chapter > 2) 1f else if (chapter == 2) t else 0f
+        for (i in 1..3) {
+            val progress = when (i) {
+                2 -> relay * 3.5f
+                else -> if (chapter > i) 1f else if (chapter == i) t else 0f
+            }.coerceIn(0f, 1f)
+            signal(canvas, routes[i], progress, chapter == i && progress < 1f)
         }
-        if (chapter == 4) {
-            for (i in 0..2) {
-                val passage = (t * 1.55f - i * .30f).coerceIn(0f, 1f)
-                val y = 321f - passage * 103f
-                val x = 259f + if (y < 257f) (i - 1) * (257f - y) * .42f else (i - 1) * ((y - 297f) / 24f).coerceIn(0f, 1f) * 24f
-                glucose(canvas, x, y)
-            }
-            arrow(canvas, 208f, 317f, 208f, 245f)
-        } else for (x in 235..283 step 24) glucose(canvas, x.toFloat(), 321f)
+        node(canvas, "IRS", 73f, 103f, 54f, irsActive, 0xffb9cce9.toInt())
+        if (irsActive) dot(canvas, 124f, 105f, 4f, 0xffdb9f31.toInt())
+        transfer(canvas, 80f, 160f, relay, .29f, .57f)
+        transfer(canvas, 222f, 262f, relay, .57f, .90f)
+        node(canvas, "PI3K", 111f, 132f, 54f, relay >= .26f, 0xffb9cce9.toInt())
+        node(canvas, "PIP2", 23f, 157f, 54f, relay >= .29f, 0xffc6cde9.toInt())
+        node(canvas, "PIP3", 164f, 157f, 54f, relay >= .57f, 0xffa9dbe0.toInt())
+        node(canvas, "AKT", 266f, 157f, 54f, relay >= .90f, 0xffb8dec1.toInt())
+        transporter(canvas, motion.transporterX, motion.transporterY, .79f + .11f * motion.flatten, motion.transporterRotation)
+        label(canvas, "GLUT4", motion.transporterX - 54f, motion.transporterY - 17f, true)
+        for (i in 0..2) {
+            val travel = motion.glucoseTravel(i)
+            val y = 314f - travel * 88f
+            val spread = (abs(y - HealthAtlasUptakeMotion.SURFACE) / 34f).coerceIn(0f, 1f) * 18f
+            glucose(canvas, 268f + (i - 1) * spread, y)
+        }
         label(canvas, context.getString(R.string.health_atlas_uptake_outside), 14f, 25f)
-        label(canvas, context.getString(R.string.health_atlas_uptake_inside), 14f, 112f)
-        label(canvas, context.getString(R.string.health_atlas_uptake_glucose), 14f, 321f)
+        label(canvas, context.getString(R.string.health_atlas_uptake_inside), 14f, 92f)
+        label(canvas, context.getString(R.string.health_atlas_uptake_glucose), 14f, 317f)
         canvas.restore()
     }
 
-    private fun bilayer(canvas: Canvas, y: Float, neck: Float) {
-        canvas.save()
-        canvas.translate(0f, y)
+    private fun bilayer(canvas: Canvas, y: Float, motion: HealthAtlasUptakeMotion? = null) {
         shape.rewind()
-        shape.moveTo(12f, 4f)
-        if (neck > 0f) {
-            shape.lineTo(235f, 4f)
-            shape.cubicTo(247f, 3f, 236f, 4f - neck, 259f, 4f - neck)
-            shape.cubicTo(281f, 4f - neck, 267f, 3f, 282f, 4f)
+        shape.moveTo(5f, y)
+        val curved = motion != null && motion.flatten > 0f && motion.radiusY > .1f
+        if (motion != null && curved) {
+            // Open the bottom of the vesicle into the bilayer, then flatten the cap.
+            val opening = motion.opening.coerceAtLeast(.5f)
+            val r = HealthAtlasUptakeMotion.RADIUS
+            val x = motion.vesicleX
+            val cy = y - motion.radiusY * cos(opening * HealthAtlasUptakeMotion.DEGREES)
+            bounds.set(x - r, cy - motion.radiusY, x + r, cy + motion.radiusY)
+            shape.arcTo(bounds, 90f + opening, 360f - 2f * opening, false)
         }
-        shape.lineTo(332f, 4f)
-        stroke(canvas, shape, 0xffac793e.toInt(), 12f)
-        paint.shader = membrane
-        paint.strokeWidth = 8f
-        canvas.drawPath(shape, paint)
-        paint.shader = null
-        for (x in 16..328 step 12) {
-            if (neck > 0f && x in 231..290) continue
-            dot(canvas, x.toFloat(), 1f, 1.6f, 0xfffff1c7.toInt())
-            dot(canvas, x.toFloat(), 8f, 1.4f, 0xffba8144.toInt())
-        }
-        canvas.restore()
+        shape.lineTo(339f, y)
+        stroke(canvas, shape, 0xffb98545.toInt(), 9f)
+        stroke(canvas, shape, 0xfff7d589.toInt(), 6.5f)
+        stroke(canvas, shape, 0xffffedbd.toInt(), 2f)
     }
 
     private fun receptor(canvas: Canvas, active: Boolean) {
         for (i in 0..1) {
-            val x = 162f + i * 19f
-            capsule(canvas, x - 5f, 58f, x + 5f, 101f, 5f, 0xff31887f.toInt())
-            dot(canvas, x, 104f, 4f, if (active) 0xffebac43.toInt() else 0xff568c92.toInt())
+            val x = 160f + i * 18f
+            capsule(canvas, x - 5f, 55f, x + 5f, 96f, 5f, 0xff31887f.toInt())
+            dot(canvas, x, 99f, 4f, if (active) 0xffebac43.toInt() else 0xff568c92.toInt())
         }
         shape.rewind()
-        shape.moveTo(140f, 41f)
-        shape.cubicTo(152f, 71f, 192f, 71f, 204f, 41f)
+        shape.moveTo(141f, 38f)
+        shape.cubicTo(150f, 64f, 188f, 64f, 197f, 38f)
         style(0xff6c65ab.toInt(), Paint.Style.STROKE)
         paint.strokeWidth = 12f
         paint.shader = receptor
@@ -139,21 +160,28 @@ internal class HealthAtlasUptakeView(context: Context) : HealthAtlasFunctionArt(
     }
 
     private fun vesicle(canvas: Canvas, x: Float, y: Float) {
-        dot(canvas, x, y, 25f, 0xffc58f45.toInt())
-        dot(canvas, x, y, 22f, 0xfff8df99.toInt())
-        dot(canvas, x, y, 19f, 0xfffff4d5.toInt())
-        transporter(canvas, x, y + 23f, .74f)
+        val r = HealthAtlasUptakeMotion.RADIUS
+        style(0xffb98545.toInt(), Paint.Style.STROKE)
+        paint.strokeWidth = 9f
+        canvas.drawCircle(x, y, r, paint)
+        paint.color = 0xfff7d589.toInt()
+        paint.strokeWidth = 6.5f
+        canvas.drawCircle(x, y, r, paint)
+        paint.color = 0xffffedbd.toInt()
+        paint.strokeWidth = 2f
+        canvas.drawCircle(x, y, r, paint)
     }
 
-    private fun transporter(canvas: Canvas, x: Float, y: Float, scale: Float) {
+    private fun transporter(canvas: Canvas, x: Float, y: Float, scale: Float, rotation: Float) {
         canvas.save()
         canvas.translate(x, y)
+        canvas.rotate(rotation)
         canvas.scale(scale, scale)
         style(0xff246880.toInt())
         paint.shader = channel
         bounds.set(-17f, -13f, 17f, 16f)
         canvas.drawRoundRect(bounds, 8f, 8f, paint)
-        capsule(canvas, -5f, -14f, 5f, 16f, 4f, 0xffdff2eb.toInt())
+        capsule(canvas, -4f, -15f, 4f, 17f, 3f, 0xffdff2eb.toInt())
         canvas.restore()
     }
 
@@ -171,29 +199,36 @@ internal class HealthAtlasUptakeView(context: Context) : HealthAtlasFunctionArt(
         stroke(canvas, shape, 0xff996019.toInt(), 1.8f)
     }
 
-    private fun signal(canvas: Canvas, path: PathMeasure, t: Float) {
+    private fun signal(canvas: Canvas, path: PathMeasure, t: Float, moving: Boolean) {
+        trace.rewind()
+        if (path.getSegment(0f, path.length, trace, true)) stroke(canvas, trace, 0xffa0b4bb.toInt(), 1.3f)
         trace.rewind()
         val distance = t * path.length
         if (path.getSegment(0f, distance, trace, true)) stroke(canvas, trace, 0xff007973.toInt(), 2.5f)
-        if (!path.getPosTan(distance, point, null)) return
+        if (!moving || t <= 0f || !path.getPosTan(distance, point, null)) return
         dot(canvas, point[0], point[1], 7f, 0xffd8faf0.toInt())
         dot(canvas, point[0], point[1], 4f, 0xff007973.toInt())
     }
 
-    private fun arrow(canvas: Canvas, x: Float, y: Float, toX: Float, toY: Float) {
-        val angle = atan2(toY - y, toX - x)
+    private fun arrow(canvas: Canvas, x: Float, y: Float, toX: Float, active: Boolean) {
         shape.rewind()
         shape.moveTo(x, y)
-        shape.lineTo(toX, toY)
-        shape.lineTo(toX - cos(angle - .58f) * 5f, toY - sin(angle - .58f) * 5f)
-        shape.moveTo(toX, toY)
-        shape.lineTo(toX - cos(angle + .58f) * 5f, toY - sin(angle + .58f) * 5f)
-        stroke(canvas, shape, 0xff516f70.toInt(), 1.5f)
+        shape.lineTo(toX, y)
+        shape.lineTo(toX - 4f, y - 3f)
+        shape.moveTo(toX, y)
+        shape.lineTo(toX - 4f, y + 3f)
+        stroke(canvas, shape, if (active) 0xff007973.toInt() else 0xff728d92.toInt(), 1.5f)
     }
 
-    private fun node(canvas: Canvas, text: String, x: Float, y: Float, width: Float, active: Boolean) {
-        capsule(canvas, x, y, x + width, y + 26f, 7f, if (active) 0xffb1e0d3.toInt() else 0xffe1e7e9.toInt())
-        label(canvas, text, x + 12f, y + 18f, true)
+    private fun transfer(canvas: Canvas, from: Float, to: Float, relay: Float, start: Float, finish: Float) {
+        arrow(canvas, from, 168f, to, relay >= finish)
+        val travel = ((relay - start) / (finish - start)).coerceIn(0f, 1f)
+        if (travel > 0f && travel < 1f) dot(canvas, from + (to - from) * travel, 168f, 3f, 0xff007973.toInt())
+    }
+
+    private fun node(canvas: Canvas, text: String, x: Float, y: Float, width: Float, active: Boolean, accent: Int) {
+        capsule(canvas, x, y, x + width, y + 22f, 7f, if (active) accent else 0xffe1e7e9.toInt())
+        label(canvas, text, x + 13f, y + 15f, true)
     }
 
     private fun label(canvas: Canvas, text: String, x: Float, y: Float, strong: Boolean = false) {

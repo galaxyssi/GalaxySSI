@@ -383,6 +383,36 @@ class HealthAtlasFunctionStoryDeviceTest {
         } finally { clearHealthOverviewFixture(context, fixture) }
     }
 
+    @Test fun airwayLiningAndTracheaShowClearanceWithSeparatePlayheads() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    openCell(activity, "cell-ciliated-airway-cell")
+                    activity.find<View>("atlas-function-airway-clearance-art")
+                    repeat(2) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_airway_beat_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.onBackPressed()
+                    activity.find<View>("atlas-tab-2").performClick()
+                    activity.find<EditText>("atlas-search").setText("trachea")
+                    activity.find<View>("atlas-entry-trachea").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-breathing-art")
+                    activity.find<View>("atlas-function-next").performClick()
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    activity.find<View>("atlas-function-airway-clearance-art")
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.find<View>("atlas-function-lesson-0").performClick()
+                    assertEquals(.2f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
     @Test fun uptakeRestoresPausedAndDoesNotReplaceTheBetaCellLesson() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
@@ -413,6 +443,13 @@ class HealthAtlasFunctionStoryDeviceTest {
                     assertNull(activity.window.decorView.findViewWithTag<View>("atlas-function-player"))
                     activity.find<View>("atlas-tab-1").performClick()
                     assertEquals(saved, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, .001f)
+                    activity.onBackPressed()
+                    openCell(activity, "cell-skeletal-myocyte")
+                    assertEquals(HealthAtlasFunctionStory.MUSCLE_MOTION,
+                        activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").story)
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    activity.find<View>("atlas-function-uptake-art")
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
                     activity.onBackPressed()
                     openCell(activity, "cell-pancreatic-beta-cell")
                     activity.find<View>("atlas-function-insulin-secretion-art")
