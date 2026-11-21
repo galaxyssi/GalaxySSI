@@ -156,7 +156,10 @@ final class GalaxySSIHealthCareClarificationRecoveryTests: XCTestCase {
           XCTAssertTrue(text.contains("question_id"))
           let row = try XCTUnwrap(f.records.localCareQuestionPage(id: f.concern.id, metric: .glucose).rows.first)
           XCTAssertNil(row.answer)
-          return self.call(GalaxySSIHealthCareModelReview.function, try f.arguments())
+          var input = try f.arguments()
+          input["decision"] = .string("CLARIFY")
+          input["questions"] = .array([.object(["id": .string(row.id.uuidString), "revision": .int(Int64(row.revision))])])
+          return self.call(GalaxySSIHealthCareModelReview.function, input)
         }
         return Data(#"{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Synthetic unresolved-context question"}}]}"#.utf8)
       })
@@ -212,8 +215,20 @@ final class GalaxySSIHealthCareClarificationRecoveryTests: XCTestCase {
   }
 
   private func envelope(_ f: HealthModelReviewFixture, questions: AgentMcpJSONValue) throws -> String {
-    AgentMcpJSONCodec.stringify(["assessment": .object(try f.arguments()), "plan": .null,
-      "questions": questions, "answer": .string("Synthetic initial clarification")])
+    var input = try f.arguments()
+    let declared: [AgentMcpJSONValue] = (questions.arrayValue ?? []).compactMap { value in
+      guard var object = value.objectValue else { return nil }
+      object["id"] = .string(UUID().uuidString)
+      return .object(object)
+    }
+    if !declared.isEmpty {
+      input["decision"] = .string("CLARIFY")
+      input["questions"] = .array(declared.compactMap {
+        $0.objectValue?["id"].map { .object(["id": $0, "revision": .int(1)]) }
+      })
+    }
+    return AgentMcpJSONCodec.stringify(["assessment": .object(input), "plan": .null,
+      "questions": .array(declared), "answer": .string("Synthetic initial clarification")])
   }
 
   private func call(_ name: String, _ input: AgentMcpJSONObject) -> Data {

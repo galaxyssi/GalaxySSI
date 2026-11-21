@@ -17,7 +17,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       "records": .array(GalaxySSIHealthCareModelReview.references(concern).map(\.payload)),
       "evidence_ids": .array(approval.evidence.map { .string($0.id.uuidString) }),
       "plan_id": .string(plan?.id.uuidString ?? ""), "attention_requested": .bool(false),
-      "attention_reason": .string("No notification is requested")]
+      "attention_reason": .string("No notification is requested"), "questions": .array([])]
     _ = try records.recordLocalCareModelReview(approval, arguments: input, now: now)
   }
 

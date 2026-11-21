@@ -13,6 +13,12 @@ enum GalaxySSIHealthCareModelReview {
     unavailable data or silently include an unselected measurement. Correct missing references within this turn.
     Separate observations, reasoning and uncertainty. A PROPOSE_PLAN decision needs the plan_id receipt
     from galaxyssi_health_plan_propose in this turn first. Other decisions do not require a plan.
+    A CLARIFY decision requires questions with exact retained IDs/revisions from approved question pages or
+    the question proposal receipt. Cite only current OPEN or CONFLICT questions in this sharing scope.
+    Do not cite resolved, deferred, declined or stale questions as awaiting clarification. Explain conflicts.
+    Without question sharing choose another applicable decision and state the limitation. Do not delay urgent
+    clinician review for missing answers. Other decisions may use an empty questions array. Recording this
+    assessment creates no questions or user answers; retain necessary questions before citing them.
     Use sequential calls, never parallel calls; retain a plan before recording its final assessment.
     Review events are conditions, not scheduled checks. Attention is a recommendation, not a sent notification.
     This tool does not diagnose, change medication, confirm a target, adopt a plan, schedule reminders or
@@ -47,10 +53,11 @@ enum GalaxySSIHealthCareModelReview {
     let planID: UUID?
     let attentionRequested: Bool
     let attentionReason: String
+    var questions: [Reference]?
 
     init(_ raw: AgentMcpJSONObject) throws {
       let keys: Set<String> = ["summary", "rationale", "uncertainty", "next_step", "decision", "review_events",
-        "records", "evidence_ids", "plan_id", "attention_requested", "attention_reason"]
+        "records", "evidence_ids", "plan_id", "attention_requested", "attention_reason", "questions"]
       guard Set(raw.keys) == keys else { throw GalaxySSIHealthRecords.Failure.invalid }
       func text(_ key: String, _ limit: Int) throws -> String {
         guard let value = raw[key]?.strictStringValue, !value.isBlank, value.utf16.count <= limit else {
@@ -67,6 +74,7 @@ enum GalaxySSIHealthCareModelReview {
             let eventRows = raw["review_events"]?.arrayValue, (1...3).contains(eventRows.count),
             let recordRows = raw["records"]?.arrayValue, (1...30).contains(recordRows.count),
             let evidenceRows = raw["evidence_ids"]?.arrayValue, evidenceRows.count <= 8,
+            let questionRows = raw["questions"]?.arrayValue, questionRows.count <= 30,
             let plan = raw["plan_id"]?.strictStringValue, plan.isEmpty || UUID(uuidString: plan) != nil,
             let attention = raw["attention_requested"]?.boolValue else { throw GalaxySSIHealthRecords.Failure.invalid }
       self.decision = decision
@@ -86,10 +94,20 @@ enum GalaxySSIHealthCareModelReview {
         guard let text = $0.strictStringValue, let id = UUID(uuidString: text) else { throw GalaxySSIHealthRecords.Failure.invalid }
         return id
       }
+      questions = try questionRows.map {
+        guard let row = $0.objectValue, Set(row.keys) == ["id", "revision"],
+              let text = row["id"]?.strictStringValue, let id = UUID(uuidString: text),
+              case .int(let revision) = row["revision"], revision > 0, let number = Int(exactly: revision) else {
+          throw GalaxySSIHealthRecords.Failure.invalid
+        }
+        return Reference(id: id, revision: number)
+      }
       planID = UUID(uuidString: plan)
       attentionRequested = attention
       guard Set(events).count == events.count, Set(records).count == records.count,
-            Set(evidenceIDs).count == evidenceIDs.count, decision != .proposePlan || planID != nil else {
+            Set(evidenceIDs).count == evidenceIDs.count, decision != .proposePlan || planID != nil,
+            Set((questions ?? []).map(\.id)).count == questionRows.count,
+            decision != .clarify || !questionRows.isEmpty else {
         throw GalaxySSIHealthRecords.Failure.invalid
       }
     }
@@ -99,7 +117,8 @@ enum GalaxySSIHealthCareModelReview {
         "next_step": .string(nextStep), "decision": .string(decision.rawValue),
         "review_events": .array(events.map { .string($0.rawValue) }), "records": .array(records.map(\.payload)),
         "evidence_ids": .array(evidenceIDs.map { .string($0.uuidString) }), "plan_id": .string(planID?.uuidString ?? ""),
-        "attention_requested": .bool(attentionRequested), "attention_reason": .string(attentionReason)]
+        "attention_requested": .bool(attentionRequested), "attention_reason": .string(attentionReason),
+        "questions": .array((questions ?? []).map(\.payload))]
     }
   }
 
@@ -133,6 +152,7 @@ enum GalaxySSIHealthCareModelReview {
     }
     var receipt: AgentMcpJSONObject {
       ["review_id": .string(id.uuidString), "stored": .bool(true), "clinical_verification": .bool(false),
+        "question_references": .array((input.questions ?? []).map(\.payload)), "questions_created": .bool(false),
         "scheduled": .bool(false), "notification_sent": .bool(false), "concern_closed": .bool(false)]
     }
   }
@@ -152,7 +172,7 @@ enum GalaxySSIHealthCareModelReview {
     switch value {
     case .invalid:
       code = "invalid_health_review"
-      message = "Supply every structured field, the primary record and EVERY available selected related sample's exact record ID/revision, unique review events and evidence IDs. Explain limited relevance or missing context; a reference is input provenance, not a clinical conclusion. Correct the request within this turn. Do not supply approval flags."
+      message = "Supply every structured field, the primary record and EVERY available selected related sample's exact record ID/revision, unique review events and evidence IDs. For CLARIFY retain necessary questions first and cite current OPEN or CONFLICT question IDs/revisions; never re-ask answered, deferred, declined or stale questions. References are provenance, not clinical conclusions. Correct within this turn. Do not supply approval flags."
     case .stale, .permission:
       code = "health_review_scope_changed"
       message = "The approved concern, authorization, evidence or plan changed. Do not reuse another turn or overwrite a retained assessment."
@@ -172,6 +192,10 @@ enum GalaxySSIHealthCareModelReview {
           "properties": ["id": text(36), "revision": ["type": "integer", "minimum": 1]]]],
       "evidence_ids": ["type": "array", "minItems": 0, "maxItems": 8, "uniqueItems": true, "items": text(36)],
       "plan_id": ["type": "string", "maxLength": 36], "attention_requested": ["type": "boolean"], "attention_reason": text(2000)]
-    return ["type": "object", "properties": properties, "required": properties.keys.sorted(), "additionalProperties": false]
+    var complete = properties
+    complete["questions"] = ["type": "array", "minItems": 0, "maxItems": 30, "uniqueItems": true,
+      "items": ["type": "object", "required": ["id", "revision"], "additionalProperties": false,
+        "properties": ["id": text(36), "revision": ["type": "integer", "minimum": 1]]]]
+    return ["type": "object", "properties": complete, "required": complete.keys.sorted(), "additionalProperties": false]
   }
 }
