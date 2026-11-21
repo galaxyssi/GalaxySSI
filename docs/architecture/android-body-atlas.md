@@ -514,6 +514,12 @@ matrix renewal, spleen filtration and thymic selection. These qualitative
 lessons open from their matching organs, tissues or cells. They do not
 replace the broader mechanisms for ventilation, skin barrier and immunity.
 
+The arterial lesson pairs an aortic locator with cross-section and
+lengthwise cutaways. Wall expansion, pulse-wave travel and blood flow are
+separately marked. The aorta's original ejection lesson remains available;
+the vessel-family entry also links to venous return and capillary exchange.
+The cutaways use qualitative motion, not personal flow or pressure values.
+
 The pinned Agent action follows the current surface. Public catalogue, mechanism
 and research prompts use `HealthAtlasAgentContext`: selected anatomy, current
 teaching stage, cardiac or other quantitative inputs, assumptions and sources.

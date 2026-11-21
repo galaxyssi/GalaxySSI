@@ -45,6 +45,26 @@ class HealthAtlasFunctionStoryTest {
             HealthAtlasFunctionStory.MELANIN_TRANSFER), HealthAtlasFunctionStory.choicesForId("epidermis"))
     }
 
+    @Test fun arterialExpansionAndTravelStaySeparateFromHeartAndVeinPlayback() {
+        val story = HealthAtlasFunctionStory.ARTERIAL_PULSE
+        assertEquals(listOf(story), HealthAtlasFunctionStory.choicesForId("arteries"))
+        assertEquals(listOf(HealthAtlasFunctionStory.HEARTBEAT, story), HealthAtlasFunctionStory.choicesForId("aorta"))
+        assertEquals(listOf(story, HealthAtlasFunctionStory.ENDOTHELIAL_EXCHANGE, HealthAtlasFunctionStory.VENOUS_RETURN),
+            HealthAtlasFunctionStory.choicesForId("blood-vessels"))
+
+        val motion = HealthAtlasArterialMotion
+        assertEquals(0f, motion.expansion(1, Float.NaN, .3f), 0f)
+        assertTrue(motion.expansion(1, .8f, .3f) > motion.expansion(1, .2f, .3f))
+        assertTrue(motion.expansion(3, .8f, .3f) < motion.expansion(3, .2f, .3f))
+        assertTrue(motion.flowTravel(3, .8f)!! > motion.flowTravel(3, .2f)!!)
+        assertNull(motion.front(3, .5f))
+        val early = requireNotNull(motion.front(2, .2f))
+        val late = requireNotNull(motion.front(2, .8f))
+        assertTrue(late > early)
+        assertTrue(motion.expansion(2, .2f, early) > motion.expansion(2, .2f, late))
+        assertTrue(motion.expansion(2, .8f, late) > motion.expansion(2, .8f, early))
+    }
+
     @Test fun focusedEntryChaptersAreOnlyDefaultsAndDoNotOverrideSavedPlayback() {
         val items = mapOf(
             "aorta" to (HealthAtlasFunctionStory.HEARTBEAT to HealthAtlasBeatStage.EJECTION.ordinal),

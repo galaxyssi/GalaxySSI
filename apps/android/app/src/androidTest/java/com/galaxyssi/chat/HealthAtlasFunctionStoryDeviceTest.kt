@@ -56,6 +56,39 @@ class HealthAtlasFunctionStoryDeviceTest {
         } finally { clearHealthOverviewFixture(context, fixture) }
     }
 
+    @Test fun aorticPulseCanCrossToCapillaryExchangeAndReturnToTheSameChapter() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-tab-2").performClick()
+                    activity.find<EditText>("atlas-search").setText("aorta")
+                    activity.find<View>("atlas-entry-aorta").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    fun player() = activity.find<HealthAtlasFunctionPlayer>("atlas-function-player")
+                    assertEquals(HealthAtlasFunctionStory.HEARTBEAT, player().story)
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    activity.find<View>("atlas-function-arterial-pulse-art")
+                    repeat(2) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(.4f, player().phase, 0f)
+                    activity.find<View>("atlas-related-lesson-capillaries").performClick()
+                    assertEquals(HealthAtlasFunctionStory.ENDOTHELIAL_EXCHANGE, player().story)
+                    activity.onBackPressed()
+                    assertEquals(HealthAtlasFunctionStory.ARTERIAL_PULSE, player().story)
+                    assertEquals(.4f, player().phase, 0f)
+                }
+                scenario.recreate()
+                waitFor(scenario, "atlas-function-arterial-pulse-art")
+                scenario.onActivity { activity ->
+                    assertEquals(.4f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
     @Test fun everyAnimationIsReachableFromTheBundledCatalogue() {
         val atlas = HealthBodyAtlas.load(context)
         val reached = linkedSetOf<HealthAtlasFunctionStory>()

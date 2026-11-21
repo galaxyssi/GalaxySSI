@@ -1185,6 +1185,24 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    ARTERIAL_PULSE(
+        setOf("arteries", "blood-vessels"),
+        R.string.health_atlas_arterial_title,
+        R.string.health_atlas_arterial_scope,
+        listOf(
+            R.string.health_atlas_arterial_locate to R.string.health_atlas_arterial_locate_caption,
+            R.string.health_atlas_arterial_ejection to R.string.health_atlas_arterial_ejection_caption,
+            R.string.health_atlas_arterial_wave_front to R.string.health_atlas_arterial_wave_front_caption,
+            R.string.health_atlas_arterial_recoil to R.string.health_atlas_arterial_recoil_caption,
+            R.string.health_atlas_arterial_smooth to R.string.health_atlas_arterial_smooth_caption,
+        ),
+        listOf(
+            R.string.health_atlas_arterial_ref_distension to "https://pubmed.ncbi.nlm.nih.gov/27310400/",
+            R.string.health_atlas_arterial_ref_wave to "https://doi.org/10.1097/HJH.0000000000001886",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -1232,6 +1250,7 @@ internal enum class HealthAtlasFunctionStory(
         THYMIC_SELECTION -> R.string.health_atlas_thymus_story_choice
         BRAINSTEM_RHYTHM -> R.string.health_atlas_brainstem_story_choice
         FIBROBLAST_MATRIX -> R.string.health_atlas_fibroblast_story_choice
+        ARTERIAL_PULSE -> R.string.health_atlas_arterial_choice
         else -> title
     }
 
@@ -1280,6 +1299,7 @@ internal enum class HealthAtlasFunctionStory(
         THYMIC_SELECTION -> listOf("cell-t-cell" to T_CELL_RESPONSE)
         BRAINSTEM_RHYTHM -> listOf("diaphragm" to BREATHING)
         FIBROBLAST_MATRIX -> listOf("skin-organ" to EPIDERMAL_BARRIER)
+        ARTERIAL_PULSE -> listOf("aorta" to HEARTBEAT, "capillaries" to ENDOTHELIAL_EXCHANGE, "veins" to VENOUS_RETURN)
         else -> emptyList()
     }
 
@@ -1355,6 +1375,7 @@ internal enum class HealthAtlasFunctionStory(
         THYMIC_SELECTION -> HealthAtlasThymusStoryView(context)
         BRAINSTEM_RHYTHM -> HealthAtlasBrainstemRhythmStoryView(context)
         FIBROBLAST_MATRIX -> HealthAtlasFibroblastStoryView(context)
+        ARTERIAL_PULSE -> HealthAtlasArterialStoryView(context)
         NEUTROPHIL_DEFENSE, EOSINOPHIL_RESPONSE, BASOPHIL_SIGNALING, MONOCYTE_RECRUITMENT,
         DENDRITIC_PRESENTATION, T_CELL_RESPONSE, NK_SURVEILLANCE, PLATELET_FORMATION, MACROPHAGE_CLEARANCE ->
             HealthAtlasCellFunctionArt(context, this, owners.single())
@@ -1392,6 +1413,8 @@ internal enum class HealthAtlasFunctionStory(
                 "alveoli", "tissue-alveolar-epithelium" -> listOf(primary, ALVEOLAR_SURFACTANT)
                 "patella" -> listOf(primary, KNEE_ARTICULATION)
                 "cardio", "heart", "ventricles", "tissue-cardiac-muscle" -> listOf(primary, CARDIAC_EXCITATION)
+                "aorta" -> listOf(primary, ARTERIAL_PULSE)
+                "blood-vessels" -> listOf(primary, ENDOTHELIAL_EXCHANGE, VENOUS_RETURN)
                 "salivary-glands", "oral-cavity" -> listOf(primary, SALIVA_SECRETION)
                 "lungs" -> listOf(primary, PLEURAL_COUPLING)
                 "tendons" -> listOf(primary, TENDON_FORCE_TRANSFER)
