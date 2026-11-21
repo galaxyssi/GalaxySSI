@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_melanin_distribution_title">每个受体细胞内的色素量</string>
+    <string name="health_atlas_melanin_distribution_packet_units">假设的色素总量</string>
+    <string name="health_atlas_melanin_distribution_recipient_cells">示例中的受体细胞数</string>
+    <string name="health_atlas_melanin_distribution_companion">分给各细胞的总量：%1$s PPU</string>
+    <string name="health_atlas_melanin_distribution_formula">每个细胞内的色素量 = 色素包单位总量 ÷ 受体细胞数。总量不变时，细胞数加倍，每个细胞分到的量就减半。</string>
+    <string name="health_atlas_melanin_distribution_scope">在表皮中，黑色素细胞将黑色素装入黑素体，并将色素转移给附近的角质形成细胞。在这个示例中，假设的色素总量由各受体细胞平分。PPU 指虚构的色素包单位；小数表示分到的份额，并不表示实际黑素体的碎片。结果表示每个细胞内部的色素量，而不是在细胞间或细胞表面形成的均匀覆盖层。本模型不预测真实的转移速率、肤色或健康结果。</string>
+</resources>

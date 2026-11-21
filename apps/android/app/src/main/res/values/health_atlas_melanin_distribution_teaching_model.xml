@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_melanin_distribution_title">Pigment amount per recipient cell</string>
+    <string name="health_atlas_melanin_distribution_packet_units">Hypothetical pigment amount</string>
+    <string name="health_atlas_melanin_distribution_recipient_cells">Recipient cell count</string>
+    <string name="health_atlas_melanin_distribution_companion">Total shared among cells: %1$s PPU</string>
+    <string name="health_atlas_melanin_distribution_formula">Amount per cell = total pigment packet units &#247; number of recipient cells. With the same total, twice as many cells get half as much each.</string>
+    <string name="health_atlas_melanin_distribution_scope">In the epidermis, melanocytes package melanin in melanosomes and transfer pigment to nearby keratinocytes. In this illustration, each recipient cell gets an equal share of the hypothetical total. PPU means pigment packet units; fractions are shares, not pieces of actual melanosomes. The result is the amount inside each cell, not a uniform coating between or over cells. The model does not predict real transfer rates, skin color, or health outcomes.</string>
+</resources>
