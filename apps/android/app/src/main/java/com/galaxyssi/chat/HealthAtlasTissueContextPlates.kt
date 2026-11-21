@@ -8,6 +8,16 @@ internal object HealthAtlasTissueContextPlates {
         HealthAtlasPlate(art, id, caption, markers, source, features = features.toList(), splitCallouts = splitCallouts)
 
     val all = listOf(
+        plate("pleura", R.drawable.health_atlas_pleura_section, "https://pubmed.ncbi.nlm.nih.gov/5693173/",
+            R.string.health_atlas_pleura_section_view,
+            feature("visceral-pleura", 219, 105, R.string.health_atlas_pleura_section_visceral,
+                R.string.health_atlas_pleura_section_visceral_detail),
+            feature("pleural-fluid-film", 237, 139, R.string.health_atlas_pleura_section_fluid,
+                R.string.health_atlas_pleura_section_fluid_detail),
+            feature("parietal-pleura", 254, 178, R.string.health_atlas_pleura_section_parietal,
+                R.string.health_atlas_pleura_section_parietal_detail),
+            markers = listOf(HealthAtlasMarker("lungs", 83 / 360f, 153 / 280f)),
+            splitCallouts = true),
         plate("cell-mast-cell", R.drawable.health_atlas_cell_mast,
             "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-6-diseases-associated-with-depressed-or-overactive-immune-responses",
             R.string.health_atlas_cell_morphology,

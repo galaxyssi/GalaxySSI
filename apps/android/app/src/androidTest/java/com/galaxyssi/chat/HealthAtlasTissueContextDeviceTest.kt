@@ -99,9 +99,9 @@ class HealthAtlasTissueContextDeviceTest {
         val chinese = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
         val atlas = HealthBodyAtlas.load(english)
         val plates = HealthAtlasTissueContextPlates.all
-        assertEquals(25, plates.size)
-        assertEquals(53, plates.sumOf { it.features.size })
-        assertEquals(4, plates.sumOf { it.markers.size })
+        assertEquals(26, plates.size)
+        assertEquals(56, plates.sumOf { it.features.size })
+        assertEquals(5, plates.sumOf { it.markers.size })
         for (plate in plates) {
             val owner = requireNotNull(plate.owner)
             assertNotNull(atlas[owner])
@@ -155,6 +155,24 @@ class HealthAtlasTissueContextDeviceTest {
             assertNotNull(it.view("atlas-feature-hair-section-papilla"))
             it.onBackPressed()
             assertNotNull(it.view("atlas-feature-sebaceous-lobules"))
+        }
+    }
+
+    @Test fun pleuraCutawayExplainsTheFluidFilmAndReturnsFromTheLung() = native { scenario ->
+        scenario.onActivity {
+            it.open("pleura")
+            assertNotNull(it.view("atlas-feature-visceral-pleura"))
+            assertNotNull(it.view("atlas-feature-parietal-pleura"))
+            it.view("atlas-feature-pleural-fluid-film").performClick()
+        }
+        awaitVisibleText(scenario.localized(R.string.health_atlas_pleura_section_fluid_detail))
+        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        instrumentation.waitForIdleSync()
+        capture("pleura-cutaway", scenario.localized(R.string.health_atlas_pleura_section_view))
+        scenario.onActivity {
+            it.view("atlas-hotspot-lungs").performClick()
+            it.onBackPressed()
+            assertNotNull(it.view("atlas-feature-pleural-fluid-film"))
         }
     }
 
