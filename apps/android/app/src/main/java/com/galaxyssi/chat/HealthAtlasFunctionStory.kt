@@ -1305,6 +1305,60 @@ internal enum class HealthAtlasFunctionStory(
         ),
         HealthAtlasPodocyteStoryView.DURATION_MS,
         showStructurePreview = true,
+    ),
+    ENDOMETRIUM_RENEWAL(
+        setOf("endometrium", "cell-endometrial-epithelial-cell", "cell-endometrial-stromal-cell"),
+        R.string.health_atlas_endometrium_story_title,
+        R.string.health_atlas_endometrium_story_scope,
+        listOf(
+            R.string.health_atlas_endometrium_story_layers to R.string.health_atlas_endometrium_story_layers_caption,
+            R.string.health_atlas_endometrium_story_growth to R.string.health_atlas_endometrium_story_growth_caption,
+            R.string.health_atlas_endometrium_story_secretion to R.string.health_atlas_endometrium_story_secretion_caption,
+            R.string.health_atlas_endometrium_story_shedding to R.string.health_atlas_endometrium_story_shedding_caption,
+            R.string.health_atlas_endometrium_story_repair to R.string.health_atlas_endometrium_story_repair_caption,
+        ),
+        listOf(
+            R.string.health_atlas_endometrium_story_ref_cycle to "https://pmc.ncbi.nlm.nih.gov/articles/PMC8648563/",
+            R.string.health_atlas_endometrium_story_ref_repair to "https://pubmed.ncbi.nlm.nih.gov/1244749/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    CRANIAL_REFLEX(
+        setOf("cranial-nerves"),
+        R.string.health_atlas_cranial_reflex_story_title,
+        R.string.health_atlas_cranial_reflex_story_scope,
+        listOf(
+            R.string.health_atlas_cranial_reflex_story_light to R.string.health_atlas_cranial_reflex_story_light_caption,
+            R.string.health_atlas_cranial_reflex_story_input to R.string.health_atlas_cranial_reflex_story_input_caption,
+            R.string.health_atlas_cranial_reflex_story_relay to R.string.health_atlas_cranial_reflex_story_relay_caption,
+            R.string.health_atlas_cranial_reflex_story_output to R.string.health_atlas_cranial_reflex_story_output_caption,
+            R.string.health_atlas_cranial_reflex_story_response to R.string.health_atlas_cranial_reflex_story_response_caption,
+        ),
+        listOf(
+            R.string.health_atlas_cranial_reflex_story_ref_circuit to "https://pmc.ncbi.nlm.nih.gov/articles/PMC6957570/",
+            R.string.health_atlas_cranial_reflex_story_ref_responses to "https://pubmed.ncbi.nlm.nih.gov/465430/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    SEBUM_RELEASE(
+        setOf("sebaceous-glands", "cell-sebocyte"),
+        R.string.health_atlas_sebaceous_title,
+        R.string.health_atlas_sebaceous_scope,
+        listOf(
+            R.string.health_atlas_sebaceous_locate to R.string.health_atlas_sebaceous_locate_caption,
+            R.string.health_atlas_sebaceous_renew to R.string.health_atlas_sebaceous_renew_caption,
+            R.string.health_atlas_sebaceous_store to R.string.health_atlas_sebaceous_store_caption,
+            R.string.health_atlas_sebaceous_release to R.string.health_atlas_sebaceous_release_caption,
+            R.string.health_atlas_sebaceous_surface_flow to R.string.health_atlas_sebaceous_surface_flow_caption,
+        ),
+        listOf(
+            R.string.health_atlas_sebaceous_ref_histology to "https://pubmed.ncbi.nlm.nih.gov/38542083/",
+            R.string.health_atlas_sebaceous_ref_maturation to "https://pubmed.ncbi.nlm.nih.gov/8000703/",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -1359,6 +1413,9 @@ internal enum class HealthAtlasFunctionStory(
         MARROW_HEMATOPOIESIS -> R.string.health_atlas_marrow_story_choice
         CORONARY_PERFUSION -> R.string.health_atlas_coronary_story_choice
         PODOCYTE_BARRIER -> R.string.health_atlas_podocyte_story_choice
+        ENDOMETRIUM_RENEWAL -> R.string.health_atlas_endometrium_story_choice
+        CRANIAL_REFLEX -> R.string.health_atlas_cranial_reflex_story_choice
+        SEBUM_RELEASE -> R.string.health_atlas_sebaceous_choice
         else -> title
     }
 
@@ -1369,7 +1426,10 @@ internal enum class HealthAtlasFunctionStory(
         SYNAPTIC_SIGNAL -> listOf("cell-oligodendrocyte" to MYELIN_SIGNAL)
         MYELIN_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
         SWEAT_COOLING -> listOf("epidermis" to EPIDERMAL_BARRIER)
-        EPIDERMAL_BARRIER -> listOf("sweat-glands" to SWEAT_COOLING)
+        EPIDERMAL_BARRIER -> listOf("sweat-glands" to SWEAT_COOLING, "sebaceous-glands" to SEBUM_RELEASE)
+        HAIR_FOLLICLE_CYCLE -> listOf("sebaceous-glands" to SEBUM_RELEASE)
+        OVUM_TRANSPORT -> listOf("endometrium" to ENDOMETRIUM_RENEWAL)
+        VISION -> listOf("cranial-nerves" to CRANIAL_REFLEX)
         OLFACTION -> listOf("taste-buds" to TASTE_SIGNAL)
         TASTE_SIGNAL -> listOf("olfactory-mucosa" to OLFACTION)
         TOUCH_SIGNAL -> listOf("epidermis" to EPIDERMAL_BARRIER)
@@ -1411,6 +1471,9 @@ internal enum class HealthAtlasFunctionStory(
         HEARTBEAT -> listOf("coronary-vessels" to CORONARY_PERFUSION)
         CORONARY_PERFUSION -> listOf("heart" to HEARTBEAT)
         PODOCYTE_BARRIER -> listOf("glomerulus" to NEPHRON)
+        ENDOMETRIUM_RENEWAL -> listOf("ovaries" to OVUM_TRANSPORT)
+        CRANIAL_REFLEX -> listOf("eye" to VISION)
+        SEBUM_RELEASE -> listOf("hair-follicles" to HAIR_FOLLICLE_CYCLE, "epidermis" to EPIDERMAL_BARRIER)
         CHONDROCYTE_MATRIX -> listOf("tissue-hyaline-cartilage" to CARTILAGE_LOAD)
         ADRENAL_MEDULLA_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
         GASTRIC_ACID_SECRETION -> listOf("stomach" to DIGESTION)
@@ -1444,6 +1507,12 @@ internal enum class HealthAtlasFunctionStory(
             "cell-myoepithelial-cell" -> 3
             else -> 0
         }
+        ENDOMETRIUM_RENEWAL -> when (id) {
+            "cell-endometrial-epithelial-cell" -> 4
+            "cell-endometrial-stromal-cell" -> 1
+            else -> 0
+        }
+        SEBUM_RELEASE -> if (id == "cell-sebocyte") 2 else 0
         else -> 0
     })
 
@@ -1498,6 +1567,9 @@ internal enum class HealthAtlasFunctionStory(
         MARROW_HEMATOPOIESIS -> HealthAtlasMarrowStoryView(context)
         CORONARY_PERFUSION -> HealthAtlasCoronaryStoryView(context)
         PODOCYTE_BARRIER -> HealthAtlasPodocyteStoryView(context)
+        ENDOMETRIUM_RENEWAL -> HealthAtlasEndometriumStoryView(context)
+        CRANIAL_REFLEX -> HealthAtlasCranialReflexStoryView(context)
+        SEBUM_RELEASE -> HealthAtlasSebaceousStoryView(context)
         NEUTROPHIL_DEFENSE, EOSINOPHIL_RESPONSE, BASOPHIL_SIGNALING, MONOCYTE_RECRUITMENT,
         DENDRITIC_PRESENTATION, T_CELL_RESPONSE, NK_SURVEILLANCE, PLATELET_FORMATION, MACROPHAGE_CLEARANCE ->
             HealthAtlasCellFunctionArt(context, this, owners.single())

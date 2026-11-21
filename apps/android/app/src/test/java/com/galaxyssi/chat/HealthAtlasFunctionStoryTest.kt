@@ -70,6 +70,10 @@ class HealthAtlasFunctionStoryTest {
         assertEquals(HealthAtlasFunctionStory.HEARTBEAT, HealthAtlasFunctionStory.forId("heart"))
         assertEquals(HealthAtlasFunctionStory.PODOCYTE_BARRIER, HealthAtlasFunctionStory.forId("cell-podocyte"))
         assertEquals(HealthAtlasFunctionStory.NEPHRON, HealthAtlasFunctionStory.forId("glomerulus"))
+        assertEquals(HealthAtlasFunctionStory.VISION, HealthAtlasFunctionStory.forId("eye"))
+        assertEquals(HealthAtlasFunctionStory.CRANIAL_REFLEX, HealthAtlasFunctionStory.forId("cranial-nerves"))
+        assertEquals(HealthAtlasFunctionStory.ENDOMETRIUM_RENEWAL, HealthAtlasFunctionStory.forId("endometrium"))
+        assertNull(HealthAtlasFunctionStory.forId("cervix"))
         assertEquals(HealthAtlasFunctionStory.ADRENAL_MEDULLA_SIGNAL, HealthAtlasFunctionStory.forId("adrenal-glands"))
         assertEquals(HealthAtlasFunctionStory.ADRENAL_MEDULLA_SIGNAL, HealthAtlasFunctionStory.forId("cell-chromaffin-cell"))
         assertNull(HealthAtlasFunctionStory.forId("cell-adrenocortical-cell"))
@@ -84,6 +88,9 @@ class HealthAtlasFunctionStoryTest {
 
     @Test fun focusedEntryChaptersAreOnlyDefaultsAndDoNotOverrideSavedPlayback() {
         val items = mapOf(
+            "cell-endometrial-epithelial-cell" to (HealthAtlasFunctionStory.ENDOMETRIUM_RENEWAL to 4),
+            "cell-endometrial-stromal-cell" to (HealthAtlasFunctionStory.ENDOMETRIUM_RENEWAL to 1),
+            "cell-sebocyte" to (HealthAtlasFunctionStory.SEBUM_RELEASE to 2),
             "aorta" to (HealthAtlasFunctionStory.HEARTBEAT to HealthAtlasBeatStage.EJECTION.ordinal),
             "pulmonary-trunk" to (HealthAtlasFunctionStory.HEARTBEAT to HealthAtlasBeatStage.EJECTION.ordinal),
             "cell-type-i-pneumocyte" to (HealthAtlasFunctionStory.BREATHING to HealthAtlasBreathingStage.DIFFUSE.ordinal),
@@ -504,7 +511,7 @@ class HealthAtlasFunctionStoryTest {
         for (id in listOf("skin", "sweat-glands", "cell-sweat-gland-secretory-cell")) {
             assertEquals(sweat, HealthAtlasFunctionStory.forId(id))
         }
-        assertNull(HealthAtlasFunctionStory.forId("sebaceous-glands"))
+        assertEquals(HealthAtlasFunctionStory.SEBUM_RELEASE, HealthAtlasFunctionStory.forId("sebaceous-glands"))
         val motion = HealthAtlasHomeostasisMotion
         assertEquals(1f, motion.liquidRemaining(0f, false), 0f)
         assertEquals(1f, motion.liquidRemaining(0f, true), 0f)

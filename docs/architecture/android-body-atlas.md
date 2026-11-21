@@ -529,6 +529,12 @@ during contraction and relaxation and drainage through the coronary sinus.
 The podocyte lesson shows the three layers of the filtration barrier rather
 than attributing whole-nephron transport to one cell.
 
+The endometrial lesson separates epithelial repair from stromal growth and
+uses different starting chapters for the two cells. The bilateral pupil
+reflex is distinct from vision and the nerve-transit model. The sebaceous
+lesson shows normal hair-associated secretion without replacing hair growth
+or sweat cooling, and the sebocyte opens at lipid accumulation.
+
 The pinned Agent action follows the current surface. Public catalogue, mechanism
 and research prompts use `HealthAtlasAgentContext`: selected anatomy, current
 teaching stage, cardiac or other quantitative inputs, assumptions and sources.
