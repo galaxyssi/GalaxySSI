@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_rectal_reservoir_title">Volume released through the anal canal</string>
+    <string name="health_atlas_rectal_reservoir_initial_volume">Initial rectal volume</string>
+    <string name="health_atlas_rectal_reservoir_release_share">Release share</string>
+    <string name="health_atlas_rectal_reservoir_companion">Volume remaining in the rectum: %1$s mL</string>
+    <string name="health_atlas_rectal_reservoir_formula">Released volume (mL) = initial rectal volume (mL) × (release share ÷ 100). Remaining rectal volume (mL) = initial rectal volume (mL) − released volume (mL).</string>
+    <string name="health_atlas_rectal_reservoir_scope">The rectum temporarily stores stool. The anal canal is the passage from the rectum to the anus, not a storage compartment. The release share is the percentage of the starting volume that passes through that outlet in the example. These made-up volumes and percentages are not normal ranges. The example does not model water absorption, pressure, or sphincter function, and is not medical advice.</string>
+</resources>

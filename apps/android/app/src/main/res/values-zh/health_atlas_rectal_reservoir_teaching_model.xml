@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_rectal_reservoir_title">经肛管排出的体积</string>
+    <string name="health_atlas_rectal_reservoir_initial_volume">直肠内的初始体积</string>
+    <string name="health_atlas_rectal_reservoir_release_share">排出比例</string>
+    <string name="health_atlas_rectal_reservoir_companion">直肠内剩余体积：%1$s mL</string>
+    <string name="health_atlas_rectal_reservoir_formula">排出体积（mL）= 直肠内的初始体积（mL）×（排出比例 ÷ 100）。直肠内剩余体积（mL）= 直肠内的初始体积（mL）− 排出体积（mL）。</string>
+    <string name="health_atlas_rectal_reservoir_scope">直肠暂时储存粪便。肛管是连接直肠与肛门的排出通道，不是储存部位。在此示例中，排出比例指经肛管排出的体积占初始体积的百分比。这些体积与百分比是虚构的，不代表正常范围。本示例不模拟水分吸收、压力或括约肌功能，也不提供医疗建议。</string>
+</resources>
