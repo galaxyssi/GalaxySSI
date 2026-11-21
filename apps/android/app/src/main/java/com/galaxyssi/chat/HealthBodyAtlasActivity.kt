@@ -347,7 +347,21 @@ class HealthBodyAtlasActivity : Activity() {
             saveFunctionStory()
             functionPlayer?.pause()
             panel.removeAllViews()
-            if (choices.size > 1) {
+            if (choices.size > 3) {
+                val menu = ui.row(getString(R.string.health_atlas_sense_choose), getString(story.choiceTitle)) {
+                    dialog = AlertDialog.Builder(this).setTitle(R.string.health_atlas_sense_choose)
+                        .setSingleChoiceItems(choices.map { getString(it.choiceTitle) }.toTypedArray(), choices.indexOf(story)) { picker, index ->
+                            picker.dismiss()
+                            val next = choices[index]
+                            if (next != story) {
+                                functionState.choose(item.id, next)
+                                show(next)
+                                panel.findViewWithTag<View>("atlas-function-lesson-menu")?.requestFocus()
+                            }
+                        }.setNegativeButton(android.R.string.cancel, null).show()
+                }.apply { tag = "atlas-function-lesson-menu" }
+                ui.add(panel, menu)
+            } else if (choices.size > 1) {
                 ui.add(panel, HealthAtlasUi.tabs(this, choices.map { it.choiceTitle }, choices.indexOf(story),
                     "atlas-function-lesson") { index ->
                     val next = choices[index]

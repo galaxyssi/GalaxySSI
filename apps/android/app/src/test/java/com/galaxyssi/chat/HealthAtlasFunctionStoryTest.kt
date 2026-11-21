@@ -62,7 +62,7 @@ class HealthAtlasFunctionStoryTest {
         for (id in listOf("ear", "external-ear", "middle-ear", "inner-ear", "cochlea", "cell-inner-ear-hair-cell")) {
             assertEquals(HealthAtlasFunctionStory.HEARING, HealthAtlasFunctionStory.forId(id))
         }
-        assertNull(HealthAtlasFunctionStory.forId("vestibular-apparatus"))
+        assertEquals(HealthAtlasFunctionStory.VESTIBULAR_BALANCE, HealthAtlasFunctionStory.forId("vestibular-apparatus"))
         assertNull(HealthAtlasFunctionStory.forId("cell-hair-matrix-cell"))
         assertEquals(0f, HealthAtlasSoundStage.packet(.90f, .10f), 0f)
         assertEquals(0f, HealthAtlasSoundStage.packet(.10f, .90f), 0f)
@@ -279,9 +279,10 @@ class HealthAtlasFunctionStoryTest {
         val barrier = HealthAtlasFunctionStory.EPIDERMAL_BARRIER
         val sperm = HealthAtlasFunctionStory.SPERM_TRANSPORT
         val ovum = HealthAtlasFunctionStory.OVUM_TRANSPORT
-        assertEquals(listOf(HealthAtlasFunctionStory.SWEAT_COOLING, barrier), HealthAtlasFunctionStory.choicesForId("skin"))
+        assertEquals(listOf(HealthAtlasFunctionStory.SWEAT_COOLING, barrier, HealthAtlasFunctionStory.TOUCH_SIGNAL),
+            HealthAtlasFunctionStory.choicesForId("skin"))
         for (id in listOf("skin-organ", "epidermis", "tissue-epidermal", "cell-keratinocyte")) {
-            assertEquals(listOf(barrier), HealthAtlasFunctionStory.choicesForId(id))
+            assertEquals(barrier, HealthAtlasFunctionStory.choicesForId(id).first())
         }
         for (id in listOf("male", "testes", "epididymis", "vas-deferens", "cell-spermatozoon",
             "cell-sertoli-cell", "cell-spermatogonium", "cell-spermatocyte")) {
@@ -308,6 +309,39 @@ class HealthAtlasFunctionStoryTest {
         assertTrue(flow.pickup(.65f) > flow.pickup(.35f))
         assertTrue(flow.ductRadius(180f, .5f) < flow.ductRadius(65f, .5f))
         assertTrue(flow.ductRadius(180f, .5f) < flow.ductRadius(180f, .1f))
+    }
+
+    @Test fun sensoryAndGutOverviewsOfferTheRightDistinctLessons() {
+        val smell = HealthAtlasFunctionStory.OLFACTION
+        val taste = HealthAtlasFunctionStory.TASTE_SIGNAL
+        val touch = HealthAtlasFunctionStory.TOUCH_SIGNAL
+        val balance = HealthAtlasFunctionStory.VESTIBULAR_BALANCE
+        val hearing = HealthAtlasFunctionStory.HEARING
+        val meal = HealthAtlasFunctionStory.DIGESTION
+        assertEquals(listOf(HealthAtlasFunctionStory.VISION, hearing, balance, smell, taste, touch),
+            HealthAtlasFunctionStory.choicesForId("sensory"))
+        assertEquals(listOf(meal, HealthAtlasFunctionStory.COLON), HealthAtlasFunctionStory.choicesForId("gut"))
+        assertEquals(listOf(hearing, balance), HealthAtlasFunctionStory.choicesForId("ear"))
+        assertEquals(listOf(hearing, balance), HealthAtlasFunctionStory.choicesForId("cell-inner-ear-hair-cell"))
+        assertEquals(listOf(meal, taste), HealthAtlasFunctionStory.choicesForId("tongue"))
+        assertEquals(listOf(smell), HealthAtlasFunctionStory.choicesForId("cell-olfactory-receptor-neuron"))
+        assertEquals(listOf(taste), HealthAtlasFunctionStory.choicesForId("cell-taste-receptor-cell"))
+        assertEquals(listOf(touch), HealthAtlasFunctionStory.choicesForId("cell-merkel-cell"))
+        assertEquals(listOf(balance), HealthAtlasFunctionStory.choicesForId("vestibular-apparatus"))
+        assertEquals(listOf(hearing), HealthAtlasFunctionStory.choicesForId("cochlea"))
+        val senses = HealthAtlasChemicalSenseMotion
+        assertEquals(0f, senses.transfer(.09f, 0, .12f), 0f)
+        assertTrue(senses.transfer(.55f, 0, .12f) > senses.transfer(.55f, 2, .12f))
+        assertNotEquals(senses.odorChannels(false), senses.odorChannels(true))
+        val motion = HealthAtlasMotionSenseMotion
+        assertEquals(0f, motion.touchLoad(0, .28f), 0f)
+        assertEquals(motion.touchLoad(3, .2f), motion.touchLoad(3, .8f), 0f)
+        assertEquals(0f, motion.touchLoad(4, 1f), 0f)
+        for (i in 1..9) {
+            val t = i / 10f
+            assertTrue(motion.relativeFluid(t) < 0f)
+            assertEquals(0f, motion.headHeading(t) + motion.gazeCounterRotation(t), 0f)
+        }
     }
 
     @Test fun allChaptersScrubToTheirOwnBoundariesAndRejectInvalidState() = HealthAtlasFunctionStory.entries.forEach { story ->

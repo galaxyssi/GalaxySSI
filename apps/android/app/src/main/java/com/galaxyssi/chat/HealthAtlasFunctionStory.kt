@@ -54,7 +54,7 @@ internal enum class HealthAtlasFunctionStory(
         18_000L,
     ),
     DIGESTION(
-        setOf("digestive", "oral-cavity", "tongue", "pharynx", "esophagus", "stomach", "small-intestine",
+        setOf("gut", "digestive", "oral-cavity", "tongue", "pharynx", "esophagus", "stomach", "small-intestine",
             "duodenum", "jejunum", "ileum", "salivary-glands", "pancreas", "pancreatic-duct",
             "gallbladder", "biliary-tract", "cell-enterocyte"),
         R.string.health_atlas_meal_title,
@@ -104,7 +104,7 @@ internal enum class HealthAtlasFunctionStory(
         18_000L,
     ),
     VISION(
-        setOf("eye", "cornea", "lens", "retina", "cell-retinal-bipolar-cell", "cell-retinal-ganglion-cell"),
+        setOf("sensory", "eye", "cornea", "lens", "retina", "cell-retinal-bipolar-cell", "cell-retinal-ganglion-cell"),
         R.string.health_atlas_vision_story_title,
         R.string.health_atlas_vision_story_scope,
         HealthAtlasVisionStage.pathway.map { it.title to it.caption },
@@ -365,6 +365,78 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    OLFACTION(
+        setOf("nose", "nasal-cavity", "olfactory-mucosa", "cell-olfactory-receptor-neuron"),
+        R.string.health_atlas_sense_smell_title,
+        R.string.health_atlas_sense_smell_scope,
+        listOf(
+            R.string.health_atlas_sense_smell_air to R.string.health_atlas_sense_smell_air_caption,
+            R.string.health_atlas_sense_smell_mucus to R.string.health_atlas_sense_smell_mucus_caption,
+            R.string.health_atlas_sense_smell_receptor to R.string.health_atlas_sense_smell_receptor_caption,
+            R.string.health_atlas_sense_smell_bulb to R.string.health_atlas_sense_smell_bulb_caption,
+            R.string.health_atlas_sense_smell_pattern to R.string.health_atlas_sense_smell_pattern_caption,
+        ),
+        listOf(
+            R.string.health_atlas_sense_smell_ref_tissue to "https://pubmed.ncbi.nlm.nih.gov/21792956/",
+            R.string.health_atlas_sense_smell_ref_bulb to "https://www.nature.com/articles/s41467-020-14520-9",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    TASTE_SIGNAL(
+        setOf("taste-buds", "cell-taste-receptor-cell"),
+        R.string.health_atlas_sense_taste_title,
+        R.string.health_atlas_sense_taste_scope,
+        listOf(
+            R.string.health_atlas_sense_taste_dissolve to R.string.health_atlas_sense_taste_dissolve_caption,
+            R.string.health_atlas_sense_taste_pore to R.string.health_atlas_sense_taste_pore_caption,
+            R.string.health_atlas_sense_taste_receptor to R.string.health_atlas_sense_taste_receptor_caption,
+            R.string.health_atlas_sense_taste_atp to R.string.health_atlas_sense_taste_atp_caption,
+            R.string.health_atlas_sense_taste_relay to R.string.health_atlas_sense_taste_relay_caption,
+        ),
+        listOf(
+            R.string.health_atlas_sense_taste_ref_atp to "https://pmc.ncbi.nlm.nih.gov/articles/PMC3600154/",
+            R.string.health_atlas_sense_taste_ref_channel to "https://pmc.ncbi.nlm.nih.gov/articles/PMC5934295/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    TOUCH_SIGNAL(
+        setOf("cell-merkel-cell"),
+        R.string.health_atlas_sense_touch_title,
+        R.string.health_atlas_sense_touch_scope,
+        listOf(
+            R.string.health_atlas_sense_touch_contact to R.string.health_atlas_sense_touch_contact_caption,
+            R.string.health_atlas_sense_touch_deform to R.string.health_atlas_sense_touch_deform_caption,
+            R.string.health_atlas_sense_touch_channel to R.string.health_atlas_sense_touch_channel_caption,
+            R.string.health_atlas_sense_touch_steady to R.string.health_atlas_sense_touch_steady_caption,
+            R.string.health_atlas_sense_touch_release to R.string.health_atlas_sense_touch_release_caption,
+        ),
+        listOf(
+            R.string.health_atlas_sense_touch_ref_human to "https://pubmed.ncbi.nlm.nih.gov/27653382/",
+            R.string.health_atlas_sense_touch_ref_merkel to "https://www.nature.com/articles/nature13250",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    VESTIBULAR_BALANCE(
+        setOf("vestibular-apparatus"),
+        R.string.health_atlas_sense_balance_title,
+        R.string.health_atlas_sense_balance_scope,
+        listOf(
+            R.string.health_atlas_sense_balance_map to R.string.health_atlas_sense_balance_map_caption,
+            R.string.health_atlas_sense_balance_turn to R.string.health_atlas_sense_balance_turn_caption,
+            R.string.health_atlas_sense_balance_cupula to R.string.health_atlas_sense_balance_cupula_caption,
+            R.string.health_atlas_sense_balance_tilt to R.string.health_atlas_sense_balance_tilt_caption,
+            R.string.health_atlas_sense_balance_gaze to R.string.health_atlas_sense_balance_gaze_caption,
+        ),
+        listOf(
+            R.string.health_atlas_sense_balance_ref_canal to "https://pubmed.ncbi.nlm.nih.gov/11710461/",
+            R.string.health_atlas_sense_balance_ref_otolith to "https://pubmed.ncbi.nlm.nih.gov/12867670/",
+        ),
+        20_000L,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -380,6 +452,13 @@ internal enum class HealthAtlasFunctionStory(
         THYROID_FEEDBACK -> R.string.health_atlas_signal_lesson_thyroid
         SWEAT_COOLING -> R.string.health_atlas_barrier_choice_sweat
         EPIDERMAL_BARRIER -> R.string.health_atlas_barrier_choice
+        VISION -> R.string.health_atlas_sense_choice_vision
+        HEARING -> R.string.health_atlas_sense_choice_hearing
+        VESTIBULAR_BALANCE -> R.string.health_atlas_sense_choice_balance
+        OLFACTION -> R.string.health_atlas_sense_choice_smell
+        TASTE_SIGNAL -> R.string.health_atlas_sense_choice_taste
+        TOUCH_SIGNAL -> R.string.health_atlas_sense_choice_touch
+        COLON -> R.string.health_atlas_sense_choice_colon
         else -> title
     }
 
@@ -391,6 +470,10 @@ internal enum class HealthAtlasFunctionStory(
         MYELIN_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
         SWEAT_COOLING -> listOf("epidermis" to EPIDERMAL_BARRIER)
         EPIDERMAL_BARRIER -> listOf("sweat-glands" to SWEAT_COOLING)
+        OLFACTION -> listOf("taste-buds" to TASTE_SIGNAL)
+        TASTE_SIGNAL -> listOf("olfactory-mucosa" to OLFACTION)
+        TOUCH_SIGNAL -> listOf("epidermis" to EPIDERMAL_BARRIER)
+        VESTIBULAR_BALANCE -> listOf("cochlea" to HEARING)
         else -> emptyList()
     }
 
@@ -412,6 +495,8 @@ internal enum class HealthAtlasFunctionStory(
         SYNAPTIC_SIGNAL, MYELIN_SIGNAL, THYROID_FEEDBACK -> HealthAtlasSignalStoryView(context, this)
         EPIDERMAL_BARRIER -> HealthAtlasBarrierStoryView(context)
         SPERM_TRANSPORT, OVUM_TRANSPORT -> HealthAtlasGameteStoryView(context, this)
+        OLFACTION, TASTE_SIGNAL -> HealthAtlasChemicalSenseStoryView(context, this)
+        TOUCH_SIGNAL, VESTIBULAR_BALANCE -> HealthAtlasMotionSenseStoryView(context, this)
     }
 
     companion object {
@@ -426,7 +511,12 @@ internal enum class HealthAtlasFunctionStory(
                 "nervous", "brain", "spinal-cord", "cell-neuron", "tissue-central-nervous" -> listOf(primary, MYELIN_SIGNAL)
                 "tissue-skeletal-muscle" -> listOf(primary, MUSCLE_MOTION)
                 "immune" -> listOf(primary, LYMPH_RETURN)
-                "skin" -> listOf(primary, EPIDERMAL_BARRIER)
+                "skin" -> listOf(primary, EPIDERMAL_BARRIER, TOUCH_SIGNAL)
+                "skin-organ", "epidermis" -> listOf(primary, TOUCH_SIGNAL)
+                "sensory" -> listOf(primary, HEARING, VESTIBULAR_BALANCE, OLFACTION, TASTE_SIGNAL, TOUCH_SIGNAL)
+                "ear", "inner-ear", "cell-inner-ear-hair-cell" -> listOf(primary, VESTIBULAR_BALANCE)
+                "tongue" -> listOf(primary, TASTE_SIGNAL)
+                "gut" -> listOf(primary, COLON)
                 else -> listOf(primary)
             }
         }

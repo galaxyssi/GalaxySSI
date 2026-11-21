@@ -269,7 +269,10 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<View>("atlas-tab-0").performClick()
                     activity.find<View>("atlas-hotspot-vestibular-apparatus").performClick()
                     activity.find<View>("atlas-tab-1").performClick()
-                    assertNull(activity.window.decorView.findViewWithTag<View>("atlas-function-player"))
+                    activity.find<View>("atlas-function-vestibular-balance-art")
+                    repeat(3) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_sense_balance_tilt_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
                     activity.onBackPressed()
                     activity.find<View>("atlas-tab-1").performClick()
                     assertEquals(.8f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
@@ -552,6 +555,69 @@ class HealthAtlasFunctionStoryDeviceTest {
         } finally { clearHealthOverviewFixture(context, fixture) }
     }
 
+    @Test fun sensoryPickerAndGutTabsRestoreIndependentLessonPositions() {
+        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
+        val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
+        try {
+            ActivityScenario.launch<HealthBodyAtlasActivity>(intent).use { scenario ->
+                waitFor(scenario, "atlas-whole-art")
+                lateinit var smellTitle: String
+                lateinit var tasteTitle: String
+                scenario.onActivity { activity ->
+                    smellTitle = activity.getString(R.string.health_atlas_sense_choice_smell)
+                    tasteTitle = activity.getString(R.string.health_atlas_sense_choice_taste)
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<EditText>("atlas-search").setText("sensory")
+                    activity.find<View>("atlas-entry-sensory").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-lesson-menu").performClick()
+                }
+                pickFunction(smellTitle)
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-function-olfaction-art")
+                    repeat(3) { activity.find<View>("atlas-function-next").performClick() }
+                    activity.find<View>("atlas-function-lesson-menu").performClick()
+                }
+                pickFunction(tasteTitle)
+                scenario.onActivity { activity ->
+                    activity.find<View>("atlas-function-taste-signal-art")
+                    assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.find<View>("atlas-function-lesson-menu").performClick()
+                }
+                pickFunction(smellTitle)
+                scenario.onActivity { activity ->
+                    assertEquals(.6f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    activity.onBackPressed()
+                    activity.find<EditText>("atlas-search").setText("gut")
+                    activity.find<View>("atlas-entry-gut").performClick()
+                    activity.find<View>("atlas-tab-1").performClick()
+                    activity.find<View>("atlas-function-next").performClick()
+                    activity.find<View>("atlas-function-lesson-1").performClick()
+                    repeat(2) { activity.find<View>("atlas-function-next").performClick() }
+                    assertEquals(activity.getString(R.string.health_atlas_colon_story_water_caption),
+                        activity.find<TextView>("atlas-function-caption").text)
+                    activity.find<View>("atlas-function-lesson-0").performClick()
+                    assertEquals(.2f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                }
+            }
+        } finally { clearHealthOverviewFixture(context, fixture) }
+    }
+
+    private fun pickFunction(title: String) {
+        val deadline = SystemClock.uptimeMillis() + 4_000
+        do {
+            instrumentation.waitForIdleSync()
+            val options = instrumentation.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText(title).orEmpty()
+            if (options.any {
+                    it.text?.toString() == title &&
+                        it.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
+                }) return
+            SystemClock.sleep(100)
+        } while (SystemClock.uptimeMillis() < deadline)
+        fail("Could not open the function picker option: $title")
+    }
+
     @Test fun legacyPlayheadIsRestoredOnlyIntoTheDefaultLesson() {
         val old = android.os.Bundle().apply { putFloat("pancreas", .44f) }
         val first = HealthAtlasFunctionState().apply { restore(null, old) }
@@ -606,6 +672,11 @@ class HealthAtlasFunctionStoryDeviceTest {
             functionPhase = .46f)
         assertTrue(ovum.contains(context.getString(R.string.health_atlas_ovum_flow_pickup_caption)))
         assertFalse(ovum.contains(context.getString(R.string.health_atlas_sperm_flow_mature_caption)))
+        val sensory = requireNotNull(atlas["sensory"])
+        val flavor = HealthAtlasAgentContext.prompt(context, atlas, sensory, functionPhase = .66f,
+            functionStory = HealthAtlasFunctionStory.TASTE_SIGNAL)
+        assertTrue(flavor.contains(context.getString(R.string.health_atlas_sense_taste_atp_caption)))
+        assertFalse(flavor.contains(context.getString(R.string.health_atlas_sense_smell_bulb_caption)))
         assertFalse(HealthAtlasAgentContext.prompt(context, atlas, beta, functionPhase = .91f,
             functionStory = HealthAtlasFunctionStory.GLUCOSE).contains(glucoseSource))
         assertFalse(HealthAtlasAgentContext.prompt(context, atlas, adipocyte, topic = HealthAtlasResearchTopic.DRUGS,

@@ -1341,3 +1341,20 @@ and muscular transport, and arrival at the ampulla. It does not equate
 ovulation with fertilization or implantation. The existing germline
 chromosome-count diagrams remain available independently of the
 animations; neither animation predicts fertility or timing for a person.
+
+## Sensory And Alimentary Overview Lessons
+
+The sensory overview opens a compact named picker for visual, auditory,
+vestibular, olfactory, taste, and touch lessons. The entry keeps a
+separate playhead for each lesson. The alimentary overview links the
+meal and colon chapters without conflating them with the lesson on
+digestive glands.
+
+The nasal cutaway distinguishes inhaled molecules from signals passing
+through the cribriform plate. The taste example models sweet-responsive
+type II cells, not a map of the tongue or a single mechanism for all
+tastes. The touch example contrasts onset and sustained firing in a
+Merkel-cell and sensory-nerve complex. The vestibular lesson separates
+canal fluid lag, cupula displacement, otolith movement, and compensatory
+eye rotation. These are educational paths, not personal sensitivity
+measurements or clinical tests.
