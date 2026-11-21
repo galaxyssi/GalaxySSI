@@ -12,6 +12,8 @@ struct GalaxySSIHealthMotionView: View {
   @State private var failed = false
   @State private var saveUnavailable = false
   private var state: GalaxySSIHealthMotion.State? { motion.matches(records) ? motion.state : nil }
+  private var stepStatus: GalaxySSIHealthMotionController.Status { motion.matches(records) ? motion.stepStatus : .failed }
+  private var cyclingStatus: GalaxySSIHealthMotionController.Status { motion.matches(records) ? motion.cyclingStatus : .failed }
   var body: some View {
     Form {
       if scene == .active {
@@ -26,7 +28,7 @@ struct GalaxySSIHealthMotionView: View {
           Toggle(t("phone_steps", "Phone step counter"), isOn: Binding(
             get: { state?.stepsEnabled != nil }, set: { motion.setEnabled(.steps, enabled: $0, for: records) }))
             .disabled(state == nil || (state?.stepsEnabled == nil && (motion.stepStatus == .unsupported || motion.stepStatus == .restricted)) || motion.stepStatus == .requesting || motion.cyclingStatus == .requesting)
-          Text(Self.status(motion.stepStatus, language: language)).foregroundColor(.secondary)
+          Text(Self.status(stepStatus, language: language)).foregroundColor(.secondary)
           if let count = state?.steps?.today(Date(), calendar: .autoupdatingCurrent) {
             Text(count.formatted() + " " + t("steps_today", "phone steps today"))
           }
@@ -35,7 +37,7 @@ struct GalaxySSIHealthMotionView: View {
           Toggle(t("cycling", "Automatic cycling detection"), isOn: Binding(
             get: { state?.cyclingEnabled != nil }, set: { motion.setEnabled(.cycling, enabled: $0, for: records) }))
             .disabled(state == nil || (state?.cyclingEnabled == nil && (motion.cyclingStatus == .unsupported || motion.cyclingStatus == .restricted)) || motion.stepStatus == .requesting || motion.cyclingStatus == .requesting)
-          Text(Self.status(motion.cyclingStatus, language: language)).foregroundColor(.secondary)
+          Text(Self.status(cyclingStatus, language: language)).foregroundColor(.secondary)
           Text(t("privacy", "Completed rides only. No location or route data.")).font(.caption).foregroundColor(.secondary)
         }
         if motion.stepStatus == .denied || motion.cyclingStatus == .denied {
@@ -65,6 +67,7 @@ struct GalaxySSIHealthMotionView: View {
     switch status {
     case .off: fallback = "Off"
     case .active: fallback = "Automatic collection on"
+    case .waiting: fallback = "Waiting for movement data"
     case .requesting: fallback = "Waiting for Motion & Fitness authorization"
     case .denied: fallback = "Motion & Fitness access denied"
     case .restricted: fallback = "Motion & Fitness access restricted"

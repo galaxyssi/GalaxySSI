@@ -7436,6 +7436,7 @@
 "galaxyssi.health.motion.minutes" = "%lld 分钟";
 "galaxyssi.health.motion.status.off" = "已关闭";
 "galaxyssi.health.motion.status.active" = "自动采集已开启";
+"galaxyssi.health.motion.status.waiting" = "等待运动数据";
 "galaxyssi.health.motion.status.requesting" = "等待运动与健身授权";
 "galaxyssi.health.motion.status.denied" = "运动与健身访问被拒绝";
 "galaxyssi.health.motion.status.restricted" = "运动与健身访问受限";

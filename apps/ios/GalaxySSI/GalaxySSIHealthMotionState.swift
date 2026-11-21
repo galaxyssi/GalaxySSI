@@ -31,7 +31,7 @@ enum GalaxySSIHealthMotion {
   }
   struct Cycling: Codable, Equatable {
     struct Day: Codable, Equatable { let start: Date; let zone: String; var seconds: TimeInterval }
-    enum Kind { case cycling, inactive, uncertain }
+    enum Kind: Equatable { case cycling, inactive, uncertain }
     struct Event { let at: Date; let kind: Kind }
     var epoch = UUID()
     var cursor: Date?

@@ -5,7 +5,7 @@ import UIKit
 @MainActor
 final class GalaxySSIHealthMotionController: ObservableObject {
   static let shared = GalaxySSIHealthMotionController()
-  enum Status: String { case off, active, requesting, denied, restricted, unsupported, failed }
+  enum Status: String { case off, active, waiting, requesting, denied, restricted, unsupported, failed }
   enum Feature: String, CaseIterable { case steps, cycling }
   @Published private(set) var state: GalaxySSIHealthMotion.State?
   @Published private(set) var stepStatus = Status.off
@@ -181,7 +181,7 @@ final class GalaxySSIHealthMotionController: ObservableObject {
           return
         }
         guard error == nil, let data, data.endDate >= from, data.startDate <= data.endDate else {
-          self.stepStatus = CMPedometer.authorizationStatus() == .denied ? .denied : .failed; return
+          self.stepStatus = Self.emptyHistory(error) ? .waiting : .failed; return
         }
         do {
           self.state = try records.updateMotion {
@@ -220,7 +220,9 @@ final class GalaxySSIHealthMotionController: ObservableObject {
               $0.cycling.cursor = now
             }
           }
-          self.cyclingStatus = error == nil ? .active : .failed
+          if (data?.count ?? 0) > 10_000 { self.cyclingStatus = .failed }
+          else if Self.emptyHistory(error) || error == nil && data?.isEmpty != false { self.cyclingStatus = .waiting }
+          else { self.cyclingStatus = error == nil ? .active : .failed }
           self.activities.startActivityUpdates(to: .main) { [weak self] activity in
             Task { @MainActor in
               guard let self, self.generation == token, let records = self.records else { return }
@@ -238,7 +240,7 @@ final class GalaxySSIHealthMotionController: ObservableObject {
                   guard $0.cyclingEnabled != nil, $0.cycling.epoch == epoch else { return }
                   $0.cycling.observe(.init(at: max(activity.startDate, now), kind: Self.kind(activity)), now: Date(), calendar: .autoupdatingCurrent)
                 }
-                self.cyclingStatus = self.state?.cyclingEnabled == nil ? .off : .active
+                self.cyclingStatus = self.state?.cyclingEnabled == nil ? .off : (Self.kind(activity) == .uncertain ? .waiting : .active)
               } catch { self.cyclingStatus = .failed }
             }
           }
@@ -251,6 +253,10 @@ final class GalaxySSIHealthMotionController: ObservableObject {
     if activity.cycling && !activity.automotive && !activity.walking && !activity.running && !activity.unknown { return .cycling }
     if !activity.unknown && (activity.stationary || activity.walking || activity.running || activity.automotive) { return .inactive }
     return .uncertain
+  }
+  private static func emptyHistory(_ error: Error?) -> Bool {
+    guard let error = error as NSError? else { return false }
+    return error.domain == CMErrorDomain && error.code == Int(CMErrorUnknown.rawValue)
   }
 }
 
