@@ -39,6 +39,8 @@ enum GalaxySSIHealthCareResearch {
     let createdAt: Date
     var state = State.queued
     var owner: UUID?
+    var reviewRequired: Bool?
+    var assessmentMissing: Bool?
   }
 
   struct Ledger: Codable, Equatable {
@@ -108,7 +110,7 @@ enum GalaxySSIHealthCareResearch {
       }
       cancelDesktopJob(key, at: now)
       seen[key, default: []].insert(trigger)
-      jobs[key] = .init(authorization: authorization.id, trigger: trigger, revision: revision, createdAt: now)
+      jobs[key] = .init(authorization: authorization.id, trigger: trigger, revision: revision, createdAt: now, reviewRequired: true)
     }
 
     private mutating func cancelDesktopJob(_ key: String, at date: Date) {
@@ -117,7 +119,7 @@ enum GalaxySSIHealthCareResearch {
       desktopTransport?.cancel(job.id, nowMillis: millis)
     }
 
-    mutating func transition(_ job: Job, concern: UUID, to state: State, process: UUID) throws {
+    mutating func transition(_ job: Job, concern: UUID, to state: State, process: UUID, reviewRetained: Bool = false) throws {
       let key = concern.uuidString
       guard var current = jobs[key], current == job,
             authorizations[key]?.id == current.authorization else { throw GalaxySSIHealthRecords.Failure.stale }
@@ -130,7 +132,9 @@ enum GalaxySSIHealthCareResearch {
         allowed = current.owner == process
       default: allowed = false
       }
-      guard allowed else { throw GalaxySSIHealthRecords.Failure.stale }
+      guard allowed, state != .completed || current.reviewRequired != true || reviewRetained else {
+        throw GalaxySSIHealthRecords.Failure.stale
+      }
       if state == .failed || state == .interrupted { cancelDesktopJob(key, at: Date()) }
       current.state = state
       current.owner = state == .preparing || state == .dispatched ? process : nil

@@ -15,7 +15,17 @@ enum GalaxySSIHealthDesktopResearch {
       Partial progress and barriers leave the action open. Discuss feasible changes for user review without changing the plan.
       """
     let format: String
-    if approval.proposesPlan {
+    if approval.requiresStructuredReview {
+      let reviewSchema = try JSONSerialization.data(withJSONObject: GalaxySSIHealthCareModelReview.schema, options: [.sortedKeys])
+      let planSchema = try JSONSerialization.data(withJSONObject: GalaxySSIHealthCarePlan.schema, options: [.sortedKeys])
+      format = "Return only one JSON object with exactly assessment, plan and answer. " +
+        "assessment follows the schema below; answer is concise plain text. plan is null unless an optional source-cited " +
+        "draft is warranted and native_sources are supplied. If plan is present, assessment.plan_id must be " +
+        approval.id.uuidString + ". The phone retains the draft before recording the assessment; this does not adopt it. " +
+        "Use exact record_references and current evidence IDs. Review events do not schedule anything. " +
+        "Prior assessments are historical model opinions, not verified facts. Assessment schema: " +
+        String(decoding: reviewSchema, as: UTF8.self) + ". Optional plan schema: " + String(decoding: planSchema, as: UTF8.self)
+    } else if approval.proposesPlan {
       let schema = try JSONSerialization.data(withJSONObject: GalaxySSIHealthCarePlan.schema, options: [.sortedKeys])
       format = "Return only the JSON draft object, without Markdown. Cite exact current native evidence IDs and URLs, " +
         "and short verbatim excerpts. Historical reads do not authorize a new draft. Output schema: " +
@@ -29,6 +39,25 @@ enum GalaxySSIHealthDesktopResearch {
   static func planArguments(_ reply: String) throws -> AgentMcpJSONObject {
     guard !reply.isBlank, reply.utf8.count <= 48_000 else { throw GalaxySSIHealthRecords.Failure.invalid }
     return try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(reply.utf8))
+  }
+
+  @MainActor
+  static func retainStructuredReview(_ reply: String, approval: GalaxySSIHealthCareDiscussion.Approval,
+                                    records: GalaxySSIHealthRecords, now: Date = Date()) throws {
+    guard approval.pairedDesktop != nil, approval.requiresStructuredReview,
+          reply.utf8.count <= 48_000 else { throw GalaxySSIHealthRecords.Failure.invalid }
+    let value = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(reply.utf8))
+    guard Set(value.keys) == ["assessment", "plan", "answer"], let arguments = value["assessment"]?.objectValue,
+          let answer = value["answer"]?.strictStringValue, !answer.isBlank, answer.utf8.count <= 6_144,
+          value["plan"] == .null || value["plan"]?.objectValue != nil else { throw GalaxySSIHealthRecords.Failure.invalid }
+    let input = try GalaxySSIHealthCareModelReview.Input(arguments)
+    try records.validateLocalCareDiscussionTurn(approval, now: now)
+    if let plan = value["plan"]?.objectValue {
+      guard approval.proposesPlan, input.planID == approval.id else { throw GalaxySSIHealthRecords.Failure.permission }
+      try records.saveLocalCarePlan(approval, arguments: plan, now: now)
+    }
+    _ = try records.recordLocalCareModelReview(approval, arguments: arguments, now: now)
+    try records.finishLocalCareDiscussionTurn(approval, answer: answer, now: now)
   }
 
   struct Route: Codable, Equatable {
