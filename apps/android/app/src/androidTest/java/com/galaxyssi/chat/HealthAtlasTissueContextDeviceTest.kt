@@ -99,9 +99,9 @@ class HealthAtlasTissueContextDeviceTest {
         val chinese = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
         val atlas = HealthBodyAtlas.load(english)
         val plates = HealthAtlasTissueContextPlates.all
-        assertEquals(30, plates.size)
-        assertEquals(75, plates.sumOf { it.features.size })
-        assertEquals(7, plates.sumOf { it.markers.size })
+        assertEquals(31, plates.size)
+        assertEquals(76, plates.sumOf { it.features.size })
+        assertEquals(10, plates.sumOf { it.markers.size })
         for (plate in plates) {
             val owner = requireNotNull(plate.owner)
             assertNotNull(atlas[owner])
@@ -235,6 +235,30 @@ class HealthAtlasTissueContextDeviceTest {
                 (it.view("health-page-title") as TextView).text)
             it.onBackPressed()
             assertNotNull(it.view("atlas-feature-hypothalamus-region"))
+        }
+    }
+
+    @Test fun wholeBloodShowsPlasmaAndLinksTheRepresentedBloodComponents() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("blood")
+            activity.view("atlas-feature-whole-blood-plasma").performClick()
+        }
+        awaitVisibleText(scenario.localized(R.string.health_atlas_whole_blood_plasma_detail))
+        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        instrumentation.waitForIdleSync()
+        capture("whole-blood-suspension", scenario.localized(R.string.health_atlas_whole_blood_caption))
+        scenario.onActivity { activity ->
+            val parts = listOf(
+                "cell-erythrocyte" to R.string.health_atlas_cell_erythrocyte_name,
+                "cell-neutrophil" to R.string.health_atlas_cell_neutrophil_name,
+                "fragment-platelet" to R.string.health_atlas_fragment_platelet_name,
+            )
+            for ((id, label) in parts) {
+                activity.view("atlas-hotspot-$id").performClick()
+                assertEquals(activity.getString(label), (activity.view("health-page-title") as TextView).text)
+                activity.onBackPressed()
+                assertNotNull(activity.view("atlas-feature-whole-blood-plasma"))
+            }
         }
     }
 

@@ -8,6 +8,15 @@ internal object HealthAtlasTissueContextPlates {
         HealthAtlasPlate(art, id, caption, markers, source, features = features.toList(), splitCallouts = splitCallouts)
 
     val all = listOf(
+        plate("blood", R.drawable.health_atlas_whole_blood_plate,
+            "https://www.hematology.org/resources/patients/blood-basics", R.string.health_atlas_whole_blood_caption,
+            feature("whole-blood-plasma", 102, 134, R.string.health_atlas_whole_blood_plasma,
+                R.string.health_atlas_whole_blood_plasma_detail),
+            markers = listOf(
+                HealthAtlasMarker("cell-erythrocyte", 136 / 360f, 183 / 280f),
+                HealthAtlasMarker("cell-neutrophil", 212 / 360f, 129 / 280f),
+                HealthAtlasMarker("fragment-platelet", 228 / 360f, 193 / 280f)),
+            splitCallouts = true),
         plate("hypothalamus", R.drawable.health_atlas_hypothalamus_plate, "https://www.ncbi.nlm.nih.gov/books/NBK279126/",
             R.string.health_atlas_hypothalamus_plate_scope,
             feature("hypothalamus-region", 168, 143, R.string.health_atlas_hypothalamus_plate_region,

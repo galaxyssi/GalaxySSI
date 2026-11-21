@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_whole_blood_caption">Whole blood in suspension · illustrative sizes and amounts</string>
+    <string name="health_atlas_whole_blood_plasma">Plasma</string>
+    <string name="health_atlas_whole_blood_plasma_detail">The fluid around blood cells and platelets carries dissolved proteins, salts, nutrients and waste products.</string>
+</resources>
