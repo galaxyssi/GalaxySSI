@@ -29,7 +29,7 @@ struct GalaxySSIHealthCenterView: View {
 
   private enum OverviewDestination: String, Identifiable {
     case weekly, assistant, files, sleep, reviews, records, devices, originals, pdf, profile, crop
-    case export, privacy, backup, trends, catalog, recording, body, imports, photo
+    case export, privacy, backup, trends, catalog, recording, body, imports, photo, movement
     var id: String { rawValue }
   }
 
@@ -59,18 +59,17 @@ struct GalaxySSIHealthCenterView: View {
               Label(t("sources", "Devices & Data Sources"), systemImage: "externaldrive.connected.to.line.below")
             }
           }
-        } else {
-          Section {
-              TimelineView(.everyMinute) { context in
-                overview(archive, now: context.date)
-              }
-          } header: {
-            HStack {
-              Text(t("overview_list.heading", "Measurements"))
-              Spacer()
-              Button(t("overview_list.view_all", "View all")) { overviewDestination = .catalog }
-                .textCase(nil)
-              }
+        }
+        Section {
+          TimelineView(.everyMinute) { context in
+            overview(archive, now: context.date)
+          }
+        } header: {
+          HStack {
+            Text(t("overview_list.heading", "Measurements"))
+            Spacer()
+            Button(t("overview_list.view_all", "View all")) { overviewDestination = .catalog }
+              .textCase(nil)
           }
         }
         GalaxySSIHealthOverviewCareSection(records: records)
@@ -380,11 +379,14 @@ struct GalaxySSIHealthCenterView: View {
     var local = calendar
     local.timeZone = timeZone
     let ranges = (try? records.overviewRanges(expected: snapshot, now: now)) ?? [:]
+    let birth = try? records.overviewBirthDate(expected: snapshot)
     let overview = GalaxySSIHealthOverview(current: snapshot.current, now: now, calendar: local, ranges: ranges)
     return VStack(alignment: .leading, spacing: 0) {
       ForEach(overview.metrics) { item in
-        GalaxySSIHealthOverviewMetricRow(item: item, records: records, open: openOverviewReading, manual: { startManual($0) })
+        GalaxySSIHealthOverviewMetricRow(item: item, records: records, open: openOverviewReading, manual: { startManual($0) },
+          birthDate: birth, progressPermitted: snapshot.derivesOverview == true)
         Divider()
+        if item.metric == .steps { GalaxySSIHealthCyclingOverviewRow(records: records); Divider() }
       }
     }
   }
@@ -680,6 +682,7 @@ struct GalaxySSIHealthCenterView: View {
     case .body: GalaxySSIHealthBodyView { bloodPressureRecords }
     case .imports: GalaxySSIHealthImportView(store: originals, records: records, initialAction: .files)
     case .photo: GalaxySSIHealthPhotoCaptureView(records: records, originals: originals, initialCamera: true)
+    case .movement: GalaxySSIHealthMotionView(records: records)
     }
   }
 
@@ -705,6 +708,7 @@ struct GalaxySSIHealthCenterView: View {
     menuEntry(.export, "export.title", "Export Measurements", "square.and.arrow.up")
     menuEntry(.privacy, "privacy.title", "Health Privacy", "lock.shield")
     menuEntry(.backup, "backup.title", "Health Backup", "externaldrive")
+    menuEntry(.movement, "motion.title", "Movement", "figure.walk")
     }
     if let archive, let removed = latestRemoval(in: archive) {
       Button { openDeletion(removed) } label: { Label(t("resume_removal", "Review last removed measurement"), systemImage: "arrow.uturn.backward") }
