@@ -1001,6 +1001,45 @@ health record. Organ-resolved distribution and clearance remain separate work.
 Reference for the linear amount equations and analytical treatment:
 https://doi.org/10.12793/tcp.2019.27.2.43
 
+### Model Comparison And Evidence
+
+**Entry:** Body Atlas > Mechanisms and Research > Drug Pathways > Compare
+models. The original single- and two-compartment explorers are unchanged. The
+comparison shows three selectable synthetic scenarios, a shared 0-48-hour
+plot, a time slider and reset, the selected values and difference in percentage
+points, and the minimum and maximum over the three scenarios. The curve and
+numeric readout update in place; no continuously running service is added.
+
+- **Task and units:** Compare normalized central amount, not concentration,
+  response, or risk. Both models start at 100 units in the central compartment
+  and use the same elimination rate (0.10 per hour). Only the two-compartment
+  model can exchange amount with a peripheral compartment.
+- **Versioned assumptions:** The paired exchange rates `(k12, k21)` are
+  `(0, 0)`, `(0.30, 0.15)`, and `(1.00, 0.40)` per hour. Each pair is
+  evaluated as authored, with no recombination. These frozen examples are
+  synthetic, not an estimated distribution and not quantiles or confidence
+  intervals. Changes to this example set require updating the fixtures.
+- **Numerical verification:** The no-exchange control agrees with the
+  single-compartment result at every supported time. Independent matrix
+  exponential fixtures and mass accounting cover the coupled cases.
+- **Experimental validation:** No observations or patient data are used. A
+  passing numerical check does not establish biological or clinical validity.
+  No molecule input, real-drug ranking, safety threshold, dose, or personal
+  response is inferred. The public teaching summary travels through the
+  existing Agent confirmation, not into the personal record.
+
+Design references and limits:
+
+- [Song, Segal and Xing, Nature Medicine Perspective](https://pubmed.ncbi.nlm.nih.gov/42595785/):
+  small, composable modules with explicit boundaries; this is not an AIDO or
+  a connected multiscale model.
+- [CiPA independent validation principles](https://pmc.ncbi.nlm.nih.gov/articles/PMC6977398/):
+  separate numerical verification, model development and independent
+  validation for an intended use; no cardiac prediction model is implemented.
+- [FDA PBPK reporting guidance](https://www.fda.gov/regulatory-information/search-fda-guidance-documents/physiologically-based-pharmacokinetic-analyses-format-and-content-guidance-industry):
+  keep assumptions, scope and evidence visible. This comparison is not PBPK and
+  does not imply regulatory qualification.
+
 ## Musculoskeletal Views
 
 The skeletal and muscular categories each add an anterior and a posterior

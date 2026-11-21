@@ -233,4 +233,62 @@ class HealthAtlasDistributionDeviceTest {
         }
         capture("controls")
     }
+
+    @Test fun comparisonUpdatesInPlaceAndKeepsIndependentInputsAcrossRecreation() = native { scenario ->
+        scenario.onActivity {
+            it.view("atlas-drug-model-1").performClick()
+            (it.view("atlas-distribution-outward") as SeekBar).progress = 75
+            val originalAdme = it.view("atlas-adme-liver")
+            it.view("atlas-drug-model-2").performClick()
+            val chart = it.view("atlas-comparison-chart") as HealthAtlasComparisonChart
+            val elapsed = it.view("atlas-comparison-elapsed") as SeekBar
+            it.view("atlas-comparison-case-0").performClick()
+            assertEquals(0.0, chart.model.point.centralGap, 0.0)
+            it.view("atlas-comparison-case-2").performClick()
+            elapsed.progress = 32
+            assertSame(originalAdme, it.view("atlas-adme-liver"))
+            assertSame(chart, it.view("atlas-comparison-chart"))
+            assertSame(elapsed, it.view("atlas-comparison-elapsed"))
+            assertEquals(HealthAtlasModelComparison(HealthAtlasComparisonScenario.FASTER, 32), chart.model)
+            assertEquals(HealthAtlasComparisonText.summary(it, chart.model.point), (it.view("atlas-comparison-result") as TextView).text)
+            assertEquals(HealthAtlasComparisonText.time(it, chart.model), elapsed.contentDescription)
+        }
+        scenario.recreate(); ready(scenario, "atlas-comparison-chart")
+        scenario.onActivity {
+            assertTrue(it.view("atlas-drug-model-2").isSelected)
+            assertTrue(it.view("atlas-comparison-case-2").isSelected)
+            assertEquals(32, (it.view("atlas-comparison-elapsed") as SeekBar).progress)
+            it.view("atlas-comparison-reset").performClick()
+            assertEquals(HealthAtlasModelComparison(), (it.view("atlas-comparison-chart") as HealthAtlasComparisonChart).model)
+            it.view("atlas-drug-model-1").performClick()
+            assertEquals(75, (it.view("atlas-distribution-outward") as SeekBar).progress)
+        }
+    }
+
+    @Test fun comparisonHandoffShowsTheSameScopeAndValuesInBothLanguages() {
+        for (locale in listOf(java.util.Locale.ENGLISH, java.util.Locale.SIMPLIFIED_CHINESE)) {
+            val local = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
+            val atlas = HealthBodyAtlas.load(local)
+            val state = HealthAtlasDrugState(HealthAtlasDrugMode.COMPARISON,
+                comparison = HealthAtlasModelComparison(HealthAtlasComparisonScenario.FASTER, 37))
+            val prompt = HealthAtlasAgentContext.prompt(local, atlas, atlas["heart"], topic = HealthAtlasResearchTopic.DRUGS,
+                drugs = state)
+            assertTrue(prompt.contains(HealthAtlasComparisonText.prompt(local, state.comparison)))
+            assertFalse(prompt.contains(local.getString(R.string.health_atlas_elimination_assumptions)))
+            val physiology = HealthAtlasAgentContext.prompt(local, atlas, atlas["heart"], topic = HealthAtlasResearchTopic.PHYSIOLOGY,
+                drugs = state)
+            assertFalse(physiology.contains(HealthAtlasComparisonText.VALIDATION_SOURCE))
+        }
+    }
+
+    @Test fun comparisonChartAndTeachingScopeAreVisibleOnDevice() = native { scenario ->
+        scenario.onActivity {
+            it.view("atlas-drug-model-2").performClick()
+            val scroll = it.view("atlas-scroll") as ScrollView
+            val firstTab = it.view("atlas-drug-model-0")
+            val rect = android.graphics.Rect(); firstTab.getDrawingRect(rect)
+            scroll.offsetDescendantRectToMyCoords(firstTab, rect); scroll.scrollTo(0, rect.top - 24)
+        }
+        capture("comparison")
+    }
 }

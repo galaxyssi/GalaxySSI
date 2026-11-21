@@ -105,21 +105,26 @@ internal object HealthAtlasAgentContext {
         }
         if (topic != null) {
             appendLine(); appendLine(context.getString(topic.title))
-            appendLine(context.getString(when (topic) {
-                HealthAtlasResearchTopic.PHYSIOLOGY -> R.string.health_atlas_teaching_note
-                HealthAtlasResearchTopic.DRUGS -> if (drugs?.mode == HealthAtlasDrugMode.TWO)
-                    R.string.health_atlas_drug_models else R.string.health_atlas_elimination_assumptions
-                HealthAtlasResearchTopic.AGING -> R.string.health_atlas_aging_evidence
-            }))
-            if (topic == HealthAtlasResearchTopic.DRUGS) {
-                if (drugs?.mode == HealthAtlasDrugMode.TWO) appendLine(HealthAtlasDistributionText.prompt(context, drugs.distribution))
-                else {
-                    val values = elimination ?: HealthAtlasElimination()
-                    appendLine(context.getString(R.string.health_atlas_elimination_summary, values.halfLifeHours,
-                        values.elapsedHours, HealthAtlasPhysiologyText.number(values.percent)))
+            when (topic) {
+                HealthAtlasResearchTopic.PHYSIOLOGY -> appendLine(context.getString(R.string.health_atlas_teaching_note))
+                HealthAtlasResearchTopic.DRUGS -> when (drugs?.mode) {
+                    HealthAtlasDrugMode.TWO -> {
+                        appendLine(context.getString(R.string.health_atlas_drug_models))
+                        appendLine(HealthAtlasDistributionText.prompt(context, drugs.distribution))
+                    }
+                    HealthAtlasDrugMode.COMPARISON -> appendLine(HealthAtlasComparisonText.prompt(context, drugs.comparison))
+                    else -> {
+                        val values = elimination ?: HealthAtlasElimination()
+                        appendLine(context.getString(R.string.health_atlas_elimination_assumptions))
+                        appendLine(context.getString(R.string.health_atlas_elimination_summary, values.halfLifeHours,
+                            values.elapsedHours, HealthAtlasPhysiologyText.number(values.percent)))
+                    }
+                }
+                HealthAtlasResearchTopic.AGING -> {
+                    appendLine(context.getString(R.string.health_atlas_aging_evidence))
+                    aging?.let { appendLine(it.publicContext(context)) }
                 }
             }
-            if (topic == HealthAtlasResearchTopic.AGING && aging != null) appendLine(aging.publicContext(context))
             append(HealthAtlasResearchSources.forTopic(topic, mechanism).joinToString("\n"))
         }
     }.trim()

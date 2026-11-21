@@ -52,13 +52,18 @@ internal class HealthAtlasResearchPanel(
         modelBody = ui.column(); ui.add(body, modelBody)
         fun renderModel() {
             choice.removeAllViews(); modelBody.removeAllViews(); resetInputs.clear()
-            choice.addView(HealthAtlasUi.tabs(activity, listOf(R.string.health_atlas_drug_single, R.string.health_atlas_drug_two),
+            choice.addView(HealthAtlasUi.tabs(activity, listOf(R.string.health_atlas_drug_single, R.string.health_atlas_drug_two,
+                R.string.health_atlas_compare_title),
                 drugState.mode.ordinal, "atlas-drug-model") { index ->
                 drugState = drugState.copy(mode = HealthAtlasDrugMode.entries[index]); renderModel()
             })
-            if (drugState.mode == HealthAtlasDrugMode.SINGLE) singleCompartment()
-            else HealthAtlasDistributionPanel(activity, modelBody, drugState.distribution,
-                { drugState = drugState.copy(distribution = it) }, source)
+            when (drugState.mode) {
+                HealthAtlasDrugMode.SINGLE -> singleCompartment()
+                HealthAtlasDrugMode.TWO -> HealthAtlasDistributionPanel(activity, modelBody, drugState.distribution,
+                    { drugState = drugState.copy(distribution = it) }, source)
+                HealthAtlasDrugMode.COMPARISON -> HealthAtlasComparisonPanel(activity, modelBody, drugState.comparison,
+                    { drugState = drugState.copy(comparison = it) }, source)
+            }
         }
         renderModel()
         heading(R.string.health_atlas_evidence)

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_compare_title">模型对照</string>
+    <string name="health_atlas_compare_scope">合成示踪 · 初始量和消除速率相同，曲线表示仍在中央室的比例。</string>
+    <string name="health_atlas_compare_control">无交换</string>
+    <string name="health_atlas_compare_exchange">有交换</string>
+    <string name="health_atlas_compare_faster">更快转移</string>
+    <string name="health_atlas_compare_legend">虚线：单室 · 实线：双室 · 阴影：预设范围 · 时间单位：小时</string>
+    <string name="health_atlas_compare_summary">单室 %1$s%% · 双室 %2$s%%\n差值（双室减单室）：%3$s 个百分点</string>
+    <string name="health_atlas_compare_range">三组预设的中央室比例：%1$s%% 至 %2$s%%</string>
+    <string name="health_atlas_compare_evidence">模型证据</string>
+    <string name="health_atlas_compare_limit">参数为成组的合成预设，不来自实测。范围不是置信区间，数值核验不等于实验验证。不用于预测药物或个人反应。</string>
+    <string name="health_atlas_compare_reference">独立验证原则</string>
+</resources>
