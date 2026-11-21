@@ -88,7 +88,7 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
       }
     }
     .onAppear { visible = true; reload(preserve: true) }
-    .onDisappear { visible = false; cancelSelection(); query.cancel(clear: false) }
+    .onDisappear { visible = false; picker = nil; cancelSelection(); query.cancel(clear: false) }
     .onChange(of: timeZone) { _ in picker = nil; reload() }
     .onChange(of: allowed) { if !$0 { clearPrivate(); reload() } }
     .onChange(of: now) { _ in reload(preserve: true) }

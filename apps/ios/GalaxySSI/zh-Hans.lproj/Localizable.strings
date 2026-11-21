@@ -7545,6 +7545,7 @@
 "galaxyssi.health.guidance.sleep_source" = "来源：CDC · 关于睡眠";
 
 "galaxyssi.health.period.choose" = "采样周期";
+"galaxyssi.health.period.loading" = "正在加载测量数据";
 "galaxyssi.health.period.weeks" = "按周";
 "galaxyssi.health.period.months" = "按月";
 "galaxyssi.health.period.latest" = "最新测量";
