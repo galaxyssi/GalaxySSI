@@ -7258,6 +7258,7 @@
 "galaxyssi.health.report_quick.choose" = "请选择";
 "galaxyssi.health.report_quick.fasting" = "空腹";
 "galaxyssi.health.report_quick.non_fasting" = "非空腹";
+"galaxyssi.health.report_quick.after_meal" = "餐后";
 "galaxyssi.health.report_quick.unknown" = "不确定";
 "galaxyssi.health.report_quick.save_all" = "保存可用结果";
 "galaxyssi.health.report_quick.supplement" = "补充报告信息";

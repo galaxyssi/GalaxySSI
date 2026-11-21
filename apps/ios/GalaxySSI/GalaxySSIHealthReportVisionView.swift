@@ -138,7 +138,8 @@ struct GalaxySSIHealthReportVisionView: View {
     } else {
       NavigationLink {
         GalaxySSIHealthReportItemEditor(records: records, source: Vision.source(row, job: job), excerpt: row.source,
-          sourceContext: sourceContext(result), modelPrefill: row, modelSourceIsAvailable: { accessible && (try? input(job)) != nil })
+          sourceContext: sourceContext(result), modelPrefill: row, modelFasting: result.fasting,
+          modelSourceIsAvailable: { accessible && (try? input(job)) != nil })
       } label: { rowLabel(row, status: q("pending", "Pending review")) }.disabled(!originalAvailable)
     }
   }

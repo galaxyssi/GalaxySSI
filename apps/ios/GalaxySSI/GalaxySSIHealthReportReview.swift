@@ -222,6 +222,7 @@ struct GalaxySSIHealthReportItemEditor: View {
   let excerpt: String
   let sourceContext: GalaxySSIHealthOCRSourceContext
   var modelPrefill: GalaxySSIHealthReportVision.Row? = nil
+  var modelFasting: String? = nil
   var modelSourceIsAvailable: (() -> Bool)? = nil
   @State private var existing: GalaxySSIHealthReportReview.Item?
   @State private var metric: GalaxySSIHealthMetric?
@@ -332,6 +333,8 @@ struct GalaxySSIHealthReportItemEditor: View {
     let interval = reference.trimmingCharacters(in: .whitespacesAndNewlines)
     let reading = GalaxySSIHealthReading(id: existing?.reading.id ?? UUID(), metric: metric, measuredAt: date,
       value: parsed, diastolic: metric == .bloodPressure ? decimal(lower) : nil,
+      conditions: existing?.reading.metric == metric ? existing?.reading.conditions ?? "" :
+        (modelPrefill?.metric == metric && metric == .glucose ? modelFasting ?? "" : ""),
       reported: typed, reportedNotation: metric.laboratory ? raw : nil, unitOverride: unit,
       referenceInterval: metric.laboratory && !interval.isEmpty ? interval : nil, reportSource: source)
     do {

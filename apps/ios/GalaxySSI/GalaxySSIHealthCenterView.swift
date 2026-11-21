@@ -603,7 +603,18 @@ struct GalaxySSIHealthCenterView: View {
         }
         Group {
           DatePicker(t("time", "Measured at"), selection: field(\.measuredAt, Date()), in: ...Date())
-          TextField(t("conditions", "Conditions"), text: field(\.conditions, ""))
+          if draft.metric == .glucose {
+            Picker(t("conditions", "Conditions"), selection: Binding(
+              get: { GalaxySSIHealthReportQuickImport.conditionKey(editor?.conditions ?? "") }, set: { editor?.conditions = $0 })) {
+              Text(GalaxySSIHealthReportQuickImport.text("unknown", "Not sure", language)).tag("")
+              Text(GalaxySSIHealthReportQuickImport.text("fasting", "Fasting", language)).tag("fasting")
+              Text(GalaxySSIHealthReportQuickImport.text("non_fasting", "Not fasting", language)).tag("non_fasting")
+              Text(GalaxySSIHealthReportQuickImport.text("after_meal", "After a meal", language)).tag("after_meal")
+              if !["", "unspecified", "fasting", "non_fasting", "after_meal"].contains(draft.conditions) {
+                Text(draft.conditions).tag(draft.conditions)
+              }
+            }
+          } else { TextField(t("conditions", "Conditions"), text: field(\.conditions, "")) }
           TextField(t("notes", "Notes"), text: field(\.notes, ""))
         }
         Button(t("save_draft", "Save draft"), action: saveDraft)
