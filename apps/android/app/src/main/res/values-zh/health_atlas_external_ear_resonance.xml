@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_model_external_ear_resonance_title">外耳：理想管共振</string>
+    <string name="health_atlas_model_external_ear_resonance_length">教学用管的长度（L）</string>
+    <string name="health_atlas_model_external_ear_resonance_speed">管内空气中的声速（v）</string>
+    <string name="health_atlas_model_external_ear_resonance_formula">在一端开口、另一端封闭的管中，最低频率的驻波在管内恰好占四分之一个波长。基频（Hz）= v / (4L)，v 的单位是 m/s，L 要从厘米换算成米。声速不变时，管越长，基频越低；管长不变时，声速越大，基频越高。</string>
+    <string name="health_atlas_model_external_ear_resonance_wavelength">基频对应的波长：%1$s 厘米。</string>
+    <string name="health_atlas_model_external_ear_resonance_scope">这些假设数值描述的是教学用的刚性直管，不代表真实耳朵或个人测量结果。真实的外耳道并非刚性管：它弯曲且宽度不一，末端是会振动的鼓膜，而不是理想的封闭端。这个类比不能预测个人听力。</string>
+</resources>
