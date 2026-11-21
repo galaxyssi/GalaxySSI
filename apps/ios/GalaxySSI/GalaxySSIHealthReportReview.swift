@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 enum GalaxySSIHealthReportReview {
   struct Source: Codable, Hashable {
+    enum Recognition: String, Codable { case model }
     var original: UUID
     let sha256: String
     let page: Int
@@ -10,6 +11,7 @@ enum GalaxySSIHealthReportReview {
     let fromOCR: Bool
     var evidenceKey: String?
     var captureSource: GalaxySSIHealthPhotoDraft.Source?
+    var recognition: Recognition?
 
     var regionIdentity: String { evidenceKey ?? "legacy:\(region)" }
 
@@ -219,6 +221,8 @@ struct GalaxySSIHealthReportItemEditor: View {
   let source: GalaxySSIHealthReportReview.Source
   let excerpt: String
   let sourceContext: GalaxySSIHealthOCRSourceContext
+  var modelPrefill: GalaxySSIHealthReportVision.Row? = nil
+  var modelSourceIsAvailable: (() -> Bool)? = nil
   @State private var existing: GalaxySSIHealthReportReview.Item?
   @State private var metric: GalaxySSIHealthMetric?
   @State private var unit = ""
@@ -234,6 +238,10 @@ struct GalaxySSIHealthReportItemEditor: View {
     Form {
       if scene == .active {
         Text(excerpt)
+        if source.recognition == .model {
+          Text(GalaxySSIHealthReportVision.text("unverified", "Model transcription is unverified. Check every field against the original.", language))
+            .foregroundColor(.secondary)
+        }
         GalaxySSIHealthOCRSourceContextRows(context: sourceContext, apply: applySourceTime)
         Picker(t("metric", "Measurement"), selection: Binding(get: { metric }, set: { selected in
           guard metric != selected else { return }
@@ -298,6 +306,11 @@ struct GalaxySSIHealthReportItemEditor: View {
         lower = reading.diastolic?.formatted(.number.locale(locale).grouping(.never)) ?? ""
         reference = reading.referenceInterval ?? ""
         date = reading.measuredAt
+      } else if let row = modelPrefill {
+        metric = row.metric; unit = row.unit; value = row.values["value"] ?? ""
+        lower = row.values["diastolic"] ?? ""; reference = row.reference
+        if let sample = sourceContext.sample, sample.date <= Date() { date = sample.date }
+        dateConfirmed = false; ownership = false
       } else if let row = GalaxySSIHealthOCRLabRow.parse(excerpt) {
         metric = row.metric
         unit = row.unit ?? ""
@@ -308,6 +321,7 @@ struct GalaxySSIHealthReportItemEditor: View {
   }
 
   private func stage() {
+    guard source.recognition != .model || modelSourceIsAvailable?() == true else { failed = true; return }
     guard scene == .active, dateConfirmed, ownership, let metric, date <= Date(),
           metric.units.contains(unit) || (metric.form == .laboratory && unit.isEmpty) else { failed = true; return }
     let raw = value.trimmingCharacters(in: .whitespacesAndNewlines)
