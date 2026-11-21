@@ -57,7 +57,10 @@ class HealthAtlasElbowTest {
             assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(40, 38)))
         }
         for (id in listOf("triceps-brachii", "cell-skeletal-myocyte", "tendons", "cell-osteoblast"))
-            assertNull(id, HealthAtlasPhysiologyKind.forItem(id))
+            assertNotEquals(id, kind, HealthAtlasPhysiologyKind.forItem(id))
+        val tendon = requireNotNull(HealthAtlasPhysiologyKind.forItem("tendons"))
+        assertEquals(HealthAtlasPhysiologyKind.TENDON_ELONGATION, tendon)
+        assertNull(HealthAtlasPhysiology.restore("tendons", intArrayOf(40, 38)))
         val femur = requireNotNull(HealthAtlasPhysiology.restore("femur", intArrayOf(6, 20, 60)))
         assertEquals(HealthAtlasPhysiologyKind.BONE_BENDING, femur.kind)
         assertNull(femur.elbowForces)
