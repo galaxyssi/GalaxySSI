@@ -15,6 +15,9 @@ final class GalaxySSIHealthMotionController: ObservableObject {
   private var pending: Feature?
   private let pedometer = CMPedometer()
   private let activities = CMMotionActivityManager()
+  private let activitySamples = CMMotionActivityManager()
+  private var sampleTask: Task<Void, Never>?
+  private var sampleTicket = UUID()
   private var day: Date?
 
   func matches(_ value: GalaxySSIHealthRecords) -> Bool {
@@ -54,7 +57,7 @@ final class GalaxySSIHealthMotionController: ObservableObject {
   }
   func suspend() {
     generation = UUID(); pending = nil
-    pedometer.stopUpdates(); activities.stopActivityUpdates()
+    stopUpdates()
     state = nil; stepStatus = .off; cyclingStatus = .off
   }
   func refreshDay() {
@@ -62,7 +65,7 @@ final class GalaxySSIHealthMotionController: ObservableObject {
   }
   func refresh() {
     guard pending == nil, let records, UIApplication.shared.isProtectedDataAvailable else { return }
-    pedometer.stopUpdates(); activities.stopActivityUpdates(); generation = UUID()
+    stopUpdates(); generation = UUID()
     let token = generation, now = Date(), calendar = Calendar.autoupdatingCurrent
     do {
       var saved = try records.loadMotion()
@@ -99,7 +102,7 @@ final class GalaxySSIHealthMotionController: ObservableObject {
       if cyclingStatus == .active, let enabled = saved.cyclingEnabled {
         startCycling(saved.cycling, enabled: enabled, now: now, token: token)
       } else if saved.cycling.started != nil {
-        state = try records.updateMotion { $0.cycling.started = nil }
+        state = try records.updateMotion { $0.cycling.settle(now: now, calendar: calendar) }
       }
     } catch { state = nil; stepStatus = .failed; cyclingStatus = .failed }
   }
@@ -112,7 +115,7 @@ final class GalaxySSIHealthMotionController: ObservableObject {
     if !enabled {
       // Persist an opt-out marker even if protected health-file storage is unavailable.
       UserDefaults.standard.set(true, forKey: revocationKey(feature, records))
-      generation = UUID(); pedometer.stopUpdates(); activities.stopActivityUpdates()
+      generation = UUID(); stopUpdates()
     }
     let supported = feature == .steps ? CMPedometer.isStepCountingAvailable() : CMMotionActivityManager.isActivityAvailable()
     let authorization = feature == .steps ? CMPedometer.authorizationStatus() : CMMotionActivityManager.authorizationStatus()
@@ -209,13 +212,19 @@ final class GalaxySSIHealthMotionController: ObservableObject {
         do {
           self.state = try records.updateMotion {
             guard $0.cyclingEnabled != nil, $0.cycling.epoch == epoch else { return }
-            if (ledger.cursor ?? enabled) < floor || error != nil || data?.isEmpty != false || (data?.count ?? 0) > 10_000 {
-              $0.cycling.started = nil
+            if (ledger.cursor ?? enabled) < floor || (data?.count ?? 0) > 10_000 {
+              $0.cycling.settle(now: now, calendar: .autoupdatingCurrent)
             }
             if error == nil, let data, data.count <= 10_000 {
-              for activity in data.sorted(by: { $0.startDate < $1.startDate }) {
-                let event = GalaxySSIHealthMotion.Cycling.Event(at: max(activity.startDate, from), kind: Self.kind(activity))
-                $0.cycling.observe(event, now: now, calendar: .autoupdatingCurrent)
+              let history = data.sorted { $0.startDate < $1.startDate }
+              for (index, activity) in history.enumerated() {
+                let start = max(activity.startDate, from)
+                if index + 1 < history.count {
+                  $0.cycling.replay(Self.kind(activity), from: start, through: min(now, history[index + 1].startDate),
+                    now: now, calendar: .autoupdatingCurrent, includeEnd: false)
+                } else {
+                  $0.cycling.observe(.init(at: start, kind: Self.kind(activity)), now: now, calendar: .autoupdatingCurrent)
+                }
               }
               $0.cycling.cursor = now
             }
@@ -232,27 +241,80 @@ final class GalaxySSIHealthMotionController: ObservableObject {
                 return
               }
               guard let activity else {
-                self.state = try? records.updateMotion { $0.cycling.started = nil }
+                self.state = try? records.updateMotion { $0.cycling.expire(now: Date(), calendar: .autoupdatingCurrent) }
                 self.cyclingStatus = .failed; return
               }
               do {
                 self.state = try records.updateMotion {
                   guard $0.cyclingEnabled != nil, $0.cycling.epoch == epoch else { return }
-                  $0.cycling.observe(.init(at: max(activity.startDate, now), kind: Self.kind(activity)), now: Date(), calendar: .autoupdatingCurrent)
+                  let received = Date(), anchor = $0.cycling.lastEvent ?? $0.cycling.cursor ?? enabled
+                  let start = max(enabled, max(anchor, max(activity.startDate, received.addingTimeInterval(-7 * 86_400))))
+                  $0.cycling.replay(Self.kind(activity), from: start, through: received, now: received,
+                    calendar: .autoupdatingCurrent, includeEnd: true)
                 }
                 self.cyclingStatus = self.state?.cyclingEnabled == nil ? .off : (Self.kind(activity) == .uncertain ? .waiting : .active)
               } catch { self.cyclingStatus = .failed }
             }
           }
+          self.startSampling(epoch: epoch, token: token)
         } catch { self.cyclingStatus = .failed }
       }
     }
   }
   private static func kind(_ activity: CMMotionActivity) -> GalaxySSIHealthMotion.Cycling.Kind {
     guard activity.confidence == .medium || activity.confidence == .high else { return .uncertain }
-    if activity.cycling && !activity.automotive && !activity.walking && !activity.running && !activity.unknown { return .cycling }
-    if !activity.unknown && (activity.stationary || activity.walking || activity.running || activity.automotive) { return .inactive }
+    if activity.cycling && !activity.automotive && !activity.walking && !activity.running && !activity.unknown { return .enter }
+    if !activity.unknown && !activity.cycling {
+      if activity.automotive && !activity.walking && !activity.running { return .motor }
+      if !activity.automotive && (activity.walking || activity.running) { return .foot }
+      if activity.stationary { return .still }
+    }
     return .uncertain
+  }
+  private func stopUpdates() {
+    sampleTask?.cancel(); sampleTask = nil; sampleTicket = UUID()
+    pedometer.stopUpdates(); activities.stopActivityUpdates(); activitySamples.stopActivityUpdates()
+  }
+  private func startSampling(epoch: UUID, token: UUID) {
+    sampleTask?.cancel()
+    sampleTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        guard self?.generation == token else { return }
+        self?.sample(epoch: epoch, token: token)
+        do { try await Task.sleep(nanoseconds: 20_000_000_000) } catch { return }
+      }
+    }
+  }
+  private func sample(epoch: UUID, token: UUID) {
+    guard let records, generation == token, UIApplication.shared.isProtectedDataAvailable else { return }
+    guard CMMotionActivityManager.authorizationStatus() == .authorized else {
+      setEnabled(.cycling, enabled: false, for: records); cyclingStatus = .denied; return
+    }
+    let requested = Date(), ticket = UUID(); sampleTicket = ticket
+    activitySamples.stopActivityUpdates()
+    activitySamples.startActivityUpdates(to: .main) { [weak self] activity in
+      Task { @MainActor in
+        guard let self, self.generation == token, self.sampleTicket == ticket, let records = self.records else { return }
+        self.sampleTicket = UUID()
+        self.activitySamples.stopActivityUpdates()
+        guard CMMotionActivityManager.authorizationStatus() == .authorized else {
+          self.setEnabled(.cycling, enabled: false, for: records); self.cyclingStatus = .denied; return
+        }
+        do {
+          self.state = try records.updateMotion {
+            guard $0.cyclingEnabled != nil, $0.cycling.epoch == epoch else { return }
+            if let activity, let enabled = $0.cyclingEnabled {
+              let anchor = $0.cycling.lastEvent ?? $0.cycling.cursor ?? enabled
+              let start = max(enabled, max(anchor, max(activity.startDate, requested.addingTimeInterval(-7 * 86_400))))
+              $0.cycling.replay(Self.kind(activity), from: start, through: requested, now: Date(),
+                calendar: .autoupdatingCurrent, includeEnd: true)
+            }
+            $0.cycling.expire(now: Date(), calendar: .autoupdatingCurrent)
+          }
+          self.cyclingStatus = activity.map { Self.kind($0) == .uncertain ? .waiting : .active } ?? .waiting
+        } catch { self.cyclingStatus = .failed }
+      }
+    }
   }
   private static func emptyHistory(_ error: Error?) -> Bool {
     guard let error = error as NSError? else { return false }

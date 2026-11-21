@@ -76,8 +76,8 @@ final class GalaxySSIHealthMotionLedgerTests: XCTestCase {
     ledger.observe(.init(at: now, kind: .cycling), now: end, calendar: calendar)
     XCTAssertEqual(ledger, previous)
   }
-  func testCyclingRejectsTooShortOverlongFutureAndUncertainSessions() {
-    for duration in [29.0, 43_201.0] {
+  func testCyclingRejectsOverlongAndFutureEventsAndIgnoresUncertainSamples() {
+    for duration in [43_201.0] {
       var ledger = Motion.Cycling()
       ledger.observe(.init(at: now, kind: .cycling), now: now, calendar: calendar)
       let end = now.addingTimeInterval(duration)
@@ -92,12 +92,13 @@ final class GalaxySSIHealthMotionLedgerTests: XCTestCase {
     ledger.observe(.init(at: now.addingTimeInterval(60), kind: .inactive), now: now.addingTimeInterval(60), calendar: calendar)
     XCTAssertTrue(ledger.days.isEmpty)
   }
-  func testRideCrossingMidnightSplitsOnlyCompletedDuration() {
+  func testRideCrossingMidnightSplitsConfirmedDuration() {
     let midnight = calendar.startOfDay(for: now)
     var ledger = Motion.Cycling()
     ledger.observe(.init(at: midnight.addingTimeInterval(-30), kind: .cycling), now: midnight.addingTimeInterval(-30), calendar: calendar)
     XCTAssertEqual(ledger.today(midnight, calendar: calendar), 0)
     ledger.observe(.init(at: midnight.addingTimeInterval(30), kind: .inactive), now: midnight.addingTimeInterval(30), calendar: calendar)
+    ledger.settle(now: midnight.addingTimeInterval(30), calendar: calendar)
     XCTAssertEqual(ledger.today(midnight, calendar: calendar), 30)
     XCTAssertEqual(ledger.today(midnight.addingTimeInterval(-1), calendar: calendar), 30)
   }
@@ -106,8 +107,9 @@ final class GalaxySSIHealthMotionLedgerTests: XCTestCase {
     let begin = try XCTUnwrap(local.date(from: DateComponents(year: 2026, month: 3, day: 8, hour: 1, minute: 30)))
     let end = try XCTUnwrap(local.date(from: DateComponents(year: 2026, month: 3, day: 8, hour: 3, minute: 30)))
     var ledger = Motion.Cycling()
-    ledger.observe(.init(at: begin, kind: .cycling), now: begin, calendar: local)
+    ledger.replay(.enter, from: begin, through: end, now: end, calendar: local, includeEnd: true)
     ledger.observe(.init(at: end, kind: .inactive), now: end, calendar: local)
+    ledger.settle(now: end, calendar: local)
     XCTAssertEqual(ledger.today(end, calendar: local), 3_600)
     for day in 1...10 {
       let start = try XCTUnwrap(local.date(byAdding: .day, value: day, to: end))
