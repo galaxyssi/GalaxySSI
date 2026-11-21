@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class GalaxySSIHealthAtlasTests: XCTestCase {
   private func catalogue() throws -> GalaxySSIHealthAtlas {
-    try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self), includeArtworkPack: false)
   }
 
   func testFrozenCatalogueCountsAndCanonicalGraph() throws {
@@ -52,6 +52,26 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("cell-pancreatic-beta-cell"), [.glucose, .hba1c])
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("fragment-platelet"), [.platelets])
     XCTAssertTrue(GalaxySSIHealthAtlasMetrics.forEntry("brain").isEmpty)
+  }
+
+  func testBundledArtworkPackIsAdditiveAndValidatesCoordinates() throws {
+    let atlas = try catalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    let extra = GalaxySSIHealthAtlas.Entry(id: "test-structure", kind: .organ, name: "name", description: "description",
+      systems: ["urinary"], related: ["nephron"], mechanism: "urinary", aliases: "aliases", color: "", icon: "")
+    func pack(x: Double = 0.5, anchor: String = "kidneys") -> GalaxySSIHealthAtlas.ArtworkPack {
+      .init(schema: 1, entries: [extra], insertAfter: [extra.id: anchor], relatedAdditions: ["kidneys": [extra.id]],
+        plates: [.init(id: "test", asset: "HealthAtlasBody", owner: "kidneys", viewLabel: "health_atlas_illustration",
+          entryIDs: [extra.id], aspectRatio: 2.0 / 3.0, markers: [.init(id: extra.id, x: x, y: 0.5)])], english: [:])
+    }
+    let merged = try pack().applying(to: atlas, bundle: bundle)
+    XCTAssertEqual(merged.entries.count, atlas.entries.count + 1)
+    XCTAssertEqual(merged.entry("kidneys")?.related.first, extra.id)
+    let index = try XCTUnwrap(merged.entries.firstIndex { $0.id == "kidneys" })
+    XCTAssertEqual(merged.entries[index + 1].id, extra.id)
+    XCTAssertThrowsError(try pack(x: .nan).applying(to: atlas, bundle: bundle))
+    XCTAssertThrowsError(try pack(x: 1.1).applying(to: atlas, bundle: bundle))
+    XCTAssertThrowsError(try pack(anchor: "missing").applying(to: atlas, bundle: bundle))
+    XCTAssertThrowsError(try pack().applying(to: merged, bundle: bundle))
   }
 
   func testTeachingEquationsAndDefensiveRestoration() {

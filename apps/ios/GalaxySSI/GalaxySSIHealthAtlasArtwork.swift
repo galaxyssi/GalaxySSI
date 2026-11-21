@@ -13,21 +13,39 @@ struct GalaxySSIHealthAtlasArtwork: View {
   @State private var zoom: Double = 1
   @State private var fullscreen = false
   @State private var selected: String?
-  private var art: String? {
-    guard let id = entry?.id else { return "HealthAtlasBody" }
-    if ["heart", "cardio", "atria", "ventricles", "heart-valves", "coronary-vessels"].contains(id) { return "HealthAtlasHeart" }
-    return id == "cell-pancreatic-beta-cell" ? "HealthAtlasBetaCell" : nil
-  }
+  private var plate: GalaxySSIHealthAtlas.Plate? { atlas.plate(for: entry?.id) }
+  private var art: String? { plate?.asset }
   private var spots: [(String, Double, Double)] {
-    if entry == nil { return [("brain", 0.50, 0.045), ("heart", 0.54, 0.28), ("liver", 0.45, 0.34), ("small-intestine", 0.51, 0.44)] }
-    return art == "HealthAtlasHeart" ? [("atria", 0.28, 0.46), ("coronary-vessels", 0.57, 0.68), ("ventricles", 0.61, 0.84)] : []
+    plate?.markers.map { ($0.id, $0.x, $0.y) } ?? []
+  }
+  private var choices: [GalaxySSIHealthAtlas.Entry] {
+    let candidates = entry.map { atlas.children($0) + atlas.cells($0) + spots.compactMap { atlas.entry($0.0) } }
+      ?? atlas.entries.filter { $0.kind == .system }
+    return candidates.reduce(into: []) { result, candidate in
+      if candidate.id != entry?.id, !result.contains(where: { $0.id == candidate.id }) { result.append(candidate) }
+    }
+  }
+  private var caption: String {
+    guard let plate else { return t("illustration") }
+    let view = GalaxySSIHealthAtlasText.get(plate.viewLabel, language)
+    guard let owner = plate.owner, owner != entry?.id, let structure = atlas.entry(owner) else { return view }
+    let name = GalaxySSIHealthAtlasText.get(structure.name, language)
+    return plate.viewLabel == "health_atlas_illustration" ? String(format: t("related_process"), name) :
+      String(format: t("plate_context"), name, view)
   }
   var body: some View {
     if let art {
       VStack(alignment: .leading, spacing: 8) {
         canvas(art)
         HStack {
-          Toggle(t("layers"), isOn: $layers)
+          Menu {
+            Toggle(t("layers"), isOn: $layers)
+            ForEach(choices) { target in
+              Button(GalaxySSIHealthAtlasText.get(target.name, language)) { selected = target.id }
+                .disabled(depth >= 32)
+            }
+          } label: { Image(systemName: "square.3.layers.3d").frame(width: 44, height: 44) }
+            .accessibilityLabel(t("layers")).help(t("layers"))
           Spacer()
           Button { zoom = 1 } label: { Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44) }
             .accessibilityLabel(t("reset")).help(t("reset"))
@@ -36,24 +54,21 @@ struct GalaxySSIHealthAtlasArtwork: View {
         }
         Slider(value: $zoom, in: 1...4).accessibilityLabel(bodyText("zoom"))
         if layers {
-          ForEach(Array(spots.enumerated()), id: \.offset) { index, spot in
-            if let target = atlas.entry(spot.0) {
-              Button { selected = target.id } label: {
-                HStack { Text("\(index + 1)").monospacedDigit(); Text(GalaxySSIHealthAtlasText.get(target.name, language)); Spacer(); Image(systemName: "chevron.right") }
-                  .frame(minHeight: 44)
-              }.disabled(depth >= 32)
-            }
-          }
+          markerLabels
         }
+        Text(caption).font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
         Text(t("illustration")).font(.caption).foregroundColor(.secondary)
-        if entry != nil, art == "HealthAtlasHeart", entry?.id != "heart" {
-          Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(atlas.entry("heart")!.name, language)))
-            .font(.caption).foregroundColor(.secondary)
-        }
       }
       .sheet(isPresented: $fullscreen) {
         NavigationView {
-          ScrollView { canvas(art).padding() }
+          ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+              canvas(art)
+              Text(caption).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+              if layers { markerLabels }
+              Text(t("illustration")).font(.caption).foregroundColor(.secondary)
+            }.padding()
+          }
             .navigationTitle(t("illustration")).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) {
               Button { fullscreen = false } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
@@ -73,11 +88,26 @@ struct GalaxySSIHealthAtlasArtwork: View {
       .onChange(of: zoom) { value in if let entry { state.binding(entry).wrappedValue.zoom = value } }
     }
   }
+  private var markerLabels: some View {
+    ForEach(Array(spots.enumerated()), id: \.offset) { index, spot in
+      if let target = atlas.entry(spot.0) {
+        Button { selected = target.id; fullscreen = false } label: {
+          HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("\(index + 1)").monospacedDigit()
+            Text(GalaxySSIHealthAtlasText.get(target.name, language)).fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            if target.id != entry?.id { Image(systemName: "chevron.right") }
+          }.frame(minHeight: 44)
+        }.disabled(depth >= 32 || target.id == entry?.id)
+          .accessibilityAddTraits(target.id == entry?.id ? .isSelected : [])
+      }
+    }
+  }
   private func canvas(_ art: String) -> some View {
-    GalaxySSIHealthAtlasZoomCanvas(asset: art, zoom: $zoom, spots: layers ? spots : [], labels: spots.map {
+    GalaxySSIHealthAtlasZoomCanvas(asset: art, zoom: $zoom, currentID: entry?.id, spots: layers ? spots : [], labels: spots.map {
       atlas.entry($0.0).map { GalaxySSIHealthAtlasText.get($0.name, language) } ?? $0.0
-    }, onSelect: { if depth < 32 { selected = $0; fullscreen = false } })
-      .aspectRatio(art == "HealthAtlasBody" ? 2.0 / 3.0 : art == "HealthAtlasHeart" ? 3.0 / 4.0 : 1, contentMode: .fit)
+    }, onSelect: { if depth < 32, $0 != entry?.id { selected = $0; fullscreen = false } })
+      .aspectRatio(plate?.aspectRatio ?? 1, contentMode: .fit)
   }
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
   private func bodyText(_ key: String) -> String { GalaxySSIHealthBodyText.string(key, language: language) }
@@ -87,6 +117,7 @@ struct GalaxySSIHealthAtlasArtwork: View {
 private struct GalaxySSIHealthAtlasZoomCanvas: UIViewRepresentable {
   let asset: String
   @Binding var zoom: Double
+  let currentID: String?
   let spots: [(String, Double, Double)]
   let labels: [String]
   let onSelect: (String) -> Void
@@ -117,6 +148,9 @@ private struct GalaxySSIHealthAtlasZoomCanvas: UIViewRepresentable {
       button.backgroundColor = .systemBackground
       button.layer.cornerRadius = 22
       button.accessibilityLabel = labels.indices.contains(index) ? labels[index] : spot.0
+      button.isSelected = spot.0 == currentID
+      button.isEnabled = !button.isSelected
+      if button.isSelected { button.accessibilityTraits.insert(.isSelected) }
       button.addAction(UIAction { _ in onSelect(spot.0) }, for: .touchUpInside)
       coordinator.content.addSubview(button)
     }

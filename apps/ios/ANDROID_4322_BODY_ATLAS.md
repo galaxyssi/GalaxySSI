@@ -44,3 +44,11 @@ Public teaching questions cannot read a Health archive or inherit composer attac
 The PNGs and JSON are unmodified blobs from the isolated Android commit. Android's bundled Lucide/Feather attribution is retained in `body-atlas/body-atlas-lucide.txt`; iOS uses native SF Symbols for category controls rather than importing Lucide vector paths.
 
 The existing iOS encrypted archive/trend implementation is reused rather than introducing Android's SQLite repository. Atlas filters and Agent disclosure are scoped to selected metrics/periods, but this PR does not claim to replace the underlying encrypted archive with Android's indexed storage engine. Native zoom/fullscreen and navigation follow iOS conventions rather than pixel-identical Android widgets.
+
+## Additive Resource Contract
+
+The atlas optionally consumes the bundled `HealthAtlasOrganPlates` data asset. With no pack, the original 278-entry catalogue and three illustrations remain unchanged. A pack can only add uniquely identified entries at existing anchors and prepend explicit relationships; schema, IDs, markers, coordinates, image availability and normalized aspect ratios are validated before opening the atlas. It cannot load a network document or executable code.
+
+This allows the following Android #4323 image/metadata increment to be a separate, independently buildable main-based PR without duplicating this foundation. The pack's English strings are bundled with its metadata; Chinese strings use the existing `Localizable.strings` table. Base XCTest counts explicitly load the frozen base without extensions. Layer controls navigate actual systems/children/cells/visible markers, and fullscreen retains the plate caption and accessible labels.
+
+Asset packaging follows Apple's [Data Set Type specification](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_ref-Asset_Catalog_Format/DataSetType.html). An absent optional pack is supported; an installed but malformed pack fails catalogue loading rather than silently presenting incomplete anatomy.
