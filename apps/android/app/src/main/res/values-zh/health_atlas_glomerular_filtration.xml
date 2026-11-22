@@ -1,0 +1,10 @@
+<resources>
+    <string name="health_atlas_glomerular_filtration_title">肾小球滤过</string>
+    <string name="health_atlas_glomerular_filtration_capillary_hydrostatic">毛细血管静水压</string>
+    <string name="health_atlas_glomerular_filtration_capsular_hydrostatic">肾小囊腔静水压</string>
+    <string name="health_atlas_glomerular_filtration_capillary_oncotic">毛细血管胶体渗透压</string>
+    <string name="health_atlas_glomerular_filtration_coefficient">滤过系数（Kf）</string>
+    <string name="health_atlas_glomerular_filtration_net_pressure">净滤过压：%1$s mmHg</string>
+    <string name="health_atlas_glomerular_filtration_formula">净滤过压 = 毛细血管静水压 − 肾小囊腔静水压 − 毛细血管胶体渗透压。正向滤过速率 = Kf × max(0, 净滤过压)。</string>
+    <string name="health_atlas_glomerular_filtration_scope">本演示采用合成数值，模拟一个代表性的肾小球滤过屏障。数值不代表个人测量结果或临床参考值，模型也不估算全肾滤过率。假设毛细血管内各项压力沿程均一、肾小囊腔胶体渗透压为零，且血浆蛋白完全留在血管内。Kf 综合反映屏障的水力通透性和滤过面积。模型不考虑自身调节或反向流动。</string>
+</resources>

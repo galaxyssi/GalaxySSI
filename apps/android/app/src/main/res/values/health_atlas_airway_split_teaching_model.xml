@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_airway_split_title">Airflow in the selected branch</string>
+    <string name="health_atlas_airway_split_total_flow">Total airflow into both branches</string>
+    <string name="health_atlas_airway_split_selected_resistance">Selected branch resistance</string>
+    <string name="health_atlas_airway_split_other_resistance">Other branch resistance</string>
+    <string name="health_atlas_airway_split_companion">Other branch airflow: %1$s L/s</string>
+    <string name="health_atlas_airway_split_formula">Selected branch flow = total flow × other branch resistance ÷ (selected resistance + other resistance). The two branch flows add up to the total.</string>
+    <string name="health_atlas_airway_split_scope">This demo uses two idealized parallel conducting airways with a shared pressure drop. The values are examples, not personal measurements. At a specified total flow, the shared pressure drop adjusts as resistance changes. If the pressure drop were held fixed instead, each branch flow would equal that drop divided by its own resistance, and total flow could change.</string>
+</resources>

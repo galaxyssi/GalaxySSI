@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_valve_flux_title">通过心脏瓣膜的瞬时流量</string>
+    <string name="health_atlas_valve_flux_area">瓣膜开口面积</string>
+    <string name="health_atlas_valve_flux_speed">平均前向流速</string>
+    <string name="health_atlas_valve_flux_scope">此理想化示例展示某一瞬间正向流经所选瓣膜的血流。流速是对整个开口截面取的平均值。输入与结果仅供演示，不是个人测量值或参考值。</string>
+    <string name="health_atlas_valve_flux_formula">Q = A × v；cm² × cm/s = cm³/s = mL/s。</string>
+    <string name="health_atlas_valve_flux_companion">若流量在 0.1 秒内保持恒定，则通过瓣膜的血液体积为 %1$s mL。</string>
+</resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_salivary_delivery_title">Combined salivary flow</string>
+    <string name="health_atlas_salivary_delivery_parotid">Parotid pair flow</string>
+    <string name="health_atlas_salivary_delivery_submandibular">Submandibular pair flow</string>
+    <string name="health_atlas_salivary_delivery_sublingual">Sublingual pair flow</string>
+    <string name="health_atlas_salivary_delivery_scope">Many acinar cells in each gland make the initial fluid. Each contribution is for a pair of major glands, not one cell. This demo omits minor glands and uses invented volume units (DU), not personal measurements or reference values.</string>
+    <string name="health_atlas_salivary_delivery_formula">Total flow = parotid flow + submandibular flow + sublingual flow. At constant flow, volume = total flow × 5 minutes.</string>
+    <string name="health_atlas_salivary_delivery_companion">Volume over 5 minutes: %1$s DU</string>
+</resources>

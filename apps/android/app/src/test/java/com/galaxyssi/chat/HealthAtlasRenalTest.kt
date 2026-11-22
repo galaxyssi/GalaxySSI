@@ -39,7 +39,9 @@ class HealthAtlasRenalTest {
             assertEquals(model, HealthAtlasPhysiology.restore(id, intArrayOf(150, 80, 20)))
         assertNull(HealthAtlasPhysiology.restore("distal-tubule", intArrayOf(150, 101, 20)))
         assertNull(HealthAtlasPhysiology(HealthAtlasPhysiologyKind.VENTILATION).renalAmounts)
-        assertNull(HealthAtlasPhysiologyKind.forItem("cell-podocyte"))
+        assertNull(HealthAtlasPhysiology.restore("cell-podocyte", intArrayOf(150, 80, 20)))
+        assertEquals(HealthAtlasPhysiologyKind.GLOMERULAR_FILTRATION, HealthAtlasPhysiologyKind.forItem("cell-podocyte"))
+        assertNull(HealthAtlasPhysiology(HealthAtlasPhysiologyKind.GLOMERULAR_FILTRATION).renalAmounts)
         assertNull(HealthAtlasPhysiologyKind.forItem("cell-mesangial-cell"))
     }
 }

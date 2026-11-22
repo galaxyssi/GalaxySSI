@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_peristaltic_travel_title">食管蠕动波</string>
+    <string name="health_atlas_peristaltic_travel_speed">波前传播速度</string>
+    <string name="health_atlas_peristaltic_travel_time">经过时间</string>
+    <string name="health_atlas_peristaltic_travel_scope">食管的平滑肌段依次收缩。本示例追踪以恒定速度推进的收缩波前。输入为虚构的教学参数，不是个人测量值。模型不追踪食物的移动。</string>
+    <string name="health_atlas_peristaltic_travel_formula">波前传播距离（cm）= 波前传播速度（cm/s）× 经过时间（s）。</string>
+    <string name="health_atlas_peristaltic_travel_progress">波前在 10 cm 示意段上的进度：%1$s%%</string>
+</resources>

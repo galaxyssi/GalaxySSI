@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_airway_split_title">所选支路的气流量</string>
+    <string name="health_atlas_airway_split_total_flow">流入两条支路的总气流量</string>
+    <string name="health_atlas_airway_split_selected_resistance">所选支路阻力</string>
+    <string name="health_atlas_airway_split_other_resistance">另一支路阻力</string>
+    <string name="health_atlas_airway_split_companion">另一支路的气流量：%1$s L/s</string>
+    <string name="health_atlas_airway_split_formula">所选支路流量 = 总流量 × 另一支路阻力 ÷（所选支路阻力 + 另一支路阻力）。两条支路的流量之和等于总流量。</string>
+    <string name="health_atlas_airway_split_scope">本演示使用两条理想化的并联传导气道，两条支路的压降相同。所用数值仅供教学演示，并非个人测量值。在给定总流量时，共同压降随阻力变化而调整。若改为固定压降，各支路的流量等于压降除以该支路自身的阻力，此时总流量可能变化。</string>
+</resources>

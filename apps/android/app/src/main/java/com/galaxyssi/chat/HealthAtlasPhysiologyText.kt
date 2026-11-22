@@ -28,6 +28,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_title
         HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> R.string.health_atlas_pelvis_model_title
         HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> R.string.health_atlas_cushion_model_title
+        else -> requireNotNull(kind.teaching).title
     }
     fun scope(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_scope
@@ -53,6 +54,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_scope
         HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> R.string.health_atlas_pelvis_model_scope
         HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> R.string.health_atlas_cushion_model_scope
+        else -> requireNotNull(kind.teaching).scope
     }
     fun formula(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_formula
@@ -78,6 +80,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_formula
         HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> R.string.health_atlas_pelvis_model_formula
         HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> R.string.health_atlas_cushion_model_formula
+        else -> requireNotNull(kind.teaching).formula
     }
     fun label(key: String) = when (key) {
         "rate" -> R.string.health_atlas_rate
@@ -136,7 +139,7 @@ internal object HealthAtlasPhysiologyText {
         "pelvis-position" -> R.string.health_atlas_pelvis_model_position
         "cushion-load" -> R.string.health_atlas_cushion_model_load
         "cushion-area" -> R.string.health_atlas_cushion_model_area
-        else -> error("Unknown physiology input: $key")
+        else -> requireNotNull(HealthAtlasPhysiologyKind.teachingInput(key)) { "Unknown physiology input: $key" }.label
     }
     fun unit(key: String) = when (key) {
         "rate" -> "/min"
@@ -183,7 +186,7 @@ internal object HealthAtlasPhysiologyText {
         "pelvis-load", "cushion-load" -> "N"
         "pelvis-position" -> "%"
         "cushion-area" -> "cm\u00b2"
-        else -> error("Unknown physiology input: $key")
+        else -> requireNotNull(HealthAtlasPhysiologyKind.teachingInput(key)) { "Unknown physiology input: $key" }.unit
     }
     fun number(value: Double, digits: Int = 2): String = NumberFormat.getNumberInstance().apply {
         maximumFractionDigits = digits
@@ -193,9 +196,12 @@ internal object HealthAtlasPhysiologyText {
     fun resultNumber(model: HealthAtlasPhysiology, value: Double) = when (model.kind) {
         HealthAtlasPhysiologyKind.VESSEL_FLOW -> number(value, 6)
         HealthAtlasPhysiologyKind.EYE_FOCUS -> HealthAtlasEyeOpticsText.offsetNumber(value)
-        else -> number(value)
+        else -> number(value, model.kind.teaching?.digits ?: 2)
     }
-    fun inputNumber(key: String, value: Double) = number(value, if (key == "vessel-radius" || key == "villus-radius") 3 else 2)
+    fun inputNumber(key: String, value: Double) = number(value, when (key) {
+        "vessel-radius", "villus-radius" -> 3
+        else -> HealthAtlasPhysiologyKind.teachingInput(key)?.digits ?: 2
+    })
     fun companion(context: Context, model: HealthAtlasPhysiology): String {
         model.oxygenAmounts?.let {
             return context.getString(R.string.health_atlas_model_oxygen_content,
@@ -229,6 +235,7 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_net_stroke
         HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> R.string.health_atlas_pelvis_model_left_value
         HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> R.string.health_atlas_cushion_model_reference_value
+        else -> requireNotNull(model.kind.teaching).companionTitle
     }, number(model.companionValue, if (model.kind == HealthAtlasPhysiologyKind.POTASSIUM) 4 else 2))
     }
     fun sourceTitle(kind: HealthAtlasPhysiologyKind, index: Int): Int = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING) {

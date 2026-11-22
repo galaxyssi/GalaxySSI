@@ -1,0 +1,10 @@
+<resources>
+    <string name="health_atlas_glomerular_filtration_title">Glomerular filtration</string>
+    <string name="health_atlas_glomerular_filtration_capillary_hydrostatic">Capillary hydrostatic pressure</string>
+    <string name="health_atlas_glomerular_filtration_capsular_hydrostatic">Bowman space hydrostatic pressure</string>
+    <string name="health_atlas_glomerular_filtration_capillary_oncotic">Capillary oncotic pressure</string>
+    <string name="health_atlas_glomerular_filtration_coefficient">Filtration coefficient (Kf)</string>
+    <string name="health_atlas_glomerular_filtration_net_pressure">Net filtration pressure: %1$s mmHg</string>
+    <string name="health_atlas_glomerular_filtration_formula">Net pressure = capillary hydrostatic pressure − Bowman space hydrostatic pressure − capillary oncotic pressure. Forward filtration rate = Kf × max(0, net pressure).</string>
+    <string name="health_atlas_glomerular_filtration_scope">Synthetic teaching values for one representative glomerular barrier, not personal measurements, clinical reference values, or a whole-kidney estimate. Pressures are held uniform along the capillary, Bowman space oncotic pressure is treated as zero, and plasma proteins are assumed to be fully retained. Kf combines hydraulic permeability and filtration area. Autoregulation and reverse flow are not modeled.</string>
+</resources>

@@ -1,0 +1,7 @@
+<resources>
+    <string name="health_atlas_model_cochlear_frequency_title">Cochlear place and frequency</string>
+    <string name="health_atlas_model_cochlear_frequency_position">Basilar membrane position from the apex (x)</string>
+    <string name="health_atlas_model_cochlear_frequency_formula">Greenwood (1990): Characteristic frequency (Hz) = 165.4 × (10^(2.1 × x) − 0.88). The position x is a fraction of the basilar membrane length, from 0 at the apex (low frequencies) to 1 at the base (high frequencies).</string>
+    <string name="health_atlas_model_cochlear_frequency_from_base">Distance from the base: %1$s%% of the basilar membrane length.</string>
+    <string name="health_atlas_model_cochlear_frequency_scope">This one-dimensional teaching model shows tuning in a normal human cochlea. Its values are not personal measurements. Cochlear hair cells respond to sound; vestibular hair cells sense head motion and orientation relative to gravity. The model does not predict audiograms or guide treatment.</string>
+</resources>

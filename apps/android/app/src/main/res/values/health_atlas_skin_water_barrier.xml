@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_skin_water_barrier_title">Relative skin water flux</string>
+    <string name="health_atlas_skin_water_barrier_diffusivity">Relative water diffusivity</string>
+    <string name="health_atlas_skin_water_barrier_gradient">Relative water concentration difference</string>
+    <string name="health_atlas_skin_water_barrier_thickness">Relative barrier thickness</string>
+    <string name="health_atlas_skin_water_barrier_formula">Relative water flux magnitude = relative diffusivity × relative water concentration difference ÷ relative thickness.</string>
+    <string name="health_atlas_skin_water_barrier_conductance">Relative water conductance: %1$s ×</string>
+    <string name="health_atlas_skin_water_barrier_scope">This water-only demo treats the stratum corneum as one uniform layer at steady state. Keratinocytes mature into corneocytes and supply the lipids between them. Together, the corneocytes and lipids form the outer barrier that limits water loss. All values are multiples of a synthetic baseline. The model does not predict personal water loss or the behavior of a single cell.</string>
+</resources>
