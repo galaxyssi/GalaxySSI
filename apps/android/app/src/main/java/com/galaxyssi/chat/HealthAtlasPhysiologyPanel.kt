@@ -25,7 +25,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION, HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION,
         HealthAtlasPhysiologyKind.BONE_BENDING, HealthAtlasPhysiologyKind.CALF_PUMP,
         HealthAtlasPhysiologyKind.PELVIC_SUPPORT, HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE,
-        HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT ->
+        HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT, HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY ->
             HealthAtlasMaterialResponseView(activity, model)
         else -> null
     }

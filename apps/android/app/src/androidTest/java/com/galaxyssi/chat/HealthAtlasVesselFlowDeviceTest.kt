@@ -202,7 +202,7 @@ class HealthAtlasVesselFlowDeviceTest {
         capture("all-controls", context.getString(R.string.health_atlas_vessel_viscosity))
         scenario.onActivity {
             it.setInputs(listOf(20, 153, 20, 20))
-            val chart = it.view("atlas-physiology-chart")
+            val chart = it.view("atlas-physiology-curve")
             chart.requestRectangleOnScreen(android.graphics.Rect(0, 0, chart.width, chart.height), true)
         }
         capture("curve", "mL/min")

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_bone_section_title">Nominal axial compressive stress</string>
+    <string name="health_atlas_bone_section_force">Axial compressive force</string>
+    <string name="health_atlas_bone_section_wall_thickness">Cortical wall thickness</string>
+    <string name="health_atlas_bone_section_area">Cortical cross-sectional area: %1$s mm²</string>
+    <string name="health_atlas_bone_section_formula">The outer radius is fixed at 5 mm. Inner radius = outer radius − wall thickness. Cortical area = π × (outer radius² − inner radius²). Nominal compressive stress = force ÷ cortical area (1 N/mm² = 1 MPa).</string>
+    <string name="health_atlas_bone_section_scope">Compact (cortical) bone forms the wall around the marrow cavity in a long-bone shaft. The model represents only a short shaft segment as a straight, circular tube: for example, part of the clavicle midshaft, a metacarpal in the hand, or a metatarsal in the foot. The force acts along the centerline. At the same force, a thicker wall spreads the load over more area and lowers the average stress. All values are synthetic. The model ignores variations in shape, bending and twisting; it does not estimate stress or fracture risk in a real bone.</string>
+</resources>

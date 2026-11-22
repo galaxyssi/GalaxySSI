@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_colonic_water_balance_title">Water remaining in the colon</string>
+    <string name="health_atlas_colonic_water_balance_starting_volume">Starting water volume</string>
+    <string name="health_atlas_colonic_water_balance_net_absorbed">Net absorbed percentage</string>
+    <string name="health_atlas_colonic_water_balance_companion">Net water absorbed: %1$s mL</string>
+    <string name="health_atlas_colonic_water_balance_formula">Net water absorbed (mL) = starting water volume (mL) × (net absorbed percentage ÷ 100). Water remaining (mL) = starting water volume (mL) − net water absorbed (mL).</string>
+    <string name="health_atlas_colonic_water_balance_scope">The colon absorbs much of the water left in the contents arriving from the small intestine. This model starts with an example volume of water in the colon. The chosen percentage summarizes net uptake (absorption minus secretion) as a share of that starting volume. The values are for teaching only; they are not reference ranges and do not predict individual absorption or stool output.</string>
+</resources>

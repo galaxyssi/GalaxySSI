@@ -153,7 +153,9 @@ class HealthAtlasPhysiologyTest {
                             HealthAtlasPhysiologyKind.RENAL_EXCRETION, HealthAtlasPhysiologyKind.EYE_FOCUS,
                             HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE,
                             HealthAtlasPhysiologyKind.AIRWAY_SPLIT, HealthAtlasPhysiologyKind.VISUAL_ANGLE,
-                            HealthAtlasPhysiologyKind.HORMONE_SIGNAL -> y <= value + 1e-9
+                            HealthAtlasPhysiologyKind.HORMONE_SIGNAL, HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY,
+                            HealthAtlasPhysiologyKind.COLONIC_WATER_BALANCE, HealthAtlasPhysiologyKind.GLIAL_CAPACITANCE,
+                            HealthAtlasPhysiologyKind.ENDOCRINE_DILUTION -> y <= value + 1e-9
                             else -> y >= value - 1e-9
                         })
                     }

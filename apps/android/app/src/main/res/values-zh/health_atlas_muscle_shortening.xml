@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_muscle_shortening_title">肌原纤维节段的缩短量</string>
+    <string name="health_atlas_muscle_shortening_count">串联肌节数</string>
+    <string name="health_atlas_muscle_shortening_per_sarcomere">单个肌节的缩短量</string>
+    <string name="health_atlas_muscle_shortening_scope">此演示假设一段笔直的肌原纤维中，所有肌节的缩短量相同。输入为虚构的教学数值，并非任何个人或所选肌肉的测量值。模型不考虑肌肉的整体构造、整块肌肉或关节的位移，也不计算力，不用于估算运动表现或预测患者结局。</string>
+    <string name="health_atlas_muscle_shortening_formula">ΔL = N × s / 1000\nL = N × (2.5 − s) / 1000\nN：串联肌节数；s：单个肌节的缩短量（µm，微米）。演示设定每个肌节的初始长度为 2.5 µm。ΔL 为节段缩短量，L 为缩短后的节段长度，单位均为 mm（毫米）。</string>
+    <string name="health_atlas_muscle_shortening_remaining_length">缩短后的节段长度：%1$s mm</string>
+</resources>

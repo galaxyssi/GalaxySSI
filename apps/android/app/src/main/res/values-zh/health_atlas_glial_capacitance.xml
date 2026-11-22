@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_glial_capacitance_title">髓鞘电容（理想模型）</string>
+    <string name="health_atlas_glial_capacitance_thickness">相对髓鞘厚度</string>
+    <string name="health_atlas_glial_capacitance_area">相对内表面积</string>
+    <string name="health_atlas_glial_capacitance_formula">相对电容 = 相对面积 × ln(1.5) ÷ ln(1 + 相对厚度 ÷ 2)，其中 ln 表示自然对数。</string>
+    <string name="health_atlas_glial_capacitance_per_area">单位内表面积的相对电容：%1$s 倍</string>
+    <string name="health_atlas_glial_capacitance_scope">在周围神经系统中，形成髓鞘的施万细胞包裹轴突；在中枢神经系统中，这一过程由少突胶质细胞完成。模型将一段有髓鞘的轴突简化为理想圆柱形电容器，保持内半径和绝缘材料不变。内表面积随节段长度变化。所有数值均为假设基准值的倍数，基准髓鞘厚度为内半径的一半。在电压和面积相同的情况下，髓鞘越厚，电容越小，储存的电荷也越少。本模型不估算神经传导速度，也不用于诊断。</string>
+</resources>

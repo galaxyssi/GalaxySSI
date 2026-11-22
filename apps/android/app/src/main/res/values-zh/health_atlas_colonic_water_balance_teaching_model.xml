@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_colonic_water_balance_title">结肠内剩余水量</string>
+    <string name="health_atlas_colonic_water_balance_starting_volume">初始水量</string>
+    <string name="health_atlas_colonic_water_balance_net_absorbed">净吸收百分比</string>
+    <string name="health_atlas_colonic_water_balance_companion">净吸收水量：%1$s mL</string>
+    <string name="health_atlas_colonic_water_balance_formula">净吸收水量（mL）= 初始水量（mL）×（净吸收百分比 ÷ 100）。剩余水量（mL）= 初始水量（mL）− 净吸收水量（mL）。</string>
+    <string name="health_atlas_colonic_water_balance_scope">结肠吸收来自小肠的内容物中大部分剩余水分。此模型以结肠内的示例水量为起点。所选百分比表示净吸收水量（吸收量减去分泌量）占初始水量的比例。这些数值仅用于教学，不是参考范围，也不能预测个人的吸收量或排便量。</string>
+</resources>

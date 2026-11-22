@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_muscle_shortening_title">Myofibril segment shortening</string>
+    <string name="health_atlas_muscle_shortening_count">Sarcomere count in series</string>
+    <string name="health_atlas_muscle_shortening_per_sarcomere">Shortening per sarcomere</string>
+    <string name="health_atlas_muscle_shortening_scope">This demo assumes all sarcomeres in one straight myofibril segment shorten by the same amount. The inputs are synthetic, not measurements of any person or selected muscle. The model does not account for muscle architecture, whole-muscle or joint displacement, or force. It does not estimate exercise performance or predict patient outcomes.</string>
+    <string name="health_atlas_muscle_shortening_formula">ΔL = N × s / 1000\nL = N × (2.5 − s) / 1000\nN: number of sarcomeres in series; s: shortening per sarcomere (µm). Each sarcomere starts at a synthetic length of 2.5 µm. ΔL is segment shortening and L is remaining segment length, both in mm.</string>
+    <string name="health_atlas_muscle_shortening_remaining_length">Remaining segment length: %1$s mm</string>
+</resources>

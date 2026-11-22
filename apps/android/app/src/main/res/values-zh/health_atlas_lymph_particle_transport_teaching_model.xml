@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_lymph_particle_transport_title">淋巴液携带染料</string>
+    <string name="health_atlas_lymph_particle_transport_flow">模型中的淋巴液流量</string>
+    <string name="health_atlas_lymph_particle_transport_concentration">淋巴液中的染料浓度</string>
+    <string name="health_atlas_lymph_particle_transport_companion">5 分钟内携带的染料质量：%1$s µg</string>
+    <string name="health_atlas_lymph_particle_transport_formula">单位时间内携带的染料质量（µg/min）= 染料浓度（µg/mL）× 淋巴液流量（mL/min）。</string>
+    <string name="health_atlas_lymph_particle_transport_scope">毛细淋巴管的管壁由淋巴管内皮细胞构成，组织液进入管内后成为淋巴液。淋巴液经输出淋巴管离开淋巴结；胸导管通常在左颈内静脉与左锁骨下静脉的汇合处将淋巴液送回血液循环。本模型只考察一股稳定的淋巴液流，例如从淋巴结流出的淋巴液，并假设虚构的染料已均匀混合在其中。染料在所考察的管段中没有增加、损失或积存，因此每分钟流入与流出的染料质量相同。浓度不变时，每分钟流过的淋巴液越多，携带的染料就越多。数值均为虚构，不用于估算染料进入淋巴液的过程、淋巴结的过滤作用或实际淋巴液流量。</string>
+</resources>

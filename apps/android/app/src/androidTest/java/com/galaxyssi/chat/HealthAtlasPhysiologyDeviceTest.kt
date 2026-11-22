@@ -227,6 +227,7 @@ class HealthAtlasPhysiologyDeviceTest {
             Triple("pelvis", "pelvic-support", "pelvis-load"),
             Triple("subcutaneous-tissue", "cushion-contact", "cushion-load"),
             Triple("diaphragm", "diaphragm-displacement", "diaphragm-descent"),
+            Triple("aorta", "arterial-continuity", "arterial-lumen-diameter"),
         )
         for ((id, art, input) in examples) {
             var initial = 0
@@ -244,7 +245,8 @@ class HealthAtlasPhysiologyDeviceTest {
                 val after = draw()
                 try {
                     assertFalse("$id illustration did not respond", before.sameAs(after))
-                    assertTrue(diagram.contentDescription.contains("0 "))
+                    val model = (activity.view("atlas-physiology-curve") as HealthAtlasPhysiologyChart).model
+                    assertTrue(diagram.contentDescription.contains(HealthAtlasPhysiologyText.result(activity, model)))
                 } finally { before.recycle(); after.recycle() }
             }
             scenario.recreate()
@@ -257,6 +259,28 @@ class HealthAtlasPhysiologyDeviceTest {
             }
             capture(id)
             scenario.onActivity { it.onBackPressed() }
+        }
+    }
+    @Test fun newStructureLessonsExposeLiveControlsAndKeepTheirFunctionPlayback() = native { scenario ->
+        val examples = listOf("pulmonary-trunk", "colon", "thoracic-duct", "clavicle", "hair",
+            "cell-oligodendrocyte", "cell-pancreatic-beta-cell", "cell-retinal-bipolar-cell", "cell-skeletal-myocyte")
+        for (id in examples) scenario.onActivity { activity ->
+            activity.open(id, cell = id.startsWith("cell-"))
+            val kind = requireNotNull(HealthAtlasPhysiologyKind.forItem(id))
+            val curve = activity.view("atlas-physiology-curve") as HealthAtlasPhysiologyChart
+            val panel = activity.view("atlas-physiology-output") as TextView
+            val control = activity.view("atlas-physiology-${kind.inputs[kind.axis].key}") as SeekBar
+            assertEquals(id, kind, curve.model.kind)
+            val initial = curve.model
+            val initialText = panel.text.toString()
+            control.progress = control.max
+            assertNotEquals(id, initial.result, curve.model.result)
+            assertNotEquals(id, initialText, panel.text.toString())
+            assertNotNull(activity.view("atlas-physiology-source"))
+            assertNotNull(activity.view("atlas-simulation-play"))
+            activity.view("atlas-physiology-reset").performClick()
+            assertEquals(id, initial, curve.model)
+            activity.onBackPressed()
         }
     }
     @Test fun threePhysiologyScreensShowIndependentModels() = native { scenario ->

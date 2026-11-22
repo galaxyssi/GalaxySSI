@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_endocrine_dilution_title">稀释后的示踪物浓度</string>
+    <string name="health_atlas_endocrine_dilution_amount">示踪物总量</string>
+    <string name="health_atlas_endocrine_dilution_volume">最终体积</string>
+    <string name="health_atlas_endocrine_dilution_companion">稀释后保留的示踪物总量：%1$s TU</string>
+    <string name="health_atlas_endocrine_dilution_formula">示踪物浓度 = 示踪物总量 ÷ 最终体积。仅将体积加倍，浓度就减半；仅将示踪物总量加倍，浓度就加倍。</string>
+    <string name="health_atlas_endocrine_dilution_scope">激素分泌后可随血液运输。有些信号也作用于邻近细胞，例如胰岛内的细胞间信号。这个类比只比较均匀混合且示踪物无损失的样本。所有数值均为虚构；TU 和 VU 分别是示踪物量和体积的虚构单位。本模型不描述实际混合过程或激素动力学，也不预测血液中的激素浓度。</string>
+</resources>

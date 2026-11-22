@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_endocrine_dilution_title">Tracer concentration after dilution</string>
+    <string name="health_atlas_endocrine_dilution_amount">Tracer amount</string>
+    <string name="health_atlas_endocrine_dilution_volume">Final volume</string>
+    <string name="health_atlas_endocrine_dilution_companion">Tracer amount conserved: %1$s TU</string>
+    <string name="health_atlas_endocrine_dilution_formula">Tracer concentration = tracer amount &#247; final volume. Doubling only the volume halves the concentration. Doubling only the amount doubles it.</string>
+    <string name="health_atlas_endocrine_dilution_scope">After secretion, hormones can travel in the blood. Some signals also act on nearby cells, as in pancreatic islets. This analogy compares evenly mixed samples with no tracer loss. TU and VU are imaginary units of tracer amount and volume. This model does not simulate mixing in the body or hormone kinetics, and it cannot predict blood hormone levels.</string>
+</resources>
