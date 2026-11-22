@@ -296,7 +296,7 @@ class HealthAtlasIllustrationStyleDeviceTest {
 
     @Test fun directionalTrailGrowsAndClearsOnTheSameNativeDiagram() = native { scenario ->
         scenario.onActivity {
-            it.open("esophagus"); it.view("atlas-tab-3").performClick()
+            it.open("esophagus"); it.openAtlasModelDetails()
             val diagram = it.view("atlas-section-diagram") as HealthAtlasSectionLessonView
             diagram.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))

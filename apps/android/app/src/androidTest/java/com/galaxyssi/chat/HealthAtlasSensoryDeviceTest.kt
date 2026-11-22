@@ -140,7 +140,7 @@ class HealthAtlasSensoryDeviceTest {
 
     @Test fun rodRelayUsesBothInterneuronsAndDoesNotLeakIntoConeStages() = native { scenario ->
         scenario.onActivity {
-            it.open("retina"); it.view("atlas-tab-3").performClick()
+            it.open("retina"); it.openAtlasModelDetails()
             val path = it.view("atlas-retinal-path") as HealthAtlasRetinaPath
             val section = it.view("atlas-section-diagram") as HealthAtlasSectionLessonView
             val atlas = HealthBodyAtlas.load(it)
@@ -180,7 +180,7 @@ class HealthAtlasSensoryDeviceTest {
         scenario.onActivity { it.open("cell-rod-photoreceptor") }
         capture("rod-structure", scenario.localized(R.string.health_atlas_cell_rod_photoreceptor_name))
         scenario.onActivity {
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             val scroll = it.view("atlas-scroll")
             val control = it.view("atlas-physiology-photon-mean") as SeekBar
             assertEquals(100, control.progress)
@@ -195,7 +195,7 @@ class HealthAtlasSensoryDeviceTest {
         scenario.onActivity {
             assertEquals(200, (it.view("atlas-physiology-photon-mean") as SeekBar).progress)
             it.onBackPressed()
-            it.open("cell-cone-photoreceptor"); it.view("atlas-tab-3").performClick()
+            it.open("cell-cone-photoreceptor"); it.openAtlasModelDetails()
             assertNull(it.window.decorView.tagged("atlas-physiology-photon-mean"))
         }
     }
@@ -209,7 +209,7 @@ class HealthAtlasSensoryDeviceTest {
         for ((id, output) in outputs) {
             scenario.onActivity { activity ->
                 activity.open(id)
-                activity.view("atlas-tab-3").performClick()
+                activity.openAtlasModelDetails()
             }
             instrumentation.waitForIdleSync()
             var title = ""

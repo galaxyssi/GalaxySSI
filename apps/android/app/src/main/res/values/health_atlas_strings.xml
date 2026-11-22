@@ -9,6 +9,8 @@
     <string name="health_atlas_cells">Cells</string>
     <string name="health_atlas_structure">Structure</string>
     <string name="health_atlas_function">Function</string>
+    <string name="health_atlas_function_outline">Complete process</string>
+    <string name="health_atlas_inline_models">Models and parameters</string>
     <string name="health_atlas_values">My metrics</string>
     <string name="health_atlas_simulation">Simulation</string>
     <string name="health_atlas_open_quantitative_model">Numerical model</string>

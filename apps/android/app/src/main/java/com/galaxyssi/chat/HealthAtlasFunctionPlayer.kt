@@ -2,21 +2,24 @@ package com.galaxyssi.chat
 
 import android.animation.ValueAnimator
 import android.app.Activity
+import android.os.SystemClock
+import android.view.View
 import android.view.Gravity
-import android.view.animation.LinearInterpolator
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.SeekBar
 
 internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAtlasFunctionStory,
-    initial: Float, openSource: (String) -> Unit) : LinearLayout(activity) {
+    initial: Float, openSource: (String) -> Unit, showTitle: Boolean = true,
+    private val onPlay: () -> Unit = {}) : LinearLayout(activity) {
     private val ui = HealthCenterViews(activity)
     private val art = story.createArt(activity)
     private val caption = ui.text("", 15f).apply { tag = "atlas-function-caption" }
     private val chapterLabel = ui.text("", 16f, bold = true).apply { tag = "atlas-function-chapter" }
-    private val play: ImageButton = ui.icon(R.drawable.ic_rich_play, R.string.health_body_play) {
-        if (animator == null) start() else pause()
-    }.apply { tag = "atlas-function-play" }
+    private val timeline = HealthAtlasChapterClock(story.chapters.size, initial)
+    private val frame = Runnable { advance() }
+    private val play: ImageButton = ui.icon(R.drawable.ic_rich_play, R.string.health_body_play, ::toggle)
+        .apply { tag = "atlas-function-play" }
     private val position = SeekBar(activity).apply {
         max = 1000
         tag = "atlas-function-position"
@@ -26,11 +29,10 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
             override fun onStartTrackingTouch(seek: SeekBar?) = pause()
             override fun onStopTrackingTouch(seek: SeekBar?) = Unit
             override fun onProgressChanged(seek: SeekBar?, value: Int, user: Boolean) {
-                if (user) { pause(); setPhase(value / 1000f) }
+                if (user) seek(value / 1000f)
             }
         })
     }
-    private var animator: ValueAnimator? = null
     private var renderedChapter = -1
     var phase = 0f
         private set
@@ -38,7 +40,7 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
     init {
         tag = "atlas-function-player"
         orientation = VERTICAL
-        ui.add(this, ui.text(context.getString(story.title), 18f, bold = true))
+        if (showTitle) ui.add(this, ui.text(context.getString(story.title), 18f, bold = true))
         ui.add(this, ui.line().apply {
             gravity = Gravity.CENTER
             tag = "atlas-function-controls"
@@ -47,27 +49,41 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
             addView(play)
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_body_next_step) { skip(1) }
                 .apply { rotation = 180f; tag = "atlas-function-next" })
-            addView(ui.icon(R.drawable.ic_reset_data, R.string.health_atlas_reset) { pause(); setPhase(0f) }
+            addView(ui.icon(R.drawable.ic_reset_data, R.string.health_atlas_reset) { seek(0f) }
                 .apply { tag = "atlas-function-reset" })
-        }, 2)
+        }, if (showTitle) 2 else 0)
         ui.add(this, position)
+        art.setOnClickListener { toggle() }
+        art.isFocusable = true
         ui.add(this, art, 6)
         ui.add(this, chapterLabel, 12)
         ui.add(this, caption, 6)
         ui.add(this, ui.text(context.getString(story.scope), 12f, muted = true), 6)
+        val outline = ui.column().apply { tag = "atlas-function-outline"; visibility = View.GONE }
+        ui.add(this, HealthAtlasUi.disclosure(activity, context.getString(R.string.health_atlas_function_outline),
+            "atlas-function-outline-toggle") { open ->
+            if (open && outline.childCount == 0) story.chapters.forEachIndexed { index, chapter ->
+                val label = context.getString(R.string.health_atlas_stage, index + 1, story.chapters.size,
+                    context.getString(chapter.first))
+                ui.add(outline, ui.row(label, context.getString(chapter.second)) { seek(story.startOf(index)) }
+                    .apply { tag = "atlas-function-outline-stage-$index" })
+            }
+            outline.visibility = if (open) View.VISIBLE else View.GONE
+        }, 6)
+        ui.add(this, outline)
         story.references.forEachIndexed { index, (title, url) ->
             ui.add(this, ui.row(context.getString(title)) { openSource(url) }
                 .apply { tag = "atlas-function-source-$index" }, if (index == 0) 8 else 0)
         }
-        setPhase(initial)
+        showPhase(timeline.sample(SystemClock.uptimeMillis()))
     }
 
     private fun skip(direction: Int) {
-        pause()
-        setPhase(story.startOf(story.chapter(phase) + direction))
+        val position = timeline.sample(SystemClock.uptimeMillis())
+        seek(story.startOf(story.chapter(position) + direction))
     }
 
-    private fun setPhase(value: Float) {
+    private fun showPhase(value: Float) {
         phase = HealthAtlasFunctionStory.safePhase(value)
         val chapter = story.chapter(phase)
         if (chapter != renderedChapter) {
@@ -77,35 +93,45 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
             caption.setText(detail)
             renderedChapter = chapter
         }
-        art.phase = phase
+        art.phase = if (ValueAnimator.areAnimatorsEnabled()) phase else story.startOf(chapter)
         position.progress = (phase * position.max).toInt()
     }
 
-    private fun start() {
-        if (phase >= 1f) setPhase(0f)
-        if (!ValueAnimator.areAnimatorsEnabled()) { skip(1); return }
-        play.setImageResource(R.drawable.ic_rich_pause)
-        play.contentDescription = context.getString(R.string.health_body_pause)
-        play.tooltipText = play.contentDescription
-        val player = ValueAnimator.ofFloat(phase, 1f).apply {
-            duration = ((1f - phase) * story.durationMs).toLong().coerceAtLeast(1L)
-            interpolator = LinearInterpolator()
-            addUpdateListener {
-                setPhase(it.animatedValue as Float)
-                if (phase >= 1f) pause()
-            }
+    private fun seek(value: Float) {
+        removeCallbacks(frame)
+        timeline.seek(value)
+        advance()
+    }
+
+    private fun toggle() {
+        if (timeline.playing) pause()
+        else {
+            onPlay()
+            timeline.resume(SystemClock.uptimeMillis())
+            advance()
         }
-        animator = player
-        player.start()
+    }
+
+    private fun advance() {
+        val now = SystemClock.uptimeMillis()
+        showPhase(timeline.sample(now))
+        val label = context.getString(if (timeline.playing) R.string.health_body_pause else R.string.health_body_play)
+        if (play.contentDescription != label) {
+            play.setImageResource(if (timeline.playing) R.drawable.ic_rich_pause else R.drawable.ic_rich_play)
+            play.contentDescription = label
+            play.tooltipText = label
+        }
+        if (timeline.playing) {
+            if (ValueAnimator.areAnimatorsEnabled()) postOnAnimation(frame)
+            else postDelayed(frame, timeline.nextStepIn(now))
+        }
     }
 
     fun pause() {
-        animator?.removeAllUpdateListeners()
-        animator?.cancel()
-        animator = null
-        play.setImageResource(R.drawable.ic_rich_play)
-        play.contentDescription = context.getString(R.string.health_body_play)
-        play.tooltipText = play.contentDescription
+        if (!timeline.playing) return
+        removeCallbacks(frame)
+        timeline.pause(SystemClock.uptimeMillis())
+        advance()
     }
 
     override fun onDetachedFromWindow() { pause(); super.onDetachedFromWindow() }

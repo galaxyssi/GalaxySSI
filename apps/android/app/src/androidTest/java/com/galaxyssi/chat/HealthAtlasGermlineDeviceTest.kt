@@ -47,7 +47,7 @@ class HealthAtlasGermlineDeviceTest {
     private fun Activity.open(id: String) {
         view("atlas-tab-3").performClick()
         (view("atlas-search") as EditText).setText(id); view("atlas-entry-$id").performClick()
-        view("atlas-tab-3").performClick()
+        openAtlasModelDetails()
     }
     private fun activeWindow(text: String? = null): android.view.accessibility.AccessibilityNodeInfo {
         instrumentation.waitForIdleSync()
@@ -97,7 +97,7 @@ class HealthAtlasGermlineDeviceTest {
         scenario.recreate(); ready(scenario, "atlas-germline")
         scenario.onActivity {
             assertEquals(2, (it.view("atlas-germline") as HealthAtlasGermlineView).stage)
-            it.view("atlas-tab-0").performClick(); it.view("atlas-tab-3").performClick()
+            it.view("atlas-tab-0").performClick(); it.openAtlasModelDetails()
             assertEquals(2, (it.view("atlas-germline") as HealthAtlasGermlineView).stage)
             it.onBackPressed(); it.open("cell-oocyte-or-ovum")
             assertEquals(0, (it.view("atlas-germline") as HealthAtlasGermlineView).stage)

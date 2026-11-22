@@ -119,7 +119,7 @@ class HealthAtlasDigestiveDeviceTest {
 
     @Test fun pancreasRoutesAndSyntheticMixRestoreAndDrillIntoIslet() = native { scenario ->
         scenario.onActivity {
-            it.open("pancreas"); it.view("atlas-tab-3").performClick()
+            it.open("pancreas"); it.openAtlasModelDetails()
             assertTrue(it.view("atlas-pancreatic-route-duct").isSelected)
             assertTrue(it.view("atlas-pancreatic-route-blood").isSelected)
             it.view("atlas-process-stage-2").performClick()
@@ -156,7 +156,7 @@ class HealthAtlasDigestiveDeviceTest {
         scenario.onActivity {
             it.open("pancreatic-islets")
             for (id in HealthAtlasIsletStages.CELL_IDS) assertNotNull(it.view("atlas-hotspot-$id"))
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             for ((index, id) in HealthAtlasIsletStages.CELL_IDS.withIndex()) {
                 it.view("atlas-process-stage-$index").performClick()
                 assertEquals(index, (it.view("atlas-islet-stages") as HealthAtlasIsletStages).stage)

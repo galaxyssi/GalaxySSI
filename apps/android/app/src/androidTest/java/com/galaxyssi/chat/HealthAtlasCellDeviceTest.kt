@@ -195,7 +195,7 @@ class HealthAtlasCellDeviceTest {
         scenario.onActivity {
             it.openTransportCell(typeII)
             assertNotNull(it.view("atlas-feature-lamellar-body"))
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             val scroll = it.view("atlas-scroll")
             val diagram = it.view("atlas-alveolar-surface-diagram") as HealthAtlasAlveolarSurfaceView
             assertEquals(300.0, diagram.model.result, 1e-9)
@@ -219,7 +219,7 @@ class HealthAtlasCellDeviceTest {
             val typeI = "cell-type-i-pneumocyte"
             assertFalse(HealthAtlasAgentContext.prompt(it, atlas, atlas[typeI], quantitative = diagram.model).contains(scope))
             it.onBackPressed(); it.openTransportCell(typeI)
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             assertNull(it.window.decorView.tagged("atlas-alveolar-surface-diagram"))
         }
     }
@@ -230,7 +230,7 @@ class HealthAtlasCellDeviceTest {
         scenario.onActivity {
             it.openTransportCell(id)
             assertNotNull(it.view("atlas-feature-podocyte-foot"))
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             val diagram = it.view("atlas-podocyte-diagram") as HealthAtlasPodocyteView
             val atlas = HealthBodyAtlas.load(it)
             val mechanism = atlas.mechanism(requireNotNull(atlas[id]))
@@ -249,7 +249,7 @@ class HealthAtlasCellDeviceTest {
         scenario.onActivity {
             assertEquals(3, (it.view("atlas-podocyte-diagram") as HealthAtlasPodocyteView).stage)
             it.onBackPressed(); it.openTransportCell(neighbor)
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             assertNull(it.window.decorView.tagged("atlas-podocyte-diagram"))
         }
     }
@@ -267,7 +267,7 @@ class HealthAtlasCellDeviceTest {
         capture("astrocyte")
         scenario.onActivity {
             it.onBackPressed(); it.openCell(HealthAtlasSarcomere.OWNER)
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             val scroll = it.view("atlas-scroll")
             val diagram = it.view("atlas-sarcomere-diagram") as HealthAtlasSarcomerePanel.Diagram
             for (stage in 0..3) {
@@ -282,7 +282,7 @@ class HealthAtlasCellDeviceTest {
         scenario.recreate(); await(scenario, "atlas-sarcomere-diagram")
         scenario.onActivity {
             assertEquals(180, (it.view("atlas-sarcomere-diagram") as HealthAtlasSarcomerePanel.Diagram).model.zDistance)
-            it.onBackPressed(); it.openCell("cell-cardiomyocyte"); it.view("atlas-tab-3").performClick()
+            it.onBackPressed(); it.openCell("cell-cardiomyocyte"); it.openAtlasModelDetails()
             assertNull(it.window.decorView.tagged("atlas-sarcomere-diagram"))
         }
     }
@@ -356,7 +356,7 @@ class HealthAtlasCellDeviceTest {
             }
             capture("$id-structure")
             scenario.onActivity {
-                it.view("atlas-tab-3").performClick()
+                it.openAtlasModelDetails()
                 it.view("atlas-process-stage-2").performClick()
                 assertEquals(500, (it.view("atlas-simulation-progress") as SeekBar).progress)
                 val atlas = HealthBodyAtlas.load(it)
@@ -382,7 +382,7 @@ class HealthAtlasCellDeviceTest {
     }
     @Test fun stageTapPausesPlaybackWithoutChangingOtherInputs() = native { scenario ->
         scenario.onActivity {
-            it.view("atlas-hotspot-heart").performClick(); it.view("atlas-tab-3").performClick()
+            it.view("atlas-hotspot-heart").performClick(); it.openAtlasModelDetails()
             (it.view("atlas-parameter-first") as SeekBar).progress = 60
             it.view("atlas-simulation-play").performClick()
         }

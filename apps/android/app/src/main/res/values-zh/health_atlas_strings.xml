@@ -9,6 +9,8 @@
     <string name="health_atlas_cells">细胞</string>
     <string name="health_atlas_structure">结构</string>
     <string name="health_atlas_function">功能</string>
+    <string name="health_atlas_function_outline">完整流程</string>
+    <string name="health_atlas_inline_models">模型与参数</string>
     <string name="health_atlas_values">我的指标</string>
     <string name="health_atlas_simulation">模拟</string>
     <string name="health_atlas_open_quantitative_model">数值模拟</string>

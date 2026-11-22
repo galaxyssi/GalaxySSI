@@ -103,7 +103,7 @@ class HealthAtlasRenalDeviceTest {
             it.view("atlas-entry-cell-proximal-tubular-cell").performClick()
             assertNotNull(it.view("atlas-feature-prox-brush"))
             assertNull(it.window.decorView.tagged("atlas-hotspot-proximal-tubule"))
-            it.view("atlas-tab-3").performClick(); it.view("atlas-process-stage-2").performClick()
+            it.openAtlasModelDetails(); it.view("atlas-process-stage-2").performClick()
             (it.view("atlas-physiology-reabsorbed") as SeekBar).progress = 50
         }
         scenario.recreate(); ready(scenario, "atlas-process-stage-2")
@@ -117,7 +117,7 @@ class HealthAtlasRenalDeviceTest {
     }
     @Test fun balanceUpdatesLocallyAndRestoresWithResearchWithoutChangingOtherEntries() = native { scenario ->
         scenario.onActivity {
-            it.open("nephron"); it.view("atlas-tab-3").performClick()
+            it.open("nephron"); it.openAtlasModelDetails()
             (it.view("atlas-physiology-reabsorbed") as SeekBar).progress = 50
             (it.view("atlas-physiology-secreted") as SeekBar).progress = 30
             val balance = it.view("atlas-renal-balance") as HealthAtlasRenalBalanceView
@@ -136,7 +136,7 @@ class HealthAtlasRenalDeviceTest {
             (it.view("atlas-physiology-filtered") as SeekBar).progress = 0
             (it.view("atlas-physiology-secreted") as SeekBar).progress = 0
             assertEquals(0.0, (it.view("atlas-renal-balance") as HealthAtlasRenalBalanceView).amounts.excreted, 0.0)
-            it.onBackPressed(); it.onBackPressed(); it.open("distal-tubule"); it.view("atlas-tab-3").performClick()
+            it.onBackPressed(); it.onBackPressed(); it.open("distal-tubule"); it.openAtlasModelDetails()
             assertEquals(20.0, (it.view("atlas-renal-balance") as HealthAtlasRenalBalanceView).amounts.excreted, 1e-9)
         }
     }
@@ -188,7 +188,7 @@ class HealthAtlasRenalDeviceTest {
     }
     @Test fun actualAgentConfirmationContainsTheVisibleBalanceAndCanBeCancelled() = native { scenario ->
         scenario.onActivity {
-            it.open("nephron"); it.view("atlas-tab-3").performClick()
+            it.open("nephron"); it.openAtlasModelDetails()
             (it.view("atlas-physiology-filtered") as SeekBar).progress = 150
             it.view("atlas-ask").performClick()
         }
@@ -203,7 +203,7 @@ class HealthAtlasRenalDeviceTest {
         scenario.onActivity { it.open("nephron") }; capture("structure")
         scenario.onActivity { it.view("atlas-fullscreen").performClick() }; capture("fullscreen")
         instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK); instrumentation.waitForIdleSync(); SystemClock.sleep(250)
-        scenario.onActivity { it.view("atlas-tab-3").performClick() }; capture("balance")
+        scenario.onActivity { it.openAtlasModelDetails() }; capture("balance")
         scenario.onActivity { it.onBackPressed(); it.open("cell-collecting-duct-intercalated-cell"); it.view("atlas-tab-1").performClick() }
         capture("cell-function")
     }

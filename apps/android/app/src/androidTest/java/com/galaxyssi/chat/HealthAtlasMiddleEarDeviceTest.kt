@@ -107,7 +107,7 @@ class HealthAtlasMiddleEarDeviceTest {
                     assertTrue(activity.view("atlas-hotspot-$id").isSelected)
                 }
                 assertEquals(atlas[id]!!.name, (activity.view("health-page-title") as TextView).text.toString())
-                activity.view("atlas-tab-3").performClick()
+                activity.openAtlasModelDetails()
                 activity.view("atlas-process-stage-2").performClick()
                 assertTrue(activity.view("atlas-process-stage-2").isSelected)
                 val stage = (activity.view("atlas-simulation-stage") as TextView).text
@@ -125,7 +125,7 @@ class HealthAtlasMiddleEarDeviceTest {
     @Test fun controlsUpdateLocallyAndRestoreAcrossRecreationAndResearch() = native { scenario ->
         val values = listOf(64, 40, 140)
         scenario.onActivity {
-            it.openEar(); it.view("atlas-tab-3").performClick()
+            it.openEar(); it.openAtlasModelDetails()
             val scroll = it.view("atlas-scroll"); val diagram = it.transformer()
             it.adjust(values)
             assertSame(scroll, it.view("atlas-scroll")); assertSame(diagram, it.transformer())
@@ -136,7 +136,7 @@ class HealthAtlasMiddleEarDeviceTest {
         scenario.onActivity {
             assertEquals(HealthAtlasMiddleEar(64.0, 4.0, 1.4), it.transformer().model)
             it.view("atlas-tab-0").performClick(); it.view("atlas-hotspot-middle-ear").performClick()
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             assertEquals(HealthAtlasMiddleEar(), it.transformer().model)
             it.onBackPressed(); it.view("atlas-tab-1").performClick(); it.view("atlas-open-research").performClick()
             assertEquals(HealthAtlasMiddleEar(64.0, 4.0, 1.4), it.transformer().model)
@@ -147,7 +147,7 @@ class HealthAtlasMiddleEarDeviceTest {
 
     @Test fun auditorySequenceMovesOnTheCrossSectionAndRestoresItsOwnStage() = native { scenario ->
         scenario.onActivity {
-            it.openEar(); it.view("atlas-tab-3").performClick()
+            it.openEar(); it.openAtlasModelDetails()
             val section = it.view("atlas-section-diagram") as HealthAtlasSectionLessonView
             val artWidth = section.lesson.artWidth
             assertEquals(420, artWidth)
@@ -256,7 +256,7 @@ class HealthAtlasMiddleEarDeviceTest {
 
     @Test fun capturesThePressureModelAndCancelsItsLivePreviewWithoutSending() = native { scenario ->
         val inputs = listOf(64, 40, 140)
-        scenario.onActivity { it.openEar(); it.view("atlas-tab-3").performClick(); it.adjust(inputs) }
+        scenario.onActivity { it.openEar(); it.openAtlasModelDetails(); it.adjust(inputs) }
         capture("model", context.getString(R.string.health_atlas_middle_ear_pressure_ratio))
         scenario.onActivity {
             val slider = it.view("atlas-physiology-ear-lever")

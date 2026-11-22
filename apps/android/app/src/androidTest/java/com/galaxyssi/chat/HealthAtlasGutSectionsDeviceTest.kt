@@ -151,7 +151,7 @@ class HealthAtlasGutSectionsDeviceTest {
             }
             activity.view("atlas-tab-1").performClick()
             assertNotNull(activity.view("atlas-open-research"))
-            activity.view("atlas-tab-3").performClick()
+            activity.openAtlasModelDetails()
             val diagram = activity.view("atlas-section-diagram") as HealthAtlasSectionLessonView
             assertEquals(id, diagram.lesson.owner)
             assertNull(activity.window.decorView.tagged("atlas-simulation-art"))
@@ -166,7 +166,7 @@ class HealthAtlasGutSectionsDeviceTest {
 
     @Test fun esophagusMotionAndResearchRestoreTheSameAnatomy() = native { scenario ->
         scenario.onActivity {
-            it.open("esophagus"); it.view("atlas-tab-3").performClick()
+            it.open("esophagus"); it.openAtlasModelDetails()
             val view = it.view("atlas-section-diagram") as HealthAtlasSectionLessonView
             view.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
@@ -198,7 +198,7 @@ class HealthAtlasGutSectionsDeviceTest {
 
     @Test fun villusGeometryRespondsToSlidersAndDoesNotLeakToOtherEntries() = native { scenario ->
         scenario.onActivity {
-            it.open("jejunum"); it.view("atlas-tab-3").performClick()
+            it.open("jejunum"); it.openAtlasModelDetails()
             val scroller = it.view("atlas-scroll")
             val geometry = it.view("atlas-villus-geometry") as HealthAtlasVillusAreaView
             val density = it.view("atlas-physiology-villus-density") as SeekBar
@@ -226,9 +226,9 @@ class HealthAtlasGutSectionsDeviceTest {
         scenario.recreate(); ready(scenario, "atlas-villus-geometry")
         scenario.onActivity {
             assertEquals(listOf(24, 70, 120), (it.view("atlas-villus-geometry") as HealthAtlasVillusAreaView).model.inputs)
-            it.onBackPressed(); it.open("small-intestine"); it.view("atlas-tab-3").performClick()
+            it.onBackPressed(); it.open("small-intestine"); it.openAtlasModelDetails()
             assertEquals(listOf(12, 45, 60), (it.view("atlas-villus-geometry") as HealthAtlasVillusAreaView).model.inputs)
-            it.onBackPressed(); it.open("colon"); it.view("atlas-tab-3").performClick()
+            it.onBackPressed(); it.open("colon"); it.openAtlasModelDetails()
             assertNull(it.window.decorView.tagged("atlas-villus-geometry"))
             assertNull(it.window.decorView.tagged("atlas-physiology-villus-density"))
         }

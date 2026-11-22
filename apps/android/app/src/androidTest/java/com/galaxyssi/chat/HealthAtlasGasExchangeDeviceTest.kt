@@ -106,14 +106,14 @@ class HealthAtlasGasExchangeDeviceTest {
     }
     @Test fun navigationAndRecreationKeepGasPhaseAndVentilationInputsIndependent() = native { scenario ->
         scenario.onActivity {
-            it.open("lungs"); it.view("atlas-entry-alveoli").performClick(); it.view("atlas-tab-3").performClick()
+            it.open("lungs"); it.view("atlas-entry-alveoli").performClick(); it.openAtlasModelDetails()
             (it.view("atlas-physiology-rate") as SeekBar).progress = 20
             it.view("atlas-process-stage-2").performClick()
             it.view("atlas-gas-membrane").performClick()
             assertTrue(it.view("atlas-view-0").isSelected)
             it.view("atlas-view-1").performClick()
             assertTrue(it.view("atlas-hotspot-respiratory-membrane").isSelected)
-            it.view("atlas-entry-cell-type-i-pneumocyte").performClick(); it.view("atlas-tab-3").performClick()
+            it.view("atlas-entry-cell-type-i-pneumocyte").performClick(); it.openAtlasModelDetails()
             assertNull(it.window.decorView.tagged("atlas-gas-alveolus"))
         }
         scenario.recreate(); ready(scenario, "atlas-process-stage-0")
@@ -129,7 +129,7 @@ class HealthAtlasGasExchangeDeviceTest {
         }
     }
     @Test fun backgroundStopsAnimationAndDoesNotRestartIt() = native { scenario ->
-        scenario.onActivity { it.open("alveoli"); it.view("atlas-tab-3").performClick(); it.view("atlas-simulation-play").performClick() }
+        scenario.onActivity { it.open("alveoli"); it.openAtlasModelDetails(); it.view("atlas-simulation-play").performClick() }
         SystemClock.sleep(220); scenario.moveToState(Lifecycle.State.CREATED)
         var saved = -1
         scenario.onActivity { saved = (it.view("atlas-simulation-progress") as SeekBar).progress }
@@ -197,7 +197,7 @@ class HealthAtlasGasExchangeDeviceTest {
             .contains(context.getString(R.string.health_atlas_gas_scope)))
     }
     @Test fun realConfirmationIncludesCurrentGasContextAndCanBeCancelled() = native { scenario ->
-        scenario.onActivity { it.open("alveoli"); it.view("atlas-tab-3").performClick(); it.view("atlas-process-stage-2").performClick(); it.view("atlas-ask").performClick() }
+        scenario.onActivity { it.open("alveoli"); it.openAtlasModelDetails(); it.view("atlas-process-stage-2").performClick(); it.view("atlas-ask").performClick() }
         val expected = HealthAtlasGasExchangeText.summary(context, HealthAtlasGasExchange.gradients[1])
         val root = activeWindow(expected)
         assertTrue(root.findAccessibilityNodeInfosByText(expected).isNotEmpty())
@@ -209,7 +209,7 @@ class HealthAtlasGasExchangeDeviceTest {
         scenario.onActivity { it.open("alveoli") }; capture("structure")
         scenario.onActivity { it.view("atlas-fullscreen").performClick() }; capture("fullscreen")
         instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK); instrumentation.waitForIdleSync(); SystemClock.sleep(250)
-        scenario.onActivity { it.view("atlas-hotspot-pulmonary-capillaries").performClick(); it.view("atlas-tab-3").performClick() }
+        scenario.onActivity { it.view("atlas-hotspot-pulmonary-capillaries").performClick(); it.openAtlasModelDetails() }
         capture("diagram-top")
         scenario.onActivity {
             it.view("atlas-process-stage-2").performClick()
@@ -217,7 +217,7 @@ class HealthAtlasGasExchangeDeviceTest {
         }; capture("directions")
     }
     @Test fun alveolarSimulationShowsTheDiagramBeforeTheNumericModel() = native { scenario ->
-        scenario.onActivity { it.open("alveoli"); it.view("atlas-tab-3").performClick() }
+        scenario.onActivity { it.open("alveoli"); it.openAtlasModelDetails() }
         instrumentation.waitForIdleSync()
         scenario.onActivity {
             val diagram = it.view("atlas-process")

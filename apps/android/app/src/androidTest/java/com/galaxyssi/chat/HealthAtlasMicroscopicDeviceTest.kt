@@ -123,7 +123,7 @@ class HealthAtlasMicroscopicDeviceTest {
             model.stages.forEach { assertTrue(item.id, functionText.contains(it)) }
             assertTrue(functionText.contains(context.getString(if (model.reference == null)
                 R.string.health_atlas_reference_openstax else R.string.health_atlas_reference_pubmed)))
-            activity.view("atlas-tab-3").performClick()
+            activity.openAtlasModelDetails()
             val scroll = activity.view("atlas-scroll")
             val ask = activity.view("atlas-ask")
             for (stage in 0..3) {
@@ -156,19 +156,19 @@ class HealthAtlasMicroscopicDeviceTest {
     }
 
     @Test fun plateletStageRestoresWithoutLeakingToMegakaryocyte() = native { scenario ->
-        scenario.onActivity { it.open("fragment-platelet"); it.view("atlas-tab-3").performClick(); it.view("atlas-process-stage-2").performClick() }
+        scenario.onActivity { it.open("fragment-platelet"); it.openAtlasModelDetails(); it.view("atlas-process-stage-2").performClick() }
         scenario.recreate(); ready(scenario, "atlas-simulation-progress")
         scenario.onActivity {
             assertEquals(500, (it.view("atlas-simulation-progress") as SeekBar).progress)
-            it.onBackPressed(); it.open("cell-megakaryocyte"); it.view("atlas-tab-3").performClick()
+            it.onBackPressed(); it.open("cell-megakaryocyte"); it.openAtlasModelDetails()
             assertEquals(0, (it.view("atlas-simulation-progress") as SeekBar).progress)
-            it.onBackPressed(); it.open("fragment-platelet"); it.view("atlas-tab-3").performClick()
+            it.onBackPressed(); it.open("fragment-platelet"); it.openAtlasModelDetails()
             assertEquals(500, (it.view("atlas-simulation-progress") as SeekBar).progress)
         }
     }
 
     @Test fun extendedCellPlaybackStopsInBackgroundAndResetsLocally() = native { scenario ->
-        scenario.onActivity { it.open("cell-rod-photoreceptor"); it.view("atlas-tab-3").performClick(); it.view("atlas-simulation-play").performClick() }
+        scenario.onActivity { it.open("cell-rod-photoreceptor"); it.openAtlasModelDetails(); it.view("atlas-simulation-play").performClick() }
         SystemClock.sleep(200); scenario.moveToState(Lifecycle.State.CREATED)
         var progress = -1
         scenario.onActivity { progress = (it.view("atlas-simulation-progress") as SeekBar).progress }
@@ -183,7 +183,7 @@ class HealthAtlasMicroscopicDeviceTest {
 
     @Test fun representativeMicroscopicScreensHaveReadableNativeStages() = native { scenario ->
         for (id in listOf("fragment-platelet", "cell-rod-photoreceptor", "cell-thyroid-follicular-cell")) {
-            scenario.onActivity { it.open(id); it.view("atlas-tab-3").performClick(); it.view("atlas-process-stage-1").performClick() }
+            scenario.onActivity { it.open(id); it.openAtlasModelDetails(); it.view("atlas-process-stage-1").performClick() }
             instrumentation.waitForIdleSync()
             capture(id)
             scenario.onActivity { it.onBackPressed() }

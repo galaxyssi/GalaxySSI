@@ -46,7 +46,7 @@ class HealthAtlasElbowDeviceTest {
     private fun Activity.open(id: String) {
         view("atlas-tab-1").performClick()
         (view("atlas-search") as EditText).setText(id); view("atlas-entry-$id").performClick()
-        view("atlas-tab-3").performClick()
+        openAtlasModelDetails()
     }
     private fun activeWindow(text: String? = null): android.view.accessibility.AccessibilityNodeInfo {
         instrumentation.waitForIdleSync()
@@ -91,7 +91,7 @@ class HealthAtlasElbowDeviceTest {
         scenario.onActivity {
             assertEquals(70, (it.view("atlas-physiology-elbow-load") as SeekBar).progress)
             assertEquals(10, (it.view("atlas-physiology-elbow-muscle-arm") as SeekBar).progress)
-            it.view("atlas-tab-0").performClick(); it.view("atlas-tab-3").performClick()
+            it.view("atlas-tab-0").performClick(); it.openAtlasModelDetails()
             assertEquals(70, (it.view("atlas-physiology-elbow-load") as SeekBar).progress)
             it.onBackPressed(); it.open("skeletal")
             assertEquals(40, (it.view("atlas-physiology-elbow-load") as SeekBar).progress)
