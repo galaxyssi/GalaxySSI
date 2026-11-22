@@ -1606,8 +1606,8 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
     failedResult: AgentActionResult
 ): AgentUiState? {
     val action = plan.actions.firstOrNull { it.id == failedResult.actionId } ?: return null
-    val manuallyLocked = failedResult.metadata["manual_target_locked"] == "true" ||
-        action.parameters["manual_target_locked"] == "true"
+    // A delivery timeout does not grant consent to replace a manually selected model.
+    if (AgentConnectorFallbackAction.isTargetLocked(action, failedResult.metadata)) return null
     val failedResourceId = failedResult.metadata["resource_id"].orEmpty()
     val attemptedIds = AgentConnectorFallbackAction.attempted(failedResult.metadata)
     val connectorSnapshot = connectorRegistry.planningSnapshot()
@@ -1622,7 +1622,6 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
         decision = currentRouting
     )?.decision?.orderedTargetIds.orEmpty()
     recoverCodexSilence(plan, action, failedResult, connectorSnapshot.targets, currentFallbackIds)?.let { return it }
-    if (manuallyLocked && failedResult.metadata["allow_unavailable_target_fallback"] != "true") return null
     val silenceFallback = failedResult.metadata["allow_unavailable_target_fallback"] == "true"
     val fallbackIds = AgentConnectorFallbackTrail.mergeAvailable(
         rememberedResourceIds = emptyList(),
@@ -1648,8 +1647,7 @@ internal fun MobileNativeAgent.continueWithConnectorFallback(
         attemptedResourceIds = attemptedIds
     ) ?: return null
     val retryAction = AgentConnectorFallbackAction.prepare(
-        if (failedResult.metadata["allow_unavailable_target_fallback"] == "true")
-            action.copy(parameters = action.parameters - "manual_target_locked") else action,
+        action,
         selection,
         connectorSnapshot.targets.firstOrNull { it.id == selection.resourceId }
     )
