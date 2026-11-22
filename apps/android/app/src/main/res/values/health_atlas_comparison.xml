@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_compare_title">Compare models</string>
+    <string name="health_atlas_compare_scope">Synthetic tracer · Same initial amount and elimination rate. The curves show the share still in the central compartment.</string>
+    <string name="health_atlas_compare_control">No exchange</string>
+    <string name="health_atlas_compare_exchange">Exchange</string>
+    <string name="health_atlas_compare_faster">Faster transfer</string>
+    <string name="health_atlas_compare_legend">Dashed: one compartment · Solid: two compartments · Shaded: preset range · Time in hours</string>
+    <string name="health_atlas_compare_summary">One compartment %1$s%% · Two compartments %2$s%%\nDifference (two minus one): %3$s percentage points</string>
+    <string name="health_atlas_compare_range">Central amount across three presets: %1$s%% to %2$s%%</string>
+    <string name="health_atlas_compare_evidence">Model evidence</string>
+    <string name="health_atlas_compare_limit">Fixed synthetic parameter sets, not measurements. The range is not a confidence interval. Numerical checks do not establish experimental validity. This is not a drug or patient prediction.</string>
+    <string name="health_atlas_compare_reference">Independent validation principles</string>
+</resources>
