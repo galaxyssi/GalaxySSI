@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import android.app.Activity
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.View
 import android.view.animation.LinearInterpolator
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -28,7 +29,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private val inlineClock = if (inline) HealthAtlasChapterClock(mechanism.stages.size, values.phase) else null
     private val inlineFrame = Runnable { advanceInline() }
     private lateinit var play: ImageButton
-    private lateinit var stage: TextView
+    private var stage: TextView? = null
     private var renderedStage = -1
     private lateinit var progress: SeekBar
     private lateinit var output: TextView
@@ -41,9 +42,6 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     }
     private val retinalPath = if (item.id == HealthAtlasRetinaPath.OWNER)
         HealthAtlasRetinaPath(activity, atlas, mechanism, { index -> pause(); setPhase(index / 4f) }, select) else null
-    private val process = if (circulation == null && gasExchange == null && endocrinePath == null && retinalPath == null) HealthAtlasProcessView(activity, mechanism) { index ->
-        pause(); setPhase(index / 4f)
-    } else null
     private val germline = if (item.id in HealthAtlasGermline.supported) HealthAtlasGermlineView(activity, item.id) else null
     private val heartValves = if (HealthAtlasValve.supports(item.id)) HealthAtlasValvePanel(activity, atlas, item, select) else null
     private val phagocytosis = if (item.id == HealthAtlasPhagocytosisView.OWNER) HealthAtlasPhagocytosisView(activity, mechanism) else null
@@ -56,6 +54,12 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private val isletStages = if (item.id == HealthAtlasIsletStages.OWNER) HealthAtlasIsletStages(activity, atlas, select) else null
     private val sweatView = if (item.id == HealthAtlasSweatView.OWNER) HealthAtlasSweatView(activity, mechanism) else null
     private val sectionView = HealthAtlasSectionLesson.forId(item.id)?.let { HealthAtlasSectionLessonView(activity, it, mechanism) }
+    private val diagram = circulation ?: gasExchange ?: endocrinePath ?: retinalPath
+    private val closeUp = heartValves ?: germline ?: phagocytosis ?: granulocyte ?: immuneLink ?: bloodDefense ?:
+        sarcomere ?: podocyte ?: pancreaticRoutes ?: isletStages ?: sweatView ?: sectionView
+    private val process = if (diagram == null) {
+        HealthAtlasProcessView(activity, mechanism, showLabels = !inline) { index -> pause(); setPhase(index / 4f) }
+    } else null
     private val quantitativeAfterArt = mechanismFirst || gasExchange != null || pancreaticRoutes != null || endocrinePath != null ||
         sweatView != null || (sectionView != null && item.kind != HealthAtlasKind.CELL)
     private val resetInputs = arrayListOf<() -> Unit>()
@@ -68,64 +72,73 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
             }
         }
         if (!quantitativeAfterArt) addQuantitative()
+        val scene = HealthAtlasSceneFrame(activity, "atlas-simulation-frame").apply {
+            setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8))
+        }
+        ui.add(body, scene)
+        val details = if (inline) ui.column().apply {
+            visibility = View.GONE
+            tag = "atlas-simulation-references"
+        } else body
+        fun note(res: Int, top: Int = 6, size: Float = 12f): TextView =
+            ui.text(activity.getString(res), size, muted = true).also { ui.add(details, it, top) }
         val art = HealthAtlasUi.art(item)
-        if (art != null && circulation == null && gasExchange == null && heartValves == null &&
-            phagocytosis == null && granulocyte == null && immuneLink == null && bloodDefense == null && sarcomere == null &&
-            podocyte == null && pancreaticRoutes == null &&
-            isletStages == null && endocrinePath == null && retinalPath == null && sweatView == null && sectionView == null)
-            ui.add(body, ImageView(activity).apply {
+        if (art != null && diagram == null && closeUp == null)
+            ui.add(scene, ImageView(activity).apply {
             setImageResource(art); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = item.name
             minimumHeight = ui.dp(260); setOnClickListener { zoom(art, item.name) }; tag = "atlas-simulation-art"
             adjustViewBounds = true; maxHeight = ui.dp(280)
         })
-        ui.add(body, ui.text(mechanism.title, 18f, bold = true), 14)
-        germline?.let { ui.add(body, it, 12) }
-        val diagram = circulation ?: gasExchange ?: endocrinePath ?: retinalPath
-        if (heartValves != null) ui.add(body, heartValves, 8)
+        ui.add(scene, ui.text(mechanism.title, 16f, bold = true), 4)
+        germline?.let { ui.add(scene, it, 12) }
+        if (heartValves != null) ui.add(scene, heartValves, 8)
         if (phagocytosis != null) {
-            ui.add(body, phagocytosis, 8)
-            ui.add(body, ui.text(activity.getString(R.string.health_atlas_phagocytosis_scope), 12f, muted = true), 6)
+            ui.add(scene, phagocytosis, 8)
+            note(R.string.health_atlas_phagocytosis_scope)
         }
         fun addCellScene(view: HealthAtlasCellSceneView, scope: Int, relatedId: String? = null) {
-            ui.add(body, view, 8)
-            ui.add(body, ui.text(activity.getString(scope), 12f, muted = true), 6)
+            ui.add(scene, view, 8)
+            note(scope)
             relatedId?.let(atlas::get)?.let { related ->
-                ui.add(body, HealthAtlasUi.row(activity, related, atlas) { select(related) }
+                ui.add(details, HealthAtlasUi.row(activity, related, atlas) { select(related) }
                     .apply { tag = "atlas-immune-related-${related.id}" }, 6)
             }
         }
         granulocyte?.let { addCellScene(it, it.lesson.scope) }
         immuneLink?.let { addCellScene(it, it.lesson.scope, it.lesson.relatedId) }
         bloodDefense?.let { addCellScene(it, it.lesson.scope, it.lesson.relatedId) }
-        sarcomere?.let { ui.add(body, it, 8) }
+        sarcomere?.let { ui.add(scene, it, 8) }
         podocyte?.let {
-            ui.add(body, it, 8)
-            ui.add(body, ui.text(activity.getString(R.string.health_atlas_podocyte_scope), 12f, muted = true), 6)
+            ui.add(scene, it, 8)
+            note(R.string.health_atlas_podocyte_scope)
         }
         pancreaticRoutes?.let {
-            ui.add(body, it, 8)
-            ui.add(body, ui.text(activity.getString(R.string.health_atlas_digestive_routes_scope), 12f, muted = true), 6)
+            ui.add(scene, it, 8)
+            note(R.string.health_atlas_digestive_routes_scope)
         }
         isletStages?.let {
-            ui.add(body, it, 8)
-            ui.add(body, ui.text(activity.getString(R.string.health_atlas_digestive_islets_scope), 12f, muted = true), 6)
+            ui.add(scene, it, 8)
+            note(R.string.health_atlas_digestive_islets_scope)
         }
         sweatView?.let {
-            ui.add(body, it, 8)
-            ui.add(body, ui.text(activity.getString(R.string.health_atlas_context_sweat_scope), 12f, muted = true), 6)
+            ui.add(scene, it, 8)
+            note(R.string.health_atlas_context_sweat_scope)
         }
         sectionView?.let {
-            ui.add(body, it, 8)
-            it.lesson.notes.forEach { note -> ui.add(body, ui.text(activity.getString(note), 12f, muted = true), 6) }
+            ui.add(scene, it, 8)
+            it.lesson.notes.forEach { res -> note(res) }
         }
-        if (item.id == "hair-follicles")
-            ui.add(body, ui.text(activity.getString(R.string.health_atlas_context_hair_scope), 12f, muted = true), 6)
-        body.addView(diagram ?: requireNotNull(process), LinearLayout.LayoutParams(-1, -2))
-        if (circulation != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_circuit_scope), 12f, muted = true), 8)
-        if (gasExchange != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_gas_scope), 12f, muted = true), 8)
-        stage = ui.text("", 15f, bold = true).apply { tag = "atlas-simulation-stage" }
-        if (germline != null) body.addView(stage, body.indexOfChild(germline), LinearLayout.LayoutParams(-1, -2))
-        else if (retinalPath == null && endocrinePath == null) ui.add(body, stage)
+        if (item.id == "hair-follicles") note(R.string.health_atlas_context_hair_scope)
+        (diagram ?: process)?.let { ui.add(scene, it, 8) }
+        if (circulation != null) note(R.string.health_atlas_circuit_scope, 8)
+        if (gasExchange != null) note(R.string.health_atlas_gas_scope, 8)
+        if (retinalPath == null && endocrinePath == null) {
+            val caption = ui.text("", 15f, bold = true).apply { tag = "atlas-simulation-stage" }
+            stage = caption
+            scene.reserveCaption(caption, mechanism.stages.indices.map(::stageCaption))
+            if (germline != null) scene.addView(caption, scene.indexOfChild(germline), LinearLayout.LayoutParams(-1, -2))
+            else ui.add(scene, caption, 6)
+        }
         val controls = ui.line().apply {
             gravity = Gravity.CENTER
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_body_previous_step) { pause(); setPhase((values.stage - 1).coerceAtLeast(0) / 4f) })
@@ -138,11 +151,10 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 pause(); values = HealthAtlasSimulation.initial(item.id); resetInputs.forEach { it() }; setPhase(0f); updateOutput(); quantitative?.reset()
             }.apply { tag = "atlas-simulation-reset" })
         }
-        val controlsAnchor = diagram ?: heartValves ?: germline ?: phagocytosis ?: granulocyte ?: immuneLink ?: bloodDefense ?: sarcomere ?: podocyte ?:
-            pancreaticRoutes ?: isletStages ?: sweatView ?: sectionView
-        if (controlsAnchor != null) body.addView(controls, body.indexOfChild(controlsAnchor),
+        val controlsAnchor = diagram ?: closeUp
+        if (controlsAnchor != null && !inline) scene.addView(controls, scene.indexOfChild(controlsAnchor),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
-        else ui.add(body, controls, 8)
+        else ui.add(scene, controls, 8)
         progress = SeekBar(activity).apply {
             max = 1000; contentDescription = activity.getString(R.string.health_atlas_phase); tag = "atlas-simulation-progress"
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -150,11 +162,11 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 override fun onStopTrackingTouch(seek: SeekBar?) = Unit
                 override fun onProgressChanged(seek: SeekBar?, value: Int, user: Boolean) { if (user) setPhase(value / 1000f) }
             })
-        }; ui.add(body, progress)
-        if (pancreaticRoutes != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_digestive_routes_reference)) {
+        }; ui.add(scene, progress)
+        if (pancreaticRoutes != null) ui.add(details, ui.row(activity.getString(R.string.health_atlas_digestive_routes_reference)) {
             source(HealthAtlasPancreaticRoutes.SOURCE)
         }.apply { tag = "atlas-source-pancreatic-routes" }, 8)
-        if (retinalPath != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_sensory_retinal_paper)) {
+        if (retinalPath != null) ui.add(details, ui.row(activity.getString(R.string.health_atlas_sensory_retinal_paper)) {
             source(HealthAtlasRetinaPath.SOURCE)
         }.apply { tag = "atlas-source-retinal-path" }, 8)
         if (quantitativeAfterArt) addQuantitative()
@@ -166,28 +178,39 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 values.first, "bpm", "first") { values = values.copy(first = it); updateOutput() }
             parameter(R.string.health_atlas_stroke_volume, 30..120,
                 values.second, "mL", "second") { values = values.copy(second = it); updateOutput() }
-            ui.add(body, ui.text(activity.getString(R.string.health_atlas_cardiac_formula), 13f, muted = true), 12)
+            note(R.string.health_atlas_cardiac_formula, 12, 13f)
             updateOutput()
-        } else ui.add(body, ui.text(activity.getString(when {
+        } else note(when {
             germline != null -> R.string.health_atlas_germline_timing
             quantitative != null -> R.string.health_atlas_model_process_note
             else -> R.string.health_atlas_qualitative_note
-        }), 13f, muted = true), 14)
+        }, 14, 13f)
         if (!inline) parameter(R.string.health_atlas_speed, 1..4, (values.speed * 2).toInt(), "×0.5", "speed") { pause(); values = values.copy(speed = it / 2f) }
-        ui.add(body, ui.text(activity.getString(R.string.health_atlas_teaching_note), 12f, muted = true), 14)
-        if (germline != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_germline_scope), 12f, muted = true)
-            .apply { tag = "atlas-germline-scope" }, 12)
-        if (circulation != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_circuit_reference)) {
+        note(R.string.health_atlas_teaching_note, 14)
+        if (germline != null) note(R.string.health_atlas_germline_scope, 12).tag = "atlas-germline-scope"
+        if (circulation != null) ui.add(details, ui.row(activity.getString(R.string.health_atlas_circuit_reference)) {
             source(HealthAtlasCirculation.SOURCE)
         }.apply { tag = "atlas-source-circulation" }, 12)
-        if (gasExchange != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_gas_reference)) {
+        if (gasExchange != null) ui.add(details, ui.row(activity.getString(R.string.health_atlas_gas_reference)) {
             source(HealthAtlasGasExchange.SOURCE)
         }.apply { tag = "atlas-source-gas" }, 12)
-        if (germline != null) ui.add(body, ui.row(activity.getString(R.string.health_atlas_germline_source)) {
+        if (germline != null) ui.add(details, ui.row(activity.getString(R.string.health_atlas_germline_source)) {
             source(HealthAtlasGermline.SOURCE)
         }.apply { tag = "atlas-source-germline" }, 12)
+        if (inline) {
+            val reference = if (mechanism.reference == null) R.string.health_atlas_reference_openstax
+                else R.string.health_atlas_reference_pubmed
+            ui.add(details, ui.row(activity.getString(reference)) { source(mechanism.source) }
+                .apply { tag = "atlas-source-physiology" }, 8)
+            ui.add(body, HealthAtlasUi.disclosure(activity, activity.getString(R.string.health_atlas_evidence),
+                "atlas-simulation-references-toggle") { details.visibility = if (it) View.VISIBLE else View.GONE }, 8)
+            ui.add(body, details)
+        }
         setPhase(values.phase)
     }
+    private fun stageCaption(index: Int) = activity.getString(
+        R.string.health_atlas_stage, index + 1, mechanism.stages.size, mechanism.stages[index])
+
     private fun parameter(label: Int, range: IntRange, initial: Int, unit: String, key: String, changed: (Int) -> Unit) {
         fun labelText(value: Int) = activity.getString(label) + "  " + if (key == "speed")
             NumberFormat.getNumberInstance().format(value / 2.0) + "\u00d7" else "$value $unit"
@@ -231,7 +254,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         sectionView?.phase = values.phase
         if (renderedStage != values.stage) {
             renderedStage = values.stage
-            stage.text = activity.getString(R.string.health_atlas_stage, values.stage + 1, mechanism.stages.size, mechanism.stages[values.stage])
+            stage?.text = stageCaption(values.stage)
         }
         if (::progress.isInitialized) progress.progress = (values.phase * 1000).toInt()
     }

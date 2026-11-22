@@ -178,9 +178,10 @@ class HealthAtlasGermlineDeviceTest {
                     { _, _ -> }, { opened = it }, {})
                 if (id in HealthAtlasGermline.supported) {
                     val countView = body.tagged("atlas-germline")!!
-                    assertTrue(body.indexOfChild(body.tagged("atlas-simulation-play")!!.parent as View) < body.indexOfChild(countView))
-                    assertTrue(body.indexOfChild(body.tagged("atlas-simulation-stage")) < body.indexOfChild(countView))
-                    assertTrue(body.indexOfChild(body.tagged("atlas-germline-scope")) > body.indexOfChild(body.tagged("atlas-process")))
+                    val scene = body.tagged("atlas-simulation-frame") as LinearLayout
+                    assertTrue(scene.indexOfChild(scene.tagged("atlas-simulation-play")!!.parent as View) < scene.indexOfChild(countView))
+                    assertTrue(scene.indexOfChild(scene.tagged("atlas-simulation-stage")) < scene.indexOfChild(countView))
+                    assertTrue(body.indexOfChild(body.tagged("atlas-germline-scope")) > body.indexOfChild(scene))
                     body.tagged("atlas-source-germline")!!.performClick()
                     assertEquals(HealthAtlasGermline.SOURCE, opened)
                 } else {

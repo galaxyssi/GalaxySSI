@@ -1,9 +1,19 @@
 package com.galaxyssi.chat
 
+import java.io.File
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 
 class HealthAtlasFunctionStoryTest {
+    @Test fun allPackagedEntriesResolveToAnAnimatedLesson() {
+        val entries = JSONObject(File("src/main/assets/health/body-atlas.json").readText()).getJSONArray("entries")
+        assertTrue(entries.length() > 300)
+        val missing = (0 until entries.length()).map { entries.getJSONObject(it).getString("id") }
+            .filter { HealthAtlasFunctionStory.choicesForId(it).isEmpty() }
+        assertEquals(emptyList<String>(), missing)
+    }
+
     @Test fun cellPlaybackPreservesAllFourDedicatedMechanisms() {
         val routes = mapOf(
             "cell-neutrophil" to HealthAtlasFunctionStory.NEUTROPHIL_DEFENSE,

@@ -4,7 +4,6 @@ import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.SystemClock
-import android.text.StaticLayout
 import android.view.View
 import android.view.Gravity
 import android.widget.ImageButton
@@ -27,7 +26,6 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
         context.getString(R.string.health_atlas_scene_chapter, index + 1, story.chapters.size, context.getString(chapter.first))
     }
     private val chapterCaptions = story.chapters.map { context.getString(it.second) }
-    private var measuredCaptionWidth = 0
     private val timeline = HealthAtlasChapterClock(story.chapters.size, initial)
     private val frame = Runnable { advance() }
     private val play: ImageButton = ui.icon(R.drawable.ic_rich_play, R.string.health_body_play, ::toggle)
@@ -52,10 +50,9 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
     init {
         tag = "atlas-function-player"
         orientation = VERTICAL
-        val scene = ui.column().apply {
-            tag = "atlas-function-frame"
-            background = ui.background()
-            clipToOutline = true
+        val scene = HealthAtlasSceneFrame(activity, "atlas-function-frame").apply {
+            reserveCaption(chapterLabel, chapterLabels, ui.dp(12) * 2)
+            reserveCaption(caption, chapterCaptions, ui.dp(12) * 2)
             if (showTitle) ui.add(this, ui.text(context.getString(story.title), 16f, bold = true).apply {
                 setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(8))
             })
@@ -108,24 +105,6 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
             }.apply { tag = "atlas-function-menu" })
         })
         showPhase(timeline.sample(SystemClock.uptimeMillis()))
-    }
-
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val width = View.MeasureSpec.getSize(widthMeasureSpec) - paddingStart - paddingEnd - ui.dp(24)
-        if (width > 0 && width != measuredCaptionWidth) {
-            measuredCaptionWidth = width
-            fun reservedHeight(view: TextView, strings: List<String>) = strings.maxOf { text ->
-                StaticLayout.Builder.obtain(text, 0, text.length, view.paint, width)
-                    .setIncludePad(view.includeFontPadding)
-                    .setLineSpacing(view.lineSpacingExtra, view.lineSpacingMultiplier)
-                    .setBreakStrategy(view.breakStrategy)
-                    .setHyphenationFrequency(view.hyphenationFrequency)
-                    .build().height
-            }
-            chapterLabel.minimumHeight = reservedHeight(chapterLabel, chapterLabels)
-            caption.minimumHeight = reservedHeight(caption, chapterCaptions)
-        }
-        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 
     private fun skip(direction: Int) {
