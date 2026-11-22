@@ -943,23 +943,40 @@ final class GalaxySSIStore: ObservableObject {
 
   @discardableResult
   func renameContact(id: String, displayName: String) -> Bool {
-    let cleaned = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !cleaned.isEmpty,
-          let index = contacts.firstIndex(where: { $0.id == id || $0.galaxySSIId == id }) else {
+    guard let cleaned = GalaxySSIConversationRenamePolicy.normalize(displayName), id != "system",
+          let index = contacts.firstIndex(where: { ($0.id == id || $0.galaxySSIId == id) && $0.id != "system" && !$0.deleted && $0.trustState != .deleted }) else {
       return false
     }
-    if contacts[index].type == "device",
-       !contacts[index].desktopId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      rememberDeviceDefaultDisplayName(
-        contacts[index].desktopId,
-        fallback: contacts[index].desktopName.ifBlank(contacts[index].displayName)
-      )
-    }
+    let previous = contacts[index]
     contacts[index].name = cleaned
     contacts[index].displayName = cleaned
     contacts[index].updatedAt = Date()
-    save()
+    guard save() else { contacts[index] = previous; return false }
+    if previous.type == "device" { rememberDeviceDefaultDisplayName(previous.desktopId, fallback: previous.desktopName.ifBlank(previous.displayName)) }
     return true
+  }
+
+  func renameContact(id: String, displayName: String, expected: String, fingerprint: String?, owner: String) async -> Bool {
+    guard let name = GalaxySSIConversationRenamePolicy.normalize(displayName), id != "system",
+          !runtimePlaintextCleared, profile.identityFingerprint == owner, let initial = contact(id: id),
+          !initial.deleted, initial.trustState != .deleted, initial.name.ifBlank(initial.displayName) == expected,
+          fingerprint == nil || initial.identityFingerprint == fingerprint else { return false }
+    // Retry against fresh root bytes; never overwrite a concurrent whole-state save.
+    for _ in 0..<3 {
+      guard !Task.isCancelled, !runtimePlaintextCleared, profile.identityFingerprint == owner,
+            let index = contacts.firstIndex(where: { $0.id == initial.id }), contacts[index] == initial,
+            let input = GalaxySSIEncryptedStateStore.contactRenameInput(defaults: defaults, secrets: secrets,
+              owner: owner, contact: initial, name: name) else { return false }
+      let work = Task.detached(priority: .userInitiated) { try? input.prepare() }
+      let prepared = await withTaskCancellationHandler(operation: { await work.value }, onCancel: { work.cancel() })
+      guard let prepared, !Task.isCancelled, !runtimePlaintextCleared, profile.identityFingerprint == owner,
+            let current = contacts.firstIndex(where: { $0.id == initial.id }), contacts[current] == initial else { return false }
+      guard GalaxySSIEncryptedStateStore.commitContactRename(prepared, input: input, defaults: defaults) else { continue }
+      contacts[current].name = name; contacts[current].displayName = name; contacts[current].updatedAt = input.at
+      if initial.type == "device" { rememberDeviceDefaultDisplayName(initial.desktopId, fallback: initial.desktopName.ifBlank(initial.displayName)) }
+      return true
+    }
+    return false
   }
 
   @discardableResult

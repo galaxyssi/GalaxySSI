@@ -120,6 +120,7 @@ struct GalaxySSIConversationHubPreparedContent {
   var conversations: GalaxySSIConversationHubSections
   var archivedCount: Int
   var contacts: [GalaxySSIContact]
+  var cachedConversations = GalaxySSIConversationHubSections(pinned: [], recent: [])
 }
 
 struct GalaxySSIConversationHubView: View {
@@ -145,7 +146,7 @@ struct GalaxySSIConversationHubView: View {
   private let onBackToSettings: (() -> Void)?
   private let initialContactId: String
   private let onInitialContactHandled: (() -> Void)?
-  @State private var editingSession: AgentConversation?
+  @State private var renameTarget: GalaxySSIConversationRenameTarget?
   @State private var deletingSession: AgentConversation?
   @State private var mergingSession: AgentConversation?
   @State private var multiDeleteMode = false
@@ -404,18 +405,20 @@ struct GalaxySSIConversationHubView: View {
       }
       .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     }
-    .sheet(item: $editingSession) { session in
-      GalaxySSIConversationHubRenameSheet(
-        title: t("galaxyssi.agent_session.rename", "Rename"),
-        initialValue: session.title
-      ) { value in
-        let changed = store.renameAgentSession(id: session.id, title: value)
-        if changed {
-          refreshAfterSessionMutation()
+    .sheet(item: $renameTarget) { target in
+      GalaxySSIConversationRenameView(target: target) { value in
+        guard renameTarget?.id == target.id, scenePhase == .active, store.profile.identityFingerprint == target.owner else { return false }
+        let changed: Bool
+        if target.kind == .agent {
+          changed = await store.renameAgentSession(id: target.rowID, title: value, expected: target.initialName, owner: target.owner)
+        } else {
+          changed = await store.renameContact(id: target.rowID, displayName: value, expected: target.initialName,
+            fingerprint: target.contactFingerprint, owner: target.owner)
         }
-        sessionNotice = changed
-          ? t("galaxyssi.agent_sessions.updated", "Session updated")
-          : t("galaxyssi.agent_sessions.update_failed", "Session was not changed")
+        guard changed, !Task.isCancelled, renameTarget?.id == target.id, scenePhase == .active,
+              store.profile.identityFingerprint == target.owner else { return false }
+        updateRenamedRow(target)
+        return true
       }
     }
     .alert(
@@ -537,6 +540,11 @@ struct GalaxySSIConversationHubView: View {
       multiDeleteMode = false
       selectedSessionIDs.removeAll()
     }
+    .onChange(of: store.profile.identityFingerprint) { _ in
+      renameTarget = nil; suspendHubContentForBackground()
+      if scenePhase == .active { backgroundSuspended = false; refreshAfterAppActivation() }
+    }
+    .onReceive(store.$contacts) { synchronizeContactNames($0) }
     .onReceive(
       NotificationCenter.default.publisher(for: .galaxySSIDesktopPairingDidComplete)
     ) { _ in
@@ -544,10 +552,12 @@ struct GalaxySSIConversationHubView: View {
     }
     .onDisappear {
       captureContactScroll()
+      renameTarget = nil
       navigationContentGate.invalidate()
     }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
       captureContactScroll()
+      renameTarget = nil
     }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
       suspendHubContentForBackground()
@@ -789,7 +799,8 @@ struct GalaxySSIConversationHubView: View {
     }.joined(separator: "|")
     let contactKey = store.contacts.map {
       let summary = GalaxySSIConversationHubContactHistoryPolicy.visibleSummary($0, summary: store.conversationSummary(for:))
-      return "\($0.id):\($0.updatedAt):\($0.deleted):\($0.displayName):\(summary?.lastMessage?.createdAt.timeIntervalSince1970 ?? 0):\(summary?.unreadCount ?? 0):\(store.isContactPinned($0.id))"
+      let directoryName = selectedTab == .contacts ? "\($0.updatedAt):\($0.displayName)" : ""
+      return "\($0.id):\($0.deleted):\($0.trustState):\($0.type):\($0.isDesktopHistoryOnly):\(directoryName):\(summary?.lastMessage?.createdAt.timeIntervalSince1970 ?? 0):\(summary?.unreadCount ?? 0):\(store.isContactPinned($0.id))"
     }.joined(separator: "|")
     return [
       selectedTab.rawValue,
@@ -911,7 +922,9 @@ struct GalaxySSIConversationHubView: View {
           archived: archived
         ),
         archivedCount: archivedCount,
-        contacts: GalaxySSIConversationHubModels.contacts(sourceContacts, query: query)
+        contacts: GalaxySSIConversationHubModels.contacts(sourceContacts, query: query),
+        cachedConversations: GalaxySSIConversationHubModels.unifiedConversations(
+          agents: agentItems, contacts: contactSummaries, query: "", archived: archived)
       )
     }.value
     guard !Task.isCancelled, navigationContentGate.isCurrent(generation),
@@ -922,6 +935,21 @@ struct GalaxySSIConversationHubView: View {
     conversationPageLoading = false
     preparedHubContent = prepared
     hubContentLoading = false
+    // Titles are intentionally not reload keys; reconcile edits made while the snapshot was prepared.
+    let current = Dictionary(store.agentConversations.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+    func currentTitles(_ rows: [GalaxySSIConversationHubItem]) -> [GalaxySSIConversationHubItem] {
+      rows.map { row in
+        guard row.kind == .agent, let session = current[row.id] else { return row }
+        var copy = row; copy.title = GalaxySSIConversationHubModels.agentDisplayTitle(session, language: interfaceLanguage); return copy
+      }
+    }
+    preparedHubContent.cachedConversations.pinned = currentTitles(preparedHubContent.cachedConversations.pinned)
+    preparedHubContent.cachedConversations.recent = currentTitles(preparedHubContent.cachedConversations.recent)
+    loadedAgentConversations = loadedAgentConversations.map { old in
+      var copy = old; if let session = current[old.id] { copy.title = session.title }; return copy
+    }
+    preparedHubContent.conversations = GalaxySSIConversationHubModels.filteredRows(preparedHubContent.cachedConversations, query: searchText)
+    synchronizeContactNames(store.contacts)
   }
 
   private func loadNextConversationPage() async {
@@ -950,12 +978,13 @@ struct GalaxySSIConversationHubView: View {
       summary: store.conversationSummary(for:),
       isPinned: store.isContactPinned
     )
-    preparedHubContent.conversations = GalaxySSIConversationHubModels.unifiedConversations(
+    preparedHubContent.cachedConversations = GalaxySSIConversationHubModels.unifiedConversations(
       agents: loadedAgentConversations.map { agentHubItem($0) },
       contacts: contactSummaries,
-      query: searchText,
+      query: "",
       archived: showingArchived
     )
+    preparedHubContent.conversations = GalaxySSIConversationHubModels.filteredRows(preparedHubContent.cachedConversations, query: searchText)
     conversationPageLoading = false
   }
 
@@ -1018,17 +1047,22 @@ struct GalaxySSIConversationHubView: View {
       }
       .buttonStyle(.plain)
       .contextMenu {
+        Text(item.title).lineLimit(2)
         if contact.id != "system" {
-          Button(store.isContactPinned(contact.id)
-            ? t("galaxyssi.agent_session.unpin", "Unpin")
-            : t("galaxyssi.agent_session.pin", "Pin")) {
+          if !contact.deleted && contact.trustState != .deleted {
+            Button { beginRename(contact, title: item.title) } label: {
+              Label(t("contact_edit_remark_title", "Edit remark"), systemImage: "square.and.pencil")
+            }
+          }
+          Button {
             if store.setContactPinned(contact.id, pinned: !store.isContactPinned(contact.id)) {
               refreshAfterSessionMutation()
             }
-          }
-          Button(t("delete_chat_title", "Delete Chat"), role: .destructive) {
+          } label: { Label(store.isContactPinned(contact.id) ? t("galaxyssi.agent_session.unpin", "Unpin") : t("galaxyssi.agent_session.pin", "Pin"), systemImage: "pin") }
+          Divider()
+          Button(role: .destructive) {
             pendingChatDeletion = contact
-          }
+          } label: { Label(t("delete_chat_title", "Delete Chat"), systemImage: "trash") }
         }
       }
       .id(scrollRowId(item))
@@ -1145,7 +1179,7 @@ struct GalaxySSIConversationHubView: View {
     searchExpanded = false
     searchFocused = false
     sessionNotice = ""
-    editingSession = nil
+    renameTarget = nil
     deletingSession = nil
     mergingSession = nil
     sessionEditDraft = nil
@@ -1190,22 +1224,18 @@ struct GalaxySSIConversationHubView: View {
     }
     .buttonStyle(.plain)
     .contextMenu {
-      Button(session.pinned
-        ? t("galaxyssi.agent_session.unpin", "Unpin")
-        : t("galaxyssi.agent_session.pin", "Pin")) {
+      Text(GalaxySSIConversationHubModels.agentDisplayTitle(session, language: interfaceLanguage)).lineLimit(2)
+      Button { beginRename(session) } label: {
+        Label(t("galaxyssi.agent_session.rename", "Rename"), systemImage: "square.and.pencil")
+      }
+      Button {
         if store.setAgentSessionPinned(id: session.id, pinned: !session.pinned) {
           refreshAfterSessionMutation()
         }
-      }
-      Button(t("galaxyssi.agent_session.delete", "Delete session"), role: .destructive) {
-        deletingSession = session
-      }
-      Divider()
+      } label: { Label(session.pinned ? t("galaxyssi.agent_session.unpin", "Unpin") : t("galaxyssi.agent_session.pin", "Pin"), systemImage: "pin") }
+      Menu {
       Button(t("galaxyssi.agent_sessions.select", "Select session")) {
         openConversation(session)
-      }
-      Button(t("galaxyssi.agent_session.rename", "Rename")) {
-        editingSession = session
       }
       if canMerge(session) {
         Button(t("galaxyssi.agent_session.merge_into_original", "Merge into original session")) {
@@ -1260,7 +1290,52 @@ struct GalaxySSIConversationHubView: View {
         multiDeleteMode = true
         selectedSessionIDs.removeAll()
       }
+      } label: { Label(t("galaxyssi.conversation_actions.more", "More actions"), systemImage: "ellipsis") }
+      Divider()
+      Button(role: .destructive) { deletingSession = session } label: {
+        Label(t("galaxyssi.agent_session.delete", "Delete session"), systemImage: "trash")
+      }
     }
+  }
+
+  private func beginRename(_ session: AgentConversation) {
+    guard scenePhase == .active else { return }
+    renameTarget = .init(rowID: session.id, kind: .agent, owner: store.profile.identityFingerprint,
+      title: GalaxySSIConversationHubModels.agentDisplayTitle(session, language: interfaceLanguage), initialName: session.title)
+  }
+  private func beginRename(_ contact: GalaxySSIContact, title: String) {
+    guard scenePhase == .active, contact.id != "system", !contact.deleted, contact.trustState != .deleted else { return }
+    renameTarget = .init(rowID: contact.id, kind: .contact, owner: store.profile.identityFingerprint,
+      title: title, initialName: contact.name.ifBlank(contact.displayName), contactFingerprint: contact.identityFingerprint)
+  }
+  private func updateRenamedRow(_ target: GalaxySSIConversationRenameTarget) {
+    let title: String
+    if target.kind == .agent, let session = store.agentSession(id: target.rowID) {
+      title = GalaxySSIConversationHubModels.agentDisplayTitle(session, language: interfaceLanguage)
+      loadedAgentConversations = loadedAgentConversations.map { $0.id == session.id ? session : $0 }
+    } else if let contact = store.contact(id: target.rowID) {
+      title = contact.displayName
+      preparedHubContent.contacts = preparedHubContent.contacts.map { $0.id == contact.id ? contact : $0 }
+    } else {
+      return
+    }
+    preparedHubContent.cachedConversations = GalaxySSIConversationHubModels.renamedRows(preparedHubContent.cachedConversations,
+      kind: target.kind, id: target.rowID, title: title, query: "")
+    preparedHubContent.conversations = GalaxySSIConversationHubModels.filteredRows(preparedHubContent.cachedConversations, query: searchText)
+  }
+
+  private func synchronizeContactNames(_ contacts: [GalaxySSIContact]) {
+    guard scenePhase == .active, !backgroundSuspended, selectedTab == .conversations else { return }
+    // Published delivers the new array before store.contacts changes; use that array directly.
+    let visible = preparedHubContent.cachedConversations.pinned + preparedHubContent.cachedConversations.recent
+    let titles = Dictionary(visible.filter { $0.kind == .contact }.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+    var changed = false
+    for contact in contacts where titles[contact.id] != nil && titles[contact.id] != contact.displayName {
+      preparedHubContent.cachedConversations = GalaxySSIConversationHubModels.renamedRows(preparedHubContent.cachedConversations,
+        kind: .contact, id: contact.id, title: contact.displayName, query: "")
+      changed = true
+    }
+    if changed { preparedHubContent.conversations = GalaxySSIConversationHubModels.filteredRows(preparedHubContent.cachedConversations, query: searchText) }
   }
 
   private func bulkDeleteToolbar(visible sessions: [AgentConversation]) -> some View {
@@ -1736,69 +1811,6 @@ struct GalaxySSIConversationHubView: View {
     if left == "#" { return false }
     if right == "#" { return true }
     return left < right
-  }
-
-  private func t(_ key: String, _ fallback: String) -> String {
-    GalaxySSILocalization.string(key, fallback: fallback, language: interfaceLanguage)
-  }
-}
-
-private struct GalaxySSIConversationHubRenameSheet: View {
-  @Environment(\.dismiss) private var dismiss
-  @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
-  @State private var value: String
-  let title: String
-  let onSave: (String) -> Void
-
-  init(title: String, initialValue: String, onSave: @escaping (String) -> Void) {
-    self.title = title
-    self.onSave = onSave
-    _value = State(initialValue: initialValue)
-  }
-
-  var body: some View {
-    VStack(spacing: 0) {
-      GalaxySSITopBar(
-        title: title,
-        leading: {
-          Button {
-            dismiss()
-          } label: {
-            Image(systemName: "xmark")
-              .font(.system(size: 16, weight: .semibold))
-              .foregroundColor(.galaxySSITextPrimary)
-          }
-          .buttonStyle(.plain)
-          .accessibilityLabel(Text(t("galaxyssi.common.cancel", "Cancel")))
-        },
-        trailing: {
-          Button {
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return }
-            onSave(trimmed)
-            dismiss()
-          } label: {
-            Image(systemName: "checkmark")
-              .font(.system(size: 17, weight: .bold))
-              .foregroundColor(.galaxySSIAccent)
-          }
-          .buttonStyle(.plain)
-          .accessibilityLabel(Text(t("galaxyssi.common.save", "Save")))
-          .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-      )
-      TextField(t("galaxyssi.agent_session.name_placeholder", "Session name"), text: $value)
-        .textInputAutocapitalization(.sentences)
-        .autocorrectionDisabled(false)
-        .padding(.horizontal, 12)
-        .frame(height: 46)
-        .background(Color.galaxySSISurface)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .padding(16)
-      Spacer()
-    }
-    .background(Color.galaxySSIPageBackground.ignoresSafeArea())
-    .navigationBarHidden(true)
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
