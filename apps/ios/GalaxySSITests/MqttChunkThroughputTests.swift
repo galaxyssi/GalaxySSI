@@ -67,6 +67,34 @@ final class MqttChunkThroughputTests: XCTestCase {
     XCTAssertEqual(throughput.rate(peer: "peer", broker: "emqx"), 262_144)
   }
 
+  func testInitialWindowIsSharedAcrossPeersOnOneBroker() {
+    let throughput = MqttChunkThroughput()
+    throughput.track(peer: "peer", chunk: chunk(0), broker: "emqx", generation: 1, bytes: 256 * 1024, now: 0)
+    XCTAssertFalse(throughput.canSend(peer: "peer", broker: "emqx", bytes: 1))
+    XCTAssertFalse(throughput.canSend(peer: "other", broker: "emqx", bytes: 1))
+    XCTAssertTrue(throughput.canSend(peer: "peer", broker: "hivemq", bytes: 256 * 1024))
+    throughput.confirmed(peer: "other", transfer: "transfer", request: "request", indices: [0], generations: ["emqx": 1], now: 100)
+    XCTAssertFalse(throughput.canSend(peer: "peer", broker: "emqx", bytes: 1))
+    throughput.confirmed(peer: "peer", transfer: "transfer", request: "request", indices: [0], generations: ["emqx": 1], now: 100)
+    throughput.track(peer: "peer", chunk: chunk(1), broker: "emqx", generation: 1, bytes: 256 * 1024, now: 101)
+    XCTAssertTrue(throughput.canSend(peer: "peer", broker: "emqx", bytes: 256 * 1024))
+    XCTAssertFalse(throughput.canSend(peer: "peer", broker: "emqx", bytes: 256 * 1024 + 1))
+  }
+
+  func testExpiryHalvesWindowOncePerPathAndLegacyOversizeCanProgressAlone() {
+    let throughput = MqttChunkThroughput()
+    for index in 0..<2 {
+      throughput.track(peer: "peer", chunk: chunk(index), broker: "emqx", generation: 1, bytes: 128 * 1024, now: 0)
+    }
+    throughput.expire(now: 30_001)
+    throughput.expire(now: 30_002)
+    XCTAssertTrue(throughput.canSend(peer: "peer", broker: "emqx", bytes: 380 * 1024))
+    throughput.track(peer: "peer", chunk: chunk(2), broker: "emqx", generation: 1, bytes: 64 * 1024, now: 30_002)
+    XCTAssertTrue(throughput.canSend(peer: "peer", broker: "emqx", bytes: 64 * 1024))
+    XCTAssertFalse(throughput.canSend(peer: "peer", broker: "emqx", bytes: 64 * 1024 + 1))
+    XCTAssertFalse(throughput.canSend(peer: "peer", broker: "emqx", bytes: 0))
+  }
+
   private func chunk(_ index: Int) -> MqttChunkThroughput.Chunk {
     .init(transfer: "transfer", request: "request", index: index, sampleEligible: true)
   }

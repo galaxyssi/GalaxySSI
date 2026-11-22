@@ -6,9 +6,9 @@ final class MqttDurableChunks {
   static let retentionMillis: Int64 = 8 * 24 * 60 * 60 * 1000
 
   struct Limits {
-    var transfers = 16
+    var transfers = 128
     var bytes: Int64 = 32 * 1024 * 1024
-    var peerTransfers = 8
+    var peerTransfers = 64
     var peerBytes: Int64 = 16 * 1024 * 1024
   }
 
