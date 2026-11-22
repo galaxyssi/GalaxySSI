@@ -69,7 +69,8 @@ private extension AgentModelPlanningPromptRequest {
     var copy = self
     copy.conversationContext = conversationContext
     copy.hasAttachments = hasAttachments || conversationContext.hasAttachments
-    copy.allowsDirectResponse = allowsDirectResponse && !copy.hasAttachments
+    // Conversation attachment history is not an execution requirement for the current turn.
+    copy.allowsDirectResponse = allowsDirectResponse
     return copy
   }
 }
