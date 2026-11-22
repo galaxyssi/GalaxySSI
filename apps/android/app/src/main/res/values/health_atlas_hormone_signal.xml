@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_hormone_signal_title">Circulating signal remaining</string>
+    <string name="health_atlas_hormone_signal_half_life">Half-life (example ticks)</string>
+    <string name="health_atlas_hormone_signal_elapsed">Time since secretion stopped (example ticks)</string>
+    <string name="health_atlas_hormone_signal_scope">This simulation starts when secretion of a generic circulating signal stops. It sets the starting level to 100 percent and assumes a constant half-life: each half-life removes half of what remains. The ticks are arbitrary, not physical time units. This is not the half-life of any named hormone or a patient result, and it does not model ongoing secretion or feedback.</string>
+    <string name="health_atlas_hormone_signal_formula">Percent of starting signal remaining = 100 × 2^(−elapsed time ÷ half-life).</string>
+    <string name="health_atlas_hormone_signal_removed">Starting signal removed: %1$s%%</string>
+</resources>

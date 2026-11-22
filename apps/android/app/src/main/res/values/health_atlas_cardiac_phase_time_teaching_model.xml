@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cardiac_phase_time_title">Simulated ventricular filling time</string>
+    <string name="health_atlas_cardiac_phase_time_rate">Simulated heart rate</string>
+    <string name="health_atlas_cardiac_phase_time_filling_percent">Assumed filling percentage of the cycle</string>
+    <string name="health_atlas_cardiac_phase_time_companion">Whole cardiac cycle: %1$s ms</string>
+    <string name="health_atlas_cardiac_phase_time_formula">Whole cycle (ms) = 60,000 ÷ heart rate (bpm). Simulated filling time = whole cycle × (filling percentage ÷ 100).</string>
+    <string name="health_atlas_cardiac_phase_time_scope">In a normally beating human heart, blood flows from the atria into the ventricles during filling. This simulation assumes a steady heart rate. The filling percentage is a share of time chosen independently, not a prediction from heart rate or a share of blood volume. The model does not predict filling in any individual or estimate cardiac output.</string>
+</resources>

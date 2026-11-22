@@ -90,7 +90,16 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     TENDON_ELONGATION(HealthAtlasTendonElongationTeachingModel.spec),
     AIRWAY_SPLIT(HealthAtlasAirwaySplitTeachingModel.spec),
     PERISTALTIC_TRAVEL(HealthAtlasPeristalticTravelTeachingModel.spec),
-    COCHLEAR_FREQUENCY(HealthAtlasCochlearFrequencyTeachingModel.spec);
+    COCHLEAR_FREQUENCY(HealthAtlasCochlearFrequencyTeachingModel.spec),
+    DIAPHRAGM_DISPLACEMENT(HealthAtlasDiaphragmTeachingModel.spec),
+    CARDIAC_PHASE_TIME(HealthAtlasCardiacPhaseTimeTeachingModel.spec),
+    VISUAL_ANGLE(HealthAtlasVisualAngleTeachingModel.spec),
+    SERIAL_ABSORPTION(HealthAtlasSerialAbsorptionTeachingModel.spec),
+    HORMONE_SIGNAL(HealthAtlasHormoneSignalTeachingModel.spec),
+    IMMUNE_COMPOSITION(HealthAtlasImmuneCompositionTeachingModel.spec),
+    DUCT_TRANSIT(HealthAtlasDuctTransitTeachingModel.spec),
+    OVIDUCT_CILIARY_CYCLES(HealthAtlasOviductCiliaryCyclesTeachingModel.spec),
+    KNEE_MOMENT(HealthAtlasKneeMomentTeachingModel.spec);
 
     constructor(spec: HealthAtlasTeachingModelSpec) : this(spec.inputs.map { it.control }, spec.axis, spec.unit,
         spec.minimum, spec.maximum, spec.source, spec.extraSource, spec)

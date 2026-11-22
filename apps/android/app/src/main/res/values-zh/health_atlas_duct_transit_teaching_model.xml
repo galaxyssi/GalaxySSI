@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_duct_transit_title">理想化的管道通过时间</string>
+    <string name="health_atlas_duct_transit_length">模型路径长度</string>
+    <string name="health_atlas_duct_transit_speed">标记点的恒定速度</string>
+    <string name="health_atlas_duct_transit_companion">每单位长度的模型用时：%1$s TU/LU</string>
+    <string name="health_atlas_duct_transit_formula">模型用时（TU）= 路径长度（LU）÷ 标记点速度（LU/TU）。</string>
+    <string name="health_atlas_duct_transit_scope">附睾、输精管和射精管都是男性生殖道的一部分。平滑肌有助于推动附睾和输精管中的内容物。此模型用一段拉直的示意管道，追踪一个匀速移动的理想标记点。管道形状是虚构的，长度（LU）和时间（TU）均采用自定义单位。标记点的移动不代表精子运动能力或生育能力。此模型不模拟射精或受孕，也不估算真实的通过时间。</string>
+</resources>

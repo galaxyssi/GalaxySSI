@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_oviduct_ciliary_cycles_title">输卵管纤毛摆动周期数</string>
+    <string name="health_atlas_oviduct_ciliary_cycles_rate">模拟摆动频率</string>
+    <string name="health_atlas_oviduct_ciliary_cycles_time">模拟经过时间</string>
+    <string name="health_atlas_oviduct_ciliary_cycles_companion">每个摆动周期的时长：%1$s 毫秒</string>
+    <string name="health_atlas_oviduct_ciliary_cycles_formula">经过的周期数 = 摆动频率（Hz）× 经过时间（秒），不足一个周期的部分也计入。每个周期的时长（毫秒）= 1000 ÷ 摆动频率（Hz）。</string>
+    <string name="health_atlas_oviduct_ciliary_cycles_scope">本教学模型模拟人体输卵管纤毛上皮中的一根运动纤毛以恒定频率摆动。输入值为虚构的示例，并非医学测量值或参考范围。本模型不预测卵细胞移动速度、排卵、受孕、妊娠或个人生育能力。</string>
+</resources>

@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_model_visual_angle_title">Central visual angle</string>
+    <string name="health_atlas_model_visual_angle_width">Object width (W)</string>
+    <string name="health_atlas_model_visual_angle_distance">Viewing distance (D)</string>
+    <string name="health_atlas_model_visual_angle_formula">Visual angle (degrees) = 2 × arctan(W / (2 × D)) × 180 / π. W is the object width and D is the distance from the viewing point to its center, both in cm.</string>
+    <string name="health_atlas_model_visual_angle_half">Half-angle (line of sight to either edge): %1$s°</string>
+    <string name="health_atlas_model_visual_angle_scope">This vision-only example uses synthetic widths and distances in two dimensions. The object is centered on and perpendicular to the line of sight. In normal vision, the eye focuses light on the retina; this model only calculates the angle at the viewing point. It does not predict visual acuity or refractive error or assess eye health.</string>
+</resources>

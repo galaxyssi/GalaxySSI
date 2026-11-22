@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_diaphragm_demo_title">Diaphragm descent and chest volume</string>
+    <string name="health_atlas_diaphragm_demo_descent">Downward displacement</string>
+    <string name="health_atlas_diaphragm_demo_area">Effective projected area</string>
+    <string name="health_atlas_diaphragm_demo_per_mm">Extra space per 1 mm of descent: %1$s mL</string>
+    <string name="health_atlas_diaphragm_demo_formula">Volume change = projected area × displacement (converted to cm)</string>
+    <string name="health_atlas_diaphragm_demo_scope">The chest is simplified to a fixed cross-section with a moving floor. This shows only the geometric space made by the diaphragm. It omits rib motion and tissue deformation and does not estimate how much air a person breathes.</string>
+    <string name="health_atlas_diaphragm_demo_diagram">Schematic chest cross-section, not to scale. Blue dashed line: resting diaphragm. Solid teal line: lowered diaphragm.</string>
+    <string name="health_atlas_diaphragm_demo_resting">Resting</string>
+    <string name="health_atlas_diaphragm_demo_current">Lowered</string>
+</resources>

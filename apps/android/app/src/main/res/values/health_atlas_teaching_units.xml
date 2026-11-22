@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_teaching_unit_heart_rate">bpm</string>
+    <string name="health_atlas_teaching_unit_cells">cells</string>
+    <string name="health_atlas_teaching_unit_cycles">cycles</string>
+</resources>

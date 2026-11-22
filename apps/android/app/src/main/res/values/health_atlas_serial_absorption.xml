@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_serial_absorption_title">Two-stage intestinal absorption</string>
+    <string name="health_atlas_serial_absorption_stage_a">A: uptake from the starting amount</string>
+    <string name="health_atlas_serial_absorption_stage_b">B: uptake from what remains after A</string>
+    <string name="health_atlas_serial_absorption_scope">This bookkeeping model follows an already dissolved generic nutrient through two representative small-intestinal segments in sequence. Both stages represent combined uptake across a segment, not a measured rate for a single enterocyte. A and B do not stand for named anatomical regions. The percentages are invented, not reference values. The model ignores digestion, transit time, and what happens after absorption; it does not predict real uptake.</string>
+    <string name="health_atlas_serial_absorption_formula">Let a and b be the slider percentages divided by 100. For a starting amount M, A absorbs M × a and B absorbs M × (1 − a) × b. The plot shows the sum as a percentage of M. The amount left in the lumen is M × (1 − a) × (1 − b).</string>
+    <string name="health_atlas_serial_absorption_companion">Still in the lumen after B: %1$s%% of the starting amount</string>
+</resources>

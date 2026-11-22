@@ -38,7 +38,7 @@ internal class HealthAtlasPhysiologyChart(context: Context, initial: HealthAtlas
         fun x(value: Double) = left + ((right - left) * (value - range.start) / (range.endInclusive - range.start)).toFloat()
         fun y(value: Double) = bottom - ((bottom - top) * (value - low) / (high - low)).toFloat()
         paint.color = context.getColor(R.color.text_secondary); paint.textAlign = Paint.Align.LEFT
-        canvas.drawText(model.kind.unit, left, font, paint)
+        canvas.drawText(HealthAtlasPhysiologyText.displayUnit(context, model.kind.unit), left, font, paint)
         paint.strokeWidth = density
         ticks.forEach { tick ->
             paint.color = context.getColor(if (model.kind == HealthAtlasPhysiologyKind.EYE_FOCUS && tick == 0.0)

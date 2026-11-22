@@ -152,7 +152,8 @@ class HealthAtlasPhysiologyTest {
                         assertTrue("$kind at $x", when (kind) {
                             HealthAtlasPhysiologyKind.RENAL_EXCRETION, HealthAtlasPhysiologyKind.EYE_FOCUS,
                             HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE,
-                            HealthAtlasPhysiologyKind.AIRWAY_SPLIT -> y <= value + 1e-9
+                            HealthAtlasPhysiologyKind.AIRWAY_SPLIT, HealthAtlasPhysiologyKind.VISUAL_ANGLE,
+                            HealthAtlasPhysiologyKind.HORMONE_SIGNAL -> y <= value + 1e-9
                             else -> y >= value - 1e-9
                         })
                     }
@@ -249,6 +250,7 @@ class HealthAtlasPhysiologyTest {
         }
         assertNull(HealthAtlasPhysiology.restore("parathyroid-glands", intArrayOf(80, 100)))
         assertNull(HealthAtlasPhysiology.restore("cell-thyrotroph", intArrayOf(80, 100)))
+        assertEquals(HealthAtlasPhysiologyKind.HORMONE_SIGNAL, HealthAtlasPhysiologyKind.forItem("cell-thyrotroph"))
         assertNull(HealthAtlasPhysiology.restore(id, intArrayOf(80, 301)))
     }
     @Test fun idealPoissonAbsorptionComplementsTheZeroEventProbability() {
