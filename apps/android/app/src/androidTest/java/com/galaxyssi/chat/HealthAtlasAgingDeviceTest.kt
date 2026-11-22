@@ -48,7 +48,7 @@ class HealthAtlasAgingDeviceTest {
     private fun Activity.openResearch() {
         view("atlas-tab-1").performClick()
         view("atlas-open-research").performClick()
-        view("atlas-research-tab-2").performClick()
+        view("atlas-research-tab-aging").performClick()
     }
     private fun nodes(text: String): List<AccessibilityNodeInfo> {
         instrument.waitForIdleSync()
@@ -118,11 +118,11 @@ class HealthAtlasAgingDeviceTest {
         scenario.recreate(); ready(scenario, "atlas-aging-stage")
         scenario.onActivity {
             it.onBackPressed(); it.onBackPressed()
-            assertTrue(it.view("atlas-research-tab-2").isSelected)
+            assertTrue(it.view("atlas-research-tab-aging").isSelected)
             assertTrue(it.view("atlas-process-stage-2").isSelected)
-            it.view("atlas-research-tab-1").performClick()
+            it.view("atlas-research-tab-drugs").performClick()
             assertNull(it.window.decorView.tagged("atlas-aging-study"))
-            it.view("atlas-research-tab-2").performClick()
+            it.view("atlas-research-tab-aging").performClick()
             assertTrue(it.view("atlas-process-stage-2").isSelected)
         }
     }

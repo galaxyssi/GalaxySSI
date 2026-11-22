@@ -377,6 +377,12 @@ are retained independently, and starting either animation pauses the other.
 The structure diagram, personal measurements and research modules remain
 available without mixing personal and teaching data.
 
+For those entries, the research link opens drug and aging modules only. The
+expanded Function model leads with the physiological diagram and retains its
+parameter controls and sources. Old physiological research destinations open
+the in-place model, rather than recreating a second physiological screen.
+Back from research restores the Function scroll position.
+
 ## Mechanisms and Research
 
 The ten macroscopic circulation entries use a native double-circulation

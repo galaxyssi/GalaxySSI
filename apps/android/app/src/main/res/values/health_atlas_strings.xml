@@ -63,6 +63,7 @@
     <string name="health_atlas_stage">Stage %1$d / %2$d · %3$s</string>
     <string name="health_atlas_evidence">Evidence and sources</string>
     <string name="health_atlas_research">Mechanisms and research</string>
+    <string name="health_atlas_targeted_research">Drug pathways and aging</string>
     <string name="health_atlas_physiology">Physiology</string>
     <string name="health_atlas_drugs">Drug pathways</string>
     <string name="health_atlas_aging">Aging research</string>

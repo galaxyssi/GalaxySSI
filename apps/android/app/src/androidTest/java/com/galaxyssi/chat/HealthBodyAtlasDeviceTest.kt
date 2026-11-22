@@ -495,7 +495,7 @@ class HealthBodyAtlasDeviceTest {
         scenario.onActivity { activity ->
             activity.view("atlas-hotspot-heart").performClick(); activity.view("atlas-tab-1").performClick()
             activity.view("atlas-open-research").performClick()
-            activity.view("atlas-research-tab-1").performClick()
+            activity.view("atlas-research-tab-drugs").performClick()
             (activity.view("atlas-elimination-half-life") as SeekBar).progress = 7
             (activity.view("atlas-elimination-elapsed") as SeekBar).progress = 16
             assertTrue((activity.view("atlas-elimination-output") as TextView).text.toString().contains("25"))
@@ -511,12 +511,12 @@ class HealthBodyAtlasDeviceTest {
         assertTrue(loaded)
         scenario.onActivity { activity ->
             activity.onBackPressed()
-            assertTrue(activity.view("atlas-research-tab-1").isSelected)
+            assertTrue(activity.view("atlas-research-tab-drugs").isSelected)
             assertEquals(7, (activity.view("atlas-elimination-half-life") as SeekBar).progress)
             assertEquals(16, (activity.view("atlas-elimination-elapsed") as SeekBar).progress)
-            activity.view("atlas-research-tab-2").performClick()
+            activity.view("atlas-research-tab-aging").performClick()
             assertNotNull(activity.view("atlas-source-aging"))
-            activity.view("atlas-research-tab-1").performClick()
+            activity.view("atlas-research-tab-drugs").performClick()
             assertEquals(7, (activity.view("atlas-elimination-half-life") as SeekBar).progress)
             activity.view("atlas-elimination-reset").performClick()
             assertEquals(3, (activity.view("atlas-elimination-half-life") as SeekBar).progress)
@@ -563,12 +563,15 @@ class HealthBodyAtlasDeviceTest {
             } } finally { bitmap.recycle() }
         }
         scenario.onActivity {
-            it.view("atlas-hotspot-heart").performClick(); it.view("atlas-tab-1").performClick(); it.view("atlas-open-research").performClick()
+            it.view("atlas-hotspot-heart").performClick()
+            it.openAtlasModelDetails()
         }
-        for ((index, name) in listOf("physiology", "drugs", "aging").withIndex()) {
-            scenario.onActivity { it.view("atlas-research-tab-$index").performClick() }
+        capture("physiology")
+        scenario.onActivity { it.view("atlas-open-research").performClick() }
+        for (name in listOf("drugs", "aging")) {
+            scenario.onActivity { it.view("atlas-research-tab-$name").performClick() }
             capture(name)
-            if (index == 1) {
+            if (name == "drugs") {
                 scenario.onActivity { activity ->
                     val output = activity.view("atlas-elimination-output")
                     (activity.view("atlas-scroll") as android.widget.ScrollView).scrollTo(0, output.top)

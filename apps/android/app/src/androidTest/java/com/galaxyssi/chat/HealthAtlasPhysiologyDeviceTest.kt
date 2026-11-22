@@ -58,12 +58,13 @@ class HealthAtlasPhysiologyDeviceTest {
             (it.view("atlas-physiology-reabsorbed") as SeekBar).progress = 75
             assertTrue((it.view("atlas-physiology-output") as TextView).text.contains("35"))
             it.view("atlas-tab-1").performClick(); it.view("atlas-open-research").performClick()
-            assertEquals(75, (it.view("atlas-physiology-reabsorbed") as SeekBar).progress)
+            assertNull(it.window.decorView.findViewWithTag<View>("atlas-physiology-reabsorbed"))
         }
-        scenario.recreate(); ready(scenario, "atlas-physiology-output")
+        scenario.recreate(); ready(scenario, "atlas-research-tab-drugs")
         scenario.onActivity {
+            it.onBackPressed()
             assertEquals(75, (it.view("atlas-physiology-reabsorbed") as SeekBar).progress)
-            it.onBackPressed(); it.onBackPressed(); it.open("lungs")
+            it.onBackPressed(); it.open("lungs")
             assertEquals(150, (it.view("atlas-physiology-dead-space") as SeekBar).progress)
             (it.view("atlas-physiology-dead-space") as SeekBar).progress = 200
             assertTrue((it.view("atlas-physiology-output") as TextView).text.contains("3.6"))

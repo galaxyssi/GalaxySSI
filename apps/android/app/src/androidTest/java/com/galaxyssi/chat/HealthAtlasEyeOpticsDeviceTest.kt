@@ -130,6 +130,8 @@ class HealthAtlasEyeOpticsDeviceTest {
             it.openAtlasModelDetails()
             assertEquals(HealthAtlasEyeOptics(), it.optics().eye)
             it.onBackPressed(); it.view("atlas-tab-1").performClick(); it.view("atlas-open-research").performClick()
+            assertTrue(it.view("atlas-research-tab-drugs").isSelected)
+            it.onBackPressed()
             assertEquals(782, it.input("power").progress)
             it.view("atlas-physiology-reset").performClick()
             assertEquals(HealthAtlasEyeOptics(), it.optics().eye)

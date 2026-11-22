@@ -139,6 +139,8 @@ class HealthAtlasMiddleEarDeviceTest {
             it.openAtlasModelDetails()
             assertEquals(HealthAtlasMiddleEar(), it.transformer().model)
             it.onBackPressed(); it.view("atlas-tab-1").performClick(); it.view("atlas-open-research").performClick()
+            assertTrue(it.view("atlas-research-tab-drugs").isSelected)
+            it.onBackPressed()
             assertEquals(HealthAtlasMiddleEar(64.0, 4.0, 1.4), it.transformer().model)
             it.view("atlas-physiology-reset").performClick()
             assertEquals(HealthAtlasMiddleEar(), it.transformer().model)

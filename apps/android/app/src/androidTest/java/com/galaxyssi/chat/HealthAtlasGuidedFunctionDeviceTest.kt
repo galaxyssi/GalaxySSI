@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
@@ -128,6 +129,15 @@ class HealthAtlasGuidedFunctionDeviceTest {
                 assertFalse(it.hasOpenAtlasModels())
                 assertSame(page, it.view("atlas-scroll"))
                 assertEquals(player.story.chapters.lastIndex, player.story.chapter(player.phase))
+                it.view("atlas-open-research").performClick()
+                assertTrue(it.view("atlas-research-tab-drugs").isSelected)
+                assertNotNull(it.view("atlas-research-tab-aging"))
+                assertNull(it.window.decorView.findViewWithTag<View>("atlas-research-tab-physiology"))
+                it.onBackPressed()
+                assertTrue(it.view("atlas-tab-1").isSelected)
+                val restored = it.view("atlas-function-player") as HealthAtlasFunctionPlayer
+                assertEquals(player.phase, restored.phase, 0f)
+                assertFalse(it.hasOpenAtlasModels())
             }
             checkEntry()
             it.onBackPressed()
@@ -154,6 +164,28 @@ class HealthAtlasGuidedFunctionDeviceTest {
                     }
                 }
             }
+        }
+    }
+
+    @Test fun returningFromResearchKeepsTheFunctionScrollAndExpandedModel() = native { scenario ->
+        scenario.onActivity {
+            it.view("atlas-hotspot-heart").performClick()
+            it.openAtlasModelDetails()
+        }
+        runner.waitForIdleSync()
+        var originalScroll = 0
+        scenario.onActivity {
+            val scroll = it.view("atlas-scroll") as ScrollView
+            originalScroll = scroll.scrollY
+            assertTrue("The inline model must be below the function lesson", originalScroll > 0)
+            it.view("atlas-open-research").performClick()
+            it.view("atlas-research-tab-aging").performClick()
+            it.onBackPressed()
+        }
+        runner.waitForIdleSync()
+        scenario.onActivity {
+            assertTrue(it.hasOpenAtlasModels())
+            assertEquals(originalScroll, (it.view("atlas-scroll") as ScrollView).scrollY)
         }
     }
 

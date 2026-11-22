@@ -102,8 +102,10 @@ class HealthAtlasVesselFlowDeviceTest {
                     (it.view("atlas-physiology-${kind.inputs[index].key}") as SeekBar).progress)
             }
             verify()
-            it.view("atlas-tab-1").performClick(); it.view("atlas-open-research").performClick(); verify()
-            it.onBackPressed(); it.onBackPressed(); it.open("veins")
+            it.view("atlas-tab-1").performClick(); it.view("atlas-open-research").performClick()
+            assertTrue(it.view("atlas-research-tab-drugs").isSelected)
+            it.onBackPressed(); verify()
+            it.onBackPressed(); it.open("veins")
             assertEquals(HealthAtlasVesselFlow(), (it.view("atlas-vessel-flow") as HealthAtlasVesselFlowView).flow)
             it.onBackPressed(); it.open("arteries"); verify()
         }

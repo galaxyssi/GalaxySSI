@@ -125,18 +125,17 @@ class HealthAtlasRenalDeviceTest {
             assertTrue((it.view("atlas-renal-amount-1") as TextView).text.contains("50"))
             it.view("atlas-open-research").performClick()
         }
-        scenario.recreate(); ready(scenario, "atlas-renal-balance")
+        scenario.recreate(); ready(scenario, "atlas-research-tab-drugs")
         scenario.onActivity {
-            assertEquals(80.0, (it.view("atlas-renal-balance") as HealthAtlasRenalBalanceView).amounts.excreted, 1e-9)
-            it.view("atlas-research-tab-1").performClick()
             assertNull(it.window.decorView.tagged("atlas-renal-balance"))
-            it.view("atlas-research-tab-0").performClick()
+            it.onBackPressed()
+            assertEquals(80.0, (it.view("atlas-renal-balance") as HealthAtlasRenalBalanceView).amounts.excreted, 1e-9)
             it.view("atlas-physiology-reset").performClick()
             assertEquals(20.0, (it.view("atlas-renal-balance") as HealthAtlasRenalBalanceView).amounts.excreted, 1e-9)
             (it.view("atlas-physiology-filtered") as SeekBar).progress = 0
             (it.view("atlas-physiology-secreted") as SeekBar).progress = 0
             assertEquals(0.0, (it.view("atlas-renal-balance") as HealthAtlasRenalBalanceView).amounts.excreted, 0.0)
-            it.onBackPressed(); it.onBackPressed(); it.open("distal-tubule"); it.openAtlasModelDetails()
+            it.onBackPressed(); it.open("distal-tubule"); it.openAtlasModelDetails()
             assertEquals(20.0, (it.view("atlas-renal-balance") as HealthAtlasRenalBalanceView).amounts.excreted, 1e-9)
         }
     }

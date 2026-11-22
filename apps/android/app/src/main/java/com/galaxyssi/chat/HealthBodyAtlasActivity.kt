@@ -19,6 +19,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import java.util.Locale
 import java.util.concurrent.Executors
 
 class HealthBodyAtlasActivity : Activity() {
@@ -39,7 +40,7 @@ class HealthBodyAtlasActivity : Activity() {
     private var scrollY = 0
     private var scroller: ScrollView? = null
     private data class Destination(val id: String, val tab: HealthAtlasTab,
-        val research: HealthAtlasResearchTopic?, val scroll: Int)
+        val research: HealthAtlasResearchTopic?, val scroll: Int, val functionScroll: Int)
     private val history = arrayListOf<Destination>()
     private var dialog: Dialog? = null
     private var simulation: HealthAtlasSimulationPanel? = null
@@ -56,6 +57,7 @@ class HealthBodyAtlasActivity : Activity() {
     private val measurementSelections = linkedMapOf<String, HealthAtlasMeasurementSelection>()
     private var started = false
     private var researchTopic: HealthAtlasResearchTopic? = null
+    private var researchReturnScroll = 0
     private var research: HealthAtlasResearchPanel? = null
     private var aging: HealthAtlasAgingPanel? = null
     private var researchItem = ""
@@ -81,6 +83,7 @@ class HealthBodyAtlasActivity : Activity() {
         query = state?.getString("query").orEmpty().take(100)
         tab = HealthAtlasTab.entries.firstOrNull { it.name == state?.getString("tab") } ?: HealthAtlasTab.STRUCTURE
         researchTopic = HealthAtlasResearchTopic.entries.firstOrNull { it.name == state?.getString("researchTopic") }
+        researchReturnScroll = state?.getInt("researchReturnScroll")?.coerceAtLeast(0) ?: 0
         functionState.restore(state?.getBundle("functionStateV2"), state?.getBundle("functionPhasesV1"))
         state?.getStringArrayList("expandedModels")?.let { expandedModels.addAll(it.take(320)) }
         state?.getBundle("artworkViewsV1")?.let { saved -> saved.keySet().take(300).forEach { key ->
@@ -107,7 +110,8 @@ class HealthBodyAtlasActivity : Activity() {
         state?.getBundle("historyV2")?.let { saved -> repeat(saved.getInt("count").coerceIn(0, 32)) { index ->
             saved.getBundle(index.toString())?.let { entry -> history.add(Destination(entry.getString("id").orEmpty(),
                 HealthAtlasTab.entries.firstOrNull { it.name == entry.getString("tab") } ?: HealthAtlasTab.STRUCTURE,
-                HealthAtlasResearchTopic.entries.firstOrNull { it.name == entry.getString("research") }, entry.getInt("scroll").coerceAtLeast(0))) }
+                HealthAtlasResearchTopic.entries.firstOrNull { it.name == entry.getString("research") },
+                entry.getInt("scroll").coerceAtLeast(0), entry.getInt("functionScroll").coerceAtLeast(0))) }
         } }
         scrollY = state?.getInt("scroll") ?: 0
         state?.getBundle("simulations")?.let { saved -> saved.keySet().take(300).forEach { key ->
@@ -163,10 +167,12 @@ class HealthBodyAtlasActivity : Activity() {
         out.putBundle("historyV2", Bundle().apply {
             putInt("count", history.size)
             history.forEachIndexed { index, value -> putBundle(index.toString(), Bundle().apply {
-                putString("id", value.id); putString("tab", value.tab.name); putString("research", value.research?.name); putInt("scroll", value.scroll)
+                putString("id", value.id); putString("tab", value.tab.name); putString("research", value.research?.name)
+                putInt("scroll", value.scroll); putInt("functionScroll", value.functionScroll)
             }) }
         })
         out.putString("researchTopic", researchTopic?.name)
+        out.putInt("researchReturnScroll", researchReturnScroll)
         out.putStringArrayList("expandedModels", ArrayList(expandedModels))
         out.putBundle("artworkViewsV1", Bundle().apply { artworkViews.forEach { (id, view) -> putString(id, view) } })
         out.putBundle("drugModelsV1", Bundle().apply { drugStates.forEach { (id, value) -> putIntArray(id, value.encode()) } })
@@ -190,20 +196,26 @@ class HealthBodyAtlasActivity : Activity() {
     }
     @Deprecated("Native back callback") override fun onBackPressed() = back()
     private fun back() {
-        if (researchTopic != null) { researchTopic = null; scrollY = 0; render(); return }
+        if (researchTopic != null) {
+            researchTopic = null; scrollY = researchReturnScroll; researchReturnScroll = 0; render(); return
+        }
         if (selection.isEmpty()) { finish(); return }
         val previous = if (history.isEmpty()) null else history.removeAt(history.lastIndex)
         selection = previous?.id.orEmpty(); tab = previous?.tab ?: HealthAtlasTab.STRUCTURE
-        researchTopic = previous?.research; scrollY = previous?.scroll ?: 0; render()
+        researchTopic = previous?.research; scrollY = previous?.scroll ?: 0
+        researchReturnScroll = previous?.functionScroll ?: 0; render()
     }
     private fun select(item: HealthAtlasItem) = select(item, HealthAtlasTab.STRUCTURE)
 
     private fun select(item: HealthAtlasItem, destination: HealthAtlasTab, showTrend: Boolean = false) {
         if (selection.isEmpty() && section == 0) wholeFocus = item.id
-        if (selection.isNotEmpty()) { history.add(Destination(selection, tab, researchTopic, scroller?.scrollY ?: 0)); if (history.size > 32) history.removeAt(0) }
+        if (selection.isNotEmpty()) {
+            history.add(Destination(selection, tab, researchTopic, scroller?.scrollY ?: 0, researchReturnScroll))
+            if (history.size > 32) history.removeAt(0)
+        }
         selection = item.id; tab = destination; scrollY = 0
         revealTrend = showTrend
-        researchTopic = null
+        researchTopic = null; researchReturnScroll = 0
         (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(root.windowToken, 0)
         render()
     }
@@ -222,21 +234,31 @@ class HealthBodyAtlasActivity : Activity() {
             expandedModels += requireNotNull(item).id
             tab = HealthAtlasTab.FUNCTION
         }
+        if (inlineModels && researchTopic == HealthAtlasResearchTopic.PHYSIOLOGY) {
+            expandedModels += requireNotNull(item).id
+            tab = HealthAtlasTab.FUNCTION
+            researchTopic = null; scrollY = researchReturnScroll; researchReturnScroll = 0
+        }
+        val topic = researchTopic
+        val topics = if (inlineModels) listOf(HealthAtlasResearchTopic.DRUGS, HealthAtlasResearchTopic.AGING)
+            else HealthAtlasResearchTopic.entries
         val toolbar = ui.toolbar(R.string.health_body_title, ::back, ui.icon(R.drawable.ic_hub_search, R.string.health_atlas_search) {
-            selection = ""; researchTopic = null; section = 2; showTissueCatalogue = false; scrollY = 0; render()
+            selection = ""; researchTopic = null; researchReturnScroll = 0; section = 2
+            showTissueCatalogue = false; scrollY = 0; render()
             root.findViewWithTag<EditText>("atlas-search")?.let { input -> input.requestFocus()
                 (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT) }
         })
-        toolbar.findViewWithTag<TextView>("health-page-title").text = if (researchTopic != null) getString(R.string.health_atlas_research)
+        toolbar.findViewWithTag<TextView>("health-page-title").text = if (topic != null) getString(researchTitle(inlineModels))
             else item?.name ?: getString(R.string.health_body_title)
         root.addView(toolbar)
-        val labels = if (researchTopic != null) HealthAtlasResearchTopic.entries.map { it.title }
+        val labels = if (topic != null) topics.map { it.title }
             else if (item == null) listOf(R.string.health_atlas_whole, R.string.health_atlas_systems, R.string.health_atlas_organs, R.string.health_atlas_cells)
             else if (inlineModels) listOf(R.string.health_atlas_structure, R.string.health_atlas_function, R.string.health_atlas_values)
             else listOf(R.string.health_atlas_structure, R.string.health_atlas_function, R.string.health_atlas_values, R.string.health_atlas_simulation)
-        root.addView(HealthAtlasUi.tabs(this, labels, researchTopic?.ordinal ?: if (item == null) section else tab.ordinal,
-            if (researchTopic == null) "atlas-tab" else "atlas-research-tab") { index ->
-            if (researchTopic != null) researchTopic = HealthAtlasResearchTopic.entries[index]
+        root.addView(HealthAtlasUi.tabs(this, labels, topic?.let(topics::indexOf) ?: if (item == null) section else tab.ordinal,
+            if (topic == null) "atlas-tab" else "atlas-research-tab",
+            tagKey = { index -> if (topic == null) index.toString() else topics[index].name.lowercase(Locale.ROOT) }) { index ->
+            if (topic != null) researchTopic = topics[index]
             else if (item == null) { section = index; query = ""; limit = 24 } else tab = HealthAtlasTab.entries[index]
             revealTrend = false
             scrollY = 0; render()
@@ -321,6 +343,9 @@ class HealthBodyAtlasActivity : Activity() {
     private fun usesInlineModels(item: HealthAtlasItem) =
         item.kind == HealthAtlasKind.SYSTEM || item.kind == HealthAtlasKind.ORGAN
 
+    private fun researchTitle(inline: Boolean): Int =
+        if (inline) R.string.health_atlas_targeted_research else R.string.health_atlas_research
+
     private fun addInlineModels(data: HealthBodyAtlas, item: HealthAtlasItem) {
         val models = ui.column().apply { tag = "atlas-inline-models" }
         fun show(open: Boolean) {
@@ -329,7 +354,9 @@ class HealthBodyAtlasActivity : Activity() {
                 functionPlayer?.pause()
                 simulationItem = item.id
                 simulation = HealthAtlasSimulationPanel(this, models, data, item, simulationStates[item.id],
-                    physiologyStates[item.id], ::zoom, ::source, ::select, inline = true, onPlay = { functionPlayer?.pause() })
+                    physiologyStates[item.id], ::zoom, ::source, ::select, mechanismFirst = true, inline = true,
+                    onPlay = { functionPlayer?.pause() })
+                addMechanismSource(models, data, item)
             } else {
                 expandedModels -= item.id
                 simulation?.pause(); saveSimulation(); simulation = null
@@ -380,7 +407,8 @@ class HealthBodyAtlasActivity : Activity() {
                 if (choices.isNotEmpty() && (hasAlternateView || hasLessonHotspots)) {
                     ui.add(content, artwork(data, item), 12)
                 }
-                ui.add(content, ui.row(getString(R.string.health_atlas_research)) { openResearch() }.apply { tag = "atlas-open-research" }, 12)
+                ui.add(content, ui.row(getString(researchTitle(usesInlineModels(item)))) { openResearch(item) }
+                    .apply { tag = "atlas-open-research" }, 12)
             }
             HealthAtlasTab.VALUES -> {
                 measurementItem = item.id
@@ -394,16 +422,16 @@ class HealthBodyAtlasActivity : Activity() {
             HealthAtlasTab.SIMULATION -> {
                 simulationItem = item.id
                 simulation = HealthAtlasSimulationPanel(this, content, data, item, simulationStates[item.id], physiologyStates[item.id], ::zoom, ::source, ::select)
-                ui.add(content, ui.row(getString(R.string.health_atlas_research)) { openResearch() }.apply { tag = "atlas-open-research" }, 12)
+                ui.add(content, ui.row(getString(R.string.health_atlas_research)) { openResearch(item) }
+                    .apply { tag = "atlas-open-research" }, 12)
             }
         }
         if (tab == HealthAtlasTab.STRUCTURE || tab == HealthAtlasTab.FUNCTION) HealthAtlasPlates.forId(item.id)?.source?.let { url ->
             ui.add(content, ui.row(getString(R.string.health_atlas_plate_source)) { source(url) }
                 .apply { tag = "atlas-source-structure" }, 18)
         }
-        if (tab != HealthAtlasTab.VALUES) ui.add(content, ui.row(getString(R.string.health_atlas_evidence), mechanismReferenceLabel(data, item)) {
-            source(data.mechanism(item).source)
-        }, 18)
+        if (tab != HealthAtlasTab.VALUES && !(usesInlineModels(item) && tab == HealthAtlasTab.FUNCTION))
+            addMechanismSource(content, data, item)
         if (HealthAtlasUi.art(item) != null && tab != HealthAtlasTab.VALUES)
             ui.add(content, ui.text(getString(R.string.health_atlas_art_note), 11f, muted = true), 8)
     }
@@ -518,7 +546,16 @@ class HealthBodyAtlasActivity : Activity() {
         research?.let { eliminationStates[researchItem] = it.elimination; drugStates[researchItem] = it.drugState }
         aging?.let { agingSelections[researchItem] = it.selection }
     }
-    private fun openResearch() { researchTopic = HealthAtlasResearchTopic.PHYSIOLOGY; scrollY = 0; render() }
+    private fun openResearch(item: HealthAtlasItem) {
+        researchReturnScroll = scroller?.scrollY ?: 0
+        researchTopic = if (usesInlineModels(item)) HealthAtlasResearchTopic.DRUGS else HealthAtlasResearchTopic.PHYSIOLOGY
+        scrollY = 0; render()
+    }
+    private fun addMechanismSource(parent: LinearLayout, data: HealthBodyAtlas, item: HealthAtlasItem) {
+        ui.add(parent, ui.row(getString(R.string.health_atlas_evidence), mechanismReferenceLabel(data, item)) {
+            source(data.mechanism(item).source)
+        }.apply { tag = "atlas-source-physiology" }, 16)
+    }
     private fun researchPage(data: HealthBodyAtlas, item: HealthAtlasItem) {
         val topic = requireNotNull(researchTopic)
         researchItem = item.id
@@ -527,9 +564,7 @@ class HealthBodyAtlasActivity : Activity() {
             simulationItem = item.id
             simulation = HealthAtlasSimulationPanel(this, content, data, item, simulationStates[item.id],
                 physiologyStates[item.id], ::zoom, ::source, ::select, mechanismFirst = true)
-            ui.add(content, ui.row(getString(R.string.health_atlas_evidence), mechanismReferenceLabel(data, item)) {
-                source(data.mechanism(item).source)
-            }.apply { tag = "atlas-source-physiology" }, 16)
+            addMechanismSource(content, data, item)
         } else if (topic == HealthAtlasResearchTopic.AGING) {
             content.tag = "atlas-research-content"
             aging = HealthAtlasAgingPanel(this, content, data, item, agingSelections[item.id], ::select, ::source)
