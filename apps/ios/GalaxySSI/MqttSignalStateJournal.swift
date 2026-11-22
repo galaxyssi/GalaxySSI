@@ -36,12 +36,13 @@ final class MqttSignalStateJournal {
   }
 
   init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
-       inboxLimits: MqttBusinessInbox.Limits = .init(), outboxLimits: MqttBusinessOutbox.Limits = .init()) throws {
+       inboxLimits: MqttBusinessInbox.Limits = .init(), outboxLimits: MqttBusinessOutbox.Limits = .init(),
+       now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) throws {
     database = try MqttChunkDatabase(fileURL: fileURL, secrets: secrets)
     inbox = try MqttBusinessInbox(database: database, limits: inboxLimits)
     outbox = try MqttBusinessOutbox(database: database, limits: outboxLimits)
-    incomingChunks = try MqttDurableChunks(database: database)
-    outgoingChunks = try MqttOutgoingChunks(database: database)
+    incomingChunks = try MqttDurableChunks(database: database, now: now)
+    outgoingChunks = try MqttOutgoingChunks(database: database, now: now)
   }
 
   func load() throws -> Data? { try database.transaction { try read() } }

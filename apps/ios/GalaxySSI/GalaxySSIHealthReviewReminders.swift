@@ -13,6 +13,7 @@ enum GalaxySSIHealthReviewReminders {
     let mapping: GalaxySSIHealthTableImport.Mapping
     let worksheet: GalaxySSIHealthXLSX.Selection?
     let retainOriginal: Bool
+    var reportBatchID: UUID? = nil
   }
 
   enum Action: Codable, Equatable {
@@ -138,7 +139,7 @@ struct GalaxySSIHealthReviewReminderView: View {
       }
     }
     .navigationTitle(t("title", "Health Review Reminders"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) {
       if $0 == .active { reload() }

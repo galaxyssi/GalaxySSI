@@ -23,6 +23,8 @@ enum GalaxySSIHealthCareResearch {
     var sharesQuestionPages: Bool?
     var sharesActionFeedback: Bool?
     var sharesFeedbackHistory: Bool?
+    var relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope?
+    var reviewedAnswerFollowUp: Bool?
   }
 
   enum State: String, Codable {
@@ -39,6 +41,8 @@ enum GalaxySSIHealthCareResearch {
     let createdAt: Date
     var state = State.queued
     var owner: UUID?
+    var reviewRequired: Bool?
+    var assessmentMissing: Bool?
   }
 
   struct Ledger: Codable, Equatable {
@@ -108,7 +112,7 @@ enum GalaxySSIHealthCareResearch {
       }
       cancelDesktopJob(key, at: now)
       seen[key, default: []].insert(trigger)
-      jobs[key] = .init(authorization: authorization.id, trigger: trigger, revision: revision, createdAt: now)
+      jobs[key] = .init(authorization: authorization.id, trigger: trigger, revision: revision, createdAt: now, reviewRequired: true)
     }
 
     private mutating func cancelDesktopJob(_ key: String, at date: Date) {
@@ -117,7 +121,7 @@ enum GalaxySSIHealthCareResearch {
       desktopTransport?.cancel(job.id, nowMillis: millis)
     }
 
-    mutating func transition(_ job: Job, concern: UUID, to state: State, process: UUID) throws {
+    mutating func transition(_ job: Job, concern: UUID, to state: State, process: UUID, reviewRetained: Bool = false) throws {
       let key = concern.uuidString
       guard var current = jobs[key], current == job,
             authorizations[key]?.id == current.authorization else { throw GalaxySSIHealthRecords.Failure.stale }
@@ -130,7 +134,9 @@ enum GalaxySSIHealthCareResearch {
         allowed = current.owner == process
       default: allowed = false
       }
-      guard allowed else { throw GalaxySSIHealthRecords.Failure.stale }
+      guard allowed, state != .completed || current.reviewRequired != true || reviewRetained else {
+        throw GalaxySSIHealthRecords.Failure.stale
+      }
       if state == .failed || state == .interrupted { cancelDesktopJob(key, at: Date()) }
       current.state = state
       current.owner = state == .preparing || state == .dispatched ? process : nil
@@ -146,11 +152,15 @@ enum GalaxySSIHealthCareResearch {
     let actionOutcomes: [GalaxySSIHealthCarePlan.AdoptedAction]
     let dueActions: [String]
     let latestFeedback: [String: UUID]?
+    let relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope?
+    let reviewedQuestions: UUID?
   }
 
   static func trigger(_ concern: GalaxySSIHealthCare.Concern, history: String, now: Date,
                       scopedActions: [GalaxySSIHealthCarePlan.AdoptedAction],
-                      clinicalFeedback: [String: UUID] = [:]) throws -> String {
+                      clinicalFeedback: [String: UUID] = [:],
+                      relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope = [:],
+                      reviewedQuestions: UUID? = nil) throws -> String {
     let actions = scopedActions.sorted { $0.id < $1.id }
     var latest = clinicalFeedback
     for action in actions {
@@ -159,7 +169,8 @@ enum GalaxySSIHealthCareResearch {
     let input = Trigger(assessment: concern.assessment, context: concern.context, target: concern.targetRevision,
       history: history, actionOutcomes: actions.filter { $0.outcome != nil },
       dueActions: actions.filter { $0.outcome == nil && $0.action.dueFrom.map { $0 <= now } == true }.map(\.id),
-      latestFeedback: latest.isEmpty ? nil : latest)
+      latestFeedback: latest.isEmpty ? nil : latest,
+      relatedMeasurements: relatedMeasurements.isEmpty ? nil : relatedMeasurements, reviewedQuestions: reviewedQuestions)
     let encoder = JSONEncoder()
     encoder.outputFormatting = .sortedKeys
     return AgentModelLoopRecoveryIdentity.sha256(["health_research": String(decoding: try encoder.encode(input), as: UTF8.self)])

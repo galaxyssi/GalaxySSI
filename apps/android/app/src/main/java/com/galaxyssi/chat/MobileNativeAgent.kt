@@ -756,10 +756,15 @@ class MobileNativeAgent(
         if (failureDomain.isNotBlank() && AgentConnectorFailureScope.sharedTransportFailed(timeoutMetadata)) {
             health.recordFailureDomainTimeout("domain:$failureDomain", elapsed)
         }
-        val safeReplay = AgentRemoteSilencePolicy.permitsReplay(
-            currentPlan?.actions?.firstOrNull { it.id == pending.actionId }, currentGoal)
-        val timeoutMessage = if (!recoveryExhausted) "${pending.metadata["target"].orEmpty().ifBlank { "Selected resource" }} timed out"
-            else appContext.getString(if (safeReplay) R.string.agent_remote_silence_no_model else R.string.agent_remote_silence_unknown)
+        val action = currentPlan?.actions?.firstOrNull { it.id == pending.actionId }
+        val manuallyLocked = AgentConnectorFallbackAction.isTargetLocked(action, pending.metadata)
+        val safeReplay = AgentRemoteSilencePolicy.permitsReplay(action, currentGoal)
+        val timeoutMessage = when {
+            !recoveryExhausted -> "${pending.metadata["target"].orEmpty().ifBlank { "Selected resource" }} timed out"
+            manuallyLocked -> appContext.getString(R.string.agent_manual_desktop_timeout)
+            safeReplay -> appContext.getString(R.string.agent_remote_silence_no_model)
+            else -> appContext.getString(R.string.agent_remote_silence_unknown)
+        }
         val failed = pending.copy(
             success = false,
             message = timeoutMessage,
@@ -770,7 +775,7 @@ class MobileNativeAgent(
                 "remote_task_terminal_at" to System.currentTimeMillis().toString(),
                 "delivery_confirmation_unknown" to recoveryExhausted.toString(),
                 "delivery_failed" to recoveryExhausted.toString(),
-                "allow_unavailable_target_fallback" to (recoveryExhausted && safeReplay).toString(),
+                "allow_unavailable_target_fallback" to (recoveryExhausted && safeReplay && !manuallyLocked).toString(),
                 "non_retriable" to recoveryExhausted.toString()
             )
         )

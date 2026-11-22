@@ -51,7 +51,7 @@ struct GalaxySSIHealthInstructionProposalView: View {
         }
       }
       .navigationTitle(t("assist_title", "Suggest fields from original"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("done", "Done")) { close() } } }
     }
     .navigationViewStyle(.stack)

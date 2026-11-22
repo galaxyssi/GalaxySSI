@@ -239,6 +239,13 @@ struct PublicNewsHeadlineRetryLedger: Codable {
     entry.next = max(retry, notBefore ?? retry)
     entries[key] = entry
   }
+
+  mutating func releaseBudgetClaim(_ key: String, lease: UUID, at now: Date, delay: TimeInterval) {
+    guard var entry = entries[key], entry.lease == lease else { return }
+    entry.lease = nil; entry.attempts = max(0, entry.attempts - 1)
+    entry.next = now.addingTimeInterval(max(1, delay))
+    entries[key] = entry
+  }
 }
 
 struct PublicNewsPairedHeadlineBatch: Codable {
@@ -454,6 +461,10 @@ final class PublicNewsAutomaticHeadlineWorker: ObservableObject {
     let articles = PublicNewsAutomaticHeadlinePolicy.candidates(archive.eligibleArticles,
       visible: visibleArchive === archive ? visible : [])
     guard !articles.isEmpty else { status = .idle; return }
+    let newsDelay = archive.newsBudget.pressure()
+    guard newsDelay == 0 else {
+      status = .deferred; schedule(now.addingTimeInterval(newsDelay)); return
+    }
     guard PublicNewsHeadlineTranslator.deviceAllowsTranslation else {
       status = .deferred
       schedule(Date(timeIntervalSinceNow: 120))
@@ -514,6 +525,7 @@ final class PublicNewsAutomaticHeadlineWorker: ObservableObject {
       var feedback: [Int: String] = [:]
       var failure = "invalid_translation"
       do {
+        try archive.newsBudget.check()
         if let cloud {
           let payload = batch.enumerated().map { index, article in
             ["id": .int(Int64(index)), "headline": .string(article.title),
@@ -540,6 +552,7 @@ final class PublicNewsAutomaticHeadlineWorker: ObservableObject {
         } else {
           for (index, article) in batch.enumerated() {
             try Task.checkCancellation()
+            try archive.newsBudget.check()
             do {
               let (value, issue) = try await PublicNewsHeadlineTranslator.translateAutomaticLocal(
                 article.title, feedback: state.entries[keys[index]]?.reason)
@@ -555,6 +568,8 @@ final class PublicNewsAutomaticHeadlineWorker: ObservableObject {
             }
           }
         }
+      } catch is PublicNewsBudgetYield {
+        failure = "news_budget_deferred"
       } catch {
         failure = error is AgentDataDisclosureBlockedError ? "disclosure_blocked" : "request_failed"
       }
@@ -568,10 +583,12 @@ final class PublicNewsAutomaticHeadlineWorker: ObservableObject {
         } ?? false
         let reason = saved ? nil : values[index] == nil ? (feedback[index] ?? failure) : "headline_changed_or_not_saved"
         needsRetry = needsRetry || reason != nil
-        completed.finish(keys[index], lease: lease, at: Date(), reason: reason)
+        if reason == "news_budget_deferred" {
+          completed.releaseBudgetClaim(keys[index], lease: lease, at: Date(), delay: archive.newsBudget.pressure())
+        } else { completed.finish(keys[index], lease: lease, at: Date(), reason: reason) }
       }
       self.status = self.persist(completed)
-        ? (failure == "device_capacity_deferred" ? .deferred : needsRetry ? .retrying : .idle)
+        ? (["device_capacity_deferred", "news_budget_deferred"].contains(failure) ? .deferred : needsRetry ? .retrying : .idle)
         : .storageFailed
     }
   }
