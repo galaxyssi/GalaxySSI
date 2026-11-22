@@ -162,7 +162,7 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
           "provider_circuit_open": circuit == nil ? "false" : "true",
           "provider_health_scope": provider.healthScope(agentId: agentId),
           "provider_retry_at_millis": circuit.map { String($0.retryAtMillis) } ?? ""
-        ]
+        ].merging(AgentLocalTransportFailure.metadata(for: error)) { _, new in new }
       )
     }
   }
@@ -529,6 +529,7 @@ final class ActionExecutorAgentProvider: AgentProvider {
   }
 
   func recordDispatchOutcome(agentId: String, result: AgentActionResult, latencyMillis: Int64) {
+    guard AgentLocalTransportFailure.shouldRecord(result) else { return }
     guard let registration = registration(agentId: agentId) else { return }
     let now = AgentControlPlaneClock.nowMillis()
     if result.success {

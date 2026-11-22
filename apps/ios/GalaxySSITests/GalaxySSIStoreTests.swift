@@ -1584,6 +1584,33 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertEqual(contact?.displayName, "Alice Remark")
   }
 
+  @MainActor
+  func testAsyncConversationRemarkPersistsWithoutChangingMessagesOrTrust() async throws {
+    let store = makeStore()
+    let request = store.addFriendRequest(makeFriendRequest(galaxySSIId: "friend-rename", name: "Alice"))
+    XCTAssertTrue(store.approveFriendRequest(id: request.id))
+    let before = try XCTUnwrap(store.contact(id: "friend-rename"))
+    store.appendOutgoing("Unchanged message", to: before.id)
+    let message = store.conversationSummary(for: before.id).lastMessage?.id
+    let saved = await store.renameContact(id: before.id, displayName: "Local remark", expected: before.name,
+      fingerprint: before.identityFingerprint, owner: store.profile.identityFingerprint)
+    XCTAssertTrue(saved)
+    let reopened = GalaxySSIStore(defaults: store.defaults, secrets: store.secrets)
+    let after = try XCTUnwrap(reopened.contact(id: before.id))
+    XCTAssertEqual(after.name, "Local remark")
+    XCTAssertEqual(after.displayName, "Local remark")
+    XCTAssertEqual(after.identityFingerprint, before.identityFingerprint)
+    XCTAssertEqual(after.trustState, before.trustState)
+    XCTAssertEqual(after.cloudModels, before.cloudModels)
+    XCTAssertEqual(reopened.conversationSummary(for: before.id).lastMessage?.id, message)
+    let stale = await store.renameContact(id: before.id, displayName: "Stale", expected: before.name,
+      fingerprint: before.identityFingerprint, owner: store.profile.identityFingerprint)
+    XCTAssertFalse(stale)
+    let wrongOwner = await store.renameContact(id: before.id, displayName: "Wrong owner", expected: "Local remark",
+      fingerprint: before.identityFingerprint, owner: "different")
+    XCTAssertFalse(wrongOwner)
+  }
+
   func testDeleteContactSoftDeletesAndOptionallyRemovesMessages() {
     let store = makeStore()
     let now = Date(timeIntervalSince1970: 1_800_000_000)

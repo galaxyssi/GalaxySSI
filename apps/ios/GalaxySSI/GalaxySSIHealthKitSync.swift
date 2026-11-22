@@ -316,7 +316,7 @@ struct GalaxySSIHealthKitSyncView: View {
       }
     }
     .navigationTitle(t("title", "Sync and Data Coverage"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onDisappear(perform: stop)
     .onChange(of: scene) {

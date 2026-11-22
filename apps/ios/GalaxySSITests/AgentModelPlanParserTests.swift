@@ -3,6 +3,21 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentModelPlanParserTests: XCTestCase {
+  func testCompletionDiagnosticsDistinguishTargetAndMissingObservations() {
+    for (target, code, field) in [("wrong-target", "invalid_completion_target", "actions[0].target"),
+                                  ("task-complete", "completion_before_observation", "actions")] {
+      let raw = """
+      {"actions":[{"kind":"DRAFT_PLAN","target":"\(target)","description":"Done"}]}
+      """
+      guard case .failure(let rejection) = AgentModelPlanParser.parseWithDiagnostics(
+        request: request(), raw: raw, settings: AgentModelPlannerSettings(), context: context()) else {
+        return XCTFail("Premature completion was accepted")
+      }
+      XCTAssertEqual(rejection.code, code)
+      XCTAssertEqual(rejection.field, field)
+    }
+  }
+
   func testRejectionDiagnosticsDistinguishSyntaxToolGraphAndCompletion() {
     let cases: [(String, String, String)] = [
       ("{", "$", "invalid_json"),

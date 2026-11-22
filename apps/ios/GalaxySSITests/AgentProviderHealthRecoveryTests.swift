@@ -3,6 +3,63 @@ import XCTest
 
 @MainActor
 final class AgentProviderHealthRecoveryTests: XCTestCase {
+  func testLocalQueueCapacityFailureDoesNotPoisonProviderHealth() {
+    let metadata = AgentLocalTransportFailure.metadata(for: MqttChunkStorageError.capacityExceeded)
+    XCTAssertEqual(metadata["provider_failure_attribution"], "local_transport")
+    XCTAssertEqual(metadata["delivery_failure_reason"], "local_outbox_full")
+    XCTAssertFalse(AgentLocalTransportFailure.shouldRecord(
+      .init(actionId: "fixture", success: false, message: "Queue full", metadata: metadata)))
+    XCTAssertTrue(AgentLocalTransportFailure.shouldRecord(
+      .init(actionId: "fixture", success: false, message: "Remote failed")))
+    XCTAssertTrue(AgentLocalTransportFailure.metadata(for: MqttChunkStorageError.corruptState).isEmpty)
+  }
+
+  func testIndependentLedgersObserveOneReconnectionProbeWithoutRecordingSuccess() throws {
+    let name = "provider-reconnect-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let executor = UserDefaultsAgentProviderHealthLedger(defaults: defaults)
+    let registry = UserDefaultsAgentProviderHealthLedger(defaults: defaults)
+    var registration = desktopRegistration()
+    registration.lastHeartbeatMillis = 1_500
+    executor.recordFailure(registration: registration, operation: "start_run", kind: .transportCrash,
+      latencyMillis: 1, nowMillis: 1_000)
+    registry.observeAvailability(registration: registration, nowMillis: 2_000)
+    XCTAssertEqual(executor.snapshot(registration: registration).successes, 0)
+    XCTAssertEqual(executor.snapshot(registration: registration).failures, 1)
+    XCTAssertTrue(executor.acquire(registration: registration, operation: "start_run", nowMillis: 2_001).probe)
+    XCTAssertFalse(registry.acquire(registration: registration, operation: "start_run", nowMillis: 2_002).allowed)
+    executor.recordFailure(registration: registration, operation: "start_run", kind: .transportCrash,
+      latencyMillis: 1, nowMillis: 2_003)
+    registry.observeAvailability(registration: registration, nowMillis: 2_004)
+    XCTAssertFalse(executor.acquire(registration: registration, operation: "start_run", nowMillis: 2_005).allowed)
+  }
+
+  func testReadinessCannotClearAuthorizationOrUseStaleFutureOrOfflineHeartbeats() {
+    let kinds: [AgentProviderFailureKind] = [.authorization, .protocolFailure, .timeout, .execution, .transportCrash]
+    for kind in kinds {
+      let ledger = InMemoryAgentProviderHealthLedger()
+      var registration = desktopRegistration()
+      for time in [1_000, 1_001, 1_002] as [Int64] {
+        ledger.recordFailure(registration: registration, operation: "health_check", kind: kind,
+          latencyMillis: 1, nowMillis: time)
+      }
+      registration.lastHeartbeatMillis = 1_500
+      if kind == .transportCrash { registration.status = .offline }
+      ledger.observeAvailability(registration: registration, nowMillis: 2_000)
+      XCTAssertEqual(ledger.snapshot(registration: registration).circuitState(nowMillis: 2_000), .open)
+    }
+    for heartbeat in [1_000, 100_000] as [Int64] {
+      let ledger = InMemoryAgentProviderHealthLedger()
+      var registration = desktopRegistration()
+      registration.lastHeartbeatMillis = heartbeat
+      ledger.recordFailure(registration: registration, operation: "start_run", kind: .transportCrash,
+        latencyMillis: 1, nowMillis: 1_000)
+      ledger.observeAvailability(registration: registration, nowMillis: 2_000)
+      XCTAssertFalse(ledger.acquire(registration: registration, operation: "start_run", nowMillis: 2_001).allowed)
+    }
+  }
+
   func testProviderAttemptJournalRestoresStructuredFactsWithoutContent() throws {
     let suiteName = "AgentProviderAttemptJournalTests-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -183,6 +240,13 @@ final class AgentProviderHealthRecoveryTests: XCTestCase {
       XCTAssertEqual(ledger.snapshot(scopeId: scopeId).consecutiveFailures, 0)
       XCTAssertEqual(ledger.snapshot(scopeId: scopeId).circuitOpenUntilMillis, 0)
     }
+  }
+
+  private func desktopRegistration() -> AgentRegistration {
+    AgentRegistration(agentId: "fixture:codex", installationId: "fixture", deviceId: "fixture",
+      providerId: "fixture", displayName: "Fixture Desktop", kind: .agent, location: .trustedDesktop,
+      status: .online, capabilities: [.chat], runtimeFailureDomain: "fixture:codex",
+      adapterType: "codex-app-server-or-cli")
   }
 
   private func deepSeekRegistration() -> AgentRegistration {

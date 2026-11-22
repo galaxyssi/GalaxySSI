@@ -98,6 +98,7 @@ struct GalaxySSIHealthCareTargetSection: View {
           }
         }
         .navigationTitle(t("review", "Review target"))
+        .galaxySSIHealthTheme()
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("cancel", "Cancel")) { review = nil } } }
       }.navigationViewStyle(.stack)
     }

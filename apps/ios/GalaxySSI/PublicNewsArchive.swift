@@ -127,12 +127,16 @@ final class PublicNewsArchive: ObservableObject {
   private(set) var initialPageFilter: PublicNewsTimeline.Filter?
 
   private let fileURL: URL?
+  let articleBacklog: PublicNewsBacklogStore
+  let articleBodies: PublicNewsBodyStore
+  let newsBudget: PublicNewsBudget
   private var refreshedAt: Date?
   private var revision: Int64 = 0
   private var unreadCount = 0
   private var pushCursor = PublicNewsPushCursor()
   private var publisherState = PublicNewsPublisherState()
   private var liveWake: AsyncStream<Void>.Continuation?
+  private var retryCleanup: Task<Bool, Never>?
 
   private enum PollOutcome {
     case articles([PublicNewsArticle])
@@ -163,8 +167,13 @@ final class PublicNewsArchive: ObservableObject {
     catch { return nil }
   }
 
-  init(fileURL: URL? = PublicNewsArchive.defaultFileURL) {
+  init(fileURL: URL? = PublicNewsArchive.defaultFileURL, budget: PublicNewsBudget? = nil,
+       backlog: PublicNewsBacklogStore? = nil, bodies: PublicNewsBodyStore? = nil) {
     self.fileURL = fileURL
+    let production = fileURL == Self.defaultFileURL
+    articleBacklog = backlog ?? (production ? .shared : PublicNewsBacklogStore(file: fileURL?.appendingPathExtension("backlog.json")))
+    articleBodies = bodies ?? (production ? .shared : PublicNewsBodyStore(root: fileURL?.appendingPathExtension("bodies")))
+    newsBudget = budget ?? .shared
   }
 
   nonisolated static func readFirstPage(fileURL: URL, filter: PublicNewsTimeline.Filter, anchor: String,
@@ -192,7 +201,9 @@ final class PublicNewsArchive: ObservableObject {
     }.value
     guard !Task.isCancelled, !loaded else { return }
     switch result {
-    case .success(let saved): install(saved)
+    case .success(let saved):
+      install(saved)
+      _ = await prepareArticleRetryPolicy()
     case .failure: storageFailed = true
     }
     initialPage = nil
@@ -203,6 +214,22 @@ final class PublicNewsArchive: ObservableObject {
     guard let fileURL else { storageFailed = true; return }
     do { install(try PublicNewsRowArchive.load(legacyURL: fileURL)) }
     catch { storageFailed = true }
+  }
+
+  func prepareArticleRetryPolicy() async -> Bool {
+    if let retryCleanup { return await retryCleanup.value }
+    guard loaded, let fileURL else { return false }
+    let work = Task { @MainActor in
+      do {
+        let saved = try await PublicNewsArticleRetryCleanup.prepare(file: fileURL, backlog: articleBacklog, bodies: articleBodies)
+        if let saved { install(saved) }
+        return true
+      } catch { storageFailed = true; return false }
+    }
+    retryCleanup = work
+    let result = await work.value
+    retryCleanup = nil
+    return result
   }
 
   private func install(_ saved: PublicNewsRowArchive.Loaded) {
@@ -222,53 +249,50 @@ final class PublicNewsArchive: ObservableObject {
                fetch: (@Sendable (PublicNewsSource, Date) async throws -> [PublicNewsArticle])? = nil) async {
     load()
     guard loaded, !refreshing else { return }
+    guard await prepareArticleRetryPolicy(), !refreshing, !Task.isCancelled else { return }
     let now = Date()
-    if !force, let refreshedAt, now.timeIntervalSince(refreshedAt) < 900 { return }
+    guard newsBudget.pressure() == 0 else { return }
+    if !force, newsBudget.feedDelay(now: now, atSweepBoundary: publisherState.builtInOffset == 0) > 0 { return }
     refreshing = true
     refreshIncomplete = false
     defer { refreshing = false }
 
     var state = publisherState
-    let probe = learnPublishers ? state.probeCandidate(in: eligibleArticles, now: now) : nil
-    let sources = state.plan(now: now, enabled: learnPublishers, probe: probe != nil)
+    let profile = newsBudget.profile(now: now)
+    let probe = learnPublishers && (profile.charging || profile.recentlyRead) ? state.probeCandidate(in: eligibleArticles, now: now) : nil
+    let sources = state.plan(now: now, enabled: learnPublishers, probe: probe != nil, advanceBuiltIns: false,
+      interval: profile.feedInterval)
     let loadFeed: @Sendable (PublicNewsSource, Date) async throws -> [PublicNewsArticle] = fetch ?? { source, date in
       try await PublicNewsFeedClient.fetch(source, now: date, useCache: !force)
     }
-    let completed = await withTaskGroup(of: (Int, PollOutcome).self) { group in
-      for (index, source) in sources.enumerated() {
-        group.addTask {
-          do { return (index, .articles(try await loadFeed(source, now))) }
-          catch PublicNewsFeedError.discussionFeed { return (index, .discussion) }
-          catch { return (index, .failed) }
-        }
+    var scanned = 0, completedSweep = false
+    var received: [PublicNewsArticle] = []
+    let existing = articles
+    defer { if scanned > 0 { newsBudget.feedFinished(completedSweep: completedSweep) } }
+    for source in sources {
+      guard !Task.isCancelled, newsBudget.pressure() == 0 else { return }
+      let result: PollOutcome
+      do { result = .articles(try await loadFeed(source, now)) }
+      catch is CancellationError { return }
+      catch PublicNewsFeedError.discussionFeed { result = .discussion }
+      catch { result = .failed }
+      guard !Task.isCancelled else { return }
+      scanned += 1
+      switch result {
+      case .articles(let incoming):
+        received += incoming
+        state.recordPoll(source, success: true, discussion: false, now: now, interval: profile.feedInterval)
+      case .discussion: state.recordPoll(source, success: false, discussion: true, now: now)
+      case .failed:
+        refreshIncomplete = true
+        state.recordPoll(source, success: false, discussion: false, now: now)
       }
-      var batches: [Int: [PublicNewsArticle]] = [:]
-      for await (index, result) in group {
-        guard !Task.isCancelled else { return false }
-        let source = sources[index]
-        switch result {
-        case .articles(let incoming):
-          state.recordPoll(source, success: true, discussion: false, now: now)
-          batches[index] = incoming
-          guard !incoming.isEmpty else { continue }
-          // Keep configured source priority for duplicates regardless of arrival order.
-          let received = batches.keys.sorted().flatMap { batches[$0] ?? [] }
-          let next = Self.merge(existing: articles, incoming: received)
-          guard save(next, refreshedAt: refreshedAt) else {
-            group.cancelAll()
-            return false
-          }
-        case .discussion:
-          state.recordPoll(source, success: false, discussion: true, now: now)
-        case .failed:
-          refreshIncomplete = true
-          state.recordPoll(source, success: false, discussion: false, now: now)
-        }
-      }
-      guard !Task.isCancelled else { return false }
-      return save(articles, refreshedAt: batches.isEmpty ? refreshedAt : now, publishers: state)
+      // Save each scanned boundary; a budget pause must not skip unvisited sources.
+      guard save(Self.merge(existing: existing, incoming: received),
+        refreshedAt: received.isEmpty ? refreshedAt : now, publishers: state) else { return }
+      if !source.learned && state.builtInOffset == 0 { completedSweep = true }
     }
-    guard completed, !Task.isCancelled, let probe else { return }
+    guard !Task.isCancelled, newsBudget.pressure() == 0, let probe else { return }
     do {
       let feeds = try await PublicNewsFeedClient.probe(probe.article.url)
       guard !Task.isCancelled else { return }
@@ -282,10 +306,12 @@ final class PublicNewsArchive: ObservableObject {
   }
 
   func markRead(_ id: String) {
+    newsBudget.noteRead()
     update(id) { $0.read = true }
   }
 
   func markRead(_ ids: Set<String>) {
+    if !ids.isEmpty { newsBudget.noteRead() }
     var next = articles
     var changed = false
     for index in next.indices where !next[index].read && ids.contains(next[index].id) {
@@ -342,6 +368,7 @@ final class PublicNewsArchive: ObservableObject {
   func collectLive() async {
     load()
     guard loaded, liveWake == nil, !Task.isCancelled else { return }
+    guard await prepareArticleRetryPolicy(), liveWake == nil, !Task.isCancelled else { return }
     let wakes = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { self.liveWake = $0 }
     defer { liveWake?.finish(); liveWake = nil }
     liveWake?.yield(())
@@ -355,10 +382,24 @@ final class PublicNewsArchive: ObservableObject {
   private func receiveLiveEvents() async {
     var retry: TimeInterval = 2.5
     while !Task.isCancelled {
+      guard canReceiveLive else {
+        do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
+        continue
+      }
       let started = ProcessInfo.processInfo.systemUptime
       do {
-        try await PublicNewsPushClient.stream { event in
-          try await self.acceptLiveEvent(event)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+          group.addTask {
+            try await PublicNewsPushClient.stream { event in try await self.acceptLiveEvent(event) }
+          }
+          group.addTask {
+            while !Task.isCancelled {
+              try await Task.sleep(nanoseconds: 5_000_000_000)
+              guard await self.canReceiveLive else { throw PublicNewsBudgetYield() }
+            }
+          }
+          defer { group.cancelAll() }
+          _ = try await group.next()
         }
       } catch {
         if Task.isCancelled { return }
@@ -373,6 +414,7 @@ final class PublicNewsArchive: ObservableObject {
 
   private func acceptLiveEvent(_ event: PublicNewsSSEDecoder.Event) throws {
     try Task.checkCancellation()
+    guard canReceiveLive else { throw PublicNewsBudgetYield() }
     var next = pushCursor
     try next.accept(type: event.type, data: event.data, now: Date())
     let hasNewWork = !Set(next.pending.keys).subtracting(pushCursor.pending.keys).isEmpty
@@ -390,11 +432,19 @@ final class PublicNewsArchive: ObservableObject {
       guard !Task.isCancelled else { return }
       timer?.cancel()
       timer = nil
+      if !canReceiveLive {
+        timer = Task {
+          do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
+          self.liveWake?.yield(())
+        }
+        continue
+      }
       let now = Date()
       if nextFetchAt <= now, let id = pushCursor.next(at: now) {
         do {
           let article = try await PublicNewsPushClient.fetchStory(id, now: now)
           try Task.checkCancellation()
+          guard canReceiveLive else { throw PublicNewsBudgetYield() }
           if pushCursor.pending[id] != nil {
             var nextArticles = articles
             if let article, !articles.contains(where: { $0.id == article.id }) {
@@ -404,6 +454,8 @@ final class PublicNewsArchive: ObservableObject {
             next.complete(id)
             _ = save(nextArticles, refreshedAt: refreshedAt, cursor: next)
           }
+        } catch is PublicNewsBudgetYield {
+          // Keep the pending ID; a power/CPU pause is not a failed article.
         } catch {
           if Task.isCancelled { return }
           var next = pushCursor
@@ -419,6 +471,17 @@ final class PublicNewsArchive: ObservableObject {
         catch { return }
         wake.yield(())
       }
+    }
+  }
+
+  private var canReceiveLive: Bool { newsBudget.profile().allowPush && newsBudget.pressure() == 0 }
+
+  func pollFeeds(learnPublishers: Bool) async {
+    while !Task.isCancelled {
+      await refresh(learnPublishers: learnPublishers)
+      let delay = max(1, max(newsBudget.pressure(),
+        newsBudget.feedDelay(atSweepBoundary: publisherState.builtInOffset == 0)))
+      do { try await Task.sleep(nanoseconds: UInt64(max(15, min(30, delay)) * 1_000_000_000)) } catch { return }
     }
   }
 
@@ -439,14 +502,18 @@ final class PublicNewsArchive: ObservableObject {
        (cursor ?? pushCursor) == pushCursor, (feedback ?? notRelevantIDs) == notRelevantIDs,
        (publishers ?? publisherState) == publisherState { return true }
     do {
-      let count = PublicNewsArchiveStorage.unreadCount(next, excluding: feedback ?? notRelevantIDs)
+      let existingIDs = Set(articles.map(\.id))
+      let candidates = Set(next.lazy.map(\.id).filter { !existingIDs.contains($0) })
+      let discarded = try PublicNewsRowArchive.discardedIDs(legacyURL: fileURL, candidates: candidates)
+      let retained = next.filter { !discarded.contains($0.id) }
+      let count = PublicNewsArchiveStorage.unreadCount(retained, excluding: feedback ?? notRelevantIDs)
       revision = try PublicNewsRowArchive.save(legacyURL: fileURL, revision: revision, previous: articles,
         previousHidden: notRelevantIDs, next: .init(
-          articles: next, refreshedAt: refreshedAt, pushCursor: cursor ?? pushCursor,
+          articles: retained, refreshedAt: refreshedAt, pushCursor: cursor ?? pushCursor,
           notRelevantIDs: feedback ?? notRelevantIDs, publisherState: publishers ?? publisherState
         ))
       unreadCount = count
-      if articles != next { articles = next }
+      if articles != retained { articles = retained }
       self.refreshedAt = refreshedAt
       if let cursor { pushCursor = cursor }
       if let feedback { notRelevantIDs = feedback }
