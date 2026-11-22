@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct GalaxySSIHealthTrendDevice: Identifiable {
   let id: UUID
@@ -199,6 +200,8 @@ struct GalaxySSIHealthTrend {
 
 @MainActor
 struct GalaxySSIHealthTrendView: View {
+  @Environment(\.galaxySSIAtlasPinnedAnalysis) private var atlasPinnedAnalysis
+  @Environment(\.galaxySSIAtlasAnalysisSelection) private var atlasAnalysisSelection
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   @Environment(\.calendar) private var calendar
@@ -237,6 +240,8 @@ struct GalaxySSIHealthTrendView: View {
   @State private var originPage: GalaxySSIHealthTrend.OriginPage?
   @State private var originCursors: [GalaxySSIHealthTrend.HealthOrigin] = []
   @State private var selectedOriginTitle: String?
+  @State private var atlasAnalysisIdentity: GalaxySSIHealthAtlasTrendAction.Identity?
+  @State private var protectedDataBlocked = false
 
   init(records: GalaxySSIHealthRecords, fixedMetric: GalaxySSIHealthMetric? = nil,
        recordMeasurement: ((GalaxySSIHealthMetric) -> Void)? = nil, comparisonAnchor: GalaxySSIHealthReading? = nil,
@@ -350,8 +355,10 @@ struct GalaxySSIHealthTrendView: View {
               }
             }
             if let minimum = trend.minimum, let maximum = trend.maximum {
-              Button(action: explainTrend) {
-                Label(t("explain", "Explain this trend"), systemImage: "text.bubble")
+              if !atlasPinnedAnalysis {
+                Button(action: explainTrend) {
+                  Label(t("explain", "Explain this trend"), systemImage: "text.bubble")
+                }
               }
               Section(t("summary", "Summary")) {
                 Text(String(format: t("coverage", "%lld of %lld days with readings"), Int64(trend.validDays), Int64(trend.points.count)))
@@ -390,8 +397,11 @@ struct GalaxySSIHealthTrendView: View {
     .onChange(of: timeZone) { _ in reload() }
     .onChange(of: scene) { if $0 == .background { device = nil; devices = [] } }
     .onChange(of: source) { _ in resetOrigins(); reload() }
-    .onDisappear { resetOrigins(); selected = nil; trend = nil; showsChartData = false }
-    .onChange(of: aggregation) { _ in selected = nil; focusedDay = nil; showsChartData = false }
+    .onDisappear { resetOrigins(); selected = nil; trend = nil; showsChartData = false; atlasAnalysisIdentity = nil }
+    .onChange(of: aggregation) { _ in
+      selected = nil; focusedDay = nil; showsChartData = false
+      if atlasPinnedAnalysis { reload() }
+    }
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
       else { trend = nil; selected = nil; focusedDay = nil; allowed = false; showsChartData = false; resetOrigins() }
@@ -403,7 +413,21 @@ struct GalaxySSIHealthTrendView: View {
     .onChange(of: scene) { phase in
       if phase != .active {
         trendVersions = []; explanation = nil; recordAfterExplanation = nil; fallbackEditor = nil
+        atlasAnalysisIdentity = nil
       }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
+      protectedDataBlocked = true
+      atlasAnalysisIdentity = nil; trend = nil; selected = nil; focusedDay = nil; allowed = false
+      trendVersions = []; explanation = nil; showsChartData = false; resetOrigins()
+      device = nil; devices = []; recordAfterExplanation = nil; fallbackEditor = nil
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+      protectedDataBlocked = false
+      if scene == .active { reload() }
+    }
+    .safeAreaInset(edge: .bottom) {
+      if atlasPinnedAnalysis { GalaxySSIHealthAtlasPinnedAnalysisButton(enabled: atlasAnalysisReady, action: explainTrend) }
     }
     .sheet(item: $explanation, onDismiss: {
       if let metric = recordAfterExplanation {
@@ -487,7 +511,8 @@ struct GalaxySSIHealthTrendView: View {
   }
 
   private func reload() {
-    guard scene == .active else { return }
+    atlasAnalysisIdentity = nil
+    guard scene == .active, !protectedDataBlocked, UIApplication.shared.isProtectedDataAvailable else { return }
     selected = nil
     showsChartData = false
     focusedDay = nil
@@ -521,6 +546,7 @@ struct GalaxySSIHealthTrendView: View {
       trend = spec.chart(current)
       if trend?.unverifiedMethods == true { aggregation = .latest }
       trendVersions = spec.versions(current)
+      if atlasPinnedAnalysis { atlasAnalysisIdentity = currentAtlasIdentity }
     } catch { allowed = false; error = true; resetOrigins() }
   }
 
@@ -542,6 +568,8 @@ struct GalaxySSIHealthTrendView: View {
 
   private func explainTrend() {
     guard scene == .active, allowed, !changed, trend != nil else { return }
+    guard !protectedDataBlocked, UIApplication.shared.isProtectedDataAvailable else { return }
+    guard !atlasPinnedAnalysis || atlasAnalysisReady else { return }
     do {
       let archive = try records.load()
       let label = selectedOriginTitle ?? device.flatMap { id in devices.first { $0.id == id } }.map(deviceTitle)
@@ -602,15 +630,26 @@ struct GalaxySSIHealthTrendView: View {
   }
 
   private func invalidate() {
+    atlasAnalysisIdentity = nil
     selected = nil
     showsChartData = false
     focusedDay = nil
     trend = nil
     trendVersions = []
+    guard !protectedDataBlocked, UIApplication.shared.isProtectedDataAvailable else { allowed = false; return }
     do {
       allowed = try records.load().derivesOverview == true; changed = allowed
       if !allowed { resetOrigins() }
     } catch { allowed = false; error = true; resetOrigins() }
+  }
+
+  private var currentAtlasIdentity: GalaxySSIHealthAtlasTrendAction.Identity {
+    .init(spec: trendSpec, environmentCalendar: calendar, timeZone: timeZone, selection: atlasAnalysisSelection)
+  }
+  private var atlasAnalysisReady: Bool {
+    GalaxySSIHealthAtlasTrendAction.ready(captured: atlasAnalysisIdentity, current: currentAtlasIdentity,
+      foreground: scene == .active, protectedData: !protectedDataBlocked && UIApplication.shared.isProtectedDataAvailable, permitted: allowed,
+      changed: changed, hasChartData: trend?.chartData(aggregation, component: component).isEmpty == false)
   }
 
   private func chart(_ trend: GalaxySSIHealthTrend, data: [GalaxySSIHealthTrend.ChartDatum]) -> some View {

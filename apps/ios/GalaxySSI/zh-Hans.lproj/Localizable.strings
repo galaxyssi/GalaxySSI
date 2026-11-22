@@ -789,6 +789,7 @@
 "galaxyssi.health.fresh" = "近期";
 "galaxyssi.health.stale_reading" = "较早";
 "galaxyssi.health.trend.title" = "测量趋势";
+"galaxyssi.health.atlas.compare" = "请 Agent 分析变化";
 "galaxyssi.health.recording_reminder.title" = "健康记录提醒";
 "galaxyssi.health.recording_reminder.preferences" = "记录偏好";
 "galaxyssi.health.recording_reminder.delivery" = "健康通知发送设置";
