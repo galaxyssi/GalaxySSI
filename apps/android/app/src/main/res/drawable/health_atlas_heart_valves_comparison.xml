@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Separate en face views: right heart at left, left heart at right; arterial row above atrial row. -->
+    <!-- Pulmonary valve: three similar semilunar pockets. -->
+    <path android:fillColor="#638E9B" android:strokeColor="#456877" android:strokeWidth="2"
+        android:pathData="M99,16 C129,16 150,39 153,66 C156,98 133,121 102,124 C72,126 46,108 44,77 C41,47 65,18 99,16 Z" />
+    <path android:fillColor="#A0BFC0" android:strokeColor="#B7D2CF" android:strokeWidth="1.9"
+        android:pathData="M99,26 C122,26 142,44 144,68 C147,93 127,113 101,115 C76,117 56,101 54,77 C51,52 70,27 99,26 Z" />
+    <path android:fillColor="#E7D6B4"
+        android:pathData="M62,52 C69,36 84,28 99,28 C114,27 130,37 136,51 C119,52 109,61 99,72 C89,60 77,55 62,52 Z" />
+    <path android:fillColor="#C7CCB4"
+        android:pathData="M62,52 C76,55 90,63 99,72 C94,87 94,99 101,113 C79,115 59,101 56,82 C54,71 56,60 62,52 Z" />
+    <path android:fillColor="#DAD9BF"
+        android:pathData="M136,51 C142,59 145,71 141,83 C136,100 121,112 101,113 C96,101 94,86 99,72 C108,61 120,54 136,51 Z" />
+    <path android:strokeColor="#7C7E73" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M62,52 C76,55 89,61 99,72 C110,61 122,54 136,51 M99,72 C95,87 95,101 101,113" />
+    <path android:strokeColor="#F3E5C8" android:strokeWidth="2.1" android:strokeLineCap="round"
+        android:pathData="M73,43 Q98,30 123,42 M64,68 Q58,89 78,101 M134,66 Q140,90 118,102" />
+    <path android:strokeColor="#B4CCD0" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M52,51 Q63,28 89,23 M106,119 Q126,117 140,101" />
+
+    <!-- Aortic valve: three cusps inside a softly scalloped root. -->
+    <path android:fillColor="#AD737B" android:strokeColor="#764D60" android:strokeWidth="2"
+        android:pathData="M258,25 C276,15 298,24 308,42 Q319,60 310,77 C312,101 294,120 270,124 C249,127 231,116 224,102 C204,93 194,75 199,55 C204,32 232,15 258,25 Z" />
+    <path android:fillColor="#D8A29B" android:strokeColor="#E5B5A3" android:strokeWidth="1.9"
+        android:pathData="M258,34 C276,24 292,32 301,46 Q310,61 301,77 C305,98 289,111 269,114 Q245,118 231,96 C213,88 204,75 208,57 C213,38 238,25 258,34 Z" />
+    <path android:fillColor="#F0D6B6"
+        android:pathData="M258,34 C239,26 216,39 210,57 C204,74 214,88 232,96 Q242,80 259,72 Q253,54 258,34 Z" />
+    <path android:fillColor="#EBC3A6"
+        android:pathData="M258,34 C278,25 294,34 301,48 Q309,63 301,77 C283,77 270,76 259,72 Q253,54 258,34 Z" />
+    <path android:fillColor="#E4B49F"
+        android:pathData="M232,96 Q243,81 259,72 C274,78 287,76 301,77 C303,96 289,112 270,114 Q246,118 232,96 Z" />
+    <path android:strokeColor="#90636A" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M258,34 Q253,53 259,72 C245,79 237,87 232,96 M259,72 C272,78 289,77 301,77" />
+    <path android:strokeColor="#F9E0C0" android:strokeWidth="2.1" android:strokeLineCap="round"
+        android:pathData="M221,53 Q228,39 247,38 M271,35 Q289,34 297,52 M247,99 Q267,114 287,96" />
+    <path android:strokeColor="#DB9B96" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M204,58 Q210,33 234,28 M275,119 Q295,114 305,96" />
+
+    <!-- Tricuspid valve: broad anterior, smaller posterior, and medial septal leaflets. -->
+    <path android:fillColor="#668A98" android:strokeColor="#476974" android:strokeWidth="2"
+        android:pathData="M100,151 C127,148 151,159 158,184 C168,212 147,241 119,253 C91,266 58,252 44,231 C31,212 36,186 52,171 C65,159 80,153 100,151 Z" />
+    <path android:fillColor="#A4BDB9" android:strokeColor="#C2D0C3" android:strokeWidth="1.9"
+        android:pathData="M101,161 C126,157 144,168 149,188 C156,211 140,234 115,245 C94,255 65,243 52,225 C41,207 46,187 60,175 Q76,163 101,161 Z" />
+    <path android:fillColor="#EAD4B2"
+        android:pathData="M129,163 Q130,186 102,205 C87,204 71,200 49,200 C53,182 72,166 101,161 Q117,159 129,163 Z" />
+    <path android:fillColor="#D2C8AC"
+        android:pathData="M49,200 C72,200 88,204 102,205 Q100,222 107,248 C86,252 62,239 52,225 Q45,214 49,200 Z" />
+    <path android:fillColor="#DEC3A7"
+        android:pathData="M129,163 C140,168 147,176 149,188 C156,211 140,234 115,245 L107,248 Q100,226 102,205 C119,192 128,181 129,163 Z" />
+    <path android:strokeColor="#847870" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M129,163 C128,181 119,192 102,205 C86,203 68,200 49,200 M102,205 Q100,223 107,248" />
+    <path android:strokeColor="#F5E3C1" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M63,187 C74,177 92,170 110,169 M58,212 Q65,228 85,237 M140,183 C148,204 137,222 119,235" />
+    <path android:strokeColor="#B5CACE" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M45,185 Q60,161 88,157 M120,249 Q139,241 147,226" />
+
+    <!-- Mitral valve: deeper anterior leaflet and one scalloped posterior leaflet. -->
+    <path android:fillColor="#AD737D" android:strokeColor="#774D60" android:strokeWidth="2"
+        android:pathData="M207,167 C226,150 268,148 294,157 C315,164 327,184 323,208 C319,239 290,260 259,263 C227,266 200,250 189,226 C179,203 187,179 207,167 Z" />
+    <path android:fillColor="#E0A79B" android:strokeColor="#F2BDA7" android:strokeWidth="1.9"
+        android:pathData="M212,174 C227,162 268,158 292,166 C309,172 318,189 314,206 C310,232 287,251 258,253 C231,255 207,242 198,223 C188,203 197,184 212,174 Z" />
+    <path android:fillColor="#F0D3B1"
+        android:pathData="M212,174 C232,163 269,159 291,167 C306,172 312,182 314,191 C295,196 281,209 264,217 C246,225 224,214 198,203 C197,192 204,180 212,174 Z" />
+    <path android:fillColor="#DFB19A"
+        android:pathData="M198,203 C224,214 246,225 264,217 C281,209 295,196 314,191 C321,222 292,248 266,252 C235,258 209,244 200,225 Q195,215 198,203 Z" />
+    <path android:strokeColor="#90636B" android:strokeWidth="2.3" android:strokeLineCap="round"
+        android:pathData="M198,203 C224,214 246,225 264,217 C281,209 295,196 314,191" />
+    <path android:strokeColor="#B9857F" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M227,240 Q232,232 231,217 M289,238 Q281,230 279,208" />
+    <path android:strokeColor="#F9E1C0" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M212,190 Q224,175 242,173 M253,172 Q279,168 296,177 M203,216 Q211,229 223,232 M239,232 Q253,241 271,231 M288,221 Q305,214 308,205" />
+    <path android:strokeColor="#DDA09A" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M195,188 Q204,165 234,158 M265,258 Q288,255 305,239" />
+</vector>

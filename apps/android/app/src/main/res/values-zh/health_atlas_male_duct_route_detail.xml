@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mdr_epi_selector">附睾管</string>
+    <string name="health_atlas_mdr_epi_view">附睾 · 后外侧观，示睾丸局部剖面</string>
+    <string name="health_atlas_mdr_epi_ductules">睾丸输出小管</string>
+    <string name="health_atlas_mdr_epi_ductules_detail">这些细小管道从睾丸网通向附睾头，在那里汇入一条附睾管。</string>
+    <string name="health_atlas_mdr_epi_head">附睾头</string>
+    <string name="health_atlas_mdr_epi_head_detail">宽大的附睾头覆盖睾丸上极，接收来自睾丸网的输出小管。</string>
+    <string name="health_atlas_mdr_epi_body">附睾体</string>
+    <string name="health_atlas_mdr_epi_body_detail">较窄的附睾体位于睾丸后外侧，内有同一条连续的附睾管反复盘曲。</string>
+    <string name="health_atlas_mdr_epi_tail">附睾尾</string>
+    <string name="health_atlas_mdr_epi_tail_detail">在睾丸下极，附睾尾内盘曲的管道逐渐变直，延续为向上行走的输精管。</string>
+
+    <string name="health_atlas_mdr_vas_selector">输精管走行</string>
+    <string name="health_atlas_mdr_vas_view">输精管 · 从附睾至膀胱后方的单侧走行</string>
+    <string name="health_atlas_mdr_vas_cord">精索段</string>
+    <string name="health_atlas_mdr_vas_cord_detail">输精管由附睾尾向上，在精索内与血管和神经伴行。</string>
+    <string name="health_atlas_mdr_vas_canal">腹股沟管</string>
+    <string name="health_atlas_mdr_vas_canal_detail">精索穿过下腹壁的这段短通道。输精管在腹股沟深环处离开精索。</string>
+    <string name="health_atlas_mdr_vas_pelvic">盆腔段</string>
+    <string name="health_atlas_mdr_vas_pelvic_detail">输精管进入盆腔后沿盆侧壁走行，转向膀胱后下方，但并不开口于膀胱内。</string>
+    <string name="health_atlas_mdr_vas_ampulla">输精管壶腹</string>
+    <string name="health_atlas_mdr_vas_ampulla_detail">输精管末端在精囊内侧膨大成壶腹，与同侧精囊排泄管汇合，形成同侧射精管。</string>
+
+    <string name="health_atlas_mdr_sv_selector">成对精囊</string>
+    <string name="health_atlas_mdr_sv_view">精囊 · 膀胱底后面观</string>
+    <string name="health_atlas_mdr_sv_blind">精囊上端盲端</string>
+    <string name="health_atlas_mdr_sv_blind_detail">每侧精囊的上端封闭，位于膀胱后方、输精管末端的外侧。</string>
+    <string name="health_atlas_mdr_sv_coil">盘曲的精囊腺管</string>
+    <string name="health_atlas_mdr_sv_coil_detail">每侧精囊由一条盘曲的腺管构成。管内带有皱褶的黏膜分泌精液的部分液体成分。</string>
+    <string name="health_atlas_mdr_sv_outlet">精囊排泄管</string>
+    <string name="health_atlas_mdr_sv_outlet_detail">这条短管从精囊下端引出，与同侧输精管壶腹汇合。汇合后的管道称为射精管。</string>
+
+    <string name="health_atlas_mdr_ej_selector">射精管剖视</string>
+    <string name="health_atlas_mdr_ej_view">射精管 · 经前列腺的后方投影</string>
+    <string name="health_atlas_mdr_ej_union">射精管形成处</string>
+    <string name="health_atlas_mdr_ej_union_detail">两侧各有一条精囊排泄管与同侧输精管壶腹汇合。每个汇合点下方的细管就是该侧的射精管。</string>
+    <string name="health_atlas_mdr_ej_course">前列腺内走行</string>
+    <string name="health_atlas_mdr_ej_course_detail">两条射精管从前列腺底进入腺体，斜向内前方的尿道，在前列腺内始终彼此分开。</string>
+    <string name="health_atlas_mdr_ej_openings">精阜处的射精管开口</string>
+    <string name="health_atlas_mdr_ej_openings_detail">两条射精管分别开口于精阜。精阜是尿道前列腺部后壁上的隆起。</string>
+    <string name="health_atlas_mdr_ej_urethra">尿道前列腺部</string>
+    <string name="health_atlas_mdr_ej_urethra_detail">这段尿道起于膀胱颈，穿过前列腺。射精管开口于此，并不各自延伸到前列腺以下。</string>
+</resources>

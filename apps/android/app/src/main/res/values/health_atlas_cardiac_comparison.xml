@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_atria_compare_selector">Atrial cutaways</string>
+    <string name="health_atlas_atria_compare_view">Opened atria compared side by side: right atrium on the left, left atrium on the right. These are separate cutaways.</string>
+    <string name="health_atlas_atria_compare_caval">Superior caval opening</string>
+    <string name="health_atlas_atria_compare_caval_detail">The superior vena cava opens high in the right atrium. The inferior vena cava opens below in the same smooth-walled venous region.</string>
+    <string name="health_atlas_atria_compare_pectinate">Right pectinate ridges</string>
+    <string name="health_atlas_atria_compare_pectinate_detail">These muscle ridges fan out into the right atrial appendage from the terminal crest, which separates the ridged wall from the smooth venous region.</string>
+    <string name="health_atlas_atria_compare_fossa">Fossa ovalis</string>
+    <string name="health_atlas_atria_compare_fossa_detail">This shallow oval depression is on the septal wall of the right atrium. It is a remnant of the fetal foramen ovale, not an open passage in this adult view.</string>
+    <string name="health_atlas_atria_compare_pulmonary">Pulmonary vein openings</string>
+    <string name="health_atlas_atria_compare_pulmonary_detail">Four openings are shown in the back of the left atrium, two from each lung. They admit blood returning from the lungs.</string>
+    <string name="health_atlas_atria_compare_smooth">Smooth left atrial wall</string>
+    <string name="health_atlas_atria_compare_smooth_detail">Most of the left atrial lining is smooth, including the posterior wall between the pulmonary vein openings. Pectinate ridges are confined to the left atrial appendage.</string>
+
+    <string name="health_atlas_ventricles_compare_selector">Ventricular short axis</string>
+    <string name="health_atlas_ventricles_compare_view">Mid-ventricular cross-section looking from base toward apex: crescent-shaped right cavity at upper left and rounded left cavity at lower right.</string>
+    <string name="health_atlas_ventricles_compare_right_wall">Thin right free wall</string>
+    <string name="health_atlas_ventricles_compare_right_wall_detail">The outer muscle wall of the right ventricle is thinner than the left. In this section it forms the outer arc of the crescent.</string>
+    <string name="health_atlas_ventricles_compare_trabeculae">Right ventricular ridges</string>
+    <string name="health_atlas_ventricles_compare_trabeculae_detail">Coarse muscular ridges, called trabeculae carneae, project into the right ventricular cavity from its inner surface.</string>
+    <string name="health_atlas_ventricles_compare_septum">Muscular ventricular septum</string>
+    <string name="health_atlas_ventricles_compare_septum_detail">This shared muscular wall separates the two ventricular cavities and forms the inner arc of the right ventricular crescent.</string>
+    <string name="health_atlas_ventricles_compare_left_wall">Thick left free wall</string>
+    <string name="health_atlas_ventricles_compare_left_wall_detail">The left ventricular muscle is thicker than the right free wall. It forms most of the ring around the rounded left cavity, completed by the septum.</string>
+
+    <string name="health_atlas_valves_compare_selector">Four valve faces</string>
+    <string name="health_atlas_valves_compare_view">Closed valve faces shown separately, not in one plane or at one moment: right heart on the left, left heart on the right; outflow valves above, inlet valves below. Viewed from the arteries or atria, respectively.</string>
+    <string name="health_atlas_valves_compare_pulmonary">Pulmonary cusps</string>
+    <string name="health_atlas_valves_compare_pulmonary_detail">Three pocket-shaped cusps meet at the center of the pulmonary valve, at the exit from the right ventricle into the pulmonary trunk.</string>
+    <string name="health_atlas_valves_compare_aortic">Aortic cusps</string>
+    <string name="health_atlas_valves_compare_aortic_detail">The aortic valve has three semilunar cusps: right coronary, left coronary, and noncoronary. They close together at the exit from the left ventricle into the aorta.</string>
+    <string name="health_atlas_valves_compare_tricuspid">Tricuspid leaflets</string>
+    <string name="health_atlas_valves_compare_tricuspid_detail">The right inlet has three main leaflets: anterior, posterior, and septal. The broad anterior leaflet is usually the largest.</string>
+    <string name="health_atlas_valves_compare_mitral">Mitral leaflets</string>
+    <string name="health_atlas_valves_compare_mitral_detail">The left inlet has two main leaflets. The deeper anterior leaflet meets the shallower, scalloped posterior leaflet along a curved closure line.</string>
+</resources>

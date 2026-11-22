@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gluteus_maximus_posterior_attachments_selector">Hip attachments</string>
+    <string name="health_atlas_gluteus_maximus_posterior_attachments_view">Right gluteus maximus from behind, with its origins on the pelvis and two insertions at the lateral hip.</string>
+    <string name="health_atlas_gluteus_maximus_iliac_origin">Iliac origin</string>
+    <string name="health_atlas_gluteus_maximus_iliac_origin_detail">Upper fibers arise along the posterior gluteal line and the adjacent outer surface of the ilium.</string>
+    <string name="health_atlas_gluteus_maximus_sacral_origin">Sacral origin</string>
+    <string name="health_atlas_gluteus_maximus_sacral_origin_detail">Medial fibers arise from the back of the sacrum and the side of the coccyx. Other fibers arise from the nearby sacrotuberous ligament.</string>
+    <string name="health_atlas_gluteus_maximus_iliotibial_insertion">Iliotibial tract</string>
+    <string name="health_atlas_gluteus_maximus_iliotibial_insertion_detail">The upper fibers blend into the iliotibial tract, a thickened strip of fascia that continues down the outside of the thigh.</string>
+    <string name="health_atlas_gluteus_maximus_femoral_insertion">Gluteal tuberosity</string>
+    <string name="health_atlas_gluteus_maximus_femoral_insertion_detail">The lowest fibers attach to the gluteal tuberosity, a roughened ridge on the back of the upper femur below the greater trochanter.</string>
+
+    <string name="health_atlas_gastrocnemius_posterior_attachments_selector">Calf attachments</string>
+    <string name="health_atlas_gastrocnemius_posterior_attachments_view">Right gastrocnemius from behind, from the two origins above the knee to the shared tendon at the heel.</string>
+    <string name="health_atlas_gastrocnemius_medial_origin">Medial head origin</string>
+    <string name="health_atlas_gastrocnemius_medial_origin_detail">The medial head starts at the back of the femur just above the medial condyle. Its muscle belly forms the inner bulge of the calf.</string>
+    <string name="health_atlas_gastrocnemius_lateral_origin">Lateral head origin</string>
+    <string name="health_atlas_gastrocnemius_lateral_origin_detail">The lateral head starts just above the lateral femoral condyle and forms the outer bulge of the calf.</string>
+    <string name="health_atlas_gastrocnemius_aponeurosis">Calf aponeurosis</string>
+    <string name="health_atlas_gastrocnemius_aponeurosis_detail">Fibers from both heads attach to a broad tendinous sheet. It narrows and joins the soleus contribution to form the Achilles tendon.</string>
+    <string name="health_atlas_gastrocnemius_calcaneal_insertion">Calcaneal insertion</string>
+    <string name="health_atlas_gastrocnemius_calcaneal_insertion_detail">The Achilles tendon carries both gastrocnemius heads and the soleus to the back of the calcaneal tuberosity, the prominent part of the heel bone.</string>
+
+    <string name="health_atlas_tendons_fascicle_cross_section_selector">Tendon cross-section</string>
+    <string name="health_atlas_tendons_fascicle_cross_section_view">Achilles tendon in place and an enlarged schematic cross-section showing how collagen bundles are organized.</string>
+    <string name="health_atlas_tendons_achilles_midportion">Achilles tendon</string>
+    <string name="health_atlas_tendons_achilles_midportion_detail">This segment of the Achilles tendon lies below the calf muscle bellies and above the heel attachment. The enlarged view looks across the tendon, rather than along it.</string>
+    <string name="health_atlas_tendons_epitenon">Epitenon</string>
+    <string name="health_atlas_tendons_epitenon_detail">The epitenon is the thin connective tissue layer immediately around the tendon proper. It forms the rim of the enlarged section.</string>
+    <string name="health_atlas_tendons_fascicle">Collagen fascicle</string>
+    <string name="health_atlas_tendons_fascicle_detail">A fascicle is a bundle of smaller collagen fibers that run mainly along the tendon. In cross-section, bundles appear as separate profiles.</string>
+    <string name="health_atlas_tendons_endotenon">Endotenon</string>
+    <string name="health_atlas_tendons_endotenon_detail">This connective tissue runs between neighboring fascicles and separates their collagen bundles. It appears as narrow channels in the cross-section.</string>
+</resources>

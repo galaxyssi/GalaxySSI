@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- A pale cortex-to-medulla slice behind one continuous nephron. -->
+    <path android:fillColor="#EAC2BD" android:strokeColor="#C99692" android:strokeWidth="1.4"
+        android:pathData="M39,76 C53,48 105,31 173,29 C227,25 287,29 315,47 Q331,57 332,87 L327,199 C322,230 286,245 238,251 Q148,264 80,246 C58,240 37,225 33,206 L28,121 Q26,94 39,76Z"/>
+    <path android:fillColor="#F7E2D2"
+        android:pathData="M37,79 C63,48 114,35 175,34 Q266,25 312,50 Q329,59 328,87 L326,134 Q293,125 262,136 Q230,146 200,140 Q161,131 132,146 Q91,160 33,146 L31,120 Q30,94 37,79Z"/>
+    <path android:strokeColor="#CF9E9A" android:strokeWidth="1.5"
+        android:pathData="M33,146 Q91,160 132,146 Q161,131 200,140 Q230,146 262,136 Q293,125 326,134"/>
+    <path android:strokeColor="#F4D5C8" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M47,166 Q49,203 69,224 M61,171 Q64,204 82,226 M75,163 Q76,196 90,222 M120,162 Q120,206 137,230 M137,163 Q132,199 146,216 M181,157 Q179,193 175,218 M190,161 L187,208 M235,155 Q233,191 221,227 M247,150 Q243,198 229,227 M261,153 Q257,200 245,228 M278,152 Q269,199 255,232 M293,160 Q281,203 273,220"/>
+    <path android:strokeColor="#E8B9A9" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M125,56 Q133,49 145,52 M50,111 Q52,99 61,97 M58,137 Q68,143 77,134 M119,124 Q125,120 133,125 M226,44 Q236,38 247,41 M260,113 Q273,104 284,112"/>
+    <!-- The collecting duct is downstream of, and not part of, this nephron. -->
+    <path android:strokeColor="#796942" android:strokeWidth="19" android:strokeLineCap="round"
+        android:pathData="M305,66 C306,108 305,139 307,170 Q308,206 295,225"/>
+    <path android:strokeColor="#BEA062" android:strokeWidth="15" android:strokeLineCap="round"
+        android:pathData="M305,66 C306,108 305,139 307,170 Q308,206 295,225"/>
+    <path android:strokeColor="#EAD8A3" android:strokeWidth="5.5" android:strokeLineCap="round"
+        android:pathData="M304,66 C305,108 304,139 306,170 Q307,206 294,225"/>
+    <path android:fillColor="#817047" android:strokeColor="#EAD8A3" android:strokeWidth="1.2"
+        android:pathData="M297,66 C297,61 312,60 312,66 C312,71 297,72 297,66Z M289,222 C293,220 302,225 300,228 C297,233 288,228 289,222Z"/>
+    <!-- Fine limbs widen at the proximal straight and thick ascending segments. -->
+    <path android:strokeColor="#6C6483" android:strokeWidth="10" android:strokeLineCap="round"
+        android:pathData="M100,150 C102,172 104,195 117,214 C129,230 143,237 160,237 C183,237 201,222 207,199"/>
+    <path android:strokeColor="#B9ADC7" android:strokeWidth="6.5" android:strokeLineCap="round"
+        android:pathData="M100,150 C102,172 104,195 117,214 C129,230 143,237 160,237 C183,237 201,222 207,199"/>
+    <path android:strokeColor="#E5DBE9" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M99,153 C102,173 103,195 116,214 C128,230 143,236 160,236 C182,236 200,222 206,199"/>
+    <path android:strokeColor="#625978" android:strokeWidth="16" android:strokeLineCap="round"
+        android:pathData="M207,199 C214,173 211,149 213,127 Q213,114 220,104"/>
+    <path android:strokeColor="#A298B8" android:strokeWidth="12" android:strokeLineCap="round"
+        android:pathData="M207,199 C214,173 211,149 213,127 Q213,114 220,104"/>
+    <path android:strokeColor="#DBD1E3" android:strokeWidth="3.8" android:strokeLineCap="round"
+        android:pathData="M207,199 C214,173 211,149 213,127 Q213,114 220,104"/>
+    <!-- Proximal coils originate at the urinary pole, opposite the vessels. -->
+    <path android:strokeColor="#9D594E" android:strokeWidth="18" android:strokeLineCap="round"
+        android:pathData="M144,104 C123,111 113,102 118,88 C127,66 110,57 96,63 C87,66 86,74 91,80 C97,90 105,89 101,102 C95,118 68,99 63,117 C58,132 73,138 86,132 Q102,129 100,150"/>
+    <path android:strokeColor="#D79273" android:strokeWidth="14" android:strokeLineCap="round"
+        android:pathData="M144,104 C123,111 113,102 118,88 C127,66 110,57 96,63 C87,66 86,74 91,80 C97,90 105,89 101,102 C95,118 68,99 63,117 C58,132 73,138 86,132 Q102,129 100,150"/>
+    <path android:strokeColor="#F8C8A5" android:strokeWidth="4" android:strokeLineCap="round"
+        android:pathData="M144,104 C123,111 113,102 118,88 C127,66 110,57 96,63 C87,66 86,74 91,80 C97,90 105,89 101,102 C95,118 68,99 63,117 C58,132 73,138 86,132 Q102,129 100,150"/>
+    <!-- Separate vascular and urinary lumina in the renal corpuscle. -->
+    <path android:fillColor="#FBE7D2" android:strokeColor="#A76262" android:strokeWidth="2"
+        android:pathData="M136,102 C134,84 144,66 163,63 C180,60 194,69 197,85 C201,104 186,117 170,120 Q150,122 138,108 L130,108 L130,104Z"/>
+    <path android:strokeColor="#F9D8B8" android:strokeWidth="3.6" android:strokeLineCap="round"
+        android:pathData="M125,105 Q135,107 143,105"/>
+    <path android:strokeColor="#9F5964" android:strokeWidth="7" android:strokeLineCap="round"
+        android:pathData="M184,88 Q201,92 210,86 M183,97 Q199,98 207,110"/>
+    <path android:strokeColor="#E39B94" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M184,88 Q201,92 210,86 M183,97 Q199,98 207,110"/>
+    <path android:fillColor="#BD6974"
+        android:pathData="M148,90 C143,84 149,76 157,78 C158,71 171,71 174,77 C181,74 189,81 186,87 C196,91 190,102 182,102 C178,112 167,109 164,105 C156,111 148,104 150,98 Q142,95 148,90Z"/>
+    <path android:strokeColor="#F1A8A3" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M151,89 Q153,81 161,84 Q168,88 163,92 Q157,99 167,102 M164,81 Q175,77 177,85 Q179,90 173,92 Q168,96 177,102 M181,86 Q188,92 180,96"/>
+    <!-- Distal convolution continues through a short connecting tubule. -->
+    <path android:strokeColor="#486A65" android:strokeWidth="16" android:strokeLineCap="round"
+        android:pathData="M220,104 C224,93 222,80 234,69 C242,60 253,58 262,64 C274,72 267,86 254,87 C245,88 244,100 251,104 C261,109 267,95 280,96 Q292,97 304,106"/>
+    <path android:strokeColor="#83ABA0" android:strokeWidth="12" android:strokeLineCap="round"
+        android:pathData="M220,104 C224,93 222,80 234,69 C242,60 253,58 262,64 C274,72 267,86 254,87 C245,88 244,100 251,104 C261,109 267,95 280,96 Q292,97 304,106"/>
+    <path android:strokeColor="#D3E5CA" android:strokeWidth="3.8" android:strokeLineCap="round"
+        android:pathData="M220,104 C224,93 222,80 234,69 C242,60 253,58 262,64 C274,72 267,86 254,87 C245,88 244,100 251,104 C261,109 267,95 280,96 Q292,97 304,106"/>
+    <path android:strokeColor="#EAD8A3" android:strokeWidth="4.4" android:strokeLineCap="round"
+        android:pathData="M302,99 Q305,104 306,113"/>
+</vector>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_major_salivary_pairs_view">三对大唾液腺的前面观</string>
+    <string name="health_atlas_major_salivary_pairs_selector">成对唾液腺示意图</string>
+    <string name="health_atlas_major_salivary_parotid">腮腺</string>
+    <string name="health_atlas_major_salivary_parotid_detail">腮腺是最大的一对唾液腺，位于耳的前下方。两侧的腮腺导管各自横过面颊，开口于上颌第二磨牙相对的颊黏膜上。</string>
+    <string name="health_atlas_major_salivary_submandibular">下颌下腺</string>
+    <string name="health_atlas_major_salivary_submandibular_detail">这对腺体大部分位于下颌骨下方。两侧的下颌下腺导管各自向前走行，开口于舌系带旁。</string>
+    <string name="health_atlas_major_salivary_sublingual">舌下腺</string>
+    <string name="health_atlas_major_salivary_sublingual_detail">舌下腺是最小的一对大唾液腺，分别位于舌下两侧的口底黏膜下。每侧都有数条短导管沿舌下襞开口。</string>
+
+    <string name="health_atlas_sublingual_floor_view">抬起舌体后显示口底及两侧舌下腺</string>
+    <string name="health_atlas_sublingual_floor_selector">口底剖视图</string>
+    <string name="health_atlas_sublingual_floor_gland">舌下腺所在部位</string>
+    <string name="health_atlas_sublingual_floor_gland_detail">两侧细长的舌下腺位于舌根旁的口底黏膜下。剖视图显示了舌下襞下方呈分叶状的腺体。</string>
+    <string name="health_atlas_sublingual_floor_rivinus">舌下腺小管（里维努斯管）</string>
+    <string name="health_atlas_sublingual_floor_rivinus_detail">这些短管从舌下腺通向舌下襞，并分别开口。图中只画出了其中一部分。</string>
+    <string name="health_atlas_sublingual_floor_fold">舌下襞</string>
+    <string name="health_atlas_sublingual_floor_fold_detail">舌下腺将口底黏膜顶起，形成条状隆起。舌下腺小管沿隆起各自开口，并非汇入同一个开口。</string>
+    <string name="health_atlas_sublingual_floor_caruncle">舌下阜</string>
+    <string name="health_atlas_sublingual_floor_caruncle_detail">舌系带基部两旁各有一个小隆起。下颌下腺导管在此开口，舌下腺大管也可能在附近汇入。</string>
+    <string name="health_atlas_sublingual_floor_frenulum">舌系带</string>
+    <string name="health_atlas_sublingual_floor_frenulum_detail">这条位于正中的黏膜襞连接舌体下表面与口底，两个舌下阜分列其两旁。</string>
+    <string name="health_atlas_sublingual_floor_wharton">下颌下腺导管（沃顿管）</string>
+    <string name="health_atlas_sublingual_floor_wharton_detail">这条较长的导管将下颌下腺分泌的唾液向前输送至舌下阜。它经过舌下腺内侧，与舌下腺的多条短小导管不同。</string>
+
+    <string name="health_atlas_pancreatic_main_duct_view">主胰管前面观：从胰尾到十二指肠</string>
+    <string name="health_atlas_pancreatic_main_duct_selector">主胰管剖视图</string>
+    <string name="health_atlas_pancreatic_main_duct_tributaries">胰尾的汇入小管</string>
+    <string name="health_atlas_pancreatic_main_duct_tributaries_detail">来自胰腺小叶的细小导管在狭窄的胰尾附近汇合，形成主胰管的起始段。</string>
+    <string name="health_atlas_pancreatic_main_duct_trunk">主胰管（维尔松管）</string>
+    <string name="health_atlas_pancreatic_main_duct_trunk_detail">主胰管位于胰腺内，沿途接纳较小的分支导管，将胰液从胰尾经胰体输向胰头。</string>
+    <string name="health_atlas_pancreatic_main_duct_bend">胰头内的导管弯曲段</string>
+    <string name="health_atlas_pancreatic_main_duct_bend_detail">主胰管在较宽的胰头内弯向十二指肠降部的肠壁，通常在那里与胆总管汇合。</string>
+    <string name="health_atlas_pancreatic_main_duct_papilla">十二指肠大乳头</string>
+    <string name="health_atlas_pancreatic_main_duct_papilla_detail">这个小突起标示了十二指肠降部内侧壁上的开口。图中所示的常见形态是两管在开口前汇成一段短的共同通道，称为肝胰壶腹。</string>
+</resources>

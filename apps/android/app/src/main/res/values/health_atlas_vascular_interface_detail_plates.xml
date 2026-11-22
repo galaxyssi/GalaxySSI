@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vi_vein_selector">Limb vein cutaway</string>
+    <string name="health_atlas_vi_vein_view">Representative calf vein · Longitudinal cutaway, toward the heart at top</string>
+    <string name="health_atlas_vi_vein_segment">Calf vein segment</string>
+    <string name="health_atlas_vi_vein_segment_detail">This segment represents a vein running through the calf. Veins carry blood back toward the heart.</string>
+    <string name="health_atlas_vi_vein_valve">Paired valve leaflets</string>
+    <string name="health_atlas_vi_vein_valve_detail">In this example of a valved limb vein, blood moving toward the heart pushes the two leaflets aside. If flow reverses, the leaflets come together to limit backflow. Not all veins have valves.</string>
+    <string name="health_atlas_vi_vein_lumen">Venous lumen</string>
+    <string name="health_atlas_vi_vein_lumen_detail">Blood flows through this inner channel. Veins generally have wider lumens and thinner walls than their accompanying arteries.</string>
+    <string name="health_atlas_vi_vein_wall">Vein wall</string>
+    <string name="health_atlas_vi_vein_wall_detail">An inner lining faces the blood. Outside it lie a relatively thin layer of smooth muscle and a supporting layer of connective tissue.</string>
+
+    <string name="health_atlas_vi_systemic_selector">Skeletal muscle capillary bed</string>
+    <string name="health_atlas_vi_systemic_view">Systemic capillaries · Between skeletal muscle fibers, with one enlarged</string>
+    <string name="health_atlas_vi_systemic_inlet">Feeding arteriole</string>
+    <string name="health_atlas_vi_systemic_inlet_detail">This small arterial branch supplies the capillary bed between muscle fibers.</string>
+    <string name="health_atlas_vi_systemic_bed">Capillary branch</string>
+    <string name="health_atlas_vi_systemic_bed_detail">These narrow channels exchange oxygen, nutrients, and wastes with the surrounding muscle tissue. Unlike pulmonary capillaries, they do not border an alveolar air space.</string>
+    <string name="health_atlas_vi_systemic_outlet">Collecting venule</string>
+    <string name="health_atlas_vi_systemic_outlet_detail">Multiple small channels merge into this venule, which drains the muscle capillary bed toward larger veins.</string>
+    <string name="health_atlas_vi_systemic_wall">Continuous endothelium</string>
+    <string name="health_atlas_vi_systemic_wall_detail">A single layer of flattened endothelial cells forms the lining of this muscle capillary. Its channel is narrow enough for red blood cells to pass in single file.</string>
+
+    <string name="health_atlas_vi_barrier_selector">Air–blood barrier layers</string>
+    <string name="health_atlas_vi_barrier_view">Respiratory membrane · Enlarged thin region between alveolar air and blood</string>
+    <string name="health_atlas_vi_barrier_epithelium">Type I alveolar epithelium</string>
+    <string name="health_atlas_vi_barrier_epithelium_detail">Flat type I cells line most of the alveolar surface. Their thin extensions form the air-facing tissue layer of the barrier.</string>
+    <string name="health_atlas_vi_barrier_basal">Fused basement membranes</string>
+    <string name="health_atlas_vi_barrier_basal_detail">In this thin region, the basement membranes of the alveolar epithelium and capillary endothelium join, leaving very little tissue between the cells.</string>
+    <string name="health_atlas_vi_barrier_endothelium">Capillary endothelium</string>
+    <string name="health_atlas_vi_barrier_endothelium_detail">Flat endothelial cells line the blood side. Oxygen diffuses from alveolar air through the barrier into blood, while carbon dioxide moves in the opposite direction.</string>
+
+    <string name="health_atlas_vi_pulmonary_selector">Alveolar capillary mesh</string>
+    <string name="health_atlas_vi_pulmonary_view">Pulmonary capillaries · Section through alveoli with a septal surface exposed</string>
+    <string name="health_atlas_vi_pulmonary_inlet">Pulmonary arteriole</string>
+    <string name="health_atlas_vi_pulmonary_inlet_detail">This small pulmonary arterial branch delivers oxygen-poor blood to the capillary network in the alveolar walls.</string>
+    <string name="health_atlas_vi_pulmonary_mesh">Septal capillary mesh</string>
+    <string name="health_atlas_vi_pulmonary_mesh_detail">Short, interconnected capillaries lie inside the thin walls shared by neighboring alveoli, not in the air spaces. The exposed mesh shows how much of the septum is available for gas exchange.</string>
+    <string name="health_atlas_vi_pulmonary_outlet">Pulmonary venule</string>
+    <string name="health_atlas_vi_pulmonary_outlet_detail">The capillary network drains into small venules. These collect oxygen-rich blood and carry it toward the pulmonary veins and left atrium.</string>
+</resources>

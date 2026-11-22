@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Anterior is image right. The muted spine provides posterior context. -->
+    <path android:fillColor="#A87876" android:strokeColor="#825D62" android:strokeWidth="1.8"
+        android:pathData="M62,44 C87,23 120,18 160,19 L239,22 Q268,23 278,41 Q285,57 288,68 C295,81 314,88 318,98 Q324,108 307,112 L297,115 Q293,120 297,126 Q306,133 297,140 Q303,147 296,153 C301,169 294,182 277,192 Q250,208 246,230 L243,257 L78,259 Q69,236 67,215 Q61,185 65,154 Q69,110 57,81 Q48,58 62,44 Z"/>
+    <path android:fillColor="#DFB4A3"
+        android:pathData="M66,48 C86,30 122,24 163,25 L237,28 Q262,29 272,45 Q278,59 281,72 C286,87 310,94 310,101 Q311,105 298,107 Q285,112 290,128 L293,134 Q284,140 291,151 Q299,169 273,185 Q244,202 239,230 L236,250 L82,252 Q76,235 74,212 Q69,182 73,153 Q77,109 64,78 Q54,59 66,48 Z"/>
+    <path android:fillColor="#EBC6A9"
+        android:pathData="M77,46 Q107,31 161,32 L233,35 Q259,35 267,55 Q269,62 269,70 L185,65 Q148,63 128,70 Q111,79 106,100 Q99,76 74,71 Q64,64 77,46 Z"/>
+    <path android:fillColor="#C3967E" android:strokeColor="#977265" android:strokeWidth="1.3"
+        android:pathData="M78,78 Q95,70 107,78 Q113,99 114,122 Q117,147 116,175 Q115,217 129,251 Q106,256 84,250 Q77,221 76,198 Q73,177 78,154 Q83,123 75,99 Q71,86 78,78 Z"/>
+    <path android:fillColor="#E4BD9B" android:strokeColor="#A78170" android:strokeWidth="1.4"
+        android:pathData="M79,94 Q86,84 100,88 Q105,99 106,112 Q95,119 83,112 Z M84,120 Q96,123 108,117 Q112,129 111,141 Q96,147 85,140 Z M84,149 Q98,154 111,147 Q114,162 110,173 Q95,179 82,173 Z M82,181 Q99,185 111,179 L111,201 Q97,208 84,202 Z M85,211 Q101,215 113,208 L119,231 Q103,238 90,232 Z M93,240 Q107,244 121,239 L125,250 L96,251 Z"/>
+    <path android:strokeColor="#F1D2AA" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M83,95 Q89,92 97,93 M88,125 Q99,128 104,124 M88,154 Q96,157 104,154 M87,186 Q96,189 106,186 M92,218 L109,217"/>
+    <path android:fillColor="#B37B78"
+        android:pathData="M113,93 Q118,74 134,66 L150,63 Q126,81 127,109 L128,182 Q127,211 140,232 L137,253 L125,254 Q115,219 114,198 Q111,160 114,124 Z"/>
+    <!-- Nasal and oral spaces meet the continuous posterior pharyngeal column. -->
+    <path android:fillColor="#57737C" android:strokeColor="#866062" android:strokeWidth="1.6"
+        android:pathData="M161,72 Q193,60 226,62 Q254,61 270,72 Q279,84 299,101 Q283,104 265,98 L221,102 Q186,103 162,112 Z"/>
+    <path android:fillColor="#81A0A0"
+        android:pathData="M199,71 Q225,65 250,68 Q268,72 277,86 Q246,80 224,88 L192,93 Z"/>
+    <path android:fillColor="#D59991" android:strokeColor="#A16D70" android:strokeWidth="1.4"
+        android:pathData="M192,78 Q220,71 256,74 Q264,76 266,80 Q247,87 223,85 Q208,86 196,89 Q190,86 192,78 Z M199,92 Q219,85 242,87 Q255,86 267,83 Q275,87 270,91 Q251,96 227,95 L201,101 Q195,98 199,92 Z"/>
+    <path android:fillColor="#73505F" android:strokeColor="#936D70" android:strokeWidth="1.5"
+        android:pathData="M171,119 Q211,104 263,110 Q279,109 290,119 L289,138 Q282,142 292,150 Q268,163 232,170 L197,178 Q174,166 168,145 Z"/>
+    <path android:fillColor="#F0CEAC" android:strokeColor="#A97D6D" android:strokeWidth="1.4"
+        android:pathData="M203,101 Q237,98 266,98 Q277,98 287,106 L281,117 Q271,110 252,111 L208,115 Z"/>
+    <path android:strokeColor="#F9E0BA" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M218,105 Q249,102 268,103"/>
+    <path android:fillColor="#F6D9B8" android:strokeColor="#AB8072" android:strokeWidth="1.5"
+        android:pathData="M279,112 Q285,112 288,116 L289,128 L282,130 Z M281,145 L289,141 L287,150 L279,155 Z"/>
+    <path android:fillColor="#C8828C" android:strokeColor="#90616E" android:strokeWidth="1.6"
+        android:pathData="M187,156 Q201,139 219,139 Q236,138 254,143 Q274,149 286,145 Q282,158 267,166 Q248,173 227,170 Q207,171 193,186 Q182,186 179,177 Z"/>
+    <path android:fillColor="#E0A295"
+        android:pathData="M192,158 Q208,142 226,145 Q243,145 257,151 Q269,155 277,152 Q269,163 252,164 Q226,161 209,169 Q199,172 193,178 Q186,174 192,158 Z"/>
+    <path android:strokeColor="#F2BDAB" android:strokeWidth="2.1" android:strokeLineCap="round"
+        android:pathData="M202,155 Q221,145 243,151 Q256,157 267,155"/>
+    <!-- Region colors share edges: they do not represent membranes or valves. -->
+    <path android:fillColor="#729A98"
+        android:pathData="M130,80 Q141,64 165,66 Q177,67 182,73 L181,99 L172,118 L127,118 Q124,94 130,80 Z"/>
+    <path android:fillColor="#66869A"
+        android:pathData="M127,118 L172,118 Q173,131 187,139 L198,143 Q188,154 184,169 L129,169 Q126,147 127,118 Z"/>
+    <path android:fillColor="#797D9B"
+        android:pathData="M129,169 L184,169 Q184,183 199,189 L198,198 Q175,207 163,222 L135,222 Q128,201 129,169 Z"/>
+    <path android:fillColor="#805C6A" android:strokeColor="#956873" android:strokeWidth="1.4"
+        android:pathData="M135,222 L163,222 Q152,237 158,254 L141,254 Q135,241 135,222 Z"/>
+    <path android:strokeColor="#B7BBBE" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M130,118 H158 M131,169 H176"/>
+    <path android:strokeColor="#BEC1CC" android:strokeWidth="1.9" android:strokeLineCap="round"
+        android:pathData="M138,78 Q132,83 131,97 M133,132 L134,154 M135,177 Q135,202 140,214"/>
+    <path android:strokeColor="#CAA19D" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M143,229 Q142,241 147,250"/>
+    <!-- Soft palate ends freely; the epiglottis stands anterior to the lower pharynx. -->
+    <path android:fillColor="#C88981" android:strokeColor="#976463" android:strokeWidth="1.5"
+        android:pathData="M213,103 Q205,115 190,118 Q178,121 174,129 Q168,135 162,129 Q159,125 164,119 Q174,110 186,107 Q200,102 213,103 Z"/>
+    <path android:strokeColor="#F2BBA6" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M207,107 Q185,110 170,122"/>
+    <path android:fillColor="#5B6D84" android:strokeColor="#87626D" android:strokeWidth="1.5"
+        android:pathData="M188,192 Q202,185 214,190 Q224,196 218,213 Q209,227 212,253 L177,254 Q171,234 177,215 Q181,204 188,192 Z"/>
+    <path android:fillColor="#A8A9B4" android:strokeColor="#727A92" android:strokeWidth="1.6"
+        android:pathData="M211,188 Q223,191 225,200 Q222,213 216,222 L216,254 L203,254 L201,232 Q200,223 205,216 Q212,207 208,201 Z"/>
+    <path android:fillColor="#8295A5"
+        android:pathData="M179,227 Q191,225 201,226 L204,254 L179,254 Q175,241 179,227 Z"/>
+    <path android:strokeColor="#B9C1C7" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M182,232 Q190,229 200,231 M180,240 Q191,237 200,239 M180,248 Q191,245 201,247 M207,225 Q210,223 215,224"/>
+    <path android:fillColor="#B4B6A2" android:strokeColor="#7A776F" android:strokeWidth="1.5"
+        android:pathData="M194,193 Q183,187 181,180 Q176,173 177,167 Q182,165 188,171 Q195,179 199,187 Q200,192 194,193 Z"/>
+    <path android:strokeColor="#DFD9B4" android:strokeWidth="1.9" android:strokeLineCap="round"
+        android:pathData="M181,171 Q187,176 195,188"/>
+    <path android:strokeColor="#EFC2AD" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M269,46 Q275,59 275,69 M285,86 Q295,92 306,99 M292,136 L299,135 M279,184 Q258,196 250,210"/>
+</vector>

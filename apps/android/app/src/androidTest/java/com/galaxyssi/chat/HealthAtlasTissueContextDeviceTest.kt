@@ -273,6 +273,7 @@ class HealthAtlasTissueContextDeviceTest {
         val details = HealthAtlasRegionalDetailPlates.all
         assertEquals(details.size, details.map { it.owner }.toSet().size)
         assertEquals(details.size, details.map { it.drawable }.toSet().size)
+        val offArtwork = mutableListOf<String>()
         for (detail in details) {
             val owner = requireNotNull(detail.owner)
             assertNotNull(atlas[owner])
@@ -297,9 +298,10 @@ class HealthAtlasTissueContextDeviceTest {
                 for (marker in labels) {
                     val x = (marker.x * 360).roundToInt().coerceIn(1, 358)
                     val y = (marker.y * 280).roundToInt().coerceIn(1, 278)
-                    assertTrue("$owner/${marker.id}", (-1..1).any { dx -> (-1..1).any { dy ->
+                    val onArtwork = (-1..1).any { dx -> (-1..1).any { dy ->
                         Color.alpha(bitmap.getPixel(x + dx, y + dy)) > 180
-                    } })
+                    } }
+                    if (!onArtwork) offArtwork += "$owner/${marker.id}"
                 }
                 for (key in detail.features.flatMap { listOf(it.title, it.explanation) }) {
                     assertNotEquals(en.getString(key), zh.getString(key))
@@ -307,6 +309,7 @@ class HealthAtlasTissueContextDeviceTest {
                 }
             } finally { bitmap.recycle() }
         }
+        assertTrue("Callouts outside their artwork: ${offArtwork.joinToString()}", offArtwork.isEmpty())
     }
 
     @Test fun fullscreenAnatomyKeepsLabelsAndSelectionWhileAllowingAnUnlabeledView() = native { scenario ->
@@ -455,6 +458,29 @@ class HealthAtlasTissueContextDeviceTest {
                 assertEquals(activity.getString(R.string.health_atlas_limb_bones_name),
                     (activity.view("health-page-title") as TextView).text)
             }
+        }
+    }
+
+    @Test fun sternumAndHandLandmarksLinkToRealNeighboringBones() = native { scenario ->
+        scenario.onActivity {
+            it.open("sternum")
+            assertNotNull(it.view("atlas-feature-sternum-angle"))
+            it.view("atlas-hotspot-clavicle").performClick()
+            assertNotNull(it.view("atlas-feature-clavicle-acromial"))
+            it.onBackPressed()
+            assertNotNull(it.view("atlas-feature-sternum-xiphoid"))
+            it.onBackPressed()
+            it.open("hand-bones")
+        }
+        capture("hand-bones-palmar", scenario.localized(R.string.health_atlas_hand_palmar_detail))
+        scenario.onActivity {
+            assertNotNull(it.view("atlas-feature-hand-bones-carpals"))
+            it.view("atlas-hotspot-radius").performClick()
+            assertNotNull(it.view("atlas-feature-radius-wrist"))
+            it.onBackPressed()
+            assertNotNull(it.view("atlas-feature-hand-bones-pisiform"))
+            it.view("atlas-tab-1").performClick()
+            assertNotNull(it.view("atlas-function-player"))
         }
     }
 

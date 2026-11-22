@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Skeletal muscle fibers frame the narrow channels between them. -->
+    <path android:fillColor="#D09C88" android:strokeColor="#A37671" android:strokeWidth="1.5"
+        android:pathData="M44,68 C76,53 119,48 155,40 Q219,26 280,34 Q304,39 314,52 L317,113 Q315,130 293,141 C235,166 141,159 67,176 Q52,179 48,168Z"/>
+    <path android:fillColor="#F1CEAD"
+        android:pathData="M46,70 C81,57 118,51 157,44 Q222,30 281,38 Q306,43 311,54 L311,116 Q300,129 276,136 C211,153 133,153 53,166Z"/>
+    <path android:fillColor="#CC8B80" android:strokeColor="#BD7D75" android:strokeWidth="1.2"
+        android:pathData="M50,78 C113,57 186,46 251,42 Q280,39 297,49 L299,54 Q277,48 254,51 C172,56 100,70 51,88Z M50,99 C111,81 203,65 274,65 Q296,63 304,69 L305,78 Q291,73 267,75 C180,78 103,95 52,110Z M51,123 C116,104 203,91 266,89 Q299,86 307,92 L308,101 Q292,98 266,100 C187,102 105,118 52,134Z M52,146 C124,128 200,117 269,113 Q292,111 309,109 Q302,121 284,126 C213,134 131,143 53,158Z"/>
+    <path android:strokeColor="#F8DDC1" android:strokeWidth="1.4" android:strokeLineCap="round"
+        android:pathData="M63,79L64,83 M73,76L74,80 M83,73L84,77 M150,60L151,64 M159,59L160,63 M168,57L169,61 M224,47L225,52 M233,46L234,51 M242,45L243,50 M137,85L138,90 M147,82L148,88 M157,81L158,85 M205,76L206,79 M214,74L215,78 M223,74L224,78 M172,105L173,110 M182,104L183,109 M192,102L193,108 M248,93L249,99 M258,93L259,99 M268,92L269,98 M123,134L124,142 M133,132L134,139 M143,131L144,138 M210,121L212,132 M220,120L222,131 M231,119L232,129"/>
+    <!-- All capillary paths return to the collecting venule. -->
+    <path android:strokeColor="#A15356" android:strokeWidth="14" android:strokeLineCap="round"
+        android:pathData="M30,111 C55,106 77,96 102,98"/>
+    <path android:strokeColor="#DC8A77" android:strokeWidth="7" android:strokeLineCap="round"
+        android:pathData="M30,111 C55,106 77,96 102,98"/>
+    <path android:strokeColor="#A15258" android:strokeWidth="6.2" android:strokeLineCap="round"
+        android:pathData="M79,101 C99,91 108,77 135,71 Q158,68 173,63 Q203,53 221,59 M101,98 C124,97 132,94 153,91 Q170,89 185,86 Q205,78 225,84 M89,99 C108,112 130,113 149,109 Q166,105 188,107 Q204,108 222,101 M148,109 C158,124 176,133 197,124 Q213,118 235,120 M150,68 Q160,76 156,90 M185,86 Q189,93 188,107"/>
+    <path android:strokeColor="#D38979" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M79,101 C99,91 108,77 135,71 Q158,68 173,63 Q203,53 221,59 M101,98 C124,97 132,94 153,91 Q170,89 185,86 Q205,78 225,84 M89,99 C108,112 130,113 149,109 Q166,105 188,107 Q204,108 222,101 M148,109 C158,124 176,133 197,124 Q213,118 235,120 M150,68 Q160,76 156,90 M185,86 Q189,93 188,107"/>
+    <path android:strokeColor="#6C647F" android:strokeWidth="6.2" android:strokeLineCap="round"
+        android:pathData="M221,59 C249,59 260,70 272,89 Q278,104 289,111 M225,84 C252,85 256,101 280,111 M222,101 C241,96 250,106 280,111 M235,120 C254,121 263,111 280,111 M245,65 Q247,77 241,87 M254,105 Q254,113 253,118"/>
+    <path android:strokeColor="#B091A3" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M221,59 C249,59 260,70 272,89 Q278,104 289,111 M225,84 C252,85 256,101 280,111 M222,101 C241,96 250,106 280,111 M235,120 C254,121 263,111 280,111 M245,65 Q247,77 241,87 M254,105 Q254,113 253,118"/>
+    <path android:strokeColor="#516078" android:strokeWidth="13" android:strokeLineCap="round"
+        android:pathData="M281,111 Q306,115 331,103"/>
+    <path android:strokeColor="#99A9BE" android:strokeWidth="6" android:strokeLineCap="round"
+        android:pathData="M281,111 Q306,115 331,103"/>
+    <path android:strokeColor="#8A7479" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M132,118 Q141,121 150,116 M133,123L101,204 M152,121L273,197"/>
+    <!-- Enlarged longitudinal section: a continuous lining around a single-file lumen. -->
+    <path android:fillColor="#AB746D" android:strokeColor="#834D58" android:strokeWidth="1.7"
+        android:pathData="M100,203 C130,197 144,201 164,202 C189,204 207,191 231,192 Q254,193 277,185 L283,227 C259,239 248,232 226,235 C201,236 186,251 159,250 Q126,245 105,252Z"/>
+    <path android:fillColor="#D99582" android:strokeColor="#A86565" android:strokeWidth="1.4"
+        android:pathData="M101,205 C125,202 143,203 158,206 C184,209 209,194 232,196 Q256,197 277,189 L281,222 C264,230 247,227 226,231 C202,233 183,245 161,245 Q134,240 105,247Z"/>
+    <path android:fillColor="#F5C6AD"
+        android:pathData="M103,215 C129,208 145,215 160,216 C189,219 213,204 233,206 Q258,206 279,199 L280,215 C256,224 244,219 225,224 C202,228 184,239 161,237 Q129,231 105,239Z"/>
+    <path android:fillColor="#8E5260"
+        android:pathData="M137,207 C143,203 151,203 157,207 C153,211 143,212 137,207Z M173,240 C180,236 188,235 192,238 Q183,245 173,240Z M235,202 C242,198 251,198 256,201 Q247,207 235,202Z"/>
+    <path android:fillColor="#B95F64" android:strokeColor="#904653" android:strokeWidth="1.3"
+        android:pathData="M116,225 C116,217 131,214 139,219 C146,225 135,232 127,232 Q118,232 116,225Z M157,227 C157,219 172,216 182,220 C192,227 179,234 170,234 Q160,234 157,227Z M194,226 C193,219 209,214 218,217 C228,221 218,231 208,233 Q198,233 194,226Z M238,216 C237,209 251,206 262,208 C273,214 260,222 251,223 Q242,223 238,216Z"/>
+    <path android:strokeColor="#E39386" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M123,224 Q128,220 134,223 M165,226 Q172,222 178,225 M201,225 Q208,220 215,222 M245,215 Q253,211 259,213"/>
+</vector>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gluteus_maximus_posterior_attachments_selector">臀大肌起止点</string>
+    <string name="health_atlas_gluteus_maximus_posterior_attachments_view">右侧臀大肌后面观，显示骨盆上的起点及髋外侧的两处止点。</string>
+    <string name="health_atlas_gluteus_maximus_iliac_origin">髂骨起点</string>
+    <string name="health_atlas_gluteus_maximus_iliac_origin_detail">上部肌纤维起自髂骨臀后线及其邻近的髂骨外面。</string>
+    <string name="health_atlas_gluteus_maximus_sacral_origin">骶骨起点</string>
+    <string name="health_atlas_gluteus_maximus_sacral_origin_detail">内侧肌纤维起自骶骨背面及尾骨外侧。另有部分纤维起自邻近的骶结节韧带。</string>
+    <string name="health_atlas_gluteus_maximus_iliotibial_insertion">髂胫束</string>
+    <string name="health_atlas_gluteus_maximus_iliotibial_insertion_detail">上部肌纤维汇入髂胫束。髂胫束是沿大腿外侧向下延伸的增厚筋膜带。</string>
+    <string name="health_atlas_gluteus_maximus_femoral_insertion">臀肌粗隆</string>
+    <string name="health_atlas_gluteus_maximus_femoral_insertion_detail">最下部的肌纤维止于臀肌粗隆，即股骨上段后面、大转子下方的粗糙骨嵴。</string>
+
+    <string name="health_atlas_gastrocnemius_posterior_attachments_selector">腓肠肌起止点</string>
+    <string name="health_atlas_gastrocnemius_posterior_attachments_view">右侧腓肠肌后面观，显示从膝上两处起点到足跟共同肌腱的结构。</string>
+    <string name="health_atlas_gastrocnemius_medial_origin">内侧头起点</string>
+    <string name="health_atlas_gastrocnemius_medial_origin_detail">内侧头起自股骨后面、内侧髁上方，其肌腹形成小腿后方内侧的隆起。</string>
+    <string name="health_atlas_gastrocnemius_lateral_origin">外侧头起点</string>
+    <string name="health_atlas_gastrocnemius_lateral_origin_detail">外侧头起自股骨外侧髁上方，其肌腹形成小腿后方外侧的隆起。</string>
+    <string name="health_atlas_gastrocnemius_aponeurosis">腓肠肌腱膜</string>
+    <string name="health_atlas_gastrocnemius_aponeurosis_detail">腓肠肌两头的肌纤维附着在宽阔的腱膜上。腱膜向下逐渐变窄，与比目鱼肌的腱性部分汇合形成跟腱。</string>
+    <string name="health_atlas_gastrocnemius_calcaneal_insertion">跟骨止点</string>
+    <string name="health_atlas_gastrocnemius_calcaneal_insertion_detail">腓肠肌两头和比目鱼肌经跟腱止于跟骨结节的后面。跟骨结节是足跟骨的隆起部分。</string>
+
+    <string name="health_atlas_tendons_fascicle_cross_section_selector">肌腱横切面</string>
+    <string name="health_atlas_tendons_fascicle_cross_section_view">左侧显示跟腱的位置，右侧为放大的横切面示意图，显示胶原纤维束的排列。</string>
+    <string name="health_atlas_tendons_achilles_midportion">跟腱</string>
+    <string name="health_atlas_tendons_achilles_midportion_detail">这段跟腱位于小腿后方肌腹下方、足跟止点上方。放大图展示的是垂直于肌腱长轴的切面。</string>
+    <string name="health_atlas_tendons_epitenon">腱外膜</string>
+    <string name="health_atlas_tendons_epitenon_detail">腱外膜是紧贴并包覆肌腱本体的一薄层结缔组织，在放大切面中形成外缘。</string>
+    <string name="health_atlas_tendons_fascicle">胶原纤维束</string>
+    <string name="health_atlas_tendons_fascicle_detail">较细的胶原纤维主要沿肌腱长轴排列，聚集成束。在横切面上，每束各有独立的轮廓。</string>
+    <string name="health_atlas_tendons_endotenon">腱内膜</string>
+    <string name="health_atlas_tendons_endotenon_detail">腱内膜是分隔相邻胶原纤维束的结缔组织，在横切面上呈束间的狭窄间隔。</string>
+</resources>

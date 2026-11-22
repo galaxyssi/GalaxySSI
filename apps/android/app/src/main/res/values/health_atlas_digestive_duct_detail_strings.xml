@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_major_salivary_pairs_view">Three pairs of major salivary glands, seen from the front</string>
+    <string name="health_atlas_major_salivary_pairs_selector">Paired gland map</string>
+    <string name="health_atlas_major_salivary_parotid">Parotid pair</string>
+    <string name="health_atlas_major_salivary_parotid_detail">The largest pair sits in front of and below the ears. Each parotid duct crosses the cheek to open opposite an upper second molar.</string>
+    <string name="health_atlas_major_salivary_submandibular">Submandibular pair</string>
+    <string name="health_atlas_major_salivary_submandibular_detail">These glands lie mainly beneath the lower jaw. Each submandibular duct runs forward to an opening beside the lingual frenulum.</string>
+    <string name="health_atlas_major_salivary_sublingual">Sublingual pair</string>
+    <string name="health_atlas_major_salivary_sublingual_detail">The smallest major pair lies just beneath the lining of the floor of the mouth, one gland on either side under the tongue. Several short ducts open along each sublingual fold.</string>
+
+    <string name="health_atlas_sublingual_floor_view">Floor of the mouth: paired glands beneath the lifted tongue</string>
+    <string name="health_atlas_sublingual_floor_selector">Floor of mouth cutaway</string>
+    <string name="health_atlas_sublingual_floor_gland">Sublingual gland bed</string>
+    <string name="health_atlas_sublingual_floor_gland_detail">Each elongated gland lies under the floor-of-mouth lining beside the base of the tongue. The cutaway exposes the lobulated tissue beneath the fold.</string>
+    <string name="health_atlas_sublingual_floor_rivinus">Ducts of Rivinus</string>
+    <string name="health_atlas_sublingual_floor_rivinus_detail">These short ducts lead from the sublingual gland to separate openings along the fold. The illustration shows only some of them.</string>
+    <string name="health_atlas_sublingual_floor_fold">Sublingual fold</string>
+    <string name="health_atlas_sublingual_floor_fold_detail">The gland raises a ridge in the lining of the mouth. Small sublingual ducts open along the ridge rather than all draining through one opening.</string>
+    <string name="health_atlas_sublingual_floor_caruncle">Sublingual caruncle</string>
+    <string name="health_atlas_sublingual_floor_caruncle_detail">One small bump sits on either side of the frenulum at its base. The submandibular duct opens on this bump; a larger sublingual duct may join it nearby.</string>
+    <string name="health_atlas_sublingual_floor_frenulum">Lingual frenulum</string>
+    <string name="health_atlas_sublingual_floor_frenulum_detail">This midline fold connects the underside of the lifted tongue to the floor of the mouth and separates the paired caruncles.</string>
+    <string name="health_atlas_sublingual_floor_wharton">Wharton duct</string>
+    <string name="health_atlas_sublingual_floor_wharton_detail">This longer duct carries saliva from the submandibular gland forward to the caruncle. It passes on the inner side of the sublingual gland and is distinct from the short ducts of Rivinus.</string>
+
+    <string name="health_atlas_pancreatic_main_duct_view">Main pancreatic duct: tail to duodenum, anterior view</string>
+    <string name="health_atlas_pancreatic_main_duct_selector">Main duct cutaway</string>
+    <string name="health_atlas_pancreatic_main_duct_tributaries">Tail tributaries</string>
+    <string name="health_atlas_pancreatic_main_duct_tributaries_detail">Small ducts from the lobules converge near the narrow tail to form the beginning of the main pancreatic duct.</string>
+    <string name="health_atlas_pancreatic_main_duct_trunk">Main pancreatic duct (Wirsung)</string>
+    <string name="health_atlas_pancreatic_main_duct_trunk_detail">The main duct runs inside the pancreas. It receives smaller branches as it carries pancreatic juice from the tail through the body toward the head.</string>
+    <string name="health_atlas_pancreatic_main_duct_bend">Duct bend in the head</string>
+    <string name="health_atlas_pancreatic_main_duct_bend_detail">In the broad head of the pancreas, the main duct curves toward the wall of the descending duodenum, where it usually joins the common bile duct.</string>
+    <string name="health_atlas_pancreatic_main_duct_papilla">Major duodenal papilla</string>
+    <string name="health_atlas_pancreatic_main_duct_papilla_detail">This small projection marks the outlet in the inner wall of the descending duodenum. In the common arrangement shown here, the two ducts share a short channel, the hepatopancreatic ampulla, just before the opening.</string>
+</resources>

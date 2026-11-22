@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Air and capillary lumen sit on opposite sides of the septal layers. -->
+    <path android:fillColor="#BCD6D2" android:strokeColor="#8FAFAE" android:strokeWidth="1.5"
+        android:pathData="M27,115 C34,78 61,52 108,38 C151,25 215,23 260,34 C306,46 330,76 333,112 Q311,135 275,139 C237,143 207,133 176,128 C143,120 115,127 85,127 Q52,126 27,115Z"/>
+    <path android:fillColor="#DBE9E1"
+        android:pathData="M39,109 C50,75 77,54 113,45 C159,30 213,30 258,42 C295,52 320,79 324,109 Q294,128 269,131 C227,135 208,123 175,119 C143,111 110,117 85,118 Q56,118 39,109Z"/>
+    <path android:strokeColor="#EDF3E9" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M56,86 Q74,62 111,53 M121,50 Q144,44 167,44 M267,52 Q294,61 310,87"/>
+    <path android:fillColor="#CAA39A" android:strokeColor="#9E726E" android:strokeWidth="1.7"
+        android:pathData="M28,126 C66,137 105,135 146,136 C184,136 216,150 249,149 Q294,148 331,125 L330,194 C301,212 276,220 240,225 C191,231 161,240 112,240 C77,240 46,230 28,213Z"/>
+    <path android:fillColor="#B36F76" android:strokeColor="#995A64" android:strokeWidth="1.5"
+        android:pathData="M29,135 C75,146 112,141 146,143 C184,145 218,161 254,157 Q302,152 331,132 L330,182 Q294,211 247,213 C201,216 158,230 111,229 Q59,228 29,205Z"/>
+    <path android:fillColor="#E6A299"
+        android:pathData="M29,145 C73,156 113,151 147,153 C182,155 215,169 257,166 Q295,164 331,142 L330,175 C300,199 273,202 243,203 C199,206 157,220 111,220 Q62,220 29,196Z"/>
+    <path android:fillColor="#F5B9A5"
+        android:pathData="M30,155 Q62,165 108,162 C152,159 172,166 202,174 Q239,183 278,174 Q306,168 330,153 L330,165 Q301,188 261,193 C208,194 168,212 112,211 Q67,211 30,188Z"/>
+    <!-- The apposed tissue bands follow the same curve, with local cell nuclei in the linings. -->
+    <path android:fillColor="#72A29D" android:strokeColor="#517D79" android:strokeWidth="1.4"
+        android:pathData="M27,114 Q53,119 69,115 C75,111 76,103 86,103 Q96,103 102,113 C125,112 146,113 168,118 C192,123 212,132 236,133 C273,136 306,124 333,110 L333,121 C306,137 273,145 236,142 C212,141 192,132 168,127 C135,120 113,123 86,124 Q52,127 27,122Z"/>
+    <path android:fillColor="#4E7773"
+        android:pathData="M77,113 C77,109 84,106 90,108 Q96,109 97,113 Q88,118 77,113Z"/>
+    <path android:fillColor="#EFD19A" android:strokeColor="#AB875E" android:strokeWidth="1.2"
+        android:pathData="M27,122 Q52,127 86,124 C113,123 135,120 168,127 C192,132 212,141 236,142 C273,145 306,137 333,121 L333,127 C306,142 273,151 236,148 C212,147 192,138 168,133 C135,126 113,129 86,130 Q52,133 27,128Z"/>
+    <path android:fillColor="#C0848D" android:strokeColor="#985F71" android:strokeWidth="1.3"
+        android:pathData="M27,128 Q52,133 86,130 C113,129 135,126 168,133 C192,138 212,147 236,148 C273,151 306,142 333,127 L333,136 Q309,150 285,153 C281,158 278,165 269,165 Q259,166 253,157 Q244,158 236,157 C212,156 192,147 168,142 C135,135 113,138 86,139 Q52,142 27,137Z"/>
+    <path android:fillColor="#89516A"
+        android:pathData="M258,156 C261,152 270,150 276,151 Q280,152 278,155 C273,160 263,161 258,156Z"/>
+    <path android:fillColor="#BD666D" android:strokeColor="#974F62" android:strokeWidth="1.7"
+        android:pathData="M55,176 C57,165 76,160 92,164 C105,167 107,176 100,182 C87,192 64,189 55,176Z M131,192 C129,179 151,169 168,171 C184,173 189,183 181,192 C173,202 141,205 131,192Z M253,185 C256,176 275,169 288,169 C299,169 304,175 298,182 C289,193 264,198 253,185Z"/>
+    <path android:fillColor="#9D5262"
+        android:pathData="M67,176 Q80,166 94,173 Q89,181 75,181Z M143,190 Q153,179 173,180 Q171,191 154,194Z M266,184 Q272,175 288,175 Q286,183 274,187Z"/>
+    <path android:strokeColor="#E39387" android:strokeWidth="2.3" android:strokeLineCap="round"
+        android:pathData="M62,173 Q69,168 77,168 M137,187 Q144,178 156,176 M259,182 Q269,175 279,174"/>
+    <path android:strokeColor="#EDBFAE" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M44,218 Q76,233 108,233 M177,226 Q203,220 230,218 M270,215 Q295,211 312,202"/>
+</vector>

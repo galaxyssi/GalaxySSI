@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_renal_tubules_segment_view">Renal tubules from corpuscle to collecting duct</string>
+    <string name="health_atlas_renal_tubules_segment_selector">Tubule segments</string>
+    <string name="health_atlas_renal_tubules_urinary_pole">Urinary pole</string>
+    <string name="health_atlas_renal_tubules_urinary_pole_detail">At this opening, filtrate in Bowman\'s space enters the proximal tubule. The glomerulus is the capillary tuft inside the corpuscle, not part of the tubule.</string>
+    <string name="health_atlas_renal_tubules_loop_bend">Loop of Henle bend</string>
+    <string name="health_atlas_renal_tubules_loop_bend_detail">The thin descending limb turns back toward the cortex at this hairpin in the medulla. The length of the loop varies among nephrons.</string>
+    <string name="health_atlas_renal_tubules_thick_ascending">Thick ascending limb</string>
+    <string name="health_atlas_renal_tubules_thick_ascending_detail">The wider returning limb rises from the medulla to the cortex, passes close to the vascular pole of its own corpuscle, and leads into the distal convoluted tubule.</string>
+
+    <string name="health_atlas_distal_tubule_junction_view">Distal tubule at the corpuscle and collecting junction</string>
+    <string name="health_atlas_distal_tubule_junction_selector">Distal junctions</string>
+    <string name="health_atlas_distal_tubule_macula">Macula densa</string>
+    <string name="health_atlas_distal_tubule_macula_detail">This patch of tightly packed cells sits near the end of the thick ascending limb beside the vascular pole of the glomerulus. It lies just upstream of the distal convoluted tubule.</string>
+    <string name="health_atlas_distal_tubule_convolution">Distal convolution</string>
+    <string name="health_atlas_distal_tubule_convolution_detail">This coiled segment stays in the cortex. Its lumen is continuous with the ascending limb, not with the nearby glomerular capillaries.</string>
+    <string name="health_atlas_distal_tubule_lining">Cuboidal lining</string>
+    <string name="health_atlas_distal_tubule_lining_detail">A single layer of cuboidal epithelial cells surrounds the distal tubule lumen. These cells lack the dense brush border of the proximal tubule, so the lumen has a clearer edge.</string>
+    <string name="health_atlas_distal_tubule_connector">Connecting tubule</string>
+    <string name="health_atlas_distal_tubule_connector_detail">This short segment carries fluid from the distal convolution into the collecting system. The collecting duct also receives fluid from other nephrons.</string>
+
+    <string name="health_atlas_collecting_ducts_tree_view">Collecting ducts from cortex to papilla</string>
+    <string name="health_atlas_collecting_ducts_tree_selector">Collecting path</string>
+    <string name="health_atlas_collecting_ducts_cortical">Cortical collecting duct</string>
+    <string name="health_atlas_collecting_ducts_cortical_detail">Connecting tubules from different nephrons feed the same cortical collecting duct. Two separate nephron outlets join the shared path shown here.</string>
+    <string name="health_atlas_collecting_ducts_medullary">Medullary collecting duct</string>
+    <string name="health_atlas_collecting_ducts_medullary_detail">Collecting ducts descend through the renal pyramid. In the inner medulla they converge into larger channels as they approach the papilla.</string>
+    <string name="health_atlas_collecting_ducts_papillary">Papillary duct</string>
+    <string name="health_atlas_collecting_ducts_papillary_detail">A papillary duct, also called a duct of Bellini, is the final collecting channel. It opens at the tip of the papilla into a minor calyx; one outlet is shown here.</string>
+    <string name="health_atlas_collecting_ducts_calyx">Minor calyx</string>
+    <string name="health_atlas_collecting_ducts_calyx_detail">This cup surrounds the papilla and receives urine from its openings. It belongs to the drainage passages beyond the collecting ducts.</string>
+</resources>

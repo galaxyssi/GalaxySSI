@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vi_vein_selector">肢体静脉剖面</string>
+    <string name="health_atlas_vi_vein_view">小腿静脉示例 · 纵向剖面，上方朝向心脏</string>
+    <string name="health_atlas_vi_vein_segment">小腿静脉段</string>
+    <string name="health_atlas_vi_vein_segment_detail">这里显示一段经过小腿的静脉。静脉将血液送回心脏。</string>
+    <string name="health_atlas_vi_vein_valve">成对的静脉瓣叶</string>
+    <string name="health_atlas_vi_vein_valve_detail">图中是一段有瓣膜的肢体静脉。血液流向心脏时会推开两片瓣叶；血液反向流动时，瓣叶合拢以限制回流。并非所有静脉都有瓣膜。</string>
+    <string name="health_atlas_vi_vein_lumen">静脉管腔</string>
+    <string name="health_atlas_vi_vein_lumen_detail">血液沿着管腔流动。与伴行的动脉相比，静脉通常管腔较宽，管壁较薄。</string>
+    <string name="health_atlas_vi_vein_wall">静脉壁</string>
+    <string name="health_atlas_vi_vein_wall_detail">内层与血液接触，其外是相对较薄的平滑肌层和起支撑作用的结缔组织层。</string>
+
+    <string name="health_atlas_vi_systemic_selector">骨骼肌毛细血管床</string>
+    <string name="health_atlas_vi_systemic_view">体循环毛细血管 · 位于骨骼肌纤维之间，下方为单支血管放大图</string>
+    <string name="health_atlas_vi_systemic_inlet">供血微动脉</string>
+    <string name="health_atlas_vi_systemic_inlet_detail">这条细小的动脉分支为肌纤维之间的毛细血管床供血。</string>
+    <string name="health_atlas_vi_systemic_bed">毛细血管分支</string>
+    <string name="health_atlas_vi_systemic_bed_detail">这些细小的血管与周围肌组织交换氧、营养物质和代谢废物。与肺毛细血管不同，它们不邻接肺泡气腔。</string>
+    <string name="health_atlas_vi_systemic_outlet">汇流微静脉</string>
+    <string name="health_atlas_vi_systemic_outlet_detail">多支毛细血管汇入这条微静脉，血液从肌肉的毛细血管床流向较大的静脉。</string>
+    <string name="health_atlas_vi_systemic_wall">连续型内皮</string>
+    <string name="health_atlas_vi_systemic_wall_detail">这条肌肉毛细血管的内壁由一层扁平的内皮细胞构成。管腔很窄，红细胞可单列通过。</string>
+
+    <string name="health_atlas_vi_barrier_selector">气血屏障的层次</string>
+    <string name="health_atlas_vi_barrier_view">呼吸膜 · 肺泡气体与血液之间薄区的放大图</string>
+    <string name="health_atlas_vi_barrier_epithelium">Ⅰ型肺泡上皮</string>
+    <string name="health_atlas_vi_barrier_epithelium_detail">扁平的Ⅰ型肺泡上皮细胞覆盖肺泡的大部分表面。其薄而延展的部分构成屏障朝向肺泡气腔的一层组织。</string>
+    <string name="health_atlas_vi_barrier_basal">融合的基底膜</string>
+    <string name="health_atlas_vi_barrier_basal_detail">在这一薄区，肺泡上皮和毛细血管内皮的基底膜融合，两层细胞之间的组织极薄。</string>
+    <string name="health_atlas_vi_barrier_endothelium">毛细血管内皮</string>
+    <string name="health_atlas_vi_barrier_endothelium_detail">扁平的内皮细胞衬在血液一侧。氧从肺泡气腔经屏障扩散到血液，二氧化碳沿相反方向扩散。</string>
+
+    <string name="health_atlas_vi_pulmonary_selector">肺泡隔毛细血管网</string>
+    <string name="health_atlas_vi_pulmonary_view">肺毛细血管 · 肺泡剖面，显示一处展开的肺泡隔表面</string>
+    <string name="health_atlas_vi_pulmonary_inlet">肺微动脉</string>
+    <string name="health_atlas_vi_pulmonary_inlet_detail">这条细小的肺动脉分支将含氧较少的血液送入肺泡壁内的毛细血管网。</string>
+    <string name="health_atlas_vi_pulmonary_mesh">肺泡隔内毛细血管网</string>
+    <string name="health_atlas_vi_pulmonary_mesh_detail">彼此相连的短小毛细血管位于相邻肺泡共有的薄壁内，而不在气腔里。展开的血管网显示了广泛参与气体交换的肺泡隔表面。</string>
+    <string name="health_atlas_vi_pulmonary_outlet">肺微静脉</string>
+    <string name="health_atlas_vi_pulmonary_outlet_detail">毛细血管汇入细小的微静脉。微静脉汇集富氧血，血液随后经肺静脉流向左心房。</string>
+</resources>

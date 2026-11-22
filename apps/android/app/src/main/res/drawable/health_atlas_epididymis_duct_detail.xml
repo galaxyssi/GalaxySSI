@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- The opened pole exposes the rete and efferent ductules. -->
+    <path android:strokeColor="#89685F" android:strokeWidth="1.8"
+        android:pathData="M155,62 C115,56 86,92 76,139 C65,187 79,232 119,244 C151,255 186,233 200,195 C206,176 208,153 206,135 C203,101 189,67 155,62Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="91" android:startY="103" android:endX="204" android:endY="218"
+                android:startColor="#F4D6B3" android:centerColor="#E0B090" android:endColor="#AC7974"/>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#F5DBC4" android:strokeColor="#BB9180" android:strokeWidth="1.35"
+        android:pathData="M153,71 C124,67 103,93 92,128 C77,174 84,220 113,233 C145,248 176,223 188,188 C196,164 197,145 193,128 C189,108 177,77 153,71Z"/>
+    <path android:fillColor="#D69F8A" android:fillAlpha="0.6"
+        android:pathData="M148,99 C137,123 144,146 161,160 Q168,170 174,185 Q192,151 181,122 Q171,103 148,99Z"/>
+    <path android:strokeColor="#C59A82" android:strokeWidth="1.25" android:strokeLineCap="round"
+        android:pathData="M125,81 Q124,100 145,111 M103,103 Q111,116 143,119 M91,133 Q115,132 144,128 M86,164 Q116,154 148,138 M90,193 Q118,169 152,147 M102,220 Q126,186 158,154 M123,235 Q139,204 165,160 M150,226 Q158,204 172,173"/>
+    <path android:strokeColor="#9B6E66" android:strokeWidth="2.65" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M141,108 Q150,119 144,126 Q142,133 151,138 Q149,145 159,152 M144,115 Q156,112 153,124 Q161,128 151,138 M153,124 Q166,122 164,135 Q167,142 159,152 M164,135 Q174,139 169,149"/>
+    <!-- Continuous epididymal coil around the posterior edge. -->
+    <path android:strokeColor="#9B635E" android:strokeWidth="1.75"
+        android:pathData="M180,56 C187,40 214,33 230,45 C245,57 240,77 234,93 C227,114 234,135 228,158 C224,176 215,186 216,198 C218,210 240,217 231,232 C221,249 183,248 174,233 C168,222 177,210 190,206 C199,202 199,184 205,169 C211,148 209,132 204,113 C201,100 199,94 187,87 C172,80 171,69 180,56Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="182" android:startY="68" android:endX="243" android:endY="89"
+                android:startColor="#F2BEA1" android:centerColor="#DD9583" android:endColor="#AA6265"/>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#A15B58" android:strokeWidth="4.6" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M141,108 C151,97 155,92 164,83 C172,75 181,72 188,65 M148,115 C163,101 171,84 188,65 M153,124 C169,111 176,90 188,65"/>
+    <path android:strokeColor="#F5CDAD" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M141,108 C151,97 155,92 164,83 C172,75 181,72 188,65 M148,115 C163,101 171,84 188,65 M153,124 C169,111 176,90 188,65"/>
+    <path android:strokeColor="#9D595A" android:strokeWidth="10" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M188,65 C191,53 201,47 212,53 C227,60 226,68 213,67 C203,66 195,68 197,74 C200,82 225,75 223,85 C222,92 206,88 209,98 C210,102 220,99 220,107 S210,115 215,121 S225,123 220,130 Q215,135 218,139 C224,147 214,148 214,154 C215,162 218,161 211,169 C205,176 212,178 207,185 C200,196 210,203 200,211 C191,215 181,218 184,226 C186,232 207,230 200,224 C192,216 218,216 222,223 C226,231 216,235 212,236"/>
+    <path android:strokeColor="#F5C3A2" android:strokeWidth="4.4" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M188,65 C191,53 201,47 212,53 C227,60 226,68 213,67 C203,66 195,68 197,74 C200,82 225,75 223,85 C222,92 206,88 209,98 C210,102 220,99 220,107 S210,115 215,121 S225,123 220,130 Q215,135 218,139 C224,147 214,148 214,154 C215,162 218,161 211,169 C205,176 212,178 207,185 C200,196 210,203 200,211 C191,215 181,218 184,226 C186,232 207,230 200,224 C192,216 218,216 222,223 C226,231 216,235 212,236"/>
+    <!-- The tail turns into the thicker-walled ascending vas. -->
+    <path android:strokeColor="#466B64" android:strokeWidth="13.5" android:strokeLineCap="round"
+        android:pathData="M212,236 C239,244 255,220 261,190 C268,158 265,122 268,94 Q272,63 284,43"/>
+    <path android:strokeColor="#81ABA0" android:strokeWidth="9.5" android:strokeLineCap="round"
+        android:pathData="M212,236 C239,244 255,220 261,190 C268,158 265,122 268,94 Q272,63 284,43"/>
+    <path android:strokeColor="#D0DBB9" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M211,236 C239,244 255,220 261,190 C268,158 265,122 268,94 Q272,63 284,43"/>
+</vector>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_renal_tubules_segment_view">从肾小体到集合管的肾小管</string>
+    <string name="health_atlas_renal_tubules_segment_selector">肾小管分段</string>
+    <string name="health_atlas_renal_tubules_urinary_pole">尿极</string>
+    <string name="health_atlas_renal_tubules_urinary_pole_detail">肾小囊腔内的滤液在这里进入近端小管。肾小球是肾小体内的毛细血管团，不属于肾小管。</string>
+    <string name="health_atlas_renal_tubules_loop_bend">髓袢弯曲部</string>
+    <string name="health_atlas_renal_tubules_loop_bend_detail">降支薄段在肾髓质内形成发夹状弯曲，转而朝向肾皮质。不同肾单位的髓袢长度不一。</string>
+    <string name="health_atlas_renal_tubules_thick_ascending">升支粗段</string>
+    <string name="health_atlas_renal_tubules_thick_ascending_detail">这段较宽的管道从肾髓质回到肾皮质，经过同一肾单位的肾小体血管极附近，随后接入远曲小管。</string>
+
+    <string name="health_atlas_distal_tubule_junction_view">远端小管与肾小体及集合管的位置关系</string>
+    <string name="health_atlas_distal_tubule_junction_selector">远端小管连接</string>
+    <string name="health_atlas_distal_tubule_macula">致密斑</string>
+    <string name="health_atlas_distal_tubule_macula_detail">这片排列紧密的细胞位于升支粗段末端附近，紧邻肾小球的血管极，在远曲小管起始处的上游。</string>
+    <string name="health_atlas_distal_tubule_convolution">远曲小管</string>
+    <string name="health_atlas_distal_tubule_convolution_detail">这段弯曲的小管位于肾皮质。它的管腔与髓袢升支相通，并不连通邻近的肾小球毛细血管。</string>
+    <string name="health_atlas_distal_tubule_lining">立方上皮</string>
+    <string name="health_atlas_distal_tubule_lining_detail">远端小管的管腔由单层立方上皮围成。这里没有近端小管那样密集的刷状缘，因此管腔边缘更清晰。</string>
+    <string name="health_atlas_distal_tubule_connector">连接小管</string>
+    <string name="health_atlas_distal_tubule_connector_detail">这段短小管将远曲小管内的液体送入集合管系统。集合管也接收其他肾单位的液体。</string>
+
+    <string name="health_atlas_collecting_ducts_tree_view">从肾皮质到肾乳头的集合管</string>
+    <string name="health_atlas_collecting_ducts_tree_selector">集合管通路</string>
+    <string name="health_atlas_collecting_ducts_cortical">皮质集合管</string>
+    <string name="health_atlas_collecting_ducts_cortical_detail">不同肾单位的连接小管汇入同一条皮质集合管。图中两个独立的肾单位出口汇入这条共同通路。</string>
+    <string name="health_atlas_collecting_ducts_medullary">髓质集合管</string>
+    <string name="health_atlas_collecting_ducts_medullary_detail">集合管沿肾锥体向深部延伸，在内髓质逐步汇成较粗的管道，通向肾乳头。</string>
+    <string name="health_atlas_collecting_ducts_papillary">乳头管</string>
+    <string name="health_atlas_collecting_ducts_papillary_detail">乳头管又称贝利尼管，是集合管通路的末段。它在肾乳头顶端开口于肾小盏；图中仅示一个开口。</string>
+    <string name="health_atlas_collecting_ducts_calyx">肾小盏</string>
+    <string name="health_atlas_collecting_ducts_calyx_detail">肾小盏呈杯状，围绕肾乳头并接收从乳头开口流出的尿液。它属于集合管下游的排尿通路。</string>
+</resources>

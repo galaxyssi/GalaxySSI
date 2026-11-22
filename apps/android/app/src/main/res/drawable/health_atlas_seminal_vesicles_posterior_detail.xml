@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Posterior bladder wall and prostate establish the depth and midline. -->
+    <path android:strokeColor="#8DA3A2" android:strokeWidth="1.65"
+        android:pathData="M91,83 C100,45 143,32 179,31 C221,28 262,46 270,78 C280,114 254,142 225,155 C210,162 195,174 194,189 Q181,201 167,188 C163,173 152,164 132,156 C103,141 80,117 91,83Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="163" android:startY="43" android:endX="204" android:endY="167"
+                android:startColor="#ECF2ED" android:endColor="#AAC2C1"/>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#F8F9EF" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M118,64 C149,43 208,37 241,57"/>
+    <path android:strokeColor="#93ABAA" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M130,72 C155,63 199,61 224,66 M165,157 Q179,166 181,179 M187,166 Q195,157 208,151"/>
+    <path android:strokeColor="#AD8580" android:strokeWidth="1.55"
+        android:pathData="M114,215 C115,199 136,193 154,193 Q179,189 205,192 C232,191 255,201 249,223 C244,242 213,251 184,252 C147,254 112,239 114,215Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="169" android:startY="195" android:endX="191" android:endY="248"
+                android:startColor="#F1D9C6" android:endColor="#C69492"/>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#F5DCCC" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M124,210 Q140,197 159,201 M220,203 Q239,207 241,217 M134,232 Q153,244 180,245"/>
+    <!-- The ampullae are medial to the two glands and remain separate. -->
+    <path android:strokeColor="#547A70" android:strokeWidth="8" android:strokeLineCap="round"
+        android:pathData="M133,57 C143,67 151,85 155,111 Q159,127 157,145 C154,166 151,177 155,192 M222,58 C211,70 207,89 204,108 Q201,127 204,144 C207,164 211,177 206,192"/>
+    <path android:fillColor="#77A091" android:strokeColor="#557D72" android:strokeWidth="1.5"
+        android:pathData="M154,132 C161,136 163,147 162,158 Q161,179 155,192 C154,187 149,181 148,172 C146,159 150,143 154,132Z M204,130 C198,136 198,147 200,160 Q203,178 206,192 C211,187 213,174 212,165 Q211,143 204,130Z"/>
+    <path android:strokeColor="#BAD2B0" android:strokeWidth="3.5" android:strokeLineCap="round"
+        android:pathData="M133,57 C143,67 151,85 155,111 Q159,127 157,145 C154,166 151,177 155,192 M222,58 C211,70 207,89 204,108 Q201,127 204,144 C207,164 211,177 206,192"/>
+    <!-- Each folded gland has a blind lateral end and a narrower medial outlet. -->
+    <path android:strokeColor="#9B6247" android:strokeWidth="1.9"
+        android:pathData="M73,79 C83,73 93,79 102,75 C115,71 128,83 125,95 C137,96 144,109 138,119 C146,124 149,136 141,144 C147,150 144,159 138,165 Q128,173 119,165 C110,169 98,164 99,154 C83,157 75,146 80,136 C68,137 62,124 68,115 C55,113 54,98 64,94 Q61,83 73,79Z M283,72 C296,66 306,73 305,85 C318,88 318,103 307,109 C315,119 307,132 296,132 C300,143 289,151 278,147 C279,158 268,164 256,159 C256,171 244,171 238,169 C226,172 216,161 221,150 C211,145 212,133 219,127 C213,117 220,107 229,105 C224,93 234,85 244,86 C247,75 258,71 267,76 Q273,68 283,72Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="169" android:startY="74" android:endX="189" android:endY="176"
+                android:startColor="#F3D5A4" android:centerColor="#DFAD74" android:endColor="#BA8158"/>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#A26A4A" android:strokeWidth="9" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M82,89 C95,82 115,83 113,94 C111,106 86,95 78,104 C68,116 88,116 102,110 C117,103 134,110 126,119 C119,128 94,119 89,129 C86,138 102,139 113,132 C126,124 138,130 133,140 C129,147 110,143 112,153 C114,160 129,150 138,160 C144,168 145,177 155,192 M291,81 C275,80 258,84 256,93 C254,102 277,97 287,92 C299,86 306,97 295,103 C286,109 273,103 263,111 C250,121 236,106 230,117 C222,129 248,129 261,121 C274,113 293,114 291,124 C289,135 272,129 260,136 C246,144 225,133 225,145 C224,155 245,141 250,151 C255,163 234,158 228,162 C224,164 223,169 218,174 C214,182 210,187 206,192"/>
+    <path android:strokeColor="#F5CB95" android:strokeWidth="4.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M82,89 C95,82 115,83 113,94 C111,106 86,95 78,104 C68,116 88,116 102,110 C117,103 134,110 126,119 C119,128 94,119 89,129 C86,138 102,139 113,132 C126,124 138,130 133,140 C129,147 110,143 112,153 C114,160 129,150 138,160 C144,168 145,177 155,192 M291,81 C275,80 258,84 256,93 C254,102 277,97 287,92 C299,86 306,97 295,103 C286,109 273,103 263,111 C250,121 236,106 230,117 C222,129 248,129 261,121 C274,113 293,114 291,124 C289,135 272,129 260,136 C246,144 225,133 225,145 C224,155 245,141 250,151 C255,163 234,158 228,162 C224,164 223,169 218,174 C214,182 210,187 206,192"/>
+    <path android:strokeColor="#F9E2B3" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M71,85 Q77,79 88,80 M69,105 Q67,112 72,119 M124,100 Q132,102 132,108 M93,144 Q95,149 102,150 M275,76 Q289,72 296,76 M307,97 Q309,103 303,107 M241,93 Q232,98 234,104 M298,129 Q295,135 285,135"/>
+    <path android:strokeColor="#80536B" android:strokeWidth="6.5" android:strokeLineCap="round"
+        android:pathData="M155,192 C159,200 161,209 163,224 M206,192 C205,200 201,206 200,215 Q199,219 199,224"/>
+    <path android:strokeColor="#D5A1AD" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M155,192 C159,200 161,209 163,224 M206,192 C205,200 201,206 200,215 Q199,219 199,224"/>
+</vector>

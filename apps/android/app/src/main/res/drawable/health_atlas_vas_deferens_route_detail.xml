@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Bladder and prostate are subdued landmarks anterior to the duct. -->
+    <path android:strokeColor="#91A8AA" android:strokeWidth="1.7"
+        android:pathData="M145,91 C147,55 177,30 218,30 C257,29 284,46 294,77 C308,125 263,150 236,160 C219,167 220,177 210,176 C199,173 200,158 183,148 C160,134 142,117 145,91Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="183" android:startY="41" android:endX="246" android:endY="166"
+                android:startColor="#EDF2E9" android:endColor="#ABC3C5"/>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#F7F9F0" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M158,69 C173,44 216,36 241,44 Q265,51 277,66"/>
+    <path android:strokeColor="#88A4A6" android:strokeWidth="1.35" android:strokeLineCap="round"
+        android:pathData="M165,123 C179,141 204,148 212,163 M230,151 Q260,142 277,120"/>
+    <path android:fillColor="#DCB9AE" android:strokeColor="#B88D89" android:strokeWidth="1.5"
+        android:pathData="M185,207 C190,191 209,186 229,191 C253,195 267,212 257,226 C247,243 225,248 208,243 C192,239 177,226 185,207Z"/>
+    <path android:fillColor="#EDCFC0"
+        android:pathData="M192,207 C197,198 215,191 228,197 C234,211 236,230 221,239 C204,240 188,224 192,207Z"/>
+    <!-- The cord enters the short oblique passage in the abdominal wall. -->
+    <path android:fillColor="#DECABA" android:strokeColor="#AA968B" android:strokeWidth="1.4"
+        android:pathData="M47,126 C58,102 89,78 123,66 Q133,63 144,66 L146,78 C118,84 88,111 76,137 L62,132Z"/>
+    <path android:fillColor="#F1DDD0"
+        android:pathData="M49,120 Q81,86 124,69 Q131,66 138,69 Q103,83 76,115 L64,127Z"/>
+    <path android:strokeColor="#AB978E" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M55,119 Q71,100 93,88 M86,107 Q104,90 129,81 M65,128 Q69,122 76,115"/>
+    <path android:strokeColor="#D1B4A5" android:strokeWidth="21" android:strokeLineCap="round"
+        android:pathData="M81,218 C60,198 50,182 52,155 Q53,134 67,117"/>
+    <path android:strokeColor="#F0DCCE" android:strokeWidth="14" android:strokeLineCap="round"
+        android:pathData="M81,218 C60,198 50,182 52,155 Q53,134 67,117"/>
+    <path android:strokeColor="#AE827E" android:strokeWidth="2.1" android:strokeLineCap="round"
+        android:pathData="M81,215 C60,200 49,174 49,153 Q51,134 61,122"/>
+    <!-- Muted epididymal tail and same-side seminal gland feed the route. -->
+    <path android:strokeColor="#A0716F" android:strokeWidth="1.5"
+        android:pathData="M81,211 C94,204 114,209 118,221 C120,233 106,244 91,243 C80,242 73,234 76,225 Q76,216 81,211Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="81" android:startY="208" android:endX="110" android:endY="244"
+                android:startColor="#F5C5AB" android:endColor="#C48279"/>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#A96B66" android:strokeWidth="3.5" android:strokeLineCap="round"
+        android:pathData="M111,221 C107,217 99,216 100,222 C100,227 111,225 107,231 C103,237 92,233 91,226 Q87,221 81,219"/>
+    <path android:strokeColor="#A36B4C" android:strokeWidth="22" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M299,144 C283,138 273,145 285,152 C297,158 291,165 277,162 C263,159 259,167 270,174 C280,182 271,188 261,183 Q251,179 249,186"/>
+    <path android:strokeColor="#E2AB74" android:strokeWidth="18.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M299,144 C283,138 273,145 285,152 C297,158 291,165 277,162 C263,159 259,167 270,174 C280,182 271,188 261,183 Q251,179 249,186"/>
+    <path android:strokeColor="#F7D1A0" android:strokeWidth="4.2" android:strokeLineCap="round"
+        android:pathData="M299,141 Q285,138 281,145 M289,158 Q289,164 277,160 Q267,158 264,164 M272,174 Q279,182 272,184 M251,184 Q247,188 243,193"/>
+    <path android:strokeColor="#A36B4C" android:strokeWidth="8.2" android:strokeLineCap="round"
+        android:pathData="M249,186 C244,197 234,202 224,208"/>
+    <path android:strokeColor="#EAB884" android:strokeWidth="5.0" android:strokeLineCap="round"
+        android:pathData="M249,186 C244,197 234,202 224,208"/>
+    <!-- The continuous vas widens into its terminal ampulla. -->
+    <path android:strokeColor="#3B6E63" android:strokeWidth="10.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M81,219 C66,205 58,185 59,155 C60,130 74,111 96,94 C116,79 135,66 153,71 C174,77 176,102 189,122 C202,141 215,146 219,169 C222,185 228,199 224,208"/>
+    <path android:strokeColor="#4D786E" android:strokeWidth="1.55"
+        android:pathData="M214,161 C221,161 226,169 228,180 C231,190 231,200 224,208 C223,201 217,197 214,187 C211,178 213,167 214,161Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="211" android:startY="178" android:endX="229" android:endY="176"
+                android:startColor="#A9C4A5" android:endColor="#6D9C8D"/>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#ACCAA8" android:strokeWidth="5.6" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M81,219 C66,205 58,185 59,155 C60,130 74,111 96,94 C116,79 135,66 153,71 C174,77 176,102 189,122 C202,141 215,146 219,169 Q220,175 221,181 C223,192 228,201 224,208"/>
+    <path android:strokeColor="#E0E4C4" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M64,146 Q69,123 85,107 M107,86 Q135,67 152,72 M173,96 Q182,122 196,131 M219,173 L223,190"/>
+    <path android:strokeColor="#784C66" android:strokeWidth="6.8" android:strokeLineCap="round"
+        android:pathData="M224,208 C224,218 217,223 216,230 Q215,233 214,236"/>
+    <path android:strokeColor="#D2A0A8" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M224,208 C224,218 217,223 216,230 Q215,233 214,236"/>
+</vector>

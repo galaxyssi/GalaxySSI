@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Rectal profile curves behind the vault and posterior vaginal wall. -->
+    <path android:name="rectum" android:strokeColor="#95808A" android:strokeWidth="1.45"
+        android:pathData="M274,47 Q290,48 306,58 C308,80 302,102 302,125 C301,151 315,173 307,198 C299,224 276,232 259,247 L234,247 C252,229 270,214 273,195 C278,176 261,158 261,134 C260,106 276,75 274,47Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="258" android:startY="114" android:endX="310" android:endY="160"
+                android:startColor="#E5D5CB" android:centerColor="#C9B4B4" android:endColor="#DFCDD0"/>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#F3E8DE" android:strokeColor="#AA9197" android:strokeWidth="1.1"
+        android:pathData="M284,50 L296,53 C299,75 288,105 288,127 C288,153 304,173 295,198 C287,219 268,233 253,247 L242,247 C259,230 280,215 285,194 C290,172 273,156 273,132 C273,104 286,77 284,50Z"/>
+    <path android:strokeColor="#C5ABA9" android:strokeWidth="1.35" android:strokeLineCap="round"
+        android:pathData="M285,75 Q291,73 295,76 M279,103 Q284,104 291,100 M274,134 Q281,130 287,132 M279,158 Q284,161 292,159 M285,184 Q292,185 297,182 M279,209 Q285,210 289,208 M263,230 Q268,230 272,226"/>
+
+    <!-- Anterior urinary tract, with its own outlet in front of the vaginal opening. -->
+    <path android:strokeColor="#6D8C8D" android:strokeWidth="10"
+        android:pathData="M129,142 C125,161 114,178 114,195 Q113,215 116,228"/>
+    <path android:name="urethra" android:strokeColor="#B2CDC3" android:strokeWidth="7"
+        android:pathData="M129,142 C125,161 114,178 114,195 Q113,215 116,228"/>
+    <path android:strokeColor="#EFF4E8" android:strokeWidth="2.7"
+        android:pathData="M129,142 C125,161 114,178 114,195 Q113,215 116,228"/>
+    <path android:strokeColor="#6D8C8D" android:strokeWidth="1.2" android:pathData="M111,229 L121,227"/>
+    <path android:name="bladder" android:strokeColor="#6D8C8D" android:strokeWidth="1.6"
+        android:pathData="M71,121 C64,105 70,86 82,75 C98,61 120,64 135,75 C150,86 158,104 155,122 C154,137 142,146 132,151 Q129,157 126,151 C123,143 111,145 101,143 C88,141 77,133 71,121Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="81" android:startY="75" android:endX="142" android:endY="150"
+                android:startColor="#E1EBDF" android:centerColor="#BFD5CA" android:endColor="#8DB0AA"/>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#EEF3E5" android:strokeColor="#9CB8AF" android:strokeWidth="1.15"
+        android:pathData="M77,118 C72,104 80,88 91,81 C105,72 121,74 134,86 C145,96 150,110 147,121 Q144,135 133,143 Q131,145 129,149 C124,139 113,139 105,138 C92,137 82,129 77,118Z"/>
+    <path android:strokeColor="#A9C3B6" android:strokeWidth="1.35" android:strokeLineCap="round"
+        android:pathData="M80,111 Q86,116 94,115 M88,126 Q98,130 107,128 M134,122 Q141,117 144,111 M113,133 Q123,136 130,134"/>
+    <path android:strokeColor="#F4F7E8" android:strokeWidth="1.9" android:strokeLineCap="round"
+        android:pathData="M74,100 Q81,78 105,73 M108,73 Q122,73 132,82"/>
+
+    <!-- Oblique canal: a thicker cut wall surrounds a slightly opened mucosal surface. -->
+    <path android:name="vaginal_wall" android:strokeColor="#845B78" android:strokeWidth="1.8"
+        android:pathData="M199,99 C183,94 176,105 173,120 C166,139 152,158 147,179 C140,200 133,219 132,242 Q135,251 151,254 C164,238 182,217 196,199 C216,175 232,153 243,131 C253,111 253,89 241,82 C232,77 221,81 214,92Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="152" android:startY="127" android:endX="215" android:endY="183"
+                android:startColor="#E6B8B6" android:centerColor="#D29BA8" android:endColor="#A46D91"/>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#F3D0C7" android:strokeWidth="1.9" android:strokeLineCap="round"
+        android:pathData="M182,114 C176,134 159,155 153,181 Q139,220 137,237 M246,104 Q246,121 233,141 M228,152 C212,179 183,209 158,240"/>
+    <path android:strokeColor="#A97591" android:strokeWidth="1.25" android:strokeLineCap="round"
+        android:pathData="M178,135 Q163,155 159,172 M153,185 Q145,204 142,224 M223,159 Q212,177 204,184 M191,202 Q174,224 165,232"/>
+    <path android:name="canal_lining" android:strokeColor="#9D6D84" android:strokeWidth="1.35"
+        android:pathData="M192,109 Q186,111 184,123 C177,147 159,167 153,191 C147,211 141,226 140,241 Q141,246 148,248 C160,232 176,211 191,194 C207,174 224,153 235,130 C243,114 244,97 237,90 Q232,86 226,93 L214,113 Q204,124 192,109Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="154" android:startY="152" android:endX="216" android:endY="182"
+                android:startColor="#F7DED0" android:centerColor="#ECC1BE" android:endColor="#BF8AA8"/>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#F9E9DA"
+        android:pathData="M193,118 Q188,117 187,126 C179,150 164,169 157,192 C150,214 144,230 143,241 L146,244 C154,225 167,208 173,188 C183,165 203,150 212,130 Q222,113 229,106 L233,90 Q229,90 226,96 L214,114 Q204,126 193,118Z"/>
+    <path android:name="rugae" android:strokeColor="#A86F8C" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M216,154 Q208,150 199,154 M210,164 Q198,159 190,165 M201,174 Q190,170 183,175 M193,184 Q185,178 177,182 M184,195 Q176,190 171,193 M175,206 Q169,202 164,205 M167,217 Q161,213 156,218 M158,229 Q153,224 150,228"/>
+    <path android:strokeColor="#FBE0D6" android:strokeWidth="1.15" android:strokeLineCap="round"
+        android:pathData="M214,156 Q207,153 200,156 M208,166 Q200,162 192,167 M199,176 Q191,173 185,177 M191,186 Q184,181 178,184 M182,197 Q177,193 172,195 M173,208 Q168,205 165,207 M165,219 Q161,216 157,219"/>
+    <path android:name="vaginal_opening" android:strokeColor="#875B76" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M133,241 Q139,247 150,250"/>
+    <path android:strokeColor="#875B76" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M228,92 Q236,82 241,95"/>
+
+    <!-- Anteflexed uterine body and the cervical tip projecting into the vault. -->
+    <path android:name="uterus_and_cervix" android:strokeColor="#8E667C" android:strokeWidth="1.65"
+        android:pathData="M153,49 C146,38 152,27 165,23 C184,18 204,28 216,43 C226,55 230,68 226,82 C223,92 219,99 220,106 C220,114 214,122 205,124 C197,126 191,120 192,112 C194,102 198,96 194,88 C188,76 177,67 166,61 Q157,57 153,49Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="157" android:startY="30" android:endX="227" android:endY="106"
+                android:startColor="#EAC7BE" android:centerColor="#D5A5AD" android:endColor="#B1809B"/>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#F2D4C4" android:strokeColor="#AE7F92" android:strokeWidth="1.2"
+        android:pathData="M158,38 C170,32 187,38 200,48 C211,56 219,68 215,80 C213,89 208,98 208,106 Q209,113 204,117 Q200,118 200,114 C202,104 206,91 202,82 C196,66 181,60 169,52 Q160,46 158,38Z"/>
+    <path android:strokeColor="#F8D9CD" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M158,33 Q170,24 186,29 Q199,34 209,45 M219,84 Q214,94 215,102 M195,113 Q195,121 203,121"/>
+    <path android:strokeColor="#A77C91" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M169,55 Q186,64 197,78 M191,49 Q206,59 209,68 M199,101 Q202,104 204,104 M213,105 Q215,104 218,105"/>
+</vector>

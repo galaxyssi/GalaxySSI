@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_nasal_wall_selector">Lateral nasal wall</string>
+    <string name="health_atlas_nasal_wall_view">Side cutaway of the nasal cavity with the septum removed</string>
+    <string name="health_atlas_nasal_wall_vestibule">Nasal vestibule</string>
+    <string name="health_atlas_nasal_wall_vestibule_detail">The vestibule sits just inside the nostril. Its skin-like lining contains coarse hairs that catch some larger particles.</string>
+    <string name="health_atlas_nasal_wall_superior">Superior nasal concha</string>
+    <string name="health_atlas_nasal_wall_superior_detail">The smallest of the three usual conchae projects from the upper back part of the lateral wall. Part of its surface lies in the olfactory region.</string>
+    <string name="health_atlas_nasal_wall_middle">Middle nasal concha</string>
+    <string name="health_atlas_nasal_wall_middle_detail">This curved shelf is part of the ethmoid bone. The passage beneath it receives drainage from several of the paranasal sinuses.</string>
+    <string name="health_atlas_nasal_wall_inferior">Inferior nasal concha</string>
+    <string name="health_atlas_nasal_wall_inferior_detail">The largest and lowest concha is a separate bone. Its lining helps warm and humidify passing air; the tear duct opens into the passage below it.</string>
+    <string name="health_atlas_nasal_wall_choana">Choana</string>
+    <string name="health_atlas_nasal_wall_choana_detail">Each side of the nasal cavity has a posterior opening called a choana. It leads into the nasopharynx above the soft palate.</string>
+
+    <string name="health_atlas_pharynx_regions_selector">Pharyngeal regions</string>
+    <string name="health_atlas_pharynx_regions_view">Sagittal section through the three regions of the pharynx</string>
+    <string name="health_atlas_pharynx_regions_nasopharynx">Nasopharynx</string>
+    <string name="health_atlas_pharynx_regions_nasopharynx_detail">The upper pharynx lies behind the nasal cavity and above the soft palate. It carries air from the nose into the throat.</string>
+    <string name="health_atlas_pharynx_regions_oropharynx">Oropharynx</string>
+    <string name="health_atlas_pharynx_regions_oropharynx_detail">The middle pharynx lies behind the mouth and tongue, below the soft palate. Both air and swallowed material pass through it.</string>
+    <string name="health_atlas_pharynx_regions_laryngopharynx">Laryngopharynx</string>
+    <string name="health_atlas_pharynx_regions_laryngopharynx_detail">The lowest region lies behind the larynx. It continues downward into the esophagus, while the laryngeal inlet opens toward the front.</string>
+    <string name="health_atlas_pharynx_regions_soft_palate">Soft palate</string>
+    <string name="health_atlas_pharynx_regions_soft_palate_detail">This movable extension behind the hard palate lifts during swallowing, separating the nasopharynx from the passage below.</string>
+    <string name="health_atlas_pharynx_regions_epiglottis">Epiglottis</string>
+    <string name="health_atlas_pharynx_regions_epiglottis_detail">This leaf-shaped cartilage stands near the entrance to the larynx. During swallowing it folds back over the inlet, helping protect the airway.</string>
+
+    <string name="health_atlas_diaphragm_inferior_selector">Inferior surface</string>
+    <string name="health_atlas_diaphragm_inferior_view">Diaphragm from below, with the front at the top</string>
+    <string name="health_atlas_diaphragm_inferior_tendon">Central tendon</string>
+    <string name="health_atlas_diaphragm_inferior_tendon_detail">The pale, three-lobed sheet lies where the surrounding diaphragm muscle fibers converge. It moves with the muscle during breathing.</string>
+    <string name="health_atlas_diaphragm_inferior_costal">Costal muscle</string>
+    <string name="health_atlas_diaphragm_inferior_costal_detail">Fibers attach along the inside of the lower ribs and their cartilages and run inward to the central tendon.</string>
+    <string name="health_atlas_diaphragm_inferior_caval">Caval opening</string>
+    <string name="health_atlas_diaphragm_inferior_caval_detail">The inferior vena cava passes through an opening in the right side of the central tendon.</string>
+    <string name="health_atlas_diaphragm_inferior_esophageal">Esophageal hiatus</string>
+    <string name="health_atlas_diaphragm_inferior_esophageal_detail">The esophagus passes through a muscular opening behind the central tendon. Fibers mainly from the right crus loop around the opening.</string>
+    <string name="health_atlas_diaphragm_inferior_aortic">Aortic hiatus</string>
+    <string name="health_atlas_diaphragm_inferior_aortic_detail">The aorta passes behind the diaphragm between the crura, under the median arcuate ligament. It does not pierce the muscle or tendon.</string>
+    <string name="health_atlas_diaphragm_inferior_crus">Right crus</string>
+    <string name="health_atlas_diaphragm_inferior_crus_detail">This longer right-hand bundle anchors the diaphragm to the upper lumbar spine. In this view from below, it appears on the left of the image.</string>
+</resources>

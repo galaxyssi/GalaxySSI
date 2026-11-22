@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_sternum_front_detail">Sternum from the front</string>
+    <string name="health_atlas_sternum_notch">Jugular notch</string>
+    <string name="health_atlas_sternum_notch_detail">The dip at the top of the sternum lies between the points where the clavicles meet the chest.</string>
+    <string name="health_atlas_sternum_manubrium">Manubrium</string>
+    <string name="health_atlas_sternum_manubrium_detail">The broad upper part meets the two clavicles and the first costal cartilages.</string>
+    <string name="health_atlas_sternum_angle">Sternal angle</string>
+    <string name="health_atlas_sternum_angle_detail">The ridge where the manubrium meets the body sits at the level of the second costal cartilage.</string>
+    <string name="health_atlas_sternum_body">Body of sternum</string>
+    <string name="health_atlas_sternum_body_detail">The long middle part provides attachment points for the costal cartilages along both sides.</string>
+    <string name="health_atlas_sternum_xiphoid">Xiphoid process</string>
+    <string name="health_atlas_sternum_xiphoid_detail">The small lower tip is initially cartilaginous and can ossify with age. Its shape varies from person to person.</string>
+    <string name="health_atlas_hand_palmar_detail">Hand bones from the palm</string>
+    <string name="health_atlas_hand_phalanges">Finger phalanges</string>
+    <string name="health_atlas_hand_phalanges_detail">Each of the four fingers has three phalanges, joined by joints that let the finger bend.</string>
+    <string name="health_atlas_hand_thumb">Thumb phalanges</string>
+    <string name="health_atlas_hand_thumb_detail">The thumb has two phalanges rather than three. Its broad movement also depends on the joint at the base of its metacarpal.</string>
+    <string name="health_atlas_hand_metacarpals">Metacarpals</string>
+    <string name="health_atlas_hand_metacarpals_detail">Five metacarpal bones link the wrist to the digits and form the framework of the palm.</string>
+    <string name="health_atlas_hand_carpals">Carpal bones</string>
+    <string name="health_atlas_hand_carpals_detail">Eight small bones in two rows form the base of the hand. Some meet the radius at the wrist.</string>
+    <string name="health_atlas_hand_pisiform">Pisiform</string>
+    <string name="health_atlas_hand_pisiform_detail">This small round carpal sits on the palm side of the triquetrum near the little-finger edge.</string>
+</resources>

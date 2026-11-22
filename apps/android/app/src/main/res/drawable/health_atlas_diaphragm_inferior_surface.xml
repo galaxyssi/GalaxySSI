@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Inferior view, anterior up and the body's right on image left. -->
+    <path android:fillColor="#B8817E" android:strokeColor="#895B63" android:strokeWidth="2"
+        android:pathData="M173,32 C183,26 194,33 204,38 C238,42 270,46 295,65 C322,84 330,115 320,145 C313,168 293,187 269,195 C248,203 222,200 208,209 Q194,221 186,222 Q175,221 169,209 C151,199 128,207 106,202 C67,196 39,174 33,147 C22,108 38,78 67,60 C96,43 126,42 154,40 Q165,38 173,32 Z"/>
+    <path android:fillColor="#E3A596"
+        android:pathData="M171,39 Q185,32 201,44 C237,46 270,54 291,71 C314,89 321,115 312,142 C305,164 283,181 260,188 C239,194 214,191 198,203 Q185,215 176,204 C153,193 130,197 107,194 C71,189 47,169 40,145 C31,113 44,85 71,68 C100,51 135,49 157,46 Z"/>
+    <path android:fillColor="#C58781"
+        android:pathData="M40,121 Q56,148 87,161 C115,174 148,165 175,176 C198,179 214,174 248,166 Q293,158 315,122 Q315,165 273,184 C246,196 220,190 197,202 Q184,215 176,203 C156,194 129,199 106,194 C71,188 46,169 40,145 Q38,133 40,121 Z"/>
+    <path android:strokeColor="#F4C2A7" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M46,112 Q52,83 84,66 Q111,52 144,52 M212,47 Q262,53 288,76 Q303,87 308,104 M47,151 Q57,174 84,183 M274,178 Q299,166 308,145"/>
+    <!-- Rib-side muscle fibers sweep centripetally into the broad three-leaf tendon. -->
+    <path android:strokeColor="#BA7976" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M62,82 Q93,74 117,92 M51,94 Q81,87 105,101 M47,106 Q76,99 98,111 M45,119 Q68,112 93,121 M48,132 Q72,124 97,132 M51,145 Q79,136 106,141 M58,155 Q83,149 111,149 M68,166 Q94,160 118,156 M81,176 Q105,168 130,160 M98,183 Q121,174 141,161 M114,188 Q141,176 156,162 M134,189 Q154,177 167,167 M88,68 Q109,66 129,85 M109,61 Q128,65 141,80 M131,55 Q145,62 152,75 M151,51 Q164,60 165,71 M171,44 Q178,55 177,69 M190,43 Q186,56 190,70 M210,49 Q201,59 202,73 M230,53 Q219,63 216,77 M250,59 Q235,67 230,84 M269,67 Q256,75 247,91 M287,79 Q267,85 258,102 M300,91 Q277,94 265,109 M307,105 Q282,106 267,117 M311,119 Q286,116 269,126 M309,132 Q287,131 266,137 M304,145 Q282,142 263,147 M294,157 Q270,154 250,155 M280,168 Q253,166 234,158 M263,178 Q239,175 219,163 M241,185 Q220,177 209,169"/>
+    <path android:strokeColor="#F1B7A3" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M55,98 Q84,91 107,106 M54,114 Q76,106 100,115 M56,139 Q78,131 105,137 M72,160 Q94,153 116,152 M99,175 Q118,169 138,158 M117,181 Q139,173 155,160 M98,67 Q115,68 132,83 M142,54 Q154,62 158,73 M181,43 L182,67 M220,52 Q211,61 209,75 M260,65 Q246,66 238,87 M294,87 Q275,88 260,105 M303,112 Q282,110 267,123 M300,142 Q280,138 263,143 M284,159 Q261,159 245,155 M255,177 Q239,171 225,164"/>
+    <path android:fillColor="#BE978F" android:strokeColor="#AB767B" android:strokeWidth="1.6"
+        android:pathData="M105,104 C117,89 140,88 156,83 Q163,80 166,71 C171,52 191,55 202,67 Q208,75 211,84 C216,94 232,91 248,98 C267,107 271,127 259,139 C248,151 223,155 203,147 Q188,140 177,144 Q160,151 139,151 C115,152 98,140 96,127 Q94,115 105,104 Z"/>
+    <path android:fillColor="#E8D5B6" android:strokeColor="#AF938C" android:strokeWidth="1.2"
+        android:pathData="M105,104 C122,89 143,93 157,84 Q165,80 168,70 C173,55 190,59 199,69 Q206,78 208,86 C215,97 235,94 248,102 C263,111 265,124 255,135 C243,148 222,150 204,143 Q191,136 177,140 Q156,149 135,147 C115,147 102,137 100,126 Q98,116 105,104 Z"/>
+    <path android:fillColor="#F3E4C8"
+        android:pathData="M109,111 Q125,95 153,94 Q167,91 172,77 C177,62 189,65 196,73 Q202,82 204,89 C210,102 232,99 245,106 Q261,115 251,128 C240,139 219,143 203,135 Q188,131 173,136 Q152,144 131,141 Q107,139 106,124 Q104,118 109,111 Z"/>
+    <path android:strokeColor="#CFB99F" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M119,128 Q143,137 170,121 Q189,112 199,91 M146,108 Q169,98 179,81 M193,121 Q211,116 235,118 M202,128 Q225,131 245,123 M161,133 Q180,125 191,126"/>
+    <path android:strokeColor="#FFF0D1" android:strokeWidth="1.9" android:strokeLineCap="round"
+        android:pathData="M136,101 Q161,99 172,85 M181,104 Q192,93 193,83 M210,111 Q227,106 244,114 M133,133 Q156,135 177,124 M212,138 Q234,142 248,132"/>
+    <!-- The caval opening sits inside the right leaf of the central tendon. -->
+    <path android:fillColor="#73949F" android:strokeColor="#5E7988" android:strokeWidth="1.7"
+        android:pathData="M110,108 Q114,100 127,100 C136,101 143,107 141,115 Q138,126 125,126 Q115,126 110,119 Q106,114 110,108 Z"/>
+    <path android:fillColor="#4D6577"
+        android:pathData="M114,109 Q119,103 128,104 Q138,106 137,115 Q134,122 125,122 Q119,123 114,117 Q112,114 114,109 Z"/>
+    <path android:strokeColor="#B5C7BF" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M112,118 Q120,127 131,122"/>
+    <!-- Posterior lumbar attachment, with the aorta behind the arch, not through muscle. -->
+    <path android:fillColor="#D5B199" android:strokeColor="#A17C73" android:strokeWidth="1.4"
+        android:pathData="M155,231 Q170,226 184,229 Q197,230 207,238 L204,255 Q186,264 167,261 Q153,259 149,254 Z"/>
+    <path android:strokeColor="#EED2AE" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M158,236 Q174,230 191,235 M157,249 Q171,257 193,253"/>
+    <path android:fillColor="#A56973" android:strokeColor="#845865" android:strokeWidth="1.6"
+        android:pathData="M165,211 Q177,204 187,211 C184,227 199,246 192,255 Q184,262 169,256 Q174,243 168,229 Z"/>
+    <path android:fillColor="#D29089"
+        android:pathData="M173,218 L180,218 Q179,232 186,245 Q190,250 187,254 L176,254 Q180,247 176,234 Z"/>
+    <path android:fillColor="#DFA095" android:strokeColor="#845865" android:strokeWidth="1.3"
+        android:pathData="M169,255 Q173,248 183,249 Q194,249 193,255 Q189,261 179,260 Q173,260 169,255 Z"/>
+    <path android:fillColor="#835767"
+        android:pathData="M174,255 Q176,252 183,252 Q190,252 189,255 Q185,258 180,257 Z"/>
+    <path android:fillColor="#AA6D72" android:strokeColor="#8D5D65" android:strokeWidth="1.6"
+        android:pathData="M113,183 Q137,176 153,164 Q168,151 181,147 Q189,145 194,150 Q187,159 180,168 Q171,177 171,193 Q170,209 161,228 L157,247 Q149,254 139,250 Q137,241 143,227 Q149,214 146,207 Q135,201 116,199 Z M207,159 Q216,164 223,171 Q232,182 251,186 L247,196 Q226,198 214,205 Q205,213 209,229 L213,239 Q206,246 195,242 Q188,232 188,220 Q188,211 193,200 Q195,190 191,179 Z"/>
+    <path android:fillColor="#D18D81"
+        android:pathData="M128,188 Q149,181 166,165 Q175,156 185,153 Q183,161 173,168 Q159,183 158,205 Q156,220 149,233 L146,246 L141,246 Q144,232 149,220 Q155,207 150,201 Q139,195 128,196 Z M212,171 Q225,185 244,190 L240,193 Q215,193 205,207 Q201,218 207,236 L202,239 Q194,222 199,209 Q203,196 209,190 Q212,181 205,176 Z"/>
+    <path android:strokeColor="#EFB19A" android:strokeWidth="1.9" android:strokeLineCap="round"
+        android:pathData="M166,179 Q158,190 158,205 M151,218 L143,241 M209,203 Q201,213 204,228"/>
+    <path android:fillColor="#694F5C"
+        android:pathData="M162,217 Q168,203 177,203 Q186,202 194,216 L191,228 Q186,217 178,217 Q169,219 167,228 Z"/>
+    <path android:strokeColor="#E0AF9B" android:strokeWidth="3.4" android:strokeLineCap="round"
+        android:pathData="M161,218 Q170,202 178,204 Q187,204 194,217"/>
+    <!-- Sling and a short oblique cuff distinguish the hiatus from the esophagus itself. -->
+    <path android:fillColor="#AF7276" android:strokeColor="#8B5B65" android:strokeWidth="1.7"
+        android:pathData="M178,171 C176,162 183,152 194,149 Q207,147 216,158 Q224,170 212,180 Q203,187 191,184 Q181,181 178,171 Z"/>
+    <path android:fillColor="#73535F"
+        android:pathData="M184,171 Q182,161 192,156 Q202,152 210,161 Q217,170 208,176 Q200,182 191,179 Q185,177 184,171 Z"/>
+    <path android:strokeColor="#E5A292" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M181,165 Q180,177 193,182 Q203,185 211,177"/>
+    <path android:fillColor="#C88D91" android:strokeColor="#90656D" android:strokeWidth="1.5"
+        android:pathData="M193,168 Q198,160 203,152 Q206,145 208,139 Q218,134 224,142 Q221,154 212,166 Q205,178 197,175 Q193,173 193,168 Z"/>
+    <path android:fillColor="#E5ADA1"
+        android:pathData="M198,168 Q203,159 208,151 Q210,146 211,143 L219,143 Q215,155 206,167 Q202,173 198,171 Z"/>
+    <path android:fillColor="#A37882" android:strokeColor="#90656D" android:strokeWidth="1.4"
+        android:pathData="M208,139 Q212,134 219,136 Q225,138 224,142 Q222,147 215,146 Q208,145 208,139 Z"/>
+    <path android:strokeColor="#EDBEB1" android:strokeWidth="1.4" android:strokeLineCap="round"
+        android:pathData="M211,139 Q215,137 220,140"/>
+</vector>

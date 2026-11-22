@@ -125,7 +125,8 @@ class HealthAtlasSystemOverviewDeviceTest {
         assertEquals("pancreatic-islets", HealthAtlasPlates.forId("pancreatic-islets")?.owner)
         assertEquals("cochlea", HealthAtlasPlates.forId("cochlea")!!.owner)
         assertEquals("ear", HealthAtlasPlates.viewsForId("cochlea")[1].owner)
-        assertEquals("heart", HealthAtlasPlates.forId("heart-valves")!!.owner)
+        assertEquals("heart-valves", HealthAtlasPlates.forId("heart-valves")!!.owner)
+        assertEquals("heart", HealthAtlasPlates.viewsForId("heart-valves")[1].owner)
         for (plate in HealthAtlasSystemPlates.all) for (marker in plate.markers) {
             val selected = HealthAtlasPlates.forId(marker.id)!!
             if (selected.owner != marker.id)
