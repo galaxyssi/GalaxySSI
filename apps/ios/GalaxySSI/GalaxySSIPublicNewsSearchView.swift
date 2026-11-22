@@ -94,6 +94,7 @@ struct GalaxySSIPublicNewsSearchView: View {
     }
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
+    .onAppear { archive.newsBudget.noteRead() }
     .task(id: SearchVersion(query: request, refreshing: archive.refreshing)) {
       await runSearch(request)
     }

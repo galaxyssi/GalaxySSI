@@ -167,6 +167,7 @@ private struct GalaxySSIHealthCarePlanReviewView: View {
       }
     }
     .navigationTitle(t("title", "Health plans"))
+    .galaxySSIHealthTheme()
     .toolbar {
       ToolbarItem(placement: .cancellationAction) { Button(t("close", "Close")) { dismiss() } }
     }

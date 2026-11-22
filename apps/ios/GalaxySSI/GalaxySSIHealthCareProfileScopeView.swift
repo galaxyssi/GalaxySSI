@@ -74,7 +74,7 @@ struct GalaxySSIHealthCareProfileScopeView: View {
         if failed { Text(t("stale", "The saved profile or concern changed. Reopen the selection to review it.")) }
       }
       .navigationTitle(t("title", "Profile sharing scope"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button(t("cancel", "Cancel")) { dismiss() } }
         ToolbarItem(placement: .confirmationAction) {
