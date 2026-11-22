@@ -36,6 +36,13 @@ enum GalaxySSIHealthRecognitionJobs {
     var pages: [Page] = []
     var requiresPDFPassword: Bool?
     var runProcess: UUID?
+    var reportVision: GalaxySSIHealthReportVision.Result?
+    var reportVisionZone: String?
+    var reportImportedSources: Set<String>?
+    var reportImportOutcome: GalaxySSIHealthReportQuickImport.Outcome?
+    var reportBatchID: UUID?
+    var reportModelFirst: Bool?
+    var reportFailure: GalaxySSIHealthReportFailure?
 
     var reviewPages: [Page] { requiresPDFPassword == true && phase != .completed ? [] : pages }
   }
@@ -83,6 +90,12 @@ struct GalaxySSIHealthRecognitionJobsView: View {
   let records: GalaxySSIHealthRecords
   let store: GalaxySSIHealthOriginalStore
   var automaticPhotoBatch: UUID? = nil
+  var automaticReportJob: UUID? = nil
+  var initialLocalReview: UUID? = nil
+  @State private var localReviewRoute: UUID?
+  @State private var localReviewOpened = false
+  @State private var quickReportRoute: UUID?
+  @State private var quickReportOpened = false
   @State private var jobs: [GalaxySSIHealthRecognitionJobs.Job] = []
   @State private var originals: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var task: Task<Void, Never>?
@@ -97,10 +110,22 @@ struct GalaxySSIHealthRecognitionJobsView: View {
   @State private var selectingRepair = false
   @State private var missingSource: UUID?
   @State private var removedSources: Set<UUID> = []
+  @State private var selectedBatches: [GalaxySSIHealthSelectedFiles.Selection] = []
 
   var body: some View {
     List {
       if scene == .active {
+        if !selectedBatches.isEmpty {
+          Section(GalaxySSIHealthReportQuickImport.text("batch_title", "Selected health files", language)) {
+            ForEach(selectedBatches) { selection in
+              NavigationLink {
+                GalaxySSIHealthSelectedFilesView(records: records, originals: store, selection: selection)
+              } label: {
+                Text(String(format: GalaxySSIHealthReportQuickImport.text("batch_files", "%lld selected files", language), Int64(selection.entries.count)))
+              }.disabled(task != nil)
+            }
+          }
+        }
         Section(t("jobs", "Recognition jobs")) {
           ForEach(jobs) { job in
             NavigationLink {
@@ -134,15 +159,32 @@ struct GalaxySSIHealthRecognitionJobsView: View {
     }
     .task(id: scene) { await runPhotoBatch() }
     .navigationTitle(t("title", "Local Report Recognition"))
-    .navigationBarTitleDisplayMode(.inline)
-    .onAppear(perform: enterQueue)
+    .galaxySSIHealthTheme()
+    .background {
+      NavigationLink(isActive: Binding(get: { quickReportRoute != nil }, set: { if !$0 { quickReportRoute = nil } })) {
+        if let id = quickReportRoute {
+          GalaxySSIHealthReportVisionView(records: records, originals: store, jobID: id, automaticallyPreview: true)
+        }
+      } label: { EmptyView() }.hidden()
+      NavigationLink(isActive: Binding(get: { localReviewRoute != nil }, set: { if !$0 { localReviewRoute = nil } })) {
+        if let id = localReviewRoute { detail(id) }
+      } label: { EmptyView() }.hidden()
+    }
+    .onAppear {
+      enterQueue()
+      if !localReviewOpened, let id = initialLocalReview, jobs.contains(where: { $0.id == id }) {
+        localReviewOpened = true; localReviewRoute = id
+      }
+    }
     .onDisappear { if task != nil { stop(cancelled: false) } }
     .onChange(of: scene) {
       if $0 == .active { enterQueue() }
       else {
         stop(cancelled: false)
         unlock = nil; unlockFailed = false; restricted = false
-        jobs = []; originals = []; failed = false
+        jobs = []; originals = []; selectedBatches = []; failed = false
+        quickReportRoute = nil
+        localReviewRoute = nil
         if $0 == .background {
           selectingRepair = false; repairJob = nil; missingSource = nil; removedSources = []
         }
@@ -177,6 +219,13 @@ struct GalaxySSIHealthRecognitionJobsView: View {
     List {
       if scene == .active, let job = jobs.first(where: { $0.id == id }) {
         Text(phase(job))
+        if job.original.kind == .image, job.captureSource?.mode != .device, [.completed, .failed].contains(job.phase) {
+          NavigationLink {
+            GalaxySSIHealthReportVisionView(records: records, originals: store, jobID: job.id)
+          } label: {
+            Label(GalaxySSIHealthReportVision.text("title", "Transcribe with a vision model", language), systemImage: "doc.text.viewfinder")
+          }.disabled(task != nil)
+        }
         if removedSources.contains(job.original.id) {
           Text(t("source_removed", "The original was removed.")).foregroundColor(.secondary)
         } else if missingSource == id || !originals.contains(job.original) {
@@ -217,6 +266,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
       }
     }
     .navigationTitle(t("jobs", "Recognition jobs"))
+    .galaxySSIHealthTheme()
     .onDisappear { if activeID == id { stop(cancelled: false) } }
   }
 
@@ -241,6 +291,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
       }
     }
     .navigationTitle(String(format: t("page", "Page %lld"), Int64(index + 1)))
+    .galaxySSIHealthTheme()
     .onAppear {
       if scene == .active, let job = jobs.first(where: { $0.id == jobID }),
          (try? store.read(job.original)) == nil { missingSource = jobID }
@@ -249,7 +300,12 @@ struct GalaxySSIHealthRecognitionJobsView: View {
 
   private func enterQueue() {
     guard scene == .active else { return }
-    do { try records.reconcileAbandonedRecognitionJobs(); reload() }
+    do {
+      store.releaseCompletedQuickReportOriginals()
+      try records.reconcileAbandonedRecognitionJobs(); reload()
+      if task == nil, let id = automaticReportJob, let job = jobs.first(where: { $0.id == id }),
+         [.queued, .interrupted].contains(job.phase) { run(job) }
+    }
     catch { jobs = []; originals = []; failed = true }
   }
 
@@ -374,12 +430,27 @@ struct GalaxySSIHealthRecognitionJobsView: View {
   private func reload() {
     guard scene == .active else { return }
     do {
-      jobs = try records.load().recognitionJobs ?? []
+      let archive = try records.load()
+      jobs = archive.recognitionJobs ?? []
+      let batches = Set(jobs.compactMap(\.reportBatchID) + (archive.tableReviews ?? []).compactMap(\.reportBatchID))
+      selectedBatches = batches.sorted { $0.uuidString < $1.uuidString }.compactMap {
+        try? GalaxySSIHealthSelectedFiles.restore(batch: $0, archive: archive)
+      }
       let listing = try store.list()
       originals = listing.originals
       removedSources = Set(listing.removed.map(\.id)).union(listing.pendingRemovals)
+      if !quickReportOpened, task == nil {
+        let candidates = jobs.filter {
+          $0.id == automaticReportJob || (automaticPhotoBatch != nil && $0.captureSource?.batchID == automaticPhotoBatch && $0.captureSource?.mode == .report)
+        }
+        if candidates.count == 1, let job = candidates.first, [.completed, .failed].contains(job.phase),
+           originals.contains(job.original) {
+          quickReportOpened = true; quickReportRoute = job.id
+        }
+      }
     } catch {
       jobs = []
+      selectedBatches = []
       originals = []
       removedSources = []
       failed = true

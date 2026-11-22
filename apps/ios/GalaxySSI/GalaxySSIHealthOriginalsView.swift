@@ -30,7 +30,7 @@ struct GalaxySSIHealthOriginalRemovalHistoryView: View {
       }
     }
     .navigationTitle(t("removal_history", "Original removal history"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) { _ in reload() }
   }
@@ -51,6 +51,7 @@ struct GalaxySSIHealthOriginalsView: View {
   @Environment(\.scenePhase) private var scene
   @Environment(\.calendar) private var calendar
   @Environment(\.timeZone) private var timeZone
+  @Environment(\.galaxySSIHealthFunctions) private var functions
   let store: GalaxySSIHealthOriginalStore
   var exact: GalaxySSIHealthDataFiles.Reference? = nil
   var pickOnAppear = false
@@ -140,7 +141,26 @@ struct GalaxySSIHealthOriginalsView: View {
       }
     }
     .navigationTitle(t("title", "Health Originals"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
+    .toolbar {
+      ToolbarItem(placement: .navigationBarTrailing) {
+        Menu {
+          NavigationLink {
+            GalaxySSIHealthPDFTextView(store: store, reviewRecords: GalaxySSIHealthRecords(
+              owner: store.owner, secrets: store.secrets, isolatedFile: store.restoreRecordsFile))
+          } label: { Label(healthText("pdf_text.title", "Report PDF Text"), systemImage: "doc.text.magnifyingglass") }
+          NavigationLink { GalaxySSIHealthReportCropView(store: store) } label: {
+            Label(healthText("report_crop.title", "Report Crop Preview"), systemImage: "crop")
+          }
+          if let functions {
+            NavigationLink(destination: functions) { Label(healthText("functions", "Health functions"), systemImage: "ellipsis") }
+          }
+        } label: {
+          Image(systemName: "ellipsis").frame(minWidth: 44, minHeight: 44)
+            .accessibilityLabel(healthText("more_menu", "More"))
+        }.help(healthText("more_menu", "More"))
+      }
+    }
     .onAppear {
       reload()
       if scene == .active, pickOnAppear, !didAutoPick {
@@ -272,6 +292,9 @@ struct GalaxySSIHealthOriginalsView: View {
         Label(t("file_save_history", "File save history"), systemImage: "clock.arrow.circlepath")
       }
   }
+  private func healthText(_ key: String, _ fallback: String) -> String {
+    GalaxySSILocalization.string("galaxyssi.health." + key, fallback: fallback, language: language)
+  }
 
   private func destinationActions<Content: View>(_ content: Content) -> some View {
     content
@@ -289,7 +312,7 @@ struct GalaxySSIHealthOriginalsView: View {
           }
         }
         .navigationTitle(t("zip_preview", "Export preview"))
-        .navigationBarTitleDisplayMode(.inline)
+        .galaxySSIHealthTheme()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) {
             Button(t("close", "Close")) { zipReview = nil }
@@ -862,7 +885,7 @@ struct OriginalExportHistory: View {
       }
     }
     .navigationTitle(t("file_save_history", "File save history"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) {
       if $0 == .active { reload() }
@@ -891,7 +914,7 @@ struct OriginalExportHistory: View {
           }
         }
         .navigationTitle(t("export_history", "ZIP export history"))
-        .navigationBarTitleDisplayMode(.inline)
+        .galaxySSIHealthTheme()
         .toolbar { ToolbarItem(placement: .confirmationAction) {
           Button(t("close", "Close")) { selected = nil }
         } }

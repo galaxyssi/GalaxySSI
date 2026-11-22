@@ -29,6 +29,7 @@ extension EnvironmentValues {
 
 struct GalaxySSIRichContentView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.scenePhase) private var scenePhase
   @Environment(\.agentReplyParagraphSpeechAction) private var paragraphSpeechAction
   @EnvironmentObject private var coordinator: MessageCoordinator
   @EnvironmentObject private var store: GalaxySSIStore
@@ -43,6 +44,20 @@ struct GalaxySSIRichContentView: View {
   @State private var filePreview: GalaxySSIFilePreview?
   @State private var archivePreview: GalaxySSIRuntimeArtifactPreview?
   @State private var largeOutputExpanded = false
+  @State private var previewRequest: UUID?
+  @State private var attachmentNotice: AttachmentNotice?
+
+  private enum AttachmentNotice: Identifiable {
+    case unreadable, previewFailed, noReader(AgentRichBlock), saveFailed
+    var id: String {
+      switch self {
+      case .unreadable: return "unreadable"
+      case .previewFailed: return "preview_failed"
+      case .noReader: return "no_reader"
+      case .saveFailed: return "save_failed"
+      }
+    }
+  }
 
   var content: String
   var richOutputJson: String = ""
@@ -137,6 +152,11 @@ struct GalaxySSIRichContentView: View {
       contentType: .data,
       defaultFilename: artifactExportFilename
     ) { result in
+      if case .failure(let error) = result {
+        let value = error as NSError
+        if value.domain != NSCocoaErrorDomain || value.code != NSUserCancelledError { attachmentNotice = .saveFailed }
+        return
+      }
       guard case .success = result else { return }
       guard AgentDesktopArtifactStore.isGalaxySSIArtifactURI(artifactExportSourceURI) else { return }
       coordinator.markDesktopArtifactSaved(
@@ -156,6 +176,35 @@ struct GalaxySSIRichContentView: View {
       contentType: .zip,
       defaultFilename: compressedArtifactExportFilename
     ) { _ in }
+    .alert(item: $attachmentNotice, content: attachmentAlert)
+    .overlay {
+      if previewRequest != nil {
+        ProgressView().accessibilityLabel(t("galaxyssi.peer_attachment.opening", "Opening attachment"))
+      }
+    }
+    .onDisappear { previewRequest = nil }
+    .onChange(of: scenePhase) { phase in
+      if phase != .active { previewRequest = nil; filePreview = nil; attachmentNotice = nil }
+    }
+    .onChange(of: store.profile.identityFingerprint) { _ in
+      previewRequest = nil; filePreview = nil; attachmentNotice = nil
+    }
+  }
+
+  private func attachmentAlert(_ notice: AttachmentNotice) -> Alert {
+    let title = Text(t("galaxyssi.peer_attachment.title", "Attachment"))
+    switch notice {
+    case .unreadable:
+      return Alert(title: title, message: Text(t("galaxyssi.peer_attachment.unreadable", "The attachment cannot be read. It may no longer be available.")))
+    case .previewFailed:
+      return Alert(title: title, message: Text(t("galaxyssi.peer_attachment.failed", "The attachment could not be opened. Try again.")))
+    case .saveFailed:
+      return Alert(title: title, message: Text(t("galaxyssi.peer_attachment.save_failed", "The attachment could not be saved. The original is unchanged.")))
+    case .noReader(let block):
+      return Alert(title: title, message: Text(t("galaxyssi.peer_attachment.no_reader", "No preview is available for this attachment. You can explicitly save a copy to Files.")),
+        primaryButton: .default(Text(t("galaxyssi.peer_attachment.save", "Save to Files"))) { exportArtifact(block) },
+        secondaryButton: .cancel(Text(t("cancel", "Cancel"))))
+    }
   }
 
   private func largeOutputPreview(_ visibleContent: String) -> some View {
@@ -209,6 +258,7 @@ struct GalaxySSIRichContentView: View {
     guard let file = coordinator.desktopArtifactStore.localFile(for: block)
       ?? GalaxySSILocalFileResource.url(for: block),
       let data = try? Data(contentsOf: file, options: [.mappedIfSafe]) else {
+      attachmentNotice = .unreadable
       return
     }
     artifactExportSourceURI = block.metadata["artifact_source_uri"] ?? block.uri
@@ -220,9 +270,11 @@ struct GalaxySSIRichContentView: View {
   }
 
   fileprivate func previewArtifact(_ block: AgentRichBlock) {
+    guard scenePhase == .active, previewRequest == nil else { return }
     guard let file = coordinator.desktopArtifactStore.localFile(for: block)
       ?? GalaxySSILocalFileResource.url(for: block),
       FileManager.default.fileExists(atPath: file.path) else {
+      attachmentNotice = .unreadable
       return
     }
     if file.pathExtension.lowercased() == "zip",
@@ -233,10 +285,32 @@ struct GalaxySSIRichContentView: View {
       )
       return
     }
-    filePreview = GalaxySSIFilePreview(
-      url: file,
-      title: block.title.ifBlank(file.lastPathComponent)
-    )
+    let request = UUID()
+    let owner = store.profile.identityFingerprint
+    let name = (block.metadata["artifact_name"] ?? block.title).ifBlank(file.lastPathComponent)
+    let mime = AgentPeerAttachmentPreview.mimeType(name: file.lastPathComponent, declared: block.mimeType)
+    previewRequest = request
+    Task { @MainActor in
+      do {
+        let lease = try await Task.detached(priority: .userInitiated) {
+          try AgentPeerAttachmentPreview.prepare(source: file, name: name, declared: mime)
+        }.value
+        guard previewRequest == request, scenePhase == .active, store.profile.identityFingerprint == owner else {
+          AgentPeerAttachmentPreview.release(lease); return
+        }
+        previewRequest = nil
+        guard QLPreviewController.canPreview(lease.file as NSURL) else {
+          AgentPeerAttachmentPreview.release(lease)
+          attachmentNotice = .noReader(block)
+          return
+        }
+        filePreview = GalaxySSIFilePreview(url: lease.file, title: name, lease: lease)
+      } catch {
+        guard previewRequest == request, scenePhase == .active, store.profile.identityFingerprint == owner else { return }
+        previewRequest = nil
+        attachmentNotice = (error as? AgentPeerAttachmentPreview.Failure) == .unreadable ? .unreadable : .previewFailed
+      }
+    }
   }
 
   fileprivate func compressArtifact(_ block: AgentRichBlock) {
@@ -263,6 +337,7 @@ struct GalaxySSIFilePreview: Identifiable {
   let id = UUID()
   let url: URL
   let title: String
+  let lease: AgentPeerAttachmentPreview.Lease
 }
 
 private struct GalaxySSIFilePreviewView: UIViewControllerRepresentable {
@@ -282,6 +357,11 @@ private struct GalaxySSIFilePreviewView: UIViewControllerRepresentable {
   }
 
   func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {}
+
+  static func dismantleUIViewController(_ uiViewController: UINavigationController, coordinator: Coordinator) {
+    (uiViewController.viewControllers.first as? QLPreviewController)?.dataSource = nil
+    AgentPeerAttachmentPreview.release(coordinator.preview.lease)
+  }
 
   final class Coordinator: NSObject, QLPreviewControllerDataSource {
     let preview: GalaxySSIFilePreview

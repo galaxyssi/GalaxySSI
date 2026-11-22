@@ -2139,6 +2139,23 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
+  func disconnectDesktopKeepingHistory(desktopId: String, fingerprint: String) -> Bool {
+    let id = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let link = GalaxySSIPairingLifecycle.disconnectTarget(desktopId: id, fingerprint: fingerprint,
+      links: store.serverLinks) else { return false }
+    // Never send client_revoked: Desktop interprets that packet as a history deletion.
+    let removed = removeDesktopPairingState(desktopId: id, deleteMessages: false, preserveHistory: true)
+    blobRelayConfigurationStore.remove(desktopId: id)
+    remoteWhisperNodeRegistry.remove(desktopID: id)
+    recordPairingRevocation(contactIds: removed)
+    if !usesLegacyMqtt {
+      do { try journalMqttRuntime?.finishDesktopRevocation(link) }
+      catch { lastError = GalaxySSIError.transportUnavailable.localizedDescription }
+    }
+    return true
+  }
+
+  @discardableResult
   func revokeDesktopPairing(desktopId: String, deleteMessages: Bool = true) async -> Bool {
     let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanDesktopId.isEmpty else { return false }
@@ -2203,13 +2220,15 @@ final class MessageCoordinator: ObservableObject {
   @discardableResult
   private func removeDesktopPairingState(
     desktopId: String,
-    deleteMessages: Bool = true
+    deleteMessages: Bool = true,
+    preserveHistory: Bool = false
   ) -> Set<String> {
     desktopControlLiveFrames.removeValue(forKey: desktopId)
     desktopControlFrameUpdates.send(desktopId)
     return GalaxySSIPairingLifecycle.remove(
       desktopId: desktopId,
       deleteMessages: deleteMessages,
+      preserveHistory: preserveHistory,
       store: store,
       mqttClient: mqttClient,
       deliveryStore: deliveryStore,
@@ -7902,7 +7921,8 @@ final class MessageCoordinator: ObservableObject {
         turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
         executionMode: executionMode,
         hasAttachments: !attachments.isEmpty,
-        allowsDirectResponse: executionMode != .planOnly && attachments.isEmpty && !compositePhoneStatus,
+        allowsDirectResponse: executionMode != .planOnly &&
+          attachments.allSatisfy { $0.historicalSourceTurnId != nil } && !compositePhoneStatus,
         completionRequirements: nil,
         plannerConfigurationSha256: plannerSnapshot?.configurationSha256
           ?? initialPlannerConfigurationSha256(conversationId: outgoing.conversationId),
@@ -10125,7 +10145,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func sendRemotePilotMember(prompt: String, runID: String, conversation: String, turn: String,
-      member: String, source: UUID, contactID: String, desktopID: String, fingerprint: String, routeID: String,
+      member: String, transportInstance: String, source: UUID, contactID: String, desktopID: String, fingerprint: String, routeID: String,
       profile: String, selectionConversation: String, selection: AgentModelSelection,
       invocation: [String: String], deadline: UInt64) async throws -> String {
     let current = DispatchTime.now().uptimeNanoseconds
@@ -10133,6 +10153,8 @@ final class MessageCoordinator: ObservableObject {
     let history = AgentTeamExecutionHistoryStore.shared
     guard ProcessInfo.processInfo.environment["GALAXYSSI_REMOTE_PILOT_RUN"] == "1", !Task.isCancelled,
           current < deadline, !prompt.isBlank, prompt.utf8.count <= 60_000,
+          ["draft", "review", "final"].contains(member),
+          transportInstance == "analyst" || (member == "review" && transportInstance == "reviewer"),
           selection.mode == .manual, selection.targetId == contactID,
           AgentModelSelectionSettings.hasStoredSelection(for: selectionConversation, defaults: store.defaults),
           AgentModelSelectionSettings.selection(for: selectionConversation, defaults: store.defaults) == selection,
@@ -10186,7 +10208,7 @@ final class MessageCoordinator: ObservableObject {
     payload["agent_invocation"] = invocation
     payload["agent_team_message"] = true
     payload["team_id"] = scope.team.teamId
-    payload["agent_instance_id"] = member
+    payload["agent_instance_id"] = transportInstance
     payload["delivery_mode"] = AgentDeliveryMode.observe.rawValue
     payload["run_id"] = AgentTeamExecutionRuntime.stableChildRunId(supervisorRunId: runID, instanceId: member)
     let wire = try linkWirePayload(payload, link: link)
@@ -12492,6 +12514,48 @@ final class MessageCoordinator: ObservableObject {
     return isPrivateHealthDesktopRouteAvailable(route) ? route : nil
   }
 
+  func privateHealthReportCodexTarget() -> GalaxySSIHealthReportCodex.Target? {
+    guard !usesLegacyMqtt, journalMqttRuntime != nil, UIApplication.shared.isProtectedDataAvailable else { return nil }
+    for contact in store.contacts where GalaxySSIHealthReportCodex.supports(contact) {
+      let configured = AgentModelSelectionSettings.configurationForTarget(conversationId: "health-report-vision",
+        targetId: contact.id, defaults: store.defaults) ??
+        AgentModelSelectionSettings.configurationForTarget(conversationId: "health-report-vision", targetId: "codex", defaults: store.defaults)
+      let model = configured?.modelId ?? contact.connectorInvocationProfile.defaultModelId
+      let effort = configured?.reasoningEffort ?? .automatic
+      guard let route = privateHealthDesktopRoute(contactID: contact.id, modelID: model, effort: effort) else { continue }
+      let name = String(contact.desktopName.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }.map(String.init).joined().prefix(100))
+      return .init(route: route, authority: name.isBlank ? "Desktop" : name)
+    }
+    return nil
+  }
+
+  func transcribePrivateHealthReport(target: GalaxySSIHealthReportCodex.Target, jpeg: Data, instructions: String,
+                                    valid: () -> Bool) async throws -> String {
+    let profile = store.profile.identityFingerprint
+    guard valid(), privateHealthReportCodexTarget() == target, let runtime = journalMqttRuntime else {
+      throw GalaxySSIError.transportUnavailable
+    }
+    let request = GalaxySSIHealthReportCodex.Request(target: target)
+    let ticket = AgentDataDisclosureLedger.beginDesktopRequest(store: healthDisclosureStore,
+      contactId: target.route.connector.contactId, desktopId: target.route.connector.desktopId, providerId: "codex",
+      title: target.title, text: instructions,
+      attachments: [.init(displayName: "report.jpg", mimeType: "image/jpeg", sizeBytes: Int64(jpeg.count))],
+      conversationId: request.identity.conversationId, taskId: request.identity.taskId, turnId: request.identity.turnId)
+    guard ticket.allowed else { throw AgentDataDisclosureBlockedError(destination: "Codex") }
+    var status: AgentDisclosureStatus = .failed
+    defer {
+      AgentDataDisclosureLedger.update(store: healthDisclosureStore, ticket: ticket, status: status,
+        failureReason: status == .failed ? "private_health_report_not_completed" : "")
+    }
+    let result = try await runtime.transcribePrivateHealthReport(request, jpeg: jpeg, instructions: instructions, published: { status = .sent }) {
+      valid() && store.profile.identityFingerprint == profile && privateHealthReportCodexTarget() == target &&
+        !healthDisclosureStore.blockedDestinationIds().contains(target.route.connector.contactId)
+    }
+    status = .sent
+    guard valid(), privateHealthReportCodexTarget() == target else { throw GalaxySSIError.transportUnavailable }
+    return result
+  }
+
   func isPrivateHealthDesktopRouteAvailable(_ route: GalaxySSIHealthDesktopResearch.Route) -> Bool {
     !usesLegacyMqtt && isPrivateHealthDesktopRouteConfigured(route) && pairedPhonePlannerLink(route.connector) != nil
   }
@@ -12798,14 +12862,15 @@ final class MessageCoordinator: ObservableObject {
     let timerCheckpoint = AgentIOSTimerCheckpointStore.shared.current(conversationId: outgoing.conversationId)
       .flatMap { checkpoint -> [String: String]? in
         guard !outgoing.readOnlyAnalysis, outgoing.isMine, outgoing.sourceConversationId.isBlank else { return nil }
-        let explicitlyTimer = requestText.range(of: #"(?i)\b(?:timer|countdown)\b|\u8BA1\u65F6\u5668|\u5012\u8BA1\u65F6"#,
+        let intentGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(requestText)
+        let explicitlyTimer = intentGoal.range(of: #"(?i)\b(?:timer|countdown)\b|\u8BA1\u65F6\u5668|\u5012\u8BA1\u65F6"#,
           options: .regularExpression) != nil
-        let previous = AgentOwnedOperationContext.wantsContext(request: requestText, priorGoal: "phone timer")
+        let previous = AgentOwnedOperationContext.wantsContext(request: intentGoal, priorGoal: "phone timer")
           ? AgentOwnedOperationContext.previousRequest(before: outgoing, in: store.agentSessionMessages(outgoing.conversationId))
           : nil
         let previousTurn = previous.map { $0.turnId.ifBlank($0.id.uuidString) }
         guard checkpoint.sourceTurnId == turnId || checkpoint.lastControlTurnId == turnId ||
-          (explicitlyTimer && AgentTaskIntentClassifier.classify(goal: requestText).intent == .phoneControl) ||
+          (explicitlyTimer && AgentTaskIntentClassifier.classify(goal: intentGoal).intent == .phoneControl) ||
           previousTurn == checkpoint.sourceTurnId ||
           (previousTurn != nil && previousTurn == checkpoint.lastControlTurnId) else { return nil }
         return checkpoint.evidence(now: Int64(Date().timeIntervalSince1970 * 1_000))
@@ -12909,7 +12974,8 @@ final class MessageCoordinator: ObservableObject {
           )
         ),
       hasAttachments: hasAttachments,
-      allowsDirectResponse: allowsDirectResponse && !hasAttachments && executionMode != .planOnly,
+      allowsDirectResponse: allowsDirectResponse &&
+        attachments.allSatisfy { $0.historicalSourceTurnId != nil } && executionMode != .planOnly,
       phoneOwnsExecution: true,
       timerCheckpoint: timerCheckpoint
     )
@@ -15033,17 +15099,9 @@ final class MessageCoordinator: ObservableObject {
       sourceId: "\(conversationId)/\(turnId)",
       content: manifest.joined(separator: "\n")
     )
-    let instruction = hasUserGoal
-      ? "Use the attached content when completing the request."
-      : "Inspect the attached content, infer the user's most likely intent from the content and conversation, and complete the most helpful relevant action."
-    let directVisionInstruction = AgentDirectVisionPolicy.instruction(attachments)
-    return [
-      baseGoal,
-      directVisionInstruction,
-      "Attached input:\n\(evidence)\n\(instruction)",
-    ]
-    .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    .joined(separator: "\n\n")
+    return AgentDirectVisionPolicy.goalWithAttachmentEvidence(
+      userGoal: baseGoal, attachments: attachments, evidence: evidence, hasUserGoal: hasUserGoal
+    )
   }
 
   private func recordLocalNativeActionResult(
@@ -17679,7 +17737,7 @@ final class MessageCoordinator: ObservableObject {
         "size_bytes": transfer.originalSizeBytes,
         "sha256": transfer.sha256,
         "progress": 0,
-        "state": GalaxySSIPeerAttachmentTransferProgress.uploading
+        "state": GalaxySSIPeerAttachmentTransferProgress.outboundState(transfer.mimeType)
       ], contact: contact)
     }
   }
@@ -18048,6 +18106,11 @@ final class MessageCoordinator: ObservableObject {
         link: link,
         allowStage: allowStage
       )
+      return
+    }
+    // Private report replies are owned only by the foreground journal-runtime exchange.
+    if appPayload.string("conversation_id").hasPrefix(GalaxySSIHealthReportCodex.prefix) {
+      if !appPayload.string("message_id").isEmpty { deliveryStore.completeIncoming(messageId: appPayload.string("message_id")) }
       return
     }
     if shouldValidateAgentTaskIdentity(appPayload),
@@ -19443,7 +19506,7 @@ final class MessageCoordinator: ObservableObject {
           "desktop_fingerprint": pair.desktopFingerprint
         ]
         if usesLegacyMqtt {
-          publishDesktopArtifactControl(payload, link: link)
+          guard publishDesktopArtifactControl(payload, link: link) else { continue }
         } else {
           guard let runtime = journalMqttRuntime else { continue }
           try runtime.enqueueDesktopBlobControl(payload, desktopId: link.desktopId)
@@ -19526,9 +19589,21 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func publishDesktopArtifactControl(_ payload: [String: Any], link: ServerLink?) {
+  @discardableResult
+  private func publishDesktopArtifactControl(_ payload: [String: Any], link: ServerLink?) -> Bool {
     guard let link, link.paired, let wire = try? linkWirePayload(payload, link: link) else {
-      return
+      return false
+    }
+    if payload.string("type") == "artifact_blob_capability" {
+      let binding = MqttRouteProtocol.digest(Data([
+        link.desktopId, link.routes.clientRouteId, link.routes.localFingerprint,
+        link.routes.remoteFingerprint, link.routes.linkSecret
+      ].joined(separator: "\u{001f}").utf8))
+      guard let snapshot = LinkCapabilitySnapshot(payload: payload, binding: binding),
+            deliveryStore.enqueueCapabilitySnapshot(messageId: wire.messageId, topic: link.routes.controlTopic,
+              wire: wire.wireText, snapshot: snapshot) else { return false }
+      scheduleOutboxFlush(after: 0)
+      return true
     }
     deliveryStore.enqueue(
       messageId: wire.messageId,
@@ -19543,6 +19618,7 @@ final class MessageCoordinator: ObservableObject {
         scheduleOutboxFlush(after: 0)
       }
     }
+    return true
   }
 
   private func handleDesktopControlPayload(

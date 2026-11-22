@@ -162,7 +162,7 @@ struct GalaxySSIHealthReportCropView: View {
       }
     }
     .navigationTitle(t("title", "Report Crop Preview"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear {
       reload()
       if !openedInitialOriginal, let initialOriginalID, let item = files.first(where: { $0.id == initialOriginalID }) {

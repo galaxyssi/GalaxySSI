@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct GalaxySSIHealthTrendDevice: Identifiable {
   let id: UUID
@@ -21,11 +22,11 @@ struct GalaxySSIHealthTrendDevice: Identifiable {
 
 struct GalaxySSIHealthTrend {
   enum Aggregation: String, CaseIterable {
-    case mean, min, max
+    case mean, min, max, latest
   }
 
   enum Source: String, CaseIterable {
-    case all, manual, bluetooth, table, healthKit
+    case all, manual, bluetooth, table, healthKit, report
 
     func includes(_ reading: GalaxySSIHealthReading) -> Bool {
       switch self {
@@ -35,6 +36,7 @@ struct GalaxySSIHealthTrend {
       case .bluetooth: return reading.tableSource == nil && reading.bluetoothReceipt != nil
       case .table: return reading.tableSource != nil
       case .healthKit: return reading.healthKitSource != nil
+      case .report: return reading.reportSource != nil
       }
     }
   }
@@ -115,11 +117,16 @@ struct GalaxySSIHealthTrend {
     let day: Date
     let readings: [GalaxySSIHealthReading]
     let mean: Decimal?
+    var forceUnverifiedMethods = false
 
     var revisions: [UUID: Int] { Dictionary(uniqueKeysWithValues: readings.map { ($0.id, $0.revision) }) }
+    var unverifiedMethods: Bool { forceUnverifiedMethods || readings.contains(where: GalaxySSIHealthMeasurementComparison.unverifiedMethod) }
 
     func extremum(_ aggregation: Aggregation, component: Component) -> GalaxySSIHealthReading? {
       guard aggregation != .mean else { return nil }
+      if aggregation == .latest {
+        return readings.filter { component.value(in: $0) != nil }.max { ($0.measuredAt, $0.id.uuidString) < ($1.measuredAt, $1.id.uuidString) }
+      }
       return readings.reduce(nil as GalaxySSIHealthReading?) { best, reading in
         guard let value = component.value(in: reading) else { return best }
         guard let best, let previous = component.value(in: best) else { return reading }
@@ -128,7 +135,7 @@ struct GalaxySSIHealthTrend {
     }
 
     func value(_ aggregation: Aggregation, component: Component) -> Decimal? {
-      aggregation == .mean ? mean : extremum(aggregation, component: component).flatMap { component.value(in: $0) }
+      aggregation == .mean ? (unverifiedMethods ? nil : mean) : extremum(aggregation, component: component).flatMap { component.value(in: $0) }
     }
   }
 
@@ -152,12 +159,13 @@ struct GalaxySSIHealthTrend {
   let minimum: Decimal?
   let maximum: Decimal?
   let mean: Decimal?
+  var unverifiedMethods: Bool { points.contains(where: \.unverifiedMethods) }
 
   init(current: [GalaxySSIHealthReading], metric: GalaxySSIHealthMetric, component: Component,
        now: Date, dayCount: Int, calendar: Calendar, unit: String? = nil, source: Source = .all,
-       healthOrigin: HealthOrigin = .all) {
+       healthOrigin: HealthOrigin = .all, forceUnverifiedMethods: Bool = false) {
     let today = calendar.startOfDay(for: now)
-    let dates = (0..<max(1, min(dayCount, 90))).reversed().compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }
+    let dates = (0..<max(1, min(dayCount, 366))).reversed().compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }
     let days = Set(dates)
     let scoped = current.filter {
       !$0.deleted && $0.metric == metric && $0.measuredAt <= now && source.includes($0) &&
@@ -171,15 +179,16 @@ struct GalaxySSIHealthTrend {
         $0.measuredAt == $1.measuredAt ? $0.id.uuidString < $1.id.uuidString : $0.measuredAt < $1.measuredAt
       }
       return Point(id: index, day: day, readings: readings,
-                   mean: Self.average(readings.compactMap { component.value(in: $0) }))
+                   mean: forceUnverifiedMethods || readings.contains(where: GalaxySSIHealthMeasurementComparison.unverifiedMethod) ? nil :
+                     Self.average(readings.compactMap { component.value(in: $0) }), forceUnverifiedMethods: forceUnverifiedMethods)
     }
     let values = scoped.compactMap { component.value(in: $0) }
     minimum = values.min()
     maximum = values.max()
-    mean = Self.average(values)
+    mean = forceUnverifiedMethods || scoped.contains(where: GalaxySSIHealthMeasurementComparison.unverifiedMethod) ? nil : Self.average(values)
   }
 
-  var validDays: Int { points.filter { $0.mean != nil }.count }
+  var validDays: Int { points.filter { !$0.readings.isEmpty }.count }
 
   private static func average(_ values: [Decimal]) -> Decimal? {
     guard !values.isEmpty else { return nil }
@@ -191,6 +200,8 @@ struct GalaxySSIHealthTrend {
 
 @MainActor
 struct GalaxySSIHealthTrendView: View {
+  @Environment(\.galaxySSIAtlasPinnedAnalysis) private var atlasPinnedAnalysis
+  @Environment(\.galaxySSIAtlasAnalysisSelection) private var atlasAnalysisSelection
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   @Environment(\.calendar) private var calendar
@@ -199,6 +210,9 @@ struct GalaxySSIHealthTrendView: View {
   let records: GalaxySSIHealthRecords
   private let fixedMetric: GalaxySSIHealthMetric?
   private let recordMeasurement: ((GalaxySSIHealthMetric) -> Void)?
+  private let comparisonAnchor: GalaxySSIHealthReading?
+  private let unverifiedComparison: Bool
+  private let atlasWindow: Binding<GalaxySSIHealthAtlasWindow>?
   @State private var metric: GalaxySSIHealthMetric
   @State private var component = GalaxySSIHealthTrend.Component.value
   @State private var selectedUnit: String?
@@ -226,13 +240,28 @@ struct GalaxySSIHealthTrendView: View {
   @State private var originPage: GalaxySSIHealthTrend.OriginPage?
   @State private var originCursors: [GalaxySSIHealthTrend.HealthOrigin] = []
   @State private var selectedOriginTitle: String?
+  @State private var atlasAnalysisIdentity: GalaxySSIHealthAtlasTrendAction.Identity?
+  @State private var protectedDataBlocked = false
 
   init(records: GalaxySSIHealthRecords, fixedMetric: GalaxySSIHealthMetric? = nil,
-       recordMeasurement: ((GalaxySSIHealthMetric) -> Void)? = nil) {
+       recordMeasurement: ((GalaxySSIHealthMetric) -> Void)? = nil, comparisonAnchor: GalaxySSIHealthReading? = nil,
+       unverifiedComparison: Bool = false, atlasWindow: Binding<GalaxySSIHealthAtlasWindow>? = nil) {
     self.records = records
     self.fixedMetric = fixedMetric
     self.recordMeasurement = recordMeasurement
+    self.comparisonAnchor = comparisonAnchor
+    self.unverifiedComparison = unverifiedComparison
+    self.atlasWindow = atlasWindow
     _metric = State(initialValue: fixedMetric ?? .bloodPressure)
+    if atlasWindow != nil { _aggregation = State(initialValue: .latest) }
+    if let comparisonAnchor {
+      _selectedUnit = State(initialValue: comparisonAnchor.unit)
+      _source = State(initialValue: Self.trendSource(comparisonAnchor))
+      _device = State(initialValue: comparisonAnchor.bluetoothReceipt?.device)
+      _origin = State(initialValue: GalaxySSIHealthTrend.HealthOrigin.recorded(in: comparisonAnchor) ?? .all)
+      _aggregation = State(initialValue: unverifiedComparison || GalaxySSIHealthMeasurementComparison.unverifiedMethod(comparisonAnchor) ? .latest : .mean)
+      _days = State(initialValue: 180)
+    }
   }
 
   var body: some View {
@@ -251,6 +280,14 @@ struct GalaxySSIHealthTrendView: View {
           } else {
             Text(metricTitle(metric))
           }
+          if let comparisonAnchor {
+            if !comparisonAnchor.conditions.isEmpty { Text(comparisonAnchor.conditions).font(.caption).foregroundColor(.secondary) }
+            if let side = comparisonAnchor.measurementSide {
+              Text(GalaxySSILocalization.string("galaxyssi.health.measurement_comparison.side_" + side,
+                fallback: side == "left" ? "Left" : side == "right" ? "Right" : "Not specified", language: language))
+                .font(.caption).foregroundColor(.secondary)
+            }
+          }
           if metric == .bloodPressure {
             Picker(t("component", "Component"), selection: $component) {
               Text(t("systolic", "Systolic")).tag(GalaxySSIHealthTrend.Component.value)
@@ -263,10 +300,20 @@ struct GalaxySSIHealthTrendView: View {
               get: { selectedUnit ?? metric.unit }, set: { selectedUnit = $0; reload() })) {
               ForEach(metric.units, id: \.self) { Text($0).tag($0) }
             }
+            .disabled(comparisonAnchor != nil)
           }
-          Picker(t("period", "Period"), selection: $days) {
-            ForEach([7, 30, 90], id: \.self) { value in
-              Text(String(format: t("days", "%lld days"), Int64(value))).tag(value)
+          if let atlasWindow {
+            Picker(t("period", "Period"), selection: atlasWindow) {
+              ForEach(GalaxySSIHealthAtlasWindow.allCases, id: \.self) { window in
+                Text(GalaxySSIHealthAtlasText.get("health_atlas_" + window.rawValue, language)).tag(window)
+              }
+            }
+          } else {
+            Picker(t("period", "Period"), selection: $days) {
+              ForEach([7, 30, 90], id: \.self) { value in
+                Text(String(format: t("days", "%lld days"), Int64(value))).tag(value)
+              }
+              if comparisonAnchor != nil { Text(t("six_months", "6 months")).tag(180) }
             }
           }
           if source != .healthKit && (!devices.isEmpty || device != nil) {
@@ -279,27 +326,48 @@ struct GalaxySSIHealthTrendView: View {
                 Text(t("device_unavailable", "Selected device unavailable")).tag(Optional(device))
               }
             }
+            .disabled(comparisonAnchor != nil)
           }
           Picker(t("aggregation", "Aggregation"), selection: $aggregation) {
-            ForEach(GalaxySSIHealthTrend.Aggregation.allCases, id: \.self) { Text(aggregationTitle($0)).tag($0) }
+            ForEach(trend?.unverifiedMethods == true ? [.latest] : GalaxySSIHealthTrend.Aggregation.allCases, id: \.self) {
+              Text(aggregationTitle($0)).tag($0)
+            }
           }
           Picker(t("source", "Source"), selection: $source) {
             ForEach(GalaxySSIHealthTrend.Source.allCases, id: \.self) { Text(sourceTitle($0)).tag($0) }
-          }
-          if source == .healthKit { originPicker }
+          }.disabled(comparisonAnchor != nil)
+          if source == .healthKit { originPicker.disabled(comparisonAnchor != nil) }
           if changed {
             Text(t("changed", "Measurements changed. Refresh to view current results."))
             Button(t("refresh", "Refresh"), action: reload)
           } else if let trend {
-            if let average = trend.mean, let minimum = trend.minimum, let maximum = trend.maximum {
-              Button(action: explainTrend) {
-                Label(t("explain", "Explain this trend"), systemImage: "text.bubble")
+            if atlasWindow != nil,
+               let reading = trend.points.flatMap(\.readings).filter({ component.value(in: $0) != nil })
+                .max(by: { ($0.measuredAt, $0.id.uuidString) < ($1.measuredAt, $1.id.uuidString) }),
+               let value = component.value(in: reading),
+               let point = trend.points.first(where: { $0.readings.contains(where: { $0.id == reading.id }) }) {
+              Section(t("latest", "Latest")) {
+                statistic(t("latest", "Latest"), value)
+                Text(reading.measuredAt, style: .date)
+                Text(reading.measuredAt, style: .time)
+                Text(readingSource(reading)).font(.caption).foregroundColor(.secondary)
+                Button(GalaxySSIHealthAtlasText.get("health_atlas_source", language)) { selected = point }
+              }
+            }
+            if let minimum = trend.minimum, let maximum = trend.maximum {
+              if !atlasPinnedAnalysis {
+                Button(action: explainTrend) {
+                  Label(t("explain", "Explain this trend"), systemImage: "text.bubble")
+                }
               }
               Section(t("summary", "Summary")) {
-                Text(String(format: t("coverage", "%lld of %lld days with readings"), Int64(trend.validDays), Int64(days)))
-                statistic(t("mean", "Mean"), average)
+                Text(String(format: t("coverage", "%lld of %lld days with readings"), Int64(trend.validDays), Int64(trend.points.count)))
+                if let average = trend.mean { statistic(t("mean", "Mean"), average) }
                 statistic(t("min", "Minimum"), minimum)
                 statistic(t("max", "Maximum"), maximum)
+                if trend.unverifiedMethods {
+                  Text(t("unverified_methods", "Laboratory methods are unverified; results are shown separately.")).font(.caption).foregroundColor(.secondary)
+                }
                 let data = trend.chartData(aggregation, component: component)
                 chart(trend, data: data)
                 Button { toggleChartData(data) } label: {
@@ -318,18 +386,22 @@ struct GalaxySSIHealthTrendView: View {
       }
     }
     .navigationTitle(t("title", "Measurement Trends"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: metric) { _ in component = .value; selectedUnit = nil; resetOrigins(); reload() }
     .onChange(of: component) { _ in reload() }
     .onChange(of: days) { _ in resetOrigins(); reload() }
     .onChange(of: device) { _ in reload() }
     .onChange(of: calendar) { _ in reload() }
+    .onChange(of: atlasWindow?.wrappedValue) { _ in resetOrigins(); reload() }
     .onChange(of: timeZone) { _ in reload() }
     .onChange(of: scene) { if $0 == .background { device = nil; devices = [] } }
     .onChange(of: source) { _ in resetOrigins(); reload() }
-    .onDisappear { resetOrigins(); selected = nil; trend = nil; showsChartData = false }
-    .onChange(of: aggregation) { _ in selected = nil; focusedDay = nil; showsChartData = false }
+    .onDisappear { resetOrigins(); selected = nil; trend = nil; showsChartData = false; atlasAnalysisIdentity = nil }
+    .onChange(of: aggregation) { _ in
+      selected = nil; focusedDay = nil; showsChartData = false
+      if atlasPinnedAnalysis { reload() }
+    }
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
       else { trend = nil; selected = nil; focusedDay = nil; allowed = false; showsChartData = false; resetOrigins() }
@@ -341,7 +413,21 @@ struct GalaxySSIHealthTrendView: View {
     .onChange(of: scene) { phase in
       if phase != .active {
         trendVersions = []; explanation = nil; recordAfterExplanation = nil; fallbackEditor = nil
+        atlasAnalysisIdentity = nil
       }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
+      protectedDataBlocked = true
+      atlasAnalysisIdentity = nil; trend = nil; selected = nil; focusedDay = nil; allowed = false
+      trendVersions = []; explanation = nil; showsChartData = false; resetOrigins()
+      device = nil; devices = []; recordAfterExplanation = nil; fallbackEditor = nil
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+      protectedDataBlocked = false
+      if scene == .active { reload() }
+    }
+    .safeAreaInset(edge: .bottom) {
+      if atlasPinnedAnalysis { GalaxySSIHealthAtlasPinnedAnalysisButton(enabled: atlasAnalysisReady, action: explainTrend) }
     }
     .sheet(item: $explanation, onDismiss: {
       if let metric = recordAfterExplanation {
@@ -414,7 +500,7 @@ struct GalaxySSIHealthTrendView: View {
             }
           }
           .navigationTitle(point.day.formatted(date: .abbreviated, time: .omitted))
-          .navigationBarTitleDisplayMode(.inline)
+          .galaxySSIHealthTheme()
           .toolbar { ToolbarItem(placement: .confirmationAction) {
             Button(t("done", "Done")) { selected = nil }
           } }
@@ -425,7 +511,8 @@ struct GalaxySSIHealthTrendView: View {
   }
 
   private func reload() {
-    guard scene == .active else { return }
+    atlasAnalysisIdentity = nil
+    guard scene == .active, !protectedDataBlocked, UIApplication.shared.isProtectedDataAvailable else { return }
     selected = nil
     showsChartData = false
     focusedDay = nil
@@ -439,10 +526,16 @@ struct GalaxySSIHealthTrendView: View {
       guard allowed else { devices = []; resetOrigins(); return }
       let current = archive.current
       devices = source == .healthKit ? [] : GalaxySSIHealthTrendDevice.options(in: current, metric: metric)
-      snapshotTime = Date()
+      snapshotTime = comparisonAnchor.map { min($0.measuredAt, Date()) } ?? Date()
       var local = calendar
       local.timeZone = timeZone
       snapshotCalendar = local
+      if let atlasWindow { days = atlasWindow.wrappedValue.days(through: snapshotTime, calendar: local) }
+      if atlasWindow != nil, selectedUnit == nil,
+         let latest = trendSpec.cohort(current).filter({ metric.units.contains($0.unit) && component.value(in: $0) != nil })
+          .max(by: { ($0.measuredAt, $0.id.uuidString) < ($1.measuredAt, $1.id.uuidString) }) {
+        selectedUnit = latest.unit
+      }
       if source == .healthKit {
         let today = local.startOfDay(for: snapshotTime)
         let start = local.date(byAdding: .day, value: 1 - days, to: today) ?? today
@@ -451,21 +544,32 @@ struct GalaxySSIHealthTrendView: View {
       }
       let spec = trendSpec
       trend = spec.chart(current)
+      if trend?.unverifiedMethods == true { aggregation = .latest }
       trendVersions = spec.versions(current)
+      if atlasPinnedAnalysis { atlasAnalysisIdentity = currentAtlasIdentity }
     } catch { allowed = false; error = true; resetOrigins() }
   }
 
   private var trendSpec: GalaxySSIHealthTrendAnalysis.Spec {
     let local = snapshotCalendar ?? calendar
+    var length = days
+    if comparisonAnchor != nil, days == 180,
+       let start = local.date(byAdding: .month, value: -6, to: local.startOfDay(for: snapshotTime)),
+       let span = local.dateComponents([.day], from: start, to: local.startOfDay(for: snapshotTime)).day {
+      length = span + 1
+    }
     return .init(metric: metric, component: component, unit: unit, source: source,
       device: source == .healthKit ? nil : device, origin: source == .healthKit ? origin : .all,
-      aggregation: aggregation, through: snapshotTime, days: days, calendar: local)
+      aggregation: aggregation, through: snapshotTime, days: length, calendar: local, comparisonAnchor: comparisonAnchor,
+      unverifiedComparison: unverifiedComparison)
   }
 
   private func makeTrend(_ current: [GalaxySSIHealthReading]) -> GalaxySSIHealthTrend { trendSpec.chart(current) }
 
   private func explainTrend() {
     guard scene == .active, allowed, !changed, trend != nil else { return }
+    guard !protectedDataBlocked, UIApplication.shared.isProtectedDataAvailable else { return }
+    guard !atlasPinnedAnalysis || atlasAnalysisReady else { return }
     do {
       let archive = try records.load()
       let label = selectedOriginTitle ?? device.flatMap { id in devices.first { $0.id == id } }.map(deviceTitle)
@@ -526,15 +630,26 @@ struct GalaxySSIHealthTrendView: View {
   }
 
   private func invalidate() {
+    atlasAnalysisIdentity = nil
     selected = nil
     showsChartData = false
     focusedDay = nil
     trend = nil
     trendVersions = []
+    guard !protectedDataBlocked, UIApplication.shared.isProtectedDataAvailable else { allowed = false; return }
     do {
       allowed = try records.load().derivesOverview == true; changed = allowed
       if !allowed { resetOrigins() }
     } catch { allowed = false; error = true; resetOrigins() }
+  }
+
+  private var currentAtlasIdentity: GalaxySSIHealthAtlasTrendAction.Identity {
+    .init(spec: trendSpec, environmentCalendar: calendar, timeZone: timeZone, selection: atlasAnalysisSelection)
+  }
+  private var atlasAnalysisReady: Bool {
+    GalaxySSIHealthAtlasTrendAction.ready(captured: atlasAnalysisIdentity, current: currentAtlasIdentity,
+      foreground: scene == .active, protectedData: !protectedDataBlocked && UIApplication.shared.isProtectedDataAvailable, permitted: allowed,
+      changed: changed, hasChartData: trend?.chartData(aggregation, component: component).isEmpty == false)
   }
 
   private func chart(_ trend: GalaxySSIHealthTrend, data: [GalaxySSIHealthTrend.ChartDatum]) -> some View {
@@ -545,13 +660,14 @@ struct GalaxySSIHealthTrendView: View {
         let range = high - low
         var prior: CGPoint?
         var priorID: Int?
+        var priorComparable = false
         for (datum, value) in zip(data, values) {
           let point = datum.point
           if priorID != point.id - 1 { prior = nil }
           let fraction = range > 0 ? (value - low) / range : 0.5
           let position = CGPoint(x: 8 + CGFloat(point.id) / CGFloat(max(1, trend.points.count - 1)) * (size.width - 16),
                                  y: 8 + CGFloat(1 - fraction) * (size.height - 16))
-          if let prior {
+          if let prior, priorComparable, !point.unverifiedMethods {
             var path = Path()
             path.move(to: prior)
             path.addLine(to: position)
@@ -563,6 +679,7 @@ struct GalaxySSIHealthTrendView: View {
                        with: .color(.accentColor))
           prior = position
           priorID = point.id
+          priorComparable = !point.unverifiedMethods
         }
       }
       .contentShape(Rectangle())
@@ -594,6 +711,7 @@ struct GalaxySSIHealthTrendView: View {
     case .mean: return t("mean", "Mean")
     case .min: return t("min", "Minimum")
     case .max: return t("max", "Maximum")
+    case .latest: return t("latest", "Latest reading")
     }
   }
 
@@ -604,6 +722,17 @@ struct GalaxySSIHealthTrendView: View {
     case .bluetooth: return t("source_bluetooth", "Bluetooth monitor")
     case .table: return t("source_table", "Imported table")
     case .healthKit: return t("source_healthkit", "Apple Health")
+    case .report: return t("source_report", "Report measurements")
+    }
+  }
+
+  private static func trendSource(_ reading: GalaxySSIHealthReading) -> GalaxySSIHealthTrend.Source {
+    switch GalaxySSIHealthMeasurementComparison.source(reading) {
+    case .manual: return .manual
+    case .report: return .report
+    case .table: return .table
+    case .bluetooth: return .bluetooth
+    case .healthKit: return .healthKit
     }
   }
 
