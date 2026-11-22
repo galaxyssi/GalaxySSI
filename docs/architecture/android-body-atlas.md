@@ -354,6 +354,29 @@ Model references:
 - https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption
 - https://neurotext.library.stonybrook.edu/C2/C2_4/C2_4.html
 
+## Guided Function Playback
+
+System and organ details show Structure, Function and Measurements. Function
+keeps the mechanism art and its current caption together, with a complete
+chapter transcript that can be expanded and read without playing. Selecting
+a transcript step seeks to the corresponding still frame and pauses. Existing
+entry-specific chapter anchors and references remain available.
+
+Playback starts with the image or the play button. Each chapter has five
+seconds of active time. Tapping the image or the play/pause control freezes
+both the frame and the caption; continuing consumes only the time remaining
+in that chapter. Opening another entry, switching tabs or backgrounding
+pauses playback. With reduced motion, the same clock updates the chapter
+without interpolating its frames. Playback stops at the last chapter.
+
+Models and parameters expand in the same Function scroll for systems and
+organs. This retains the existing number inputs, visual mechanisms and
+links without a fourth sibling tab; old saved Simulation destinations
+restore into the expanded section. The active chapter and model inputs
+are retained independently, and starting either animation pauses the other.
+The structure diagram, personal measurements and research modules remain
+available without mixing personal and teaching data.
+
 ## Mechanisms and Research
 
 The ten macroscopic circulation entries use a native double-circulation

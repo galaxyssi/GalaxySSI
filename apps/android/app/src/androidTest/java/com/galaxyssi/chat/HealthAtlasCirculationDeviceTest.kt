@@ -40,7 +40,7 @@ class HealthAtlasCirculationDeviceTest {
             ActivityScenario.launch<HealthBodyAtlasActivity>(Intent(context, HealthBodyAtlasActivity::class.java)
                 .putHealthNavigationFixture(names)).use { scenario ->
                 ready(scenario, "atlas-whole-art")
-                scenario.onActivity { it.view("atlas-hotspot-heart").performClick(); it.view("atlas-tab-3").performClick() }
+                scenario.onActivity { it.view("atlas-hotspot-heart").performClick(); it.openAtlasModelDetails() }
                 block(scenario)
             }
         } finally { clearHealthOverviewFixture(context, names) }
@@ -84,14 +84,14 @@ class HealthAtlasCirculationDeviceTest {
         scenario.recreate(); ready(scenario, "atlas-hotspot-bronchi")
         scenario.onActivity {
             it.onBackPressed()
-            assertTrue(it.view("atlas-tab-3").isSelected)
+            assertTrue(it.hasOpenAtlasModels())
             assertEquals(50, (it.view("atlas-parameter-first") as SeekBar).progress)
             assertEquals(50, (it.view("atlas-parameter-second") as SeekBar).progress)
             assertEquals(750, (it.view("atlas-simulation-progress") as SeekBar).progress)
             assertEquals(7.2, (it.view("atlas-process") as HealthAtlasCirculationView).flowLitresPerMinute!!, .0001)
             it.view("atlas-circulation-node-heart").performClick()
             assertTrue(it.view("atlas-tab-0").isSelected)
-            it.onBackPressed(); assertTrue(it.view("atlas-tab-3").isSelected)
+            it.onBackPressed(); assertTrue(it.hasOpenAtlasModels())
             it.view("atlas-simulation-reset").performClick()
             assertEquals(4.9, (it.view("atlas-process") as HealthAtlasCirculationView).flowLitresPerMinute!!, .0001)
         }

@@ -122,7 +122,7 @@ class HealthAtlasLymphOrgansDeviceTest {
             assertNotSame(plate, HealthAtlasPlates.forId(link))
             activity.onBackPressed()
             assertNotNull(activity.view("atlas-feature-${plate.features.first().marker.id}"))
-            activity.view("atlas-tab-3").performClick()
+            activity.openAtlasModelDetails()
             val diagram = activity.view("atlas-section-diagram") as HealthAtlasSectionLessonView
             assertEquals(id, diagram.lesson.owner)
             assertNull(activity.window.decorView.tagged("atlas-simulation-art"))
@@ -139,7 +139,7 @@ class HealthAtlasLymphOrgansDeviceTest {
 
     @Test fun nodeShowsMovingLymphAndPreservesTheSelectedRouteAcrossResearchAndRecreation() = native { scenario ->
         scenario.onActivity {
-            it.open("lymph-nodes"); it.view("atlas-tab-3").performClick()
+            it.open("lymph-nodes"); it.openAtlasModelDetails()
             val diagram = it.view("atlas-section-diagram") as HealthAtlasSectionLessonView
             diagram.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
@@ -171,7 +171,7 @@ class HealthAtlasLymphOrgansDeviceTest {
 
     @Test fun valveControlsAreScopedToTheCollectingVesselAndUpdateInPlace() = native { scenario ->
         scenario.onActivity {
-            it.open("lymphatic-vessels"); it.view("atlas-tab-3").performClick()
+            it.open("lymphatic-vessels"); it.openAtlasModelDetails()
             val pressure = it.view("atlas-physiology-lymph-pressure") as SeekBar
             val resistance = it.view("atlas-physiology-lymph-resistance") as SeekBar
             val scroller = it.view("atlas-scroll")
@@ -189,7 +189,7 @@ class HealthAtlasLymphOrgansDeviceTest {
         scenario.recreate(); ready(scenario, "atlas-physiology-lymph-pressure")
         scenario.onActivity {
             assertEquals(60, (it.view("atlas-physiology-lymph-resistance") as SeekBar).progress)
-            it.onBackPressed(); it.open("thoracic-duct"); it.view("atlas-tab-3").performClick()
+            it.onBackPressed(); it.open("thoracic-duct"); it.openAtlasModelDetails()
             assertNull(it.window.decorView.tagged("atlas-physiology-lymph-pressure"))
             assertEquals(0, (it.view("atlas-section-diagram") as HealthAtlasSectionLessonView).stage)
         }

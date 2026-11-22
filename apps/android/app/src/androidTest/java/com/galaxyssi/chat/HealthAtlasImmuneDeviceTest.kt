@@ -162,7 +162,7 @@ class HealthAtlasImmuneDeviceTest {
         val atlas = HealthBodyAtlas.load(context)
         val item = atlas[plate.owner!!]!!
         scenario.onActivity {
-            it.open(item.id); it.view("atlas-tab-3").performClick()
+            it.open(item.id); it.openAtlasModelDetails()
             val scroll = it.view("atlas-scroll")
             val diagram = it.view("atlas-phagocytosis-diagram") as HealthAtlasPhagocytosisView
             for (stage in 0..3) {
@@ -177,7 +177,7 @@ class HealthAtlasImmuneDeviceTest {
         scenario.recreate(); ready(scenario, "atlas-phagocytosis-diagram")
         scenario.onActivity {
             assertEquals(2, (it.view("atlas-phagocytosis-diagram") as HealthAtlasPhagocytosisView).stage)
-            it.onBackPressed(); it.open("cell-monocyte"); it.view("atlas-tab-3").performClick()
+            it.onBackPressed(); it.open("cell-monocyte"); it.openAtlasModelDetails()
             assertNull(it.find("atlas-phagocytosis-diagram"))
         }
     }
@@ -248,7 +248,7 @@ class HealthAtlasImmuneDeviceTest {
             val mechanism = atlas.mechanism(item)
             scenario.onActivity {
                 it.open(lesson.owner)
-                it.view("atlas-tab-3").performClick()
+                it.openAtlasModelDetails()
                 val scroll = it.view("atlas-scroll")
                 val diagram = it.view("atlas-granulocyte-diagram") as HealthAtlasGranulocyteView
                 assertEquals(lesson, diagram.lesson)
@@ -271,7 +271,7 @@ class HealthAtlasImmuneDeviceTest {
         }
         scenario.onActivity {
             it.open("cell-monocyte")
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             assertNull(it.find("atlas-granulocyte-diagram"))
         }
     }
@@ -307,7 +307,7 @@ class HealthAtlasImmuneDeviceTest {
             val target = requireNotNull(atlas[lesson.relatedId])
             scenario.onActivity { activity ->
                 activity.open(item.id)
-                activity.view("atlas-tab-3").performClick()
+                activity.openAtlasModelDetails()
                 val row = activity.view("atlas-immune-related-${target.id}")
                 val diagram = activity.view("atlas-immune-link-diagram") as HealthAtlasImmuneLinkView
                 assertEquals(lesson, diagram.lesson)
@@ -335,12 +335,12 @@ class HealthAtlasImmuneDeviceTest {
     @Test fun plateletAndPrecursorOpenSeparateLessonsAndKeepTheirOwnPlayheads() = native { scenario ->
         scenario.onActivity { activity ->
             activity.open("cell-megakaryocyte")
-            activity.view("atlas-tab-3").performClick()
+            activity.openAtlasModelDetails()
             val precursor = activity.view("atlas-blood-defense-diagram") as HealthAtlasBloodDefenseView
             assertEquals(HealthAtlasBloodDefense.MEGAKARYOCYTE, precursor.lesson)
             activity.view("atlas-process-stage-3").performClick()
             activity.view("atlas-immune-related-fragment-platelet").performClick()
-            activity.view("atlas-tab-3").performClick()
+            activity.openAtlasModelDetails()
             val platelet = activity.view("atlas-blood-defense-diagram") as HealthAtlasBloodDefenseView
             assertEquals(HealthAtlasBloodDefense.PLATELET, platelet.lesson)
             assertEquals(0, platelet.stage)

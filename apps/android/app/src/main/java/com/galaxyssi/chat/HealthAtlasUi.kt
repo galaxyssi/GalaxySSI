@@ -28,6 +28,22 @@ internal object HealthAtlasUi {
             }, LinearLayout.LayoutParams(0, -2, 1f)) }
         }
     }
+    fun disclosure(activity: Activity, title: String, key: String, initial: Boolean = false,
+        changed: (Boolean) -> Unit): LinearLayout {
+        lateinit var row: LinearLayout
+        fun update(open: Boolean) {
+            row.isSelected = open
+            row.getChildAt(row.childCount - 1).rotation = if (open) 90f else 270f
+            if (android.os.Build.VERSION.SDK_INT >= 30) row.stateDescription = activity.getString(
+                if (open) R.string.health_sources_devices_expanded else R.string.health_sources_devices_collapsed)
+        }
+        row = HealthCenterViews(activity).row(title) {
+            val open = !row.isSelected
+            update(open); changed(open)
+        }.apply { tag = key }
+        update(initial)
+        return row
+    }
     fun icon(item: HealthAtlasItem): Int = if (item.kind == HealthAtlasKind.TISSUE) R.drawable.ic_input_menu_layers
         else if (item.kind == HealthAtlasKind.CELL || item.kind == HealthAtlasKind.FRAGMENT)
         R.drawable.ic_atlas_microscope else when (item.systems.first()) {

@@ -145,7 +145,7 @@ class HealthAtlasMusculoskeletalDeviceTest {
         scenario.onActivity {
             it.open("muscle"); it.view("atlas-view-1").performClick()
             it.view("atlas-tab-1").performClick(); assertTrue(it.view("atlas-view-1").isSelected)
-            it.view("atlas-tab-3").performClick(); it.view("atlas-process-stage-2").performClick()
+            it.openAtlasModelDetails(); it.view("atlas-process-stage-2").performClick()
             it.view("atlas-tab-0").performClick(); assertTrue(it.view("atlas-view-1").isSelected)
             it.onBackPressed(); it.open("skeletal"); assertTrue(it.view("atlas-view-0").isSelected)
             it.onBackPressed(); it.open("muscle"); assertTrue(it.view("atlas-view-1").isSelected)
@@ -235,7 +235,7 @@ class HealthAtlasMusculoskeletalDeviceTest {
             it.view("atlas-entry-cell-skeletal-myocyte").performClick()
             assertNotNull(it.view("atlas-feature-skeletal-striations"))
             assertNull(it.window.decorView.tagged("atlas-hotspot-biceps-brachii"))
-            it.view("atlas-tab-3").performClick(); assertNotNull(it.view("atlas-process-stage-0"))
+            it.openAtlasModelDetails(); assertNotNull(it.view("atlas-process-stage-0"))
             it.onBackPressed(); assertTrue(it.view("atlas-hotspot-biceps-brachii").isSelected)
             it.onBackPressed(); assertTrue(it.view("atlas-view-0").isSelected)
         }

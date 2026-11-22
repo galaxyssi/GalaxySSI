@@ -291,7 +291,7 @@ class HealthAtlasSystemOverviewDeviceTest {
             it.view("atlas-entry-cell-keratinocyte").performClick()
             assertNotNull(it.view("atlas-feature-keratin-filaments"))
             assertNull(it.window.decorView.tagged("atlas-hotspot-epidermis"))
-            it.view("atlas-tab-1").performClick(); it.view("atlas-tab-3").performClick()
+            it.view("atlas-tab-1").performClick(); it.openAtlasModelDetails()
             assertNotNull(it.view("atlas-process-stage-0"))
         }
         scenario.recreate(); ready(scenario, "atlas-process-stage-0")
@@ -317,7 +317,7 @@ class HealthAtlasSystemOverviewDeviceTest {
     }
 
     @Test fun systemSimulationPausesOnBackgroundAndKeepsTheSelectedStage() = native { scenario ->
-        scenario.onActivity { it.open("endocrine"); it.view("atlas-tab-3").performClick(); it.view("atlas-simulation-play").performClick() }
+        scenario.onActivity { it.open("endocrine"); it.openAtlasModelDetails(); it.view("atlas-simulation-play").performClick() }
         SystemClock.sleep(220); scenario.moveToState(Lifecycle.State.CREATED)
         var saved = -1
         scenario.onActivity { saved = (it.view("atlas-simulation-progress") as SeekBar).progress }
@@ -354,7 +354,7 @@ class HealthAtlasSystemOverviewDeviceTest {
         val value = HealthAtlasPhysiologyText.resultNumber(transit, transit.result) + " ms"
         scenario.onActivity {
             it.open("nervous"); it.view("atlas-hotspot-peripheral-nerves").performClick()
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             val scroll = it.view("atlas-scroll")
             (it.view("atlas-physiology-nerve-distance") as SeekBar).progress = 110
             (it.view("atlas-physiology-nerve-speed") as SeekBar).progress = 39
@@ -370,7 +370,7 @@ class HealthAtlasSystemOverviewDeviceTest {
             assertTrue(prompt.contains(kind.source))
             assertTrue(HealthAtlasMetrics.forItem(atlas["peripheral-nerves"]!!).isEmpty())
             it.onBackPressed(); it.view("atlas-hotspot-spinal-cord").performClick()
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             assertNotNull(it.view("atlas-physiology-outside"))
             assertNull(it.window.decorView.tagged("atlas-physiology-nerve-distance"))
         }

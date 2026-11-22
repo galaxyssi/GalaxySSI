@@ -47,7 +47,7 @@ class HealthAtlasVesselFlowDeviceTest {
     private fun Activity.open(id: String) {
         view("atlas-tab-2").performClick()
         (view("atlas-search") as EditText).setText(id); view("atlas-entry-$id").performClick()
-        view("atlas-tab-3").performClick()
+        openAtlasModelDetails()
     }
     private fun Activity.setInputs(values: List<Int>) = values.forEachIndexed { index, value ->
         (view("atlas-physiology-${kind.inputs[index].key}") as SeekBar).progress = value - kind.inputs[index].range.first

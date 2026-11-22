@@ -43,7 +43,7 @@ class HealthAtlasPhysiologyDeviceTest {
     private fun Activity.open(id: String, cell: Boolean = false) {
         view(if (cell) "atlas-tab-3" else "atlas-tab-2").performClick()
         (view("atlas-search") as EditText).setText(id)
-        view("atlas-entry-$id").performClick(); view("atlas-tab-3").performClick()
+        view("atlas-entry-$id").performClick(); openAtlasModelDetails()
     }
     private fun capture(name: String) {
         instrumentation.waitForIdleSync(); SystemClock.sleep(180)
@@ -82,7 +82,7 @@ class HealthAtlasPhysiologyDeviceTest {
             activity.view("atlas-function-next").performClick()
             val phase = (activity.view("atlas-function-player") as HealthAtlasFunctionPlayer).phase
             assertTrue(phase > 0f)
-            activity.view("atlas-open-simulation").performClick()
+            activity.openAtlasModelDetails()
             val kind = requireNotNull(HealthAtlasPhysiologyKind.forItem(id))
             val input = kind.inputs[kind.axis]
             val sliderKey = "atlas-physiology-${input.key}"
@@ -93,7 +93,7 @@ class HealthAtlasPhysiologyDeviceTest {
             slider.progress = adjusted
             activity.view("atlas-tab-1").performClick()
             assertEquals(phase, (activity.view("atlas-function-player") as HealthAtlasFunctionPlayer).phase, 0f)
-            activity.view("atlas-open-simulation").performClick()
+            activity.openAtlasModelDetails()
             assertEquals(adjusted, (activity.view(sliderKey) as SeekBar).progress)
         }
     }
@@ -204,7 +204,7 @@ class HealthAtlasPhysiologyDeviceTest {
                 activity.view("atlas-tab-1").performClick()
                 (activity.view("atlas-search") as EditText).setText(system.id)
                 activity.view("atlas-entry-${system.id}").performClick()
-                activity.view("atlas-tab-3").performClick()
+                activity.openAtlasModelDetails()
                 val curve = activity.view("atlas-physiology-curve") as HealthAtlasPhysiologyChart
                 assertEquals(system.id, requireNotNull(HealthAtlasPhysiologyKind.forItem(system.id)), curve.model.kind)
                 assertNotNull(activity.view("atlas-simulation-play"))

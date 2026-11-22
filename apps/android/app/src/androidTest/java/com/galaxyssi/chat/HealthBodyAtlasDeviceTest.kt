@@ -410,7 +410,7 @@ class HealthBodyAtlasDeviceTest {
     @Test fun simulationInputsResetAndAnimationStopsInBackground() = native { scenario ->
         var phase = 0
         scenario.onActivity { activity ->
-            activity.view("atlas-hotspot-heart").performClick(); activity.view("atlas-tab-3").performClick()
+            activity.view("atlas-hotspot-heart").performClick(); activity.openAtlasModelDetails()
             (activity.view("atlas-parameter-first") as SeekBar).progress = 60
             assertTrue((activity.view("atlas-simulation-output") as TextView).text.toString().contains("7"))
             activity.view("atlas-simulation-reset").performClick()
@@ -426,7 +426,7 @@ class HealthBodyAtlasDeviceTest {
     }
     @Test fun simulationChangesPixelsAndRestoresItsOwnParameters() = native { scenario ->
         scenario.onActivity { activity ->
-            activity.view("atlas-hotspot-heart").performClick(); activity.view("atlas-tab-3").performClick()
+            activity.view("atlas-hotspot-heart").performClick(); activity.openAtlasModelDetails()
             (activity.view("atlas-parameter-first") as SeekBar).progress = 60
         }
         scenario.recreate()
@@ -484,7 +484,7 @@ class HealthBodyAtlasDeviceTest {
         }
         capture("whole")
         scenario.onActivity { it.view("atlas-hotspot-heart").performClick() }; capture("heart")
-        scenario.onActivity { it.view("atlas-tab-3").performClick() }; capture("simulation")
+        scenario.onActivity { it.openAtlasModelDetails() }; capture("simulation")
         scenario.onActivity { it.onBackPressed(); it.view("atlas-tab-1").performClick() }; capture("systems")
         scenario.onActivity {
             it.view("atlas-tab-3").performClick(); (it.view("atlas-search") as EditText).setText("beta")

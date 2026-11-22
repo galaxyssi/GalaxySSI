@@ -86,7 +86,7 @@ class HealthAtlasHeartDeviceTest {
         scenario.onActivity {
             it.view("atlas-hotspot-heart").performClick()
             it.view("atlas-entry-heart-valves").performClick()
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             val scroll = it.view("atlas-scroll")
             for (stage in 0..3) {
                 it.view("atlas-process-stage-$stage").performClick()
@@ -120,7 +120,7 @@ class HealthAtlasHeartDeviceTest {
             it.view("atlas-hotspot-heart").performClick()
             it.view("atlas-view-1").performClick()
             it.view("atlas-hotspot-left-ventricle").performClick()
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             val scroll = it.view("atlas-scroll")
             (it.view("atlas-physiology-ejection-stroke") as SeekBar).progress = 90
             assertEquals(output(expected), it.label("atlas-physiology-output"))
@@ -132,7 +132,7 @@ class HealthAtlasHeartDeviceTest {
             assertEquals(output(expected), it.label("atlas-physiology-output"))
             it.onBackPressed()
             it.view("atlas-hotspot-right-ventricle").performClick()
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             assertEquals(output(HealthAtlasPhysiology(kind)), it.label("atlas-physiology-output"))
         }
     }

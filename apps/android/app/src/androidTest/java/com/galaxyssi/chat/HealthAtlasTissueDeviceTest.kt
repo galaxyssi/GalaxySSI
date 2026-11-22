@@ -114,7 +114,7 @@ class HealthAtlasTissueDeviceTest {
             it.view("atlas-hotspot-heart").performClick()
             it.view("atlas-structure-layer-1").performClick()
             it.view("atlas-entry-$cardiac").performClick()
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             it.view("atlas-process-stage-2").performClick()
             assertTrue((it.view("atlas-simulation-stage") as TextView).text.contains(stage))
         }

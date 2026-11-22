@@ -2,6 +2,7 @@ package com.galaxyssi.chat
 
 import android.animation.ValueAnimator
 import android.app.Activity
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.animation.LinearInterpolator
 import android.widget.ImageButton
@@ -14,7 +15,8 @@ import java.text.NumberFormat
 internal class HealthAtlasSimulationPanel(private val activity: Activity, private val body: LinearLayout,
     private val atlas: HealthBodyAtlas, private val item: HealthAtlasItem, initial: HealthAtlasSimulation?,
     quantitativeInitial: HealthAtlasPhysiology?, zoom: (Int, String) -> Unit, source: (String) -> Unit,
-    select: (HealthAtlasItem) -> Unit, mechanismFirst: Boolean = false) {
+    select: (HealthAtlasItem) -> Unit, mechanismFirst: Boolean = false, private val inline: Boolean = false,
+    private val onPlay: () -> Unit = {}) {
     private val ui = HealthCenterViews(activity)
     private val mechanism = atlas.mechanism(item)
     private val cardiac = item.id in setOf("heart", "cardio")
@@ -23,8 +25,11 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private var quantitative: HealthAtlasPhysiologyPanel? = null
     val quantitativeSnapshot get() = quantitative?.model
     private var animator: ValueAnimator? = null
+    private val inlineClock = if (inline) HealthAtlasChapterClock(mechanism.stages.size, values.phase) else null
+    private val inlineFrame = Runnable { advanceInline() }
     private lateinit var play: ImageButton
     private lateinit var stage: TextView
+    private var renderedStage = -1
     private lateinit var progress: SeekBar
     private lateinit var output: TextView
     private val circulation = if (HealthAtlasCirculation.supports(item.id)) HealthAtlasCirculationView(activity, mechanism,
@@ -124,7 +129,9 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         val controls = ui.line().apply {
             gravity = Gravity.CENTER
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_body_previous_step) { pause(); setPhase((values.stage - 1).coerceAtLeast(0) / 4f) })
-            play = ui.icon(R.drawable.ic_rich_play, R.string.health_body_play) { if (animator == null) start() else pause() }
+            play = ui.icon(R.drawable.ic_rich_play, R.string.health_body_play) {
+                if (animator == null && inlineClock?.playing != true) start() else pause()
+            }
                 .apply { tag = "atlas-simulation-play" }; addView(play)
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_body_next_step) { pause(); setPhase((values.stage + 1).coerceAtMost(3) / 4f) }.apply { rotation = 180f })
             addView(ui.icon(R.drawable.ic_reset_data, R.string.health_atlas_reset) {
@@ -166,7 +173,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
             quantitative != null -> R.string.health_atlas_model_process_note
             else -> R.string.health_atlas_qualitative_note
         }), 13f, muted = true), 14)
-        parameter(R.string.health_atlas_speed, 1..4, (values.speed * 2).toInt(), "×0.5", "speed") { pause(); values = values.copy(speed = it / 2f) }
+        if (!inline) parameter(R.string.health_atlas_speed, 1..4, (values.speed * 2).toInt(), "×0.5", "speed") { pause(); values = values.copy(speed = it / 2f) }
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_teaching_note), 12f, muted = true), 14)
         if (germline != null) ui.add(body, ui.text(activity.getString(R.string.health_atlas_germline_scope), 12f, muted = true)
             .apply { tag = "atlas-germline-scope" }, 12)
@@ -222,19 +229,56 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         if (retinalPath?.stage != values.stage) retinalPath?.stage = values.stage
         sweatView?.phase = values.phase
         sectionView?.phase = values.phase
-        stage.text = activity.getString(R.string.health_atlas_stage, values.stage + 1, mechanism.stages.size, mechanism.stages[values.stage])
+        if (renderedStage != values.stage) {
+            renderedStage = values.stage
+            stage.text = activity.getString(R.string.health_atlas_stage, values.stage + 1, mechanism.stages.size, mechanism.stages[values.stage])
+        }
         if (::progress.isInitialized) progress.progress = (values.phase * 1000).toInt()
     }
     private fun start() {
+        val clock = inlineClock
+        if (clock != null) {
+            onPlay()
+            clock.seek(values.phase)
+            clock.resume(SystemClock.uptimeMillis())
+            advanceInline()
+            return
+        }
         if (!ValueAnimator.areAnimatorsEnabled()) { setPhase((values.stage + 1).coerceAtMost(3) / 4f); return }
+        onPlay()
         if (values.phase >= 1f) setPhase(0f)
         animator = ValueAnimator.ofFloat(values.phase, 1f).apply {
-            duration = ((1f - this@HealthAtlasSimulationPanel.values.phase) * 8000 / this@HealthAtlasSimulationPanel.values.speed).toLong().coerceAtLeast(1)
+            val lessonMs = 8_000.0 / this@HealthAtlasSimulationPanel.values.speed
+            duration = ((1f - this@HealthAtlasSimulationPanel.values.phase) * lessonMs).toLong().coerceAtLeast(1)
             interpolator = LinearInterpolator(); addUpdateListener { setPhase(it.animatedValue as Float); if (this@HealthAtlasSimulationPanel.values.phase >= 1f) pause() }
             start()
         }
-        play.setImageResource(R.drawable.ic_rich_pause); play.contentDescription = activity.getString(R.string.health_body_pause)
+        showPlaying(true)
     }
-    fun pause() { animator?.removeAllUpdateListeners(); animator?.cancel(); animator = null
-        if (::play.isInitialized) { play.setImageResource(R.drawable.ic_rich_play); play.contentDescription = activity.getString(R.string.health_body_play) } }
+    private fun advanceInline() {
+        val now = SystemClock.uptimeMillis()
+        val clock = requireNotNull(inlineClock)
+        setPhase(clock.sample(now))
+        showPlaying(clock.playing)
+        if (clock.playing) {
+            if (ValueAnimator.areAnimatorsEnabled()) play.postOnAnimation(inlineFrame)
+            else play.postDelayed(inlineFrame, clock.nextStepIn(now))
+        }
+    }
+    private fun showPlaying(playing: Boolean) {
+        if (!::play.isInitialized) return
+        val label = activity.getString(if (playing) R.string.health_body_pause else R.string.health_body_play)
+        if (play.contentDescription == label) return
+        play.setImageResource(if (playing) R.drawable.ic_rich_pause else R.drawable.ic_rich_play)
+        play.contentDescription = label; play.tooltipText = label
+    }
+    fun pause() {
+        animator?.removeAllUpdateListeners(); animator?.cancel(); animator = null
+        if (inlineClock?.playing == true) {
+            play.removeCallbacks(inlineFrame)
+            inlineClock.pause(SystemClock.uptimeMillis())
+            advanceInline()
+        }
+        showPlaying(false)
+    }
 }

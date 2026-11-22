@@ -42,14 +42,14 @@ class HealthAtlasFunctionStoryDeviceTest {
                     assertEquals(.75f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
                     assertEquals(activity.getString(R.string.health_atlas_cell_play_t_cell_3_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     val simulation = activity.find<HealthAtlasBloodDefenseView>("atlas-blood-defense-diagram")
                     assertEquals(0, simulation.stage)
                     activity.find<View>("atlas-process-stage-1").performClick()
                     assertEquals(1, simulation.stage)
                     activity.find<View>("atlas-tab-1").performClick()
                     assertEquals(.75f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     assertEquals(1, activity.find<HealthAtlasBloodDefenseView>("atlas-blood-defense-diagram").stage)
                 }
             }
@@ -153,8 +153,9 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(2) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_knee_glide_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
-                    assertNull(activity.window.decorView.findViewWithTag<View>("atlas-function-player"))
+                    val player = activity.find<HealthAtlasFunctionPlayer>("atlas-function-player")
+                    activity.openAtlasModelDetails()
+                    assertSame(player, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player"))
                     activity.find<View>("atlas-tab-1").performClick()
                     assertEquals(.4f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
                     activity.onBackPressed()
@@ -275,7 +276,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<View>("atlas-tab-2").performClick()
                     activity.find<EditText>("atlas-search").setText("lymphatic-vessels")
                     activity.find<View>("atlas-entry-lymphatic-vessels").performClick()
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     activity.find<android.widget.SeekBar>("atlas-physiology-lymph-pressure").progress = 70
                     activity.find<View>("atlas-tab-1").performClick()
                     activity.find<View>("atlas-function-lymph-return-art")
@@ -283,7 +284,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(2) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_lymph_flow_pump_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     assertEquals(70, activity.find<android.widget.SeekBar>("atlas-physiology-lymph-pressure").progress)
                     activity.find<View>("atlas-tab-1").performClick()
                     assertEquals(.4f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
@@ -295,7 +296,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(4) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_antibody_story_release_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     activity.find<View>("atlas-immune-link-diagram")
                     activity.find<View>("atlas-tab-1").performClick()
                     assertEquals(.8f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
@@ -318,7 +319,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                 waitFor(scenario, "atlas-whole-art")
                 scenario.onActivity { activity ->
                     openBiceps(activity)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     activity.find<HealthAtlasElbowView>("atlas-elbow-balance")
                     activity.find<android.widget.SeekBar>("atlas-physiology-elbow-load").progress = 71
                     activity.find<View>("atlas-tab-1").performClick()
@@ -326,7 +327,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(3) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_motion_pull_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     assertEquals(71, activity.find<android.widget.SeekBar>("atlas-physiology-elbow-load").progress)
                     activity.onBackPressed()
                     openCell(activity, "cell-osteoclast")
@@ -363,7 +364,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(3) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_vision_story_relay_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     activity.find<View>("atlas-eye-optics")
                     activity.onBackPressed()
                     openCell(activity, "cell-rod-photoreceptor")
@@ -401,7 +402,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<View>("atlas-function-lesson-2").performClick()
                     activity.find<View>("atlas-function-rpe-visual-cycle-art")
                     assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     activity.find<View>("atlas-retinal-path")
                     activity.find<View>("atlas-tab-1").performClick()
                     activity.find<View>("atlas-function-lesson-1").performClick()
@@ -436,7 +437,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(4) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_meal_villus_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     activity.find<View>("atlas-villus-geometry")
                     activity.onBackPressed()
                     open(activity, "colon")
@@ -481,7 +482,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(3) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_nephron_story_distal_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     activity.find<View>("atlas-physiology-reabsorbed")
                     activity.find<View>("atlas-tab-1").performClick()
                     assertEquals(.6f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
@@ -506,7 +507,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(4) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_hear_nerve_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     activity.find<View>("atlas-middle-ear-model")
                     activity.find<View>("atlas-tab-0").performClick()
                     activity.find<View>("atlas-hotspot-vestibular-apparatus").performClick()
@@ -542,7 +543,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(2) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_breathe_diffuse_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     activity.find<View>("atlas-gas-arrow-OXYGEN")
                     activity.find<View>("atlas-gas-arrow-CARBON_DIOXIDE")
                     activity.find<View>("atlas-tab-1").performClick()
@@ -627,11 +628,11 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(4) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_platelet_stabilization_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     activity.find<View>("atlas-process-stage-2").performClick()
                     activity.find<View>("atlas-tab-1").performClick()
                     assertEquals(.8f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     assertTrue(activity.find<View>("atlas-process-stage-2").isSelected)
                 }
             }
@@ -729,7 +730,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                 waitFor(scenario, "atlas-function-player")
                 scenario.onActivity { activity ->
                     assertEquals(saved, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, .001f)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     assertNull(activity.window.decorView.findViewWithTag<View>("atlas-function-player"))
                     activity.find<View>("atlas-tab-1").performClick()
                     assertEquals(saved, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, .001f)
@@ -823,7 +824,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                         activity.find<TextView>("atlas-function-caption").text)
                     activity.find<View>("atlas-function-lesson-0").performClick()
                     assertEquals(.4f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     activity.find<View>("atlas-physiology-outside")
                     activity.onBackPressed()
 
@@ -836,12 +837,12 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(4) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_signal_thyroid_feedback_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     activity.find<View>("atlas-endocrine-path")
                     activity.find<android.widget.SeekBar>("atlas-physiology-feedback-gain").progress = 200
                     activity.find<View>("atlas-tab-1").performClick()
                     assertEquals(.8f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     assertEquals(200, activity.find<android.widget.SeekBar>("atlas-physiology-feedback-gain").progress)
                 }
             }
@@ -865,7 +866,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(4) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_home_sweat_story_evaporate_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     activity.find<HealthAtlasSweatView>("atlas-sweat-diagram")
                     activity.find<View>("atlas-tab-1").performClick()
                     assertEquals(.8f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
@@ -903,7 +904,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     openCell(activity, "cell-spermatocyte")
                     activity.find<View>("atlas-function-sperm-transport-art")
                     activity.find<View>("atlas-function-next").performClick()
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     val swimCounts = activity.find<HealthAtlasGermlineView>("atlas-germline").counts
                     assertEquals(HealthAtlasGermline.counts("cell-spermatocyte", 0), swimCounts)
                     activity.find<View>("atlas-tab-1").performClick()
@@ -915,7 +916,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     repeat(4) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_ovum_flow_ampulla_caption),
                         activity.find<TextView>("atlas-function-caption").text)
-                    activity.find<View>("atlas-tab-3").performClick()
+                    activity.openAtlasModelDetails()
                     assertEquals(HealthAtlasGermline.counts("cell-oocyte-or-ovum", 0),
                         activity.find<HealthAtlasGermlineView>("atlas-germline").counts)
                 }

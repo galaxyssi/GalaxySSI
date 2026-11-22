@@ -43,7 +43,7 @@ class HealthAtlasOxygenDeviceTest {
     private fun Activity.open(id: String) {
         view(if (id.startsWith("cell-")) "atlas-tab-3" else "atlas-tab-2").performClick()
         (view("atlas-search") as EditText).setText(id)
-        view("atlas-entry-$id").performClick(); view("atlas-tab-3").performClick()
+        view("atlas-entry-$id").performClick(); openAtlasModelDetails()
     }
     private fun activeWindow(text: String? = null): android.view.accessibility.AccessibilityNodeInfo {
         instrumentation.waitForIdleSync()

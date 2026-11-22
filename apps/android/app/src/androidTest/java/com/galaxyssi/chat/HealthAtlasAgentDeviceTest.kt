@@ -90,7 +90,7 @@ class HealthAtlasAgentDeviceTest {
     }
     @Test fun heartConfirmationUsesVisibleInputsAndPausesItsAnimation() = native { _, scenario ->
         scenario.onActivity { activity ->
-            activity.view("atlas-tab-3").performClick()
+            activity.openAtlasModelDetails()
             (activity.view("atlas-parameter-first") as SeekBar).progress = 60
             activity.view("atlas-simulation-play").performClick()
             activity.view("atlas-ask").performClick()

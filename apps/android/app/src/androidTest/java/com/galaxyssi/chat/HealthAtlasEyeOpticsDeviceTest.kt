@@ -111,7 +111,7 @@ class HealthAtlasEyeOpticsDeviceTest {
 
     @Test fun controlsAndMatchActionUpdateTheDiagramInPlaceAndRestoreIndependently() = native { scenario ->
         scenario.onActivity {
-            it.openEye(); it.view("atlas-tab-3").performClick()
+            it.openEye(); it.openAtlasModelDetails()
             val scroll = it.view("atlas-scroll"); val diagram = it.optics()
             it.input("distance").progress = 0
             it.input("power").progress = 0
@@ -127,7 +127,7 @@ class HealthAtlasEyeOpticsDeviceTest {
         scenario.onActivity {
             assertEquals(782, it.input("power").progress)
             it.view("atlas-tab-0").performClick(); it.view("atlas-hotspot-lens").performClick()
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             assertEquals(HealthAtlasEyeOptics(), it.optics().eye)
             it.onBackPressed(); it.view("atlas-tab-1").performClick(); it.view("atlas-open-research").performClick()
             assertEquals(782, it.input("power").progress)
@@ -213,7 +213,7 @@ class HealthAtlasEyeOpticsDeviceTest {
 
     @Test fun actualPreviewIsCancellableAndOpticsCaptureShowsTheSelectedFocus() = native { scenario ->
         scenario.onActivity {
-            it.openEye(); it.view("atlas-tab-3").performClick()
+            it.openEye(); it.openAtlasModelDetails()
             it.input("distance").progress = 0; it.input("power").progress = 0
         }
         capture("behind", context.getString(R.string.health_atlas_eye_behind))

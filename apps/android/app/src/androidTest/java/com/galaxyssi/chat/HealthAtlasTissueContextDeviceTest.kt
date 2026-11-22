@@ -555,7 +555,7 @@ class HealthAtlasTissueContextDeviceTest {
         }
         capture("cartilage-overview", scenario.localized(R.string.health_atlas_cartilage_overview_plate_caption))
         scenario.onActivity { activity ->
-            activity.view("atlas-tab-3").performClick()
+            activity.openAtlasModelDetails()
             assertNotNull(activity.view("atlas-cartilage-compression"))
             activity.onBackPressed()
             activity.open("joints")
@@ -628,10 +628,10 @@ class HealthAtlasTissueContextDeviceTest {
             assertNotNull(it.view("atlas-feature-sweat-pore"))
             it.view("atlas-hotspot-cell-sweat-gland-secretory-cell").performClick()
             assertNotNull(it.view("atlas-feature-eccrine-secretory-apex"))
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             assertNull(it.window.decorView.tagged("atlas-physiology-sweat-evaporated"))
             it.onBackPressed()
-            it.view("atlas-tab-3").performClick()
+            it.openAtlasModelDetails()
             val diagram = it.view("atlas-sweat-diagram") as HealthAtlasSweatView
             diagram.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
@@ -675,7 +675,7 @@ class HealthAtlasTissueContextDeviceTest {
             it.view("atlas-hotspot-cell-hair-matrix-cell").performClick()
             assertNotNull(it.view("atlas-feature-hair-matrix-bulb"))
             assertNull(it.window.decorView.tagged("atlas-feature-hair-section-shaft"))
-            it.onBackPressed(); it.view("atlas-tab-3").performClick()
+            it.onBackPressed(); it.openAtlasModelDetails()
             it.view("atlas-process-stage-2").performClick()
             val stage = (it.view("atlas-simulation-stage") as TextView).text
             assertTrue(stage.contains(it.getString(R.string.health_atlas_context_hair_stage_2)))
