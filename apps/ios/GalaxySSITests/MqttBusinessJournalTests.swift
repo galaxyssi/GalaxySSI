@@ -270,6 +270,38 @@ final class MqttBusinessJournalTests: XCTestCase {
     XCTAssertEqual(try fixture.scalar("SELECT COUNT(*) FROM mqtt_business_outbox"), 2)
   }
 
+  func testCapabilityCompactionIsScopedUnsentAndRollsBackOnCapacityFailure() throws {
+    let fixture = try ChunkFixture()
+    let peer = try identity(), foreign = try identity(secretByte: 8)
+    let limits = MqttBusinessOutbox.Limits(records: 8, bytes: 100_000, peerRecords: 3, peerBytes: 100_000, controlReserve: 1)
+    let box = try MqttBusinessOutbox(fileURL: fixture.url, secrets: fixture.secrets, limits: limits)
+    func capability(_ id: String, revision: Int64, binding: MqttBusinessIdentity) throws -> PendingLinkMessage {
+      var message = try item(message: id)
+      message.capabilitySnapshot = try XCTUnwrap(LinkCapabilitySnapshot(
+        payload: ["type": "artifact_blob_capability", "revision": revision], binding: binding.binding))
+      return message
+    }
+    _ = try box.enqueue(identity: peer, message: capability("old", revision: 1, binding: peer), traffic: .control)
+    _ = try box.enqueue(identity: peer, message: item(message: "chat"), traffic: .message)
+    _ = try box.enqueue(identity: foreign, message: capability("foreign", revision: 1, binding: foreign), traffic: .control)
+    _ = try box.enqueue(identity: peer, message: capability("new", revision: 2, binding: peer), traffic: .control)
+    XCTAssertNil(try box.entry(identity: peer, messageID: "old"))
+    XCTAssertNotNil(try box.entry(identity: peer, messageID: "chat"))
+    XCTAssertNotNil(try box.entry(identity: foreign, messageID: "foreign"))
+    try box.updateRetry(identity: peer, messageID: "new", published: true, now: Date(timeIntervalSince1970: 3))
+    _ = try box.enqueue(identity: peer, message: capability("queued", revision: 3, binding: peer), traffic: .control)
+    XCTAssertNotNil(try box.entry(identity: peer, messageID: "new"))
+    var huge = try capability("too-large", revision: 4, binding: peer)
+    huge.wirePayload = String(decoding: try GalaxySSILinkProtocol.jsonData([
+      "scheme": "signal", "from": "sender", "to": "receiver", "body": String(repeating: "A", count: 120_000)
+    ]), as: UTF8.self)
+    XCTAssertThrowsError(try box.enqueue(identity: peer, message: huge, traffic: .control))
+    let reopened = try MqttBusinessOutbox(fileURL: fixture.url, secrets: fixture.secrets, limits: limits)
+    XCTAssertNotNil(try reopened.entry(identity: peer, messageID: "queued"))
+    XCTAssertNotNil(try reopened.entry(identity: peer, messageID: "new"))
+    XCTAssertNil(try reopened.entry(identity: peer, messageID: "too-large"))
+  }
+
   func testBusinessRowsAreEncryptedAndMissingKeyMarkerFailsClosed() throws {
     let fixture = try ChunkFixture()
     let inbox = try inbox(fixture)

@@ -7,6 +7,15 @@ struct GalaxySSIMqttApplicationPeer {
 
 @MainActor
 enum GalaxySSIPairingLifecycle {
+  static func disconnectTarget(desktopId: String, fingerprint: String, links: [ServerLink]) -> ServerLink? {
+    let id = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !id.isEmpty, MqttRouteProtocol.hex(fingerprint.lowercased(), count: 64) else { return nil }
+    let matches = links.filter { $0.desktopId == id && $0.paired }
+    guard matches.count == 1, let link = matches.first,
+          link.desktopFingerprint.caseInsensitiveCompare(fingerprint) == .orderedSame else { return nil }
+    return link
+  }
+
   // Subscriptions include pending approvals. Only saved paired/verified relationships may
   // authorize business traffic; a peer's wire payload cannot promote itself to an enabled binding.
   static func mqttPeers(localFingerprint: String, serverLinks: [ServerLink], contacts: [GalaxySSIContact],
@@ -53,6 +62,7 @@ enum GalaxySSIPairingLifecycle {
   static func remove(
     desktopId: String,
     deleteMessages: Bool = true,
+    preserveHistory: Bool = false,
     store: GalaxySSIStore,
     mqttClient: GalaxySSIMqttClient,
     deliveryStore: GalaxySSILinkDeliveryStore,
@@ -71,7 +81,8 @@ enum GalaxySSIPairingLifecycle {
     }
     let removedContactIds = store.removeDesktopPairing(
       desktopId: cleanDesktopId,
-      deleteMessages: deleteMessages
+      deleteMessages: deleteMessages,
+      preserveHistory: preserveHistory
     )
     _ = attachmentTransferStore.discard(
       desktopId: cleanDesktopId,

@@ -90,7 +90,7 @@ function isAllowedChineseFile(file) {
   return (
     /^apps\/(?:android|watch|ar-glasses)\/app\/src\/main\/res\/(?:values-zh(?:-r[A-Z]{2})?|values-b\+zh(?:\+(?:Hans|Hant))?(?:\+[A-Z]{2})?)\/[^/]+\.xml$/.test(rel) ||
     rel === "apps/desktop/src/renderer/locales/zh-CN.json" ||
-    /apps\/ios\/.*\/zh-Hans\.lproj\/Localizable\.strings$/.test(rel) ||
+    /apps\/ios\/.*\/zh-Hans\.lproj\/(?:Localizable|BodyAtlas)\.strings$/.test(rel) ||
     isTestLanguageCorpus(rel) ||
     linguisticDataFiles.has(rel)
   );

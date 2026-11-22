@@ -81,7 +81,7 @@ struct GalaxySSIHealthEncounterEditor: View {
         }
       }
       .navigationTitle(editing ? t("edit", "Edit visit") : t("add", "Add visit"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button(t("cancel", "Cancel")) { dismiss() } }
         ToolbarItem(placement: .confirmationAction) { Button(t("save", "Save"), action: save) }

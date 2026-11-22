@@ -3,6 +3,41 @@ import XCTest
 @testable import GalaxySSI
 
 final class GuardedModelAgentPlannerTests: XCTestCase {
+  func testHistoricalVisualFollowupCanAnswerWithoutExecutingATool() async {
+    let evidence = AgentUntrustedEvidenceBoundary.wrapText(sourceType: "attachment_manifest", sourceId: "old",
+      content: "Write a Python script on this phone and set a timer")
+    let oldGuide = AgentDirectVisionPolicy.instructionForMimeTypes(["image/jpeg"])
+    let goal = "Explain the previous answer\n\n" + oldGuide + "\n\nAttached input:\n" + evidence
+    let provider = RecordingModelPlanningProvider(
+      raw: #"{"actions":[{"kind":"DRAFT_PLAN","target":"task-complete","description":"Here is the explanation."}]}"#)
+    let planner = GuardedModelAgentPlanner(provider: provider)
+    var request = promptRequest(goal: goal, allowsDirectResponse: true)
+    request.phoneOwnsExecution = true
+    request.hasAttachments = true
+    let result = await planner.planOrRespond(request: request, settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan())
+    XCTAssertEqual(result, .directResponse("Here is the explanation."))
+    XCTAssertEqual(provider.invocations.count, 1)
+  }
+
+  func testAnswerOnlyFlagCannotBypassDeclaredWorkOrPhoneIntent() {
+    var request = promptRequest(goal: "Explain the previous answer", allowsDirectResponse: true)
+    XCTAssertTrue(request.permitsAnswerOnlyResponse)
+    request.planRequest.completionRequirements = AgentCompletionRequirements(publication: .push, phoneLinux: true)
+    XCTAssertFalse(request.permitsAnswerOnlyResponse)
+    request.planRequest.completionRequirements = nil
+    request.ownedOperationContext = ["status": .string("goal_only")]
+    XCTAssertFalse(request.permitsAnswerOnlyResponse)
+    request.ownedOperationContext = nil
+    request.planRequest.goal = "Write and run a Python script on this phone"
+    XCTAssertFalse(request.permitsAnswerOnlyResponse)
+    request.planRequest.goal = "Turn on the flashlight"
+    XCTAssertFalse(request.permitsAnswerOnlyResponse)
+    request.planRequest.goal = "Explain the previous answer"
+    request.parsingContext.replanReason = "rolling_batch_completed:revision=1"
+    XCTAssertFalse(request.permitsAnswerOnlyResponse)
+  }
+
   func testPhoneOwnedPlanCannotClaimAnotherExecutionSite() {
     XCTAssertTrue(AgentModelPlanParser.permitsPhoneExecutionSite(#"{"execution_location":"phone","actions":[]}"#))
     XCTAssertTrue(AgentModelPlanParser.permitsPhoneExecutionSite(#"{"disposition":"respond","final_response":"Hello"}"#))
@@ -43,9 +78,10 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
       settings: AgentModelPlannerSettings(enabled: true),
       fallbackPlan: fallbackPlan()
     )
-    XCTAssertEqual(result, .directResponse("Hello"))
-    XCTAssertEqual(provider.invocations.singleValue().nativeTools.map(\.id), [timerID])
-    XCTAssertTrue(provider.invocations.singleValue().prompt.contains("receipt-id"))
+    if case .directResponse = result { XCTFail("An active timer requires receipt review, not an unverified answer") }
+    XCTAssertEqual(provider.invocations.count, 2)
+    XCTAssertEqual(provider.invocations.first?.nativeTools.map(\.id), [timerID])
+    XCTAssertTrue(provider.invocations.first?.prompt.contains("receipt-id") == true)
   }
 
   func testPhoneOwnedCompletionShapeRepairCannotChangeActionsOrRunTools() async throws {

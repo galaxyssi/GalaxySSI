@@ -42,7 +42,7 @@ struct GalaxySSIHealthVisitJournalView: View {
         } else { journal }
       }
       .navigationTitle(t("title", "Post-visit journal"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           if editor != nil { Button(t("cancel", "Cancel")) { editor = nil; invalid = false } }
@@ -94,7 +94,7 @@ struct GalaxySSIHealthVisitJournalView: View {
         if reviewEligible { reviewSection }
         let commands = Journal.commands(page.entry?.state, attended: page.scope.visit.details.state == .attended)
         if let primary = commands.first {
-          Button(commandTitle(primary)) { begin(primary) }.buttonStyle(.borderedProminent)
+          Button(commandTitle(primary)) { begin(primary) }.buttonStyle(GalaxySSIHealthCommandStyle())
           ForEach(commands.dropFirst()) { command in
             Button(commandTitle(command)) { begin(command) }
           }

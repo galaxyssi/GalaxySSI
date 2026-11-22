@@ -1,0 +1,579 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4326,
+    "mergeCommit": "427b3083fb749505fe135f284124f7b4a3e4c0f3"
+  },
+  "mechanisms": [
+    {
+      "id": "cell-erythrocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_erythrocyte_title",
+      "stages": [
+        "health_atlas_process_erythrocyte_0",
+        "health_atlas_process_erythrocyte_1",
+        "health_atlas_process_erythrocyte_2",
+        "health_atlas_process_erythrocyte_3"
+      ],
+      "chapter": "18-3-erythrocytes"
+    },
+    {
+      "id": "cell-neutrophil",
+      "kind": "cell",
+      "title": "health_atlas_process_neutrophil_title",
+      "stages": [
+        "health_atlas_process_neutrophil_0",
+        "health_atlas_process_neutrophil_1",
+        "health_atlas_process_neutrophil_2",
+        "health_atlas_process_neutrophil_3"
+      ],
+      "chapter": "18-4-leukocytes-and-platelets"
+    },
+    {
+      "id": "cell-eosinophil",
+      "kind": "cell",
+      "title": "health_atlas_process_eosinophil_title",
+      "stages": [
+        "health_atlas_process_eosinophil_0",
+        "health_atlas_process_eosinophil_1",
+        "health_atlas_process_eosinophil_2",
+        "health_atlas_process_eosinophil_3"
+      ],
+      "chapter": "18-4-leukocytes-and-platelets"
+    },
+    {
+      "id": "cell-basophil",
+      "kind": "cell",
+      "title": "health_atlas_process_basophil_title",
+      "stages": [
+        "health_atlas_process_basophil_0",
+        "health_atlas_process_basophil_1",
+        "health_atlas_process_basophil_2",
+        "health_atlas_process_basophil_3"
+      ],
+      "chapter": "18-4-leukocytes-and-platelets"
+    },
+    {
+      "id": "cell-monocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_monocyte_title",
+      "stages": [
+        "health_atlas_process_monocyte_0",
+        "health_atlas_process_monocyte_1",
+        "health_atlas_process_monocyte_2",
+        "health_atlas_process_monocyte_3"
+      ],
+      "chapter": "18-4-leukocytes-and-platelets"
+    },
+    {
+      "id": "cell-macrophage",
+      "kind": "cell",
+      "title": "health_atlas_process_macrophage_title",
+      "stages": [
+        "health_atlas_process_macrophage_0",
+        "health_atlas_process_macrophage_1",
+        "health_atlas_process_macrophage_2",
+        "health_atlas_process_macrophage_3"
+      ],
+      "chapter": "21-2-barrier-defenses-and-the-innate-immune-response"
+    },
+    {
+      "id": "cell-t-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_t_cell_title",
+      "stages": [
+        "health_atlas_process_t_cell_0",
+        "health_atlas_process_t_cell_1",
+        "health_atlas_process_t_cell_2",
+        "health_atlas_process_t_cell_3"
+      ],
+      "chapter": "21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types"
+    },
+    {
+      "id": "cell-b-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_b_cell_title",
+      "stages": [
+        "health_atlas_process_b_cell_0",
+        "health_atlas_process_b_cell_1",
+        "health_atlas_process_b_cell_2",
+        "health_atlas_process_b_cell_3"
+      ],
+      "chapter": "21-4-the-adaptive-immune-response-b-lymphocytes-and-antibodies"
+    },
+    {
+      "id": "cell-plasma-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_plasma_cell_title",
+      "stages": [
+        "health_atlas_process_plasma_cell_0",
+        "health_atlas_process_plasma_cell_1",
+        "health_atlas_process_plasma_cell_2",
+        "health_atlas_process_plasma_cell_3"
+      ],
+      "chapter": "21-4-the-adaptive-immune-response-b-lymphocytes-and-antibodies"
+    },
+    {
+      "id": "cell-natural-killer-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_natural_killer_cell_title",
+      "stages": [
+        "health_atlas_process_natural_killer_cell_0",
+        "health_atlas_process_natural_killer_cell_1",
+        "health_atlas_process_natural_killer_cell_2",
+        "health_atlas_process_natural_killer_cell_3"
+      ],
+      "chapter": "21-2-barrier-defenses-and-the-innate-immune-response"
+    },
+    {
+      "id": "cell-neuron",
+      "kind": "cell",
+      "title": "health_atlas_process_neuron_title",
+      "stages": [
+        "health_atlas_process_neuron_0",
+        "health_atlas_process_neuron_1",
+        "health_atlas_process_neuron_2",
+        "health_atlas_process_neuron_3"
+      ],
+      "chapter": "12-5-communication-between-neurons"
+    },
+    {
+      "id": "cell-astrocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_astrocyte_title",
+      "stages": [
+        "health_atlas_process_astrocyte_0",
+        "health_atlas_process_astrocyte_1",
+        "health_atlas_process_astrocyte_2",
+        "health_atlas_process_astrocyte_3"
+      ],
+      "chapter": "12-2-nervous-tissue"
+    },
+    {
+      "id": "cell-schwann-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_schwann_cell_title",
+      "stages": [
+        "health_atlas_process_schwann_cell_0",
+        "health_atlas_process_schwann_cell_1",
+        "health_atlas_process_schwann_cell_2",
+        "health_atlas_process_schwann_cell_3"
+      ],
+      "chapter": "12-2-nervous-tissue"
+    },
+    {
+      "id": "cell-skeletal-myocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_skeletal_myocyte_title",
+      "stages": [
+        "health_atlas_process_skeletal_myocyte_0",
+        "health_atlas_process_skeletal_myocyte_1",
+        "health_atlas_process_skeletal_myocyte_2",
+        "health_atlas_process_skeletal_myocyte_3"
+      ],
+      "chapter": "10-3-muscle-fiber-contraction-and-relaxation"
+    },
+    {
+      "id": "cell-cardiomyocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_cardiomyocyte_title",
+      "stages": [
+        "health_atlas_process_cardiomyocyte_0",
+        "health_atlas_process_cardiomyocyte_1",
+        "health_atlas_process_cardiomyocyte_2",
+        "health_atlas_process_cardiomyocyte_3"
+      ],
+      "chapter": "10-7-cardiac-muscle-tissue"
+    },
+    {
+      "id": "cell-smooth-muscle-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_smooth_muscle_cell_title",
+      "stages": [
+        "health_atlas_process_smooth_muscle_cell_0",
+        "health_atlas_process_smooth_muscle_cell_1",
+        "health_atlas_process_smooth_muscle_cell_2",
+        "health_atlas_process_smooth_muscle_cell_3"
+      ],
+      "chapter": "10-8-smooth-muscle"
+    },
+    {
+      "id": "cell-keratinocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_keratinocyte_title",
+      "stages": [
+        "health_atlas_process_keratinocyte_0",
+        "health_atlas_process_keratinocyte_1",
+        "health_atlas_process_keratinocyte_2",
+        "health_atlas_process_keratinocyte_3"
+      ],
+      "chapter": "5-1-layers-of-the-skin"
+    },
+    {
+      "id": "cell-melanocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_melanocyte_title",
+      "stages": [
+        "health_atlas_process_melanocyte_0",
+        "health_atlas_process_melanocyte_1",
+        "health_atlas_process_melanocyte_2",
+        "health_atlas_process_melanocyte_3"
+      ],
+      "chapter": "5-1-layers-of-the-skin"
+    },
+    {
+      "id": "cell-fibroblast",
+      "kind": "cell",
+      "title": "health_atlas_process_fibroblast_title",
+      "stages": [
+        "health_atlas_process_fibroblast_0",
+        "health_atlas_process_fibroblast_1",
+        "health_atlas_process_fibroblast_2",
+        "health_atlas_process_fibroblast_3"
+      ],
+      "chapter": "4-3-connective-tissue-supports-and-protects"
+    },
+    {
+      "id": "cell-adipocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_adipocyte_title",
+      "stages": [
+        "health_atlas_process_adipocyte_0",
+        "health_atlas_process_adipocyte_1",
+        "health_atlas_process_adipocyte_2",
+        "health_atlas_process_adipocyte_3"
+      ],
+      "chapter": "24-3-lipid-metabolism"
+    },
+    {
+      "id": "cell-osteoblast",
+      "kind": "cell",
+      "title": "health_atlas_process_osteoblast_title",
+      "stages": [
+        "health_atlas_process_osteoblast_0",
+        "health_atlas_process_osteoblast_1",
+        "health_atlas_process_osteoblast_2",
+        "health_atlas_process_osteoblast_3"
+      ],
+      "chapter": "6-3-bone-structure"
+    },
+    {
+      "id": "cell-osteocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_osteocyte_title",
+      "stages": [
+        "health_atlas_process_osteocyte_0",
+        "health_atlas_process_osteocyte_1",
+        "health_atlas_process_osteocyte_2",
+        "health_atlas_process_osteocyte_3"
+      ],
+      "chapter": "6-3-bone-structure"
+    },
+    {
+      "id": "cell-osteoclast",
+      "kind": "cell",
+      "title": "health_atlas_process_osteoclast_title",
+      "stages": [
+        "health_atlas_process_osteoclast_0",
+        "health_atlas_process_osteoclast_1",
+        "health_atlas_process_osteoclast_2",
+        "health_atlas_process_osteoclast_3"
+      ],
+      "chapter": "6-3-bone-structure"
+    },
+    {
+      "id": "cell-chondrocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_chondrocyte_title",
+      "stages": [
+        "health_atlas_process_chondrocyte_0",
+        "health_atlas_process_chondrocyte_1",
+        "health_atlas_process_chondrocyte_2",
+        "health_atlas_process_chondrocyte_3"
+      ],
+      "chapter": "4-3-connective-tissue-supports-and-protects"
+    },
+    {
+      "id": "cell-vascular-endothelial-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_vascular_endothelial_cell_title",
+      "stages": [
+        "health_atlas_process_vascular_endothelial_cell_0",
+        "health_atlas_process_vascular_endothelial_cell_1",
+        "health_atlas_process_vascular_endothelial_cell_2",
+        "health_atlas_process_vascular_endothelial_cell_3"
+      ],
+      "chapter": "20-1-structure-and-function-of-blood-vessels"
+    },
+    {
+      "id": "cell-hepatocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_hepatocyte_title",
+      "stages": [
+        "health_atlas_process_hepatocyte_0",
+        "health_atlas_process_hepatocyte_1",
+        "health_atlas_process_hepatocyte_2",
+        "health_atlas_process_hepatocyte_3"
+      ],
+      "chapter": "23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder"
+    },
+    {
+      "id": "cell-pancreatic-beta-cell",
+      "kind": "cell",
+      "title": "health_atlas_process_pancreatic_beta_cell_title",
+      "stages": [
+        "health_atlas_process_pancreatic_beta_cell_0",
+        "health_atlas_process_pancreatic_beta_cell_1",
+        "health_atlas_process_pancreatic_beta_cell_2",
+        "health_atlas_process_pancreatic_beta_cell_3"
+      ],
+      "chapter": "17-9-the-endocrine-pancreas"
+    },
+    {
+      "id": "cell-enterocyte",
+      "kind": "cell",
+      "title": "health_atlas_process_enterocyte_title",
+      "stages": [
+        "health_atlas_process_enterocyte_0",
+        "health_atlas_process_enterocyte_1",
+        "health_atlas_process_enterocyte_2",
+        "health_atlas_process_enterocyte_3"
+      ],
+      "chapter": "23-7-chemical-digestion-and-absorption-a-closer-look"
+    },
+    {
+      "id": "cell-spermatozoon",
+      "kind": "cell",
+      "title": "health_atlas_process_spermatozoon_title",
+      "stages": [
+        "health_atlas_process_spermatozoon_0",
+        "health_atlas_process_spermatozoon_1",
+        "health_atlas_process_spermatozoon_2",
+        "health_atlas_process_spermatozoon_3"
+      ],
+      "chapter": "28-1-fertilization"
+    },
+    {
+      "id": "cell-oocyte-or-ovum",
+      "kind": "cell",
+      "title": "health_atlas_process_oocyte_or_ovum_title",
+      "stages": [
+        "health_atlas_process_oocyte_or_ovum_0",
+        "health_atlas_process_oocyte_or_ovum_1",
+        "health_atlas_process_oocyte_or_ovum_2",
+        "health_atlas_process_oocyte_or_ovum_3"
+      ],
+      "chapter": "28-1-fertilization"
+    }
+  ],
+  "entryMechanisms": {
+    "cell-erythrocyte": "cell-erythrocyte",
+    "cell-neutrophil": "cell-neutrophil",
+    "cell-eosinophil": "cell-eosinophil",
+    "cell-basophil": "cell-basophil",
+    "cell-monocyte": "cell-monocyte",
+    "cell-macrophage": "cell-macrophage",
+    "cell-t-cell": "cell-t-cell",
+    "cell-b-cell": "cell-b-cell",
+    "cell-plasma-cell": "cell-plasma-cell",
+    "cell-natural-killer-cell": "cell-natural-killer-cell",
+    "cell-neuron": "cell-neuron",
+    "cell-astrocyte": "cell-astrocyte",
+    "cell-schwann-cell": "cell-schwann-cell",
+    "cell-skeletal-myocyte": "cell-skeletal-myocyte",
+    "cell-cardiomyocyte": "cell-cardiomyocyte",
+    "cell-smooth-muscle-cell": "cell-smooth-muscle-cell",
+    "cell-keratinocyte": "cell-keratinocyte",
+    "cell-melanocyte": "cell-melanocyte",
+    "cell-fibroblast": "cell-fibroblast",
+    "cell-adipocyte": "cell-adipocyte",
+    "cell-osteoblast": "cell-osteoblast",
+    "cell-osteocyte": "cell-osteocyte",
+    "cell-osteoclast": "cell-osteoclast",
+    "cell-chondrocyte": "cell-chondrocyte",
+    "cell-vascular-endothelial-cell": "cell-vascular-endothelial-cell",
+    "cell-hepatocyte": "cell-hepatocyte",
+    "cell-pancreatic-beta-cell": "cell-pancreatic-beta-cell",
+    "cell-enterocyte": "cell-enterocyte",
+    "cell-spermatozoon": "cell-spermatozoon",
+    "cell-oocyte-or-ovum": "cell-oocyte-or-ovum"
+  },
+  "plates": [
+    {
+      "id": "erythrocyte",
+      "asset": "HealthAtlasErythrocyte",
+      "owner": "cell-erythrocyte",
+      "viewLabel": "health_atlas_view_erythrocyte",
+      "entryIDs": [
+        "cell-erythrocyte"
+      ],
+      "aspectRatio": 1,
+      "markers": []
+    },
+    {
+      "id": "neuron",
+      "asset": "HealthAtlasNeuron",
+      "owner": "cell-neuron",
+      "viewLabel": "health_atlas_view_neuron",
+      "entryIDs": [
+        "cell-neuron"
+      ],
+      "aspectRatio": 0.6666666666666666,
+      "markers": []
+    }
+  ],
+  "english": {
+    "health_atlas_process_adipocyte_0": "Take up available substrates",
+    "health_atlas_process_adipocyte_1": "Store triglycerides",
+    "health_atlas_process_adipocyte_2": "Respond to mobilization signals",
+    "health_atlas_process_adipocyte_3": "Release breakdown products",
+    "health_atlas_process_adipocyte_title": "Fat storage and mobilization",
+    "health_atlas_process_astrocyte_0": "Contact neurons and vessels",
+    "health_atlas_process_astrocyte_1": "Regulate extracellular conditions",
+    "health_atlas_process_astrocyte_2": "Take up excess transmitter",
+    "health_atlas_process_astrocyte_3": "Support neuronal metabolism",
+    "health_atlas_process_astrocyte_title": "Support around a synapse",
+    "health_atlas_process_b_cell_0": "Bind matching antigen",
+    "health_atlas_process_b_cell_1": "Receive helper T-cell signals",
+    "health_atlas_process_b_cell_2": "Expand selected clones",
+    "health_atlas_process_b_cell_3": "Form plasma or memory cells",
+    "health_atlas_process_b_cell_title": "T-dependent B-cell response",
+    "health_atlas_process_basophil_0": "Receive an activating signal",
+    "health_atlas_process_basophil_1": "Activate secretory granules",
+    "health_atlas_process_basophil_2": "Release histamine",
+    "health_atlas_process_basophil_3": "Modify local vascular responses",
+    "health_atlas_process_basophil_title": "Inflammatory mediator release",
+    "health_atlas_process_cardiomyocyte_0": "Couple electrical activity",
+    "health_atlas_process_cardiomyocyte_1": "Activate contractile machinery",
+    "health_atlas_process_cardiomyocyte_2": "Shorten sarcomeres",
+    "health_atlas_process_cardiomyocyte_3": "Relax before the next beat",
+    "health_atlas_process_cardiomyocyte_title": "Coordinated cardiac contraction",
+    "health_atlas_process_chondrocyte_0": "Receive nutrients by diffusion",
+    "health_atlas_process_chondrocyte_1": "Produce matrix components",
+    "health_atlas_process_chondrocyte_2": "Maintain surrounding cartilage",
+    "health_atlas_process_chondrocyte_3": "Support tissue resilience",
+    "health_atlas_process_chondrocyte_title": "Cartilage matrix maintenance",
+    "health_atlas_process_enterocyte_0": "Glucose reaches the brush border",
+    "health_atlas_process_enterocyte_1": "Enter with sodium cotransport",
+    "health_atlas_process_enterocyte_2": "Exit across the basal side",
+    "health_atlas_process_enterocyte_3": "Reach villus capillary blood",
+    "health_atlas_process_enterocyte_title": "Glucose absorption example",
+    "health_atlas_process_eosinophil_0": "Recruit to affected tissue",
+    "health_atlas_process_eosinophil_1": "Interact with the target",
+    "health_atlas_process_eosinophil_2": "Release granule contents",
+    "health_atlas_process_eosinophil_3": "Damage susceptible parasites",
+    "health_atlas_process_eosinophil_title": "Antiparasite response example",
+    "health_atlas_process_erythrocyte_0": "Oxygen enters in the lungs",
+    "health_atlas_process_erythrocyte_1": "Hemoglobin binds oxygen",
+    "health_atlas_process_erythrocyte_2": "Circulation carries the cell",
+    "health_atlas_process_erythrocyte_3": "Oxygen unloads in tissues",
+    "health_atlas_process_erythrocyte_title": "Oxygen delivery",
+    "health_atlas_process_fibroblast_0": "Respond to local conditions",
+    "health_atlas_process_fibroblast_1": "Produce matrix components",
+    "health_atlas_process_fibroblast_2": "Deposit fibers and ground substance",
+    "health_atlas_process_fibroblast_3": "Maintain connective tissue",
+    "health_atlas_process_fibroblast_title": "Connective-tissue matrix support",
+    "health_atlas_process_hepatocyte_0": "Receive absorbed nutrients",
+    "health_atlas_process_hepatocyte_1": "Process metabolic substrates",
+    "health_atlas_process_hepatocyte_2": "Store or synthesize products",
+    "health_atlas_process_hepatocyte_3": "Release products into circulation",
+    "health_atlas_process_hepatocyte_title": "Hepatic nutrient processing",
+    "health_atlas_process_keratinocyte_0": "Produce cells in the basal layer",
+    "health_atlas_process_keratinocyte_1": "Differentiate toward the surface",
+    "health_atlas_process_keratinocyte_2": "Build the cornified barrier",
+    "health_atlas_process_keratinocyte_3": "Shed outer cells",
+    "health_atlas_process_keratinocyte_title": "Epidermal renewal",
+    "health_atlas_process_macrophage_0": "Recognize a target",
+    "health_atlas_process_macrophage_1": "Enclose it in a vesicle",
+    "health_atlas_process_macrophage_2": "Digest with lysosomes",
+    "health_atlas_process_macrophage_3": "Clear debris and signal",
+    "health_atlas_process_macrophage_title": "Phagocytosis and clearance",
+    "health_atlas_process_melanocyte_0": "Synthesize melanin",
+    "health_atlas_process_melanocyte_1": "Package it in melanosomes",
+    "health_atlas_process_melanocyte_2": "Transfer to keratinocytes",
+    "health_atlas_process_melanocyte_3": "Provide partial UV protection",
+    "health_atlas_process_melanocyte_title": "Melanin transfer",
+    "health_atlas_process_monocyte_0": "Circulate in blood",
+    "health_atlas_process_monocyte_1": "Follow recruitment signals",
+    "health_atlas_process_monocyte_2": "Enter affected tissue",
+    "health_atlas_process_monocyte_3": "Some become macrophages",
+    "health_atlas_process_monocyte_title": "Tissue recruitment example",
+    "health_atlas_process_natural_killer_cell_0": "Survey potential targets",
+    "health_atlas_process_natural_killer_cell_1": "Recognize altered self signals",
+    "health_atlas_process_natural_killer_cell_2": "Release cytotoxic contents",
+    "health_atlas_process_natural_killer_cell_3": "Trigger target-cell death",
+    "health_atlas_process_natural_killer_cell_title": "NK-cell cytotoxicity example",
+    "health_atlas_process_neuron_0": "Receive synaptic input",
+    "health_atlas_process_neuron_1": "Integrate input toward threshold",
+    "health_atlas_process_neuron_2": "Conduct an axonal action potential",
+    "health_atlas_process_neuron_3": "Release neurotransmitter",
+    "health_atlas_process_neuron_title": "Chemical synaptic signaling",
+    "health_atlas_process_neutrophil_0": "Follow inflammatory signals",
+    "health_atlas_process_neutrophil_1": "Leave the blood vessel",
+    "health_atlas_process_neutrophil_2": "Engulf a microbe",
+    "health_atlas_process_neutrophil_3": "Use antimicrobial contents",
+    "health_atlas_process_neutrophil_title": "Rapid phagocytic defense",
+    "health_atlas_process_oocyte_or_ovum_0": "Secondary oocyte awaits fertilization",
+    "health_atlas_process_oocyte_or_ovum_1": "Sperm fusion activates the cell",
+    "health_atlas_process_oocyte_or_ovum_2": "Complete the second meiotic division",
+    "health_atlas_process_oocyte_or_ovum_3": "Parental genomes form the zygote",
+    "health_atlas_process_oocyte_or_ovum_title": "Oocyte activation example",
+    "health_atlas_process_osteoblast_0": "Occupy a bone-forming surface",
+    "health_atlas_process_osteoblast_1": "Secrete collagen-rich matrix",
+    "health_atlas_process_osteoblast_2": "Support matrix mineralization",
+    "health_atlas_process_osteoblast_3": "Some become osteocytes",
+    "health_atlas_process_osteoblast_title": "New bone matrix formation",
+    "health_atlas_process_osteoclast_0": "Reach a bone surface",
+    "health_atlas_process_osteoclast_1": "Establish a resorption region",
+    "health_atlas_process_osteoclast_2": "Break down bone matrix",
+    "health_atlas_process_osteoclast_3": "Release resorption products",
+    "health_atlas_process_osteoclast_title": "Bone resorption",
+    "health_atlas_process_osteocyte_0": "Reside within mineralized matrix",
+    "health_atlas_process_osteocyte_1": "Connect through cell processes",
+    "health_atlas_process_osteocyte_2": "Exchange nutrients and signals",
+    "health_atlas_process_osteocyte_3": "Help maintain the matrix",
+    "health_atlas_process_osteocyte_title": "Bone tissue maintenance",
+    "health_atlas_process_pancreatic_beta_cell_0": "Blood glucose rises",
+    "health_atlas_process_pancreatic_beta_cell_1": "Beta cells increase insulin release",
+    "health_atlas_process_pancreatic_beta_cell_2": "Target tissues respond",
+    "health_atlas_process_pancreatic_beta_cell_3": "Falling glucose reduces the stimulus",
+    "health_atlas_process_pancreatic_beta_cell_title": "Insulin feedback example",
+    "health_atlas_process_plasma_cell_0": "Differentiate from activated B cells",
+    "health_atlas_process_plasma_cell_1": "Produce antibody proteins",
+    "health_atlas_process_plasma_cell_2": "Secrete matching antibodies",
+    "health_atlas_process_plasma_cell_3": "Antibodies bind outside the cell",
+    "health_atlas_process_plasma_cell_title": "Antibody secretion",
+    "health_atlas_process_schwann_cell_0": "Contact a peripheral axon",
+    "health_atlas_process_schwann_cell_1": "Wrap a segment of axon",
+    "health_atlas_process_schwann_cell_2": "Form insulating myelin",
+    "health_atlas_process_schwann_cell_3": "Support conduction between nodes",
+    "health_atlas_process_schwann_cell_title": "Myelinating Schwann-cell example",
+    "health_atlas_process_skeletal_myocyte_0": "Receive motor-neuron stimulation",
+    "health_atlas_process_skeletal_myocyte_1": "Release stored calcium",
+    "health_atlas_process_skeletal_myocyte_2": "Activate sarcomere cross-bridges",
+    "health_atlas_process_skeletal_myocyte_3": "Reclaim calcium and relax",
+    "health_atlas_process_skeletal_myocyte_title": "Skeletal muscle contraction",
+    "health_atlas_process_smooth_muscle_cell_0": "Increase intracellular calcium",
+    "health_atlas_process_smooth_muscle_cell_1": "Calcium binds calmodulin",
+    "health_atlas_process_smooth_muscle_cell_2": "Activate myosin light-chain kinase",
+    "health_atlas_process_smooth_muscle_cell_3": "Enable actin-myosin contraction",
+    "health_atlas_process_smooth_muscle_cell_title": "Calmodulin-mediated contraction",
+    "health_atlas_process_spermatozoon_0": "Capacitate in the reproductive tract",
+    "health_atlas_process_spermatozoon_1": "Interact with oocyte coverings",
+    "health_atlas_process_spermatozoon_2": "Undergo the acrosomal reaction",
+    "health_atlas_process_spermatozoon_3": "Fuse with the oocyte membrane",
+    "health_atlas_process_spermatozoon_title": "Fertilization sequence example",
+    "health_atlas_process_t_cell_0": "Recognize presented antigen",
+    "health_atlas_process_t_cell_1": "Receive activation signals",
+    "health_atlas_process_t_cell_2": "Expand selected clones",
+    "health_atlas_process_t_cell_3": "Act according to subtype",
+    "health_atlas_process_t_cell_title": "Adaptive T-cell response",
+    "health_atlas_process_vascular_endothelial_cell_0": "Line the vessel lumen",
+    "health_atlas_process_vascular_endothelial_cell_1": "Form a selective interface",
+    "health_atlas_process_vascular_endothelial_cell_2": "Permit tissue-specific exchange",
+    "health_atlas_process_vascular_endothelial_cell_3": "Maintain the blood-tissue boundary",
+    "health_atlas_process_vascular_endothelial_cell_title": "Vascular lining and exchange",
+    "health_atlas_view_erythrocyte": "Mature red blood cell · biconcave disc",
+    "health_atlas_view_neuron": "Myelinated multipolar neuron · representative example"
+  }
+}

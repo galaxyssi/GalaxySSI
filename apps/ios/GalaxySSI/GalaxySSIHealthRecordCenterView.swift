@@ -53,7 +53,7 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
             Label(t("manual", "Record measurement"), systemImage: "square.and.pencil")
           }
           NavigationLink {
-            GalaxySSIHealthImportView(store: originals, records: records)
+            GalaxySSIHealthImportView(store: originals, records: records, initialAction: .files)
           } label: { Label(t("record_center.files", "Import files"), systemImage: "folder") }
           NavigationLink(destination: devices) {
             Label(t("sources", "Devices & Data Sources"), systemImage: "externaldrive.connected.to.line.below")
@@ -121,7 +121,7 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
       }
     }
     .navigationTitle(t("record_center.title", "Health Record Center"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) { if $0 == .active { reload() } else { snapshot = nil; failed = false } }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
