@@ -271,7 +271,7 @@ struct GalaxySSIHealthBluetoothView: View {
       }
     }
     .navigationTitle(t("title", "Bluetooth Blood Pressure"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onDisappear { session.stop(); clear() }
     .onChange(of: scene) { if $0 != .active { session.stop(); clear() } }
   }

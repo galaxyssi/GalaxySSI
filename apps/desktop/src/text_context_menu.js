@@ -3,6 +3,20 @@ function buildImageContextMenuItem(params = {}, actions = {}) {
   return { label: actions.copyImageLabel || "Copy Image", click: actions.copyImage };
 }
 
+function buildPeerAttachmentSaveMenuItem(peer = {}, actions = {}) {
+  const { messageId, attachmentIndex } = peer;
+  if (!messageId || !Number.isSafeInteger(attachmentIndex) || attachmentIndex < 0 ||
+      typeof actions.saveAttachment !== "function") return null;
+  return {
+    label: actions.saveAttachmentLabel || "Save attachment as...",
+    enabled: peer.attachmentAvailable !== false,
+    click: () => {
+      if (peer.attachmentAvailable === false) return;
+      return actions.saveAttachment(messageId, attachmentIndex);
+    }
+  };
+}
+
 function buildTextContextMenuTemplate(params = {}, actions = {}) {
   const flags = params.editFlags || {};
   const hasSelection = String(params.selectionText || "").length > 0;
@@ -25,4 +39,4 @@ function buildTextContextMenuTemplate(params = {}, actions = {}) {
   ];
 }
 
-module.exports = { buildTextContextMenuTemplate, buildImageContextMenuItem };
+module.exports = { buildTextContextMenuTemplate, buildImageContextMenuItem, buildPeerAttachmentSaveMenuItem };

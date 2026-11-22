@@ -71,7 +71,7 @@ struct GalaxySSIHealthCareVisitView: View {
       }
     }
     .navigationTitle(t("title", "Prepare for a visit"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .confirmationDialog(t("confirm", "Share health information?"), isPresented: $confirming, titleVisibility: .visible) {
       Button(t("share", "Share selected text"), action: confirmShare)
     } message: {
@@ -87,7 +87,7 @@ struct GalaxySSIHealthCareVisitView: View {
           }
         }
         .navigationTitle(value.item.title)
-        .navigationBarTitleDisplayMode(.inline)
+        .galaxySSIHealthTheme()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button(t("close", "Close")) { source = nil } }
         }

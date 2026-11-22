@@ -45,6 +45,14 @@ struct GalaxySSIHealthEncounterView: View {
         if let page {
           if let entry = page.entry {
             Section { details(entry) }
+            GalaxySSIHealthAppointmentReminderView(records: records, visit: entry, stamp: page.stamp, language: language)
+            if Encounter.State.planned == entry.details.state || entry.details.state == .booked {
+              NavigationLink {
+                GalaxySSIHealthCareVisitView(records: records, id: concern, metric: metric)
+              } label: {
+                Label(GalaxySSIHealthCareVisit.text("title", "Prepare for a visit", language), systemImage: "list.bullet.rectangle")
+              }
+            }
             Button { showingDocuments = true } label: { Label(t("documents", "Visit documents"), systemImage: "doc.on.doc") }
             Button { showingInstructions = true } label: {
               Label(GalaxySSIHealthInstruction.text("title", "Instruction drafts", language), systemImage: "list.bullet.rectangle")
@@ -89,7 +97,7 @@ struct GalaxySSIHealthEncounterView: View {
       }
     }
     .navigationTitle(entryID == nil ? t("title", "Visit records") : t("detail", "Visit details"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .background {
       NavigationLink(isActive: Binding(get: { selectedEntryID != nil }, set: {
         if !$0 { selectedEntryID = nil }
