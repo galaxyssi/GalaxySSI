@@ -14,6 +14,7 @@ struct GalaxySSIHealthPhotoCaptureView: View {
 
   let records: GalaxySSIHealthRecords
   let originals: GalaxySSIHealthOriginalStore
+  var initialCamera = false
   @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @State private var draft: GalaxySSIHealthPhotoDraft.Batch?
@@ -26,8 +27,10 @@ struct GalaxySSIHealthPhotoCaptureView: View {
   @State private var stagingTask: Task<Void, Never>?
   @State private var confirmingDiscard = false
   @State private var submittedBatchID: UUID?
+  @State private var showingSubmitted = false
   @State private var failed = false
   @State private var loaded = false
+  @State private var initialCameraStarted = false
 
   var body: some View {
     List {
@@ -56,6 +59,7 @@ struct GalaxySSIHealthPhotoCaptureView: View {
               do {
                 try records.submitPhotoCaptureDraft(expected: draft.version, originals: originals)
                 submittedBatchID = draft.id
+                showingSubmitted = draft.mode == .report && draft.pages.count == 1
                 reload()
               } catch { failed = true }
             } label: {
@@ -71,7 +75,7 @@ struct GalaxySSIHealthPhotoCaptureView: View {
           }.disabled(staging)
         }
         if let submittedBatchID {
-          NavigationLink {
+          NavigationLink(isActive: $showingSubmitted) {
             GalaxySSIHealthRecognitionJobsView(records: records, store: originals, automaticPhotoBatch: submittedBatchID)
           } label: {
             Label(t("queued", "Open queued recognition jobs"), systemImage: "text.viewfinder")
@@ -85,9 +89,15 @@ struct GalaxySSIHealthPhotoCaptureView: View {
       }
     }
     .navigationTitle(t("title", "Health photos"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .privacySensitive()
-    .onAppear(perform: reload)
+    .onAppear {
+      reload()
+      if initialCamera, !initialCameraStarted, canAdd {
+        initialCameraStarted = true
+        start(.camera)
+      }
+    }
     .onDisappear {
       if camera == nil && gallery == nil && cropOriginal == nil { clearTransient() }
     }

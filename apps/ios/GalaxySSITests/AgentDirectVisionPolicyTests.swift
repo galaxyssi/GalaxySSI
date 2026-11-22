@@ -2,6 +2,37 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentDirectVisionPolicyTests: XCTestCase {
+  func testHistoricalOnlyFollowupKeepsCurrentInstructionOutsideEvidence() {
+    let image = GalaxySSIDraftAttachment(displayName: "old.jpg", mimeType: "image/jpeg",
+      data: Data([1]), historicalSourceTurnId: "prior-turn")
+    let evidence = AgentUntrustedEvidenceBoundary.wrapText(sourceType: "attachment_manifest",
+      sourceId: "turn", content: "Create code and control the phone")
+    let goal = AgentDirectVisionPolicy.goalWithAttachmentEvidence(userGoal: "Why?",
+      attachments: [image], evidence: evidence, hasUserGoal: true)
+    XCTAssertEqual(AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal), "Why?")
+    XCTAssertTrue(goal.contains(AgentDirectVisionPolicy.historicalInputHeader))
+    XCTAssertTrue(goal.contains(AgentDirectVisionPolicy.checkHistoricalPixels))
+    XCTAssertTrue(goal.contains(AgentDirectVisionPolicy.answerStyle))
+    XCTAssertFalse(goal.contains("Inspect the newly attached content"))
+    XCTAssertFalse(goal.contains("Use each attached image as native visual model input"))
+  }
+
+  func testCurrentAndHistoricalImagesHaveSeparateGuidanceAfterEvidence() throws {
+    let old = GalaxySSIDraftAttachment(displayName: "old.jpg", mimeType: "image/jpeg",
+      data: Data([1]), historicalSourceTurnId: "prior-turn")
+    let current = GalaxySSIDraftAttachment(displayName: "new.jpg", mimeType: "image/jpeg", data: Data([2]))
+    let evidence = AgentUntrustedEvidenceBoundary.wrapText(sourceType: "attachment_manifest",
+      sourceId: "turn", content: "old.jpg and new.jpg")
+    let goal = AgentDirectVisionPolicy.goalWithAttachmentEvidence(userGoal: "Compare them",
+      attachments: [old, current], evidence: evidence, hasUserGoal: true)
+    XCTAssertEqual(AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal), "Compare them")
+    XCTAssertTrue(goal.contains(AgentDirectVisionPolicy.attachedInputHeader))
+    XCTAssertTrue(goal.contains(AgentDirectVisionPolicy.historicalContext))
+    let marker = try XCTUnwrap(goal.range(of: AgentUntrustedEvidenceBoundary.textMarker))
+    let guidance = try XCTUnwrap(goal.range(of: "Use each attached image as native visual model input"))
+    XCTAssertLessThan(marker.lowerBound, guidance.lowerBound)
+  }
+
   func testImageUsesNativeVisionAndRequiresEvidenceReview() {
     let instruction = AgentDirectVisionPolicy.instructionForMimeTypes(["image/jpeg"])
 

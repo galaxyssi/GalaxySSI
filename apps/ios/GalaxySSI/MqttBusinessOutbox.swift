@@ -2,6 +2,11 @@ import Foundation
 
 // Immutable Signal wire bytes and receipt bindings share one committed encrypted record.
 final class MqttBusinessOutbox {
+  struct AttachmentChunk: Codable, Equatable {
+    let transfer: String
+    let index: Int
+    let digest: String
+  }
   struct Limits {
     var records = 4096
     var bytes: Int64 = 64 * 1024 * 1024
@@ -16,6 +21,7 @@ final class MqttBusinessOutbox {
     let traffic: String
     var requestHash: String? = nil
     var deferredRequest: MqttSignalSendRequest? = nil
+    var attachmentChunk: AttachmentChunk? = nil
     var isPrepared: Bool { deferredRequest == nil && !wireHash.isEmpty }
   }
   struct DependencyPage { let nextKey: String?; let matched: Int; let released: Int }
@@ -41,10 +47,12 @@ final class MqttBusinessOutbox {
 
   @discardableResult
   func enqueue(identity: MqttBusinessIdentity, message: PendingLinkMessage, traffic: MqttMultipathPolicy.Traffic,
-               requestHash: String? = nil, transaction: MqttChunkDatabase.Transaction? = nil) throws -> Bool {
+               requestHash: String? = nil, attachmentChunk: AttachmentChunk? = nil,
+               transaction: MqttChunkDatabase.Transaction? = nil) throws -> Bool {
     let key = try identity.key(messageID: message.messageId)
     let hash = try wireHash(message)
-    let entry = Entry(identity: identity, message: message, wireHash: hash, traffic: traffic.rawValue, requestHash: requestHash)
+    let entry = Entry(identity: identity, message: message, wireHash: hash, traffic: traffic.rawValue,
+      requestHash: requestHash, attachmentChunk: attachmentChunk)
     return try insert(entry, key: key, transaction: transaction)
   }
 
@@ -70,6 +78,18 @@ final class MqttBusinessOutbox {
               existing.message.topic == entry.message.topic else { throw MqttChunkStorageError.corruptState }
         return false
       }
+      if let snapshot = entry.message.replaceableCapability {
+        // The enclosing transaction restores every previous row if quota or insertion fails.
+        guard snapshot.binding == entry.identity.binding else { throw MqttChunkStorageError.corruptState }
+        let keys = try database.query("SELECT record_key FROM mqtt_business_outbox WHERE binding_digest=?",
+          [.text(entry.identity.binding)], maximumRows: limits.peerRecords) { try $0.text(0) }
+        for oldKey in keys {
+          guard let old = try read(oldKey), old.identity == entry.identity,
+                let previous = old.message.replaceableCapability, previous.binding == snapshot.binding else { continue }
+          guard previous.revision < snapshot.revision else { throw MqttChunkStorageError.corruptState }
+          try database.run("DELETE FROM mqtt_business_outbox WHERE record_key=?", [.text(oldKey)])
+        }
+      }
       try quota(identity: entry.identity, bytes: encoded.count, control: entry.traffic == "control")
       try write(entry, key: key)
       return true
@@ -80,6 +100,23 @@ final class MqttBusinessOutbox {
              transaction: MqttChunkDatabase.Transaction? = nil) throws -> Entry? {
     let key = try identity.key(messageID: messageID)
     return try database.transaction(joining: transaction) { try read(key) }
+  }
+
+  func pendingAttachmentChunk(identity: MqttBusinessIdentity, part: AttachmentChunk,
+                              transaction: MqttChunkDatabase.Transaction) throws -> Entry? {
+    try identity.validate()
+    return try database.transaction(joining: transaction) {
+      let keys = try database.query("SELECT record_key FROM mqtt_business_outbox WHERE binding_digest=? ORDER BY record_key LIMIT ?",
+        [.text(identity.binding), .number(Int64(limits.peerRecords))], maximumRows: limits.peerRecords) { try $0.text(0) }
+      for key in keys {
+        guard let entry = try read(key), entry.identity == identity else { throw MqttChunkStorageError.corruptState }
+        guard entry.message.status != "held_unclassified", let previous = entry.attachmentChunk,
+              previous.transfer == part.transfer, previous.index == part.index else { continue }
+        guard previous.digest == part.digest else { throw MqttChunkStorageError.corruptState }
+        return entry
+      }
+      return nil
+    }
   }
 
   func prepare(identity: MqttBusinessIdentity, messageID: String, requestHash: String, wire: String, now: Date,
@@ -284,6 +321,10 @@ final class MqttBusinessOutbox {
     _ = try entry.identity.key(messageID: entry.message.messageId)
     guard MqttMultipathPolicy.Traffic(rawValue: entry.traffic) != nil,
           entry.requestHash.map({ MqttRouteProtocol.hex($0, count: 64) }) ?? true else { throw MqttChunkStorageError.corruptState }
+    if let part = entry.attachmentChunk {
+      guard MqttRouteProtocol.hex(part.transfer, count: 64), part.transfer == entry.message.attachmentTransferId,
+            part.index >= 0, MqttRouteProtocol.hex(part.digest, count: 64) else { throw MqttChunkStorageError.corruptState }
+    }
     if let request = entry.deferredRequest {
       guard try request.digest() == entry.requestHash, request.identity == entry.identity, request.matches(entry.message),
             request.traffic.rawValue == entry.traffic, !request.attachmentDependencies.isEmpty,

@@ -16,6 +16,16 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
   var timerCheckpoint: [String: String]?
   var observationRepairDiagnostics: [AgentMcpJSONObject]?
 
+  var permitsAnswerOnlyResponse: Bool {
+    let intentGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(planRequest.goal)
+    return allowsDirectResponse && planRequest.executionMode != .planOnly &&
+      planRequest.completionRequirements == nil && timerCheckpoint == nil && ownedOperationContext == nil &&
+      executionHistory.isEmpty && parsingContext.replanReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+      !AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: intentGoal) &&
+      !AgentPhoneShortcutRouting.requiresPhoneReasoning(intentGoal) &&
+      AgentTaskIntentClassifier.classify(goal: intentGoal).intent != .phoneControl
+  }
+
   init(
     planRequest: AgentPlanRequest,
     parsingContext: AgentModelPlanParsingContext = .empty,
