@@ -7,12 +7,14 @@ import android.graphics.Rect
 import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.widget.LinearLayout
 import androidx.core.view.doOnLayout
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.Instant
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.util.concurrent.Executors
 
 internal data class HealthAtlasMeasurementSelection(val metric: HealthMetric?, val period: Int = 1)
@@ -35,9 +37,9 @@ internal class HealthAtlasMeasurements(private val activity: Activity, private v
     private var closed = false
     private var analysis: HealthTrendAnalysisHandoff? = null
     val canAnalyze get() = !closed && analysis != null
-    private var picker: android.app.AlertDialog? = null
     private val panel = ui.column().apply { isSaveEnabled = false }
     private var chart: HealthTrendChart? = null
+    private data class ViewData(val readings: Map<HealthMetric, HealthObservation?>, val trend: HealthTrendSummary)
     private val observer = object : ContentObserver(main) { override fun onChange(selfChange: Boolean) { if (!closed) load() } }
     init {
         parent.addView(panel)
@@ -54,32 +56,48 @@ internal class HealthAtlasMeasurements(private val activity: Activity, private v
         val selected = metric ?: return
         signal?.cancel(); val cancellation = CancellationSignal(); signal = cancellation; val token = ++generation
         chart?.clear(); chart = null; panel.removeAllViews()
-        val metricSelector = ui.row(activity.getString(selected.titleResource())) {
-            picker = android.app.AlertDialog.Builder(activity).setTitle(R.string.health_atlas_measurements)
-                .setItems(metrics.map { activity.getString(it.titleResource()) }.toTypedArray()) { _, index -> metric = metrics[index]; load() }
-                .setNegativeButton(android.R.string.cancel, null).show()
-        }.apply { tag = "atlas-metric-selector" }
-        panel.addView(metricSelector)
+        ui.add(panel, ui.text(activity.getString(R.string.health_atlas_related_metrics), 18f, bold = true), 4)
+        val readingsPanel = ui.column().apply { tag = "atlas-related-metrics" }
+        ui.add(panel, readingsPanel)
+        val zone = ZoneId.systemDefault()
+        showReadings(readingsPanel, zone)
+        ui.add(panel, ui.text(activity.getString(R.string.health_atlas_metric_trend_title,
+            activity.getString(selected.titleResource())), 17f, bold = true).apply { tag = "atlas-personal-trend-title" }, 18)
         panel.addView(HealthAtlasUi.tabs(activity, listOf(R.string.health_atlas_week, R.string.health_atlas_month, R.string.health_atlas_year), period, "atlas-period") { period = it; load() })
         val resultPanel = ui.column(); panel.addView(resultPanel)
         resultPanel.addView(ui.text(activity.getString(R.string.health_loading)))
-        val zone = ZoneId.systemDefault(); val last = LocalDate.now(zone)
+        val last = LocalDate.now(zone)
         val first = when (period) { 0 -> last.minusDays(6); 1 -> last.minusMonths(1).plusDays(1); else -> last.minusYears(1).plusDays(1) }
         val requested = HealthTrendSpec(selected, first, last, zone, selected.units.first(), HealthTrendAggregation.LATEST)
         worker.execute {
             val result = runCatching {
-                HealthPrivacyStore.track(activity.applicationContext, HealthAccessScope.trend(HealthAccessPurpose.TREND, requested), names.privacy) {
-                    HealthRecordStore(activity.applicationContext, names.records).use { store ->
+                val context = activity.applicationContext
+                val now = System.currentTimeMillis()
+                val scope = HealthAccessScope(HealthAccessPurpose.OVERVIEW, metrics.toSet(), until = now + 1, zone = zone.id)
+                val latest = HealthPrivacyStore.track(context, scope, names.privacy) {
+                    HealthRecordStore(context, names.records).use { store ->
+                        metrics.associateWith { candidate ->
+                            cancellation.throwIfCanceled()
+                            store.overviewLatestSelf(candidate, now)
+                        }
+                    }
+                }
+                val trend = HealthPrivacyStore.track(context, HealthAccessScope.trend(HealthAccessPurpose.TREND, requested), names.privacy) {
+                    HealthRecordStore(context, names.records).use { store ->
                         cancellation.throwIfCanceled()
                         val unit = store.trendRecords(requested, signal = cancellation).records.firstOrNull()?.draft?.unit
                             ?.takeIf { it in selected.selectableUnits } ?: requested.unit
                         HealthTrendRepository.load(store, requested.copy(unit = unit), { cancellation.throwIfCanceled() }, signal = cancellation)
                     }
                 }
+                ViewData(latest, trend)
             }
             main.post { if (!closed && generation == token && !cancellation.isCanceled) {
                 resultPanel.removeAllViews()
-                result.fold({ summary -> show(resultPanel, summary) }, { error ->
+                result.fold({ data ->
+                    showReadings(readingsPanel, zone, data.readings)
+                    show(resultPanel, data.trend)
+                }, { error ->
                     resultPanel.addView(ui.text(activity.getString(if (error is HealthAccessBlocked) R.string.health_privacy_trend_blocked else R.string.health_storage_error))
                         .apply { if (error is HealthAccessBlocked) tag = "atlas-personal-blocked" })
                     ui.add(resultPanel, ui.command(if (error is HealthAccessBlocked) R.string.health_privacy_title else R.string.health_atlas_reset) {
@@ -90,6 +108,48 @@ internal class HealthAtlasMeasurements(private val activity: Activity, private v
             } }
         }
     }
+
+    private fun showReadings(container: LinearLayout, zone: ZoneId,
+        readings: Map<HealthMetric, HealthObservation?>? = null) {
+        container.removeAllViews()
+        val date = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(activity.resources.configuration.locales[0])
+        for (candidate in metrics) {
+            val record = readings?.get(candidate)
+            val current = candidate == metric
+            val detail = record?.let {
+                val whenMeasured = Instant.ofEpochMilli(it.draft.measuredAt).atZone(zone).format(date)
+                activity.getString(R.string.health_atlas_reading_source, whenMeasured,
+                    activity.getString(healthRecordSourceResource(it.source)))
+            }.orEmpty()
+            val open = ui.row(activity.getString(candidate.titleResource()), detail) {
+                if (metric != candidate) {
+                    metric = candidate
+                    revealTrend = true
+                    load()
+                } else chart?.let(::revealChart)
+            }.apply {
+                tag = "atlas-metric-${candidate.name}"
+                isSelected = current
+                val value = record?.let { healthDisplayValue(it.draft) } ?:
+                    if (readings == null) "" else activity.getString(R.string.health_atlas_no_reading)
+                if (value.isNotEmpty()) addView(ui.text(value, 15f, muted = record == null, bold = record != null).apply {
+                    tag = "atlas-metric-reading-${candidate.name}"
+                    gravity = Gravity.END
+                    if (current && record != null) setTextColor(activity.getColor(R.color.health_overview_green))
+                }, childCount - 1, LinearLayout.LayoutParams(0, -2, .8f).apply { marginStart = ui.dp(6) })
+            }
+            ui.add(container, open)
+        }
+    }
+
+    private fun revealChart(plot: HealthTrendChart) {
+        plot.doOnLayout {
+            plot.post {
+                if (!closed && chart === plot) plot.requestRectangleOnScreen(Rect(0, 0, plot.width, plot.height), true)
+            }
+        }
+    }
+
     private fun show(container: LinearLayout, summary: HealthTrendSummary) {
         val record = summary.latest
         ui.add(container, ui.text(record?.let { healthDisplayValue(it.draft) } ?: activity.getString(R.string.health_no_measurement), 26f, bold = true), 18)
@@ -105,11 +165,7 @@ internal class HealthAtlasMeasurements(private val activity: Activity, private v
         chart = plot; container.addView(plot, LinearLayout.LayoutParams(-1, ui.dp(230)))
         if (revealTrend) {
             revealTrend = false
-            plot.doOnLayout {
-                plot.post {
-                    if (!closed && chart === plot) plot.requestRectangleOnScreen(Rect(0, 0, plot.width, plot.height), true)
-                }
-            }
+            revealChart(plot)
         }
         ui.add(container, ui.text(activity.getString(R.string.health_atlas_records_note), 12f, muted = true), 12)
         ui.add(container, ui.row(activity.getString(R.string.health_atlas_source)) {
@@ -129,7 +185,7 @@ internal class HealthAtlasMeasurements(private val activity: Activity, private v
     }
     override fun close() {
         if (closed) return
-        closed = true; generation++; signal?.cancel(); signal = null; picker?.dismiss(); picker = null
+        closed = true; generation++; signal?.cancel(); signal = null
         analysis = null; onAnalysisReady(false)
         activity.contentResolver.unregisterContentObserver(observer)
         chart?.clear(); chart = null; panel.removeAllViews(); worker.shutdown()

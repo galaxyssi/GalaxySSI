@@ -39,6 +39,10 @@
     <string name="health_atlas_process_note">This associated process may involve several structures; this entry does not independently perform every step.</string>
     <string name="health_atlas_parameters">Teaching parameters</string>
     <string name="health_atlas_measurements">My measurements</string>
+    <string name="health_atlas_related_metrics">Related metrics</string>
+    <string name="health_atlas_metric_trend_title">%1$s trend</string>
+    <string name="health_atlas_reading_source">%1$s · %2$s</string>
+    <string name="health_atlas_no_reading">No record</string>
     <string name="health_atlas_no_metrics">No matching measurement type is currently linked to this structure. This does not imply normal or abnormal function.</string>
     <string name="health_atlas_records_note">Related measurements do not directly measure the function of an individual organ or cell.</string>
     <string name="health_atlas_teaching_note">Teaching inputs, not personal measurements. Illustration timing is not physiological time.</string>
