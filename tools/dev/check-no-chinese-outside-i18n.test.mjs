@@ -28,6 +28,16 @@ function fixture(t) {
   return { write, run };
 }
 
+test("iOS BodyAtlas is a localized resource, not a source-text exemption", (t) => {
+  const { write, run } = fixture(t);
+  write("apps/ios/GalaxySSI/zh-Hans.lproj/BodyAtlas.strings", '"title" = "\u4e2d\u6587";');
+  assert.equal(run().status, 0);
+  write("apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift", '// "\u4e2d\u6587"\n');
+  const result = run();
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /GalaxySSIHealthAtlas\.swift:1/);
+});
+
 test("native target artifacts are not read as source text", (t) => {
   const { write, run } = fixture(t);
   write("apps/android/memory-native/target/debug/opaque.o", "\u4e2d\u6587");

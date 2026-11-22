@@ -2,6 +2,72 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttPeerRoutesTests: XCTestCase {
+  func testSmallProfilePausesAtPeerWindowAndContinuesSameRequestAfterBitmap() async throws {
+    let f = try ReceiptBridgeFixture()
+    let peer = f.peer
+    let identity = f.entry.identity
+    let date = Date(timeIntervalSince1970: 1)
+    let wire = try GalaxySSILinkProtocol.jsonData(["scheme": "signal", "from": "sender", "to": "receiver",
+      "body": String(repeating: "A", count: 560_000)])
+    try f.outbox.enqueue(identity: identity, message: PendingLinkMessage(messageId: "image", topic: peer.binding.sendTopic,
+      wirePayload: String(decoding: wire, as: UTF8.self), status: "queued", attempts: 0,
+      nextAttemptAt: date, createdAt: date, updatedAt: date), traffic: .message)
+    await peer.start()
+    await peer.startSecondPath()
+    try await peer.handshake(twoPaths: true)
+    let drain = f.sendDrain()
+    let initial = try await drain.drain(identities: [identity], validatedNetwork: true)
+    XCTAssertTrue(initial.failures.isEmpty)
+    let first = peer.path.sealedPublications + peer.secondPath.sealedPublications
+    XCTAssertFalse(first.isEmpty)
+    func object(_ packet: MqttSealedPathPublication) throws -> [String: Any] {
+      let bytes = try GalaxySSILinkProtocol.openWirePacket(packet.publication.payload, secret: peer.binding.secret)
+      return try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+    }
+    let query = try XCTUnwrap(MqttChunkReceipts.fromChunk(object(XCTUnwrap(first.first))))
+    XCTAssertLessThan(first.count, query.count)
+    let indices = try Set(first.map { try MqttChunkManifest.parse(object($0)).index })
+    for packet in first { packet.completed(true) }
+    peer.path.sealedPublications.removeAll()
+    peer.secondPath.sealedPublications.removeAll()
+    let bitmap = try query.response(epoch: String(repeating: "a", count: 32), revision: 1, indices: indices)
+    let incoming = try await peer.routes.receive(peer.ingress(bitmap))
+    try peer.routes.acceptChunkState(XCTUnwrap(incoming.packet), chunks: f.journal.outgoingChunks)
+    peer.time += 5000
+    let resumed = try await drain.drain(identities: [identity], validatedNetwork: true)
+    XCTAssertTrue(resumed.failures.isEmpty)
+    let next = peer.path.sealedPublications + peer.secondPath.sealedPublications
+    XCTAssertFalse(next.isEmpty)
+    for packet in next {
+      let part = try object(packet)
+      XCTAssertFalse(indices.contains(try MqttChunkManifest.parse(part).index))
+      XCTAssertEqual(try MqttChunkReceipts.fromChunk(part)?.request, query.request)
+    }
+    XCTAssertNotNil(try f.outbox.entry(identity: identity, messageID: "image"))
+  }
+
+  func testStoredReceiptFallsBackAfterOneSecondWithoutIngressPUBACK() async throws {
+    let f = try ReceiptBridgeFixture()
+    await f.peer.start()
+    await f.peer.startSecondPath()
+    try await f.peer.handshake(twoPaths: true)
+    let packet = try await f.incomingPacket()
+    try f.stageIncoming(packet)
+    f.peer.path.publications.removeAll()
+    f.peer.secondPath.publications.removeAll()
+    let initial = try await f.peer.routes.publishStoredReceipt(packet, inbox: f.journal.inbox)
+    XCTAssertFalse(initial)
+    XCTAssertEqual(f.peer.path.publications.count, 1)
+    f.peer.time += 1000
+    let fallback = try await f.peer.routes.publishStoredReceipt(packet, inbox: f.journal.inbox)
+    XCTAssertFalse(fallback)
+    XCTAssertEqual(f.peer.secondPath.publications.count, 1)
+    f.peer.secondPath.publications.last?.transientCompleted?(true)
+    let completed = try await f.peer.routes.publishStoredReceipt(packet, inbox: f.journal.inbox)
+    XCTAssertTrue(completed)
+    XCTAssertEqual(f.peer.path.publications.count, 1)
+  }
+
   func testQueuedDirectCiphertextUsesCurrentTopicWithoutChangingItsIdentity() async throws {
     let f = try ReceiptBridgeFixture(scope: "direct:pair")
     let peer = f.peer
@@ -48,6 +114,9 @@ final class MqttPeerRoutesTests: XCTestCase {
       wirePayload: String(decoding: wire, as: UTF8.self), status: "queued", attempts: 0,
       nextAttemptAt: date, createdAt: date, updatedAt: date), traffic: .message)
     let entry = try XCTUnwrap(f.outbox.entry(identity: identity, messageID: id))
+    let legacyParts = try GalaxySSIMqttWireChunking.encode(wirePayload: String(decoding: wire, as: UTF8.self),
+      directLimitBytes: 1).map { try XCTUnwrap(JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]) }
+    _ = try f.journal.outgoingChunks.prepare(authenticatedScope: identity.binding, parts: legacyParts)
     await peer.start()
     await peer.startSecondPath()
     try await peer.handshake(twoPaths: true)
@@ -406,7 +475,11 @@ final class MqttPeerRoutesTests: XCTestCase {
     // Receiving committed data does not require a completed outgoing resume handshake.
     XCTAssertFalse(f.peer.routes.isReady(scope: f.peer.binding.scope))
     let sent = try await f.peer.routes.publishStoredReceipt(packet, inbox: f.journal.inbox)
-    XCTAssertTrue(sent)
+    XCTAssertFalse(sent)
+    XCTAssertEqual(f.peer.path.publications.count, 1)
+    f.peer.path.publications.last?.transientCompleted?(true)
+    let acknowledged = try await f.peer.routes.publishStoredReceipt(packet, inbox: f.journal.inbox)
+    XCTAssertTrue(acknowledged)
     XCTAssertEqual(f.peer.path.publications.count, 1)
   }
 
@@ -1097,7 +1170,8 @@ private final class ReceiptBridgeFixture {
   init(scope: String = "pair") throws {
     peer = try PeerRoutesFixture(scope: scope)
     storage = try ChunkFixture()
-    journal = try MqttSignalStateJournal(fileURL: storage.url, secrets: storage.secrets)
+    let clock = peer
+    journal = try MqttSignalStateJournal(fileURL: storage.url, secrets: storage.secrets, now: { clock.time })
     outbox = journal.outbox
     let identity = try MqttBusinessIdentity(peer.binding)
     let wire = try GalaxySSILinkProtocol.jsonData(["scheme": "signal", "from": "sender", "to": "receiver", "body": "AA=="])
