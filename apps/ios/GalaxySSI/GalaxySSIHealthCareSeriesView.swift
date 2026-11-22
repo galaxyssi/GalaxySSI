@@ -65,6 +65,7 @@ private struct GalaxySSIHealthCareSeriesView: View {
       }
     }
     .navigationTitle(t("series_title", "Measurement history"))
+    .galaxySSIHealthTheme()
     .onAppear(perform: loadRecent)
     .onDisappear { clear() }
     .onChange(of: scene) { phase in

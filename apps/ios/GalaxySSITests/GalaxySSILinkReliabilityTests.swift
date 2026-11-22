@@ -656,6 +656,37 @@ final class GalaxySSILinkReliabilityTests: XCTestCase {
     XCTAssertTrue(store.pending(now: now.addingTimeInterval(10)).isEmpty)
   }
 
+  func testCapabilityQueueOnlyReplacesUnsentSnapshotsWithinTheSameBinding() throws {
+    let store = makeDeliveryStore(), now = Date(timeIntervalSince1970: 100)
+    let topic = String(repeating: "s", count: 43)
+    let binding = String(repeating: "a", count: 64), foreign = String(repeating: "b", count: 64)
+    func enqueue(_ id: String, revision: Int64, binding: String) throws -> Bool {
+      let snapshot = try XCTUnwrap(LinkCapabilitySnapshot(
+        payload: ["type": "artifact_blob_capability", "revision": revision], binding: binding))
+      return store.enqueueCapabilitySnapshot(messageId: id, topic: topic, wire: "sealed-" + id,
+        snapshot: snapshot, now: now)
+    }
+    XCTAssertTrue(try enqueue("old", revision: 1, binding: binding))
+    XCTAssertTrue(try enqueue("foreign", revision: 1, binding: foreign))
+    store.enqueue(messageId: "chat", topic: topic, wirePayload: "sealed-chat", now: now)
+    XCTAssertTrue(try enqueue("new", revision: 2, binding: binding))
+    XCTAssertEqual(Set(store.pending(now: now).map(\.messageId)), ["foreign", "chat", "new"])
+    XCTAssertFalse(try enqueue("stale", revision: 1, binding: binding))
+    store.markAttempt(messageId: "new", now: now)
+    XCTAssertTrue(try enqueue("latest", revision: 3, binding: binding))
+    XCTAssertEqual(Set(store.pending(now: now.addingTimeInterval(300)).map(\.messageId)),
+      ["foreign", "chat", "new", "latest"])
+    var protected = PendingLinkMessage(messageId: "protected", topic: "topic/up", wirePayload: "sealed",
+      status: "queued", attempts: 0, nextAttemptAt: now, createdAt: now, updatedAt: now)
+    protected.capabilitySnapshot = try XCTUnwrap(LinkCapabilitySnapshot(
+      payload: ["type": "artifact_blob_capability", "revision": 4], binding: binding))
+    protected.clientSourceMessageId = "user-message"
+    XCTAssertNil(protected.replaceableCapability)
+    protected.clientSourceMessageId = ""
+    protected.attachmentTransferId = String(repeating: "c", count: 64)
+    XCTAssertNil(protected.replaceableCapability)
+  }
+
   func testOutboxAttachmentDependenciesBlockReleaseAndDiscard() {
     let store = makeDeliveryStore()
     let now = Date(timeIntervalSince1970: 100)

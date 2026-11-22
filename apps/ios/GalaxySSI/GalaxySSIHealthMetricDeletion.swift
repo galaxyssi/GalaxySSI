@@ -179,7 +179,7 @@ struct GalaxySSIHealthMetricDeletionView: View {
     }
     .navigationTitle(filter == .appleHealth ? t("apple_health_title", "Local Apple Health Copies")
                                           : t("title", "Delete by Measurement Type"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) {
       if $0 == .active { reload() }
