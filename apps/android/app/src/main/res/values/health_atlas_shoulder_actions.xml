@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pectoral_action_title">Pectoralis major: across the chest</string>
+    <string name="health_atlas_pectoral_action_scope">A schematic overhead view of horizontal adduction at the shoulder. It isolates the sweep and does not show full shoulder mechanics or measure range of motion.</string>
+    <string name="health_atlas_pectoral_action_origins">A fan across the chest</string>
+    <string name="health_atlas_pectoral_action_origins_caption">The clavicular fibers start at the inner clavicle. The sternocostal fibers start at the sternum and nearby costal cartilages.</string>
+    <string name="health_atlas_pectoral_action_insertion">The humeral attachment</string>
+    <string name="health_atlas_pectoral_action_insertion_caption">The fan narrows into a tendon on the outer lip of the groove between the tubercles of the upper humerus.</string>
+    <string name="health_atlas_pectoral_action_sweep">Begin horizontal adduction</string>
+    <string name="health_atlas_pectoral_action_sweep_caption">With the upper arm raised out to the side, pectoralis major contributes to its forward sweep at the shoulder.</string>
+    <string name="health_atlas_pectoral_action_across">Sweep toward the midline</string>
+    <string name="health_atlas_pectoral_action_across_caption">The humerus continues across the front of the chest. The humeral attachment travels with the bone while the chest origins stay in place in this view.</string>
+    <string name="health_atlas_pectoral_action_return">Return to the side</string>
+    <string name="health_atlas_pectoral_action_return_caption">The diagram reverses the sweep to compare the positions. It does not show which muscles produce the return.</string>
+    <string name="health_atlas_pectoral_action_ref_anatomy">UW Muscle Atlas: pectoralis major</string>
+    <string name="health_atlas_pectoral_action_ref_sweep">Kuechle et al.: horizontal flexion at the shoulder</string>
+    <string name="health_atlas_pectoral_action_overhead">View from above</string>
+    <string name="health_atlas_pectoral_action_front">Front of chest</string>
+    <string name="health_atlas_pectoral_action_joint">Shoulder joint</string>
+    <string name="health_atlas_pectoral_action_clavicular">Clavicular fibers</string>
+    <string name="health_atlas_pectoral_action_sternocostal">Sternocostal fibers</string>
+    <string name="health_atlas_pectoral_action_tendon">Pectoral tendon</string>
+
+    <string name="health_atlas_latissimus_action_title">Latissimus dorsi: back and in</string>
+    <string name="health_atlas_latissimus_action_scope">A schematic view from behind and to the side. It separates shoulder extension and adduction for comparison and does not measure range of motion.</string>
+    <string name="health_atlas_latissimus_action_origins">A broad sheet on the back</string>
+    <string name="health_atlas_latissimus_action_origins_caption">Latissimus dorsi arises from the lower thoracic spine, thoracolumbar fascia, iliac crest, and lower ribs.</string>
+    <string name="health_atlas_latissimus_action_insertion">Around to the humerus</string>
+    <string name="health_atlas_latissimus_action_insertion_caption">The muscle narrows near the back of the armpit. Its tendon curves around teres major to attach to the floor of the groove at the front of the upper humerus.</string>
+    <string name="health_atlas_latissimus_action_extend">Extension: move back</string>
+    <string name="health_atlas_latissimus_action_extend_caption">From a position in front and to the side, the upper arm moves backward relative to the trunk. Latissimus dorsi contributes to shoulder extension.</string>
+    <string name="health_atlas_latissimus_action_adduct">Adduction: move in</string>
+    <string name="health_atlas_latissimus_action_adduct_caption">The upper arm then moves closer to the side of the trunk. Latissimus dorsi also contributes to shoulder adduction.</string>
+    <string name="health_atlas_latissimus_action_return">Compare the path back</string>
+    <string name="health_atlas_latissimus_action_return_caption">The diagram retraces both parts of the path. This reversal compares poses without modeling the muscles that produce the return.</string>
+    <string name="health_atlas_latissimus_action_ref_anatomy">UW Muscle Atlas: latissimus dorsi</string>
+    <string name="health_atlas_latissimus_action_ref_route">Latissimus dorsi anatomy and tendon course</string>
+    <string name="health_atlas_latissimus_action_ref_moment">Ackland et al.: shoulder muscle moment arms</string>
+    <string name="health_atlas_latissimus_action_oblique">View from behind and to the side</string>
+    <string name="health_atlas_latissimus_action_fascia">Thoracolumbar fascia</string>
+    <string name="health_atlas_latissimus_action_tendon">Latissimus tendon</string>
+    <string name="health_atlas_latissimus_action_forward_pose">Forward pose</string>
+    <string name="health_atlas_latissimus_action_side_pose">At the side</string>
+</resources>

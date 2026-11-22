@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vulvar_protection_title">外阴的保护性皱襞</string>
+    <string name="health_atlas_vulvar_protection_choice">保护性皱襞</string>
+    <string name="health_atlas_vulvar_protection_scope">成人解剖简图，未按比例绘制。各视图展示组织的位置关系和形态差异示例，不提供测量值或诊断标准。播放时仅突出显示静止的解剖结构。</string>
+    <string name="health_atlas_vulvar_protection_overview">外阴的层次</string>
+    <string name="health_atlas_vulvar_protection_overview_caption">外阴是外生殖器区域的总称。图中外侧皱襞分布在内侧皱襞两旁，内侧皱襞围绕阴道前庭。</string>
+    <string name="health_atlas_vulvar_protection_outer">外侧皱襞：覆盖与缓冲</string>
+    <string name="health_atlas_vulvar_protection_outer_caption">大阴唇是外侧皱襞。其表面的皮肤和下方的脂肪组织在内侧皱襞两旁起覆盖和缓冲作用。</string>
+    <string name="health_atlas_vulvar_protection_inner">内侧皱襞：围绕阴道前庭</string>
+    <string name="health_atlas_vulvar_protection_inner_caption">小阴唇位于大阴唇内侧，有助于保护阴道前庭。尿道外口和阴道口位于前庭内，本放大图未绘出这两个开口。</string>
+    <string name="health_atlas_vulvar_protection_variation">皱襞形态的差异</string>
+    <string name="health_atlas_vulvar_protection_variation_caption">成人皱襞的轮廓和突出程度各不相同。图中两个静态轮廓展示同一种组织排列的不同形态，并非比较标准。</string>
+    <string name="health_atlas_vulvar_protection_boundary">外部结构的边界</string>
+    <string name="health_atlas_vulvar_protection_boundary_caption">阴道前庭位于小阴唇之间，属于外阴，并不是内部的阴道管腔。皱襞起覆盖作用，但不形成密闭屏障。</string>
+    <string name="health_atlas_vulvar_protection_ref_anatomy">OpenStax《生物学》：外生殖器解剖</string>
+    <string name="health_atlas_vulvar_protection_ref_variation">Lloyd 等：成人外阴解剖形态的差异</string>
+    <string name="health_atlas_vulvar_protection_region_view">区域概览</string>
+    <string name="health_atlas_vulvar_protection_region_caption">成人外阴：外部轮廓和皱襞排列简图</string>
+    <string name="health_atlas_vulvar_protection_outer_view">外侧皱襞横断面</string>
+    <string name="health_atlas_vulvar_protection_outer_plate_caption">大阴唇：皮肤与缓冲组织的横断面示意图</string>
+    <string name="health_atlas_vulvar_protection_inner_view">内侧皱襞放大图</string>
+    <string name="health_atlas_vulvar_protection_inner_plate_caption">小阴唇：阴道前庭两侧皱襞的放大图</string>
+    <string name="health_atlas_vulvar_protection_outer_boundary">外部轮廓</string>
+    <string name="health_atlas_vulvar_protection_outer_boundary_detail">该轮廓标示简图所示的范围，并不代表界限分明的解剖边界。</string>
+    <string name="health_atlas_vulvar_protection_outer_folds">外侧皱襞</string>
+    <string name="health_atlas_vulvar_protection_outer_folds_detail">大阴唇位于内侧皱襞两旁，在外侧起覆盖作用。</string>
+    <string name="health_atlas_vulvar_protection_inner_folds">内侧皱襞</string>
+    <string name="health_atlas_vulvar_protection_inner_folds_detail">小阴唇位于大阴唇内侧，轮廓和突出程度因人而异。</string>
+    <string name="health_atlas_vulvar_protection_vestibule">阴道前庭</string>
+    <string name="health_atlas_vulvar_protection_vestibule_detail">这个区域位于小阴唇之间，包含尿道外口和阴道口；图中未绘出这两个开口。</string>
+    <string name="health_atlas_vulvar_protection_skin_surface">皮肤表面</string>
+    <string name="health_atlas_vulvar_protection_skin_surface_detail">本断面中的轮廓显示覆盖在外侧皱襞表面的皮肤。</string>
+    <string name="health_atlas_vulvar_protection_fatty_cushion">脂肪组织</string>
+    <string name="health_atlas_vulvar_protection_fatty_cushion_detail">皮肤下的脂肪组织构成外侧皱襞的一部分，并起缓冲作用。</string>
+    <string name="health_atlas_vulvar_protection_vestibule_floor">前庭表面</string>
+    <string name="health_atlas_vulvar_protection_vestibule_floor_detail">在本横断面中，阴道前庭表面位于两侧小阴唇之间。</string>
+    <string name="health_atlas_vulvar_protection_inner_margin">内侧皱襞边缘</string>
+    <string name="health_atlas_vulvar_protection_inner_margin_detail">内侧皱襞朝向中线的一缘与阴道前庭相接。它是一条轮廓，并不构成密闭屏障。</string>
+    <string name="health_atlas_vulvar_protection_profile_one">示例一</string>
+    <string name="health_atlas_vulvar_protection_profile_two">示例二</string>
+</resources>

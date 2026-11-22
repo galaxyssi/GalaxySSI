@@ -1,9 +1,12 @@
 package com.galaxyssi.chat
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PathMeasure
+import android.graphics.RectF
 import android.graphics.Shader
 import androidx.annotation.StringRes
 
@@ -29,9 +32,17 @@ internal object HealthAtlasPinealMotion {
 
 internal class HealthAtlasPinealStoryView(context: Context) :
     HealthAtlasIllustratedStoryView(context, HealthAtlasFunctionStory.PINEAL_DARK_SIGNAL) {
-    private val pinealPlate = requireNotNull(context.getDrawable(R.drawable.health_atlas_pineal_plate)).apply {
-        setBounds(0, 0, 360, 280)
+    // Keep zoom and rewind independent of a VectorDrawable's scale-dependent raster cache.
+    private val pinealPlate by lazy {
+        Bitmap.createBitmap(720, 560, Bitmap.Config.ARGB_8888).also { bitmap ->
+            requireNotNull(context.getDrawable(R.drawable.health_atlas_pineal_plate)).apply {
+                setBounds(0, 0, bitmap.width, bitmap.height)
+                draw(Canvas(bitmap))
+            }
+        }
     }
+    private val pinealBounds = RectF(0f, 0f, 360f, 280f)
+    private val platePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val page = shade(0f, 360f, 0xfff8fbfc, 0xffe7f1f1)
     private val nightPage = shade(0f, 360f, 0xfff0f1f9, 0xffe7f1f3)
     private val guide = 0xff55727d
@@ -342,7 +353,7 @@ internal class HealthAtlasPinealStoryView(context: Context) :
 
     private fun brain(c: Canvas, x: Float, y: Float, size: Float) {
         c.save(); c.translate(x, y); c.scale(size, size)
-        pinealPlate.draw(c)
+        c.drawBitmap(pinealPlate, null, pinealBounds, platePaint)
         c.restore()
     }
 

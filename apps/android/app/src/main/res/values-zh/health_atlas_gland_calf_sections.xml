@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mammary_section_view">泌乳期腺小叶与放大的腺泡示意</string>
+    <string name="health_atlas_mammary_section_lobule">腺小叶</string>
+    <string name="health_atlas_mammary_section_lobule_detail">一个小叶包含成组的产乳小囊，称为腺泡。右侧放大其中一个腺泡，显示它的细胞层。</string>
+    <string name="health_atlas_mammary_section_duct">分支导管</string>
+    <string name="health_atlas_mammary_section_duct_detail">细导管汇入较大的分支，负责输送乳汁。这里仅示意部分导管网，不代表导管总数。</string>
+    <string name="health_atlas_soleus_section_view">小腿后方深层示意，省略浅层肌肉</string>
+    <string name="health_atlas_soleus_section_arch">比目鱼肌腱弓</string>
+    <string name="health_atlas_soleus_section_arch_detail">上端的纤维弓横跨比目鱼肌在胫骨和腓骨的附着部位。</string>
+    <string name="health_atlas_soleus_section_belly">比目鱼肌纤维</string>
+    <string name="health_atlas_soleus_section_belly_detail">比目鱼肌位于腓肠肌深面。肌纤维斜向连到宽大的腱膜，而不是直接一直延伸到脚跟。</string>
+    <string name="health_atlas_soleus_section_sheet">腱膜</string>
+    <string name="health_atlas_soleus_section_sheet_detail">图中的扁平腱膜汇集肌肉产生的拉力，并与下方的跟腱相连。</string>
+    <string name="health_atlas_soleus_section_heel">跟骨</string>
+    <string name="health_atlas_soleus_section_heel_detail">跟腱附着在脚跟的跟骨上，把小腿肌肉产生的力传给足部。</string>
+    <string name="health_atlas_clavicle_section_view">锁骨俯视图 · 两端关节</string>
+    <string name="health_atlas_clavicle_section_sternal">胸骨端</string>
+    <string name="health_atlas_clavicle_section_sternal_detail">较厚的内侧端在胸锁关节与胸骨上端相接。</string>
+    <string name="health_atlas_clavicle_section_shaft">弯曲骨干</string>
+    <string name="health_atlas_clavicle_section_shaft_detail">S 形骨干像支撑杆一样，使肩部与胸壁保持间距。</string>
+    <string name="health_atlas_clavicle_section_acromial">肩峰端</string>
+    <string name="health_atlas_clavicle_section_acromial_detail">较扁平的外侧端与肩胛骨的肩峰相接。抬臂时，锁骨两端的关节都参与运动。</string>
+    <string name="health_atlas_fibula_section_view">腓骨与相邻的胫骨和踝关节</string>
+    <string name="health_atlas_fibula_section_head">腓骨头</string>
+    <string name="health_atlas_fibula_section_head_detail">上端在膝关节下方与胫骨上端相接，不直接与股骨形成关节。</string>
+    <string name="health_atlas_fibula_section_shaft">腓骨干</string>
+    <string name="health_atlas_fibula_section_shaft_detail">细长的腓骨位于小腿外侧，为肌肉提供附着位置。</string>
+    <string name="health_atlas_fibula_section_membrane">骨间膜</string>
+    <string name="health_atlas_fibula_section_membrane_detail">一层纤维膜连接胫骨和腓骨的骨干。</string>
+    <string name="health_atlas_fibula_section_malleolus">外踝</string>
+    <string name="health_atlas_fibula_section_malleolus_detail">腓骨下端形成脚踝外侧的骨性突起，位于距骨旁边。</string>
+</resources>

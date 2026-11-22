@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vulvar_protection_title">Vulvar protective folds</string>
+    <string name="health_atlas_vulvar_protection_choice">Protective folds</string>
+    <string name="health_atlas_vulvar_protection_scope">Simplified adult anatomy, not to scale. The views show tissue relationships and examples of variation, not measurements or diagnostic criteria. Playback highlights stationary anatomy.</string>
+    <string name="health_atlas_vulvar_protection_overview">Layers of the vulva</string>
+    <string name="health_atlas_vulvar_protection_overview_caption">Vulva is the name for the external genital region. In this schematic, the outer folds flank the inner folds, which border the vestibule.</string>
+    <string name="health_atlas_vulvar_protection_outer">Outer folds: covering and cushioning</string>
+    <string name="health_atlas_vulvar_protection_outer_caption">The labia majora are the outer folds. Their skin and underlying fatty tissue provide a layer of covering and cushioning beside the inner folds.</string>
+    <string name="health_atlas_vulvar_protection_inner">Inner folds: bordering the vestibule</string>
+    <string name="health_atlas_vulvar_protection_inner_caption">The labia minora sit medial to the outer folds and help protect the vestibule. The vestibule contains the urethral and vaginal openings, omitted in this close-up.</string>
+    <string name="health_atlas_vulvar_protection_variation">Variation in fold shape</string>
+    <string name="health_atlas_vulvar_protection_variation_caption">Fold outline and prominence vary among adults. These two fixed profiles are examples of the same arrangement, not standards for comparison.</string>
+    <string name="health_atlas_vulvar_protection_boundary">External boundaries</string>
+    <string name="health_atlas_vulvar_protection_boundary_caption">The vestibule lies between the inner folds and is part of the external vulvar region. It is not the internal vaginal canal. The folds provide covering without forming a sealed barrier.</string>
+    <string name="health_atlas_vulvar_protection_ref_anatomy">OpenStax Biology: external anatomy</string>
+    <string name="health_atlas_vulvar_protection_ref_variation">Lloyd et al.: variation in adult vulvar anatomy</string>
+    <string name="health_atlas_vulvar_protection_region_view">Regional overview</string>
+    <string name="health_atlas_vulvar_protection_region_caption">Adult vulva: simplified external boundaries and fold arrangement</string>
+    <string name="health_atlas_vulvar_protection_outer_view">Outer-fold cross-section</string>
+    <string name="health_atlas_vulvar_protection_outer_plate_caption">Labia majora: transverse schematic of skin and cushioning tissue</string>
+    <string name="health_atlas_vulvar_protection_inner_view">Inner-fold close-up</string>
+    <string name="health_atlas_vulvar_protection_inner_plate_caption">Labia minora: magnified view of the folds bordering the vestibule</string>
+    <string name="health_atlas_vulvar_protection_outer_boundary">Outer boundary</string>
+    <string name="health_atlas_vulvar_protection_outer_boundary_detail">The outline marks the extent of this regional schematic, not a sharp anatomical border.</string>
+    <string name="health_atlas_vulvar_protection_outer_folds">Outer folds</string>
+    <string name="health_atlas_vulvar_protection_outer_folds_detail">The labia majora flank the inner folds and provide an outer layer of covering.</string>
+    <string name="health_atlas_vulvar_protection_inner_folds">Inner folds</string>
+    <string name="health_atlas_vulvar_protection_inner_folds_detail">The labia minora lie medial to the outer folds. Their prominence and outline vary.</string>
+    <string name="health_atlas_vulvar_protection_vestibule">Vestibule</string>
+    <string name="health_atlas_vulvar_protection_vestibule_detail">The area between the inner folds contains the urethral and vaginal openings, which are not drawn here.</string>
+    <string name="health_atlas_vulvar_protection_skin_surface">Skin surface</string>
+    <string name="health_atlas_vulvar_protection_skin_surface_detail">The contour shows the skin covering the outer fold in this section.</string>
+    <string name="health_atlas_vulvar_protection_fatty_cushion">Fatty tissue</string>
+    <string name="health_atlas_vulvar_protection_fatty_cushion_detail">The fatty tissue beneath the skin contributes to the bulk and cushioning of the outer fold.</string>
+    <string name="health_atlas_vulvar_protection_vestibule_floor">Vestibule surface</string>
+    <string name="health_atlas_vulvar_protection_vestibule_floor_detail">In this cross-section, the surface of the vestibule lies between the two inner folds.</string>
+    <string name="health_atlas_vulvar_protection_inner_margin">Inner fold margin</string>
+    <string name="health_atlas_vulvar_protection_inner_margin_detail">The medial edge of the inner fold borders the vestibule. It is shown as a contour, not a closed seal.</string>
+    <string name="health_atlas_vulvar_protection_profile_one">Example 1</string>
+    <string name="health_atlas_vulvar_protection_profile_two">Example 2</string>
+</resources>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_clitoral_sensory_title">Clitoral sensory pathway</string>
+    <string name="health_atlas_clitoral_sensory_scope">Adult anatomy. The cutaway and nerve diagrams show structure and the direction of normal sensory signals, not to scale.</string>
+    <string name="health_atlas_clitoral_sensory_choice">Follow sensory signals</string>
+    <string name="health_atlas_clitoral_sensory_cutaway">Clitoral cutaway</string>
+    <string name="health_atlas_clitoral_sensory_cutaway_caption">The midline clitoral body ends in the glans. The two crura extend from the body along the pubic arch. The vestibular bulbs lie medial to the crura and are distinct structures.</string>
+    <string name="health_atlas_clitoral_sensory_endings">Sensory endings</string>
+    <string name="health_atlas_clitoral_sensory_endings_caption">Branches of sensory fibers end within tissue of the glans. A single signal is shown traveling from one peripheral ending toward the parent nerve.</string>
+    <string name="health_atlas_clitoral_sensory_dorsal_route">Dorsal nerve route</string>
+    <string name="health_atlas_clitoral_sensory_dorsal_route_caption">On either side, the dorsal nerve of the clitoris carries sensory signals from the glans and body toward the pudendal nerve. The diagram follows one side.</string>
+    <string name="health_atlas_clitoral_sensory_sacral_entry">Entry into the spinal cord</string>
+    <string name="health_atlas_clitoral_sensory_sacral_entry_caption">Sensory fibers in the pudendal nerve return via sacral spinal nerves. A signal enters the spinal cord through a dorsal root. One route is shown.</string>
+    <string name="health_atlas_clitoral_sensory_body">Clitoral body</string>
+    <string name="health_atlas_clitoral_sensory_body_detail">The paired cavernous bodies form the central body, which continues distally to the glans.</string>
+    <string name="health_atlas_clitoral_sensory_glans">Glans</string>
+    <string name="health_atlas_clitoral_sensory_glans_detail">The glans is the rounded distal part of the clitoris. It contains sensory nerve endings.</string>
+    <string name="health_atlas_clitoral_sensory_crura">Paired crura</string>
+    <string name="health_atlas_clitoral_sensory_crura_detail">Each crus continues from one of the two cavernous bodies and follows its side of the pubic arch.</string>
+    <string name="health_atlas_clitoral_sensory_bulbs">Vestibular bulbs</string>
+    <string name="health_atlas_clitoral_sensory_bulbs_detail">The bulbs are a separate pair of erectile tissues on either side of the vestibule, medial to the crura.</string>
+    <string name="health_atlas_clitoral_sensory_afferent">Sensory nerve fiber</string>
+    <string name="health_atlas_clitoral_sensory_dorsal_nerve">Dorsal clitoral nerve</string>
+    <string name="health_atlas_clitoral_sensory_pudendal">Pudendal nerve</string>
+    <string name="health_atlas_clitoral_sensory_dorsal_root">Sacral dorsal root</string>
+    <string name="health_atlas_clitoral_sensory_cord">Spinal cord</string>
+    <string name="health_atlas_clitoral_sensory_ref_anatomy">Clitoral anatomy on adult MRI</string>
+    <string name="health_atlas_clitoral_sensory_ref_nerve">Dorsal clitoral nerve and its distribution</string>
+    <string name="health_atlas_clitoral_sensory_ref_route">Course of the dorsal clitoral nerve</string>
+    <string name="health_atlas_clitoral_sensory_ref_sacral">Pudendal nerve and sacral connections</string>
+
+    <string name="health_atlas_vestibular_gland_title">Greater vestibular gland secretion</string>
+    <string name="health_atlas_vestibular_gland_scope">Adult anatomy. Schematics show gland position, microscopic structure, and the direction of normal mucus movement, not to scale.</string>
+    <string name="health_atlas_vestibular_gland_choice">Follow mucus through the ducts</string>
+    <string name="health_atlas_vestibular_gland_map">Greater vestibular glands and ducts</string>
+    <string name="health_atlas_vestibular_gland_map_caption">Two small glands sit deep on either side of the posterior vaginal opening. Their ducts open onto the vestibule at the posterolateral margins, separate from the urethral opening farther forward.</string>
+    <string name="health_atlas_vestibular_gland_acini">Mucus-producing acini</string>
+    <string name="health_atlas_vestibular_gland_acini_caption">Each gland contains clusters of small secretory units called acini. Mucus-producing epithelial cells line the acini and release mucus into their central spaces.</string>
+    <string name="health_atlas_vestibular_gland_collection">Collecting ducts</string>
+    <string name="health_atlas_vestibular_gland_collection_caption">Small branches collect mucus from the acini into one main duct per gland. The moving traces show the direction of mucus within the duct spaces.</string>
+    <string name="health_atlas_vestibular_gland_outlet">Outlets into the vestibule</string>
+    <string name="health_atlas_vestibular_gland_outlet_caption">Mucus passes out of each short main duct onto the vestibular surface beside the vaginal opening. Neither duct opens into the urethra or the vagina.</string>
+    <string name="health_atlas_vestibular_gland_urethral">Urethral opening</string>
+    <string name="health_atlas_vestibular_gland_urethral_detail">This separate opening is anterior to the vaginal opening and the two gland duct outlets.</string>
+    <string name="health_atlas_vestibular_gland_pair">Paired glands</string>
+    <string name="health_atlas_vestibular_gland_pair_detail">The two greater vestibular (Bartholin) glands sit deep in the tissue. Each contains many small mucus-secreting acini.</string>
+    <string name="health_atlas_vestibular_gland_duct">Gland duct</string>
+    <string name="health_atlas_vestibular_gland_duct_detail">Each gland has its own slender main duct that carries mucus to the vestibular surface.</string>
+    <string name="health_atlas_vestibular_gland_pores">Paired duct outlets</string>
+    <string name="health_atlas_vestibular_gland_pores_detail">The outlets are posterolateral to the vaginal opening, approximately at 4 and 8 o’clock in this orientation.</string>
+    <string name="health_atlas_vestibular_gland_cells">Secretory cells</string>
+    <string name="health_atlas_vestibular_gland_lumen">Acinar lumen</string>
+    <string name="health_atlas_vestibular_gland_branches">Duct branches</string>
+    <string name="health_atlas_vestibular_gland_main_duct">Main gland duct</string>
+    <string name="health_atlas_vestibular_gland_ref_anatomy">Adult vestibular anatomy and histology</string>
+    <string name="health_atlas_vestibular_gland_ref_histology">Greater vestibular gland and duct histology</string>
+</resources>

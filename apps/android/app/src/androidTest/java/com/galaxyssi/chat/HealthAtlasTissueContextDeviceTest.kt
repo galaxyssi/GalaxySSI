@@ -99,18 +99,20 @@ class HealthAtlasTissueContextDeviceTest {
         val chinese = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
         val atlas = HealthBodyAtlas.load(english)
         val plates = HealthAtlasTissueContextPlates.all
-        assertEquals(54, plates.size)
-        assertEquals(177, plates.sumOf { it.features.size })
-        assertEquals(27, plates.sumOf { it.markers.size })
-        for (plate in plates) {
+        assertEquals(72, plates.size)
+        assertEquals(249, plates.sumOf { it.features.size })
+        assertEquals(36, plates.sumOf { it.markers.size })
+        val tenocyteSection = HealthAtlasTenocyteTendonMatrixPlate.plate
+        assertEquals(2, HealthAtlasPlates.viewsForId("cell-tenocyte").size)
+        for (plate in plates + tenocyteSection) {
             val owner = requireNotNull(plate.owner)
             assertNotNull(atlas[owner])
-            assertSame(plate, HealthAtlasPlates.forId(owner))
+            assertSame(plate, HealthAtlasPlates.forId(owner, plate.viewKey))
             assertNotNull(plate.source)
             val bitmap = Bitmap.createBitmap(360, 280, Bitmap.Config.ARGB_8888)
             try {
                 context.getDrawable(plate.drawable)!!.apply { setBounds(0, 0, 360, 280); draw(Canvas(bitmap)) }
-                assertEquals(0, Color.alpha(bitmap.getPixel(0, 0)))
+                assertEquals("$owner has artwork in the transparent corner", 0, Color.alpha(bitmap.getPixel(0, 0)))
                 for (marker in plate.markers + plate.features.map { it.marker }) {
                     val x = (360 * marker.x).roundToInt().coerceIn(1, 358)
                     val y = (280 * marker.y).roundToInt().coerceIn(1, 278)
@@ -261,6 +263,53 @@ class HealthAtlasTissueContextDeviceTest {
             activity.view("atlas-function-lesson-1").performClick()
             assertEquals(activity.getString(R.string.health_atlas_ganglion_relay_autonomic_caption),
                 (activity.view("atlas-function-caption") as TextView).text)
+        }
+    }
+
+    @Test fun clavicleAndFibulaHaveDedicatedLandmarksAndRelatedMotion() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("clavicle")
+            assertNotNull(activity.view("atlas-feature-clavicle-acromial"))
+            activity.view("atlas-tab-1").performClick()
+            assertEquals(activity.getString(R.string.health_atlas_scapular_rotation_story_clavicle_caption),
+                (activity.view("atlas-function-caption") as TextView).text)
+            activity.onBackPressed()
+            activity.open("fibula")
+            assertNotNull(activity.view("atlas-feature-fibula-malleolus"))
+        }
+        capture("fibula-section", scenario.localized(R.string.health_atlas_fibula_section_view))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-ankle-mortise-art"))
+            activity.view("atlas-related-lesson-tibia").performClick()
+            activity.onBackPressed()
+            assertNotNull(activity.view("atlas-function-ankle-mortise-art"))
+        }
+    }
+
+    @Test fun glandAndDeepCalfCutawaysKeepTheirOriginalFunctionLessons() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("mammary-glands")
+            assertNotNull(activity.view("atlas-feature-mammary-duct"))
+        }
+        capture("mammary-gland-section", scenario.localized(R.string.health_atlas_mammary_section_view))
+        scenario.onActivity { activity ->
+            activity.view("atlas-hotspot-cell-mammary-luminal-cell").performClick()
+            assertEquals(activity.getString(R.string.health_atlas_cell_mammary_luminal_cell_name),
+                (activity.view("health-page-title") as TextView).text)
+            activity.onBackPressed()
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-player"))
+            activity.onBackPressed()
+            activity.open("soleus")
+            assertNotNull(activity.view("atlas-feature-soleus-calcaneus"))
+        }
+        capture("deep-calf-soleus", scenario.localized(R.string.health_atlas_soleus_section_view))
+        scenario.onActivity { activity ->
+            activity.view("atlas-hotspot-tendons").performClick()
+            activity.onBackPressed()
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-player"))
         }
     }
 

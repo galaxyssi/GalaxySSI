@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_penile_urinary_title">Penis: urinary route</string>
+    <string name="health_atlas_penile_urinary_choice">Penile urinary route</string>
+    <string name="health_atlas_penile_urinary_scope">Normal adult anatomy. The spongy urethra runs inside the corpus spongiosum, separate from the paired corpora cavernosa. These sections simplify tissue boundaries and omit surrounding structures. The tracer shows direction only, not speed or volume.</string>
+    <string name="health_atlas_penile_urinary_section">Across the shaft</string>
+    <string name="health_atlas_penile_urinary_section_caption">In a transverse section, the paired corpora cavernosa lie dorsally. The single corpus spongiosum lies ventrally and encloses the spongy urethral lumen, highlighted in gold.</string>
+    <string name="health_atlas_penile_urinary_proximal">From the bladder</string>
+    <string name="health_atlas_penile_urinary_proximal_caption">Urine leaves the bladder through the prostatic urethra, then passes through the short membranous segment before entering the spongy segment. The bend and lengths are schematic.</string>
+    <string name="health_atlas_penile_urinary_distal">Through the spongy segment</string>
+    <string name="health_atlas_penile_urinary_distal_caption">The spongy urethra continues within the corpus spongiosum to the external urethral opening at the tip. The two dorsal bodies are separate tissues, not channels for urine.</string>
+    <string name="health_atlas_penile_urinary_dorsal">Dorsal side</string>
+    <string name="health_atlas_penile_urinary_bladder">Bladder</string>
+    <string name="health_atlas_penile_urinary_prostatic">Prostatic urethra</string>
+    <string name="health_atlas_penile_urinary_membranous">Membranous urethra</string>
+    <string name="health_atlas_penile_urinary_cavernosa">Corpora cavernosa</string>
+    <string name="health_atlas_penile_urinary_cavernosa_detail">The two larger dorsal bodies are shown in lavender. Neither contains the urethral lumen.</string>
+    <string name="health_atlas_penile_urinary_spongiosum">Corpus spongiosum</string>
+    <string name="health_atlas_penile_urinary_spongiosum_detail">This single ventral body surrounds the spongy urethra. The coral area represents the tissue, not the passage itself.</string>
+    <string name="health_atlas_penile_urinary_spongy">Spongy urethra</string>
+    <string name="health_atlas_penile_urinary_spongy_detail">The gold opening in the transverse section is the lumen. It corresponds to the channel shown along the lower longitudinal section.</string>
+    <string name="health_atlas_penile_urinary_meatus">Urethral opening</string>
+    <string name="health_atlas_penile_urinary_meatus_detail">The external urethral opening is where the spongy urethra ends and urine leaves the body.</string>
+    <string name="health_atlas_penile_urinary_plate_title">Penile urinary section</string>
+    <string name="health_atlas_penile_urinary_plate_caption">Penis, simplified internal sections: transverse anatomy above and the urinary route below. Not to scale.</string>
+    <string name="health_atlas_penile_urinary_ref_anatomy">OpenStax: penile cross-sectional anatomy</string>
+    <string name="health_atlas_penile_urinary_ref_route">OpenStax: gross anatomy of urine transport</string>
+</resources>

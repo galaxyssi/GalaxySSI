@@ -1689,7 +1689,7 @@ internal enum class HealthAtlasFunctionStory(
         showStructurePreview = true,
     ),
     SCAPULAR_ROTATION(
-        setOf("trapezius", "scapula"),
+        setOf("trapezius", "scapula", "clavicle"),
         R.string.health_atlas_scapular_rotation_story_title,
         R.string.health_atlas_scapular_rotation_story_scope,
         listOf(
@@ -1840,6 +1840,133 @@ internal enum class HealthAtlasFunctionStory(
         ),
         20_000L,
         showStructurePreview = true,
+    ),
+    ANKLE_MORTISE(
+        setOf("fibula"),
+        R.string.health_atlas_ankle_mortise_title,
+        R.string.health_atlas_ankle_mortise_scope,
+        listOf(
+            R.string.health_atlas_ankle_mortise_locate to R.string.health_atlas_ankle_mortise_locate_caption,
+            R.string.health_atlas_ankle_mortise_cradle to R.string.health_atlas_ankle_mortise_cradle_caption,
+            R.string.health_atlas_ankle_mortise_roll to R.string.health_atlas_ankle_mortise_roll_caption,
+            R.string.health_atlas_ankle_mortise_adapt to R.string.health_atlas_ankle_mortise_adapt_caption,
+            R.string.health_atlas_ankle_mortise_return to R.string.health_atlas_ankle_mortise_return_caption,
+        ),
+        listOf(
+            R.string.health_atlas_ankle_mortise_ref_anatomy to "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-4-bones-of-the-lower-limb",
+            R.string.health_atlas_ankle_mortise_ref_position to "https://pubmed.ncbi.nlm.nih.gov/27733557/",
+            R.string.health_atlas_ankle_mortise_ref_motion to "https://pubmed.ncbi.nlm.nih.gov/35097392/",
+        ),
+        20_000L,
+        showStructurePreview = true,
+    ),
+    VULVAR_PROTECTIVE_FOLDS(
+        HealthAtlasVulvarProtectionAssignment.owners,
+        HealthAtlasVulvarProtectionAssignment.title,
+        HealthAtlasVulvarProtectionAssignment.scope,
+        HealthAtlasVulvarProtectionAssignment.chapters,
+        HealthAtlasVulvarProtectionAssignment.references,
+        HealthAtlasVulvarProtectionAssignment.durationMs,
+        showStructurePreview = true,
+    ),
+    ACCESSORY_GLAND_ROUTING(
+        HealthAtlasAccessoryGlandRoutingAssignment.owners,
+        HealthAtlasAccessoryGlandRoutingAssignment.title,
+        HealthAtlasAccessoryGlandRoutingAssignment.scope,
+        HealthAtlasAccessoryGlandRoutingAssignment.chapters,
+        HealthAtlasAccessoryGlandRoutingAssignment.references,
+        HealthAtlasAccessoryGlandRoutingAssignment.durationMs,
+        showStructurePreview = true,
+    ),
+    UTEROCERVICAL_CONTINUITY(
+        HealthAtlasUterocervicalAssignment.owners,
+        HealthAtlasUterocervicalAssignment.title,
+        HealthAtlasUterocervicalAssignment.scope,
+        HealthAtlasUterocervicalAssignment.chapters,
+        HealthAtlasUterocervicalAssignment.references,
+        HealthAtlasUterocervicalAssignment.durationMs,
+        showStructurePreview = true,
+    ),
+    PENILE_URINARY_ROUTE(
+        HealthAtlasPenileUrinaryAssignment.owners,
+        HealthAtlasPenileUrinaryAssignment.title,
+        HealthAtlasPenileUrinaryAssignment.scope,
+        HealthAtlasPenileUrinaryAssignment.chapters,
+        HealthAtlasPenileUrinaryAssignment.references,
+        HealthAtlasPenileUrinaryAssignment.durationMs,
+        showStructurePreview = true,
+    ),
+    SCROTAL_HEAT_EXCHANGE(
+        HealthAtlasScrotalHeatAssignment.owners,
+        HealthAtlasScrotalHeatAssignment.title,
+        HealthAtlasScrotalHeatAssignment.scope,
+        HealthAtlasScrotalHeatAssignment.chapters,
+        HealthAtlasScrotalHeatAssignment.references,
+        HealthAtlasScrotalHeatAssignment.durationMs,
+        showStructurePreview = true,
+    ),
+    SKULL_PROTECTION(
+        HealthAtlasAxialProtectionAssignment.Skull.owners,
+        HealthAtlasAxialProtectionAssignment.Skull.title,
+        HealthAtlasAxialProtectionAssignment.Skull.scope,
+        HealthAtlasAxialProtectionAssignment.Skull.chapters,
+        HealthAtlasAxialProtectionAssignment.Skull.references,
+        HealthAtlasAxialProtectionAssignment.Skull.durationMs,
+        showStructurePreview = true,
+    ),
+    VERTEBRAL_MOTION(
+        HealthAtlasAxialProtectionAssignment.Vertebral.owners,
+        HealthAtlasAxialProtectionAssignment.Vertebral.title,
+        HealthAtlasAxialProtectionAssignment.Vertebral.scope,
+        HealthAtlasAxialProtectionAssignment.Vertebral.chapters,
+        HealthAtlasAxialProtectionAssignment.Vertebral.references,
+        HealthAtlasAxialProtectionAssignment.Vertebral.durationMs,
+        showStructurePreview = true,
+    ),
+    CLITORAL_SENSORY_PATH(
+        HealthAtlasClitoralSensoryAssignment.owners,
+        HealthAtlasClitoralSensoryAssignment.title,
+        HealthAtlasClitoralSensoryAssignment.scope,
+        HealthAtlasClitoralSensoryAssignment.chapters,
+        HealthAtlasClitoralSensoryAssignment.references,
+        HealthAtlasClitoralSensoryAssignment.durationMs,
+        showStructurePreview = true,
+    ),
+    VESTIBULAR_GLAND_SECRETION(
+        HealthAtlasVestibularGlandAssignment.owners,
+        HealthAtlasVestibularGlandAssignment.title,
+        HealthAtlasVestibularGlandAssignment.scope,
+        HealthAtlasVestibularGlandAssignment.chapters,
+        HealthAtlasVestibularGlandAssignment.references,
+        HealthAtlasVestibularGlandAssignment.durationMs,
+        showStructurePreview = true,
+    ),
+    TENOCYTE_TENDON_MATRIX(
+        HealthAtlasTenocyteTendonMatrixAssignment.owners,
+        HealthAtlasTenocyteTendonMatrixAssignment.title,
+        HealthAtlasTenocyteTendonMatrixAssignment.scope,
+        HealthAtlasTenocyteTendonMatrixAssignment.chapters,
+        HealthAtlasTenocyteTendonMatrixAssignment.references,
+        HealthAtlasTenocyteTendonMatrixAssignment.durationMs,
+        showStructurePreview = true,
+    ),
+    PECTORAL_HORIZONTAL_ADDUCTION(
+        HealthAtlasPectoralActionAssignment.owners,
+        HealthAtlasPectoralActionAssignment.title,
+        HealthAtlasPectoralActionAssignment.scope,
+        HealthAtlasPectoralActionAssignment.chapters,
+        HealthAtlasPectoralActionAssignment.references,
+        HealthAtlasPectoralActionAssignment.durationMs,
+        showStructurePreview = true,
+    ),
+    LATISSIMUS_EXTENSION_ADDUCTION(
+        HealthAtlasLatissimusActionAssignment.owners,
+        HealthAtlasLatissimusActionAssignment.title,
+        HealthAtlasLatissimusActionAssignment.scope,
+        HealthAtlasLatissimusActionAssignment.chapters,
+        HealthAtlasLatissimusActionAssignment.references,
+        HealthAtlasLatissimusActionAssignment.durationMs,
+        showStructurePreview = true,
     );
 
     val choiceTitle get() = when (this) {
@@ -1924,6 +2051,17 @@ internal enum class HealthAtlasFunctionStory(
         ERECTOR_SUPPORT -> R.string.health_atlas_erector_support_story_choice
         GLUTEAL_EXTENSION -> R.string.health_atlas_gluteal_extension_story_choice
         GUT_LYMPHOID_SAMPLING -> R.string.health_atlas_gut_lymphoid_story_choice
+        ANKLE_MORTISE -> R.string.health_atlas_ankle_mortise_choice
+        VULVAR_PROTECTIVE_FOLDS -> HealthAtlasVulvarProtectionAssignment.choice
+        ACCESSORY_GLAND_ROUTING -> HealthAtlasAccessoryGlandRoutingAssignment.choice
+        UTEROCERVICAL_CONTINUITY -> HealthAtlasUterocervicalAssignment.choice
+        PENILE_URINARY_ROUTE -> HealthAtlasPenileUrinaryAssignment.choice
+        SCROTAL_HEAT_EXCHANGE -> HealthAtlasScrotalHeatAssignment.choice
+        SKULL_PROTECTION -> HealthAtlasAxialProtectionAssignment.Skull.choice
+        VERTEBRAL_MOTION -> HealthAtlasAxialProtectionAssignment.Vertebral.choice
+        CLITORAL_SENSORY_PATH -> HealthAtlasClitoralSensoryAssignment.choice
+        VESTIBULAR_GLAND_SECRETION -> HealthAtlasVestibularGlandAssignment.choice
+        TENOCYTE_TENDON_MATRIX -> HealthAtlasTenocyteTendonMatrixAssignment.choice
         else -> title
     }
 
@@ -2014,6 +2152,19 @@ internal enum class HealthAtlasFunctionStory(
         ERECTOR_SUPPORT -> listOf("muscle" to MUSCLE_MOTION)
         GLUTEAL_EXTENSION -> listOf("muscle" to MUSCLE_MOTION)
         GUT_LYMPHOID_SAMPLING -> listOf("ileum" to INTESTINAL_ABSORPTION)
+        ANKLE_MORTISE -> listOf("tibia" to KNEE_ARTICULATION)
+        VULVAR_PROTECTIVE_FOLDS -> listOf("skin-organ" to EPIDERMAL_BARRIER)
+        ACCESSORY_GLAND_ROUTING -> HealthAtlasAccessoryGlandRoutingAssignment.relatedLessons()
+        UTEROCERVICAL_CONTINUITY -> listOf("endometrium" to ENDOMETRIUM_RENEWAL)
+        PENILE_URINARY_ROUTE -> listOf("urethra" to URINE_ROUTE)
+        SCROTAL_HEAT_EXCHANGE -> listOf("testes" to SPERM_TRANSPORT)
+        SKULL_PROTECTION -> listOf("brain" to SYNAPTIC_SIGNAL)
+        VERTEBRAL_MOTION -> listOf("erector-spinae" to ERECTOR_SUPPORT)
+        CLITORAL_SENSORY_PATH -> listOf("spinal-cord" to SYNAPTIC_SIGNAL)
+        VESTIBULAR_GLAND_SECRETION -> listOf("vulva" to VULVAR_PROTECTIVE_FOLDS)
+        TENOCYTE_TENDON_MATRIX -> listOf("tissue-dense-regular-connective" to TENDON_FORCE_TRANSFER)
+        PECTORAL_HORIZONTAL_ADDUCTION -> listOf("clavicle" to SCAPULAR_ROTATION)
+        LATISSIMUS_EXTENSION_ADDUCTION -> listOf("erector-spinae" to ERECTOR_SUPPORT)
         CHONDROCYTE_MATRIX -> listOf("tissue-hyaline-cartilage" to CARTILAGE_LOAD)
         ADRENAL_MEDULLA_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
         GASTRIC_ACID_SECRETION -> listOf("stomach" to DIGESTION, "cell-gastric-chief-cell" to GASTRIC_CHIEF_SECRETION)
@@ -2027,12 +2178,19 @@ internal enum class HealthAtlasFunctionStory(
     fun startOf(chapter: Int) = chapter.coerceIn(chapters.indices) / chapters.size.toFloat()
 
     fun entryPhase(id: String): Float = startOf(when (this) {
+        VULVAR_PROTECTIVE_FOLDS -> HealthAtlasVulvarProtectionAssignment.entryChapter(id)
+        ACCESSORY_GLAND_ROUTING -> HealthAtlasAccessoryGlandRoutingAssignment.entryChapter(id)
+        UTEROCERVICAL_CONTINUITY -> HealthAtlasUterocervicalAssignment.entryChapter(id)
         GANGLION_RELAY -> if (id == "autonomic-nerves") HealthAtlasGanglionRelayAssignment.AUTONOMIC
             else HealthAtlasGanglionRelayAssignment.entryChapter(id)
         PLACENTAL_EXCHANGE -> if (id == "cell-trophoblast") 2 else 0
         GUT_LYMPHOID_SAMPLING -> if (id == "gut-associated-lymphoid-tissue") 1 else 0
         PINEAL_DARK_SIGNAL -> if (id == "cell-pinealocyte") 3 else 0
-        SCAPULAR_ROTATION -> if (id == "scapula") 2 else 0
+        SCAPULAR_ROTATION -> when (id) {
+            "clavicle" -> 1
+            "scapula" -> 2
+            else -> 0
+        }
         HEARTBEAT -> if (id == "aorta" || id == "pulmonary-trunk") HealthAtlasBeatStage.EJECTION.ordinal else 0
         BREATHING -> if (id == "cell-type-i-pneumocyte") HealthAtlasBreathingStage.DIFFUSE.ordinal else 0
         SALIVA_SECRETION -> if (id == "cell-salivary-acinar-cell") 1 else 0
@@ -2144,6 +2302,19 @@ internal enum class HealthAtlasFunctionStory(
         ERECTOR_SUPPORT -> HealthAtlasErectorSupportStoryView(context)
         GLUTEAL_EXTENSION -> HealthAtlasGlutealExtensionStoryView(context)
         GUT_LYMPHOID_SAMPLING -> HealthAtlasGutLymphoidStoryView(context)
+        ANKLE_MORTISE -> HealthAtlasAnkleMortiseStoryView(context)
+        VULVAR_PROTECTIVE_FOLDS -> HealthAtlasVulvarProtectionStoryView(context, this)
+        ACCESSORY_GLAND_ROUTING -> HealthAtlasAccessoryGlandRoutingStoryView(context, this)
+        UTEROCERVICAL_CONTINUITY -> HealthAtlasUterocervicalStoryView(context, this)
+        PENILE_URINARY_ROUTE -> HealthAtlasPenileUrinaryStoryView(context, this)
+        SCROTAL_HEAT_EXCHANGE -> HealthAtlasScrotalHeatStoryView(context, this)
+        SKULL_PROTECTION -> HealthAtlasSkullProtectionStoryView(context, this)
+        VERTEBRAL_MOTION -> HealthAtlasVertebralMotionStoryView(context, this)
+        CLITORAL_SENSORY_PATH -> HealthAtlasClitoralSensoryStoryView(context, this)
+        VESTIBULAR_GLAND_SECRETION -> HealthAtlasVestibularGlandStoryView(context, this)
+        TENOCYTE_TENDON_MATRIX -> HealthAtlasTenocyteTendonMatrixStoryView(context, this)
+        PECTORAL_HORIZONTAL_ADDUCTION -> HealthAtlasPectoralActionStoryView(context, this)
+        LATISSIMUS_EXTENSION_ADDUCTION -> HealthAtlasLatissimusActionStoryView(context, this)
         NEUTROPHIL_DEFENSE, EOSINOPHIL_RESPONSE, BASOPHIL_SIGNALING, MONOCYTE_RECRUITMENT,
         DENDRITIC_PRESENTATION, T_CELL_RESPONSE, NK_SURVEILLANCE, PLATELET_FORMATION, MACROPHAGE_CLEARANCE ->
             HealthAtlasCellFunctionArt(context, this, owners.single())
@@ -2161,6 +2332,7 @@ internal enum class HealthAtlasFunctionStory(
                 "biliary-tract" -> listOf(primary, CHOLANGIOCYTE_BILE)
                 "autonomic-nerves" -> listOf(primary, GANGLION_RELAY)
                 "joints" -> listOf(primary, LIGAMENT_GUIDANCE)
+                "tibia" -> listOf(primary, ANKLE_MORTISE)
                 "nervous", "brain", "spinal-cord", "cell-neuron" -> listOf(primary, MYELIN_SIGNAL)
                 "tissue-central-nervous" -> listOf(primary, MYELIN_SIGNAL, ASTROCYTE_SUPPORT)
                 "tissue-skeletal-muscle" -> listOf(primary, MUSCLE_MOTION)

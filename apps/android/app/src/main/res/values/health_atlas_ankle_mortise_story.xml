@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ankle_mortise_title">How the fibula helps frame the ankle</string>
+    <string name="health_atlas_ankle_mortise_choice">The ankle frame in motion</string>
+    <string name="health_atlas_ankle_mortise_scope">Normal ankle anatomy in simplified front and side views. Very small motions of the fibula are enlarged for visibility. Angles and distances are not measurements.</string>
+    <string name="health_atlas_ankle_mortise_locate">Locate the fibula</string>
+    <string name="health_atlas_ankle_mortise_locate_caption">The thinner bone on the outside of the lower leg is the fibula. Its lower end extends beside the talus and contributes the outer wall of the ankle frame.</string>
+    <string name="health_atlas_ankle_mortise_cradle">See the ankle frame</string>
+    <string name="health_atlas_ankle_mortise_cradle_caption">The lower tibia and fibula surround the top of the talus. The ligament connection between the two lower-leg bones keeps them together while allowing small adjustments.</string>
+    <string name="health_atlas_ankle_mortise_roll">Follow the talus</string>
+    <string name="health_atlas_ankle_mortise_roll_caption">In this side view, the foot tips upward as the talus moves relative to the lower leg. The side view shows the large direction of movement, not the full joint motion.</string>
+    <string name="health_atlas_ankle_mortise_adapt">The fibula adjusts</string>
+    <string name="health_atlas_ankle_mortise_adapt_caption">As the ankle bends upward, the lower fibula can shift and rotate slightly. The drawing enlarges one sideways component to make it visible.</string>
+    <string name="health_atlas_ankle_mortise_return">Back toward neutral</string>
+    <string name="health_atlas_ankle_mortise_return_caption">The foot returns toward its starting position. The talus remains within the ankle frame as the two lower-leg bones adjust together.</string>
+    <string name="health_atlas_ankle_mortise_tibia">Tibia</string>
+    <string name="health_atlas_ankle_mortise_fibula">Fibula</string>
+    <string name="health_atlas_ankle_mortise_ankle">Ankle joint</string>
+    <string name="health_atlas_ankle_mortise_talus">Talus</string>
+    <string name="health_atlas_ankle_mortise_syndesmosis">Tibiofibular link</string>
+    <string name="health_atlas_ankle_mortise_dorsiflex">Foot tips upward</string>
+    <string name="health_atlas_ankle_mortise_neutral">Return toward neutral</string>
+    <string name="health_atlas_ankle_mortise_exaggerated">Small shift enlarged</string>
+    <string name="health_atlas_ankle_mortise_ref_anatomy">OpenStax · bones of the lower limb</string>
+    <string name="health_atlas_ankle_mortise_ref_position">MRI study · moving the uninjured ankle</string>
+    <string name="health_atlas_ankle_mortise_ref_motion">In vivo mechanics · ankle motion and the fibula</string>
+</resources>

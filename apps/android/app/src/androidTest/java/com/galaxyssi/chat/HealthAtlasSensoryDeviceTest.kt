@@ -82,9 +82,11 @@ class HealthAtlasSensoryDeviceTest {
         val english = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.ENGLISH) })
         val chinese = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
         val atlas = HealthBodyAtlas.load(english)
-        val plates = HealthAtlasSensoryPlates.all
+        val extendedCells = listOf("cell-microglia", "cell-ependymal-cell")
+            .map { requireNotNull(HealthAtlasTissueContextPlates.forId(it)) }
+        val plates = HealthAtlasSensoryPlates.all + extendedCells
         assertEquals(16, plates.size)
-        assertEquals(34, plates.sumOf { it.features.size })
+        assertEquals(40, plates.sumOf { it.features.size })
         assertEquals(3, plates.sumOf { it.markers.size })
         assertEquals(16, plates.map { it.drawable }.toSet().size)
         for (plate in plates) {

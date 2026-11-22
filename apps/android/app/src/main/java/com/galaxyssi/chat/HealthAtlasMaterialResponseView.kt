@@ -17,6 +17,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> R.string.health_atlas_diffusion_diagram
         HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> R.string.health_atlas_compression_diagram
         HealthAtlasPhysiologyKind.BONE_BENDING -> R.string.health_atlas_bone_bending_diagram
+        HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_diagram
         else -> error("Unexpected material response: $kind")
     }
     private val ink = context.getColor(R.color.text_primary)
@@ -38,6 +39,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> "atlas-diffusion-layer"
             HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> "atlas-cartilage-compression"
             HealthAtlasPhysiologyKind.BONE_BENDING -> "atlas-bone-bending"
+            HealthAtlasPhysiologyKind.CALF_PUMP -> "atlas-calf-pump"
             else -> error("Unexpected material response: $kind")
         }
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
@@ -60,6 +62,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION -> drawExchange(canvas)
             HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> drawCartilage(canvas)
             HealthAtlasPhysiologyKind.BONE_BENDING -> drawBone(canvas)
+            HealthAtlasPhysiologyKind.CALF_PUMP -> drawCalfPump(canvas)
             else -> Unit
         }
         canvas.restore()
@@ -175,6 +178,32 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         label(c, R.string.health_atlas_bone_bending_tension, axis + 44, 148f, 94f)
     }
 
+    private fun drawCalfPump(c: Canvas) {
+        val stroke = model.input(0).toFloat()
+        val total = stroke * model.input(1).toFloat()
+        val returning = (total * model.input(2) / 100).toFloat()
+        val returnInk = 0xffa66c44.toInt()
+        rectangle(c, 43f, 32f, 140f, 122f, 0xffe2eded.toInt(), 18f)
+        rectangle(c, 50f, 39f, 133f, 115f, 0xfff3f7f5.toInt(), 14f)
+        if (stroke > 0) {
+            val top = 115f - 71f * stroke / 25f
+            rectangle(c, 53f, top, 130f, 113f, 0xff8ac9ba.toInt(), minOf((113f - top) * .45f, 12f))
+        }
+        line(c, 39f, 44f, 39f, 111f, rose, 4f)
+        line(c, 144f, 44f, 144f, 111f, rose, 4f)
+        line(c, 75f, 33f, 91f, 40f, teal, 2.5f)
+        line(c, 92f, 40f, 108f, 33f, teal, 2.5f)
+        line(c, 75f, 115f, 91f, 122f, teal, 2.5f)
+        line(c, 92f, 122f, 108f, 115f, teal, 2.5f)
+        line(c, 196f, 54f, 314f, 54f, 0xffc5ded9.toInt(), 7f)
+        line(c, 196f, 111f, 314f, 111f, 0xffeedccc.toInt(), 7f)
+        if (total > 0) arrow(c, 196f, 54f, 196f + (118f * total / 750).coerceAtLeast(6f), 54f, teal, 3f)
+        if (returning > 0) arrow(c, 314f, 111f, 314f - (118f * returning / 750).coerceAtLeast(6f), 111f, returnInk, 3f)
+        label(c, R.string.health_atlas_calf_pump_chamber_label, 91f, 145f, 132f)
+        label(c, R.string.health_atlas_calf_pump_forward_label, 255f, 72f, 145f)
+        label(c, R.string.health_atlas_calf_pump_return_label, 255f, 130f, 145f)
+    }
+
     private fun rectangle(c: Canvas, left: Float, top: Float, right: Float, bottom: Float, color: Int, radius: Float = 10f) {
         paint.color = color
         c.drawRoundRect(left, top, right, bottom, radius, radius, paint)
@@ -196,9 +225,10 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         val horizontal = y1 == y2
         c.drawPath(Path().apply {
             if (horizontal) {
-                moveTo(x2 + 2, y2)
-                lineTo(x2 - 6, y2 - 4)
-                lineTo(x2 - 6, y2 + 4)
+                val direction = if (x2 >= x1) 1f else -1f
+                moveTo(x2 + 2 * direction, y2)
+                lineTo(x2 - 6 * direction, y2 - 4)
+                lineTo(x2 - 6 * direction, y2 + 4)
             } else {
                 moveTo(x2, y2 + 2)
                 lineTo(x2 - 4, y2 - 6)
