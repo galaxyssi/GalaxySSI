@@ -7,6 +7,9 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    C43210000000000000000011 /* GalaxySSIConversationRenamePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43210000000000000000012 /* GalaxySSIConversationRenamePolicy.swift */; };
+    C43210000000000000000021 /* GalaxySSIConversationRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43210000000000000000022 /* GalaxySSIConversationRenameView.swift */; };
+    C43210000000000000000031 /* GalaxySSIConversationRenameTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43210000000000000000032 /* GalaxySSIConversationRenameTests.swift */; };
     C43080000000000000000011 /* PublicNewsArticleRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43080000000000000000012 /* PublicNewsArticleRetryPolicy.swift */; };
     C43080000000000000000021 /* PublicNewsArticleRetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43080000000000000000022 /* PublicNewsArticleRetryTests.swift */; };
     C43070000000000000000011 /* PublicNewsBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43070000000000000000012 /* PublicNewsBudget.swift */; };
@@ -1425,6 +1428,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    C43210000000000000000012 /* GalaxySSIConversationRenamePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationRenamePolicy.swift; sourceTree = "<group>"; };
+    C43210000000000000000022 /* GalaxySSIConversationRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationRenameView.swift; sourceTree = "<group>"; };
+    C43210000000000000000032 /* GalaxySSIConversationRenameTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationRenameTests.swift; sourceTree = "<group>"; };
     C43080000000000000000012 /* PublicNewsArticleRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticleRetryPolicy.swift; sourceTree = "<group>"; };
     C43080000000000000000022 /* PublicNewsArticleRetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticleRetryTests.swift; sourceTree = "<group>"; };
     C43070000000000000000012 /* PublicNewsBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBudget.swift; sourceTree = "<group>"; };
@@ -3707,6 +3713,8 @@
         C43140000000000000000032 /* GalaxySSIHealthActivityComparisonView.swift */,
         C43140000000000000000052 /* GalaxySSIHealthMeasurementComparison.swift */,
         C43150000000000000000012 /* GalaxySSIHealthMeasurementPeriods.swift */,
+        C43210000000000000000012 /* GalaxySSIConversationRenamePolicy.swift */,
+        C43210000000000000000022 /* GalaxySSIConversationRenameView.swift */,
         C43170000000000000000012 /* GalaxySSIHealthMeasurementList.swift */,
         C43180000000000000000012 /* GalaxySSIHealthTheme.swift */,
         C43180000000000000000022 /* GalaxySSIHealthFunctionsView.swift */,
@@ -4213,6 +4221,7 @@
         C43140000000000000000042 /* GalaxySSIHealthActivityComparisonTests.swift */,
         C43140000000000000000072 /* GalaxySSIHealthMeasurementComparisonTests.swift */,
         C43150000000000000000072 /* GalaxySSIHealthMeasurementPeriodTests.swift */,
+        C43210000000000000000032 /* GalaxySSIConversationRenameTests.swift */,
         C43170000000000000000022 /* GalaxySSIHealthMeasurementListTests.swift */,
         C43180000000000000000032 /* GalaxySSIHealthThemeTests.swift */,
         C43050000000000000000022 /* GalaxySSIHealthCyclingSessionTests.swift */,
@@ -5259,6 +5268,8 @@
         C43140000000000000000031 /* GalaxySSIHealthActivityComparisonView.swift in Sources */,
         C43140000000000000000051 /* GalaxySSIHealthMeasurementComparison.swift in Sources */,
         C43150000000000000000011 /* GalaxySSIHealthMeasurementPeriods.swift in Sources */,
+        C43210000000000000000011 /* GalaxySSIConversationRenamePolicy.swift in Sources */,
+        C43210000000000000000021 /* GalaxySSIConversationRenameView.swift in Sources */,
         C43170000000000000000011 /* GalaxySSIHealthMeasurementList.swift in Sources */,
         C43180000000000000000011 /* GalaxySSIHealthTheme.swift in Sources */,
         C43180000000000000000021 /* GalaxySSIHealthFunctionsView.swift in Sources */,
@@ -5764,6 +5775,7 @@
         C43140000000000000000041 /* GalaxySSIHealthActivityComparisonTests.swift in Sources */,
         C43140000000000000000071 /* GalaxySSIHealthMeasurementComparisonTests.swift in Sources */,
         C43150000000000000000071 /* GalaxySSIHealthMeasurementPeriodTests.swift in Sources */,
+        C43210000000000000000031 /* GalaxySSIConversationRenameTests.swift in Sources */,
         C43170000000000000000021 /* GalaxySSIHealthMeasurementListTests.swift in Sources */,
         C43180000000000000000031 /* GalaxySSIHealthThemeTests.swift in Sources */,
         C43050000000000000000021 /* GalaxySSIHealthCyclingSessionTests.swift in Sources */,
