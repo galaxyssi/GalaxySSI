@@ -110,6 +110,7 @@ enum AgentRemotePilotProtocol {
   struct Dispatch: Codable, Equatable {
     let node: Node
     let person: String
+    let transportInstance: String
     let childRun: String
     let sourceID: UUID
     let idempotencyKey: String
@@ -119,6 +120,23 @@ enum AgentRemotePilotProtocol {
   struct Prepared {
     let receipt: Dispatch
     let prompt: String
+  }
+
+  static func desktopCaptureScope(binding: AppBinding, slot: SlotState) throws -> AgentMcpJSONObject {
+    guard slot.dispatches.map(\.node) == Node.allCases,
+          Set(slot.dispatches.map(\.sourceID)).count == Node.allCases.count,
+          slot.dispatches.allSatisfy({ $0.person == $0.node.person(in: slot.arm) &&
+            $0.transportInstance == $0.person && slot.identity.sources[$0.node] == $0.sourceID }) else { throw Failure.scope }
+    return ["format": .string("galaxyssi.codex-trial-scope.v2"), "trial_id": .string(slot.identity.run),
+      "client_route_id": .string(binding.clientRoute), "conversation_id": .string(slot.identity.group),
+      "turn_id": .string(slot.identity.turn), "contact_id": .string(binding.contact), "agent_id": .string("codex"),
+      "requested_model": .string(binding.selection.modelId),
+      "requested_reasoning_effort": .string(binding.selection.reasoningEffort.rawValue),
+      "expected_nodes": .array(Node.allCases.map { .string($0.rawValue) }),
+      "assignments": .array(slot.dispatches.map {
+        .object(["node_id": .string($0.node.rawValue), "transport_instance_id": .string($0.transportInstance),
+          "source_message_id": .string($0.sourceID.uuidString)])
+      })]
   }
 
   struct AppBinding: Equatable {
@@ -211,6 +229,8 @@ enum AgentRemotePilotProtocol {
             report.slots[index].state == "started" else { throw Failure.scope }
       let admitted = report.slots[index].dispatches
       guard admitted.count < Node.allCases.count, receipt.node == Node.allCases[admitted.count],
+            receipt.person == receipt.node.person(in: report.slots[index].arm), receipt.transportInstance == receipt.person,
+            receipt.sourceID == identity.sources[receipt.node],
             admitted.allSatisfy({ $0.sourceID != receipt.sourceID && $0.childRun != receipt.childRun &&
               $0.idempotencyKey != receipt.idempotencyKey }) else { throw Failure.replay }
       var next = report
@@ -288,7 +308,7 @@ enum AgentRemotePilotProtocol {
         "\nDo not inspect unrelated files, call other agents or claim unperformed verification. These instructions are not a sandbox."
       guard prompt.utf8.count <= 60_000 else { throw Failure.incomplete }
       guard let source = identity.sources[node] else { throw Failure.scope }
-      let receipt = Dispatch(node: node, person: person, childRun: request.runId, sourceID: source,
+      let receipt = Dispatch(node: node, person: person, transportInstance: person, childRun: request.runId, sourceID: source,
         idempotencyKey: request.idempotencyKey, promptSHA256: digest(Data(prompt.utf8)))
       try Task.checkCancellation()
       try await journal.record(receipt, index: index, identity: identity)

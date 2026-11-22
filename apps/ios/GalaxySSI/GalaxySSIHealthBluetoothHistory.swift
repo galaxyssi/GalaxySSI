@@ -125,7 +125,7 @@ struct GalaxySSIHealthBluetoothHistorySection: View {
             }
           }
           .navigationTitle(title(device))
-          .navigationBarTitleDisplayMode(.inline)
+          .galaxySSIHealthTheme()
           .alert(t("erase_confirm", "Permanently delete this device's local history?"),
                  isPresented: $confirmingDeletion) {
             Button(t("erase", "Delete local history"), role: .destructive) { erase(device.id) }

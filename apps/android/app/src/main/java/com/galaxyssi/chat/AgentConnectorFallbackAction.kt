@@ -7,6 +7,10 @@ internal object AgentConnectorFallbackAction {
     const val ATTEMPTED_RESULT = "attempted_resource_ids"
     private const val ACTION_ID_PARAMETER = "routing_fallback_action_id"
 
+    fun isTargetLocked(action: AgentAction?, metadata: Map<String, String>): Boolean =
+        action?.parameters?.get("manual_target_locked") == "true" ||
+            metadata["manual_target_locked"] == "true"
+
     fun hasActiveTrail(action: AgentAction): Boolean =
         action.parameters[ACTION_ID_PARAMETER] == action.id &&
             action.parameters[ATTEMPTED_PARAMETER].orEmpty().isNotBlank()

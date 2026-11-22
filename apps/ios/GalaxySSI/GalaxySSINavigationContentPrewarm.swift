@@ -17,9 +17,8 @@ enum GalaxySSINavigationContentPrewarm {
 
     let activePage = store.agentSessionPage(status: .active, cursor: nil)
     let conversations = activePage.items
-    let archivedConversationCount = store.agentSessionCount(status: .archived)
     let contacts = store.contactList(matching: "")
-    let chatContacts = store.chatContacts(matching: "")
+    let chatContacts = store.conversationHistoryContacts
     let cloudContacts = store.cloudModelContacts
     let visibleContacts = store.visibleContacts
     let activeConversationID = store.activeAgentConversationId
@@ -46,6 +45,7 @@ enum GalaxySSINavigationContentPrewarm {
       summary: store.conversationSummary(for:),
       isPinned: store.isContactPinned
     )
+    let archivedConversationCount = store.agentSessionCount(status: .archived) + contactSummaries.filter(\.archived).count
     let apiKeys = cloudContacts.reduce(into: [String: String]()) { result, contact in
       for model in contact.cloudModels {
         if let key = store.apiKey(for: model), !key.isEmpty {

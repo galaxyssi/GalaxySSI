@@ -50,8 +50,7 @@ internal fun MobileNativeAgent.recoverCodexSilence(
     val selected = targets.firstOrNull { it.id == decision.resourceId }
     val selection = AgentConnectorFallbackSelection(decision.resourceId, emptyList(), emptyList(), emptySet(),
         AgentConnectorFallbackTrail.parse(decision.state[AgentCodexSilenceRecovery.TRIED].orEmpty()).toSet())
-    var retry = AgentConnectorFallbackAction.prepare(action.copy(parameters = action.parameters - "manual_target_locked"),
-        selection, selected)
+    var retry = AgentConnectorFallbackAction.prepare(action, selection, selected)
     val originalSettings = if (state[AgentCodexSilenceRecovery.ORIGIN].isNullOrBlank()) {
         action.parameters.filterKeys { it in setOf("manual_model_id", "agent_model_id", "agent_reasoning_effort") }
             .mapKeys { AgentCodexSilenceRecovery.PREFIX + it.key }

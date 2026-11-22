@@ -1,0 +1,4718 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "id": "nervous",
+      "kind": "system",
+      "name": "health_atlas_nervous_name",
+      "description": "health_atlas_nervous_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [
+        "brain",
+        "cerebrum",
+        "cerebellum",
+        "brainstem",
+        "spinal-cord",
+        "peripheral-nerves",
+        "cranial-nerves",
+        "spinal-nerves",
+        "ganglia",
+        "autonomic-nerves"
+      ],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_nervous_aliases",
+      "color": "#8b70c9",
+      "icon": "brain"
+    },
+    {
+      "id": "sensory",
+      "kind": "system",
+      "name": "health_atlas_sensory_name",
+      "description": "health_atlas_sensory_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [
+        "eye",
+        "cornea",
+        "lens",
+        "retina",
+        "ear",
+        "external-ear",
+        "middle-ear",
+        "inner-ear",
+        "cochlea",
+        "vestibular-apparatus",
+        "nose",
+        "olfactory-mucosa",
+        "tongue",
+        "taste-buds",
+        "skin-organ"
+      ],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_sensory_aliases",
+      "color": "#5b7fc5",
+      "icon": "eye"
+    },
+    {
+      "id": "cardio",
+      "kind": "system",
+      "name": "health_atlas_cardio_name",
+      "description": "health_atlas_cardio_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "heart",
+        "atria",
+        "ventricles",
+        "heart-valves",
+        "coronary-vessels",
+        "blood-vessels",
+        "arteries",
+        "veins",
+        "capillaries",
+        "blood"
+      ],
+      "mechanism": "cardio",
+      "aliases": "health_atlas_cardio_aliases",
+      "color": "#d4657d",
+      "icon": "heart-pulse"
+    },
+    {
+      "id": "respiratory",
+      "kind": "system",
+      "name": "health_atlas_respiratory_name",
+      "description": "health_atlas_respiratory_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "nose",
+        "nasal-cavity",
+        "paranasal-sinuses",
+        "pharynx",
+        "larynx",
+        "trachea",
+        "bronchi",
+        "bronchioles",
+        "lungs",
+        "alveoli",
+        "pleura",
+        "diaphragm"
+      ],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_respiratory_aliases",
+      "color": "#399fc1",
+      "icon": "wind"
+    },
+    {
+      "id": "gut",
+      "kind": "system",
+      "name": "health_atlas_gut_name",
+      "description": "health_atlas_gut_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "oral-cavity",
+        "teeth",
+        "tongue",
+        "pharynx",
+        "esophagus",
+        "stomach",
+        "small-intestine",
+        "duodenum",
+        "jejunum",
+        "ileum",
+        "large-intestine",
+        "cecum",
+        "appendix",
+        "colon",
+        "rectum",
+        "anal-canal"
+      ],
+      "mechanism": "gut",
+      "aliases": "health_atlas_gut_aliases",
+      "color": "#c77a48",
+      "icon": "route"
+    },
+    {
+      "id": "digestive",
+      "kind": "system",
+      "name": "health_atlas_digestive_name",
+      "description": "health_atlas_digestive_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [
+        "salivary-glands",
+        "parotid-glands",
+        "submandibular-glands",
+        "sublingual-glands",
+        "liver",
+        "gallbladder",
+        "biliary-tract",
+        "pancreas",
+        "pancreatic-duct"
+      ],
+      "mechanism": "digestive",
+      "aliases": "health_atlas_digestive_aliases",
+      "color": "#b89139",
+      "icon": "droplets"
+    },
+    {
+      "id": "urinary",
+      "kind": "system",
+      "name": "health_atlas_urinary_name",
+      "description": "health_atlas_urinary_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "kidneys",
+        "nephron",
+        "glomerulus",
+        "renal-tubules",
+        "collecting-ducts",
+        "ureters",
+        "bladder",
+        "urethra"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_urinary_aliases",
+      "color": "#ca7895",
+      "icon": "droplet"
+    },
+    {
+      "id": "endocrine",
+      "kind": "system",
+      "name": "health_atlas_endocrine_name",
+      "description": "health_atlas_endocrine_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [
+        "hypothalamus",
+        "pituitary-gland",
+        "pineal-gland",
+        "thyroid-gland",
+        "parathyroid-glands",
+        "adrenal-glands",
+        "pancreas",
+        "pancreatic-islets",
+        "ovaries",
+        "testes",
+        "placenta"
+      ],
+      "mechanism": "endocrine",
+      "aliases": "health_atlas_endocrine_aliases",
+      "color": "#4f9e91",
+      "icon": "network"
+    },
+    {
+      "id": "immune",
+      "kind": "system",
+      "name": "health_atlas_immune_name",
+      "description": "health_atlas_immune_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "bone-marrow",
+        "thymus",
+        "spleen",
+        "lymph-nodes",
+        "lymphatic-vessels",
+        "thoracic-duct",
+        "tonsils",
+        "adenoids",
+        "appendix",
+        "gut-associated-lymphoid-tissue"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_immune_aliases",
+      "color": "#63a86c",
+      "icon": "shield-plus"
+    },
+    {
+      "id": "male",
+      "kind": "system",
+      "name": "health_atlas_male_name",
+      "description": "health_atlas_male_description",
+      "systems": [
+        "male"
+      ],
+      "related": [
+        "testes",
+        "epididymis",
+        "vas-deferens",
+        "seminal-vesicles",
+        "ejaculatory-ducts",
+        "prostate",
+        "bulbourethral-glands",
+        "penis",
+        "scrotum",
+        "urethra"
+      ],
+      "mechanism": "male",
+      "aliases": "health_atlas_male_aliases",
+      "color": "#8c74bd",
+      "icon": "mars"
+    },
+    {
+      "id": "female",
+      "kind": "system",
+      "name": "health_atlas_female_name",
+      "description": "health_atlas_female_description",
+      "systems": [
+        "female"
+      ],
+      "related": [
+        "ovaries",
+        "uterine-tubes",
+        "uterus",
+        "endometrium",
+        "cervix",
+        "vagina",
+        "vulva",
+        "clitoris",
+        "labia-majora",
+        "labia-minora",
+        "greater-vestibular-glands",
+        "mammary-glands",
+        "placenta"
+      ],
+      "mechanism": "female",
+      "aliases": "health_atlas_female_aliases",
+      "color": "#c4759e",
+      "icon": "venus"
+    },
+    {
+      "id": "skin",
+      "kind": "system",
+      "name": "health_atlas_skin_name",
+      "description": "health_atlas_skin_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [
+        "skin-organ",
+        "epidermis",
+        "dermis",
+        "subcutaneous-tissue",
+        "sweat-glands",
+        "sebaceous-glands",
+        "hair-follicles",
+        "hair",
+        "nails"
+      ],
+      "mechanism": "skin",
+      "aliases": "health_atlas_skin_aliases",
+      "color": "#d19a51",
+      "icon": "fingerprint"
+    },
+    {
+      "id": "skeletal",
+      "kind": "system",
+      "name": "health_atlas_skeletal_name",
+      "description": "health_atlas_skeletal_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [
+        "skull",
+        "vertebrae",
+        "ribs",
+        "sternum",
+        "clavicle",
+        "scapula",
+        "pelvis",
+        "limb-bones",
+        "humerus",
+        "radius",
+        "ulna",
+        "hand-bones",
+        "femur",
+        "patella",
+        "tibia",
+        "fibula",
+        "foot-bones",
+        "cartilage",
+        "joints",
+        "ligaments",
+        "bone-marrow"
+      ],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_skeletal_aliases",
+      "color": "#7793ac",
+      "icon": "bone"
+    },
+    {
+      "id": "muscle",
+      "kind": "system",
+      "name": "health_atlas_muscle_name",
+      "description": "health_atlas_muscle_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [
+        "pectoralis-major",
+        "deltoid",
+        "biceps-brachii",
+        "triceps-brachii",
+        "rectus-abdominis",
+        "oblique-abdominal-muscles",
+        "trapezius",
+        "latissimus-dorsi",
+        "erector-spinae",
+        "diaphragm",
+        "gluteus-maximus",
+        "quadriceps-femoris",
+        "hamstrings",
+        "gastrocnemius",
+        "soleus",
+        "tendons"
+      ],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_muscle_aliases",
+      "color": "#cf7f73",
+      "icon": "biceps-flexed"
+    },
+    {
+      "id": "brain",
+      "kind": "organ",
+      "name": "health_atlas_brain_name",
+      "description": "health_atlas_brain_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [
+        "cerebrum",
+        "cerebellum",
+        "brainstem"
+      ],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_brain_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cerebrum",
+      "kind": "organ",
+      "name": "health_atlas_cerebrum_name",
+      "description": "health_atlas_cerebrum_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_cerebrum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cerebellum",
+      "kind": "organ",
+      "name": "health_atlas_cerebellum_name",
+      "description": "health_atlas_cerebellum_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_cerebellum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "brainstem",
+      "kind": "organ",
+      "name": "health_atlas_brainstem_name",
+      "description": "health_atlas_brainstem_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_brainstem_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "spinal-cord",
+      "kind": "organ",
+      "name": "health_atlas_spinal_cord_name",
+      "description": "health_atlas_spinal_cord_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_spinal_cord_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "peripheral-nerves",
+      "kind": "organ",
+      "name": "health_atlas_peripheral_nerves_name",
+      "description": "health_atlas_peripheral_nerves_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_peripheral_nerves_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cranial-nerves",
+      "kind": "organ",
+      "name": "health_atlas_cranial_nerves_name",
+      "description": "health_atlas_cranial_nerves_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_cranial_nerves_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "spinal-nerves",
+      "kind": "organ",
+      "name": "health_atlas_spinal_nerves_name",
+      "description": "health_atlas_spinal_nerves_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_spinal_nerves_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "ganglia",
+      "kind": "organ",
+      "name": "health_atlas_ganglia_name",
+      "description": "health_atlas_ganglia_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_ganglia_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "autonomic-nerves",
+      "kind": "organ",
+      "name": "health_atlas_autonomic_nerves_name",
+      "description": "health_atlas_autonomic_nerves_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_autonomic_nerves_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "eye",
+      "kind": "organ",
+      "name": "health_atlas_eye_name",
+      "description": "health_atlas_eye_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [
+        "cornea",
+        "lens",
+        "retina"
+      ],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_eye_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cornea",
+      "kind": "organ",
+      "name": "health_atlas_cornea_name",
+      "description": "health_atlas_cornea_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_cornea_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "lens",
+      "kind": "organ",
+      "name": "health_atlas_lens_name",
+      "description": "health_atlas_lens_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_lens_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "retina",
+      "kind": "organ",
+      "name": "health_atlas_retina_name",
+      "description": "health_atlas_retina_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_retina_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "ear",
+      "kind": "organ",
+      "name": "health_atlas_ear_name",
+      "description": "health_atlas_ear_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [
+        "external-ear",
+        "middle-ear",
+        "inner-ear"
+      ],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_ear_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "external-ear",
+      "kind": "organ",
+      "name": "health_atlas_external_ear_name",
+      "description": "health_atlas_external_ear_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_external_ear_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "middle-ear",
+      "kind": "organ",
+      "name": "health_atlas_middle_ear_name",
+      "description": "health_atlas_middle_ear_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_middle_ear_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "inner-ear",
+      "kind": "organ",
+      "name": "health_atlas_inner_ear_name",
+      "description": "health_atlas_inner_ear_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [
+        "cochlea",
+        "vestibular-apparatus"
+      ],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_inner_ear_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cochlea",
+      "kind": "organ",
+      "name": "health_atlas_cochlea_name",
+      "description": "health_atlas_cochlea_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_cochlea_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "vestibular-apparatus",
+      "kind": "organ",
+      "name": "health_atlas_vestibular_apparatus_name",
+      "description": "health_atlas_vestibular_apparatus_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_vestibular_apparatus_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "nose",
+      "kind": "organ",
+      "name": "health_atlas_nose_name",
+      "description": "health_atlas_nose_description",
+      "systems": [
+        "sensory",
+        "respiratory"
+      ],
+      "related": [],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_nose_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "olfactory-mucosa",
+      "kind": "organ",
+      "name": "health_atlas_olfactory_mucosa_name",
+      "description": "health_atlas_olfactory_mucosa_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_olfactory_mucosa_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "tongue",
+      "kind": "organ",
+      "name": "health_atlas_tongue_name",
+      "description": "health_atlas_tongue_description",
+      "systems": [
+        "sensory",
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_tongue_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "taste-buds",
+      "kind": "organ",
+      "name": "health_atlas_taste_buds_name",
+      "description": "health_atlas_taste_buds_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_taste_buds_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "skin-organ",
+      "kind": "organ",
+      "name": "health_atlas_skin_organ_name",
+      "description": "health_atlas_skin_organ_description",
+      "systems": [
+        "sensory",
+        "skin"
+      ],
+      "related": [
+        "epidermis",
+        "dermis",
+        "sweat-glands",
+        "sebaceous-glands",
+        "hair-follicles"
+      ],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_skin_organ_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "heart",
+      "kind": "organ",
+      "name": "health_atlas_heart_name",
+      "description": "health_atlas_heart_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "atria",
+        "ventricles",
+        "heart-valves",
+        "coronary-vessels"
+      ],
+      "mechanism": "cardio",
+      "aliases": "health_atlas_heart_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "atria",
+      "kind": "organ",
+      "name": "health_atlas_atria_name",
+      "description": "health_atlas_atria_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "cardio",
+      "aliases": "health_atlas_atria_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "ventricles",
+      "kind": "organ",
+      "name": "health_atlas_ventricles_name",
+      "description": "health_atlas_ventricles_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "cardio",
+      "aliases": "health_atlas_ventricles_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "heart-valves",
+      "kind": "organ",
+      "name": "health_atlas_heart_valves_name",
+      "description": "health_atlas_heart_valves_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "cardio",
+      "aliases": "health_atlas_heart_valves_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "coronary-vessels",
+      "kind": "organ",
+      "name": "health_atlas_coronary_vessels_name",
+      "description": "health_atlas_coronary_vessels_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "cardio",
+      "aliases": "health_atlas_coronary_vessels_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "blood-vessels",
+      "kind": "organ",
+      "name": "health_atlas_blood_vessels_name",
+      "description": "health_atlas_blood_vessels_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "cardio",
+      "aliases": "health_atlas_blood_vessels_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "arteries",
+      "kind": "organ",
+      "name": "health_atlas_arteries_name",
+      "description": "health_atlas_arteries_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "cardio",
+      "aliases": "health_atlas_arteries_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "veins",
+      "kind": "organ",
+      "name": "health_atlas_veins_name",
+      "description": "health_atlas_veins_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "cardio",
+      "aliases": "health_atlas_veins_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "capillaries",
+      "kind": "organ",
+      "name": "health_atlas_capillaries_name",
+      "description": "health_atlas_capillaries_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "cardio",
+      "aliases": "health_atlas_capillaries_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "blood",
+      "kind": "organ",
+      "name": "health_atlas_blood_name",
+      "description": "health_atlas_blood_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "cardio",
+      "aliases": "health_atlas_blood_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "nasal-cavity",
+      "kind": "organ",
+      "name": "health_atlas_nasal_cavity_name",
+      "description": "health_atlas_nasal_cavity_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_nasal_cavity_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "paranasal-sinuses",
+      "kind": "organ",
+      "name": "health_atlas_paranasal_sinuses_name",
+      "description": "health_atlas_paranasal_sinuses_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_paranasal_sinuses_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "pharynx",
+      "kind": "organ",
+      "name": "health_atlas_pharynx_name",
+      "description": "health_atlas_pharynx_description",
+      "systems": [
+        "respiratory",
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_pharynx_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "larynx",
+      "kind": "organ",
+      "name": "health_atlas_larynx_name",
+      "description": "health_atlas_larynx_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_larynx_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "trachea",
+      "kind": "organ",
+      "name": "health_atlas_trachea_name",
+      "description": "health_atlas_trachea_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_trachea_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "bronchi",
+      "kind": "organ",
+      "name": "health_atlas_bronchi_name",
+      "description": "health_atlas_bronchi_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_bronchi_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "bronchioles",
+      "kind": "organ",
+      "name": "health_atlas_bronchioles_name",
+      "description": "health_atlas_bronchioles_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_bronchioles_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "lungs",
+      "kind": "organ",
+      "name": "health_atlas_lungs_name",
+      "description": "health_atlas_lungs_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "bronchi",
+        "bronchioles",
+        "alveoli"
+      ],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_lungs_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "alveoli",
+      "kind": "organ",
+      "name": "health_atlas_alveoli_name",
+      "description": "health_atlas_alveoli_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_alveoli_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "pleura",
+      "kind": "organ",
+      "name": "health_atlas_pleura_name",
+      "description": "health_atlas_pleura_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_pleura_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "diaphragm",
+      "kind": "organ",
+      "name": "health_atlas_diaphragm_name",
+      "description": "health_atlas_diaphragm_description",
+      "systems": [
+        "respiratory",
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_diaphragm_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "oral-cavity",
+      "kind": "organ",
+      "name": "health_atlas_oral_cavity_name",
+      "description": "health_atlas_oral_cavity_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "gut",
+      "aliases": "health_atlas_oral_cavity_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "teeth",
+      "kind": "organ",
+      "name": "health_atlas_teeth_name",
+      "description": "health_atlas_teeth_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "gut",
+      "aliases": "health_atlas_teeth_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "esophagus",
+      "kind": "organ",
+      "name": "health_atlas_esophagus_name",
+      "description": "health_atlas_esophagus_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "gut",
+      "aliases": "health_atlas_esophagus_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "stomach",
+      "kind": "organ",
+      "name": "health_atlas_stomach_name",
+      "description": "health_atlas_stomach_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "gut",
+      "aliases": "health_atlas_stomach_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "small-intestine",
+      "kind": "organ",
+      "name": "health_atlas_small_intestine_name",
+      "description": "health_atlas_small_intestine_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "duodenum",
+        "jejunum",
+        "ileum"
+      ],
+      "mechanism": "gut",
+      "aliases": "health_atlas_small_intestine_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "duodenum",
+      "kind": "organ",
+      "name": "health_atlas_duodenum_name",
+      "description": "health_atlas_duodenum_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "gut",
+      "aliases": "health_atlas_duodenum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "jejunum",
+      "kind": "organ",
+      "name": "health_atlas_jejunum_name",
+      "description": "health_atlas_jejunum_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "gut",
+      "aliases": "health_atlas_jejunum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "ileum",
+      "kind": "organ",
+      "name": "health_atlas_ileum_name",
+      "description": "health_atlas_ileum_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "gut",
+      "aliases": "health_atlas_ileum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "large-intestine",
+      "kind": "organ",
+      "name": "health_atlas_large_intestine_name",
+      "description": "health_atlas_large_intestine_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "cecum",
+        "colon",
+        "rectum",
+        "anal-canal"
+      ],
+      "mechanism": "gut",
+      "aliases": "health_atlas_large_intestine_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cecum",
+      "kind": "organ",
+      "name": "health_atlas_cecum_name",
+      "description": "health_atlas_cecum_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "gut",
+      "aliases": "health_atlas_cecum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "appendix",
+      "kind": "organ",
+      "name": "health_atlas_appendix_name",
+      "description": "health_atlas_appendix_description",
+      "systems": [
+        "gut",
+        "immune"
+      ],
+      "related": [],
+      "mechanism": "gut",
+      "aliases": "health_atlas_appendix_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "colon",
+      "kind": "organ",
+      "name": "health_atlas_colon_name",
+      "description": "health_atlas_colon_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "gut",
+      "aliases": "health_atlas_colon_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "rectum",
+      "kind": "organ",
+      "name": "health_atlas_rectum_name",
+      "description": "health_atlas_rectum_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "gut",
+      "aliases": "health_atlas_rectum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "anal-canal",
+      "kind": "organ",
+      "name": "health_atlas_anal_canal_name",
+      "description": "health_atlas_anal_canal_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "gut",
+      "aliases": "health_atlas_anal_canal_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "salivary-glands",
+      "kind": "organ",
+      "name": "health_atlas_salivary_glands_name",
+      "description": "health_atlas_salivary_glands_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [
+        "parotid-glands",
+        "submandibular-glands",
+        "sublingual-glands"
+      ],
+      "mechanism": "digestive",
+      "aliases": "health_atlas_salivary_glands_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "parotid-glands",
+      "kind": "organ",
+      "name": "health_atlas_parotid_glands_name",
+      "description": "health_atlas_parotid_glands_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [],
+      "mechanism": "digestive",
+      "aliases": "health_atlas_parotid_glands_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "submandibular-glands",
+      "kind": "organ",
+      "name": "health_atlas_submandibular_glands_name",
+      "description": "health_atlas_submandibular_glands_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [],
+      "mechanism": "digestive",
+      "aliases": "health_atlas_submandibular_glands_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "sublingual-glands",
+      "kind": "organ",
+      "name": "health_atlas_sublingual_glands_name",
+      "description": "health_atlas_sublingual_glands_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [],
+      "mechanism": "digestive",
+      "aliases": "health_atlas_sublingual_glands_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "liver",
+      "kind": "organ",
+      "name": "health_atlas_liver_name",
+      "description": "health_atlas_liver_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [],
+      "mechanism": "digestive",
+      "aliases": "health_atlas_liver_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "gallbladder",
+      "kind": "organ",
+      "name": "health_atlas_gallbladder_name",
+      "description": "health_atlas_gallbladder_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [],
+      "mechanism": "digestive",
+      "aliases": "health_atlas_gallbladder_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "biliary-tract",
+      "kind": "organ",
+      "name": "health_atlas_biliary_tract_name",
+      "description": "health_atlas_biliary_tract_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [],
+      "mechanism": "digestive",
+      "aliases": "health_atlas_biliary_tract_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "pancreas",
+      "kind": "organ",
+      "name": "health_atlas_pancreas_name",
+      "description": "health_atlas_pancreas_description",
+      "systems": [
+        "digestive",
+        "endocrine"
+      ],
+      "related": [
+        "pancreatic-islets",
+        "pancreatic-duct"
+      ],
+      "mechanism": "digestive",
+      "aliases": "health_atlas_pancreas_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "pancreatic-duct",
+      "kind": "organ",
+      "name": "health_atlas_pancreatic_duct_name",
+      "description": "health_atlas_pancreatic_duct_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [],
+      "mechanism": "digestive",
+      "aliases": "health_atlas_pancreatic_duct_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "kidneys",
+      "kind": "organ",
+      "name": "health_atlas_kidneys_name",
+      "description": "health_atlas_kidneys_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "nephron",
+        "collecting-ducts"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_kidneys_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "nephron",
+      "kind": "organ",
+      "name": "health_atlas_nephron_name",
+      "description": "health_atlas_nephron_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "glomerulus",
+        "renal-tubules"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_nephron_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "glomerulus",
+      "kind": "organ",
+      "name": "health_atlas_glomerulus_name",
+      "description": "health_atlas_glomerulus_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_glomerulus_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "renal-tubules",
+      "kind": "organ",
+      "name": "health_atlas_renal_tubules_name",
+      "description": "health_atlas_renal_tubules_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_renal_tubules_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "collecting-ducts",
+      "kind": "organ",
+      "name": "health_atlas_collecting_ducts_name",
+      "description": "health_atlas_collecting_ducts_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_collecting_ducts_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "ureters",
+      "kind": "organ",
+      "name": "health_atlas_ureters_name",
+      "description": "health_atlas_ureters_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_ureters_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "bladder",
+      "kind": "organ",
+      "name": "health_atlas_bladder_name",
+      "description": "health_atlas_bladder_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_bladder_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "urethra",
+      "kind": "organ",
+      "name": "health_atlas_urethra_name",
+      "description": "health_atlas_urethra_description",
+      "systems": [
+        "urinary",
+        "male"
+      ],
+      "related": [],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_urethra_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "hypothalamus",
+      "kind": "organ",
+      "name": "health_atlas_hypothalamus_name",
+      "description": "health_atlas_hypothalamus_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [],
+      "mechanism": "endocrine",
+      "aliases": "health_atlas_hypothalamus_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "pituitary-gland",
+      "kind": "organ",
+      "name": "health_atlas_pituitary_gland_name",
+      "description": "health_atlas_pituitary_gland_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [],
+      "mechanism": "endocrine",
+      "aliases": "health_atlas_pituitary_gland_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "pineal-gland",
+      "kind": "organ",
+      "name": "health_atlas_pineal_gland_name",
+      "description": "health_atlas_pineal_gland_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [],
+      "mechanism": "endocrine",
+      "aliases": "health_atlas_pineal_gland_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "thyroid-gland",
+      "kind": "organ",
+      "name": "health_atlas_thyroid_gland_name",
+      "description": "health_atlas_thyroid_gland_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [],
+      "mechanism": "endocrine",
+      "aliases": "health_atlas_thyroid_gland_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "parathyroid-glands",
+      "kind": "organ",
+      "name": "health_atlas_parathyroid_glands_name",
+      "description": "health_atlas_parathyroid_glands_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [],
+      "mechanism": "endocrine",
+      "aliases": "health_atlas_parathyroid_glands_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "adrenal-glands",
+      "kind": "organ",
+      "name": "health_atlas_adrenal_glands_name",
+      "description": "health_atlas_adrenal_glands_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [],
+      "mechanism": "endocrine",
+      "aliases": "health_atlas_adrenal_glands_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "pancreatic-islets",
+      "kind": "organ",
+      "name": "health_atlas_pancreatic_islets_name",
+      "description": "health_atlas_pancreatic_islets_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [],
+      "mechanism": "beta",
+      "aliases": "health_atlas_pancreatic_islets_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "ovaries",
+      "kind": "organ",
+      "name": "health_atlas_ovaries_name",
+      "description": "health_atlas_ovaries_description",
+      "systems": [
+        "endocrine",
+        "female"
+      ],
+      "related": [],
+      "mechanism": "endocrine",
+      "aliases": "health_atlas_ovaries_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "testes",
+      "kind": "organ",
+      "name": "health_atlas_testes_name",
+      "description": "health_atlas_testes_description",
+      "systems": [
+        "endocrine",
+        "male"
+      ],
+      "related": [],
+      "mechanism": "endocrine",
+      "aliases": "health_atlas_testes_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "placenta",
+      "kind": "organ",
+      "name": "health_atlas_placenta_name",
+      "description": "health_atlas_placenta_description",
+      "systems": [
+        "endocrine",
+        "female"
+      ],
+      "related": [],
+      "mechanism": "endocrine",
+      "aliases": "health_atlas_placenta_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "bone-marrow",
+      "kind": "organ",
+      "name": "health_atlas_bone_marrow_name",
+      "description": "health_atlas_bone_marrow_description",
+      "systems": [
+        "immune",
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "immune",
+      "aliases": "health_atlas_bone_marrow_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "thymus",
+      "kind": "organ",
+      "name": "health_atlas_thymus_name",
+      "description": "health_atlas_thymus_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [],
+      "mechanism": "immune",
+      "aliases": "health_atlas_thymus_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "spleen",
+      "kind": "organ",
+      "name": "health_atlas_spleen_name",
+      "description": "health_atlas_spleen_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [],
+      "mechanism": "immune",
+      "aliases": "health_atlas_spleen_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "lymph-nodes",
+      "kind": "organ",
+      "name": "health_atlas_lymph_nodes_name",
+      "description": "health_atlas_lymph_nodes_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [],
+      "mechanism": "immune",
+      "aliases": "health_atlas_lymph_nodes_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "lymphatic-vessels",
+      "kind": "organ",
+      "name": "health_atlas_lymphatic_vessels_name",
+      "description": "health_atlas_lymphatic_vessels_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [],
+      "mechanism": "immune",
+      "aliases": "health_atlas_lymphatic_vessels_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "thoracic-duct",
+      "kind": "organ",
+      "name": "health_atlas_thoracic_duct_name",
+      "description": "health_atlas_thoracic_duct_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [],
+      "mechanism": "immune",
+      "aliases": "health_atlas_thoracic_duct_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "tonsils",
+      "kind": "organ",
+      "name": "health_atlas_tonsils_name",
+      "description": "health_atlas_tonsils_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [],
+      "mechanism": "immune",
+      "aliases": "health_atlas_tonsils_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "adenoids",
+      "kind": "organ",
+      "name": "health_atlas_adenoids_name",
+      "description": "health_atlas_adenoids_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [],
+      "mechanism": "immune",
+      "aliases": "health_atlas_adenoids_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "gut-associated-lymphoid-tissue",
+      "kind": "organ",
+      "name": "health_atlas_gut_associated_lymphoid_tissue_name",
+      "description": "health_atlas_gut_associated_lymphoid_tissue_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [],
+      "mechanism": "immune",
+      "aliases": "health_atlas_gut_associated_lymphoid_tissue_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "epididymis",
+      "kind": "organ",
+      "name": "health_atlas_epididymis_name",
+      "description": "health_atlas_epididymis_description",
+      "systems": [
+        "male"
+      ],
+      "related": [],
+      "mechanism": "male",
+      "aliases": "health_atlas_epididymis_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "vas-deferens",
+      "kind": "organ",
+      "name": "health_atlas_vas_deferens_name",
+      "description": "health_atlas_vas_deferens_description",
+      "systems": [
+        "male"
+      ],
+      "related": [],
+      "mechanism": "male",
+      "aliases": "health_atlas_vas_deferens_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "seminal-vesicles",
+      "kind": "organ",
+      "name": "health_atlas_seminal_vesicles_name",
+      "description": "health_atlas_seminal_vesicles_description",
+      "systems": [
+        "male"
+      ],
+      "related": [],
+      "mechanism": "male",
+      "aliases": "health_atlas_seminal_vesicles_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "ejaculatory-ducts",
+      "kind": "organ",
+      "name": "health_atlas_ejaculatory_ducts_name",
+      "description": "health_atlas_ejaculatory_ducts_description",
+      "systems": [
+        "male"
+      ],
+      "related": [],
+      "mechanism": "male",
+      "aliases": "health_atlas_ejaculatory_ducts_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "prostate",
+      "kind": "organ",
+      "name": "health_atlas_prostate_name",
+      "description": "health_atlas_prostate_description",
+      "systems": [
+        "male"
+      ],
+      "related": [],
+      "mechanism": "male",
+      "aliases": "health_atlas_prostate_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "bulbourethral-glands",
+      "kind": "organ",
+      "name": "health_atlas_bulbourethral_glands_name",
+      "description": "health_atlas_bulbourethral_glands_description",
+      "systems": [
+        "male"
+      ],
+      "related": [],
+      "mechanism": "male",
+      "aliases": "health_atlas_bulbourethral_glands_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "penis",
+      "kind": "organ",
+      "name": "health_atlas_penis_name",
+      "description": "health_atlas_penis_description",
+      "systems": [
+        "male"
+      ],
+      "related": [],
+      "mechanism": "male",
+      "aliases": "health_atlas_penis_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "scrotum",
+      "kind": "organ",
+      "name": "health_atlas_scrotum_name",
+      "description": "health_atlas_scrotum_description",
+      "systems": [
+        "male"
+      ],
+      "related": [],
+      "mechanism": "male",
+      "aliases": "health_atlas_scrotum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "uterine-tubes",
+      "kind": "organ",
+      "name": "health_atlas_uterine_tubes_name",
+      "description": "health_atlas_uterine_tubes_description",
+      "systems": [
+        "female"
+      ],
+      "related": [],
+      "mechanism": "female",
+      "aliases": "health_atlas_uterine_tubes_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "uterus",
+      "kind": "organ",
+      "name": "health_atlas_uterus_name",
+      "description": "health_atlas_uterus_description",
+      "systems": [
+        "female"
+      ],
+      "related": [
+        "endometrium",
+        "cervix"
+      ],
+      "mechanism": "female",
+      "aliases": "health_atlas_uterus_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "endometrium",
+      "kind": "organ",
+      "name": "health_atlas_endometrium_name",
+      "description": "health_atlas_endometrium_description",
+      "systems": [
+        "female"
+      ],
+      "related": [],
+      "mechanism": "female",
+      "aliases": "health_atlas_endometrium_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cervix",
+      "kind": "organ",
+      "name": "health_atlas_cervix_name",
+      "description": "health_atlas_cervix_description",
+      "systems": [
+        "female"
+      ],
+      "related": [],
+      "mechanism": "female",
+      "aliases": "health_atlas_cervix_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "vagina",
+      "kind": "organ",
+      "name": "health_atlas_vagina_name",
+      "description": "health_atlas_vagina_description",
+      "systems": [
+        "female"
+      ],
+      "related": [],
+      "mechanism": "female",
+      "aliases": "health_atlas_vagina_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "vulva",
+      "kind": "organ",
+      "name": "health_atlas_vulva_name",
+      "description": "health_atlas_vulva_description",
+      "systems": [
+        "female"
+      ],
+      "related": [
+        "clitoris",
+        "labia-majora",
+        "labia-minora"
+      ],
+      "mechanism": "female",
+      "aliases": "health_atlas_vulva_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "clitoris",
+      "kind": "organ",
+      "name": "health_atlas_clitoris_name",
+      "description": "health_atlas_clitoris_description",
+      "systems": [
+        "female"
+      ],
+      "related": [],
+      "mechanism": "female",
+      "aliases": "health_atlas_clitoris_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "labia-majora",
+      "kind": "organ",
+      "name": "health_atlas_labia_majora_name",
+      "description": "health_atlas_labia_majora_description",
+      "systems": [
+        "female"
+      ],
+      "related": [],
+      "mechanism": "female",
+      "aliases": "health_atlas_labia_majora_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "labia-minora",
+      "kind": "organ",
+      "name": "health_atlas_labia_minora_name",
+      "description": "health_atlas_labia_minora_description",
+      "systems": [
+        "female"
+      ],
+      "related": [],
+      "mechanism": "female",
+      "aliases": "health_atlas_labia_minora_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "greater-vestibular-glands",
+      "kind": "organ",
+      "name": "health_atlas_greater_vestibular_glands_name",
+      "description": "health_atlas_greater_vestibular_glands_description",
+      "systems": [
+        "female"
+      ],
+      "related": [],
+      "mechanism": "female",
+      "aliases": "health_atlas_greater_vestibular_glands_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "mammary-glands",
+      "kind": "organ",
+      "name": "health_atlas_mammary_glands_name",
+      "description": "health_atlas_mammary_glands_description",
+      "systems": [
+        "female"
+      ],
+      "related": [],
+      "mechanism": "female",
+      "aliases": "health_atlas_mammary_glands_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "epidermis",
+      "kind": "organ",
+      "name": "health_atlas_epidermis_name",
+      "description": "health_atlas_epidermis_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [],
+      "mechanism": "skin",
+      "aliases": "health_atlas_epidermis_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "dermis",
+      "kind": "organ",
+      "name": "health_atlas_dermis_name",
+      "description": "health_atlas_dermis_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [],
+      "mechanism": "skin",
+      "aliases": "health_atlas_dermis_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "subcutaneous-tissue",
+      "kind": "organ",
+      "name": "health_atlas_subcutaneous_tissue_name",
+      "description": "health_atlas_subcutaneous_tissue_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [],
+      "mechanism": "skin",
+      "aliases": "health_atlas_subcutaneous_tissue_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "sweat-glands",
+      "kind": "organ",
+      "name": "health_atlas_sweat_glands_name",
+      "description": "health_atlas_sweat_glands_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [],
+      "mechanism": "skin",
+      "aliases": "health_atlas_sweat_glands_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "sebaceous-glands",
+      "kind": "organ",
+      "name": "health_atlas_sebaceous_glands_name",
+      "description": "health_atlas_sebaceous_glands_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [],
+      "mechanism": "skin",
+      "aliases": "health_atlas_sebaceous_glands_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "hair-follicles",
+      "kind": "organ",
+      "name": "health_atlas_hair_follicles_name",
+      "description": "health_atlas_hair_follicles_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [],
+      "mechanism": "skin",
+      "aliases": "health_atlas_hair_follicles_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "hair",
+      "kind": "organ",
+      "name": "health_atlas_hair_name",
+      "description": "health_atlas_hair_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [],
+      "mechanism": "skin",
+      "aliases": "health_atlas_hair_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "nails",
+      "kind": "organ",
+      "name": "health_atlas_nails_name",
+      "description": "health_atlas_nails_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [],
+      "mechanism": "skin",
+      "aliases": "health_atlas_nails_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "skull",
+      "kind": "organ",
+      "name": "health_atlas_skull_name",
+      "description": "health_atlas_skull_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_skull_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "vertebrae",
+      "kind": "organ",
+      "name": "health_atlas_vertebrae_name",
+      "description": "health_atlas_vertebrae_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_vertebrae_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "ribs",
+      "kind": "organ",
+      "name": "health_atlas_ribs_name",
+      "description": "health_atlas_ribs_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_ribs_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "sternum",
+      "kind": "organ",
+      "name": "health_atlas_sternum_name",
+      "description": "health_atlas_sternum_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_sternum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "clavicle",
+      "kind": "organ",
+      "name": "health_atlas_clavicle_name",
+      "description": "health_atlas_clavicle_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_clavicle_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "scapula",
+      "kind": "organ",
+      "name": "health_atlas_scapula_name",
+      "description": "health_atlas_scapula_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_scapula_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "pelvis",
+      "kind": "organ",
+      "name": "health_atlas_pelvis_name",
+      "description": "health_atlas_pelvis_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_pelvis_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "limb-bones",
+      "kind": "organ",
+      "name": "health_atlas_limb_bones_name",
+      "description": "health_atlas_limb_bones_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [
+        "humerus",
+        "radius",
+        "ulna",
+        "hand-bones",
+        "femur",
+        "patella",
+        "tibia",
+        "fibula",
+        "foot-bones"
+      ],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_limb_bones_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "humerus",
+      "kind": "organ",
+      "name": "health_atlas_humerus_name",
+      "description": "health_atlas_humerus_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_humerus_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "radius",
+      "kind": "organ",
+      "name": "health_atlas_radius_name",
+      "description": "health_atlas_radius_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_radius_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "ulna",
+      "kind": "organ",
+      "name": "health_atlas_ulna_name",
+      "description": "health_atlas_ulna_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_ulna_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "hand-bones",
+      "kind": "organ",
+      "name": "health_atlas_hand_bones_name",
+      "description": "health_atlas_hand_bones_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_hand_bones_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "femur",
+      "kind": "organ",
+      "name": "health_atlas_femur_name",
+      "description": "health_atlas_femur_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_femur_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "patella",
+      "kind": "organ",
+      "name": "health_atlas_patella_name",
+      "description": "health_atlas_patella_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_patella_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "tibia",
+      "kind": "organ",
+      "name": "health_atlas_tibia_name",
+      "description": "health_atlas_tibia_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_tibia_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "fibula",
+      "kind": "organ",
+      "name": "health_atlas_fibula_name",
+      "description": "health_atlas_fibula_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_fibula_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "foot-bones",
+      "kind": "organ",
+      "name": "health_atlas_foot_bones_name",
+      "description": "health_atlas_foot_bones_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_foot_bones_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cartilage",
+      "kind": "organ",
+      "name": "health_atlas_cartilage_name",
+      "description": "health_atlas_cartilage_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_cartilage_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "joints",
+      "kind": "organ",
+      "name": "health_atlas_joints_name",
+      "description": "health_atlas_joints_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_joints_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "ligaments",
+      "kind": "organ",
+      "name": "health_atlas_ligaments_name",
+      "description": "health_atlas_ligaments_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_ligaments_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "pectoralis-major",
+      "kind": "organ",
+      "name": "health_atlas_pectoralis_major_name",
+      "description": "health_atlas_pectoralis_major_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_pectoralis_major_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "deltoid",
+      "kind": "organ",
+      "name": "health_atlas_deltoid_name",
+      "description": "health_atlas_deltoid_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_deltoid_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "biceps-brachii",
+      "kind": "organ",
+      "name": "health_atlas_biceps_brachii_name",
+      "description": "health_atlas_biceps_brachii_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_biceps_brachii_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "triceps-brachii",
+      "kind": "organ",
+      "name": "health_atlas_triceps_brachii_name",
+      "description": "health_atlas_triceps_brachii_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_triceps_brachii_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "rectus-abdominis",
+      "kind": "organ",
+      "name": "health_atlas_rectus_abdominis_name",
+      "description": "health_atlas_rectus_abdominis_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_rectus_abdominis_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "oblique-abdominal-muscles",
+      "kind": "organ",
+      "name": "health_atlas_oblique_abdominal_muscles_name",
+      "description": "health_atlas_oblique_abdominal_muscles_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_oblique_abdominal_muscles_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "trapezius",
+      "kind": "organ",
+      "name": "health_atlas_trapezius_name",
+      "description": "health_atlas_trapezius_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_trapezius_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "latissimus-dorsi",
+      "kind": "organ",
+      "name": "health_atlas_latissimus_dorsi_name",
+      "description": "health_atlas_latissimus_dorsi_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_latissimus_dorsi_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "erector-spinae",
+      "kind": "organ",
+      "name": "health_atlas_erector_spinae_name",
+      "description": "health_atlas_erector_spinae_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_erector_spinae_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "gluteus-maximus",
+      "kind": "organ",
+      "name": "health_atlas_gluteus_maximus_name",
+      "description": "health_atlas_gluteus_maximus_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_gluteus_maximus_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "quadriceps-femoris",
+      "kind": "organ",
+      "name": "health_atlas_quadriceps_femoris_name",
+      "description": "health_atlas_quadriceps_femoris_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_quadriceps_femoris_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "hamstrings",
+      "kind": "organ",
+      "name": "health_atlas_hamstrings_name",
+      "description": "health_atlas_hamstrings_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_hamstrings_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "gastrocnemius",
+      "kind": "organ",
+      "name": "health_atlas_gastrocnemius_name",
+      "description": "health_atlas_gastrocnemius_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_gastrocnemius_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "soleus",
+      "kind": "organ",
+      "name": "health_atlas_soleus_name",
+      "description": "health_atlas_soleus_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_soleus_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "tendons",
+      "kind": "organ",
+      "name": "health_atlas_tendons_name",
+      "description": "health_atlas_tendons_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_tendons_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-erythrocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_erythrocyte_name",
+      "description": "health_atlas_cell_erythrocyte_description",
+      "systems": [
+        "cardio",
+        "immune"
+      ],
+      "related": [
+        "blood",
+        "bone-marrow"
+      ],
+      "mechanism": "bloodcell",
+      "aliases": "health_atlas_cell_erythrocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-neutrophil",
+      "kind": "cell",
+      "name": "health_atlas_cell_neutrophil_name",
+      "description": "health_atlas_cell_neutrophil_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "blood",
+        "bone-marrow"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_neutrophil_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-eosinophil",
+      "kind": "cell",
+      "name": "health_atlas_cell_eosinophil_name",
+      "description": "health_atlas_cell_eosinophil_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "blood",
+        "bone-marrow"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_eosinophil_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-basophil",
+      "kind": "cell",
+      "name": "health_atlas_cell_basophil_name",
+      "description": "health_atlas_cell_basophil_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "blood",
+        "bone-marrow"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_basophil_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-monocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_monocyte_name",
+      "description": "health_atlas_cell_monocyte_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "blood",
+        "bone-marrow"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_monocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-macrophage",
+      "kind": "cell",
+      "name": "health_atlas_cell_macrophage_name",
+      "description": "health_atlas_cell_macrophage_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "liver",
+        "lungs",
+        "spleen",
+        "skin-organ"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_macrophage_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-t-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_t_cell_name",
+      "description": "health_atlas_cell_t_cell_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "blood",
+        "thymus",
+        "lymph-nodes",
+        "spleen"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_t_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-b-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_b_cell_name",
+      "description": "health_atlas_cell_b_cell_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "blood",
+        "bone-marrow",
+        "lymph-nodes",
+        "spleen"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_b_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-plasma-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_plasma_cell_name",
+      "description": "health_atlas_cell_plasma_cell_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "bone-marrow",
+        "gut-associated-lymphoid-tissue"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_plasma_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-natural-killer-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_natural_killer_cell_name",
+      "description": "health_atlas_cell_natural_killer_cell_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "blood",
+        "spleen"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_natural_killer_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-neuron",
+      "kind": "cell",
+      "name": "health_atlas_cell_neuron_name",
+      "description": "health_atlas_cell_neuron_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [
+        "brain",
+        "spinal-cord",
+        "ganglia"
+      ],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_cell_neuron_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-astrocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_astrocyte_name",
+      "description": "health_atlas_cell_astrocyte_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [
+        "brain",
+        "spinal-cord"
+      ],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_cell_astrocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-schwann-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_schwann_cell_name",
+      "description": "health_atlas_cell_schwann_cell_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [
+        "peripheral-nerves"
+      ],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_cell_schwann_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-skeletal-myocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_skeletal_myocyte_name",
+      "description": "health_atlas_cell_skeletal_myocyte_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [
+        "pectoralis-major",
+        "biceps-brachii",
+        "rectus-abdominis",
+        "diaphragm",
+        "quadriceps-femoris"
+      ],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_cell_skeletal_myocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-cardiomyocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_cardiomyocyte_name",
+      "description": "health_atlas_cell_cardiomyocyte_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "heart",
+        "atria",
+        "ventricles"
+      ],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_cell_cardiomyocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-smooth-muscle-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_smooth_muscle_cell_name",
+      "description": "health_atlas_cell_smooth_muscle_cell_description",
+      "systems": [
+        "cardio",
+        "gut",
+        "urinary",
+        "female"
+      ],
+      "related": [
+        "blood-vessels",
+        "stomach",
+        "small-intestine",
+        "bladder",
+        "uterus"
+      ],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_cell_smooth_muscle_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-keratinocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_keratinocyte_name",
+      "description": "health_atlas_cell_keratinocyte_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [
+        "epidermis",
+        "hair-follicles"
+      ],
+      "mechanism": "transport",
+      "aliases": "health_atlas_cell_keratinocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-melanocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_melanocyte_name",
+      "description": "health_atlas_cell_melanocyte_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [
+        "epidermis",
+        "hair-follicles"
+      ],
+      "mechanism": "transport",
+      "aliases": "health_atlas_cell_melanocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-fibroblast",
+      "kind": "cell",
+      "name": "health_atlas_cell_fibroblast_name",
+      "description": "health_atlas_cell_fibroblast_description",
+      "systems": [
+        "skin",
+        "muscle"
+      ],
+      "related": [
+        "dermis",
+        "tendons"
+      ],
+      "mechanism": "repair",
+      "aliases": "health_atlas_cell_fibroblast_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-adipocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_adipocyte_name",
+      "description": "health_atlas_cell_adipocyte_description",
+      "systems": [
+        "skin",
+        "endocrine"
+      ],
+      "related": [
+        "subcutaneous-tissue"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_adipocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-osteoblast",
+      "kind": "cell",
+      "name": "health_atlas_cell_osteoblast_name",
+      "description": "health_atlas_cell_osteoblast_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [
+        "vertebrae",
+        "femur"
+      ],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_cell_osteoblast_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-osteocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_osteocyte_name",
+      "description": "health_atlas_cell_osteocyte_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [
+        "vertebrae",
+        "femur"
+      ],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_cell_osteocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-osteoclast",
+      "kind": "cell",
+      "name": "health_atlas_cell_osteoclast_name",
+      "description": "health_atlas_cell_osteoclast_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [
+        "vertebrae",
+        "femur"
+      ],
+      "mechanism": "skeletal",
+      "aliases": "health_atlas_cell_osteoclast_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-chondrocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_chondrocyte_name",
+      "description": "health_atlas_cell_chondrocyte_description",
+      "systems": [
+        "skeletal",
+        "respiratory"
+      ],
+      "related": [
+        "cartilage",
+        "joints",
+        "trachea"
+      ],
+      "mechanism": "repair",
+      "aliases": "health_atlas_cell_chondrocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-vascular-endothelial-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_vascular_endothelial_cell_name",
+      "description": "health_atlas_cell_vascular_endothelial_cell_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "blood-vessels",
+        "capillaries"
+      ],
+      "mechanism": "transport",
+      "aliases": "health_atlas_cell_vascular_endothelial_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-hepatocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_hepatocyte_name",
+      "description": "health_atlas_cell_hepatocyte_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [
+        "liver"
+      ],
+      "mechanism": "digestive",
+      "aliases": "health_atlas_cell_hepatocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-pancreatic-beta-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_pancreatic_beta_cell_name",
+      "description": "health_atlas_cell_pancreatic_beta_cell_description",
+      "systems": [
+        "endocrine",
+        "digestive"
+      ],
+      "related": [
+        "pancreas",
+        "pancreatic-islets"
+      ],
+      "mechanism": "beta",
+      "aliases": "health_atlas_cell_pancreatic_beta_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-enterocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_enterocyte_name",
+      "description": "health_atlas_cell_enterocyte_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "small-intestine",
+        "duodenum",
+        "jejunum",
+        "ileum"
+      ],
+      "mechanism": "gut",
+      "aliases": "health_atlas_cell_enterocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-spermatozoon",
+      "kind": "cell",
+      "name": "health_atlas_cell_spermatozoon_name",
+      "description": "health_atlas_cell_spermatozoon_description",
+      "systems": [
+        "male"
+      ],
+      "related": [
+        "testes",
+        "epididymis"
+      ],
+      "mechanism": "sperm",
+      "aliases": "health_atlas_cell_spermatozoon_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-oocyte-or-ovum",
+      "kind": "cell",
+      "name": "health_atlas_cell_oocyte_or_ovum_name",
+      "description": "health_atlas_cell_oocyte_or_ovum_description",
+      "systems": [
+        "female"
+      ],
+      "related": [
+        "ovaries",
+        "uterine-tubes"
+      ],
+      "mechanism": "female",
+      "aliases": "health_atlas_cell_oocyte_or_ovum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-dendritic-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_dendritic_cell_name",
+      "description": "health_atlas_cell_dendritic_cell_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "lymph-nodes",
+        "skin-organ"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_dendritic_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-mast-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_mast_cell_name",
+      "description": "health_atlas_cell_mast_cell_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "skin-organ",
+        "small-intestine"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_mast_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-megakaryocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_megakaryocyte_name",
+      "description": "health_atlas_cell_megakaryocyte_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "bone-marrow"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_megakaryocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-hematopoietic-stem-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_hematopoietic_stem_cell_name",
+      "description": "health_atlas_cell_hematopoietic_stem_cell_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "bone-marrow"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_hematopoietic_stem_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-helper-t-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_helper_t_cell_name",
+      "description": "health_atlas_cell_helper_t_cell_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "lymph-nodes",
+        "blood"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_helper_t_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-cytotoxic-t-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_cytotoxic_t_cell_name",
+      "description": "health_atlas_cell_cytotoxic_t_cell_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "lymph-nodes",
+        "blood"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_cytotoxic_t_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-regulatory-t-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_regulatory_t_cell_name",
+      "description": "health_atlas_cell_regulatory_t_cell_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "lymph-nodes",
+        "blood"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_cell_regulatory_t_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-oligodendrocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_oligodendrocyte_name",
+      "description": "health_atlas_cell_oligodendrocyte_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [
+        "brain",
+        "spinal-cord"
+      ],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_cell_oligodendrocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-microglia",
+      "kind": "cell",
+      "name": "health_atlas_cell_microglia_name",
+      "description": "health_atlas_cell_microglia_description",
+      "systems": [
+        "nervous",
+        "immune"
+      ],
+      "related": [
+        "brain",
+        "spinal-cord"
+      ],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_cell_microglia_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-ependymal-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_ependymal_cell_name",
+      "description": "health_atlas_cell_ependymal_cell_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [
+        "brain",
+        "spinal-cord"
+      ],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_cell_ependymal_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-satellite-glial-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_satellite_glial_cell_name",
+      "description": "health_atlas_cell_satellite_glial_cell_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [
+        "ganglia"
+      ],
+      "mechanism": "nervous",
+      "aliases": "health_atlas_cell_satellite_glial_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-rod-photoreceptor",
+      "kind": "cell",
+      "name": "health_atlas_cell_rod_photoreceptor_name",
+      "description": "health_atlas_cell_rod_photoreceptor_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [
+        "retina"
+      ],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_cell_rod_photoreceptor_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-cone-photoreceptor",
+      "kind": "cell",
+      "name": "health_atlas_cell_cone_photoreceptor_name",
+      "description": "health_atlas_cell_cone_photoreceptor_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [
+        "retina"
+      ],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_cell_cone_photoreceptor_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-retinal-pigment-epithelial-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_retinal_pigment_epithelial_cell_name",
+      "description": "health_atlas_cell_retinal_pigment_epithelial_cell_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [
+        "retina"
+      ],
+      "mechanism": "transport",
+      "aliases": "health_atlas_cell_retinal_pigment_epithelial_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-retinal-ganglion-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_retinal_ganglion_cell_name",
+      "description": "health_atlas_cell_retinal_ganglion_cell_description",
+      "systems": [
+        "sensory",
+        "nervous"
+      ],
+      "related": [
+        "retina"
+      ],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_cell_retinal_ganglion_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-inner-ear-hair-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_inner_ear_hair_cell_name",
+      "description": "health_atlas_cell_inner_ear_hair_cell_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [
+        "cochlea",
+        "vestibular-apparatus"
+      ],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_cell_inner_ear_hair_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-olfactory-receptor-neuron",
+      "kind": "cell",
+      "name": "health_atlas_cell_olfactory_receptor_neuron_name",
+      "description": "health_atlas_cell_olfactory_receptor_neuron_description",
+      "systems": [
+        "sensory",
+        "nervous"
+      ],
+      "related": [
+        "olfactory-mucosa"
+      ],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_cell_olfactory_receptor_neuron_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-taste-receptor-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_taste_receptor_cell_name",
+      "description": "health_atlas_cell_taste_receptor_cell_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [
+        "taste-buds",
+        "tongue"
+      ],
+      "mechanism": "sensory",
+      "aliases": "health_atlas_cell_taste_receptor_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-corneal-epithelial-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_corneal_epithelial_cell_name",
+      "description": "health_atlas_cell_corneal_epithelial_cell_description",
+      "systems": [
+        "sensory"
+      ],
+      "related": [
+        "cornea"
+      ],
+      "mechanism": "transport",
+      "aliases": "health_atlas_cell_corneal_epithelial_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-pericyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_pericyte_name",
+      "description": "health_atlas_cell_pericyte_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "capillaries"
+      ],
+      "mechanism": "cardio",
+      "aliases": "health_atlas_cell_pericyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-lymphatic-endothelial-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_lymphatic_endothelial_cell_name",
+      "description": "health_atlas_cell_lymphatic_endothelial_cell_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "lymphatic-vessels"
+      ],
+      "mechanism": "transport",
+      "aliases": "health_atlas_cell_lymphatic_endothelial_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-type-i-pneumocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_type_i_pneumocyte_name",
+      "description": "health_atlas_cell_type_i_pneumocyte_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "alveoli"
+      ],
+      "mechanism": "transport",
+      "aliases": "health_atlas_cell_type_i_pneumocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-type-ii-pneumocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_type_ii_pneumocyte_name",
+      "description": "health_atlas_cell_type_ii_pneumocyte_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "alveoli"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_type_ii_pneumocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-ciliated-airway-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_ciliated_airway_cell_name",
+      "description": "health_atlas_cell_ciliated_airway_cell_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "trachea",
+        "bronchi"
+      ],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_cell_ciliated_airway_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-goblet-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_goblet_cell_name",
+      "description": "health_atlas_cell_goblet_cell_description",
+      "systems": [
+        "respiratory",
+        "gut"
+      ],
+      "related": [
+        "trachea",
+        "bronchi",
+        "small-intestine",
+        "large-intestine"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_goblet_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-club-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_club_cell_name",
+      "description": "health_atlas_cell_club_cell_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "bronchioles"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_club_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-gastric-parietal-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_gastric_parietal_cell_name",
+      "description": "health_atlas_cell_gastric_parietal_cell_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "stomach"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_gastric_parietal_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-gastric-chief-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_gastric_chief_cell_name",
+      "description": "health_atlas_cell_gastric_chief_cell_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "stomach"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_gastric_chief_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-paneth-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_paneth_cell_name",
+      "description": "health_atlas_cell_paneth_cell_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "small-intestine"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_paneth_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-enteroendocrine-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_enteroendocrine_cell_name",
+      "description": "health_atlas_cell_enteroendocrine_cell_description",
+      "systems": [
+        "gut",
+        "endocrine"
+      ],
+      "related": [
+        "stomach",
+        "small-intestine",
+        "large-intestine"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_enteroendocrine_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-intestinal-stem-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_intestinal_stem_cell_name",
+      "description": "health_atlas_cell_intestinal_stem_cell_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "small-intestine",
+        "large-intestine"
+      ],
+      "mechanism": "gut",
+      "aliases": "health_atlas_cell_intestinal_stem_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-cholangiocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_cholangiocyte_name",
+      "description": "health_atlas_cell_cholangiocyte_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [
+        "liver",
+        "biliary-tract"
+      ],
+      "mechanism": "transport",
+      "aliases": "health_atlas_cell_cholangiocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-pancreatic-acinar-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_pancreatic_acinar_cell_name",
+      "description": "health_atlas_cell_pancreatic_acinar_cell_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [
+        "pancreas"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_pancreatic_acinar_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-pancreatic-ductal-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_pancreatic_ductal_cell_name",
+      "description": "health_atlas_cell_pancreatic_ductal_cell_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [
+        "pancreas",
+        "pancreatic-duct"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_pancreatic_ductal_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-salivary-acinar-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_salivary_acinar_cell_name",
+      "description": "health_atlas_cell_salivary_acinar_cell_description",
+      "systems": [
+        "digestive"
+      ],
+      "related": [
+        "salivary-glands",
+        "parotid-glands",
+        "submandibular-glands",
+        "sublingual-glands"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_salivary_acinar_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-pancreatic-alpha-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_pancreatic_alpha_cell_name",
+      "description": "health_atlas_cell_pancreatic_alpha_cell_description",
+      "systems": [
+        "endocrine",
+        "digestive"
+      ],
+      "related": [
+        "pancreas",
+        "pancreatic-islets"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_pancreatic_alpha_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-pancreatic-delta-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_pancreatic_delta_cell_name",
+      "description": "health_atlas_cell_pancreatic_delta_cell_description",
+      "systems": [
+        "endocrine",
+        "digestive"
+      ],
+      "related": [
+        "pancreas",
+        "pancreatic-islets"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_pancreatic_delta_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-pancreatic-pp-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_pancreatic_pp_cell_name",
+      "description": "health_atlas_cell_pancreatic_pp_cell_description",
+      "systems": [
+        "endocrine",
+        "digestive"
+      ],
+      "related": [
+        "pancreas",
+        "pancreatic-islets"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_pancreatic_pp_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-thyroid-follicular-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_thyroid_follicular_cell_name",
+      "description": "health_atlas_cell_thyroid_follicular_cell_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [
+        "thyroid-gland"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_thyroid_follicular_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-thyroid-parafollicular-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_thyroid_parafollicular_cell_name",
+      "description": "health_atlas_cell_thyroid_parafollicular_cell_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [
+        "thyroid-gland"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_thyroid_parafollicular_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-parathyroid-chief-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_parathyroid_chief_cell_name",
+      "description": "health_atlas_cell_parathyroid_chief_cell_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [
+        "parathyroid-glands"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_parathyroid_chief_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-adrenocortical-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_adrenocortical_cell_name",
+      "description": "health_atlas_cell_adrenocortical_cell_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [
+        "adrenal-glands"
+      ],
+      "mechanism": "endocrine",
+      "aliases": "health_atlas_cell_adrenocortical_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-chromaffin-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_chromaffin_cell_name",
+      "description": "health_atlas_cell_chromaffin_cell_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [
+        "adrenal-glands"
+      ],
+      "mechanism": "endocrine",
+      "aliases": "health_atlas_cell_chromaffin_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-somatotroph",
+      "kind": "cell",
+      "name": "health_atlas_cell_somatotroph_name",
+      "description": "health_atlas_cell_somatotroph_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [
+        "pituitary-gland"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_somatotroph_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-lactotroph",
+      "kind": "cell",
+      "name": "health_atlas_cell_lactotroph_name",
+      "description": "health_atlas_cell_lactotroph_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [
+        "pituitary-gland"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_lactotroph_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-corticotroph",
+      "kind": "cell",
+      "name": "health_atlas_cell_corticotroph_name",
+      "description": "health_atlas_cell_corticotroph_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [
+        "pituitary-gland"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_corticotroph_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-thyrotroph",
+      "kind": "cell",
+      "name": "health_atlas_cell_thyrotroph_name",
+      "description": "health_atlas_cell_thyrotroph_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [
+        "pituitary-gland"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_thyrotroph_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-gonadotroph",
+      "kind": "cell",
+      "name": "health_atlas_cell_gonadotroph_name",
+      "description": "health_atlas_cell_gonadotroph_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [
+        "pituitary-gland"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_gonadotroph_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-pinealocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_pinealocyte_name",
+      "description": "health_atlas_cell_pinealocyte_description",
+      "systems": [
+        "endocrine"
+      ],
+      "related": [
+        "pineal-gland"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_pinealocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-podocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_podocyte_name",
+      "description": "health_atlas_cell_podocyte_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "kidneys",
+        "glomerulus"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_cell_podocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-mesangial-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_mesangial_cell_name",
+      "description": "health_atlas_cell_mesangial_cell_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "glomerulus"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_cell_mesangial_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-proximal-tubular-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_proximal_tubular_cell_name",
+      "description": "health_atlas_cell_proximal_tubular_cell_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "kidneys",
+        "renal-tubules"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_cell_proximal_tubular_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-distal-tubular-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_distal_tubular_cell_name",
+      "description": "health_atlas_cell_distal_tubular_cell_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "kidneys",
+        "renal-tubules"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_cell_distal_tubular_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-collecting-duct-principal-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_collecting_duct_principal_cell_name",
+      "description": "health_atlas_cell_collecting_duct_principal_cell_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "collecting-ducts"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_cell_collecting_duct_principal_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-collecting-duct-intercalated-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_collecting_duct_intercalated_cell_name",
+      "description": "health_atlas_cell_collecting_duct_intercalated_cell_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "collecting-ducts"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_cell_collecting_duct_intercalated_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-urothelial-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_urothelial_cell_name",
+      "description": "health_atlas_cell_urothelial_cell_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "bladder",
+        "ureters"
+      ],
+      "mechanism": "transport",
+      "aliases": "health_atlas_cell_urothelial_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-sertoli-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_sertoli_cell_name",
+      "description": "health_atlas_cell_sertoli_cell_description",
+      "systems": [
+        "male"
+      ],
+      "related": [
+        "testes"
+      ],
+      "mechanism": "male",
+      "aliases": "health_atlas_cell_sertoli_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-leydig-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_leydig_cell_name",
+      "description": "health_atlas_cell_leydig_cell_description",
+      "systems": [
+        "male",
+        "endocrine"
+      ],
+      "related": [
+        "testes"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_leydig_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-spermatogonium",
+      "kind": "cell",
+      "name": "health_atlas_cell_spermatogonium_name",
+      "description": "health_atlas_cell_spermatogonium_description",
+      "systems": [
+        "male"
+      ],
+      "related": [
+        "testes"
+      ],
+      "mechanism": "male",
+      "aliases": "health_atlas_cell_spermatogonium_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-spermatocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_spermatocyte_name",
+      "description": "health_atlas_cell_spermatocyte_description",
+      "systems": [
+        "male"
+      ],
+      "related": [
+        "testes"
+      ],
+      "mechanism": "male",
+      "aliases": "health_atlas_cell_spermatocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-granulosa-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_granulosa_cell_name",
+      "description": "health_atlas_cell_granulosa_cell_description",
+      "systems": [
+        "female",
+        "endocrine"
+      ],
+      "related": [
+        "ovaries"
+      ],
+      "mechanism": "female",
+      "aliases": "health_atlas_cell_granulosa_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-theca-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_theca_cell_name",
+      "description": "health_atlas_cell_theca_cell_description",
+      "systems": [
+        "female",
+        "endocrine"
+      ],
+      "related": [
+        "ovaries"
+      ],
+      "mechanism": "female",
+      "aliases": "health_atlas_cell_theca_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-ciliated-oviduct-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_ciliated_oviduct_cell_name",
+      "description": "health_atlas_cell_ciliated_oviduct_cell_description",
+      "systems": [
+        "female"
+      ],
+      "related": [
+        "uterine-tubes"
+      ],
+      "mechanism": "female",
+      "aliases": "health_atlas_cell_ciliated_oviduct_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-endometrial-epithelial-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_endometrial_epithelial_cell_name",
+      "description": "health_atlas_cell_endometrial_epithelial_cell_description",
+      "systems": [
+        "female"
+      ],
+      "related": [
+        "uterus",
+        "endometrium"
+      ],
+      "mechanism": "transport",
+      "aliases": "health_atlas_cell_endometrial_epithelial_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-endometrial-stromal-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_endometrial_stromal_cell_name",
+      "description": "health_atlas_cell_endometrial_stromal_cell_description",
+      "systems": [
+        "female"
+      ],
+      "related": [
+        "endometrium"
+      ],
+      "mechanism": "female",
+      "aliases": "health_atlas_cell_endometrial_stromal_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-mammary-luminal-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_mammary_luminal_cell_name",
+      "description": "health_atlas_cell_mammary_luminal_cell_description",
+      "systems": [
+        "female"
+      ],
+      "related": [
+        "mammary-glands"
+      ],
+      "mechanism": "transport",
+      "aliases": "health_atlas_cell_mammary_luminal_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-myoepithelial-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_myoepithelial_cell_name",
+      "description": "health_atlas_cell_myoepithelial_cell_description",
+      "systems": [
+        "female",
+        "digestive",
+        "skin"
+      ],
+      "related": [
+        "mammary-glands",
+        "salivary-glands",
+        "sweat-glands"
+      ],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_cell_myoepithelial_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-trophoblast",
+      "kind": "cell",
+      "name": "health_atlas_cell_trophoblast_name",
+      "description": "health_atlas_cell_trophoblast_description",
+      "systems": [
+        "female"
+      ],
+      "related": [
+        "placenta"
+      ],
+      "mechanism": "female",
+      "aliases": "health_atlas_cell_trophoblast_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-merkel-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_merkel_cell_name",
+      "description": "health_atlas_cell_merkel_cell_description",
+      "systems": [
+        "skin",
+        "sensory"
+      ],
+      "related": [
+        "epidermis"
+      ],
+      "mechanism": "skin",
+      "aliases": "health_atlas_cell_merkel_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-langerhans-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_langerhans_cell_name",
+      "description": "health_atlas_cell_langerhans_cell_description",
+      "systems": [
+        "skin",
+        "immune"
+      ],
+      "related": [
+        "epidermis"
+      ],
+      "mechanism": "skin",
+      "aliases": "health_atlas_cell_langerhans_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-sebocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_sebocyte_name",
+      "description": "health_atlas_cell_sebocyte_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [
+        "sebaceous-glands"
+      ],
+      "mechanism": "skin",
+      "aliases": "health_atlas_cell_sebocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-sweat-gland-secretory-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_sweat_gland_secretory_cell_name",
+      "description": "health_atlas_cell_sweat_gland_secretory_cell_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [
+        "sweat-glands"
+      ],
+      "mechanism": "secretory",
+      "aliases": "health_atlas_cell_sweat_gland_secretory_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-hair-matrix-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_hair_matrix_cell_name",
+      "description": "health_atlas_cell_hair_matrix_cell_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [
+        "hair-follicles"
+      ],
+      "mechanism": "skin",
+      "aliases": "health_atlas_cell_hair_matrix_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-muscle-satellite-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_muscle_satellite_cell_name",
+      "description": "health_atlas_cell_muscle_satellite_cell_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [
+        "pectoralis-major",
+        "quadriceps-femoris"
+      ],
+      "mechanism": "muscle",
+      "aliases": "health_atlas_cell_muscle_satellite_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-tenocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_tenocyte_name",
+      "description": "health_atlas_cell_tenocyte_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [
+        "tendons"
+      ],
+      "mechanism": "repair",
+      "aliases": "health_atlas_cell_tenocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "fragment-platelet",
+      "kind": "fragment",
+      "name": "health_atlas_fragment_platelet_name",
+      "description": "health_atlas_fragment_platelet_description",
+      "systems": [
+        "cardio",
+        "immune"
+      ],
+      "related": [
+        "blood",
+        "bone-marrow"
+      ],
+      "mechanism": "immune",
+      "aliases": "health_atlas_fragment_platelet_aliases",
+      "color": "",
+      "icon": ""
+    }
+  ],
+  "mechanisms": [
+    {
+      "id": "cardio",
+      "kind": "flow",
+      "title": "health_atlas_mechanism_cardio",
+      "stages": [
+        "health_atlas_mechanism_cardio_0",
+        "health_atlas_mechanism_cardio_1",
+        "health_atlas_mechanism_cardio_2",
+        "health_atlas_mechanism_cardio_3"
+      ],
+      "chapter": "19-4-cardiac-physiology"
+    },
+    {
+      "id": "nervous",
+      "kind": "neural",
+      "title": "health_atlas_mechanism_nervous",
+      "stages": [
+        "health_atlas_mechanism_nervous_0",
+        "health_atlas_mechanism_nervous_1",
+        "health_atlas_mechanism_nervous_2",
+        "health_atlas_mechanism_nervous_3"
+      ],
+      "chapter": "12-4-the-action-potential"
+    },
+    {
+      "id": "sensory",
+      "kind": "sensory",
+      "title": "health_atlas_mechanism_sensory",
+      "stages": [
+        "health_atlas_mechanism_sensory_0",
+        "health_atlas_mechanism_sensory_1",
+        "health_atlas_mechanism_sensory_2",
+        "health_atlas_mechanism_sensory_3"
+      ],
+      "chapter": "14-1-sensory-perception"
+    },
+    {
+      "id": "respiratory",
+      "kind": "lung",
+      "title": "health_atlas_mechanism_respiratory",
+      "stages": [
+        "health_atlas_mechanism_respiratory_0",
+        "health_atlas_mechanism_respiratory_1",
+        "health_atlas_mechanism_respiratory_2",
+        "health_atlas_mechanism_respiratory_3"
+      ],
+      "chapter": "22-3-the-process-of-breathing"
+    },
+    {
+      "id": "gut",
+      "kind": "gut",
+      "title": "health_atlas_mechanism_gut",
+      "stages": [
+        "health_atlas_mechanism_gut_0",
+        "health_atlas_mechanism_gut_1",
+        "health_atlas_mechanism_gut_2",
+        "health_atlas_mechanism_gut_3"
+      ],
+      "chapter": "23-introduction"
+    },
+    {
+      "id": "digestive",
+      "kind": "secretion",
+      "title": "health_atlas_mechanism_digestive",
+      "stages": [
+        "health_atlas_mechanism_digestive_0",
+        "health_atlas_mechanism_digestive_1",
+        "health_atlas_mechanism_digestive_2",
+        "health_atlas_mechanism_digestive_3"
+      ],
+      "chapter": "23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder"
+    },
+    {
+      "id": "urinary",
+      "kind": "filter",
+      "title": "health_atlas_mechanism_urinary",
+      "stages": [
+        "health_atlas_mechanism_urinary_0",
+        "health_atlas_mechanism_urinary_1",
+        "health_atlas_mechanism_urinary_2",
+        "health_atlas_mechanism_urinary_3"
+      ],
+      "chapter": "25-introduction"
+    },
+    {
+      "id": "endocrine",
+      "kind": "secretion",
+      "title": "health_atlas_mechanism_endocrine",
+      "stages": [
+        "health_atlas_mechanism_endocrine_0",
+        "health_atlas_mechanism_endocrine_1",
+        "health_atlas_mechanism_endocrine_2",
+        "health_atlas_mechanism_endocrine_3"
+      ],
+      "chapter": "17-introduction"
+    },
+    {
+      "id": "immune",
+      "kind": "immune",
+      "title": "health_atlas_mechanism_immune",
+      "stages": [
+        "health_atlas_mechanism_immune_0",
+        "health_atlas_mechanism_immune_1",
+        "health_atlas_mechanism_immune_2",
+        "health_atlas_mechanism_immune_3"
+      ],
+      "chapter": "21-introduction"
+    },
+    {
+      "id": "male",
+      "kind": "cycle",
+      "title": "health_atlas_mechanism_male",
+      "stages": [
+        "health_atlas_mechanism_male_0",
+        "health_atlas_mechanism_male_1",
+        "health_atlas_mechanism_male_2",
+        "health_atlas_mechanism_male_3"
+      ],
+      "chapter": "27-1-anatomy-and-physiology-of-the-male-reproductive-system"
+    },
+    {
+      "id": "female",
+      "kind": "cycle",
+      "title": "health_atlas_mechanism_female",
+      "stages": [
+        "health_atlas_mechanism_female_0",
+        "health_atlas_mechanism_female_1",
+        "health_atlas_mechanism_female_2",
+        "health_atlas_mechanism_female_3"
+      ],
+      "chapter": "27-2-anatomy-and-physiology-of-the-female-reproductive-system"
+    },
+    {
+      "id": "skin",
+      "kind": "barrier",
+      "title": "health_atlas_mechanism_skin",
+      "stages": [
+        "health_atlas_mechanism_skin_0",
+        "health_atlas_mechanism_skin_1",
+        "health_atlas_mechanism_skin_2",
+        "health_atlas_mechanism_skin_3"
+      ],
+      "chapter": "5-introduction"
+    },
+    {
+      "id": "skeletal",
+      "kind": "bone",
+      "title": "health_atlas_mechanism_skeletal",
+      "stages": [
+        "health_atlas_mechanism_skeletal_0",
+        "health_atlas_mechanism_skeletal_1",
+        "health_atlas_mechanism_skeletal_2",
+        "health_atlas_mechanism_skeletal_3"
+      ],
+      "chapter": "6-introduction"
+    },
+    {
+      "id": "muscle",
+      "kind": "muscle",
+      "title": "health_atlas_mechanism_muscle",
+      "stages": [
+        "health_atlas_mechanism_muscle_0",
+        "health_atlas_mechanism_muscle_1",
+        "health_atlas_mechanism_muscle_2",
+        "health_atlas_mechanism_muscle_3"
+      ],
+      "chapter": "10-3-muscle-fiber-contraction-and-relaxation"
+    },
+    {
+      "id": "beta",
+      "kind": "secretion",
+      "title": "health_atlas_mechanism_beta",
+      "stages": [
+        "health_atlas_mechanism_beta_0",
+        "health_atlas_mechanism_beta_1",
+        "health_atlas_mechanism_beta_2",
+        "health_atlas_mechanism_beta_3"
+      ],
+      "chapter": "17-9-the-endocrine-pancreas"
+    },
+    {
+      "id": "transport",
+      "kind": "barrier",
+      "title": "health_atlas_mechanism_transport",
+      "stages": [
+        "health_atlas_mechanism_transport_0",
+        "health_atlas_mechanism_transport_1",
+        "health_atlas_mechanism_transport_2",
+        "health_atlas_mechanism_transport_3"
+      ],
+      "chapter": "3-1-the-cell-membrane"
+    },
+    {
+      "id": "bloodcell",
+      "kind": "flow",
+      "title": "health_atlas_mechanism_bloodcell",
+      "stages": [
+        "health_atlas_mechanism_bloodcell_0",
+        "health_atlas_mechanism_bloodcell_1",
+        "health_atlas_mechanism_bloodcell_2",
+        "health_atlas_mechanism_bloodcell_3"
+      ],
+      "chapter": "18-3-erythrocytes"
+    },
+    {
+      "id": "repair",
+      "kind": "bone",
+      "title": "health_atlas_mechanism_repair",
+      "stages": [
+        "health_atlas_mechanism_repair_0",
+        "health_atlas_mechanism_repair_1",
+        "health_atlas_mechanism_repair_2",
+        "health_atlas_mechanism_repair_3"
+      ],
+      "chapter": "4-introduction"
+    },
+    {
+      "id": "sperm",
+      "kind": "sperm",
+      "title": "health_atlas_mechanism_sperm",
+      "stages": [
+        "health_atlas_mechanism_sperm_0",
+        "health_atlas_mechanism_sperm_1",
+        "health_atlas_mechanism_sperm_2",
+        "health_atlas_mechanism_sperm_3"
+      ],
+      "chapter": "27-1-anatomy-and-physiology-of-the-male-reproductive-system"
+    },
+    {
+      "id": "secretory",
+      "kind": "secretion",
+      "title": "health_atlas_mechanism_secretory",
+      "stages": [
+        "health_atlas_mechanism_secretory_0",
+        "health_atlas_mechanism_secretory_1",
+        "health_atlas_mechanism_secretory_2",
+        "health_atlas_mechanism_secretory_3"
+      ],
+      "chapter": "3-introduction"
+    }
+  ]
+}

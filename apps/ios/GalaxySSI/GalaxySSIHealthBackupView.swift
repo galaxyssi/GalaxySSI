@@ -107,7 +107,7 @@ struct GalaxySSIHealthBackupView: View {
       }
     }
     .navigationTitle(t("title", "Health Backup"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear {
       guard !historyLoaded else { return }
       do {
