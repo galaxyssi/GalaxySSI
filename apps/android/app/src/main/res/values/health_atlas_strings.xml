@@ -12,6 +12,8 @@
     <string name="health_atlas_values">My metrics</string>
     <string name="health_atlas_simulation">Simulation</string>
     <string name="health_atlas_open_quantitative_model">Numerical model</string>
+    <string name="health_atlas_quick_metrics">Metrics</string>
+    <string name="health_atlas_quick_trend">Trend</string>
     <string name="health_atlas_search">Search structures, cells or functions</string>
     <string name="health_atlas_counts">%1$d categories · %2$d structures · %3$d tissues · %4$d cell types/subtypes</string>
     <string name="health_atlas_no_matches">No matching entries</string>

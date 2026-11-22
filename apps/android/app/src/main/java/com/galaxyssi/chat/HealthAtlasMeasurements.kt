@@ -3,10 +3,12 @@ package com.galaxyssi.chat
 import android.app.Activity
 import android.content.Intent
 import android.database.ContentObserver
+import android.graphics.Rect
 import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
 import android.widget.LinearLayout
+import androidx.core.view.doOnLayout
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.Instant
@@ -18,6 +20,7 @@ internal data class HealthAtlasMeasurementSelection(val metric: HealthMetric?, v
 /** Cancels indexed reads and drops decrypted view state whenever this surface leaves the foreground. */
 internal class HealthAtlasMeasurements(private val activity: Activity, private val parent: LinearLayout,
     private val item: HealthAtlasItem, initial: HealthAtlasMeasurementSelection?,
+    private var revealTrend: Boolean = false,
     private val onAnalysisReady: (Boolean) -> Unit = {}) : AutoCloseable {
     private val ui = HealthCenterViews(activity)
     private val names = activity.intent.healthNavigationDatabases()
@@ -77,7 +80,8 @@ internal class HealthAtlasMeasurements(private val activity: Activity, private v
             main.post { if (!closed && generation == token && !cancellation.isCanceled) {
                 resultPanel.removeAllViews()
                 result.fold({ summary -> show(resultPanel, summary) }, { error ->
-                    resultPanel.addView(ui.text(activity.getString(if (error is HealthAccessBlocked) R.string.health_privacy_trend_blocked else R.string.health_storage_error)))
+                    resultPanel.addView(ui.text(activity.getString(if (error is HealthAccessBlocked) R.string.health_privacy_trend_blocked else R.string.health_storage_error))
+                        .apply { if (error is HealthAccessBlocked) tag = "atlas-personal-blocked" })
                     ui.add(resultPanel, ui.command(if (error is HealthAccessBlocked) R.string.health_privacy_title else R.string.health_atlas_reset) {
                         if (error is HealthAccessBlocked) activity.startActivity(Intent(activity, HealthPrivacyActivity::class.java)
                             .putExtra("health_privacy_test_db", names.privacy).putHealthNavigationFixture(names)) else load()
@@ -99,6 +103,14 @@ internal class HealthAtlasMeasurements(private val activity: Activity, private v
                 .putExtra("health_record", point.recordId).putExtra("health_revision", point.recordRevision).putHealthNavigationFixture(names))
         }).apply { tag = "atlas-personal-chart"; bind(summary) }
         chart = plot; container.addView(plot, LinearLayout.LayoutParams(-1, ui.dp(230)))
+        if (revealTrend) {
+            revealTrend = false
+            plot.doOnLayout {
+                plot.post {
+                    if (!closed && chart === plot) plot.requestRectangleOnScreen(Rect(0, 0, plot.width, plot.height), true)
+                }
+            }
+        }
         ui.add(container, ui.text(activity.getString(R.string.health_atlas_records_note), 12f, muted = true), 12)
         ui.add(container, ui.row(activity.getString(R.string.health_atlas_source)) {
             activity.startActivity(Intent(activity, HealthTrendRecordsActivity::class.java).putHealthTrend(summary.spec).putHealthNavigationFixture(names))
