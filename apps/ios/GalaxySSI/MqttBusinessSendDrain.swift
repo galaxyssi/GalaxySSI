@@ -105,20 +105,16 @@ actor MqttBusinessSendDrain {
               contentHash: current.wireHash, sender: identity.local, receiver: identity.remote, traffic: traffic.rawValue)
             let prepared: Publication
             if try MqttSignalDelivery.requiresFragments(topic: topic, wire: wire, message: message) {
-              let parts = try GalaxySSIMqttWireChunking.encode(wirePayload: current.message.wirePayload,
-                directLimitBytes: 1).map { part -> [String: Any] in
-                  guard let value = try JSONSerialization.jsonObject(with: Data(part.utf8)) as? [String: Any] else {
-                    throw MqttRouteError.invalidPayload
-                  }
-                  return value
-                }
-              prepared = .fragments(message, try chunks.prepare(authenticatedScope: identity.binding, parts: parts))
+              prepared = .fragments(message, try chunks.prepare(authenticatedScope: identity.binding,
+                wirePayload: current.message.wirePayload))
             } else {
               guard let direct = try routes.prepareDelivery(topic: topic, wire: wire, messageID: message.messageID,
                 traffic: traffic) else { return nil }
               prepared = .direct(direct)
             }
-            try outbox.updateRetry(identity: identity, messageID: current.message.messageId, published: false, now: now())
+            if case .direct = prepared {
+              try outbox.updateRetry(identity: identity, messageID: current.message.messageId, published: false, now: now())
+            }
             return (topic, prepared)
           }
           guard let (topic, delivery) = delivery else { continue }
@@ -130,6 +126,11 @@ actor MqttBusinessSendDrain {
           case .fragments(let message, let batch):
             submitted = try await publishFragments(topic: topic, storedTopic: item.message.topic,
               identity: identity, message: message, batch: batch)
+            if submitted {
+              try routes.withOutgoing(identity: identity, topics: [topic]) {
+                try outbox.updateRetry(identity: identity, messageID: message.messageID, published: false, now: now())
+              }
+            }
           }
           try Task.checkCancellation()
           if closed { result.stopped = true; return result }
@@ -152,6 +153,7 @@ actor MqttBusinessSendDrain {
       try Task.checkCancellation()
       guard !closed else { return submitted }
       let index = selection.index
+      if routes.chunkPending(identity: identity, query: query, index: index) { continue }
       let broker = try await routes.publishChunk(topic: topic, identity: identity, message: message,
         query: query, selection: selection, attempted: batch.attempted(index: index),
         isPending: { [outbox, chunks] in
@@ -164,7 +166,7 @@ actor MqttBusinessSendDrain {
         try routes.withOutgoing(identity: identity, topics: [topic]) {
           _ = try chunks.recordPath(authenticatedScope: identity.binding, query: query, index: index, broker: broker)
         }
-      }
+      } else { break }
     }
     return submitted
   }

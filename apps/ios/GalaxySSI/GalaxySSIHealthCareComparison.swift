@@ -31,7 +31,7 @@ enum GalaxySSIHealthCareComparison {
       reported = reading.reported?.raw
       unit = reading.unit
       reference = reading.referenceInterval ?? ""
-      condition = reading.conditions.trimmingCharacters(in: .whitespacesAndNewlines)
+      condition = GalaxySSIHealthReportQuickImport.conditionKey(reading.conditions)
       if let bluetooth = reading.bluetoothReceipt { sourceIdentity = "bluetooth:" + bluetooth.device.uuidString }
       else if let report = reading.reportSource { sourceIdentity = "report:" + report.original.uuidString }
       else if let table = reading.tableSource { sourceIdentity = "table:" + table.batch.uuidString }
