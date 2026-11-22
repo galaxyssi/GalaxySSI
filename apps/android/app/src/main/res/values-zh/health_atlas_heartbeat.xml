@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_atlas_beat_choice">心动周期</string>
     <string name="health_atlas_beat_title">心脏怎样把血液泵出去</string>
     <string name="health_atlas_beat_fill">心室舒张，血液流入</string>
     <string name="health_atlas_beat_fill_caption">来自全身和肺的血液分别回到右心房和左心房。三尖瓣与二尖瓣打开，血液流进心室。</string>

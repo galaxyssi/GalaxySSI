@@ -14,18 +14,21 @@ import android.widget.TextView
 
 internal object HealthAtlasUi {
     fun tabs(activity: Activity, labels: List<Int>, selected: Int, tagPrefix: String = "atlas-tab",
-        tagKey: (Int) -> String = { it.toString() }, action: (Int) -> Unit): LinearLayout {
+        tagKey: (Int) -> String = { it.toString() }, compact: Boolean = false,
+        action: (Int) -> Unit): LinearLayout {
         val ui = HealthCenterViews(activity)
         return ui.line().apply {
-            setBackgroundColor(activity.getColor(R.color.surface_bg))
+            setBackgroundColor(activity.getColor(if (compact) R.color.page_bg else R.color.surface_bg))
             labels.forEachIndexed { index, label -> addView(ui.column().apply {
                 addView(ui.text(activity.getString(label), 14f, bold = index == selected).apply {
-                    tag = "$tagPrefix-${tagKey(index)}"; gravity = Gravity.CENTER; minimumHeight = ui.dp(48)
+                    tag = "$tagPrefix-${tagKey(index)}"; gravity = Gravity.CENTER; minimumHeight = ui.dp(if (compact) 44 else 48)
                     isSelected = index == selected; isFocusable = true; setOnClickListener { action(index) }
                     setTextColor(activity.getColor(if (index == selected) R.color.health_overview_green else R.color.text_primary))
                 }, LinearLayout.LayoutParams(-1, -2))
                 addView(View(activity).apply { setBackgroundColor(if (index == selected) activity.getColor(R.color.health_overview_green) else Color.TRANSPARENT) },
-                    LinearLayout.LayoutParams(-1, ui.dp(3)).apply { marginStart = ui.dp(18); marginEnd = ui.dp(18) })
+                    LinearLayout.LayoutParams(-1, ui.dp(if (compact) 2 else 3)).apply {
+                        marginStart = ui.dp(if (compact) 24 else 18); marginEnd = marginStart
+                    })
             }, LinearLayout.LayoutParams(0, -2, 1f)) }
         }
     }

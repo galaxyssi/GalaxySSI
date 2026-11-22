@@ -270,6 +270,7 @@ internal enum class HealthAtlasFunctionStory(
             R.string.health_atlas_signal_neuro_response to R.string.health_atlas_signal_neuro_response_caption,
         ),
         listOf(
+            R.string.health_atlas_signal_neuro_potential_source to "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-4-the-action-potential",
             R.string.health_atlas_signal_neuro_calcium_source to "https://pubmed.ncbi.nlm.nih.gov/11160426/",
             R.string.health_atlas_signal_neuro_clearance_source to "https://pmc.ncbi.nlm.nih.gov/articles/PMC6725141/",
         ),
@@ -2033,6 +2034,8 @@ internal enum class HealthAtlasFunctionStory(
 
     val choiceTitle get() = cellLesson?.choice ?: when (this) {
         GLUCOSE -> R.string.health_atlas_lesson_uptake
+        HEARTBEAT -> R.string.health_atlas_beat_choice
+        BREATHING -> R.string.health_atlas_breathe_choice
         MUSCLE_MOTION -> R.string.health_atlas_lesson_contraction
         DIGESTION -> R.string.health_atlas_lesson_digestion
         LYMPH_RETURN -> R.string.health_atlas_lesson_lymph

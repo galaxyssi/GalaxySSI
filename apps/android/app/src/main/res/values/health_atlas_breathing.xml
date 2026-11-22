@@ -1,18 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_atlas_breathe_choice">Pulmonary ventilation</string>
     <string name="health_atlas_breathe_title">How breathing exchanges gases</string>
     <string name="health_atlas_breathe_inhale">The diaphragm moves down</string>
-    <string name="health_atlas_breathe_inhale_caption">During inhalation, the diaphragm contracts and moves down. The lungs expand and air flows in through the airways.</string>
+    <string name="health_atlas_breathe_inhale_caption">The diaphragm contracts and descends. Chest volume increases, lowering alveolar pressure below outside pressure so air enters.</string>
     <string name="health_atlas_breathe_reach">Air reaches the alveoli</string>
     <string name="health_atlas_breathe_reach_caption">Air passes through the bronchi and smaller bronchioles into the alveoli. Capillaries wrap around each air sac.</string>
     <string name="health_atlas_breathe_diffuse">Two gases move in opposite directions</string>
-    <string name="health_atlas_breathe_diffuse_caption">Oxygen crosses the thin barrier into blood while carbon dioxide crosses toward the alveolar air. Each gas moves down its own partial-pressure gradient.</string>
+    <string name="health_atlas_breathe_diffuse_caption">Across the alveolar lining, shared basement layer and capillary lining, O₂ diffuses toward blood and CO₂ toward air, each down its own partial-pressure gradient.</string>
     <string name="health_atlas_breathe_perfuse">Blood carries oxygen away</string>
     <string name="health_atlas_breathe_perfuse_caption">Red blood cells pick up oxygen as they flow through capillaries. Oxygen-rich blood returns to the left side of the heart through pulmonary veins.</string>
     <string name="health_atlas_breathe_exhale">The lungs recoil and air flows out</string>
     <string name="health_atlas_breathe_exhale_caption">During quiet exhalation, the diaphragm relaxes and rises. The lungs recoil, and exhaled air carries carbon dioxide out. Gas exchange does not stop between breaths.</string>
     <string name="health_atlas_breathe_alveolar_air">Air in the alveolus</string>
     <string name="health_atlas_breathe_muscle">Diaphragm</string>
+    <string name="health_atlas_breathe_barrier">Blood–air barrier</string>
+    <string name="health_atlas_breathe_blood">Capillary blood</string>
+    <string name="health_atlas_breathe_cross_section">Microscopic section</string>
     <string name="health_atlas_breathe_air_in">Air flows in</string>
     <string name="health_atlas_breathe_air_out">Air flows out</string>
     <string name="health_atlas_breathe_oxygen">Oxygen into blood</string>

@@ -24,6 +24,16 @@ internal object HealthAtlasSignalMotion {
 
     fun synapticRelease(t: Float, index: Int): Float =
         ((t - .38f - index * .085f) / .39f).coerceIn(0f, 1f)
+
+    fun gradedInput(time: Float): Float {
+        val t = HealthAtlasFunctionStory.safePhase(time)
+        fun input(at: Float, width: Float) = (1f - abs(t - at) / width).coerceAtLeast(0f)
+        return .18f + .30f * input(.24f, .25f) - .24f * input(.47f, .17f) +
+            .24f * input(.70f, .25f) + .35f * input(.81f, .27f)
+    }
+
+    fun gateProgress(time: Float, openAt: Float, duration: Float) =
+        ((HealthAtlasFunctionStory.safePhase(time) - openAt) / duration).coerceIn(0f, 1f)
 }
 
 internal class HealthAtlasSignalStoryView(context: Context, story: HealthAtlasFunctionStory) :
@@ -71,6 +81,7 @@ internal class HealthAtlasSignalStoryView(context: Context, story: HealthAtlasFu
         quadTo(199f, 231f, 255f, 238f); lineTo(305f, 244f)
     } }
     private val nodes = intArrayOf(94, 160, 226, 292)
+    private val potential = FloatArray(65) { HealthAtlasSignalMotion.gradedInput(it / 64f) }
 
     init {
         tag = when (story) {
@@ -112,14 +123,17 @@ internal class HealthAtlasSignalStoryView(context: Context, story: HealthAtlasFu
     }
 
     private fun neuron(c: Canvas, receiving: Boolean, t: Float) {
+        c.save()
+        c.translate(37f, 2f)
+        c.scale(.79f, .79f)
         plate(c, R.drawable.health_atlas_neuron, 75, 12, 275, 312)
         if (receiving) {
             for (i in dendrites.indices) {
                 val f = loop(t * 1.22f + i * .28f)
                 trail(c, dendrites[i], f, blue)
             }
-            val r = 7f + 4.5f * sin(t * PI.toFloat())
-            ring(c, 154f, 138f, r, gold)
+            val input = HealthAtlasSignalMotion.gradedInput(t)
+            ring(c, 154f, 138f, 6f + 9f * input, if (input >= .58f) gold else blue)
             leader(c, 52f, 48f, 117f, 61f, R.string.health_atlas_signal_neuro_dendrites, blue)
             leader(c, 63f, 211f, 154f, 138f, R.string.health_atlas_signal_neuro_initial, gold)
         } else {
@@ -127,6 +141,60 @@ internal class HealthAtlasSignalStoryView(context: Context, story: HealthAtlasFu
             leader(c, 70f, 223f, 190f, 191f, R.string.health_atlas_signal_neuro_axon, gold)
             leader(c, 253f, 331f, 240f, 281f, R.string.health_atlas_signal_neuro_terminal, coral)
         }
+        c.restore()
+        if (receiving) gradedPotential(c, t) else membraneRelay(c, t)
+    }
+
+    private fun gradedPotential(c: Canvas, t: Float) {
+        rounded(c, 19f, 262f, 341f, 343f, 8f, cream)
+        label(c, 114f, 282f, R.string.health_atlas_signal_neuro_voltage)
+        label(c, 275f, 283f, R.string.health_atlas_signal_neuro_threshold)
+        val left = 32f; val bottom = 332f; val length = 292f; val height = 63f
+        val thresholdY = bottom - .58f * height
+        for (i in 0..19) {
+            val x = left + i * 15f
+            line(c, x, thresholdY, x + 7f, thresholdY, gold, 1f)
+        }
+        val samples = (t * potential.lastIndex).toInt().coerceAtLeast(1)
+        path {
+            moveTo(left, bottom - height * potential.first())
+            for (i in 1..samples) {
+                lineTo(left + length * i / potential.lastIndex, bottom - height * potential[i])
+            }
+        }
+        ink(blue, 2.5f); c.drawPath(shape, paint)
+        val reading = HealthAtlasSignalMotion.gradedInput(t)
+        dot(c, left + length * t, bottom - height * reading, 4f, if (reading >= .58f) gold else blue)
+    }
+
+    private fun membraneRelay(c: Canvas, t: Float) {
+        rounded(c, 19f, 274f, 341f, 343f, 8f, cream)
+        line(c, 34f, 303f, 326f, 303f, coral, 3f)
+        line(c, 34f, 314f, 326f, 314f, coral, 3f)
+        for (segment in 0..2) {
+            val x = 77f + segment * 103f
+            val local = t * 1.55f - segment * .29f
+            val activation = local in .04f.. .69f
+            val sodium = local < .32f
+            val color = if (!activation) 0xff8fa4a6 else if (sodium) blue else violet
+            gate(c, x, 309f, color, activation)
+            if (activation) {
+                if (sodium) arrow(c, x, 289f, x, 327f, blue) else arrow(c, x, 327f, x, 289f, violet)
+                val f = if (sodium) (local - .04f) / .28f else (local - .32f) / .37f
+                dot(c, x, if (sodium) 289f + 38f * f else 327f - 38f * f, 3.1f, color)
+            }
+        }
+        dot(c, 40f, 333f, 2.9f, blue)
+        label(c, 98f, 337f, R.string.health_atlas_signal_neuro_sodium_in)
+        dot(c, 216f, 333f, 2.9f, violet)
+        label(c, 274f, 337f, R.string.health_atlas_signal_neuro_potassium_out)
+    }
+
+    private fun gate(c: Canvas, x: Float, y: Float, color: Long, open: Boolean) {
+        rounded(c, x - 14f, y - 11f, x + 14f, y + 11f, 4f, cream)
+        rounded(c, x - 13f, y - 9f, x - 4f, y + 9f, 4f, color)
+        rounded(c, x + 4f, y - 9f, x + 13f, y + 9f, 4f, color)
+        if (!open) line(c, x - 5f, y, x + 5f, y, color, 3f)
     }
 
     private fun synapse(c: Canvas, chapter: Int, t: Float) {
@@ -151,13 +219,19 @@ internal class HealthAtlasSignalStoryView(context: Context, story: HealthAtlasFu
         when (chapter) {
             2 -> {
                 vesicle(c, 178f, 138f)
+                val open = t > .22f
+                c.save()
+                c.rotate(90f, 267f, 147f)
+                gate(c, 267f, 147f, blue, open)
+                c.restore()
                 for (i in 0..4) {
-                    val f = loop(t * 1.29f + i / 5f)
-                    dot(c, 312f - f * 92f, 151f + 10f * (i % 2), 3.6f, blue)
+                    val f = HealthAtlasSignalMotion.gateProgress(t, .22f + i * .085f, .43f)
+                    val x = 318f - 99f * f
+                    val y = 147f + (i - 2) * 5.5f * abs(1f - f * 2f)
+                    dot(c, x, y, 3.6f, blue)
                 }
-                rounded(c, 262f, 143f, 273f, 148f, 2f, blue)
-                rounded(c, 262f, 162f, 273f, 167f, 2f, blue)
-                label(c, 297f, 125f, R.string.health_atlas_signal_neuro_calcium_ions)
+                label(c, 291f, 116f, R.string.health_atlas_signal_neuro_calcium_ions)
+                if (open) arrow(c, 307f, 169f, 229f, 169f, blue)
             }
             3 -> {
                 if (!fusion) vesicle(c, 180f, 140f + 21f * (t / .35f).coerceIn(0f, 1f))
@@ -165,16 +239,24 @@ internal class HealthAtlasSignalStoryView(context: Context, story: HealthAtlasFu
                     val f = HealthAtlasSignalMotion.synapticRelease(t, i)
                     dot(c, 180f + (i - 2) * 18f * f, 174f + 61f * f, 3.8f, violet)
                 }
+                if (fusion) arrow(c, 112f, 194f, 112f, 227f, violet)
                 leader(c, 277f, 201f, 208f, 219f, R.string.health_atlas_signal_neuro_transmitter, violet)
             }
             else -> {
-                val radius = 9f + t * 22f
-                ring(c, 180f, 271f, radius, gold)
-                for (i in 0..4) {
-                    val f = loop(t * .95f + i / 5f)
-                    val x = 149f + 36f * i * .45f + 67f * f
-                    dot(c, x, 229f - 26f * f, 3.5f - .8f * f, violet)
+                val receptorOpen = t in .24f.. .79f
+                gate(c, 180f, 246f, teal, receptorOpen)
+                val binding = HealthAtlasSignalMotion.gateProgress(t, .03f, .21f)
+                val clearing = HealthAtlasSignalMotion.gateProgress(t, .70f, .26f)
+                dot(c, 168f + 12f * binding - 50f * clearing, 202f + 29f * binding - 38f * clearing, 4f, violet)
+                if (receptorOpen) {
+                    arrow(c, 180f, 250f, 180f, 281f, blue)
+                    for (i in 0..2) {
+                        val f = HealthAtlasSignalMotion.gateProgress(t, .25f + i * .11f, .27f)
+                        dot(c, 180f + (i - 1) * 11f * f, 248f + 41f * f, 3.3f, blue)
+                    }
                 }
+                if (clearing > 0f) arrow(c, 122f, 223f, 122f, 189f, violet)
+                label(c, 99f, 280f, R.string.health_atlas_signal_neuro_sodium_in)
                 leader(c, 303f, 193f, 230f, 234f, R.string.health_atlas_signal_neuro_receptor, teal)
             }
         }

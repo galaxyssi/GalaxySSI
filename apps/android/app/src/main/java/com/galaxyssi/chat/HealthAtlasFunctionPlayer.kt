@@ -2,12 +2,16 @@ package com.galaxyssi.chat
 
 import android.animation.ValueAnimator
 import android.app.Activity
+import android.app.AlertDialog
 import android.os.SystemClock
+import android.text.StaticLayout
 import android.view.View
 import android.view.Gravity
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.SeekBar
+import android.widget.TextView
 
 internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAtlasFunctionStory,
     initial: Float, openSource: (String) -> Unit, showTitle: Boolean = true,
@@ -15,7 +19,15 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
     private val ui = HealthCenterViews(activity)
     private val art = story.createArt(activity)
     private val caption = ui.text("", 15f).apply { tag = "atlas-function-caption" }
-    private val chapterLabel = ui.text("", 16f, bold = true).apply { tag = "atlas-function-chapter" }
+    private val chapterLabel = ui.text("", 14f, bold = true).apply {
+        tag = "atlas-function-chapter"
+        setTextColor(context.getColor(R.color.health_overview_green))
+    }
+    private val chapterLabels = story.chapters.mapIndexed { index, chapter ->
+        context.getString(R.string.health_atlas_scene_chapter, index + 1, story.chapters.size, context.getString(chapter.first))
+    }
+    private val chapterCaptions = story.chapters.map { context.getString(it.second) }
+    private var measuredCaptionWidth = 0
     private val timeline = HealthAtlasChapterClock(story.chapters.size, initial)
     private val frame = Runnable { advance() }
     private val play: ImageButton = ui.icon(R.drawable.ic_rich_play, R.string.health_body_play, ::toggle)
@@ -40,7 +52,25 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
     init {
         tag = "atlas-function-player"
         orientation = VERTICAL
-        if (showTitle) ui.add(this, ui.text(context.getString(story.title), 18f, bold = true))
+        val scene = ui.column().apply {
+            tag = "atlas-function-frame"
+            background = ui.background()
+            clipToOutline = true
+            if (showTitle) ui.add(this, ui.text(context.getString(story.title), 16f, bold = true).apply {
+                setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(8))
+            })
+            art.setOnClickListener { toggle() }
+            art.isFocusable = true
+            ui.add(this, art)
+            ui.add(this, ui.column().apply {
+                tag = "atlas-function-subtitles"
+                setPadding(ui.dp(12), ui.dp(9), ui.dp(12), ui.dp(10))
+                ui.add(this, chapterLabel)
+                ui.add(this, caption, 2)
+            })
+        }
+        ui.add(this, scene)
+        ui.add(this, position)
         ui.add(this, ui.line().apply {
             gravity = Gravity.CENTER
             tag = "atlas-function-controls"
@@ -49,33 +79,53 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
             addView(play)
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_body_next_step) { skip(1) }
                 .apply { rotation = 180f; tag = "atlas-function-next" })
-            addView(ui.icon(R.drawable.ic_reset_data, R.string.health_atlas_reset) { seek(0f) }
-                .apply { tag = "atlas-function-reset" })
-        }, if (showTitle) 2 else 0)
-        ui.add(this, position)
-        art.setOnClickListener { toggle() }
-        art.isFocusable = true
-        ui.add(this, art, 6)
-        ui.add(this, chapterLabel, 12)
-        ui.add(this, caption, 6)
-        ui.add(this, ui.text(context.getString(story.scope), 12f, muted = true), 6)
-        val outline = ui.column().apply { tag = "atlas-function-outline"; visibility = View.GONE }
-        ui.add(this, HealthAtlasUi.disclosure(activity, context.getString(R.string.health_atlas_function_outline),
-            "atlas-function-outline-toggle") { open ->
-            if (open && outline.childCount == 0) story.chapters.forEachIndexed { index, chapter ->
-                val label = context.getString(R.string.health_atlas_stage, index + 1, story.chapters.size,
-                    context.getString(chapter.first))
-                ui.add(outline, ui.row(label, context.getString(chapter.second)) { seek(story.startOf(index)) }
-                    .apply { tag = "atlas-function-outline-stage-$index" })
-            }
-            outline.visibility = if (open) View.VISIBLE else View.GONE
-        }, 6)
-        ui.add(this, outline)
-        story.references.forEachIndexed { index, (title, url) ->
-            ui.add(this, ui.row(context.getString(title)) { openSource(url) }
-                .apply { tag = "atlas-function-source-$index" }, if (index == 0) 8 else 0)
-        }
+            addView(ui.icon(R.drawable.ic_more_horizontal, R.string.health_atlas_scene_menu) {
+                pause()
+                PopupMenu(activity, findViewWithTag("atlas-function-menu")).apply {
+                    menu.add(R.string.health_atlas_function_outline).setOnMenuItemClickListener {
+                        AlertDialog.Builder(activity).setTitle(R.string.health_atlas_function_outline)
+                            .setSingleChoiceItems(chapterLabels.toTypedArray(), story.chapter(phase)) { dialog, index ->
+                                seek(story.startOf(index))
+                                dialog.dismiss()
+                            }
+                            .setNegativeButton(android.R.string.cancel, null).show()
+                        true
+                    }
+                    menu.add(R.string.health_atlas_reset).setOnMenuItemClickListener { seek(0f); true }
+                    menu.add(R.string.health_atlas_evidence).setOnMenuItemClickListener {
+                        AlertDialog.Builder(activity).setTitle(R.string.health_atlas_evidence)
+                            .setMessage(context.getString(story.scope))
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .setPositiveButton(R.string.health_atlas_scene_sources) { _, _ ->
+                                AlertDialog.Builder(activity).setTitle(R.string.health_atlas_scene_sources)
+                                    .setItems(story.references.map { context.getString(it.first) }.toTypedArray()) { _, index ->
+                                        openSource(story.references[index].second)
+                                    }.setNegativeButton(android.R.string.cancel, null).show()
+                            }.show()
+                        true
+                    }
+                }.show()
+            }.apply { tag = "atlas-function-menu" })
+        })
         showPhase(timeline.sample(SystemClock.uptimeMillis()))
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val width = View.MeasureSpec.getSize(widthMeasureSpec) - paddingStart - paddingEnd - ui.dp(24)
+        if (width > 0 && width != measuredCaptionWidth) {
+            measuredCaptionWidth = width
+            fun reservedHeight(view: TextView, strings: List<String>) = strings.maxOf { text ->
+                StaticLayout.Builder.obtain(text, 0, text.length, view.paint, width)
+                    .setIncludePad(view.includeFontPadding)
+                    .setLineSpacing(view.lineSpacingExtra, view.lineSpacingMultiplier)
+                    .setBreakStrategy(view.breakStrategy)
+                    .setHyphenationFrequency(view.hyphenationFrequency)
+                    .build().height
+            }
+            chapterLabel.minimumHeight = reservedHeight(chapterLabel, chapterLabels)
+            caption.minimumHeight = reservedHeight(caption, chapterCaptions)
+        }
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 
     private fun skip(direction: Int) {
@@ -87,10 +137,8 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
         phase = HealthAtlasFunctionStory.safePhase(value)
         val chapter = story.chapter(phase)
         if (chapter != renderedChapter) {
-            val (title, detail) = story.chapters[chapter]
-            chapterLabel.text = context.getString(R.string.health_atlas_stage, chapter + 1,
-                story.chapters.size, context.getString(title))
-            caption.setText(detail)
+            chapterLabel.text = chapterLabels[chapter]
+            caption.text = chapterCaptions[chapter]
             renderedChapter = chapter
         }
         art.phase = if (ValueAnimator.areAnimatorsEnabled()) phase else story.startOf(chapter)

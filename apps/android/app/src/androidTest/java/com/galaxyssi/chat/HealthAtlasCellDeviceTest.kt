@@ -218,7 +218,10 @@ class HealthAtlasCellDeviceTest {
             assertTrue(HealthAtlasAgentContext.prompt(it, atlas, atlas[typeII], quantitative = diagram.model).contains(scope))
             val typeI = "cell-type-i-pneumocyte"
             assertFalse(HealthAtlasAgentContext.prompt(it, atlas, atlas[typeI], quantitative = diagram.model).contains(scope))
-            it.onBackPressed(); it.openTransportCell(typeI)
+            it.onBackPressed()
+            assertTrue(it.view("atlas-tab-1").isSelected)
+            it.onBackPressed()
+            it.openTransportCell(typeI)
             it.openAtlasModelDetails()
             assertNull(it.window.decorView.tagged("atlas-alveolar-surface-diagram"))
         }
@@ -248,7 +251,9 @@ class HealthAtlasCellDeviceTest {
         scenario.recreate(); await(scenario, "atlas-podocyte-diagram")
         scenario.onActivity {
             assertEquals(3, (it.view("atlas-podocyte-diagram") as HealthAtlasPodocyteView).stage)
-            it.onBackPressed(); it.openTransportCell(neighbor)
+            it.onBackPressed()
+            it.onBackPressed()
+            it.openTransportCell(neighbor)
             it.openAtlasModelDetails()
             assertNull(it.window.decorView.tagged("atlas-podocyte-diagram"))
         }
@@ -282,7 +287,9 @@ class HealthAtlasCellDeviceTest {
         scenario.recreate(); await(scenario, "atlas-sarcomere-diagram")
         scenario.onActivity {
             assertEquals(180, (it.view("atlas-sarcomere-diagram") as HealthAtlasSarcomerePanel.Diagram).model.zDistance)
-            it.onBackPressed(); it.openCell("cell-cardiomyocyte"); it.openAtlasModelDetails()
+            it.onBackPressed()
+            it.onBackPressed()
+            it.openCell("cell-cardiomyocyte"); it.openAtlasModelDetails()
             assertNull(it.window.decorView.tagged("atlas-sarcomere-diagram"))
         }
     }
@@ -376,6 +383,8 @@ class HealthAtlasCellDeviceTest {
             scenario.onActivity {
                 assertEquals(500, (it.view("atlas-simulation-progress") as SeekBar).progress)
                 assertTrue(it.view("atlas-process-stage-2").isSelected)
+                it.onBackPressed()
+                assertTrue(it.view("atlas-tab-1").isSelected)
                 it.onBackPressed()
             }
         }

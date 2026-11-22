@@ -76,6 +76,11 @@ internal class HealthAtlasBreathingView(context: Context) :
         paint.shader = sky
         canvas.drawRoundRect(bounds, 8f, 8f, paint)
         paint.shader = null
+        if (stage == HealthAtlasBreathingStage.DIFFUSE) {
+            membrane(canvas, fraction)
+            canvas.restore()
+            return
+        }
         if (zoom < 1f) {
             val layer = canvas.saveLayerAlpha(0f, 0f, FRAME, FRAME, ((1f - zoom) * 255).toInt())
             whole(canvas, expansion, phase, stage.exhales)
@@ -87,6 +92,48 @@ internal class HealthAtlasBreathingView(context: Context) :
             canvas.restoreToCount(layer)
         }
         canvas.restore()
+    }
+
+    private fun membrane(canvas: Canvas, time: Float) {
+        fun band(top: Float, bottom: Float, color: Int) {
+            ink(color)
+            canvas.drawRoundRect(19f, top, 325f, bottom, 9f, 9f, paint)
+        }
+        band(42f, 140f, 0xffdeedf2.toInt())
+        band(144f, 159f, 0xffdfa98f.toInt())
+        band(160f, 165f, 0xffecd8ba.toInt())
+        band(166f, 180f, 0xffa9c5c0.toInt())
+        band(184f, 282f, 0xfff2dbd7.toInt())
+        label(canvas, airLabel, 172f, 32f, 14f)
+        label(canvas, context.getString(R.string.health_atlas_breathe_cross_section), 172f, 302f, 13f)
+
+        val rbc = 34f + 275f * time
+        ink(0xffba5763.toInt())
+        canvas.drawOval(rbc - 15f, 234f, rbc + 15f, 255f, paint)
+        ink(0xffed9196.toInt(), 2f)
+        canvas.drawOval(rbc - 8f, 241f, rbc + 8f, 248f, paint)
+        for (i in 0..1) {
+            val color = if (i == 0) teal else gold
+            val x = if (i == 0) 98f else 246f
+            val start = if (i == 0) 87f else 222f
+            val end = if (i == 0) 222f else 87f
+            val head = if (i == 0) -7f else 7f
+            ink(color, 2f)
+            canvas.drawLine(x, start, x, end, paint)
+            canvas.drawLine(x, end, x - 5f, end + head, paint)
+            canvas.drawLine(x, end, x + 5f, end + head, paint)
+            for (particle in 0..2) {
+                val f = loop(time * 1.6f + particle / 3f)
+                ink(WHITE)
+                canvas.drawCircle(x, start + (end - start) * f, 5.4f, paint)
+                ink(color)
+                canvas.drawCircle(x, start + (end - start) * f, 4f, paint)
+            }
+        }
+        label(canvas, context.getString(R.string.health_atlas_breathe_barrier), 172f, 130f, 13f)
+        label(canvas, context.getString(R.string.health_atlas_breathe_blood), 172f, 274f, 13f)
+        legend(canvas, 91f, oxygenLabel, teal)
+        legend(canvas, 253f, carbonLabel, gold)
     }
 
     private fun whole(canvas: Canvas, expansion: Float, time: Float, exhale: Boolean) {

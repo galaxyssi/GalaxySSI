@@ -199,6 +199,9 @@ class HealthBodyAtlasActivity : Activity() {
         if (researchTopic != null) {
             researchTopic = null; scrollY = researchReturnScroll; researchReturnScroll = 0; render(); return
         }
+        if (tab == HealthAtlasTab.SIMULATION && selection.isNotEmpty()) {
+            tab = HealthAtlasTab.FUNCTION; scrollY = 0; render(); return
+        }
         if (selection.isEmpty()) { finish(); return }
         val previous = if (history.isEmpty()) null else history.removeAt(history.lastIndex)
         selection = previous?.id.orEmpty(); tab = previous?.tab ?: HealthAtlasTab.STRUCTURE
@@ -253,11 +256,12 @@ class HealthBodyAtlasActivity : Activity() {
         root.addView(toolbar)
         val labels = if (topic != null) topics.map { it.title }
             else if (item == null) listOf(R.string.health_atlas_whole, R.string.health_atlas_systems, R.string.health_atlas_organs, R.string.health_atlas_cells)
-            else if (inlineModels) listOf(R.string.health_atlas_structure, R.string.health_atlas_function, R.string.health_atlas_values)
-            else listOf(R.string.health_atlas_structure, R.string.health_atlas_function, R.string.health_atlas_values, R.string.health_atlas_simulation)
-        root.addView(HealthAtlasUi.tabs(this, labels, topic?.let(topics::indexOf) ?: if (item == null) section else tab.ordinal,
+            else listOf(R.string.health_atlas_structure, R.string.health_atlas_function, R.string.health_atlas_values)
+        val activeTab = if (tab == HealthAtlasTab.SIMULATION) HealthAtlasTab.FUNCTION else tab
+        root.addView(HealthAtlasUi.tabs(this, labels, topic?.let(topics::indexOf) ?: if (item == null) section else activeTab.ordinal,
             if (topic == null) "atlas-tab" else "atlas-research-tab",
-            tagKey = { index -> if (topic == null) index.toString() else topics[index].name.lowercase(Locale.ROOT) }) { index ->
+            tagKey = { index -> if (topic == null) index.toString() else topics[index].name.lowercase(Locale.ROOT) },
+            compact = item != null) { index ->
             if (topic != null) researchTopic = topics[index]
             else if (item == null) { section = index; query = ""; limit = 24 } else tab = HealthAtlasTab.entries[index]
             revealTrend = false
@@ -391,22 +395,17 @@ class HealthBodyAtlasActivity : Activity() {
             HealthAtlasTab.STRUCTURE -> structure(data, item)
             HealthAtlasTab.FUNCTION -> {
                 val choices = HealthAtlasFunctionStory.choicesForId(item.id)
-                if (choices.isEmpty()) ui.add(content, artwork(data, item)) else functionLessons(data, item, choices)
+                if (choices.isEmpty()) {
+                    ui.add(content, artwork(data, item))
+                    ui.add(content, ui.text(item.description, 16f), 8)
+                    addFunctionPrinciple(data, item)
+                } else functionLessons(data, item, choices)
                 if (usesInlineModels(item)) addInlineModels(data, item)
                 else ui.add(content, ui.navigationRow(R.drawable.ic_health_data_chart, R.string.health_atlas_open_quantitative_model) {
                     tab = HealthAtlasTab.SIMULATION
                     scrollY = 0
                     render()
                 }.apply { tag = "atlas-open-simulation" }, 12)
-                ui.add(content, ui.text(item.description, 17f), 12)
-                addFunctionPrinciple(data, item)
-                val hasAlternateView = item.kind == HealthAtlasKind.SYSTEM &&
-                    HealthAtlasMusculoskeletalPlates.viewsForId(item.id).size > 1
-                val hasLessonHotspots = choices.any { it.showStructurePreview } &&
-                    HealthAtlasPlates.forId(item.id)?.hasLabels == true
-                if (choices.isNotEmpty() && (hasAlternateView || hasLessonHotspots)) {
-                    ui.add(content, artwork(data, item), 12)
-                }
                 ui.add(content, ui.row(getString(researchTitle(usesInlineModels(item)))) { openResearch(item) }
                     .apply { tag = "atlas-open-research" }, 12)
             }
@@ -420,19 +419,20 @@ class HealthBodyAtlasActivity : Activity() {
                 else content.addView(ui.text(getString(R.string.health_loading)))
             }
             HealthAtlasTab.SIMULATION -> {
+                content.tag = "atlas-standalone-models"
                 simulationItem = item.id
                 simulation = HealthAtlasSimulationPanel(this, content, data, item, simulationStates[item.id], physiologyStates[item.id], ::zoom, ::source, ::select)
                 ui.add(content, ui.row(getString(R.string.health_atlas_research)) { openResearch(item) }
                     .apply { tag = "atlas-open-research" }, 12)
             }
         }
-        if (tab == HealthAtlasTab.STRUCTURE || tab == HealthAtlasTab.FUNCTION) HealthAtlasPlates.forId(item.id)?.source?.let { url ->
+        if (tab == HealthAtlasTab.STRUCTURE) HealthAtlasPlates.forId(item.id)?.source?.let { url ->
             ui.add(content, ui.row(getString(R.string.health_atlas_plate_source)) { source(url) }
                 .apply { tag = "atlas-source-structure" }, 18)
         }
-        if (tab != HealthAtlasTab.VALUES && !(usesInlineModels(item) && tab == HealthAtlasTab.FUNCTION))
+        if (tab == HealthAtlasTab.SIMULATION)
             addMechanismSource(content, data, item)
-        if (HealthAtlasUi.art(item) != null && tab != HealthAtlasTab.VALUES)
+        if (HealthAtlasUi.art(item) != null && tab == HealthAtlasTab.STRUCTURE)
             ui.add(content, ui.text(getString(R.string.health_atlas_art_note), 11f, muted = true), 8)
     }
     private fun functionLessons(data: HealthBodyAtlas, item: HealthAtlasItem, choices: List<HealthAtlasFunctionStory>) {
@@ -458,7 +458,7 @@ class HealthBodyAtlasActivity : Activity() {
                 ui.add(panel, menu)
             } else if (choices.size > 1) {
                 ui.add(panel, HealthAtlasUi.tabs(this, choices.map { it.choiceTitle }, choices.indexOf(story),
-                    "atlas-function-lesson") { index ->
+                    "atlas-function-lesson", compact = true) { index ->
                     val next = choices[index]
                     if (next != story) {
                         functionState.choose(item.id, next)
@@ -513,7 +513,8 @@ class HealthBodyAtlasActivity : Activity() {
         fun renderLayer() {
             val current = structureLayers[item.id] ?: StructureLayer.ORGAN
             layers.removeAllViews()
-            layers.addView(HealthAtlasUi.tabs(this, StructureLayer.entries.map { it.label }, current.ordinal, "atlas-structure-layer") { index ->
+            layers.addView(HealthAtlasUi.tabs(this, StructureLayer.entries.map { it.label }, current.ordinal, "atlas-structure-layer",
+                compact = true) { index ->
                 val next = StructureLayer.entries[index]
                 if (next != current) {
                     structureLayers[item.id] = next
