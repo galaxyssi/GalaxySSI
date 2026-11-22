@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_hide_labels">Hide labels</string>
+    <string name="health_atlas_show_labels">Show labels</string>
+    <string name="health_atlas_locator_view">Locator</string>
+</resources>

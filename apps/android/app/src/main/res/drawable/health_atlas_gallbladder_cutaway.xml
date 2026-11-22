@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Liver bed and a window in the descending duodenum. -->
+    <path android:fillColor="#50AE695B" android:strokeColor="#7798544D" android:strokeWidth="2"
+        android:pathData="M48,49 C88,26 146,25 193,41 C225,29 265,36 299,58 C275,79 247,84 220,81 C195,80 185,93 164,103 C126,126 91,125 53,107 C48,89 46,67 48,49Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#5C98594E" android:strokeWidth="2"
+        android:pathData="M191,45 C182,61 182,76 173,91" />
+    <path android:fillColor="#D58870" android:strokeColor="#91504B" android:strokeWidth="2.5"
+        android:pathData="M238,124 C273,112 310,126 315,162 C320,192 315,220 293,239 C276,254 248,256 218,247 L226,224 C245,232 268,229 278,216 C290,202 296,166 279,154 C270,147 257,145 243,149Z" />
+    <path android:fillColor="#F3BBA7" android:strokeColor="#AB6356" android:strokeWidth="2"
+        android:pathData="M290,163 C301,158 309,165 310,178 C313,204 303,226 283,240 C274,246 260,249 249,247 C252,238 259,233 269,228 C282,219 287,203 288,190 C289,179 282,170 290,163Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#B37064" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M294,176 Q303,177 307,183 M294,189 Q301,191 306,196 M291,203 Q297,207 302,209 M286,216 Q291,219 294,221 M277,226 Q281,231 284,231 M264,235 Q268,240 271,241" />
+    <path android:fillColor="#F8CCB8" android:strokeColor="#B37064" android:strokeWidth="1.5"
+        android:pathData="M276,200 C280,196 285,196 289,199 L288,211 C283,215 277,215 272,212Z" />
+    <!-- Duct walls with a continuous lumen through the cystic and hepatic junction. -->
+    <path android:fillColor="#00000000" android:strokeColor="#536135" android:strokeWidth="12" android:strokeLineCap="round"
+        android:pathData="M177,57 C191,61 203,67 211,77 C213,65 226,59 240,56 M211,77 C214,90 210,107 211,123 C211,141 218,157 222,175 C226,190 240,204 257,204 C265,204 272,207 281,207 M163,110 C171,101 180,101 189,110 C198,119 204,123 211,123" />
+    <path android:name="gallbladder-common-bile-duct" android:fillColor="#00000000"
+        android:strokeColor="#D5DA83" android:strokeWidth="6" android:strokeLineCap="round"
+        android:pathData="M177,57 C191,61 203,67 211,77 C213,65 226,59 240,56 M211,77 C214,90 210,107 211,123 C211,141 218,157 222,175 C226,190 240,204 257,204 C265,204 272,207 281,207" />
+    <path android:name="gallbladder-cystic-duct" android:fillColor="#00000000"
+        android:strokeColor="#D5DA83" android:strokeWidth="6" android:strokeLineCap="round"
+        android:pathData="M163,110 C171,101 180,101 189,110 C198,119 204,123 211,123" />
+    <!-- Pear-shaped wall, exposed lumen and low mucosal folds. -->
+    <path android:fillColor="#7C8748" android:strokeColor="#475C36" android:strokeWidth="3"
+        android:pathData="M164,98 C173,96 179,101 178,107 C178,114 166,122 160,130 C149,144 146,163 135,181 C123,200 112,220 95,229 C82,236 67,231 62,216 C54,196 68,173 79,156 C99,126 128,104 164,98Z" />
+    <path android:name="gallbladder-body" android:fillColor="#CED675" android:strokeColor="#A1B45E" android:strokeWidth="2"
+        android:pathData="M158,112 C167,108 171,105 173,106 C170,113 158,122 154,128 C142,144 140,159 129,176 C116,195 108,213 94,220 C84,226 74,221 71,212 C67,197 76,180 87,163 C107,134 133,117 158,112Z" />
+    <path android:name="gallbladder-fundus" android:fillColor="#E8E99D"
+        android:pathData="M72,200 C75,189 88,189 99,195 C105,199 105,211 94,218 C85,224 76,221 72,212 C71,208 71,204 72,200Z" />
+    <path android:name="gallbladder-neck" android:fillColor="#B6C46A"
+        android:pathData="M149,113 C158,110 167,106 173,106 C170,113 163,120 155,126 C154,121 152,116 149,113Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#A2B35F" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M99,156 Q102,164 110,164 Q117,164 120,171 M106,147 Q114,151 116,155 Q118,158 129,160 M115,140 Q121,147 134,146 M126,132 Q129,137 140,138 M82,180 Q88,183 92,191 M88,172 Q97,172 105,182 M77,191 Q85,193 87,199 M109,199 Q103,195 100,188" />
+    <path android:name="gallbladder-duodenal-papilla" android:fillColor="#865343" android:strokeColor="#E6A089" android:strokeWidth="2"
+        android:pathData="M275,207 C275,203 278,201 281,202 C285,202 287,206 286,209 C284,214 275,213 275,207Z" />
+</vector>

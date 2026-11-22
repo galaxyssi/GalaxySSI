@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Female sagittal schematic, anterior at left. Adjacent tissue is muted. -->
+    <path android:fillColor="#D8C7B2" android:strokeColor="#8C7E74" android:strokeWidth="2"
+        android:pathData="M78,86 C90,84 107,93 112,105 C120,125 108,151 92,170 C85,178 72,177 66,170 C57,159 58,145 63,129 C68,113 66,94 78,86Z"/>
+    <path android:strokeColor="#AE9884" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M80,98 C90,98 99,106 101,115 M73,119 C81,116 93,120 101,128 M71,135 C79,132 91,138 96,142 M67,151 C75,149 83,153 87,158"/>
+    <path android:fillColor="#B3A0AD" android:strokeColor="#746479" android:strokeWidth="2"
+        android:pathData="M222,78 C234,100 234,127 229,150 C224,180 222,214 204,250 L171,250 C191,226 195,199 197,176 C199,150 193,126 201,101 C207,84 213,77 222,78Z"/>
+    <path android:fillColor="#D9C7CD" android:strokeColor="#746479" android:strokeWidth="1.6"
+        android:pathData="M217,104 C220,121 217,147 214,164 C210,191 207,224 190,251 L182,251 C193,232 199,209 202,187 C206,154 202,123 217,104Z"/>
+    <path android:strokeColor="#9B8195" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M212,120 L219,125 M210,137 L218,142 M209,152 L215,157 M206,167 L214,171 M206,182 L211,186 M203,199 L208,201 M200,213 L204,215 M195,227 L199,230"/>
+    <!-- Bladder base continuing into the outer urethral wall. -->
+    <path android:fillColor="#B76C7D" android:strokeColor="#713D56" android:strokeWidth="2.3"
+        android:pathData="M88,40 C118,21 182,25 234,35 C253,39 248,57 222,65 C202,71 192,78 186,100 C177,143 168,189 155,219 C151,228 144,234 132,234 C118,234 113,228 118,218 C130,193 128,167 131,136 C133,110 140,96 129,83 C118,69 98,65 89,54 C84,49 84,44 88,40Z"/>
+    <!-- Cut faces of the striated sphincter flank the mid-urethra. -->
+    <path android:fillColor="#9B586F" android:strokeColor="#713D56" android:strokeWidth="1.8"
+        android:pathData="M126,108 C135,104 144,110 145,122 C144,138 140,157 134,171 C130,180 120,185 115,178 C109,171 112,159 113,148 C115,131 117,115 126,108Z M177,103 C183,98 192,103 194,113 C197,129 189,157 179,169 C174,175 167,174 166,168 C166,162 172,148 173,135 C175,120 173,110 177,103Z"/>
+    <path android:strokeColor="#DC9E9B" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M125,115 Q129,121 131,130 M121,130 Q125,135 128,144 M119,145 Q123,150 126,159 M116,159 Q120,165 122,171 M183,108 Q188,113 190,119 M180,121 Q183,125 185,130 M178,133 Q181,138 184,143 M176,147 Q177,151 180,155 M172,157 L175,163"/>
+    <!-- A continuous urine-facing lining links the bladder neck to the meatus. -->
+    <path android:fillColor="#4F867F" android:strokeColor="#365B62" android:strokeWidth="1.6"
+        android:pathData="M101,44 C132,28 190,33 228,40 C237,42 237,46 227,49 C201,56 184,62 178,83 C168,116 169,157 156,190 C151,203 149,216 141,228 C138,233 124,232 125,226 C134,200 137,172 138,144 C140,117 152,88 145,76 C138,61 110,58 101,49 C98,47 98,46 101,44Z"/>
+    <path android:fillColor="#F8D993" android:strokeColor="#365B62" android:strokeWidth="1.4"
+        android:pathData="M105,45 C134,34 191,36 219,42 C227,44 218,46 211,48 C189,53 175,58 170,75 C165,93 158,119 158,145 C157,176 145,204 141,222 C139,229 129,229 131,223 C140,201 144,172 144,145 C145,119 153,89 154,77 C155,61 130,54 116,52 C110,50 104,49 105,45Z"/>
+    <path android:strokeColor="#B58459" android:strokeWidth="2.1" android:strokeLineCap="round"
+        android:pathData="M160,67 Q166,68 172,66"/>
+    <path android:fillColor="#704558"
+        android:pathData="M128,227 C130,223 138,223 143,226 C143,230 135,234 130,232 C127,231 126,229 128,227Z"/>
+</vector>

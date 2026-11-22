@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_brainstem_section_view">Brainstem, midline section (front at left)</string>
+    <string name="health_atlas_brainstem_section_selector">Midline section</string>
+    <string name="health_atlas_brainstem_section_midbrain">Midbrain</string>
+    <string name="health_atlas_brainstem_section_midbrain_detail">The upper part of the brainstem surrounds the cerebral aqueduct and lies just above the pons.</string>
+    <string name="health_atlas_brainstem_section_aqueduct">Cerebral aqueduct</string>
+    <string name="health_atlas_brainstem_section_aqueduct_detail">This narrow channel passes through the midbrain and carries cerebrospinal fluid from the third ventricle to the fourth.</string>
+    <string name="health_atlas_brainstem_section_pons">Pons</string>
+    <string name="health_atlas_brainstem_section_pons_detail">The middle part of the brainstem forms the rounded bulge at the front. Its back helps form the floor of the fourth ventricle.</string>
+    <string name="health_atlas_brainstem_section_fourth_ventricle">Fourth ventricle</string>
+    <string name="health_atlas_brainstem_section_fourth_ventricle_detail">This fluid-filled space lies between the cerebellum behind it and the pons and upper medulla in front of it.</string>
+    <string name="health_atlas_brainstem_section_medulla">Medulla</string>
+    <string name="health_atlas_brainstem_section_medulla_detail">The medulla lies below the pons and tapers into the spinal cord.</string>
+
+    <string name="health_atlas_cerebellum_section_view">Cerebellum, midline section through the vermis (front at left)</string>
+    <string name="health_atlas_cerebellum_section_selector">Vermis section</string>
+    <string name="health_atlas_cerebellum_section_anterior_lobe">Anterior lobe</string>
+    <string name="health_atlas_cerebellum_section_anterior_lobe_detail">In this midline view, the smaller anterior lobe lies above and in front of the primary fissure.</string>
+    <string name="health_atlas_cerebellum_section_primary_fissure">Primary fissure</string>
+    <string name="health_atlas_cerebellum_section_primary_fissure_detail">This deep groove separates the anterior and posterior lobes of the cerebellum.</string>
+    <string name="health_atlas_cerebellum_section_posterior_lobe">Posterior lobe</string>
+    <string name="health_atlas_cerebellum_section_posterior_lobe_detail">The larger posterior lobe extends behind and below the primary fissure.</string>
+    <string name="health_atlas_cerebellum_section_arbor_vitae">Arbor vitae</string>
+    <string name="health_atlas_cerebellum_section_arbor_vitae_detail">Branches of white matter extend from the center into the folds, forming a tree-like pattern in this section.</string>
+    <string name="health_atlas_cerebellum_section_folia">Folia</string>
+    <string name="health_atlas_cerebellum_section_folia_detail">These narrow, leaf-like folds give the outer cerebellar cortex its ridged surface.</string>
+
+    <string name="health_atlas_spinal_cord_section_view">Spinal cord, transverse section (back at top)</string>
+    <string name="health_atlas_spinal_cord_section_selector">Transverse section</string>
+    <string name="health_atlas_spinal_cord_section_posterior_sulcus">Posterior median sulcus</string>
+    <string name="health_atlas_spinal_cord_section_posterior_sulcus_detail">This shallow groove marks the middle of the back of the spinal cord. The anterior median fissure on the opposite side is deeper.</string>
+    <string name="health_atlas_spinal_cord_section_dorsal_horn">Dorsal horn</string>
+    <string name="health_atlas_spinal_cord_section_dorsal_horn_detail">The slender rear projection of gray matter receives and processes incoming sensory information.</string>
+    <string name="health_atlas_spinal_cord_section_central_canal">Central canal</string>
+    <string name="health_atlas_spinal_cord_section_central_canal_detail">This tiny channel lies in the bridge of gray matter connecting the two halves of the cord.</string>
+    <string name="health_atlas_spinal_cord_section_white_matter">White matter</string>
+    <string name="health_atlas_spinal_cord_section_white_matter_detail">White matter surrounds the butterfly-shaped gray matter and contains bundles of nerve fibers that travel along the cord.</string>
+    <string name="health_atlas_spinal_cord_section_ventral_horn">Ventral horn</string>
+    <string name="health_atlas_spinal_cord_section_ventral_horn_detail">The broader front projection of gray matter contains motor neurons whose axons reach skeletal muscle.</string>
+    <string name="health_atlas_spinal_cord_section_anterior_fissure">Anterior median fissure</string>
+    <string name="health_atlas_spinal_cord_section_anterior_fissure_detail">This deep cleft runs along the midline at the front of the spinal cord.</string>
+</resources>

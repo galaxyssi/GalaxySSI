@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Cortical arch with columns extending into the spaces between pyramids. -->
+    <path android:fillColor="#A3545A" android:strokeColor="#78404D" android:strokeWidth="1.8"
+        android:pathData="M40,62 Q98,20 174,27 Q262,24 321,60 L320,110 Q308,151 270,173 Q249,182 219,181 L153,185 Q112,191 70,163 Q48,145 40,105Z"/>
+    <path android:fillColor="#E2A18D" android:strokeColor="#A45C60" android:strokeWidth="1.5"
+        android:pathData="M40,62 Q97,22 174,28 Q257,23 315,57 L313,101 Q309,124 291,146 Q269,169 239,174 L145,176 Q104,172 76,153 Q51,136 40,100Z"/>
+    <path android:fillColor="#F2B6A1"
+        android:pathData="M46,64 Q96,28 173,34 Q254,27 308,59 L307,77 Q258,56 219,59 Q184,55 139,59 Q80,60 46,87Z"/>
+    <path android:strokeColor="#FFD2AE" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M55,62 Q96,35 149,36 M207,35 Q266,35 301,59"/>
+    <path android:strokeColor="#B96D6B" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M55,84 Q62,77 68,78 M76,68 Q84,63 93,62 M103,56 Q111,50 121,51 M158,50 Q166,43 175,49 M197,49 Q205,44 213,49 M235,54 Q242,47 251,53 M267,58 Q274,57 283,63 M76,116 Q80,121 79,125 Q78,130 84,135 M90,135 Q96,143 101,144 M107,154 Q111,158 118,159 M279,119 Q275,124 271,125 M266,138 Q258,145 254,145"/>
+    <!-- The neighboring pyramids are truncated by the edges of the cut. -->
+    <path android:fillColor="#B66A73" android:strokeColor="#96505D" android:strokeWidth="1.6"
+        android:pathData="M40,91 Q49,84 57,82 Q61,107 71,132 Q79,148 84,155 Q57,145 44,114Z M295,71 Q303,73 313,78 L313,101 Q305,132 287,146 Q276,155 261,163 Q286,124 295,71Z"/>
+    <path android:strokeColor="#D9918C" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M45,95 Q50,116 64,132 M51,91 Q56,117 72,140 M302,80 Q296,120 279,143 M307,82 Q302,118 289,137"/>
+    <!-- A cup of calyceal lumen lies behind the papilla. -->
+    <path android:fillColor="#CA8B66" android:strokeColor="#89594E" android:strokeWidth="1.9"
+        android:pathData="M141,166 Q150,166 156,177 Q169,190 187,190 Q203,190 218,175 Q224,167 231,171 C229,194 220,213 207,226 Q201,233 201,252 Q186,257 173,252 Q173,235 166,228 C152,215 142,194 141,166Z"/>
+    <path android:fillColor="#F3CB91"
+        android:pathData="M149,178 Q166,197 188,195 Q209,194 223,179 Q216,209 200,224 Q194,230 193,249 L180,249 Q180,231 172,224 Q155,205 149,178Z"/>
+    <path android:strokeColor="#FFE4AA" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M153,186 Q159,211 174,222 M219,188 Q214,210 201,222"/>
+    <!-- Main pyramid: broad cortical border, striated body and projecting tip. -->
+    <path android:fillColor="#A45465" android:strokeColor="#733E51" android:strokeWidth="2"
+        android:pathData="M83,86 Q99,78 120,75 Q184,63 237,72 Q259,75 275,84 C263,113 238,139 220,163 C207,179 201,195 198,203 Q188,215 178,205 C172,194 164,177 150,163 C124,137 98,113 83,86Z"/>
+    <path android:fillColor="#BF6A73"
+        android:pathData="M91,88 Q151,68 224,75 Q249,77 267,85 C255,112 229,141 214,163 Q198,185 194,201 Q189,208 181,202 Q170,179 154,161 C130,137 107,113 91,88Z"/>
+    <path android:fillColor="#CF7E7C"
+        android:pathData="M145,111 Q171,106 201,107 Q219,108 241,112 Q228,138 211,162 Q198,181 194,201 Q189,208 181,202 Q171,177 154,160 Q143,147 131,133Z"/>
+    <path android:strokeColor="#985062" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M104,88 Q126,117 150,142 Q169,159 178,183 M117,85 Q139,113 162,143 M130,82 Q147,102 159,124 M155,79 Q166,99 175,121 M184,77 Q187,97 187,119 M202,78 Q201,98 198,116 M224,80 Q217,110 206,131 M254,87 Q238,116 224,130 M256,100 Q234,131 211,156 M221,147 Q207,163 201,180"/>
+    <path android:strokeColor="#F8BB9B" android:strokeWidth="3.4" android:strokeLineCap="round"
+        android:pathData="M141,81 Q154,107 170,142 Q179,162 184,183 L188,202 M159,79 Q171,105 181,130 Q186,145 184,153 M174,79 Q182,111 193,140 Q197,155 191,175 Q189,186 188,202 M212,80 Q208,114 200,137 L193,149 M240,84 L219,130 Q205,156 196,169 Q191,178 190,189 M251,89 Q239,121 219,130 M121,91 Q138,121 160,145 Q171,158 181,169"/>
+    <path android:strokeColor="#F0A692" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M90,86 Q103,79 120,75 Q157,69 191,70 Q236,70 261,80"/>
+    <path android:fillColor="#753F52"
+        android:pathData="M183,204 a1.6,1.4 0,1 0,3.2,0 a1.6,1.4 0,1 0,-3.2,0 M186,204 a2,1.6 0,1 0,4,0 a2,1.6 0,1 0,-4,0 M192,203 a1.5,1.3 0,1 0,3,0 a1.5,1.3 0,1 0,-3,0"/>
+</vector>

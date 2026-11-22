@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- One side of the face, with the cheek opened near the upper molars. -->
+    <path android:fillColor="#30CB9C89" android:strokeColor="#7794554D" android:strokeWidth="2" android:strokeLineJoin="round"
+        android:pathData="M57,228 C69,203 73,186 66,168 C52,142 43,109 57,77 C68,50 98,35 141,34 C212,30 260,58 276,89 C286,99 302,104 308,116 C311,123 297,127 291,130 C290,139 300,141 300,148 C299,152 293,154 290,156 C297,159 300,162 295,167 C289,174 297,187 289,196 C280,204 257,205 235,205 C216,205 205,224 199,243 L57,228Z" />
+    <path android:fillColor="#DCA896" android:strokeColor="#AA6C5F" android:strokeWidth="2"
+        android:pathData="M81,77 C72,71 60,77 59,90 C58,101 64,120 73,126 C80,131 86,121 85,113 C84,103 92,102 91,91 C90,84 87,80 81,77Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#AC6E63" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M67,101 C65,88 72,83 79,88 C85,93 80,98 75,100 C72,102 72,107 75,111" />
+    <path android:fillColor="#EAD2B0" android:strokeColor="#AB8670" android:strokeWidth="2.5"
+        android:pathData="M126,85 C143,87 150,102 155,122 C161,143 174,155 196,168 C224,183 251,187 278,181 L283,193 C253,211 221,208 188,197 C164,190 128,179 116,163 C107,151 108,137 111,125 L115,103Z" />
+    <path android:fillColor="#D9937E" android:strokeColor="#9D6055" android:strokeWidth="2"
+        android:pathData="M142,88 C161,86 187,91 202,100 C211,119 206,146 193,168 C186,180 169,189 152,182 C137,176 130,164 130,146 C131,124 135,102 142,88Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#B67566" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M144,108 Q138,137 144,159 M154,96 Q148,125 152,165 M167,95 Q163,130 158,172 M179,99 Q176,141 168,176 M190,105 Q191,135 178,170" />
+    <path android:fillColor="#864F51" android:strokeColor="#A6645C" android:strokeWidth="2"
+        android:pathData="M219,114 C237,105 266,107 282,121 L294,142 Q282,151 289,165 C274,181 249,178 229,166 C216,158 213,133 219,114Z" />
+    <path android:fillColor="#E0A08A" android:strokeColor="#AD6C61" android:strokeWidth="2"
+        android:pathData="M203,110 C212,102 224,107 233,116 C240,124 242,134 252,139 C254,147 251,158 246,162 C231,158 224,153 217,143 C210,138 209,123 203,110Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#BC7B6B" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M208,114 Q218,118 228,129 M215,132 Q228,137 238,149 M223,146 Q233,152 244,154" />
+    <!-- Second and first upper molars, then a smaller premolar toward the front. -->
+    <path android:fillColor="#F7E3C1" android:strokeColor="#BB947A" android:strokeWidth="1.4"
+        android:pathData="M248,126 Q254,123 260,125 L262,132 Q261,139 254,140 Q249,139 247,135Z M263,126 Q270,123 277,126 L278,135 Q274,142 268,141 Q263,140 262,134Z M280,130 Q284,128 288,132 L288,138 Q285,142 281,140 Q278,137 280,130Z" />
+    <path android:fillColor="#F2B3A0" android:strokeColor="#AE675F" android:strokeWidth="1.5"
+        android:pathData="M236,143 C243,138 256,140 259,148 C259,156 251,163 242,160 C235,157 233,148 236,143Z" />
+    <!-- Lobulated parotid over the rear of the jaw; Stensen duct runs across masseter. -->
+    <path android:name="parotid-gland-bed" android:fillColor="#D99753" android:strokeColor="#8F5739" android:strokeWidth="2.8"
+        android:pathData="M91,78 C98,71 108,74 114,79 C125,75 136,82 137,94 C146,99 150,107 147,117 C153,125 149,137 142,143 C145,156 138,165 130,170 C124,183 112,189 105,183 C97,180 95,170 95,162 C86,158 82,149 84,140 C78,133 81,125 86,118 C82,109 88,99 88,94 C86,87 88,82 91,78Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#B66F46" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M91,94 Q104,96 106,105 M113,81 Q119,92 116,96 M121,101 Q132,100 137,94 M86,118 Q99,122 102,127 M105,121 Q112,115 118,117 M104,137 Q113,141 117,152 M87,141 Q96,139 100,145 M96,162 Q108,159 114,165 M113,172 Q123,168 127,157 M120,130 Q134,133 141,141" />
+    <path android:fillColor="#00000000" android:strokeColor="#885539" android:strokeWidth="9" android:strokeLineCap="round"
+        android:pathData="M123,118 C136,115 151,120 168,120 C186,120 201,116 214,118 C218,118 220,120 222,123 C229,134 233,148 250,152" />
+    <path android:name="parotid-stensen-duct" android:fillColor="#00000000" android:strokeColor="#F9D293"
+        android:strokeWidth="4.5" android:strokeLineCap="round"
+        android:pathData="M123,118 C136,115 151,120 168,120 C186,120 201,116 214,118" />
+    <path android:name="parotid-buccinator-turn" android:fillColor="#00000000" android:strokeColor="#F9D293"
+        android:strokeWidth="4.5" android:strokeLineCap="round"
+        android:pathData="M214,118 C218,118 220,120 222,123 C229,134 233,148 250,152" />
+    <path android:name="parotid-duct-papilla" android:fillColor="#80453B" android:strokeColor="#FFDDB0" android:strokeWidth="1.5"
+        android:pathData="M245,152 C245,146 255,146 255,152 C255,158 245,158 245,152Z" />
+</vector>

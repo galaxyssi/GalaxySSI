@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Ureters approach the back of the bladder; distal tunnels are shown in section. -->
+    <path android:strokeColor="#81554B" android:strokeWidth="17" android:strokeLineCap="round"
+        android:pathData="M64,62 C68,96 82,127 103,151 L127,174 M296,62 C292,96 278,127 257,151 L233,174"/>
+    <path android:strokeColor="#EDBC87" android:strokeWidth="10" android:strokeLineCap="round"
+        android:pathData="M64,62 C68,96 82,127 103,151 L127,174 M296,62 C292,96 278,127 257,151 L233,174"/>
+    <!-- Opened anterior wall and cut rim, facing the posterior mucosa. -->
+    <path android:fillColor="#914E65" android:strokeColor="#603D55" android:strokeWidth="2.4"
+        android:pathData="M81,75 C94,44 133,31 180,31 C226,31 264,45 279,75 C297,112 287,164 264,190 C244,213 217,218 200,234 C195,240 196,252 196,259 L168,259 C168,251 169,239 163,233 C145,217 116,211 96,190 C73,166 63,112 81,75Z"/>
+    <path android:fillColor="#BE7281"
+        android:pathData="M90,79 C105,51 140,39 180,39 C224,39 257,52 271,81 C284,111 276,161 256,184 C236,205 210,211 194,227 C188,234 189,248 189,255 L175,255 C175,246 176,233 169,227 C151,211 122,204 103,183 C84,162 76,110 90,79Z"/>
+    <path android:strokeColor="#E8A4A0" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M204,43 C228,44 248,54 262,68 M259,77 C261,81 264,87 265,92 C270,112 270,129 266,144 M263,152 C260,167 250,183 237,190 M267,78 C279,99 278,133 269,154 M96,75 C99,69 103,64 109,60 M88,93 C82,115 87,149 99,169 M104,180 C114,192 128,199 140,206"/>
+    <path android:fillColor="#EAB196" android:strokeColor="#955D67" android:strokeWidth="1.4"
+        android:pathData="M100,78 C112,56 145,48 180,48 C216,48 248,59 260,84 C270,108 263,153 245,174 C227,194 203,201 191,216 C184,225 188,239 188,257 L176,257 C176,238 180,225 172,216 C159,202 132,193 114,174 C96,155 87,105 100,78Z"/>
+    <path android:fillColor="#F7CCBC" android:strokeColor="#6C9F91" android:strokeWidth="5"
+        android:pathData="M105,78 C116,60 146,53 180,53 C215,53 245,63 255,85 C265,109 257,149 241,169 C224,190 198,199 187,215 C181,223 185,240 185,255 L179,255 C179,239 183,224 175,215 C162,199 136,191 118,170 C101,151 94,105 105,78Z"/>
+    <path android:strokeColor="#C47778" android:strokeWidth="2.8" android:strokeLineCap="round"
+        android:pathData="M121,85 C132,80 143,82 151,76 C164,68 173,72 178,68 M193,69 C202,73 213,71 224,79 C231,85 236,82 241,88 M112,119 C122,113 129,116 137,113 C149,108 158,108 170,106 M185,105 C197,100 209,110 222,109 C231,108 238,110 246,119 M115,139 C122,134 131,139 141,133 C147,130 155,130 161,132 M181,131 C190,135 204,131 216,136 C225,141 232,135 240,140 M128,150 C137,145 149,149 156,145 M196,151 C207,145 218,153 230,150"/>
+    <path android:fillColor="#D98C8D" android:strokeColor="#AA626B" android:strokeWidth="1.8"
+        android:pathData="M127,174 Q180,165 233,174 Q211,193 182,222 Q157,194 127,174Z"/>
+    <path android:strokeColor="#885264" android:strokeWidth="9" android:strokeLineCap="round"
+        android:pathData="M99,151 Q112,158 127,174 M261,151 Q248,158 233,174"/>
+    <path android:strokeColor="#F0BA83" android:strokeWidth="4.5" android:strokeLineCap="round"
+        android:pathData="M99,151 Q112,158 127,174 M261,151 Q248,158 233,174"/>
+    <path android:fillColor="#724052"
+        android:pathData="M121,170 C126,167 134,171 134,175 C133,180 124,179 121,176Z M239,170 C234,167 226,171 226,175 C227,180 236,179 239,176Z"/>
+    <path android:strokeColor="#F1B783" android:strokeWidth="4" android:strokeLineCap="round"
+        android:pathData="M182,222 L182,255"/>
+    <path android:fillColor="#724052"
+        android:pathData="M175,222 C175,216 190,216 189,222 C189,229 175,229 175,222Z"/>
+</vector>

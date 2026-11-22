@@ -10,9 +10,11 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.ScrollView
+import android.widget.Button
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -28,7 +30,6 @@ class AgentRichContentPinchZoomTest {
         lateinit var viewport: GalaxySSIPinchZoomViewport
         lateinit var dialog: Dialog
         lateinit var image: ImageView
-        val location = IntArray(2)
         var centerX = 0f
         var centerY = 0f
         instrumentation.runOnMainSync {
@@ -46,15 +47,16 @@ class AgentRichContentPinchZoomTest {
         }
         instrumentation.waitForIdleSync()
         instrumentation.runOnMainSync {
-            viewport.getLocationOnScreen(location)
-            centerX = location[0] + viewport.width / 2f
-            centerY = location[1] + viewport.height / 2f
+            assertTrue(viewport.width > 0 && viewport.height > 0)
+            centerX = viewport.width / 2f
+            centerY = viewport.height / 2f
         }
 
-        dispatchPinch(instrumentation, centerX, centerY)
+        val touch = viewportTouch(instrumentation, viewport)
+        dispatchPinch(touch, centerX, centerY)
         instrumentation.waitForIdleSync()
         val translationBefore = image.translationX
-        dispatchDrag(instrumentation, centerX, centerY, centerX + 140f, centerY + 80f)
+        dispatchDrag(touch, centerX, centerY, centerX + 140f, centerY + 80f)
         instrumentation.waitForIdleSync()
 
         assertTrue(
@@ -66,6 +68,65 @@ class AgentRichContentPinchZoomTest {
             image.translationX > translationBefore + 40f
         )
         instrumentation.runOnMainSync { dialog.dismiss(); activity.finish() }
+    }
+
+    @Test
+    fun interactiveZoomTargetSeparatesLabelTapFromPan() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val activity = instrumentation.startActivitySync(
+            Intent(instrumentation.targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        lateinit var marker: Button
+        lateinit var viewport: GalaxySSIPinchZoomViewport
+        var dialog: Dialog? = null
+        var clicks = 0
+        try {
+            instrumentation.runOnMainSync {
+                marker = Button(activity).apply {
+                    text = "Marker"
+                    setOnClickListener { clicks++ }
+                }
+                viewport = GalaxySSIPinchZoomViewport(activity, keepZoomedTargetTaps = true).apply { attach(marker) }
+                dialog = Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen).apply {
+                    setContentView(viewport)
+                    show()
+                }
+            }
+            instrumentation.waitForIdleSync()
+            var x = 0f
+            var y = 0f
+            instrumentation.runOnMainSync {
+                assertTrue(viewport.width > 0 && viewport.height > 0)
+                x = viewport.width / 2f
+                y = viewport.height / 2f
+            }
+            val touch = viewportTouch(instrumentation, viewport)
+            dispatchPinch(touch, x, y)
+            instrumentation.waitForIdleSync()
+            assertTrue(viewport.currentZoomScale > 1.2f)
+            assertEquals(0, clicks)
+            dispatchDrag(touch, x, y, x + 125f, y + 54f)
+            instrumentation.waitForIdleSync()
+            assertTrue(marker.translationX > 20f)
+            assertEquals(0, clicks)
+            val down = SystemClock.uptimeMillis()
+            val p = listOf(pointerProperties(0))
+            val c = listOf(coords(x, y))
+            touch(event(down, down, MotionEvent.ACTION_DOWN, p, c))
+            touch(event(down, down + 28, MotionEvent.ACTION_UP, p, c))
+            instrumentation.waitForIdleSync()
+            assertEquals(1, clicks)
+            instrumentation.runOnMainSync {
+                viewport.resetZoom()
+                assertEquals(1f, viewport.currentZoomScale, 0f)
+                assertEquals(0f, marker.translationX, 0f)
+            }
+        } finally {
+            instrumentation.runOnMainSync {
+                dialog?.dismiss()
+                activity.finish()
+            }
+        }
     }
 
     @Test
@@ -113,7 +174,7 @@ class AgentRichContentPinchZoomTest {
             pinchCenterX = webLocation[0] + viewport.width / 2f
             pinchCenterY = webLocation[1] + viewport.height / 2f
         }
-        dispatchPinch(instrumentation, pinchCenterX, pinchCenterY)
+        dispatchPinch(instrumentation::sendPointerSync, pinchCenterX, pinchCenterY)
         instrumentation.waitForIdleSync()
         SystemClock.sleep(250)
         instrumentation.runOnMainSync {
@@ -132,55 +193,64 @@ class AgentRichContentPinchZoomTest {
         instrumentation.runOnMainSync { dialog.dismiss(); activity.finish() }
     }
 
-    private fun dispatchPinch(instrumentation: Instrumentation, centerX: Float, centerY: Float) {
-        val downTime = SystemClock.uptimeMillis()
+    private fun viewportTouch(instrumentation: Instrumentation, viewport: GalaxySSIPinchZoomViewport):
+        (MotionEvent) -> Unit = { motion ->
+        try {
+            instrumentation.runOnMainSync { viewport.dispatchTouchEvent(motion) }
+        } finally {
+            motion.recycle()
+        }
+    }
+
+    private fun dispatchPinch(touch: (MotionEvent) -> Unit, centerX: Float, centerY: Float) {
+        val downTime = SystemClock.uptimeMillis() - 80
         val first = pointerProperties(0)
         val second = pointerProperties(1)
-        instrumentation.sendPointerSync(event(downTime, downTime, MotionEvent.ACTION_DOWN, listOf(first), listOf(coords(centerX - 70f, centerY))))
-        instrumentation.sendPointerSync(event(
+        touch(event(downTime, downTime, MotionEvent.ACTION_DOWN, listOf(first), listOf(coords(centerX - 70f, centerY))))
+        touch(event(
             downTime,
             downTime + 16,
             MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
             listOf(first, second),
             listOf(coords(centerX - 70f, centerY), coords(centerX + 70f, centerY))
         ))
-        instrumentation.sendPointerSync(event(
+        touch(event(
             downTime,
             downTime + 32,
             MotionEvent.ACTION_MOVE,
             listOf(first, second),
             listOf(coords(centerX - 150f, centerY), coords(centerX + 150f, centerY))
         ))
-        instrumentation.sendPointerSync(event(
+        touch(event(
             downTime,
             downTime + 48,
             MotionEvent.ACTION_MOVE,
             listOf(first, second),
             listOf(coords(centerX - 230f, centerY), coords(centerX + 230f, centerY))
         ))
-        instrumentation.sendPointerSync(event(
+        touch(event(
             downTime,
             downTime + 64,
             MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
             listOf(first, second),
             listOf(coords(centerX - 230f, centerY), coords(centerX + 230f, centerY))
         ))
-        instrumentation.sendPointerSync(event(downTime, downTime + 80, MotionEvent.ACTION_UP, listOf(first), listOf(coords(centerX - 230f, centerY))))
+        touch(event(downTime, downTime + 80, MotionEvent.ACTION_UP, listOf(first), listOf(coords(centerX - 230f, centerY))))
     }
 
     private fun dispatchDrag(
-        instrumentation: Instrumentation,
+        touch: (MotionEvent) -> Unit,
         startX: Float,
         startY: Float,
         endX: Float,
         endY: Float
     ) {
-        val downTime = SystemClock.uptimeMillis()
+        val downTime = SystemClock.uptimeMillis() - 48
         val pointer = pointerProperties(0)
-        instrumentation.sendPointerSync(
+        touch(
             event(downTime, downTime, MotionEvent.ACTION_DOWN, listOf(pointer), listOf(coords(startX, startY)))
         )
-        instrumentation.sendPointerSync(
+        touch(
             event(
                 downTime,
                 downTime + 24,
@@ -189,7 +259,7 @@ class AgentRichContentPinchZoomTest {
                 listOf(coords(endX, endY))
             )
         )
-        instrumentation.sendPointerSync(
+        touch(
             event(
                 downTime,
                 downTime + 48,

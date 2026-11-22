@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_hide_labels">隐藏标注</string>
+    <string name="health_atlas_show_labels">显示标注</string>
+    <string name="health_atlas_locator_view">全图定位</string>
+</resources>

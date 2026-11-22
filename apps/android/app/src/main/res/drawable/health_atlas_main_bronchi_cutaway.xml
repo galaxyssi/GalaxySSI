@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Anterior view: the body's right main bronchus descends on the viewer's left. -->
+    <path android:fillColor="#9EBDB3" android:strokeColor="#4F716E" android:strokeWidth="2"
+        android:pathData="M130,43 C133,24 216,23 220,43 L219,92 C219,114 246,128 269,142 L321,173 Q329,192 305,208 L245,177 C220,163 202,149 189,134 C179,148 169,173 158,193 L136,229 Q103,236 84,209 L117,147 C129,125 132,111 130,93 Z"/>
+    <path android:fillColor="#70968E"
+        android:pathData="M132,85 C138,100 145,109 141,126 C135,151 104,194 93,215 Q89,212 86,208 L119,147 C132,124 133,113 132,85 Z M221,111 C233,125 247,131 269,143 L321,174 L319,180 C291,172 273,158 250,146 Q231,136 221,111 Z"/>
+    <path android:fillColor="#CDD9C2"
+        android:pathData="M132,45 Q140,50 147,51 L144,92 C140,97 138,95 132,94 Z M212,49 L218,45 L217,89 L213,91 Z M151,196 Q145,218 135,228 L128,229 Q141,213 151,196 Z M269,187 L305,206 L309,203 Q297,193 269,187 Z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#5D827C" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M132,61 Q141,65 150,65 M131,77 Q139,81 148,81 M131,94 Q140,98 148,99 M208,65 L217,62 M206,81 L217,78 M205,98 L217,94 M128,123 Q135,129 141,131 M121,140 Q128,146 135,148 M111,157 L124,165 M102,175 L114,182 M93,192 L104,200 M241,132 L247,129 M258,144 L264,140 M277,155 L284,151 M295,165 L302,161"/>
+    <path android:fillColor="#E1A39B" android:strokeColor="#9E686D" android:strokeWidth="1.8"
+        android:pathData="M142,47 Q174,36 210,47 L209,91 C208,116 230,131 250,142 L317,181 L305,199 L249,170 C220,154 202,139 187,125 C174,144 167,168 150,196 L132,222 L97,206 L127,154 C144,127 144,112 142,91 Z"/>
+    <path android:fillColor="#614352"
+        android:pathData="M151,49 Q176,40 202,49 L201,91 C199,118 220,133 245,148 L312,184 L305,193 L253,163 C222,146 201,129 186,121 C171,138 164,162 143,195 L128,215 L105,204 L135,154 C149,130 152,113 151,89 Z"/>
+    <path android:name="distal_trachea" android:fillColor="#89606C"
+        android:pathData="M153,53 Q176,46 199,52 L198,87 C197,101 199,111 204,118 C191,111 170,109 150,124 C155,103 153,77 153,53 Z"/>
+    <path android:name="right_main_bronchus" android:fillColor="#89606C"
+        android:pathData="M169,131 C164,153 146,183 126,211 L108,204 C133,167 140,143 159,133 Q165,130 169,131 Z"/>
+    <path android:name="left_main_bronchus" android:fillColor="#89606C"
+        android:pathData="M203,121 C216,126 227,138 246,148 L309,184 L305,192 C271,178 235,157 213,138 Q205,131 203,121 Z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#C48A8B" android:strokeWidth="1.5"
+        android:strokeAlpha="0.72" android:strokeLineCap="round"
+        android:pathData="M162,58 Q165,84 161,104 M191,57 L190,90 M152,147 Q139,172 123,196 M225,141 Q245,155 267,166"/>
+    <path android:name="carina" android:fillColor="#F0BEAB" android:strokeColor="#AD7371" android:strokeWidth="1.3"
+        android:pathData="M180,132 Q183,124 187,121 Q190,121 194,127 L206,144 C198,140 191,137 188,136 Q182,141 174,148 Z"/>
+    <path android:fillColor="#4D3848" android:strokeColor="#DFA59A" android:strokeWidth="2.5"
+        android:pathData="M85,209 C90,200 103,200 118,207 C132,214 141,224 136,229 C131,235 115,233 101,226 C89,220 82,214 85,209 Z M321,173 C326,175 326,185 320,194 C315,203 309,209 305,207 C299,205 301,194 306,185 C311,177 317,171 321,173 Z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#CAD9C5" android:strokeWidth="2"
+        android:pathData="M130,43 C135,26 212,26 220,43"/>
+</vector>

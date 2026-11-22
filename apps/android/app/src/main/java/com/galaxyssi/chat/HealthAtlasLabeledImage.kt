@@ -13,7 +13,8 @@ import android.widget.TextView
 import kotlin.math.ceil
 
 internal class HealthAtlasLabeledImage(private val activity: Activity, plate: HealthAtlasPlate, description: String,
-    data: HealthBodyAtlas, currentId: String?, selected: (HealthAtlasItem) -> Unit) : FrameLayout(activity) {
+    data: HealthBodyAtlas, currentId: String?, reserveControlSpace: Boolean = true,
+    selected: (HealthAtlasItem) -> Unit) : FrameLayout(activity) {
     private val ui = HealthCenterViews(activity)
     private val features = plate.features.associateBy { it.marker.id }
     private val markers = (plate.markers + plate.features.map { it.marker }).sortedBy { it.y }
@@ -21,7 +22,9 @@ internal class HealthAtlasLabeledImage(private val activity: Activity, plate: He
     private val leftRail = markers.indices.filter { split && markers[it].x < .5f }
     private val rightRail = markers.indices.filterNot { it in leftRail }
     private var featureDialog: android.app.AlertDialog? = null
-    private val controlsInset = if (plate.owner == null) ui.dp(144) else 0
+    private val controlsInset = if (reserveControlSpace && plate.owner == null) ui.dp(144) else 0
+    var labelsShown = true
+        private set
     val image = ImageView(activity).apply {
         setImageResource(plate.drawable); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = description
         tag = "atlas-art-image"
@@ -69,6 +72,14 @@ internal class HealthAtlasLabeledImage(private val activity: Activity, plate: He
         }
     }
     init { addView(image); addView(guides); labels.forEach(::addView) }
+    fun showLabels(show: Boolean) {
+        if (labelsShown == show) return
+        labelsShown = show
+        val visibility = if (show) VISIBLE else GONE
+        guides.visibility = visibility
+        labels.forEach { it.visibility = visibility }
+        requestLayout()
+    }
     fun showFeature(feature: HealthAtlasFeature) {
         featureDialog?.dismiss()
         featureDialog = android.app.AlertDialog.Builder(activity).setTitle(feature.title).setMessage(feature.explanation)
@@ -80,6 +91,13 @@ internal class HealthAtlasLabeledImage(private val activity: Activity, plate: He
     }
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
+        if (!labelsShown) {
+            val h = resolveSize(suggestedMinimumHeight, heightMeasureSpec)
+            setMeasuredDimension(w, h)
+            image.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
+            return
+        }
         val railLimit = (w * (if (split) .24f else .6f)).toInt()
         fun preferred(indices: List<Int>): Int {
             if (indices.isEmpty()) return 0
@@ -112,6 +130,11 @@ internal class HealthAtlasLabeledImage(private val activity: Activity, plate: He
         guides.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
     }
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        if (!labelsShown) {
+            image.layout(0, 0, width, height)
+            leaderPaths = emptyMap()
+            return
+        }
         val artLeft = leftRail.firstOrNull()?.let { labels[it].measuredWidth } ?: 0
         image.layout(artLeft, 0, artLeft + image.measuredWidth, height)
         guides.layout(0, 0, width, height)

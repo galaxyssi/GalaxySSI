@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_renal_cortex_cutaway_view">Renal cortex in section</string>
+    <string name="health_atlas_renal_cortex_cutaway_selector">Cortex cutaway</string>
+    <string name="health_atlas_renal_cortex_capsule">Fibrous capsule</string>
+    <string name="health_atlas_renal_cortex_capsule_detail">This thin coat of dense connective tissue covers the outer surface of the renal cortex.</string>
+    <string name="health_atlas_renal_cortex_corpuscle">Renal corpuscle</string>
+    <string name="health_atlas_renal_cortex_corpuscle_detail">The rounded corpuscle contains a tuft of capillaries, the glomerulus, within Bowman\'s capsule. Corpuscles lie in the cortical labyrinth, not in the straight rays.</string>
+    <string name="health_atlas_renal_cortex_ray">Medullary ray</string>
+    <string name="health_atlas_renal_cortex_ray_detail">Despite its name, this bundle lies in the cortex. Straight segments of nephron tubules and collecting ducts run together here toward or away from the medulla.</string>
+    <string name="health_atlas_renal_cortex_labyrinth">Cortical labyrinth</string>
+    <string name="health_atlas_renal_cortex_labyrinth_detail">The tissue between the straight rays contains coiled proximal and distal tubules, with rounded renal corpuscles scattered among them.</string>
+
+    <string name="health_atlas_renal_medulla_cutaway_view">Renal pyramid in section</string>
+    <string name="health_atlas_renal_medulla_cutaway_selector">Pyramid cutaway</string>
+    <string name="health_atlas_renal_medulla_pyramid_base">Pyramid base</string>
+    <string name="health_atlas_renal_medulla_pyramid_base_detail">The broad end of the medullary pyramid meets the cortex. The pyramid narrows inward toward its papilla.</string>
+    <string name="health_atlas_renal_medulla_column">Renal column</string>
+    <string name="health_atlas_renal_medulla_column_detail">This inward extension of cortical tissue lies between adjacent medullary pyramids.</string>
+    <string name="health_atlas_renal_medulla_ducts">Collecting ducts</string>
+    <string name="health_atlas_renal_medulla_ducts_detail">Collecting ducts run lengthwise and join into larger ducts deeper in the pyramid. The terminal ducts open at the papillary tip.</string>
+    <string name="health_atlas_renal_medulla_papilla">Renal papilla</string>
+    <string name="health_atlas_renal_medulla_papilla_detail">The rounded tip of the pyramid projects into a minor calyx, a cup that receives urine from the openings of the papillary ducts.</string>
+
+    <string name="health_atlas_renal_pelvis_cutaway_view">Calyces and renal pelvis in section</string>
+    <string name="health_atlas_renal_pelvis_cutaway_selector">Pelvis cutaway</string>
+    <string name="health_atlas_renal_pelvis_minor_calyx">Minor calyx</string>
+    <string name="health_atlas_renal_pelvis_minor_calyx_detail">This cup surrounds the projecting tip of a renal papilla. Its narrow neck opens into a larger calyx.</string>
+    <string name="health_atlas_renal_pelvis_major_calyx">Major calyx</string>
+    <string name="health_atlas_renal_pelvis_major_calyx_detail">The two smaller cups shown above join into this wider branch, which opens into the renal pelvis.</string>
+    <string name="health_atlas_renal_pelvis_funnel">Pelvic funnel</string>
+    <string name="health_atlas_renal_pelvis_funnel_detail">Major calyces join in this broad cavity. It narrows at the kidney hilum to continue as the ureter.</string>
+</resources>

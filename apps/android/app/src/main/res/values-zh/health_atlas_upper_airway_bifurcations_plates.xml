@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_larynx_inlet_plate_selector">喉入口</string>
+    <string name="health_atlas_larynx_inlet_plate_caption">从上方俯视的喉剖视图。图的上方为喉的前方。</string>
+    <string name="health_atlas_larynx_inlet_plate_epiglottis">会厌</string>
+    <string name="health_atlas_larynx_inlet_plate_epiglottis_detail">这片叶状弹性软骨位于喉内各皱襞的上方，构成喉入口的前缘。吞咽时，会厌向后倾倒，覆盖喉入口。</string>
+    <string name="health_atlas_larynx_inlet_plate_vestibular_folds">前庭襞</string>
+    <string name="health_atlas_larynx_inlet_plate_vestibular_folds_detail">这对粉色隆起位于颜色较浅的真声带上方，且更靠外侧，又称假声带。</string>
+    <string name="health_atlas_larynx_inlet_plate_vocal_folds">真声带</string>
+    <string name="health_atlas_larynx_inlet_plate_vocal_folds_detail">这对浅色皱襞位于前庭襞下方。两侧游离内缘之间是声门裂，内缘振动可产生声音。</string>
+    <string name="health_atlas_larynx_inlet_plate_glottic_opening">声门裂</string>
+    <string name="health_atlas_larynx_inlet_plate_glottic_opening_detail">这是两侧真声带内缘之间的空隙。图中气道开放，声门裂的后部更宽。</string>
+
+    <string name="health_atlas_trachea_ring_plate_selector">气管软骨环</string>
+    <string name="health_atlas_trachea_ring_plate_caption">气管壁剖视图。露出的横断面上方为气管后壁。</string>
+    <string name="health_atlas_trachea_ring_plate_posterior_wall">气管后壁</string>
+    <string name="health_atlas_trachea_ring_plate_posterior_wall_detail">柔韧的后壁连接软骨环的两个开口端，含有气管平滑肌，后方邻近食管。</string>
+    <string name="health_atlas_trachea_ring_plate_lumen">气管腔</string>
+    <string name="health_atlas_trachea_ring_plate_lumen_detail">这是气管内供空气通过的空腔。软骨环围住它的前方和两侧，柔韧的气管后壁补全其边界。</string>
+    <string name="health_atlas_trachea_ring_plate_cartilage">C形软骨环</string>
+    <string name="health_atlas_trachea_ring_plate_cartilage_detail">一层层排列的透明软骨环支撑气管的前壁和两侧壁。每个软骨环均在后方开口。</string>
+    <string name="health_atlas_trachea_ring_plate_lining">气管黏膜</string>
+    <string name="health_atlas_trachea_ring_plate_lining_detail">图中露出的黏膜位于支撑气管的软骨内侧，覆盖气管腔的内壁。黏膜表面的微小纤毛将黏液推向咽部。</string>
+
+    <string name="health_atlas_main_bronchi_plate_selector">主支气管分叉</string>
+    <string name="health_atlas_main_bronchi_plate_caption">由前方观察主支气管分叉。人体右侧位于图像左侧。</string>
+    <string name="health_atlas_main_bronchi_plate_distal_trachea">气管下段</string>
+    <string name="health_atlas_main_bronchi_plate_distal_trachea_detail">气管隆嵴上方的气管下段是一条单一的空气通道，在分叉处延续为两侧主支气管。</string>
+    <string name="health_atlas_main_bronchi_plate_carina">气管隆嵴</string>
+    <string name="health_atlas_main_bronchi_plate_carina_detail">气管下端内侧的这道隆起将左、右主支气管的开口分开。</string>
+    <string name="health_atlas_main_bronchi_plate_right">右主支气管</string>
+    <string name="health_atlas_main_bronchi_plate_right_detail">图像左侧的分支通向右肺。与左主支气管相比，它通常更宽、更短，走向也更接近垂直。</string>
+    <string name="health_atlas_main_bronchi_plate_left">左主支气管</string>
+    <string name="health_atlas_main_bronchi_plate_left_detail">图像右侧的分支通向左肺。与右主支气管相比，它通常更窄、更长，走向也更倾斜。</string>
+</resources>

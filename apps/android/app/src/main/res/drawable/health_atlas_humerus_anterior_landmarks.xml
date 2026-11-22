@@ -1,0 +1,35 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <path android:pathData="M165,31 C177,17 195,15 208,23 C224,33 228,53 217,67 C209,77 197,80 191,90 C183,107 182,132 185,157 C187,183 190,201 201,211 C206,216 214,215 220,222 C227,230 223,240 214,241 Q209,242 203,239 C204,246 202,254 195,258 C185,264 174,261 168,254 C156,258 147,253 144,244 C141,238 136,237 134,229 Q131,219 140,214 C148,207 150,197 151,182 C153,164 150,153 149,142 C149,134 153,127 152,119 C152,99 145,89 139,74 C133,62 132,47 139,36 C145,27 156,24 165,31Z"
+        android:fillColor="#E8C6A8" android:strokeColor="#82695E" android:strokeWidth="2" />
+    <path android:pathData="M172,72 C182,77 190,76 202,71 Q188,85 184,101 C176,130 182,169 187,191 C190,204 198,214 210,219 C215,222 219,228 218,232 Q215,236 208,232 Q200,224 193,224 C180,221 176,208 173,190 C166,152 168,112 172,72Z"
+        android:fillColor="#C59780" />
+    <path android:pathData="M156,82 C163,95 162,112 162,128 Q157,147 160,163 C162,188 158,204 148,213 C157,210 167,212 174,220 C174,207 169,194 168,179 C165,150 171,126 168,103 Q166,88 161,81Z"
+        android:fillColor="#F1D7B7" />
+    <path android:pathData="M165,34 C175,20 193,17 206,24 C220,32 225,47 220,59 C215,71 204,75 190,75 C175,74 168,63 165,52 Q162,42 165,34Z"
+        android:fillColor="#B2C2AF" android:strokeColor="#788982" android:strokeWidth="1.6" />
+    <path android:pathData="M169,40 C177,24 199,22 210,33 Q218,40 218,49 C211,39 200,33 187,35 Q176,36 169,40Z"
+        android:fillColor="#DCE1C7" />
+    <path android:pathData="M174,60 C184,72 201,74 212,64"
+        android:strokeColor="#94A597" android:strokeWidth="2" android:strokeLineCap="round" />
+    <path android:pathData="M139,43 C142,33 151,29 160,34 Q165,39 162,50 C158,59 159,70 154,78 Q143,77 139,66 Q135,53 139,43Z"
+        android:fillColor="#DBB093" />
+    <path android:pathData="M142,54 Q146,40 155,39 M142,58 Q145,54 149,53"
+        android:strokeColor="#F6DBBA" android:strokeWidth="2.3" android:strokeLineCap="round" />
+    <path android:pathData="M161,48 C158,64 157,75 161,91 M164,62 Q172,57 176,64 Q180,71 174,79 Q170,83 169,93"
+        android:strokeColor="#9E7867" android:strokeWidth="1.7" android:strokeLineCap="round" />
+    <path android:pathData="M153,119 Q157,128 158,144 Q161,133 167,125 Q167,137 159,152 Q156,155 153,150 Q150,139 153,119Z"
+        android:fillColor="#BA907C" />
+    <path android:pathData="M154,128 L157,141 M162,135 L159,146 M153,143 L155,148"
+        android:strokeColor="#F1D6B7" android:strokeWidth="1.5" android:strokeLineCap="round" />
+    <path android:pathData="M157,214 C163,211 169,216 171,223 Q170,228 164,228 Q157,227 153,223 Q151,218 157,214Z M180,217 C186,211 193,213 197,219 Q199,227 193,230 Q184,233 178,226 Q177,221 180,217Z"
+        android:fillColor="#C49B87" />
+    <!-- The lateral capitulum is round; the medial trochlea has a pulley groove. -->
+    <path android:pathData="M146,233 C150,226 160,226 165,230 C172,234 172,244 168,251 C162,258 151,254 147,248 Q143,241 146,233Z"
+        android:fillColor="#B1C0AD" android:strokeColor="#748980" android:strokeWidth="1.5" />
+    <path android:pathData="M172,234 C177,229 182,230 187,234 C192,232 195,228 199,231 C205,235 206,245 201,253 C197,261 189,262 186,258 C180,261 173,257 170,252 C167,246 168,238 172,234Z"
+        android:fillColor="#A9BBAC" android:strokeColor="#748980" android:strokeWidth="1.5" />
+    <path android:pathData="M187,235 Q183,244 186,257 M150,237 Q154,231 162,233 M193,236 Q198,233 200,239"
+        android:strokeColor="#DCE1C9" android:strokeWidth="2.2" android:strokeLineCap="round" />
+</vector>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Oblique floor of mouth, with the tongue lifted and the near mandible cut away. -->
+    <path android:fillColor="#43D8B79E" android:strokeColor="#81986B59" android:strokeWidth="2"
+        android:pathData="M59,68 Q76,89 79,128 C82,161 110,185 141,192 C191,205 271,191 303,162 Q318,149 314,133 L309,125 Q306,151 275,160 C228,181 175,180 139,168 C116,160 100,146 96,124 Q92,92 81,66Z" />
+    <path android:fillColor="#C17B71" android:strokeColor="#96574F" android:strokeWidth="2.5"
+        android:pathData="M132,114 C133,89 170,59 213,48 C246,40 277,42 298,61 C319,81 313,101 295,112 C275,125 249,128 217,125 C185,121 158,136 135,140 C129,131 128,123 132,114Z" />
+    <path android:fillColor="#E2A398"
+        android:pathData="M140,108 C165,71 218,51 252,53 C274,53 295,63 303,77 C278,62 249,64 219,73 C182,85 161,101 140,108Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#AB655F" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M169,106 C195,91 223,86 250,86 M193,111 C223,101 257,106 281,94" />
+    <path android:fillColor="#E4A594" android:strokeColor="#A8645B" android:strokeWidth="2"
+        android:pathData="M128,150 C153,140 181,136 203,138 C237,142 275,134 309,132 C318,146 305,168 272,183 C239,198 182,202 139,181 C119,171 118,158 128,150Z" />
+    <path android:fillColor="#F1B8A7" android:strokeColor="#AD6F66" android:strokeWidth="1.8"
+        android:pathData="M291,108 Q297,105 300,108 C293,122 298,133 302,143 Q297,149 291,144 C288,132 287,123 291,108Z" />
+    <path android:fillColor="#DDA05B" android:strokeColor="#8F5638" android:strokeWidth="2.7"
+        android:pathData="M76,201 C70,192 77,180 88,179 C88,169 96,162 105,162 C112,152 122,151 130,157 C140,150 151,152 159,157 C168,159 172,167 168,174 C165,180 154,181 144,182 C134,183 132,192 132,205 C133,216 127,227 119,232 C115,240 104,243 97,238 C86,240 76,233 76,224 C69,217 69,209 76,201Z" />
+    <path android:name="submandibular-superficial-part" android:fillColor="#EBB471"
+        android:pathData="M79,202 C77,194 86,187 94,189 C100,183 115,186 120,194 C128,201 126,214 119,221 C116,230 104,236 95,230 C86,233 80,225 81,218 C75,214 75,207 79,202Z" />
+    <path android:name="submandibular-deep-part" android:fillColor="#EBB471"
+        android:pathData="M107,173 C112,162 122,159 131,163 C141,156 155,157 163,164 C168,168 165,174 160,175 C152,177 144,176 138,179 Q127,183 123,188 C116,185 111,180 107,173Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#BE7C4F" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M78,195 Q89,193 96,201 M103,189 Q108,195 107,202 M83,216 Q93,214 98,221 M100,210 Q109,206 118,210 M113,222 Q108,222 105,230 M98,181 Q104,176 111,179 M115,166 Q121,171 124,177 M133,162 Q135,169 130,173 M145,160 Q146,165 151,167" />
+    <path android:name="submandibular-mylohyoid" android:fillColor="#C18478" android:strokeColor="#8F5B54" android:strokeWidth="2.3"
+        android:pathData="M137,186 C174,178 225,186 267,174 C283,170 297,164 307,157 C299,176 282,188 259,199 C229,212 177,221 139,215 C131,213 126,206 127,199 C127,193 131,189 137,186Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#A96A61" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M141,190 Q136,200 140,210 M154,189 Q149,198 150,212 M171,189 Q167,201 169,214 M189,190 Q186,201 185,214 M208,190 Q206,199 201,212 M227,188 Q222,199 215,208 M245,185 Q240,197 232,204 M265,179 Q257,191 250,199 M285,173 Q278,181 270,187" />
+    <!-- The lateral neighbor has its own short ducts; the long duct is Wharton. -->
+    <path android:name="submandibular-sublingual-neighbor" android:fillColor="#A689AA" android:strokeColor="#71536F" android:strokeWidth="2.2"
+        android:pathData="M188,161 C190,154 197,151 204,152 C210,146 220,147 226,148 C232,143 241,143 247,147 C254,142 263,144 268,149 C277,149 280,157 274,162 C271,169 260,171 253,168 C247,172 238,172 231,170 C226,175 217,175 210,171 C202,174 192,171 188,165Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#F5C4B5" android:strokeWidth="5" android:strokeLineCap="round"
+        android:pathData="M190,142 C214,136 247,139 276,136" />
+    <path android:fillColor="#00000000" android:strokeColor="#735670" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M202,159 Q203,148 200,140 M222,155 Q225,147 223,139 M241,153 Q246,145 245,138 M262,153 Q266,143 265,137" />
+    <path android:fillColor="#735670"
+        android:pathData="M198,140 a2,2 0,1 1,4 0 a2,2 0,1 1,-4 0Z M221,139 a2,2 0,1 1,4 0 a2,2 0,1 1,-4 0Z M243,138 a2,2 0,1 1,4 0 a2,2 0,1 1,-4 0Z M263,137 a2,2 0,1 1,4 0 a2,2 0,1 1,-4 0Z" />
+    <path android:fillColor="#00000000" android:strokeColor="#89553A" android:strokeWidth="8.5" android:strokeLineCap="round"
+        android:pathData="M153,171 C166,169 187,177 205,177 C224,177 243,176 260,169 C272,164 282,155 288,146" />
+    <path android:name="submandibular-wharton-duct" android:fillColor="#00000000"
+        android:strokeColor="#F8D099" android:strokeWidth="4.3" android:strokeLineCap="round"
+        android:pathData="M153,171 C166,169 187,177 205,177 C224,177 243,176 260,169 C272,164 282,155 288,146" />
+    <path android:name="submandibular-sublingual-caruncle" android:fillColor="#884E48" android:strokeColor="#F6C29F" android:strokeWidth="1.8"
+        android:pathData="M283,146 C283,140 293,140 293,146 C293,152 283,152 283,146Z" />
+</vector>

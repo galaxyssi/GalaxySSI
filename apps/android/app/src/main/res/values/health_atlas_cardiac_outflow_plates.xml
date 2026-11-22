@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_aortic_root_arch_selector">Aortic root and arch</string>
+    <string name="health_atlas_aortic_root_arch_view">Aortic cutaway · Front view, body right at image left</string>
+    <string name="health_atlas_aortic_root_valve">Aortic valve</string>
+    <string name="health_atlas_aortic_root_valve_detail">The pale cusps mark the boundary between the left ventricular outflow and the aortic root. They open toward the aorta.</string>
+    <string name="health_atlas_aortic_root_sinus">Aortic sinus</string>
+    <string name="health_atlas_aortic_root_sinus_detail">This pocket immediately above a valve cusp is one of the three aortic sinuses. The right and left coronary arteries begin in two of these sinuses.</string>
+    <string name="health_atlas_aortic_ascending">Ascending aorta</string>
+    <string name="health_atlas_aortic_ascending_detail">Above the widened root, this segment rises from the sinotubular junction to the first arch branch, carrying oxygen-rich blood from the left ventricle.</string>
+    <string name="health_atlas_aortic_arch">Aortic arch</string>
+    <string name="health_atlas_aortic_arch_detail">The arch turns backward and toward the left side of the body. The three usual branches leave its upper curve in the order shown.</string>
+    <string name="health_atlas_aortic_brachiocephalic">Brachiocephalic trunk</string>
+    <string name="health_atlas_aortic_brachiocephalic_detail">The first arch branch heads to the right and divides into the right common carotid and right subclavian arteries beyond this view.</string>
+    <string name="health_atlas_aortic_left_carotid">Left common carotid</string>
+    <string name="health_atlas_aortic_left_carotid_detail">The second arch branch rises toward the left side of the neck and carries blood toward the head and neck.</string>
+    <string name="health_atlas_aortic_left_subclavian">Left subclavian</string>
+    <string name="health_atlas_aortic_left_subclavian_detail">The third arch branch turns toward the left shoulder and carries blood toward the left upper limb.</string>
+    <string name="health_atlas_aortic_descending">Descending aorta</string>
+    <string name="health_atlas_aortic_descending_detail">Beyond the left subclavian origin, the arch turns down into the descending thoracic aorta behind the heart.</string>
+
+    <string name="health_atlas_pulmonary_bifurcation_selector">Pulmonary trunk bifurcation</string>
+    <string name="health_atlas_pulmonary_bifurcation_view">Pulmonary outflow cutaway · Front view, body right at image left</string>
+    <string name="health_atlas_pulmonary_trunk_valve">Pulmonary valve</string>
+    <string name="health_atlas_pulmonary_trunk_valve_detail">The pale cusps sit between the right ventricular outflow and the base of the pulmonary trunk. They open toward the trunk.</string>
+    <string name="health_atlas_pulmonary_main_trunk">Pulmonary trunk</string>
+    <string name="health_atlas_pulmonary_main_trunk_detail">This short blue vessel rises from the right ventricle, in front of and then to the left of the ascending aorta. Blue denotes oxygen-poor blood headed to the lungs.</string>
+    <string name="health_atlas_pulmonary_branch_point">Bifurcation</string>
+    <string name="health_atlas_pulmonary_branch_point_detail">Just beneath the aortic arch, the pulmonary trunk splits into the right and left pulmonary arteries, one to each lung.</string>
+    <string name="health_atlas_pulmonary_right_branch">Right pulmonary artery</string>
+    <string name="health_atlas_pulmonary_right_branch_detail">The longer branch runs toward the right lung behind the ascending aorta. The muted red aorta is partly transparent to reveal that crossing.</string>
+    <string name="health_atlas_pulmonary_left_branch">Left pulmonary artery</string>
+    <string name="health_atlas_pulmonary_left_branch_detail">The shorter branch passes in front of the descending aorta and above the left main bronchus on its way to the left lung.</string>
+
+    <string name="health_atlas_coronary_routes_selector">Epicardial coronary routes</string>
+    <string name="health_atlas_coronary_routes_view">Coronary surface cutaway · Front view, body right at image left</string>
+    <string name="health_atlas_coronary_right_route">Right coronary artery</string>
+    <string name="health_atlas_coronary_right_route_detail">From the right aortic sinus, this red artery tracks between the right atrium and right ventricle in the right atrioventricular groove. The red routes carry oxygen-rich blood to the heart muscle.</string>
+    <string name="health_atlas_coronary_right_marginal">Right marginal branch</string>
+    <string name="health_atlas_coronary_right_marginal_detail">This branch leaves the right coronary artery at the lower right border of the heart and runs toward the apex along the right ventricular surface.</string>
+    <string name="health_atlas_coronary_left_main">Left main coronary</string>
+    <string name="health_atlas_coronary_left_main_detail">The short stem starts at the left aortic sinus, passes between the pulmonary trunk and left atrial appendage, then divides into the LAD and circumflex. The overlying trunk is muted to expose the origin.</string>
+    <string name="health_atlas_coronary_lad">LAD</string>
+    <string name="health_atlas_coronary_lad_detail">The left anterior descending artery runs toward the apex in the anterior interventricular groove, between the right and left ventricles.</string>
+    <string name="health_atlas_coronary_circumflex">Circumflex artery</string>
+    <string name="health_atlas_coronary_circumflex_detail">From the left main division, the circumflex follows the left atrioventricular groove between the left atrium and left ventricle, then wraps out of view.</string>
+</resources>

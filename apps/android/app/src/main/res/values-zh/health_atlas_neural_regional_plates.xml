@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_brainstem_section_view">脑干正中矢状切面（左侧为前方）</string>
+    <string name="health_atlas_brainstem_section_selector">正中矢状切面</string>
+    <string name="health_atlas_brainstem_section_midbrain">中脑</string>
+    <string name="health_atlas_brainstem_section_midbrain_detail">中脑是脑干的上部，位于脑桥上方，围绕中脑导水管。</string>
+    <string name="health_atlas_brainstem_section_aqueduct">中脑导水管</string>
+    <string name="health_atlas_brainstem_section_aqueduct_detail">这条狭窄的管道穿过中脑，脑脊液经此从第三脑室流入第四脑室。</string>
+    <string name="health_atlas_brainstem_section_pons">脑桥</string>
+    <string name="health_atlas_brainstem_section_pons_detail">脑桥位于脑干中部，向前隆起。其背面构成第四脑室底的一部分。</string>
+    <string name="health_atlas_brainstem_section_fourth_ventricle">第四脑室</string>
+    <string name="health_atlas_brainstem_section_fourth_ventricle_detail">这个充满脑脊液的腔隙位于小脑前方、脑桥和延髓上部的后方。</string>
+    <string name="health_atlas_brainstem_section_medulla">延髓</string>
+    <string name="health_atlas_brainstem_section_medulla_detail">延髓位于脑桥下方，向下逐渐变细并与脊髓相连。</string>
+
+    <string name="health_atlas_cerebellum_section_view">小脑正中矢状切面，经过小脑蚓（左侧为前方）</string>
+    <string name="health_atlas_cerebellum_section_selector">小脑蚓切面</string>
+    <string name="health_atlas_cerebellum_section_anterior_lobe">小脑前叶</string>
+    <string name="health_atlas_cerebellum_section_anterior_lobe_detail">在正中切面上，较小的小脑前叶位于原裂的前上方。</string>
+    <string name="health_atlas_cerebellum_section_primary_fissure">原裂</string>
+    <string name="health_atlas_cerebellum_section_primary_fissure_detail">这条深沟将小脑分为前叶和后叶。</string>
+    <string name="health_atlas_cerebellum_section_posterior_lobe">小脑后叶</string>
+    <string name="health_atlas_cerebellum_section_posterior_lobe_detail">较大的小脑后叶向原裂的后下方延伸。</string>
+    <string name="health_atlas_cerebellum_section_arbor_vitae">小脑活树</string>
+    <string name="health_atlas_cerebellum_section_arbor_vitae_detail">小脑白质从中央分支伸入各个褶皱，在这个切面上呈树枝状。</string>
+    <string name="health_atlas_cerebellum_section_folia">小脑叶片</string>
+    <string name="health_atlas_cerebellum_section_folia_detail">这些狭长的叶状褶皱使小脑皮质表面呈现一条条隆起。</string>
+
+    <string name="health_atlas_spinal_cord_section_view">脊髓横切面（上方为背侧）</string>
+    <string name="health_atlas_spinal_cord_section_selector">横切面</string>
+    <string name="health_atlas_spinal_cord_section_posterior_sulcus">后正中沟</string>
+    <string name="health_atlas_spinal_cord_section_posterior_sulcus_detail">这条浅沟位于脊髓背侧正中。对侧的前正中裂更深。</string>
+    <string name="health_atlas_spinal_cord_section_dorsal_horn">灰质后角</string>
+    <string name="health_atlas_spinal_cord_section_dorsal_horn_detail">灰质向背侧伸出的狭长部分称为后角，接收并处理传入的感觉信息。</string>
+    <string name="health_atlas_spinal_cord_section_central_canal">中央管</string>
+    <string name="health_atlas_spinal_cord_section_central_canal_detail">这条细小的管道位于连接左右两侧灰质的灰质连合内。</string>
+    <string name="health_atlas_spinal_cord_section_white_matter">白质</string>
+    <string name="health_atlas_spinal_cord_section_white_matter_detail">白质围绕蝴蝶形的灰质，内含沿脊髓纵向走行的神经纤维束。</string>
+    <string name="health_atlas_spinal_cord_section_ventral_horn">灰质前角</string>
+    <string name="health_atlas_spinal_cord_section_ventral_horn_detail">灰质向腹侧伸出的较宽部分称为前角，其中的运动神经元以轴突连接骨骼肌。</string>
+    <string name="health_atlas_spinal_cord_section_anterior_fissure">前正中裂</string>
+    <string name="health_atlas_spinal_cord_section_anterior_fissure_detail">这条深裂沿着脊髓腹侧的正中线走行。</string>
+</resources>

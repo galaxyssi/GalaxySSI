@@ -92,11 +92,22 @@ internal object HealthAtlasPlates {
         HealthAtlasHeartSection.section + HealthAtlasImmunePlates.all + HealthAtlasCoreCellPlates.all +
         HealthAtlasTransportCellPlates.all + HealthAtlasDigestivePlates.all + HealthAtlasEndocrinePlates.all +
         HealthAtlasSensoryPlates.all + HealthAtlasTissueContextPlates.all + HealthAtlasLymphOrgans.all + HealthAtlasGutSections.all +
-        HealthAtlasTenocyteTendonMatrixPlate.plate
+        HealthAtlasTenocyteTendonMatrixPlate.plate + HealthAtlasRegionalDetailPlates.all
 
     private val retinaContext = eye.copy(viewKey = "retina-eye-context", selectorLabel = R.string.health_atlas_sensory_retinal_eye_location)
 
-    fun viewsForId(id: String?): List<HealthAtlasPlate> = when (id) {
+    fun viewsForId(id: String?): List<HealthAtlasPlate> {
+        val context = contextViewsForId(id)
+        val detail = HealthAtlasRegionalDetailPlates.forId(id) ?: return context
+        return listOf(detail) + context.map { locator ->
+            locator.copy(
+                viewKey = locator.viewKey ?: "anatomy-locator-${locator.owner ?: "body"}",
+                selectorLabel = locator.selectorLabel ?: R.string.health_atlas_locator_view,
+            )
+        }
+    }
+
+    private fun contextViewsForId(id: String?): List<HealthAtlasPlate> = when (id) {
         "heart" -> listOf(heart, HealthAtlasHeartSection.section)
         "retina" -> listOf(requireNotNull(HealthAtlasSensoryPlates.forId(id)), retinaContext)
         HealthAtlasTenocyteTendonMatrixAssignment.ID -> listOf(

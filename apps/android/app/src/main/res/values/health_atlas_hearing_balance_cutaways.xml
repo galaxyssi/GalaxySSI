@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_hb_middle_ear_caption">Middle ear: oblique cutaway from eardrum to oval window</string>
+    <string name="health_atlas_hb_middle_ear_selector">Ossicular chain</string>
+    <string name="health_atlas_hb_eardrum">Eardrum</string>
+    <string name="health_atlas_hb_eardrum_detail">The tympanic membrane separates the ear canal from the air-filled middle ear. The malleus handle attaches to it at the umbo, the deepest point of the membrane.</string>
+    <string name="health_atlas_hb_malleus">Malleus</string>
+    <string name="health_atlas_hb_malleus_detail">The head of the malleus meets the incus above the eardrum. Its handle extends down along the inner side of the eardrum to the umbo.</string>
+    <string name="health_atlas_hb_incus">Incus</string>
+    <string name="health_atlas_hb_incus_detail">The body of the incus meets the malleus high in the middle ear. Its long process descends to a small joint with the head of the stapes.</string>
+    <string name="health_atlas_hb_stapes">Stapes</string>
+    <string name="health_atlas_hb_stapes_detail">Two slender branches give the stapes its stirrup shape. They join the head, which touches the incus, to the footplate seated in the oval window.</string>
+    <string name="health_atlas_hb_oval_window">Oval window</string>
+    <string name="health_atlas_hb_oval_window_detail">The oval window opens into the inner-ear vestibule. A flexible ring seals the stapes footplate to its rim while allowing the footplate to move.</string>
+    <string name="health_atlas_hb_round_window">Round window</string>
+    <string name="health_atlas_hb_round_window_detail">A flexible membrane covers this opening below the oval window, at the basal end of the scala tympani. It can move as the stapes displaces inner-ear fluid.</string>
+    <string name="health_atlas_hb_cochlea_caption">Cochlea: simplified cross-section through one turn</string>
+    <string name="health_atlas_hb_cochlea_selector">Cochlear cross-section</string>
+    <string name="health_atlas_hb_scala_vestibuli">Scala vestibuli</string>
+    <string name="health_atlas_hb_scala_vestibuli_detail">This perilymph-filled chamber lies above the cochlear duct, separated from it by Reissner’s membrane. Toward the base it opens into the vestibule.</string>
+    <string name="health_atlas_hb_reissners">Reissner’s membrane</string>
+    <string name="health_atlas_hb_reissners_detail">This thin, sloping membrane forms the roof of the cochlear duct. It separates the duct’s endolymph from the perilymph of the scala vestibuli.</string>
+    <string name="health_atlas_hb_cochlear_duct">Cochlear duct</string>
+    <string name="health_atlas_hb_cochlear_duct_detail">Also called the scala media, this wedge-shaped chamber contains endolymph. Its roof slopes toward the outer wall, and the organ of Corti sits on its floor.</string>
+    <string name="health_atlas_hb_corti">Organ of Corti</string>
+    <string name="health_atlas_hb_corti_detail">The hearing sensory epithelium sits inside the cochlear duct on the basilar membrane. Its hair cells lie beneath the tectorial membrane.</string>
+    <string name="health_atlas_hb_basilar">Basilar membrane</string>
+    <string name="health_atlas_hb_basilar_detail">This membrane spans from the inner bony shelf to the outer wall. It supports the organ of Corti and separates the cochlear duct from the scala tympani below.</string>
+    <string name="health_atlas_hb_scala_tympani">Scala tympani</string>
+    <string name="health_atlas_hb_scala_tympani_detail">This perilymph-filled chamber lies below the cochlear partition. At the base it ends at the round window; at the tip of the coil it joins the scala vestibuli.</string>
+    <string name="health_atlas_hb_vestibular_caption">Vestibular labyrinth: semicircular canals and otolith organs</string>
+    <string name="health_atlas_hb_vestibular_selector">Canals and otolith organs</string>
+    <string name="health_atlas_hb_anterior_canal">Anterior canal</string>
+    <string name="health_atlas_hb_anterior_canal_detail">This upward arch houses the anterior semicircular duct, one of the two steeply oriented ducts that sense head rotation. Its non-ampullary end joins the posterior duct in a shared branch.</string>
+    <string name="health_atlas_hb_posterior_canal">Posterior canal</string>
+    <string name="health_atlas_hb_posterior_canal_detail">The posterior semicircular duct runs in a different steep plane from the anterior duct. One end widens into an ampulla and the other joins the shared branch.</string>
+    <string name="health_atlas_hb_lateral_canal">Lateral canal</string>
+    <string name="health_atlas_hb_lateral_canal_detail">The lateral canal houses the more nearly horizontal semicircular duct. Both ends open into the utricle separately from the shared branch of the other two ducts.</string>
+    <string name="health_atlas_hb_ampulla">Posterior ampulla</string>
+    <string name="health_atlas_hb_ampulla_detail">This swelling of the posterior duct contains a sensory ridge capped by a gelatinous cupula. During head rotation, relative endolymph motion deflects the cupula.</string>
+    <string name="health_atlas_hb_utricle">Utricle</string>
+    <string name="health_atlas_hb_utricle_detail">The flattened upper sac receives the semicircular ducts. Crystals called otoconia overlie its mostly horizontal sensory patch, which responds to linear acceleration and tilt relative to gravity.</string>
+    <string name="health_atlas_hb_saccule">Saccule</string>
+    <string name="health_atlas_hb_saccule_detail">The smaller sac sits below the utricle. Its sensory patch is more nearly vertical and also carries otoconia; it is especially sensitive to vertical linear acceleration.</string>
+</resources>

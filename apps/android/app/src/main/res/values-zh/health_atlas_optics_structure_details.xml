@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_optics_cornea_detail">角膜分层</string>
+    <string name="health_atlas_optics_cornea_tear">泪膜</string>
+    <string name="health_atlas_optics_cornea_tear_detail">薄薄的液膜覆盖暴露表面，让光线首先经过的界面更均匀。</string>
+    <string name="health_atlas_optics_cornea_epithelium">角膜上皮</string>
+    <string name="health_atlas_optics_cornea_epithelium_detail">多层上皮细胞覆盖角膜前面，位于泪膜下方。</string>
+    <string name="health_atlas_optics_cornea_bowman">前弹力层</string>
+    <string name="health_atlas_optics_cornea_bowman_detail">薄而致密的组织层位于上皮与主体基质之间。</string>
+    <string name="health_atlas_optics_cornea_stroma">角膜基质</string>
+    <string name="health_atlas_optics_cornea_stroma_detail">规则排列的胶原板层占据角膜的大部分厚度。图中的厚度比例经过放大，方便区分。</string>
+    <string name="health_atlas_optics_cornea_descemet">后弹力层</string>
+    <string name="health_atlas_optics_cornea_descemet_detail">它是内皮细胞下方的基底膜，位于基质的后侧。</string>
+    <string name="health_atlas_optics_cornea_endothelium">角膜内皮</string>
+    <string name="health_atlas_optics_cornea_endothelium_detail">单层细胞面向房水，帮助调节角膜内的水分。</string>
+    <string name="health_atlas_optics_cornea_aqueous">房水</string>
+    <string name="health_atlas_optics_cornea_aqueous_detail">前房内的液体与角膜内表面相接。</string>
+    <string name="health_atlas_optics_lens_detail">晶状体纤维与悬韧带</string>
+    <string name="health_atlas_optics_lens_capsule">晶状体囊</string>
+    <string name="health_atlas_optics_lens_capsule_detail">透明的囊膜包住晶状体，为悬韧带附着提供表面。</string>
+    <string name="health_atlas_optics_lens_epithelium">前囊下上皮</string>
+    <string name="health_atlas_optics_lens_epithelium_detail">上皮层位于晶状体前侧囊膜内面，不延伸成覆盖后表面的连续层。</string>
+    <string name="health_atlas_optics_lens_cortex">晶状体皮质</string>
+    <string name="health_atlas_optics_lens_cortex_detail">外侧的晶状体纤维层包围中央的核。</string>
+    <string name="health_atlas_optics_lens_nucleus">晶状体核</string>
+    <string name="health_atlas_optics_lens_nucleus_detail">中央区域含有较早形成的晶状体纤维，这里的核不是细胞核。</string>
+    <string name="health_atlas_optics_lens_zonules">悬韧带纤维</string>
+    <string name="health_atlas_optics_lens_zonules_detail">位于睫状体与晶状体囊之间的悬韧带纤维，把张力传给晶状体。</string>
+    <string name="health_atlas_optics_lens_ciliary">睫状突</string>
+    <string name="health_atlas_optics_lens_ciliary_detail">图中显示睫状体的突起及其与晶状体赤道的位置关系。</string>
+</resources>

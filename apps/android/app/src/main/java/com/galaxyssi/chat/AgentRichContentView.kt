@@ -2182,7 +2182,10 @@ class AgentRichContentView(
     }
 }
 
-internal class GalaxySSIPinchZoomViewport(context: Context) : FrameLayout(context) {
+internal class GalaxySSIPinchZoomViewport(
+    context: Context,
+    private val keepZoomedTargetTaps: Boolean = false,
+) : FrameLayout(context) {
     private var zoomTarget: View? = null
     private var zoomScale = 1f
     internal val currentZoomScale: Float get() = zoomScale
@@ -2192,6 +2195,8 @@ internal class GalaxySSIPinchZoomViewport(context: Context) : FrameLayout(contex
     private var lastPanX = 0f
     private var lastPanY = 0f
     private var lastTapAt = 0L
+    private val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+    private var zoomedDrag = false
     private val scaleDetector = ScaleGestureDetector(
         context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -2239,6 +2244,18 @@ internal class GalaxySSIPinchZoomViewport(context: Context) : FrameLayout(contex
         addView(target, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
 
+    internal fun resetZoom() {
+        zoomScale = MIN_ZOOM
+        lastTapAt = 0L
+        zoomTarget?.apply {
+            animate().cancel()
+            scaleX = 1f
+            scaleY = 1f
+            translationX = 0f
+            translationY = 0f
+        }
+    }
+
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         scaleDetector.onTouchEvent(event)
         if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
@@ -2259,6 +2276,7 @@ internal class GalaxySSIPinchZoomViewport(context: Context) : FrameLayout(contex
         }
         val target = zoomTarget
         if (zoomScale > MIN_ZOOM && target != null && event.pointerCount == 1) {
+            if (keepZoomedTargetTaps) return dispatchZoomedInteractiveTouch(event, target)
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     val now = android.os.SystemClock.uptimeMillis()
@@ -2287,6 +2305,44 @@ internal class GalaxySSIPinchZoomViewport(context: Context) : FrameLayout(contex
                     parent?.requestDisallowInterceptTouchEvent(false)
                     return true
                 }
+            }
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
+    private fun dispatchZoomedInteractiveTouch(event: MotionEvent, target: View): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                zoomedDrag = false
+                lastPanX = event.x
+                lastPanY = event.y
+                parent?.requestDisallowInterceptTouchEvent(true)
+                super.dispatchTouchEvent(event)
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = event.x - lastPanX
+                val dy = event.y - lastPanY
+                if (!zoomedDrag) {
+                    if (dx * dx + dy * dy <= touchSlop * touchSlop) return true
+                    zoomedDrag = true
+                    val cancel = MotionEvent.obtain(event)
+                    cancel.action = MotionEvent.ACTION_CANCEL
+                    super.dispatchTouchEvent(cancel)
+                    cancel.recycle()
+                }
+                target.translationX += dx
+                target.translationY += dy
+                lastPanX = event.x
+                lastPanY = event.y
+                clampTranslation(target)
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (!zoomedDrag) super.dispatchTouchEvent(event)
+                zoomedDrag = false
+                parent?.requestDisallowInterceptTouchEvent(false)
+                return true
             }
         }
         return super.dispatchTouchEvent(event)

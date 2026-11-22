@@ -77,7 +77,7 @@ class HealthAtlasMusculoskeletalDeviceTest {
     @Test fun onlyDepictedStructuresCanUseEachView() {
         for (plate in HealthAtlasMusculoskeletalPlates.all) for (marker in plate.markers) {
             val views = HealthAtlasPlates.viewsForId(marker.id)
-            assertTrue(views.contains(plate))
+            assertTrue(views.any { it.viewKey == plate.viewKey && it.drawable == plate.drawable })
             assertTrue(views.all { it.owner == marker.id || it.markers.any { target -> target.id == marker.id } })
         }
         for (id in listOf("erector-spinae", "soleus", "cartilage", "ligaments", "radius",
@@ -153,7 +153,9 @@ class HealthAtlasMusculoskeletalDeviceTest {
 
     @Test fun returningToADedicatedCutawayRemainsSelectedAfterRecreation() = native { scenario ->
         scenario.onActivity {
-            it.open("trapezius")
+            it.open("muscle")
+            it.view("atlas-view-1").performClick()
+            it.view("atlas-hotspot-trapezius").performClick()
             assertTrue(it.view("atlas-view-0").isSelected)
             it.view("atlas-view-1").performClick()
             assertTrue(it.view("atlas-view-1").isSelected)

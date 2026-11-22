@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <path android:fillColor="#8FAFA9" android:strokeColor="#496C69" android:strokeWidth="2"
+        android:pathData="M82,136 C74,98 112,76 146,78 C159,78 170,82 181,90 C200,75 222,75 249,84 C278,94 293,115 288,151 C283,197 252,233 214,246 C173,261 131,245 106,214 C89,193 83,163 82,136 Z"/>
+    <path android:fillColor="#BFD1BE"
+        android:pathData="M83,137 C92,161 111,181 130,208 C143,228 162,239 181,246 C148,246 121,233 102,209 C88,190 83,160 83,137 Z M282,162 C273,194 247,225 216,239 C239,211 248,190 251,173 C260,172 273,168 282,162 Z"/>
+    <path android:fillColor="#CE9289" android:strokeColor="#855753" android:strokeWidth="2"
+        android:pathData="M91,127 C96,98 120,88 144,90 C159,91 173,102 181,108 C197,94 216,86 238,91 C265,96 280,114 278,139 C276,165 264,186 246,206 C225,230 205,241 184,240 C161,240 141,229 123,209 C104,188 88,153 91,127 Z"/>
+    <path android:fillColor="#754D59"
+        android:pathData="M110,126 C125,107 148,104 168,114 Q181,122 194,114 C216,102 242,109 254,126 C266,148 251,183 229,204 C211,222 197,230 181,228 C158,226 139,214 123,192 C107,170 100,143 110,126 Z"/>
+    <path android:fillColor="#9D666C"
+        android:pathData="M117,169 C132,181 138,192 151,198 Q176,203 182,219 C191,205 210,198 225,194 Q235,187 248,176 C235,205 205,229 183,228 C156,226 131,205 117,169 Z"/>
+
+    <!-- The pale true folds meet anteriorly; their inner edges frame the airway. -->
+    <path android:name="glottic_opening" android:fillColor="#392D40"
+        android:pathData="M179,118 C174,136 160,166 151,183 C148,190 151,197 158,200 Q181,206 205,199 C213,196 218,190 215,182 C205,164 190,137 182,118 Z"/>
+    <path android:name="vocal_folds" android:fillColor="#F4E5CF" android:strokeColor="#B49483" android:strokeWidth="1.5"
+        android:pathData="M180,118 C159,131 132,142 127,161 C122,175 133,187 148,191 C151,181 173,147 181,120 Z M182,118 C205,131 231,142 235,161 C238,176 228,188 216,191 C214,179 191,146 181,120 Z"/>
+    <path android:fillColor="#FFFAE7"
+        android:pathData="M179,122 C167,150 155,174 148,187 L143,184 C152,164 166,139 179,122 Z M184,122 C198,141 212,168 222,184 L217,187 C207,165 194,145 184,122 Z"/>
+    <path android:name="vestibular_folds" android:fillColor="#D88F96" android:strokeColor="#A8626E" android:strokeWidth="1.5"
+        android:pathData="M170,115 C150,106 121,113 109,131 C101,144 108,162 122,174 C120,157 133,139 153,130 Q165,124 170,115 Z M192,115 C212,106 241,113 253,131 C261,144 254,162 240,174 C242,157 229,139 209,130 Q197,124 192,115 Z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#EFB0AE" android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M113,142 Q122,120 155,117 M209,117 Q240,120 249,142"/>
+    <path android:fillColor="#B4747E" android:strokeColor="#754D59" android:strokeWidth="1.5"
+        android:pathData="M119,180 Q130,174 147,187 Q155,195 151,204 Q139,210 127,198 Q119,190 119,180 Z M244,180 Q232,174 215,187 Q207,196 212,204 Q225,210 237,198 Q244,189 244,180 Z"/>
+
+    <path android:name="epiglottis" android:fillColor="#E0AA80" android:strokeColor="#98634F" android:strokeWidth="2"
+        android:pathData="M183,117 C171,109 142,101 129,81 C113,59 119,41 137,36 C155,31 165,42 178,42 C193,42 209,34 223,43 C238,53 233,73 217,88 C204,100 191,107 183,117 Z"/>
+    <path android:fillColor="#F2C8A1"
+        android:pathData="M134,43 C150,34 163,50 178,49 C195,49 210,38 222,49 C228,55 226,61 222,67 C209,58 195,65 181,66 C165,66 149,53 132,61 C129,56 128,49 134,43 Z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#B97D65" android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M138,69 C152,86 173,92 181,104 M218,71 C210,83 194,94 185,104"/>
+</vector>
