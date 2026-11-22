@@ -39,6 +39,30 @@ class HealthAtlasModelComparisonTest {
         }
     }
 
+    @Test fun cumulativeAreaAgreesWithAnIndependentAugmentedMatrixFixture() {
+        val defaults = HealthAtlasModelComparison().centralAmountHours()
+        // Add an accumulator row [1,0,0] to the central/peripheral mass matrix and solve by expm.
+        assertEquals(219.6577427940722, defaults.two, 1e-10)
+        assertEquals(329.6799539643607, defaults.one, 1e-10)
+        assertEquals(-110.0222111702885, defaults.gap, 1e-10)
+        assertEquals(148.0005412446694,
+            HealthAtlasModelComparison(HealthAtlasComparisonScenario.FASTER).centralAmountHours().two, 1e-10)
+        assertEquals(HealthAtlasCentralAmountHours(0.0, 0.0),
+            HealthAtlasModelComparison(quarterHours = 0).centralAmountHours())
+    }
+
+    @Test fun bothCumulativeValuesGrowWithTimeAndTheControlGapIsAlwaysZero() {
+        for (scenario in HealthAtlasComparisonScenario.entries) {
+            var previous = HealthAtlasCentralAmountHours(0.0, 0.0)
+            for (quarter in 0..192) {
+                val result = HealthAtlasModelComparison(scenario, quarter).centralAmountHours()
+                assertTrue(result.one >= previous.one && result.two >= previous.two)
+                if (scenario == HealthAtlasComparisonScenario.CONTROL) assertEquals(0.0, result.gap, 0.0)
+                previous = result
+            }
+        }
+    }
+
     @Test fun boundsAndIndependentSavedStateAreEnforced() {
         val state = HealthAtlasDrugState(HealthAtlasDrugMode.COMPARISON, HealthAtlasDistribution(63, 20, 10, 41),
             HealthAtlasModelComparison(HealthAtlasComparisonScenario.FASTER, 23))
@@ -49,5 +73,14 @@ class HealthAtlasModelComparisonTest {
         assertNull(HealthAtlasDrugState.restore(state.encode().apply { this[6] = 193 }))
         assertThrows(IllegalArgumentException::class.java) { HealthAtlasModelComparison(quarterHours = -1) }
         assertThrows(IllegalArgumentException::class.java) { state.comparison.at(Double.NaN) }
+    }
+
+    @Test fun cumulativeDisclosureRestoresAndLegacyComparisonDefaultsToClosed() {
+        val old = intArrayOf(2, 30, 15, 10, 16, 2, 23)
+        val state = requireNotNull(HealthAtlasDrugState.restore(old))
+        assertFalse(state.showComparisonTotals)
+        val expanded = state.copy(showComparisonTotals = true)
+        assertEquals(expanded, HealthAtlasDrugState.restore(expanded.encode()))
+        assertNull(HealthAtlasDrugState.restore(expanded.encode().apply { this[7] = 2 }))
     }
 }

@@ -112,7 +112,8 @@ internal object HealthAtlasAgentContext {
                         appendLine(context.getString(R.string.health_atlas_drug_models))
                         appendLine(HealthAtlasDistributionText.prompt(context, drugs.distribution))
                     }
-                    HealthAtlasDrugMode.COMPARISON -> appendLine(HealthAtlasComparisonText.prompt(context, drugs.comparison))
+                    HealthAtlasDrugMode.COMPARISON -> appendLine(HealthAtlasComparisonText.prompt(context, drugs.comparison,
+                        includeTotals = drugs.showComparisonTotals))
                     else -> {
                         val values = elimination ?: HealthAtlasElimination()
                         appendLine(context.getString(R.string.health_atlas_elimination_assumptions))

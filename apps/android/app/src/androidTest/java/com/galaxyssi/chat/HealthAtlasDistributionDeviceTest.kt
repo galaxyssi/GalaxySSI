@@ -291,4 +291,32 @@ class HealthAtlasDistributionDeviceTest {
         }
         capture("comparison")
     }
+
+    @Test fun cumulativeComparisonUpdatesInPlaceAndKeepsItsScope() = native { scenario ->
+        scenario.onActivity {
+            it.view("atlas-drug-model-2").performClick()
+            val chart = it.view("atlas-comparison-chart")
+            val totals = it.view("atlas-comparison-totals")
+            assertEquals(View.GONE, totals.visibility)
+            it.view("atlas-comparison-totals-toggle").performClick()
+            assertEquals(View.VISIBLE, totals.visibility)
+            val display = it.view("atlas-comparison-totals-value") as TextView
+            assertEquals(HealthAtlasComparisonText.totals(it, HealthAtlasModelComparison()), display.text)
+            (it.view("atlas-comparison-elapsed") as SeekBar).progress = 37
+            assertEquals(HealthAtlasComparisonText.totals(it, HealthAtlasModelComparison(quarterHours = 37)), display.text)
+            assertSame(chart, it.view("atlas-comparison-chart"))
+        }
+        scenario.recreate(); ready(scenario, "atlas-comparison-totals-value")
+        scenario.onActivity {
+            assertEquals(View.VISIBLE, it.view("atlas-comparison-totals").visibility)
+            assertEquals(37, (it.view("atlas-comparison-elapsed") as SeekBar).progress)
+        }
+        val atlas = HealthBodyAtlas.load(context)
+        val state = HealthAtlasDrugState(HealthAtlasDrugMode.COMPARISON, comparison = HealthAtlasModelComparison(quarterHours = 37))
+        val basis = context.getString(R.string.health_atlas_compare_total_basis)
+        assertFalse(HealthAtlasAgentContext.prompt(context, atlas, atlas["heart"], topic = HealthAtlasResearchTopic.DRUGS,
+            drugs = state).contains(basis))
+        assertTrue(HealthAtlasAgentContext.prompt(context, atlas, atlas["heart"], topic = HealthAtlasResearchTopic.DRUGS,
+            drugs = state.copy(showComparisonTotals = true)).contains(basis))
+    }
 }
