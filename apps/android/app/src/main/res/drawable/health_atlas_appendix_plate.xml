@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Cecal attachment and the closed tip, with guides to the separate transverse cut. -->
+    <path android:strokeColor="#85979A" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M106,154l5,-1 M115,152l5,-1 M124,150l5,-1 M133,148l5,-1 M142,146l5,-1 M151,144l5,-1 M160,142l5,-1 M169,140l5,-1 M102,173l4,3 M110,179l4,3 M118,185l4,3 M126,191l4,3 M134,197l4,3 M142,203l4,3 M150,209l4,3 M158,215l4,3 M166,221l4,3 M174,227l4,3" />
+    <path android:name="appendix_tube" android:strokeColor="#986577" android:strokeWidth="1.6"
+        android:pathData="M77,111 C78,125 85,139 87,153 C90,172 88,184 78,197 C69,208 65,213 67,222 C70,234 86,234 94,224 C109,207 115,191 113,174 C111,150 105,124 99,111 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="79" android:startY="165" android:endX="110" android:endY="177">
+                <item android:offset="0" android:color="#F2C8B7" />
+                <item android:offset="0.45" android:color="#E0A9A6" />
+                <item android:offset="1" android:color="#AE788B" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#F9DFD0" android:strokeWidth="2.05" android:strokeLineCap="round"
+        android:pathData="M86,126 C89,143 99,168 95,186 C92,202 76,211 76,221 M82,225 Q87,226 91,220" />
+    <path android:strokeColor="#A97B86" android:strokeWidth="1.9" android:strokeAlpha="0.65"
+        android:pathData="M87,155 Q98,160 109,151 M89,164 Q99,170 111,160" />
+    <path android:name="cecum" android:strokeColor="#996873" android:strokeWidth="1.6"
+        android:pathData="M49,31 C58,21 77,19 99,24 C114,26 128,38 131,49 C136,60 129,68 132,77 C141,84 138,98 130,104 C130,117 114,131 103,128 C93,137 81,134 72,129 C61,130 53,124 51,116 C39,111 36,96 42,90 C36,79 40,69 46,64 C41,54 42,42 49,31 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="61" android:startY="34" android:endX="113" android:endY="134">
+                <item android:offset="0" android:color="#F3D6BA" />
+                <item android:offset="0.48" android:color="#EBBFA7" />
+                <item android:offset="1" android:color="#BC8792" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#AD798B" android:fillAlpha="0.23"
+        android:pathData="M103,25 C122,31 130,43 132,53 C136,64 129,68 132,77 C141,84 138,98 130,104 C130,117 114,131 103,128 C93,137 81,134 72,129 C61,130 53,124 51,116 C61,126 74,119 82,122 C101,127 114,115 116,102 C122,96 125,81 119,73 C120,60 121,42 103,25 Z" />
+    <path android:strokeColor="#AD7B83" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M46,64 C58,70 74,62 87,64 C102,65 119,71 129,62 M43,90 C60,96 66,88 82,91 C99,95 115,95 130,87 M53,114 C62,118 75,111 83,115 C96,122 117,114 126,107" />
+    <path android:strokeColor="#FBE5D4" android:strokeWidth="1.9" android:strokeLineCap="round"
+        android:pathData="M53,37 C63,29 80,29 95,33 M48,72 Q60,78 77,71 M47,97 Q62,101 74,97 M58,118 Q69,123 77,120" />
+
+    <!-- Enlarged cross-section: continuous muscle cuff enclosing the follicle-rich wall. -->
+    <path android:name="muscularis_externa" android:strokeColor="#926678" android:strokeWidth="1.7"
+        android:pathData="M164,151 C177,128 212,113 248,115 C283,116 315,132 325,153 C337,177 324,207 302,225 C275,247 232,254 198,240 C169,230 153,209 152,185 C151,171 156,160 164,151 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="184" android:startY="138" android:endX="284" android:endY="245">
+                <item android:offset="0" android:color="#F3C7B8" />
+                <item android:offset="0.48" android:color="#DCA6A7" />
+                <item android:offset="0.8" android:color="#C18C9E" />
+                <item android:offset="1" android:color="#A87388" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#DCAEB7" android:strokeWidth="1.1" android:strokeLineCap="round"
+        android:pathData="M156,184 Q155,161 174,148 M174,223 Q189,237 213,243 M223,245 Q248,249 275,237 M283,234 Q307,224 320,200 M323,193 Q331,176 326,163" />
+    <path android:strokeColor="#A87589" android:strokeWidth="1.1"
+        android:pathData="M165,145 C182,124 216,113 248,117 C282,120 312,137 319,157 C327,175 314,199 295,213 C270,231 234,235 203,225 C175,217 160,203 157,183 C155,168 158,154 165,145 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="190" android:startY="126" android:endX="283" android:endY="224">
+                <item android:offset="0" android:color="#F5D0BD" />
+                <item android:offset="0.55" android:color="#E8B6B4" />
+                <item android:offset="1" android:color="#C98EA2" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#F6DAC9" android:strokeWidth="1.3" android:strokeLineCap="round"
+        android:pathData="M163,159 Q173,138 203,127 M212,125 Q246,114 277,129 M285,132 Q304,141 312,154 M315,164 Q319,182 305,199 M296,207 Q282,218 265,223 M253,226 Q225,231 198,220 M191,216 Q167,206 162,187" />
+    <path android:strokeColor="#B58291" android:strokeWidth="1.15"
+        android:pathData="M177,151 C194,134 221,125 246,130 C275,132 299,146 306,162 C312,177 302,194 286,205 C267,219 234,223 210,215 C185,208 173,197 169,184 C166,172 169,159 177,151 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="188" android:startY="143" android:endX="261" android:endY="221">
+                <item android:offset="0" android:color="#F8E2AA" />
+                <item android:offset="0.16" android:color="#F9E2C7" />
+                <item android:offset="0.62" android:color="#F2CDCD" />
+                <item android:offset="1" android:color="#DCACBC" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:name="lymphoid_follicles" android:strokeColor="#A4789B" android:strokeWidth="1"
+        android:pathData="M174,171 C174,161 181,154 190,154 C200,154 206,164 203,173 C201,184 194,190 185,188 C177,186 172,179 174,171 Z M193,148 C197,138 208,133 217,136 C225,139 225,147 220,152 C212,160 193,159 193,148 Z M232,142 C237,131 255,133 264,140 C273,148 269,157 257,157 C245,158 227,151 232,142 Z M274,154 C281,147 293,152 298,161 C303,171 294,180 286,180 C276,180 266,163 274,154 Z M273,183 C282,177 294,182 293,190 C291,201 278,209 270,205 C260,201 264,189 273,183 Z M231,199 C238,188 250,188 258,194 C266,200 262,211 251,214 C241,218 225,209 231,199 Z M191,194 C196,185 210,182 220,188 C232,195 229,205 220,210 C211,216 199,210 195,205 Q191,200 191,194 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="203" android:startY="137" android:endX="275" android:endY="215">
+                <item android:offset="0" android:color="#DCB3CA" />
+                <item android:offset="0.50" android:color="#CC9AB7" />
+                <item android:offset="1" android:color="#AA7DA7" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#F1D8E2" android:fillAlpha="0.86"
+        android:pathData="M178,171 C178,165 184,160 190,160 C199,162 199,173 193,179 C187,184 179,180 178,171 Z M199,145 Q205,137 213,141 C220,144 215,152 209,152 Q198,153 199,145 Z M238,142 Q249,136 260,142 C266,148 258,154 252,151 Q238,149 238,142 Z M278,160 C282,154 291,157 294,163 C298,170 290,175 284,171 Q275,167 278,160 Z M271,191 Q280,182 286,188 C292,194 278,202 273,200 Q268,198 271,191 Z M238,199 Q247,192 255,198 C261,206 249,212 241,207 Q235,205 238,199 Z M199,194 C204,188 213,189 220,193 Q225,199 219,205 Q207,210 201,203 Q196,200 199,194 Z" />
+    <path android:name="appendiceal_lumen" android:fillColor="#FFF0DF" android:strokeColor="#A9768A"
+        android:strokeWidth="1.55" android:strokeLineJoin="round"
+        android:pathData="M206,168 C211,160 222,163 227,160 C233,156 230,150 236,152 C242,154 240,161 247,163 C256,163 262,160 266,165 C271,173 259,172 255,177 C252,182 257,189 250,190 C243,191 241,181 234,181 C228,181 220,186 216,181 C213,179 216,175 213,174 Q207,173 206,168 Z" />
+    <path android:strokeColor="#AE798B" android:strokeWidth="0.95" android:strokeLineCap="round"
+        android:pathData="M210,161l-2,-4 M218,160l1,-3 M226,157l-2,-4 M231,152l-1,-4 M240,153l3,-3 M247,160l2,-4 M258,160l2,-4 M268,167l4,-2 M259,177l4,1 M254,184l3,2 M243,187l-2,3 M236,183l-2,3 M226,185l-2,3 M214,182l-3,1 M210,176l-5,1" />
+    <path android:strokeColor="#926D95" android:strokeAlpha="0.62" android:strokeWidth="1.25" android:strokeLineCap="round"
+        android:pathData="M177,171h0.1 M180,182h0.1 M192,181h0.1 M196,164h0.1 M203,141h0.1 M215,136h0.1 M218,150h0.1 M238,138h0.1 M252,135h0.1 M262,151h0.1 M276,155h0.1 M292,157h0.1 M298,169h0.1 M273,185h0.1 M285,194h0.1 M277,205h0.1 M235,196h0.1 M257,202h0.1 M248,213h0.1 M200,191h0.1 M220,191h0.1 M222,204h0.1 M206,208h0.1" />
+</vector>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_red_cell_story_title">How red cells deliver oxygen</string>
+    <string name="health_atlas_red_cell_story_choice">Red cell oxygen delivery</string>
+    <string name="health_atlas_red_cell_story_scope">A qualitative view of normal oxygen delivery. Sizes, timing and oxygen symbols are not to scale and do not represent oxygen levels. The full circulation and carbon dioxide exchange are not shown. This is not medical advice.</string>
+    <string name="health_atlas_red_cell_story_cell">Red cell and hemoglobin</string>
+    <string name="health_atlas_red_cell_story_cell_caption">A red blood cell is a disk with a dip on each side. Inside it, many hemoglobin molecules can reversibly bind oxygen. The inset shows one simplified hemoglobin molecule.</string>
+    <string name="health_atlas_red_cell_story_loading">Oxygen loading in the lungs</string>
+    <string name="health_atlas_red_cell_story_loading_caption">Oxygen diffuses from the air in an alveolus across the thin air–blood barrier. It enters red cells in a nearby lung capillary and binds to hemoglobin.</string>
+    <string name="health_atlas_red_cell_story_transport">Carried in the bloodstream</string>
+    <string name="health_atlas_red_cell_story_transport_caption">Blood flow carries red cells toward the tissues. Most oxygen in the blood travels bound to hemoglobin inside those cells.</string>
+    <string name="health_atlas_red_cell_story_release">Oxygen release in tissue capillaries</string>
+    <string name="health_atlas_red_cell_story_release_caption">Where less oxygen is dissolved in the blood, some oxygen separates from hemoglobin. It leaves the red cell and dissolves in the plasma.</string>
+    <string name="health_atlas_red_cell_story_diffusion">Oxygen diffusion into tissue</string>
+    <string name="health_atlas_red_cell_story_diffusion_caption">Oxygen diffuses down its partial-pressure gradient: from blood across the capillary wall, through tissue fluid and into nearby cells. Red cells stay inside the vessel.</string>
+    <string name="health_atlas_red_cell_story_label_red_cell">Red blood cell</string>
+    <string name="health_atlas_red_cell_story_label_hemoglobin">Hemoglobin</string>
+    <string name="health_atlas_red_cell_story_label_alveolus">Alveolar air space</string>
+    <string name="health_atlas_red_cell_story_label_oxygen">Oxygen (O₂)</string>
+    <string name="health_atlas_red_cell_story_label_lung_capillary">Lung capillary</string>
+    <string name="health_atlas_red_cell_story_label_vessel">Systemic blood vessel</string>
+    <string name="health_atlas_red_cell_story_label_flow">Blood flow</string>
+    <string name="health_atlas_red_cell_story_label_tissue_capillary">Tissue capillary</string>
+    <string name="health_atlas_red_cell_story_label_plasma">Plasma</string>
+    <string name="health_atlas_red_cell_story_label_tissue_fluid">Tissue fluid</string>
+    <string name="health_atlas_red_cell_story_label_tissue">Tissue cells</string>
+    <string name="health_atlas_red_cell_story_ref_binding">Adair (1925): Oxygen binding to hemoglobin</string>
+    <string name="health_atlas_red_cell_story_ref_microcirculation">Colburn et al. (2020): Oxygen gradients across muscle capillaries</string>
+</resources>

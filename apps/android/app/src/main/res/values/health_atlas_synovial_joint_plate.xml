@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_synovial_joint_plate_title">Synovial joint section</string>
+    <string name="health_atlas_synovial_joint_plate_caption">Cross-section of a simplified synovial joint. Not all joints are synovial. The joint space is widened for clarity.</string>
+    <string name="health_atlas_synovial_joint_plate_capsule">Fibrous capsule</string>
+    <string name="health_atlas_synovial_joint_plate_capsule_detail">The outer fibrous wall surrounds the joint and joins the two bones. It is thicker than the synovial lining on its inner face.</string>
+    <string name="health_atlas_synovial_joint_plate_lining">Synovial lining</string>
+    <string name="health_atlas_synovial_joint_plate_lining_detail">This thin membrane lines the inside of the capsule up to the cartilage margins. It does not cover the articular surfaces.</string>
+    <string name="health_atlas_synovial_joint_plate_cavity">Potential joint cavity</string>
+    <string name="health_atlas_synovial_joint_plate_cavity_detail">This is normally a narrow space containing a small amount of lubricating synovial fluid, not a wide, empty gap between the bones.</string>
+    <string name="health_atlas_synovial_joint_plate_surfaces">Articular surfaces</string>
+    <string name="health_atlas_synovial_joint_plate_surfaces_detail">In this example, a thin coat of hyaline cartilage covers each facing bone surface. The two coats face each other across the joint space but are not joined.</string>
+    <string name="health_atlas_synovial_joint_plate_attachment">Capsule attachment</string>
+    <string name="health_atlas_synovial_joint_plate_attachment_detail">The capsule attaches to bone outside the smooth, cartilage-covered surfaces, leaving those surfaces free to glide past each other.</string>
+</resources>

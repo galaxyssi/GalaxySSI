@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ependymal_story_choice">Ependymal cilia and local flow</string>
+    <string name="health_atlas_ependymal_story_title">How ventricular cilia move nearby fluid</string>
+    <string name="health_atlas_ependymal_story_scope">A schematic of the normal ventricular lining and nearby cerebrospinal fluid (CSF). Mouse studies inform the local flow example. Size and motion are not to scale.</string>
+    <string name="health_atlas_ependymal_story_line">A lining faces the fluid</string>
+    <string name="health_atlas_ependymal_story_line_caption">Ependymal cells lie side by side along the walls of the brain ventricles. Their apical surfaces face the fluid-filled space; brain tissue lies beneath the cells.</string>
+    <string name="health_atlas_ependymal_story_beat">Cilia sweep and bend back</string>
+    <string name="health_atlas_ependymal_story_beat_caption">Many motile cilia project from each cell into the ventricle. Each beats from a fixed base, sweeping one way and bending as it returns.</string>
+    <string name="health_atlas_ependymal_story_wave">The beats form a traveling wave</string>
+    <string name="health_atlas_ependymal_story_wave_caption">Neighbors beat with a slight timing offset. This makes a metachronal wave: the pattern moves along the lining, but the cilia stay anchored to their own cells.</string>
+    <string name="health_atlas_ependymal_story_drift">Fluid moves along the wall</string>
+    <string name="health_atlas_ependymal_story_drift_caption">Together, the beating cilia can move a nearby layer of CSF along the lining. The dots trace that local motion; they do not show flow throughout the ventricle.</string>
+    <string name="health_atlas_ependymal_story_routes">Different patches, different routes</string>
+    <string name="health_atlas_ependymal_story_routes_caption">Studies of the mouse third ventricle found that patches of cilia can guide fluid in different directions. The choroid plexus makes most CSF, and other forces such as pulsations also move it on a larger scale.</string>
+    <string name="health_atlas_ependymal_story_lumen">Ventricular cavity</string>
+    <string name="health_atlas_ependymal_story_ventricles">Brain ventricles</string>
+    <string name="health_atlas_ependymal_story_lining">Ependymal lining</string>
+    <string name="health_atlas_ependymal_story_cilia">Motile cilia</string>
+    <string name="health_atlas_ependymal_story_apical_surface">Apical surface</string>
+    <string name="health_atlas_ependymal_story_wave_front">Staggered ciliary beats</string>
+    <string name="health_atlas_ependymal_story_near_wall">Near-wall flow</string>
+    <string name="health_atlas_ependymal_story_local_routes">Local flow paths</string>
+    <string name="health_atlas_ependymal_story_plate_caption">Ciliated cross-section of the ventricular lining</string>
+    <string name="health_atlas_ependymal_story_feature_lumen">Ventricular cavity</string>
+    <string name="health_atlas_ependymal_story_feature_lumen_detail">This space contains cerebrospinal fluid. Only a small region of one ventricular wall is shown.</string>
+    <string name="health_atlas_ependymal_story_feature_cilia">Motile cilia</string>
+    <string name="health_atlas_ependymal_story_feature_cilia_detail">Tufts project into the fluid, where their coordinated beats influence flow close to the wall.</string>
+    <string name="health_atlas_ependymal_story_feature_bases">Ciliary bases</string>
+    <string name="health_atlas_ependymal_story_feature_bases_detail">Each cilium is rooted at the apical surface, the side of the cell facing the ventricle.</string>
+    <string name="health_atlas_ependymal_story_feature_lining">Ependymal cell layer</string>
+    <string name="health_atlas_ependymal_story_feature_lining_detail">Neighboring cells meet side by side to form a lining one cell thick in this section.</string>
+    <string name="health_atlas_ependymal_story_feature_tissue">Underlying brain tissue</string>
+    <string name="health_atlas_ependymal_story_feature_tissue_detail">The lining sits directly against neural tissue on the side away from the ventricular cavity.</string>
+    <string name="health_atlas_ependymal_story_ref_anatomy">UTHealth · Anatomy of the ventricular lining</string>
+    <string name="health_atlas_ependymal_story_ref_wave">Meng et al. · Coordinated ependymal ciliary beats</string>
+    <string name="health_atlas_ependymal_story_ref_flow">Faubel et al. · Local flow in the mouse third ventricle</string>
+    <string name="health_atlas_ependymal_story_ref_csf">OpenStax · CSF production and circulation</string>
+</resources>

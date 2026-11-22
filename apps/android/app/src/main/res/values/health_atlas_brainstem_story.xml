@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_brainstem_story_title">How the brainstem sets the breathing rhythm</string>
+    <string name="health_atlas_brainstem_story_choice">Automatic breathing rhythm</string>
+    <string name="health_atlas_brainstem_story_scope">A qualitative view of normal quiet breathing. Anatomy and nerve routes are simplified; movement and timing are not to scale.</string>
+
+    <string name="health_atlas_brainstem_story_locate">Find the brainstem</string>
+    <string name="health_atlas_brainstem_story_locate_caption">At the base of the brain, the brainstem connects to the spinal cord. Its lower part, the medulla, contains networks that help drive automatic breathing.</string>
+    <string name="health_atlas_brainstem_story_rhythm">The inspiratory rhythm</string>
+    <string name="health_atlas_brainstem_story_rhythm_caption">A network of nerve cells in the medulla helps generate recurring bursts of activity for inhalation. The enlarged view highlights the network, not individual nerve connections.</string>
+    <string name="health_atlas_brainstem_story_relay">The signal reaches the diaphragm</string>
+    <string name="health_atlas_brainstem_story_relay_caption">Signals descend from the brainstem to motor neurons in the cervical spinal cord. The phrenic nerves carry those signals to both sides of the diaphragm.</string>
+    <string name="health_atlas_brainstem_story_inhale">The diaphragm contracts</string>
+    <string name="health_atlas_brainstem_story_inhale_caption">The diaphragm contracts, flattens and moves down. The chest cavity enlarges, the lungs expand, and air flows in.</string>
+    <string name="health_atlas_brainstem_story_exhale">Quiet exhalation and the next breath</string>
+    <string name="health_atlas_brainstem_story_exhale_caption">As inspiratory drive fades, the diaphragm relaxes and returns toward its domed shape. Elastic recoil moves air out passively. The next burst begins the cycle again.</string>
+
+    <string name="health_atlas_brainstem_story_stem">Brainstem</string>
+    <string name="health_atlas_brainstem_story_network">Inspiratory network</string>
+    <string name="health_atlas_brainstem_story_cord">Cervical spinal cord</string>
+    <string name="health_atlas_brainstem_story_phrenic">Phrenic nerves</string>
+    <string name="health_atlas_brainstem_story_lungs">Lungs</string>
+    <string name="health_atlas_brainstem_story_diaphragm">Diaphragm</string>
+
+    <string name="health_atlas_brainstem_story_ref_rhythm">Study: respiratory rhythm generation in the mammalian brainstem</string>
+    <string name="health_atlas_brainstem_story_ref_diaphragm">Study: diaphragm motion during quiet breathing in healthy adults</string>
+</resources>

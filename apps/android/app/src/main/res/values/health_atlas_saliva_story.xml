@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_saliva_story_title">How salivary glands make saliva</string>
+    <string name="health_atlas_saliva_story_choice">Saliva secretion</string>
+    <string name="health_atlas_saliva_story_scope">A qualitative view of normal human anatomy, showing one side of the head and one parotid example. It does not show every gland, duct or cell type. Size, timing and particle counts are schematic, not measurements.</string>
+
+    <string name="health_atlas_saliva_story_locate">Three glands near the mouth</string>
+    <string name="health_atlas_saliva_story_locate_caption">On each side, the parotid lies by the ear, the submandibular gland lies beneath the jaw, and the sublingual gland lies under the tongue. The moving trace follows only the example parotid duct.</string>
+    <string name="health_atlas_saliva_story_acinus">Inside an acinus</string>
+    <string name="health_atlas_saliva_story_acinus_caption">An acinus is one small secretory unit, not the whole gland. Its cells face a shared hollow space called the lumen. In this parotid example, cells store proteins in granules near that space.</string>
+    <string name="health_atlas_saliva_story_release">Fluid and proteins enter the lumen</string>
+    <string name="health_atlas_saliva_story_release_caption">Acinar cells move dissolved ions into the lumen, and water follows. Cells also release proteins such as amylase from granules into the same space. The resulting fluid flows into a small duct.</string>
+    <string name="health_atlas_saliva_story_modify">Duct cells change the fluid</string>
+    <string name="health_atlas_saliva_story_modify_caption">As fluid passes through the gland, duct cells take up sodium from it and add potassium to it. These are examples of how the duct changes the mix of dissolved ions while the fluid keeps moving.</string>
+    <string name="health_atlas_saliva_story_empty">Saliva enters the mouth</string>
+    <string name="health_atlas_saliva_story_empty_caption">The parotid duct opens on the inside of the cheek near the upper back teeth. Saliva leaves that opening and mixes with secretions that reach the mouth from other glands through their own outlets.</string>
+
+    <string name="health_atlas_saliva_story_parotid">Parotid</string>
+    <string name="health_atlas_saliva_story_submandibular">Submandibular gland</string>
+    <string name="health_atlas_saliva_story_sublingual">Sublingual gland</string>
+    <string name="health_atlas_saliva_story_cheek_opening">Cheek opening</string>
+    <string name="health_atlas_saliva_story_example">Parotid cutaway: one acinus</string>
+    <string name="health_atlas_saliva_story_acinar_cells">Acinar cells</string>
+    <string name="health_atlas_saliva_story_lumen">Lumen</string>
+    <string name="health_atlas_saliva_story_duct">Duct</string>
+    <string name="health_atlas_saliva_story_fluid">Acinar fluid</string>
+    <string name="health_atlas_saliva_story_proteins">Secreted proteins</string>
+    <string name="health_atlas_saliva_story_sodium_out">Sodium out</string>
+    <string name="health_atlas_saliva_story_potassium_in">Potassium in</string>
+    <string name="health_atlas_saliva_story_to_mouth">Saliva toward mouth</string>
+
+    <string name="health_atlas_saliva_story_ref_duct">Evidence: sodium and potassium in rat parotid saliva</string>
+    <string name="health_atlas_saliva_story_ref_human">Evidence: composition of human gland saliva</string>
+</resources>

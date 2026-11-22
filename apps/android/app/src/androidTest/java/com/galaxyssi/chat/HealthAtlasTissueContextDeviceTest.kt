@@ -99,9 +99,9 @@ class HealthAtlasTissueContextDeviceTest {
         val chinese = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
         val atlas = HealthBodyAtlas.load(english)
         val plates = HealthAtlasTissueContextPlates.all
-        assertEquals(23, plates.size)
-        assertEquals(46, plates.sumOf { it.features.size })
-        assertEquals(2, plates.sumOf { it.markers.size })
+        assertEquals(54, plates.size)
+        assertEquals(177, plates.sumOf { it.features.size })
+        assertEquals(27, plates.sumOf { it.markers.size })
         for (plate in plates) {
             val owner = requireNotNull(plate.owner)
             assertNotNull(atlas[owner])
@@ -123,6 +123,309 @@ class HealthAtlasTissueContextDeviceTest {
                     assertNotEquals(english.getString(key), chinese.getString(key))
                 }
             } finally { bitmap.recycle() }
+        }
+    }
+
+    @Test fun nailAndSebaceousCutawaysExposeTheRightStructuresAndLinks() = native { scenario ->
+        scenario.onActivity {
+            it.open("nails")
+            for (feature in listOf("fold", "matrix", "plate", "bed", "free-edge"))
+                assertNotNull(it.view("atlas-feature-nail-$feature"))
+            assertNotNull(it.view("atlas-layers"))
+            assertNotNull(it.view("atlas-fullscreen"))
+        }
+        capture("nail-lengthwise", scenario.localized(R.string.health_atlas_context_nail_section))
+        scenario.onActivity { it.view("atlas-feature-nail-matrix").performClick() }
+        awaitVisibleText(scenario.localized(R.string.health_atlas_context_nail_matrix_detail))
+        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        instrumentation.waitForIdleSync()
+        scenario.onActivity {
+            assertNotNull(it.view("atlas-feature-nail-matrix"))
+            it.onBackPressed()
+            it.open("sebaceous-glands")
+            assertNotNull(it.view("atlas-feature-sebaceous-duct"))
+            assertNotNull(it.view("atlas-feature-sebaceous-lobules"))
+        }
+        capture("sebaceous-gland", scenario.localized(R.string.health_atlas_context_sebaceous_section))
+        scenario.onActivity {
+            it.view("atlas-hotspot-cell-sebocyte").performClick()
+            assertNotNull(it.view("atlas-feature-sebocyte-lipid"))
+            it.onBackPressed()
+            it.view("atlas-hotspot-hair-follicles").performClick()
+            assertNotNull(it.view("atlas-feature-hair-section-papilla"))
+            it.onBackPressed()
+            assertNotNull(it.view("atlas-feature-sebaceous-lobules"))
+        }
+    }
+
+    @Test fun sinusCutawayAndDrainagePlayWithoutReplacingEachOther() = native { scenario ->
+        scenario.onActivity {
+            it.open("paranasal-sinuses")
+            for (feature in listOf("frontal", "ethmoid", "maxillary", "nasal-cavity", "inferior-conchae"))
+                assertNotNull(it.view("atlas-feature-sinus-$feature"))
+        }
+        capture("sinus-coronal", scenario.localized(R.string.health_atlas_sinus_plate_caption))
+        scenario.onActivity {
+            it.view("atlas-tab-1").performClick()
+            assertNotNull(it.view("atlas-function-sinus-drainage-art"))
+            it.view("atlas-tab-0").performClick()
+            assertNotNull(it.view("atlas-feature-sinus-maxillary"))
+        }
+    }
+
+    @Test fun tasteBudShowsItsPoreAndLinksToSensoryCells() = native { scenario ->
+        scenario.onActivity {
+            it.open("taste-buds")
+            assertNotNull(it.view("atlas-feature-taste-pore"))
+            assertNotNull(it.view("atlas-feature-taste-afferent-contact"))
+        }
+        capture("taste-bud-cutaway", scenario.localized(R.string.health_atlas_taste_buds_plate_caption))
+        scenario.onActivity {
+            it.view("atlas-hotspot-cell-taste-receptor-cell").performClick()
+            assertNotNull(it.view("atlas-tab-1"))
+            it.onBackPressed()
+            assertNotNull(it.view("atlas-feature-taste-pore"))
+        }
+    }
+
+    @Test fun pleuraCutawayExplainsTheFluidFilmAndReturnsFromTheLung() = native { scenario ->
+        scenario.onActivity {
+            it.open("pleura")
+            assertNotNull(it.view("atlas-feature-visceral-pleura"))
+            assertNotNull(it.view("atlas-feature-parietal-pleura"))
+            it.view("atlas-feature-pleural-fluid-film").performClick()
+        }
+        awaitVisibleText(scenario.localized(R.string.health_atlas_pleura_section_fluid_detail))
+        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        instrumentation.waitForIdleSync()
+        capture("pleura-cutaway", scenario.localized(R.string.health_atlas_pleura_section_view))
+        scenario.onActivity {
+            it.view("atlas-hotspot-lungs").performClick()
+            it.onBackPressed()
+            assertNotNull(it.view("atlas-feature-pleural-fluid-film"))
+        }
+    }
+
+    @Test fun bronchioleCutawayAndClubCellLessonAreBothReachable() = native { scenario ->
+        scenario.onActivity {
+            it.open("bronchioles")
+            for (feature in listOf("terminal-branch", "epithelium", "lumen", "elastic-fibers", "smooth-muscle"))
+                assertNotNull(it.view("atlas-feature-bronchioles-$feature"))
+        }
+        capture("terminal-bronchiole", scenario.localized(R.string.health_atlas_bronchioles_plate_caption))
+        scenario.onActivity {
+            it.view("atlas-tab-1").performClick()
+            it.view("atlas-related-lesson-cell-club-cell").performClick()
+            assertNotNull(it.view("atlas-function-club-cell-airway-art"))
+            it.onBackPressed()
+            assertNotNull(it.view("atlas-related-lesson-cell-club-cell"))
+        }
+    }
+
+    @Test fun hypothalamusCutawayLinksToThePituitary() = native { scenario ->
+        scenario.onActivity {
+            it.open("hypothalamus")
+            assertNotNull(it.view("atlas-feature-hypothalamus-region"))
+            assertNotNull(it.view("atlas-feature-hypothalamus-infundibulum"))
+        }
+        capture("hypothalamus-midsagittal", scenario.localized(R.string.health_atlas_hypothalamus_plate_scope))
+        scenario.onActivity {
+            it.view("atlas-hotspot-pituitary-gland").performClick()
+            assertEquals(it.getString(R.string.health_atlas_pituitary_gland_name),
+                (it.view("health-page-title") as TextView).text)
+            it.onBackPressed()
+            assertNotNull(it.view("atlas-feature-hypothalamus-region"))
+        }
+    }
+
+    @Test fun newRegionalCutawaysLeadToTheirOwnPlayback() = native { scenario ->
+        val direct = listOf(
+            Triple("placenta", "placenta-terminal-villus", "placental-exchange"),
+            Triple("ligaments", "ligaments-acl-tibial-footprint", "ligament-guidance"),
+            Triple("appendix", "appendix-lymphoid-follicle", "gut-lymphoid-sampling"),
+            Triple("rectus-abdominis", "rectus-linea-alba", "rectus-trunk-flexion"),
+            Triple("oblique-abdominal-muscles", "oblique-internal", "oblique-rotation"),
+            Triple("erector-spinae", "erector-spinae-midline", "erector-support"),
+        )
+        for ((owner, feature, animation) in direct) scenario.onActivity { activity ->
+            activity.open(owner)
+            assertNotNull(activity.view("atlas-feature-$feature"))
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-$animation-art"))
+            activity.onBackPressed()
+        }
+        scenario.onActivity { activity ->
+            activity.open("autonomic-nerves")
+            assertNotNull(activity.view("atlas-feature-autonomic-sympathetic-chain"))
+            activity.view("atlas-tab-1").performClick()
+            activity.view("atlas-function-lesson-1").performClick()
+            assertEquals(activity.getString(R.string.health_atlas_ganglion_relay_autonomic_caption),
+                (activity.view("atlas-function-caption") as TextView).text)
+        }
+    }
+
+    @Test fun hairShaftCutawayKeepsTheFollicleAsItsOwnPage() = native { scenario ->
+        scenario.onActivity { it.open("hair") }
+        capture("hair-shaft", scenario.localized(R.string.health_atlas_hair_shaft_view))
+        scenario.onActivity { activity ->
+            assertNotNull(activity.view("atlas-feature-hair-shaft-medulla"))
+            activity.view("atlas-hotspot-hair-follicles").performClick()
+            assertNotNull(activity.view("atlas-feature-hair-section-papilla"))
+            activity.onBackPressed()
+            assertNotNull(activity.view("atlas-feature-hair-shaft-cuticle"))
+        }
+    }
+
+    @Test fun limbBonesOpenUpperAndLowerLimbPagesAndReturnToTheOverview() = native { scenario ->
+        scenario.onActivity { it.open("limb-bones") }
+        capture("limb-bones-overview", scenario.localized(R.string.health_atlas_limb_bones_overview_view))
+        scenario.onActivity { activity ->
+            for (id in listOf("radius", "tibia", "foot-bones")) {
+                activity.view("atlas-hotspot-$id").performClick()
+                assertNotEquals(activity.getString(R.string.health_atlas_limb_bones_name),
+                    (activity.view("health-page-title") as TextView).text)
+                activity.onBackPressed()
+                assertEquals(activity.getString(R.string.health_atlas_limb_bones_name),
+                    (activity.view("health-page-title") as TextView).text)
+            }
+        }
+    }
+
+    @Test fun cranialNerveMapAndReflexPlaybackRemainSeparate() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("cranial-nerves")
+            for (part in listOf("olfactory", "optic", "midbrain", "trigeminal", "pontomedullary",
+                "medullary", "accessory", "hypoglossal"))
+                assertNotNull(activity.view("atlas-feature-cranial-$part-attachment"))
+        }
+        capture("cranial-nerve-map", scenario.localized(R.string.health_atlas_cranial_attach_view))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-cranial-reflex-art"))
+            activity.view("atlas-tab-0").performClick()
+            assertNotNull(activity.view("atlas-feature-cranial-accessory-attachment"))
+        }
+    }
+
+    @Test fun radiusAndOlfactorySectionsOpenTheirOwnNeighboringStructures() = native { scenario ->
+        val cases = listOf(
+            Triple("radius", "ulna", "radius-wrist"),
+            Triple("olfactory-mucosa", "cell-olfactory-receptor-neuron", "olfactory-gland"),
+        )
+        for ((owner, target, feature) in cases) scenario.onActivity { activity ->
+            activity.open(owner)
+            assertNotNull(activity.view("atlas-feature-$feature"))
+            activity.view("atlas-hotspot-$target").performClick()
+            assertNull(activity.window.decorView.tagged("atlas-feature-$feature"))
+            activity.onBackPressed()
+            assertNotNull(activity.view("atlas-feature-$feature"))
+            activity.onBackPressed()
+        }
+    }
+
+    @Test fun ribsDefaultToTheDetailAndRetainTheSkeletonContext() = native { scenario ->
+        assertEquals(listOf("ribs", "skeletal"), HealthAtlasPlates.viewsForId("ribs").map { it.owner })
+        scenario.onActivity { activity ->
+            activity.open("ribs")
+            assertNotNull(activity.view("atlas-feature-ribs-posterior-joint"))
+            assertNotNull(activity.view("atlas-feature-ribs-floating-tip"))
+        }
+        capture("rib-attachments", scenario.localized(R.string.health_atlas_ribs_attachments_plate_caption))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-thoracic-frame-art"))
+            activity.view("atlas-related-lesson-lungs").performClick()
+            activity.onBackPressed()
+            assertNotNull(activity.view("atlas-function-thoracic-frame-art"))
+        }
+    }
+
+    @Test fun pinealCutawayAndNightSignalDoNotReplaceTheHypothalamusPage() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("pineal-gland")
+            assertNotNull(activity.view("atlas-feature-pineal-plate-body"))
+            assertNotNull(activity.view("atlas-feature-pineal-third-ventricle"))
+            assertNull(activity.window.decorView.tagged("atlas-feature-hypothalamus-region"))
+        }
+        capture("pineal-sagittal", scenario.localized(R.string.health_atlas_pineal_plate_caption))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-pineal-dark-signal-art"))
+        }
+    }
+
+    @Test fun cartilageAndJointUseDistinctCutawaysAndCartilageSimulatesCompression() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("cartilage")
+            assertNotNull(activity.view("atlas-feature-cartilage-articular-surface"))
+            assertNotNull(activity.view("atlas-hotspot-cell-chondrocyte"))
+        }
+        capture("cartilage-overview", scenario.localized(R.string.health_atlas_cartilage_overview_plate_caption))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-3").performClick()
+            assertNotNull(activity.view("atlas-cartilage-compression"))
+            activity.onBackPressed()
+            activity.open("joints")
+            assertNotNull(activity.view("atlas-feature-synovial-joint-cavity"))
+            assertNotNull(activity.view("atlas-hotspot-tissue-hyaline-cartilage"))
+        }
+        capture("synovial-joint", scenario.localized(R.string.health_atlas_synovial_joint_plate_caption))
+    }
+
+    @Test fun biliaryPlateAndCellPlaybackAreAvailableFromTheSameEntry() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("biliary-tract")
+            assertNotNull(activity.view("atlas-feature-biliary-common-bile-duct"))
+            assertNotNull(activity.view("atlas-feature-biliary-major-papilla"))
+        }
+        capture("biliary-tract", scenario.localized(R.string.health_atlas_biliary_tract_plate_caption))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-1").performClick()
+            activity.view("atlas-function-lesson-1").performClick()
+            assertNotNull(activity.view("atlas-function-cholangiocyte-bile-art"))
+        }
+    }
+
+    @Test fun vesselComparisonLinksToAnArteryWithItsOwnWallLayers() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("blood-vessels")
+            assertNotNull(activity.view("atlas-hotspot-veins"))
+            assertNotNull(activity.view("atlas-hotspot-capillaries"))
+        }
+        capture("vessel-comparison", scenario.localized(R.string.health_atlas_vessel_comparison_caption))
+        scenario.onActivity { activity ->
+            activity.view("atlas-hotspot-arteries").performClick()
+            for (id in listOf("outer-layer", "middle-layer", "inner-layer", "lumen"))
+                assertNotNull(activity.view("atlas-feature-artery-$id"))
+        }
+        capture("artery-wall", scenario.localized(R.string.health_atlas_artery_layers_caption))
+        scenario.onActivity { activity ->
+            activity.onBackPressed()
+            assertNotNull(activity.view("atlas-hotspot-arteries"))
+        }
+    }
+
+    @Test fun wholeBloodShowsPlasmaAndLinksTheRepresentedBloodComponents() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("blood")
+            activity.view("atlas-feature-whole-blood-plasma").performClick()
+        }
+        awaitVisibleText(scenario.localized(R.string.health_atlas_whole_blood_plasma_detail))
+        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        instrumentation.waitForIdleSync()
+        capture("whole-blood-suspension", scenario.localized(R.string.health_atlas_whole_blood_caption))
+        scenario.onActivity { activity ->
+            val parts = listOf(
+                "cell-erythrocyte" to R.string.health_atlas_cell_erythrocyte_name,
+                "cell-neutrophil" to R.string.health_atlas_cell_neutrophil_name,
+                "fragment-platelet" to R.string.health_atlas_fragment_platelet_name,
+            )
+            for ((id, label) in parts) {
+                activity.view("atlas-hotspot-$id").performClick()
+                assertEquals(activity.getString(label), (activity.view("health-page-title") as TextView).text)
+                activity.onBackPressed()
+                assertNotNull(activity.view("atlas-feature-whole-blood-plasma"))
+            }
         }
     }
 

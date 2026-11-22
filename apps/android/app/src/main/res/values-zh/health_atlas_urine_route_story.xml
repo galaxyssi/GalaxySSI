@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_urine_route_story_title">尿液的流动路径</string>
+    <string name="health_atlas_urine_route_story_scope">定性示意尿液形成后在人体内的正常输送、储存与排出。形态、液面高度和时序均不按实际比例呈现。本图不展示肾单位的功能，也不用于诊断。</string>
+    <string name="health_atlas_urine_route_story_collect">在肾盂汇集</string>
+    <string name="health_atlas_urine_route_story_collect_caption">已在肾脏中形成的尿液经肾盏汇入两侧各自的肾盂，再进入输尿管。肾盂汇集尿液，但不生成尿液。</string>
+    <string name="health_atlas_urine_route_story_peristalsis">靠输尿管蠕动推进</string>
+    <string name="health_atlas_urine_route_story_peristalsis_caption">平滑肌收缩波沿输尿管传递，使一小团尿液后方的管腔变窄。尿液经前方较为舒张的管段向膀胱移动。</string>
+    <string name="health_atlas_urine_route_story_junction">经斜行通道进入膀胱</string>
+    <string name="health_atlas_urine_route_story_junction_caption">输尿管斜穿膀胱壁，开口于膀胱内。膀胱壁可压窄这段斜行的输尿管，帮助限制尿液向肾脏方向回流。</string>
+    <string name="health_atlas_urine_route_story_store">在膀胱内储存</string>
+    <string name="health_atlas_urine_route_story_store_caption">两侧输尿管将尿液送入膀胱。膀胱随尿液积聚而扩张，此时出口保持闭合。</string>
+    <string name="health_atlas_urine_route_story_empty">经尿道排出</string>
+    <string name="health_atlas_urine_route_story_empty_caption">排尿时，膀胱肌收缩，出口放松并打开。两者相互配合，使尿液经尿道排出。</string>
+    <string name="health_atlas_urine_route_story_renal_pelvis">肾盂</string>
+    <string name="health_atlas_urine_route_story_ureters">两侧输尿管</string>
+    <string name="health_atlas_urine_route_story_ureter">输尿管</string>
+    <string name="health_atlas_urine_route_story_bladder">膀胱</string>
+    <string name="health_atlas_urine_route_story_urethra">尿道</string>
+    <string name="health_atlas_urine_route_story_contraction">传递的收缩波</string>
+    <string name="health_atlas_urine_route_story_to_bladder">朝向膀胱</string>
+    <string name="health_atlas_urine_route_story_oblique_tunnel">斜行通道</string>
+    <string name="health_atlas_urine_route_story_bladder_wall">膀胱壁</string>
+    <string name="health_atlas_urine_route_story_bladder_interior">膀胱腔</string>
+    <string name="health_atlas_urine_route_story_outlet">膀胱出口</string>
+    <string name="health_atlas_urine_route_story_ref_junction">人体输尿管膀胱连接部（Roshani 等，1996 年）</string>
+    <string name="health_atlas_urine_route_story_ref_emptying">排尿时的膀胱壁运动（Gonzalez-Pereira 等，2025 年）</string>
+</resources>

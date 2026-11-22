@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Transverse appendix: continuous muscular coat, mucosal crypts and follicle clusters. -->
+    <path android:name="appendix_muscle" android:strokeColor="#96697B" android:strokeWidth="1.5"
+        android:pathData="M30,133 C32,107 54,91 82,89 C111,85 145,101 153,126 C163,152 152,181 130,194 C106,209 71,209 49,192 C35,181 26,157 30,133 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="55" android:startY="96" android:endX="117" android:endY="204">
+                <item android:offset="0" android:color="#F4C9BD" />
+                <item android:offset="0.58" android:color="#DCA4AA" />
+                <item android:offset="1" android:color="#B5798F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#EDC6C1" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M35,135 Q39,103 77,95 M87,95 Q127,92 145,123 M150,135 Q158,164 136,183 M126,192 Q97,208 63,194 M54,190 Q37,177 34,151" />
+    <path android:strokeColor="#AE7D8F" android:strokeWidth="1.05"
+        android:pathData="M40,131 C47,106 72,99 93,99 C119,99 143,117 147,135 C151,154 143,175 126,187 C108,199 79,200 57,185 C42,175 36,152 40,131 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="61" android:startY="102" android:endX="108" android:endY="197">
+                <item android:offset="0" android:color="#F8E2D0" />
+                <item android:offset="0.55" android:color="#F0CCD0" />
+                <item android:offset="1" android:color="#DDA9BC" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:name="appendix_follicles" android:strokeColor="#AA819D" android:strokeWidth="0.9"
+        android:pathData="M44,133 C43,124 48,117 55,117 C64,117 68,124 67,132 C66,141 61,147 55,146 C49,145 45,140 44,133 Z M63,115 C65,107 77,104 85,107 C90,110 92,117 87,123 C81,129 62,125 63,115 Z M102,112 C109,106 125,111 129,120 C132,128 125,136 116,135 C106,135 96,120 102,112 Z M121,146 C126,137 138,137 141,147 C145,155 138,169 130,170 C122,171 117,157 121,146 Z M91,176 C97,166 109,167 117,174 C123,182 113,191 104,191 C96,193 86,185 91,176 Z M52,159 C60,150 73,156 80,165 C86,174 81,186 70,186 C60,187 46,172 52,159 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="64" android:startY="107" android:endX="112" android:endY="190">
+                <item android:offset="0" android:color="#D8ABC0" />
+                <item android:offset="0.53" android:color="#C796B4" />
+                <item android:offset="1" android:color="#B183A5" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#F3DDE5" android:fillAlpha="0.85"
+        android:pathData="M49,130 C48,125 52,121 56,122 C62,123 62,130 59,135 C56,139 50,136 49,130 Z M70,115 C71,111 78,109 83,112 Q88,117 82,120 Q71,123 70,115 Z M107,118 C111,113 121,116 124,122 Q125,130 118,130 Q110,128 107,118 Z M126,150 C128,144 134,143 137,149 C139,155 134,163 130,163 C126,162 123,156 126,150 Z M96,177 Q103,170 112,178 Q115,184 104,186 Q96,186 96,177 Z M56,165 C60,158 69,161 74,169 C79,176 72,181 66,179 Q55,175 56,165 Z" />
+    <path android:name="appendix_lumen" android:fillColor="#FFF2DF" android:strokeColor="#AB7382" android:strokeWidth="1.3"
+        android:pathData="M69,137 C75,129 83,139 89,132 Q97,123 101,131 C102,134 100,139 106,139 Q119,138 115,147 C112,153 100,149 99,155 Q101,168 94,167 Q89,166 88,160 C85,152 78,158 74,154 Q71,151 76,147 Q66,143 69,137 Z" />
+    <path android:strokeColor="#B7838B" android:strokeWidth="0.95" android:strokeLineCap="round"
+        android:pathData="M71,134 Q73,130 71,127 M79,134 L80,130 M88,131 L86,126 M96,127 L98,123 M104,134 L108,131 M113,137 L116,133 M117,148 L121,149 M107,152 L109,157 M101,159 L105,162 M89,163 L85,167 M84,155 L82,160 M74,151 L70,154 M71,144 L66,145" />
+    <path android:strokeColor="#966D92" android:strokeAlpha="0.62" android:strokeWidth="1.15" android:strokeLineCap="round"
+        android:pathData="M48,134h0.1 M56,142h0.1 M64,132h0.1 M76,107h0.1 M86,113h0.1 M109,113h0.1 M126,123h0.1 M118,132h0.1 M138,151h0.1 M132,166h0.1 M101,172h0.1 M114,181h0.1 M96,185h0.1 M55,164h0.1 M60,175h0.1 M70,184h0.1 M77,175h0.1" />
+
+    <!-- Separate ileal wall segment: villi flank a follicle-associated dome. -->
+    <path android:name="ileal_wall" android:strokeColor="#9F7080" android:strokeWidth="1.5" android:strokeLineJoin="round"
+        android:pathData="M192,134 Q199,137 201,124 C202,114 203,108 209,108 C216,109 214,121 218,129 Q223,138 228,128 C230,121 229,108 235,108 C243,108 239,127 246,132 C260,118 277,118 290,132 Q297,142 299,129 C301,121 300,105 307,105 C314,105 313,116 315,121 Q320,142 326,127 C331,113 335,121 336,134 L336,178 C332,197 305,208 265,208 C231,208 203,198 196,186 C191,175 190,151 192,134 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="237" android:startY="110" android:endX="272" android:endY="205">
+                <item android:offset="0" android:color="#F8E0CA" />
+                <item android:offset="0.52" android:color="#EDC4C6" />
+                <item android:offset="1" android:color="#C28DA7" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#AB768E" android:fillAlpha="0.35"
+        android:pathData="M194,185 C224,196 247,199 271,198 C301,197 324,188 336,179 C331,197 306,208 265,208 C231,208 203,199 196,186 Z" />
+    <path android:strokeColor="#BC8598" android:strokeWidth="3.6" android:strokeLineCap="round"
+        android:pathData="M193,135 Q199,137 201,124 C202,114 203,109 209,109 C216,110 214,121 218,129 Q223,138 228,128 C230,121 229,109 235,109 C242,109 239,127 246,132 C260,118 277,119 290,132 Q297,142 299,129 C301,121 300,106 307,106 C314,106 313,116 315,121 Q320,142 326,127 C330,116 333,121 335,133" />
+    <path android:strokeColor="#F2C9BE" android:strokeWidth="1.65" android:strokeLineCap="round"
+        android:pathData="M203,120 Q205,111 209,112 M218,130 Q223,138 229,128 M233,115 Q235,110 237,116 M248,133 Q270,114 291,134 M300,128 Q304,113 306,110 M315,124 Q319,136 324,131 M199,187 C216,200 250,204 269,203 Q310,203 326,190" />
+    <path android:name="peyer_patch_follicles" android:strokeColor="#A3759B" android:strokeWidth="1"
+        android:pathData="M232,153 C238,143 251,146 254,158 C258,169 253,182 245,184 C235,186 227,173 229,164 Z M253,152 C257,139 273,137 282,150 C289,159 284,175 274,179 C263,186 251,174 251,163 Z M279,168 C284,153 301,153 307,163 C313,173 306,187 297,191 C285,194 275,182 279,168 Z M213,164 C222,153 232,162 232,174 Q231,188 220,186 C211,184 207,172 213,164 Z M248,183 Q254,174 263,179 Q277,184 274,193 Q265,202 252,197 Q246,194 248,183 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="244" android:startY="143" android:endX="280" android:endY="198">
+                <item android:offset="0" android:color="#DAB6CF" />
+                <item android:offset="0.52" android:color="#C89DBD" />
+                <item android:offset="1" android:color="#A87A9F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#F0D8E2" android:fillAlpha="0.85"
+        android:pathData="M235,158 Q240,150 246,155 C254,161 250,176 242,177 Q232,176 235,158 Z M257,155 C259,147 271,144 277,151 C283,159 279,171 271,173 C261,175 254,167 257,155 Z M284,170 C287,160 297,159 303,165 C307,174 299,185 291,185 Q282,183 284,170 Z M216,167 Q222,160 227,168 Q229,180 222,181 Q215,181 216,167 Z M253,185 Q260,178 268,187 Q271,194 261,194 Q252,194 253,185 Z" />
+    <path android:strokeColor="#A16F97" android:strokeAlpha="0.63" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M232,166h0.1 M238,178h0.1 M245,153h0.1 M255,162h0.1 M261,149h0.1 M272,146h0.1 M279,167h0.1 M266,176h0.1 M283,165h0.1 M299,161h0.1 M305,174h0.1 M293,187h0.1 M272,190h0.1 M255,194h0.1 M214,169h0.1 M222,183h0.1" />
+</vector>

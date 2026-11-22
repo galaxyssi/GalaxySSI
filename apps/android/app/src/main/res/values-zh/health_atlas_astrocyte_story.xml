@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_astrocyte_story_choice">星形胶质细胞的支持作用</string>
+    <string name="health_atlas_astrocyte_story_title">星形胶质细胞如何支持突触</string>
+    <string name="health_atlas_astrocyte_story_scope">以一个兴奋性突触为例，展示正常的支持作用。图中路径仅为示意，未按实际比例绘制。</string>
+    <string name="health_atlas_astrocyte_story_signal">神经元发出信号</string>
+    <string name="health_atlas_astrocyte_story_signal_caption">谷氨酸把信号从一个神经元传给另一个神经元。附近的星形胶质细胞伸出突起靠近突触，其中一个终足贴在毛细血管上。</string>
+    <string name="health_atlas_astrocyte_story_capture">星形胶质细胞摄取谷氨酸</string>
+    <string name="health_atlas_astrocyte_story_capture_caption">信号传递后，附近的星形胶质细胞通过突起摄取一部分已释放的谷氨酸，帮助清除突触周围的谷氨酸。</string>
+    <string name="health_atlas_astrocyte_story_convert">谷氨酸转化为谷氨酰胺</string>
+    <string name="health_atlas_astrocyte_story_convert_caption">在星形胶质细胞内，一部分摄取的谷氨酸转化为谷氨酰胺。</string>
+    <string name="health_atlas_astrocyte_story_recycle">谷氨酰胺返回神经元</string>
+    <string name="health_atlas_astrocyte_story_recycle_caption">谷氨酰胺返回发出信号的神经元。神经元可将它转回谷氨酸，供之后传递信号使用。这个返回过程是回收利用，不是一次新的信号传递。</string>
+    <string name="health_atlas_astrocyte_story_balance">星形胶质细胞稳定周围环境</string>
+    <string name="health_atlas_astrocyte_story_balance_caption">星形胶质细胞还会摄取活跃神经元周围的一部分钾离子，帮助减小局部钾离子浓度的波动。</string>
+    <string name="health_atlas_astrocyte_story_sending_neuron">发送信号的神经元</string>
+    <string name="health_atlas_astrocyte_story_receiving_neuron">接收信号的神经元</string>
+    <string name="health_atlas_astrocyte_story_synaptic_cleft">突触间隙</string>
+    <string name="health_atlas_astrocyte_story_astrocyte">星形胶质细胞</string>
+    <string name="health_atlas_astrocyte_story_capillary">毛细血管</string>
+    <string name="health_atlas_astrocyte_story_endfoot">星形胶质细胞终足</string>
+    <string name="health_atlas_astrocyte_story_glutamate">谷氨酸</string>
+    <string name="health_atlas_astrocyte_story_glutamine">谷氨酰胺</string>
+    <string name="health_atlas_astrocyte_story_potassium">钾离子</string>
+    <string name="health_atlas_astrocyte_story_ref_cycle">Lebon 等 · 人脑中的谷氨酸循环利用</string>
+    <string name="health_atlas_astrocyte_story_ref_buffer">Djukic 等 · 胶质细胞摄取钾离子和谷氨酸</string>
+</resources>

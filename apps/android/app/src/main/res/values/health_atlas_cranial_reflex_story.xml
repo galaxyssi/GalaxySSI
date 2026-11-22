@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cranial_reflex_story_title">How light narrows both pupils</string>
+    <string name="health_atlas_cranial_reflex_story_choice">Pupillary light reflex</string>
+    <string name="health_atlas_cranial_reflex_story_scope">An illustration of one normal cranial nerve reflex, not a survey of all cranial nerves or a guide to testing or diagnosis. Nerve routes are simplified; motion and timing are not to scale.</string>
+
+    <string name="health_atlas_cranial_reflex_story_light">Light reaches the retina</string>
+    <string name="health_atlas_cranial_reflex_story_light_caption">Light enters one eye through its pupil and reaches the retina. Retinal nerve cells signal the increase in light.</string>
+    <string name="health_atlas_cranial_reflex_story_input">Optic input travels inward</string>
+    <string name="health_atlas_cranial_reflex_story_input_caption">The optic nerve (cranial nerve II) carries the signal toward the brain. Some fibers cross at the optic chiasm and others stay on the same side, so input reaches the pretectum on both sides.</string>
+    <string name="health_atlas_cranial_reflex_story_relay">The midbrain relays to both sides</string>
+    <string name="health_atlas_cranial_reflex_story_relay_caption">In the midbrain, the pretectum relays the light signal to the paired Edinger-Westphal nuclei, which send motor signals toward the eyes.</string>
+    <string name="health_atlas_cranial_reflex_story_output">Motor signals return to both eyes</string>
+    <string name="health_atlas_cranial_reflex_story_output_caption">Parasympathetic signals travel in each oculomotor nerve (cranial nerve III) to the ciliary ganglion, then along short ciliary nerves to the iris sphincter.</string>
+    <string name="health_atlas_cranial_reflex_story_response">Direct and consensual responses</string>
+    <string name="health_atlas_cranial_reflex_story_response_caption">The iris sphincters contract, narrowing both pupils. Narrowing in the lit eye is the direct response; narrowing in the other eye is the consensual response. Smaller pupils admit less light to the retina, one part of light adaptation.</string>
+
+    <string name="health_atlas_cranial_reflex_story_iris">Iris sphincter</string>
+    <string name="health_atlas_cranial_reflex_story_retina">Retina</string>
+    <string name="health_atlas_cranial_reflex_story_optic">Optic nerve (II)</string>
+    <string name="health_atlas_cranial_reflex_story_chiasm">Optic chiasm</string>
+    <string name="health_atlas_cranial_reflex_story_ganglion">Ciliary ganglion</string>
+    <string name="health_atlas_cranial_reflex_story_pretectum">Pretectum</string>
+    <string name="health_atlas_cranial_reflex_story_ew">Edinger-Westphal</string>
+    <string name="health_atlas_cranial_reflex_story_motor">Oculomotor (III)</string>
+    <string name="health_atlas_cranial_reflex_story_midbrain">Midbrain</string>
+    <string name="health_atlas_cranial_reflex_story_direct">Direct response</string>
+    <string name="health_atlas_cranial_reflex_story_consensual">Consensual response</string>
+
+    <string name="health_atlas_cranial_reflex_story_ref_circuit">May et al.: Midbrain circuitry for the light reflex in macaques</string>
+    <string name="health_atlas_cranial_reflex_story_ref_responses">Smith et al.: Direct and consensual light reflexes in people</string>
+</resources>

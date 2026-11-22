@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mesangial_story_title">系膜细胞如何支持肾小球</string>
+    <string name="health_atlas_mesangial_story_choice">系膜细胞的支持作用</string>
+    <string name="health_atlas_mesangial_story_scope">定性展示健康肾小球毛细血管袢之间的一个系膜细胞。结构、碎屑和运动均为示意，未按比例绘制。</string>
+    <string name="health_atlas_mesangial_story_locate">毛细血管袢之间</string>
+    <string name="health_atlas_mesangial_story_locate_caption">肾小球是由细小血管组成的血管团。系膜细胞和周围基质位于血管团内部、毛细血管袢之间，不在血管腔内。</string>
+    <string name="health_atlas_mesangial_story_boundary">系膜与滤过屏障</string>
+    <string name="health_atlas_mesangial_story_boundary_caption">在毛细血管外侧壁，足细胞的足突贴在肾小球基底膜上。系膜细胞位于血管袢之间，不是滤过屏障的一层。</string>
+    <string name="health_atlas_mesangial_story_support">支撑相邻的血管袢</string>
+    <string name="health_atlas_mesangial_story_support_caption">在毛细血管袢与系膜相接处，系膜细胞的突起通过邻近基质与血管壁相连。这些连接有助于血管袢在血液流动时保持形状。</string>
+    <string name="health_atlas_mesangial_story_uptake">摄取局部碎屑</string>
+    <string name="health_atlas_mesangial_story_uptake_caption">系膜细胞可摄取局部基质中的部分大分子和碎屑。图中的碎屑进入细胞内的小囊泡，而不是进入肾小囊腔。</string>
+    <string name="health_atlas_mesangial_story_tension">局部张力与血管袢大小</string>
+    <string name="health_atlas_mesangial_story_tension_caption">系膜张力变化时，邻近的毛细血管袢可略微变窄或变宽，从而改变可用于滤过的血管壁面积。整个肾小球的滤过率并不由单个系膜细胞决定。</string>
+    <string name="health_atlas_mesangial_story_label_glomerulus">肾小球</string>
+    <string name="health_atlas_mesangial_story_label_podocyte">足细胞</string>
+    <string name="health_atlas_mesangial_story_label_loop">毛细血管袢</string>
+    <string name="health_atlas_mesangial_story_label_basement">肾小球</string>
+    <string name="health_atlas_mesangial_story_label_membrane">基底膜</string>
+    <string name="health_atlas_mesangial_story_label_cell">系膜细胞</string>
+    <string name="health_atlas_mesangial_story_label_matrix">系膜基质</string>
+    <string name="health_atlas_mesangial_story_label_debris">局部碎屑</string>
+    <string name="health_atlas_mesangial_story_ref_structure">Sakai 和 Kriz（1987）：系膜细胞的连接与毛细血管形态</string>
+    <string name="health_atlas_mesangial_story_ref_uptake">He 等（2021）：系膜细胞的特征与大分子摄取</string>
+</resources>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ribs_attachments_plate_caption">Ribs: attachments and costal arch</string>
+    <string name="health_atlas_ribs_attachments_plate_posterior_joint">Rib-spine articulation</string>
+    <string name="health_atlas_ribs_attachments_plate_posterior_joint_detail">Each rib meets the thoracic spine at its back end. The pale rear arcs show where the ribs turn toward the spine.</string>
+    <string name="health_atlas_ribs_attachments_plate_shaft">Curved rib shaft</string>
+    <string name="health_atlas_ribs_attachments_plate_shaft_detail">The long bony shaft curves around the side of the chest, with a space between it and the neighboring ribs.</string>
+    <string name="health_atlas_ribs_attachments_plate_direct_cartilage">Direct costal cartilage</string>
+    <string name="health_atlas_ribs_attachments_plate_direct_cartilage_detail">Each of the first seven rib pairs reaches the sternum through its own cartilage. The cartilage bridges bone to bone at the front.</string>
+    <string name="health_atlas_ribs_attachments_plate_costal_arch">Costal arch</string>
+    <string name="health_atlas_ribs_attachments_plate_costal_arch_detail">Cartilages of ribs 8 to 10 typically join the cartilage above instead of reaching the sternum separately, forming the sloping costal margin.</string>
+    <string name="health_atlas_ribs_attachments_plate_floating_tip">Floating rib tip</string>
+    <string name="health_atlas_ribs_attachments_plate_floating_tip_detail">Ribs 11 and 12 attach at the back but do not join the sternum or the costal arch at their free front ends.</string>
+</resources>

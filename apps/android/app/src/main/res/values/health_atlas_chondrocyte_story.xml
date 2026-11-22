@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_chondrocyte_story_title">How a chondrocyte maintains cartilage</string>
+    <string name="health_atlas_chondrocyte_story_choice">Chondrocytes and the cartilage matrix</string>
+    <string name="health_atlas_chondrocyte_story_scope">A close-up of normal articular hyaline cartilage. Molecules and matrix regions are simplified, and slow matrix maintenance is shown on a shortened timescale.</string>
+    <string name="health_atlas_chondrocyte_story_locate">A cell in its lacuna</string>
+    <string name="health_atlas_chondrocyte_story_locate_caption">The chondrocyte occupies a small space called a lacuna. The pericellular matrix hugs the cell, the territorial matrix surrounds that rim, and the interterritorial matrix fills the space between cells.</string>
+    <string name="health_atlas_chondrocyte_story_collagen">Supplying the collagen network</string>
+    <string name="health_atlas_chondrocyte_story_collagen_caption">The chondrocyte releases type II collagen precursors. Outside the cell, collagen assembles into fibrils that join the existing network. Collagen in mature cartilage is very slow to turn over.</string>
+    <string name="health_atlas_chondrocyte_story_aggrecan">Replenishing aggrecan</string>
+    <string name="health_atlas_chondrocyte_story_aggrecan_caption">The cell also makes and releases aggrecan. These brush-shaped molecules attach to hyaluronan strands outside the cell, replenishing aggregates within the collagen network.</string>
+    <string name="health_atlas_chondrocyte_story_hydration">A matrix that holds water</string>
+    <string name="health_atlas_chondrocyte_story_hydration_caption">Aggrecan has negatively charged side chains that help draw water into the matrix. The collagen network restrains swelling, so the hydrated matrix can resist compression.</string>
+    <string name="health_atlas_chondrocyte_story_recovery">The hydrated matrix springs back</string>
+    <string name="health_atlas_chondrocyte_story_recovery_caption">Brief pressure squeezes the matrix and shifts some of its water. When pressure lifts, water moves back and the tissue recovers its shape. This is much faster than the cell’s ongoing matrix maintenance.</string>
+    <string name="health_atlas_chondrocyte_story_label_lacuna">Lacuna</string>
+    <string name="health_atlas_chondrocyte_story_label_chondrocyte">Chondrocyte</string>
+    <string name="health_atlas_chondrocyte_story_label_pericellular">Pericellular matrix</string>
+    <string name="health_atlas_chondrocyte_story_label_territorial">Territorial matrix</string>
+    <string name="health_atlas_chondrocyte_story_label_interterritorial">Interterritorial matrix</string>
+    <string name="health_atlas_chondrocyte_story_label_collagen">Type II collagen</string>
+    <string name="health_atlas_chondrocyte_story_label_aggrecan">Aggrecan</string>
+    <string name="health_atlas_chondrocyte_story_label_water">Water</string>
+    <string name="health_atlas_chondrocyte_story_ref_aggrecan">Winter et al. (1998): Aggrecan turnover around articular chondrocytes</string>
+    <string name="health_atlas_chondrocyte_story_ref_swelling">Han et al. (2011): Proteoglycan swelling pressure and cartilage compression</string>
+</resources>

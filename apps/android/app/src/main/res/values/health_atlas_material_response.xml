@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_diffusion_title">Relative oxygen transfer</string>
+    <string name="health_atlas_diffusion_gradient">Oxygen pressure difference</string>
+    <string name="health_atlas_diffusion_area">Exchange surface area</string>
+    <string name="health_atlas_diffusion_thickness">Air–blood barrier thickness</string>
+    <string name="health_atlas_diffusion_conductance">Relative membrane conductance: %1$s ×</string>
+    <string name="health_atlas_diffusion_formula">Relative transfer = relative area × relative pressure difference ÷ relative thickness.</string>
+    <string name="health_atlas_diffusion_scope">All inputs are multiples of a synthetic baseline. This plane-layer example holds oxygen diffusivity constant and omits blood flow and hemoglobin binding. It does not estimate blood oxygen or clinical lung function.</string>
+    <string name="health_atlas_diffusion_diagram">Alveolar air → exchange barrier → capillary blood</string>
+    <string name="health_atlas_diffusion_air">Alveolar air</string>
+    <string name="health_atlas_diffusion_barrier">Barrier</string>
+    <string name="health_atlas_diffusion_blood">Capillary blood</string>
+    <string name="health_atlas_compression_title">Example cartilage compression</string>
+    <string name="health_atlas_compression_stress">Applied compressive stress</string>
+    <string name="health_atlas_compression_modulus">Example elastic modulus</string>
+    <string name="health_atlas_compression_remaining">Thickness remaining: %1$s%%</string>
+    <string name="health_atlas_compression_formula">Compressive strain (percent) = 100 × stress ÷ modulus, using the same units for both.</string>
+    <string name="health_atlas_compression_scope">A small-strain, uniform elastic example of articular cartilage. It omits fluid transport, time dependence and tissue layers. This models tissue, not an individual chondrocyte, and does not estimate injury or joint health.</string>
+    <string name="health_atlas_compression_diagram">Articular cartilage before and under load. Deformation enlarged.</string>
+    <string name="health_atlas_compression_unloaded">Unloaded</string>
+    <string name="health_atlas_compression_loaded">Under load</string>
+    <string name="health_atlas_bone_bending_title">Example bone bending stress</string>
+    <string name="health_atlas_bone_bending_moment">Bending moment</string>
+    <string name="health_atlas_bone_bending_diameter">Outer diameter</string>
+    <string name="health_atlas_bone_bending_cavity">Inner-to-outer diameter ratio</string>
+    <string name="health_atlas_bone_bending_inertia">Second moment of area: %1$s mm⁴</string>
+    <string name="health_atlas_bone_bending_formula">In this model, outer stress = moment × outer radius ÷ second moment of area.</string>
+    <string name="health_atlas_bone_bending_scope">A hollow circular beam with synthetic dimensions. Actual bones are irregular, with different properties across and along their length. These stresses do not predict bone strength, fracture risk, or safe exercise loads.</string>
+    <string name="health_atlas_bone_bending_diagram">Example bone cross section and stress across its depth.</string>
+    <string name="health_atlas_bone_bending_compression">Compression</string>
+    <string name="health_atlas_bone_bending_tension">Tension</string>
+    <string name="health_atlas_bone_bending_neutral">Neutral axis</string>
+</resources>

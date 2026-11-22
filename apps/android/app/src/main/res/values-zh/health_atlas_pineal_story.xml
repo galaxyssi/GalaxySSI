@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_pineal_story_title">松果体如何发出夜间信号</string>
+    <string name="health_atlas_pineal_story_choice">松果体的夜间信号</string>
+    <string name="health_atlas_pineal_story_scope">从人脑到单个松果体细胞，了解松果体的正常生理。关于神经通路及其细胞节律的证据，多来自大鼠等哺乳动物。通路和昼夜曲线为示意，并非实测数据。</string>
+
+    <string name="health_atlas_pineal_story_orient">找到松果体</string>
+    <string name="health_atlas_pineal_story_orient_caption">在正中矢状面上，松果体位于第三脑室的后上方，紧邻中脑上方。附近的松果体隐窝是第三脑室的一部分。生物钟则位于更靠前的下丘脑。</string>
+    <string name="health_atlas_pineal_story_retina">视网膜把光照信息传给生物钟</string>
+    <string name="health_atlas_pineal_story_retina_caption">光到达眼球后部的视网膜。特殊的视网膜神经节细胞把信号传至视交叉上核（SCN），也就是位于下丘脑的主要昼夜节律中枢。光照有助于校准生物钟；在黑暗中，生物钟仍在运转。</string>
+    <string name="health_atlas_pineal_story_relay">沿着夜间神经通路追踪信号</string>
+    <string name="health_atlas_pineal_story_relay_caption">生物钟的时序经室旁核、上胸段脊髓和颈上神经节间接传到松果体。在生物夜间，松果体内的交感神经末梢释放更多去甲肾上腺素。</string>
+    <string name="health_atlas_pineal_story_production">放大观察：松果体细胞合成褪黑素</string>
+    <string name="health_atlas_pineal_story_production_caption">去甲肾上腺素作用于松果体细胞，促进褪黑素合成。在细胞内，AANAT 将血清素转化为 N-乙酰血清素，ASMT 再将这一中间产物转化为褪黑素。新合成的褪黑素离开细胞，进入邻近的血管。</string>
+    <string name="health_atlas_pineal_story_rhythm">比较生物白昼与夜间</string>
+    <string name="health_atlas_pineal_story_rhythm_caption">血液中的褪黑素在生物白昼通常较低，在生物夜间升高，临近清晨时回落。夜间进入眼睛的光可以抑制这种升高；黑暗本身并不决定上升的时刻。</string>
+
+    <string name="health_atlas_pineal_story_label_anterior">前方</string>
+    <string name="health_atlas_pineal_story_label_posterior">后方</string>
+    <string name="health_atlas_pineal_story_label_light">光</string>
+    <string name="health_atlas_pineal_story_label_retina">视网膜</string>
+    <string name="health_atlas_pineal_story_label_scn">视交叉上核</string>
+    <string name="health_atlas_pineal_story_label_pvn">室旁核</string>
+    <string name="health_atlas_pineal_story_label_spinal">上胸段脊髓</string>
+    <string name="health_atlas_pineal_story_label_scg">颈上神经节</string>
+    <string name="health_atlas_pineal_story_label_pinealocyte">松果体细胞</string>
+    <string name="health_atlas_pineal_story_label_norepinephrine">去甲肾上腺素</string>
+    <string name="health_atlas_pineal_story_label_serotonin">血清素</string>
+    <string name="health_atlas_pineal_story_label_intermediate">N-乙酰血清素</string>
+    <string name="health_atlas_pineal_story_label_melatonin">褪黑素</string>
+    <string name="health_atlas_pineal_story_label_aanat">AANAT</string>
+    <string name="health_atlas_pineal_story_label_asmt">ASMT</string>
+    <string name="health_atlas_pineal_story_label_capillary">毛细血管</string>
+    <string name="health_atlas_pineal_story_label_relative">血液中的相对褪黑素水平</string>
+    <string name="health_atlas_pineal_story_label_day">白昼</string>
+    <string name="health_atlas_pineal_story_label_night">夜间</string>
+
+    <string name="health_atlas_pineal_story_ref_anatomy">解剖：人的松果体区（Fang 和 Meyers）</string>
+    <string name="health_atlas_pineal_story_ref_retina">研究证据：将光照信息传到生物钟的视网膜神经节细胞（Berson 等）</string>
+    <string name="health_atlas_pineal_story_ref_relay">研究证据：大鼠通向松果体的自主神经通路（Larsen 等）</string>
+    <string name="health_atlas_pineal_story_ref_norepinephrine">研究证据：大鼠松果体在夜间释放去甲肾上腺素（Drijfhout 等）</string>
+    <string name="health_atlas_pineal_story_ref_aanat">研究证据：大鼠松果体 AANAT 的昼夜调控（Roseboom 等）</string>
+    <string name="health_atlas_pineal_story_ref_asmt">研究证据：N-乙酰血清素转化为褪黑素（Axelrod 和 Weissbach）</string>
+    <string name="health_atlas_pineal_story_ref_rhythm">研究证据：人血液中褪黑素的昼夜变化（Brown 等）</string>
+    <string name="health_atlas_pineal_story_ref_light">研究证据：光对人夜间褪黑素水平的影响（Lewy 等）</string>
+</resources>

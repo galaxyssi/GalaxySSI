@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_artery_layers_caption">Artery wall cutaway · three layers</string>
+    <string name="health_atlas_artery_layers_adventitia">Outer layer</string>
+    <string name="health_atlas_artery_layers_adventitia_detail">Connective tissue supports the outer wall and helps anchor it to its surroundings.</string>
+    <string name="health_atlas_artery_layers_media">Middle layer</string>
+    <string name="health_atlas_artery_layers_media_detail">Smooth muscle and elastic components help the artery withstand and respond to changes in pressure. Their proportions vary by artery type.</string>
+    <string name="health_atlas_artery_layers_intima">Inner layer</string>
+    <string name="health_atlas_artery_layers_intima_detail">This innermost layer includes the endothelium, which faces the flowing blood.</string>
+    <string name="health_atlas_artery_layers_lumen">Lumen</string>
+    <string name="health_atlas_artery_layers_lumen_detail">Blood flows through this open space. Arteries carry blood away from the heart.</string>
+</resources>

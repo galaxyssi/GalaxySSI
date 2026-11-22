@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_taste_buds_plate_caption">舌上皮中的味蕾</string>
+    <string name="health_atlas_taste_buds_plate_pore">味孔</string>
+    <string name="health_atlas_taste_buds_plate_pore_detail">这是舌上皮表面的一个小开口，让溶于唾液的物质到达味蕾细胞的顶端。</string>
+    <string name="health_atlas_taste_buds_plate_microvilli">顶端微绒毛</string>
+    <string name="health_atlas_taste_buds_plate_microvilli_detail">这些微小突起从味蕾细胞的顶端伸入味孔。味觉感受细胞可在这些突起处检测溶解的物质。</string>
+    <string name="health_atlas_taste_buds_plate_sensory_cell">味觉感受细胞</string>
+    <string name="health_atlas_taste_buds_plate_sensory_cell_detail">这种细长的细胞在顶端检测味觉刺激，并将信号传给味蕾较深处的感觉神经纤维。</string>
+    <string name="health_atlas_taste_buds_plate_supporting_cell">支持细胞</string>
+    <string name="health_atlas_taste_buds_plate_supporting_cell_detail">支持细胞的细长突起伸入相邻细胞之间，有助于维持味蕾内的局部环境。</string>
+    <string name="health_atlas_taste_buds_plate_afferent">传入神经接触点</string>
+    <string name="health_atlas_taste_buds_plate_afferent_detail">感觉神经纤维从味蕾底部进入，分支与味觉感受细胞接触，并将味觉信号传向脑。</string>
+</resources>

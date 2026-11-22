@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_calcium_feedback_story_title">How the parathyroid glands regulate calcium</string>
+    <string name="health_atlas_calcium_feedback_story_choice">Parathyroid feedback</string>
+    <string name="health_atlas_calcium_feedback_story_scope">A qualitative view of normal human calcium feedback, focused on the parathyroid glands, kidneys, and small intestine. Timing, particle counts, and anatomy are schematic, not measurements or predictions.</string>
+
+    <string name="health_atlas_calcium_feedback_story_sense">Chief cells sense lower ionized calcium</string>
+    <string name="health_atlas_calcium_feedback_story_sense_caption">Calcium-sensing receptors on parathyroid chief cells respond to free (ionized) calcium outside the cells. As ionized calcium falls, the receptors are less active.</string>
+    <string name="health_atlas_calcium_feedback_story_release">The glands release more PTH</string>
+    <string name="health_atlas_calcium_feedback_story_release_caption">When calcium-sensing receptor activity falls, chief cells release more parathyroid hormone (PTH). The hormone enters nearby capillaries and travels through the blood.</string>
+    <string name="health_atlas_calcium_feedback_story_kidney">The kidneys retain calcium and activate vitamin D</string>
+    <string name="health_atlas_calcium_feedback_story_kidney_caption">PTH helps the kidneys return more calcium from tubule fluid to the blood. It separately promotes formation of active vitamin D in the kidneys.</string>
+    <string name="health_atlas_calcium_feedback_story_intestine">Active vitamin D supports intestinal calcium uptake</string>
+    <string name="health_atlas_calcium_feedback_story_intestine_caption">Active vitamin D helps cells lining the small intestine absorb calcium from the lumen into the blood. This effect of PTH is indirect, through active vitamin D.</string>
+    <string name="health_atlas_calcium_feedback_story_recover">PTH release eases as calcium recovers</string>
+    <string name="health_atlas_calcium_feedback_story_recover_caption">As ionized calcium recovers, calcium-sensing receptors become more active again. Chief cells release less PTH, easing the response that helped restore calcium.</string>
+
+    <string name="health_atlas_calcium_feedback_story_art_glands">Parathyroid glands</string>
+    <string name="health_atlas_calcium_feedback_story_art_thyroid">Thyroid (back view)</string>
+    <string name="health_atlas_calcium_feedback_story_art_chief">Chief cell</string>
+    <string name="health_atlas_calcium_feedback_story_art_receptor">Ca-sensing receptor</string>
+    <string name="health_atlas_calcium_feedback_story_art_calcium">Ionized calcium</string>
+    <string name="health_atlas_calcium_feedback_story_art_pth">Parathyroid hormone (PTH)</string>
+    <string name="health_atlas_calcium_feedback_story_art_blood">Capillary blood</string>
+    <string name="health_atlas_calcium_feedback_story_art_kidney">Kidney cutaway</string>
+    <string name="health_atlas_calcium_feedback_story_art_tubule">Renal tubule fluid</string>
+    <string name="health_atlas_calcium_feedback_story_art_activation">Vitamin D activation</string>
+    <string name="health_atlas_calcium_feedback_story_art_vitamin_d">Active vitamin D</string>
+    <string name="health_atlas_calcium_feedback_story_art_lumen">Intestinal lumen</string>
+    <string name="health_atlas_calcium_feedback_story_art_villus">Intestinal villus</string>
+
+    <string name="health_atlas_calcium_feedback_story_ref_sensing">Evidence: the human parathyroid calcium-sensing receptor</string>
+    <string name="health_atlas_calcium_feedback_story_ref_vitamin_d">Evidence: parathyroid regulation of vitamin D activation in rats</string>
+</resources>

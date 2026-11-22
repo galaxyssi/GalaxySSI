@@ -117,7 +117,8 @@ class HealthAtlasSystemOverviewDeviceTest {
         val atlas = HealthBodyAtlas.load(context)
         for (id in listOf("brain", "heart", "lungs", "pancreas", "liver", "kidneys", "alveoli"))
             assertEquals(id, HealthAtlasPlates.forId(id)!!.owner)
-        assertNull(HealthAtlasPlates.forId("nails"))
+        for (id in listOf("nails", "sebaceous-glands"))
+            assertEquals(id, HealthAtlasPlates.forId(id)?.owner)
         assertEquals("cell-langerhans-cell", HealthAtlasPlates.forId("cell-langerhans-cell")?.owner)
         for (id in listOf("parathyroid-glands", "cell-thyroid-follicular-cell", "thyroid-gland", "pituitary-gland", "adrenal-glands"))
             assertEquals(id, HealthAtlasPlates.forId(id)?.owner)
@@ -135,13 +136,20 @@ class HealthAtlasSystemOverviewDeviceTest {
         scenario.onActivity { activity ->
             for (locale in listOf(java.util.Locale.ENGLISH, java.util.Locale.SIMPLIFIED_CHINESE)) {
                 val config = Configuration(activity.resources.configuration).apply { setLocale(locale) }
-                val atlas = HealthBodyAtlas.load(activity.createConfigurationContext(config))
-                val plates = HealthAtlasSystemPlates.all + listOf("ear", "eye").map { requireNotNull(HealthAtlasPlates.forId(it)) }
+                val localized = activity.createConfigurationContext(config)
+                val atlas = HealthBodyAtlas.load(localized)
+                val detailed = listOf("ear", "eye", "nails", "sebaceous-glands", "cranial-nerves",
+                    "limb-bones", "olfactory-mucosa", "hair")
+                val plates = HealthAtlasSystemPlates.all + detailed.map { requireNotNull(HealthAtlasPlates.forId(it)) }
                 for (plate in plates) for (width in listOf(720, 1080, 1600)) {
                     var selected = ""
                     val view = HealthAtlasLabeledImage(activity, plate, plate.owner!!, atlas, plate.owner) { selected = it.id }
                     val labels = (0 until view.childCount).map { view.getChildAt(it) }.filterIsInstance<TextView>()
-                    labels.forEach { it.textSize = 26f }
+                    val features = plate.features.associateBy { "atlas-feature-${it.marker.id}" }
+                    labels.forEach { label ->
+                        features[label.tag.toString()]?.let { label.text = localized.getString(it.title) }
+                        label.textSize = 26f
+                    }
                     view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                         View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
                     view.layout(0, 0, width, view.measuredHeight)
@@ -156,7 +164,13 @@ class HealthAtlasSystemOverviewDeviceTest {
                             assertTrue(label.top >= bottom && label.bottom <= view.height && label.right <= width)
                             assertTrue(label.height >= label.layout.height + label.compoundPaddingTop + label.compoundPaddingBottom)
                             bottom = label.bottom
-                            label.performClick(); assertEquals(label.tag.toString().removePrefix("atlas-hotspot-"), selected)
+                            val marker = label.tag.toString()
+                            if (marker.startsWith("atlas-hotspot-")) {
+                                label.performClick()
+                                assertEquals(marker.removePrefix("atlas-hotspot-"), selected)
+                            } else {
+                                assertTrue(marker.startsWith("atlas-feature-") && label.isClickable)
+                            }
                         }
                     }
                     if (plate.splitCallouts || plate.owner == "skin") {
@@ -164,13 +178,14 @@ class HealthAtlasSystemOverviewDeviceTest {
                             view.image.drawable.intrinsicHeight.toFloat())
                         view.image.imageMatrix.mapRect(imageBounds)
                         imageBounds.offset(view.image.left.toFloat(), 0f)
-                        val points = plate.markers.associate { it.id to android.graphics.PointF(
+                        val anchors = (plate.markers + plate.features.map { it.marker }).associateBy { it.id }
+                        val points = anchors.values.associate { it.id to android.graphics.PointF(
                             imageBounds.left + imageBounds.width() * it.x, imageBounds.top + imageBounds.height() * it.y) }
                         for ((otherId, path) in view.leaderPaths) {
                             assertTrue("Missing leader: $otherId", path.size >= 2)
                             if (plate.splitCallouts) {
-                                val left = plate.markers.single { it.id == otherId }.x < .5f
-                                val label = labels.single { it.tag == "atlas-hotspot-$otherId" }
+                                val left = anchors.getValue(otherId).x < .5f
+                                val label = labels.single { it.tag == "atlas-hotspot-$otherId" || it.tag == "atlas-feature-$otherId" }
                                 assertEquals((if (left) label.right else label.left).toFloat(), path.last().x, 0f)
                                 assertTrue(path.all { if (left) it.x <= imageBounds.centerX() else it.x >= imageBounds.centerX() })
                             }

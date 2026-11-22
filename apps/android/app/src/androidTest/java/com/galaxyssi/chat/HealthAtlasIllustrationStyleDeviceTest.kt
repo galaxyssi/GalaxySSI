@@ -97,11 +97,12 @@ class HealthAtlasIllustrationStyleDeviceTest {
             Triple("cell-t-cell", 1254, 1254), Triple("cell-b-cell", 1254, 1254),
             Triple("cell-natural-killer-cell", 1254, 1254), Triple("cell-megakaryocyte", 1254, 1254),
             Triple("fragment-platelet", 1254, 1254),
+            Triple("teeth", 1254, 1254), Triple("jejunum", 1254, 1254),
         ).map { (id, width, height) -> requireNotNull(HealthAtlasPlates.forId(id)) to (width to height) } +
             (HealthAtlasHeartSection.section to (1254 to 1254)) + HealthAtlasMusculoskeletalPlates.all.map { plate ->
                 plate to if (plate.viewKey == "skeletal-posterior") (887 to 1774) else (1024 to 1536)
             }
-        assertEquals(43, frames.map { it.first.drawable }.distinct().size)
+        assertEquals(45, frames.map { it.first.drawable }.distinct().size)
         var anchors = 0
         for ((plate, size) in frames) {
             val (width, height) = size
@@ -119,7 +120,7 @@ class HealthAtlasIllustrationStyleDeviceTest {
                 }
             } finally { art.recycle() }
         }
-        assertEquals(119, anchors)
+        assertEquals(121, anchors)
     }
 
     @Test fun muscleMarkersIdentifyThePaintedRegionsRatherThanTheMannequinSurface() {
@@ -183,8 +184,16 @@ class HealthAtlasIllustrationStyleDeviceTest {
     }
 
     @Test fun paintedTissueAndLymphVectorsRenderTheirAnatomyOnTransparentBackgrounds() {
-        val plates = HealthAtlasTissuePlates.all + HealthAtlasLymphOrgans.all
-        assertEquals(23, plates.map { it.drawable }.distinct().size)
+        assertShadedPlates(HealthAtlasTissuePlates.all + HealthAtlasLymphOrgans.all, 23)
+    }
+
+    @Test fun paintedDigestiveVectorsRenderLayersOnTransparentBackgrounds() {
+        val gutVectors = HealthAtlasGutSections.all.filterNot { it.owner == "teeth" || it.owner == "jejunum" }
+        assertShadedPlates(gutVectors + HealthAtlasDigestivePlates.all, 26)
+    }
+
+    private fun assertShadedPlates(plates: List<HealthAtlasPlate>, expected: Int) {
+        assertEquals(expected, plates.map { it.drawable }.distinct().size)
         val width = 360
         val height = 240
         val pixels = IntArray(width * height)
@@ -200,6 +209,35 @@ class HealthAtlasIllustrationStyleDeviceTest {
                 val opaque = pixels.filter { Color.alpha(it) == 255 }
                 assertTrue("Missing illustration in ${plate.owner}", opaque.size > pixels.size / 100)
                 assertTrue("Missing shaded surfaces in ${plate.owner}", opaque.distinct().size > 30)
+            } finally { art.recycle() }
+        }
+    }
+
+    @Test fun paintedDigestiveSectionsKeepLayersAndLymphaticLandmarksOnTheirOwnArt() {
+        for (id in listOf("teeth", "jejunum")) {
+            val lesson = requireNotNull(HealthAtlasGutSections[id])
+            assertEquals(lesson.artWidth, lesson.artHeight)
+            val art = requireNotNull(BitmapFactory.decodeResource(context.resources, lesson.plate.drawable))
+            try {
+                val markers = lesson.plate.features.map(HealthAtlasFeature::marker) + lesson.plate.markers
+                for (marker in markers) {
+                    val c = art.getPixel((marker.x * art.width).toInt(), (marker.y * art.height).toInt())
+                    val r = Color.red(c)
+                    val g = Color.green(c)
+                    val b = Color.blue(c)
+                    val matches = when (marker.id) {
+                        "tooth-0" -> r > 210 && g > 195 && b > 170 && r - g < 27
+                        "tooth-1" -> r - g > 28 && g - b > 40
+                        "tooth-2" -> r - g > 60 && g > b
+                        "tooth-3" -> r > g && g - b > 33 && r - g < 55
+                        "jejunum-0", "jejunum-1" -> r - g > 50 && r - b > 45
+                        "jejunum-2" -> r - g > 105 && r - b > 100
+                        "cell-enterocyte" -> b - g > 45 && r - g > 45
+                        "jejunum-3", "lymphatic-vessels" -> g - r > 42 && g - b > 10
+                        else -> false
+                    }
+                    assertTrue("Wrong painted landmark at ${marker.id}", matches && Color.alpha(c) > 200)
+                }
             } finally { art.recycle() }
         }
     }

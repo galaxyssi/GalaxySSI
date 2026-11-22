@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cardiac_title">From heartbeat signal to muscle contraction</string>
+    <string name="health_atlas_cardiac_choice">Electrical signal</string>
+    <string name="health_atlas_cardiac_scope">A simplified diagram of normal cardiac conduction and a ventricular muscle cell. Paths, timing and shortening are illustrative, not ECG or personal measurements.</string>
+    <string name="health_atlas_cardiac_pace">The sinoatrial node starts the beat</string>
+    <string name="health_atlas_cardiac_pace_caption">Specialized pacemaker cells start an electrical signal. It spreads through the atria, helping them contract.</string>
+    <string name="health_atlas_cardiac_delay">The atrioventricular node slows the signal</string>
+    <string name="health_atlas_cardiac_delay_caption">Conduction through the atrioventricular node takes longer. This timing lets the atria contract before the ventricles do.</string>
+    <string name="health_atlas_cardiac_spread">The signal reaches the ventricles</string>
+    <string name="health_atlas_cardiac_spread_caption">The signal follows the bundle and its branches, then the Purkinje fibers rapidly distribute it through the ventricles.</string>
+    <string name="health_atlas_cardiac_shorten">Calcium helps the muscle cell shorten</string>
+    <string name="health_atlas_cardiac_shorten_caption">When a ventricular muscle cell is excited, a small influx of calcium triggers more calcium release from internal stores. Calcium enables the contractile filaments to slide past each other.</string>
+    <string name="health_atlas_cardiac_relax">Calcium falls and the muscle relaxes</string>
+    <string name="health_atlas_cardiac_relax_caption">Calcium is moved back into internal stores or out of the cell. As cytoplasmic calcium falls, the filaments relax and the muscle can lengthen again.</string>
+    <string name="health_atlas_cardiac_sa_label">SA node</string>
+    <string name="health_atlas_cardiac_av_label">AV node</string>
+    <string name="health_atlas_cardiac_network_label">Purkinje fibers</string>
+    <string name="health_atlas_cardiac_cell_label">Ventricular muscle cell</string>
+    <string name="health_atlas_cardiac_filaments_label">Contractile filaments</string>
+    <string name="health_atlas_cardiac_calcium_label">Calcium</string>
+    <string name="health_atlas_cardiac_ref_conduction">Evidence: measuring excitation through the human heart</string>
+    <string name="health_atlas_cardiac_ref_cell">Evidence: calcium release and contraction in a human ventricular cell model</string>
+</resources>

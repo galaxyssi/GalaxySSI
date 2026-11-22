@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ligament_guidance_story_title">How ligaments guide joint motion</string>
+    <string name="health_atlas_ligament_guidance_story_choice">Ligament guidance</string>
+    <string name="health_atlas_ligament_guidance_story_scope">Simplified oblique view of the right knee. The kneecap and front of the joint capsule are omitted so the two bands are visible. The arrows show directions of sliding that the ligaments resist, not how far the bones move or how much force the bands carry.</string>
+    <string name="health_atlas_ligament_guidance_story_connect">Ligaments connect bone to bone</string>
+    <string name="health_atlas_ligament_guidance_story_connect_caption">Ligaments are collagen-rich bands that help stabilize joints. Unlike muscles, they do not contract to move the bones. They resist certain motions as their fibers come under tension.</string>
+    <string name="health_atlas_ligament_guidance_story_cross">Two bands cross inside the knee</string>
+    <string name="health_atlas_ligament_guidance_story_cross_caption">The anterior cruciate ligament (ACL) runs from the inner face of the lateral femoral condyle to the front of the area between the tibial condyles. The posterior cruciate ligament (PCL) runs from the inner face of the medial femoral condyle to the back of that area, down the rear slope of the tibia.</string>
+    <string name="health_atlas_ligament_guidance_story_anterior">The ACL checks forward sliding</string>
+    <string name="health_atlas_ligament_guidance_story_anterior_caption">The ACL helps limit how far the tibia slides forward relative to the femur. The band stays attached at both ends and resists the slide in tension.</string>
+    <string name="health_atlas_ligament_guidance_story_posterior">The PCL checks backward sliding</string>
+    <string name="health_atlas_ligament_guidance_story_posterior_caption">The PCL helps limit how far the tibia slides backward relative to the femur. Its different attachment sites let it resist sliding in the opposite direction.</string>
+    <string name="health_atlas_ligament_guidance_story_coordinate">The two bands guide without locking</string>
+    <string name="health_atlas_ligament_guidance_story_coordinate_caption">The knee still bends and straightens. As posture and load change, different fibers can carry more or less tension. The cruciates work with the shapes of the bones and the other tissues around the knee; they do not hold the joint rigid.</string>
+    <string name="health_atlas_ligament_guidance_story_femur">Femur</string>
+    <string name="health_atlas_ligament_guidance_story_tibia">Tibia</string>
+    <string name="health_atlas_ligament_guidance_story_acl">ACL</string>
+    <string name="health_atlas_ligament_guidance_story_pcl">PCL</string>
+    <string name="health_atlas_ligament_guidance_story_direction_key">Directions of tibial slide resisted</string>
+    <string name="health_atlas_ligament_guidance_story_forward_slide">Forward slide</string>
+    <string name="health_atlas_ligament_guidance_story_backward_slide">Backward slide</string>
+    <string name="health_atlas_ligament_guidance_story_ref_anatomy">Textbook: knee ligaments and joint motion</string>
+    <string name="health_atlas_ligament_guidance_story_ref_acl">Anatomy study: ACL attachment sites</string>
+    <string name="health_atlas_ligament_guidance_story_ref_pcl">Anatomy study: PCL attachment sites</string>
+    <string name="health_atlas_ligament_guidance_story_ref_motion">Imaging study: cruciate ligaments during loaded knee bending</string>
+</resources>

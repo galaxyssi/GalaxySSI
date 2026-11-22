@@ -98,7 +98,10 @@ internal object HealthAtlasPlates {
     fun viewsForId(id: String?): List<HealthAtlasPlate> = when (id) {
         "heart" -> listOf(heart, HealthAtlasHeartSection.section)
         "retina" -> listOf(requireNotNull(HealthAtlasSensoryPlates.forId(id)), retinaContext)
-        else -> HealthAtlasMusculoskeletalPlates.viewsForId(id).ifEmpty { listOfNotNull(defaultForId(id)) }
+        else -> HealthAtlasMusculoskeletalPlates.viewsForId(id).let { context ->
+            if (context.isEmpty()) listOfNotNull(defaultForId(id))
+            else listOfNotNull(HealthAtlasTissueContextPlates.forId(id)) + context
+        }
     }
 
     fun forId(id: String?, viewKey: String? = null): HealthAtlasPlate? = viewsForId(id).let { views ->

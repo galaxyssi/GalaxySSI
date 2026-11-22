@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_hair_cycle_story_title">毛囊的生长周期</string>
+    <string name="health_atlas_hair_cycle_story_scope">本图定性展示一个人类头皮毛囊在典型周期中的剖面变化。形态和运动均经简化，未按比例绘制。各章节不代表实际时长；各毛囊独立循环，脱落和重新生长不必同时发生。本图仅供解剖学习，不构成健康建议。</string>
+    <string name="health_atlas_hair_cycle_story_matrix">活跃的毛母质（生长期）</string>
+    <string name="health_atlas_hair_cycle_story_matrix_caption">在生长毛囊底部的毛球内，毛母质细胞不断分裂。其中一部分子代细胞形成毛干。</string>
+    <string name="health_atlas_hair_cycle_story_growth">毛干伸长（生长期）</string>
+    <string name="health_atlas_hair_cycle_story_growth_caption">构成毛干的细胞在成熟过程中逐渐变硬。新形成的毛干成分从基部推着已有毛干向外移动，毛发并不是从发梢长长的。</string>
+    <string name="health_atlas_hair_cycle_story_regression">毛囊退缩（退行期）</string>
+    <string name="health_atlas_hair_cycle_story_regression_caption">毛干停止伸长，毛囊下段缩短，原有毛干的根端变圆，形成棒状毛根。毛囊上段仍留在原位。</string>
+    <string name="health_atlas_hair_cycle_story_rest">毛囊休止（休止期）</string>
+    <string name="health_atlas_hair_cycle_story_rest_caption">缩短后的毛囊可暂时保留原有的棒状毛发，但它不再伸长。动画中的圆环仅用于标示仍留在毛囊内的毛根。</string>
+    <string name="health_atlas_hair_cycle_story_renewal">脱落与再生</string>
+    <string name="health_atlas_hair_cycle_story_renewal_caption">脱落期，原有的棒状毛发从毛囊中脱离。同一个毛囊再次进入生长期时，会从基部形成新毛干。图中并列展示这两个变化，但两者并不必然互为因果。</string>
+    <string name="health_atlas_hair_cycle_story_label_epidermis">表皮</string>
+    <string name="health_atlas_hair_cycle_story_label_follicle">毛囊</string>
+    <string name="health_atlas_hair_cycle_story_label_shaft">毛干</string>
+    <string name="health_atlas_hair_cycle_story_label_matrix">毛母质</string>
+    <string name="health_atlas_hair_cycle_story_label_lower">毛囊下段</string>
+    <string name="health_atlas_hair_cycle_story_label_club">棒状毛根</string>
+    <string name="health_atlas_hair_cycle_story_label_shedding">脱落的毛发</string>
+    <string name="health_atlas_hair_cycle_story_label_replacement">新毛干</string>
+    <string name="health_atlas_hair_cycle_story_reference_regression">Soma 等（1998）：人类毛囊退行期的细胞死亡</string>
+    <string name="health_atlas_hair_cycle_story_reference_shedding">Van Neste 等（2007）：人类头皮脱落期毛发的特征</string>
+</resources>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_autonomic_relay_story_title">How autonomic nerves tune heart rate</string>
+    <string name="health_atlas_autonomic_relay_story_choice">Autonomic relay to the heart</string>
+    <string name="health_atlas_autonomic_relay_story_scope">A qualitative example of normal human heart-rate control through two-neuron autonomic pathways. It shows one sympathetic route and one parasympathetic route to the sinoatrial node. Anatomy and timing are schematic.</string>
+
+    <string name="health_atlas_autonomic_relay_story_output">Autonomic output leaves the central nervous system</string>
+    <string name="health_atlas_autonomic_relay_story_output_caption">Autonomic output adjusts how fast the heart beats without conscious effort. The first neurons in these two routes start in different places: the upper thoracic spinal cord for the sympathetic route and the brainstem for the parasympathetic route.</string>
+    <string name="health_atlas_autonomic_relay_story_sympathetic">A relay beside the upper thoracic cord</string>
+    <string name="health_atlas_autonomic_relay_story_sympathetic_caption">A short preganglionic fiber leaves the upper thoracic spinal cord. In a ganglion of the nearby sympathetic chain, it passes its signal to a second neuron. That neuron sends a longer postganglionic fiber toward the heart.</string>
+    <string name="health_atlas_autonomic_relay_story_target">The sympathetic route reaches the pacemaker</string>
+    <string name="health_atlas_autonomic_relay_story_target_caption">The second neuron carries sympathetic output to the sinoatrial (SA) node, the heart’s natural pacemaker. The node starts beats on its own. Stronger sympathetic input can make it fire more often, shortening the gap between beats.</string>
+    <string name="health_atlas_autonomic_relay_story_vagal">A vagal relay near the heart</string>
+    <string name="health_atlas_autonomic_relay_story_vagal_caption">A long preganglionic fiber from the brainstem travels in the vagus nerve to a ganglion near the heart. A short postganglionic fiber from the second neuron reaches the SA node. Stronger vagal input can make the node fire less often.</string>
+    <string name="health_atlas_autonomic_relay_story_compare">Two relays adjust the same pacemaker</string>
+    <string name="health_atlas_autonomic_relay_story_compare_caption">Both routes use two neurons. In this example, the sympathetic relay sits near the cord and the vagal relay sits near the heart. Both inputs can be active at once. Their levels can change independently, so normal heart rate reflects their combined influence.</string>
+
+    <string name="health_atlas_autonomic_relay_story_art_brainstem">Brainstem</string>
+    <string name="health_atlas_autonomic_relay_story_art_cord">Spinal cord</string>
+    <string name="health_atlas_autonomic_relay_story_art_heart">Heart</string>
+    <string name="health_atlas_autonomic_relay_story_art_thoracic_ganglion">Thoracic ganglion</string>
+    <string name="health_atlas_autonomic_relay_story_art_cardiac_fiber">Fiber to heart</string>
+    <string name="health_atlas_autonomic_relay_story_art_sa_node">SA node</string>
+    <string name="health_atlas_autonomic_relay_story_art_beat_spacing">Beat spacing</string>
+    <string name="health_atlas_autonomic_relay_story_art_vagus">Vagus nerve</string>
+    <string name="health_atlas_autonomic_relay_story_art_cardiac_ganglion">Cardiac ganglion</string>
+    <string name="health_atlas_autonomic_relay_story_art_sympathetic">Sympathetic</string>
+    <string name="health_atlas_autonomic_relay_story_art_parasympathetic">Parasympathetic</string>
+
+    <string name="health_atlas_autonomic_relay_story_ref_anatomy">Evidence: autonomic nerve routes in the human heart</string>
+    <string name="health_atlas_autonomic_relay_story_ref_rate">Evidence: autonomic control of human heart rate</string>
+</resources>

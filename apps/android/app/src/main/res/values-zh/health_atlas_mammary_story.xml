@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mammary_story_title">乳腺中的乳汁流动</string>
+    <string name="health_atlas_mammary_story_scope">哺乳期单个乳腺腺泡及相连导管的定性剖面示意。形态、运动和时序仅供示意，不按比例绘制，也不用于预测乳汁量或流速。</string>
+    <string name="health_atlas_mammary_story_locate">腺泡与导管</string>
+    <string name="health_atlas_mammary_story_locate_caption">腔面上皮细胞排列在腺泡腔内侧，肌上皮细胞位于这层上皮外侧，腺泡腔与导管相通。</string>
+    <string name="health_atlas_mammary_story_secrete">分泌到腺泡腔</string>
+    <string name="health_atlas_mammary_story_secrete_caption">腔面上皮细胞从朝向腺泡腔的一侧释放乳汁成分。</string>
+    <string name="health_atlas_mammary_story_accumulate">乳汁积聚</string>
+    <string name="health_atlas_mammary_story_accumulate_caption">排出前，分泌的乳汁积聚在腺泡腔内。颜色深浅仅用来定性表示积聚过程。</string>
+    <string name="health_atlas_mammary_story_contract">催产素与收缩</string>
+    <string name="health_atlas_mammary_story_contract_caption">外侧的肌上皮细胞响应催产素而收缩，挤压腺泡。</string>
+    <string name="health_atlas_mammary_story_eject">乳汁进入导管</string>
+    <string name="health_atlas_mammary_story_eject_caption">腺泡受挤压后，乳汁从腺泡腔流入相连的导管。</string>
+    <string name="health_atlas_mammary_story_luminal_epithelium">腔面上皮</string>
+    <string name="health_atlas_mammary_story_lumen">腺泡腔</string>
+    <string name="health_atlas_mammary_story_myoepithelial_cells">肌上皮细胞</string>
+    <string name="health_atlas_mammary_story_duct">乳腺导管</string>
+    <string name="health_atlas_mammary_story_oxytocin_signal">催产素信号</string>
+    <string name="health_atlas_mammary_story_ref_secretion">乳脂分泌成像（小鼠研究）</string>
+    <string name="health_atlas_mammary_story_ref_ejection">肌上皮收缩与排乳（小鼠成像研究）</string>
+</resources>

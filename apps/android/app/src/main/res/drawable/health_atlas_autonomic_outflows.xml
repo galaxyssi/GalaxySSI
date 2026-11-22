@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Central axis: brain, brainstem and cord. Segment spacing is schematic. -->
+    <path android:strokeColor="#937282" android:strokeWidth="1.35"
+        android:pathData="M159,47 C161,55 161,66 159,79 C154,108 156,140 157,165 C158,191 159,213 166,230 Q170,238 175,229 C182,212 180,185 180,164 C179,133 181,103 179,80 C178,68 175,58 178,47 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="158" android:startY="122" android:endX="181" android:endY="122"
+                android:startColor="#F8E5D8" android:centerColor="#E8C3B9" android:endColor="#CB9EA8" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#937282" android:strokeWidth="1.35"
+        android:pathData="M138,49 C126,45 126,33 133,26 C135,18 148,14 155,17 C163,11 176,13 181,18 C193,16 205,23 205,32 C214,38 209,50 199,53 C193,60 181,59 176,54 C168,59 158,56 153,52 C146,54 142,53 138,49 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="164" android:startY="14" android:endX="174" android:endY="58"
+                android:startColor="#F6DECD" android:centerColor="#EBC4B8" android:endColor="#CE9CA8" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#B0838D" android:strokeWidth="1.05" android:strokeLineCap="round"
+        android:pathData="M137,32 Q142,24 153,27 Q162,30 166,22 M134,42 Q144,36 151,41 Q158,46 165,37 M172,31 Q179,24 187,28 M175,47 Q184,39 193,43 Q197,45 201,39 M161,77 C158,105 160,133 160,159 C160,185 162,206 166,219 M174,78 C174,100 175,122 175,141" />
+
+    <!-- Thoracolumbar spinal origin, bilateral trunks and sampled connections. -->
+    <path android:fillColor="#C18B47" android:strokeColor="#98622F" android:strokeWidth=".85"
+        android:pathData="M164,107 Q167,103 170,107 L170,166 Q167,170 164,165 Z" />
+    <path android:strokeColor="#B38A57" android:strokeWidth="2.15" android:strokeLineCap="round"
+        android:pathData="M119,80 C119,105 119,137 121,157 C122,181 123,207 130,229 M213,80 C214,112 214,136 212,157 C212,183 211,202 206,229" />
+    <path android:strokeColor="#A7733E" android:strokeWidth="1.75" android:strokeLineCap="round"
+        android:pathData="M166,109 C153,111 143,117 119,117 M166,139 Q145,141 120,139 M166,164 Q145,161 121,161 M168,109 C184,112 195,117 214,117 M168,139 Q189,142 213,139 M168,164 Q191,162 212,161" />
+    <path android:strokeColor="#C09566" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M119,96 C105,95 89,80 63,82 M120,139 C101,139 90,157 54,155 M123,183 C103,183 89,195 62,194" />
+    <path android:strokeColor="#C09566" android:strokeWidth="1.4" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M68,78 L63,82 L69,85 M60,152 L54,155 L60,158 M68,190 L62,194 L68,197" />
+    <path android:strokeColor="#9C6A38" android:strokeWidth="1.15"
+        android:pathData="M119,75 C125,75 125,85 119,86 C113,86 113,76 119,75 Z M119,90 C125,90 126,101 119,102 C112,102 112,91 119,90 Z M119,110 C126,110 126,124 119,124 C112,124 112,110 119,110 Z M120,133 C127,133 127,145 120,145 C113,145 113,133 120,133 Z M121,155 C128,155 128,167 121,167 C114,167 114,155 121,155 Z M123,177 C129,177 130,188 124,189 C117,190 117,178 123,177 Z M126,199 C132,198 132,210 127,211 C120,212 120,200 126,199 Z M129,222 C134,221 136,232 131,234 C125,236 122,224 129,222 Z M213,75 C219,75 219,85 213,86 C207,86 207,76 213,75 Z M214,90 C220,90 221,101 214,102 C207,102 207,91 214,90 Z M214,110 C221,110 221,124 214,124 C207,124 207,110 214,110 Z M213,133 C220,133 220,145 213,145 C206,145 206,133 213,133 Z M212,155 C219,155 219,167 212,167 C205,167 205,155 212,155 Z M212,177 C218,177 218,188 212,189 C206,189 205,178 212,177 Z M210,199 C216,200 216,211 210,211 C204,211 203,199 210,199 Z M207,222 C213,222 211,234 205,234 C200,234 200,222 207,222 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="114" android:startY="154" android:endX="221" android:endY="154"
+                android:startColor="#EACA9B" android:centerColor="#E2BA83" android:endColor="#D49C60" />
+        </aapt:attr>
+    </path>
+
+    <!-- Small target shapes orient the craniosacral paths without implying complete branching. -->
+    <path android:fillColor="#ECD6CD" android:strokeColor="#B88987" android:strokeWidth="1.2"
+        android:pathData="M286,46 Q304,31 323,44 Q305,61 286,46 Z" />
+    <path android:fillColor="#C69499" android:strokeColor="#A67983" android:strokeWidth="1"
+        android:pathData="M311,44 a6,6 0 1,1 -12,0 a6,6 0 1,1 12,0 Z" />
+    <path android:strokeColor="#A97480" android:strokeWidth="1.25"
+        android:pathData="M283,104 C281,96 288,90 296,92 Q303,91 307,100 C314,93 325,98 326,110 C329,124 315,136 307,139 C299,134 283,120 283,104 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="302" android:startY="91" android:endX="306" android:endY="141"
+                android:startColor="#F3D1C4" android:centerColor="#DEA7AA" android:endColor="#C48A9A" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#A97480" android:strokeWidth="1" android:strokeLineCap="round"
+        android:pathData="M308,122 Q306,114 302,109 Q302,103 307,100 M312,113 Q317,112 320,109" />
+    <path android:strokeColor="#AD7A78" android:strokeWidth="1.25"
+        android:pathData="M302,146 L310,145 Q308,159 315,160 C331,156 339,170 330,185 C322,200 308,200 298,195 C289,191 288,196 282,196 L277,189 Q284,183 294,185 C304,186 305,178 301,171 Q296,160 302,146 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="305" android:startY="145" android:endX="308" android:endY="200"
+                android:startColor="#F3D6C5" android:centerColor="#E6B3AA" android:endColor="#C48B95" />
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#B98582" android:strokeWidth="1.1" android:strokeLineCap="round"
+        android:pathData="M315,165 Q328,164 329,174 M313,189 Q322,185 323,180" />
+    <path android:strokeColor="#AD7A78" android:strokeWidth="1.2"
+        android:pathData="M287,227 C294,217 316,217 325,227 C333,236 326,251 314,254 L312,262 L305,262 L304,254 C291,251 279,237 287,227 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:startX="302" android:startY="220" android:endX="310" android:endY="262"
+                android:startColor="#F4DAC7" android:centerColor="#E6B9AD" android:endColor="#CA939A" />
+        </aapt:attr>
+    </path>
+
+    <!-- Continuous teal paths end at ganglia beside target organs; short branches are postganglionic. -->
+    <path android:strokeColor="#468077" android:strokeWidth="2.4" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M171,61 C187,63 203,55 222,56 C246,57 260,49 278,47 M171,61 C197,64 231,53 247,72 C264,91 252,105 281,112 M249,75 C258,94 252,123 263,145 Q271,162 288,175 M171,219 C174,236 183,247 208,247 C238,248 254,236 281,236" />
+    <path android:strokeColor="#569086" android:strokeWidth="1.45" android:strokeLineCap="round"
+        android:pathData="M278,47 L291,46 M281,112 Q287,116 296,117 M288,175 Q297,177 304,179 M281,236 Q289,238 297,238" />
+    <path android:fillColor="#CFDFCF" android:strokeColor="#3F786E" android:strokeWidth="1.3"
+        android:pathData="M281,46 a3.6,4.4 0 1,1 -7.2,0 a3.6,4.4 0 1,1 7.2,0 Z M285,111 a4,4.5 0 1,1 -8,0 a4,4.5 0 1,1 8,0 Z M293,175 a5,5.6 0 1,1 -10,0 a5,5.6 0 1,1 10,0 Z M285,236 a4,4.5 0 1,1 -8,0 a4,4.5 0 1,1 8,0 Z" />
+    <path android:fillColor="#468077" android:strokeColor="#EAF3E6" android:strokeWidth=".9"
+        android:pathData="M174.5,61 a3.5,3.5 0 1,1 -7,0 a3.5,3.5 0 1,1 7,0 Z M174.5,219 a3.5,3.5 0 1,1 -7,0 a3.5,3.5 0 1,1 7,0 Z" />
+</vector>

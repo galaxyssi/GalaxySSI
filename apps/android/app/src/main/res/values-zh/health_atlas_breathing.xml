@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_breathe_title">一次呼吸如何交换气体</string>
+    <string name="health_atlas_breathe_inhale">膈肌下移，空气进入</string>
+    <string name="health_atlas_breathe_inhale_caption">吸气时，膈肌收缩并下移，肺扩张，空气沿气道流入。</string>
+    <string name="health_atlas_breathe_reach">空气到达肺泡</string>
+    <string name="health_atlas_breathe_reach_caption">空气经支气管和更细的细支气管到达肺泡。每个肺泡周围都有毛细血管。</string>
+    <string name="health_atlas_breathe_diffuse">两种气体反向扩散</string>
+    <string name="health_atlas_breathe_diffuse_caption">氧气穿过薄薄的气血屏障进入血液，同时二氧化碳从血液进入肺泡。两种气体各自由分压较高处向较低处扩散。</string>
+    <string name="health_atlas_breathe_perfuse">血液把氧气带走</string>
+    <string name="health_atlas_breathe_perfuse_caption">红细胞流过毛细血管时结合氧气。含氧较高的血液经肺静脉回到左心。</string>
+    <string name="health_atlas_breathe_exhale">肺回缩，空气流出</string>
+    <string name="health_atlas_breathe_exhale_caption">平静呼气时，膈肌放松并上移，肺回缩，含二氧化碳的空气被呼出。两次呼吸之间，气体交换不会停止。</string>
+    <string name="health_atlas_breathe_alveolar_air">肺泡内的空气</string>
+    <string name="health_atlas_breathe_muscle">膈肌</string>
+    <string name="health_atlas_breathe_air_in">空气流入</string>
+    <string name="health_atlas_breathe_air_out">空气流出</string>
+    <string name="health_atlas_breathe_oxygen">氧气 → 血液</string>
+    <string name="health_atlas_breathe_carbon">二氧化碳 → 肺泡</string>
+    <string name="health_atlas_breathe_scope">慢速示意通气、扩散和血流。粒子数量、画面比例和时长不代表实际测量值。</string>
+    <string name="health_atlas_breathe_air_source">资料来源：呼吸过程（美国国立卫生研究院）</string>
+    <string name="health_atlas_breathe_gas_source">资料来源：气体交换（OpenStax）</string>
+</resources>

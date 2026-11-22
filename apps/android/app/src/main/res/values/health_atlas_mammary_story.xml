@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mammary_story_title">Milk flow in a mammary gland</string>
+    <string name="health_atlas_mammary_story_scope">Qualitative cross-section of one lactating alveolus and its adjoining duct. Shape, motion and timing are illustrative, not to scale or predictions of milk volume or flow.</string>
+    <string name="health_atlas_mammary_story_locate">Alveolus and duct</string>
+    <string name="health_atlas_mammary_story_locate_caption">Luminal epithelial cells line the milk space. Myoepithelial cells lie outside that lining, and the lumen opens into a duct.</string>
+    <string name="health_atlas_mammary_story_secrete">Secretion into the lumen</string>
+    <string name="health_atlas_mammary_story_secrete_caption">Luminal epithelial cells release milk components from the side that faces the alveolar lumen.</string>
+    <string name="health_atlas_mammary_story_accumulate">Milk accumulates</string>
+    <string name="health_atlas_mammary_story_accumulate_caption">Secreted milk collects in the alveolar lumen before ejection. The shading shows accumulation qualitatively.</string>
+    <string name="health_atlas_mammary_story_contract">Oxytocin and contraction</string>
+    <string name="health_atlas_mammary_story_contract_caption">In response to oxytocin, the outer myoepithelial cells contract and squeeze the alveolus.</string>
+    <string name="health_atlas_mammary_story_eject">Milk enters the duct</string>
+    <string name="health_atlas_mammary_story_eject_caption">The squeeze moves milk from the alveolar lumen into the adjoining duct.</string>
+    <string name="health_atlas_mammary_story_luminal_epithelium">Luminal epithelium</string>
+    <string name="health_atlas_mammary_story_lumen">Alveolar lumen</string>
+    <string name="health_atlas_mammary_story_myoepithelial_cells">Myoepithelial cells</string>
+    <string name="health_atlas_mammary_story_duct">Milk duct</string>
+    <string name="health_atlas_mammary_story_oxytocin_signal">Oxytocin signal</string>
+    <string name="health_atlas_mammary_story_ref_secretion">Milk lipid secretion imaging (mouse study)</string>
+    <string name="health_atlas_mammary_story_ref_ejection">Myoepithelial contraction and milk ejection (mouse imaging study)</string>
+</resources>

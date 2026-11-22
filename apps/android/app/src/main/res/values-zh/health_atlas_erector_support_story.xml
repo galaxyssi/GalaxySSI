@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_erector_support_story_title">竖脊肌如何伸展并支撑脊柱</string>
+    <string name="health_atlas_erector_support_story_choice">脊柱伸展与支撑</string>
+    <string name="health_atlas_erector_support_story_scope">这是简化的后视图与侧视图。侧视图中，身体前方在右侧。各场景展示正常解剖与功能；颜色变化仅示意相对用力需求，不代表实测的肌电活动或肌力。</string>
+    <string name="health_atlas_erector_support_story_columns">脊柱两侧成对的肌柱</string>
+    <string name="health_atlas_erector_support_story_columns_caption">竖脊肌位于较浅层的背部肌肉深面，沿脊柱两侧纵向排列。从中线向外依次为棘肌、最长肌和髂肋肌。</string>
+    <string name="health_atlas_erector_support_story_extension">两侧共同参与脊柱伸展</string>
+    <string name="health_atlas_erector_support_story_extension_caption">躯干从脊柱轻度屈曲回到接近中立位时，两侧竖脊肌共同参与这一过程。图中的骨盆保持不动，以便看清脊柱曲度的变化。</string>
+    <string name="health_atlas_erector_support_story_supported">有外部支撑的中立位</string>
+    <string name="health_atlas_erector_support_story_supported_caption">靠背分担了一部分维持躯干位置的负荷。脊柱保留自然曲度，背部肌肉仍可保持一定的活动。</string>
+    <string name="health_atlas_erector_support_story_loaded">有外部负荷的中立位</string>
+    <string name="health_atlas_erector_support_story_loaded_caption">图中躯干前方的负荷使脊柱有向前屈曲的趋势。脊柱伸肌可以增加出力来抵消这种趋势，而不必增大脊柱弧度，也不一定出现可见的伸展动作。</string>
+    <string name="health_atlas_erector_support_story_posterior">后视图</string>
+    <string name="health_atlas_erector_support_story_paired">成对的脊柱伸肌</string>
+    <string name="health_atlas_erector_support_story_fixed_pelvis">骨盆保持不动</string>
+    <string name="health_atlas_erector_support_story_neutral_curve">中立位曲度不变</string>
+    <string name="health_atlas_erector_support_story_contact">靠背接触处</string>
+    <string name="health_atlas_erector_support_story_external">外部负荷</string>
+    <string name="health_atlas_erector_support_story_ref_anatomy">OpenStax：头、颈与背部的轴向肌肉</string>
+    <string name="health_atlas_erector_support_story_ref_support">Boudrifa 与 Davies：不同靠背支撑条件下的竖脊肌活动</string>
+    <string name="health_atlas_erector_support_story_ref_load">Schultz 等：静态负荷下的躯干肌肉活动</string>
+</resources>

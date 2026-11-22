@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_intercalated_story_title">A 型闰细胞如何帮助排酸</string>
+    <string name="health_atlas_intercalated_story_choice">闰细胞与排酸</string>
+    <string name="health_atlas_intercalated_story_scope">以正常皮质集合管中的一个 A 型闰细胞为例。图中只显示物质移动的方向，不表示数量或速率。结构和颗粒未按比例绘制。</string>
+    <string name="health_atlas_intercalated_story_orientation">一个细胞的两侧</string>
+    <string name="health_atlas_intercalated_story_orientation_caption">A 型闰细胞的顶端面朝向集合管管腔，基底外侧面朝向集合管与邻近血管之间的组织。相邻的主细胞主要参与盐和水的调节。</string>
+    <string name="health_atlas_intercalated_story_protons">质子进入管腔</string>
+    <string name="health_atlas_intercalated_story_protons_caption">顶端膜上的质子泵（H⁺-ATP 酶）把氢离子（H⁺）从 A 型闰细胞泵入管液。B 型闰细胞则不同，可以将碳酸氢根分泌到管腔中。</string>
+    <string name="health_atlas_intercalated_story_bicarbonate">碳酸氢根返回血液</string>
+    <string name="health_atlas_intercalated_story_bicarbonate_caption">在细胞的另一侧，AE1 交换蛋白将碳酸氢根（HCO₃⁻）转运出细胞，同时将氯离子转运入细胞。碳酸氢根经过集合管与邻近毛细血管之间的组织间隙，返回血液。</string>
+    <string name="health_atlas_intercalated_story_buffers">缓冲物质结合质子</string>
+    <string name="health_atlas_intercalated_story_buffers_caption">在管液中，质子可以与氨结合形成铵离子（NH₄⁺）。磷酸氢根也能结合一个质子，形成磷酸二氢根（H₂PO₄⁻）。</string>
+    <string name="health_atlas_intercalated_story_excretion">缓冲后的酸随尿排出</string>
+    <string name="health_atlas_intercalated_story_excretion_caption">铵离子和磷酸二氢根随管液流向下游，最终随尿排出，把酸带离身体。与此同时，A 型闰细胞释放的碳酸氢根返回血液。</string>
+    <string name="health_atlas_intercalated_story_label_duct">皮质集合管</string>
+    <string name="health_atlas_intercalated_story_label_lumen">集合管管腔</string>
+    <string name="health_atlas_intercalated_story_label_apical">顶端面</string>
+    <string name="health_atlas_intercalated_story_label_principal">主细胞</string>
+    <string name="health_atlas_intercalated_story_label_type_a">A 型闰细胞</string>
+    <string name="health_atlas_intercalated_story_label_basolateral">基底外侧面</string>
+    <string name="health_atlas_intercalated_story_label_blood">邻近毛细血管</string>
+    <string name="health_atlas_intercalated_story_label_urine">随尿排出方向</string>
+    <string name="health_atlas_intercalated_story_label_h">H⁺</string>
+    <string name="health_atlas_intercalated_story_label_hco3">HCO₃⁻</string>
+    <string name="health_atlas_intercalated_story_label_nh4">NH₄⁺</string>
+    <string name="health_atlas_intercalated_story_label_h2po4">H₂PO₄⁻</string>
+    <string name="health_atlas_intercalated_story_ref_polarity">Kim 等（1999）：大鼠和小鼠的闰细胞亚型</string>
+    <string name="health_atlas_intercalated_story_ref_buffers">Pitts 等（1948）：人肾如何酸化尿液</string>
+</resources>

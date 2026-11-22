@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_adrenal_medulla_story_title">How the adrenal medulla releases hormones</string>
+    <string name="health_atlas_adrenal_medulla_story_choice">Adrenal medulla signaling</string>
+    <string name="health_atlas_adrenal_medulla_story_scope">A qualitative view of normal human adrenal medulla function, from sympathetic input to hormone release and return toward resting levels. The adrenal cortex is shown only for orientation. Anatomy, timing, and particle counts are schematic.</string>
+
+    <string name="health_atlas_adrenal_medulla_story_locate">Find the medulla inside the gland</string>
+    <string name="health_atlas_adrenal_medulla_story_locate_caption">An adrenal gland sits above each kidney. In this cutaway of one gland, the outer cortex surrounds the inner medulla, where chromaffin cells are found.</string>
+    <string name="health_atlas_adrenal_medulla_story_signal">A sympathetic signal arrives</string>
+    <string name="health_atlas_adrenal_medulla_story_signal_caption">A preganglionic sympathetic nerve carries a signal to the medulla. Its ending releases acetylcholine, which crosses the small gap and activates receptors on a chromaffin cell.</string>
+    <string name="health_atlas_adrenal_medulla_story_release">Vesicles release their contents</string>
+    <string name="health_atlas_adrenal_medulla_story_release_caption">Activation lets calcium enter the chromaffin cell. The rise in calcium helps vesicles fuse with the cell membrane and release stored catecholamines outside the cell.</string>
+    <string name="health_atlas_adrenal_medulla_story_circulate">Blood carries the hormones away</string>
+    <string name="health_atlas_adrenal_medulla_story_circulate_caption">Epinephrine (adrenaline) and norepinephrine (noradrenaline) enter nearby capillaries. The bloodstream carries these catecholamine hormones beyond the gland.</string>
+    <string name="health_atlas_adrenal_medulla_story_settle">Levels move back toward baseline</string>
+    <string name="health_atlas_adrenal_medulla_story_settle_caption">As sympathetic input eases, the medulla releases less. The body continues to clear circulating catecholamines, so their levels move back toward resting levels rather than falling to zero.</string>
+
+    <string name="health_atlas_adrenal_medulla_story_art_gland">Adrenal gland</string>
+    <string name="health_atlas_adrenal_medulla_story_art_kidney">Kidney</string>
+    <string name="health_atlas_adrenal_medulla_story_art_cortex">Cortex</string>
+    <string name="health_atlas_adrenal_medulla_story_art_medulla">Medulla</string>
+    <string name="health_atlas_adrenal_medulla_story_art_nerve">Sympathetic nerve</string>
+    <string name="health_atlas_adrenal_medulla_story_art_transmitter">Acetylcholine</string>
+    <string name="health_atlas_adrenal_medulla_story_art_cell">Chromaffin cell</string>
+    <string name="health_atlas_adrenal_medulla_story_art_vesicle">Secretory vesicle</string>
+    <string name="health_atlas_adrenal_medulla_story_art_fusion">Fusion site</string>
+    <string name="health_atlas_adrenal_medulla_story_art_catecholamines">Catecholamines</string>
+    <string name="health_atlas_adrenal_medulla_story_art_capillary">Capillary</string>
+    <string name="health_atlas_adrenal_medulla_story_art_blood">Blood flow</string>
+    <string name="health_atlas_adrenal_medulla_story_art_level">Circulating hormone level</string>
+    <string name="health_atlas_adrenal_medulla_story_art_baseline">Resting level</string>
+    <string name="health_atlas_adrenal_medulla_story_art_time">Time</string>
+
+    <string name="health_atlas_adrenal_medulla_story_ref_exocytosis">Evidence: nerve-linked vesicle release in mouse adrenal medulla</string>
+    <string name="health_atlas_adrenal_medulla_story_ref_recovery">Evidence: circulating catecholamines return toward resting levels in humans</string>
+</resources>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gluteal_extension_story_title">臀大肌如何伸展髋关节</string>
+    <string name="health_atlas_gluteal_extension_story_choice">髋关节伸展</string>
+    <string name="health_atlas_gluteal_extension_story_scope">这是简化的侧视图，身体前方在右侧。蓝色弧线表示髋关节的运动，不代表实测角度或肌力。</string>
+    <string name="health_atlas_gluteal_extension_story_attachments">髋关节后方的肌肉</string>
+    <string name="health_atlas_gluteal_extension_story_attachments_caption">臀大肌从骨盆后方跨过髋关节后侧，远端附着于股骨上段及大腿外侧的组织。图中重点标出了股骨上的附着处。</string>
+    <string name="health_atlas_gluteal_extension_story_femur">大腿相对骨盆转动</string>
+    <string name="health_atlas_gluteal_extension_story_femur_caption">图中骨盆保持不动，股骨绕髋关节中心相对骨盆向后转动。臀大肌参与这一髋关节伸展动作。浅色轮廓表示起始位置。</string>
+    <string name="health_atlas_gluteal_extension_story_pelvis">骨盆相对大腿转动</string>
+    <string name="health_atlas_gluteal_extension_story_pelvis_caption">图中股骨保持不动，骨盆绕同一个髋关节中心向后转动。腰椎随骨盆一起移动，自身曲度不变。这也是髋关节伸展。</string>
+    <string name="health_atlas_gluteal_extension_story_compare">髋关节伸展不等于脊柱伸展</string>
+    <string name="health_atlas_gluteal_extension_story_compare_caption">左图中，骨盆和股骨之间的角度改变。右图中，腰椎伸展，而髋关节角度不变。两种动作可以同时发生，但发生在不同的关节。</string>
+    <string name="health_atlas_gluteal_extension_story_lateral">侧视图（身体前方在右侧）</string>
+    <string name="health_atlas_gluteal_extension_story_gluteus">臀大肌</string>
+    <string name="health_atlas_gluteal_extension_story_pelvis_label">骨盆</string>
+    <string name="health_atlas_gluteal_extension_story_socket">髋关节中心</string>
+    <string name="health_atlas_gluteal_extension_story_femoral_attachment">股骨附着处</string>
+    <string name="health_atlas_gluteal_extension_story_pelvis_fixed">骨盆保持不动</string>
+    <string name="health_atlas_gluteal_extension_story_femur_moves">股骨转动</string>
+    <string name="health_atlas_gluteal_extension_story_pelvis_moves">骨盆转动</string>
+    <string name="health_atlas_gluteal_extension_story_femur_fixed">股骨保持不动</string>
+    <string name="health_atlas_gluteal_extension_story_hip_motion">髋关节伸展</string>
+    <string name="health_atlas_gluteal_extension_story_spine_motion">脊柱伸展</string>
+    <string name="health_atlas_gluteal_extension_story_hip_angle_changes">髋关节角度改变</string>
+    <string name="health_atlas_gluteal_extension_story_hip_angle_fixed">髋关节角度不变</string>
+    <string name="health_atlas_gluteal_extension_story_ref_anatomy">OpenStax：骨盆带与下肢肌肉</string>
+    <string name="health_atlas_gluteal_extension_story_ref_attachments">解剖研究：臀大肌的附着方式</string>
+    <string name="health_atlas_gluteal_extension_story_ref_emg">Lieberman 等：步行与跑步时的臀大肌活动</string>
+</resources>

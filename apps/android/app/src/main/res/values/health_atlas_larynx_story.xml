@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_larynx_story_title">How the larynx makes voice</string>
+    <string name="health_atlas_larynx_story_choice">Laryngeal phonation</string>
+    <string name="health_atlas_larynx_story_scope">A qualitative view of normal voicing on an outgoing breath. Motion is slowed and not to scale.</string>
+
+    <string name="health_atlas_larynx_story_breathe">An open glottis</string>
+    <string name="health_atlas_larynx_story_breathe_caption">During quiet breathing, air passes through the open glottis, the gap between the vocal folds. The gap widens as air flows in.</string>
+    <string name="health_atlas_larynx_story_approach">The vocal folds move closer</string>
+    <string name="health_atlas_larynx_story_approach_caption">As voicing begins, muscles of the larynx draw the vocal folds toward the midline, narrowing the glottis.</string>
+    <string name="health_atlas_larynx_story_air">Outgoing air sets the folds in motion</string>
+    <string name="health_atlas_larynx_story_air_caption">Air from the lungs pushes the closely spaced folds apart. Their elastic tissue recoils inward, and the interaction with outgoing air sustains vibration.</string>
+    <string name="health_atlas_larynx_story_pulse">Vibration makes sound pulses</string>
+    <string name="health_atlas_larynx_story_pulse_caption">As the folds vibrate, the glottis repeatedly widens and narrows. The pulses in airflow generate sound waves that travel up the vocal tract.</string>
+    <string name="health_atlas_larynx_story_reopen">The glottis opens again</string>
+    <string name="health_atlas_larynx_story_reopen_caption">As voicing ends, vibration dies away. The folds move apart, reopening the glottis for quiet breathing.</string>
+
+    <string name="health_atlas_larynx_story_superior">Superior view</string>
+    <string name="health_atlas_larynx_story_larynx">Larynx</string>
+    <string name="health_atlas_larynx_story_folds">Vocal folds</string>
+    <string name="health_atlas_larynx_story_glottis">Glottis</string>
+    <string name="health_atlas_larynx_story_cutaway">Frontal cutaway</string>
+    <string name="health_atlas_larynx_story_airflow">Airflow</string>
+    <string name="health_atlas_larynx_story_sound">Sound pulses</string>
+    <string name="health_atlas_larynx_story_trachea">Trachea</string>
+
+    <string name="health_atlas_larynx_story_ref_breathing">Study: vocal fold movement during breathing</string>
+    <string name="health_atlas_larynx_story_ref_phonation">Study: vocal fold motion, airflow and sound at voice onset</string>
+</resources>

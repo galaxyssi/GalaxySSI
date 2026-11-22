@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_arterial_title">弹性动脉怎样扩张与回弹</string>
+    <string name="health_atlas_arterial_choice">动脉脉搏与回弹</string>
+    <string name="health_atlas_arterial_scope">以一段主动脉示意大弹性动脉的工作方式。管壁运动与血流分别标出，比例、时序与波形宽度均不代表实测值。</string>
+    <string name="health_atlas_arterial_locate">管腔外有三层管壁</string>
+    <string name="health_atlas_arterial_locate_caption">主动脉把血液从左心室送出。内膜朝向血液，中膜含有弹性层，外膜支撑管壁。</string>
+    <string name="health_atlas_arterial_ejection">心室射血，管壁扩张</string>
+    <string name="health_atlas_arterial_ejection_caption">左心室射血时，动脉压上升，富有弹性的管壁向外扩张，暂时储存一部分射血的能量。</string>
+    <string name="health_atlas_arterial_wave_front">脉搏波沿动脉传播</string>
+    <string name="health_atlas_arterial_wave_front_caption">金色标记追踪压力变化和管壁扩张的前沿，红色箭头表示血流。脉搏波的传播并不是同一团血液在移动。</string>
+    <string name="health_atlas_arterial_recoil">两次射血之间，管壁回弹</string>
+    <string name="health_atlas_arterial_recoil_caption">主动脉瓣关闭、心室舒张后，扩张的主动脉回弹。在两次射血之间，回弹帮助维持下游血流。</string>
+    <string name="health_atlas_arterial_smooth">间歇射血，下游血流更平稳</string>
+    <string name="health_atlas_arterial_smooth_caption">扩张和回弹缓冲了心脏的间歇射血，使下游血流更平稳。这是总体趋势，不代表每一处动脉的具体流动。</string>
+    <string name="health_atlas_arterial_aortic_arch">主动脉弓</string>
+    <string name="health_atlas_arterial_cross_section">动脉横切面</string>
+    <string name="health_atlas_arterial_from_heart">来自心脏</string>
+    <string name="health_atlas_arterial_outer_wall">外膜</string>
+    <string name="health_atlas_arterial_elastic_media">中膜弹性层</string>
+    <string name="health_atlas_arterial_intima">内膜</string>
+    <string name="health_atlas_arterial_lumen">管腔</string>
+    <string name="health_atlas_arterial_longitudinal">动脉管壁纵切面</string>
+    <string name="health_atlas_arterial_flow">血流</string>
+    <string name="health_atlas_arterial_wave">脉搏波</string>
+    <string name="health_atlas_arterial_ref_distension">磁共振研究：心动周期中的主动脉扩张与回弹</string>
+    <string name="health_atlas_arterial_ref_wave">磁共振研究：升主动脉管径变化、血流与脉搏波</string>
+</resources>
