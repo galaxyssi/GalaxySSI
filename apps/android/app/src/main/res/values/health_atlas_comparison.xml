@@ -9,6 +9,9 @@
     <string name="health_atlas_compare_summary">One compartment %1$s%% · Two compartments %2$s%%\nDifference (two minus one): %3$s percentage points</string>
     <string name="health_atlas_compare_range">Central amount across three presets: %1$s%% to %2$s%%</string>
     <string name="health_atlas_compare_evidence">Model evidence</string>
+    <string name="health_atlas_compare_total_title">Cumulative comparison</string>
+    <string name="health_atlas_compare_total_result">0 to %1$s h · One compartment %2$s · Two compartments %3$s\nDifference (two minus one): %4$s percentage-hours</string>
+    <string name="health_atlas_compare_total_basis">Area under the normalized central-amount curve up to the selected time. The unit is percentage-hours, not a drug concentration or a clinical exposure.</string>
     <string name="health_atlas_compare_limit">Fixed synthetic parameter sets, not measurements. The range is not a confidence interval. Numerical checks do not establish experimental validity. This is not a drug or patient prediction.</string>
     <string name="health_atlas_compare_reference">Independent validation principles</string>
 </resources>

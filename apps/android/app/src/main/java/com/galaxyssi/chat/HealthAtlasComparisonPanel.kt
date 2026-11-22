@@ -25,26 +25,41 @@ internal object HealthAtlasComparisonText {
         R.string.health_atlas_compare_summary, number(point.one), number(point.two.central), number(point.centralGap))
     fun range(context: Context, point: HealthAtlasComparisonPoint) =
         context.getString(R.string.health_atlas_compare_range, number(point.low), number(point.high))
-    fun prompt(context: Context, model: HealthAtlasModelComparison) = model.point.let { point ->
-        listOf(context.getString(R.string.health_atlas_compare_title), context.getString(R.string.health_atlas_compare_scope),
-            context.getString(labels[model.scenario.ordinal]), rates(context, model), time(context, model),
-            summary(context, point), range(context, point), context.getString(R.string.health_atlas_compare_limit),
-            HealthAtlasDistribution.SOURCE, VALIDATION_SOURCE).joinToString("\n")
+    fun totals(context: Context, model: HealthAtlasModelComparison) = model.centralAmountHours().let {
+        context.getString(R.string.health_atlas_compare_total_result, number(model.hours), number(it.one),
+            number(it.two), number(it.gap))
+    }
+    fun prompt(context: Context, model: HealthAtlasModelComparison, includeTotals: Boolean = false) = model.point.let { point ->
+        buildList {
+            add(context.getString(R.string.health_atlas_compare_title))
+            add(context.getString(R.string.health_atlas_compare_scope))
+            add(context.getString(labels[model.scenario.ordinal]))
+            add(rates(context, model)); add(time(context, model))
+            add(summary(context, point)); add(range(context, point))
+            if (includeTotals) {
+                add(totals(context, model))
+                add(context.getString(R.string.health_atlas_compare_total_basis))
+            }
+            add(context.getString(R.string.health_atlas_compare_limit))
+            add(HealthAtlasDistribution.SOURCE); add(VALIDATION_SOURCE)
+        }.joinToString("\n")
     }
 }
 
 internal class HealthAtlasComparisonPanel(
-    activity: Activity, body: LinearLayout, initial: HealthAtlasModelComparison,
-    changed: (HealthAtlasModelComparison) -> Unit, source: (String) -> Unit,
+    activity: Activity, body: LinearLayout, initial: HealthAtlasModelComparison, totalsInitiallyOpen: Boolean,
+    changed: (HealthAtlasModelComparison, Boolean) -> Unit, source: (String) -> Unit,
 ) {
     init {
         val ui = HealthCenterViews(activity)
         var model = initial
+        var totalsOpen = totalsInitiallyOpen
         val choice = ui.column()
         val rates = ui.text("", 13f, muted = true).apply { tag = "atlas-comparison-rates" }
         val time = ui.text("", 14f).apply { tag = "atlas-comparison-time" }
         val result = ui.text("", 15f, bold = true).apply { tag = "atlas-comparison-result" }
         val range = ui.text("", 13f).apply { tag = "atlas-comparison-range" }
+        val totals = ui.text("", 14f).apply { tag = "atlas-comparison-totals-value" }
         val chart = HealthAtlasComparisonChart(activity, initial)
         val seek = SeekBar(activity).apply { tag = "atlas-comparison-elapsed"; max = 192; progress = initial.quarterHours }
         fun update() {
@@ -54,8 +69,9 @@ internal class HealthAtlasComparisonPanel(
             seek.contentDescription = time.text
             result.text = HealthAtlasComparisonText.summary(activity, point)
             range.text = HealthAtlasComparisonText.range(activity, point)
+            if (totalsOpen) totals.text = HealthAtlasComparisonText.totals(activity, model)
             chart.model = model
-            changed(model)
+            changed(model, totalsOpen)
         }
         fun scenarios() {
             choice.removeAllViews()
@@ -79,6 +95,19 @@ internal class HealthAtlasComparisonPanel(
         ui.add(body, seek)
         ui.add(body, result, 8)
         ui.add(body, range, 6)
+        val totalsBody = ui.column().apply {
+            tag = "atlas-comparison-totals"
+            visibility = if (totalsOpen) View.VISIBLE else View.GONE
+        }
+        ui.add(body, HealthAtlasUi.disclosure(activity, activity.getString(R.string.health_atlas_compare_total_title),
+            "atlas-comparison-totals-toggle", totalsOpen) { open ->
+            totalsOpen = open
+            totalsBody.visibility = if (open) View.VISIBLE else View.GONE
+            update()
+        }, 8)
+        ui.add(totalsBody, totals)
+        ui.add(totalsBody, ui.text(activity.getString(R.string.health_atlas_compare_total_basis), 13f, muted = true), 6)
+        ui.add(body, totalsBody)
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_compare_evidence), 16f, bold = true), 20)
         ui.add(body, ui.text(activity.getString(R.string.health_atlas_compare_limit), 13f, muted = true)
             .apply { tag = "atlas-comparison-evidence" }, 6)

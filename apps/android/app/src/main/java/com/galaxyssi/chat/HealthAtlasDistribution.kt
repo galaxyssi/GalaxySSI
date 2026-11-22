@@ -46,17 +46,21 @@ internal enum class HealthAtlasDrugMode { SINGLE, TWO, COMPARISON }
 
 internal data class HealthAtlasDrugState(val mode: HealthAtlasDrugMode = HealthAtlasDrugMode.SINGLE,
     val distribution: HealthAtlasDistribution = HealthAtlasDistribution(),
-    val comparison: HealthAtlasModelComparison = HealthAtlasModelComparison()) {
+    val comparison: HealthAtlasModelComparison = HealthAtlasModelComparison(),
+    val showComparisonTotals: Boolean = false) {
     fun encode() = intArrayOf(mode.ordinal, distribution.outward, distribution.returning,
-        distribution.elimination, distribution.quarterHours, comparison.scenario.ordinal, comparison.quarterHours)
+        distribution.elimination, distribution.quarterHours, comparison.scenario.ordinal, comparison.quarterHours,
+        if (showComparisonTotals) 1 else 0)
     companion object {
-        fun restore(values: IntArray?): HealthAtlasDrugState? = values?.takeIf { it.size == 5 || it.size == 7 }?.let {
+        fun restore(values: IntArray?): HealthAtlasDrugState? = values?.takeIf { it.size == 5 || it.size in 7..8 }?.let {
             runCatching {
                 val modes = if (it.size == 5) listOf(HealthAtlasDrugMode.SINGLE, HealthAtlasDrugMode.TWO)
                     else HealthAtlasDrugMode.entries
-                val comparison = if (it.size == 7) HealthAtlasModelComparison(
+                val comparison = if (it.size >= 7) HealthAtlasModelComparison(
                     HealthAtlasComparisonScenario.entries[it[5]], it[6]) else HealthAtlasModelComparison()
-                HealthAtlasDrugState(modes[it[0]], HealthAtlasDistribution(it[1], it[2], it[3], it[4]), comparison)
+                val totals = it.getOrElse(7) { 0 }
+                require(totals in 0..1)
+                HealthAtlasDrugState(modes[it[0]], HealthAtlasDistribution(it[1], it[2], it[3], it[4]), comparison, totals == 1)
             }.getOrNull()
         }
     }

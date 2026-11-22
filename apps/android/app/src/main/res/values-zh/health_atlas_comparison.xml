@@ -9,6 +9,9 @@
     <string name="health_atlas_compare_summary">单室 %1$s%% · 双室 %2$s%%\n差值（双室减单室）：%3$s 个百分点</string>
     <string name="health_atlas_compare_range">三组预设的中央室比例：%1$s%% 至 %2$s%%</string>
     <string name="health_atlas_compare_evidence">模型证据</string>
+    <string name="health_atlas_compare_total_title">累计对照</string>
+    <string name="health_atlas_compare_total_result">0 至 %1$s 小时 · 单室 %2$s · 双室 %3$s\n差值（双室减单室）：%4$s 百分比·小时</string>
+    <string name="health_atlas_compare_total_basis">所选时间前中央室比例曲线下的面积，单位为百分比·小时，不表示药物浓度或临床暴露量。</string>
     <string name="health_atlas_compare_limit">参数为成组的合成预设，不来自实测。范围不是置信区间，数值核验不等于实验验证。不用于预测药物或个人反应。</string>
     <string name="health_atlas_compare_reference">独立验证原则</string>
 </resources>

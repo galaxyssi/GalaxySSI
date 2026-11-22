@@ -62,7 +62,8 @@ internal class HealthAtlasResearchPanel(
                 HealthAtlasDrugMode.TWO -> HealthAtlasDistributionPanel(activity, modelBody, drugState.distribution,
                     { drugState = drugState.copy(distribution = it) }, source)
                 HealthAtlasDrugMode.COMPARISON -> HealthAtlasComparisonPanel(activity, modelBody, drugState.comparison,
-                    { drugState = drugState.copy(comparison = it) }, source)
+                    drugState.showComparisonTotals,
+                    { model, totals -> drugState = drugState.copy(comparison = model, showComparisonTotals = totals) }, source)
             }
         }
         renderModel()

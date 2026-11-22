@@ -1033,6 +1033,15 @@ plot, a time slider and reset, the selected values and difference in percentage
 points, and the minimum and maximum over the three scenarios. The curve and
 numeric readout update in place; no continuously running service is added.
 
+The cumulative comparison expands below the point readout. It integrates
+normalized central amount from zero to the selected time. Because these
+presets share a positive constant `k10`, the cumulative amount equals the
+eliminated amount divided by `k10`. The unit is percentage-hours and is not
+a concentration AUC or a clinical exposure. The no-exchange control agrees
+exactly, and an independent augmented matrix exponential verifies the
+coupled cases. The selected time and expansion state restore independently
+of the original models.
+
 - **Task and units:** Compare normalized central amount, not concentration,
   response, or risk. Both models start at 100 units in the central compartment
   and use the same elimination rate (0.10 per hour). Only the two-compartment
