@@ -31,6 +31,15 @@ internal fun Activity.hasOpenAtlasModels(): Boolean =
     window.decorView.findViewWithTag<View>("atlas-standalone-models") != null ||
         window.decorView.findViewWithTag<View>("atlas-inline-models")?.visibility == View.VISIBLE
 
+@Suppress("DEPRECATION")
+internal fun Activity.closeAtlasStandaloneModel() {
+    val decor = window.decorView
+    check(decor.findViewWithTag<View>("atlas-standalone-models") != null)
+    onBackPressed()
+    check(decor.findViewWithTag<View>("atlas-standalone-models") == null)
+    check(decor.findViewWithTag<View>("atlas-tab-1")?.isSelected == true)
+}
+
 internal fun Activity.openAtlasFromFigureOrSearch(id: String) {
     val decor = window.decorView
     val marker = decor.findViewWithTag<View>("atlas-hotspot-$id")

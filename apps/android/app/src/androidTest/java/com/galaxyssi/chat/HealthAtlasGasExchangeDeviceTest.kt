@@ -118,6 +118,7 @@ class HealthAtlasGasExchangeDeviceTest {
         }
         scenario.recreate(); ready(scenario, "atlas-process-stage-0")
         scenario.onActivity {
+            it.closeAtlasStandaloneModel()
             it.onBackPressed(); it.onBackPressed()
             assertTrue(it.view("atlas-process-stage-2").isSelected)
             assertEquals(20, (it.view("atlas-physiology-rate") as SeekBar).progress)

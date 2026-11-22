@@ -110,6 +110,7 @@ class HealthAtlasRenalDeviceTest {
         scenario.onActivity {
             assertTrue(it.view("atlas-process-stage-2").isSelected)
             assertEquals(50, (it.view("atlas-physiology-reabsorbed") as SeekBar).progress)
+            it.closeAtlasStandaloneModel()
             it.onBackPressed(); assertTrue(it.view("atlas-hotspot-proximal-tubule").isSelected)
             it.onBackPressed(); assertFalse(it.view("atlas-hotspot-proximal-tubule").isSelected)
             it.onBackPressed(); assertNotNull(it.view("atlas-hotspot-renal-cortex"))

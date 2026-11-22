@@ -296,6 +296,7 @@ class HealthAtlasSystemOverviewDeviceTest {
         }
         scenario.recreate(); ready(scenario, "atlas-process-stage-0")
         scenario.onActivity {
+            it.closeAtlasStandaloneModel()
             it.onBackPressed(); assertTrue(it.view("atlas-hotspot-epidermis").isSelected)
             it.onBackPressed(); assertFalse(it.view("atlas-hotspot-epidermis").isSelected)
         }

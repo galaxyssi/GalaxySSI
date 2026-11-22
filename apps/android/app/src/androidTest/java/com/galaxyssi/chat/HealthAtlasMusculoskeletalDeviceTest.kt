@@ -236,6 +236,7 @@ class HealthAtlasMusculoskeletalDeviceTest {
             assertNotNull(it.view("atlas-feature-skeletal-striations"))
             assertNull(it.window.decorView.tagged("atlas-hotspot-biceps-brachii"))
             it.openAtlasModelDetails(); assertNotNull(it.view("atlas-process-stage-0"))
+            it.closeAtlasStandaloneModel()
             it.onBackPressed(); assertTrue(it.view("atlas-hotspot-biceps-brachii").isSelected)
             it.onBackPressed(); assertTrue(it.view("atlas-view-0").isSelected)
         }
