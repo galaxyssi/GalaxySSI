@@ -37,4 +37,31 @@ class HealthAtlasMechanismCloseUpTest {
         assertTrue(toward > resting && toward <= 1f)
         assertEquals(toward, HealthAtlasSoundStage.relativeChannelOpening(4f), 0f)
     }
+
+    @Test fun myosinCycleMovesFromBindingToStrokeToAtpReleaseAndReset() {
+        val geometry = HealthAtlasMovementGeometry
+        val cycle = (0..3).map { geometry.crossBridge((it + .5f) / 4f) }
+        assertEquals(listOf(
+            HealthAtlasCrossBridge.BIND,
+            HealthAtlasCrossBridge.PULL,
+            HealthAtlasCrossBridge.DETACH,
+            HealthAtlasCrossBridge.RESET,
+        ), cycle)
+        assertEquals(HealthAtlasCrossBridge.RESET, geometry.crossBridge(1f))
+        assertTrue(geometry.sarcomereHalfWidth(1f) < geometry.sarcomereHalfWidth(0f))
+    }
+
+    @Test fun theSchematicVoltageRisesAfterPotassiumChannelsStartClosing() {
+        val diagram = HealthAtlasInsulinDiagram
+        assertEquals(0f, diagram.relativeDepolarization(.18f), 0f)
+        assertTrue(diagram.potassiumOpen(.18f) < diagram.potassiumOpen(0f))
+        for (i in 1..100) {
+            val t = i / 100f
+            val previous = (i - 1) / 100f
+            assertTrue(diagram.potassiumOpen(t) <= diagram.potassiumOpen(previous))
+            assertTrue(diagram.relativeDepolarization(t) >= diagram.relativeDepolarization(previous))
+        }
+        assertEquals(0f, diagram.potassiumOpen(1f), 0f)
+        assertEquals(1f, diagram.relativeDepolarization(1f), 0f)
+    }
 }

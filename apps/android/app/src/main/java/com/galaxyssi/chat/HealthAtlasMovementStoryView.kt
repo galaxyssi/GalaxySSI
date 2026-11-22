@@ -13,11 +13,21 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+internal enum class HealthAtlasCrossBridge(val title: Int) {
+    BIND(R.string.health_atlas_motion_bridge_bind),
+    PULL(R.string.health_atlas_motion_bridge_pull),
+    DETACH(R.string.health_atlas_motion_bridge_detach),
+    RESET(R.string.health_atlas_motion_bridge_reset),
+}
+
 internal object HealthAtlasMovementGeometry {
     const val ACTIN_LENGTH = 80f
     const val MYOSIN_LENGTH = 122f
     fun ease(t: Float) = t * t * (3f - 2f * t)
     fun sarcomereHalfWidth(t: Float) = 111f - 33f * ease(t)
+    fun crossBridge(t: Float) = HealthAtlasCrossBridge.entries[
+        (t.coerceIn(0f, 1f) * 4f).toInt().coerceAtMost(3)
+    ]
     fun elbowAngle(extending: Boolean, t: Float) = 96f * ease(if (extending) 1f - t else t)
     fun erosionDepth(chapter: Int, t: Float) = when (chapter) {
         0 -> 0f
@@ -151,7 +161,7 @@ internal class HealthAtlasMovementStoryView(context: Context, story: HealthAtlas
     private fun sliding(c: Canvas, t: Float) {
         val left = 170f - HealthAtlasMovementGeometry.sarcomereHalfWidth(t)
         val right = 340f - left
-        for (y in 131..222 step 34) {
+        for (y in 104..168 step 28) {
             val h = y.toFloat()
             line(c, left, h, left + HealthAtlasMovementGeometry.ACTIN_LENGTH, h, teal, 4.2f)
             line(c, right, h, right - HealthAtlasMovementGeometry.ACTIN_LENGTH, h, teal, 4.2f)
@@ -164,13 +174,56 @@ internal class HealthAtlasMovementStoryView(context: Context, story: HealthAtlas
             }
         }
         for (x in listOf(left, right)) {
-            line(c, x, 113f, x, 236f, edge, 5f)
-            line(c, x, 270f, x, 290f, edge, 1.3f)
+            line(c, x, 89f, x, 185f, edge, 5f)
+            line(c, x, 194f, x, 204f, edge, 1.3f)
         }
-        line(c, left, 280f, right, 280f, edge, 1.3f)
-        leader(c, 73f, 78f, left + 32f, 131f, R.string.health_atlas_motion_actin, teal)
-        leader(c, 258f, 78f, 205f, 145f, R.string.health_atlas_motion_myosin, scarlet)
-        label(c, 170f, 312f, R.string.health_atlas_motion_sarcomere)
+        line(c, left, 199f, right, 199f, edge, 1.3f)
+        leader(c, 73f, 59f, left + 32f, 104f, R.string.health_atlas_motion_actin, teal)
+        leader(c, 258f, 59f, 205f, 118f, R.string.health_atlas_motion_myosin, scarlet)
+        label(c, 170f, 220f, R.string.health_atlas_motion_sarcomere)
+        crossBridge(c, t)
+    }
+
+    private fun crossBridge(c: Canvas, t: Float) {
+        val stage = HealthAtlasMovementGeometry.crossBridge(t)
+        val progress = HealthAtlasMovementGeometry.ease((t * 4f - stage.ordinal).coerceIn(0f, 1f))
+        val actinOffset = when (stage) {
+            HealthAtlasCrossBridge.BIND -> 0f
+            HealthAtlasCrossBridge.PULL -> 22f * progress
+            else -> 22f
+        }
+        val tipX = when (stage) {
+            HealthAtlasCrossBridge.BIND -> 117f
+            HealthAtlasCrossBridge.PULL -> 117f + actinOffset
+            HealthAtlasCrossBridge.DETACH -> 139f
+            HealthAtlasCrossBridge.RESET -> 139f - 22f * progress
+        }
+        val tipY = when (stage) {
+            HealthAtlasCrossBridge.BIND -> 280f - 13f * progress
+            HealthAtlasCrossBridge.PULL -> 267f
+            HealthAtlasCrossBridge.DETACH -> 267f + 13f * progress
+            HealthAtlasCrossBridge.RESET -> 280f
+        }
+        ink(0xfff9f6ed)
+        c.drawRoundRect(24f, 231f, 316f, 331f, 8f, 8f, paint)
+        ink(0xffddcbb8, 1f)
+        c.drawRoundRect(24f, 231f, 316f, 331f, 8f, 8f, paint)
+        c.save()
+        c.clipRect(38f, 238f, 223f, 305f)
+        for (i in 0..11) {
+            val x = 29f + i * 17f + actinOffset
+            oval(c, x, 257f, 9f, 6f, teal)
+            oval(c, x + 6f, 252f, 8f, 5f, 0xff6aa59c)
+        }
+        c.restore()
+        line(c, 46f, 299f, 208f, 299f, scarlet, 8f)
+        line(c, 160f, 299f, tipX + 8f, tipY + 4f, scarlet, 5f)
+        oval(c, tipX, tipY, 10f, 5f, scarlet)
+        oval(c, tipX - 3f, tipY - 1f, 4f, 2f, 0xffd99589)
+        for (i in HealthAtlasCrossBridge.entries.indices) {
+            oval(c, 244f + i * 15f, 275f, 3.2f, 3.2f, if (i == stage.ordinal) scarlet else 0xffcfc3b7)
+        }
+        label(c, 170f, 320f, stage.title)
     }
 
     private fun elbow(c: Canvas, extending: Boolean, t: Float) {

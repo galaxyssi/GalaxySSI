@@ -16,6 +16,7 @@ import kotlin.math.sin
 internal object HealthAtlasInsulinDiagram {
     const val FUSION_START = .54f
     fun potassiumOpen(t: Float) = 1f - ease(interval(t, .04f, .68f))
+    fun relativeDepolarization(t: Float) = ease(interval(t, .19f, .85f))
     fun calciumOpen(t: Float) = ease(interval(t, .04f, .34f))
     fun approach(t: Float) = ease(interval(t, 0f, FUSION_START))
     fun aperture(t: Float) = ease(interval(t, FUSION_START, .72f))
@@ -107,7 +108,35 @@ internal class HealthAtlasInsulinStoryView(context: Context) :
             particle(c, x, y, potassium, 4f)
         }
         for (i in 0..3) particle(c, 238f + 51f * wrap(t * 1.2f + i / 4f), 202f + i * 10f, energy, 3f)
-        label(c, 243f, 275f, R.string.health_atlas_insulin_art_energy)
+        label(c, 243f, 264f, R.string.health_atlas_insulin_art_energy)
+        potassiumTrace(c, t)
+    }
+
+    private fun potassiumTrace(c: Canvas, t: Float) {
+        brush(0xfffaf5ed)
+        c.drawRoundRect(20f, 277f, 340f, 350f, 8f, 8f, paint)
+        brush(0xffd9c6b7, 1f)
+        c.drawRoundRect(20f, 277f, 340f, 350f, 8f, 8f, paint)
+        label(c, 80f, 296f, R.string.health_atlas_insulin_art_k_opening)
+        label(c, 275f, 296f, R.string.health_atlas_insulin_art_voltage)
+        for ((colour, trace) in listOf(
+            potassium to HealthAtlasInsulinDiagram::potassiumOpen,
+            calcium to HealthAtlasInsulinDiagram::relativeDepolarization,
+        )) {
+            val x = if (colour == potassium) 80f else 275f
+            brush(colour, 2f)
+            c.drawLine(x - 12f, 302f, x + 12f, 302f, paint)
+            val yAt: (Float) -> Float = { 338f - 26f * trace(it) }
+            shape {
+                moveTo(39f, yAt(0f))
+                for (i in 1..24) {
+                    val f = t * i / 24f
+                    lineTo(39f + 282f * f, yAt(f))
+                }
+            }
+            c.drawPath(line, paint)
+            particle(c, 39f + 282f * t, yAt(t), colour, 3.2f)
+        }
     }
 
     private fun calciumGate(c: Canvas, t: Float) {

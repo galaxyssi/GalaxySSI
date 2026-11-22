@@ -8,7 +8,14 @@
     <string name="health_atlas_absorption_story_brush_border">Microvilli form the brush border</string>
     <string name="health_atlas_absorption_story_brush_border_caption">An enterocyte is one absorptive cell in the lining of a villus. Tiny microvilli on its lumen-facing surface form the brush border and add still more surface area.</string>
     <string name="health_atlas_absorption_story_blood">Soluble nutrients enter blood</string>
-    <string name="health_atlas_absorption_story_blood_caption">Glucose and amino acids cross enterocytes, leave on the tissue side and enter nearby blood capillaries. Portal blood carries them toward the liver.</string>
+    <string name="health_atlas_absorption_story_blood_caption">SGLT1 uses the sodium gradient to bring glucose into the cell. GLUT2 lets glucose leave toward capillaries. The sodium–potassium pump keeps the gradient in place.</string>
+    <string name="health_atlas_absorption_story_sglt1" translatable="false">SGLT1</string>
+    <string name="health_atlas_absorption_story_glut2" translatable="false">GLUT2</string>
+    <string name="health_atlas_absorption_story_pump">Na⁺/K⁺ pump</string>
+    <string name="health_atlas_absorption_story_tissue_side">Toward blood capillaries</string>
+    <string name="health_atlas_absorption_story_glucose">Glucose</string>
+    <string name="health_atlas_absorption_story_sodium" translatable="false">Na⁺</string>
+    <string name="health_atlas_absorption_story_potassium" translatable="false">K⁺</string>
     <string name="health_atlas_absorption_story_package">Enterocytes package long-chain lipids</string>
     <string name="health_atlas_absorption_story_package_caption">After long-chain fat digestion products enter the cell, the enterocyte rebuilds triglycerides and packages them with other lipids and proteins into chylomicrons.</string>
     <string name="health_atlas_absorption_story_lymph">Chylomicrons enter lymph first</string>

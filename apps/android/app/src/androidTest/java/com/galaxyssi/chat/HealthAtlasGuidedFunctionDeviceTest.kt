@@ -267,23 +267,44 @@ class HealthAtlasGuidedFunctionDeviceTest {
         }
     }
 
-    @Test fun heartEarAndNephronRenderMovingCloseUpsAlongsideTheirCaptions() = native { scenario ->
-        fun select(id: String) {
+    private data class CloseUp(
+        val id: String,
+        val art: String,
+        val chapter: Int,
+        val region: Rect,
+        val file: String,
+        val lesson: Int = 0,
+    )
+
+    @Test fun heartEarAndNephronRenderMovingCloseUpsAlongsideTheirCaptions() = verifyCloseUps(
+        CloseUp("heart", "heartbeat", 2, Rect(5, 72, 95, 97), "heart-pressure"),
+        CloseUp("ear", "hearing", 3, Rect(46, 8, 96, 88), "ear-tip-link"),
+        CloseUp("nephron", "nephron", 0, Rect(3, 53, 97, 97), "nephron-filter"),
+        CloseUp("nephron", "nephron", 2, Rect(3, 53, 97, 97), "nephron-loop"),
+    )
+
+    @Test fun movementAbsorptionAndSecretionRenderMovingCloseUpsAlongsideTheirCaptions() = verifyCloseUps(
+        CloseUp("biceps-brachii", "muscle-motion", 2, Rect(10, 73, 64, 90), "muscle-cross-bridge"),
+        CloseUp("small-intestine", "intestinal-absorption", 2, Rect(58, 25, 96, 72), "glucose-transport", lesson = 1),
+        CloseUp("pancreas", "insulin-secretion", 1, Rect(10, 85, 92, 96), "beta-cell-voltage", lesson = 1),
+    )
+
+    private fun verifyCloseUps(vararg closeUps: CloseUp) = native { scenario ->
+        for ((id, artName, chapter, region, file, lesson) in closeUps) {
             scenario.onActivity { activity ->
                 activity.view("atlas-tab-2").performClick()
                 (activity.view("atlas-search") as EditText).setText(id)
                 activity.view("atlas-entry-$id").performClick()
                 activity.view("atlas-tab-1").performClick()
+                if (lesson != 0) activity.view("atlas-function-lesson-$lesson").performClick()
             }
             runner.waitForIdleSync()
-        }
-        fun verify(artTag: String, chapter: Int, file: String, region: Rect) {
             scenario.onActivity { activity ->
                 repeat(chapter) { activity.view("atlas-function-next").performClick() }
                 val player = activity.view("atlas-function-player") as HealthAtlasFunctionPlayer
                 assertEquals(chapter, player.story.chapter(player.phase))
                 val frame = activity.view("atlas-function-frame")
-                val art = activity.view(artTag) as HealthAtlasFunctionArt
+                val art = activity.view("atlas-function-$artName-art") as HealthAtlasFunctionArt
                 val caption = activity.view("atlas-function-caption") as TextView
                 assertSame(frame, caption.parent.parent)
                 assertEquals(activity.getString(player.story.chapters[chapter].second), caption.text.toString())
@@ -303,22 +324,14 @@ class HealthAtlasGuidedFunctionDeviceTest {
                             y + size * region.top / 100, w, h)
                         return pixels.contentHashCode()
                     }
-                    assertNotEquals(hash(.18f), hash(.42f))
-                    java.io.File(context.getExternalFilesDir(null), file).outputStream().use {
+                    assertNotEquals(file, hash(.18f), hash(.42f))
+                    java.io.File(context.getExternalFilesDir(null), "body-atlas-$file.png").outputStream().use {
                         canvas.compress(Bitmap.CompressFormat.PNG, 100, it)
                     }
                 } finally { canvas.recycle() }
                 activity.onBackPressed()
             }
         }
-        select("heart")
-        verify("atlas-function-heartbeat-art", 2, "body-atlas-heart-pressure.png", Rect(5, 72, 95, 97))
-        select("ear")
-        verify("atlas-function-hearing-art", 3, "body-atlas-ear-tip-link.png", Rect(46, 8, 96, 88))
-        select("nephron")
-        verify("atlas-function-nephron-art", 0, "body-atlas-nephron-filter.png", Rect(3, 53, 97, 97))
-        select("nephron")
-        verify("atlas-function-nephron-art", 2, "body-atlas-nephron-loop.png", Rect(3, 53, 97, 97))
     }
 
     @Test fun capturesAnAnimationAndItsPrincipleTogether() = native { scenario ->

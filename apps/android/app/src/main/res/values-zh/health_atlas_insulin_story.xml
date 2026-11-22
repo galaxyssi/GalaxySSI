@@ -29,6 +29,8 @@
     <string name="health_atlas_insulin_art_potassium">钾离子</string>
     <string name="health_atlas_insulin_art_k_open">钾通道开启</string>
     <string name="health_atlas_insulin_art_k_closed">钾通道关闭</string>
+    <string name="health_atlas_insulin_art_k_opening">钾通道开放程度</string>
+    <string name="health_atlas_insulin_art_voltage">膜电位</string>
     <string name="health_atlas_insulin_art_calcium">钙离子</string>
     <string name="health_atlas_insulin_art_ca_gate">电压门控钙通道</string>
     <string name="health_atlas_insulin_art_hormone">胰岛素</string>

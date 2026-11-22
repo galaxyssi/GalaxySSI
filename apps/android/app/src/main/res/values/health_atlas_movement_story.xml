@@ -35,7 +35,11 @@
     <string name="health_atlas_motion_calcium">Calcium is released</string>
     <string name="health_atlas_motion_calcium_caption">Excitation travels down a T-tubule, triggering calcium release from the sarcoplasmic reticulum into the muscle fiber.</string>
     <string name="health_atlas_motion_slide">Filaments slide</string>
-    <string name="health_atlas_motion_slide_caption">Calcium enables the filaments to interact. Actin slides past myosin; the sarcomere shortens while the individual filaments keep their lengths.</string>
+    <string name="health_atlas_motion_slide_caption">A myosin head grips actin and pulls it inward. New ATP releases the grip; ATP hydrolysis resets the head. The sarcomere shortens, not the filaments.</string>
+    <string name="health_atlas_motion_bridge_bind">Myosin binds actin</string>
+    <string name="health_atlas_motion_bridge_pull">Power stroke: actin slides</string>
+    <string name="health_atlas_motion_bridge_detach">ATP binds: myosin detaches</string>
+    <string name="health_atlas_motion_bridge_reset">ATP hydrolysis resets the head</string>
     <string name="health_atlas_motion_pull">Tendon pulls the forearm</string>
     <string name="health_atlas_motion_pull_caption">The biceps contracts, transmitting tension through its tendon to the radius, and the forearm rises around the elbow.</string>
     <string name="health_atlas_motion_release">Relaxation and extension</string>
