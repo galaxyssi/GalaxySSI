@@ -120,9 +120,17 @@ class HealthAtlasDigestiveDeviceTest {
     @Test fun pancreasRoutesAndSyntheticMixRestoreAndDrillIntoIslet() = native { scenario ->
         scenario.onActivity {
             it.open("pancreas"); it.openAtlasModelDetails()
+            val frame = it.view("atlas-simulation-frame")
+            val diagram = it.view("atlas-pancreatic-routes")
+            val steps = it.view("atlas-process")
+            val chapter = it.view("atlas-process-stage-2") as TextView
+            assertSame(frame, diagram.parent)
+            assertSame(frame, steps.parent)
+            assertTrue(chapter.text.isEmpty())
+            assertFalse(chapter.contentDescription.isNullOrBlank())
             assertTrue(it.view("atlas-pancreatic-route-duct").isSelected)
             assertTrue(it.view("atlas-pancreatic-route-blood").isSelected)
-            it.view("atlas-process-stage-2").performClick()
+            chapter.performClick()
             assertTrue(it.view("atlas-pancreatic-route-duct").isSelected)
             assertFalse(it.view("atlas-pancreatic-route-blood").isSelected)
             (it.view("atlas-physiology-bicarb-flow") as SeekBar).progress = 0

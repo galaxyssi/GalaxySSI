@@ -147,12 +147,12 @@ class HealthAtlasGuidedFunctionDeviceTest {
         }
     }
 
-    @Test fun everySystemAndOrganHasACompleteLocalizedCaptionSequence() {
+    @Test fun everyEntryHasACompleteLocalizedCaptionSequence() {
         for (locale in listOf(Locale.ENGLISH, Locale.SIMPLIFIED_CHINESE)) {
             val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })
             val atlas = HealthBodyAtlas.load(localized)
-            val targets = atlas.items.filter { it.kind == HealthAtlasKind.SYSTEM || it.kind == HealthAtlasKind.ORGAN }
-            assertTrue(targets.size > 180)
+            val targets = atlas.items
+            assertTrue(targets.size > 300)
             for (item in targets) {
                 val choices = HealthAtlasFunctionStory.choicesForId(item.id)
                 assertTrue(item.id, choices.isNotEmpty())
@@ -164,6 +164,43 @@ class HealthAtlasGuidedFunctionDeviceTest {
                     }
                 }
             }
+        }
+    }
+
+    @Test fun inlineModelKeepsTheChangingCaptionWithTheArtworkAndCollapsesReferences() = native { scenario ->
+        scenario.onActivity {
+            it.view("atlas-hotspot-heart").performClick()
+            it.view("atlas-tab-1").performClick()
+            it.view("atlas-open-simulation").performClick()
+        }
+        runner.waitForIdleSync()
+        val sceneHeight = intArrayOf(0)
+        scenario.onActivity { activity ->
+            val frame = activity.view("atlas-simulation-frame")
+            val caption = activity.view("atlas-simulation-stage") as TextView
+            val references = activity.view("atlas-simulation-references")
+            val diagram = activity.view("atlas-process")
+            assertSame(frame, caption.parent)
+            assertSame(frame, diagram.parent)
+            assertTrue(caption.top >= diagram.bottom)
+            assertEquals(View.GONE, references.visibility)
+            assertSame(references, activity.view("atlas-source-physiology").parent)
+            assertSame(references, activity.view("atlas-source-circulation").parent)
+            sceneHeight[0] = frame.height
+            val prior = caption.text
+            activity.view("atlas-process-stage-2").performClick()
+            val atlas = HealthBodyAtlas.load(activity)
+            assertNotEquals(prior.toString(), caption.text.toString())
+            assertTrue(caption.text.contains(atlas.mechanism(requireNotNull(atlas["heart"])).stages[2]))
+        }
+        runner.waitForIdleSync()
+        scenario.onActivity { activity ->
+            assertEquals(sceneHeight[0], activity.view("atlas-simulation-frame").height)
+            val toggle = activity.view("atlas-simulation-references-toggle")
+            toggle.performClick()
+            assertEquals(View.VISIBLE, activity.view("atlas-simulation-references").visibility)
+            toggle.performClick()
+            assertEquals(View.GONE, activity.view("atlas-simulation-references").visibility)
         }
     }
 

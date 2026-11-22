@@ -10,7 +10,7 @@ import android.widget.TextView
 
 /** Native, focusable stages over a schematic process path, not anatomical geometry. */
 internal class HealthAtlasProcessView(context: Context, private val mechanism: HealthAtlasMechanism,
-    private val selected: (Int) -> Unit = {}) : ViewGroup(context) {
+    private val showLabels: Boolean = true, private val selected: (Int) -> Unit = {}) : ViewGroup(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val density = resources.displayMetrics.density
     private var rowHeight = 0
@@ -19,9 +19,10 @@ internal class HealthAtlasProcessView(context: Context, private val mechanism: H
         object : TextView(context) {
             override fun getAccessibilityClassName(): CharSequence = "android.widget.Button"
         }.apply {
-            text = label; textSize = 12f; gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            text = if (showLabels) label else ""; textSize = 12f; gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             setTextColor(context.getColor(R.color.text_primary))
-            setPadding(dp(4), dp(40), dp(4), dp(8)); minimumHeight = dp(64)
+            if (showLabels) setPadding(dp(4), dp(40), dp(4), dp(8))
+            minimumHeight = dp(if (showLabels) 64 else 48)
             tag = "atlas-process-stage-$index"; isSaveEnabled = false; isFocusable = true
             contentDescription = context.getString(R.string.health_atlas_stage, index + 1, 4, label)
             val background = android.util.TypedValue()
@@ -48,16 +49,21 @@ internal class HealthAtlasProcessView(context: Context, private val mechanism: H
     private fun dp(value: Int) = (value * density).toInt()
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)
-        val column = ((width - dp(40)) / 2).coerceAtLeast(1)
+        val column = (if (showLabels) (width - dp(40)) / 2 else width / stages.size).coerceAtLeast(1)
         stages.forEach {
             it.measure(MeasureSpec.makeMeasureSpec(column, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
         }
         rowHeight = stages.maxOf { it.measuredHeight }
-        setMeasuredDimension(width, resolveSize(rowHeight * 2 + dp(40), heightMeasureSpec))
+        setMeasuredDimension(width, resolveSize(if (showLabels) rowHeight * 2 + dp(40) else rowHeight, heightMeasureSpec))
     }
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         stages.forEachIndexed { index, stage ->
+            if (!showLabels) {
+                val left = width * index / stages.size
+                stage.layout(left, 0, width * (index + 1) / stages.size, rowHeight)
+                return@forEachIndexed
+            }
             val left = if (index == 0 || index == 3) dp(8) else width - dp(8) - stage.measuredWidth
             val top = dp(8) + if (index < 2) 0 else rowHeight + dp(24)
             stage.layout(left, top, left + stage.measuredWidth, top + rowHeight)
@@ -66,11 +72,13 @@ internal class HealthAtlasProcessView(context: Context, private val mechanism: H
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val accent = context.getColor(R.color.health_overview_green)
-        val points = stages.map { (it.left + it.width / 2f) to (it.top + dp(16).toFloat()) }
+        val points = stages.map { (it.left + it.width / 2f) to (if (showLabels) it.top + dp(16).toFloat() else height / 2f) }
         val path = Path().apply {
             moveTo(points[0].first, points[0].second); lineTo(points[1].first, points[1].second)
-            lineTo(width - dp(4).toFloat(), points[1].second)
-            lineTo(width - dp(4).toFloat(), points[2].second)
+            if (showLabels) {
+                lineTo(width - dp(4).toFloat(), points[1].second)
+                lineTo(width - dp(4).toFloat(), points[2].second)
+            }
             lineTo(points[2].first, points[2].second); lineTo(points[3].first, points[3].second)
         }
         paint.strokeWidth = density * 2; paint.style = Paint.Style.STROKE
@@ -79,7 +87,8 @@ internal class HealthAtlasProcessView(context: Context, private val mechanism: H
         val measure = android.graphics.PathMeasure(path, false)
         val position = FloatArray(2)
         val firstLeg = points[1].first - points[0].first
-        val secondLeg = 2 * (width - dp(4) - points[1].first) + points[2].second - points[1].second
+        val secondLeg = if (showLabels) 2 * (width - dp(4) - points[1].first) + points[2].second - points[1].second
+            else points[2].first - points[1].first
         val milestones = floatArrayOf(0f, firstLeg, firstLeg + secondLeg, measure.length, measure.length)
         val fraction = phase * 4 - current
         val distance = milestones[current] + (milestones[current + 1] - milestones[current]) * fraction

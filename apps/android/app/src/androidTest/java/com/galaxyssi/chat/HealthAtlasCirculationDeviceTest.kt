@@ -100,9 +100,11 @@ class HealthAtlasCirculationDeviceTest {
         fun mechanismComesFirst(activity: Activity): Boolean {
             val diagram = activity.view("atlas-process")
             val output = activity.view("atlas-physiology-output")
-            val parent = diagram.parent as ViewGroup
+            val scene = activity.view("atlas-simulation-frame")
+            val parent = scene.parent as ViewGroup
+            assertSame(scene, diagram.parent)
             assertSame(parent, output.parent)
-            return parent.indexOfChild(diagram) < parent.indexOfChild(output)
+            return parent.indexOfChild(scene) < parent.indexOfChild(output)
         }
         scenario.onActivity {
             assertTrue(mechanismComesFirst(it))

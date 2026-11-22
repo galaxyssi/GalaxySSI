@@ -360,7 +360,6 @@ class HealthBodyAtlasActivity : Activity() {
                 simulation = HealthAtlasSimulationPanel(this, models, data, item, simulationStates[item.id],
                     physiologyStates[item.id], ::zoom, ::source, ::select, mechanismFirst = true, inline = true,
                     onPlay = { functionPlayer?.pause() })
-                addMechanismSource(models, data, item)
             } else {
                 expandedModels -= item.id
                 simulation?.pause(); saveSimulation(); simulation = null
