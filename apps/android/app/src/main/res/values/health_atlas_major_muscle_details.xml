@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_biceps_brachii_anterior_selector">Biceps heads</string>
+    <string name="health_atlas_biceps_brachii_anterior_caption">Front of the right upper arm: two heads join above the elbow.</string>
+    <string name="health_atlas_biceps_brachii_long_head">Long head</string>
+    <string name="health_atlas_biceps_brachii_long_head_detail">The outer head starts at the upper edge of the shoulder socket. Its tendon runs through a groove at the front of the humerus.</string>
+    <string name="health_atlas_biceps_brachii_short_head">Short head</string>
+    <string name="health_atlas_biceps_brachii_short_head_detail">The inner head starts at the coracoid process, a projection of the shoulder blade. It joins the long head toward the elbow.</string>
+    <string name="health_atlas_biceps_brachii_distal_tendon">Distal tendon</string>
+    <string name="health_atlas_biceps_brachii_distal_tendon_detail">This tendon crosses the front of the elbow and attaches to the radial tuberosity near the top of the radius. The biceps bends the elbow and helps turn the palm upward.</string>
+
+    <string name="health_atlas_triceps_brachii_posterior_selector">Triceps heads</string>
+    <string name="health_atlas_triceps_brachii_posterior_caption">Back of the right upper arm: the deep medial head is visible near the elbow.</string>
+    <string name="health_atlas_triceps_brachii_long_head">Long head</string>
+    <string name="health_atlas_triceps_brachii_long_head_detail">The long head starts just below the shoulder socket on the shoulder blade. It crosses both the shoulder and the elbow.</string>
+    <string name="health_atlas_triceps_brachii_lateral_head">Lateral head</string>
+    <string name="health_atlas_triceps_brachii_lateral_head_detail">This superficial head starts high on the back of the humerus and forms the outer part of the triceps.</string>
+    <string name="health_atlas_triceps_brachii_medial_head">Medial head</string>
+    <string name="health_atlas_triceps_brachii_medial_head_detail">This head starts lower on the back of the humerus. Most of it lies beneath the other two heads, with a portion exposed near the elbow.</string>
+    <string name="health_atlas_triceps_brachii_distal_tendon">Triceps tendon</string>
+    <string name="health_atlas_triceps_brachii_distal_tendon_detail">The tendon attaches at the olecranon, the bony point of the ulna at the back of the elbow. The triceps pulls here to straighten the elbow.</string>
+
+    <string name="health_atlas_quadriceps_femoris_anterior_selector">Quadriceps layers</string>
+    <string name="health_atlas_quadriceps_femoris_anterior_caption">Front of the right thigh, with a separate inset of the deep vastus intermedius.</string>
+    <string name="health_atlas_quadriceps_rectus_femoris">Rectus femoris</string>
+    <string name="health_atlas_quadriceps_rectus_femoris_detail">This long, central muscle lies over the vastus intermedius. It starts on the pelvis and helps bend the hip as well as straighten the knee.</string>
+    <string name="health_atlas_quadriceps_vastus_lateralis">Vastus lateralis</string>
+    <string name="health_atlas_quadriceps_vastus_lateralis_detail">This broad muscle starts on the femur and forms the outer part of the quadriceps. It helps straighten the knee.</string>
+    <string name="health_atlas_quadriceps_vastus_medialis">Vastus medialis</string>
+    <string name="health_atlas_quadriceps_vastus_medialis_detail">This muscle forms the inner part of the quadriceps. Its lower fibers form a rounded bulge just above the inside of the kneecap.</string>
+    <string name="health_atlas_quadriceps_vastus_intermedius">Vastus intermedius</string>
+    <string name="health_atlas_quadriceps_vastus_intermedius_detail">The inset shows this muscle on the front of the femur with the overlying rectus femoris omitted. Like the other three muscles, it helps straighten the knee.</string>
+    <string name="health_atlas_quadriceps_tendon">Quadriceps tendon</string>
+    <string name="health_atlas_quadriceps_tendon_detail">The four muscles converge into this tendon above the kneecap. Below the kneecap, the patellar ligament continues to the tibia.</string>
+
+    <string name="health_atlas_hamstrings_posterior_selector">Hamstring muscles</string>
+    <string name="health_atlas_hamstrings_posterior_caption">Back of the right thigh: the hamstrings pass to either side of the knee.</string>
+    <string name="health_atlas_hamstrings_biceps_femoris_long_head">Biceps femoris: long head</string>
+    <string name="health_atlas_hamstrings_biceps_femoris_long_head_detail">This outer hamstring head starts at the ischial tuberosity, the sitting bone. Its tendon runs to the head of the fibula on the outside of the knee.</string>
+    <string name="health_atlas_hamstrings_biceps_femoris_short_head">Biceps femoris: short head</string>
+    <string name="health_atlas_hamstrings_biceps_femoris_short_head_detail">The short head starts on the back of the femur, not on the pelvis. It lies partly beneath the long head and joins its tendon near the knee.</string>
+    <string name="health_atlas_hamstrings_semitendinosus">Semitendinosus</string>
+    <string name="health_atlas_hamstrings_semitendinosus_detail">This muscle shares an attachment at the sitting bone with the long head of the biceps femoris. Its long lower tendon wraps to the inner side of the upper tibia.</string>
+    <string name="health_atlas_hamstrings_semimembranosus">Semimembranosus</string>
+    <string name="health_atlas_hamstrings_semimembranosus_detail">This broad muscle lies deeper than the semitendinosus. It attaches to the back of the inner tibial condyle near the knee.</string>
+</resources>

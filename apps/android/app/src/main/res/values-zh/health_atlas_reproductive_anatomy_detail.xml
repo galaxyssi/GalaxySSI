@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ovarian_section_selector">卵巢剖面</string>
+    <string name="health_atlas_ovarian_section_view">单侧成人卵巢纵切面。图中示邻近的输卵管作为位置参照。比例尺约为 1 厘米。</string>
+    <string name="health_atlas_ovarian_cortex_band">卵巢皮质</string>
+    <string name="health_atlas_ovarian_cortex_band_detail">位于卵巢薄层结缔组织包膜的下方，含有处于不同发育阶段的卵泡。</string>
+    <string name="health_atlas_ovarian_small_follicle">发育中的卵泡</string>
+    <string name="health_atlas_ovarian_small_follicle_detail">这个较小的皮质卵泡中，支持细胞包绕卵母细胞，尚未形成大的含液腔隙。</string>
+    <string name="health_atlas_ovarian_antral_follicle">有腔卵泡</string>
+    <string name="health_atlas_ovarian_antral_follicle_detail">这个较大的卵泡含有充满液体的卵泡腔。卵母细胞偏居一侧，位于紧贴卵泡壁的卵丘内。</string>
+    <string name="health_atlas_ovarian_medulla_core">卵巢髓质</string>
+    <string name="health_atlas_ovarian_medulla_core_detail">卵巢内部的结缔组织含有分支血管、淋巴管及神经。</string>
+    <string name="health_atlas_ovarian_hilum">卵巢门</string>
+    <string name="health_atlas_ovarian_hilum_detail">血管与神经经卵巢附着缘的卵巢门，在卵巢系膜与髓质之间通行。</string>
+
+    <string name="health_atlas_testicular_section_selector">睾丸剖面</string>
+    <string name="health_atlas_testicular_section_view">单侧成人睾丸纵切面，后缘位于图右侧。比例尺约为 1 厘米。</string>
+    <string name="health_atlas_testicular_tunica_albuginea">睾丸白膜</string>
+    <string name="health_atlas_testicular_tunica_albuginea_detail">致密、色浅的结缔组织包膜包绕睾丸，在后缘增厚形成睾丸纵隔。</string>
+    <string name="health_atlas_testicular_septum">睾丸小隔</string>
+    <string name="health_atlas_testicular_septum_detail">薄隔从白膜向睾丸纵隔延伸，将内部划分为多个小叶。图中只显示少量小叶。</string>
+    <string name="health_atlas_testicular_tubules">曲细精管</string>
+    <string name="health_atlas_testicular_tubules_detail">这些高度盘曲的小管位于睾丸小叶内。在纵隔附近，它们经短小的直细精管连至睾丸网。</string>
+    <string name="health_atlas_testicular_rete">睾丸网</string>
+    <string name="health_atlas_testicular_rete_detail">这个管道网络位于后方的睾丸纵隔内。睾丸输出小管自其上端离开，进入附睾头。</string>
+
+    <string name="health_atlas_uterine_tube_cutaway_selector">输卵管剖面</string>
+    <string name="health_atlas_uterine_tube_cutaway_view">单侧输卵管纵向剖开，图左为卵巢侧，图右为子宫角。插图放大显示壶腹部横切面。</string>
+    <string name="health_atlas_tubal_fimbriae">输卵管伞</string>
+    <string name="health_atlas_tubal_fimbriae_detail">指状突起环绕输卵管开口，邻近卵巢，但并不封闭输卵管与卵巢之间的间隙。</string>
+    <string name="health_atlas_tubal_infundibulum">输卵管漏斗</string>
+    <string name="health_atlas_tubal_infundibulum_detail">输卵管外侧端呈漏斗状，在卵巢旁开口于腹膜腔。</string>
+    <string name="health_atlas_tubal_ampulla">输卵管壶腹</string>
+    <string name="health_atlas_tubal_ampulla_detail">漏斗与峡部之间较长、较宽的一段管道，黏膜皱襞尤其发达。</string>
+    <string name="health_atlas_tubal_isthmus">输卵管峡</string>
+    <string name="health_atlas_tubal_isthmus_detail">这段较狭窄的管道连接较宽的壶腹和短小的子宫部。子宫部穿过子宫壁，开口于子宫腔。</string>
+    <string name="health_atlas_tubal_mucosal_folds">黏膜皱襞</string>
+    <string name="health_atlas_tubal_mucosal_folds_detail">黏膜形成分支状皱襞，突入壶腹管腔。平滑肌层环绕有皱襞的黏膜。</string>
+
+    <string name="health_atlas_endometrial_layers_selector">内膜分层</string>
+    <string name="health_atlas_endometrial_layers_view">增殖期子宫内膜的放大剖面，上方为子宫腔。内膜厚度随周期变化。</string>
+    <string name="health_atlas_endometrial_luminal_epithelium">表面上皮</string>
+    <string name="health_atlas_endometrial_luminal_epithelium_detail">单层柱状细胞面向子宫腔，并在子宫腺开口处与腺上皮连续。</string>
+    <string name="health_atlas_endometrial_functional_layer">内膜功能层</string>
+    <string name="health_atlas_endometrial_functional_layer_detail">靠近子宫腔，含间质、腺体和螺旋小动脉。该层随周期生长，并在月经期间脱落。</string>
+    <string name="health_atlas_endometrial_uterine_gland">子宫腺</string>
+    <string name="health_atlas_endometrial_uterine_gland_detail">管状腺体开口于内膜表面，贯穿功能层并延伸至基底层。增殖期的腺体较直。</string>
+    <string name="health_atlas_endometrial_basal_layer">内膜基底层</string>
+    <string name="health_atlas_endometrial_basal_layer_detail">内膜深部紧邻子宫肌层，月经后保留，并再生新一轮的功能层。</string>
+    <string name="health_atlas_endometrial_myometrium_bed">子宫肌层</string>
+    <string name="health_atlas_endometrial_myometrium_bed_detail">交织的平滑肌束构成内膜下方厚实的子宫壁。图中仅显示浅部肌层。</string>
+</resources>

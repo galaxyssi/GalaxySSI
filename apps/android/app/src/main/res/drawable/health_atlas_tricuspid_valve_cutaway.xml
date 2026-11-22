@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- The anterior free wall is at image left; the septal wall is at right. -->
+    <path android:fillColor="#B7767D" android:strokeColor="#704454" android:strokeWidth="2.5"
+        android:pathData="M71,38 C115,15 194,20 252,39 C287,50 300,73 293,101 C289,125 297,154 282,187 C265,224 224,252 173,256 C125,260 82,233 61,192 C46,164 42,130 52,106 C59,89 45,61 71,38 Z" />
+    <path android:name="tricuspid_chamber_lumen" android:fillColor="#734F64" android:strokeColor="#E7A69E" android:strokeWidth="5"
+        android:pathData="M77,46 C118,28 188,30 242,48 C273,58 286,74 280,98 C274,128 283,153 268,181 C250,212 217,237 172,242 C132,246 97,223 77,186 C61,156 60,130 68,108 C77,83 54,67 77,46 Z" />
+    <path android:fillColor="#916278"
+        android:pathData="M77,46 C117,28 186,32 242,48 Q269,57 278,74 C258,63 220,68 191,75 C140,90 118,95 69,89 C60,74 61,60 77,46 Z" />
+    <path android:fillColor="#985D6B"
+        android:pathData="M246,86 C267,88 280,95 277,116 C273,143 281,157 267,182 C251,211 224,229 203,234 C217,215 239,189 241,165 C243,139 231,113 246,86 Z" />
+    <path android:fillColor="#80536A"
+        android:pathData="M68,136 C84,166 98,198 136,219 Q161,233 202,229 Q187,241 163,242 C117,241 79,205 68,158 Z" />
+    <path android:strokeColor="#B77987" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M81,58 Q129,39 184,49 M87,68 Q123,54 157,55 M255,142 Q266,154 250,177 M256,165 Q249,184 227,202 M74,151 Q83,182 99,197 M80,173 Q95,200 114,206 M136,226 Q154,237 176,231 M151,217 Q166,228 189,223" />
+    <path android:strokeColor="#F1B3A9" android:strokeAlpha="0.78" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M60,115 Q53,145 66,173 M83,212 Q113,247 152,251 M285,123 Q292,155 275,183" />
+
+    <!-- Papillary muscle and septal tethers sit below the leaflet hinges. -->
+    <path android:fillColor="#B97682" android:strokeColor="#68455B" android:strokeWidth="1.8"
+        android:pathData="M101,217 Q107,201 120,192 C126,188 130,190 133,197 C140,211 158,224 165,236 Q131,235 101,217 Z M176,234 Q178,217 187,207 Q192,202 197,208 Q205,220 220,229 Q196,237 176,234 Z" />
+    <path android:strokeColor="#E09A99" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M112,214 Q115,203 124,197 M185,225 Q187,215 191,212" />
+    <path android:fillColor="#AE6F7A" android:strokeColor="#805062" android:strokeWidth="1.6"
+        android:pathData="M258,130 C258,142 251,148 248,156 C245,162 248,171 243,178 C248,177 254,170 254,162 C254,154 263,144 265,138 Z" />
+    <path android:name="tricuspid_chordae" android:strokeColor="#E9CAAE" android:strokeWidth="1.9"
+        android:strokeLineCap="round"
+        android:pathData="M124,194 Q118,168 104,137 M125,194 Q131,166 131,144 M126,193 Q144,169 147,146 M129,193 Q148,176 166,157 M192,207 Q185,181 174,154 M193,206 Q197,184 197,157 M194,206 Q211,179 218,154 M243,178 Q228,168 230,144 M244,168 Q243,156 243,135 M248,156 L250,125" />
+    <path android:fillColor="#543E54" android:strokeColor="#CF9798" android:strokeWidth="4"
+        android:pathData="M67,106 C89,81 141,72 178,77 C219,82 257,83 280,100 C269,125 236,145 200,155 C162,166 121,155 92,143 C79,137 72,123 67,106 Z" />
+    <path android:name="tricuspid_anterior" android:fillColor="#F6D9B7" android:strokeColor="#885F67" android:strokeWidth="1.9"
+        android:pathData="M71,105 C96,85 146,74 181,80 C190,81 201,84 205,86 C179,93 156,101 146,114 C143,124 149,131 147,145 C133,139 127,144 116,142 C98,140 80,126 71,105 Z" />
+    <path android:fillColor="#DAB091"
+        android:pathData="M76,109 C97,115 112,133 145,137 L147,145 C121,137 119,147 105,138 Q84,130 76,109 Z" />
+    <path android:name="tricuspid_septal" android:fillColor="#E8C5A7" android:strokeColor="#885F67" android:strokeWidth="1.8"
+        android:pathData="M205,86 C233,86 259,89 277,100 C272,116 249,133 231,142 Q224,146 215,152 C214,140 221,126 218,115 Q215,104 205,86 Z" />
+    <path android:fillColor="#C99B87"
+        android:pathData="M272,105 Q253,119 226,126 L215,152 Q257,132 272,105 Z" />
+    <path android:name="tricuspid_posterior" android:fillColor="#F5CEAC" android:strokeColor="#885F67" android:strokeWidth="1.8"
+        android:pathData="M94,139 C115,150 133,151 146,147 Q159,138 168,144 Q178,151 191,144 Q202,137 217,147 L231,142 C219,155 198,166 176,171 C146,177 116,158 94,139 Z" />
+    <path android:strokeColor="#FFF0CD" android:strokeWidth="1.9" android:strokeLineCap="round"
+        android:pathData="M84,103 C115,87 153,82 178,84 M221,92 Q251,94 266,101 M146,148 Q159,142 167,147 Q178,153 192,147 Q201,142 211,147" />
+</vector>

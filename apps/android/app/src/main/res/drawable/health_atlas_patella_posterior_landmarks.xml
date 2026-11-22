@@ -1,0 +1,34 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- The proximal articular area is broader on the lateral side (image right). -->
+    <path android:pathData="M92,91 C97,74 115,64 134,59 C150,54 168,58 187,62 C211,67 225,83 226,104 C228,129 208,152 187,175 C175,188 167,200 159,207 Q154,212 149,205 C139,190 128,181 111,163 C93,144 84,113 92,91Z"
+        android:fillColor="#E8C6A9" android:strokeColor="#82695E" android:strokeWidth="2" />
+    <path android:pathData="M93,110 C98,132 115,152 133,162 C144,169 155,173 166,172 C184,169 203,151 217,135 C210,150 198,163 187,175 C175,188 167,200 159,207 Q154,211 150,205 C144,194 137,189 126,178 C105,159 93,139 93,110Z"
+        android:fillColor="#CAA08B" />
+    <path android:pathData="M109,83 C117,74 133,68 151,70 C151,89 153,105 151,123 Q148,143 148,162 C130,160 114,149 104,133 C95,118 98,98 109,83Z"
+        android:fillColor="#B9C7AE" android:strokeColor="#839584" android:strokeWidth="1.5" />
+    <path android:pathData="M151,70 C166,68 185,73 197,80 C216,89 221,103 216,121 C211,138 192,153 174,159 Q160,165 148,162 C148,145 151,134 151,123 C153,107 151,88 151,70Z"
+        android:fillColor="#9EB8AD" android:strokeColor="#758C82" android:strokeWidth="1.5" />
+    <path android:pathData="M107,114 C108,92 124,82 144,79 C140,89 139,104 140,114 C137,130 139,142 143,149 C128,148 112,135 107,114Z"
+        android:fillColor="#D0D9BE" />
+    <path android:pathData="M157,79 C176,77 201,88 208,102 Q214,115 205,128 C190,143 171,150 157,152 C159,127 162,104 157,79Z"
+        android:fillColor="#B8CDBD" />
+    <path android:pathData="M151,72 C151,92 155,106 151,124 Q148,142 148,161"
+        android:strokeColor="#E9EAD0" android:strokeWidth="3.5" android:strokeLineCap="round" />
+    <path android:pathData="M118,89 C110,96 107,107 109,119 M167,83 Q186,84 200,97"
+        android:strokeColor="#E5EAD4" android:strokeWidth="2.1" android:strokeLineCap="round" />
+    <path android:pathData="M122,65 Q140,60 158,63 M133,170 Q143,178 151,178 M140,182 L148,189 M154,174 Q163,168 176,168 M157,188 L160,183"
+        android:strokeColor="#F5DFC1" android:strokeWidth="2" android:strokeLineCap="round" />
+    <!-- Cropped side detail: the small patella sits anterior to the distal femur. -->
+    <path android:pathData="M265,79 Q274,83 286,79 C285,103 287,121 296,136 C304,149 303,167 290,177 C279,186 263,184 254,175 C245,165 246,152 252,141 C263,122 263,107 265,79Z"
+        android:fillColor="#EBD9C6" android:strokeColor="#A08B7D" android:strokeWidth="1.6" />
+    <path android:pathData="M276,84 C275,112 277,124 285,139 C291,148 295,157 289,167 Q280,178 270,175 C278,168 277,160 273,151 C266,135 267,112 270,86Z"
+        android:fillColor="#F7E7D2" />
+    <path android:pathData="M255,140 C261,141 267,147 267,156 C270,167 282,172 293,168 Q289,179 278,181 C267,183 258,178 254,172 C248,163 249,151 255,140Z"
+        android:fillColor="#C1CDBA" android:strokeColor="#93A395" android:strokeWidth="1.3" />
+    <path android:pathData="M240,135 Q244,132 250,137 C252,145 247,157 242,165 C237,162 234,155 234,147 Q234,140 240,135Z"
+        android:fillColor="#DBAE90" android:strokeColor="#92786B" android:strokeWidth="1.5" />
+    <path android:pathData="M245,138 Q248,145 242,158"
+        android:strokeColor="#AEC2AF" android:strokeWidth="2" android:strokeLineCap="round" />
+</vector>

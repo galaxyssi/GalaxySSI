@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- A transverse face and short length of cord. Only one side's roots are exposed. -->
+    <path android:fillColor="#B77C72" android:strokeColor="#865661" android:strokeWidth="2"
+        android:pathData="M24,117 C19,88 53,72 79,73 Q112,71 134,93 L132,206 C127,225 106,238 77,239 C47,240 26,226 22,212Z"/>
+    <path android:fillColor="#DDA68A"
+        android:pathData="M30,120 Q42,142 74,152 Q103,157 129,133 L127,207 Q111,232 78,233 Q47,234 28,214Z"/>
+    <path android:fillColor="#F2C09A"
+        android:pathData="M36,145 Q46,162 63,170 L62,225 Q44,222 35,211Z M84,178 Q109,175 119,159 L118,212 Q107,226 87,229Z"/>
+    <path android:strokeColor="#A4706D" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M34,169 L33,205 M41,182 L40,213 M52,191 L52,219 M75,193 L75,229 M101,193 L101,219 M122,181 L122,204"/>
+    <path android:fillColor="#F5D4AC" android:strokeColor="#98636A" android:strokeWidth="2"
+        android:pathData="M79,69 Q85,62 96,66 C121,69 139,89 140,115 C142,151 124,176 102,181 Q90,184 84,175 L80,157 L76,176 Q71,184 58,181 C36,177 19,157 18,128 C15,104 28,79 49,70 Q69,61 79,69Z"/>
+    <path android:strokeColor="#FFF0CA" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M26,114 Q31,84 53,77 Q65,72 73,76 M92,74 Q111,72 127,93 M26,135 Q31,158 48,167 M106,169 Q124,161 132,139"/>
+    <path android:fillColor="#C1847E" android:strokeColor="#A16A70" android:strokeWidth="1.4"
+        android:pathData="M77,116 C64,111 63,95 53,90 Q44,87 49,99 L57,115 Q61,123 54,130 C38,140 38,157 50,160 Q62,164 70,148 Q75,138 80,135 Q86,138 91,149 Q99,164 110,159 C122,155 119,140 107,131 Q99,124 103,115 L111,99 Q116,88 108,90 C98,95 96,111 84,116 Q80,118 77,116Z"/>
+    <path android:strokeColor="#E9AA95" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M54,97 Q61,112 65,117 M54,142 Q49,147 51,153 M107,97 Q99,111 95,116 M106,142 Q111,148 108,153"/>
+    <path android:fillColor="#88565E"
+        android:pathData="M83,125 A3,3 0,1 1,77,125 A3,3 0,1 1,83,125Z"/>
+    <path android:strokeColor="#BC8479" android:strokeWidth="1.3" android:strokeLineCap="round"
+        android:pathData="M79,71 L80,86 M80,163 L80,150"/>
+    <!-- Rootlets converge on separate sensory (teal) and motor (rose) roots. -->
+    <path android:strokeColor="#5E6F6B" android:strokeWidth="4" android:strokeLineCap="round"
+        android:pathData="M122,86 Q138,86 150,94 M128,94 Q140,91 150,94 M132,102 Q142,97 150,95"/>
+    <path android:strokeColor="#ACBBA0" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M122,85 Q138,86 150,94 M129,93 Q140,91 150,94 M133,101 Q142,97 150,95"/>
+    <path android:strokeColor="#925D63" android:strokeWidth="4.2" android:strokeLineCap="round"
+        android:pathData="M124,153 Q136,153 150,169 M121,161 Q137,161 151,169 M114,170 Q138,173 150,169"/>
+    <path android:strokeColor="#E2A083" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M124,153 Q136,153 150,169 M121,161 Q137,161 151,169 M114,170 Q138,173 150,169"/>
+    <path android:strokeColor="#5E6F6B" android:strokeWidth="13" android:strokeLineCap="round"
+        android:pathData="M147,95 C171,88 200,98 216,112 Q231,125 247,141"/>
+    <path android:strokeColor="#A4B796" android:strokeWidth="9" android:strokeLineCap="round"
+        android:pathData="M147,95 C171,88 200,98 216,112 Q231,125 247,141"/>
+    <path android:strokeColor="#905764" android:strokeWidth="14" android:strokeLineCap="round"
+        android:pathData="M147,169 C184,175 212,157 248,144"/>
+    <path android:strokeColor="#D89079" android:strokeWidth="10" android:strokeLineCap="round"
+        android:pathData="M147,169 C184,175 212,157 248,144"/>
+    <!-- The ganglion is a swelling on the dorsal root, medial to the union. -->
+    <path android:fillColor="#7FA090" android:strokeColor="#526B67" android:strokeWidth="1.9"
+        android:pathData="M175,95 C189,89 197,86 209,91 Q223,96 226,110 Q228,117 232,126 Q224,122 216,123 C205,125 194,119 188,111 Q181,102 175,100Z"/>
+    <path android:fillColor="#B8C3A0"
+        android:pathData="M184,97 C197,90 209,91 217,100 Q223,107 224,116 Q211,120 201,115 Q190,109 184,97Z"/>
+    <path android:strokeColor="#669184" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M184,99 Q202,95 217,108 M189,103 Q202,101 221,115 M197,110 Q207,107 216,116"/>
+    <!-- Mixed fibers continue through the short trunk into both primary rami. -->
+    <path android:strokeColor="#896267" android:strokeWidth="18" android:strokeLineCap="round"
+        android:pathData="M244,143 Q258,141 273,143"/>
+    <path android:strokeColor="#896267" android:strokeWidth="19" android:strokeLineCap="round"
+        android:pathData="M271,143 C286,148 293,172 309,186 Q322,199 338,207"/>
+    <path android:strokeColor="#896267" android:strokeWidth="12" android:strokeLineCap="round"
+        android:pathData="M271,143 C286,134 288,115 298,99 Q309,80 327,68"/>
+    <path android:strokeColor="#E3B38E" android:strokeWidth="14" android:strokeLineCap="round"
+        android:pathData="M244,143 Q258,141 273,143 M271,143 C286,148 293,172 309,186 Q322,199 338,207"/>
+    <path android:strokeColor="#E3B38E" android:strokeWidth="8" android:strokeLineCap="round"
+        android:pathData="M271,143 C286,134 288,115 298,99 Q309,80 327,68"/>
+    <path android:strokeColor="#527E72" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M147,94 C163,90 172,94 181,96 M218,113 Q232,126 244,139 Q257,138 272,140 C284,133 286,115 297,98 Q309,79 327,66 M272,140 C287,145 295,169 312,184 Q324,197 340,204"/>
+    <path android:strokeColor="#A45863" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M147,168 C181,174 211,157 247,145 Q258,144 271,145 C287,138 290,117 300,101 Q310,82 327,70 M271,145 C286,151 290,173 307,188 Q320,201 337,209"/>
+    <!-- Direction arrows are confined to the unmixed portions of the roots. -->
+    <path android:strokeColor="#385B55" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M170,90 L162,93 L169,97"/>
+    <path android:strokeColor="#7D4655" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M184,164 L193,167 L186,172"/>
+</vector>

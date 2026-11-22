@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Inlet cuff and the higher pulmonary outlet. -->
+    <path android:fillColor="#9C667B" android:strokeColor="#744751" android:strokeWidth="2"
+        android:pathData="M66,82 C66,63 58,52 64,40 Q103,25 139,48 C134,63 141,81 147,90 Q106,103 66,82 Z" />
+    <path android:fillColor="#587E99" android:strokeColor="#395E79" android:strokeWidth="2"
+        android:pathData="M207,89 C217,61 224,38 218,22 C231,11 262,12 273,22 C267,40 271,64 267,83 L251,107 Z" />
+    <path android:fillColor="#85ACBF"
+        android:pathData="M224,26 Q231,22 240,24 C244,45 234,65 230,77 L218,78 Q233,46 224,26 Z" />
+    <path android:fillColor="#ADCBD4" android:strokeColor="#395E79" android:strokeWidth="1.6"
+        android:pathData="M218,22 C219,11 270,10 273,22 C272,33 219,34 218,22 Z" />
+    <path android:fillColor="#3F5B76"
+        android:pathData="M224,22 C224,17 265,16 267,22 C266,27 225,28 224,22 Z" />
+
+    <!-- The crescent opens from the front; the thinner free-wall edge is at image left. -->
+    <path android:fillColor="#BC7D82" android:strokeColor="#774957" android:strokeWidth="2.4"
+        android:pathData="M63,72 C82,53 119,66 144,77 Q161,87 178,92 C196,88 208,81 211,69 Q239,56 269,73 C289,108 283,147 271,176 C254,216 229,242 193,251 C149,261 106,243 77,214 C55,192 44,160 45,132 C44,108 49,87 63,72 Z" />
+    <path android:fillColor="#466C89" android:strokeColor="#F4B4A0" android:strokeWidth="3.3"
+        android:pathData="M70,80 C88,66 118,76 140,87 Q160,100 180,103 C200,99 214,87 219,74 Q241,64 262,77 C280,102 274,144 261,174 C244,210 221,233 190,241 C152,250 113,232 85,206 C65,185 53,156 54,133 Q53,100 70,80 Z" />
+    <path android:fillColor="#6D92A9"
+        android:pathData="M174,138 C184,120 200,106 213,90 Q221,79 224,73 Q242,68 260,79 C270,97 271,124 264,149 C253,190 228,220 200,231 Q211,207 210,184 Q211,161 192,151 Z" />
+    <path android:fillColor="#557D98"
+        android:pathData="M65,143 Q84,157 113,164 C146,172 172,153 192,152 Q213,166 208,190 Q211,212 200,231 C171,243 140,234 116,220 C85,203 63,174 65,143 Z" />
+    <path android:strokeColor="#9AB8C4" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M211,113 Q226,99 231,83 M244,88 C238,114 222,129 209,139 M255,112 Q254,130 245,147" />
+    <path android:fillColor="#7190A8" android:strokeColor="#3B5E7A" android:strokeWidth="1.8"
+        android:pathData="M151,90 Q177,104 193,93 Q205,85 213,80 C213,97 200,111 185,120 Q169,127 155,116 Q160,103 151,90 Z" />
+    <path android:strokeColor="#A6BBC5" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M158,95 Q180,107 197,94" />
+
+    <!-- Trabecular ridges stay below the smooth infundibulum. -->
+    <path android:strokeColor="#3A5A76" android:strokeWidth="6.8" android:strokeLineCap="round"
+        android:pathData="M71,158 Q87,167 100,185 Q114,202 137,213 M81,182 Q99,206 126,218 Q151,230 167,226 M106,211 Q131,228 152,234 M135,204 Q147,216 172,215 Q182,219 194,220 M158,207 Q179,206 194,198 M196,223 Q213,218 223,206 M219,184 Q238,178 252,162" />
+    <path android:strokeColor="#88AAB9" android:strokeWidth="2.8" android:strokeLineCap="round"
+        android:pathData="M71,157 Q88,165 100,182 Q117,201 137,211 M82,180 Q99,204 126,217 Q151,229 167,224 M107,210 Q133,226 151,232 M136,202 Q148,214 172,213 Q184,216 194,218 M159,205 Q180,203 193,196 M199,220 Q214,215 222,204 M220,182 Q237,176 251,161" />
+    <path android:fillColor="#9AA6B4" android:strokeColor="#3A5774" android:strokeWidth="2.2"
+        android:pathData="M239,158 C227,172 209,188 189,191 C170,194 154,191 135,183 L130,192 C149,203 171,205 191,200 C214,196 234,180 246,163 Z" />
+    <path android:strokeColor="#BACDD0" android:strokeWidth="2.7" android:strokeLineCap="round"
+        android:pathData="M240,162 C228,175 208,191 189,192 Q159,197 138,185" />
+    <path android:fillColor="#738EA6" android:strokeColor="#3B5D78" android:strokeWidth="2"
+        android:pathData="M109,189 C119,172 114,150 126,144 C135,140 137,151 137,163 Q135,182 143,192 Q132,198 109,189 Z" />
+    <path android:strokeColor="#A7BDCA" android:strokeWidth="2.7" android:strokeLineCap="round"
+        android:pathData="M119,186 Q127,172 125,153" />
+    <path android:strokeColor="#EBD5BB" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M126,147 Q119,119 103,101 M127,145 Q129,123 122,98 M130,146 Q139,125 135,107" />
+
+    <!-- Leaflets are cut at the inlet; the pulmonary cusps sit across the outlet. -->
+    <path android:fillColor="#354E68" android:strokeColor="#C9948A" android:strokeWidth="2.6"
+        android:pathData="M61,78 C79,60 117,61 139,76 C151,85 145,101 133,105 C115,112 78,106 66,97 Q57,90 61,78 Z" />
+    <path android:fillColor="#F2C6A9" android:strokeColor="#82566A" android:strokeWidth="1.4"
+        android:pathData="M63,79 C80,66 101,65 116,69 Q110,80 102,88 Q77,88 63,79 Z M115,69 Q136,71 143,83 Q136,96 119,96 Q116,84 115,69 Z M66,93 Q89,94 99,88 Q109,95 120,96 Q128,99 137,99 C122,111 79,105 66,93 Z" />
+    <path android:strokeColor="#FFE1C4" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M68,79 Q88,83 103,79 M118,74 Q120,87 123,93 M78,96 Q95,99 104,94" />
+    <path android:fillColor="#496C87" android:strokeColor="#395C77" android:strokeWidth="1.9"
+        android:pathData="M218,66 C223,58 258,56 267,66 C272,74 259,82 240,82 C227,82 216,76 218,66 Z" />
+    <path android:fillColor="#F2C6AA" android:strokeColor="#79586C" android:strokeWidth="1.3"
+        android:pathData="M219,68 Q230,73 240,66 Q237,79 229,79 Q222,76 219,68 Z M240,66 Q250,73 266,65 Q260,79 251,80 Q243,80 240,66 Z" />
+    <path android:strokeColor="#FFE0C6" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M222,69 Q232,73 240,67 Q251,73 263,67" />
+</vector>

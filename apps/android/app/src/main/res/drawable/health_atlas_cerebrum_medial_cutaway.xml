@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Subdued cerebellum and brainstem establish the orientation of the medial surface. -->
+    <path android:fillColor="#C6978C" android:strokeColor="#846064" android:strokeWidth="1.8"
+        android:pathData="M208,190 C221,179 247,175 270,185 C286,192 295,205 290,220 C285,238 259,245 237,241 C220,239 201,227 200,214 Q198,202 208,190Z"/>
+    <path android:strokeColor="#9B6869" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M211,197 Q250,183 278,198 M207,204 Q252,190 286,206 M207,211 Q254,197 289,214 M208,218 Q254,205 286,222 M215,224 Q258,213 280,229 M226,231 Q252,222 270,234"/>
+    <path android:strokeColor="#EAC2A9" android:strokeWidth="1.4" android:strokeLineCap="round"
+        android:pathData="M217,201 Q252,191 276,201 M217,208 Q254,199 283,209 M215,216 Q257,205 285,217 M222,223 Q256,215 277,224 M238,230 Q256,224 269,230"/>
+    <path android:fillColor="#C78C82" android:strokeColor="#815659" android:strokeWidth="1.8"
+        android:pathData="M164,157 C173,143 203,145 212,162 Q219,173 212,190 C225,204 218,217 205,221 Q202,232 205,244 L188,250 Q178,232 179,214 C167,209 167,196 173,186 Q160,172 164,157Z"/>
+    <path android:fillColor="#E4AE98"
+        android:pathData="M179,182 Q194,183 203,193 Q216,205 200,214 L194,238 L188,240 Q182,226 184,212 C170,202 176,193 179,182Z"/>
+    <path android:strokeColor="#A46C6A" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M175,198 Q188,203 203,197 M174,204 Q188,210 207,203 M183,217 Q194,218 198,212"/>
+    <!-- Cortex and folded medial surface; the anterior pole is at left. -->
+    <path android:fillColor="#A85961" android:strokeColor="#75434F" android:strokeWidth="2"
+        android:pathData="M37,123 Q35,106 47,94 Q47,78 66,69 Q72,52 93,49 Q107,35 130,39 Q152,26 175,34 Q193,27 214,35 Q235,32 250,43 Q273,42 288,57 Q308,63 314,82 Q330,94 328,116 Q336,134 324,151 Q324,167 308,177 Q296,196 271,193 Q249,202 229,191 Q212,193 199,182 Q184,179 178,166 Q162,163 153,176 Q139,192 115,187 Q96,192 79,181 Q58,179 51,164 Q36,155 39,138 Q34,131 37,123Z"/>
+    <path android:fillColor="#DA918A"
+        android:pathData="M44,123 Q41,108 53,98 Q54,82 72,74 Q80,57 100,56 Q111,43 133,46 Q154,35 177,41 Q192,34 214,42 Q235,39 249,50 Q269,48 284,63 Q303,69 308,86 Q323,96 321,117 Q330,134 317,148 Q319,162 302,172 Q292,188 271,186 Q249,194 230,184 Q215,185 202,176 Q186,173 179,157 Q160,158 149,170 Q136,184 114,179 Q95,184 81,174 Q62,172 57,158 Q43,151 47,137 Q40,131 44,123Z"/>
+    <path android:fillColor="#E8A79B"
+        android:pathData="M56,113 Q64,91 83,84 Q90,70 111,67 Q124,55 149,60 Q169,48 186,53 Q213,44 230,60 Q258,53 280,71 Q300,78 307,99 Q315,115 307,131 Q282,124 269,106 Q252,91 227,88 C200,79 166,83 141,98 Q120,111 117,141 Q107,158 82,158 Q61,154 57,138Z"/>
+    <path android:fillColor="#CA7779"
+        android:pathData="M48,141 Q72,164 100,158 Q124,162 143,151 Q155,146 171,150 Q159,159 149,170 Q136,184 114,179 Q95,184 81,174 Q62,172 57,158 Q49,153 48,141Z M260,123 Q289,139 315,136 Q319,156 303,169 Q290,187 268,184 Q247,192 228,182 Q218,183 207,174 Q231,174 251,163 Q268,153 260,123Z"/>
+    <!-- Cingulate gyrus and its branching bounding sulcus. -->
+    <path android:fillColor="#BC6C74"
+        android:pathData="M133,155 Q120,139 134,115 C151,90 188,83 222,88 C245,91 263,105 266,123 Q271,140 256,151 Q249,158 235,161 Q241,151 241,142 C244,130 238,116 221,111 C184,100 153,114 149,137 Q147,147 153,152Z"/>
+    <path android:strokeColor="#98525F" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M132,153 C119,139 128,117 140,106 C159,88 191,84 221,89 Q241,92 252,104 M248,100 Q252,85 245,72 Q242,64 245,48"/>
+    <path android:strokeColor="#EEAA99" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M137,144 Q132,126 150,112 C170,98 200,94 226,101 Q248,107 255,124 Q261,138 248,149"/>
+    <!-- Parieto-occipital and calcarine sulci diverge posteriorly. -->
+    <path android:strokeColor="#864956" android:strokeWidth="3.2" android:strokeLineCap="round"
+        android:pathData="M285,63 C280,75 290,84 288,96 C285,105 284,115 281,125 Q279,140 261,152 M274,143 Q288,141 298,150 Q306,157 319,151"/>
+    <path android:strokeColor="#ECA599" android:strokeWidth="1.3" android:strokeLineCap="round"
+        android:pathData="M288,68 Q287,76 292,85 Q296,96 290,107 Q286,118 285,128 Q282,141 266,153 M284,146 Q291,146 301,155"/>
+    <path android:strokeColor="#A65862" android:strokeWidth="2.1" android:strokeLineCap="round"
+        android:pathData="M118,48 Q116,61 103,66 Q92,71 89,81 M154,42 Q158,55 145,62 Q135,68 132,80 M179,44 Q171,54 174,65 Q176,72 167,78 M200,40 Q196,51 206,60 Q214,68 207,80 M225,45 Q221,54 228,63 Q234,71 228,78 M260,54 Q256,66 264,75 Q272,82 268,94 M306,85 Q295,94 301,104 Q307,116 322,118 M298,167 Q286,162 276,169 Q266,177 259,173 M242,174 Q248,177 246,188 M96,179 Q105,176 111,170 M54,151 Q64,148 69,154"/>
+    <path android:strokeColor="#F1B6A4" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M72,73 Q85,69 92,59 M120,57 Q131,49 143,51 M156,70 Q158,61 168,58 M182,75 Q189,69 191,55 M212,71 Q229,67 235,76 M257,68 Q256,78 260,84 M303,107 Q311,105 316,114 M281,178 Q290,176 296,170"/>
+    <!-- The cutaway window stops short of the cingulate gyrus. -->
+    <path android:fillColor="#995A64"
+        android:pathData="M57,113 Q72,86 105,86 Q123,87 139,96 C121,109 120,130 125,148 Q110,160 87,158 Q69,153 61,139 Q56,129 57,113Z"/>
+    <path android:fillColor="#F2C3A4" android:strokeColor="#D99785" android:strokeWidth="1.3"
+        android:pathData="M62,115 Q79,91 105,91 Q119,92 131,98 C117,110 113,130 119,146 Q102,155 85,151 Q70,146 65,134 Q61,127 62,115Z"/>
+    <path android:strokeColor="#DBA487" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M69,118 Q84,105 109,102 M68,124 Q83,117 112,115 M71,132 Q90,123 115,126 M78,139 Q92,132 113,135 M88,146 Q99,140 113,141"/>
+    <path android:strokeColor="#FFE0B4" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M68,116 Q84,100 104,99 M70,128 Q91,114 111,120 M76,135 Q98,125 112,130 M88,143 Q103,135 115,138"/>
+    <!-- Callosal rostrum, genu, body and splenium on the midline. -->
+    <path android:fillColor="#AC7170"
+        android:pathData="M151,153 C155,133 176,126 202,130 Q220,131 236,143 Q230,156 217,159 Q206,163 201,174 Q180,174 171,163 Q161,163 151,153Z"/>
+    <path android:fillColor="#D39886"
+        android:pathData="M166,149 Q181,137 204,139 Q220,139 228,149 Q215,157 202,157 Q194,165 182,163Z"/>
+    <path android:fillColor="#F9D9AD" android:strokeColor="#9A6265" android:strokeWidth="1.9"
+        android:pathData="M158,157 C144,155 139,143 145,133 C155,116 186,110 212,116 C231,120 244,128 246,138 Q249,150 236,154 Q223,157 216,147 C211,140 193,133 180,135 C168,137 159,141 158,148 Q158,152 164,151 L174,148 Q169,158 158,157Z"/>
+    <path android:strokeColor="#FFEDC9" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M149,140 C159,121 186,116 211,121 Q232,125 240,137"/>
+    <path android:strokeColor="#CF987E" android:strokeWidth="1.4" android:strokeLineCap="round"
+        android:pathData="M153,149 Q150,139 169,131 C189,124 214,129 226,141 Q232,149 239,146"/>
+</vector>

@@ -98,6 +98,11 @@ class HealthAtlasHeartDeviceTest {
             }
             it.view("atlas-process-stage-2").performClick()
             it.view("atlas-valve-state-aortic-valve").performClick()
+            assertTrue(it.view("atlas-view-0").isSelected)
+            val direct = requireNotNull(HealthAtlasPlates.forId("aortic-valve"))
+            assertEquals("aortic-valve", direct.owner)
+            assertTrue(it.view("atlas-feature-${direct.features.first().marker.id}").isClickable)
+            it.view("atlas-view-1").performClick()
             assertTrue(it.view("atlas-hotspot-aortic-valve").isSelected)
             it.onBackPressed()
             assertEquals(2, (it.view("atlas-valve-diagram") as HealthAtlasValvePanel.Diagram).stage)

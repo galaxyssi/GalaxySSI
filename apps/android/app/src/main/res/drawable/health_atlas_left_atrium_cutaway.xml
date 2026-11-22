@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Posterior vein cuffs: body right appears at image left. -->
+    <path android:fillColor="#BC6470" android:strokeColor="#824552" android:strokeWidth="2"
+        android:pathData="M67,39 C91,44 115,46 132,59 L121,88 C96,81 75,69 55,64 Q51,48 67,39 Z M57,92 Q94,95 121,111 L111,140 Q82,124 52,121 Q43,108 57,92 Z M287,34 Q302,37 304,59 C281,65 267,76 242,85 L228,59 Q247,41 287,34 Z M301,88 Q314,95 312,115 Q269,119 244,139 L231,112 Q259,94 301,88 Z" />
+    <path android:strokeColor="#EE9E95" android:strokeWidth="4.2" android:strokeLineCap="round"
+        android:pathData="M65,47 Q92,51 119,65 M55,101 Q82,103 111,118 M287,43 Q261,47 241,62 M303,96 Q269,99 242,118" />
+    <path android:fillColor="#EFA79A" android:strokeColor="#824552" android:strokeWidth="1.5"
+        android:pathData="M67,39 C74,43 64,69 55,64 C47,60 58,37 67,39 Z M57,92 C65,94 59,124 52,121 C44,119 49,93 57,92 Z M287,34 C295,30 313,56 304,59 C297,62 280,37 287,34 Z M301,88 C311,84 320,113 312,115 C303,118 294,91 301,88 Z" />
+    <path android:fillColor="#824657"
+        android:pathData="M65,43 C69,46 61,63 57,60 C53,58 61,42 65,43 Z M56,96 C60,98 56,118 53,117 C49,116 52,97 56,96 Z M289,38 C294,36 305,53 302,55 C298,56 286,40 289,38 Z M303,92 C308,90 315,111 311,111 C307,112 299,93 303,92 Z" />
+
+    <!-- Broad, smooth atrial body. The appendage sits anterior to the left veins. -->
+    <path android:fillColor="#CD807E" android:strokeColor="#874755" android:strokeWidth="2"
+        android:pathData="M92,71 C110,47 154,37 189,39 Q233,39 253,65 C264,81 265,106 265,119 Q277,111 295,112 Q309,111 321,104 C325,120 315,136 306,145 C296,157 280,161 265,164 C261,185 252,211 228,227 Q199,248 171,238 C142,232 124,210 110,195 C86,169 77,137 79,108 Q81,87 92,71 Z" />
+    <path android:fillColor="#A25768" android:strokeColor="#F6BBA7" android:strokeWidth="3.2"
+        android:pathData="M100,74 C123,51 158,47 189,48 Q228,48 246,70 C256,83 254,105 256,123 Q262,137 273,127 C291,118 302,125 315,114 Q310,135 293,146 Q279,155 256,155 C252,181 244,204 222,220 Q198,237 174,229 C146,221 129,201 117,188 C96,166 86,137 88,108 Q89,89 100,74 Z" />
+    <path android:fillColor="#BB7280"
+        android:pathData="M127,66 C150,51 187,51 209,58 C226,64 237,82 238,101 Q237,124 229,141 C218,164 201,176 177,176 C144,176 118,166 108,145 Q98,118 112,91 Z" />
+    <path android:fillColor="#CB8290"
+        android:pathData="M136,76 C152,63 188,60 211,72 C225,80 228,94 221,114 Q207,143 184,152 C160,163 124,155 119,135 C115,113 123,91 136,76 Z" />
+    <path android:strokeColor="#E4A092" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M146,70 Q174,57 201,67 M121,154 C138,169 163,173 181,168 M226,163 Q218,173 205,179" />
+
+    <!-- Four separate pulmonary venous ostia at the corners of the posterior wall. -->
+    <path android:fillColor="#874B60" android:strokeColor="#E8A99E" android:strokeWidth="2.4"
+        android:pathData="M98,69 C101,60 113,57 124,61 C135,65 137,75 130,82 C124,88 110,88 102,83 Q95,78 98,69 Z M92,112 C98,102 111,103 120,109 C129,115 126,126 117,130 Q105,137 95,129 Q88,123 92,112 Z M220,63 C227,55 243,54 250,62 C257,69 253,81 244,84 Q229,88 221,80 Q214,73 220,63 Z M226,106 C231,96 246,94 255,101 C263,107 263,119 254,124 Q242,133 231,125 Q222,117 226,106 Z" />
+    <path android:fillColor="#653D56"
+        android:pathData="M101,72 C104,64 116,61 124,66 C133,70 133,76 127,80 Q119,87 106,81 Q100,78 101,72 Z M96,114 C101,107 111,108 118,113 C125,118 120,125 114,127 Q103,132 97,125 Q93,121 96,114 Z M223,65 C229,59 242,58 248,65 C253,70 249,79 242,81 Q232,85 225,78 Q220,73 223,65 Z M230,108 C235,101 245,99 253,105 C259,110 258,118 252,122 Q242,128 234,122 Q227,116 230,108 Z" />
+    <path android:strokeColor="#F6C4AC" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M103,82 Q119,93 130,81 M96,128 Q108,137 120,127 M224,80 Q236,90 249,80 M232,125 Q244,132 254,123" />
+
+    <!-- The pectinate ridges are local to the appendage, not the atrial body. -->
+    <path android:fillColor="#8E4C62"
+        android:pathData="M256,138 C269,134 276,127 291,127 Q302,126 311,119 C307,131 296,142 283,146 Q269,152 255,151 Z" />
+    <path android:strokeColor="#E7A295" android:strokeWidth="2.7" android:strokeLineCap="round"
+        android:pathData="M264,144 Q270,143 274,135 M274,145 Q281,142 284,131 M284,142 Q291,138 294,130 M294,137 Q300,133 302,128" />
+
+    <!-- Mitral opening at the inferior end of the left atrial vestibule. -->
+    <path android:fillColor="#693D52" android:strokeColor="#E9AA94" android:strokeWidth="3.4"
+        android:pathData="M146,200 C159,180 195,175 218,182 C234,187 237,199 226,210 C210,227 169,227 150,215 Q141,208 146,200 Z" />
+    <path android:fillColor="#F3C2A8" android:strokeColor="#995767" android:strokeWidth="1.5"
+        android:pathData="M149,201 C160,186 194,178 216,184 Q204,192 193,194 Q177,196 165,207 Q154,208 149,201 Z M152,214 Q162,212 174,213 Q182,211 188,207 Q204,213 226,204 C211,223 167,224 152,214 Z" />
+    <path android:strokeColor="#FFE0C5" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M154,204 Q160,207 165,206 Q177,196 193,193 M161,215 Q178,218 188,209 Q200,216 218,208" />
+</vector>

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Aortic root and the short left atrial inlet, behind the cut face. -->
+    <path android:fillColor="#C56770" android:strokeColor="#873F51" android:strokeWidth="2"
+        android:pathData="M101,24 C110,13 145,11 154,21 C154,37 159,53 169,68 Q161,83 124,84 C119,64 113,43 101,24 Z" />
+    <path android:fillColor="#E68E87"
+        android:pathData="M107,25 L122,21 Q127,47 139,66 L128,73 Q123,48 107,25 Z" />
+    <path android:fillColor="#F1AA9B" android:strokeColor="#873F51" android:strokeWidth="1.6"
+        android:pathData="M101,24 C96,15 150,7 154,21 C153,32 106,35 101,24 Z" />
+    <path android:fillColor="#833D53"
+        android:pathData="M107,23 C108,18 145,14 148,21 C147,26 111,31 107,23 Z" />
+    <path android:fillColor="#B27080" android:strokeColor="#82485A" android:strokeWidth="2"
+        android:pathData="M195,77 Q184,57 188,42 C209,31 248,38 268,52 Q269,69 256,89 Z" />
+    <path android:strokeColor="#DF9B97" android:strokeWidth="3.2" android:strokeLineCap="round"
+        android:pathData="M195,49 Q220,43 250,54" />
+
+    <!-- The long conical cavity sits inside a broad myocardium. -->
+    <path android:fillColor="#A95865" android:strokeColor="#7D4051" android:strokeWidth="2.5"
+        android:pathData="M98,65 C121,46 147,46 168,63 Q180,72 196,69 C230,54 262,65 282,86 C305,110 310,145 299,179 C287,215 257,245 235,257 Q223,266 206,258 C175,246 141,229 114,204 C84,178 68,154 65,124 C63,101 76,80 98,65 Z" />
+    <path android:fillColor="#D28986"
+        android:pathData="M102,70 C125,52 146,54 165,69 Q180,78 200,74 C229,62 255,69 273,87 C294,110 299,144 287,175 C273,208 250,231 228,247 Q219,255 209,250 C178,237 148,224 121,199 C94,176 77,151 75,124 C73,103 84,85 102,70 Z" />
+    <path android:fillColor="#E19A8D"
+        android:pathData="M93,87 C111,64 130,60 148,62 Q166,68 179,76 L163,105 C137,102 108,116 109,141 Q108,165 131,190 C157,218 180,228 204,248 C160,229 122,207 101,181 C78,154 73,128 82,105 Z" />
+    <path android:strokeColor="#B77576" android:strokeWidth="2.8" android:strokeLineCap="round"
+        android:pathData="M95,94 C79,122 87,149 102,170 C114,189 129,201 145,213 M107,100 C95,118 96,142 109,161 M277,114 C290,155 263,208 231,231 M291,133 C292,162 280,185 267,202" />
+    <path android:strokeColor="#F5B4A1" android:strokeWidth="2.4" android:strokeLineCap="round"
+        android:pathData="M86,98 C73,124 83,153 97,174 M113,186 Q141,217 178,233 M285,118 Q294,150 279,178 M263,206 Q246,230 228,240" />
+    <path android:fillColor="#91475B" android:strokeColor="#FFBFAA" android:strokeWidth="3"
+        android:pathData="M119,82 C131,68 145,69 162,83 Q174,91 190,86 C219,71 244,74 262,93 C279,112 280,142 269,170 C254,207 232,223 218,234 C192,224 164,208 143,188 C121,168 106,146 105,123 Q104,98 119,82 Z" />
+    <path android:fillColor="#B76573"
+        android:pathData="M122,88 Q137,73 154,82 C165,89 173,96 190,94 C205,84 229,82 246,90 Q257,95 263,109 C261,131 247,150 224,155 C193,161 165,150 147,133 Q127,116 122,88 Z" />
+    <path android:fillColor="#CD8284"
+        android:pathData="M126,85 Q138,74 152,83 Q164,93 179,94 Q169,106 173,120 C165,131 162,143 166,152 C143,135 129,110 126,85 Z" />
+    <path android:strokeColor="#E7A197" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:pathData="M137,91 Q144,116 163,135 M153,86 Q163,93 168,102" />
+    <path android:strokeColor="#B96A78" android:strokeWidth="3.4" android:strokeLineCap="round"
+        android:pathData="M143,176 Q161,179 175,195 M161,196 Q176,198 193,212 M182,211 Q192,214 204,224 M229,211 Q244,202 249,192 M238,194 Q254,181 260,165" />
+
+    <!-- Papillary groups and the mitral cords that connect them to the leaflets. -->
+    <path android:fillColor="#BC7180" android:strokeColor="#804559" android:strokeWidth="2"
+        android:pathData="M214,207 C221,194 212,179 215,169 C219,160 226,166 231,176 C236,190 231,202 224,210 Z" />
+    <path android:fillColor="#D88F8C" android:strokeColor="#88475A" android:strokeWidth="2"
+        android:pathData="M134,178 C140,170 141,154 151,151 Q161,147 161,159 C161,172 156,181 161,193 Q149,191 134,178 Z" />
+    <path android:strokeColor="#F2AF9E" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M144,181 Q153,168 154,157 M223,200 Q224,184 220,172" />
+    <path android:strokeColor="#7F4356" android:strokeWidth="3.5" android:strokeLineCap="round"
+        android:pathData="M153,154 Q171,131 181,103 M153,155 C175,136 197,118 216,100 M220,169 C214,150 204,124 199,103 M222,168 Q232,132 240,96" />
+    <path android:strokeColor="#FFE0C0" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M153,154 Q171,131 181,103 M153,155 C175,136 197,118 216,100 M220,169 C214,150 204,124 199,103 M222,168 Q232,132 240,96 M157,154 Q175,136 186,105 M219,166 Q224,130 228,103" />
+
+    <!-- The front mitral leaflet meets the aortic outlet; only the mitral has cords. -->
+    <path android:fillColor="#E5AA97" android:strokeColor="#99596A" android:strokeWidth="1.4"
+        android:pathData="M153,62 Q171,69 184,75 L174,86 Q160,77 149,72 Z" />
+    <path android:fillColor="#753B51" android:strokeColor="#AF686D" android:strokeWidth="2.4"
+        android:pathData="M113,55 C120,46 143,44 154,50 C163,55 164,62 156,69 C147,79 126,80 117,72 Q109,65 113,55 Z M171,81 C183,67 221,62 245,69 C265,74 268,89 254,100 C237,113 196,118 177,107 Q163,98 171,81 Z" />
+    <path android:fillColor="#F4C5A9" android:strokeColor="#8C5263" android:strokeWidth="1.4"
+        android:pathData="M114,57 Q125,64 135,56 Q135,70 126,73 Q116,69 114,57 Z M135,56 Q147,60 159,54 Q159,68 148,72 Q138,69 135,56 Z M169,83 C184,70 210,67 227,70 Q217,82 206,87 Q188,94 181,105 Q170,102 169,83 Z M180,106 Q199,110 217,96 Q228,90 233,83 Q242,88 262,81 C258,104 215,118 180,106 Z" />
+    <path android:strokeColor="#FFE1C6" android:strokeWidth="1.9" android:strokeLineCap="round"
+        android:pathData="M116,59 Q127,62 135,56 Q146,59 157,55 M173,83 Q173,98 181,103 Q192,91 207,86 M188,108 Q214,113 233,83 Q245,91 257,84" />
+</vector>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_skin_cross_section">Skin cross-section</string>
+    <string name="health_atlas_epidermis_thick_layers">Palm and sole epidermis</string>
+    <string name="health_atlas_dermis_two_layers">Layers of the dermis</string>
+    <string name="health_atlas_skin_layers_follicle">Hair follicle</string>
+    <string name="health_atlas_skin_layers_follicle_detail">A tube of epithelium extends into the dermis and surrounds the root of the hair.</string>
+    <string name="health_atlas_skin_layers_sweat_duct">Sweat duct</string>
+    <string name="health_atlas_skin_layers_sweat_duct_detail">The duct of this eccrine gland carries sweat from its coiled base to a pore on the surface.</string>
+    <string name="health_atlas_skin_layers_vessels">Dermal vessels</string>
+    <string name="health_atlas_skin_layers_vessels_detail">Blood vessels run through the dermis, not through the epidermis above it.</string>
+    <string name="health_atlas_skin_layers_corneum">Stratum corneum</string>
+    <string name="health_atlas_skin_layers_corneum_detail">Flattened cells surrounded by lipids make up the outer barrier that limits water loss.</string>
+    <string name="health_atlas_skin_layers_lucidum">Stratum lucidum</string>
+    <string name="health_atlas_skin_layers_lucidum_detail">A pale layer beneath the stratum corneum is visible in the thick skin of palms and soles.</string>
+    <string name="health_atlas_skin_layers_granulosum">Stratum granulosum</string>
+    <string name="health_atlas_skin_layers_granulosum_detail">Flattening keratinocytes contain visible granules as they mature toward the surface.</string>
+    <string name="health_atlas_skin_layers_spinosum">Stratum spinosum</string>
+    <string name="health_atlas_skin_layers_spinosum_detail">Cell junctions hold neighboring keratinocytes together. They contribute to the spiny appearance seen under a microscope.</string>
+    <string name="health_atlas_skin_layers_basale">Stratum basale</string>
+    <string name="health_atlas_skin_layers_basale_detail">Dividing cells at the base supply new keratinocytes to the layers above.</string>
+    <string name="health_atlas_skin_layers_papillary">Papillary dermis</string>
+    <string name="health_atlas_skin_layers_papillary_detail">Superficial loose connective tissue forms small projections into the base of the epidermis.</string>
+    <string name="health_atlas_skin_layers_capillary_loop">Capillary loop</string>
+    <string name="health_atlas_skin_layers_capillary_loop_detail">Small vascular loops reach into dermal papillae. Nutrients diffuse from the dermis into the overlying epidermis.</string>
+    <string name="health_atlas_skin_layers_reticular">Reticular dermis</string>
+    <string name="health_atlas_skin_layers_reticular_detail">Thicker bundles of collagen and elastic fibers give the deeper dermis strength and flexibility.</string>
+    <string name="health_atlas_skin_layers_sensory_fiber">Sensory fiber</string>
+    <string name="health_atlas_skin_layers_sensory_fiber_detail">Branches of sensory nerves pass through the dermis and carry signals from skin receptors.</string>
+</resources>

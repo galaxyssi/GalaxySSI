@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Temporal bone behind the canal, with a small window into the middle ear. -->
+    <path android:fillColor="#E4BE99" android:strokeColor="#997365" android:strokeWidth="1.7"
+        android:pathData="M180,109 C202,95 227,94 250,99 C276,104 292,91 307,88 Q323,86 329,102 L335,133 Q339,154 333,169 Q326,186 305,185 C280,180 259,178 235,178 C209,178 194,169 178,160Z"/>
+    <path android:fillColor="#F3D8B0"
+        android:pathData="M194,108 C225,93 242,107 261,107 Q284,107 308,95 Q319,91 324,101 L326,108 Q312,104 303,111 Q284,127 258,125 L221,123 Q207,127 194,126Z M202,158 C220,158 243,171 269,166 Q300,161 325,172 Q318,181 303,179 C281,175 261,173 237,173 Q215,174 202,165Z"/>
+    <path android:strokeColor="#BD947A" android:strokeWidth="1.1" android:strokeLineCap="round"
+        android:pathData="M212,112 l5,-4 M222,111 l6,-4 M233,112 l5,-4 M246,113 l5,-3 M267,116 l5,-4 M280,110 l6,-4 M302,101 l5,-4 M222,162 l5,4 M233,165 l6,4 M248,168 l5,3 M261,168 l4,4 M273,171 l5,3 M289,173 l5,3"/>
+    <path android:fillColor="#87636B" android:strokeColor="#694957" android:strokeWidth="1.6"
+        android:pathData="M279,113 C290,112 295,108 307,106 Q322,103 327,116 Q334,134 329,151 C326,164 318,172 305,167 Q291,161 275,157Z"/>
+    <path android:fillColor="#A37C78"
+        android:pathData="M293,144 Q309,134 327,137 Q329,153 318,161 Q312,168 300,161 L280,155Z"/>
+    <path android:fillColor="#F4DBB5" android:strokeColor="#A98670" android:strokeWidth="1.35"
+        android:pathData="M296,111 Q303,107 308,112 Q312,117 306,121 Q301,123 299,128 L288,141 Q284,144 283,139 L295,121 Q291,116 296,111Z"/>
+    <path android:strokeColor="#FFEDCB" android:strokeWidth="1.2" android:strokeLineCap="round"
+        android:pathData="M299,113 Q304,111 307,115 M299,123 L289,137"/>
+    <!-- Lateral auricle: rolled helix, forked antihelix, conchal bowl and lobule. -->
+    <path android:fillColor="#C17E74" android:strokeColor="#824E57" android:strokeWidth="2.1"
+        android:pathData="M163,88 C171,66 152,37 129,31 C104,23 76,32 61,52 C43,76 44,112 54,141 C62,161 70,172 76,194 C82,220 95,247 117,250 C137,253 150,237 148,220 Q145,204 154,181 C164,162 178,151 185,141 L192,114 C179,110 164,105 163,88Z"/>
+    <path android:fillColor="#E6A88F"
+        android:pathData="M160,88 C166,64 148,41 125,36 C103,30 80,40 66,57 C52,75 48,106 59,135 C67,154 78,168 82,190 C90,221 101,245 119,244 Q140,242 141,222 Q139,200 150,179 Q158,163 168,147 L181,124 Q169,115 161,102Z"/>
+    <path android:fillColor="#AA6870"
+        android:pathData="M153,86 C149,73 147,58 132,51 C114,40 91,44 77,61 C63,78 61,104 69,126 C77,147 90,158 94,183 Q97,201 109,205 Q123,211 132,194 C139,180 136,172 146,155 L158,126 C167,111 157,98 153,86Z"/>
+    <path android:fillColor="#C9857A"
+        android:pathData="M145,77 C139,54 116,49 99,55 C77,63 70,89 77,116 Q82,136 97,146 Q110,158 111,181 Q113,192 122,190 Q134,184 137,167 C140,155 149,147 153,135 Q158,120 155,100Z"/>
+    <path android:fillColor="#9F5D66" android:strokeColor="#90505F" android:strokeWidth="1.5"
+        android:pathData="M139,92 Q153,89 156,107 Q170,119 167,134 C161,152 147,156 135,162 Q118,165 111,147 Q103,131 113,114 Q119,102 139,92Z"/>
+    <path android:fillColor="#BD7772"
+        android:pathData="M128,115 Q142,106 153,113 Q164,120 160,130 Q153,147 139,153 Q124,154 119,145 Q111,130 128,115Z"/>
+    <path android:strokeColor="#854E5A" android:strokeWidth="10" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M116,178 C118,162 105,148 99,134 Q87,109 101,91 Q110,79 128,72 M101,93 Q96,80 83,77"/>
+    <path android:strokeColor="#E8A78D" android:strokeWidth="7" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M114,175 C115,161 102,145 96,131 Q86,108 99,90 Q108,78 125,70 M98,91 Q94,79 82,75"/>
+    <path android:strokeColor="#F6C8A6" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M112,165 Q109,153 102,145 M92,126 Q85,107 97,92 M106,83 Q113,77 122,74 M94,85 Q89,78 84,78"/>
+    <path android:fillColor="#E9A88F"
+        android:pathData="M90,197 Q104,202 116,207 Q128,207 137,201 Q133,213 137,222 Q138,239 124,242 Q108,247 98,226 Q92,214 90,197Z"/>
+    <path android:strokeColor="#F8C7A3" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M61,108 C56,81 65,60 80,49 C98,34 125,35 141,47 M67,134 Q72,148 80,158 M98,217 Q105,237 118,237"/>
+    <path android:fillColor="#D99583" android:strokeColor="#9D5D65" android:strokeWidth="1.4"
+        android:pathData="M162,85 Q161,97 150,103 Q136,109 122,104 Q117,99 126,97 Q141,95 145,87 Q148,81 157,78Z M123,166 Q130,152 141,155 Q148,158 144,165 Q138,174 130,177 Q125,177 123,166Z"/>
+    <!-- A continuous curved lumen from the concha into the cut cartilage and bone. -->
+    <path android:fillColor="#CE8F83" android:strokeColor="#A2696A" android:strokeWidth="1.4"
+        android:pathData="M150,113 C165,104 185,109 199,106 Q210,104 217,103 Q212,115 215,125 Q214,140 222,152 Q200,153 184,150 Q168,149 155,156 Q147,158 146,147Z"/>
+    <path android:fillColor="#734E5D"
+        android:pathData="M142,123 C158,111 171,115 188,117 C210,120 218,110 241,113 Q262,116 273,119 L291,117 L278,154 Q260,159 242,151 C221,141 204,146 187,144 Q165,141 151,150 Q143,153 138,145 Q133,132 142,123Z"/>
+    <path android:fillColor="#916471"
+        android:pathData="M150,128 Q164,120 184,124 Q204,129 222,122 Q240,117 258,123 Q274,127 287,122 L278,144 Q263,151 240,143 C221,135 207,141 189,137 Q166,132 149,144 Q140,144 141,136Z"/>
+    <path android:strokeColor="#D68F8E" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M150,148 Q168,139 189,143 C211,147 219,140 240,149 Q260,157 276,152 M159,117 Q171,114 184,117 M201,118 Q212,117 224,114"/>
+    <path android:fillColor="#E7AB91" android:strokeColor="#AB6569" android:strokeWidth="1.5"
+        android:pathData="M151,108 Q158,108 163,115 Q159,126 153,129 Q146,129 146,121 Q145,115 151,108Z"/>
+    <path android:strokeColor="#F7C7A5" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M152,112 Q157,112 159,116 M171,145 Q181,143 189,145 M225,145 Q239,148 247,152"/>
+    <!-- The eardrum slopes inward toward the canal floor. -->
+    <path android:fillColor="#A8ADBC" android:strokeColor="#645972" android:strokeWidth="1.6"
+        android:pathData="M289,113 Q288,123 283,136 Q279,150 275,158 L271,156 Q273,146 277,134 Q282,121 283,114 Q285,110 289,113Z"/>
+    <path android:strokeColor="#E3DDE3" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M285,116 Q284,124 280,134 Q277,143 275,151"/>
+</vector>

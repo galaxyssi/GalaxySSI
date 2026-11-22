@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Muted landmarks: the ovary is separate; the uterine corner surrounds the intramural segment. -->
+    <path android:fillColor="#CB9098" android:strokeColor="#995E71" android:strokeWidth="1.6"
+        android:pathData="M26,186 C32,172 51,164 69,166 C91,167 104,178 102,193 C100,209 78,218 57,215 C36,212 20,202 26,186Z"/>
+    <path android:fillColor="#E1ABA4"
+        android:pathData="M31,185 C46,168 79,166 94,181 C104,193 84,207 64,209 C45,209 24,201 31,185Z"/>
+    <path android:strokeColor="#F3C6B3" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M34,185 C47,172 72,169 86,177 M49,199 Q60,202 72,199"/>
+    <path android:fillColor="#BA7482" android:strokeColor="#8B5267" android:strokeWidth="1.8"
+        android:pathData="M253,121 C256,101 271,84 292,75 Q315,65 335,70 L335,221 Q302,220 286,210 C272,204 267,194 268,179 C267,161 258,145 253,121Z"/>
+    <path android:fillColor="#DC9690" android:strokeColor="#A76172" android:strokeWidth="1.4"
+        android:pathData="M256,122 Q263,93 292,82 Q313,73 328,77 L328,215 Q301,211 288,204 Q276,197 275,180 Q273,157 261,139Z"/>
+    <path android:strokeColor="#F1B19E" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M270,113 Q279,91 310,85 M266,139 Q281,156 282,182 Q282,197 304,204 M289,158 Q294,173 294,188 Q295,197 314,204 M277,121 Q289,103 306,102 M299,159 Q306,177 305,189"/>
+    <path android:fillColor="#EEB4A0" android:strokeColor="#B0737F" android:strokeWidth="1.2"
+        android:pathData="M328,110 Q317,107 305,116 Q295,122 291,133 Q300,134 303,141 Q308,155 315,174 Q321,188 328,193Z"/>
+    <path android:fillColor="#84445B"
+        android:pathData="M328,116 Q316,114 307,123 L299,132 Q305,135 309,146 C313,160 322,181 328,184Z"/>
+    <!-- Long open wall: flared lateral mouth, wide ampulla, then narrow medial isthmus. -->
+    <path android:fillColor="#D9918A" android:strokeColor="#874E64" android:strokeWidth="2"
+        android:pathData="M53,112 C61,96 63,80 80,65 C96,51 124,49 147,53 C176,58 195,75 212,83 C227,90 242,90 257,99 Q270,107 270,122 Q260,128 247,118 C233,109 217,111 201,103 C180,92 166,89 145,91 C124,94 105,101 93,114 C82,125 75,133 66,132 Q57,130 53,112Z"/>
+    <path android:fillColor="#F0B59D" android:strokeColor="#B77379" android:strokeWidth="1.4"
+        android:pathData="M59,111 C70,98 69,85 85,71 C103,56 128,55 148,60 C171,65 187,79 210,89 C225,95 240,95 254,103 Q264,109 267,119 Q258,121 248,114 C233,105 216,106 202,98 C184,89 166,82 145,85 C126,87 105,95 89,108 C77,119 75,129 66,127 Q62,123 59,111Z"/>
+    <path android:fillColor="#9A5368"
+        android:pathData="M60,113 C75,91 85,74 109,66 C129,59 150,64 173,74 C188,81 200,89 217,95 C233,100 247,100 262,112 L266,119 C250,108 235,106 218,103 C200,99 188,91 172,86 C146,77 128,83 113,89 C93,98 83,109 74,121 Q68,129 64,124Z"/>
+    <path android:strokeColor="#F6C7AA" android:strokeWidth="2.3" android:strokeLineCap="round"
+        android:pathData="M66,115 C78,95 92,80 112,74 Q121,71 128,76 Q140,73 151,75 Q164,77 176,82 M87,104 Q93,93 104,88 L112,85 M98,92 Q98,84 107,81 Q117,77 121,80 M129,77 Q138,79 144,77 M148,70 Q156,69 161,75 M163,75 Q167,78 173,78 M180,81 Q192,86 201,92 Q209,97 217,98 C232,102 246,101 259,112"/>
+    <path android:strokeColor="#FAD2B5" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M82,69 C101,52 126,52 147,56 Q172,62 192,77 M217,89 Q240,93 251,99 M92,113 Q111,94 144,89"/>
+    <!-- The narrow lumen continues through the uterine wall and into the cavity. -->
+    <path android:strokeColor="#A15C70" android:strokeWidth="6" android:strokeLineCap="round"
+        android:pathData="M260,116 C273,126 285,130 303,131"/>
+    <path android:strokeColor="#F3BFA5" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M260,115 C273,125 285,129 303,130"/>
+    <!-- Individual fringes are anchored at the rim, with open space below. -->
+    <path android:fillColor="#D88F8D" android:strokeColor="#9D5B70" android:strokeWidth="1.4"
+        android:pathData="M64,100 Q59,108 61,117 C55,117 53,120 47,126 Q39,133 34,131 Q41,125 44,116 Q29,126 20,121 C31,117 39,105 54,103Z M64,115 Q68,122 74,126 Q69,139 75,151 Q65,150 62,138 Q58,147 51,151 Q53,140 55,132 Q48,139 37,143 Q42,136 43,131 Q32,140 25,138 Q41,124 47,120 Q56,115 64,115Z M74,125 Q82,126 83,131 Q79,137 87,145 Q77,145 73,139 Q71,132 74,125Z"/>
+    <path android:strokeColor="#F8BFA7" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M26,121 Q42,115 53,108 M34,134 Q45,126 56,122 M41,138 Q53,129 60,123 M55,146 Q61,135 63,128 M69,145 Q65,134 68,129 M81,141 Q77,136 79,131"/>
+    <!-- Locator from the ampullary wall to the enlarged cross-section. -->
+    <path android:strokeColor="#A67A89" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M137,93L138,100 M140,106L141,112 M144,118L146,124 M149,130L152,136 M154,142L157,148 M160,154L163,160"/>
+    <path android:fillColor="#B46C7E" android:strokeColor="#854C61" android:strokeWidth="1.8"
+        android:pathData="M120,196 C124,169 147,155 174,156 C201,156 221,174 224,197 C228,227 208,247 178,250 C148,252 123,238 119,217 Q117,205 120,196Z"/>
+    <path android:fillColor="#E69D92" android:strokeColor="#D08A87" android:strokeWidth="1.4"
+        android:pathData="M123,193 C129,170 151,159 175,159 C200,160 219,179 220,201 C222,225 202,243 177,244 C150,246 129,232 124,213 Q121,203 123,193Z"/>
+    <path android:fillColor="#88485D" android:strokeColor="#F1B69F" android:strokeWidth="2.5"
+        android:pathData="M132,195 C137,176 153,167 175,167 C196,168 211,181 212,202 C213,222 198,235 175,236 C155,237 139,227 134,214 Q130,206 132,195Z"/>
+    <!-- Mucosal folds root in the wall; branching tips project into the lumen. -->
+    <path android:strokeColor="#C17B86" android:strokeWidth="6.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M171,169 Q168,183 173,198 M170,181 Q160,184 158,191 M172,187 Q179,185 182,191 M192,173 Q191,184 185,196 M191,183 Q198,182 200,189 M210,193 Q196,191 190,204 M200,198 Q201,207 195,211 M211,211 Q202,215 190,216 M200,216 Q198,221 201,225 M186,234 Q183,224 178,213 M183,225 Q175,227 171,221 M158,232 Q157,220 165,208 M157,223 Q150,218 149,214 M136,212 Q146,207 157,203 M145,208 Q142,201 146,197 M135,191 Q145,194 151,199 M147,176 Q150,186 155,190"/>
+    <path android:strokeColor="#F7C7A7" android:strokeWidth="2.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M171,169 Q168,183 173,198 M170,181 Q160,184 158,191 M172,187 Q179,185 182,191 M192,173 Q191,184 185,196 M191,183 Q198,182 200,189 M210,193 Q196,191 190,204 M200,198 Q201,207 195,211 M211,211 Q202,215 190,216 M200,216 Q198,221 201,225 M186,234 Q183,224 178,213 M183,225 Q175,227 171,221 M158,232 Q157,220 165,208 M157,223 Q150,218 149,214 M136,212 Q146,207 157,203 M145,208 Q142,201 146,197 M135,191 Q145,194 151,199 M147,176 Q150,186 155,190"/>
+    <path android:strokeColor="#F7C5AD" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M128,189 Q136,173 149,168 M184,164 Q201,168 210,180 M217,214 Q213,229 200,236 M167,240 Q149,239 139,228"/>
+</vector>

@@ -99,13 +99,11 @@ class HealthAtlasMiddleEarDeviceTest {
             for (id in listOf("ear") + parts) {
                 if (id != "ear") {
                     activity.view("atlas-hotspot-$id").performClick()
-                    if (id in setOf("middle-ear", "cochlea", "vestibular-apparatus")) {
-                        assertEquals(id, HealthAtlasPlates.forId(id)?.owner)
-                        assertTrue(activity.view("atlas-view-0").isSelected)
-                        val feature = requireNotNull(HealthAtlasPlates.forId(id)).features.first()
-                        assertTrue(activity.view("atlas-feature-${feature.marker.id}").isClickable)
-                        activity.view("atlas-view-1").performClick()
-                    }
+                    assertEquals(id, HealthAtlasPlates.forId(id)?.owner)
+                    assertTrue(activity.view("atlas-view-0").isSelected)
+                    val feature = requireNotNull(HealthAtlasPlates.forId(id)).features.first()
+                    assertTrue(activity.view("atlas-feature-${feature.marker.id}").isClickable)
+                    activity.view("atlas-view-1").performClick()
                     assertTrue(activity.view("atlas-hotspot-$id").isSelected)
                 }
                 assertEquals(atlas[id]!!.name, (activity.view("health-page-title") as TextView).text.toString())

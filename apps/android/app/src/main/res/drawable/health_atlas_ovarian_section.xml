@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Tubal end in context; the main fimbrial fringe remains clear of the ovary. -->
+    <group android:translateX="9">
+        <path android:fillColor="#D69494" android:strokeColor="#995E6D" android:strokeWidth="1.6"
+            android:pathData="M335,57 Q341,62 339,68 C320,68 318,79 309,91 C322,96 329,109 332,123 Q320,115 311,111 Q319,124 315,138 Q310,125 300,116 Q305,132 298,144 Q296,126 291,117 Q290,130 283,138 Q287,118 283,111 Q278,117 275,125 C274,109 282,98 291,88 C303,73 309,60 335,57Z"/>
+        <path android:fillColor="#B66B7D"
+            android:pathData="M307,85 Q305,96 319,105 Q308,103 302,100 Q301,115 298,121 Q297,109 292,104 Q288,110 283,115 Q286,100 295,94Z"/>
+        <path android:strokeColor="#F6BAAB" android:strokeWidth="2" android:strokeLineCap="round"
+            android:pathData="M335,62 Q317,62 309,83 M306,96 Q320,102 326,114 M301,101 Q309,112 313,124 M294,103 Q298,116 298,128 M289,104 Q285,108 282,114"/>
+    </group>
+    <!-- Mesovarium and faint posterior rim. -->
+    <path android:fillColor="#D6A29E" android:strokeColor="#A96C79" android:strokeWidth="1.2"
+        android:pathData="M213,170 C225,186 246,197 279,204 Q268,217 285,231 C247,224 222,220 196,206Z"/>
+    <path android:strokeColor="#F2C4AE" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M226,199 Q246,213 272,214 M235,211 Q247,218 263,220"/>
+    <path android:fillColor="#AC626F" android:strokeColor="#784554" android:strokeWidth="2"
+        android:pathData="M30,148 C36,116 70,86 107,74 C152,59 215,60 246,76 C278,92 285,116 278,145 C273,167 250,185 231,193 C211,200 193,217 167,223 C119,234 73,219 46,194 Q27,176 30,148Z"/>
+    <!-- The thick cortical face surrounds a yielding, vascular medullary field. -->
+    <path android:fillColor="#F2BAA1" android:strokeColor="#844B5B" android:strokeWidth="2"
+        android:pathData="M30,145 C38,109 70,83 107,71 C156,54 212,57 245,74 C270,86 279,110 272,135 C267,154 250,169 229,177 C212,185 192,202 164,210 C123,221 78,210 50,188 C35,176 26,161 30,145Z"/>
+    <path android:fillColor="#E3978D"
+        android:pathData="M40,145 C48,115 73,92 112,79 C151,65 212,65 240,82 C262,95 268,112 262,134 C256,152 244,164 224,173 C197,185 191,194 163,202 C121,212 82,201 57,182 C44,173 36,159 40,145Z"/>
+    <path android:fillColor="#D38183"
+        android:pathData="M69,155 C67,135 91,116 113,111 C135,106 153,113 167,123 C188,136 191,147 211,150 C229,154 237,166 221,173 C202,181 188,190 161,195 C131,201 109,193 88,179 Q72,171 69,155Z"/>
+    <path android:fillColor="#BE717B"
+        android:pathData="M81,151 C86,134 104,125 126,124 Q148,124 166,139 C184,153 203,151 222,165 Q224,170 216,174 C195,183 175,190 154,189 C122,189 87,178 81,151Z"/>
+    <path android:strokeColor="#FBD5B8" android:strokeWidth="2.1" android:strokeLineCap="round"
+        android:pathData="M37,143 C46,110 76,86 112,75 C148,63 211,60 238,76 M34,155 Q33,170 54,185 Q72,199 99,205 M244,157 Q258,146 265,133"/>
+    <path android:strokeColor="#F3AF9B" android:strokeWidth="2.5" android:strokeLineCap="round"
+        android:pathData="M95,156 Q110,150 122,160 M98,165 Q116,177 130,174 M124,136 Q139,134 151,141 M154,181 Q166,180 174,174 M162,148 Q176,147 187,156 M81,132 Q88,125 95,122 M226,157 Q235,153 240,147 M63,176 Q76,188 88,192 M128,201 Q151,203 174,194"/>
+    <!-- Hilum: two vessel trees enter at the mesovarial edge. -->
+    <path android:fillColor="#E8AF9C" android:strokeColor="#A96C79" android:strokeWidth="1.1"
+        android:pathData="M202,180 Q216,174 226,172 L240,185 Q228,196 211,199 L205,191Z"/>
+    <path android:strokeColor="#87566E" android:strokeWidth="4.6" android:strokeLineCap="round"
+        android:pathData="M269,212 C244,208 231,197 221,184 C204,168 182,164 163,157 C145,150 122,150 104,146 M218,182 Q193,183 178,171 Q162,169 149,172 M184,165 Q172,153 172,142 M142,153 Q130,143 126,135"/>
+    <path android:strokeColor="#C2A3AF" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M268,211 Q236,203 221,183 Q200,166 171,159 Q144,150 121,149 M207,181 Q191,179 178,171 M185,165 Q173,154 172,143"/>
+    <path android:strokeColor="#9E4659" android:strokeWidth="3.3" android:strokeLineCap="round"
+        android:pathData="M267,221 Q231,207 214,187 Q205,174 183,172 Q162,161 140,163 Q119,162 108,154 M160,163 Q150,157 145,150 M189,173 Q182,181 169,182 M126,162 Q122,170 113,172"/>
+    <path android:strokeColor="#F3A49A" android:strokeWidth="1" android:strokeLineCap="round"
+        android:pathData="M262,218 Q230,205 216,187 Q205,174 184,171 M179,170 Q158,161 140,162"/>
+    <!-- Small peripheral follicles and a larger fluid-filled follicle with eccentric oocyte. -->
+    <path android:fillColor="#F9CEA7" android:strokeColor="#AB5B68" android:strokeWidth="1.2"
+        android:pathData="M51,135a3,3 0,1 0,6,0a3,3 0,1 0,-6,0Z M61,123a3.5,3.5 0,1 0,7,0a3.5,3.5 0,1 0,-7,0Z M75,113a2.6,2.6 0,1 0,5.2,0a2.6,2.6 0,1 0,-5.2,0Z M86,100a4,4 0,1 0,8,0a4,4 0,1 0,-8,0Z M134,83a3,3 0,1 0,6,0a3,3 0,1 0,-6,0Z M148,83a2.6,2.6 0,1 0,5.2,0a2.6,2.6 0,1 0,-5.2,0Z M59,174a3.5,3.5 0,1 0,7,0a3.5,3.5 0,1 0,-7,0Z M81,185a3,3 0,1 0,6,0a3,3 0,1 0,-6,0Z M106,196a4,4 0,1 0,8,0a4,4 0,1 0,-8,0Z M251,128a3,3 0,1 0,6,0a3,3 0,1 0,-6,0Z"/>
+    <path android:fillColor="#CF7B7E" android:strokeColor="#A45565" android:strokeWidth="1.5"
+        android:pathData="M101,93a10,9 0,1 0,20,0a10,9 0,1 0,-20,0Z M152,100a12,10 0,1 0,24,0a12,10 0,1 0,-24,0Z M105,187a8,6 0,1 0,16,0a8,6 0,1 0,-16,0Z"/>
+    <path android:fillColor="#FAD6B1" android:strokeColor="#F2A695" android:strokeWidth="1.3"
+        android:pathData="M106,93a5,5 0,1 0,10,0a5,5 0,1 0,-10,0Z M159,100a5,5 0,1 0,10,0a5,5 0,1 0,-10,0Z M110,187a3,3 0,1 0,6,0a3,3 0,1 0,-6,0Z"/>
+    <path android:fillColor="#A85C6D" android:strokeColor="#8A4B5E" android:strokeWidth="1.6"
+        android:pathData="M181,108 C182,90 198,77 215,79 C235,81 250,96 249,115 C248,134 231,146 211,144 C192,143 178,130 181,108Z"/>
+    <path android:fillColor="#EFAB99" android:strokeColor="#D38883" android:strokeWidth="1.5"
+        android:pathData="M187,108 C188,93 200,83 215,84 C231,85 245,99 243,115 C241,132 228,140 212,139 C195,138 184,127 187,108Z"/>
+    <path android:fillColor="#FBE0BC"
+        android:pathData="M194,108 C195,94 207,88 220,92 C234,96 240,105 237,117 C234,131 224,136 211,133 Q201,132 196,127 C212,125 209,106 194,108Z"/>
+    <path android:fillColor="#CF7D7F" android:strokeColor="#A65D70" android:strokeWidth="1.1"
+        android:pathData="M189,112 C194,103 204,104 209,111 C213,119 205,128 196,128 Q189,123 189,112Z"/>
+    <path android:fillColor="#FFE6BD" android:strokeColor="#EFA992" android:strokeWidth="1.4"
+        android:pathData="M195,116a5,5 0,1 0,10,0a5,5 0,1 0,-10,0Z"/>
+    <path android:fillColor="#B36374"
+        android:pathData="M198,116a2,2 0,1 0,4,0a2,2 0,1 0,-4,0Z M109.5,93a1.5,1.5 0,1 0,3,0a1.5,1.5 0,1 0,-3,0Z M162.5,100a1.5,1.5 0,1 0,3,0a1.5,1.5 0,1 0,-3,0Z"/>
+    <path android:strokeColor="#FFF0D4" android:strokeWidth="1.7" android:strokeLineCap="round"
+        android:pathData="M205,95 Q217,91 229,101 M213,130 Q223,131 229,125"/>
+    <path android:strokeColor="#765463" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M50,238H120 M50,234V242 M120,234V242"/>
+</vector>

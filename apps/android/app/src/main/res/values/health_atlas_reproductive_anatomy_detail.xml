@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_ovarian_section_selector">Ovary cutaway</string>
+    <string name="health_atlas_ovarian_section_view">Longitudinal section of one adult ovary. The nearby uterine tube is shown for orientation. Scale bar: about 1 cm.</string>
+    <string name="health_atlas_ovarian_cortex_band">Ovarian cortex</string>
+    <string name="health_atlas_ovarian_cortex_band_detail">The outer region of the ovary, just under its thin connective tissue capsule, contains follicles at different stages.</string>
+    <string name="health_atlas_ovarian_small_follicle">Growing follicle</string>
+    <string name="health_atlas_ovarian_small_follicle_detail">In this small cortical follicle, supporting cells surround the oocyte. A large fluid cavity has not yet formed.</string>
+    <string name="health_atlas_ovarian_antral_follicle">Antral follicle</string>
+    <string name="health_atlas_ovarian_antral_follicle_detail">Fluid fills the antrum of this larger follicle. The oocyte sits off center in a mound of supporting cells against the follicle wall.</string>
+    <string name="health_atlas_ovarian_medulla_core">Ovarian medulla</string>
+    <string name="health_atlas_ovarian_medulla_core_detail">The inner connective tissue contains branching blood vessels, lymphatic vessels, and nerves.</string>
+    <string name="health_atlas_ovarian_hilum">Ovarian hilum</string>
+    <string name="health_atlas_ovarian_hilum_detail">Blood vessels and nerves pass between the mesovarium and the medulla at the attached edge of the ovary.</string>
+
+    <string name="health_atlas_testicular_section_selector">Testis cutaway</string>
+    <string name="health_atlas_testicular_section_view">Longitudinal section of one adult testis, with its posterior border on the right. Scale bar: about 1 cm.</string>
+    <string name="health_atlas_testicular_tunica_albuginea">Tunica albuginea</string>
+    <string name="health_atlas_testicular_tunica_albuginea_detail">A dense, pale connective tissue capsule surrounds the testis and thickens at its posterior border to form the mediastinum.</string>
+    <string name="health_atlas_testicular_septum">Testicular septum</string>
+    <string name="health_atlas_testicular_septum_detail">Thin partitions extend inward from the capsule toward the mediastinum, dividing the interior into lobules. Only a few lobules are shown.</string>
+    <string name="health_atlas_testicular_tubules">Seminiferous tubules</string>
+    <string name="health_atlas_testicular_tubules_detail">These tightly coiled tubes lie within the lobules. Near the mediastinum, short straight tubules connect them to the rete testis.</string>
+    <string name="health_atlas_testicular_rete">Rete testis</string>
+    <string name="health_atlas_testicular_rete_detail">This network lies within the posterior mediastinum. Efferent ductules leave its upper end and enter the head of the epididymis.</string>
+
+    <string name="health_atlas_uterine_tube_cutaway_selector">Tube cutaway</string>
+    <string name="health_atlas_uterine_tube_cutaway_view">One uterine tube opened along its length, from the ovary side at left to the uterine corner at right. The inset enlarges a cross section through the ampulla.</string>
+    <string name="health_atlas_tubal_fimbriae">Fimbriae</string>
+    <string name="health_atlas_tubal_fimbriae_detail">These fingerlike extensions fringe the opening of the tube. They lie near the ovary without sealing the space between the tube and the ovary.</string>
+    <string name="health_atlas_tubal_infundibulum">Infundibulum</string>
+    <string name="health_atlas_tubal_infundibulum_detail">The flared outer end of the tube opens into the peritoneal cavity beside the ovary.</string>
+    <string name="health_atlas_tubal_ampulla">Ampulla</string>
+    <string name="health_atlas_tubal_ampulla_detail">The long, wide segment between the infundibulum and the isthmus has especially elaborate mucosal folds.</string>
+    <string name="health_atlas_tubal_isthmus">Isthmus</string>
+    <string name="health_atlas_tubal_isthmus_detail">This narrow segment joins the wider ampulla to the short portion that passes through the uterine wall and opens into the uterine cavity.</string>
+    <string name="health_atlas_tubal_mucosal_folds">Mucosal folds</string>
+    <string name="health_atlas_tubal_mucosal_folds_detail">Branching ridges of the lining project into the ampullary lumen. A ring of smooth muscle surrounds the folded mucosa.</string>
+
+    <string name="health_atlas_endometrial_layers_selector">Lining layers</string>
+    <string name="health_atlas_endometrial_layers_view">Magnified cutaway of the uterine lining in the proliferative phase, with the uterine cavity above. Lining thickness varies over the cycle.</string>
+    <string name="health_atlas_endometrial_luminal_epithelium">Surface epithelium</string>
+    <string name="health_atlas_endometrial_luminal_epithelium_detail">A single layer of columnar cells faces the uterine cavity and continues into the openings of the uterine glands.</string>
+    <string name="health_atlas_endometrial_functional_layer">Functional layer</string>
+    <string name="health_atlas_endometrial_functional_layer_detail">The portion nearest the cavity contains stroma, glands, and spiral arterioles. It grows during the cycle and is shed at menstruation.</string>
+    <string name="health_atlas_endometrial_uterine_gland">Uterine gland</string>
+    <string name="health_atlas_endometrial_uterine_gland_detail">The tubular glands open onto the surface and extend through the functional layer into the basal layer. They are relatively straight in the proliferative phase.</string>
+    <string name="health_atlas_endometrial_basal_layer">Basal layer</string>
+    <string name="health_atlas_endometrial_basal_layer_detail">This deep portion of the endometrium lies against the myometrium. It remains after menstruation and gives rise to the next functional layer.</string>
+    <string name="health_atlas_endometrial_myometrium_bed">Myometrium</string>
+    <string name="health_atlas_endometrial_myometrium_bed_detail">Interlacing smooth muscle bundles form the thick uterine wall under the endometrium. Only a shallow part is shown here.</string>
+</resources>

@@ -277,6 +277,12 @@ class HealthAtlasTissueContextDeviceTest {
             val owner = requireNotNull(detail.owner)
             assertNotNull(atlas[owner])
             assertTrue(requireNotNull(detail.source).startsWith("https://"))
+            val selector = requireNotNull(detail.selectorLabel)
+            assertNotEquals(en.getString(selector), zh.getString(selector))
+            assertTrue("$owner needs at least three feature callouts", detail.features.size >= 3)
+            val labels = detail.markers + detail.features.map { it.marker }
+            assertEquals("$owner has duplicate labels", labels.map { it.id }.distinct().size, labels.size)
+            assertTrue("$owner links to an unknown structure", detail.markers.all { atlas[it.id] != null })
             val views = HealthAtlasPlates.viewsForId(owner)
             assertSame(detail, views.first())
             val locator = views.getOrNull(1)
@@ -288,7 +294,7 @@ class HealthAtlasTissueContextDeviceTest {
             try {
                 context.getDrawable(detail.drawable)!!.apply { setBounds(0, 0, 360, 280); draw(Canvas(bitmap)) }
                 assertEquals("$owner has an opaque background", 0, Color.alpha(bitmap.getPixel(0, 0)))
-                for (marker in detail.markers + detail.features.map { it.marker }) {
+                for (marker in labels) {
                     val x = (marker.x * 360).roundToInt().coerceIn(1, 358)
                     val y = (marker.y * 280).roundToInt().coerceIn(1, 278)
                     assertTrue("$owner/${marker.id}", (-1..1).any { dx -> (-1..1).any { dy ->
@@ -328,6 +334,31 @@ class HealthAtlasTissueContextDeviceTest {
                 assertEquals("femur", selection)
                 assertFalse(zoom.isShowing)
             } finally { zoom.dismiss() }
+        }
+    }
+
+    @Test fun skinCutawayLinksToTwoIndependentLayerViewsWithoutReplacingTheirFunctions() = native { scenario ->
+        scenario.onActivity { it.open("skin-organ") }
+        capture("skin-layer-cutaway", scenario.localized(R.string.health_atlas_skin_cross_section))
+        scenario.onActivity { activity ->
+            val marker = activity.view("atlas-hotspot-epidermis")
+            assertNotNull(activity.view("atlas-feature-skin-layers-follicle"))
+            marker.performClick()
+            assertNotNull(activity.view("atlas-feature-skin-layers-corneum"))
+            assertNotNull(activity.view("atlas-feature-skin-layers-basale"))
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-epidermal-barrier-art"))
+            activity.onBackPressed()
+            activity.view("atlas-hotspot-dermis").performClick()
+            assertNotNull(activity.view("atlas-feature-skin-layers-papillary"))
+            assertNotNull(activity.view("atlas-feature-skin-layers-reticular"))
+        }
+        scenario.recreate()
+        ready(scenario, "atlas-feature-skin-layers-reticular")
+        scenario.onActivity { activity ->
+            assertTrue(activity.view("atlas-view-0").isSelected)
+            activity.onBackPressed()
+            assertNotNull(activity.view("atlas-feature-skin-layers-follicle"))
         }
     }
 

@@ -1,0 +1,65 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <group android:translateX="24">
+        <!-- The talus partly overlaps the calcaneus in this dorsal projection. -->
+        <path android:pathData="M199,212 C204,205 219,206 224,216 Q228,221 224,233 C221,239 226,247 226,256 C226,266 218,271 205,271 C191,271 180,267 177,257 C174,246 180,232 185,225Z"
+            android:fillColor="#AABDB0" android:strokeColor="#71897E" android:strokeWidth="1.8" />
+        <path android:pathData="M214,218 C223,218 222,227 218,235 C215,243 222,252 219,260 C216,267 204,268 194,264 C207,262 208,252 206,243 Q204,229 214,218Z"
+            android:fillColor="#91AA9F" />
+        <path android:pathData="M189,257 Q202,266 215,261"
+            android:strokeColor="#CFD9C3" android:strokeWidth="2" android:strokeLineCap="round" />
+        <path android:pathData="M174,209 C183,206 193,209 198,217 C201,222 199,228 201,235 C204,248 196,257 185,258 C172,259 161,253 159,243 Q155,232 159,220 Q163,213 174,209Z"
+            android:fillColor="#B7C8AE" android:strokeColor="#768D80" android:strokeWidth="1.6" />
+        <path android:pathData="M163,230 C171,224 184,225 195,229 Q199,242 193,250 C186,255 172,254 166,247 Q162,241 163,230Z"
+            android:fillColor="#CDDAC0" />
+        <path android:pathData="M164,228 Q179,221 195,228 M169,244 Q181,250 189,246"
+            android:strokeColor="#95AA98" android:strokeWidth="1.5" android:strokeLineCap="round" />
+        <path android:pathData="M146,195 Q148,191 157,191 C168,193 177,186 189,190 L196,199 Q199,205 193,211 C182,207 172,209 162,215 C157,218 151,214 148,208 Q144,202 146,195Z"
+            android:fillColor="#A8C1B4" android:strokeColor="#728E83" android:strokeWidth="1.6" />
+        <path android:pathData="M151,200 Q165,206 177,198 Q185,194 191,200"
+            android:strokeColor="#D8E4CD" android:strokeWidth="2" android:strokeLineCap="round" />
+        <!-- Cuboid and three cuneiforms, in separate outlines. -->
+        <path android:pathData="M190,184 C199,178 211,181 219,187 Q228,194 225,205 L222,213 Q215,210 204,215 L197,213 Q200,204 196,198Z"
+            android:fillColor="#AAC2B4" android:strokeColor="#768E81" android:strokeWidth="1.5" />
+        <path android:pathData="M198,188 Q205,190 215,188 M202,207 Q214,201 221,204"
+            android:strokeColor="#D7E2CB" android:strokeWidth="1.8" android:strokeLineCap="round" />
+        <path android:pathData="M132,167 Q139,163 151,164 C157,167 159,171 159,180 L156,191 Q148,194 141,189 Q135,183 132,167Z"
+            android:fillColor="#C7D3B7" android:strokeColor="#7E937F" android:strokeWidth="1.5" />
+        <path android:pathData="M158,174 Q166,175 173,168 Q180,173 178,182 L175,188 Q166,191 158,189 Q161,181 158,174Z"
+            android:fillColor="#B4C8B2" android:strokeColor="#7E937F" android:strokeWidth="1.5" />
+        <path android:pathData="M176,169 Q183,166 192,166 L196,178 Q194,187 189,191 L177,188 Q181,177 176,169Z"
+            android:fillColor="#BCCCB3" android:strokeColor="#7E937F" android:strokeWidth="1.5" />
+        <path android:pathData="M138,171 Q140,184 147,187 M163,181 L170,178 M182,174 Q188,171 190,174"
+            android:strokeColor="#E2E8CF" android:strokeWidth="1.8" android:strokeLineCap="round" />
+        <!-- First through fifth metatarsals, medial to lateral. -->
+        <path android:pathData="M112,103 C114,96 127,93 134,98 Q140,102 138,111 C134,124 138,137 146,145 C152,152 157,157 154,163 Q151,168 143,168 Q132,169 129,162 C127,151 123,140 119,128 C115,120 110,112 112,103Z
+            M143,93 Q143,86 150,85 C156,85 161,88 161,94 C159,107 159,116 162,129 C164,141 170,153 175,162 Q177,168 171,172 C165,175 158,174 156,168 C156,156 154,142 151,128 C149,114 142,104 143,93Z
+            M170,107 Q168,99 174,96 C181,94 188,99 187,107 C184,121 185,133 190,146 C193,153 196,160 193,165 Q189,170 181,167 C176,166 175,162 175,156 C178,141 173,122 170,107Z
+            M193,123 C190,116 194,111 199,110 C205,109 211,113 209,121 C204,134 205,146 210,157 C214,164 216,170 212,174 Q205,180 197,175 C192,172 194,167 196,162 C199,150 197,134 193,123Z
+            M215,141 C212,133 218,128 225,129 Q233,131 231,140 C225,152 224,161 228,172 Q234,180 237,188 C232,192 224,189 218,186 Q211,182 214,176 C218,164 219,155 215,141Z"
+            android:fillColor="#E8C9A8" android:strokeColor="#8F7566" android:strokeWidth="1.55" android:strokeLineJoin="round" />
+        <path android:pathData="M120,101 C116,105 119,113 122,120 C127,132 128,145 135,158 M149,92 C146,99 152,111 154,123 L163,164 M177,102 Q174,110 181,134 L186,159 M200,116 Q196,120 201,135 Q202,152 206,168 M224,135 Q219,140 222,149 Q222,170 224,180"
+            android:strokeColor="#F7E2C4" android:strokeWidth="2.3" android:strokeLineCap="round" />
+        <path android:pathData="M114,110 Q123,115 136,106 M145,96 Q152,100 159,95 M172,108 Q179,111 185,106 M195,122 Q203,124 208,119 M216,141 Q225,145 230,138 M134,162 Q143,164 150,158 M160,167 Q167,168 173,164 M178,158 Q185,164 191,161 M198,170 Q204,173 211,167"
+            android:strokeColor="#C39C83" android:strokeWidth="1.4" android:strokeLineCap="round" />
+        <!-- Two phalanges in the hallux; three in each of digits two through five. -->
+        <path android:pathData="M101,29 C102,23 108,20 114,22 Q123,23 124,33 L124,44 Q122,51 113,52 Q104,52 101,47 Q103,37 101,29Z
+            M105,60 Q108,55 116,55 Q124,54 127,59 C126,67 129,75 133,82 Q137,90 131,93 Q124,96 116,94 Q111,92 112,86 C111,77 108,69 105,60Z
+            M134,24 Q132,16 140,15 Q147,14 148,22 L149,29 Q146,34 139,33 Q134,32 134,24Z
+            M137,39 Q141,35 148,36 Q152,38 151,44 L153,51 Q151,56 144,55 Q138,55 138,49Z
+            M141,63 Q141,58 148,58 Q155,57 156,63 C154,68 156,74 159,78 Q159,83 152,83 Q144,83 143,79 Q146,71 141,63Z
+            M164,40 Q160,34 165,30 Q172,25 176,32 L179,41 Q177,46 170,46 Q166,46 164,40Z
+            M166,51 Q171,47 178,49 Q181,52 179,57 L182,63 Q181,68 174,68 Q168,68 168,63Z
+            M170,75 Q171,71 178,70 Q184,69 185,74 C183,80 183,86 186,90 Q186,94 179,94 Q171,95 171,90 Q174,82 170,75Z
+            M189,57 Q185,52 190,47 Q197,43 200,50 L202,56 Q200,61 194,62 Q190,64 189,57Z
+            M191,67 Q195,63 201,64 Q206,66 204,71 L206,77 Q205,82 199,82 Q194,83 193,78Z
+            M194,88 Q197,84 202,84 Q208,84 208,89 C206,95 206,101 209,105 Q207,109 201,108 Q194,109 193,104 Q196,98 194,88Z
+            M213,77 Q210,72 215,68 Q221,65 224,70 L226,76 Q224,81 219,81 Q214,82 213,77Z
+            M216,87 Q220,83 225,84 Q230,86 228,91 L230,96 Q229,100 223,101 Q218,101 218,96Z
+            M218,106 Q222,102 228,103 Q232,104 231,110 Q228,116 232,122 Q232,127 225,127 Q217,126 217,122 Q221,114 218,106Z"
+            android:fillColor="#E5C1AD" android:strokeColor="#937567" android:strokeWidth="1.45" android:strokeLineJoin="round" />
+        <path android:pathData="M106,29 Q111,25 117,29 M111,61 Q116,60 120,62 L124,81 M137,21 Q142,17 145,22 M141,40 L144,45 M145,63 L150,74 M167,34 L171,38 M172,54 L175,61 M174,77 L178,89 M192,51 L195,55 M196,68 L199,75 M198,89 L202,101 M215,73 L219,75 M220,88 L223,94 M222,107 L225,120"
+            android:strokeColor="#F5DDCB" android:strokeWidth="1.65" android:strokeLineCap="round" />
+    </group>
+</vector>

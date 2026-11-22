@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_valve_detail_tricuspid_selector">三尖瓣剖面</string>
+    <string name="health_atlas_valve_detail_tricuspid_view">右心流入道 · 斜向剖视，图上方为右心房</string>
+    <string name="health_atlas_valve_detail_tricuspid_anterior">前瓣</string>
+    <string name="health_atlas_valve_detail_tricuspid_anterior_detail">宽大的前瓣附着在右房室口前缘。血液从右心房流入时，前瓣向右心室内打开。</string>
+    <string name="health_atlas_valve_detail_tricuspid_septal">隔瓣</string>
+    <string name="health_atlas_valve_detail_tricuspid_septal_detail">隔瓣附着在室间隔旁。它的一些腱索直接附着在室间隔上。</string>
+    <string name="health_atlas_valve_detail_tricuspid_posterior">后瓣</string>
+    <string name="health_atlas_valve_detail_tricuspid_posterior_detail">后瓣也称下瓣，附着在右房室口下部。在这幅图中，后瓣构成三片瓣叶打开后形成的开口的近侧边缘。</string>
+    <string name="health_atlas_valve_detail_tricuspid_chordae">腱索</string>
+    <string name="health_atlas_valve_detail_tricuspid_chordae_detail">这些细索从乳头肌连到瓣叶的心室面。右心室收缩时，腱索防止已闭合的瓣叶翻向右心房。</string>
+
+    <string name="health_atlas_valve_detail_mitral_selector">二尖瓣剖面</string>
+    <string name="health_atlas_valve_detail_mitral_view">左心流入道 · 斜向剖视，图上方为左心房</string>
+    <string name="health_atlas_valve_detail_mitral_anterior">前瓣</string>
+    <string name="health_atlas_valve_detail_mitral_anterior_detail">较长的帆形前瓣附着在左心室流出道旁。其基部与主动脉瓣通过纤维组织相连。</string>
+    <string name="health_atlas_valve_detail_mitral_posterior">后瓣</string>
+    <string name="health_atlas_valve_detail_mitral_posterior_detail">较短的后瓣沿左心室游离壁附着，占左房室口周缘的较大部分。它的游离缘呈分叶状。</string>
+    <string name="health_atlas_valve_detail_mitral_chordae">腱索</string>
+    <string name="health_atlas_valve_detail_mitral_chordae_detail">每组乳头肌都发出腱索，连到两片瓣叶。左心室收缩时，腱索有助于维持两片瓣叶的边缘贴合。</string>
+    <string name="health_atlas_valve_detail_mitral_papillary">乳头肌</string>
+    <string name="health_atlas_valve_detail_mitral_papillary_detail">前外侧和后内侧两组乳头肌从左心室壁突入室腔。腱索从乳头肌尖端连向瓣叶。</string>
+
+    <string name="health_atlas_valve_detail_pulmonary_selector">肺动脉瓣剖面</string>
+    <string name="health_atlas_valve_detail_pulmonary_view">肺动脉根部 · 从前上方斜视，瓣叶开放</string>
+    <string name="health_atlas_valve_detail_pulmonary_right">右半月瓣</string>
+    <string name="health_atlas_valve_detail_pulmonary_right_detail">从前方观察，右半月瓣位于图左侧。在瓣叶的动脉侧，瓣叶与肺动脉干壁之间有一个浅窦。</string>
+    <string name="health_atlas_valve_detail_pulmonary_left">左半月瓣</string>
+    <string name="health_atlas_valve_detail_pulmonary_left_detail">左半月瓣位于图右侧。它与右半月瓣都朝向肺动脉根部后方的主动脉根部；图中未显示主动脉根部。</string>
+    <string name="health_atlas_valve_detail_pulmonary_anterior">前半月瓣</string>
+    <string name="health_atlas_valve_detail_pulmonary_anterior_detail">前半月瓣位于开口的近侧。右心室射血时，三片半月瓣都朝肺动脉干方向打开，均无腱索。</string>
+
+    <string name="health_atlas_valve_detail_aortic_selector">主动脉瓣剖面</string>
+    <string name="health_atlas_valve_detail_aortic_view">主动脉根部 · 从后上方斜视，瓣叶闭合</string>
+    <string name="health_atlas_valve_detail_aortic_left">左冠瓣</string>
+    <string name="health_atlas_valve_detail_aortic_left_detail">左冠瓣位于左主动脉窦下方。左冠状动脉的开口位于这个窦的壁上，而不是瓣叶上。</string>
+    <string name="health_atlas_valve_detail_aortic_right">右冠瓣</string>
+    <string name="health_atlas_valve_detail_aortic_right_detail">右冠瓣位于右主动脉窦下方。瓣叶上方的深色小孔通向右冠状动脉。</string>
+    <string name="health_atlas_valve_detail_aortic_noncoronary">无冠瓣</string>
+    <string name="health_atlas_valve_detail_aortic_noncoronary_detail">这片位于后方的瓣叶对应的主动脉窦没有冠状动脉开口。左心室舒张时，它的游离缘与另外两片瓣叶贴合，阻止血液倒流入左心室。</string>
+    <string name="health_atlas_valve_detail_aortic_ostium">左冠状动脉开口</string>
+    <string name="health_atlas_valve_detail_aortic_ostium_detail">窦壁上的这个小孔是左冠状动脉的入口。右冠瓣上方还有另一个开口，通向右冠状动脉。</string>
+</resources>

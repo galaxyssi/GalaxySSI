@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Subordinate tissue section: cortex above outer and inner medulla. -->
+    <path android:fillColor="#B09AA7" android:strokeColor="#9E8291" android:strokeWidth="1.4"
+        android:pathData="M55,59 C110,31 241,24 306,46 Q318,52 322,66 L315,206 C305,230 272,247 235,252 C177,263 98,254 66,226 Q53,216 51,207 L44,81 Q44,69 55,59Z" />
+    <path android:fillColor="#D0A6A5"
+        android:pathData="M52,71 C113,77 251,59 310,64 L305,199 C292,224 263,238 229,244 C174,254 104,245 73,224 Q57,213 54,202Z" />
+    <path android:fillColor="#D8BAB3"
+        android:pathData="M51,78 Q72,65 103,69 C172,76 234,64 309,58 L307,148 Q253,154 223,151 C151,143 107,153 53,156Z" />
+    <path android:fillColor="#EFCEB4" android:strokeColor="#C59390" android:strokeWidth="1.3"
+        android:pathData="M55,58 C105,31 234,26 300,44 Q315,49 314,61 L311,81 Q275,78 249,81 C199,92 142,85 103,85 Q73,85 49,92 L46,79 Q46,66 55,58Z" />
+    <path android:strokeColor="#F9E1C4" android:strokeWidth="2.3" android:strokeLineCap="round"
+        android:pathData="M58,61 Q76,52 101,48 M123,44 C166,34 216,35 251,39 M277,42 Q302,47 309,54" />
+    <path android:strokeColor="#B68C94" android:strokeWidth="1.2" android:strokeAlpha="0.75"
+        android:pathData="M54,156 C111,150 155,146 223,152 Q264,155 307,148" />
+    <path android:strokeColor="#EBD2C5" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M65,103 L68,160 Q70,190 81,208 M77,97 L80,148 M87,107 L90,174 Q92,198 102,220 M99,174 L105,205 M130,99 L134,145 M140,107 L143,144 Q145,190 155,211 M153,96 L154,151 M168,101 L169,148 Q170,194 178,218 M185,104 L184,140 M194,100 L192,148 Q190,190 188,206 M208,103 L204,146 M256,94 L252,143 Q249,180 236,202 M268,96 L264,155 M280,99 L274,159 Q268,201 254,218 M293,93 L286,160 Q281,187 271,204" />
+    <path android:strokeColor="#B98E96" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M66,164 Q68,191 77,208 M81,153 Q82,179 88,193 M131,157 Q134,185 140,199 M156,156 Q159,191 164,203 M180,154 L180,192 M261,158 Q255,196 242,217 M278,163 Q270,200 255,222 M299,150 Q295,182 282,202" />
+
+    <!-- A single thin tube makes the hairpin; its lumen is visible through the turn. -->
+    <path android:strokeColor="#865669" android:strokeWidth="17" android:strokeLineCap="round"
+        android:pathData="M115,94 C114,120 115,146 116,174 C116,214 133,236 167,237 C204,239 226,212 230,174 Q232,155 233,139" />
+    <path android:strokeColor="#D79B91" android:strokeWidth="13" android:strokeLineCap="round"
+        android:pathData="M115,94 C114,120 115,146 116,174 C116,214 133,236 167,237 C204,239 226,212 230,174 Q232,155 233,139" />
+    <path android:strokeColor="#FAE3C5" android:strokeWidth="5.4" android:strokeLineCap="round"
+        android:pathData="M115,94 C114,120 115,146 116,174 C116,214 133,236 167,237 C204,239 226,212 230,174 Q232,155 233,139" />
+    <path android:strokeColor="#A87681" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M109,124v6 M120,130v6 M110,147v6 M121,156v7 M111,174v6 M123,183l1,6 M116,193l2,6 M125,207l3,5 M143,223l6,3 M148,240l6,2 M174,243l7,-1 M180,231l6,-1 M198,236l6,-4 M201,224l5,-4 M218,217l4,-6 M222,191l2,-6 M232,193l1,-7 M225,174l1,-6 M237,168v-7" />
+    <path android:strokeColor="#976E65" android:strokeWidth="2.1" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M115,140 L115,153 M112,149 L115,153 L118,149 M155,236 Q164,238 174,237 M169,234 L174,237 L169,240 M220,209 Q226,199 228,188 M224,193 L228,188 L230,194" />
+
+    <!-- Proximal straight tubule and its taper into the thin descending limb. -->
+    <path android:fillColor="#BD7F80" android:strokeColor="#88576A" android:strokeWidth="2"
+        android:pathData="M66,57 C82,45 101,46 114,58 Q131,72 130,94 C130,104 123,110 123,119 Q115,123 107,119 C107,109 102,101 102,93 Q105,80 95,75 Q86,69 77,79Z" />
+    <path android:fillColor="#F0B799"
+        android:pathData="M69,57 C85,48 103,51 115,64 Q126,76 126,94 C125,103 119,110 119,119 L110,120 C110,109 105,101 105,94 Q107,79 97,72 Q87,66 76,74Z" />
+    <path android:fillColor="#F8E5C8" android:strokeColor="#A7747A" android:strokeWidth="1.3"
+        android:pathData="M72,62 C84,53 100,57 110,69 Q121,81 119,95 C118,104 116,109 117,119 L112,119 C112,107 110,102 111,94 Q113,83 104,74 Q90,61 77,69Z" />
+    <path android:strokeColor="#A7747A" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M86,50 L86,57 M99,51 L96,58 M111,56 L106,65 M118,65 L114,72 M125,76 L119,80 M128,90 L119,91 M103,90 L111,91 M105,103 L111,101 M122,108 L117,106" />
+    <path android:fillColor="#E6A895" android:strokeColor="#88576A" android:strokeWidth="1.4"
+        android:pathData="M65,54 C72,49 85,70 79,80 C73,85 58,60 65,54Z" />
+    <path android:fillColor="#F7E3C4" android:strokeColor="#A7747A" android:strokeWidth="1.2"
+        android:pathData="M68,59 C71,57 80,72 76,75 C72,77 65,62 68,59Z" />
+
+    <!-- Ascending limb gains a cuboidal wall; the open face continues to the distal coil. -->
+    <path android:fillColor="#C08683" android:strokeColor="#88576A" android:strokeWidth="2.1"
+        android:pathData="M225,165 C225,155 220,146 219,132 C218,105 218,79 226,62 C235,39 250,37 264,41 C274,44 278,41 284,36 C298,25 316,27 323,38 C329,47 326,60 318,67 L305,55 Q310,51 307,48 C304,44 300,45 295,51 C284,62 271,69 259,65 Q250,62 248,75 C245,93 249,112 247,133 C246,147 239,157 239,166Z" />
+    <path android:fillColor="#E7AA90"
+        android:pathData="M222,132 C221,107 219,83 228,63 C236,43 249,40 262,44 C273,48 280,41 286,37 C297,28 313,30 319,38 Q326,47 318,62 L309,55 C316,46 309,41 304,42 Q298,42 291,50 C280,62 270,65 260,61 Q250,58 244,74 C240,91 244,114 242,132 C240,144 235,154 234,166 L227,165 Q228,157 222,132Z" />
+    <path android:fillColor="#FAE5C8" android:strokeColor="#A7747A" android:strokeWidth="1.5"
+        android:pathData="M229,164 C229,152 228,146 228,133 C225,108 225,82 233,65 C240,50 251,47 263,50 C276,54 284,44 292,38 C304,31 317,37 318,46 Q319,53 314,59 L310,56 Q316,46 308,42 C302,39 297,43 291,49 C279,60 272,60 260,57 C251,54 243,59 239,74 C234,90 237,114 235,133 C234,146 234,153 234,164Z" />
+    <path android:strokeColor="#B37677" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M220,94 L227,94 M220,105 L227,105 M220,117 L228,116 M221,128 L228,127 M223,140 L229,139 M226,151 L229,150 M236,140 L244,141 M236,129 L245,129 M237,117 L246,117 M237,105 L246,104 M237,94 L245,94 M237,83 L246,84 M223,80 L229,82 M227,67 L233,70 M234,55 L239,60 M246,44 L247,51 M257,42 L256,49 M268,46 L267,51 M280,41 L283,45 M293,32 L296,37 M304,31 L304,35 M278,58 L276,54 M263,65 L264,58 M249,66 L244,63" />
+    <path android:strokeColor="#93695F" android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M232,127 Q231,111 231,98 M228,103 L231,98 L234,103 M236,69 Q243,55 253,53 M248,51 L254,53 L250,57" />
+    <path android:fillColor="#E9AB95" android:strokeColor="#88576A" android:strokeWidth="1.5"
+        android:pathData="M305,54 C311,49 326,61 319,68 C313,72 300,60 305,54Z" />
+    <path android:fillColor="#F9E5C9" android:strokeColor="#A7747A" android:strokeWidth="1.1"
+        android:pathData="M308,57 C311,54 321,62 317,65 C314,68 305,60 308,57Z" />
+    <path android:strokeColor="#FAE3C5" android:strokeWidth="4.5" android:strokeLineCap="round"
+        android:pathData="M114,116 Q114,120 115,124 M232,161 L231,170" />
+</vector>

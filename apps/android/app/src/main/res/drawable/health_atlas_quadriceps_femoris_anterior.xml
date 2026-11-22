@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp" android:height="280dp"
+    android:viewportWidth="360" android:viewportHeight="280">
+    <!-- Right thigh from the front: the medial side (right) carries the distal teardrop. -->
+    <path android:fillColor="#E5CAA9" android:strokeColor="#8C7464" android:strokeWidth="1.7"
+        android:pathData="M143,25 Q161,15 188,17 C207,18 222,29 225,43 Q227,55 216,59 Q204,61 200,67 Q195,74 182,72 Q166,67 161,57 Q158,52 150,52 Q145,47 149,42 Q139,38 143,25Z"/>
+    <path android:fillColor="#F2DDBE"
+        android:pathData="M150,26 Q179,13 205,27 Q214,32 219,41 Q208,34 189,34 Q166,33 154,39Z"/>
+    <path android:fillColor="#B4C5B4" android:strokeColor="#7C9489" android:strokeWidth="1.3"
+        android:pathData="M170,58 Q174,46 187,45 Q200,45 202,55 Q201,66 191,70 Q179,73 170,58Z"/>
+    <path android:fillColor="#E1BE9E" android:strokeColor="#8C7464" android:strokeWidth="1.7"
+        android:pathData="M125,52 Q134,42 145,53 L153,64 Q162,62 175,51 C184,45 196,50 198,59 C202,72 191,79 178,82 Q169,85 169,98 C169,127 174,167 187,188 C194,202 208,202 210,215 Q212,228 198,235 Q186,240 176,234 Q165,241 151,233 C139,227 140,214 149,205 Q158,194 156,179 C153,143 143,103 129,81 Q119,68 125,52Z"/>
+    <path android:fillColor="#C79D86"
+        android:pathData="M154,178 Q158,196 150,209 Q146,220 151,227 Q162,233 175,225 Q188,236 200,229 Q207,225 205,217 Q200,208 192,207 Q184,199 181,187Z"/>
+    <path android:fillColor="#E7C8A8" android:strokeColor="#8C7464" android:strokeWidth="1.7"
+        android:pathData="M151,237 Q161,232 175,235 Q187,232 202,236 Q210,239 206,247 C200,254 198,261 198,266 Q186,272 174,267 L172,257 Q162,252 152,250 Q144,245 151,237Z"/>
+    <path android:fillColor="#B2C4B4" android:strokeColor="#7C9489" android:strokeWidth="1.3"
+        android:pathData="M149,238 Q161,233 175,236 Q189,233 202,237 Q209,241 203,245 Q193,248 183,244 Q172,245 165,246 Q153,246 149,243Z"/>
+    <!-- The superficial bellies surround the rectus femoris and converge above the patella. -->
+    <path android:fillColor="#D89286" android:strokeColor="#976361" android:strokeWidth="1.8"
+        android:pathData="M125,56 Q134,51 140,59 C152,71 156,87 157,105 C157,133 157,151 163,170 Q171,187 180,196 L172,209 C150,199 129,180 115,153 C101,127 99,108 104,88 Q109,67 125,56Z"/>
+    <path android:fillColor="#BE7773"
+        android:pathData="M137,59 C149,71 158,90 157,108 C157,130 159,154 164,170 Q169,187 178,196 L174,204 C150,187 139,157 138,128 Q142,99 137,59Z"/>
+    <path android:fillColor="#CF8785" android:strokeColor="#976361" android:strokeWidth="1.8"
+        android:pathData="M170,81 Q176,74 180,83 Q183,94 184,106 C187,123 198,133 211,145 C221,154 229,172 223,185 Q218,199 201,202 Q189,203 180,213 L171,198 C180,181 176,165 171,152 Q164,133 166,111Z"/>
+    <path android:fillColor="#B37377"
+        android:pathData="M176,87 Q184,92 185,108 C190,128 205,138 215,151 C226,164 228,181 220,190 Q214,199 201,202 Q212,185 207,171 C201,150 185,146 177,129 Q173,115 176,87Z"/>
+    <path android:fillColor="#EEDED0" android:strokeColor="#9C807B" android:strokeWidth="1.5"
+        android:pathData="M152,47 Q157,45 161,49 Q170,61 175,76 L164,85 Q159,62 152,53Z"/>
+    <path android:fillColor="#E6A69A" android:strokeColor="#976361" android:strokeWidth="1.8"
+        android:pathData="M164,67 Q169,61 178,71 C188,80 193,97 192,116 Q192,145 182,172 Q176,188 183,199 L171,204 C166,193 158,183 153,167 C144,143 140,114 146,93 Q150,77 164,67Z"/>
+    <path android:fillColor="#CE837D"
+        android:pathData="M176,72 C190,81 195,107 191,129 C188,149 175,180 182,198 L174,199 C168,181 173,156 179,134 Q189,101 176,72Z"/>
+    <path android:strokeColor="#F5C0AA" android:strokeWidth="1.5" android:strokeLineCap="round"
+        android:pathData="M124,67 Q107,89 110,113 Q112,134 127,156 M131,65 Q117,85 119,106 Q121,132 138,157 M130,115 Q139,144 147,158 M159,78 Q143,110 155,146 Q161,165 167,173 M166,74 Q156,101 163,127 Q168,143 169,156 M172,77 Q174,104 170,121 M194,144 Q204,164 195,177 M204,149 Q219,170 201,187 M212,160 Q224,177 206,192"/>
+    <!-- The patella separates the quadriceps tendon from the patellar ligament below it. -->
+    <path android:fillColor="#EEDED0" android:strokeColor="#9C807B" android:strokeWidth="1.5"
+        android:pathData="M155,184 Q167,197 173,184 Q182,197 193,192 Q201,191 207,185 Q202,199 191,208 L191,221 Q181,229 167,222 Q169,211 164,204Z"/>
+    <path android:strokeColor="#FFF1DA" android:strokeWidth="1.6" android:strokeLineCap="round"
+        android:pathData="M174,196 Q176,210 173,220 M187,198 Q181,212 183,220"/>
+    <path android:fillColor="#E6D4BC" android:strokeColor="#9C807B" android:strokeWidth="1.4"
+        android:pathData="M172,233 Q180,231 189,235 Q188,246 185,256 Q180,260 176,256 Q177,246 172,233Z"/>
+    <path android:fillColor="#EACDAB" android:strokeColor="#8C7464" android:strokeWidth="1.7"
+        android:pathData="M166,224 Q175,216 188,220 Q197,223 194,232 C190,239 186,245 178,244 Q169,242 165,235 Q161,228 166,224Z"/>
+    <path android:strokeColor="#FAE6C6" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M169,228 Q176,220 187,224"/>
+    <!-- Separate anterior inset with the other three muscles omitted. -->
+    <path android:fillColor="#F0F3E9" android:strokeColor="#BAC9BD" android:strokeWidth="1.2"
+        android:pathData="M271,52 Q290,44 307,55 Q321,66 322,102 Q324,144 311,163 Q297,179 278,174 Q259,170 254,149 Q247,126 250,97 Q254,63 271,52Z"/>
+    <path android:fillColor="#E5C7A7" android:strokeColor="#A0826E" android:strokeWidth="1.3"
+        android:pathData="M269,65 Q275,61 280,67 Q285,72 290,66 Q298,60 305,66 Q313,74 305,82 Q297,86 295,94 Q293,115 300,135 Q306,143 305,149 Q304,159 295,158 Q288,161 282,155 Q276,160 269,156 Q262,151 268,141 Q275,132 273,115 L271,88 Q267,80 266,74 Q265,69 269,65Z"/>
+    <path android:fillColor="#BF8081" android:strokeColor="#956368" android:strokeWidth="1.3"
+        android:pathData="M274,84 Q281,88 290,84 C296,93 295,110 295,122 Q296,135 291,142 Q285,148 279,141 Q271,126 270,109 Q269,92 274,84Z"/>
+    <path android:strokeColor="#EFAC9F" android:strokeWidth="1.4" android:strokeLineCap="round"
+        android:pathData="M276,91 Q273,112 281,131 M283,91 Q287,110 285,126 M288,96 Q293,115 289,134"/>
+    <path android:fillColor="#EEDED0" android:strokeColor="#9C807B" android:strokeWidth="1.1"
+        android:pathData="M277,133 Q284,139 293,133 Q290,144 291,150 L281,150 Q281,142 277,133Z"/>
+    <path android:fillColor="#EACDAB" android:strokeColor="#8C7464" android:strokeWidth="1.2"
+        android:pathData="M280,149 Q285,146 292,149 Q295,153 289,159 Q286,163 282,158 Q277,155 280,149Z"/>
+</vector>
