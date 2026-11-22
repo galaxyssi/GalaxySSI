@@ -262,6 +262,7 @@ class HealthBodyAtlasActivity : Activity() {
             if (topic == null) "atlas-tab" else "atlas-research-tab",
             tagKey = { index -> if (topic == null) index.toString() else topics[index].name.lowercase(Locale.ROOT) },
             compact = item != null) { index ->
+            if (topic == null && item != null && tab == HealthAtlasTab.entries[index]) return@tabs
             if (topic != null) researchTopic = topics[index]
             else if (item == null) { section = index; query = ""; limit = 24 } else tab = HealthAtlasTab.entries[index]
             revealTrend = false
@@ -468,19 +469,19 @@ class HealthBodyAtlasActivity : Activity() {
             }
             functionItem = item.id
             val tabAlreadyNamesLesson = choices.size in 2..3 && getString(story.choiceTitle) == getString(story.title)
+            val related = story.relatedLessons.mapNotNull { (id, next) ->
+                val target = data[id] ?: return@mapNotNull null
+                getString(R.string.health_atlas_related_lesson_label, target.name, getString(next.title)) to {
+                    functionState.choose(id, next)
+                    select(target, HealthAtlasTab.FUNCTION)
+                }
+            }
             val player = HealthAtlasFunctionPlayer(this, story, functionState.loadPhase(item.id, story), ::source,
-                showTitle = !tabAlreadyNamesLesson) {
+                showTitle = !tabAlreadyNamesLesson, relatedLessons = related) {
                 simulation?.pause()
             }
             functionPlayer = player
             ui.add(panel, player, if (choices.size > 1) 10 else 0)
-            story.relatedLessons.forEach { (id, next) ->
-                val target = data[id] ?: return@forEach
-                ui.add(panel, ui.row(getString(next.title), target.name) {
-                    functionState.choose(id, next)
-                    select(target, HealthAtlasTab.FUNCTION)
-                }.apply { tag = "atlas-related-lesson-$id" }, 12)
-            }
         }
         show(functionState.current(item.id) ?: choices.first())
     }

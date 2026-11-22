@@ -59,22 +59,34 @@ class HealthAtlasGuidedFunctionDeviceTest {
         }
         runner.waitForIdleSync()
         val length = player.story.chapters.size * 5_000L
+        var startPhase = 0f
         var started = 0L
         runner.runOnMainSync {
+            assertTrue("The animation must be displayed before playing", art.isAttachedToWindow)
+            startPhase = player.phase
             started = SystemClock.uptimeMillis()
             assertTrue(art.performClick())
+            assertEquals(player.context.getString(R.string.health_body_pause), play.contentDescription)
+        }
+        scenario.onActivity {
+            it.view("atlas-tab-1").performClick()
+            assertSame("Retapping Function must not replace the running player", player, it.view("atlas-function-player"))
         }
         SystemClock.sleep(1_650)
         var paused = 0f
         var chapter = -1
         runner.runOnMainSync {
+            assertTrue("The animation window was detached during the test", art.isAttachedToWindow)
+            assertEquals("The player stopped before the pause tap",
+                player.context.getString(R.string.health_body_pause), play.contentDescription)
             val before = SystemClock.uptimeMillis() - started
-            art.performClick()
+            assertTrue(art.performClick())
             val after = SystemClock.uptimeMillis() - started
             paused = player.phase
             chapter = player.story.chapter(paused)
-            assertTrue("Paused at a different time from the actual tap: $before..$after",
-                (paused * length).toLong() in (before - 80)..(after + 80))
+            val elapsed = ((paused - startPhase) * length).toLong()
+            assertTrue("Paused after $elapsed ms; the tap was at $before..$after ms",
+                elapsed in (before - 80)..(after + 80))
             assertTrue(chapter < player.story.chapters.lastIndex)
             assertEquals(player.context.getString(player.story.chapters[chapter].second), caption.text.toString())
         }
@@ -364,14 +376,17 @@ class HealthAtlasGuidedFunctionDeviceTest {
             scenario.onActivity { activity ->
                 activity.view("atlas-tab-2").performClick()
                 (activity.view("atlas-search") as EditText).setText(id)
-                activity.view("atlas-entry-$id").performClick()
+                assertTrue("Could not select $id", activity.view("atlas-entry-$id").performClick())
                 activity.view("atlas-tab-1").performClick()
                 if (lesson != 0) activity.view("atlas-function-lesson-$lesson").performClick()
+                assertNotNull("No player after opening $id", activity.window.decorView.findViewWithTag<View>("atlas-function-player"))
             }
             runner.waitForIdleSync()
             scenario.onActivity { activity ->
-                repeat(chapter) { activity.view("atlas-function-next").performClick() }
                 val player = activity.view("atlas-function-player") as HealthAtlasFunctionPlayer
+                val start = player.story.chapter(player.phase)
+                val direction = if (chapter >= start) "next" else "previous"
+                repeat(kotlin.math.abs(chapter - start)) { activity.view("atlas-function-$direction").performClick() }
                 assertEquals(chapter, player.story.chapter(player.phase))
                 val frame = activity.view("atlas-function-frame")
                 val art = activity.view("atlas-function-$artName-art") as HealthAtlasFunctionArt
@@ -385,6 +400,7 @@ class HealthAtlasGuidedFunctionDeviceTest {
                     val y = art.top + (art.height - size) / 2
                     val w = size * region.width() / 100
                     val h = size * region.height() / 100
+                    assertTrue("No visible artwork for $id", w > 0 && h > 0)
                     val pixels = IntArray(w * h)
                     fun hash(fraction: Float): Int {
                         art.phase = (chapter + fraction) / player.story.chapters.size

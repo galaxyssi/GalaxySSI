@@ -74,7 +74,10 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<View>("atlas-function-arterial-pulse-art")
                     repeat(2) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(.4f, player().phase, 0f)
-                    activity.find<View>("atlas-related-lesson-capillaries").performClick()
+                }
+                scenario.openAtlasRelatedLesson("capillaries")
+                scenario.onActivity { activity ->
+                    fun player() = activity.find<HealthAtlasFunctionPlayer>("atlas-function-player")
                     assertEquals(HealthAtlasFunctionStory.ENDOTHELIAL_EXCHANGE, player().story)
                     activity.onBackPressed()
                     assertEquals(HealthAtlasFunctionStory.ARTERIAL_PULSE, player().story)
@@ -215,7 +218,9 @@ class HealthAtlasFunctionStoryDeviceTest {
                     assertEquals(activity.getString(R.string.health_atlas_urine_route_story_store_caption),
                         activity.find<TextView>("atlas-function-caption").text)
                     activity.find<View>("atlas-function-previous").performClick()
-                    activity.find<View>("atlas-related-lesson-nephron").performClick()
+                }
+                scenario.openAtlasRelatedLesson("nephron")
+                scenario.onActivity { activity ->
                     assertEquals(HealthAtlasFunctionStory.NEPHRON,
                         activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").story)
                     assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
@@ -246,9 +251,8 @@ class HealthAtlasFunctionStoryDeviceTest {
                         try {
                             assertTrue(Color.alpha(first.getPixel(size / 2, first.height / 2)) > 200)
                             story.chapters.forEachIndexed { index, (_, caption) ->
-                                val start = story.startOf(index)
-                                val early = render(start + .05f)
-                                val late = render(start + .13f)
+                                val early = render((index + .25f) / story.chapters.size)
+                                val late = render((index + .65f) / story.chapters.size)
                                 try {
                                     if (early.sameAs(late)) staticChapters += "$story chapter ${index + 1}, $size px, $locale"
                                     assertEquals(localized.getString(caption), art.contentDescription)
@@ -789,7 +793,9 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<View>("atlas-function-lesson-2").performClick()
                     assertEquals(.8f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
                     activity.find<View>("atlas-function-lesson-1").performClick()
-                    activity.find<View>("atlas-related-lesson-tissue-skeletal-muscle").performClick()
+                }
+                scenario.openAtlasRelatedLesson("tissue-skeletal-muscle")
+                scenario.onActivity { activity ->
                     activity.find<View>("atlas-function-uptake-art")
                     activity.find<View>("atlas-function-lesson-1").performClick()
                     activity.find<View>("atlas-function-muscle-motion-art")
