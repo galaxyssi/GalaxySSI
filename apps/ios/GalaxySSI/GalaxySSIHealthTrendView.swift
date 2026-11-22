@@ -209,6 +209,7 @@ struct GalaxySSIHealthTrendView: View {
   private let recordMeasurement: ((GalaxySSIHealthMetric) -> Void)?
   private let comparisonAnchor: GalaxySSIHealthReading?
   private let unverifiedComparison: Bool
+  private let atlasWindow: Binding<GalaxySSIHealthAtlasWindow>?
   @State private var metric: GalaxySSIHealthMetric
   @State private var component = GalaxySSIHealthTrend.Component.value
   @State private var selectedUnit: String?
@@ -239,13 +240,15 @@ struct GalaxySSIHealthTrendView: View {
 
   init(records: GalaxySSIHealthRecords, fixedMetric: GalaxySSIHealthMetric? = nil,
        recordMeasurement: ((GalaxySSIHealthMetric) -> Void)? = nil, comparisonAnchor: GalaxySSIHealthReading? = nil,
-       unverifiedComparison: Bool = false) {
+       unverifiedComparison: Bool = false, atlasWindow: Binding<GalaxySSIHealthAtlasWindow>? = nil) {
     self.records = records
     self.fixedMetric = fixedMetric
     self.recordMeasurement = recordMeasurement
     self.comparisonAnchor = comparisonAnchor
     self.unverifiedComparison = unverifiedComparison
+    self.atlasWindow = atlasWindow
     _metric = State(initialValue: fixedMetric ?? .bloodPressure)
+    if atlasWindow != nil { _aggregation = State(initialValue: .latest) }
     if let comparisonAnchor {
       _selectedUnit = State(initialValue: comparisonAnchor.unit)
       _source = State(initialValue: Self.trendSource(comparisonAnchor))
@@ -294,11 +297,19 @@ struct GalaxySSIHealthTrendView: View {
             }
             .disabled(comparisonAnchor != nil)
           }
-          Picker(t("period", "Period"), selection: $days) {
-            ForEach([7, 30, 90], id: \.self) { value in
-              Text(String(format: t("days", "%lld days"), Int64(value))).tag(value)
+          if let atlasWindow {
+            Picker(t("period", "Period"), selection: atlasWindow) {
+              ForEach(GalaxySSIHealthAtlasWindow.allCases, id: \.self) { window in
+                Text(GalaxySSIHealthAtlasText.get("health_atlas_" + window.rawValue, language)).tag(window)
+              }
             }
-            if comparisonAnchor != nil { Text(t("six_months", "6 months")).tag(180) }
+          } else {
+            Picker(t("period", "Period"), selection: $days) {
+              ForEach([7, 30, 90], id: \.self) { value in
+                Text(String(format: t("days", "%lld days"), Int64(value))).tag(value)
+              }
+              if comparisonAnchor != nil { Text(t("six_months", "6 months")).tag(180) }
+            }
           }
           if source != .healthKit && (!devices.isEmpty || device != nil) {
             Picker(t("bluetooth_filter", "Bluetooth device"), selection: $device) {
@@ -325,6 +336,19 @@ struct GalaxySSIHealthTrendView: View {
             Text(t("changed", "Measurements changed. Refresh to view current results."))
             Button(t("refresh", "Refresh"), action: reload)
           } else if let trend {
+            if atlasWindow != nil,
+               let reading = trend.points.flatMap(\.readings).filter({ component.value(in: $0) != nil })
+                .max(by: { ($0.measuredAt, $0.id.uuidString) < ($1.measuredAt, $1.id.uuidString) }),
+               let value = component.value(in: reading),
+               let point = trend.points.first(where: { $0.readings.contains(where: { $0.id == reading.id }) }) {
+              Section(t("latest", "Latest")) {
+                statistic(t("latest", "Latest"), value)
+                Text(reading.measuredAt, style: .date)
+                Text(reading.measuredAt, style: .time)
+                Text(readingSource(reading)).font(.caption).foregroundColor(.secondary)
+                Button(GalaxySSIHealthAtlasText.get("health_atlas_source", language)) { selected = point }
+              }
+            }
             if let minimum = trend.minimum, let maximum = trend.maximum {
               Button(action: explainTrend) {
                 Label(t("explain", "Explain this trend"), systemImage: "text.bubble")
@@ -362,6 +386,7 @@ struct GalaxySSIHealthTrendView: View {
     .onChange(of: days) { _ in resetOrigins(); reload() }
     .onChange(of: device) { _ in reload() }
     .onChange(of: calendar) { _ in reload() }
+    .onChange(of: atlasWindow?.wrappedValue) { _ in resetOrigins(); reload() }
     .onChange(of: timeZone) { _ in reload() }
     .onChange(of: scene) { if $0 == .background { device = nil; devices = [] } }
     .onChange(of: source) { _ in resetOrigins(); reload() }
@@ -480,6 +505,12 @@ struct GalaxySSIHealthTrendView: View {
       var local = calendar
       local.timeZone = timeZone
       snapshotCalendar = local
+      if let atlasWindow { days = atlasWindow.wrappedValue.days(through: snapshotTime, calendar: local) }
+      if atlasWindow != nil, selectedUnit == nil,
+         let latest = trendSpec.cohort(current).filter({ metric.units.contains($0.unit) && component.value(in: $0) != nil })
+          .max(by: { ($0.measuredAt, $0.id.uuidString) < ($1.measuredAt, $1.id.uuidString) }) {
+        selectedUnit = latest.unit
+      }
       if source == .healthKit {
         let today = local.startOfDay(for: snapshotTime)
         let start = local.date(byAdding: .day, value: 1 - days, to: today) ?? today

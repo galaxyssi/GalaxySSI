@@ -719,7 +719,7 @@ struct GalaxySSIHealthCenterView: View {
     case .trends: GalaxySSIHealthTrendView(records: records) { startManual($0) }
     case .catalog: metricCatalog
     case .recording: GalaxySSIHealthRecordingReminderView(records: records) { startManual($0) }
-    case .body: GalaxySSIHealthBodyView { bloodPressureRecords }
+    case .body: GalaxySSIHealthAtlasView(records: records)
     case .imports: GalaxySSIHealthImportView(store: originals, records: records, initialAction: .files)
     case .photo: GalaxySSIHealthPhotoCaptureView(records: records, originals: originals, initialCamera: true)
     case .movement: GalaxySSIHealthMotionView(records: records)
