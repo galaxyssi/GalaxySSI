@@ -4,6 +4,35 @@ import XCTest
 final class MqttOutgoingChunksTests: XCTestCase {
   private let epoch = String(repeating: "d", count: 32)
 
+  func testPublicBrokerProfileResumesSmallerPartsAfterReopen() throws {
+    let f = try ChunkFixture()
+    let payload = try f.wire(body: String(repeating: "x", count: 500_000))
+    let first = try outgoing(f).prepare(authenticatedScope: "pair", wirePayload: payload)
+    XCTAssertGreaterThan(first.query.count, 2)
+    for part in first.selected {
+      XCTAssertLessThanOrEqual(try MqttChunkManifest.parse(part.wire).data.count, 44 * 1024)
+      XCTAssertLessThan(try GalaxySSILinkProtocol.jsonData(part.wire).count, 64 * 1024 - 5)
+    }
+    _ = try outgoing(f).accept(authenticatedScope: "pair", state: first.query.response(epoch: epoch, revision: 1, indices: [0]))
+    let resumed = try outgoing(f).prepare(authenticatedScope: "pair", wirePayload: payload)
+    XCTAssertEqual(resumed.query.manifest, first.query.manifest)
+    XCTAssertFalse(resumed.selected.contains { $0.index == 0 })
+  }
+
+  func testPersistedLegacyGeometryIsNotReplacedBySmallerProfile() throws {
+    let f = try ChunkFixture()
+    let payload = try f.wire(body: String(repeating: "x", count: 500_000))
+    let parts = try GalaxySSIMqttWireChunking.encode(wirePayload: payload, directLimitBytes: 1).map {
+      try XCTUnwrap(JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any])
+    }
+    let first = try outgoing(f).prepare(authenticatedScope: "pair", parts: parts)
+    XCTAssertEqual(first.query.count, 2)
+    _ = try outgoing(f).accept(authenticatedScope: "pair", state: first.query.response(epoch: epoch, revision: 1, indices: [0]))
+    let resumed = try outgoing(f).prepare(authenticatedScope: "pair", wirePayload: payload)
+    XCTAssertEqual(resumed.query.manifest, first.query.manifest)
+    XCTAssertEqual(resumed.selected.map(\.index), [1])
+  }
+
   func testSenderReceiverExchangeResumesOnlyMissingPartsAfterReopen() throws {
     let f = try ChunkFixture()
     var sender = try outgoing(f)

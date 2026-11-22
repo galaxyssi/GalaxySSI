@@ -5,6 +5,7 @@ final class PublicNewsRowArchive {
   struct Loaded {
     let snapshot: PublicNewsArchiveStorage.Snapshot
     let revision: Int64
+    let schemaVersion: Int
   }
 
   enum Failure: Error { case unavailable, invalid, stale }
@@ -68,7 +69,14 @@ final class PublicNewsRowArchive {
   deinit { sqlite3_close_v2(db) }
 
   static func load(legacyURL: URL) throws -> Loaded {
-    if let saved = try read(legacyURL: legacyURL, { try $0.snapshot() }) { return saved }
+    if let saved = try read(legacyURL: legacyURL, { try $0.snapshot() }) {
+      if saved.schemaVersion == 2 { return saved }
+      let archive = try Self(url: url(for: legacyURL), writable: true)
+      return try archive.transaction(writable: true) {
+        try archive.ensureRetrySchema()
+        return try archive.snapshot()
+      }
+    }
     // Decode before touching the new database. A malformed source is never replaced with an empty archive.
     let legacy = try PublicNewsArchiveStorage.readSnapshot(from: legacyURL) ?? .init(articles: [])
     let archive = try Self(url: url(for: legacyURL), writable: true)
@@ -95,7 +103,10 @@ final class PublicNewsRowArchive {
         for article in legacy.articles { try archive.put(article, hidden: hidden.contains(article.id)) }
         try archive.putState(legacy, revision: 1)
         try archive.execute("PRAGMA user_version = 1")
-      } else if version != 1 {
+        try archive.ensureRetrySchema()
+      } else if version == 1 {
+        try archive.ensureRetrySchema()
+      } else if version != 2 {
         throw Failure.invalid
       }
       return try archive.snapshot()
@@ -153,7 +164,7 @@ final class PublicNewsRowArchive {
                    previousHidden: Set<String>, next: PublicNewsArchiveStorage.Snapshot) throws -> Int64 {
     let archive = try Self(url: url(for: legacyURL), writable: true)
     return try archive.transaction(writable: true) {
-      guard try archive.scalar("PRAGMA user_version") == 1 else { throw Failure.invalid }
+      try archive.ensureRetrySchema()
       guard try archive.scalar("SELECT revision FROM archive_state WHERE id = 1") == revision else { throw Failure.stale }
       guard revision < Int64.max else { throw Failure.invalid }
       let before = Dictionary(previous.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -166,6 +177,8 @@ final class PublicNewsRowArchive {
       for article in next.articles {
         let isHidden = hidden.contains(article.id)
         if before[article.id] != article {
+          guard try archive.scalar("SELECT COUNT(*) FROM discarded_article WHERE anchor = ?",
+            [.text(PublicNewsSpeechBookmark.key(for: article.id))]) == 0 else { throw Failure.stale }
           try archive.put(article, hidden: isHidden)
         } else if previousHidden.contains(article.id) != isHidden {
           try archive.write("UPDATE article SET hidden = ? WHERE id = ?",
@@ -177,6 +190,49 @@ final class PublicNewsRowArchive {
     }
   }
 
+  static func discardedIDs(legacyURL: URL, candidates: Set<String>) throws -> Set<String> {
+    guard !candidates.isEmpty else { return [] }
+    return try read(legacyURL: legacyURL) { archive in
+      guard try archive.scalar("PRAGMA user_version") == 2 else { return [] }
+      var discarded = Set<String>()
+      for id in candidates {
+        if try archive.scalar("SELECT COUNT(*) FROM discarded_article WHERE anchor = ?",
+          [.text(PublicNewsSpeechBookmark.key(for: id))]) > 0 { discarded.insert(id) }
+      }
+      return discarded
+    } ?? []
+  }
+
+  static func discardUnpublished(legacyURL: URL, keys: Set<String>) throws {
+    guard keys.allSatisfy(PublicNewsSpeechBookmark.isKey) else { throw Failure.invalid }
+    guard !keys.isEmpty else { return }
+    _ = try load(legacyURL: legacyURL)
+    let archive = try Self(url: url(for: legacyURL), writable: true)
+    try archive.transaction(writable: true) {
+      try archive.ensureRetrySchema()
+      let saved = try archive.snapshot()
+      guard saved.revision < Int64.max else { throw Failure.invalid }
+      let removed = Set(saved.snapshot.articles.filter { keys.contains(PublicNewsSpeechBookmark.key(for: $0.id)) }.map(\.id))
+      for key in keys {
+        try archive.write("INSERT OR IGNORE INTO discarded_article(anchor) VALUES (?)", [.text(key)])
+        try archive.write("DELETE FROM article WHERE anchor = ?", [.text(key)])
+      }
+      var next = saved.snapshot
+      next.articles.removeAll { removed.contains($0.id) }
+      next.notRelevantIDs = next.notRelevantIDs?.subtracting(removed)
+      try archive.putState(next, revision: saved.revision + 1)
+    }
+  }
+
+  private func ensureRetrySchema() throws {
+    let version = try scalar("PRAGMA user_version")
+    guard version == 1 || version == 2 else { throw Failure.invalid }
+    if version == 1 {
+      try execute("CREATE TABLE IF NOT EXISTS discarded_article(anchor TEXT PRIMARY KEY NOT NULL) WITHOUT ROWID")
+      try execute("PRAGMA user_version = 2")
+    }
+  }
+
   private static func read<T>(legacyURL: URL, _ operation: (PublicNewsRowArchive) throws -> T) throws -> T? {
     let databaseURL = url(for: legacyURL)
     guard FileManager.default.fileExists(atPath: databaseURL.path) else { return nil }
@@ -184,7 +240,7 @@ final class PublicNewsRowArchive {
     return try archive.transaction(writable: false) {
       let version = try archive.scalar("PRAGMA user_version")
       if version == 0 { return nil }
-      guard version == 1 else { throw Failure.invalid }
+      guard version == 1 || version == 2 else { throw Failure.invalid }
       return try operation(archive)
     }
   }
@@ -196,7 +252,8 @@ final class PublicNewsRowArchive {
     }
     return Loaded(snapshot: .init(articles: try articles("SELECT payload FROM article ORDER BY sort_date DESC, id ASC"),
       refreshedAt: state.refreshedAt, pushCursor: state.pushCursor,
-      notRelevantIDs: state.notRelevantIDs, publisherState: state.publisherState), revision: revision)
+      notRelevantIDs: state.notRelevantIDs, publisherState: state.publisherState), revision: revision,
+      schemaVersion: Int(try scalar("PRAGMA user_version")))
   }
 
   private func articles(_ sql: String, _ values: [Value] = []) throws -> [PublicNewsArticle] {

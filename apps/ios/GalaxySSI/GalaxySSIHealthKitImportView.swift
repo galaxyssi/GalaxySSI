@@ -121,7 +121,7 @@ struct GalaxySSIHealthKitImportView: View {
       }
     }
     .navigationTitle("Apple Health")
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .toolbar {
       if recoveryScope != nil {
         ToolbarItem(placement: .cancellationAction) {

@@ -339,6 +339,7 @@ struct GalaxySSIDeviceSecurityDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
           if let link {
             deviceContent(link)
+            GalaxySSIDesktopDisconnectView(link: link)
           } else {
             revokedContent
           }

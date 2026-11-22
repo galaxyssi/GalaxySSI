@@ -109,6 +109,27 @@ actor PublicNewsBodyStore {
     return complete
   }
 
+  func discardUnpublished(_ keys: Set<String>, preserving: Set<String>,
+                          commit: @Sendable (Set<String>) throws -> Void) throws -> Set<String> {
+    guard keys.allSatisfy(PublicNewsSpeechBookmark.isKey), let root else {
+      throw PublicNewsArticleBodyError.incompleteSource
+    }
+    var preserved = keys.intersection(preserving)
+    for key in keys.subtracting(preserved) {
+      let url = root.appendingPathComponent(key).appendingPathExtension("json")
+      if let saved = Self.loadValidated(url), PublicNewsSpeechBookmark.key(for: saved.articleID) == key,
+         saved.completed != nil { preserved.insert(key) }
+    }
+    let discarded = keys.subtracting(preserved)
+    // No actor suspension between checking completed bodies and committing archive deletion.
+    try commit(discarded)
+    for key in discarded {
+      do { try FileManager.default.removeItem(at: root.appendingPathComponent(key).appendingPathExtension("json")) }
+      catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile { }
+    }
+    return preserved
+  }
+
   private func pruneOutsideArchive(_ retained: Set<String>) {
     guard let root, let urls = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
     else { return }
@@ -187,6 +208,7 @@ enum PublicNewsTranslation {
   static func run(
     _ initial: PublicNewsBodyCheckpoint, store: PublicNewsBodyStore = .shared,
     workClass: LocalModelWorkClass = .interactive, deadlineUptime: TimeInterval? = nil,
+    budgetCheck: (() async throws -> Void)? = nil,
     progress: @MainActor (PublicNewsBodyCheckpoint) -> Void
   ) async throws -> PublicNewsBodyCheckpoint {
     var checkpoint = initial
@@ -194,6 +216,7 @@ enum PublicNewsTranslation {
     let profile = LocalModelRuntimeSettings.selectedProfile()
     for index in initial.segments.indices where checkpoint.translated[index] == nil {
       try checkBudget(deadlineUptime)
+      try await budgetCheck?()
       let source = initial.segments[index]
       let translated: String
       if isChinese(source) {
@@ -212,7 +235,7 @@ enum PublicNewsTranslation {
           userPrompt: String(decoding: input, as: UTF8.self),
           maximumTokens: 960, temperature: 0, thinkingMode: .noThink, workClass: workClass
         )
-        try checkBudget(deadlineUptime)
+        try Task.checkCancellation()
         guard let parsed = try? JSONDecoder().decode(ModelReply.self, from: Data(reply.text.utf8)) else {
           throw PublicNewsArticleBodyError.invalidTranslation
         }
@@ -222,6 +245,8 @@ enum PublicNewsTranslation {
         translated, index: index, articleID: initial.articleID, fingerprint: initial.fingerprint
       )
       await progress(checkpoint)
+      try checkBudget(deadlineUptime)
+      try await budgetCheck?()
     }
     return checkpoint
   }
