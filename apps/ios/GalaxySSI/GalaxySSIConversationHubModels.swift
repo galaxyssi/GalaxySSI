@@ -273,6 +273,7 @@ struct GalaxySSIConversationHubContactSummary: Equatable {
   var updatedAt: Date
   var pinned: Bool = false
   var unreadCount: Int = 0
+  var archived: Bool = false
 }
 
 struct GalaxySSIConversationHubItem: Identifiable, Equatable {
@@ -290,12 +291,12 @@ struct GalaxySSIConversationHubItem: Identifiable, Equatable {
 
 enum GalaxySSIConversationHubContactHistoryPolicy {
   static func includes(_ contact: GalaxySSIContact?) -> Bool {
-    !ScannedAgentConversationPolicy.opensAgentConversation(contact)
+    contact?.isDesktopHistoryOnly == true || !ScannedAgentConversationPolicy.opensAgentConversation(contact)
   }
 
   static func visibleSummary(_ contact: GalaxySSIContact, summary: (String) -> ContactConversationSummary)
     -> ContactConversationSummary? {
-    guard !contact.deleted, includes(contact) else { return nil }
+    guard !contact.deleted || contact.isDesktopHistoryOnly, includes(contact) else { return nil }
     let history = summary(contact.id)
     return history.lastMessage == nil ? nil : history
   }
@@ -316,7 +317,8 @@ enum GalaxySSIConversationHubModels {
         preview: conversation.previewText,
         updatedAt: latest.createdAt,
         pinned: isPinned(contact.id),
-        unreadCount: conversation.unreadCount
+        unreadCount: contact.isDesktopHistoryOnly ? 0 : conversation.unreadCount,
+        archived: contact.isDesktopHistoryOnly
       )
     }
   }
@@ -388,7 +390,7 @@ enum GalaxySSIConversationHubModels {
     archived: Bool
   ) -> GalaxySSIConversationHubSections {
     let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let contactItems = archived ? [] : contacts.map { contact in
+    let contactItems = contacts.filter { $0.archived == archived }.map { contact in
       GalaxySSIConversationHubItem(
         id: contact.contactId,
         kind: .contact,
@@ -397,9 +399,9 @@ enum GalaxySSIConversationHubModels {
         preview: contact.preview,
         updatedAt: contact.updatedAt,
         pinned: contact.pinned,
-        archived: false,
+        archived: contact.archived,
         searchableMetadata: contact.contactId,
-        unreadCount: contact.unreadCount
+        unreadCount: contact.archived ? 0 : contact.unreadCount
       )
     }
     let matching = (agents + contactItems)

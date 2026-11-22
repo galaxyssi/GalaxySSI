@@ -28,6 +28,8 @@ enum GalaxySSIHealthRecordingReminders {
     var quietStart = 22
     var quietEnd = 8
     var notifications = false
+    var modelReviews: Bool?
+    var allowsModelReviews: Bool { modelReviews ?? true }
     var pausedUntil: Date?
 
     var isValid: Bool {

@@ -12,6 +12,8 @@ struct GalaxySSIHealthTrendAnalysis: Identifiable {
     let through: Date
     let days: Int
     let calendar: Calendar
+    var comparisonAnchor: GalaxySSIHealthReading? = nil
+    var unverifiedComparison = false
 
     var interval: DateInterval {
       let day = calendar.startOfDay(for: through)
@@ -21,16 +23,18 @@ struct GalaxySSIHealthTrendAnalysis: Identifiable {
     }
 
     func cohort(_ current: [GalaxySSIHealthReading]) -> [GalaxySSIHealthReading] {
+      if let comparisonAnchor, !current.contains(comparisonAnchor) { return [] }
       let window = interval
-      return GalaxySSIHealthTrendDevice.matching(current, device: device).filter {
-        !$0.deleted && $0.metric == metric && $0.measuredAt >= window.start && $0.measuredAt < window.end &&
-          source.includes($0) && (origin == .all || GalaxySSIHealthTrend.HealthOrigin.recorded(in: $0) == origin)
+      return GalaxySSIHealthTrendDevice.matching(current, device: device).filter { reading in
+        !reading.deleted && reading.metric == metric && reading.measuredAt >= window.start && reading.measuredAt < window.end &&
+          source.includes(reading) && (origin == .all || GalaxySSIHealthTrend.HealthOrigin.recorded(in: reading) == origin) &&
+          (comparisonAnchor.map { GalaxySSIHealthMeasurementComparison.accepts(reading, anchor: $0) } ?? true)
       }
     }
 
     func chart(_ current: [GalaxySSIHealthReading]) -> GalaxySSIHealthTrend {
       GalaxySSIHealthTrend(current: cohort(current), metric: metric, component: component, now: through,
-        dayCount: days, calendar: calendar, unit: unit)
+        dayCount: days, calendar: calendar, unit: unit, forceUnverifiedMethods: unverifiedComparison)
     }
 
     func versions(_ current: [GalaxySSIHealthReading]) -> [String] {
@@ -89,15 +93,15 @@ struct GalaxySSIHealthTrendAnalysis: Identifiable {
     func sources(_ point: GalaxySSIHealthTrend.Point, value: Decimal) -> GalaxySSIHealthAnalysis.Evidence {
       let leading = point.extremum(spec.aggregation, component: spec.component)
       let rows = leading.map { first in [first] + point.readings.filter { $0.id != first.id } } ?? point.readings
-      return evidence(rows, days: 1, minimum: value, maximum: value, average: value)
+      return evidence(rows, days: 1, minimum: value, maximum: value, average: point.unverifiedMethods ? nil : value)
     }
     let fact = Fact(aggregation: spec.aggregation.rawValue, pointCount: plotted.count, recordedDays: recordedDays,
       missingDays: spec.days - recordedDays, excludedNonNumeric: cohort.count - numeric.count,
       excludedOtherUnits: numeric.filter { spec.component != .pulse && $0.unit != spec.unit }.count,
       first: bucket(firstPoint, firstValue), last: plotted.count > 1 ? bucket(lastPoint, lastValue) : nil,
-      delta: plotted.count > 1 && !difference.isNaN ? exact(difference) : nil)
+      delta: plotted.count > 1 && !chart.unverifiedMethods && !difference.isNaN ? exact(difference) : nil)
     return (fact, evidence(readings, days: plotted.count, minimum: values.min(), maximum: values.max(),
-      average: mean.isNaN ? nil : mean), sources(firstPoint, value: firstValue),
+      average: chart.unverifiedMethods || mean.isNaN ? nil : mean), sources(firstPoint, value: firstValue),
       plotted.count > 1 ? sources(lastPoint, value: lastValue) : nil)
   }
 }

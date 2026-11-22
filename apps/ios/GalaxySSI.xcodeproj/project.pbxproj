@@ -7,6 +7,82 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    8332FF366E1CB020728E3B49 /* GalaxySSIHealthAtlas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 919373B1F2EC81778D6C1518 /* GalaxySSIHealthAtlas.swift */; };
+    8D35CFD559C1355DCB35BDED /* GalaxySSIHealthAtlasAgentHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C60A63B797B0A797C0B802 /* GalaxySSIHealthAtlasAgentHandoff.swift */; };
+    1E81F8D329E13C8B46E1D204 /* GalaxySSIHealthAtlasArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77250658843A3AAD50E9681B /* GalaxySSIHealthAtlasArtwork.swift */; };
+    56668657960EE8B00531B479 /* GalaxySSIHealthAtlasDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A44D7D7AAABC6353A3E171 /* GalaxySSIHealthAtlasDetail.swift */; };
+    3A27D153792D057E63607118 /* GalaxySSIHealthAtlasResearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */; };
+    11A6C0253F091CDA9CEA0803 /* GalaxySSIHealthAtlasSimulationPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */; };
+    F81EA90A113A7DE2667956C6 /* GalaxySSIHealthAtlasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */; };
+    1AA5A2AD38BCAE4FA01FE49A /* GalaxySSIHealthAtlasTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8967AB28E2E61CC057AEBD3 /* GalaxySSIHealthAtlasTests.swift */; };
+    40A8F2E0933DD60C3E202D5C /* body-atlas in Resources */ = {isa = PBXBuildFile; fileRef = B85158A6D23086CFED45AC26 /* body-atlas */; };
+    7E9C74C29FE3236437B57ACB /* BodyAtlas.strings in Resources */ = {isa = PBXBuildFile; fileRef = 42B68EDFC3BE81F4555E8974 /* BodyAtlas.strings */; };
+    C43210000000000000000011 /* GalaxySSIConversationRenamePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43210000000000000000012 /* GalaxySSIConversationRenamePolicy.swift */; };
+    C43210000000000000000021 /* GalaxySSIConversationRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43210000000000000000022 /* GalaxySSIConversationRenameView.swift */; };
+    C43210000000000000000031 /* GalaxySSIConversationRenameTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43210000000000000000032 /* GalaxySSIConversationRenameTests.swift */; };
+    C43080000000000000000011 /* PublicNewsArticleRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43080000000000000000012 /* PublicNewsArticleRetryPolicy.swift */; };
+    C43080000000000000000021 /* PublicNewsArticleRetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43080000000000000000022 /* PublicNewsArticleRetryTests.swift */; };
+    C43070000000000000000011 /* PublicNewsBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43070000000000000000012 /* PublicNewsBudget.swift */; };
+    C43070000000000000000021 /* PublicNewsBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43070000000000000000022 /* PublicNewsBudgetTests.swift */; };
+    C43060000000000000000011 /* GalaxySSIDesktopDisconnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43060000000000000000012 /* GalaxySSIDesktopDisconnectView.swift */; };
+    C43060000000000000000021 /* GalaxySSIDesktopDisconnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43060000000000000000022 /* GalaxySSIDesktopDisconnectTests.swift */; };
+    C43040000000000000000051 /* GalaxySSIHealthMotionLedgerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43040000000000000000052 /* GalaxySSIHealthMotionLedgerTests.swift */; };
+    C43040000000000000000071 /* GalaxySSIHealthGuidanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43040000000000000000072 /* GalaxySSIHealthGuidanceTests.swift */; };
+    C43040000000000000000081 /* GalaxySSIHealthMotionStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43040000000000000000082 /* GalaxySSIHealthMotionStorageTests.swift */; };
+    C43040000000000000000011 /* GalaxySSIHealthMotionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43040000000000000000012 /* GalaxySSIHealthMotionState.swift */; };
+    C43140000000000000000011 /* GalaxySSIHealthActivityComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43140000000000000000012 /* GalaxySSIHealthActivityComparison.swift */; };
+    C43140000000000000000021 /* GalaxySSIHealthActivityHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43140000000000000000022 /* GalaxySSIHealthActivityHistoryStore.swift */; };
+    C43140000000000000000031 /* GalaxySSIHealthActivityComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43140000000000000000032 /* GalaxySSIHealthActivityComparisonView.swift */; };
+    C43140000000000000000051 /* GalaxySSIHealthMeasurementComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43140000000000000000052 /* GalaxySSIHealthMeasurementComparison.swift */; };
+    C43150000000000000000011 /* GalaxySSIHealthMeasurementPeriods.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43150000000000000000012 /* GalaxySSIHealthMeasurementPeriods.swift */; };
+    C43150000000000000000021 /* GalaxySSIHealthMeasurementQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43150000000000000000022 /* GalaxySSIHealthMeasurementQuery.swift */; };
+    C43150000000000000000031 /* GalaxySSIHealthMeasurementPeriodText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43150000000000000000032 /* GalaxySSIHealthMeasurementPeriodText.swift */; };
+    C43150000000000000000041 /* GalaxySSIHealthMeasurementPeriodPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43150000000000000000042 /* GalaxySSIHealthMeasurementPeriodPicker.swift */; };
+    C43150000000000000000051 /* GalaxySSIHealthMeasurementPeriodComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43150000000000000000052 /* GalaxySSIHealthMeasurementPeriodComparisonView.swift */; };
+    C43150000000000000000061 /* GalaxySSIHealthMeasurementOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43150000000000000000062 /* GalaxySSIHealthMeasurementOverviewView.swift */; };
+    C43150000000000000000071 /* GalaxySSIHealthMeasurementPeriodTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43150000000000000000072 /* GalaxySSIHealthMeasurementPeriodTests.swift */; };
+    C43170000000000000000011 /* GalaxySSIHealthMeasurementList.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43170000000000000000012 /* GalaxySSIHealthMeasurementList.swift */; };
+    C43170000000000000000021 /* GalaxySSIHealthMeasurementListTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43170000000000000000022 /* GalaxySSIHealthMeasurementListTests.swift */; };
+    C43180000000000000000011 /* GalaxySSIHealthTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43180000000000000000012 /* GalaxySSIHealthTheme.swift */; };
+    C43180000000000000000021 /* GalaxySSIHealthFunctionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43180000000000000000022 /* GalaxySSIHealthFunctionsView.swift */; };
+    C43180000000000000000031 /* GalaxySSIHealthThemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43180000000000000000032 /* GalaxySSIHealthThemeTests.swift */; };
+    C43140000000000000000071 /* GalaxySSIHealthMeasurementComparisonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43140000000000000000072 /* GalaxySSIHealthMeasurementComparisonTests.swift */; };
+    C43140000000000000000041 /* GalaxySSIHealthActivityComparisonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43140000000000000000042 /* GalaxySSIHealthActivityComparisonTests.swift */; };
+    C43050000000000000000011 /* GalaxySSIHealthCyclingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43050000000000000000012 /* GalaxySSIHealthCyclingSession.swift */; };
+    C43050000000000000000021 /* GalaxySSIHealthCyclingSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43050000000000000000022 /* GalaxySSIHealthCyclingSessionTests.swift */; };
+    C43040000000000000000021 /* GalaxySSIHealthMotionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43040000000000000000022 /* GalaxySSIHealthMotionController.swift */; };
+    C43040000000000000000031 /* GalaxySSIHealthMotionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43040000000000000000032 /* GalaxySSIHealthMotionView.swift */; };
+    C43040000000000000000041 /* GalaxySSIHealthOverviewGuidance.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43040000000000000000042 /* GalaxySSIHealthOverviewGuidance.swift */; };
+    C43040000000000000000061 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = C43040000000000000000062 /* InfoPlist.strings */; };
+    C43030000000000000000031 /* GalaxySSIHealthOverviewRangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43030000000000000000032 /* GalaxySSIHealthOverviewRangeTests.swift */; };
+    C43030000000000000000011 /* GalaxySSIHealthOverviewRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43030000000000000000012 /* GalaxySSIHealthOverviewRange.swift */; };
+    C43030000000000000000021 /* GalaxySSIHealthOverviewMetricRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43030000000000000000022 /* GalaxySSIHealthOverviewMetricRow.swift */; };
+    C43020000000000000000011 /* GalaxySSIHealthOverviewAttention.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43020000000000000000012 /* GalaxySSIHealthOverviewAttention.swift */; };
+    C42990000000000000000011 /* GalaxySSIHealthReportDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42990000000000000000012 /* GalaxySSIHealthReportDelivery.swift */; };
+    C42990000000000000000021 /* GalaxySSIHealthReportFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42990000000000000000022 /* GalaxySSIHealthReportFailure.swift */; };
+    C42990000000000000000031 /* GalaxySSIHealthReportRowValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42990000000000000000032 /* GalaxySSIHealthReportRowValidationTests.swift */; };
+    C42990000000000000000041 /* GalaxySSIHealthReportDeliveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42990000000000000000042 /* GalaxySSIHealthReportDeliveryTests.swift */; };
+    C42980000000000000000011 /* GalaxySSIHealthReportBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42980000000000000000012 /* GalaxySSIHealthReportBatch.swift */; };
+    C42980000000000000000021 /* GalaxySSIHealthReportContextForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42980000000000000000022 /* GalaxySSIHealthReportContextForm.swift */; };
+    C42980000000000000000031 /* GalaxySSIHealthSelectedFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42980000000000000000032 /* GalaxySSIHealthSelectedFiles.swift */; };
+    C42980000000000000000041 /* GalaxySSIHealthSelectedFilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42980000000000000000042 /* GalaxySSIHealthSelectedFilesView.swift */; };
+    C42980000000000000000051 /* GalaxySSIHealthReportBatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42980000000000000000052 /* GalaxySSIHealthReportBatchTests.swift */; };
+    C42950000000000000000011 /* GalaxySSIHealthReportQuickImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42950000000000000000012 /* GalaxySSIHealthReportQuickImport.swift */; };
+    C42950000000000000000031 /* GalaxySSIHealthReportQuickImportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42950000000000000000032 /* GalaxySSIHealthReportQuickImportTests.swift */; };
+    C42960000000000000000011 /* GalaxySSIHealthOverviewCare.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42960000000000000000012 /* GalaxySSIHealthOverviewCare.swift */; };
+    C42960000000000000000021 /* GalaxySSIHealthOverviewCareSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42960000000000000000022 /* GalaxySSIHealthOverviewCareSection.swift */; };
+    C42960000000000000000031 /* GalaxySSIHealthOverviewCareTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42960000000000000000032 /* GalaxySSIHealthOverviewCareTests.swift */; };
+    C42940000000000000000011 /* GalaxySSIHealthReportCodex.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42940000000000000000012 /* GalaxySSIHealthReportCodex.swift */; };
+    C42940000000000000000021 /* GalaxySSIHealthReportCodexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42940000000000000000022 /* GalaxySSIHealthReportCodexTests.swift */; };
+    C42920000000000000000011 /* GalaxySSIHealthAppointmentReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42920000000000000000012 /* GalaxySSIHealthAppointmentReminder.swift */; };
+    C42920000000000000000021 /* GalaxySSIHealthAppointmentNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42920000000000000000022 /* GalaxySSIHealthAppointmentNotifications.swift */; };
+    C42920000000000000000031 /* GalaxySSIHealthAppointmentBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42920000000000000000032 /* GalaxySSIHealthAppointmentBackground.swift */; };
+    C42920000000000000000041 /* GalaxySSIHealthAppointmentReminderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42920000000000000000042 /* GalaxySSIHealthAppointmentReminderView.swift */; };
+    C42920000000000000000051 /* GalaxySSIHealthAppointmentReminderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42920000000000000000052 /* GalaxySSIHealthAppointmentReminderTests.swift */; };
+    C42930000000000000000011 /* GalaxySSIHealthReportVision.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42930000000000000000012 /* GalaxySSIHealthReportVision.swift */; };
+    C42930000000000000000021 /* GalaxySSIHealthReportVisionProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42930000000000000000022 /* GalaxySSIHealthReportVisionProvider.swift */; };
+    C42930000000000000000031 /* GalaxySSIHealthReportVisionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42930000000000000000032 /* GalaxySSIHealthReportVisionView.swift */; };
+    C42930000000000000000041 /* GalaxySSIHealthReportVisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42930000000000000000042 /* GalaxySSIHealthReportVisionTests.swift */; };
     D12980000000000000000001 /* GalaxySSIConversationSceneController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22980000000000000000001 /* GalaxySSIConversationSceneController.swift */; };
     D12677000000000000000001 /* AgentProviderHealthRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */; };
     F12660000000000000000001 /* GalaxySSIMermaidDiagramView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22660000000000000000001 /* GalaxySSIMermaidDiagramView.swift */; };
@@ -28,7 +104,9 @@
     F12666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */; };
     F12666000000000000000003 /* AgentInteractiveProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22666000000000000000003 /* AgentInteractiveProgressTests.swift */; };
     F12680000000000000000001 /* AgentDirectVisionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22680000000000000000001 /* AgentDirectVisionPolicy.swift */; };
+    C43130000000000000000011 /* AgentPeerAttachmentPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43130000000000000000012 /* AgentPeerAttachmentPreview.swift */; };
     F12680000000000000000002 /* AgentDirectVisionPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */; };
+    C43130000000000000000021 /* AgentPeerAttachmentPreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43130000000000000000022 /* AgentPeerAttachmentPreviewTests.swift */; };
     F12678000000000000000001 /* AgentReplySpeechController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22678000000000000000001 /* AgentReplySpeechController.swift */; };
     F13234000000000000000001 /* MqttRouteAdvertisement.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000001 /* MqttRouteAdvertisement.swift */; };
     F13234000000000000000002 /* MqttRouteState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23234000000000000000002 /* MqttRouteState.swift */; };
@@ -234,6 +312,20 @@
     D14251000000000000000004 /* GalaxySSIHealthVisitJournalDiscussionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D24251000000000000000004 /* GalaxySSIHealthVisitJournalDiscussionView.swift */; };
     A10000000000000000009875 /* GalaxySSIHealthCareMaintenance.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009875 /* GalaxySSIHealthCareMaintenance.swift */; };
     A10000000000000000009878 /* GalaxySSIHealthCareResearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009878 /* GalaxySSIHealthCareResearch.swift */; };
+    B42840000000000000000001 /* GalaxySSIHealthCareModelAttention.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42840000000000000000002 /* GalaxySSIHealthCareModelAttention.swift */; };
+    B42840000000000000000003 /* GalaxySSIHealthCareModelAttentionRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42840000000000000000004 /* GalaxySSIHealthCareModelAttentionRecords.swift */; };
+    B42840000000000000000005 /* GalaxySSIHealthCareModelAttentionDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42840000000000000000006 /* GalaxySSIHealthCareModelAttentionDelivery.swift */; };
+    B42840000000000000000007 /* GalaxySSIHealthCareModelAttentionRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42840000000000000000008 /* GalaxySSIHealthCareModelAttentionRuntime.swift */; };
+    B42840000000000000000009 /* GalaxySSIHealthCareModelAttentionBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42840000000000000000010 /* GalaxySSIHealthCareModelAttentionBackground.swift */; };
+    B42840000000000000000011 /* GalaxySSIHealthCareModelAttentionLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42840000000000000000012 /* GalaxySSIHealthCareModelAttentionLifecycle.swift */; };
+    B42860000000000000000001 /* GalaxySSIHealthCareRelatedContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42860000000000000000002 /* GalaxySSIHealthCareRelatedContext.swift */; };
+    B42860000000000000000003 /* GalaxySSIHealthCareRelatedContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42860000000000000000004 /* GalaxySSIHealthCareRelatedContextTests.swift */; };
+    B42890000000000000000001 /* GalaxySSIHealthCareClarificationRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42890000000000000000002 /* GalaxySSIHealthCareClarificationRecovery.swift */; };
+    B42890000000000000000003 /* GalaxySSIHealthCareClarificationRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42890000000000000000004 /* GalaxySSIHealthCareClarificationRecoveryTests.swift */; };
+    B42910000000000000000001 /* GalaxySSIHealthCareReviewQuestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42910000000000000000002 /* GalaxySSIHealthCareReviewQuestions.swift */; };
+    B42910000000000000000003 /* GalaxySSIHealthCareReviewQuestionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42910000000000000000004 /* GalaxySSIHealthCareReviewQuestionsTests.swift */; };
+    B42830000000000000000001 /* GalaxySSIHealthCareModelReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42830000000000000000002 /* GalaxySSIHealthCareModelReview.swift */; };
+    B42830000000000000000003 /* GalaxySSIHealthCareModelReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42830000000000000000004 /* GalaxySSIHealthCareModelReviewView.swift */; };
     A10000000000000000009879 /* GalaxySSIHealthCareResearchLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009879 /* GalaxySSIHealthCareResearchLifecycle.swift */; };
     A10000000000000000009880 /* GalaxySSIHealthCareResearchControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009880 /* GalaxySSIHealthCareResearchControls.swift */; };
     A10000000000000000009884 /* GalaxySSIHealthDesktopResearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009884 /* GalaxySSIHealthDesktopResearch.swift */; };
@@ -247,6 +339,9 @@
     A10000000000000000009834 /* GalaxySSIHealthReviewReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009834 /* GalaxySSIHealthReviewReminders.swift */; };
     A10000000000000000009835 /* GalaxySSIHealthReviewDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009835 /* GalaxySSIHealthReviewDelivery.swift */; };
     A10000000000000000009809 /* GalaxySSIHealthTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009809 /* GalaxySSIHealthTrendView.swift */; };
+    7431A9C9D1BFD10EDCF64F71 /* GalaxySSIHealthAtlasAgentContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16F04974E932086F4FF70D48 /* GalaxySSIHealthAtlasAgentContext.swift */; };
+    ABD01A10F8711424EF6114EC /* GalaxySSIHealthAtlasTrendAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3EE7BE07E2BEF431F5B42A /* GalaxySSIHealthAtlasTrendAction.swift */; };
+    E05B7B1440408F5D1480CDE3 /* GalaxySSIHealthAtlasAgentContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82CAA5317D7AACF6D76773DE /* GalaxySSIHealthAtlasAgentContextTests.swift */; };
     A10000000000000000009862 /* GalaxySSIHealthCareComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009862 /* GalaxySSIHealthCareComparison.swift */; };
     A10000000000000000009863 /* GalaxySSIHealthCareComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009863 /* GalaxySSIHealthCareComparisonView.swift */; };
     A10000000000000000009812 /* GalaxySSIHealthBluetooth.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009812 /* GalaxySSIHealthBluetooth.swift */; };
@@ -268,6 +363,9 @@
     A10000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift */; };
     A10000000000000000009805 /* GalaxySSIHealthBodyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009805 /* GalaxySSIHealthBodyView.swift */; };
     A10000000000000000009806 /* GalaxySSIHealthBodyText.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009806 /* GalaxySSIHealthBodyText.swift */; };
+    58236C684BF52CD0627E1B30 /* GalaxySSIHealthAtlasOxygen.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02B03B900B47D546DB439D9 /* GalaxySSIHealthAtlasOxygen.swift */; };
+    415CCB24AC983596F186422C /* GalaxySSIHealthAtlasOxygenText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A9CC6DF454702C3FE6F392 /* GalaxySSIHealthAtlasOxygenText.swift */; };
+    BAFCBBF5AC808C8D057877C1 /* GalaxySSIHealthAtlasOxygenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D472032F2DA29E96F4D650 /* GalaxySSIHealthAtlasOxygenTests.swift */; };
     A10000000000000000001501 /* GalaxySSIAgentModelSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001501 /* GalaxySSIAgentModelSelectionView.swift */; };
     A10000000000000000001503 /* AgentExecutionTargetStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001503 /* AgentExecutionTargetStatus.swift */; };
     A10000000000000000001436 /* GalaxySSIContactKindPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001436 /* GalaxySSIContactKindPresentation.swift */; };
@@ -429,6 +527,8 @@
     A10000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift */; };
     A10000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift */; };
     A10000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift */; };
+    C43100000000000000000011 /* GalaxySSIAgentChatShortcutLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43100000000000000000012 /* GalaxySSIAgentChatShortcutLayout.swift */; };
+    C43100000000000000000021 /* GalaxySSIAgentChatShortcutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43100000000000000000022 /* GalaxySSIAgentChatShortcutTests.swift */; };
     E35390000000000000000001 /* PublicNewsFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35390000000000000000002 /* PublicNewsFeed.swift */; };
     E35380000000000000000011 /* PublicNewsSourceReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35380000000000000000012 /* PublicNewsSourceReview.swift */; };
     E36510000000000000000001 /* PublicNewsPublisherDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */; };
@@ -668,7 +768,11 @@
     A10000000000000000000494 /* AgentOcrLayoutAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000494 /* AgentOcrLayoutAnalyzer.swift */; };
     A10000000000000000000495 /* AgentOcrLayoutAnalyzerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000495 /* AgentOcrLayoutAnalyzerTests.swift */; };
     A10000000000000000009803 /* GalaxySSIHealthRecordsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009803 /* GalaxySSIHealthRecordsTests.swift */; };
+    B42880000000000000000001 /* GalaxySSIHealthCareActiveRevocationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42880000000000000000002 /* GalaxySSIHealthCareActiveRevocationTests.swift */; };
+    B42900000000000000000001 /* GalaxySSIHealthCareEvaluationReplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42900000000000000000002 /* GalaxySSIHealthCareEvaluationReplayTests.swift */; };
     D14251000000000000000005 /* GalaxySSIHealthVisitJournalDiscussionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D24251000000000000000005 /* GalaxySSIHealthVisitJournalDiscussionTests.swift */; };
+    B42840000000000000000013 /* GalaxySSIHealthCareModelAttentionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42840000000000000000014 /* GalaxySSIHealthCareModelAttentionTests.swift */; };
+    B42830000000000000000005 /* GalaxySSIHealthCareModelReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42830000000000000000006 /* GalaxySSIHealthCareModelReviewTests.swift */; };
     E39090000000000000000003 /* GalaxySSIHealthOCRSourceContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39090000000000000000004 /* GalaxySSIHealthOCRSourceContextTests.swift */; };
     A10000000000000000000668 /* AgentOfficeDocumentExtractorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000668 /* AgentOfficeDocumentExtractorTests.swift */; };
     A10000000000000000000496 /* GlobalEventPublisherPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000496 /* GlobalEventPublisherPolicy.swift */; };
@@ -1241,6 +1345,7 @@
     D13397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift */; };
     D13388000000000000000001 /* AgentRemotePilotProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23388000000000000000001 /* AgentRemotePilotProtocol.swift */; };
     D13388000000000000000002 /* AgentRemotePilotProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23388000000000000000002 /* AgentRemotePilotProtocolTests.swift */; };
+    D13389000000000000000001 /* AgentRemotePilotSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23389000000000000000001 /* AgentRemotePilotSelectionTests.swift */; };
     A10000000000000000000225 /* AgentSkillLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000225 /* AgentSkillLifecycleTests.swift */; };
     A10000000000000000000226 /* AgentSkillExecutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000226 /* AgentSkillExecutionTests.swift */; };
     A10000000000000000000227 /* AgentSkillPackageInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */; };
@@ -1336,16 +1441,99 @@
     A10000000000000000000296 /* AgentIOSDesktopRemoteNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000296 /* AgentIOSDesktopRemoteNativeToolTests.swift */; };
     A10000000000000000000297 /* AgentIOSMcpNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000297 /* AgentIOSMcpNativeToolTests.swift */; };
     A10000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift */; };
+    BD68373A70EC821C60758ECF /* GalaxySSIHealthAtlasPhysiology.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05EA412281059396FCCFC26D /* GalaxySSIHealthAtlasPhysiology.swift */; };
+    2ECF4259194968FFE9A65DA6 /* GalaxySSIHealthAtlasPhysiologyText.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE041305DEF774444B2536EE /* GalaxySSIHealthAtlasPhysiologyText.swift */; };
+    BF37730E4012C7208E81DC84 /* GalaxySSIHealthAtlasPhysiologyPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BEF2B56A05F06056BCC4CF5 /* GalaxySSIHealthAtlasPhysiologyPanel.swift */; };
+    8E5409A2688CCA620859616F /* GalaxySSIHealthAtlasPhysiologyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EF107B122E10D994EC957C5 /* GalaxySSIHealthAtlasPhysiologyTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    919373B1F2EC81778D6C1518 /* GalaxySSIHealthAtlas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlas.swift; sourceTree = "<group>"; };
+    37C60A63B797B0A797C0B802 /* GalaxySSIHealthAtlasAgentHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAgentHandoff.swift; sourceTree = "<group>"; };
+    77250658843A3AAD50E9681B /* GalaxySSIHealthAtlasArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasArtwork.swift; sourceTree = "<group>"; };
+    94A44D7D7AAABC6353A3E171 /* GalaxySSIHealthAtlasDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDetail.swift; sourceTree = "<group>"; };
+    41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasResearch.swift; sourceTree = "<group>"; };
+    2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSimulationPanel.swift; sourceTree = "<group>"; };
+    490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasState.swift; sourceTree = "<group>"; };
+    A8967AB28E2E61CC057AEBD3 /* GalaxySSIHealthAtlasTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTests.swift; sourceTree = "<group>"; };
+    B85158A6D23086CFED45AC26 /* body-atlas */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "body-atlas"; sourceTree = "<group>"; };
+    EB1C928817FD0B78C0D6F86C /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/BodyAtlas.strings"; sourceTree = "<group>"; };
+    B8A1B2B5E765E6F693FE6E5D /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/BodyAtlas.strings"; sourceTree = "<group>"; };
+    C43210000000000000000012 /* GalaxySSIConversationRenamePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationRenamePolicy.swift; sourceTree = "<group>"; };
+    C43210000000000000000022 /* GalaxySSIConversationRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationRenameView.swift; sourceTree = "<group>"; };
+    C43210000000000000000032 /* GalaxySSIConversationRenameTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationRenameTests.swift; sourceTree = "<group>"; };
+    C43080000000000000000012 /* PublicNewsArticleRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticleRetryPolicy.swift; sourceTree = "<group>"; };
+    C43080000000000000000022 /* PublicNewsArticleRetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticleRetryTests.swift; sourceTree = "<group>"; };
+    C43070000000000000000012 /* PublicNewsBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBudget.swift; sourceTree = "<group>"; };
+    C43070000000000000000022 /* PublicNewsBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBudgetTests.swift; sourceTree = "<group>"; };
+    C43060000000000000000012 /* GalaxySSIDesktopDisconnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDesktopDisconnectView.swift; sourceTree = "<group>"; };
+    C43060000000000000000022 /* GalaxySSIDesktopDisconnectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDesktopDisconnectTests.swift; sourceTree = "<group>"; };
+    C43040000000000000000052 /* GalaxySSIHealthMotionLedgerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMotionLedgerTests.swift; sourceTree = "<group>"; };
+    C43040000000000000000072 /* GalaxySSIHealthGuidanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthGuidanceTests.swift; sourceTree = "<group>"; };
+    C43040000000000000000082 /* GalaxySSIHealthMotionStorageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMotionStorageTests.swift; sourceTree = "<group>"; };
+    C43040000000000000000012 /* GalaxySSIHealthMotionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMotionState.swift; sourceTree = "<group>"; };
+    C43140000000000000000012 /* GalaxySSIHealthActivityComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthActivityComparison.swift; sourceTree = "<group>"; };
+    C43140000000000000000022 /* GalaxySSIHealthActivityHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthActivityHistoryStore.swift; sourceTree = "<group>"; };
+    C43140000000000000000032 /* GalaxySSIHealthActivityComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthActivityComparisonView.swift; sourceTree = "<group>"; };
+    C43140000000000000000052 /* GalaxySSIHealthMeasurementComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMeasurementComparison.swift; sourceTree = "<group>"; };
+    C43150000000000000000012 /* GalaxySSIHealthMeasurementPeriods.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMeasurementPeriods.swift; sourceTree = "<group>"; };
+    C43150000000000000000022 /* GalaxySSIHealthMeasurementQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMeasurementQuery.swift; sourceTree = "<group>"; };
+    C43150000000000000000032 /* GalaxySSIHealthMeasurementPeriodText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMeasurementPeriodText.swift; sourceTree = "<group>"; };
+    C43150000000000000000042 /* GalaxySSIHealthMeasurementPeriodPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMeasurementPeriodPicker.swift; sourceTree = "<group>"; };
+    C43150000000000000000052 /* GalaxySSIHealthMeasurementPeriodComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMeasurementPeriodComparisonView.swift; sourceTree = "<group>"; };
+    C43150000000000000000062 /* GalaxySSIHealthMeasurementOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMeasurementOverviewView.swift; sourceTree = "<group>"; };
+    C43150000000000000000072 /* GalaxySSIHealthMeasurementPeriodTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMeasurementPeriodTests.swift; sourceTree = "<group>"; };
+    C43170000000000000000012 /* GalaxySSIHealthMeasurementList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMeasurementList.swift; sourceTree = "<group>"; };
+    C43170000000000000000022 /* GalaxySSIHealthMeasurementListTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMeasurementListTests.swift; sourceTree = "<group>"; };
+    C43180000000000000000012 /* GalaxySSIHealthTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthTheme.swift; sourceTree = "<group>"; };
+    C43180000000000000000022 /* GalaxySSIHealthFunctionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthFunctionsView.swift; sourceTree = "<group>"; };
+    C43180000000000000000032 /* GalaxySSIHealthThemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthThemeTests.swift; sourceTree = "<group>"; };
+    C43140000000000000000072 /* GalaxySSIHealthMeasurementComparisonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMeasurementComparisonTests.swift; sourceTree = "<group>"; };
+    C43140000000000000000042 /* GalaxySSIHealthActivityComparisonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthActivityComparisonTests.swift; sourceTree = "<group>"; };
+    C43050000000000000000012 /* GalaxySSIHealthCyclingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCyclingSession.swift; sourceTree = "<group>"; };
+    C43050000000000000000022 /* GalaxySSIHealthCyclingSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCyclingSessionTests.swift; sourceTree = "<group>"; };
+    C43040000000000000000022 /* GalaxySSIHealthMotionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMotionController.swift; sourceTree = "<group>"; };
+    C43040000000000000000032 /* GalaxySSIHealthMotionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMotionView.swift; sourceTree = "<group>"; };
+    C43040000000000000000042 /* GalaxySSIHealthOverviewGuidance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOverviewGuidance.swift; sourceTree = "<group>"; };
+    C43040000000000000000064 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+    C43030000000000000000032 /* GalaxySSIHealthOverviewRangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOverviewRangeTests.swift; sourceTree = "<group>"; };
+    C43030000000000000000012 /* GalaxySSIHealthOverviewRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOverviewRange.swift; sourceTree = "<group>"; };
+    C43030000000000000000022 /* GalaxySSIHealthOverviewMetricRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOverviewMetricRow.swift; sourceTree = "<group>"; };
+    C43020000000000000000012 /* GalaxySSIHealthOverviewAttention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOverviewAttention.swift; sourceTree = "<group>"; };
+    C42990000000000000000012 /* GalaxySSIHealthReportDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportDelivery.swift; sourceTree = "<group>"; };
+    C42990000000000000000022 /* GalaxySSIHealthReportFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportFailure.swift; sourceTree = "<group>"; };
+    C42990000000000000000032 /* GalaxySSIHealthReportRowValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportRowValidationTests.swift; sourceTree = "<group>"; };
+    C42990000000000000000042 /* GalaxySSIHealthReportDeliveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportDeliveryTests.swift; sourceTree = "<group>"; };
+    C42980000000000000000012 /* GalaxySSIHealthReportBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportBatch.swift; sourceTree = "<group>"; };
+    C42980000000000000000022 /* GalaxySSIHealthReportContextForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportContextForm.swift; sourceTree = "<group>"; };
+    C42980000000000000000032 /* GalaxySSIHealthSelectedFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthSelectedFiles.swift; sourceTree = "<group>"; };
+    C42980000000000000000042 /* GalaxySSIHealthSelectedFilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthSelectedFilesView.swift; sourceTree = "<group>"; };
+    C42980000000000000000052 /* GalaxySSIHealthReportBatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportBatchTests.swift; sourceTree = "<group>"; };
+    C42950000000000000000012 /* GalaxySSIHealthReportQuickImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportQuickImport.swift; sourceTree = "<group>"; };
+    C42950000000000000000032 /* GalaxySSIHealthReportQuickImportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportQuickImportTests.swift; sourceTree = "<group>"; };
+    C42960000000000000000012 /* GalaxySSIHealthOverviewCare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOverviewCare.swift; sourceTree = "<group>"; };
+    C42960000000000000000022 /* GalaxySSIHealthOverviewCareSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOverviewCareSection.swift; sourceTree = "<group>"; };
+    C42960000000000000000032 /* GalaxySSIHealthOverviewCareTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOverviewCareTests.swift; sourceTree = "<group>"; };
+    C42940000000000000000012 /* GalaxySSIHealthReportCodex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportCodex.swift; sourceTree = "<group>"; };
+    C42940000000000000000022 /* GalaxySSIHealthReportCodexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportCodexTests.swift; sourceTree = "<group>"; };
+    C42920000000000000000012 /* GalaxySSIHealthAppointmentReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAppointmentReminder.swift; sourceTree = "<group>"; };
+    C42920000000000000000022 /* GalaxySSIHealthAppointmentNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAppointmentNotifications.swift; sourceTree = "<group>"; };
+    C42920000000000000000032 /* GalaxySSIHealthAppointmentBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAppointmentBackground.swift; sourceTree = "<group>"; };
+    C42920000000000000000042 /* GalaxySSIHealthAppointmentReminderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAppointmentReminderView.swift; sourceTree = "<group>"; };
+    C42920000000000000000052 /* GalaxySSIHealthAppointmentReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAppointmentReminderTests.swift; sourceTree = "<group>"; };
+    C42930000000000000000012 /* GalaxySSIHealthReportVision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportVision.swift; sourceTree = "<group>"; };
+    C42930000000000000000022 /* GalaxySSIHealthReportVisionProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportVisionProvider.swift; sourceTree = "<group>"; };
+    C42930000000000000000032 /* GalaxySSIHealthReportVisionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportVisionView.swift; sourceTree = "<group>"; };
+    C42930000000000000000042 /* GalaxySSIHealthReportVisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReportVisionTests.swift; sourceTree = "<group>"; };
     D22980000000000000000001 /* GalaxySSIConversationSceneController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationSceneController.swift; sourceTree = "<group>"; };
     D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderHealthRecoveryTests.swift; sourceTree = "<group>"; };
     F22666000000000000000001 /* AgentInteractiveProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInteractiveProgress.swift; sourceTree = "<group>"; };
     F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentInteractiveProgressView.swift; sourceTree = "<group>"; };
     F22666000000000000000003 /* AgentInteractiveProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInteractiveProgressTests.swift; sourceTree = "<group>"; };
     F22680000000000000000001 /* AgentDirectVisionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectVisionPolicy.swift; sourceTree = "<group>"; };
+    C43130000000000000000012 /* AgentPeerAttachmentPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPeerAttachmentPreview.swift; sourceTree = "<group>"; };
     F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectVisionPolicyTests.swift; sourceTree = "<group>"; };
+    C43130000000000000000022 /* AgentPeerAttachmentPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPeerAttachmentPreviewTests.swift; sourceTree = "<group>"; };
     F22678000000000000000001 /* AgentReplySpeechController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReplySpeechController.swift; sourceTree = "<group>"; };
     F23234000000000000000001 /* MqttRouteAdvertisement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttRouteAdvertisement.swift; sourceTree = "<group>"; };
     F23234000000000000000002 /* MqttRouteState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttRouteState.swift; sourceTree = "<group>"; };
@@ -1564,6 +1752,20 @@
     D24251000000000000000004 /* GalaxySSIHealthVisitJournalDiscussionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthVisitJournalDiscussionView.swift; sourceTree = "<group>"; };
     A20000000000000000009875 /* GalaxySSIHealthCareMaintenance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareMaintenance.swift; sourceTree = "<group>"; };
     A20000000000000000009878 /* GalaxySSIHealthCareResearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareResearch.swift; sourceTree = "<group>"; };
+    B42840000000000000000002 /* GalaxySSIHealthCareModelAttention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareModelAttention.swift; sourceTree = "<group>"; };
+    B42840000000000000000004 /* GalaxySSIHealthCareModelAttentionRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareModelAttentionRecords.swift; sourceTree = "<group>"; };
+    B42840000000000000000006 /* GalaxySSIHealthCareModelAttentionDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareModelAttentionDelivery.swift; sourceTree = "<group>"; };
+    B42840000000000000000008 /* GalaxySSIHealthCareModelAttentionRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareModelAttentionRuntime.swift; sourceTree = "<group>"; };
+    B42840000000000000000010 /* GalaxySSIHealthCareModelAttentionBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareModelAttentionBackground.swift; sourceTree = "<group>"; };
+    B42840000000000000000012 /* GalaxySSIHealthCareModelAttentionLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareModelAttentionLifecycle.swift; sourceTree = "<group>"; };
+    B42860000000000000000002 /* GalaxySSIHealthCareRelatedContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareRelatedContext.swift; sourceTree = "<group>"; };
+    B42860000000000000000004 /* GalaxySSIHealthCareRelatedContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareRelatedContextTests.swift; sourceTree = "<group>"; };
+    B42890000000000000000002 /* GalaxySSIHealthCareClarificationRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareClarificationRecovery.swift; sourceTree = "<group>"; };
+    B42890000000000000000004 /* GalaxySSIHealthCareClarificationRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareClarificationRecoveryTests.swift; sourceTree = "<group>"; };
+    B42910000000000000000002 /* GalaxySSIHealthCareReviewQuestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareReviewQuestions.swift; sourceTree = "<group>"; };
+    B42910000000000000000004 /* GalaxySSIHealthCareReviewQuestionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareReviewQuestionsTests.swift; sourceTree = "<group>"; };
+    B42830000000000000000002 /* GalaxySSIHealthCareModelReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareModelReview.swift; sourceTree = "<group>"; };
+    B42830000000000000000004 /* GalaxySSIHealthCareModelReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareModelReviewView.swift; sourceTree = "<group>"; };
     A20000000000000000009879 /* GalaxySSIHealthCareResearchLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareResearchLifecycle.swift; sourceTree = "<group>"; };
     A20000000000000000009880 /* GalaxySSIHealthCareResearchControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareResearchControls.swift; sourceTree = "<group>"; };
     A20000000000000000009884 /* GalaxySSIHealthDesktopResearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthDesktopResearch.swift; sourceTree = "<group>"; };
@@ -1577,6 +1779,9 @@
     A20000000000000000009834 /* GalaxySSIHealthReviewReminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReviewReminders.swift; sourceTree = "<group>"; };
     A20000000000000000009835 /* GalaxySSIHealthReviewDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthReviewDelivery.swift; sourceTree = "<group>"; };
     A20000000000000000009809 /* GalaxySSIHealthTrendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthTrendView.swift; sourceTree = "<group>"; };
+    16F04974E932086F4FF70D48 /* GalaxySSIHealthAtlasAgentContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAgentContext.swift; sourceTree = "<group>"; };
+    3F3EE7BE07E2BEF431F5B42A /* GalaxySSIHealthAtlasTrendAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTrendAction.swift; sourceTree = "<group>"; };
+    82CAA5317D7AACF6D76773DE /* GalaxySSIHealthAtlasAgentContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAgentContextTests.swift; sourceTree = "<group>"; };
     A20000000000000000009862 /* GalaxySSIHealthCareComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareComparison.swift; sourceTree = "<group>"; };
     A20000000000000000009863 /* GalaxySSIHealthCareComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareComparisonView.swift; sourceTree = "<group>"; };
     A20000000000000000009812 /* GalaxySSIHealthBluetooth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthBluetooth.swift; sourceTree = "<group>"; };
@@ -1598,6 +1803,9 @@
     A20000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareProfileScopeView.swift; sourceTree = "<group>"; };
     A20000000000000000009805 /* GalaxySSIHealthBodyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthBodyView.swift; sourceTree = "<group>"; };
     A20000000000000000009806 /* GalaxySSIHealthBodyText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthBodyText.swift; sourceTree = "<group>"; };
+    F02B03B900B47D546DB439D9 /* GalaxySSIHealthAtlasOxygen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasOxygen.swift; sourceTree = "<group>"; };
+    76A9CC6DF454702C3FE6F392 /* GalaxySSIHealthAtlasOxygenText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasOxygenText.swift; sourceTree = "<group>"; };
+    15D472032F2DA29E96F4D650 /* GalaxySSIHealthAtlasOxygenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasOxygenTests.swift; sourceTree = "<group>"; };
     A20000000000000000001501 /* GalaxySSIAgentModelSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentModelSelectionView.swift; sourceTree = "<group>"; };
     A20000000000000000001503 /* AgentExecutionTargetStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionTargetStatus.swift; sourceTree = "<group>"; };
     A20000000000000000001436 /* GalaxySSIContactKindPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIContactKindPresentation.swift; sourceTree = "<group>"; };
@@ -1759,6 +1967,8 @@
     A20000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAndroidMenuComponents.swift; sourceTree = "<group>"; };
     A20000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentHomeSupportViews.swift; sourceTree = "<group>"; };
     A20000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentChatShortcuts.swift; sourceTree = "<group>"; };
+    C43100000000000000000012 /* GalaxySSIAgentChatShortcutLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentChatShortcutLayout.swift; sourceTree = "<group>"; };
+    C43100000000000000000022 /* GalaxySSIAgentChatShortcutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentChatShortcutTests.swift; sourceTree = "<group>"; };
     E35390000000000000000002 /* PublicNewsFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsFeed.swift; sourceTree = "<group>"; };
     E35380000000000000000012 /* PublicNewsSourceReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSourceReview.swift; sourceTree = "<group>"; };
     E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsPublisherDiscovery.swift; sourceTree = "<group>"; };
@@ -2001,6 +2211,10 @@
     A20000000000000000000495 /* AgentOcrLayoutAnalyzerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOcrLayoutAnalyzerTests.swift; sourceTree = "<group>"; };
     A20000000000000000009803 /* GalaxySSIHealthRecordsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthRecordsTests.swift; sourceTree = "<group>"; };
     D24251000000000000000005 /* GalaxySSIHealthVisitJournalDiscussionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthVisitJournalDiscussionTests.swift; sourceTree = "<group>"; };
+    B42840000000000000000014 /* GalaxySSIHealthCareModelAttentionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareModelAttentionTests.swift; sourceTree = "<group>"; };
+    B42880000000000000000002 /* GalaxySSIHealthCareActiveRevocationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareActiveRevocationTests.swift; sourceTree = "<group>"; };
+    B42900000000000000000002 /* GalaxySSIHealthCareEvaluationReplayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareEvaluationReplayTests.swift; sourceTree = "<group>"; };
+    B42830000000000000000006 /* GalaxySSIHealthCareModelReviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareModelReviewTests.swift; sourceTree = "<group>"; };
     E39090000000000000000004 /* GalaxySSIHealthOCRSourceContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthOCRSourceContextTests.swift; sourceTree = "<group>"; };
     A20000000000000000000668 /* AgentOfficeDocumentExtractorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOfficeDocumentExtractorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000496 /* GlobalEventPublisherPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalEventPublisherPolicy.swift; sourceTree = "<group>"; };
@@ -2572,6 +2786,7 @@
     D23397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentArtifactFeedbackPilotTests.swift; sourceTree = "<group>"; };
     D23388000000000000000001 /* AgentRemotePilotProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemotePilotProtocol.swift; sourceTree = "<group>"; };
     D23388000000000000000002 /* AgentRemotePilotProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemotePilotProtocolTests.swift; sourceTree = "<group>"; };
+    D23389000000000000000001 /* AgentRemotePilotSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemotePilotSelectionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000225 /* AgentSkillLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillLifecycleTests.swift; sourceTree = "<group>"; };
     A20000000000000000000226 /* AgentSkillExecutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillExecutionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillPackageInstallerTests.swift; sourceTree = "<group>"; };
@@ -2668,6 +2883,10 @@
     A20000000000000000000297 /* AgentIOSMcpNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSMcpNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOnDeviceRuntimeNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000350 /* AgentProviderHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderHealth.swift; sourceTree = "<group>"; };
+    05EA412281059396FCCFC26D /* GalaxySSIHealthAtlasPhysiology.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPhysiology.swift; sourceTree = "<group>"; };
+    FE041305DEF774444B2536EE /* GalaxySSIHealthAtlasPhysiologyText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPhysiologyText.swift; sourceTree = "<group>"; };
+    5BEF2B56A05F06056BCC4CF5 /* GalaxySSIHealthAtlasPhysiologyPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPhysiologyPanel.swift; sourceTree = "<group>"; };
+    6EF107B122E10D994EC957C5 /* GalaxySSIHealthAtlasPhysiologyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPhysiologyTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -2688,9 +2907,19 @@
     A40000000000000000000002 /* GalaxySSI */ = {
       isa = PBXGroup;
       children = (
+        919373B1F2EC81778D6C1518 /* GalaxySSIHealthAtlas.swift */,
+        37C60A63B797B0A797C0B802 /* GalaxySSIHealthAtlasAgentHandoff.swift */,
+        77250658843A3AAD50E9681B /* GalaxySSIHealthAtlasArtwork.swift */,
+        94A44D7D7AAABC6353A3E171 /* GalaxySSIHealthAtlasDetail.swift */,
+        41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */,
+        2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */,
+        490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */,
+        B85158A6D23086CFED45AC26 /* body-atlas */,
+        42B68EDFC3BE81F4555E8974 /* BodyAtlas.strings */,
         F22666000000000000000001 /* AgentInteractiveProgress.swift */,
         F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */,
         F22680000000000000000001 /* AgentDirectVisionPolicy.swift */,
+        C43130000000000000000012 /* AgentPeerAttachmentPreview.swift */,
         F22678000000000000000001 /* AgentReplySpeechController.swift */,
         F23234000000000000000001 /* MqttRouteAdvertisement.swift */,
         F23234000000000000000002 /* MqttRouteState.swift */,
@@ -3347,6 +3576,7 @@
         E3699A000000000000000002 /* AgentLocalResearchDisclosure.swift */,
         A20000000000000000000889 /* Assets.xcassets */,
         A41000000000000000000890 /* Localizable.strings */,
+        C43040000000000000000062 /* InfoPlist.strings */,
         A20000000000000000000888 /* GalaxySSIAndroidParityUI.swift */,
         A20000000000000000001880 /* GalaxySSIAgentHomeScanAttachments.swift */,
         F22661000000000000000001 /* GalaxySSIScannedAgentConversation.swift */,
@@ -3387,6 +3617,7 @@
         A20000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift */,
         A20000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift */,
         A20000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift */,
+        C43100000000000000000012 /* GalaxySSIAgentChatShortcutLayout.swift */,
         E35390000000000000000002 /* PublicNewsFeed.swift */,
         E35380000000000000000012 /* PublicNewsSourceReview.swift */,
         E36510000000000000000002 /* PublicNewsPublisherDiscovery.swift */,
@@ -3512,6 +3743,49 @@
         A2000000000000000000F5B7 /* GalaxySSIHealthInstructionReviewView.swift */,
         A2000000000000000000F5B8 /* GalaxySSIHealthInstructionEditor.swift */,
         A2000000000000000000F493 /* GalaxySSIHealthEncounterEditor.swift */,
+        C42920000000000000000012 /* GalaxySSIHealthAppointmentReminder.swift */,
+        C42920000000000000000022 /* GalaxySSIHealthAppointmentNotifications.swift */,
+        C42920000000000000000032 /* GalaxySSIHealthAppointmentBackground.swift */,
+        C42920000000000000000042 /* GalaxySSIHealthAppointmentReminderView.swift */,
+        C42930000000000000000012 /* GalaxySSIHealthReportVision.swift */,
+        C42930000000000000000022 /* GalaxySSIHealthReportVisionProvider.swift */,
+        C42930000000000000000032 /* GalaxySSIHealthReportVisionView.swift */,
+        C42940000000000000000012 /* GalaxySSIHealthReportCodex.swift */,
+        C43020000000000000000012 /* GalaxySSIHealthOverviewAttention.swift */,
+        C43030000000000000000012 /* GalaxySSIHealthOverviewRange.swift */,
+        C43080000000000000000012 /* PublicNewsArticleRetryPolicy.swift */,
+        C43070000000000000000012 /* PublicNewsBudget.swift */,
+        C43030000000000000000022 /* GalaxySSIHealthOverviewMetricRow.swift */,
+        C43060000000000000000012 /* GalaxySSIDesktopDisconnectView.swift */,
+        C43040000000000000000012 /* GalaxySSIHealthMotionState.swift */,
+        C43140000000000000000012 /* GalaxySSIHealthActivityComparison.swift */,
+        C43140000000000000000022 /* GalaxySSIHealthActivityHistoryStore.swift */,
+        C43140000000000000000032 /* GalaxySSIHealthActivityComparisonView.swift */,
+        C43140000000000000000052 /* GalaxySSIHealthMeasurementComparison.swift */,
+        C43150000000000000000012 /* GalaxySSIHealthMeasurementPeriods.swift */,
+        C43210000000000000000012 /* GalaxySSIConversationRenamePolicy.swift */,
+        C43210000000000000000022 /* GalaxySSIConversationRenameView.swift */,
+        C43170000000000000000012 /* GalaxySSIHealthMeasurementList.swift */,
+        C43180000000000000000012 /* GalaxySSIHealthTheme.swift */,
+        C43180000000000000000022 /* GalaxySSIHealthFunctionsView.swift */,
+        C43150000000000000000022 /* GalaxySSIHealthMeasurementQuery.swift */,
+        C43150000000000000000032 /* GalaxySSIHealthMeasurementPeriodText.swift */,
+        C43150000000000000000042 /* GalaxySSIHealthMeasurementPeriodPicker.swift */,
+        C43150000000000000000052 /* GalaxySSIHealthMeasurementPeriodComparisonView.swift */,
+        C43150000000000000000062 /* GalaxySSIHealthMeasurementOverviewView.swift */,
+        C43050000000000000000012 /* GalaxySSIHealthCyclingSession.swift */,
+        C43040000000000000000022 /* GalaxySSIHealthMotionController.swift */,
+        C43040000000000000000032 /* GalaxySSIHealthMotionView.swift */,
+        C43040000000000000000042 /* GalaxySSIHealthOverviewGuidance.swift */,
+        C42990000000000000000012 /* GalaxySSIHealthReportDelivery.swift */,
+        C42990000000000000000022 /* GalaxySSIHealthReportFailure.swift */,
+        C42950000000000000000012 /* GalaxySSIHealthReportQuickImport.swift */,
+        C42980000000000000000012 /* GalaxySSIHealthReportBatch.swift */,
+        C42980000000000000000022 /* GalaxySSIHealthReportContextForm.swift */,
+        C42980000000000000000032 /* GalaxySSIHealthSelectedFiles.swift */,
+        C42980000000000000000042 /* GalaxySSIHealthSelectedFilesView.swift */,
+        C42960000000000000000012 /* GalaxySSIHealthOverviewCare.swift */,
+        C42960000000000000000022 /* GalaxySSIHealthOverviewCareSection.swift */,
         A2000000000000000000F431 /* GalaxySSIHealthCareVisit.swift */,
         A2000000000000000000F432 /* GalaxySSIHealthCareVisitView.swift */,
         A20000000000000000009828 /* GalaxySSIHealthReportReview.swift */,
@@ -3530,6 +3804,17 @@
         D24251000000000000000004 /* GalaxySSIHealthVisitJournalDiscussionView.swift */,
         A20000000000000000009875 /* GalaxySSIHealthCareMaintenance.swift */,
         A20000000000000000009878 /* GalaxySSIHealthCareResearch.swift */,
+        B42840000000000000000002 /* GalaxySSIHealthCareModelAttention.swift */,
+        B42840000000000000000004 /* GalaxySSIHealthCareModelAttentionRecords.swift */,
+        B42840000000000000000006 /* GalaxySSIHealthCareModelAttentionDelivery.swift */,
+        B42840000000000000000008 /* GalaxySSIHealthCareModelAttentionRuntime.swift */,
+        B42840000000000000000010 /* GalaxySSIHealthCareModelAttentionBackground.swift */,
+        B42840000000000000000012 /* GalaxySSIHealthCareModelAttentionLifecycle.swift */,
+        B42860000000000000000002 /* GalaxySSIHealthCareRelatedContext.swift */,
+        B42890000000000000000002 /* GalaxySSIHealthCareClarificationRecovery.swift */,
+        B42910000000000000000002 /* GalaxySSIHealthCareReviewQuestions.swift */,
+        B42830000000000000000002 /* GalaxySSIHealthCareModelReview.swift */,
+        B42830000000000000000004 /* GalaxySSIHealthCareModelReviewView.swift */,
         A20000000000000000009879 /* GalaxySSIHealthCareResearchLifecycle.swift */,
         A20000000000000000009880 /* GalaxySSIHealthCareResearchControls.swift */,
         A20000000000000000009884 /* GalaxySSIHealthDesktopResearch.swift */,
@@ -3543,6 +3828,8 @@
         A20000000000000000009834 /* GalaxySSIHealthReviewReminders.swift */,
         A20000000000000000009835 /* GalaxySSIHealthReviewDelivery.swift */,
         A20000000000000000009809 /* GalaxySSIHealthTrendView.swift */,
+        16F04974E932086F4FF70D48 /* GalaxySSIHealthAtlasAgentContext.swift */,
+        3F3EE7BE07E2BEF431F5B42A /* GalaxySSIHealthAtlasTrendAction.swift */,
         A20000000000000000009862 /* GalaxySSIHealthCareComparison.swift */,
         A20000000000000000009863 /* GalaxySSIHealthCareComparisonView.swift */,
         A20000000000000000009812 /* GalaxySSIHealthBluetooth.swift */,
@@ -3564,6 +3851,8 @@
         A20000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift */,
         A20000000000000000009805 /* GalaxySSIHealthBodyView.swift */,
         A20000000000000000009806 /* GalaxySSIHealthBodyText.swift */,
+        F02B03B900B47D546DB439D9 /* GalaxySSIHealthAtlasOxygen.swift */,
+        76A9CC6DF454702C3FE6F392 /* GalaxySSIHealthAtlasOxygenText.swift */,
         A20000000000000000001436 /* GalaxySSIContactKindPresentation.swift */,
         A20000000000000000000990 /* GalaxySSIAddContactView.swift */,
         A20000000000000000000991 /* GalaxySSICloudModelOnboardingView.swift */,
@@ -3705,6 +3994,9 @@
         A20000000000000000001761 /* GalaxySSIContactRowView.swift */,
         A20000000000000000001760 /* GalaxySSIContactAvatarView.swift */,
         F23000000000000000000001 /* GalaxySSIChatHistoryDatabase.swift */,
+        05EA412281059396FCCFC26D /* GalaxySSIHealthAtlasPhysiology.swift */,
+        FE041305DEF774444B2536EE /* GalaxySSIHealthAtlasPhysiologyText.swift */,
+        5BEF2B56A05F06056BCC4CF5 /* GalaxySSIHealthAtlasPhysiologyPanel.swift */,
       );
       path = GalaxySSI;
       sourceTree = "<group>";
@@ -3712,12 +4004,14 @@
     A40000000000000000000003 /* GalaxySSITests */ = {
       isa = PBXGroup;
       children = (
+        A8967AB28E2E61CC057AEBD3 /* GalaxySSIHealthAtlasTests.swift */,
         D22979000000000000000002 /* AgentActionEffectExecutorTests.swift */,
         D22980100000000000000001 /* AgentRuntimeTimingTests.swift */,
         D22981000000000000000002 /* AgentImagePipelineTests.swift */,
         D22677000000000000000001 /* AgentProviderHealthRecoveryTests.swift */,
         F22666000000000000000003 /* AgentInteractiveProgressTests.swift */,
         F22680000000000000000002 /* AgentDirectVisionPolicyTests.swift */,
+        C43130000000000000000022 /* AgentPeerAttachmentPreviewTests.swift */,
         F22678000000000000000004 /* AgentReplySpeechControllerTests.swift */,
         D36650000000000000000002 /* AgentReplySpeechFooterTests.swift */,
         F23234000000000000000004 /* MqttPeerRouteSessionTests.swift */,
@@ -3890,6 +4184,7 @@
         D23397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift */,
         D23388000000000000000001 /* AgentRemotePilotProtocol.swift */,
         D23388000000000000000002 /* AgentRemotePilotProtocolTests.swift */,
+        D23389000000000000000001 /* AgentRemotePilotSelectionTests.swift */,
         A20000000000000000000225 /* AgentSkillLifecycleTests.swift */,
         A20000000000000000000226 /* AgentSkillExecutionTests.swift */,
         A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */,
@@ -3966,7 +4261,39 @@
         E22626000000000000000002 /* AgentGlobalRunSlotsTests.swift */,
         A20000000000000000000495 /* AgentOcrLayoutAnalyzerTests.swift */,
         A20000000000000000009803 /* GalaxySSIHealthRecordsTests.swift */,
+        15D472032F2DA29E96F4D650 /* GalaxySSIHealthAtlasOxygenTests.swift */,
+        B42880000000000000000002 /* GalaxySSIHealthCareActiveRevocationTests.swift */,
+        B42900000000000000000002 /* GalaxySSIHealthCareEvaluationReplayTests.swift */,
+        C42920000000000000000052 /* GalaxySSIHealthAppointmentReminderTests.swift */,
+        C42930000000000000000042 /* GalaxySSIHealthReportVisionTests.swift */,
+        C42940000000000000000022 /* GalaxySSIHealthReportCodexTests.swift */,
+        C42950000000000000000032 /* GalaxySSIHealthReportQuickImportTests.swift */,
+        C42960000000000000000032 /* GalaxySSIHealthOverviewCareTests.swift */,
+        C42980000000000000000052 /* GalaxySSIHealthReportBatchTests.swift */,
+        C42990000000000000000032 /* GalaxySSIHealthReportRowValidationTests.swift */,
+        C43030000000000000000032 /* GalaxySSIHealthOverviewRangeTests.swift */,
+        C43080000000000000000022 /* PublicNewsArticleRetryTests.swift */,
+        C43070000000000000000022 /* PublicNewsBudgetTests.swift */,
+        C43100000000000000000022 /* GalaxySSIAgentChatShortcutTests.swift */,
+        C43060000000000000000022 /* GalaxySSIDesktopDisconnectTests.swift */,
+        C43040000000000000000052 /* GalaxySSIHealthMotionLedgerTests.swift */,
+        C43140000000000000000042 /* GalaxySSIHealthActivityComparisonTests.swift */,
+        C43140000000000000000072 /* GalaxySSIHealthMeasurementComparisonTests.swift */,
+        C43150000000000000000072 /* GalaxySSIHealthMeasurementPeriodTests.swift */,
+        C43210000000000000000032 /* GalaxySSIConversationRenameTests.swift */,
+        C43170000000000000000022 /* GalaxySSIHealthMeasurementListTests.swift */,
+        C43180000000000000000032 /* GalaxySSIHealthThemeTests.swift */,
+        82CAA5317D7AACF6D76773DE /* GalaxySSIHealthAtlasAgentContextTests.swift */,
+        C43050000000000000000022 /* GalaxySSIHealthCyclingSessionTests.swift */,
+        C43040000000000000000072 /* GalaxySSIHealthGuidanceTests.swift */,
+        C43040000000000000000082 /* GalaxySSIHealthMotionStorageTests.swift */,
+        C42990000000000000000042 /* GalaxySSIHealthReportDeliveryTests.swift */,
         D24251000000000000000005 /* GalaxySSIHealthVisitJournalDiscussionTests.swift */,
+        B42840000000000000000014 /* GalaxySSIHealthCareModelAttentionTests.swift */,
+        B42860000000000000000004 /* GalaxySSIHealthCareRelatedContextTests.swift */,
+        B42890000000000000000004 /* GalaxySSIHealthCareClarificationRecoveryTests.swift */,
+        B42910000000000000000004 /* GalaxySSIHealthCareReviewQuestionsTests.swift */,
+        B42830000000000000000006 /* GalaxySSIHealthCareModelReviewTests.swift */,
         E39090000000000000000004 /* GalaxySSIHealthOCRSourceContextTests.swift */,
         A20000000000000000000668 /* AgentOfficeDocumentExtractorTests.swift */,
         A20000000000000000000489 /* AgentPreferenceModeTests.swift */,
@@ -4023,6 +4350,7 @@
         A20000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift */,
         A20000000000000000000797 /* AgentRuntimePackInstallerTests.swift */,
         A20000000000000000000407 /* AgentDirectNativeToolPlannerTests.swift */,
+        6EF107B122E10D994EC957C5 /* GalaxySSIHealthAtlasPhysiologyTests.swift */,
       );
       path = GalaxySSITests;
       sourceTree = "<group>";
@@ -4039,6 +4367,8 @@
 /* End PBXGroup section */
 
 /* Begin PBXVariantGroup section */
+    42B68EDFC3BE81F4555E8974 /* BodyAtlas.strings */ = {isa = PBXVariantGroup; children = (EB1C928817FD0B78C0D6F86C /* en */, B8A1B2B5E765E6F693FE6E5D /* zh-Hans */,); name = BodyAtlas.strings; sourceTree = "<group>"; };
+    C43040000000000000000062 /* InfoPlist.strings */ = {isa = PBXVariantGroup; children = (C43040000000000000000064 /* zh-Hans */,); name = InfoPlist.strings; sourceTree = "<group>"; };
     A41000000000000000000890 /* Localizable.strings */ = {
       isa = PBXVariantGroup;
       children = (
@@ -4132,7 +4462,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (E36400000000000000000003 /* vad in Resources */, A10000000000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F35620000000000000000001 /* browser-session-engine.cjs in Resources */, F35620000000000000000002 /* browser-runtime-readiness.cjs in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */, E3699C000000000000000003 /* research-quality.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (40A8F2E0933DD60C3E202D5C /* body-atlas in Resources */, 7E9C74C29FE3236437B57ACB /* BodyAtlas.strings in Resources */, E36400000000000000000003 /* vad in Resources */, A10000000000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F35620000000000000000001 /* browser-session-engine.cjs in Resources */, F35620000000000000000002 /* browser-runtime-readiness.cjs in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, C43040000000000000000061 /* InfoPlist.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */, E3699C000000000000000003 /* research-quality.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (E3699C000000000000000005 /* quality-cases.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
@@ -4166,6 +4496,13 @@
       isa = PBXSourcesBuildPhase;
       buildActionMask = 2147483647;
       files = (
+        8332FF366E1CB020728E3B49 /* GalaxySSIHealthAtlas.swift in Sources */,
+        8D35CFD559C1355DCB35BDED /* GalaxySSIHealthAtlasAgentHandoff.swift in Sources */,
+        1E81F8D329E13C8B46E1D204 /* GalaxySSIHealthAtlasArtwork.swift in Sources */,
+        56668657960EE8B00531B479 /* GalaxySSIHealthAtlasDetail.swift in Sources */,
+        3A27D153792D057E63607118 /* GalaxySSIHealthAtlasResearch.swift in Sources */,
+        11A6C0253F091CDA9CEA0803 /* GalaxySSIHealthAtlasSimulationPanel.swift in Sources */,
+        F81EA90A113A7DE2667956C6 /* GalaxySSIHealthAtlasState.swift in Sources */,
         F12666000000000000000001 /* AgentInteractiveProgress.swift in Sources */,
         F12666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift in Sources */,
         A1000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift in Sources */,
@@ -4410,6 +4747,7 @@
         A100000000000000000009F0 /* VoiceReminderSnapshot.swift in Sources */,
         A10000000000000000000587 /* VoiceReplySpeechService.swift in Sources */,
         F12680000000000000000001 /* AgentDirectVisionPolicy.swift in Sources */,
+        C43130000000000000000011 /* AgentPeerAttachmentPreview.swift in Sources */,
         F12678000000000000000001 /* AgentReplySpeechController.swift in Sources */,
         F13234000000000000000001 /* MqttRouteAdvertisement.swift in Sources */,
         F13234000000000000000002 /* MqttRouteState.swift in Sources */,
@@ -4852,6 +5190,7 @@
         A10000000000000000000893 /* GalaxySSIAndroidMenuComponents.swift in Sources */,
         A10000000000000000000899 /* GalaxySSIAgentHomeSupportViews.swift in Sources */,
         A10000000000000000001701 /* GalaxySSIAgentChatShortcuts.swift in Sources */,
+        C43100000000000000000011 /* GalaxySSIAgentChatShortcutLayout.swift in Sources */,
         E35390000000000000000001 /* PublicNewsFeed.swift in Sources */,
         E35380000000000000000011 /* PublicNewsSourceReview.swift in Sources */,
         E36510000000000000000001 /* PublicNewsPublisherDiscovery.swift in Sources */,
@@ -4977,6 +5316,49 @@
         A1000000000000000000F5B7 /* GalaxySSIHealthInstructionReviewView.swift in Sources */,
         A1000000000000000000F5B8 /* GalaxySSIHealthInstructionEditor.swift in Sources */,
         A1000000000000000000F493 /* GalaxySSIHealthEncounterEditor.swift in Sources */,
+        C42920000000000000000011 /* GalaxySSIHealthAppointmentReminder.swift in Sources */,
+        C42920000000000000000021 /* GalaxySSIHealthAppointmentNotifications.swift in Sources */,
+        C42920000000000000000031 /* GalaxySSIHealthAppointmentBackground.swift in Sources */,
+        C42920000000000000000041 /* GalaxySSIHealthAppointmentReminderView.swift in Sources */,
+        C42930000000000000000011 /* GalaxySSIHealthReportVision.swift in Sources */,
+        C42930000000000000000021 /* GalaxySSIHealthReportVisionProvider.swift in Sources */,
+        C42930000000000000000031 /* GalaxySSIHealthReportVisionView.swift in Sources */,
+        C42940000000000000000011 /* GalaxySSIHealthReportCodex.swift in Sources */,
+        C42990000000000000000011 /* GalaxySSIHealthReportDelivery.swift in Sources */,
+        C43020000000000000000011 /* GalaxySSIHealthOverviewAttention.swift in Sources */,
+        C43030000000000000000011 /* GalaxySSIHealthOverviewRange.swift in Sources */,
+        C43080000000000000000011 /* PublicNewsArticleRetryPolicy.swift in Sources */,
+        C43070000000000000000011 /* PublicNewsBudget.swift in Sources */,
+        C43030000000000000000021 /* GalaxySSIHealthOverviewMetricRow.swift in Sources */,
+        C43060000000000000000011 /* GalaxySSIDesktopDisconnectView.swift in Sources */,
+        C43040000000000000000011 /* GalaxySSIHealthMotionState.swift in Sources */,
+        C43140000000000000000011 /* GalaxySSIHealthActivityComparison.swift in Sources */,
+        C43140000000000000000021 /* GalaxySSIHealthActivityHistoryStore.swift in Sources */,
+        C43140000000000000000031 /* GalaxySSIHealthActivityComparisonView.swift in Sources */,
+        C43140000000000000000051 /* GalaxySSIHealthMeasurementComparison.swift in Sources */,
+        C43150000000000000000011 /* GalaxySSIHealthMeasurementPeriods.swift in Sources */,
+        C43210000000000000000011 /* GalaxySSIConversationRenamePolicy.swift in Sources */,
+        C43210000000000000000021 /* GalaxySSIConversationRenameView.swift in Sources */,
+        C43170000000000000000011 /* GalaxySSIHealthMeasurementList.swift in Sources */,
+        C43180000000000000000011 /* GalaxySSIHealthTheme.swift in Sources */,
+        C43180000000000000000021 /* GalaxySSIHealthFunctionsView.swift in Sources */,
+        C43150000000000000000021 /* GalaxySSIHealthMeasurementQuery.swift in Sources */,
+        C43150000000000000000031 /* GalaxySSIHealthMeasurementPeriodText.swift in Sources */,
+        C43150000000000000000041 /* GalaxySSIHealthMeasurementPeriodPicker.swift in Sources */,
+        C43150000000000000000051 /* GalaxySSIHealthMeasurementPeriodComparisonView.swift in Sources */,
+        C43150000000000000000061 /* GalaxySSIHealthMeasurementOverviewView.swift in Sources */,
+        C43050000000000000000011 /* GalaxySSIHealthCyclingSession.swift in Sources */,
+        C43040000000000000000021 /* GalaxySSIHealthMotionController.swift in Sources */,
+        C43040000000000000000031 /* GalaxySSIHealthMotionView.swift in Sources */,
+        C43040000000000000000041 /* GalaxySSIHealthOverviewGuidance.swift in Sources */,
+        C42990000000000000000021 /* GalaxySSIHealthReportFailure.swift in Sources */,
+        C42950000000000000000011 /* GalaxySSIHealthReportQuickImport.swift in Sources */,
+        C42980000000000000000011 /* GalaxySSIHealthReportBatch.swift in Sources */,
+        C42980000000000000000021 /* GalaxySSIHealthReportContextForm.swift in Sources */,
+        C42980000000000000000031 /* GalaxySSIHealthSelectedFiles.swift in Sources */,
+        C42980000000000000000041 /* GalaxySSIHealthSelectedFilesView.swift in Sources */,
+        C42960000000000000000011 /* GalaxySSIHealthOverviewCare.swift in Sources */,
+        C42960000000000000000021 /* GalaxySSIHealthOverviewCareSection.swift in Sources */,
         A1000000000000000000F431 /* GalaxySSIHealthCareVisit.swift in Sources */,
         A1000000000000000000F432 /* GalaxySSIHealthCareVisitView.swift in Sources */,
         A10000000000000000009828 /* GalaxySSIHealthReportReview.swift in Sources */,
@@ -4995,6 +5377,17 @@
         D14251000000000000000004 /* GalaxySSIHealthVisitJournalDiscussionView.swift in Sources */,
         A10000000000000000009875 /* GalaxySSIHealthCareMaintenance.swift in Sources */,
         A10000000000000000009878 /* GalaxySSIHealthCareResearch.swift in Sources */,
+        B42840000000000000000001 /* GalaxySSIHealthCareModelAttention.swift in Sources */,
+        B42840000000000000000003 /* GalaxySSIHealthCareModelAttentionRecords.swift in Sources */,
+        B42840000000000000000005 /* GalaxySSIHealthCareModelAttentionDelivery.swift in Sources */,
+        B42840000000000000000007 /* GalaxySSIHealthCareModelAttentionRuntime.swift in Sources */,
+        B42840000000000000000009 /* GalaxySSIHealthCareModelAttentionBackground.swift in Sources */,
+        B42840000000000000000011 /* GalaxySSIHealthCareModelAttentionLifecycle.swift in Sources */,
+        B42860000000000000000001 /* GalaxySSIHealthCareRelatedContext.swift in Sources */,
+        B42890000000000000000001 /* GalaxySSIHealthCareClarificationRecovery.swift in Sources */,
+        B42910000000000000000001 /* GalaxySSIHealthCareReviewQuestions.swift in Sources */,
+        B42830000000000000000001 /* GalaxySSIHealthCareModelReview.swift in Sources */,
+        B42830000000000000000003 /* GalaxySSIHealthCareModelReviewView.swift in Sources */,
         A10000000000000000009879 /* GalaxySSIHealthCareResearchLifecycle.swift in Sources */,
         A10000000000000000009880 /* GalaxySSIHealthCareResearchControls.swift in Sources */,
         A10000000000000000009884 /* GalaxySSIHealthDesktopResearch.swift in Sources */,
@@ -5008,6 +5401,8 @@
         A10000000000000000009834 /* GalaxySSIHealthReviewReminders.swift in Sources */,
         A10000000000000000009835 /* GalaxySSIHealthReviewDelivery.swift in Sources */,
         A10000000000000000009809 /* GalaxySSIHealthTrendView.swift in Sources */,
+        7431A9C9D1BFD10EDCF64F71 /* GalaxySSIHealthAtlasAgentContext.swift in Sources */,
+        ABD01A10F8711424EF6114EC /* GalaxySSIHealthAtlasTrendAction.swift in Sources */,
         A10000000000000000009862 /* GalaxySSIHealthCareComparison.swift in Sources */,
         A10000000000000000009863 /* GalaxySSIHealthCareComparisonView.swift in Sources */,
         A10000000000000000009812 /* GalaxySSIHealthBluetooth.swift in Sources */,
@@ -5029,6 +5424,8 @@
         A10000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift in Sources */,
         A10000000000000000009805 /* GalaxySSIHealthBodyView.swift in Sources */,
         A10000000000000000009806 /* GalaxySSIHealthBodyText.swift in Sources */,
+        58236C684BF52CD0627E1B30 /* GalaxySSIHealthAtlasOxygen.swift in Sources */,
+        415CCB24AC983596F186422C /* GalaxySSIHealthAtlasOxygenText.swift in Sources */,
         A10000000000000000001436 /* GalaxySSIContactKindPresentation.swift in Sources */,
         A10000000000000000000990 /* GalaxySSIAddContactView.swift in Sources */,
         A10000000000000000000991 /* GalaxySSICloudModelOnboardingView.swift in Sources */,
@@ -5170,6 +5567,9 @@
         A10000000000000000001761 /* GalaxySSIContactRowView.swift in Sources */,
         A10000000000000000001760 /* GalaxySSIContactAvatarView.swift in Sources */,
         F13000000000000000000001 /* GalaxySSIChatHistoryDatabase.swift in Sources */,
+        BD68373A70EC821C60758ECF /* GalaxySSIHealthAtlasPhysiology.swift in Sources */,
+        2ECF4259194968FFE9A65DA6 /* GalaxySSIHealthAtlasPhysiologyText.swift in Sources */,
+        BF37730E4012C7208E81DC84 /* GalaxySSIHealthAtlasPhysiologyPanel.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
@@ -5177,6 +5577,7 @@
       isa = PBXSourcesBuildPhase;
       buildActionMask = 2147483647;
       files = (
+        1AA5A2AD38BCAE4FA01FE49A /* GalaxySSIHealthAtlasTests.swift in Sources */,
         D12979000000000000000002 /* AgentActionEffectExecutorTests.swift in Sources */,
         D12980100000000000000001 /* AgentRuntimeTimingTests.swift in Sources */,
         D12981000000000000000002 /* AgentImagePipelineTests.swift in Sources */,
@@ -5186,6 +5587,7 @@
         F12661000000000000000002 /* ScannedAgentConversationPolicyTests.swift in Sources */,
         F12662000000000000000003 /* AgentRichSelectableParagraphsTests.swift in Sources */,
         F12680000000000000000002 /* AgentDirectVisionPolicyTests.swift in Sources */,
+        C43130000000000000000021 /* AgentPeerAttachmentPreviewTests.swift in Sources */,
         F12678000000000000000004 /* AgentReplySpeechControllerTests.swift in Sources */,
         D36650000000000000000001 /* AgentReplySpeechFooterTests.swift in Sources */,
         F13234000000000000000004 /* MqttPeerRouteSessionTests.swift in Sources */,
@@ -5346,6 +5748,7 @@
         D13397000000000000000001 /* AgentArtifactFeedbackPilotTests.swift in Sources */,
         D13388000000000000000001 /* AgentRemotePilotProtocol.swift in Sources */,
         D13388000000000000000002 /* AgentRemotePilotProtocolTests.swift in Sources */,
+        D13389000000000000000001 /* AgentRemotePilotSelectionTests.swift in Sources */,
         A10000000000000000000225 /* AgentSkillLifecycleTests.swift in Sources */,
         A10000000000000000000226 /* AgentSkillExecutionTests.swift in Sources */,
         A10000000000000000000227 /* AgentSkillPackageInstallerTests.swift in Sources */,
@@ -5431,7 +5834,39 @@
         E12626000000000000000002 /* AgentGlobalRunSlotsTests.swift in Sources */,
         A10000000000000000000495 /* AgentOcrLayoutAnalyzerTests.swift in Sources */,
         A10000000000000000009803 /* GalaxySSIHealthRecordsTests.swift in Sources */,
+        BAFCBBF5AC808C8D057877C1 /* GalaxySSIHealthAtlasOxygenTests.swift in Sources */,
+        B42880000000000000000001 /* GalaxySSIHealthCareActiveRevocationTests.swift in Sources */,
+        B42900000000000000000001 /* GalaxySSIHealthCareEvaluationReplayTests.swift in Sources */,
+        C42920000000000000000051 /* GalaxySSIHealthAppointmentReminderTests.swift in Sources */,
+        C42930000000000000000041 /* GalaxySSIHealthReportVisionTests.swift in Sources */,
+        C42940000000000000000021 /* GalaxySSIHealthReportCodexTests.swift in Sources */,
+        C42950000000000000000031 /* GalaxySSIHealthReportQuickImportTests.swift in Sources */,
+        C42960000000000000000031 /* GalaxySSIHealthOverviewCareTests.swift in Sources */,
+        C42980000000000000000051 /* GalaxySSIHealthReportBatchTests.swift in Sources */,
+        C42990000000000000000031 /* GalaxySSIHealthReportRowValidationTests.swift in Sources */,
+        C43030000000000000000031 /* GalaxySSIHealthOverviewRangeTests.swift in Sources */,
+        C43080000000000000000021 /* PublicNewsArticleRetryTests.swift in Sources */,
+        C43070000000000000000021 /* PublicNewsBudgetTests.swift in Sources */,
+        C43100000000000000000021 /* GalaxySSIAgentChatShortcutTests.swift in Sources */,
+        C43060000000000000000021 /* GalaxySSIDesktopDisconnectTests.swift in Sources */,
+        C43040000000000000000051 /* GalaxySSIHealthMotionLedgerTests.swift in Sources */,
+        C43140000000000000000041 /* GalaxySSIHealthActivityComparisonTests.swift in Sources */,
+        C43140000000000000000071 /* GalaxySSIHealthMeasurementComparisonTests.swift in Sources */,
+        C43150000000000000000071 /* GalaxySSIHealthMeasurementPeriodTests.swift in Sources */,
+        C43210000000000000000031 /* GalaxySSIConversationRenameTests.swift in Sources */,
+        C43170000000000000000021 /* GalaxySSIHealthMeasurementListTests.swift in Sources */,
+        C43180000000000000000031 /* GalaxySSIHealthThemeTests.swift in Sources */,
+        E05B7B1440408F5D1480CDE3 /* GalaxySSIHealthAtlasAgentContextTests.swift in Sources */,
+        C43050000000000000000021 /* GalaxySSIHealthCyclingSessionTests.swift in Sources */,
+        C43040000000000000000071 /* GalaxySSIHealthGuidanceTests.swift in Sources */,
+        C43040000000000000000081 /* GalaxySSIHealthMotionStorageTests.swift in Sources */,
+        C42990000000000000000041 /* GalaxySSIHealthReportDeliveryTests.swift in Sources */,
         D14251000000000000000005 /* GalaxySSIHealthVisitJournalDiscussionTests.swift in Sources */,
+        B42840000000000000000013 /* GalaxySSIHealthCareModelAttentionTests.swift in Sources */,
+        B42860000000000000000003 /* GalaxySSIHealthCareRelatedContextTests.swift in Sources */,
+        B42890000000000000000003 /* GalaxySSIHealthCareClarificationRecoveryTests.swift in Sources */,
+        B42910000000000000000003 /* GalaxySSIHealthCareReviewQuestionsTests.swift in Sources */,
+        B42830000000000000000005 /* GalaxySSIHealthCareModelReviewTests.swift in Sources */,
         E39090000000000000000003 /* GalaxySSIHealthOCRSourceContextTests.swift in Sources */,
         A10000000000000000000668 /* AgentOfficeDocumentExtractorTests.swift in Sources */,
         A10000000000000000000489 /* AgentPreferenceModeTests.swift in Sources */,
@@ -5488,6 +5923,7 @@
         A10000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift in Sources */,
         A10000000000000000000797 /* AgentRuntimePackInstallerTests.swift in Sources */,
         A10000000000000000000407 /* AgentDirectNativeToolPlannerTests.swift in Sources */,
+        8E5409A2688CCA620859616F /* GalaxySSIHealthAtlasPhysiologyTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
@@ -5538,6 +5974,7 @@
       isa = XCBuildConfiguration;
       buildSettings = {
         ALWAYS_SEARCH_USER_PATHS = NO;
+        OTHER_SWIFT_FLAGS = "$(inherited) $(GALAXYSSI_ATLAS_PHYSIOLOGY_FLAGS) $(GALAXYSSI_ATLAS_AGENT_CONTEXT_FLAGS) $(GALAXYSSI_ATLAS_OXYGEN_FLAGS)";
         CLANG_ANALYZER_NONNULL = YES;
         CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
         CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -5570,6 +6007,7 @@
         COPY_PHASE_STRIP = NO;
         DEBUG_INFORMATION_FORMAT = dwarf;
         ENABLE_STRICT_OBJC_MSGSEND = YES;
+        GALAXYSSI_ATLAS_OXYGEN_FLAGS = "-D GALAXYSSI_ATLAS_OXYGEN";
         ENABLE_TESTABILITY = YES;
         GCC_C_LANGUAGE_STANDARD = gnu17;
         GCC_DYNAMIC_NO_PIC = NO;
@@ -5590,8 +6028,10 @@
         MTL_FAST_MATH = YES;
         ONLY_ACTIVE_ARCH = YES;
         SDKROOT = iphoneos;
+        GALAXYSSI_ATLAS_AGENT_CONTEXT_FLAGS = "-D GALAXYSSI_ATLAS_AGENT_CONTEXT";
         SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
         SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+        GALAXYSSI_ATLAS_PHYSIOLOGY_FLAGS = "-D GALAXYSSI_ATLAS_PHYSIOLOGY";
       };
       name = Debug;
     };
@@ -5599,6 +6039,7 @@
       isa = XCBuildConfiguration;
       buildSettings = {
         ALWAYS_SEARCH_USER_PATHS = NO;
+        OTHER_SWIFT_FLAGS = "$(inherited) $(GALAXYSSI_ATLAS_PHYSIOLOGY_FLAGS) $(GALAXYSSI_ATLAS_AGENT_CONTEXT_FLAGS) $(GALAXYSSI_ATLAS_OXYGEN_FLAGS)";
         CLANG_ANALYZER_NONNULL = YES;
         CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
         CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -5636,6 +6077,7 @@
         ENABLE_CODE_COVERAGE = NO;
         ENABLE_NS_ASSERTIONS = NO;
         ENABLE_STRICT_OBJC_MSGSEND = YES;
+        GALAXYSSI_ATLAS_OXYGEN_FLAGS = "-D GALAXYSSI_ATLAS_OXYGEN";
         ENABLE_TESTABILITY = NO;
         GCC_C_LANGUAGE_STANDARD = gnu17;
         GCC_GENERATE_TEST_COVERAGE_FILES = NO;
@@ -5651,10 +6093,12 @@
         MTL_ENABLE_DEBUG_INFO = NO;
         MTL_FAST_MATH = YES;
         SDKROOT = iphoneos;
+        GALAXYSSI_ATLAS_AGENT_CONTEXT_FLAGS = "-D GALAXYSSI_ATLAS_AGENT_CONTEXT";
         STRIP_INSTALLED_PRODUCT = YES;
         STRIP_STYLE = all;
         SWIFT_COMPILATION_MODE = wholemodule;
         SWIFT_OPTIMIZATION_LEVEL = "-O";
+        GALAXYSSI_ATLAS_PHYSIOLOGY_FLAGS = "-D GALAXYSSI_ATLAS_PHYSIOLOGY";
         VALIDATE_PRODUCT = YES;
       };
       name = Release;
@@ -5670,7 +6114,7 @@
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh";
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh";
         INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";
@@ -5678,6 +6122,7 @@
         INFOPLIST_KEY_NSCalendarsUsageDescription = "Read calendars only when you grant GalaxySSI calendar access.";
         INFOPLIST_KEY_NSContactsUsageDescription = "Search contacts only when you grant GalaxySSI contacts access.";
         INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record voice prompts.";
+        INFOPLIST_KEY_NSMotionUsageDescription = "Count phone steps and detect cycling only after you turn them on. No location or route data is collected.";
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe voice prompts.";
         INFOPLIST_KEY_GalaxySSIRealtimeASRCredentialBrokerURL = "$(GALAXYSSI_REALTIME_ASR_CREDENTIAL_BROKER_URL)";
         INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
@@ -5735,7 +6180,7 @@
         ENABLE_DEBUG_DYLIB = NO;
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh";
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh";
         INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";
@@ -5744,6 +6189,7 @@
         INFOPLIST_KEY_NSContactsUsageDescription = "Search contacts only when you grant GalaxySSI contacts access.";
         INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record voice prompts.";
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe voice prompts.";
+        INFOPLIST_KEY_NSMotionUsageDescription = "Count phone steps and detect cycling only after you turn them on. No location or route data is collected.";
         INFOPLIST_KEY_GalaxySSIRealtimeASRCredentialBrokerURL = "$(GALAXYSSI_REALTIME_ASR_CREDENTIAL_BROKER_URL)";
         INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
         INFOPLIST_KEY_UIFileSharingEnabled = YES;

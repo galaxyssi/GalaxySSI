@@ -97,17 +97,26 @@ class AgentConnectorFallbackRuntimeDeviceTest {
         assertEquals(AgentPhase.FAILED, exercise(true, true, unconfirmedDelivery = true).phase)
     }
 
-    @Test fun repeatedSilenceSwitchesReadOnlyQuestionToAnotherProvider() {
+    @Test fun repeatedSilenceSwitchesAutoReadOnlyQuestionToAnotherProvider() {
         val state = exercise(true, true, allowTerminalFallback = true, silenceFallback = true)
         assertEquals(AgentPhase.WAITING_RESPONSE, state.phase)
         assertEquals("test-hermes", state.lastActionResult?.metadata?.get("contact_id"))
+    }
+
+    @Test fun manuallySelectedCodexStopsAfterDesktopSilenceWithoutSwitchingModels() {
+        val state = exercise(true, true, allowTerminalFallback = true, silenceFallback = true,
+            boundedCodex = true, lockedSilence = true)
+        assertEquals(AgentPhase.FAILED, state.phase)
+        assertEquals("test-codex", state.lastActionResult?.metadata?.get("resource_id"))
+        assertEquals("false", state.lastActionResult?.metadata?.get("allow_unavailable_target_fallback"))
+        assertEquals(isolated.getString(R.string.agent_manual_desktop_timeout), state.lastActionResult?.message)
     }
 
     private fun exercise(success: Boolean, awaiting: Boolean, structuredCloudFailure: Boolean = false,
         cancelCloud: Boolean = false, terminalStatus: String = "", observedGeneration: Long = 1,
         observedSequence: Long = -1, allowTerminalFallback: Boolean = false,
         deliveryFailureCode: String = "", unconfirmedDelivery: Boolean = false, silenceFallback: Boolean = false,
-        boundedCodex: Boolean = false): AgentUiState {
+        boundedCodex: Boolean = false, lockedSilence: Boolean = false): AgentUiState {
         val context = isolated
         val screen = ScreenContext(foregroundApp = "GalaxySSI", pageTitle = "Agent")
         val session = InMemoryAgentSessionStore()
@@ -241,7 +250,7 @@ class AgentConnectorFallbackRuntimeDeviceTest {
         )))
         assertEquals(1, dispatches)
         assertEquals(state.phase, session.load()?.phase)
-        if (boundedCodex) {
+        if (boundedCodex && !lockedSilence) {
             agent.currentGoal = "What is two plus two?"
             assertTrue(agent.startExecutionLoop("bounded-codex-test-turn"))
             assertTrue(agent.advanceExecutionLoop(AgentExecutionLoopPhase.ACT, "Test dispatch", action.id))
@@ -264,12 +273,12 @@ class AgentConnectorFallbackRuntimeDeviceTest {
             agent.currentGoal = "What is two plus two?"
             agent.lastActionResult = agent.lastActionResult!!.copy(metadata = agent.lastActionResult!!.metadata + mapOf(
                 "source_message_id" to isolatedSource.toString(), "resource_location" to "desktop",
-                "manual_target_locked" to "true", "resource_started_at" to "1000"))
+                "manual_target_locked" to lockedSilence.toString(), "resource_started_at" to "1000"))
             assertTrue(agent.startExecutionLoop("silence-test-turn"))
             assertTrue(agent.advanceExecutionLoop(AgentExecutionLoopPhase.ACT, "Test dispatch", action.id))
             assertTrue(agent.advanceExecutionLoop(AgentExecutionLoopPhase.WAITING_RESPONSE, "Test wait", action.id))
             val next = requireNotNull(agent.handleConnectorTimeout(isolatedSource, AgentConnectorTimeoutStage.NOT_ACCEPTED, true))
-            assertEquals(2, dispatches)
+            assertEquals(if (lockedSilence) 1 else 2, dispatches)
             return next
         }
         if (unconfirmedDelivery) {

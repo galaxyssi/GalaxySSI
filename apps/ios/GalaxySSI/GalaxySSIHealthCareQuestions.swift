@@ -63,6 +63,7 @@ enum GalaxySSIHealthCareQuestions {
     var revision = 1
     var state = State.open
     var answer: String?
+    var relatedMeasurements: Set<String>?
 
     func displayedState(basis current: String, known: AgentMcpJSONValue?) -> State {
       if basis != current { return .stale }
@@ -84,7 +85,7 @@ enum GalaxySSIHealthCareQuestions {
     var payload: AgentMcpJSONObject {
       ["items": .array(rows.map { row in
         let state = state(row)
-        return .object(["key": .string(row.proposal.key), "question": state == .stale ? .null : .string(row.proposal.question),
+        return .object(["id": .string(row.id.uuidString), "key": .string(row.proposal.key), "question": state == .stale ? .null : .string(row.proposal.question),
           "purpose": state == .stale ? .null : .string(row.proposal.purpose),
           "state": .string(state.rawValue), "revision": .int(Int64(row.revision)),
           "reviewed_answer": state == .stale ? .null : row.answer.map(AgentMcpJSONValue.string) ?? .null,
@@ -116,8 +117,12 @@ enum GalaxySSIHealthCareQuestions {
   struct Ledger: Codable {
     var revisions: [String: [Row]] = [:]
 
-    func page(scope: String, basis: String, known: AgentMcpJSONObject, after: UUID?) throws -> Page {
-      let current = revisions.values.compactMap(\.last).filter { $0.scope == scope }.sorted {
+    func page(scope: String, basis: String, known: AgentMcpJSONObject, after: UUID?,
+              allowedRelatedMeasurements: Set<String>? = nil, excludingTurn: UUID? = nil) throws -> Page {
+      let current = revisions.values.compactMap(\.last).filter { row in
+        row.scope == scope && row.turn != excludingTurn &&
+          (allowedRelatedMeasurements.map { $0.isSuperset(of: row.relatedMeasurements ?? []) } ?? true)
+      }.sorted {
         ($0.createdAt, $0.id.uuidString) > ($1.createdAt, $1.id.uuidString)
       }
       let start: Int
@@ -132,25 +137,43 @@ enum GalaxySSIHealthCareQuestions {
     }
 
     mutating func propose(_ values: [Proposal], scope: String, basis: String, known: AgentMcpJSONObject,
-                          turn: UUID, now: Date) throws {
-      let existing = Set(revisions.values.compactMap(\.last).filter { $0.scope == scope }.map(\.proposal.key))
+                          turn: UUID, now: Date, relatedMeasurements: Set<String> = [],
+                          declaredIDs: [String: UUID]? = nil) throws {
+      let current = revisions.values.compactMap(\.last).filter { $0.scope == scope }
+      if let declaredIDs {
+        guard Set(declaredIDs.keys) == Set(values.map(\.key)), Set(declaredIDs.values).count == values.count else {
+          throw GalaxySSIHealthRecords.Failure.invalid
+        }
+        for value in values {
+          guard let id = declaredIDs[value.key], known[value.key] == nil else { throw GalaxySSIHealthRecords.Failure.invalid }
+          if let row = current.first(where: { $0.proposal.key == value.key }) {
+            guard row.id == id, row.turn == turn, row.proposal == value, row.basis == basis,
+                  (row.relatedMeasurements ?? []) == relatedMeasurements else { throw GalaxySSIHealthRecords.Failure.invalid }
+          } else if revisions[id.uuidString] != nil { throw GalaxySSIHealthRecords.Failure.invalid }
+        }
+      }
+      let existing = Set(current.map(\.proposal.key))
       let new = values.filter { known[$0.key] == nil && !existing.contains($0.key) }
       guard revisions.count + new.count <= maximumQuestions else { throw GalaxySSIHealthRecords.Failure.invalid }
       for value in new {
-        let row = Row(proposal: value, scope: scope, basis: basis, turn: turn, createdAt: now, updatedAt: now)
+        let row = Row(id: declaredIDs?[value.key] ?? UUID(), proposal: value, scope: scope, basis: basis, turn: turn, createdAt: now, updatedAt: now,
+          relatedMeasurements: relatedMeasurements.isEmpty ? nil : relatedMeasurements)
         revisions[row.id.uuidString] = [row]
       }
     }
 
-    mutating func review(_ expected: Row, scope: String, basis: String, state: State, answer: String?, now: Date) throws {
+    @discardableResult
+    mutating func review(_ expected: Row, scope: String, basis: String, state: State, answer: String?, now: Date) throws -> Bool {
       let id = expected.id.uuidString
       let text = answer?.trimmingCharacters(in: .whitespacesAndNewlines)
       let needsAnswer = state == .answered || state == .conflict
       guard expected.scope == scope, state != .stale, now >= expected.updatedAt,
-            var history = revisions[id], history.last == expected, history.count < maximumRevisions,
-            state == .open || expected.basis == basis,
-            state == .open || (expected.state != .deferred && expected.state != .declined),
+            var history = revisions[id], history.last == expected,
             needsAnswer ? text.map({ !$0.isEmpty && $0.utf8.count <= 2_000 }) == true : text == nil
+      else { throw GalaxySSIHealthRecords.Failure.stale }
+      if expected.basis == basis, expected.state == state, expected.answer == text { return false }
+      guard history.count < maximumRevisions, state == .open || expected.basis == basis,
+            state == .open || (expected.state != .deferred && expected.state != .declined)
       else { throw GalaxySSIHealthRecords.Failure.stale }
       var next = expected
       next.revision += 1
@@ -160,7 +183,25 @@ enum GalaxySSIHealthCareQuestions {
       next.updatedAt = now
       history.append(next)
       revisions[id] = history
+      return true
     }
+  }
+
+  static func pairedProposals(_ raw: AgentMcpJSONValue) throws -> (arguments: AgentMcpJSONObject, ids: [String: UUID]) {
+    guard let rows = raw.arrayValue, rows.count <= pageSize else { throw GalaxySSIHealthRecords.Failure.invalid }
+    var ids: [String: UUID] = [:]
+    let stripped = try rows.map { value -> AgentMcpJSONValue in
+      guard var row = value.objectValue, Set(row.keys) == ["id", "key", "question", "purpose"],
+            let idText = row["id"]?.strictStringValue, let id = UUID(uuidString: idText),
+            let key = row["key"]?.strictStringValue, ids[key] == nil else { throw GalaxySSIHealthRecords.Failure.invalid }
+      ids[key] = id
+      row.removeValue(forKey: "id")
+      return .object(row)
+    }
+    let arguments: AgentMcpJSONObject = ["questions": .array(stripped)]
+    _ = try parse(arguments)
+    guard Set(ids.values).count == ids.count else { throw GalaxySSIHealthRecords.Failure.invalid }
+    return (arguments, ids)
   }
 
   static func scope(_ concern: GalaxySSIHealthCare.Concern) -> String {
