@@ -10,6 +10,7 @@ struct GalaxySSIHealthCareQuestionsView: View {
   let records: GalaxySSIHealthRecords
   let concern: UUID
   let metric: GalaxySSIHealthMetric
+  var assessment: GalaxySSIHealthCareModelReview.Review? = nil
   @State private var page: Questions.Page?
   @State private var cursors: [UUID] = []
   @State private var reviewing: Questions.Row?
@@ -46,6 +47,7 @@ struct GalaxySSIHealthCareQuestionsView: View {
       if failed { Text(t("unavailable", "The question or its source changed. Review it again.")) }
     }
     .onAppear(perform: reload)
+    .onDisappear(perform: clear)
     .onChange(of: scene) { if $0 == .active { reload() } else { clear() } }
     .onChange(of: store.profile.identityFingerprint) { _ in clear(); reload() }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in clear() }
@@ -80,6 +82,7 @@ struct GalaxySSIHealthCareQuestionsView: View {
           }
         }
         .navigationTitle(t("title", "Clarification questions"))
+        .galaxySSIHealthTheme()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button(t("close", "Close")) { reviewing = nil; answer = "" } }
         }
@@ -94,10 +97,17 @@ struct GalaxySSIHealthCareQuestionsView: View {
   private func reload() {
     guard canRead else { clear(); return }
     do {
-      page = try records.localCareQuestionPage(id: concern, metric: metric, after: cursors.last)
+      if let assessment {
+        guard assessment.authorization.concern == concern, assessment.authorization.metric == metric else {
+          throw GalaxySSIHealthRecords.Failure.permission
+        }
+        page = try records.localCareModelReviewQuestions(assessment)
+      } else { page = try records.localCareQuestionPage(id: concern, metric: metric, after: cursors.last) }
+      failed = false
     } catch {
       cursors = []
-      page = try? records.localCareQuestionPage(id: concern, metric: metric)
+      if assessment != nil { page = nil; failed = true }
+      else { page = try? records.localCareQuestionPage(id: concern, metric: metric) }
     }
   }
 
@@ -207,6 +217,7 @@ struct GalaxySSIHealthCareAnswerDraftsView: View {
           }
         }
         .navigationTitle(t("answer_drafts", "Review clarification answers"))
+        .galaxySSIHealthTheme()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button(t("close", "Close"), action: clearReview) }
         }

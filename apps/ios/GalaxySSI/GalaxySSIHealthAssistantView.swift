@@ -121,7 +121,7 @@ struct GalaxySSIHealthAssistantView: View {
       }
     }
     .navigationTitle(t("title", "Health Assistant"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
   }
 
   private var activeAssistant: some View {
@@ -174,7 +174,7 @@ struct GalaxySSIHealthAssistantView: View {
           }
         }
         .navigationTitle(t("confirm", "Send selected aggregates to this provider?"))
-        .navigationBarTitleDisplayMode(.inline)
+        .galaxySSIHealthTheme()
         .toolbar { ToolbarItem(placement: .cancellationAction) {
           Button(t("close", "Close")) { consent = nil }
         } }
@@ -218,7 +218,7 @@ struct GalaxySSIHealthAssistantView: View {
           }
         }
         .navigationTitle(t("sources", "Source records"))
-        .navigationBarTitleDisplayMode(.inline)
+        .galaxySSIHealthTheme()
         .toolbar { ToolbarItem(placement: .confirmationAction) {
           Button(t("close", "Close")) { evidence = nil }
         } }
@@ -460,7 +460,7 @@ struct GalaxySSIHealthAssistantView: View {
         }
       }
       .navigationTitle(t("follow_up.review", "Review request"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .toolbar { ToolbarItem(placement: .cancellationAction) {
         Button(t("close", "Close")) { followUpReview = nil }
       } }

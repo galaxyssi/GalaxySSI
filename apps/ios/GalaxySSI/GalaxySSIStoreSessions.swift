@@ -13,7 +13,7 @@ struct AgentConversationPage: Equatable {
   var hasMore: Bool
 }
 
-final class AgentConversationDatabase {
+final class AgentConversationDatabase: @unchecked Sendable {
   static let defaultPageSize = 24
   static let maximumPageSize = 200
 
@@ -37,6 +37,23 @@ final class AgentConversationDatabase {
   deinit {
     if let database {
       sqlite3_close_v2(database)
+    }
+  }
+
+  func renameTitle(id: String, expected: String, title: String) -> Bool {
+    locked {
+      guard !Task.isCancelled, let clean = GalaxySSIConversationRenamePolicy.normalize(title),
+            execute("BEGIN IMMEDIATE") else { return false }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      guard var current = read(id) ?? readDraft(id), current.title == expected else { return false }
+      current.title = clean
+      guard !Task.isCancelled else { return false }
+      // Rename metadata only; preserve message activity, settings and draft status.
+      let saved = read(id) == nil ? saveDraft(current) : upsert(current)
+      guard saved, execute("COMMIT") else { return false }
+      committed = true
+      return true
     }
   }
 
@@ -711,10 +728,23 @@ extension GalaxySSIStore {
 
   @discardableResult
   func renameAgentSession(id conversationId: String, title: String) -> Bool {
-    mutateAgentConversation(id: conversationId) { conversation in
-      conversation.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        .ifBlank(conversation.title)
-    }
+    guard let clean = GalaxySSIConversationRenamePolicy.normalize(title), let current = agentSession(id: conversationId),
+          agentConversationDatabase.renameTitle(id: current.id, expected: current.title, title: clean),
+          let saved = agentConversationDatabase.read(current.id) ?? agentConversationDatabase.readDraft(current.id) else { return false }
+    cacheAgentConversation(saved)
+    return true
+  }
+
+  func renameAgentSession(id: String, title: String, expected: String, owner: String) async -> Bool {
+    guard canReadAgentTranscript, profile.identityFingerprint == owner, !Task.isCancelled,
+          let name = GalaxySSIConversationRenamePolicy.normalize(title), agentSession(id: id)?.title == expected else { return false }
+    let database = agentConversationDatabase
+    let work = Task.detached(priority: .userInitiated) { database.renameTitle(id: id, expected: expected, title: name) }
+    let saved = await withTaskCancellationHandler(operation: { await work.value }, onCancel: { work.cancel() })
+    guard saved, !Task.isCancelled, canReadAgentTranscript, profile.identityFingerprint == owner,
+          let fresh = database.read(id) ?? database.readDraft(id) else { return false }
+    cacheAgentConversation(fresh)
+    return true
   }
 
   @discardableResult

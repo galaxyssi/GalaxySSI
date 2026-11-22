@@ -125,7 +125,7 @@ struct GalaxySSIHealthBodyView<Personal: View>: View {
       }
     }
     .navigationTitle(t("title"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onChange(of: topic) { _ in reset() }
     .onChange(of: layer) { _ in reset() }
     .onChange(of: scene) { if $0 != .active { playing = false } }

@@ -2,7 +2,7 @@ import Foundation
 
 struct PublicNewsBacklogLedger: Codable, Equatable {
   enum Lane: Int, CaseIterable { case recent, history, retry }
-  enum Outcome { case ready, retry, released }
+  enum Outcome { case ready, retry, released, failure(String) }
 
   struct Claim: Codable, Equatable {
     let articleID: String
@@ -15,6 +15,8 @@ struct PublicNewsBacklogLedger: Codable, Equatable {
     var retryAt: Date?
     var claim: Claim?
     var ready = false
+    var everPublished: Bool?
+    var stopped: Bool?
   }
 
   struct Counts: Equatable {
@@ -27,9 +29,51 @@ struct PublicNewsBacklogLedger: Codable, Equatable {
   private static let cycle: [Lane] = [.recent, .recent, .history, .retry]
   private(set) var nextLane = 0
   private(set) var entries: [String: Entry] = [:]
+  private(set) var retryPolicyRevision: Int? = PublicNewsArticleRetryPolicy.revision
+  private var pendingCleanup: Set<String>?
+  var pendingCleanupKeys: Set<String> { pendingCleanup ?? [] }
+  var publishedKeys: Set<String> {
+    Set(entries.compactMap { $0.value.ready || $0.value.everPublished == true ? PublicNewsArticleRetryPolicy.key($0.key) : nil })
+  }
+
+  mutating func prepareRetryPolicy(cachedReady: Set<String>) {
+    let upgrading = retryPolicyRevision == nil
+    for (id, var entry) in entries {
+      let published = entry.ready || entry.everPublished == true || cachedReady.contains(id)
+      if published { entry.everPublished = true }
+      if upgrading && entry.failures > 0 {
+        if published { entry.stopped = true; entry.claim = nil; entry.retryAt = nil }
+        else { discard(id); continue }
+      }
+      entries[id] = entry
+    }
+    retryPolicyRevision = PublicNewsArticleRetryPolicy.revision
+  }
+  mutating func acknowledgeCleanup(_ keys: Set<String>, preservedIDs: Set<String>) {
+    pendingCleanup = pendingCleanupKeys.subtracting(keys)
+    for id in preservedIDs {
+      var entry = entries[id] ?? Entry(ready: true)
+      entry.everPublished = true; entry.stopped = true; entry.claim = nil; entry.retryAt = nil
+      entries[id] = entry
+    }
+  }
+  private mutating func discard(_ id: String) {
+    var pending = pendingCleanupKeys
+    pending.insert(PublicNewsArticleRetryPolicy.key(id)); pendingCleanup = pending
+    entries.removeValue(forKey: id)
+  }
+
+  func nextEligible(articleIDs: Set<String>, now: Date) -> Date? {
+    articleIDs.compactMap { id -> Date? in
+      guard !pendingCleanupKeys.contains(PublicNewsArticleRetryPolicy.key(id)) else { return nil }
+      guard let entry = entries[id] else { return now }
+      guard !entry.ready, entry.stopped != true else { return nil }
+      return max(now, max(entry.claim?.expires ?? now, entry.retryAt ?? now))
+    }.min()
+  }
 
   mutating func reconcile(_ articleIDs: Set<String>, now: Date) {
-    entries = entries.filter { articleIDs.contains($0.key) }
+    entries = entries.filter { articleIDs.contains($0.key) || $0.value.everPublished == true || $0.value.stopped == true }
     for id in Array(entries.keys) {
       if let claim = entries[id]?.claim, claim.expires <= now { entries[id]?.claim = nil }
     }
@@ -40,8 +84,9 @@ struct PublicNewsBacklogLedger: Codable, Equatable {
       $0.sortDate == $1.sortDate ? $0.id < $1.id : $0.sortDate < $1.sortDate
     }
     func eligible(_ article: PublicNewsArticle, retry: Bool) -> Bool {
+      guard !pendingCleanupKeys.contains(PublicNewsArticleRetryPolicy.key(article.id)) else { return false }
       guard let entry = entries[article.id] else { return !retry }
-      return !entry.ready && (entry.claim?.expires ?? .distantPast) <= now &&
+      return !entry.ready && entry.stopped != true && (entry.claim?.expires ?? .distantPast) <= now &&
         (entry.retryAt ?? .distantPast) <= now && (entry.failures > 0) == retry
     }
     let start = max(0, nextLane) % Self.cycle.count
@@ -71,10 +116,19 @@ struct PublicNewsBacklogLedger: Codable, Equatable {
     switch outcome {
     case .ready:
       entry.ready = true
-      entry.retryAt = nil
-    case .retry:
-      entry.failures = min(9, max(0, entry.failures) + 1)
-      entry.retryAt = now.addingTimeInterval(min(86_400, 900 * pow(2, Double(entry.failures - 1))))
+      entry.everPublished = true; entry.stopped = nil
+      entry.retryAt = nil; entry.failures = 0
+    case .retry, .failure:
+      let reason: String
+      if case .failure(let message) = outcome { reason = message } else { reason = "article_extraction_failed" }
+      let attempts = max(0, entry.failures)
+      entry.failures = min(PublicNewsArticleRetryPolicy.maximumFailures, attempts + 1)
+      if PublicNewsArticleRetryPolicy.exhausted(attemptsBeforeClaim: attempts) {
+        if entry.everPublished == true || entry.ready { entry.stopped = true; entry.retryAt = nil }
+        else { discard(claim.articleID); return }
+      } else {
+        entry.retryAt = now.addingTimeInterval(PublicNewsArticleRetryPolicy.delay(attemptsBeforeClaim: attempts, error: reason))
+      }
     case .released:
       break
     }
@@ -85,9 +139,11 @@ struct PublicNewsBacklogLedger: Codable, Equatable {
     reconcile(articleIDs, now: now)
     for id in articleIDs where entries[id]?.claim == nil {
       if cachedReady.contains(id) {
-        entries[id] = Entry(ready: true)
+        var entry = entries[id] ?? Entry()
+        entry.ready = true; entry.everPublished = true; entry.retryAt = nil
+        entries[id] = entry
       } else if entries[id]?.ready == true {
-        entries[id] = Entry()
+        entries[id]?.ready = false
       }
     }
   }
@@ -96,6 +152,7 @@ struct PublicNewsBacklogLedger: Codable, Equatable {
     var result = Counts()
     for id in articleIDs {
       if cachedReady.contains(id) { result.ready += 1; continue }
+      if pendingCleanupKeys.contains(PublicNewsArticleRetryPolicy.key(id)) || entries[id]?.stopped == true { continue }
       guard let entry = entries[id] else { result.waiting += 1; continue }
       if let claim = entry.claim, claim.expires > now { result.processing += 1 }
       else if entry.ready { result.waiting += 1 }
@@ -143,10 +200,28 @@ actor PublicNewsBacklogStore {
 
   func load() throws -> PublicNewsBacklogLedger {
     guard let file else { throw PublicNewsArticleBodyError.incompleteSource }
-    do { return try JSONDecoder().decode(PublicNewsBacklogLedger.self, from: Data(contentsOf: file)) }
+    do {
+      let ledger = try JSONDecoder().decode(PublicNewsBacklogLedger.self, from: Data(contentsOf: file))
+      guard ledger.retryPolicyRevision == nil || ledger.retryPolicyRevision == PublicNewsArticleRetryPolicy.revision else {
+        throw PublicNewsArticleBodyError.incompleteSource
+      }
+      return ledger
+    }
     catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
       return PublicNewsBacklogLedger()
     }
+  }
+
+  func prepareRetryPolicy(cachedReady: Set<String>) throws {
+    var ledger = try load()
+    let previous = ledger
+    ledger.prepareRetryPolicy(cachedReady: cachedReady)
+    if ledger != previous { try save(ledger) }
+  }
+  func acknowledgeCleanup(_ keys: Set<String>, preservedIDs: Set<String>) throws {
+    var ledger = try load()
+    ledger.acknowledgeCleanup(keys, preservedIDs: preservedIDs)
+    try save(ledger)
   }
 
   private func save(_ ledger: PublicNewsBacklogLedger) throws {
