@@ -11,6 +11,7 @@ internal enum class HealthAtlasFunctionStory(
     val references: List<Pair<Int, String>>,
     val durationMs: Long,
     val showStructurePreview: Boolean = false,
+    private val cellLesson: HealthAtlasCellLesson? = null,
 ) {
     GLUCOSE(
         setOf("tissue-skeletal-muscle", "tissue-white-adipose", "cell-adipocyte"),
@@ -1967,9 +1968,70 @@ internal enum class HealthAtlasFunctionStory(
         HealthAtlasLatissimusActionAssignment.references,
         HealthAtlasLatissimusActionAssignment.durationMs,
         showStructurePreview = true,
-    );
+    ),
+    PELVIC_LOAD_TRANSFER(
+        setOf("pelvis"),
+        R.string.health_atlas_pelvic_ring_title,
+        R.string.health_atlas_pelvic_ring_scope,
+        listOf(
+            R.string.health_atlas_pelvic_ring_orient to R.string.health_atlas_pelvic_ring_orient_caption,
+            R.string.health_atlas_pelvic_ring_bilateral to R.string.health_atlas_pelvic_ring_bilateral_caption,
+            R.string.health_atlas_pelvic_ring_shift to R.string.health_atlas_pelvic_ring_shift_caption,
+            R.string.health_atlas_pelvic_ring_center to R.string.health_atlas_pelvic_ring_center_caption,
+        ),
+        listOf(
+            R.string.health_atlas_pelvic_ring_ref_anatomy to HealthAtlasLoadTransferPlates.pelvicSource,
+            R.string.health_atlas_pelvic_ring_ref_load to "https://pubmed.ncbi.nlm.nih.gov/24508529/",
+        ),
+        18_000L,
+        showStructurePreview = true,
+    ),
+    SUBCUTANEOUS_CUSHION(
+        setOf("subcutaneous-tissue"),
+        R.string.health_atlas_subcutaneous_title,
+        R.string.health_atlas_subcutaneous_scope,
+        listOf(
+            R.string.health_atlas_subcutaneous_layers to R.string.health_atlas_subcutaneous_layers_caption,
+            R.string.health_atlas_subcutaneous_press to R.string.health_atlas_subcutaneous_press_caption,
+            R.string.health_atlas_subcutaneous_spread to R.string.health_atlas_subcutaneous_spread_caption,
+            R.string.health_atlas_subcutaneous_release to R.string.health_atlas_subcutaneous_release_caption,
+        ),
+        listOf(
+            R.string.health_atlas_subcutaneous_ref_skin to HealthAtlasLoadTransferPlates.subcutaneousSource,
+            R.string.health_atlas_subcutaneous_ref_strain to "https://pubmed.ncbi.nlm.nih.gov/37276651/",
+        ),
+        18_000L,
+        showStructurePreview = true,
+    ),
+    SOMATOTROPH_GROWTH_SIGNAL(HealthAtlasAnteriorPituitaryAssignments.somatotroph),
+    LACTOTROPH_MAMMARY_SIGNAL(HealthAtlasAnteriorPituitaryAssignments.lactotroph),
+    CORTICOTROPH_ADRENAL_SIGNAL(HealthAtlasAnteriorPituitaryAssignments.corticotroph),
+    GONADOTROPH_DUAL_SIGNAL(HealthAtlasAnteriorPituitaryAssignments.gonadotroph),
+    PANCREATIC_DELTA_MODULATION(HealthAtlasEndocrineCellAssignments.DELTA),
+    PANCREATIC_PP_SIGNAL(HealthAtlasEndocrineCellAssignments.PP),
+    THYROID_CALCITONIN(HealthAtlasEndocrineCellAssignments.C_CELL),
+    ADRENAL_CORTEX_OUTPUT(HealthAtlasEndocrineCellAssignments.CORTEX),
+    MAST_CELL_GRANULE_RELEASE(HealthAtlasMastAndTCellAssignments.mast),
+    HELPER_T_COORDINATION(HealthAtlasMastAndTCellAssignments.helper),
+    CYTOTOXIC_T_CONTACT(HealthAtlasMastAndTCellAssignments.cytotoxic),
+    REGULATORY_T_MODERATION(HealthAtlasMastAndTCellAssignments.regulatory),
+    PANETH_CRYPT_BARRIER(HealthAtlasPanethBarrierAssignment),
+    ENTEROENDOCRINE_LUMEN_SIGNAL(HealthAtlasEnteroendocrineSignalAssignment),
+    INTESTINAL_STEM_RENEWAL(HealthAtlasIntestinalStemRenewalAssignment),
+    DISTAL_TUBULAR_EXCHANGE(HealthAtlasDistalTubularCellAssignment),
+    UROTHELIAL_BARRIER_GEOMETRY(HealthAtlasUrothelialCellAssignment),
+    LEYDIG_ENDOCRINE(HealthAtlasLeydigEndocrineAssignment),
+    THECA_COOPERATION(HealthAtlasThecaCooperationAssignment),
+    PERICYTE_COVERAGE(HealthAtlasPericyteCoverageAssignment),
+    LANGERHANS_SENTINEL(HealthAtlasLangerhansSentinelAssignment),
+    MUSCLE_SATELLITE_RENEWAL(HealthAtlasMuscleSatelliteRenewalAssignment);
 
-    val choiceTitle get() = when (this) {
+    private constructor(lesson: HealthAtlasCellLesson) : this(
+        lesson.owners, lesson.title, lesson.scope, lesson.chapters, lesson.references,
+        lesson.durationMs, lesson.showStructurePreview, lesson,
+    )
+
+    val choiceTitle get() = cellLesson?.choice ?: when (this) {
         GLUCOSE -> R.string.health_atlas_lesson_uptake
         MUSCLE_MOTION -> R.string.health_atlas_lesson_contraction
         DIGESTION -> R.string.health_atlas_lesson_digestion
@@ -2062,6 +2124,8 @@ internal enum class HealthAtlasFunctionStory(
         CLITORAL_SENSORY_PATH -> HealthAtlasClitoralSensoryAssignment.choice
         VESTIBULAR_GLAND_SECRETION -> HealthAtlasVestibularGlandAssignment.choice
         TENOCYTE_TENDON_MATRIX -> HealthAtlasTenocyteTendonMatrixAssignment.choice
+        PELVIC_LOAD_TRANSFER -> R.string.health_atlas_pelvic_ring_choice
+        SUBCUTANEOUS_CUSHION -> R.string.health_atlas_subcutaneous_choice
         else -> title
     }
 
@@ -2165,6 +2229,30 @@ internal enum class HealthAtlasFunctionStory(
         TENOCYTE_TENDON_MATRIX -> listOf("tissue-dense-regular-connective" to TENDON_FORCE_TRANSFER)
         PECTORAL_HORIZONTAL_ADDUCTION -> listOf("clavicle" to SCAPULAR_ROTATION)
         LATISSIMUS_EXTENSION_ADDUCTION -> listOf("erector-spinae" to ERECTOR_SUPPORT)
+        PELVIC_LOAD_TRANSFER -> listOf("vertebrae" to VERTEBRAL_MOTION, "femur" to KNEE_ARTICULATION)
+        SUBCUTANEOUS_CUSHION -> listOf("skin-organ" to EPIDERMAL_BARRIER, "dermis" to FIBROBLAST_MATRIX)
+        SOMATOTROPH_GROWTH_SIGNAL -> listOf("pituitary-gland" to THYROID_FEEDBACK)
+        LACTOTROPH_MAMMARY_SIGNAL -> listOf("mammary-glands" to MAMMARY_MILK_FLOW)
+        CORTICOTROPH_ADRENAL_SIGNAL -> listOf("cell-adrenocortical-cell" to ADRENAL_CORTEX_OUTPUT)
+        GONADOTROPH_DUAL_SIGNAL -> listOf("cell-leydig-cell" to LEYDIG_ENDOCRINE, "cell-theca-cell" to THECA_COOPERATION)
+        PANCREATIC_DELTA_MODULATION -> listOf("cell-pancreatic-alpha-cell" to GLUCAGON_RESPONSE)
+        PANCREATIC_PP_SIGNAL -> listOf("pancreas" to DIGESTION)
+        THYROID_CALCITONIN -> listOf("cell-osteoclast" to BONE_REMODELING)
+        ADRENAL_CORTEX_OUTPUT -> listOf("cell-corticotroph" to CORTICOTROPH_ADRENAL_SIGNAL)
+        MAST_CELL_GRANULE_RELEASE -> listOf("cell-basophil" to BASOPHIL_SIGNALING)
+        HELPER_T_COORDINATION -> listOf("cell-dendritic-cell" to DENDRITIC_PRESENTATION)
+        CYTOTOXIC_T_CONTACT -> listOf("cell-t-cell" to T_CELL_RESPONSE)
+        REGULATORY_T_MODERATION -> listOf("cell-helper-t-cell" to HELPER_T_COORDINATION)
+        PANETH_CRYPT_BARRIER -> listOf("ileum" to DIGESTION)
+        ENTEROENDOCRINE_LUMEN_SIGNAL -> listOf("jejunum" to DIGESTION)
+        INTESTINAL_STEM_RENEWAL -> listOf("cell-paneth-cell" to PANETH_CRYPT_BARRIER)
+        DISTAL_TUBULAR_EXCHANGE -> listOf("distal-tubule" to NEPHRON)
+        UROTHELIAL_BARRIER_GEOMETRY -> listOf("bladder" to URINE_ROUTE)
+        LEYDIG_ENDOCRINE -> listOf("cell-gonadotroph" to GONADOTROPH_DUAL_SIGNAL)
+        THECA_COOPERATION -> listOf("cell-granulosa-cell" to OVUM_TRANSPORT)
+        PERICYTE_COVERAGE -> listOf("capillaries" to ENDOTHELIAL_EXCHANGE)
+        LANGERHANS_SENTINEL -> listOf("epidermis" to EPIDERMAL_BARRIER)
+        MUSCLE_SATELLITE_RENEWAL -> listOf("cell-skeletal-myocyte" to MUSCLE_MOTION)
         CHONDROCYTE_MATRIX -> listOf("tissue-hyaline-cartilage" to CARTILAGE_LOAD)
         ADRENAL_MEDULLA_SIGNAL -> listOf("cell-neuron" to SYNAPTIC_SIGNAL)
         GASTRIC_ACID_SECRETION -> listOf("stomach" to DIGESTION, "cell-gastric-chief-cell" to GASTRIC_CHIEF_SECRETION)
@@ -2315,6 +2403,30 @@ internal enum class HealthAtlasFunctionStory(
         TENOCYTE_TENDON_MATRIX -> HealthAtlasTenocyteTendonMatrixStoryView(context, this)
         PECTORAL_HORIZONTAL_ADDUCTION -> HealthAtlasPectoralActionStoryView(context, this)
         LATISSIMUS_EXTENSION_ADDUCTION -> HealthAtlasLatissimusActionStoryView(context, this)
+        PELVIC_LOAD_TRANSFER -> HealthAtlasPelvicRingStoryView(context)
+        SUBCUTANEOUS_CUSHION -> HealthAtlasSubcutaneousStoryView(context)
+        SOMATOTROPH_GROWTH_SIGNAL -> HealthAtlasSomatotrophStoryView(context, this)
+        LACTOTROPH_MAMMARY_SIGNAL -> HealthAtlasLactotrophStoryView(context, this)
+        CORTICOTROPH_ADRENAL_SIGNAL -> HealthAtlasCorticotrophStoryView(context, this)
+        GONADOTROPH_DUAL_SIGNAL -> HealthAtlasGonadotrophStoryView(context, this)
+        PANCREATIC_DELTA_MODULATION -> HealthAtlasEndocrineCellAssignments.DELTA.createArt(context, this)
+        PANCREATIC_PP_SIGNAL -> HealthAtlasEndocrineCellAssignments.PP.createArt(context, this)
+        THYROID_CALCITONIN -> HealthAtlasEndocrineCellAssignments.C_CELL.createArt(context, this)
+        ADRENAL_CORTEX_OUTPUT -> HealthAtlasEndocrineCellAssignments.CORTEX.createArt(context, this)
+        MAST_CELL_GRANULE_RELEASE -> HealthAtlasMastAndTCellAssignments.mast.createArt(context, this)
+        HELPER_T_COORDINATION -> HealthAtlasMastAndTCellAssignments.helper.createArt(context, this)
+        CYTOTOXIC_T_CONTACT -> HealthAtlasMastAndTCellAssignments.cytotoxic.createArt(context, this)
+        REGULATORY_T_MODERATION -> HealthAtlasMastAndTCellAssignments.regulatory.createArt(context, this)
+        PANETH_CRYPT_BARRIER -> HealthAtlasPanethBarrierStoryView(context, this)
+        ENTEROENDOCRINE_LUMEN_SIGNAL -> HealthAtlasEnteroendocrineSignalStoryView(context, this)
+        INTESTINAL_STEM_RENEWAL -> HealthAtlasIntestinalStemRenewalStoryView(context, this)
+        DISTAL_TUBULAR_EXCHANGE -> HealthAtlasDistalTubularCellAssignment.createArt(context, this)
+        UROTHELIAL_BARRIER_GEOMETRY -> HealthAtlasUrothelialCellAssignment.createArt(context, this)
+        LEYDIG_ENDOCRINE -> HealthAtlasLeydigEndocrineStoryView(context, this)
+        THECA_COOPERATION -> HealthAtlasThecaCooperationStoryView(context, this)
+        PERICYTE_COVERAGE -> HealthAtlasPericyteCoverageStoryView(context, this)
+        LANGERHANS_SENTINEL -> HealthAtlasLangerhansSentinelStoryView(context, this)
+        MUSCLE_SATELLITE_RENEWAL -> HealthAtlasMuscleSatelliteRenewalStoryView(context, this)
         NEUTROPHIL_DEFENSE, EOSINOPHIL_RESPONSE, BASOPHIL_SIGNALING, MONOCYTE_RECRUITMENT,
         DENDRITIC_PRESENTATION, T_CELL_RESPONSE, NK_SURVEILLANCE, PLATELET_FORMATION, MACROPHAGE_CLEARANCE ->
             HealthAtlasCellFunctionArt(context, this, owners.single())

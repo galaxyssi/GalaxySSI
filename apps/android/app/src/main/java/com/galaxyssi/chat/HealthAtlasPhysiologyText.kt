@@ -26,6 +26,8 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> R.string.health_atlas_compression_title
         HealthAtlasPhysiologyKind.BONE_BENDING -> R.string.health_atlas_bone_bending_title
         HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_title
+        HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> R.string.health_atlas_pelvis_model_title
+        HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> R.string.health_atlas_cushion_model_title
     }
     fun scope(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_scope
@@ -49,6 +51,8 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> R.string.health_atlas_compression_scope
         HealthAtlasPhysiologyKind.BONE_BENDING -> R.string.health_atlas_bone_bending_scope
         HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_scope
+        HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> R.string.health_atlas_pelvis_model_scope
+        HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> R.string.health_atlas_cushion_model_scope
     }
     fun formula(kind: HealthAtlasPhysiologyKind) = when (kind) {
         HealthAtlasPhysiologyKind.VENTILATION -> R.string.health_atlas_model_ventilation_formula
@@ -72,6 +76,8 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> R.string.health_atlas_compression_formula
         HealthAtlasPhysiologyKind.BONE_BENDING -> R.string.health_atlas_bone_bending_formula
         HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_formula
+        HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> R.string.health_atlas_pelvis_model_formula
+        HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> R.string.health_atlas_cushion_model_formula
     }
     fun label(key: String) = when (key) {
         "rate" -> R.string.health_atlas_rate
@@ -126,6 +132,10 @@ internal object HealthAtlasPhysiologyText {
         "calf-stroke" -> R.string.health_atlas_calf_pump_stroke
         "calf-rate" -> R.string.health_atlas_calf_pump_rate
         "calf-return" -> R.string.health_atlas_calf_pump_return
+        "pelvis-load" -> R.string.health_atlas_pelvis_model_load
+        "pelvis-position" -> R.string.health_atlas_pelvis_model_position
+        "cushion-load" -> R.string.health_atlas_cushion_model_load
+        "cushion-area" -> R.string.health_atlas_cushion_model_area
         else -> error("Unknown physiology input: $key")
     }
     fun unit(key: String) = when (key) {
@@ -170,6 +180,9 @@ internal object HealthAtlasPhysiologyText {
         "calf-stroke" -> "mL"
         "calf-rate" -> "/min"
         "calf-return" -> "%"
+        "pelvis-load", "cushion-load" -> "N"
+        "pelvis-position" -> "%"
+        "cushion-area" -> "cm\u00b2"
         else -> error("Unknown physiology input: $key")
     }
     fun number(value: Double, digits: Int = 2): String = NumberFormat.getNumberInstance().apply {
@@ -214,6 +227,8 @@ internal object HealthAtlasPhysiologyText {
         HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> R.string.health_atlas_compression_remaining
         HealthAtlasPhysiologyKind.BONE_BENDING -> R.string.health_atlas_bone_bending_inertia
         HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_net_stroke
+        HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> R.string.health_atlas_pelvis_model_left_value
+        HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> R.string.health_atlas_cushion_model_reference_value
     }, number(model.companionValue, if (model.kind == HealthAtlasPhysiologyKind.POTASSIUM) 4 else 2))
     }
     fun sourceTitle(kind: HealthAtlasPhysiologyKind, index: Int): Int = if (kind == HealthAtlasPhysiologyKind.OXYGEN_BINDING) {

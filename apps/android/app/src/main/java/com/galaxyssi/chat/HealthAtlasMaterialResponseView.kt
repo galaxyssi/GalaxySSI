@@ -18,6 +18,8 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> R.string.health_atlas_compression_diagram
         HealthAtlasPhysiologyKind.BONE_BENDING -> R.string.health_atlas_bone_bending_diagram
         HealthAtlasPhysiologyKind.CALF_PUMP -> R.string.health_atlas_calf_pump_diagram
+        HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> R.string.health_atlas_pelvis_model_diagram
+        HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> R.string.health_atlas_cushion_model_diagram
         else -> error("Unexpected material response: $kind")
     }
     private val ink = context.getColor(R.color.text_primary)
@@ -40,6 +42,8 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> "atlas-cartilage-compression"
             HealthAtlasPhysiologyKind.BONE_BENDING -> "atlas-bone-bending"
             HealthAtlasPhysiologyKind.CALF_PUMP -> "atlas-calf-pump"
+            HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> "atlas-pelvic-support"
+            HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> "atlas-cushion-contact"
             else -> error("Unexpected material response: $kind")
         }
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
@@ -63,6 +67,8 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION -> drawCartilage(canvas)
             HealthAtlasPhysiologyKind.BONE_BENDING -> drawBone(canvas)
             HealthAtlasPhysiologyKind.CALF_PUMP -> drawCalfPump(canvas)
+            HealthAtlasPhysiologyKind.PELVIC_SUPPORT -> drawPelvicSupport(canvas)
+            HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> drawCushionContact(canvas)
             else -> Unit
         }
         canvas.restore()
@@ -204,6 +210,51 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         label(c, R.string.health_atlas_calf_pump_return_label, 255f, 130f, 145f)
     }
 
+    private fun drawPelvicSupport(c: Canvas) {
+        val left = 83f
+        val right = 257f
+        val span = (right - left) / 2
+        val loadX = 170f + span * model.input(1).toFloat() / 100f
+        val load = model.input(0).toFloat()
+        rectangle(c, 61f, 70f, 279f, 84f, 0xffddc2a7.toInt(), 6f)
+        line(c, left, 77f, right, 77f, 0xff9e826c.toInt(), 1.4f)
+        oval(c, loadX - 4f, 73f, loadX + 4f, 81f, 0xff926b55.toInt())
+        if (load > 0f) arrow(c, loadX, 63f - 42f * load / 800f, loadX, 67f, 0xff996449.toInt(), 3.3f)
+
+        fun support(x: Float, force: Float, caption: Int, color: Int) {
+            val base = 121f
+            rectangle(c, x - 26f, base, x + 26f, base + 5f, 0xffcbdfdb.toInt(), 2f)
+            if (force > 0f) arrow(c, x, base - 3f, x, base - (8f + 23f * force / 800f), color, 3f)
+            label(c, caption, x, 147f, 130f)
+        }
+        support(left, model.companionValue.toFloat(), R.string.health_atlas_pelvis_model_left_support, blue)
+        support(right, model.result.toFloat(), R.string.health_atlas_pelvis_model_right_support, teal)
+    }
+
+    private fun drawCushionContact(c: Canvas) {
+        val force = model.input(0).toFloat()
+        fun pad(x: Float, area: Float, pressure: Float, caption: Int) {
+            val halfWidth = 10f + 49f * area / 90f
+            rectangle(c, x - 63f, 82f, x + 63f, 117f, 0xfff5deb1.toInt(), 7f)
+            rectangle(c, x - 63f, 113f, x + 63f, 124f, 0xffb3cec5.toInt(), 4f)
+            repeat(7) { i ->
+                val centerX = x - 51f + 17f * i
+                val centerY = if (i % 2 == 0) 97f else 103f
+                oval(c, centerX - 7f, centerY - 7f, centerX + 7f, centerY + 7f, 0xffe5b97d.toInt())
+            }
+            rectangle(c, x - halfWidth, 67f, x + halfWidth, 80f, 0xffb8d6d5.toInt(), 4f)
+            if (force > 0f) {
+                arrow(c, x, 56f - 30f * force / 80f, x, 63f, blue, 2.7f)
+                val alpha = (60 + 190 * pressure / 80f).roundToInt()
+                rectangle(c, x - halfWidth, 80f, x + halfWidth, 85f,
+                    0x00a96459 or (alpha shl 24), 2f)
+            }
+            label(c, caption, x, 147f, 145f)
+        }
+        pad(85f, 40f, model.companionValue.toFloat(), R.string.health_atlas_cushion_model_standard_pad)
+        pad(255f, model.input(1).toFloat(), model.result.toFloat(), R.string.health_atlas_cushion_model_changed_pad)
+    }
+
     private fun rectangle(c: Canvas, left: Float, top: Float, right: Float, bottom: Float, color: Int, radius: Float = 10f) {
         paint.color = color
         c.drawRoundRect(left, top, right, bottom, radius, radius, paint)
@@ -230,9 +281,10 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
                 lineTo(x2 - 6 * direction, y2 - 4)
                 lineTo(x2 - 6 * direction, y2 + 4)
             } else {
-                moveTo(x2, y2 + 2)
-                lineTo(x2 - 4, y2 - 6)
-                lineTo(x2 + 4, y2 - 6)
+                val direction = if (y2 >= y1) 1f else -1f
+                moveTo(x2, y2 + 2 * direction)
+                lineTo(x2 - 4, y2 - 6 * direction)
+                lineTo(x2 + 4, y2 - 6 * direction)
             }
             close()
         }, paint)

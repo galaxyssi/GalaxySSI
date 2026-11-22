@@ -4,6 +4,36 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HealthAtlasPhysiologyTest {
+    @Test fun idealPelvicSupportsBalanceForceAndMoment() {
+        val model = requireNotNull(HealthAtlasPhysiology.restore("pelvis", intArrayOf(500, 0)))
+        assertEquals(HealthAtlasPhysiologyKind.PELVIC_SUPPORT, model.kind)
+        assertEquals(250.0, model.result, 1e-9)
+        for (load in 0..800 step 20) for (position in -100..100 step 5) {
+            val setting = model.withInput(0, load).withInput(1, position)
+            assertEquals(load.toDouble(), setting.result + setting.companionValue, 1e-9)
+            assertEquals(load * position / 100.0, setting.result - setting.companionValue, 1e-9)
+            assertEquals(setting.result, setting.withInput(1, -position).companionValue, 1e-9)
+            assertTrue(setting.result in 0.0..setting.plotMaximum)
+        }
+        assertEquals(0.0, model.withInput(1, -100).result, 0.0)
+        assertEquals(500.0, model.withInput(1, 100).result, 0.0)
+        assertNull(HealthAtlasPhysiology.restore("pelvis", intArrayOf(500, 101)))
+        assertEquals(HealthAtlasPhysiologyKind.BONE_BENDING, HealthAtlasPhysiologyKind.forItem("femur"))
+    }
+
+    @Test fun contactPressureDependsOnForceAndAreaWithAStableSameForceReference() {
+        val model = requireNotNull(HealthAtlasPhysiology.restore("subcutaneous-tissue", intArrayOf(40, 40)))
+        assertEquals(HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE, model.kind)
+        assertEquals(10.0, model.result, 1e-9)
+        assertEquals(20.0, model.withInput(1, 20).result, 1e-9)
+        assertEquals(5.0, model.withInput(1, 80).result, 1e-9)
+        assertEquals(10.0, model.withInput(1, 80).companionValue, 1e-9)
+        assertEquals(0.0, model.withInput(0, 0).result, 0.0)
+        assertEquals(80.0, model.withInput(0, 80).withInput(1, 10).result, 1e-9)
+        assertNull(HealthAtlasPhysiology.restore("subcutaneous-tissue", intArrayOf(40, 0)))
+        assertNull(HealthAtlasPhysiologyKind.forItem("cell-adipocyte"))
+    }
+
     @Test fun idealCalfPumpConservesForwardAndReturningVolume() {
         val model = requireNotNull(HealthAtlasPhysiology.restore("soleus", intArrayOf(12, 12, 0)))
         assertEquals(HealthAtlasPhysiologyKind.CALF_PUMP, model.kind)
@@ -119,8 +149,9 @@ class HealthAtlasPhysiologyTest {
                     val y = model.resultAt(x)
                     assertTrue("$kind: $y", y.isFinite() && y in kind.minimum..kind.maximum)
                     previous?.let { value ->
-                        assertTrue(when (kind) {
-                            HealthAtlasPhysiologyKind.RENAL_EXCRETION, HealthAtlasPhysiologyKind.EYE_FOCUS -> y <= value + 1e-9
+                        assertTrue("$kind at $x", when (kind) {
+                            HealthAtlasPhysiologyKind.RENAL_EXCRETION, HealthAtlasPhysiologyKind.EYE_FOCUS,
+                            HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE -> y <= value + 1e-9
                             else -> y >= value - 1e-9
                         })
                     }

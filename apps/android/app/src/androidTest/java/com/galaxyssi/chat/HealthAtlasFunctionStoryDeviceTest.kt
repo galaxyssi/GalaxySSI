@@ -92,8 +92,10 @@ class HealthAtlasFunctionStoryDeviceTest {
     @Test fun everyAnimationIsReachableFromTheBundledCatalogue() {
         val atlas = HealthBodyAtlas.load(context)
         val reached = linkedSetOf<HealthAtlasFunctionStory>()
+        val entriesWithoutPlayback = mutableListOf<String>()
         for (item in atlas.items) {
             val choices = HealthAtlasFunctionStory.choicesForId(item.id)
+            if (choices.isEmpty()) entriesWithoutPlayback += item.id
             assertEquals(item.id, choices.distinct(), choices)
             for (story in choices) {
                 reached += story
@@ -105,6 +107,8 @@ class HealthAtlasFunctionStoryDeviceTest {
             }
         }
         assertEquals(HealthAtlasFunctionStory.entries.toSet(), reached)
+        assertTrue(entriesWithoutPlayback.joinToString(prefix = "Entries without playback: "),
+            entriesWithoutPlayback.isEmpty())
     }
 
     @Test fun openingAFocusedCellStartsAtItsChapterButReopeningKeepsTheUsersPlace() {

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gonadal_story_art_educational">教学示意图 · 不按比例</string>
+
+    <string name="health_atlas_leydig_endocrine_title">睾丸间质细胞与睾酮</string>
+    <string name="health_atlas_leydig_endocrine_choice">睾丸间质细胞的内分泌</string>
+    <string name="health_atlas_leydig_endocrine_scope">正常成人睾丸示意图。形状、符号和播放节奏仅用于教学，不反映个人解剖结构、激素水平或测量结果。</string>
+    <string name="health_atlas_leydig_endocrine_location">生精小管之间</string>
+    <string name="health_atlas_leydig_endocrine_location_caption">睾丸间质细胞（莱迪希细胞）位于生精小管外、各小管之间的间质中，靠近小血管。</string>
+    <string name="health_atlas_leydig_endocrine_signal">来自垂体的信号</string>
+    <string name="health_atlas_leydig_endocrine_signal_caption">腺垂体分泌的促黄体生成素（LH）随血液到达睾丸，对间质细胞发出信号。</string>
+    <string name="health_atlas_leydig_endocrine_production">生成睾酮</string>
+    <string name="health_atlas_leydig_endocrine_production_caption">在促黄体生成素的作用下，成人睾丸间质细胞生成并释放睾酮。这是此类细胞产生的主要雄激素。</string>
+    <string name="health_atlas_leydig_endocrine_output">局部作用与内分泌</string>
+    <string name="health_atlas_leydig_endocrine_output_caption">睾酮在局部支持邻近生精小管内的精子发育。部分睾酮进入血液，可作用于身体其他部位。</string>
+    <string name="health_atlas_leydig_endocrine_art_tubules">生精小管</string>
+    <string name="health_atlas_leydig_endocrine_art_cells">睾丸间质细胞</string>
+    <string name="health_atlas_leydig_endocrine_art_capillary">毛细血管</string>
+    <string name="health_atlas_leydig_endocrine_art_interstitium">生精小管外的间质</string>
+    <string name="health_atlas_leydig_endocrine_art_lh">菱形：来自垂体的 LH 信号</string>
+    <string name="health_atlas_leydig_endocrine_art_testosterone">圆环：睾酮</string>
+    <string name="health_atlas_leydig_endocrine_art_destinations">睾酮到达邻近组织和血液</string>
+    <string name="health_atlas_leydig_endocrine_ref_anatomy">巴塞尔大学：成人睾丸组织学</string>
+    <string name="health_atlas_leydig_endocrine_ref_physiology">Endotext：成人睾丸间质细胞的功能</string>
+
+    <string name="health_atlas_theca_cooperation_title">卵泡膜细胞与颗粒细胞的协作</string>
+    <string name="health_atlas_theca_cooperation_choice">卵泡膜的激素接力</string>
+    <string name="health_atlas_theca_cooperation_scope">正常成人卵巢的窦卵泡示意图。各层、符号和播放节奏仅用于教学，不反映个人解剖结构、激素水平或测量结果。</string>
+    <string name="health_atlas_theca_cooperation_layer">富含血管的卵泡膜内层</string>
+    <string name="health_atlas_theca_cooperation_layer_caption">卵泡膜内层位于卵泡基底膜外侧、卵泡膜外层内侧。小血管分布在卵泡膜内，而不进入颗粒细胞层。</string>
+    <string name="health_atlas_theca_cooperation_source">卵泡膜细胞生成雄激素</string>
+    <string name="health_atlas_theca_cooperation_source_caption">血液中的促黄体生成素（LH）刺激卵泡膜内层细胞生成雄激素。</string>
+    <string name="health_atlas_theca_cooperation_handoff">雄激素跨过基底膜</string>
+    <string name="health_atlas_theca_cooperation_handoff_caption">卵泡膜产生的雄激素跨过基底膜，进入颗粒细胞层。血管仍位于基底膜外侧。</string>
+    <string name="health_atlas_theca_cooperation_conversion">颗粒细胞生成雌二醇</string>
+    <string name="health_atlas_theca_cooperation_conversion_caption">在促卵泡激素（FSH）的作用下，颗粒细胞将来自卵泡膜的雄激素转化为雌激素，包括雌二醇。</string>
+    <string name="health_atlas_theca_cooperation_art_follicle">窦卵泡</string>
+    <string name="health_atlas_theca_cooperation_art_externa">卵泡膜外层</string>
+    <string name="health_atlas_theca_cooperation_art_interna">卵泡膜内层</string>
+    <string name="health_atlas_theca_cooperation_art_boundary">基底膜</string>
+    <string name="health_atlas_theca_cooperation_art_granulosa">颗粒细胞层</string>
+    <string name="health_atlas_theca_cooperation_art_vascular">毛细血管位于卵泡膜内</string>
+    <string name="health_atlas_theca_cooperation_art_androgen">LH 促使卵泡膜细胞生成雄激素</string>
+    <string name="health_atlas_theca_cooperation_art_handoff">三角形：雄激素向内转移</string>
+    <string name="health_atlas_theca_cooperation_art_estradiol">三角形：雄激素 · 圆环：雌二醇</string>
+    <string name="health_atlas_theca_cooperation_ref_nomenclature">NICHD：正常人类卵泡形态</string>
+    <string name="health_atlas_theca_cooperation_ref_anatomy">Endotext：卵泡分层与卵巢生理</string>
+    <string name="health_atlas_theca_cooperation_ref_physiology">Endotext：卵泡内两类细胞协作生成雌激素</string>
+</resources>

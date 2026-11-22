@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gonadal_story_art_educational">Schematic · not to scale</string>
+
+    <string name="health_atlas_leydig_endocrine_title">Leydig cells and testosterone</string>
+    <string name="health_atlas_leydig_endocrine_choice">Leydig endocrine output</string>
+    <string name="health_atlas_leydig_endocrine_scope">A schematic of the typical adult testis. Shapes, markers, and playback timing are for teaching only and do not show personal anatomy, hormone levels, or measurements.</string>
+    <string name="health_atlas_leydig_endocrine_location">Between the tubules</string>
+    <string name="health_atlas_leydig_endocrine_location_caption">Leydig cells sit in the interstitium, the tissue outside and between the seminiferous tubules, near small blood vessels.</string>
+    <string name="health_atlas_leydig_endocrine_signal">A signal from the pituitary</string>
+    <string name="health_atlas_leydig_endocrine_signal_caption">Luteinizing hormone (LH) travels in the blood from the anterior pituitary and signals to Leydig cells.</string>
+    <string name="health_atlas_leydig_endocrine_production">Testosterone production</string>
+    <string name="health_atlas_leydig_endocrine_production_caption">In response to LH, adult Leydig cells make and release testosterone, their main androgen hormone.</string>
+    <string name="health_atlas_leydig_endocrine_output">Local support and endocrine output</string>
+    <string name="health_atlas_leydig_endocrine_output_caption">Testosterone acts locally to support sperm development in nearby tubules. Some enters the blood and can act elsewhere in the body.</string>
+    <string name="health_atlas_leydig_endocrine_art_tubules">Seminiferous tubules</string>
+    <string name="health_atlas_leydig_endocrine_art_cells">Leydig cells</string>
+    <string name="health_atlas_leydig_endocrine_art_capillary">Capillary</string>
+    <string name="health_atlas_leydig_endocrine_art_interstitium">Interstitium outside the tubules</string>
+    <string name="health_atlas_leydig_endocrine_art_lh">Diamond: pituitary LH signal</string>
+    <string name="health_atlas_leydig_endocrine_art_testosterone">Ring: testosterone</string>
+    <string name="health_atlas_leydig_endocrine_art_destinations">Testosterone to nearby tissue and blood</string>
+    <string name="health_atlas_leydig_endocrine_ref_anatomy">University of Basel: adult human testis histology</string>
+    <string name="health_atlas_leydig_endocrine_ref_physiology">Endotext: adult Leydig cell function</string>
+
+    <string name="health_atlas_theca_cooperation_title">Theca and granulosa cooperation</string>
+    <string name="health_atlas_theca_cooperation_choice">Theca hormone relay</string>
+    <string name="health_atlas_theca_cooperation_scope">A schematic of a typical adult ovarian antral follicle. Layers, markers, and playback timing are for teaching only and do not show personal anatomy, hormone levels, or measurements.</string>
+    <string name="health_atlas_theca_cooperation_layer">The vascular theca interna</string>
+    <string name="health_atlas_theca_cooperation_layer_caption">The theca interna lies outside the follicular basal lamina, beneath the theca externa. Small blood vessels run in the theca, not in the granulosa layer.</string>
+    <string name="health_atlas_theca_cooperation_source">Theca cells make androgens</string>
+    <string name="health_atlas_theca_cooperation_source_caption">Blood-borne luteinizing hormone (LH) stimulates cells in the theca interna to make androgens.</string>
+    <string name="health_atlas_theca_cooperation_handoff">Androgen crosses the boundary</string>
+    <string name="health_atlas_theca_cooperation_handoff_caption">Androgen from the theca crosses the basal lamina into the granulosa layer. The blood vessels remain outside that boundary.</string>
+    <string name="health_atlas_theca_cooperation_conversion">Granulosa cells make estradiol</string>
+    <string name="health_atlas_theca_cooperation_conversion_caption">With support from follicle-stimulating hormone (FSH), granulosa cells convert theca-derived androgens into estrogens, including estradiol.</string>
+    <string name="health_atlas_theca_cooperation_art_follicle">Antral follicle</string>
+    <string name="health_atlas_theca_cooperation_art_externa">Theca externa</string>
+    <string name="health_atlas_theca_cooperation_art_interna">Theca interna</string>
+    <string name="health_atlas_theca_cooperation_art_boundary">Basal lamina</string>
+    <string name="health_atlas_theca_cooperation_art_granulosa">Granulosa</string>
+    <string name="health_atlas_theca_cooperation_art_vascular">Capillaries stay in the theca</string>
+    <string name="health_atlas_theca_cooperation_art_androgen">LH stimulates theca androgen production</string>
+    <string name="health_atlas_theca_cooperation_art_handoff">Triangle: androgen moves inward</string>
+    <string name="health_atlas_theca_cooperation_art_estradiol">Triangle: androgen · ring: estradiol</string>
+    <string name="health_atlas_theca_cooperation_ref_nomenclature">NICHD: normal human follicle morphology</string>
+    <string name="health_atlas_theca_cooperation_ref_anatomy">Endotext: follicle layers and ovarian physiology</string>
+    <string name="health_atlas_theca_cooperation_ref_physiology">Endotext: two-cell control of follicular estrogen</string>
+</resources>

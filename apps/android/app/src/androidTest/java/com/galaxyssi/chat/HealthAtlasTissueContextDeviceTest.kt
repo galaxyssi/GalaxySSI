@@ -99,9 +99,9 @@ class HealthAtlasTissueContextDeviceTest {
         val chinese = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.SIMPLIFIED_CHINESE) })
         val atlas = HealthBodyAtlas.load(english)
         val plates = HealthAtlasTissueContextPlates.all
-        assertEquals(72, plates.size)
-        assertEquals(249, plates.sumOf { it.features.size })
-        assertEquals(36, plates.sumOf { it.markers.size })
+        assertEquals(74, plates.size)
+        assertEquals(256, plates.sumOf { it.features.size })
+        assertEquals(41, plates.sumOf { it.markers.size })
         val tenocyteSection = HealthAtlasTenocyteTendonMatrixPlate.plate
         assertEquals(2, HealthAtlasPlates.viewsForId("cell-tenocyte").size)
         for (plate in plates + tenocyteSection) {
@@ -263,6 +263,28 @@ class HealthAtlasTissueContextDeviceTest {
             activity.view("atlas-function-lesson-1").performClick()
             assertEquals(activity.getString(R.string.health_atlas_ganglion_relay_autonomic_caption),
                 (activity.view("atlas-function-caption") as TextView).text)
+        }
+    }
+
+    @Test fun pelvisAndSubcutaneousSectionsOpenTheirOwnFunctions() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.open("pelvis")
+            assertNotNull(activity.view("atlas-feature-pelvic-ring-sacroiliac"))
+            assertNotNull(activity.view("atlas-hotspot-femur"))
+        }
+        capture("pelvic-ring", scenario.localized(R.string.health_atlas_pelvic_ring_view))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-pelvic-ring-art"))
+            activity.onBackPressed()
+            activity.open("subcutaneous-tissue")
+            assertNotNull(activity.view("atlas-feature-subcutaneous-septum"))
+            assertNotNull(activity.view("atlas-hotspot-cell-adipocyte"))
+        }
+        capture("subcutaneous-section", scenario.localized(R.string.health_atlas_subcutaneous_view))
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-1").performClick()
+            assertNotNull(activity.view("atlas-function-subcutaneous-cushion-art"))
         }
     }
 

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_crypt_lumen">Crypt lumen</string>
+    <string name="health_atlas_crypt_ref_histology">Duke Histology: human small intestine</string>
+
+    <string name="health_atlas_paneth_barrier_title">Paneth cells and the crypt barrier</string>
+    <string name="health_atlas_paneth_barrier_scope">Normal adult small intestine. This is an educational schematic: geometry, particles, and playback timing are illustrative, not measured or personal.</string>
+    <string name="health_atlas_paneth_barrier_choice">Paneth cell barrier</string>
+    <string name="health_atlas_paneth_barrier_base">At the crypt base</string>
+    <string name="health_atlas_paneth_barrier_base_caption">A Paneth cell sits low in the crypt wall. Its apical side faces the crypt lumen.</string>
+    <string name="health_atlas_paneth_barrier_granules">Granules near the lumen</string>
+    <string name="health_atlas_paneth_barrier_granules_caption">Secretory granules store antimicrobial substances near the apical surface, opposite the basal nucleus.</string>
+    <string name="health_atlas_paneth_barrier_release">Release into the crypt</string>
+    <string name="health_atlas_paneth_barrier_release_caption">Granules fuse with the apical membrane and release their contents into the crypt lumen.</string>
+    <string name="health_atlas_paneth_barrier_local">Support the local barrier</string>
+    <string name="health_atlas_paneth_barrier_local_caption">Released substances, including antimicrobial peptides, spread through the nearby crypt lumen and help protect the epithelial surface.</string>
+    <string name="health_atlas_paneth_barrier_cell">Paneth cell</string>
+    <string name="health_atlas_paneth_barrier_apical">Apical granules</string>
+    <string name="health_atlas_paneth_barrier_peptides">Released peptides</string>
+    <string name="health_atlas_paneth_barrier_ref_tissue">Paneth cell antimicrobial peptides in human tissue</string>
+
+    <string name="health_atlas_enteroendocrine_signal_title">Enteroendocrine cells: from lumen to blood</string>
+    <string name="health_atlas_enteroendocrine_signal_scope">Normal adult small intestine; an open-type cell is shown. This educational diagram uses illustrative shapes, signals, and timing, not measured or personal data.</string>
+    <string name="health_atlas_enteroendocrine_signal_choice">Enteroendocrine signal</string>
+    <string name="health_atlas_enteroendocrine_signal_sense">Sense a luminal cue</string>
+    <string name="health_atlas_enteroendocrine_signal_sense_caption">The narrow apical tip of this open-type cell contacts the crypt lumen and senses a chemical cue, such as a nutrient.</string>
+    <string name="health_atlas_enteroendocrine_signal_vesicles">Vesicles at the basal side</string>
+    <string name="health_atlas_enteroendocrine_signal_vesicles_caption">The luminal cue activates the cell. Hormone-containing vesicles are stored near the broader side facing the underlying tissue.</string>
+    <string name="health_atlas_enteroendocrine_signal_release">Release toward the tissue</string>
+    <string name="health_atlas_enteroendocrine_signal_release_caption">The hormone is released from the basal side into the nearby tissue. The luminal cue itself does not travel through the cell to the blood.</string>
+    <string name="health_atlas_enteroendocrine_signal_blood">Carry the hormone in blood</string>
+    <string name="health_atlas_enteroendocrine_signal_blood_caption">The released hormone can enter a nearby capillary and travel with blood to responsive cells elsewhere.</string>
+    <string name="health_atlas_enteroendocrine_signal_cell">Open-type cell</string>
+    <string name="health_atlas_enteroendocrine_signal_capillary">Capillary</string>
+    <string name="health_atlas_enteroendocrine_signal_cue">Luminal cue</string>
+    <string name="health_atlas_enteroendocrine_signal_basal">Basal vesicles</string>
+    <string name="health_atlas_enteroendocrine_signal_hormone">Hormone</string>
+    <string name="health_atlas_enteroendocrine_signal_ref_open">University of Michigan: open-type cell histology</string>
+    <string name="health_atlas_enteroendocrine_signal_ref_capillary">University of Basel: small-intestine histology</string>
+
+    <string name="health_atlas_intestinal_stem_renewal_title">Intestinal stem cells renew the lining</string>
+    <string name="health_atlas_intestinal_stem_renewal_scope">Normal adult small intestine. This educational schematic uses illustrative cell counts, distances, and timing; it is not scaled to tissue or based on personal measurements.</string>
+    <string name="health_atlas_intestinal_stem_renewal_choice">Intestinal lining renewal</string>
+    <string name="health_atlas_intestinal_stem_renewal_niche">A niche at the crypt base</string>
+    <string name="health_atlas_intestinal_stem_renewal_niche_caption">Intestinal stem cells sit among neighboring cells, including Paneth cells, at the crypt base.</string>
+    <string name="health_atlas_intestinal_stem_renewal_division">Divide and renew</string>
+    <string name="health_atlas_intestinal_stem_renewal_division_caption">Stem-cell divisions maintain the base population and supply new descendants. This view follows one example of renewal.</string>
+    <string name="health_atlas_intestinal_stem_renewal_upward">Move up the crypt wall</string>
+    <string name="health_atlas_intestinal_stem_renewal_upward_caption">Many descendants move toward a villus within the epithelial sheet. The stem-cell population stays near the base.</string>
+    <string name="health_atlas_intestinal_stem_renewal_villus">Renew the villus lining</string>
+    <string name="health_atlas_intestinal_stem_renewal_villus_caption">Some descendants mature into absorptive cells with a brush border, replacing older cells in the villus lining.</string>
+    <string name="health_atlas_intestinal_stem_renewal_cell">Stem cell</string>
+    <string name="health_atlas_intestinal_stem_renewal_paneth">Paneth neighbor</string>
+    <string name="health_atlas_intestinal_stem_renewal_toward_villus">Toward the villus</string>
+    <string name="health_atlas_intestinal_stem_renewal_lining">Villus lining</string>
+    <string name="health_atlas_intestinal_stem_renewal_ref_lineage">Cell lineages in the human small intestinal epithelium</string>
+    <string name="health_atlas_intestinal_stem_renewal_ref_migration">MedCell histology: migration along the villus</string>
+</resources>

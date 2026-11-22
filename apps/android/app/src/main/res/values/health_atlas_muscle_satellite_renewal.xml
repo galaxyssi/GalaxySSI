@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_muscle_satellite_renewal_title">How muscle satellite cells renew and repair</string>
+    <string name="health_atlas_muscle_satellite_renewal_choice">Satellite cell renewal and fusion</string>
+    <string name="health_atlas_muscle_satellite_renewal_scope">A simplified view of satellite cells in adult skeletal muscle. Sizes, shapes and timing are schematic. Renewal and fusion are possible outcomes, not a fixed pair of fates for every division.</string>
+    <string name="health_atlas_muscle_satellite_renewal_niche">A resting cell beneath the basal lamina</string>
+    <string name="health_atlas_muscle_satellite_renewal_niche_caption">A resting satellite cell sits between the basal lamina, a thin outer layer, and the sarcolemma, the muscle fiber’s own cell membrane. The satellite cell has a nucleus of its own and is separate from the fiber.</string>
+    <string name="health_atlas_muscle_satellite_renewal_activation">Leaving the resting state</string>
+    <string name="health_atlas_muscle_satellite_renewal_activation_caption">When nearby muscle needs repair, signals from the surrounding tissue can activate satellite cells. An activated cell leaves its resting state and can begin dividing.</string>
+    <string name="health_atlas_muscle_satellite_renewal_division">One cell becomes two</string>
+    <string name="health_atlas_muscle_satellite_renewal_division_caption">The activated satellite cell divides into two daughter cells, each with its own nucleus. Further divisions can produce more descendants. The muscle fiber itself is not dividing.</string>
+    <string name="health_atlas_muscle_satellite_renewal_renewal">Some descendants renew the reserve</string>
+    <string name="health_atlas_muscle_satellite_renewal_renewal_caption">Some descendants settle back beneath the basal lamina as resting satellite cells. This self-renewal keeps a reserve for future repair. Other descendants develop into muscle-forming cells.</string>
+    <string name="health_atlas_muscle_satellite_renewal_fusion">A descendant joins the muscle fiber</string>
+    <string name="health_atlas_muscle_satellite_renewal_fusion_caption">A muscle-forming descendant can fuse with an existing fiber. Their membranes join and the descendant’s nucleus becomes one of the fiber’s many nuclei. The resting satellite cell remains separate.</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_lamina">Basal lamina</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_cell">Satellite cell</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_sarcolemma">Sarcolemma</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_fiber">Skeletal muscle fiber</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_signals">Local repair signals</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_active">Activated cell</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_division">Cell division</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_daughters">Daughter cells</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_reserve">Resting reserve</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_myoblast">Muscle-forming cell</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_fusion">Fusion site</string>
+    <string name="health_atlas_muscle_satellite_renewal_art_nucleus">Added nucleus</string>
+    <string name="health_atlas_muscle_satellite_renewal_ref_niche">Mauro (1961): The satellite cell beneath the basal lamina</string>
+    <string name="health_atlas_muscle_satellite_renewal_ref_renewal">Zammit et al. (2004): Satellite cell activation and divergent fates</string>
+    <string name="health_atlas_muscle_satellite_renewal_ref_fusion">Chou and Nonaka (1977): Satellite cells and regeneration in human skeletal muscle</string>
+</resources>
