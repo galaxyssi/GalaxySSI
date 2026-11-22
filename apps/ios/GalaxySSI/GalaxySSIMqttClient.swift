@@ -900,6 +900,9 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         fragmentInflight += 1
         fragmentInflightByTransfer[transferId, default: 0] += 1
         fragmentTransferByPacketId[packetId] = transferId
+        let sameTransfer = pendingPacketPublishes.filter { $0.transferId == transferId }
+        pendingPacketPublishes.removeAll { $0.transferId == transferId }
+        pendingPacketPublishes.append(contentsOf: sameTransfer)
       }
     }
   }

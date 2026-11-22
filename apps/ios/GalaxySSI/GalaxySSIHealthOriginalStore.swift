@@ -140,6 +140,72 @@ struct GalaxySSIHealthOriginalStore {
     try store(readImport(url), name: url.lastPathComponent)
   }
 
+  func storeReportImage(_ data: Data, name: String, retainOriginal: Bool, batchID: UUID? = nil,
+      modelFirst: Bool = false) throws -> GalaxySSIHealthRecognitionJobs.Job {
+    guard try Self.format(of: data).0 == .image else { throw Failure.invalid }
+    var chosen: GalaxySSIHealthRecognitionJobs.Job?
+    try withRestoreLease { lease in
+      try reconcileRestores(lease: lease)
+      try store(data, name: name, acquisition: .uploaded, lease: lease, reportUpdate: true, updateDraft: { archive, original in
+        var temporary = archive.reviewOnlyReportOriginals ?? []
+        if retainOriginal { temporary.remove(original.id) }
+        else if archive.originalIndex?.originals[original.id] == nil { temporary.insert(original.id) }
+        archive.reviewOnlyReportOriginals = temporary
+        var jobs = archive.recognitionJobs ?? []
+        if let job = jobs.first(where: { $0.original == original && [.queued, .running, .interrupted].contains($0.phase) &&
+          $0.captureSource?.mode != .device && $0.reportVision == nil && $0.reportBatchID == batchID &&
+          ($0.reportModelFirst == true) == modelFirst }) {
+          chosen = job; return
+        }
+        guard jobs.count < GalaxySSIHealthRecognitionJobs.maximumJobs else { throw Failure.limit }
+        var job = GalaxySSIHealthRecognitionJobs.Job(original: original, addedAt: Date(), pageCount: 1)
+        job.reportBatchID = batchID; job.reportModelFirst = modelFirst
+        jobs.insert(job, at: 0); archive.recognitionJobs = jobs; chosen = job
+      })
+    }
+    guard let chosen else { throw Failure.invalid }
+    NotificationCenter.default.post(name: Self.indexChanged, object: owner)
+    NotificationCenter.default.post(name: GalaxySSIHealthRecords.recordsChanged, object: owner)
+    return chosen
+  }
+
+  func storeSelectedPDF(_ data: Data, name: String, retainOriginal: Bool) throws -> Original {
+    guard try Self.format(of: data).0 == .pdf else { throw Failure.invalid }
+    var selected: Original?
+    try withRestoreLease { lease in
+      try reconcileRestores(lease: lease)
+      try store(data, name: name, acquisition: .uploaded, lease: lease, reportUpdate: true, updateDraft: { archive, original in
+        selected = original
+        var temporary = archive.reviewOnlyReportOriginals ?? []
+        if retainOriginal { temporary.remove(original.id) }
+        else if archive.originalIndex?.originals[original.id] == nil { temporary.insert(original.id) }
+        archive.reviewOnlyReportOriginals = temporary
+      })
+    }
+    guard let selected else { throw Failure.invalid }
+    NotificationCenter.default.post(name: Self.indexChanged, object: owner)
+    return selected
+  }
+
+  func releaseCompletedQuickReportOriginals() {
+    let records = indexRecords
+    guard let archive = try? records.load(), let jobs = archive.recognitionJobs else { return }
+    for job in jobs where archive.reviewOnlyReportOriginals?.contains(job.original.id) == true {
+      do {
+        let ledger = try reconcileRemovals()
+        if ledger.metadata.contains(job.original), !ledger.pending.contains(job.original.id) {
+          try records.forgetReleasedQuickReportOriginal(job.original.id)
+          continue
+        }
+        guard try records.markQuickReportRelease(job: job.id, original: job.original.id) else { continue }
+        let preview = try previewRemoval(job.original)
+        _ = try remove(preview)
+        let final = try loadRemovals()
+        if !final.pending.contains(job.original.id) { try records.forgetReleasedQuickReportOriginal(job.original.id) }
+      } catch { /* Keep incomplete or still-in-use originals available for the next review. */ }
+    }
+  }
+
   private func readImport(_ url: URL) throws -> Data {
     let scoped = url.startAccessingSecurityScopedResource()
     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -198,6 +264,7 @@ struct GalaxySSIHealthOriginalStore {
 
   private func store(_ data: Data, name: String, acquisition: Acquisition, lease: RestoreLease,
                      draftVersion: UUID? = nil,
+                     reportUpdate: Bool = false,
                      updateDraft: ((inout GalaxySSIHealthRecords.Archive, Original) throws -> Void)? = nil) throws {
     guard !data.isEmpty, data.count <= Self.maximumFileBytes else { throw Failure.limit }
     let (kind, fileExtension) = try Self.format(of: data)
@@ -207,11 +274,13 @@ struct GalaxySSIHealthOriginalStore {
     let item: Original
     if let existing = indexed.first(where: { $0.sha256 == digest }) {
       if (try? read(existing, lease: lease)) != nil {
-        if let updateDraft {
+        if updateDraft != nil || !reportUpdate {
           let records = indexRecords
           var archive = try records.load()
-          try updateDraft(&archive, existing)
-          try records.persistPhotoCaptureDraft(archive, expected: draftVersion)
+          let promoted = !reportUpdate && archive.reviewOnlyReportOriginals?.remove(existing.id) != nil
+          try updateDraft?(&archive, existing)
+          if reportUpdate || (updateDraft == nil && promoted) { try records.persistQuickReport(archive) }
+          else if updateDraft != nil { try records.persistPhotoCaptureDraft(archive, expected: draftVersion) }
         }
         return
       }
@@ -225,6 +294,7 @@ struct GalaxySSIHealthOriginalStore {
     }
     let records = indexRecords
     var archive = try records.load()
+    if !reportUpdate { archive.reviewOnlyReportOriginals?.remove(item.id) }
     try updateDraft?(&archive, item)
     let receipt = UUID()
     do {

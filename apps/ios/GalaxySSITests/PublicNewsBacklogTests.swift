@@ -7,8 +7,8 @@ final class PublicNewsBacklogTests: XCTestCase {
   func testHistoryAndRetryGetTurnsEvenWithContinuousNewArrivals() throws {
     var ledger = PublicNewsBacklogLedger()
     let retry = article("retry", age: 90)
-    let first = try XCTUnwrap(ledger.claim([retry], now: now.addingTimeInterval(-1_000)))
-    ledger.finish(first, outcome: .retry, now: now.addingTimeInterval(-1_000))
+    let first = try XCTUnwrap(ledger.claim([retry], now: now.addingTimeInterval(-2_000)))
+    ledger.finish(first, outcome: .retry, now: now.addingTimeInterval(-2_000))
     let oldest = article("oldest", age: 70_000)
     let articles = [oldest, retry, article("middle", age: 500)]
     var claimed = [String]()
@@ -36,7 +36,7 @@ final class PublicNewsBacklogTests: XCTestCase {
     XCTAssertEqual(ledger.entries[candidate.id]?.claim?.token, second.token)
     ledger.finish(second, outcome: .retry, now: later)
     XCTAssertNil(ledger.claim([candidate], now: later))
-    XCTAssertNotNil(ledger.claim([candidate], now: later.addingTimeInterval(901)))
+    XCTAssertNotNil(ledger.claim([candidate], now: later.addingTimeInterval(1_801)))
   }
 
   func testReconciliationAccountsForCompletedAndReplacedDocuments() throws {
