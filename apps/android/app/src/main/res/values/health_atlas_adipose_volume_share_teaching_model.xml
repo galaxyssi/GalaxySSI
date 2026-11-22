@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_adipose_volume_share_title">Lipid droplet share of model tissue</string>
+    <string name="health_atlas_adipose_volume_share_radius_ratio">Droplet radius / cell radius</string>
+    <string name="health_atlas_adipose_volume_share_cell_percent">White adipocyte share of model tissue</string>
+    <string name="health_atlas_adipose_volume_share_companion">Droplet share of one model cell: %1$s%%</string>
+    <string name="health_atlas_adipose_volume_share_formula">For a spherical droplet and cell, the droplet volume fraction in one cell is r^3, where r is the droplet radius divided by the fixed cell radius. If these cells occupy p percent of the model tissue volume, their droplets occupy p times r^3 percent of that tissue volume.</string>
+    <string name="health_atlas_adipose_volume_share_scope">A mature white adipocyte typically contains one large lipid droplet. This teaching model uses identical spheres with a fixed cell radius and one spherical droplet per cell. The two slider settings are invented ratios, and the rest of the model tissue adds no droplets. This geometry does not estimate personal cell dimensions, body fat mass, obesity status, or metabolic equivalents (METs).</string>
+    <string name="health_atlas_adipose_volume_share_diagram">The gold disk shows the lipid droplet in a cell section. The gold sector shows the fraction of model tissue occupied by droplets.</string>
+    <string name="health_atlas_adipose_volume_share_cell_view">Model cell section</string>
+    <string name="health_atlas_adipose_volume_share_tissue_view">Droplet share of tissue</string>
+</resources>

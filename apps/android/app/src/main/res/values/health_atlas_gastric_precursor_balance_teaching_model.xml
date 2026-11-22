@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gastric_precursor_balance_title">Gastric precursor balance: amount converted</string>
+    <string name="health_atlas_gastric_precursor_balance_amount">Starting precursor amount</string>
+    <string name="health_atlas_gastric_precursor_balance_converted_percent">Fictional percentage converted</string>
+    <string name="health_atlas_gastric_precursor_balance_companion">Precursor remaining: %1$s MU</string>
+    <string name="health_atlas_gastric_precursor_balance_formula">Divide the selected percentage by 100 to get the converted fraction. Multiply the starting amount by that fraction to get the converted amount. Subtract the converted amount from the starting amount to get the remaining precursor.</string>
+    <string name="health_atlas_gastric_precursor_balance_scope">Chief cells in gastric glands release an inactive enzyme precursor. Parietal cells supply acid, creating an environment that helps the precursor convert to its active form. The model divides a fictional starting amount into converted and remaining shares, both in model units (MU). The selected percentage is not a measure of acidity or enzyme activity. This model is for teaching only and does not predict digestion or stomach emptying.</string>
+</resources>

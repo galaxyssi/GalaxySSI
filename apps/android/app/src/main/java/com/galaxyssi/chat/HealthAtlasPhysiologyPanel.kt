@@ -23,12 +23,14 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
     private val villus = if (kind == HealthAtlasPhysiologyKind.VILLUS_AREA) HealthAtlasVillusAreaView(activity) else null
     private val bladder = if (kind == HealthAtlasPhysiologyKind.BLADDER_EXPANSION) HealthAtlasBladderFillingView(activity, model) else null
     private val ureter = if (kind == HealthAtlasPhysiologyKind.URETER_DELIVERY) HealthAtlasUreterTransportView(activity, model) else null
+    private val vocal = if (kind == HealthAtlasPhysiologyKind.VOCAL_CYCLES) HealthAtlasVocalCycleView(activity, model) else null
     private val materialResponse = when (kind) {
         HealthAtlasPhysiologyKind.ALVEOLAR_DIFFUSION, HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION,
         HealthAtlasPhysiologyKind.BONE_BENDING, HealthAtlasPhysiologyKind.CALF_PUMP,
         HealthAtlasPhysiologyKind.PELVIC_SUPPORT, HealthAtlasPhysiologyKind.CUSHION_CONTACT_PRESSURE,
         HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT, HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY,
-        HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE, HealthAtlasPhysiologyKind.CORNEAL_REFRACTION ->
+        HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE, HealthAtlasPhysiologyKind.CORNEAL_REFRACTION,
+        HealthAtlasPhysiologyKind.CIRCADIAN_LIGHT_WINDOW, HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE ->
             HealthAtlasMaterialResponseView(activity, model)
         else -> null
     }
@@ -44,6 +46,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         alveolar?.let { ui.add(body, it, 12) }
         bladder?.let { ui.add(body, it, 8) }
         ureter?.let { ui.add(body, it, 8) }
+        vocal?.let { ui.add(body, it, 8) }
         villus?.let {
             ui.add(body, it, 8)
             ui.add(body, ui.text(activity.getString(R.string.health_atlas_gut_section_area_views), 12f, muted = true), 4)
@@ -60,7 +63,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
             ui.add(body, ui.text(if (unit.isEmpty()) axisLabel else
                 activity.getString(R.string.health_atlas_model_axis, axisLabel, unit), 12f, muted = true))
         }
-        val controlsFirst = alveolar != null || villus != null || bladder != null || ureter != null || materialResponse != null ||
+        val controlsFirst = alveolar != null || villus != null || bladder != null || ureter != null || vocal != null || materialResponse != null ||
             kind == HealthAtlasPhysiologyKind.PHOTON_CAPTURE
         if (!controlsFirst) addChart()
         kind.inputs.forEachIndexed { index, input ->
@@ -116,6 +119,7 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         villus?.model = model
         bladder?.model = model
         ureter?.model = model
+        vocal?.model = model
         materialResponse?.model = model
         controls.forEachIndexed { index, (_, label) -> label.text = HealthAtlasPhysiologyText.input(activity, model, index) }
     }

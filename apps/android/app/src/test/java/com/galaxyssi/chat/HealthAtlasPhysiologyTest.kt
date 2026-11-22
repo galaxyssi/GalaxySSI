@@ -31,7 +31,7 @@ class HealthAtlasPhysiologyTest {
         assertEquals(0.0, model.withInput(0, 0).result, 0.0)
         assertEquals(80.0, model.withInput(0, 80).withInput(1, 10).result, 1e-9)
         assertNull(HealthAtlasPhysiology.restore("subcutaneous-tissue", intArrayOf(40, 0)))
-        assertNull(HealthAtlasPhysiologyKind.forItem("cell-adipocyte"))
+        assertEquals(HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE, HealthAtlasPhysiologyKind.forItem("cell-adipocyte"))
     }
 
     @Test fun idealCalfPumpConservesForwardAndReturningVolume() {
@@ -160,7 +160,8 @@ class HealthAtlasPhysiologyTest {
                             HealthAtlasPhysiologyKind.BONE_REMODELING_BALANCE,
                             HealthAtlasPhysiologyKind.CUTANEOUS_SEBUM,
                             HealthAtlasPhysiologyKind.EXTERNAL_EAR_RESONANCE,
-                            HealthAtlasPhysiologyKind.SWEAT_DUCT_BALANCE -> y <= value + 1e-9
+                            HealthAtlasPhysiologyKind.SWEAT_DUCT_BALANCE,
+                            HealthAtlasPhysiologyKind.ORAL_MARKER_DILUTION -> y <= value + 1e-9
                             else -> y >= value - 1e-9
                         })
                     }

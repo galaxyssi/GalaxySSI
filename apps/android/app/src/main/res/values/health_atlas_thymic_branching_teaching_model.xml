@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_thymic_branching_title">Thymic branching: selected tile tally</string>
+    <string name="health_atlas_thymic_branching_starting_tally">Starting tile tally</string>
+    <string name="health_atlas_thymic_branching_selected_percent">Share of tiles in the selected group</string>
+    <string name="health_atlas_thymic_branching_companion">Remaining group: %1$s tiles</string>
+    <string name="health_atlas_thymic_branching_formula">Selected tiles = starting tally &#215; (selected percentage &#247; 100). Remaining tiles = starting tally minus selected tiles.</string>
+    <string name="health_atlas_thymic_branching_scope">In the thymus, positive selection helps thymocytes that express both CD4 and CD8 survive and develop toward a CD4+ or CD8+ lineage. Negative selection removes many self-reactive thymocytes. Conventional CD4+ T cells can later take on helper functions, and conventional CD8+ T cells can take on cytotoxic functions. Thymus-derived regulatory T cells also arise from developing CD4+ cells but are distinct from conventional helper T cells. The exercise divides an invented tally of tiles into two groups. Neither group represents a real stage, lineage, or fate. The numbers are not biological measurements or estimates for anyone.</string>
+</resources>

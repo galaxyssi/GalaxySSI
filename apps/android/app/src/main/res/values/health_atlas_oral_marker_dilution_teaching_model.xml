@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_oral_marker_dilution_title">Oral marker dilution</string>
+    <string name="health_atlas_oral_marker_dilution_marker_stream">Marker stream volume</string>
+    <string name="health_atlas_oral_marker_dilution_added_water">Added water volume</string>
+    <string name="health_atlas_oral_marker_dilution_companion">Mixed volume: %1$s VU</string>
+    <string name="health_atlas_oral_marker_dilution_formula">The marker stream always carries 8 TU of dissolved marker. The added water carries none. Mixed volume = marker stream volume + added water volume. Marker concentration = 8 TU divided by the mixed volume.</string>
+    <string name="health_atlas_oral_marker_dilution_scope">In the mouth, tastants dissolve in saliva and can reach taste receptor cells through pores in taste buds on the tongue. When those cells are stimulated, taste nerves carry signals to the brain. Here, two streams mix evenly in one idealized local liquid sample. TU and VU are fictional units of marker amount and liquid volume. The graph shows solution concentration only. It does not show real tastant doses, receptor or nerve responses, or perceived taste intensity.</string>
+</resources>

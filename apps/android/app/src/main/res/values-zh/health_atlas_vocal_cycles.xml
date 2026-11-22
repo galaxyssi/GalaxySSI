@@ -1,0 +1,15 @@
+<resources>
+    <string name="health_atlas_vocal_cycles_title">声带振动：观察周期数</string>
+    <string name="health_atlas_vocal_cycles_frequency">示例振动频率</string>
+    <string name="health_atlas_vocal_cycles_duration">示例观察时段</string>
+    <string name="health_atlas_vocal_cycles_formula">周期数＝频率 × 时段（秒）。单次振动用时＝1,000 ÷ 频率（毫秒）。</string>
+    <string name="health_atlas_vocal_cycles_period">单个周期：%1$s ms</string>
+    <string name="health_atlas_vocal_cycles_scope">发声时，气流可以使声带振动。图中慢放的是理想化的声门开合，不是录音或声压波形，也不估计个人的声音。</string>
+    <string name="health_atlas_vocal_cycles_caption">声门开合慢放</string>
+    <string name="health_atlas_vocal_cycles_top_view">声带俯视</string>
+    <string name="health_atlas_vocal_cycles_opening">相对开口</string>
+    <string name="health_atlas_vocal_cycles_position">示例时段内的播放位置</string>
+    <string name="health_atlas_vocal_cycles_diagram">声带俯视图与开合曲线。选定时段内有 %1$s 个示例周期。</string>
+    <string name="health_atlas_vocal_cycles_play">播放声带振动</string>
+    <string name="health_atlas_vocal_cycles_pause">暂停声带振动</string>
+</resources>

@@ -28,6 +28,8 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY -> R.string.health_atlas_arterial_continuity_diagram
         HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE -> R.string.health_atlas_airway_ciliary_clearance_diagram
         HealthAtlasPhysiologyKind.CORNEAL_REFRACTION -> R.string.health_atlas_model_corneal_refraction_diagram
+        HealthAtlasPhysiologyKind.CIRCADIAN_LIGHT_WINDOW -> R.string.health_atlas_circadian_light_window_diagram
+        HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE -> R.string.health_atlas_adipose_volume_share_diagram
         else -> error("Unexpected material response: $kind")
     }
     private val ink = context.getColor(R.color.text_primary)
@@ -56,6 +58,8 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY -> "atlas-arterial-continuity"
             HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE -> "atlas-airway-cilia-track"
             HealthAtlasPhysiologyKind.CORNEAL_REFRACTION -> "atlas-corneal-rays"
+            HealthAtlasPhysiologyKind.CIRCADIAN_LIGHT_WINDOW -> "atlas-circadian-dial"
+            HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE -> "atlas-adipose-volume-share"
             else -> error("Unexpected material response: $kind")
         }
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
@@ -85,6 +89,8 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY -> drawArterialContinuity(canvas)
             HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE -> drawCiliaTrack(canvas)
             HealthAtlasPhysiologyKind.CORNEAL_REFRACTION -> drawRefraction(canvas)
+            HealthAtlasPhysiologyKind.CIRCADIAN_LIGHT_WINDOW -> drawCircadianDial(canvas)
+            HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE -> drawAdiposeShare(canvas)
             else -> Unit
         }
         canvas.restore()
@@ -420,6 +426,55 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         label(c, R.string.health_atlas_model_corneal_refraction_incident_ray, 65f, 25f, 110f)
         label(c, R.string.health_atlas_model_corneal_refraction_refracted_ray, 258f, 139f, 106f)
         label(c, R.string.health_atlas_model_corneal_refraction_surface, 253f, 65f, 128f)
+    }
+
+    private fun drawCircadianDial(c: Canvas) {
+        val cx = 97f
+        val cy = 75f
+        val r = 53f
+        val light = 0xffefd19b.toInt()
+        val dark = 0xff91b6bc.toInt()
+        paint.color = light
+        c.drawArc(cx - r, cy - r, cx + r, cy + r, -90f, 180f, true, paint)
+        paint.color = dark
+        c.drawArc(cx - r, cy - r, cx + r, cy + r, 90f, 180f, true, paint)
+        for (tick in 0..11) {
+            val direction = Math.toRadians((tick * 30.0) - 90.0)
+            val dx = cos(direction).toFloat()
+            val dy = sin(direction).toFloat()
+            line(c, cx + dx * (r - 7), cy + dy * (r - 7), cx + dx * r, cy + dy * r, 0xff3d656b.toInt(), 1.45f)
+        }
+        val angle = Math.toRadians(model.companionValue - 90)
+        val x = cx + cos(angle).toFloat() * (r - 13)
+        val y = cy + sin(angle).toFloat() * (r - 13)
+        line(c, cx, cy, x, y, 0xff1d5558.toInt(), 3.9f)
+        oval(c, cx - 4, cy - 4, cx + 4, cy + 4, 0xff1d5558.toInt())
+        oval(c, x - 3, y - 3, x + 3, y + 3, 0xff1d5558.toInt())
+        rectangle(c, 178f, 45f, 193f, 55f, light, 3f)
+        rectangle(c, 178f, 84f, 193f, 94f, dark, 3f)
+        label(c, R.string.health_atlas_circadian_light_window_dial_light, 260f, 55f, 122f)
+        label(c, R.string.health_atlas_circadian_light_window_dial_dark, 260f, 94f, 122f)
+    }
+
+    private fun drawAdiposeShare(c: Canvas) {
+        val x = 84f
+        val y = 70f
+        val r = 49f
+        val lipid = 0xffe9b967.toInt()
+        val droplet = model.input(0).toFloat() * (r - 3)
+        oval(c, x - r, y - r, x + r, y + r, 0xff598481.toInt())
+        oval(c, x - r + 3, y - r + 3, x + r - 3, y + r - 3, 0xffd1e4dc.toInt())
+        oval(c, x - droplet, y - droplet, x + droplet, y + droplet, lipid)
+        oval(c, x + 22, y + 23, x + 38, y + 29, 0xff72868b.toInt())
+
+        val center = 250f
+        val radius = 48f
+        oval(c, center - radius, y - radius, center + radius, y + radius, 0xffb8d6d0.toInt())
+        paint.color = lipid
+        c.drawArc(center - radius, y - radius, center + radius, y + radius, -90f,
+            360f * model.result.toFloat() / 100f, true, paint)
+        label(c, R.string.health_atlas_adipose_volume_share_cell_view, x, 145f, 142f)
+        label(c, R.string.health_atlas_adipose_volume_share_tissue_view, center, 145f, 155f)
     }
 
     private fun rectangle(c: Canvas, left: Float, top: Float, right: Float, bottom: Float, color: Int, radius: Float = 10f) {
