@@ -17,6 +17,8 @@ final class MqttBusinessTransportRuntime {
   private let receipts: MqttBusinessReceipts
   private let completions: MqttBusinessDeliveryDrain
   private let receiptRetry = MqttReceiptRetry()
+  private let chunkFeedback = MqttChunkFeedback()
+  private let privateReports = GalaxySSIHealthReportCodexExchange()
   private let projectInbound: @MainActor (MqttBusinessInbox.Pending) async throws -> Void
   private let monotonic: () -> Int64
   private let onFailure: @MainActor (Error) -> Void
@@ -358,6 +360,9 @@ final class MqttBusinessTransportRuntime {
           zip(retained, configuredDirectPeers).contains(where: { $0.0.binding != $0.1.binding }) else { return }
     let removed = retained.count != configuredDirectPeers.count
     let retainedIdentities = try retained.map { try MqttBusinessIdentity($0.binding) }
+    for identity in identities where !retainedIdentities.contains(identity) {
+      chunkFeedback.forget(scope: identity.scope)
+    }
     try routes.replace(retained.map(\.binding))
     configuredDirectPeers = retained
     identities = retainedIdentities
@@ -423,6 +428,7 @@ final class MqttBusinessTransportRuntime {
     guard !stopped else { return }
     await dispatcher.tick()
     await receiptRetry.drain(now: monotonic())
+    for send in chunkFeedback.drain(now: monotonic()) { await send() }
     guard !stopped else { return }
     let outbound = try await sends.drain(identities: identities, validatedNetwork: validatedNetwork) { [weak self] entry in
       try await self?.authorizeConnectorSend(entry) ?? false
@@ -516,6 +522,92 @@ final class MqttBusinessTransportRuntime {
     return evidenceDestination(request.binding) { stage in
       AgentDesktopEvidenceQueryTrace.record(stage, nonce: request.nonce, started: started)
     } != nil
+  }
+
+  private func publishPrivateReport(_ request: GalaxySSIHealthReportCodex.Request, payload: [String: Any]) async -> Bool {
+    guard !stopped, let binding = request.evidenceBinding else { return false }
+    do {
+      try refreshDirectPeerBindings()
+      guard let target = evidenceDestination(binding),
+            GalaxySSIHealthReportCodex.acceptsOutgoing(payload, desktop: target.peer.remoteSignalName, route: target.routeId)
+      else { return false }
+      let outgoing = try MqttSignalSendRequest(identity: MqttBusinessIdentity(target.peer.binding), payload: payload,
+        remoteName: target.peer.remoteSignalName, topic: target.peer.binding.sendTopic, clientRouteID: target.routeId,
+        traffic: .control, contactID: request.target.route.connector.contactId)
+      let wire = try routes.withOutgoing(identity: outgoing.identity, topics: [outgoing.topic]) {
+        try engine.makePrivateHealthReportWire(outgoing)
+      }
+      return await routes.publishTransientControl(topic: outgoing.topic, wire: wire, secret: target.peer.binding.secret).accepted
+    } catch { return false }
+  }
+
+  func transcribePrivateHealthReport(_ request: GalaxySSIHealthReportCodex.Request, jpeg: Data,
+      instructions: String, published: () -> Void, valid: () -> Bool) async throws -> String {
+    try Task.checkCancellation()
+    guard valid() else { throw MqttRouteError.identityChanged }
+    guard started, !stopped, let binding = request.evidenceBinding else { throw GalaxySSIHealthReportDelivery.Problem.notSent }
+    let payload = try request.payload(jpeg: jpeg, instructions: instructions)
+    try privateReports.begin(request)
+    var sent = false
+    var completed = false
+    defer {
+      let terminal = privateReports.outcome(request) != nil
+      privateReports.finish(request)
+      if sent, !completed, !terminal {
+        Task { @MainActor [weak self] in _ = await self?.publishPrivateReport(request, payload: request.cancellation) }
+      }
+    }
+    let text = try await GalaxySSIHealthReportDelivery.receive(publish: {
+      let waiting = DispatchTime.now().uptimeNanoseconds
+      while evidenceDestination(binding) == nil {
+        try Task.checkCancellation()
+        guard valid(), !stopped else { throw MqttRouteError.identityChanged }
+        guard DispatchTime.now().uptimeNanoseconds - waiting < 12_000_000_000 else { return false }
+        try refreshDirectPeerBindings()
+        try await Task.sleep(nanoseconds: 200_000_000)
+      }
+      try Task.checkCancellation()
+      guard valid(), !stopped else { throw MqttRouteError.identityChanged }
+      let accepted = await publishPrivateReport(request, payload: payload)
+      if accepted && !sent { sent = true; published() }
+      return accepted
+    }, probe: {
+      try await probePrivateReportAdmission(request, valid: valid)
+    }, outcome: { privateReports.outcome(request) }, valid: { valid() && !stopped })
+    completed = true
+    return text
+  }
+
+  private func probePrivateReportAdmission(_ request: GalaxySSIHealthReportCodex.Request,
+      valid: () -> Bool) async throws -> GalaxySSIHealthReportDelivery.Admission {
+    let waiting = DispatchTime.now().uptimeNanoseconds
+    guard let nonce = privateReports.beginAdmission(request, now: waiting) else { return .unknown }
+    defer { privateReports.finishAdmission(request, nonce: nonce) }
+    guard let payload = request.admissionQuery(nonce: nonce), let binding = request.evidenceBinding else { return .unknown }
+    do {
+      try Task.checkCancellation()
+      guard valid(), !stopped else { throw MqttRouteError.identityChanged }
+      try refreshDirectPeerBindings()
+      guard let target = evidenceDestination(binding),
+            request.acceptsAdmissionQuery(payload, nonce: nonce, desktop: target.peer.remoteSignalName, route: target.routeId)
+      else { return .unknown }
+      let outgoing = try MqttSignalSendRequest(identity: MqttBusinessIdentity(target.peer.binding), payload: payload,
+        remoteName: target.peer.remoteSignalName, topic: target.peer.binding.sendTopic, clientRouteID: target.routeId,
+        traffic: .control, contactID: request.target.route.connector.contactId)
+      let wire = try routes.withOutgoing(identity: outgoing.identity, topics: [outgoing.topic]) {
+        try engine.makeRecoveryQueryWire(outgoing)
+      }
+      guard await routes.publishTransientControl(topic: outgoing.topic, wire: wire, secret: target.peer.binding.secret).accepted else { return .unknown }
+    } catch is CancellationError { throw CancellationError() }
+    catch { guard valid(), !stopped else { throw MqttRouteError.identityChanged }; return .unknown }
+    while DispatchTime.now().uptimeNanoseconds - waiting < 8_000_000_000 {
+      try Task.checkCancellation()
+      guard valid(), !stopped else { throw MqttRouteError.identityChanged }
+      if privateReports.outcome(request) != nil { return .unknown }
+      if let admission = privateReports.admission(request, nonce: nonce) { return admission }
+      try await Task.sleep(nanoseconds: 200_000_000)
+    }
+    return .unknown
   }
 
   func queryDesktopEvidence(_ request: AgentDesktopToolEvidenceWire.Request,
@@ -626,6 +718,7 @@ final class MqttBusinessTransportRuntime {
   func stop() async {
     guard !stopped else { return }
     stopped = true
+    privateReports.removeAll()
     evidenceQueries.removeAll()
     let worker = ingressTask
     worker?.cancel()
@@ -636,6 +729,7 @@ final class MqttBusinessTransportRuntime {
     await completions.close()
     await dispatcher.close()
     await receiptRetry.clear()
+    chunkFeedback.clear()
     await worker?.value
   }
 
@@ -682,7 +776,15 @@ final class MqttBusinessTransportRuntime {
       try storeChunks(packet, identity: identity, remoteName: remoteName, probe: probe)
     }
     if let state {
-      _ = try await routes.publishIngressReply(packet, payload: state)
+      let feedback = try MqttChunkReceipts.parseState(state)
+      let send = chunkFeedback.offer(scope: packet.scope, transfer: feedback.query.transfer,
+        request: feedback.query.request, revision: feedback.revision, now: monotonic(),
+        urgent: proof != nil || probe || feedback.storedIndices.count == feedback.query.count) {
+          [weak self] in
+          guard let self, !self.stopped else { return false }
+          return (try? await self.routes.publishIngressReply(packet, payload: state)) == true
+        }
+      await send?()
     }
     if !stopped, let proof { await offerLogicalReceipt(packet, proof: proof, remoteName: remoteName) }
   }
@@ -710,7 +812,7 @@ final class MqttBusinessTransportRuntime {
     }
     let destination = try peerChatProjection?.currentDestination(proof.identity)
     let peerChat = destination?.desktop == false
-    let payload: [String: Any]? = try routes.withCurrentIdentity(packet) { identity in
+    let payload: [String: Any]? = try routes.withReceiptIdentity(packet) { identity in
       guard identity == proof.identity, try stillValid() else { return nil }
       if cache.payload == nil {
         cache.payload = try engine.makeStoredReceiptWire(identity: identity, messageID: proof.messageID,
@@ -932,6 +1034,25 @@ final class MqttBusinessTransportRuntime {
     guard let target = try projection.currentDestination(item.identity),
           payload["message_id"] as? String == item.messageID else { throw MqttRouteError.identityChanged }
     let type = payload.string("type")
+    if target.desktop, privateReports.handlesAdmission(payload) {
+      privateReports.receiveAdmission(payload, desktop: target.peer.remoteSignalName, route: target.routeId)
+      return
+    }
+    if target.desktop, payload.string("conversation_id").hasPrefix(GalaxySSIHealthReportCodex.prefix) {
+      if let receipt = privateReports.receive(payload, desktop: target.peer.remoteSignalName, route: target.routeId),
+         let id = UUID(uuidString: String(payload.string("conversation_id").dropFirst(GalaxySSIHealthReportCodex.prefix.count))),
+         let contact = projection.store.contact(id: payload.string("contact_id")),
+         let link = projection.store.serverLinks.first(where: { $0.desktopId == target.peer.remoteSignalName && $0.paired }) {
+        let route = GalaxySSIHealthDesktopResearch.Route(connector: .init(contactId: contact.id, desktopId: link.desktopId,
+          clientRouteId: target.routeId, modelId: contact.connectorInvocationProfile.defaultModelId, reasoningEffort: .automatic),
+          desktopFingerprint: link.desktopFingerprint)
+        let request = GalaxySSIHealthReportCodex.Request(target: .init(route: route, authority: contact.desktopName), id: id)
+        var acknowledgement = receipt.payload
+        acknowledgement["message_id"] = UUID().uuidString
+        _ = await publishPrivateReport(request, payload: acknowledgement)
+      }
+      return
+    }
     if type == "pairing_revoked" {
       guard MqttPeerChatProjection.acceptsDesktopRevocation(payload, target: target),
             let receiveDesktopRevocation else { throw MqttRouteError.identityChanged }

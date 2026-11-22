@@ -6,6 +6,39 @@ final class MqttSealedPathTests: XCTestCase {
   private let topic = String(repeating: "a", count: 43)
   private let inbox = String(repeating: "b", count: 43)
 
+  func testPublicBrokerProfileFragmentsBeforeTheProtocolCeiling() throws {
+    for (size, expected) in [(1024, false), (61_440, true), (100_000, true)] {
+      let data = try wire(body: String(repeating: "x", count: size))
+      let delivery = try makeDelivery(body: String(repeating: "x", count: size))
+      XCTAssertEqual(try MqttSignalDelivery.requiresFragments(topic: topic, wire: data, message: delivery.message), expected)
+    }
+    XCTAssertEqual(GalaxySSIMqttWireChunking.defaultChunkDataBytes, 380 * 1024)
+    XCTAssertEqual(GalaxySSIMqttWireChunking.maximumReassembledBytes, 2 * 1024 * 1024)
+  }
+
+  func testReceiptWaitsForPUBACKAndUsesOnlyOnePendingCopyPerPath() throws {
+    let receipt = MqttReceiptPublication(payload: Data([1]), now: 0)
+    let first = try XCTUnwrap(receipt.claim(broker: "emqx", generation: 1, now: 0))
+    XCTAssertFalse(receipt.accepted)
+    XCTAssertNil(receipt.claim(broker: "hivemq", generation: 1, now: 999))
+    let fallback = try XCTUnwrap(receipt.claim(broker: "hivemq", generation: 1, now: 1000))
+    XCTAssertNil(receipt.claim(broker: "emqx", generation: 1, now: 2000))
+    receipt.finish(broker: "emqx", token: "stale", accepted: true)
+    XCTAssertFalse(receipt.accepted)
+    receipt.finish(broker: "hivemq", token: fallback, accepted: true)
+    XCTAssertTrue(receipt.accepted)
+    XCTAssertFalse(receipt.permits(broker: "emqx", token: first))
+    XCTAssertNil(receipt.claim(broker: "mosquitto", generation: 1, now: 2000))
+  }
+
+  func testReceiptFailureAllowsImmediateAlternativeAndTTLStopsPublication() throws {
+    let receipt = MqttReceiptPublication(payload: Data([1]), now: 0)
+    let first = try XCTUnwrap(receipt.claim(broker: "emqx", generation: 1, now: 0))
+    receipt.finish(broker: "emqx", token: first, accepted: false)
+    XCTAssertNotNil(receipt.claim(broker: "hivemq", generation: 1, now: 1))
+    XCTAssertNil(receipt.claim(broker: "mosquitto", generation: 1, now: 30_000))
+  }
+
   func testEncryptedSizeEstimateMatchesActualPaddingBuckets() throws {
     for size in [0, 1, 1019, 1020, 16_379, 16_380, 65_531, 65_532, 131_067, 131_068, 262_139, 262_140, 524_283] {
       let sealed = try GalaxySSILinkProtocol.sealWirePacket(Data(repeating: 1, count: size), secret: secret)
