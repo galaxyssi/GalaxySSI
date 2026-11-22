@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mammary_duct_delivery_title">从乳腺腺泡进入乳管的液量</string>
+    <string name="health_atlas_mammary_duct_delivery_secreted_volume">分泌到模型腺泡腔的液量</string>
+    <string name="health_atlas_mammary_duct_delivery_displaced_share">被推入模型乳管的比例</string>
+    <string name="health_atlas_mammary_duct_delivery_companion">模型腺泡腔内剩余液量：%1$s VU</string>
+    <string name="health_atlas_mammary_duct_delivery_formula">进入乳管的液量 = 分泌液量 ×（移入乳管的百分比数值 ÷ 100）。腺泡腔内剩余液量 = 分泌液量 − 进入乳管的液量。</string>
+    <string name="health_atlas_mammary_duct_delivery_scope">泌乳期的乳腺中，腺泡内侧的分泌型腔面上皮细胞把乳汁释放到腺泡腔内。包绕腺泡的肌上皮细胞收缩，将乳汁推入乳管，但这些细胞不分泌乳汁。模型从一个空的腺泡腔开始，先加入假想液体，再由外层收缩将设定比例的液体推入一条乳管，没有其他液体加入或流失。VU 是虚构的体积单位；移入比例只是模型设定，不代表收缩强度。这些设定不是生理参考范围，也不能用于估算个人的泌乳量或排乳量。</string>
+</resources>

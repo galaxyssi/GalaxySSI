@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mucus_film_thickness_title">黏液膜厚度（教学模型）</string>
+    <string name="health_atlas_mucus_film_thickness_volume">虚拟液体体积</string>
+    <string name="health_atlas_mucus_film_thickness_area">虚拟覆盖面积</string>
+    <string name="health_atlas_mucus_film_thickness_companion">虚拟液体总体积：%1$s u&#179;</string>
+    <string name="health_atlas_mucus_film_thickness_formula">均匀液膜厚度 = 液体体积 &#247; 覆盖面积。体积不变时，面积加倍，厚度减半。面积不变时，体积加倍，厚度也加倍。</string>
+    <string name="health_atlas_mucus_film_thickness_scope">杯状细胞分泌黏蛋白，参与形成黏膜表面的黏液。气道黏液有助于捕获吸入的颗粒；肠道黏液有助于润滑并保护肠上皮。就咽部而言，本例仅指鼻咽部分区域的纤毛呼吸上皮。计算假设虚拟液体均匀铺在一块平面上，所有单位均为任意单位。本模型不代表真实的黏液厚度，也不模拟分泌或清除随时间的变化、检测结果或病原体传播。</string>
+</resources>

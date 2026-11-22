@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_tooth_enamel_section_title">牙冠横截面中的牙釉质占比</string>
+    <string name="health_atlas_tooth_enamel_section_thickness">牙釉质厚度</string>
+    <string name="health_atlas_tooth_enamel_section_radius">牙冠外半径</string>
+    <string name="health_atlas_tooth_enamel_section_companion">内部组织面积：%1$s mm²</string>
+    <string name="health_atlas_tooth_enamel_section_formula">设外半径为 r，牙釉质厚度为 t，则内半径为 r − t。牙釉质面积占比 = 100 × [1 − ((r − t) / r)²]，以整个横截面面积的百分比表示。内部组织面积 = π × (r − t)²。</string>
+    <string name="health_atlas_tooth_enamel_section_scope">牙釉质覆盖牙冠，牙本质位于牙釉质下方，牙髓位于牙齿中央。本模型把牙冠的横截面简化为一个圆，外圈为厚度均匀的牙釉质环，环内的牙本质和牙髓合并为内部组织，不作区分。牙冠半径不变时，环越厚，牙釉质面积占比越大；厚度不变时，半径越大，占比越小。两个尺寸均为假设的教学数值，不是实测值，也不代表典型值。本模型不能用于诊断牙科疾病或估算个人的牙釉质损失。</string>
+    <string name="health_atlas_tooth_enamel_section_diagram">浅色外环表示模型牙釉质，径向短线标记其厚度。中心表示牙釉质以内的组织。</string>
+    <string name="health_atlas_tooth_enamel_section_enamel">牙釉质外环</string>
+    <string name="health_atlas_tooth_enamel_section_inside">内层组织</string>
+    <string name="health_atlas_tooth_enamel_section_crown">模型牙冠截面</string>
+</resources>

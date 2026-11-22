@@ -1,0 +1,16 @@
+<resources>
+    <string name="health_atlas_placental_marker_title">胎盘交换：胎儿侧收到的示例量</string>
+    <string name="health_atlas_placental_marker_amount">母体侧起始标记量</string>
+    <string name="health_atlas_placental_marker_equilibration">向两侧均分推进的比例</string>
+    <string name="health_atlas_placental_marker_formula">两个等体积模型起初只有一侧含标记。转移量＝起始量的一半 × 选定的均分进度。</string>
+    <string name="health_atlas_placental_marker_remaining">母体侧剩余：%1$s 个示例单位</string>
+    <string name="health_atlas_placental_marker_scope">胎盘把母体和胎儿血流分开，但部分物质可经交换面通过。这个等体积模型只追踪虚拟标记物，不估算任何真实物质或药物的转移，也不用于评估妊娠。</string>
+    <string name="health_atlas_placental_marker_caption">交换面的两侧</string>
+    <string name="health_atlas_placental_marker_maternal">母体侧</string>
+    <string name="health_atlas_placental_marker_fetal">胎儿侧</string>
+    <string name="health_atlas_placental_marker_barrier">绒毛屏障</string>
+    <string name="health_atlas_placental_marker_amount_label">%1$s 单位</string>
+    <string name="health_atlas_placental_marker_diagram">两侧血流互不混合。设定终点时，母体侧有 %1$s 个示例单位，胎儿侧有 %2$s 个。</string>
+    <string name="health_atlas_placental_marker_play">播放胎盘标记物交换</string>
+    <string name="health_atlas_placental_marker_pause">暂停胎盘标记物交换</string>
+</resources>

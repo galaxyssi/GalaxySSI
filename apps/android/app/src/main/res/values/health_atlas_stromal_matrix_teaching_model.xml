@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_stromal_matrix_title">Stromal matrix per area</string>
+    <string name="health_atlas_stromal_matrix_added_mass">Symbolically added matrix mass</string>
+    <string name="health_atlas_stromal_matrix_initial_mass">Matrix mass already present</string>
+    <string name="health_atlas_stromal_matrix_companion">Initial matrix mass per area: %1$s MU/AU</string>
+    <string name="health_atlas_stromal_matrix_formula">Total matrix mass per area = (initial mass + symbolic addition) / 2 AU. Both amounts refer to the same fixed patch. The chart varies only the symbolic addition; no material is removed.</string>
+    <string name="health_atlas_stromal_matrix_scope">Fibroblasts contribute components such as collagen to the extracellular matrix, the material around cells. In the endometrium (uterine lining), some stromal cells express genes for matrix components. This example only tallies material in one imaginary patch. MU and AU are invented mass and area units, not tissue measurements. The model does not predict deposition rates, tissue properties, or menstrual or fertility timing.</string>
+</resources>

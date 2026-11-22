@@ -232,6 +232,8 @@ class HealthAtlasPhysiologyDeviceTest {
             Triple("cornea", "corneal-rays", "corneal-refraction-incident-angle"),
             Triple("pineal-gland", "circadian-dial", "circadian-light-window-elapsed"),
             Triple("cell-adipocyte", "adipose-volume-share", "adipose-volume-share-radius-ratio"),
+            Triple("teeth", "tooth-enamel-section", "tooth-enamel-section-thickness"),
+            Triple("renal-cortex", "renal-tubule-retention", "renal-tubule-retention-segment-b"),
         )
         for ((id, art, input) in examples) {
             var initial = 0
@@ -270,7 +272,8 @@ class HealthAtlasPhysiologyDeviceTest {
             "cell-oligodendrocyte", "cell-pancreatic-beta-cell", "cell-retinal-bipolar-cell", "cell-skeletal-myocyte",
             "stomach", "vestibular-apparatus", "cell-megakaryocyte", "cell-osteoblast", "cell-sebocyte",
             "external-ear", "liver", "joints", "cell-granulosa-cell", "cell-sweat-gland-secretory-cell",
-            "vertebrae", "taste-buds", "olfactory-mucosa", "thymus", "cell-gastric-chief-cell", "cell-melanocyte")
+            "vertebrae", "taste-buds", "olfactory-mucosa", "thymus", "cell-gastric-chief-cell", "cell-melanocyte",
+            "appendix", "rectum", "mammary-glands", "pharynx", "cell-fibroblast", "cell-merkel-cell")
         for (id in examples) scenario.onActivity { activity ->
             activity.open(id, cell = id.startsWith("cell-"))
             val kind = requireNotNull(HealthAtlasPhysiologyKind.forItem(id))
@@ -415,6 +418,48 @@ class HealthAtlasPhysiologyDeviceTest {
                 assertNotEquals(displayed, output.text.toString())
                 assertNotNull(activity.view("atlas-simulation-play"))
             } finally { end.recycle() }
+        }
+    }
+    @Test fun placentalExchangePlaybackKeepsItsTwoSidesAndStoresSettingsPerEntry() = native { scenario ->
+        scenario.onActivity { it.open("placenta") }
+        capture("placental-exchange")
+        scenario.onActivity { activity ->
+            val diagram = activity.view("atlas-placental-marker-diagram")
+            val play = activity.view("atlas-placental-marker-play")
+            val share = activity.view("atlas-physiology-placental-marker-equilibration") as SeekBar
+            val output = activity.view("atlas-physiology-output") as TextView
+            val previous = output.text.toString()
+            diagram.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            diagram.layout(0, 0, diagram.measuredWidth, diagram.measuredHeight)
+            fun draw() = Bitmap.createBitmap(diagram.width, diagram.height, Bitmap.Config.ARGB_8888).also {
+                diagram.draw(Canvas(it))
+            }
+            val selected = draw()
+            try {
+                if (play.isEnabled) {
+                    play.performClick()
+                    assertEquals(activity.getString(R.string.health_atlas_placental_marker_pause), play.contentDescription)
+                    play.performClick()
+                    val start = draw()
+                    try { assertFalse(selected.sameAs(start)) } finally { start.recycle() }
+                }
+                assertEquals(previous, output.text.toString())
+                share.progress = 0
+                assertFalse(play.isEnabled)
+                val none = draw()
+                try { assertFalse(selected.sameAs(none)) } finally { none.recycle() }
+                share.progress = 25
+            } finally { selected.recycle() }
+        }
+        scenario.recreate()
+        ready(scenario, "atlas-placental-marker-diagram")
+        scenario.onActivity {
+            assertEquals(25, (it.view("atlas-physiology-placental-marker-equilibration") as SeekBar).progress)
+            it.onBackPressed()
+            it.open("cell-trophoblast", cell = true)
+            assertEquals(50, (it.view("atlas-physiology-placental-marker-equilibration") as SeekBar).progress)
+            assertNotNull(it.view("atlas-simulation-play"))
         }
     }
     @Test fun threePhysiologyScreensShowIndependentModels() = native { scenario ->

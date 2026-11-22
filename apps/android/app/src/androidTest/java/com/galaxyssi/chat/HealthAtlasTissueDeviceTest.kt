@@ -137,6 +137,8 @@ class HealthAtlasTissueDeviceTest {
             "tissue-hyaline-cartilage" to HealthAtlasPhysiologyKind.CARTILAGE_COMPRESSION,
             "tissue-central-nervous" to HealthAtlasPhysiologyKind.NEURAL_RELAY_DELAYS,
             "tissue-white-adipose" to HealthAtlasPhysiologyKind.ADIPOSE_VOLUME_SHARE,
+            "tissue-intestinal-epithelium" to HealthAtlasPhysiologyKind.MUCUS_FILM_THICKNESS,
+            "tissue-renal-tubular-epithelium" to HealthAtlasPhysiologyKind.RENAL_TUBULE_RETENTION,
         )
         for (locale in listOf(Locale.ENGLISH, Locale.SIMPLIFIED_CHINESE)) {
             val localized = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(locale) })

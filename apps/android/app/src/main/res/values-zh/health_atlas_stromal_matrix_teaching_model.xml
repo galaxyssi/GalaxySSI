@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_stromal_matrix_title">单位面积的间质基质质量</string>
+    <string name="health_atlas_stromal_matrix_added_mass">象征性加入的基质质量</string>
+    <string name="health_atlas_stromal_matrix_initial_mass">原有基质质量</string>
+    <string name="health_atlas_stromal_matrix_companion">单位面积的原有基质质量：%1$s MU/AU</string>
+    <string name="health_atlas_stromal_matrix_formula">单位面积的基质总质量 =（原有质量 + 象征性加入的质量）/ 2 AU。两个质量均对应同一固定区域。图中只改变象征性加入的质量，不移除任何材料。</string>
+    <string name="health_atlas_stromal_matrix_scope">成纤维细胞为细胞周围的细胞外基质提供胶原蛋白等成分。在子宫内膜中，部分间质细胞表达编码基质成分的基因。本示例只计算一小块虚构区域内的材料量。MU 和 AU 分别是虚构的质量和面积单位，并非组织实测值。模型不用于预测基质沉积速率、组织特性、月经周期或受孕时机。</string>
+</resources>

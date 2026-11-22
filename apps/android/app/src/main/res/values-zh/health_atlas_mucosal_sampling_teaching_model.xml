@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mucosal_sampling_title">模型黏膜表面的选中面积占比</string>
+    <string name="health_atlas_mucosal_sampling_selected_tiles">选中的格子数</string>
+    <string name="health_atlas_mucosal_sampling_unselected_tiles">未选中的格子数</string>
+    <string name="health_atlas_mucosal_sampling_companion">模型中未选中的面积占比：%1$s%%</string>
+    <string name="health_atlas_mucosal_sampling_formula">选中面积占比（%）= 100 × 选中的格子数 ÷（选中的格子数 + 未选中的格子数）。</string>
+    <string name="health_atlas_mucosal_sampling_scope">黏膜相关淋巴组织（MALT）位于黏膜表面附近。腭扁桃体分布在口咽两侧，腺样体（咽扁桃体）位于鼻咽顶部。阑尾壁内的淋巴滤泡与回肠的派尔斑（集合淋巴小结）是肠相关淋巴组织（GALT）的两个不同实例。模型将一块假想的黏膜表面划分为等面积的格子，每格要么被选中，要么未被选中。格子数是虚构的，由此得出的占比仅用于示意，不能用于测量或比较实际部位，也不代表组织的功能。</string>
+</resources>

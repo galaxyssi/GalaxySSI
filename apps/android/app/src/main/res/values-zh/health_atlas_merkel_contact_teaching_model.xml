@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_merkel_contact_title">触点处的皮肤表面压强</string>
+    <string name="health_atlas_merkel_contact_force">触碰力（垂直于皮肤）</string>
+    <string name="health_atlas_merkel_contact_radius">接触半径</string>
+    <string name="health_atlas_merkel_contact_companion">圆形接触面积：%1$s mm²</string>
+    <string name="health_atlas_merkel_contact_formula">平均表面压强（kPa）= 法向力（mN）/ 圆形接触面积（mm²）。接触面积为 π × 半径的平方。力不变时，半径加倍，接触面积变为原来的四倍，平均压强降为原来的四分之一。</string>
+    <string name="health_atlas_merkel_contact_scope">表皮基底层的梅克尔细胞与感觉神经末梢共同参与持续触碰的信号传递。模型中的力和小圆形接触区都是假设示例。皮肤表面的接触区不代表梅克尔细胞本身或其感受野。模型只给出皮肤表面的平均压强，不给出感受器处的压强。它不预测感受器反应、神经放电或触觉感知，也不测量触觉灵敏度。</string>
+</resources>
