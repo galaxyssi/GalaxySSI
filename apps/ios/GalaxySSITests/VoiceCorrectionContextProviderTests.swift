@@ -120,13 +120,15 @@ final class VoiceCorrectionContextProviderTests: XCTestCase {
         turns: [],
         privateMode: false
       ),
-      hasAttachments: true
+      hasAttachments: true,
+      allowsDirectResponse: true
     )
 
     let merged = VoiceCorrectionContextProvider.merge(request: request, correctionJournal: journal)
 
     XCTAssertTrue(merged.contextMerge.injected)
     XCTAssertTrue(merged.request.hasAttachments)
+    XCTAssertTrue(merged.request.allowsDirectResponse)
     XCTAssertTrue(merged.request.conversationContext.summary.contains("Earlier context"))
     XCTAssertTrue(merged.request.conversationContext.summary.contains("accurate=open the red folder"))
     XCTAssertTrue(

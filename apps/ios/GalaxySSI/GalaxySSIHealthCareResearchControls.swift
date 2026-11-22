@@ -15,6 +15,9 @@ struct GalaxySSIHealthCareResearchControls: View {
   @State private var online = false
   @State private var authorization: Research.Authorization?
   @State private var job: Research.Job?
+  @State private var assessment: GalaxySSIHealthCareModelReview.Review?
+  @State private var historicalAssessment = false
+  @State private var questionReview: GalaxySSIHealthCareModelReview.Review?
   @State private var provider = ""
   @State private var desktopModel = ""
   @State private var desktopEffort = AgentModelReasoningEffort.automatic
@@ -22,6 +25,8 @@ struct GalaxySSIHealthCareResearchControls: View {
   @State private var shareQuestionPages = false
   @State private var shareActionFeedback = false
   @State private var shareFeedbackHistory = false
+  @State private var relatedOptions: [GalaxySSIHealthCareRelatedContext.Measurement] = []
+  @State private var selectedMeasurements = Set<GalaxySSIHealthMetric>()
   @State private var sources = Set<GalaxySSIHealthCareEvidence.PublicSource>()
   @State private var review: Review?
   @State private var confirmed = false
@@ -40,7 +45,16 @@ struct GalaxySSIHealthCareResearchControls: View {
           Text(authorization.model)
           Text(authorization.endpoint?.absoluteString ?? authorization.pairedDesktop?.connector.desktopId ?? "")
             .font(.caption).foregroundColor(.secondary)
-          if let job { Text(status(job.state)) }
+          if let scope = authorization.relatedMeasurements, !scope.isEmpty {
+            Text(t("related_selected", "Also shared") + ": " + scope.keys.sorted().compactMap {
+              GalaxySSIHealthMetric(rawValue: $0)?.title(language: language)
+            }.joined(separator: ", ")).font(.caption).foregroundColor(.secondary)
+          }
+          if let job {
+            if job.assessmentMissing == true {
+              Text(t("assessment_missing", "The reply was retained, but the model did not record its structured assessment. The review is incomplete."))
+            } else { Text(status(job.state)) }
+          }
           Button(t("revoke", "Revoke research authorization"), role: .destructive) {
             do { try records.revokeLocalCareResearch(concern); reload() }
             catch { failed = true }
@@ -69,6 +83,22 @@ struct GalaxySSIHealthCareResearchControls: View {
               if $0 { sources.insert(source) } else { sources.remove(source) }
             }))
           }
+          if !relatedOptions.isEmpty {
+            Text(t("related_title", "Other measurements for this assessment")).font(.headline)
+            Text(t("related_consent", "Optional. Share only selected measurements and their measurement context with this model. History is read in pages; other conversations and care plans are not included. Changes to selected records trigger a new assessment. Suggestions cannot adopt a plan or schedule reminders."))
+              .font(.caption).foregroundColor(.secondary)
+            ForEach(relatedOptions, id: \.metric) { option in
+              Toggle(isOn: Binding(get: { selectedMeasurements.contains(option.metric) }, set: {
+                if $0 { selectedMeasurements.insert(option.metric) } else { selectedMeasurements.remove(option.metric) }
+              })) {
+                VStack(alignment: .leading) {
+                  Text(option.metric.title(language: language))
+                  Text([option.result, option.unit].compactMap { $0 }.joined(separator: " "))
+                    .font(.caption).foregroundColor(.secondary)
+                }
+              }
+            }
+          }
           Toggle(t("share_questions", "Include reviewed clarification in automatic research"), isOn: $shareQuestions)
           if shareQuestions, route(provider) != nil {
             Toggle(t("share_question_pages", "Allow the cloud model to read additional clarification pages"),
@@ -82,10 +112,16 @@ struct GalaxySSIHealthCareResearchControls: View {
         } else {
           Text(t("online_off", "Online Health discussion is off.")).foregroundColor(.secondary)
         }
+        if let assessment {
+          GalaxySSIHealthCareModelReviewView(review: assessment, historical: historicalAssessment,
+            onQuestions: { questionReview = assessment })
+        }
         if failed { Text(t("unavailable", "Research authorization is no longer available.")) }
       }
     }
     .onAppear(perform: reload)
+    .modifier(GalaxySSIHealthCareModelAttentionVisibility(owner: records.owner, concern: concern,
+      conversation: assessment?.authorization.thread))
     .onChange(of: provider) { _ in
       desktopModel = ""; desktopEffort = .automatic; shareQuestionPages = false; shareActionFeedback = false
       shareFeedbackHistory = false
@@ -119,7 +155,7 @@ struct GalaxySSIHealthCareResearchControls: View {
                 Text($0.title)
               }
             }
-            Text(t("scope", "While GalaxySSI is active, this concern may send updated measurements, approved profile context, recent private replies and scoped plan status to this model. Research may save a reply or draft, but cannot adopt steps or schedule reminders. You can revoke access at any time."))
+            Text(t("scope", "While GalaxySSI is active, this concern may send updated measurements, approved profile context, recent private replies and scoped plan status to this model. Research may retain a structured model assessment, reply or draft, but cannot adopt steps, send attention notifications or schedule reminders. You can revoke access at any time."))
             if proposed.approval.allowsStandingFeedbackPages {
               Text(t("feedback_history_scope", "The selected model may request up to four pages of eligible action feedback, including future entries, for each automatic review of this concern."))
               if proposed.approval.includesActionFeedback {
@@ -129,7 +165,9 @@ struct GalaxySSIHealthCareResearchControls: View {
               Text(t("action_feedback_scope", "This model may receive the latest eligible self-reported action notes for this concern, including future notes, but not their history."))
             }
             if let questions = proposed.approval.questions {
-              if proposed.approval.allowsStandingQuestionPages {
+              if proposed.approval.allowsStandingQuestionFollowUp {
+                Text(t("question_follow_up_scope", "The model may save necessary clarification questions without answering them for you. Each automatic review may include the reviewed clarification record, including future answers. When you review an answer, this authorization may start one follow-up in the same private conversation. Repeating the same answer does not start another review. Plans and reminders still require separate confirmation."))
+              } else if proposed.approval.allowsStandingQuestionPages {
                 Text(t("question_pages_scope", "Each automatic review may include the first page and read up to four more pages for this concern. A changed reviewed reply requires new authorization."))
               } else {
                 Text(t("questions_scope", "Each automatic review may include the first page of this concern's clarification record. A changed reviewed reply requires new authorization."))
@@ -137,15 +175,40 @@ struct GalaxySSIHealthCareResearchControls: View {
               Text(AgentMcpJSONCodec.stringify(questions.payload)).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
             }
             Text(proposed.approval.payload).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
+            if !proposed.approval.relatedMeasurements.isEmpty {
+              Text(t("related_title", "Other measurements for this assessment")).font(.headline)
+              Text(AgentMcpJSONCodec.stringify(proposed.approval.relatedPayload))
+                .font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
+            }
             Toggle(t("acknowledge", "I authorize automatic research for this concern"), isOn: $confirmed)
             Button(t("authorize", "Authorize research")) { authorize(proposed) }.disabled(!confirmed)
           }
         }
         .navigationTitle(t("review", "Review authorization"))
+        .galaxySSIHealthTheme()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button(t("cancel", "Cancel")) { review = nil } }
         }
       }.navigationViewStyle(.stack)
+    }
+    .sheet(item: $questionReview) { selected in
+      NavigationView {
+        List {
+          if canRead {
+            GalaxySSIHealthCareQuestionsView(records: records, concern: selected.authorization.concern,
+              metric: selected.authorization.metric, assessment: selected)
+          }
+        }
+        .navigationTitle(GalaxySSILocalization.string("galaxyssi.health.questions.title", fallback: "Clarification questions", language: language))
+        .galaxySSIHealthTheme()
+        .toolbar {
+          ToolbarItem(placement: .cancellationAction) {
+            Button(GalaxySSILocalization.string("galaxyssi.health.questions.close", fallback: "Close", language: language)) {
+              questionReview = nil
+            }
+          }
+        }
+      }.navigationViewStyle(.stack).environmentObject(store)
     }
   }
 
@@ -178,6 +241,8 @@ struct GalaxySSIHealthCareResearchControls: View {
         approval = try records.prepareLocalCareDesktopDiscussion(id: concern, metric: metric, question: question, route: paired,
           includesQuestions: shareQuestions, includesActionFeedback: shareActionFeedback)
       } else { throw GalaxySSIHealthRecords.Failure.permission }
+      approval.allowsStandingQuestionFollowUp = shareQuestions
+      approval = try records.approveRelatedLocalCareMeasurements(approval, selected: selectedMeasurements)
       confirmed = false
       review = .init(approval: approval, sources: sources)
       failed = false
@@ -211,18 +276,24 @@ struct GalaxySSIHealthCareResearchControls: View {
     guard canRead, let archive = try? records.load(), archive.localCareAllowed == true,
           archive.localCare?.current[metric.rawValue]?.id == concern else { clear(); return }
     online = archive.healthOnlinePermission != nil
+    relatedOptions = (try? records.relatedLocalCareOptions(primary: metric)) ?? []
+    selectedMeasurements.formIntersection(Set(relatedOptions.map(\.metric)))
     authorization = archive.localCareResearch?.authorizations[concern.uuidString]
     job = archive.localCareResearch?.jobs[concern.uuidString]
+    assessment = job.flatMap { archive.localCareModelReviews?[$0.id] }
+    historicalAssessment = assessment.map { !records.localCareModelReviewIsCurrent($0) } ?? false
   }
 
   private func clear() {
     online = false; authorization = nil; job = nil; review = nil; confirmed = false; failed = false
+    assessment = nil; historicalAssessment = false; questionReview = nil
     provider = ""; sources = []
     desktopModel = ""; desktopEffort = .automatic
     shareQuestions = false
     shareQuestionPages = false
     shareActionFeedback = false
     shareFeedbackHistory = false
+    relatedOptions = []; selectedMeasurements = []
   }
 
   private func status(_ state: Research.State) -> String {
