@@ -1,0 +1,14 @@
+<resources>
+    <string name="health_atlas_pleural_slide_title">Pleural sliding: model shear rate</string>
+    <string name="health_atlas_pleural_slide_speed">Model sliding speed</string>
+    <string name="health_atlas_pleural_slide_thickness">Model film thickness</string>
+    <string name="health_atlas_pleural_slide_formula">Shear rate = relative speed ÷ film thickness. Multiplying that rate by an example viscosity of 0.01 Pa·s gives the model shear stress.</string>
+    <string name="health_atlas_pleural_slide_stress">Model shear stress: %1$s Pa</string>
+    <string name="health_atlas_pleural_slide_scope">Pleural fluid helps the two pleural surfaces slide during breathing. This example uses ideal parallel surfaces and a fictional fluid viscosity; the lower surface is the model reference. It does not measure pleural fluid, pressure, or breathing performance.</string>
+    <string name="health_atlas_pleural_slide_caption">Relative sliding across the film</string>
+    <string name="health_atlas_pleural_slide_wall">Chest-wall side</string>
+    <string name="health_atlas_pleural_slide_lung">Lung side</string>
+    <string name="health_atlas_pleural_slide_diagram">The chest-wall side moves relative to the lung side. The film is magnified for illustration. Model shear rate: %1$s per second.</string>
+    <string name="health_atlas_pleural_slide_play">Play pleural sliding</string>
+    <string name="health_atlas_pleural_slide_pause">Pause pleural sliding</string>
+</resources>

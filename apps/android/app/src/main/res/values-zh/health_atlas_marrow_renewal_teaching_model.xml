@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_marrow_renewal_title">骨髓图标数的净变化</string>
+    <string name="health_atlas_marrow_renewal_added">因更新而增加的图标数</string>
+    <string name="health_atlas_marrow_renewal_left">离开的初始图标数</string>
+    <string name="health_atlas_marrow_renewal_companion">结束时的图标数：%1$s</string>
+    <string name="health_atlas_marrow_renewal_formula">图标数的净变化 = 因更新而增加的图标数减去离开的图标数。结束时的图标数 = 初始图标数 + 净变化。离开的图标数不变时，每多增加一个图标，净变化就增加一。图表将图标数四舍五入为整数。</string>
+    <string name="health_atlas_marrow_renewal_scope">血液干细胞（造血干细胞）存在于骨髓中，能够自我更新，并能分化产生不同谱系的血细胞。在这个练习中，一个虚构的区室起初有 12 个图标。在一个示例时段内，更新会增加图标，一些初始图标可以离开。这些虚构数字仅用于算术练习，不代表真实细胞、生物过程的速率或细胞离开骨髓的情况。</string>
+</resources>

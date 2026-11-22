@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_capillary_support_surface_title">Model capillary side area</string>
+    <string name="health_atlas_capillary_support_surface_radius">Model radius</string>
+    <string name="health_atlas_capillary_support_surface_length">Model segment length</string>
+    <string name="health_atlas_capillary_support_surface_companion">Model circumference: %1$s µm</string>
+    <string name="health_atlas_capillary_support_surface_formula">The side of the cylinder unrolls into a rectangle. Its width is the circumference 2πr and its length is the segment length L. Side area = 2πr × L, excluding both circular ends. Increasing either radius or length while holding the other fixed increases the side area.</string>
+    <string name="health_atlas_capillary_support_surface_scope">Pericytes lie along the outside of capillary walls, next to the endothelium. In the kidney glomerulus, mesangial cells and their surrounding matrix provide structural support for the capillary loops. The straight cylinder is a geometry example for both settings, not a depiction of a glomerular loop or an estimate of how much surface either cell contacts. The dimensions are invented for teaching, not measurements. The model does not describe blood flow, filtration, or the effects of cell contraction.</string>
+</resources>

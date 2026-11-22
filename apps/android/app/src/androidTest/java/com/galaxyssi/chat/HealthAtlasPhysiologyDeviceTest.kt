@@ -234,6 +234,7 @@ class HealthAtlasPhysiologyDeviceTest {
             Triple("cell-adipocyte", "adipose-volume-share", "adipose-volume-share-radius-ratio"),
             Triple("teeth", "tooth-enamel-section", "tooth-enamel-section-thickness"),
             Triple("renal-cortex", "renal-tubule-retention", "renal-tubule-retention-segment-b"),
+            Triple("cell-retinal-pigment-epithelial-cell", "retinal-light-layer", "retinal-light-attenuation-path-length"),
         )
         for ((id, art, input) in examples) {
             var initial = 0
@@ -273,7 +274,8 @@ class HealthAtlasPhysiologyDeviceTest {
             "stomach", "vestibular-apparatus", "cell-megakaryocyte", "cell-osteoblast", "cell-sebocyte",
             "external-ear", "liver", "joints", "cell-granulosa-cell", "cell-sweat-gland-secretory-cell",
             "vertebrae", "taste-buds", "olfactory-mucosa", "thymus", "cell-gastric-chief-cell", "cell-melanocyte",
-            "appendix", "rectum", "mammary-glands", "pharynx", "cell-fibroblast", "cell-merkel-cell")
+            "appendix", "rectum", "mammary-glands", "pharynx", "cell-fibroblast", "cell-merkel-cell",
+            "uterus", "bone-marrow", "cell-spermatozoon", "cell-mesangial-cell", "cell-ependymal-cell")
         for (id in examples) scenario.onActivity { activity ->
             activity.open(id, cell = id.startsWith("cell-"))
             val kind = requireNotNull(HealthAtlasPhysiologyKind.forItem(id))
@@ -460,6 +462,44 @@ class HealthAtlasPhysiologyDeviceTest {
             it.open("cell-trophoblast", cell = true)
             assertEquals(50, (it.view("atlas-physiology-placental-marker-equilibration") as SeekBar).progress)
             assertNotNull(it.view("atlas-simulation-play"))
+        }
+    }
+    @Test fun pleuralSlideShowsRelativeMotionAndAChangingFilmWithoutChangingThePlaybackSettings() = native { scenario ->
+        scenario.onActivity { it.open("pleura") }
+        capture("pleural-slide")
+        scenario.onActivity { activity ->
+            val diagram = activity.view("atlas-pleural-slide-diagram")
+            val play = activity.view("atlas-pleural-slide-play")
+            val speed = activity.view("atlas-physiology-pleural-slide-speed") as SeekBar
+            val gap = activity.view("atlas-physiology-pleural-slide-thickness") as SeekBar
+            val output = activity.view("atlas-physiology-output") as TextView
+            val oldOutput = output.text.toString()
+            val oldSpeed = speed.progress
+            diagram.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            diagram.layout(0, 0, diagram.measuredWidth, diagram.measuredHeight)
+            fun draw() = Bitmap.createBitmap(diagram.width, diagram.height, Bitmap.Config.ARGB_8888).also {
+                diagram.draw(Canvas(it))
+            }
+            val selected = draw()
+            try {
+                if (play.isEnabled) {
+                    play.performClick()
+                    assertEquals(activity.getString(R.string.health_atlas_pleural_slide_pause), play.contentDescription)
+                    play.performClick()
+                    val early = draw()
+                    try { assertFalse(selected.sameAs(early)) } finally { early.recycle() }
+                }
+                assertEquals(oldOutput, output.text.toString())
+                assertEquals(oldSpeed, speed.progress)
+                gap.progress = gap.max
+                assertNotEquals(oldOutput, output.text.toString())
+                val widened = draw()
+                try { assertFalse(selected.sameAs(widened)) } finally { widened.recycle() }
+                speed.progress = 0
+                assertFalse(play.isEnabled)
+                assertNotNull(activity.view("atlas-simulation-play"))
+            } finally { selected.recycle() }
         }
     }
     @Test fun threePhysiologyScreensShowIndependentModels() = native { scenario ->

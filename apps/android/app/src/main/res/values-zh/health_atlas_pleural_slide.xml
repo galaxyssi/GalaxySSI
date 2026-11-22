@@ -1,0 +1,14 @@
+<resources>
+    <string name="health_atlas_pleural_slide_title">胸膜滑动：模型剪切率</string>
+    <string name="health_atlas_pleural_slide_speed">示例滑动速度</string>
+    <string name="health_atlas_pleural_slide_thickness">示例液膜厚度</string>
+    <string name="health_atlas_pleural_slide_formula">剪切率＝相对滑动速度 ÷ 液膜厚度。剪切率乘以示例黏度 0.01 Pa·s，得到模型剪应力。</string>
+    <string name="health_atlas_pleural_slide_stress">模型剪应力：%1$s Pa</string>
+    <string name="health_atlas_pleural_slide_scope">呼吸时，胸膜液有助于两层胸膜相对滑动。这里用理想平行表面与虚构黏度做示意，以肺侧表面为参照，不测量真实胸膜液、压力或呼吸表现。</string>
+    <string name="health_atlas_pleural_slide_caption">液膜两侧的相对滑动</string>
+    <string name="health_atlas_pleural_slide_wall">胸壁侧</string>
+    <string name="health_atlas_pleural_slide_lung">肺侧</string>
+    <string name="health_atlas_pleural_slide_diagram">胸壁侧相对肺侧移动，图中的液膜已放大。模型剪切率：每秒 %1$s。</string>
+    <string name="health_atlas_pleural_slide_play">播放胸膜滑动</string>
+    <string name="health_atlas_pleural_slide_pause">暂停胸膜滑动</string>
+</resources>

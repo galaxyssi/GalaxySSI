@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_ependymal_beat_phase_title">Ependymal beat phase difference</string>
+    <string name="health_atlas_ependymal_beat_phase_frequency">Toy beat frequency</string>
+    <string name="health_atlas_ependymal_beat_phase_offset">Toy timing offset</string>
+    <string name="health_atlas_ependymal_beat_phase_scope">Motile cilia on the ependymal lining of the brain ventricles can help move nearby cerebrospinal fluid (CSF). This model compares two repeating beats with the same invented frequency and a chosen timing offset. The intervals are fictional, not seconds. The model does not predict real beat rates or CSF flow and does not guide interventions.</string>
+    <string name="health_atlas_ependymal_beat_phase_formula">Unwrapped phase difference (cycles) = toy frequency (cycles per interval) × timing offset (intervals). The wrapped value keeps only the fractional part, so every whole cycle returns to the same phase as zero offset.</string>
+    <string name="health_atlas_ependymal_beat_phase_wrapped">Wrapped phase difference: %1$s cycles</string>
+</resources>

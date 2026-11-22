@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gamete_path_distance_title">Distance between gamete icons</string>
+    <string name="health_atlas_gamete_path_distance_sperm_shift">Sperm icon shift to the right</string>
+    <string name="health_atlas_gamete_path_distance_oocyte_shift">Oocyte icon shift to the left</string>
+    <string name="health_atlas_gamete_path_distance_companion">Starting separation: %1$s PU</string>
+    <string name="health_atlas_gamete_path_distance_formula">Remaining distance (PU) = starting separation − sperm icon shift − oocyte icon shift.</string>
+    <string name="health_atlas_gamete_path_distance_scope">Sperm can propel themselves with a flagellum. The oocyte does not propel itself: cilia-driven fluid movement and smooth muscle contractions help carry it through the uterine tube. On one imagined line, a sperm icon starts at 0 and shifts right; an oocyte icon starts at 16 and shifts left. Their shifts are chosen independently in invented position units (PU). The icons stay apart, and the model does not represent real paths or rates or predict fertilization or fertility.</string>
+</resources>

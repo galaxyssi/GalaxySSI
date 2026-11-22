@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vulvar_fold_overlap_title">外阴皱襞重叠（模型）</string>
+    <string name="health_atlas_vulvar_fold_overlap_angle">模型外侧薄片角度</string>
+    <string name="health_atlas_vulvar_fold_overlap_length">外侧薄片长度与基准线长度之比</string>
+    <string name="health_atlas_vulvar_fold_overlap_companion">外侧薄片的投影长度：基准线长度的 %1$s%%</string>
+    <string name="health_atlas_vulvar_fold_overlap_formula">在 0 到 1 的基准线上，固定的内侧薄片占 0.25 至 0.75 这一段。外侧薄片从 0 开始，其投影长度为 P = L × cos(角度)，其中 L 是外侧薄片长度与基准线长度之比，角度是外侧薄片与基准线的夹角。曲线显示内侧薄片被投影覆盖的百分比：100 × (P − 0.25) / 0.50，结果限制在 0 至 100 之间。</string>
+    <string name="health_atlas_vulvar_fold_overlap_scope">大阴唇是起覆盖作用的外侧皱襞。小阴唇是内侧皱襞，位于阴道前庭两侧，有助于保护前庭。模型中的两片薄片均为假设，投影重叠不代表组织运动、接触或保护程度。模型的设定和结果不反映实际尺寸、压力、敏感度或个体外观，也不能用于临床推断。</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_marrow_renewal_title">Net change in marrow icons</string>
+    <string name="health_atlas_marrow_renewal_added">Icons added by renewal</string>
+    <string name="health_atlas_marrow_renewal_left">Starting icons that leave</string>
+    <string name="health_atlas_marrow_renewal_companion">Ending icon count: %1$s</string>
+    <string name="health_atlas_marrow_renewal_formula">Net icon change = icons added by renewal minus icons that leave. Ending count = starting count + net change. With the number leaving fixed, each extra renewal icon raises the net change by one. The chart rounds to whole icons.</string>
+    <string name="health_atlas_marrow_renewal_scope">Blood stem cells (hematopoietic stem cells) are found in bone marrow. They can self-renew and give rise to different blood-cell lineages. For this exercise, a fictitious compartment starts with 12 icons. Over one example interval, renewal adds icons and some of the starting icons can leave. These invented counts are for arithmetic only and do not represent actual cells, biological rates, or movement out of marrow.</string>
+</resources>

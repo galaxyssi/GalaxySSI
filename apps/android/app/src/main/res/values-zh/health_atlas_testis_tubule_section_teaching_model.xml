@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_testis_tubule_section_title">曲细精管横截面中管壁所占比例</string>
+    <string name="health_atlas_testis_tubule_section_radius">外半径</string>
+    <string name="health_atlas_testis_tubule_section_thickness">管壁厚度</string>
+    <string name="health_atlas_testis_tubule_section_companion">管腔截面积：%1$s u&#178;</string>
+    <string name="health_atlas_testis_tubule_section_formula">设外半径为 r，管壁厚度为 t，则内半径为 r − t。管腔截面积 = π × (r − t)²。管壁面积占整个横截面的百分比 = 100 × [1 − ((r − t) / r)²]。</string>
+    <string name="health_atlas_testis_tubule_section_scope">在睾丸内，精原细胞沿曲细精管的基底膜分布。精母细胞是发育阶段更晚的生殖细胞，发育过程中位于更靠近管腔的位置，但仍在上皮内。支持细胞（塞尔托利细胞）从基底膜延伸至管腔，为发育中的生殖细胞提供支持。睾丸间质细胞（莱迪希细胞）位于曲细精管之间的间质中，不计入管壁或管腔面积。模型将一条曲细精管简化为管壁厚度均匀的圆形横截面。外半径不变时，管壁越厚，其所占比例越大，管腔截面积越小。尺寸为教学设定，使用任意单位（u），不能用于测量真实细胞的大小或数量、评估生育能力或推断检测结果。</string>
+</resources>

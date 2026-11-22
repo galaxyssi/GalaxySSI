@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_gamete_path_distance_title">配子图标之间的距离</string>
+    <string name="health_atlas_gamete_path_distance_sperm_shift">精子图标向右移动的距离</string>
+    <string name="health_atlas_gamete_path_distance_oocyte_shift">卵母细胞图标向左移动的距离</string>
+    <string name="health_atlas_gamete_path_distance_companion">起始间距：%1$s PU</string>
+    <string name="health_atlas_gamete_path_distance_formula">剩余距离（PU）= 起始间距 − 精子图标移动的距离 − 卵母细胞图标移动的距离。</string>
+    <string name="health_atlas_gamete_path_distance_scope">精子能借助鞭毛自行游动。卵母细胞不能自行移动，输卵管内纤毛带动的液体流动和平滑肌收缩有助于运送它。在一条假想的直线上，精子图标从 0 向右移动，卵母细胞图标从 16 向左移动。两者的移动距离独立设定，采用自定义的位置单位（PU）。两个图标始终保持间距；模型不反映真实路径或速率，也不预测受精或生育能力。</string>
+</resources>
