@@ -7,6 +7,8 @@ struct PublicNewsPublisherState: Codable, Equatable {
     var interests: Set<PublicNewsInterest>
     var pollAfter: Date
     var failures = 0
+    var lastPoll: Date?
+    var storedInterval: TimeInterval?
 
     var source: PublicNewsSource {
       PublicNewsSource(publisher: publisher, url: url, additionalInterests: interests, learned: true)
@@ -17,17 +19,27 @@ struct PublicNewsPublisherState: Codable, Equatable {
   var probeAfter: [String: Date] = [:]
   var builtInOffset = 0
 
-  mutating func plan(now: Date, enabled: Bool, probe: Bool) -> [PublicNewsSource] {
+  mutating func plan(now: Date, enabled: Bool, probe: Bool, advanceBuiltIns: Bool = true,
+                     interval: TimeInterval? = nil) -> [PublicNewsSource] {
     feeds.removeAll { !PublicNewsPublisherDiscovery.acceptsFeed($0.url, publisher: $0.publisher) }
+    if let interval {
+      for index in feeds.indices {
+        if let last = feeds[index].lastPoll, let stored = feeds[index].storedInterval,
+           stored > 0, feeds[index].pollAfter == last.addingTimeInterval(stored) {
+          feeds[index].pollAfter = last.addingTimeInterval(interval)
+          feeds[index].storedInterval = interval
+        }
+      }
+    }
     let due = enabled ? feeds.filter { $0.pollAfter <= now }.sorted {
       $0.pollAfter == $1.pollAfter ? $0.url.absoluteString < $1.url.absoluteString : $0.pollAfter < $1.pollAfter
     }.prefix(2).map(\.source) : []
     let builtIn = PublicNewsSource.builtIn
     guard !builtIn.isEmpty else { return due }
     let start = max(0, builtInOffset) % builtIn.count
-    let count = min(builtIn.count, 4 - due.count - (probe ? 1 : 0))
+    let count = min(advanceBuiltIns ? builtIn.count : builtIn.count - start, 4 - due.count - (probe ? 1 : 0))
     let selected = (0..<count).map { builtIn[(start + $0) % builtIn.count] }
-    builtInOffset = (start + count) % builtIn.count
+    if advanceBuiltIns { builtInOffset = (start + count) % builtIn.count }
     return selected + due
   }
 
@@ -43,13 +55,19 @@ struct PublicNewsPublisherState: Codable, Equatable {
     }
   }
 
-  mutating func recordPoll(_ source: PublicNewsSource, success: Bool, discussion: Bool, now: Date) {
+  mutating func recordPoll(_ source: PublicNewsSource, success: Bool, discussion: Bool, now: Date,
+                          interval: TimeInterval = 3_600) {
+    if !source.learned, let index = PublicNewsSource.builtIn.firstIndex(where: { $0.url == source.url }) {
+      builtInOffset = (index + 1) % PublicNewsSource.builtIn.count
+      return
+    }
     guard source.learned, let index = feeds.firstIndex(where: { $0.url == source.url }) else { return }
     if discussion {
       feeds.remove(at: index)
     } else if success {
       feeds[index].failures = 0
-      feeds[index].pollAfter = now.addingTimeInterval(60 * 60)
+      feeds[index].pollAfter = now.addingTimeInterval(interval)
+      feeds[index].lastPoll = now; feeds[index].storedInterval = interval
     } else {
       let failures = min(8, max(0, feeds[index].failures))
       feeds[index].failures = min(failures + 1, 8)

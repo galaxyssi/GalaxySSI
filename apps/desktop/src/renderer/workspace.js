@@ -810,7 +810,7 @@ function renderPeerAttachments(message) {
       const label = duration > 0
         ? `${t("Voice message")} · ${formatDuration(duration)}`
         : t("Voice message");
-      return `<button class="peer-voice-message" data-play-peer-voice="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" ${file.available === false ? "disabled" : ""} aria-label="${escapeHtml(t("Play voice message"))}">
+      return `<button class="peer-voice-message" data-play-peer-voice="${index}" data-peer-attachment-index="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" ${file.available === false ? "disabled" : ""} aria-label="${escapeHtml(t("Play voice message"))}">
         <span class="peer-voice-icon" aria-hidden="true">▶</span>
         <span class="peer-voice-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
         <b class="peer-voice-label">${escapeHtml(label)}</b>
@@ -818,14 +818,14 @@ function renderPeerAttachments(message) {
     }
     if (isImage) {
       const name = file.name || t("Image");
-      return `<button class="peer-image-attachment" data-view-peer-image="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" data-peer-image-name="${escapeHtml(name)}" ${file.available === false ? "disabled" : ""} aria-label="${escapeHtml(t("Open image"))}">
+      return `<button class="peer-image-attachment" data-view-peer-image="${index}" data-peer-attachment-index="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" data-peer-image-name="${escapeHtml(name)}" ${file.available === false ? "disabled" : ""} aria-label="${escapeHtml(t("Open image"))}">
         <span class="peer-image-placeholder">${escapeHtml(t(file.available === false ? "Image unavailable" : "Loading image"))}</span>
         <img data-peer-image-preview="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" alt="${escapeHtml(name)}">
         <span class="peer-image-meta"><b>${escapeHtml(name)}</b><small>${escapeHtml(formatBytes(file.size_bytes))}</small></span>
       </button>`;
     }
     const kind = extension;
-    return `<button class="peer-attachment" data-open-peer-attachment="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" ${file.available === false ? "disabled" : ""}>
+    return `<button class="peer-attachment" data-open-peer-attachment="${index}" data-peer-attachment-index="${index}" data-peer-message-id="${escapeHtml(message.message_id)}" ${file.available === false ? "disabled" : ""}>
       <span>${escapeHtml(kind)}</span><b>${escapeHtml(file.name || t("File"))}</b><small>${escapeHtml(formatBytes(file.size_bytes))}</small>
     </button>`;
   }).join("")}</div>`;
@@ -5392,12 +5392,18 @@ function bindEvents() {
     if (!row) return;
     const message = peerMessagesFor().find((item) => item.message_id === row.dataset.peerMessageId);
     if (!message) return;
+    const attachment = event.target.closest("[data-peer-attachment-index]");
+    const attachmentIndex = attachment ? Number(attachment.dataset.peerAttachmentIndex) : null;
+    const file = Number.isSafeInteger(attachmentIndex) && attachmentIndex >= 0
+      ? message.attachments?.[attachmentIndex] : null;
     window.galaxyssi.preparePeerMessageContext({
       routeId: state.activePeerRouteId,
       messageId: message.message_id,
       copyText: message.content || (message.attachments || []).map((file) => file.name).join("\n"),
       copyLabel: t("Copy"),
       deleteLabel: t("Delete Message"),
+      attachmentIndex: file ? attachmentIndex : null,
+      attachmentAvailable: Boolean(file) && file.available !== false,
       x: event.clientX,
       y: event.clientY
     });
@@ -5409,6 +5415,10 @@ function bindEvents() {
     if (state.activePeerRouteId) renderPeerConversation(true);
   });
   window.galaxyssi.onPeerMessageDeleteFailed?.((message) => showToast(message));
+  window.galaxyssi.onPeerAttachmentSaveResult?.((result) => {
+    if (result?.ok) showToast(`${t("Saved")}: ${result.name}`);
+    else if (!result?.canceled) showToast(`${t("Save failed")}: ${result?.error || ""}`);
+  });
   elements.attachments.addEventListener("click", (event) => {
     const button = event.target.closest("[data-remove-attachment]");
     if (!button) return;
