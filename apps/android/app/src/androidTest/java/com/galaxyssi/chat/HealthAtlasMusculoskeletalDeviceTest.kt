@@ -232,7 +232,7 @@ class HealthAtlasMusculoskeletalDeviceTest {
             it.open("muscle"); it.view("atlas-hotspot-biceps-brachii").performClick()
             assertTrue(it.view("atlas-view-0").isSelected)
             it.view("atlas-view-1").performClick()
-            it.view("atlas-entry-cell-skeletal-myocyte").performClick()
+            it.openAtlasFromFigureOrSearch("cell-skeletal-myocyte")
             assertNotNull(it.view("atlas-feature-skeletal-striations"))
             assertNull(it.window.decorView.tagged("atlas-hotspot-biceps-brachii"))
             it.openAtlasModelDetails(); assertNotNull(it.view("atlas-process-stage-0"))

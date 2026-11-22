@@ -474,7 +474,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<View>("atlas-tab-2").performClick()
                     activity.find<EditText>("atlas-search").setText("kidneys")
                     activity.find<View>("atlas-entry-kidneys").performClick()
-                    activity.find<View>("atlas-entry-nephron").performClick()
+                    activity.openAtlasFromFigureOrSearch("nephron")
                     activity.find<View>("atlas-tab-1").performClick()
                 }
                 instrumentation.waitForIdleSync()
@@ -546,7 +546,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<HealthAtlasBreathingView>("atlas-function-breathing-art")
                     activity.find<View>("atlas-function-next").performClick()
                     activity.find<View>("atlas-tab-0").performClick()
-                    activity.find<View>("atlas-entry-alveoli").performClick()
+                    activity.openAtlasFromFigureOrSearch("alveoli")
                     activity.find<View>("atlas-tab-1").performClick()
                     assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
                     repeat(2) { activity.find<View>("atlas-function-next").performClick() }
@@ -582,7 +582,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<View>("atlas-tab-2").performClick()
                     assertNull(activity.window.decorView.findViewWithTag<View>("atlas-function-player"))
                     activity.find<View>("atlas-tab-0").performClick()
-                    activity.find<View>("atlas-entry-heart-valves").performClick()
+                    activity.openAtlasFromFigureOrSearch("heart-valves")
                     activity.find<View>("atlas-tab-1").performClick()
                     assertEquals(0f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
                     activity.find<View>("atlas-function-next").performClick()

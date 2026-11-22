@@ -1,7 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="health_atlas_film_ground">#E7EFED</color>
-    <color name="health_atlas_film_caption">#223A3D</color>
-    <color name="health_atlas_film_chapter">#AFE2D0</color>
-    <color name="health_atlas_film_text">#FFFFFF</color>
 </resources>

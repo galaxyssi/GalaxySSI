@@ -291,7 +291,7 @@ class HealthBodyAtlasDeviceTest {
                 var openedTitle = ""
                 val art = HealthAtlasArtwork(activity, data, item, {}, zoom = { plate, title ->
                     openedPlate = plate; openedTitle = title
-                }, initialView = expected.viewKey)
+                }, openSource = {}, initialView = expected.viewKey)
                 val picture = requireNotNull(art.tagged("atlas-art-image"))
                 val target = picture.parent as HealthAtlasLabeledImage
                 target.scaleX = 2f; target.scaleY = 2f; target.translationX = 30f
@@ -309,7 +309,7 @@ class HealthBodyAtlasDeviceTest {
         scenario.onActivity { activity ->
             val data = HealthBodyAtlas.load(activity)
             for (width in listOf(720, 1080)) {
-                val art = HealthAtlasArtwork(activity, data, null, {}, { _, _ -> })
+                val art = HealthAtlasArtwork(activity, data, null, {}, { _, _ -> }, {})
                 HealthAtlasPlates.whole.markers.forEach { (art.tagged("atlas-hotspot-${it.id}") as TextView).textSize = 26f }
                 art.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
@@ -317,7 +317,11 @@ class HealthBodyAtlasDeviceTest {
                 val controls = art.tagged("atlas-layers")!!.parent as View
                 HealthAtlasPlates.whole.markers.forEach {
                     val label = art.tagged("atlas-hotspot-${it.id}")!!
-                    assertTrue("Tools obscure ${it.id}", label.bottom <= controls.top)
+                    val controlBounds = android.graphics.Rect(0, 0, controls.width, controls.height)
+                    val labelBounds = android.graphics.Rect(0, 0, label.width, label.height)
+                    art.offsetDescendantRectToMyCoords(controls, controlBounds)
+                    art.offsetDescendantRectToMyCoords(label, labelBounds)
+                    assertTrue("Tools obscure ${it.id}", labelBounds.top >= controlBounds.bottom)
                     assertTrue(label.top >= 0)
                 }
             }
@@ -484,12 +488,37 @@ class HealthBodyAtlasDeviceTest {
         }
         capture("whole")
         scenario.onActivity { it.view("atlas-hotspot-heart").performClick() }; capture("heart")
+        scenario.onActivity { it.view("atlas-tab-1").performClick() }; capture("function")
         scenario.onActivity { it.openAtlasModelDetails() }; capture("simulation")
         scenario.onActivity { it.onBackPressed(); it.view("atlas-tab-1").performClick() }; capture("systems")
         scenario.onActivity {
             it.view("atlas-tab-3").performClick(); (it.view("atlas-search") as EditText).setText("beta")
             it.view("atlas-entry-cell-pancreatic-beta-cell").performClick()
         }; capture("beta")
+    }
+
+    @Test fun systemsOrgansTissuesAndCellsShareTheInFigureExplanationAtLargeText() = native { scenario ->
+        scenario.onActivity { activity ->
+            val data = HealthBodyAtlas.load(activity)
+            for (id in listOf("cardio", "heart", "tissue-cardiac-muscle", "cell-cardiomyocyte")) {
+                val item = requireNotNull(data[id])
+                val art = HealthAtlasArtwork(activity, data, item, {}, { _, _ -> }, {})
+                val figure = requireNotNull(art.tagged("atlas-structure-figure")) as android.view.ViewGroup
+                val legend = requireNotNull(figure.tagged("atlas-figure-legend")) as android.view.ViewGroup
+                val description = legend.tagged("atlas-art-explanation") as TextView
+                description.textSize = 26f
+                val width = (320f * activity.resources.displayMetrics.density).toInt()
+                art.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                art.layout(0, 0, width, art.measuredHeight)
+                assertEquals(item.description, description.text.toString())
+                assertTrue(id, description.layout.height + description.totalPaddingTop + description.totalPaddingBottom <= description.height)
+                assertEquals(figure.height, legend.bottom)
+                val picture = figure.getChildAt(figure.indexOfChild(legend) - 1)
+                assertTrue(id, legend.top + legend.paddingTop < picture.bottom)
+                assertTrue(id, picture.measuredHeight > 0)
+            }
+        }
     }
     @Test fun researchTabsAndParametersSurviveRecreationAndStructureDrilldown() = native { scenario ->
         scenario.onActivity { activity ->

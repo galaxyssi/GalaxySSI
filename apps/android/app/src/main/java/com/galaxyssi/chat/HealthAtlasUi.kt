@@ -67,6 +67,16 @@ internal object HealthAtlasUi {
         "muscle" -> R.drawable.ic_atlas_biceps_flexed
         else -> R.drawable.ic_health_body
     }
+    fun illustrationNotes(activity: Activity, legend: LinearLayout, caption: String, item: HealthAtlasItem?,
+        note: Int = R.string.health_atlas_illustration) {
+        val ui = HealthCenterViews(activity)
+        ui.add(legend, ui.text(caption, 14f, bold = true).apply {
+            tag = "atlas-art-caption"
+            setTextColor(activity.getColor(R.color.health_overview_green))
+        })
+        item?.let { ui.add(legend, ui.text(it.description, 15f).apply { tag = "atlas-art-explanation" }, 3) }
+        ui.add(legend, ui.text(activity.getString(note), 12f, muted = true), 6)
+    }
     fun row(activity: Activity, item: HealthAtlasItem, data: HealthBodyAtlas, action: () -> Unit): LinearLayout {
         val ui = HealthCenterViews(activity)
         val system = data[item.systems.first()]
@@ -135,7 +145,8 @@ internal object HealthAtlasUi {
 internal class HealthAtlasArtwork(
     private val activity: Activity, private val data: HealthBodyAtlas, private val item: HealthAtlasItem?,
     private val selected: (HealthAtlasItem) -> Unit, private val zoom: (HealthAtlasPlate, String) -> Unit,
-    initialView: String? = null, private val viewChanged: (String) -> Unit = {},
+    private val openSource: (String) -> Unit, initialView: String? = null,
+    private val viewChanged: (String) -> Unit = {},
 ) : LinearLayout(activity) {
     private val ui = HealthCenterViews(activity)
     private var layers: android.app.AlertDialog? = null
@@ -162,11 +173,12 @@ internal class HealthAtlasArtwork(
             val caption = plate.caption(activity, data, item)
             val description = (item?.name ?: activity.getString(R.string.health_atlas_whole)) + " · " + caption
             val labeled = if (plate.hasLabels) HealthAtlasLabeledImage(activity, plate,
-                description, data, item?.id, selected = selected) else null
+                description, data, item?.id,
+                legendInset = HealthAtlasFigureFrame.LEGEND_OVERLAP_DP, selected = selected) else null
             val art = object : FrameLayout(activity) {
                 override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
                     labeled?.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
-                    val required = maxOf(ui.dp(if (item == null) 400 else 300), labeled?.measuredHeight ?: 0)
+                    val required = maxOf(ui.dp(if (item == null) 366 else 266), labeled?.measuredHeight ?: 0)
                     super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(resolveSize(required, heightMeasureSpec), MeasureSpec.EXACTLY))
                 }
             }
@@ -174,18 +186,18 @@ internal class HealthAtlasArtwork(
                 setImageResource(resource); scaleType = ImageView.ScaleType.FIT_CENTER
                 contentDescription = description
                 tag = "atlas-art-image"
-                setPadding(ui.dp(12), ui.dp(8), ui.dp(48), ui.dp(8))
+                setPadding(ui.dp(12), 0, ui.dp(12), ui.dp(20))
             }
             val target = labeled ?: picture
             val viewport = GalaxySSIPinchZoomViewport(activity).apply { attach(target) }
             art.addView(viewport, FrameLayout.LayoutParams(-1, -1))
-            val controls = (if (item == null) ui.column() else ui.line()).apply {
+            val controls = ui.line().apply {
                 gravity = Gravity.END
-                addView(ui.icon(R.drawable.ic_input_menu_layers, R.string.health_atlas_layers) {
-                    val choices = if (item == null) data.systems else (data.children(item) + data.cells(item) +
-                        plate.markers.mapNotNull { data[it.id] }).filter { it.id != item.id }.distinctBy { it.id }
+                val choices = if (item == null) data.systems else plate.markers.mapNotNull { data[it.id] }
+                    .filter { it.id != item.id }.distinctBy { it.id }
+                if (choices.isNotEmpty() || plate.features.isNotEmpty()) addView(ui.icon(R.drawable.ic_input_menu_layers, R.string.health_atlas_layers) {
                     val labels = choices.map { it.name } + plate.features.map { activity.getString(it.title) }
-                    if (labels.isNotEmpty()) layers = android.app.AlertDialog.Builder(activity).setTitle(R.string.health_atlas_layers)
+                    layers = android.app.AlertDialog.Builder(activity).setTitle(R.string.health_atlas_layers)
                         .setItems(labels.toTypedArray()) { _, index ->
                             if (index < choices.size) selected(choices[index])
                             else labeled?.showFeature(plate.features[index - choices.size])
@@ -198,17 +210,28 @@ internal class HealthAtlasArtwork(
                 addView(ui.icon(R.drawable.ic_screen_assistant_expand, R.string.health_body_zoom) {
                     zoom(plate, description)
                 }.apply { tag = "atlas-fullscreen" })
+                plate.source?.let { url ->
+                    addView(ui.icon(R.drawable.ic_rich_file, R.string.health_atlas_plate_source) {
+                        openSource(url)
+                    }.apply { tag = "atlas-source-structure" })
+                }
             }
-            if (item == null) art.addView(controls, FrameLayout.LayoutParams(ui.dp(48), -2, Gravity.END or Gravity.BOTTOM))
-            addView(art, LayoutParams(-1, -2))
-            if (item != null) addView(controls, LayoutParams(-1, ui.dp(48)))
-            addView(ui.text(caption, 12f, muted = true).apply { tag = "atlas-art-caption" })
-            addView(ui.text(activity.getString(R.string.health_atlas_illustration), 11f, muted = true))
+            addView(HealthAtlasFigureFrame(activity, art, "atlas-structure-figure", controls).apply {
+                HealthAtlasUi.illustrationNotes(activity, legend, caption, item)
+            }, LayoutParams(-1, -2))
         } else {
-            // Related structures are shown explicitly instead of reusing an unrelated anatomical picture.
-            addView(ui.text(item!!.name, 22f, bold = true).apply { setPadding(0, ui.dp(24), 0, ui.dp(8)) })
-            val relations = (data.children(item) + if (item.kind == HealthAtlasKind.CELL) data.children(item) else data.parents(item)).distinctBy { it.id }
-            relations.take(4).forEach { related -> ui.add(this, ui.row(related.name) { selected(related) }) }
+            val entry = requireNotNull(item)
+            val symbol = ImageView(activity).apply {
+                setImageResource(HealthAtlasUi.icon(entry))
+                imageTintList = ColorStateList.valueOf(activity.getColor(R.color.health_overview_green))
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                minimumHeight = ui.dp(132)
+                setPadding(ui.dp(36), ui.dp(22), ui.dp(36), ui.dp(30))
+                importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+            addView(HealthAtlasFigureFrame(activity, symbol, "atlas-structure-figure").apply {
+                HealthAtlasUi.illustrationNotes(activity, legend, entry.name, entry, R.string.health_atlas_symbol_only)
+            }, LayoutParams(-1, -2))
         }
     }
     override fun onDetachedFromWindow() { layers?.dismiss(); layers = null; super.onDetachedFromWindow() }

@@ -106,14 +106,14 @@ class HealthAtlasGasExchangeDeviceTest {
     }
     @Test fun navigationAndRecreationKeepGasPhaseAndVentilationInputsIndependent() = native { scenario ->
         scenario.onActivity {
-            it.open("lungs"); it.view("atlas-entry-alveoli").performClick(); it.openAtlasModelDetails()
+            it.open("lungs"); it.openAtlasFromFigureOrSearch("alveoli"); it.openAtlasModelDetails()
             (it.view("atlas-physiology-rate") as SeekBar).progress = 20
             it.view("atlas-process-stage-2").performClick()
             it.view("atlas-gas-membrane").performClick()
             assertTrue(it.view("atlas-view-0").isSelected)
             it.view("atlas-view-1").performClick()
             assertTrue(it.view("atlas-hotspot-respiratory-membrane").isSelected)
-            it.view("atlas-entry-cell-type-i-pneumocyte").performClick(); it.openAtlasModelDetails()
+            it.openAtlasFromFigureOrSearch("cell-type-i-pneumocyte"); it.openAtlasModelDetails()
             assertNull(it.window.decorView.tagged("atlas-gas-alveolus"))
         }
         scenario.recreate(); ready(scenario, "atlas-process-stage-0")

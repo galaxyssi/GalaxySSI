@@ -55,7 +55,8 @@ internal class HealthAtlasProcessView(context: Context, private val mechanism: H
                 MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
         }
         rowHeight = stages.maxOf { it.measuredHeight }
-        setMeasuredDimension(width, resolveSize(if (showLabels) rowHeight * 2 + dp(40) else rowHeight, heightMeasureSpec))
+        val diagramHeight = if (showLabels) rowHeight * 2 + dp(40) else rowHeight
+        setMeasuredDimension(width, resolveSize(diagramHeight + paddingBottom, heightMeasureSpec))
     }
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         stages.forEachIndexed { index, stage ->
@@ -72,7 +73,9 @@ internal class HealthAtlasProcessView(context: Context, private val mechanism: H
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val accent = context.getColor(R.color.health_overview_green)
-        val points = stages.map { (it.left + it.width / 2f) to (if (showLabels) it.top + dp(16).toFloat() else height / 2f) }
+        val points = stages.map {
+            (it.left + it.width / 2f) to (if (showLabels) it.top + dp(16).toFloat() else (height - paddingBottom) / 2f)
+        }
         val path = Path().apply {
             moveTo(points[0].first, points[0].second); lineTo(points[1].first, points[1].second)
             if (showLabels) {

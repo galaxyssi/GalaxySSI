@@ -288,7 +288,7 @@ class HealthAtlasSystemOverviewDeviceTest {
             it.open("skin"); it.view("atlas-hotspot-epidermis").performClick()
             assertNotNull(it.view("atlas-feature-skin-layers-lucidum"))
             it.view("atlas-view-1").performClick()
-            it.view("atlas-entry-cell-keratinocyte").performClick()
+            it.openAtlasFromFigureOrSearch("cell-keratinocyte")
             assertNotNull(it.view("atlas-feature-keratin-filaments"))
             assertNull(it.window.decorView.tagged("atlas-hotspot-epidermis"))
             it.view("atlas-tab-1").performClick(); it.openAtlasModelDetails()

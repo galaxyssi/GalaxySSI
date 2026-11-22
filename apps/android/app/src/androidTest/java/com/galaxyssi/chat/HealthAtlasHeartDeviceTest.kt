@@ -85,7 +85,7 @@ class HealthAtlasHeartDeviceTest {
         val atlas = HealthBodyAtlas.load(context)
         scenario.onActivity {
             it.view("atlas-hotspot-heart").performClick()
-            it.view("atlas-entry-heart-valves").performClick()
+            it.openAtlasFromFigureOrSearch("heart-valves")
             it.openAtlasModelDetails()
             val scroll = it.view("atlas-scroll")
             for (stage in 0..3) {

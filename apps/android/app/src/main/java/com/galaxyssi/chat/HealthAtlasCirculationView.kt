@@ -105,7 +105,8 @@ internal class HealthAtlasCirculationView(context: Context, private val mechanis
         nodes.forEach { it.width(.40f) }; sides.forEach { it.width(.28f) }; stages.forEach { it.width(.28f) }
         upperGap = maxOf(dp(64), stages[1].measuredHeight + dp(16), stages[2].measuredHeight + dp(16))
         lowerGap = maxOf(dp(64), stages[0].measuredHeight + dp(16), stages[3].measuredHeight + dp(16))
-        setMeasuredDimension(w, resolveSize(nodes.sumOf { it.measuredHeight } + upperGap + lowerGap + dp(16), heightMeasureSpec))
+        setMeasuredDimension(w, resolveSize(nodes.sumOf { it.measuredHeight } + upperGap + lowerGap + dp(16) + paddingBottom,
+            heightMeasureSpec))
     }
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         var top = dp(8)

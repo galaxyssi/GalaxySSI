@@ -29,6 +29,7 @@
     <string name="health_atlas_layers">Layers</string>
     <string name="health_atlas_reset">Reset view</string>
     <string name="health_atlas_illustration">Teaching illustration · not to scale</string>
+    <string name="health_atlas_symbol_only">Concept symbol · not an anatomical illustration</string>
     <string name="health_atlas_plate_context">Context: %1$s · %2$s</string>
     <string name="health_atlas_view_anterior">Anterior view</string>
     <string name="health_atlas_view_external">External surface</string>

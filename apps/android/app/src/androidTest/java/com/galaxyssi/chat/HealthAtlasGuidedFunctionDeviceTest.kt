@@ -192,9 +192,19 @@ class HealthAtlasGuidedFunctionDeviceTest {
             val caption = activity.view("atlas-simulation-stage") as TextView
             val references = activity.view("atlas-simulation-references")
             val diagram = activity.view("atlas-process")
-            assertSame(frame, caption.parent)
-            assertSame(frame, diagram.parent)
-            assertTrue(caption.top >= diagram.bottom)
+            val figure = activity.view("atlas-simulation-figure")
+            val legend = caption.parent as View
+            assertSame(frame, figure.parent)
+            assertSame(figure, legend.parent)
+            assertSame(figure, diagram.parent)
+            assertTrue(caption.top + legend.top < diagram.bottom)
+            val layout = figure as android.view.ViewGroup
+            for (index in 0..3) {
+                val button = activity.view("atlas-process-stage-$index")
+                val bounds = Rect(0, 0, button.width, button.height)
+                layout.offsetDescendantRectToMyCoords(button, bounds)
+                assertTrue("Legend covers stage $index", bounds.bottom <= legend.top)
+            }
             assertEquals(View.GONE, references.visibility)
             assertSame(references, activity.view("atlas-source-physiology").parent)
             assertSame(references, activity.view("atlas-source-circulation").parent)
@@ -233,9 +243,9 @@ class HealthAtlasGuidedFunctionDeviceTest {
             val caption = activity.view("atlas-function-caption") as TextView
             assertSame(frame, art.parent)
             assertSame(frame, subtitle.parent)
-            assertTrue(art.bottom <= subtitle.top)
+            assertTrue(subtitle.top + caption.top > art.top)
+            assertTrue(subtitle.top + subtitle.paddingTop < art.bottom)
             assertTrue(subtitle.bottom <= frame.height)
-            assertEquals(art.bottom, subtitle.top)
             assertEquals(art.width, subtitle.width)
             assertTrue("Missing animation artwork", art.width > 0 && art.height > 0)
             val size = Rect(0, 0, frame.width, frame.height)
@@ -249,8 +259,8 @@ class HealthAtlasGuidedFunctionDeviceTest {
                     art.phase = (chapter + .56f) / player.story.chapters.size
                     bitmap.eraseColor(0)
                     frame.draw(Canvas(bitmap))
-                    assertEquals(activity.getColor(R.color.health_atlas_film_caption),
-                        bitmap.getPixel(subtitle.width / 2, subtitle.top + 2))
+                    assertEquals(activity.getColor(R.color.health_atlas_film_ground),
+                        bitmap.getPixel(2, subtitle.top + subtitle.paddingTop + 2))
                     val pixels = IntArray(art.width * art.height)
                     bitmap.getPixels(pixels, 0, art.width, art.left, art.top, art.width, art.height)
                     hashes += pixels.contentHashCode()
@@ -281,7 +291,7 @@ class HealthAtlasGuidedFunctionDeviceTest {
                 player.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
                 player.layout(0, 0, width, player.measuredHeight)
-                assertEquals(art.bottom, subtitle.top)
+                assertTrue(subtitle.top + subtitle.paddingTop < art.bottom)
                 assertEquals(frame.height, subtitle.bottom)
                 assertTrue(caption.layout.height + caption.totalPaddingTop + caption.totalPaddingBottom <= caption.height)
                 if (chapter == 0) expectedHeight = frame.height else assertEquals(expectedHeight, frame.height)

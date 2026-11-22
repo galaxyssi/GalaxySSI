@@ -180,7 +180,8 @@ class HealthAtlasGermlineDeviceTest {
                     val countView = body.tagged("atlas-germline")!!
                     val scene = body.tagged("atlas-simulation-frame") as LinearLayout
                     assertTrue(scene.indexOfChild(scene.tagged("atlas-simulation-play")!!.parent as View) < scene.indexOfChild(countView))
-                    assertTrue(scene.indexOfChild(scene.tagged("atlas-simulation-stage")) < scene.indexOfChild(countView))
+                    val stageLegend = scene.tagged("atlas-simulation-stage")!!.parent as View
+                    assertSame(scene.tagged("atlas-simulation-figure"), stageLegend.parent)
                     assertTrue(body.indexOfChild(body.tagged("atlas-germline-scope")) > body.indexOfChild(scene))
                     body.tagged("atlas-source-germline")!!.performClick()
                     assertEquals(HealthAtlasGermline.SOURCE, opened)
