@@ -192,6 +192,8 @@ class HealthAtlasGutSectionsDeviceTest {
         scenario.onActivity {
             assertEquals(3, (it.view("atlas-section-diagram") as HealthAtlasSectionLessonView).stage)
             it.view("atlas-open-research").performClick()
+            assertTrue(it.view("atlas-research-tab-drugs").isSelected)
+            it.onBackPressed()
             assertEquals(3, (it.view("atlas-section-diagram") as HealthAtlasSectionLessonView).stage)
         }
     }

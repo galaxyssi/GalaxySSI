@@ -13,13 +13,14 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 internal object HealthAtlasUi {
-    fun tabs(activity: Activity, labels: List<Int>, selected: Int, tagPrefix: String = "atlas-tab", action: (Int) -> Unit): LinearLayout {
+    fun tabs(activity: Activity, labels: List<Int>, selected: Int, tagPrefix: String = "atlas-tab",
+        tagKey: (Int) -> String = { it.toString() }, action: (Int) -> Unit): LinearLayout {
         val ui = HealthCenterViews(activity)
         return ui.line().apply {
             setBackgroundColor(activity.getColor(R.color.surface_bg))
             labels.forEachIndexed { index, label -> addView(ui.column().apply {
                 addView(ui.text(activity.getString(label), 14f, bold = index == selected).apply {
-                    tag = "$tagPrefix-$index"; gravity = Gravity.CENTER; minimumHeight = ui.dp(48)
+                    tag = "$tagPrefix-${tagKey(index)}"; gravity = Gravity.CENTER; minimumHeight = ui.dp(48)
                     isSelected = index == selected; isFocusable = true; setOnClickListener { action(index) }
                     setTextColor(activity.getColor(if (index == selected) R.color.health_overview_green else R.color.text_primary))
                 }, LinearLayout.LayoutParams(-1, -2))

@@ -45,7 +45,7 @@ class HealthAtlasDistributionDeviceTest {
                 ready(scenario, "atlas-whole-art")
                 scenario.onActivity {
                     it.view("atlas-hotspot-heart").performClick(); it.view("atlas-tab-1").performClick()
-                    it.view("atlas-open-research").performClick(); it.view("atlas-research-tab-1").performClick()
+                    it.view("atlas-open-research").performClick(); it.view("atlas-research-tab-drugs").performClick()
                 }
                 block(scenario)
             }
@@ -87,7 +87,7 @@ class HealthAtlasDistributionDeviceTest {
             it.view("atlas-drug-model-1").performClick(); (it.view("atlas-distribution-outward") as SeekBar).progress = 63
             (it.view("atlas-distribution-elapsed") as SeekBar).progress = 27
             it.view("atlas-adme-liver").performClick(); it.view("atlas-tab-1").performClick()
-            it.view("atlas-open-research").performClick(); it.view("atlas-research-tab-1").performClick()
+            it.view("atlas-open-research").performClick(); it.view("atlas-research-tab-drugs").performClick()
             assertTrue(it.view("atlas-drug-model-0").isSelected)
             it.view("atlas-drug-model-1").performClick()
             assertEquals(30, (it.view("atlas-distribution-outward") as SeekBar).progress)

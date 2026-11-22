@@ -63,6 +63,7 @@
     <string name="health_atlas_stage">第 %1$d / %2$d 阶段 · %3$s</string>
     <string name="health_atlas_evidence">证据与文献</string>
     <string name="health_atlas_research">机制与研究</string>
+    <string name="health_atlas_targeted_research">药物与衰老研究</string>
     <string name="health_atlas_physiology">生理机制</string>
     <string name="health_atlas_drugs">药物路径</string>
     <string name="health_atlas_aging">衰老研究</string>
