@@ -139,10 +139,10 @@ class HealthAtlasGuidedFunctionDeviceTest {
     }
 
     @Test fun capturesAnAnimationAndItsPrincipleTogether() = native { scenario ->
-        scenario.onActivity {
-            it.view("atlas-hotspot-heart").performClick()
-            it.view("atlas-tab-1").performClick()
-            repeat(3) { it.view("atlas-function-next").performClick() }
+        scenario.onActivity { activity ->
+            activity.view("atlas-hotspot-heart").performClick()
+            activity.view("atlas-tab-1").performClick()
+            repeat(3) { activity.view("atlas-function-next").performClick() }
         }
         runner.waitForIdleSync()
         val deadline = SystemClock.elapsedRealtime() + 5_000
