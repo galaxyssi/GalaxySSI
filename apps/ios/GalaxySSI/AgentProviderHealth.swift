@@ -303,9 +303,21 @@ protocol AgentProviderHealthLedger: AnyObject {
   )
   func snapshot(registration: AgentRegistration) -> AgentProviderHealthSnapshot
   func snapshot(scopeId: String) -> AgentProviderHealthSnapshot
+  func observeAvailability(registration: AgentRegistration, nowMillis: Int64)
   func markAvailable(scopeIds: Set<String>, nowMillis: Int64)
   func snapshots() -> [AgentProviderHealthSnapshot]
   func clear()
+}
+
+enum AgentLocalTransportFailure {
+  static func metadata(for error: Error) -> [String: String] {
+    guard case MqttChunkStorageError.capacityExceeded = error else { return [:] }
+    return ["provider_failure_attribution": "local_transport", "delivery_failure_reason": "local_outbox_full"]
+  }
+
+  static func shouldRecord(_ result: AgentActionResult) -> Bool {
+    result.success || result.metadata["provider_failure_attribution"] != "local_transport"
+  }
 }
 
 protocol AgentProviderHealthPersistence: AnyObject {
@@ -360,10 +372,29 @@ final class UserDefaultsAgentProviderHealthPersistence: AgentProviderHealthPersi
 
 class PersistentAgentProviderHealthLedger: AgentProviderHealthLedger {
   private let persistence: AgentProviderHealthPersistence
-  private let lock = NSRecursiveLock()
+  private static let processLock = NSRecursiveLock()
+  private var lock: NSRecursiveLock { PersistentAgentProviderHealthLedger.processLock }
 
   init(persistence: AgentProviderHealthPersistence) {
     self.persistence = persistence
+  }
+
+  func observeAvailability(registration: AgentRegistration, nowMillis: Int64) {
+    guard [.online, .idle, .busy].contains(registration.status), nowMillis > 0 else { return }
+    lock.lock()
+    defer { lock.unlock() }
+    var values = persistence.load()
+    let scope = registration.runtimeHealthScope()
+    guard var current = values[scope], current.circuitState(nowMillis: nowMillis) == .open,
+          current.probeLeaseUntilMillis <= nowMillis,
+          registration.lastHeartbeatMillis > current.lastFailureAtMillis,
+          registration.lastHeartbeatMillis <= nowMillis || registration.lastHeartbeatMillis - nowMillis <= 60_000,
+          current.lastFailureKind == .transportCrash || current.lastFailureKind == .unavailable ||
+            (current.lastFailureKind == .execution && current.lastOperation == "start_run") else { return }
+    // Readiness permits one half-open request; it is not an execution success or a replay.
+    current.circuitOpenUntilMillis = nowMillis
+    values[scope] = current
+    persistence.save(Array(values.values))
   }
 
   func acquire(
@@ -626,6 +657,8 @@ extension AgentProviderHealthSnapshot {
 }
 
 extension AgentProviderHealthLedger {
+  func observeAvailability(registration: AgentRegistration, nowMillis: Int64) {}
+
   func markConfigurationAvailable(registration: AgentRegistration, nowMillis: Int64) {
     markAvailable(scopeIds: registration.healthTrackingScopeIds(), nowMillis: nowMillis)
   }
@@ -634,6 +667,7 @@ extension AgentProviderHealthLedger {
     registration: AgentRegistration,
     nowMillis: Int64
   ) -> AgentProviderHealthSnapshot {
+    observeAvailability(registration: registration, nowMillis: nowMillis)
     let runtime = snapshot(registration: registration)
     guard let providerScope = registration.cloudProviderHealthScopeId else { return runtime }
     let target = runtime
@@ -735,6 +769,7 @@ final class HealthIsolatedAgentAdapter: AgentAdapter {
     } catch is CancellationError {
       throw CancellationError()
     } catch {
+      if !AgentLocalTransportFailure.metadata(for: error).isEmpty { throw error }
       let finishedAt = clock()
       healthLedger.recordFailure(
         registration: registration,

@@ -55,7 +55,7 @@ struct GalaxySSIHealthInstructionReviewView: View {
         else { instructionList }
       }
       .navigationTitle(t("title", "Instruction drafts"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           if editor != nil || history != nil || source != nil || documents != nil {
@@ -346,7 +346,7 @@ private struct GalaxySSIHealthInstructionActionConfirmation: View {
           isOn: $acknowledgement.checked)
       }
       .navigationTitle(t("action_add", "Add to Health Actions"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button(t("cancel", "Cancel")) { dismiss() } }
         ToolbarItem(placement: .confirmationAction) {

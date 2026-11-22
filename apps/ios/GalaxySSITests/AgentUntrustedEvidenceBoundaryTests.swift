@@ -3,6 +3,28 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentUntrustedEvidenceBoundaryTests: XCTestCase {
+  func testLiteralUserHeadersWithoutEvidenceAreNeverRemoved() {
+    for text in ["Explain Attached input:", "Attached input:", AgentDirectVisionPolicy.historicalInputHeader] {
+      XCTAssertEqual(AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(text), text)
+    }
+  }
+
+  func testRestoredCheckpointRemovesOnlyExactHostGuidanceSuffix() {
+    let vision = AgentDirectVisionPolicy.instructionForMimeTypes(["image/jpeg"])
+    let evidence = AgentUntrustedEvidenceBoundary.wrapText(sourceType: "attachment_manifest", sourceId: "old", content: "file")
+    let historical = AgentDirectVisionPolicy.historicalContext + "\n" + AgentDirectVisionPolicy.checkHistoricalPixels
+    for guide in [vision, vision + "\n" + historical, historical + "\n" + AgentDirectVisionPolicy.answerStyle] {
+      for header in [AgentDirectVisionPolicy.attachedInputHeader, AgentDirectVisionPolicy.historicalInputHeader] {
+        let goal = "Explain the answer\n\n" + guide + "\n\n" + header + "\n" + evidence
+        XCTAssertEqual(AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal), "Explain the answer")
+      }
+    }
+    let userText = "Discuss this guidance:\n\n" + vision + "\nDo not remove my final line."
+    XCTAssertEqual(AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(
+      userText + "\n\nAttached input:\n" + evidence), userText)
+    XCTAssertEqual(AgentUntrustedEvidenceBoundary.trustedInstructionPrefix("Discuss:\n\n" + vision), "Discuss:\n\n" + vision)
+  }
+
   func testSecuresModelMessagesWithoutChangingStoredUserContent() {
     let user = AgentModelMessage.user("Summarize the attached file.")
     let secured = AgentUntrustedEvidenceBoundary.secureMessages([user])

@@ -77,6 +77,7 @@ enum GalaxySSIHealthCarePlan {
     var resolvedAt: Date?
     var maintenanceAccepted: Bool?
     var pairedDesktop: GalaxySSIHealthDesktopResearch.Route?
+    var relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope?
   }
   struct AdoptedAction: Codable, Equatable, Identifiable {
     let proposalID: UUID
