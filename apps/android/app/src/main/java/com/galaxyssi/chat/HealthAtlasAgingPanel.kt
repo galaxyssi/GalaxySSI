@@ -56,7 +56,6 @@ internal class HealthAtlasAgingPanel(private val activity: Activity, body: Linea
         val body = topicContent
         pickerValue.text = activity.getString(topic.title)
         body.removeAllViews()
-        ui.add(body, ui.text(activity.getString(R.string.health_atlas_aging_diagram_scope), 13f, muted = true))
         val steps = topic.steps(activity)
         val stage = ui.text(selection.stageLabel(activity, steps), 15f, bold = true).apply {
             tag = "atlas-aging-stage"
@@ -64,12 +63,16 @@ internal class HealthAtlasAgingPanel(private val activity: Activity, body: Linea
         }
         val mechanism = HealthAtlasMechanism("aging-${topic.name}", "teaching", activity.getString(topic.title),
             steps, chapter = "", reference = HealthAtlasResearchSources.AGING)
-        ui.add(body, HealthAtlasProcessView(activity, mechanism) { index ->
+        val process = HealthAtlasProcessView(activity, mechanism) { index ->
             selection = selection.copy(step = index)
             stage.text = selection.stageLabel(activity, steps)
-        }.apply { phase = selection.step / HealthAtlasAgingSelection.STEP_COUNT.toFloat() }, 4)
-        ui.add(body, stage)
-        ui.add(body, ui.text(activity.getString(topic.explanation), 15f), 8)
+        }.apply { phase = selection.step / HealthAtlasAgingSelection.STEP_COUNT.toFloat() }
+        ui.add(body, HealthAtlasFigureFrame(activity, process, "atlas-aging-figure").apply {
+            reserveCaption(stage, steps.indices.map { selection.copy(step = it).stageLabel(activity, steps) })
+            ui.add(legend, stage)
+            ui.add(legend, ui.text(activity.getString(topic.explanation), 14f), 4)
+            ui.add(legend, ui.text(activity.getString(R.string.health_atlas_aging_diagram_scope), 11f, muted = true), 5)
+        })
         topic.study?.let { study ->
             val card = ui.card().apply { tag = "atlas-aging-study" }
             ui.add(card, ui.text(activity.getString(R.string.health_atlas_aging_human_study), 14f, bold = true))

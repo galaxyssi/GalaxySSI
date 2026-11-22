@@ -13,7 +13,7 @@ import android.widget.TextView
 import kotlin.math.ceil
 
 internal class HealthAtlasLabeledImage(private val activity: Activity, plate: HealthAtlasPlate, description: String,
-    data: HealthBodyAtlas, currentId: String?, legendInset: Int = 0,
+    data: HealthBodyAtlas, currentId: String?,
     selected: (HealthAtlasItem) -> Unit) : FrameLayout(activity) {
     private val ui = HealthCenterViews(activity)
     private val features = plate.features.associateBy { it.marker.id }
@@ -22,7 +22,6 @@ internal class HealthAtlasLabeledImage(private val activity: Activity, plate: He
     private val leftRail = markers.indices.filter { split && markers[it].x < .5f }
     private val rightRail = markers.indices.filterNot { it in leftRail }
     private var featureDialog: android.app.AlertDialog? = null
-    private val labelBottomInset = ui.dp(legendInset)
     var labelsShown = true
         private set
     val image = ImageView(activity).apply {
@@ -113,7 +112,7 @@ internal class HealthAtlasLabeledImage(private val activity: Activity, plate: He
                 MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)) }
             return indices.sumOf { labels[it].measuredHeight } + ui.dp(8) * (indices.size + 1)
         }
-        fun measureLabels() = maxOf(measureRail(leftRail, leftWidth), measureRail(rightRail, rightWidth)) + labelBottomInset
+        fun measureLabels() = maxOf(measureRail(leftRail, leftWidth), measureRail(rightRail, rightWidth))
         var required = measureLabels()
         // A constrained height needs a wider label column before packing large text upward.
         if (MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) {
@@ -152,7 +151,7 @@ internal class HealthAtlasLabeledImage(private val activity: Activity, plate: He
                 tops[order] = (y - labels[index].measuredHeight / 2f).toInt().coerceAtLeast(nextTop)
                 nextTop = tops[order] + labels[index].measuredHeight + gap
             }
-            var bottom = height - gap - labelBottomInset
+            var bottom = height - gap
             for (order in indices.indices.reversed()) {
                 val label = labels[indices[order]]
                 val top = tops[order].coerceAtMost(bottom - label.measuredHeight)

@@ -28,6 +28,8 @@ internal class HealthAtlasCaptionSizes {
                     paint.set(view.paint)
                     setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, view.paddingBottom)
                     includeFontPadding = view.includeFontPadding
+                    maxLines = view.maxLines
+                    ellipsize = view.ellipsize
                     setLineSpacing(view.lineSpacingExtra, view.lineSpacingMultiplier)
                     breakStrategy = view.breakStrategy
                     hyphenationFrequency = view.hyphenationFrequency

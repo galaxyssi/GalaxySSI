@@ -51,6 +51,9 @@ internal class HealthAtlasEndocrinePathView(private val activity: Activity, priv
     private val mechanism = atlas.mechanism(owner)
     private val art = ImageView(activity).apply {
         scaleType = ImageView.ScaleType.FIT_CENTER
+        adjustViewBounds = true
+        maxHeight = ui.dp(110)
+        minimumHeight = ui.dp(84)
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
     private val description = ui.text("", 15f, bold = true).apply { tag = "atlas-endocrine-current" }
@@ -94,12 +97,13 @@ internal class HealthAtlasEndocrinePathView(private val activity: Activity, priv
                 addView(rows[first + if (reverse) 0 else 1], LayoutParams(0, -2, 1f))
             }, if (path.separateBranches && branch == 1) 6 else 0)
         }
-        ui.add(this, ui.line().apply {
-            addView(art, LayoutParams(ui.dp(84), ui.dp(72)).apply { marginEnd = ui.dp(10) })
-            addView(description, LayoutParams(0, -2, 1f))
+        ui.add(this, HealthAtlasFigureFrame(activity, art, "atlas-endocrine-figure",
+            subject = art, preferSideNote = true).apply {
+            reserveCaption(description, mechanism.stages)
+            ui.add(legend, description)
+            ui.add(legend, ui.text(activity.getString(path.scope), 11f, muted = true), 5)
         }, 8)
         ui.add(this, details, 4)
-        ui.add(this, ui.text(activity.getString(path.scope), 12f, muted = true), 4)
         bind()
     }
     private fun arrow(symbol: String) = ui.text(symbol, 18f, muted = true).apply {

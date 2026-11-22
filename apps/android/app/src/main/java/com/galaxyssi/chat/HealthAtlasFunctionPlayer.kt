@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.SystemClock
+import android.text.TextUtils
 import android.view.Gravity
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -17,7 +18,11 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
     private val onPlay: () -> Unit = {}) : LinearLayout(activity) {
     private val ui = HealthCenterViews(activity)
     private val art = story.createArt(activity)
-    private val caption = ui.text("", 15f).apply { tag = "atlas-function-caption" }
+    private val caption = ui.text("", 13f).apply {
+        tag = "atlas-function-caption"
+        maxLines = 2
+        ellipsize = TextUtils.TruncateAt.END
+    }
     private val chapterLabel = ui.text("", 14f, bold = true).apply {
         tag = "atlas-function-chapter"
         setTextColor(context.getColor(R.color.health_overview_green))
@@ -50,17 +55,23 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
     init {
         tag = "atlas-function-player"
         orientation = VERTICAL
-        val title = if (showTitle) ui.text(context.getString(story.title), 16f, bold = true).apply {
-            setPadding(ui.dp(16), ui.dp(12), ui.dp(16), 0)
-        } else null
         art.setOnClickListener { toggle() }
         art.isFocusable = true
-        val scene = HealthAtlasFigureFrame(activity, art, "atlas-function-frame", title,
-            captionKey = "atlas-function-subtitles").apply {
+        val scene = HealthAtlasFigureFrame(activity, art, "atlas-function-frame",
+            captionKey = "atlas-function-subtitles", overlayNote = true).apply {
             reserveCaption(chapterLabel, chapterLabels)
             reserveCaption(caption, chapterCaptions)
             ui.add(legend, chapterLabel)
             ui.add(legend, caption, 2)
+            legend.isFocusable = true
+            legend.setOnClickListener {
+                pause()
+                AlertDialog.Builder(activity)
+                    .setTitle(if (showTitle) context.getString(story.title) else chapterLabel.text)
+                    .setMessage(if (showTitle) "${chapterLabel.text}\n\n${caption.text}" else caption.text)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
         }
         ui.add(this, scene)
         ui.add(this, position)

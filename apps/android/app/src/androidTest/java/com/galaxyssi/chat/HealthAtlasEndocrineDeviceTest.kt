@@ -124,6 +124,7 @@ class HealthAtlasEndocrineDeviceTest {
             it.openAtlasModelDetails()
             assertNull(it.window.decorView.tagged("atlas-endocrine-path"))
             assertNull(it.window.decorView.tagged("atlas-physiology-feedback-gain"))
+            it.closeAtlasStandaloneModel()
             it.onBackPressed()
             it.openAtlasModelDetails()
             val scroll = it.view("atlas-scroll")
