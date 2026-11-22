@@ -2,7 +2,7 @@ import SwiftUI
 
 enum ScannedAgentConversationPolicy {
   static func opensAgentConversation(_ contact: GalaxySSIContact?) -> Bool {
-    guard let contact else { return false }
+    guard let contact, !contact.isDesktopHistoryOnly else { return false }
     switch contact.type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
     case "person", "device", "group", "system":
       return false

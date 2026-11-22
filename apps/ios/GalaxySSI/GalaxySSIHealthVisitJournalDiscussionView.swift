@@ -80,7 +80,7 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
         } else { Color.clear }
       }
       .navigationTitle(t("title", "Discuss post-visit journal"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button(t("done", "Done")) { dismiss() } }
       }
@@ -142,7 +142,7 @@ struct GalaxySSIHealthVisitJournalDiscussionView: View {
       } else {
         Text(t("local_notice", "The selected model can read this journal for this request. Journal data stays on this iPhone. No other Health records or changes are authorized.")).font(.footnote)
       }
-      Button(t("send", "Approve and send")) { start(review) }.buttonStyle(.borderedProminent)
+      Button(t("send", "Approve and send")) { start(review) }.buttonStyle(GalaxySSIHealthCommandStyle())
       Button(t("cancel", "Cancel")) { approval = nil }
     }
   }

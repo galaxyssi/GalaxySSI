@@ -139,7 +139,7 @@ struct GalaxySSIWeeklyHealthReportView: View {
       }
     }
     .navigationTitle(t("title", "Weekly Health Report"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notice in
       guard assistantScope != nil || sleepEvidence != nil,

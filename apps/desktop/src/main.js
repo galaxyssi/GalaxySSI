@@ -8,7 +8,7 @@ const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { preparePeerVoicePlayback } = require("./peer_voice_playback");
 const { transcribeComposerSpeech } = require("./composer_stt");
-const { buildTextContextMenuTemplate, buildImageContextMenuItem } = require("./text_context_menu");
+const { buildTextContextMenuTemplate, buildImageContextMenuItem, buildPeerAttachmentSaveMenuItem } = require("./text_context_menu");
 const { createConversationUnreadIndicator } = require("./conversation_unread_indicator");
 const { WindowsTaskbarBadge } = require("./windows_taskbar_badge");
 
@@ -154,9 +154,14 @@ function createWindow() {
     if (peer && Date.now() - peer.at < 1_000 && Math.abs(peer.x - params.x) <= 2 &&
         Math.abs(peer.y - params.y) <= 2 && !params.isEditable) {
       event.preventDefault();
+      const saveAttachment = buildPeerAttachmentSaveMenuItem(peer, {
+        saveAttachmentLabel: workspaceLocale["Save attachment as..."] || "Save attachment as...",
+        saveAttachment: savePeerAttachmentWithFeedback
+      });
       Menu.buildFromTemplate([
         buildImageContextMenuItem(params, imageActions) || { label: peer.copyLabel, enabled: Boolean(params.selectionText || peer.copyText),
           click: () => clipboard.writeText(String(params.selectionText || peer.copyText)) },
+        ...(saveAttachment ? [saveAttachment] : []),
         { label: peer.deleteLabel, click: async () => {
           try {
             const result = await deletePeerMessage(peer.routeId, peer.messageId);
@@ -2300,7 +2305,7 @@ async function savePeerAttachment(messageId, attachmentIndex) {
   const name = peerAttachmentFilename(response, attachmentIndex);
   const extension = path.extname(name).replace(/^\./, "");
   const result = await dialog.showSaveDialog(mainWindow, {
-    title: "Save attachment",
+    title: workspaceLocale["Save attachment as..."] || "Save attachment as...",
     defaultPath: path.join(app.getPath("downloads"), name),
     filters: extension
       ? [{ name: "Attachment", extensions: [extension] }, { name: "All files", extensions: ["*"] }]
@@ -2325,6 +2330,18 @@ async function savePeerAttachment(messageId, attachmentIndex) {
     throw error;
   }
   return { ok: true, canceled: false, name: path.basename(target) };
+}
+
+async function savePeerAttachmentWithFeedback(messageId, attachmentIndex) {
+  let result;
+  try {
+    result = await savePeerAttachment(messageId, attachmentIndex);
+  } catch (error) {
+    result = { ok: false, error: String(error.message || error) };
+  }
+  if (!result?.canceled && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("peer-attachment:save-result", result);
+  }
 }
 
 async function openPeerAttachment(messageId, attachmentIndex) {
@@ -2968,6 +2985,9 @@ ipcMain.on("peer-messages:context-target", (_event, payload) => {
     copyText: String(payload?.copyText || ""),
     copyLabel: String(payload?.copyLabel || "Copy").slice(0, 40),
     deleteLabel: String(payload?.deleteLabel || "Delete Message").slice(0, 40),
+    attachmentIndex: Number.isSafeInteger(payload?.attachmentIndex) && payload.attachmentIndex >= 0
+      ? payload.attachmentIndex : null,
+    attachmentAvailable: payload?.attachmentAvailable !== false,
     x: Number(payload?.x),
     y: Number(payload?.y),
     at: Date.now()
