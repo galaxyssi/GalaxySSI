@@ -29,6 +29,8 @@
     <string name="health_atlas_insulin_art_potassium">Potassium ions</string>
     <string name="health_atlas_insulin_art_k_open">Potassium channel open</string>
     <string name="health_atlas_insulin_art_k_closed">Potassium channel closed</string>
+    <string name="health_atlas_insulin_art_k_opening">K⁺ channels open</string>
+    <string name="health_atlas_insulin_art_voltage">Membrane potential</string>
     <string name="health_atlas_insulin_art_calcium">Calcium ions</string>
     <string name="health_atlas_insulin_art_ca_gate">Voltage-gated calcium channel</string>
     <string name="health_atlas_insulin_art_hormone">Insulin</string>

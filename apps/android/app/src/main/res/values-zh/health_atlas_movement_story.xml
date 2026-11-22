@@ -35,7 +35,11 @@
     <string name="health_atlas_motion_calcium">肌纤维内释放钙</string>
     <string name="health_atlas_motion_calcium_caption">兴奋沿横管向内传递，促使肌浆网将钙离子释放到肌纤维内部。</string>
     <string name="health_atlas_motion_slide">肌丝滑动</string>
-    <string name="health_atlas_motion_slide_caption">钙使肌丝能够相互作用。肌动蛋白沿肌球蛋白滑动，肌节缩短，但两种肌丝本身不缩短。</string>
+    <string name="health_atlas_motion_slide_caption">肌球蛋白头抓住肌动蛋白并向内拉动。新的 ATP 使两者分离，ATP 水解使头部复位。缩短的是肌节，两种肌丝长度不变。</string>
+    <string name="health_atlas_motion_bridge_bind">肌球蛋白头结合肌动蛋白</string>
+    <string name="health_atlas_motion_bridge_pull">动力冲程：拉动肌动蛋白</string>
+    <string name="health_atlas_motion_bridge_detach">ATP 结合：肌球蛋白头脱离</string>
+    <string name="health_atlas_motion_bridge_reset">ATP 水解：肌球蛋白头复位</string>
     <string name="health_atlas_motion_pull">肌腱带动前臂</string>
     <string name="health_atlas_motion_pull_caption">肱二头肌收缩，肌腱将拉力传给桡骨，前臂绕肘关节抬起。</string>
     <string name="health_atlas_motion_release">舒张与伸肘</string>

@@ -12,6 +12,7 @@ internal class HealthAtlasIntestinalAbsorptionStoryView(context: Context) :
     private val leaderInk = 0xff637e81
     private val brushInk = 0xff8a6052
     private val lipidInk = 0xffa16125
+    private val sodiumInk = 0xff97602c
     private val surface = Path().apply {
         moveTo(29f, 294f)
         cubicTo(51f, 278f, 54f, 250f, 54f, 206f)
@@ -85,6 +86,20 @@ internal class HealthAtlasIntestinalAbsorptionStoryView(context: Context) :
         moveTo(309f, 164f)
         cubicTo(300f, 188f, 310f, 215f, 307f, 243f)
     }, Cargo.CHYLOMICRON, lipidInk)
+    private val glucosePath = Path().apply {
+        moveTo(240f, 89f)
+        quadTo(251f, 102f, 251f, 123f)
+        lineTo(251f, 260f)
+    }
+    private val sodiumPath = Path().apply {
+        moveTo(271f, 89f)
+        quadTo(261f, 102f, 261f, 123f)
+        quadTo(261f, 167f, 282f, 175f)
+        quadTo(307f, 187f, 307f, 212f)
+        lineTo(307f, 252f)
+    }
+    private val glucoseTrack = track(glucosePath)
+    private val sodiumTrack = track(sodiumPath)
 
     init {
         tag = "atlas-function-intestinal-absorption-art"
@@ -112,8 +127,13 @@ internal class HealthAtlasIntestinalAbsorptionStoryView(context: Context) :
 
     override fun scene(c: Canvas, step: Int, t: Float) {
         drawVillus(c, step == 1, t.takeIf { step == 0 })
+        if (step == 2) {
+            flow(c, bloodRoute, t)
+            drawGlucoseTransport(c, t)
+            return
+        }
         drawInset(c, t.takeIf { step == 1 })
-        if (step == 2 || step == 4) {
+        if (step == 4) {
             flow(c, bloodRoute, t)
             flow(c, cellSolutes, t)
             legend(c, Cargo.SOLUTE, 26f, 107f, 144f, R.string.health_atlas_absorption_story_label_solutes)
@@ -131,6 +151,45 @@ internal class HealthAtlasIntestinalAbsorptionStoryView(context: Context) :
         if (step >= 3) {
             legend(c, Cargo.CHYLOMICRON, 218f, 283f, 116f, R.string.health_atlas_absorption_story_label_chylomicrons)
         }
+    }
+
+    private fun drawGlucoseTransport(c: Canvas, t: Float) {
+        oval(c, 162f, 114f, 179f, 132f, 0x22fff8eb, leaderInk)
+        line(c, 180f, 122f, 206f, 117f, leaderInk, 1f)
+        rounded(c, 204f, 73f, 348f, 270f, 8f, 0xffdceeed)
+        rounded(c, 204f, 118f, 348f, 230f, 5f, 0xfff4d0b8)
+        line(c, 205f, 230f, 347f, 230f, coral, 3f)
+        for (x in 209..345 step 5) {
+            line(c, x.toFloat(), 117f, x.toFloat(), 111f, brushInk, 1.5f)
+        }
+        oval(c, 291f, 147f, 326f, 165f, 0xffe0b5bd, coral)
+        rounded(c, 240f, 109f, 272f, 129f, 6f, teal)
+        rounded(c, 239f, 224f, 263f, 236f, 4f, teal)
+        rounded(c, 299f, 222f, 330f, 238f, 5f, teal)
+        stroke(c, glucosePath, blue, 1.8f)
+        stroke(c, sodiumPath, sodiumInk, 1.8f)
+        arrow(c, 251f, 245f, 251f, 260f, blue)
+        arrow(c, 307f, 241f, 307f, 252f, sodiumInk)
+        arrow(c, 323f, 251f, 323f, 206f, violet)
+        for (i in 0..1) {
+            val f = (t + i * .5f) % 1f
+            at(glucoseTrack, f) { x, y -> disc(c, x, y, 3.8f, blue, cream) }
+            at(sodiumTrack, f) { x, y ->
+                rounded(c, x - 3.3f, y - 3.3f, x + 3.3f, y + 3.3f, .7f, sodiumInk)
+            }
+            disc(c, 323f, 250f - 40f * f, 2.6f, violet, cream)
+        }
+        label(c, R.string.health_atlas_absorption_story_label_lumen, 275f, 62f, 132f)
+        label(c, R.string.health_atlas_absorption_story_sglt1, 309f, 121f, 62f)
+        label(c, R.string.health_atlas_absorption_story_glut2, 226f, 221f, 41f)
+        label(c, R.string.health_atlas_absorption_story_pump, 314f, 196f, 65f)
+        label(c, R.string.health_atlas_absorption_story_tissue_side, 276f, 288f, 143f)
+        disc(c, 212f, 312f, 3.8f, blue, cream)
+        label(c, R.string.health_atlas_absorption_story_glucose, 247f, 316f, 60f)
+        rounded(c, 280f, 309f, 286f, 315f, .7f, sodiumInk)
+        label(c, R.string.health_atlas_absorption_story_sodium, 300f, 316f, 24f)
+        disc(c, 321f, 312f, 3f, violet, cream)
+        label(c, R.string.health_atlas_absorption_story_potassium, 336f, 316f, 19f)
     }
 
     private fun drawVillus(c: Canvas, highlightBrush: Boolean, outlineProgress: Float?) {

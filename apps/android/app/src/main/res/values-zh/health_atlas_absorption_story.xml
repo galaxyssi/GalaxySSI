@@ -8,7 +8,10 @@
     <string name="health_atlas_absorption_story_brush_border">微绒毛形成刷状缘</string>
     <string name="health_atlas_absorption_story_brush_border_caption">小肠吸收细胞是绒毛上皮中的一种细胞。细胞朝向肠腔的一面有许多微绒毛，它们组成刷状缘，进一步增大吸收面积。</string>
     <string name="health_atlas_absorption_story_blood">可溶性营养物质进入血液</string>
-    <string name="health_atlas_absorption_story_blood_caption">葡萄糖和氨基酸穿过小肠吸收细胞，从靠组织的一侧离开，进入附近的毛细血管，再随肝门静脉血流流向肝脏。</string>
+    <string name="health_atlas_absorption_story_blood_caption">SGLT1 利用钠离子梯度把葡萄糖带进细胞，葡萄糖再经 GLUT2 离开细胞，进入附近的毛细血管。钠钾泵维持这个梯度。</string>
+    <string name="health_atlas_absorption_story_pump">钠钾泵</string>
+    <string name="health_atlas_absorption_story_tissue_side">通向毛细血管</string>
+    <string name="health_atlas_absorption_story_glucose">葡萄糖</string>
     <string name="health_atlas_absorption_story_package">吸收细胞包装长链脂质</string>
     <string name="health_atlas_absorption_story_package_caption">长链脂肪的消化产物进入吸收细胞后，细胞重新合成甘油三酯，并将其与其他脂质和蛋白质一起组装成乳糜微粒。</string>
     <string name="health_atlas_absorption_story_lymph">乳糜微粒先进入淋巴</string>
