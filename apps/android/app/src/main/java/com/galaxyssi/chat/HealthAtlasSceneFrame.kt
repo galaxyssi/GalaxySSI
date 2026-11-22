@@ -33,6 +33,7 @@ internal class HealthAtlasSceneFrame(activity: Activity, key: String) : LinearLa
                 val heightSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
                 // Measure with TextView so mixed-script fallback fonts use the same line metrics as playback.
                 val probe = TextView(context).apply {
+                    layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
                     paint.set(view.paint)
                     setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, view.paddingBottom)
                     includeFontPadding = view.includeFontPadding
@@ -48,6 +49,7 @@ internal class HealthAtlasSceneFrame(activity: Activity, key: String) : LinearLa
                 }
                 val reserved = texts.maxOf { text ->
                     probe.text = text
+                    probe.forceLayout()
                     probe.measure(widthSpec, heightSpec)
                     probe.measuredHeight
                 }
