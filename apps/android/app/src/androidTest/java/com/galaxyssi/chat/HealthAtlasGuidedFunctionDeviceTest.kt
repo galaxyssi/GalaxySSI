@@ -45,38 +45,57 @@ class HealthAtlasGuidedFunctionDeviceTest {
         lateinit var player: HealthAtlasFunctionPlayer
         lateinit var art: View
         lateinit var caption: TextView
+        lateinit var play: View
         scenario.onActivity {
             it.view("atlas-hotspot-heart").performClick()
             it.view("atlas-tab-1").performClick()
             player = it.view("atlas-function-player") as HealthAtlasFunctionPlayer
             art = it.view("atlas-function-heartbeat-art")
             caption = it.view("atlas-function-caption") as TextView
-            art.performClick()
+            play = it.view("atlas-function-play")
         }
-        SystemClock.sleep(2_000)
+        runner.waitForIdleSync()
+        val length = player.story.chapters.size * 5_000L
+        var started = 0L
+        runner.runOnMainSync {
+            started = SystemClock.uptimeMillis()
+            assertTrue(art.performClick())
+        }
+        SystemClock.sleep(1_650)
         var paused = 0f
-        scenario.onActivity {
+        var chapter = -1
+        runner.runOnMainSync {
+            val before = SystemClock.uptimeMillis() - started
             art.performClick()
+            val after = SystemClock.uptimeMillis() - started
             paused = player.phase
-            assertTrue(paused > 0f)
-            assertEquals(0, player.story.chapter(paused))
-            assertEquals(it.getString(player.story.chapters[0].second), caption.text.toString())
+            chapter = player.story.chapter(paused)
+            assertTrue("Paused at a different time from the actual tap: $before..$after",
+                (paused * length).toLong() in (before - 80)..(after + 80))
+            assertTrue(chapter < player.story.chapters.lastIndex)
+            assertEquals(player.context.getString(player.story.chapters[chapter].second), caption.text.toString())
         }
         SystemClock.sleep(5_250)
-        scenario.onActivity {
+        var resumed = 0L
+        runner.runOnMainSync {
             assertEquals(paused, player.phase, 0f)
-            assertEquals(it.getString(R.string.health_body_play), it.view("atlas-function-play").contentDescription)
+            assertEquals(player.context.getString(R.string.health_body_play), play.contentDescription)
+            resumed = SystemClock.uptimeMillis()
             art.performClick()
         }
-        val remaining = 5_000L - (paused * player.story.chapters.size * 5_000L).toLong()
-        SystemClock.sleep((remaining - 600).coerceAtLeast(0))
-        scenario.onActivity { assertEquals(0, player.story.chapter(player.phase)) }
-        SystemClock.sleep(950)
-        scenario.onActivity {
-            assertEquals(1, player.story.chapter(player.phase))
-            assertEquals(it.getString(player.story.chapters[1].second), caption.text.toString())
-            assertSame(caption, it.view("atlas-function-caption"))
+        val remaining = (chapter + 1) * 5_000L - (paused * length).toLong()
+        SystemClock.sleep(remaining + 300)
+        runner.runOnMainSync {
+            val before = SystemClock.uptimeMillis() - resumed
             art.performClick()
+            val after = SystemClock.uptimeMillis() - resumed
+            val advanced = ((player.phase - paused) * length).toLong()
+            assertTrue("Resume did not keep the partial chapter: $advanced ms for $before..$after",
+                advanced in (before - 80)..(after + 80))
+            val visibleChapter = player.story.chapter(player.phase)
+            assertTrue(visibleChapter > chapter)
+            assertEquals(player.context.getString(player.story.chapters[visibleChapter].second), caption.text.toString())
+            assertSame(caption, player.findViewWithTag<View>("atlas-function-caption"))
         }
     }
 
