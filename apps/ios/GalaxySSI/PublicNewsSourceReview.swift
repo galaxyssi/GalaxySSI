@@ -69,7 +69,7 @@ final class PublicNewsSourceReviewWorker {
       while enabled(store) && !Task.isCancelled {
         let profile = LocalModelRuntimeSettings.selectedProfile()
         let runtime = LocalModelInferenceRuntime.shared
-        guard AgentIOSBackgroundLoad.current().deferSeconds == 0, runtime.readyForBackground(profile: profile) else {
+        guard archive.newsBudget.pressure() == 0, runtime.readyForBackground(profile: profile) else {
           try await Task.sleep(nanoseconds: 30_000_000_000)
           continue
         }
@@ -87,7 +87,7 @@ final class PublicNewsSourceReviewWorker {
           do {
             let original = try await PublicNewsArticleBody.load(article.url)
             try Task.checkCancellation()
-            guard enabled(store), AgentIOSBackgroundLoad.current().deferSeconds == 0,
+            guard enabled(store), archive.newsBudget.pressure() == 0,
                   runtime.readyForBackground(profile: profile) else {
               throw LocalModelBackgroundDeferredError()
             }

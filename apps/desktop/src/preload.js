@@ -62,6 +62,11 @@ contextBridge.exposeInMainWorld("galaxyssi", {
     ipcRenderer.invoke("peer-images:load", messageId, attachmentIndex),
   savePeerAttachment: (messageId, attachmentIndex) =>
     ipcRenderer.invoke("peer-attachments:save", messageId, attachmentIndex),
+  onPeerAttachmentSaveResult: (callback) => {
+    const listener = (_event, result) => callback(result);
+    ipcRenderer.on("peer-attachment:save-result", listener);
+    return () => ipcRenderer.removeListener("peer-attachment:save-result", listener);
+  },
   onSensitiveStateClear: (callback) => {
     const listener = () => callback();
     ipcRenderer.on("sensitive-state:clear", listener);

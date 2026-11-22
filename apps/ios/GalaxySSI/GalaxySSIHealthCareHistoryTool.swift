@@ -6,10 +6,11 @@ enum GalaxySSIHealthCareHistoryTool {
   static let pageBudget = 12_000
   static let requestBudget = 180_000
   static let instructions = """
-    Only the approved concern's contiguous measurement_history is available. To read the next older page,
+    Only the approved concern's measurement_history and explicitly selected_measurement_history are available. To read the next older page,
     call galaxyssi_health_history_read with the exact input_version and cursor from next in the latest page.
     Use only returned evidence. Explain gaps in coverage and comparability; never infer clinical stability from numbers.
-    Do not count a corrected record twice. If a plan is requested, its call must be final and not parallel with history.
+    Do not count a corrected record twice. Never parallelize plan and history calls. Record any required structured
+    assessment after an optional plan draft and before the final reply.
     """
 
   struct Output: Equatable {
@@ -26,6 +27,11 @@ enum GalaxySSIHealthCareHistoryTool {
   struct Approval {
     let binding: GalaxySSIHealthCareSeries.Binding
     let recent: Output
+    var entryToken: String?
+
+    func entryArguments(turn: UUID) -> AgentMcpJSONObject? {
+      entryToken.map { ["input_version": .string(turn.uuidString), "cursor": .string($0)] }
+    }
   }
 
   static func output(_ page: GalaxySSIHealthCareSeries.Page, metric: GalaxySSIHealthMetric,
@@ -35,7 +41,8 @@ enum GalaxySSIHealthCareHistoryTool {
     let rows: [AgentMcpJSONValue] = try page.rows.map { row in
       guard let time = Int64(exactly: (row.measuredAt.timeIntervalSince1970 * 1_000).rounded(.down))
       else { throw invalid }
-      return .object(["measured_at_unix_ms": .int(time), "result": .string(row.result), "unit": .string(row.unit),
+      return .object(["record_id": .string(row.record.id.uuidString), "revision": .int(Int64(row.record.revision)),
+        "measured_at_unix_ms": .int(time), "result": .string(row.result), "unit": .string(row.unit),
         "gaps_against_current": .array(row.gaps.map { .string($0.rawValue) })])
     }
     let payload: AgentMcpJSONObject = [
@@ -52,7 +59,8 @@ enum GalaxySSIHealthCareHistoryTool {
   static func configure(_ body: inout [String: Any], style: GalaxySSICloudAPIStyle,
                         proposesPlan: Bool, historyAvailable: Bool, allowsMaintenance: Bool = false,
                         questionsAvailable: Bool = false, asksQuestions: Bool = false, feedbackAvailable: Bool = false,
-                        journalAvailable: Bool = false) {
+                        journalAvailable: Bool = false, reviewAvailable: Bool = false, reviewRecorded: Bool = false,
+                        automaticQuestionsAvailable: Bool = false) {
     for key in ["tools", "tool_choice", "toolConfig", "parallel_tool_calls"] { body.removeValue(forKey: key) }
     let plan = GalaxySSIHealthCarePlan.tool
     let schema: [String: Any] = [
@@ -72,21 +80,27 @@ enum GalaxySSIHealthCareHistoryTool {
       let feedback = GalaxySSIHealthCareFeedbackTool.self
       tools.append((feedback.function, feedback.instructions, feedback.schema))
     }
-    if asksQuestions {
+    if asksQuestions || automaticQuestionsAvailable {
       tools.append((GalaxySSIHealthCareQuestions.tool, GalaxySSIHealthCareQuestions.instruction, GalaxySSIHealthCareQuestions.schema))
     }
     if proposesPlan {
       tools.append((plan, GalaxySSIHealthCarePlan.description,
         GalaxySSIHealthCarePlan.schema(allowsMaintenance: allowsMaintenance)))
     }
+    if reviewAvailable {
+      tools.append((GalaxySSIHealthCareModelReview.function, GalaxySSIHealthCareModelReview.instructions,
+        GalaxySSIHealthCareModelReview.schema))
+    }
     guard !tools.isEmpty else { return }
-    let required = !historyAvailable && !questionsAvailable && !feedbackAvailable && !journalAvailable ? tools.first?.0 : nil
+    let reads = historyAvailable || questionsAvailable || feedbackAvailable || journalAvailable
+    let required = reads || reviewRecorded || automaticQuestionsAvailable || (reviewAvailable && proposesPlan) ? nil : tools.first?.0
     switch style {
     case .openAICompatible:
       body["tools"] = tools.map {
         ["type": "function", "function": ["name": $0.0, "description": $0.1, "parameters": $0.2] as [String: Any]]
           as [String: Any]
       }
+      if reviewAvailable { body["parallel_tool_calls"] = false }
       if let required { body["tool_choice"] = ["type": "function", "function": ["name": required]] }
     case .anthropic:
       body["tools"] = tools.map { ["name": $0.0, "description": $0.1, "input_schema": $0.2] as [String: Any] }
@@ -111,7 +125,8 @@ enum GalaxySSIHealthCareHistoryTool {
   static func call(_ bytes: Data, style: GalaxySSICloudAPIStyle, proposesPlan: Bool,
                    allowsQuestionRead: Bool = false, asksQuestions: Bool = false,
                    allowsAnswerDraft: Bool = false, allowsFeedbackRead: Bool = false,
-                   allowsJournalRead: Bool = false) throws -> Call? {
+                   allowsJournalRead: Bool = false, allowsReview: Bool = false,
+                   allowsAutomaticQuestions: Bool = false) throws -> Call? {
     let root = try JSONDecoder().decode(AgentMcpJSONObject.self, from: bytes)
     let message: AgentMcpJSONObject
     let calls: [AgentMcpJSONObject]
@@ -151,20 +166,23 @@ enum GalaxySSIHealthCareHistoryTool {
     let spec = style == .openAICompatible ? entry["function"]?.objectValue : entry
     guard let spec else { throw invalid }
     let name = spec.string("name")
-    if proposesPlan && name == GalaxySSIHealthCarePlan.tool || asksQuestions && name == GalaxySSIHealthCareQuestions.tool {
+    if (proposesPlan && !allowsReview && name == GalaxySSIHealthCarePlan.tool) || asksQuestions && name == GalaxySSIHealthCareQuestions.tool {
       return nil
     }
     let answerDraft = allowsAnswerDraft && name == GalaxySSIHealthCareAnswerDraft.tool
     guard name == function || (allowsQuestionRead && name == GalaxySSIHealthCareQuestions.readTool) ||
           answerDraft || (allowsFeedbackRead && name == GalaxySSIHealthCareFeedbackTool.function) ||
-          (allowsJournalRead && name == GalaxySSIHealthVisitJournalRead.providerName) else { throw invalid }
+          (allowsJournalRead && name == GalaxySSIHealthVisitJournalRead.providerName) ||
+          (allowsAutomaticQuestions && name == GalaxySSIHealthCareQuestions.tool) ||
+          (allowsReview && (name == GalaxySSIHealthCareModelReview.function ||
+            (proposesPlan && name == GalaxySSIHealthCarePlan.tool))) else { throw invalid }
     let id = entry["id"]?.strictStringValue
     guard (style == .gemini && id == nil) || id.map({ !$0.isBlank && $0.utf8.count <= 256 }) == true else { throw invalid }
     let args: AgentMcpJSONObject
     switch style {
     case .openAICompatible:
       guard entry.string("type") == "function", let raw = spec["arguments"]?.strictStringValue,
-            raw.utf8.count <= (answerDraft ? 25_000 : 1_024)
+            raw.utf8.count <= (allowsReview ? 48_000 : (answerDraft ? 25_000 : 1_024))
       else { throw invalid }
       args = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(raw.utf8))
     case .anthropic:
@@ -185,7 +203,8 @@ enum GalaxySSIHealthCareHistoryTool {
 
   static func continuing(_ request: URLRequest, with call: Call, payload: AgentMcpJSONObject, style: GalaxySSICloudAPIStyle,
       proposesPlan: Bool, historyAvailable: Bool, allowsMaintenance: Bool, questionsAvailable: Bool = false,
-      asksQuestions: Bool = false, feedbackAvailable: Bool = false, journalAvailable: Bool = false) throws -> URLRequest {
+      asksQuestions: Bool = false, feedbackAvailable: Bool = false, journalAvailable: Bool = false,
+      reviewAvailable: Bool = false, reviewRecorded: Bool = false, automaticQuestionsAvailable: Bool = false) throws -> URLRequest {
     guard let bytes = request.httpBody, var body = try JSONSerialization.jsonObject(with: bytes) as? [String: Any]
     else { throw invalid }
     let channel = style == .gemini ? "contents" : "messages"
@@ -210,7 +229,8 @@ enum GalaxySSIHealthCareHistoryTool {
     body[channel] = messages
     configure(&body, style: style, proposesPlan: proposesPlan, historyAvailable: historyAvailable,
       allowsMaintenance: allowsMaintenance, questionsAvailable: questionsAvailable, asksQuestions: asksQuestions,
-      feedbackAvailable: feedbackAvailable, journalAvailable: journalAvailable)
+      feedbackAvailable: feedbackAvailable, journalAvailable: journalAvailable,
+      reviewAvailable: reviewAvailable, reviewRecorded: reviewRecorded, automaticQuestionsAvailable: automaticQuestionsAvailable)
     let data = try JSONSerialization.data(withJSONObject: body)
     guard data.count <= requestBudget else { throw invalid }
     var next = request

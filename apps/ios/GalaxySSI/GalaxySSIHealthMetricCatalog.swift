@@ -28,6 +28,11 @@ enum GalaxySSIHealthMetric: String, Codable, CaseIterable, Identifiable, Sendabl
   case crp
   case tsh
   case urineProtein
+  case redBloodCells, hematocrit, meanCorpuscularVolume, meanCorpuscularHemoglobin
+  case meanCorpuscularHemoglobinConcentration, redCellDistributionWidthCV, redCellDistributionWidthSD
+  case meanPlateletVolume, neutrophilCount, neutrophilPercent, lymphocyteCount, lymphocytePercent
+  case albumin, totalProtein, totalBilirubin, directBilirubin, alkalinePhosphatase, gammaGlutamylTransferase
+  case urea, bloodUreaNitrogen
 
   enum Group: String, CaseIterable {
     case cardiovascular, metabolic, sleep, activity, body, blood, liver, kidney, thyroid, urine
@@ -90,6 +95,26 @@ enum GalaxySSIHealthMetric: String, Codable, CaseIterable, Identifiable, Sendabl
     case .crp: return .init("C-reactive protein", .blood, ["mg/L", "mg/dL"], .laboratory, ["CRP", "hs-CRP"])
     case .tsh: return .init("Thyroid stimulating hormone", .thyroid, ["mIU/L", "uIU/mL"], .laboratory, ["TSH", "thyrotropin"])
     case .urineProtein: return .init("Urine protein screen", .urine, [""], .qualitative, ["PRO", "urine protein"])
+    case .redBloodCells: return .init("Red blood cell count", .blood, ["10^12/L", "10^6/uL"], .laboratory, ["RBC", "erythrocytes"])
+    case .hematocrit: return .init("Hematocrit", .blood, ["%", "L/L"], .laboratory, ["HCT", "hematocrit fraction"])
+    case .meanCorpuscularVolume: return .init("Mean corpuscular volume", .blood, ["fL"], .laboratory, ["MCV"])
+    case .meanCorpuscularHemoglobin: return .init("Mean corpuscular hemoglobin", .blood, ["pg"], .laboratory, ["MCH"])
+    case .meanCorpuscularHemoglobinConcentration: return .init("Mean corpuscular hemoglobin concentration", .blood, ["g/L", "g/dL"], .laboratory, ["MCHC"])
+    case .redCellDistributionWidthCV: return .init("Red cell distribution width CV", .blood, ["%"], .laboratory, ["RDW-CV"])
+    case .redCellDistributionWidthSD: return .init("Red cell distribution width SD", .blood, ["fL"], .laboratory, ["RDW-SD"])
+    case .meanPlateletVolume: return .init("Mean platelet volume", .blood, ["fL"], .laboratory, ["MPV"])
+    case .neutrophilCount: return .init("Absolute neutrophil count", .blood, ["10^9/L", "10^3/uL"], .laboratory, ["NEUT#", "ANC"])
+    case .neutrophilPercent: return .init("Neutrophil percentage", .blood, ["%"], .laboratory, ["NEUT%"])
+    case .lymphocyteCount: return .init("Absolute lymphocyte count", .blood, ["10^9/L", "10^3/uL"], .laboratory, ["LYM#", "LYMPH#"])
+    case .lymphocytePercent: return .init("Lymphocyte percentage", .blood, ["%"], .laboratory, ["LYM%", "LYMPH%"])
+    case .albumin: return .init("Serum or plasma albumin", .liver, ["g/L", "g/dL"], .laboratory, ["serum albumin", "plasma albumin", "ALB"])
+    case .totalProtein: return .init("Serum or plasma total protein", .liver, ["g/L", "g/dL"], .laboratory, ["serum total protein", "plasma total protein", "TP"])
+    case .totalBilirubin: return .init("Total bilirubin", .liver, ["umol/L", "mg/dL"], .laboratory, ["TBIL", "TBili"])
+    case .directBilirubin: return .init("Direct bilirubin", .liver, ["umol/L", "mg/dL"], .laboratory, ["DBIL", "DBili"])
+    case .alkalinePhosphatase: return .init("Alkaline phosphatase", .liver, ["U/L"], .laboratory, ["ALP"])
+    case .gammaGlutamylTransferase: return .init("Gamma-glutamyl transferase", .liver, ["U/L"], .laboratory, ["GGT", "gamma-GT"])
+    case .urea: return .init("Serum or plasma urea", .kidney, ["mmol/L", "mg/dL"], .laboratory, ["serum urea", "plasma urea"])
+    case .bloodUreaNitrogen: return .init("Blood urea nitrogen", .kidney, ["mmol/L", "mg/dL"], .laboratory, ["BUN"])
     }
   }
 
