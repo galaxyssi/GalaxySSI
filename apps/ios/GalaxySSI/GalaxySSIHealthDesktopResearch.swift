@@ -13,9 +13,28 @@ enum GalaxySSIHealthDesktopResearch {
       A deadline is not new evidence. Use the existing plan when only a deadline changed. Treat unknown and unselected facts as unknown.
       Latest action feedback is self-reported execution, not a new measurement, clinical improvement, or treatment approval.
       Partial progress and barriers leave the action open. Discuss feasible changes for user review without changing the plan.
+      Use only explicitly selected related measurements. Preserve each unit, time and measurement context; do not
+      infer simultaneous sampling or causality. Supplied history is paged and may be incomplete. Do not invent missing pages.
       """
     let format: String
-    if approval.proposesPlan {
+    if approval.requiresStructuredReview {
+      let reviewSchema = try JSONSerialization.data(withJSONObject: GalaxySSIHealthCareModelReview.schema, options: [.sortedKeys])
+      let planSchema = try JSONSerialization.data(withJSONObject: GalaxySSIHealthCarePlan.schema, options: [.sortedKeys])
+      let fields = approval.canProposeAutomaticQuestions ? "assessment, plan, questions and answer" : "assessment, plan and answer"
+      let clarification = approval.canProposeAutomaticQuestions
+        ? " questions is an array of necessary NEW clarification objects with exactly id, key, question and purpose, up to eight entries. Assign a unique UUID id only to a proposed new question; initial revision is 1. Use [] when citing existing retained questions, and copy their exact IDs/revisions from reviewed_questions. Do not answer for the user or repeat answered/deferred/declined items. The phone first persists these scoped proposals with their declared IDs, then validates assessment.questions against actual retained rows. An ID not already retained or created by an accepted proposal is invalid. "
+        : ""
+      format = "Return only one JSON object with exactly " + fields + ". " + clarification +
+        "assessment follows the schema below; answer is concise plain text. plan is null unless an optional source-cited " +
+        "draft is warranted and native_sources are supplied. If plan is present, assessment.plan_id must be " +
+        approval.id.uuidString + ". The phone retains the draft before recording the assessment; this does not adopt it. " +
+        "Use exact record_references and current evidence IDs. Review events do not schedule anything. " +
+        "CLARIFY requires exact retained question IDs/revisions in assessment.questions; cite only current OPEN or CONFLICT questions. Other decisions may use []. Without question sharing choose another applicable decision. " +
+        "Include the current sample record of EVERY available selected related metric, even if relevance is limited. " +
+        "References identify reviewed inputs, not clinical relevance or causation. Never invent references for unavailable inputs. " +
+        "Prior assessments are historical model opinions, not verified facts. Assessment schema: " +
+        String(decoding: reviewSchema, as: UTF8.self) + ". Optional plan schema: " + String(decoding: planSchema, as: UTF8.self)
+    } else if approval.proposesPlan {
       let schema = try JSONSerialization.data(withJSONObject: GalaxySSIHealthCarePlan.schema, options: [.sortedKeys])
       format = "Return only the JSON draft object, without Markdown. Cite exact current native evidence IDs and URLs, " +
         "and short verbatim excerpts. Historical reads do not authorize a new draft. Output schema: " +
@@ -29,6 +48,31 @@ enum GalaxySSIHealthDesktopResearch {
   static func planArguments(_ reply: String) throws -> AgentMcpJSONObject {
     guard !reply.isBlank, reply.utf8.count <= 48_000 else { throw GalaxySSIHealthRecords.Failure.invalid }
     return try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(reply.utf8))
+  }
+
+  @MainActor
+  static func retainStructuredReview(_ reply: String, approval: GalaxySSIHealthCareDiscussion.Approval,
+                                    records: GalaxySSIHealthRecords, now: Date = Date()) throws {
+    guard approval.pairedDesktop != nil, approval.requiresStructuredReview,
+          reply.utf8.count <= 48_000 else { throw GalaxySSIHealthRecords.Failure.invalid }
+    let value = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(reply.utf8))
+    let keys: Set<String> = approval.canProposeAutomaticQuestions ? ["assessment", "plan", "questions", "answer"] : ["assessment", "plan", "answer"]
+    guard Set(value.keys) == keys, let arguments = value["assessment"]?.objectValue,
+          let answer = value["answer"]?.strictStringValue, !answer.isBlank, answer.utf8.count <= 6_144,
+          value["plan"] == .null || value["plan"]?.objectValue != nil else { throw GalaxySSIHealthRecords.Failure.invalid }
+    let input = try GalaxySSIHealthCareModelReview.Input(arguments)
+    try records.validateLocalCareDiscussionTurn(approval, now: now)
+    if approval.canProposeAutomaticQuestions {
+      guard let questions = value["questions"] else { throw GalaxySSIHealthRecords.Failure.invalid }
+      let proposed = try GalaxySSIHealthCareQuestions.pairedProposals(questions)
+      _ = try records.retainAutomaticCareQuestions(approval, arguments: proposed.arguments, declaredIDs: proposed.ids, now: now)
+    }
+    if let plan = value["plan"]?.objectValue {
+      guard approval.proposesPlan, input.planID == approval.id else { throw GalaxySSIHealthRecords.Failure.permission }
+      try records.saveLocalCarePlan(approval, arguments: plan, now: now)
+    }
+    _ = try records.recordLocalCareModelReview(approval, arguments: arguments, now: now)
+    try records.finishLocalCareDiscussionTurn(approval, answer: answer, now: now)
   }
 
   struct Route: Codable, Equatable {

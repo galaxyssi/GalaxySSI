@@ -150,7 +150,9 @@ struct GalaxySSIHealthCareResearchLifecycle: ViewModifier {
         let approval = try records.prepareLocalCareDesktopDiscussion(id: authorization.concern,
           metric: authorization.metric, question: "", route: binding.route, research: job, resume: binding)
         try records.validateLocalCareDiscussionTurn(approval)
-        if approval.proposesPlan {
+        if approval.requiresStructuredReview {
+          try GalaxySSIHealthDesktopResearch.retainStructuredReview(reply.content, approval: approval, records: records)
+        } else if approval.proposesPlan {
           try records.saveLocalCarePlan(approval, arguments: GalaxySSIHealthDesktopResearch.planArguments(reply.content))
         } else {
           try records.finishLocalCareDiscussionTurn(approval, answer: reply.content)
@@ -211,7 +213,7 @@ struct GalaxySSIHealthCareResearchLifecycle: ViewModifier {
       try records.validateLocalCareDiscussionTurn(approval)
       var bytes = try await GalaxySSIHealthSummaryTransport.responseBytes(request, limit: 65_536)
       status = .sent
-      if approval.questionCursor != nil || approval.feedbackCursor != nil {
+      if approval.requiresStructuredReview || approval.questionCursor != nil || approval.feedbackCursor != nil {
         bytes = try await GalaxySSIHealthScopedReadTransport.finish(approval, records: records, initial: bytes,
           request: request, style: model.apiStyle, ledger: ledger, currentDestination: {
             route(authorization, owner: records.owner)?.0
@@ -220,7 +222,7 @@ struct GalaxySSIHealthCareResearchLifecycle: ViewModifier {
       try Task.checkCancellation()
       guard route(authorization, owner: records.owner) != nil else { throw GalaxySSIHealthRecords.Failure.permission }
       try records.validateLocalCareDiscussionTurn(approval)
-      if approval.proposesPlan {
+      if approval.proposesPlan && !approval.requiresStructuredReview {
         try records.saveLocalCarePlan(approval, arguments: GalaxySSIHealthCarePlan.arguments(bytes, style: model.apiStyle))
       } else {
         try records.finishLocalCareDiscussionTurn(approval,

@@ -110,7 +110,7 @@ struct GalaxySSIHealthTableImportView: View {
       }
     }
     .navigationTitle(t("title", "Import Measurement Table"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
@@ -240,7 +240,7 @@ struct GalaxySSIHealthTableImportView: View {
         .environment(\.calendar, clockCalendar)
         .environment(\.timeZone, clockCalendar.timeZone)
         .navigationTitle(t("date_only_title", "Date-only time"))
-        .navigationBarTitleDisplayMode(.inline)
+        .galaxySSIHealthTheme()
         .toolbar {
           ToolbarItem(placement: .cancellationAction) {
             Button(t("close_source", "Close")) { pickingDateOnlyTime = false }
@@ -356,7 +356,7 @@ struct GalaxySSIHealthTableImportView: View {
     do {
       let draft = GalaxySSIHealthReviewReminders.TableDraft(id: openedReview?.id ?? UUID(),
         name: String(input.name.prefix(180)), at: Date(), data: input.data,
-        mapping: mapping, worksheet: input.worksheet, retainOriginal: input.retainOriginal)
+        mapping: mapping, worksheet: input.worksheet, retainOriginal: input.retainOriginal, reportBatchID: openedReview?.reportBatchID)
       try records.saveTableReview(draft, replacing: openedReview?.version)
       openedReview = draft
       reload()

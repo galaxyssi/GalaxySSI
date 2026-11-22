@@ -59,6 +59,8 @@ enum GalaxySSIPeerAttachmentTransferProgress {
     return normalized.hasPrefix("image/") || normalized.hasPrefix("audio/")
   }
 
+  static func outboundState(_ mimeType: String) -> String { shouldAutoReceive(mimeType) ? uploading : "available" }
+
   static func percent(receivedBytes: Int64, sizeBytes: Int64) -> Int {
     guard sizeBytes > 0 else { return 0 }
     guard receivedBytes < sizeBytes else { return 100 }

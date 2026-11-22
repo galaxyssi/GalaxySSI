@@ -145,7 +145,7 @@ struct GalaxySSIHealthSleepReminderView: View {
       }
     }
     .navigationTitle(t("title", "Sleep Change Reminders"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) { if $0 == .active { reload() } else { allowed = false; ledger = .init() } }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.trendInputsChanged)) {
@@ -188,6 +188,7 @@ struct GalaxySSIHealthSleepReminderView: View {
       }
     }
     .navigationTitle(t("evidence", "Sleep Evidence"))
+    .galaxySSIHealthTheme()
     .onChange(of: allowed) { if !$0 { evidenceRoute = nil } }
     .onChange(of: scene) { if $0 == .background { evidenceRoute = nil } }
     .sheet(item: $evidenceRoute) { route in
@@ -333,7 +334,7 @@ private struct GalaxySSIHealthSleepContributors: View {
     }
     .environment(\.timeZone, TimeZone(identifier: snapshot.zone) ?? .current)
     .navigationTitle(baseline ? t("baseline_records", "Baseline contributing records") : t("recent_records", "Recent contributing records"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onDisappear { rows = nil }
     .onChange(of: scene) { if $0 == .active { reload() } else { rows = nil } }
