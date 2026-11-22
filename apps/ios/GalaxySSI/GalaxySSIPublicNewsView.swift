@@ -214,7 +214,10 @@ struct GalaxySSIPublicNewsView: View {
     .overlay(alignment: .topTrailing) {
       if showFeedMenu { feedMenu }
     }
-    .onChange(of: scenePhase) { if $0 != .active { showFeedMenu = false } }
+    .onAppear { if scenePhase == .active { archive.newsBudget.noteRead() } }
+    .onChange(of: scenePhase) {
+      if $0 != .active { showFeedMenu = false } else { archive.newsBudget.noteRead() }
+    }
     .background {
       NavigationLink(destination: GalaxySSIPublicNewsSearchView(archive: archive), isActive: $showSearch) {
         EmptyView()
@@ -262,8 +265,11 @@ struct GalaxySSIPublicNewsView: View {
       selected = archive.eligibleArticles.first { PublicNewsSpeechBookmark.key(for: $0.id) == initialArticleKey }
     }
     .task(id: archive.loaded ? refreshRequest : nil) {
-      guard archive.loaded else { return }
-      await archive.refresh(force: refreshRequest != 0, learnPublishers: publisherDiscovery)
+      guard archive.loaded, refreshRequest != 0, scenePhase == .active else { return }
+      await archive.refresh(force: true, learnPublishers: publisherDiscovery)
+    }
+    .task(id: "feeds:\(archive.loaded):\(scenePhase == .active):\(publisherDiscovery)") {
+      if archive.loaded && scenePhase == .active { await archive.pollFeeds(learnPublishers: publisherDiscovery) }
     }
     .task(id: speechCandidates) {
       guard let ids = speechCandidates else { return }

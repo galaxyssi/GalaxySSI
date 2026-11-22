@@ -226,7 +226,7 @@ struct GuardedModelAgentPlanner {
         rejection = .init("completion_requirements.outcomes", "invalid_completion_shape", invalidShape.diagnostic)
         continue
       }
-      if repair == nil, safeRequest.allowsDirectResponse,
+      if repair == nil, safeRequest.permitsAnswerOnlyResponse,
          let response = AgentModelDirectResponseCodec.parse(raw, envelopeOnly: safeRequest.phoneOwnsExecution)
            ?? AgentModelPlanParser.answerOnlyAction(raw) {
         return .directResponse(response)

@@ -151,7 +151,7 @@ struct GalaxySSIHealthMeasurementExportView: View {
       }
     }
     .navigationTitle(t("title", "Export Measurements"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onChange(of: originals) { _ in snapshot = nil }
     .onChange(of: format) { _ in snapshot = nil }
     .onChange(of: metrics) { _ in snapshot = nil }
