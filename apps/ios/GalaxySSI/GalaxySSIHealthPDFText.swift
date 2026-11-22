@@ -194,7 +194,7 @@ private struct GalaxySSIHealthPDFSourceViewport: View {
           .onEnded { zoom = min(4, max(1, zoom * $0)) })
       }
       .navigationTitle(t("source", "Original page"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button(t("close_source", "Close")) { dismiss() }
@@ -237,6 +237,8 @@ struct GalaxySSIHealthPDFTextView: View {
   @Environment(\.timeZone) private var timeZone
   let store: GalaxySSIHealthOriginalStore
   var transientReport: GalaxySSIHealthTransientReport?
+  var initialOriginal: GalaxySSIHealthOriginalStore.Original?
+  @State private var initialOriginalOpened = false
   @State private var files: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var selected: GalaxySSIHealthOriginalStore.Original?
   @State private var page = 0
@@ -373,7 +375,7 @@ struct GalaxySSIHealthPDFTextView: View {
       }
     }
     .navigationTitle(t("title", "Report PDF Text"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onDisappear(perform: clearPassword)
     .onDisappear { if status == .working { cancel() } }
@@ -421,6 +423,9 @@ struct GalaxySSIHealthPDFTextView: View {
     if transientReport != nil { recognize(); return }
     do {
       files = try store.list().originals.filter { $0.kind == .pdf }
+      if !initialOriginalOpened, let initialOriginal, files.contains(initialOriginal) {
+        initialOriginalOpened = true; selected = initialOriginal; recognize(); return
+      }
       status = .idle
     } catch { files = []; status = .unavailable }
   }

@@ -310,6 +310,7 @@ final class InMemoryAgentDataDisclosureStore: AgentDataDisclosureStore {
     } else {
       blockedIds.remove(normalized)
     }
+    AgentDataDisclosureLedger.policyDidChange()
   }
 
   static func boundedListLimit(_ limit: Int) -> Int {
@@ -400,6 +401,7 @@ final class FileAgentDataDisclosureStore: AgentDataDisclosureStore {
     }
     document.blockedDestinationIds = ids.sorted()
     saveUnlocked(document)
+    AgentDataDisclosureLedger.policyDidChange()
   }
 
   private func loadUnlocked() -> AgentDataDisclosureDocument {
@@ -450,6 +452,10 @@ struct AgentDataDisclosureStorePaths: Equatable {
 }
 
 enum AgentDataDisclosureLedger {
+  static let policyChanged = Notification.Name("galaxyssi.disclosure.destinationPolicyChanged")
+  static func policyDidChange() {
+    DispatchQueue.main.async { NotificationCenter.default.post(name: policyChanged, object: nil) }
+  }
   struct TextSummary {
     let characters: Int
     let kinds: Set<AgentDisclosedDataKind>

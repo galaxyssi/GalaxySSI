@@ -29,10 +29,24 @@ struct GalaxySSIHealthCareAgendaView: View {
       GalaxySSIHealthCareAgendaRows(records: records, filter: filter, scope: nil)
     }
     .navigationTitle(t("title", "Health Actions"))
+    .galaxySSIHealthTheme()
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.agenda." + key, fallback: fallback, language: language)
+  }
+}
+
+@MainActor
+struct GalaxySSIHealthCareActionReviewView: View {
+  let records: GalaxySSIHealthRecords
+  let scope: GalaxySSIHealthCareAgenda.Scope
+  let actionID: String
+
+  var body: some View {
+    List {
+      GalaxySSIHealthCareAgendaRows(records: records, filter: nil, scope: scope, selectedActionID: actionID)
+    }
   }
 }
 
@@ -47,6 +61,7 @@ private struct GalaxySSIHealthCareAgendaRows: View {
   let records: GalaxySSIHealthRecords
   let filter: Agenda.Filter?
   let scope: Agenda.Scope?
+  var selectedActionID: String? = nil
   @State private var page: Agenda.Page?
   @State private var cursors: [Agenda.Cursor] = []
   @State private var editor: Editor?
@@ -114,6 +129,7 @@ private struct GalaxySSIHealthCareAgendaRows: View {
     .onDisappear(perform: clear)
     .onChange(of: filter) { _ in reset() }
     .onChange(of: scope) { _ in reset() }
+    .onChange(of: selectedActionID) { _ in reset() }
     .onChange(of: scene) { if $0 == .active { reset() } else { clear() } }
     .onChange(of: timeZone) { _ in reset() }
     .onChange(of: store.profile.identityFingerprint) { _ in reset() }
@@ -261,7 +277,11 @@ private struct GalaxySSIHealthCareAgendaRows: View {
     var local = calendar
     local.timeZone = timeZone
     do {
-      page = try records.localCareAgendaPage(filter: filter, scope: scope, after: cursors.last, calendar: local)
+      if let selectedActionID, let scope {
+        page = try records.localCareAgendaAction(scope: scope, actionID: selectedActionID, calendar: local)
+      } else {
+        page = try records.localCareAgendaPage(filter: filter, scope: scope, after: cursors.last, calendar: local)
+      }
       failed = false
     } catch GalaxySSIHealthRecords.Failure.permission {
       clear()
@@ -278,7 +298,7 @@ private struct GalaxySSIHealthCareAgendaRows: View {
 
   private func clear() {
     page = nil; cursors = []; editor = nil; history = nil; instructionSource = nil
-    cancelling = nil; failed = false; disallowed = false
+    cancelling = nil; journalReview = nil; failed = false; disallowed = false
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
@@ -342,6 +362,7 @@ private struct GalaxySSIHealthCareFollowUpEditor: View {
       }
     }
     .navigationTitle(editingOutcome ? t("feedback_record", "Record action feedback") : t("schedule", "Schedule reminder"))
+    .galaxySSIHealthTheme()
     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("close", "Close")) { dismiss() } } }
     .onAppear { if let existing, existing.requestedAt > Date() { time = existing.requestedAt } }
     .onChange(of: scene) { if $0 != .active { note = ""; confirming = false; dismiss() } }
@@ -413,6 +434,7 @@ private struct GalaxySSIHealthCareFeedbackHistory: View {
       if failed { Text(t("feedback_unavailable", "Feedback history is unavailable.")) }
     }
     .navigationTitle(t("feedback_history", "Action feedback history"))
+    .galaxySSIHealthTheme()
     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("close", "Close")) { dismiss() } } }
     .onAppear(perform: reload)
     .onChange(of: scene) { if $0 != .active { clear() } }

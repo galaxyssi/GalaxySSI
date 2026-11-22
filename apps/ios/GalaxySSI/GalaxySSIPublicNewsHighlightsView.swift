@@ -87,6 +87,7 @@ struct GalaxySSIPublicNewsHighlightsView: View {
 
   private func curate(mask: Int) async {
     archive.load()
+    guard await archive.prepareArticleRetryPolicy() else { return }
     loading = true
     let archiveSnapshot = archive.eligibleArticles
     let enabled = Set(PublicNewsInterest.allCases.filter { mask & $0.bit != 0 })
