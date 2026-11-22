@@ -1,0 +1,12 @@
+<resources>
+    <string name="health_atlas_model_corneal_refraction_title">角膜表面的折射</string>
+    <string name="health_atlas_model_corneal_refraction_incident_angle">入射角</string>
+    <string name="health_atlas_model_corneal_refraction_medium_index">模拟介质折射率（n）</string>
+    <string name="health_atlas_model_corneal_refraction_formula">斯涅尔定律：1.00 × sin(θ₁) = n × sin(θ₂)。入射角 θ₁ 和折射角 θ₂ 均以垂直于界面的法线为基准，单位为度。斜入射时，若入射角不变，折射率 n 越大，折射角 θ₂ 越小。</string>
+    <string name="health_atlas_model_corneal_refraction_companion">向法线偏折的角度（θ₁ − θ₂）：%1$s°</string>
+    <string name="health_atlas_model_corneal_refraction_scope">本模型用空气与一种均匀透明介质之间的平面界面来简化眼的前部光学表面。在实际眼表，泪膜覆盖着角膜上皮。模型中的折射率并非组织实测值；模型不追踪穿过单个细胞的光线，也不计算屈光力或预测个人眼睛的聚焦情况。</string>
+    <string name="health_atlas_model_corneal_refraction_diagram">琥珀色光线射入模型界面，绿色光线折向虚线表示的法线。</string>
+    <string name="health_atlas_model_corneal_refraction_incident_ray">入射光</string>
+    <string name="health_atlas_model_corneal_refraction_refracted_ray">折射光</string>
+    <string name="health_atlas_model_corneal_refraction_surface">模型界面</string>
+</resources>

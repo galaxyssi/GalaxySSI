@@ -98,13 +98,16 @@ internal object HealthAtlasPlates {
 
     fun viewsForId(id: String?): List<HealthAtlasPlate> {
         val context = contextViewsForId(id)
-        val detail = HealthAtlasRegionalDetailPlates.forId(id) ?: return context
-        return listOf(detail) + context.map { locator ->
+        val detail = HealthAtlasRegionalDetailPlates.forId(id)
+        val views = if (detail == null) context else listOf(detail) + context.map { locator ->
             locator.copy(
                 viewKey = locator.viewKey ?: "anatomy-locator-${locator.owner ?: "body"}",
                 selectorLabel = locator.selectorLabel ?: R.string.health_atlas_locator_view,
             )
         }
+        val section = HealthAtlasGutSections[id]?.plate ?: return views
+        if (views.any { it.drawable == section.drawable }) return views
+        return views + section.copy(viewKey = "gut-section-$id", selectorLabel = section.viewLabel)
     }
 
     private fun contextViewsForId(id: String?): List<HealthAtlasPlate> = when (id) {

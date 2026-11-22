@@ -1,0 +1,12 @@
+<resources>
+    <string name="health_atlas_model_corneal_refraction_title">Refraction at the corneal surface</string>
+    <string name="health_atlas_model_corneal_refraction_incident_angle">Incident angle</string>
+    <string name="health_atlas_model_corneal_refraction_medium_index">Refractive index (n)</string>
+    <string name="health_atlas_model_corneal_refraction_formula">Snell’s law: 1.00 × sin(θ₁) = n × sin(θ₂). The incident angle θ₁ and the refracted angle θ₂ are measured in degrees from the surface normal, the line perpendicular to the surface. At a fixed oblique incident angle, a higher index n gives a smaller θ₂.</string>
+    <string name="health_atlas_model_corneal_refraction_companion">Bend toward the normal (θ₁ − θ₂): %1$s°</string>
+    <string name="health_atlas_model_corneal_refraction_scope">A flat boundary from air into one uniform, transparent medium stands in for the front optical surface. In the eye, the tear film lies over the corneal epithelium. The synthetic index is not a tissue measurement, and the model does not trace light through a single cell, calculate optical power, or predict focus in an individual eye.</string>
+    <string name="health_atlas_model_corneal_refraction_diagram">The amber ray enters the model surface and the green ray refracts toward the dashed normal.</string>
+    <string name="health_atlas_model_corneal_refraction_incident_ray">Incident light</string>
+    <string name="health_atlas_model_corneal_refraction_refracted_ray">Refracted light</string>
+    <string name="health_atlas_model_corneal_refraction_surface">Model surface</string>
+</resources>

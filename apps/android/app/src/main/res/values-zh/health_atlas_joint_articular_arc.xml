@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_joint_articular_arc_title">关节面弧长</string>
+    <string name="health_atlas_joint_articular_arc_angle">扫过的角度</string>
+    <string name="health_atlas_joint_articular_arc_radius">关节面半径</string>
+    <string name="health_atlas_joint_articular_arc_companion">扫过的角度（弧度）：%1$s rad</string>
+    <string name="health_atlas_joint_articular_arc_formula">沿关节面的弧长（mm）= 半径（mm）× 角度（弧度）。角度（弧度）= 角度（度）× π / 180。半径相同时，扫过的角度越大，弧长越长。扫过的角度相同且不为零时，半径越大，弧长也越长。</string>
+    <string name="health_atlas_joint_articular_arc_scope">肩关节是球窝关节：圆隆的肱骨头是球头，肩胛骨上的浅凹关节盂是关节窝。这个模拟示例用理想化关节面的圆形截面来说明弧长。角度表示从固定起始射线扫过的幅度，不代表肩关节运动的方向。本模型不追踪实际关节运动，也不估算接触力。模型中的角度不用于设定锻炼目标或诊断。</string>
+</resources>

@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_model_external_ear_resonance_title">External ear: ideal tube resonance</string>
+    <string name="health_atlas_model_external_ear_resonance_length">Classroom tube length (L)</string>
+    <string name="health_atlas_model_external_ear_resonance_speed">Speed of sound in tube air (v)</string>
+    <string name="health_atlas_model_external_ear_resonance_formula">The lowest standing-wave mode fits one quarter-wavelength in a tube with one open end and one closed end. Fundamental frequency (Hz) = v / (4L), with v in m/s and L converted from cm to m. A longer tube lowers the fundamental at fixed speed; faster sound raises it at fixed length.</string>
+    <string name="health_atlas_model_external_ear_resonance_wavelength">Fundamental wavelength: %1$s cm.</string>
+    <string name="health_atlas_model_external_ear_resonance_scope">These made-up values describe a straight, rigid classroom tube, not a real ear or personal measurement. The real ear canal is not a rigid pipe: it curves, varies in width, and ends at a vibrating eardrum rather than an ideal sealed end. This analogy does not predict individual hearing.</string>
+</resources>

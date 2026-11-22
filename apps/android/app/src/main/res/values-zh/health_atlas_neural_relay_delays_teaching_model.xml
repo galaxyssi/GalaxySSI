@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_neural_relay_delays_title">突触中继总延迟</string>
+    <string name="health_atlas_neural_relay_delays_count">中继级数</string>
+    <string name="health_atlas_neural_relay_delays_per_relay">每级中继延迟</string>
+    <string name="health_atlas_neural_relay_delays_companion">最后一级中继前的累计延迟：%1$s 毫秒</string>
+    <string name="health_atlas_neural_relay_delays_formula">中继总延迟 = 中继级数 × 每级中继延迟。总延迟包含从第一级到最后一级的所有延迟。每增加一级，都会增加相同的延迟。</string>
+    <string name="health_atlas_neural_relay_delays_scope">在脑内回路和自主神经节中，神经元可通过化学突触传递信号。释放神经递质并引起下一个细胞响应需要时间。本模型采用一串虚构的中继，每一级都能传递信号，并产生相同的细胞间延迟。模型不计信号沿轴突传播的时间，也不描述真实的解剖连接。示例数值均为虚构，不是个人测量数据，不代表神经传导速度或反应时间，也不用于诊断。</string>
+</resources>

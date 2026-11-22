@@ -95,7 +95,16 @@ class HealthAtlasGutSectionsDeviceTest {
         for (plate in all) {
             val owner = requireNotNull(plate.owner)
             val entry = requireNotNull(data[owner])
-            assertSame(plate, HealthAtlasPlates.forId(owner))
+            val views = HealthAtlasPlates.viewsForId(owner)
+            val detail = HealthAtlasRegionalDetailPlates.forId(owner)
+            assertEquals(owner, views.first().owner)
+            if (detail != null) assertSame(detail, views.first())
+            if (owner == "appendix") assertEquals(R.drawable.health_atlas_appendix_plate, views.first().drawable)
+            val section = views.single { it.drawable == plate.drawable }
+            assertEquals(plate.viewLabel, section.viewLabel)
+            assertEquals(plate.markers, section.markers)
+            assertEquals(plate.features, section.features)
+            assertEquals(section, HealthAtlasPlates.forId(owner, section.viewKey))
             assertEquals(owner, data.mechanism(entry).id)
             assertTrue(plate.markers.all { data[it.id] != null && it.id in entry.related })
             val bitmap = Bitmap.createBitmap(360, 280, Bitmap.Config.ARGB_8888)
@@ -127,6 +136,13 @@ class HealthAtlasGutSectionsDeviceTest {
         for (plate in HealthAtlasGutSections.all) scenario.onActivity { activity ->
             val id = requireNotNull(plate.owner)
             activity.open(id)
+            val views = HealthAtlasPlates.viewsForId(id)
+            assertEquals(id, views.first().owner)
+            assertEquals(activity.getString(views.first().viewLabel),
+                (activity.view("atlas-art-caption") as TextView).text.toString())
+            val sectionIndex = views.indexOfFirst { it.drawable == plate.drawable }
+            assertTrue("Missing section view for $id", sectionIndex >= 0)
+            if (sectionIndex > 0) activity.view("atlas-view-$sectionIndex").performClick()
             assertEquals(activity.getString(plate.viewLabel), (activity.view("atlas-art-caption") as TextView).text.toString())
             plate.markers.firstOrNull()?.let { marker ->
                 activity.view("atlas-hotspot-${marker.id}").performClick()

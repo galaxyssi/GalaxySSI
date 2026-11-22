@@ -1,0 +1,16 @@
+<resources>
+    <string name="health_atlas_ureter_delivery_title">输尿管运输：累计送达量</string>
+    <string name="health_atlas_ureter_delivery_pushes">示例推进次数</string>
+    <string name="health_atlas_ureter_delivery_per_push">每次推进的示例液量</string>
+    <string name="health_atlas_ureter_delivery_formula">送达量＝完成的推进次数 × 每次推进的液量。</string>
+    <string name="health_atlas_ureter_delivery_remaining">模型剩余液量：%1$s mL</string>
+    <string name="health_atlas_ureter_delivery_scope">输尿管的管壁在液团后方收缩，推动液团向前。示意从六份等量液体开始，数值和播放速度不代表真实尿流或肾功能。</string>
+    <string name="health_atlas_ureter_delivery_caption">收缩波与液体推进</string>
+    <string name="health_atlas_ureter_delivery_pelvis">肾盂</string>
+    <string name="health_atlas_ureter_delivery_tube">输尿管</string>
+    <string name="health_atlas_ureter_delivery_bladder">膀胱</string>
+    <string name="health_atlas_ureter_delivery_counter">已送达 %1$d / %2$d 份</string>
+    <string name="health_atlas_ureter_delivery_diagram">从肾盂到膀胱的简化剖面。模型送达量：%1$s 毫升。</string>
+    <string name="health_atlas_ureter_delivery_play">播放输尿管运输</string>
+    <string name="health_atlas_ureter_delivery_pause">暂停输尿管运输</string>
+</resources>

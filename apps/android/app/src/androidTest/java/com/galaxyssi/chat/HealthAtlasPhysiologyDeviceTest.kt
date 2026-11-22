@@ -229,6 +229,7 @@ class HealthAtlasPhysiologyDeviceTest {
             Triple("diaphragm", "diaphragm-displacement", "diaphragm-descent"),
             Triple("aorta", "arterial-continuity", "arterial-lumen-diameter"),
             Triple("nasal-cavity", "airway-cilia-track", "airway-ciliary-clearance-cycles"),
+            Triple("cornea", "corneal-rays", "corneal-refraction-incident-angle"),
         )
         for ((id, art, input) in examples) {
             var initial = 0
@@ -265,7 +266,8 @@ class HealthAtlasPhysiologyDeviceTest {
     @Test fun newStructureLessonsExposeLiveControlsAndKeepTheirFunctionPlayback() = native { scenario ->
         val examples = listOf("pulmonary-trunk", "colon", "thoracic-duct", "clavicle", "hair",
             "cell-oligodendrocyte", "cell-pancreatic-beta-cell", "cell-retinal-bipolar-cell", "cell-skeletal-myocyte",
-            "stomach", "vestibular-apparatus", "cell-megakaryocyte", "cell-osteoblast", "cell-sebocyte")
+            "stomach", "vestibular-apparatus", "cell-megakaryocyte", "cell-osteoblast", "cell-sebocyte",
+            "external-ear", "liver", "joints", "cell-granulosa-cell", "cell-sweat-gland-secretory-cell")
         for (id in examples) scenario.onActivity { activity ->
             activity.open(id, cell = id.startsWith("cell-"))
             val kind = requireNotNull(HealthAtlasPhysiologyKind.forItem(id))
@@ -327,6 +329,48 @@ class HealthAtlasPhysiologyDeviceTest {
         scenario.onActivity {
             assertEquals(0, (it.view("atlas-physiology-bladder-added-volume") as SeekBar).progress)
             assertFalse(it.view("atlas-bladder-filling-play").isEnabled)
+        }
+    }
+    @Test fun ureterDiagramSeparatesPlaybackFromModelInputsAndRestoresTheSelection() = native { scenario ->
+        scenario.onActivity { it.open("ureters") }
+        capture("ureter-transport")
+        scenario.onActivity { activity ->
+            val play = activity.view("atlas-ureter-transport-play")
+            val diagram = activity.view("atlas-ureter-transport-diagram")
+            val count = activity.view("atlas-physiology-ureter-delivery-pushes") as SeekBar
+            val perPush = activity.view("atlas-physiology-ureter-delivery-volume") as SeekBar
+            val output = activity.view("atlas-physiology-output") as TextView
+            val original = output.text.toString()
+            diagram.measure(View.MeasureSpec.makeMeasureSpec(720, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            diagram.layout(0, 0, diagram.measuredWidth, diagram.measuredHeight)
+            fun draw() = Bitmap.createBitmap(diagram.width, diagram.height, Bitmap.Config.ARGB_8888).also {
+                diagram.draw(Canvas(it))
+            }
+            val selected = draw()
+            try {
+                if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
+                    assertTrue(play.isEnabled)
+                    play.performClick()
+                    assertEquals(activity.getString(R.string.health_atlas_ureter_delivery_pause), play.contentDescription)
+                    play.performClick()
+                    val early = draw()
+                    try { assertFalse(selected.sameAs(early)) } finally { early.recycle() }
+                }
+                assertEquals(original, output.text.toString())
+                assertEquals(3, count.progress)
+                perPush.progress = perPush.max
+                assertNotEquals(original, output.text.toString())
+                val more = draw()
+                try { assertFalse(selected.sameAs(more)) } finally { more.recycle() }
+                count.progress = 2
+            } finally { selected.recycle() }
+        }
+        scenario.recreate()
+        ready(scenario, "atlas-ureter-transport-diagram")
+        scenario.onActivity {
+            assertEquals(2, (it.view("atlas-physiology-ureter-delivery-pushes") as SeekBar).progress)
+            assertNotNull(it.view("atlas-simulation-play"))
         }
     }
     @Test fun threePhysiologyScreensShowIndependentModels() = native { scenario ->

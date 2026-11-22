@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_follicle_surface_title">Ovarian follicle outer surface area</string>
+    <string name="health_atlas_follicle_surface_cavity_diameter">Model fluid cavity diameter</string>
+    <string name="health_atlas_follicle_surface_shell_thickness">Combined model layer thickness</string>
+    <string name="health_atlas_follicle_surface_shell_volume">Combined model layer volume: %1$s mm³</string>
+    <string name="health_atlas_follicle_surface_formula">Cavity radius r = cavity diameter ÷ 2. Outer radius R = r + combined layer thickness. Outer area = 4πR². Shell volume = (4π ÷ 3) × (R³ − r³).</string>
+    <string name="health_atlas_follicle_surface_scope">An antral follicle has a fluid-filled cavity, with granulosa cells on the inside of its wall and theca on the outside. This model treats the cavity as a sphere and the two layers as one uniform shell. The dimensions are invented, not personal measurements or reference ranges. The model does not estimate individual follicle size, predict ovulation or fertility, assess health conditions, or model the oocyte.</string>
+</resources>

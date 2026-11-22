@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_sweat_duct_balance_title">Sodium remaining at the sweat duct outlet</string>
+    <string name="health_atlas_sweat_duct_balance_coil_sodium">Sodium secreted by the coil</string>
+    <string name="health_atlas_sweat_duct_balance_net_reabsorbed">Duct sodium reabsorption (net share)</string>
+    <string name="health_atlas_sweat_duct_balance_companion">Net sodium reabsorbed: %1$s nmol</string>
+    <string name="health_atlas_sweat_duct_balance_formula">Reabsorbed sodium (nmol) = sodium secreted by the coil (nmol) × (net reabsorbed percentage ÷ 100). Sodium remaining at the duct outlet (nmol) = sodium secreted by the coil − reabsorbed sodium.</string>
+    <string name="health_atlas_sweat_duct_balance_scope">In the dermis, an eccrine secretory coil releases water and sodium ions into its lumen to form primary sweat. Downstream, the duct reabsorbs some sodium from the lumen toward the surrounding tissue before the sweat reaches the skin surface. This synthetic example tracks only sodium in one parcel, holding its water at 1 µL from the coil to the duct outlet. The settings are illustrative, not reference ranges. The result is neither a tissue measurement nor an estimate of whole-body sweat.</string>
+</resources>

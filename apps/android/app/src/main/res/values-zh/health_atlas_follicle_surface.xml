@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_follicle_surface_title">卵巢卵泡外表面积</string>
+    <string name="health_atlas_follicle_surface_cavity_diameter">模型卵泡腔直径</string>
+    <string name="health_atlas_follicle_surface_shell_thickness">模型两层总厚度</string>
+    <string name="health_atlas_follicle_surface_shell_volume">模型两层总体积：%1$s mm³</string>
+    <string name="health_atlas_follicle_surface_formula">卵泡腔半径 r = 腔直径 ÷ 2。外半径 R = r + 两层总厚度。外表面积 = 4πR²。球壳体积 = (4π ÷ 3) × (R³ − r³)。</string>
+    <string name="health_atlas_follicle_surface_scope">有腔卵泡内有充满液体的卵泡腔，卵泡壁内侧为颗粒细胞层，外侧为卵泡膜层。模型将卵泡腔简化为球体，并将这两层合并为厚度均一的球壳。尺寸均为虚构示例，不是个人测量值或参考范围。模型不用于估算个人卵泡大小、预测排卵或生育能力，也不用于评估健康状况或模拟卵母细胞。</string>
+</resources>

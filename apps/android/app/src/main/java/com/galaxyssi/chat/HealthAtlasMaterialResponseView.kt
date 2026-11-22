@@ -6,7 +6,9 @@ import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.view.View
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 internal class HealthAtlasMaterialResponseView(context: Context, initial: HealthAtlasPhysiology) : View(context) {
@@ -25,6 +27,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT -> R.string.health_atlas_diaphragm_demo_diagram
         HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY -> R.string.health_atlas_arterial_continuity_diagram
         HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE -> R.string.health_atlas_airway_ciliary_clearance_diagram
+        HealthAtlasPhysiologyKind.CORNEAL_REFRACTION -> R.string.health_atlas_model_corneal_refraction_diagram
         else -> error("Unexpected material response: $kind")
     }
     private val ink = context.getColor(R.color.text_primary)
@@ -52,6 +55,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT -> "atlas-diaphragm-displacement"
             HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY -> "atlas-arterial-continuity"
             HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE -> "atlas-airway-cilia-track"
+            HealthAtlasPhysiologyKind.CORNEAL_REFRACTION -> "atlas-corneal-rays"
             else -> error("Unexpected material response: $kind")
         }
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
@@ -80,6 +84,7 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
             HealthAtlasPhysiologyKind.DIAPHRAGM_DISPLACEMENT -> drawDiaphragm(canvas)
             HealthAtlasPhysiologyKind.ARTERIAL_CONTINUITY -> drawArterialContinuity(canvas)
             HealthAtlasPhysiologyKind.AIRWAY_CILIARY_CLEARANCE -> drawCiliaTrack(canvas)
+            HealthAtlasPhysiologyKind.CORNEAL_REFRACTION -> drawRefraction(canvas)
             else -> Unit
         }
         canvas.restore()
@@ -373,6 +378,48 @@ internal class HealthAtlasMaterialResponseView(context: Context, initial: Health
         oval(c, marker - 6, 43f, marker + 6, 55f, 0xffbc803f.toInt())
         oval(c, marker - 2, 45f, marker + 1, 48f, 0xffffe0a5.toInt())
         label(c, R.string.health_atlas_airway_ciliary_clearance_track, 170f, 145f, 300f)
+    }
+
+    private fun drawRefraction(c: Canvas) {
+        val x = 170f
+        val y = 76f
+        val incidentDegrees = model.input(0).toFloat()
+        val refractedDegrees = model.result.toFloat()
+        val incident = Math.toRadians(incidentDegrees.toDouble())
+        val refracted = Math.toRadians(refractedDegrees.toDouble())
+        rectangle(c, 16f, y, 324f, 151f, 0xffd5e9ed.toInt(), 5f)
+        line(c, 16f, y, 324f, y, blue, 2f)
+        paint.pathEffect = DashPathEffect(floatArrayOf(4f, 4f), 0f)
+        line(c, x, 11f, x, 144f, 0xff668895.toInt(), 1.4f)
+        paint.pathEffect = null
+
+        fun ray(fromX: Float, fromY: Float, dx: Float, dy: Float, length: Float, color: Int) {
+            val toX = fromX + dx * length
+            val toY = fromY + dy * length
+            line(c, fromX, fromY, toX, toY, color, 3f)
+            val baseX = toX - 8 * dx
+            val baseY = toY - 8 * dy
+            c.drawPath(Path().apply {
+                moveTo(toX, toY)
+                lineTo(baseX - 3.5f * dy, baseY + 3.5f * dx)
+                lineTo(baseX + 3.5f * dy, baseY - 3.5f * dx)
+                close()
+            }, paint)
+        }
+        val incidentX = sin(incident).toFloat()
+        val incidentY = cos(incident).toFloat()
+        ray(x - incidentX * 62, y - incidentY * 62, incidentX, incidentY, 62f, 0xffa16629.toInt())
+        ray(x, y, sin(refracted).toFloat(), cos(refracted).toFloat(), 62f, teal)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1.3f
+        paint.color = 0xffa16629.toInt()
+        c.drawArc(x - 25, y - 25, x + 25, y + 25, -90f - incidentDegrees, incidentDegrees, false, paint)
+        paint.color = teal
+        c.drawArc(x - 25, y - 25, x + 25, y + 25, 90f - refractedDegrees, refractedDegrees, false, paint)
+        paint.style = Paint.Style.FILL
+        label(c, R.string.health_atlas_model_corneal_refraction_incident_ray, 65f, 25f, 110f)
+        label(c, R.string.health_atlas_model_corneal_refraction_refracted_ray, 258f, 139f, 106f)
+        label(c, R.string.health_atlas_model_corneal_refraction_surface, 253f, 65f, 128f)
     }
 
     private fun rectangle(c: Canvas, left: Float, top: Float, right: Float, bottom: Float, color: Int, radius: Float = 10f) {

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_neural_relay_delays_title">Total synaptic relay delay</string>
+    <string name="health_atlas_neural_relay_delays_count">Relay stages</string>
+    <string name="health_atlas_neural_relay_delays_per_relay">Delay per relay</string>
+    <string name="health_atlas_neural_relay_delays_companion">Delay before the final relay: %1$s ms</string>
+    <string name="health_atlas_neural_relay_delays_formula">Total relay delay = relay stages × delay per relay. The total includes every relay up to and including the final one. Each extra relay adds the same delay.</string>
+    <string name="health_atlas_neural_relay_delays_scope">In brain circuits and autonomic ganglia, neurons can pass signals at chemical synapses. Releasing a neurotransmitter and getting a response from the next cell takes time. This model uses an invented chain of relays. Every relay passes the signal and adds the same delay between cells; travel along an axon is not included. The model does not map actual connections. Its numbers are invented and do not measure personal timing, nerve conduction speed, or reaction time. They are not for diagnosis.</string>
+</resources>

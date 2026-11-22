@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_sweat_duct_balance_title">汗管出口处的剩余钠量</string>
+    <string name="health_atlas_sweat_duct_balance_coil_sodium">分泌部盘曲管分泌的钠量</string>
+    <string name="health_atlas_sweat_duct_balance_net_reabsorbed">汗管净重吸收的钠比例</string>
+    <string name="health_atlas_sweat_duct_balance_companion">净重吸收钠量：%1$s nmol</string>
+    <string name="health_atlas_sweat_duct_balance_formula">重吸收钠量（nmol）= 分泌部盘曲管分泌的钠量（nmol）×（净重吸收百分比 ÷ 100）。汗管出口处的剩余钠量（nmol）= 分泌的钠量 − 重吸收钠量。</string>
+    <string name="health_atlas_sweat_duct_balance_scope">真皮内，小汗腺的盘曲分泌部将水和钠离子释放到管腔中，形成原汗。原汗流经下游汗管时，一部分钠从管腔向周围组织重吸收，剩余的钠随汗液流向皮肤表面。这个假想示例只追踪一小份汗液中的钠，并假定其中的水量始终为 1 µL。设定值仅用于教学，并非参考范围。结果既不是组织检测值，也不用于估算全身汗液。</string>
+</resources>
