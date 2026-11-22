@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_nail_plate_advance_title">示意图中的甲板前移距离</string>
+    <string name="health_atlas_nail_plate_advance_steps">示意步数（n）</string>
+    <string name="health_atlas_nail_plate_advance_addition">每步在甲母质处新增的长度（a）</string>
+    <string name="health_atlas_nail_plate_advance_mark">甲板标记距甲母质：%1$s u</string>
+    <string name="health_atlas_nail_plate_advance_formula">前移距离 = n × a，其中 n 为示意步数，a 为单步新增的长度。标记位置 = 4 u + 前移距离。图中甲床末端在 10 u 处；标记越过这条线后，就位于游离缘上。</string>
+    <string name="health_atlas_nail_plate_advance_scope">甲根处的甲母质形成甲板的大部分。新材料从甲根处加入甲板，原有甲板上的标记随甲板向指尖移动，经过甲床后到达游离缘。图中甲母质位于 0 u，标记起点位于 4 u。长度采用人为设定的绘图单位（u），步数不代表天数。本模型不测量或预测实际生长。</string>
+</resources>

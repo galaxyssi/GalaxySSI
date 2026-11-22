@@ -9,8 +9,9 @@
     <string name="health_atlas_cells">细胞</string>
     <string name="health_atlas_structure">结构</string>
     <string name="health_atlas_function">功能</string>
-    <string name="health_atlas_values">数值</string>
+    <string name="health_atlas_values">我的指标</string>
     <string name="health_atlas_simulation">模拟</string>
+    <string name="health_atlas_open_quantitative_model">数值模拟</string>
     <string name="health_atlas_search">搜索结构、细胞或功能</string>
     <string name="health_atlas_counts">%1$d 类 · %2$d 个结构 · %3$d 种组织 · %4$d 种细胞及亚型</string>
     <string name="health_atlas_no_matches">没有匹配的条目</string>

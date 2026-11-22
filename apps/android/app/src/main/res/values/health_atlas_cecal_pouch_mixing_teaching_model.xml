@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cecal_pouch_mixing_title">Marker amount on the far side of the cecal pouch</string>
+    <string name="health_atlas_cecal_pouch_mixing_rounds">Mixing rounds</string>
+    <string name="health_atlas_cecal_pouch_mixing_marker_amount">Marker amount arriving from the ileum</string>
+    <string name="health_atlas_cecal_pouch_mixing_companion">Marker amount near the inlet: %1$s u</string>
+    <string name="health_atlas_cecal_pouch_mixing_formula">Each round moves one quarter of the marker amount in each zone to the other zone, halving the difference. After n rounds, far-side amount = M &#215; (1 &#8722; 0.5&#8319;) / 2, where M is the starting marker amount. Near-inlet amount = M &#8722; far-side amount. The graph rounds n to the nearest whole round (halves round up).</string>
+    <string name="health_atlas_cecal_pouch_mixing_scope">The cecum is the pouch at the start of the large intestine. It receives contents from the ileum before they continue into the ascending colon. Picture two equal zones in the pouch, one near the ileal opening and one farther away. In this mixing sketch, all the marker starts near the opening, and none enters or leaves during the rounds. The two zones, rounds and marker units (u) are invented. They do not represent anatomical compartments, elapsed time, bowel transit or water absorption.</string>
+</resources>

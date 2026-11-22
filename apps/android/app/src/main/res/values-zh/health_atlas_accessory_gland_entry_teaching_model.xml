@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_accessory_gland_entry_title">进入尿道前列腺部的标记数</string>
+    <string name="health_atlas_accessory_gland_entry_vesicles">精囊标记数</string>
+    <string name="health_atlas_accessory_gland_entry_prostate">前列腺标记数</string>
+    <string name="health_atlas_accessory_gland_entry_bulbourethral">尿道球腺标记数</string>
+    <string name="health_atlas_accessory_gland_entry_companion">直接进入尿道海绵体部的标记数：%1$s</string>
+    <string name="health_atlas_accessory_gland_entry_formula">进入尿道前列腺部的标记数 = 精囊标记数 + 前列腺标记数。直接进入尿道海绵体部的标记数 = 尿道球腺标记数，不计其他标记。图表将标记数四舍五入为整数。</string>
+    <string name="health_atlas_accessory_gland_entry_scope">用一条线代表每一类腺体的通路，线的终点是相应导管通入尿道的位置。精囊分泌含有营养物质的液体，经射精管进入尿道前列腺部。前列腺的分泌液经独立的前列腺导管进入同一段尿道。再往下游，尿道球腺导管将起润滑作用的黏液排入尿道海绵体部的起始段。每条线设 0 至 4 个标记，每个标记仅在首次进入尿道的位置计数。这些标记是虚构的示意符号，不代表分泌量、比例或分泌时间。</string>
+</resources>

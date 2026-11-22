@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_clitoral_route_trace_title">Clitoral sensory route: share traced</string>
+    <string name="health_atlas_clitoral_route_trace_links">Diagram links traced</string>
+    <string name="health_atlas_clitoral_route_trace_companion">Diagram links remaining: %1$s</string>
+    <string name="health_atlas_clitoral_route_trace_formula">Count the links traced as a whole number from 0 to 4. Share traced (percent) = 100 &#215; that count / 4. Links remaining = 4 minus that count. The plot rounds the input to the nearest whole link.</string>
+    <string name="health_atlas_clitoral_route_trace_scope">Sensory fibers from the clitoral glans run in the dorsal clitoral nerve, a branch of the pudendal nerve. This schematic follows one side: glans &#8594; dorsal clitoral nerve &#8594; pudendal nerve &#8594; sacral spinal nerve &#8594; spinal cord via a dorsal root. The four arrows count equally; they group parts of the pathway and do not mark synapses. The percentage is progress through the schematic, not distance, time, or sensitivity.</string>
+</resources>

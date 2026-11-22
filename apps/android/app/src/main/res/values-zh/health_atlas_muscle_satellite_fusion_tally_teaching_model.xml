@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_muscle_satellite_fusion_tally_title">肌纤维内的细胞核图标数</string>
+    <string name="health_atlas_muscle_satellite_fusion_tally_fused">图中发生融合的后代细胞图标数</string>
+    <string name="health_atlas_muscle_satellite_fusion_tally_starting">肌纤维内起初的细胞核图标数</string>
+    <string name="health_atlas_muscle_satellite_fusion_tally_companion">仍独立于肌纤维的储备细胞图标数：%1$s</string>
+    <string name="health_atlas_muscle_satellite_fusion_tally_formula">肌纤维内最终的细胞核图标数 = 起初的细胞核图标数 + 发生融合的后代细胞图标数。仍独立的储备细胞图标数 = 8 减去发生融合的后代细胞图标数。图表将控件数值四舍五入为整数。</string>
+    <string name="health_atlas_muscle_satellite_fusion_tally_scope">骨骼肌卫星细胞位于基底板下方，但在肌纤维细胞膜之外。一些后代细胞可以补充这一储备；具有成肌能力的后代细胞可以与肌纤维融合，将自己的细胞核加入肌纤维。示意图从 8 个后代细胞图标开始。每个画为融合的图标都会在肌纤维内增加一个细胞核图标，其余图标在此图中都归入独立的储备。这样的分配和数量都是假设的，不代表固定的细胞命运、实际细胞或细胞核数量，也不能预测修复结果。</string>
+</resources>

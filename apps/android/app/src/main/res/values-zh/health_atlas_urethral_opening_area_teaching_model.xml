@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_urethral_opening_area_title">尿道管腔横截面积</string>
+    <string name="health_atlas_urethral_opening_area_width">示意开口宽度</string>
+    <string name="health_atlas_urethral_opening_area_height_percent">高度占宽度的百分比</string>
+    <string name="health_atlas_urethral_opening_area_companion">示意开口高度：%1$s u</string>
+    <string name="health_atlas_urethral_opening_area_formula">若全宽为 w，高度百分比为 p，则全高 h = w &#215; p / 100。面积 = &#960; &#215; (w / 2) &#215; (h / 2)，以平方示意单位（u&#178;）表示。高度为零时，图形退化成线，开口面积为零。高度等于宽度时，图形为圆。</string>
+    <string name="health_atlas_urethral_opening_area_scope">排尿时，括约肌放松，膀胱壁收缩。尿液从膀胱颈进入尿道，经尿道外口排出。想象在垂直于尿道走向的平面上取一个横截面。把管腔的开放部分画成椭圆，从左到右量全宽，从上到下量全高。形状和长度采用虚构的示意单位（u），不能用来测量真实解剖结构，也不能预测尿流、压力或括约肌活动。</string>
+</resources>

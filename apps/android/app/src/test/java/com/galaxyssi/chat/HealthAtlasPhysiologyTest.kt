@@ -165,7 +165,8 @@ class HealthAtlasPhysiologyTest {
                             HealthAtlasPhysiologyKind.RENAL_TUBULE_RETENTION,
                             HealthAtlasPhysiologyKind.MUCUS_FILM_THICKNESS,
                             HealthAtlasPhysiologyKind.GAMETE_PATH_DISTANCE, HealthAtlasPhysiologyKind.VULVAR_FOLD_OVERLAP,
-                            HealthAtlasPhysiologyKind.RETINAL_LIGHT_ATTENUATION -> y <= value + 1e-9
+                            HealthAtlasPhysiologyKind.RETINAL_LIGHT_ATTENUATION, HealthAtlasPhysiologyKind.VAGINAL_RUGA_SPAN,
+                            HealthAtlasPhysiologyKind.THYROID_FOLLICULAR_FACES -> y <= value + 1e-9
                             else -> y >= value - 1e-9
                         })
                     }
@@ -215,7 +216,7 @@ class HealthAtlasPhysiologyTest {
     @Test fun unrelatedEntitiesDoNotInheritAnotherStructuresModel() {
         assertEquals(HealthAtlasPhysiologyKind.BILIARY_FLOW_TALLY, HealthAtlasPhysiologyKind.forItem("cell-hepatocyte"))
         assertEquals(HealthAtlasPhysiologyKind.URETER_DELIVERY, HealthAtlasPhysiologyKind.forItem("renal-pelvis"))
-        assertNull(HealthAtlasPhysiologyKind.forItem("cell-club-cell"))
+        assertEquals(HealthAtlasPhysiologyKind.CLUB_CELL_DOME, HealthAtlasPhysiologyKind.forItem("cell-club-cell"))
         assertEquals(HealthAtlasPhysiologyKind.GLOMERULAR_FILTRATION, HealthAtlasPhysiologyKind.forItem("cell-podocyte"))
         assertEquals(HealthAtlasPhysiologyKind.RENAL_EXCRETION, HealthAtlasPhysiologyKind.forItem("cell-proximal-tubular-cell"))
     }

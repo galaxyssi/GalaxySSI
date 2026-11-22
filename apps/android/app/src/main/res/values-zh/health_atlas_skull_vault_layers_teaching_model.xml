@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_skull_vault_layers_title">示意图中颅骨外侧到脑表面的距离</string>
+    <string name="health_atlas_skull_vault_layers_diploe">板障带宽度（d）</string>
+    <string name="health_atlas_skull_vault_layers_fluid">脑脊液带宽度（c）</string>
+    <string name="health_atlas_skull_vault_layers_bone">骨壁宽度：%1$s u</string>
+    <string name="health_atlas_skull_vault_layers_formula">从外向内，骨壁由外板（1 u）、板障（d）和内板（1 u）组成。总距离 = 骨壁宽度 + 脑脊液带宽度（c）。图中脑膜用边界线表示，不计宽度。</string>
+    <string name="health_atlas_skull_vault_layers_scope">颅盖是覆盖在脑上方的坚硬骨壁。在这个剖面中，两层密质骨板夹着松质骨（板障）。骨壁内侧贴着硬脑膜，蛛网膜和软脑膜之间的脑脊液有助于缓冲，软脑膜紧贴脑表面。模型将局部剖面拉直为条带。绘图单位（u）为人为设定，不是解剖测量值，不能预测保护效果或损伤。</string>
+</resources>

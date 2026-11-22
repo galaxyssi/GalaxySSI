@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_langerhans_dendrite_reach_title">Spaces reached by either Langerhans cell branch</string>
+    <string name="health_atlas_langerhans_dendrite_reach_left">Spaces reached from the left</string>
+    <string name="health_atlas_langerhans_dendrite_reach_right">Spaces reached from the right</string>
+    <string name="health_atlas_langerhans_dendrite_reach_companion">Spaces reached by both branches: %1$s</string>
+    <string name="health_atlas_langerhans_dendrite_reach_formula">Add the left and right counts. Any total above 10 is overlap. Distinct spaces reached = total minus overlap, so each space is counted only once. The chart rounds the controls to whole spaces.</string>
+    <string name="health_atlas_langerhans_dendrite_reach_scope">Langerhans cells in the epidermis have branching extensions (dendrites) that reach between keratinocytes and help sample the local surroundings. To illustrate overlap, picture 10 numbered spaces in a row between neighboring cells. Two branches of the same cell are drawn covering consecutive spaces from opposite ends of the row. One space is one drawing position, not a unit of skin area. The layout and counts are invented and do not measure sampling or predict an immune response.</string>
+</resources>

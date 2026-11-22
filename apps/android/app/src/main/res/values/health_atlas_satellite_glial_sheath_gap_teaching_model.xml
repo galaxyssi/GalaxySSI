@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_satellite_glial_sheath_gap_title">Drawn gap area inside the satellite glial sheath</string>
+    <string name="health_atlas_satellite_glial_sheath_gap_radius">Drawn neuron body radius</string>
+    <string name="health_atlas_satellite_glial_sheath_gap_width">Drawn gap width</string>
+    <string name="health_atlas_satellite_glial_sheath_gap_companion">Radius to the inner edge of the sheath: %1$s u</string>
+    <string name="health_atlas_satellite_glial_sheath_gap_formula">For soma radius r and gap width w, the inner edge of the sheath sits at radius r + w. Gap area = &#960; &#215; [(r + w)&#178; &#8722; r&#178;]. Lengths use arbitrary drawing units (u); areas use square drawing units (u&#178;).</string>
+    <string name="health_atlas_satellite_glial_sheath_gap_scope">Flattened satellite glial cells form a sheath around a sensory neuron body in a dorsal root ganglion, next to the narrow extracellular space they help regulate. In this schematic cross-section the inner circle is the neuron body and the outer circle is the inner edge of the glial sheath. Only the space between the two lines is counted; it is neither the sheath itself nor axonal myelin. The gap is exaggerated, and no real dimensions are implied.</string>
+</resources>

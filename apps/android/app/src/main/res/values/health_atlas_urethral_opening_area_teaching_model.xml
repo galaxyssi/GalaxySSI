@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_urethral_opening_area_title">Urethral lumen area in cross-section</string>
+    <string name="health_atlas_urethral_opening_area_width">Sketch opening width</string>
+    <string name="health_atlas_urethral_opening_area_height_percent">Height as a percentage of width</string>
+    <string name="health_atlas_urethral_opening_area_companion">Sketch opening height: %1$s u</string>
+    <string name="health_atlas_urethral_opening_area_formula">With full width w and height percentage p, full height h = w &#215; p / 100. The area is &#960; &#215; (w / 2) &#215; (h / 2) in square sketch units (u&#178;). At zero height the sketch is a line with zero open area. When height equals width, the sketch is a circle.</string>
+    <string name="health_atlas_urethral_opening_area_scope">During urination the sphincters relax and the bladder wall contracts. Urine leaves the bladder neck through the urethra and exits through its external opening. Imagine looking across the channel at one slice perpendicular to that route. The open space is drawn as an ellipse with the full width measured side to side and the full height measured top to bottom. The shape and lengths in sketch units (u) are invented; they do not measure real anatomy or predict urine flow, pressure or sphincter behavior.</string>
+</resources>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mast_cell_granule_tally_title">肥大细胞：已释放的比例</string>
+    <string name="health_atlas_mast_cell_granule_tally_released">已释放的内容物（个圆点）</string>
+    <string name="health_atlas_mast_cell_granule_tally_scope">肥大细胞在颗粒内储存物质，并能释放这些物质。想象轮廓内原有 20 个圆点，释放后部分圆点画在轮廓外。圆点代表内容物，而不是整颗颗粒。图表显示轮廓外圆点所占的百分比。数量和比例均为虚构，不代表真实细胞、释放速率或释放原因。</string>
+    <string name="health_atlas_mast_cell_granule_tally_formula">已释放的比例（%）= 100 乘以轮廓外圆点数，再除以 20。仍储存的圆点数 = 20 减去轮廓外圆点数。</string>
+    <string name="health_atlas_mast_cell_granule_tally_companion">仍储存的圆点数：%1$s</string>
+</resources>

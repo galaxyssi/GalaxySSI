@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_accessory_gland_entry_title">Markers entering the prostatic urethra</string>
+    <string name="health_atlas_accessory_gland_entry_vesicles">Seminal vesicle markers</string>
+    <string name="health_atlas_accessory_gland_entry_prostate">Prostate markers</string>
+    <string name="health_atlas_accessory_gland_entry_bulbourethral">Bulbourethral gland markers</string>
+    <string name="health_atlas_accessory_gland_entry_companion">Markers entering the spongy urethra directly: %1$s</string>
+    <string name="health_atlas_accessory_gland_entry_formula">Markers entering the prostatic urethra = seminal vesicle markers + prostate markers. Markers entering the spongy urethra directly = bulbourethral gland markers only. The chart rounds to whole markers.</string>
+    <string name="health_atlas_accessory_gland_entry_scope">Picture one line for each gland type, ending where its ducts reach the urethra. Nutrient-containing fluid from the seminal vesicles reaches the prostatic urethra via the ejaculatory ducts. The prostate adds its own fluid there via separate prostatic ducts. Farther along, the bulbourethral ducts deliver lubricating mucus into the start of the spongy urethra. Use 0 to 4 markers per line and count each only where it first enters the urethra. Markers are invented diagram symbols, not secretion volumes, proportions, or timing.</string>
+</resources>

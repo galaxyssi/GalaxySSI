@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_skull_vault_layers_title">Outer bone to brain surface in the drawing</string>
+    <string name="health_atlas_skull_vault_layers_diploe">Diplo&#235; band width (d)</string>
+    <string name="health_atlas_skull_vault_layers_fluid">Cerebrospinal fluid band width (c)</string>
+    <string name="health_atlas_skull_vault_layers_bone">Bony wall width: %1$s u</string>
+    <string name="health_atlas_skull_vault_layers_formula">From outside in, the bony wall is outer table (1 u) + diplo&#235; (d) + inner table (1 u). The full span is bony wall width + fluid band width (c). Membranes are boundary lines with no counted width.</string>
+    <string name="health_atlas_skull_vault_layers_scope">The cranial vault forms a rigid covering over the brain. In this slice, two compact bone tables enclose spongy bone (diplo&#235;). Inside the wall, dura lines the bone, and cerebrospinal fluid between arachnoid and pia helps cushion the brain. Pia follows the brain surface. The model straightens one slice into bands. The arbitrary drawing units (u) are not anatomical measurements and do not predict protection or injury.</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_enteroendocrine_polarity_title">Granule marker position from the basal side</string>
+    <string name="health_atlas_enteroendocrine_polarity_basal_offset">Distance from basal edge to marker</string>
+    <string name="health_atlas_enteroendocrine_polarity_cell_height">Basal edge to apical tip</string>
+    <string name="health_atlas_enteroendocrine_polarity_companion">Apical tip to marker: %1$s u</string>
+    <string name="health_atlas_enteroendocrine_polarity_formula">For drawn height H and basal offset d, marker position = 100 &#215; d / H as a percentage of height measured from the basal edge. Apical tip to marker = H &#8722; d.</string>
+    <string name="health_atlas_enteroendocrine_polarity_scope">This model follows an open-type enteroendocrine cell in the intestinal lining. Its narrow apical tip contacts the lumen, but secretory granules cluster toward the tissue-facing side, where the cell releases signals. On the drawing, the basal edge is zero and the apical tip is the far end of the same line. A single dot represents the granule region and stays in the basal half. The lengths use arbitrary drawing units (u) and do not measure cell dimensions, granule distributions, or hormone release.</string>
+</resources>

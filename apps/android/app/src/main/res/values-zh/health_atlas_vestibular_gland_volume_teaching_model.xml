@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_vestibular_gland_volume_title">前庭大腺：示例分泌量合计</string>
+    <string name="health_atlas_vestibular_gland_volume_a">A 侧导管口的示例体积</string>
+    <string name="health_atlas_vestibular_gland_volume_b">B 侧导管口的示例体积</string>
+    <string name="health_atlas_vestibular_gland_volume_companion">示例体积之差：%1$s vu</string>
+    <string name="health_atlas_vestibular_gland_volume_formula">总体积 = A 侧导管口的体积 + B 侧导管口的体积。体积之差 = 较大的示例体积减去较小的示例体积。</string>
+    <string name="health_atlas_vestibular_gland_volume_scope">成对的前庭大腺（巴氏腺）分泌黏液，帮助润湿阴道口旁的阴道前庭。双支路示意图中，每侧腺体各有一条导管，分别开口于前庭，标为 A 或 B。导管不通入阴道管或尿道。图表将一个示例时段内的虚构黏液量相加，以任意体积单位（vu）表示，不用于估算全部润滑液的量、实际分泌速率或个人的腺体功能。</string>
+</resources>

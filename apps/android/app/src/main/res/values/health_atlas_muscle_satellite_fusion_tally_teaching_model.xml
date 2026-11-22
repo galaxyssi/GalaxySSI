@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_muscle_satellite_fusion_tally_title">Nucleus icons inside a muscle fiber</string>
+    <string name="health_atlas_muscle_satellite_fusion_tally_fused">Descendant icons shown fusing</string>
+    <string name="health_atlas_muscle_satellite_fusion_tally_starting">Starting nucleus icons inside the fiber</string>
+    <string name="health_atlas_muscle_satellite_fusion_tally_companion">Separate reserve cell icons: %1$s</string>
+    <string name="health_atlas_muscle_satellite_fusion_tally_formula">Final nucleus icons inside the fiber = starting nucleus icons + fused descendant icons. Separate reserve cell icons = 8 minus fused descendant icons. The chart rounds the controls to whole icons.</string>
+    <string name="health_atlas_muscle_satellite_fusion_tally_scope">Muscle satellite cells sit beneath the basal lamina but outside the muscle fiber membrane. Some descendants can renew that reserve; muscle-forming descendants can fuse with a fiber and contribute their nuclei. The sketch starts with 8 descendant icons. Each one shown fusing adds a nucleus icon inside the fiber; this sketch puts all the others in the separate reserve. That split and the counts are invented, not fixed cell fates, real cell or nucleus counts, or predictions of repair.</string>
+</resources>

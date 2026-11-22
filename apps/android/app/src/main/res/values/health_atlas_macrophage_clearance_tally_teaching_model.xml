@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_macrophage_clearance_tally_title">Macrophage: Icons Taken In</string>
+    <string name="health_atlas_macrophage_clearance_tally_outside">Starting outside count (icons)</string>
+    <string name="health_atlas_macrophage_clearance_tally_spaces">Open spaces inside (spaces)</string>
+    <string name="health_atlas_macrophage_clearance_tally_scope">Macrophages help clear cellular debris by engulfing it. In this sketch, plain icons start outside an outline, and each drawn space inside can hold one icon. The graph levels off when all the drawn spaces are filled. The spaces and counts are made up; they do not represent real compartments, how much a cell can take in, or how fast it works.</string>
+    <string name="health_atlas_macrophage_clearance_tally_formula">Icons taken in = the smaller of the starting outside count and the open space count. Icons still outside = starting outside count minus icons taken in.</string>
+    <string name="health_atlas_macrophage_clearance_tally_companion">Icons still outside: %1$s</string>
+</resources>

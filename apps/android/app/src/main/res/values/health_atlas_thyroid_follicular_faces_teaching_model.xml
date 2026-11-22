@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_thyroid_follicular_faces_title">Colloid-facing edge of one follicular cell wedge</string>
+    <string name="health_atlas_thyroid_follicular_faces_wedges">Cell wedges in the ring</string>
+    <string name="health_atlas_thyroid_follicular_faces_radius">Radius to the colloid-facing edge</string>
+    <string name="health_atlas_thyroid_follicular_faces_companion">Outer edge of one wedge: %1$s u</string>
+    <string name="health_atlas_thyroid_follicular_faces_formula">Inner edge = 2 &#215; &#960; &#215; lumen radius &#247; number of wedges. Outer edge = 2 &#215; &#960; &#215; (lumen radius + 2 u) &#247; number of wedges. The chart rounds the wedge count to a whole number.</string>
+    <string name="health_atlas_thyroid_follicular_faces_scope">Thyroid follicular cells line a cavity called the lumen. Their inner (apical) face borders the colloid, which stores thyroglobulin. Their outer (basal) face points toward tissue and nearby capillaries. Picture a slice with colloid in the center and equal cell wedges forming a ring 2 u thick. The two edge lengths are arcs in that slice, not surface areas. The circle, wedge counts and lengths are invented; u is an arbitrary drawing unit, not a measurement or a predictor of hormone output.</string>
+</resources>

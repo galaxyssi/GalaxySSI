@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cecal_pouch_mixing_title">盲肠囊内远离入口一侧的标记物量</string>
+    <string name="health_atlas_cecal_pouch_mixing_rounds">混合轮数</string>
+    <string name="health_atlas_cecal_pouch_mixing_marker_amount">从回肠进入的标记物量</string>
+    <string name="health_atlas_cecal_pouch_mixing_companion">靠近入口一侧的标记物量：%1$s u</string>
+    <string name="health_atlas_cecal_pouch_mixing_formula">每轮中，两区各将本区标记物的四分之一移到对方区域，两区的量差因此减半。经过 n 轮后，远侧的量 = M &#215; (1 &#8722; 0.5&#8319;) / 2，其中 M 为初始标记物量。近入口侧的量 = M &#8722; 远侧的量。图中将 n 四舍五入到整数轮。</string>
+    <string name="health_atlas_cecal_pouch_mixing_scope">盲肠是大肠起始处的囊状结构。来自回肠的内容物先进入盲肠，再继续进入升结肠。把盲肠囊想象成两个等大的区域，一个靠近回肠开口，另一个离开口较远。在这个混合示意中，标记物起初都在开口附近，混合期间没有标记物进出。两个区域、轮数和标记物单位（u）都是虚构的，不代表真实的解剖分区、经过时间、肠道转运或水分吸收。</string>
+</resources>

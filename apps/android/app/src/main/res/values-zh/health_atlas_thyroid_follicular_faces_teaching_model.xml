@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_thyroid_follicular_faces_title">甲状腺滤泡细胞楔形的胶质侧弧长</string>
+    <string name="health_atlas_thyroid_follicular_faces_wedges">环上的细胞楔形数</string>
+    <string name="health_atlas_thyroid_follicular_faces_radius">胶质侧弧线的半径</string>
+    <string name="health_atlas_thyroid_follicular_faces_companion">单个楔形的外侧弧长：%1$s u</string>
+    <string name="health_atlas_thyroid_follicular_faces_formula">内侧弧长 = 2 &#215; &#960; &#215; 滤泡腔半径 &#247; 楔形数。外侧弧长 = 2 &#215; &#960; &#215;（滤泡腔半径 + 2 u）&#247; 楔形数。图表将楔形数四舍五入为整数。</string>
+    <string name="health_atlas_thyroid_follicular_faces_scope">甲状腺滤泡细胞围成滤泡腔。细胞的内侧（顶端面）朝向胶质，胶质中储存甲状腺球蛋白；外侧（基底面）朝向周围组织和附近的毛细血管。设想一个切面：中央是胶质，等大的细胞楔形围成厚度为 2 u 的环。这里比较的是切面上的两段弧长，而不是表面积。圆形、楔形数和长度均为假设；u 是任意绘图单位，不是实测值，也不能用来预测激素分泌量。</string>
+</resources>

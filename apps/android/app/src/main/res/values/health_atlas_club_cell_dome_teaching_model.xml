@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_club_cell_dome_title">Dome share of a club cell profile</string>
+    <string name="health_atlas_club_cell_dome_rise">Dome rise</string>
+    <string name="health_atlas_club_cell_dome_body_height">Height below dome</string>
+    <string name="health_atlas_club_cell_dome_companion">Dome area in the drawing: %1$s u&#178;</string>
+    <string name="health_atlas_club_cell_dome_formula">For a drawing width of 4 u, dome rise h, and body height b: dome area = &#960; &#215; (4 / 2) &#215; h / 2. Body area = 4 &#215; b. Dome share = 100 &#215; dome area / (dome area + body area), as a percentage.</string>
+    <string name="health_atlas_club_cell_dome_scope">A club cell is a secretory cell in the lining of small airways. Its rounded apical surface faces the airway lumen. In this side-on drawing, a half ellipse faces the lumen and sits on a rectangle of the same width. The dome rise is measured from the join to the top of the dome. All lengths use invented drawing units (u). The chart compares flat areas in one profile, not a real cell measurement, curved surface area, or secretory output.</string>
+</resources>

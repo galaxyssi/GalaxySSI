@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_club_cell_dome_title">Club 细胞侧面轮廓中穹顶的面积占比</string>
+    <string name="health_atlas_club_cell_dome_rise">穹顶高度</string>
+    <string name="health_atlas_club_cell_dome_body_height">穹顶下方的高度</string>
+    <string name="health_atlas_club_cell_dome_companion">图示穹顶面积：%1$s u&#178;</string>
+    <string name="health_atlas_club_cell_dome_formula">设图示宽度为 4 u，穹顶高度为 h，下方矩形高度为 b。穹顶面积 = π × (4 / 2) × h / 2。矩形面积 = 4 × b。穹顶面积占比 = 100 × 穹顶面积 /（穹顶面积 + 矩形面积），以百分比表示。</string>
+    <string name="health_atlas_club_cell_dome_scope">Club 细胞是小气道上皮中的分泌细胞，其圆隆的顶端朝向气道腔。侧面示意图用半个椭圆表示朝向气道腔的穹顶，下方接一个等宽的矩形。穹顶高度从两部分的交界线量到穹顶顶点。长度均使用虚构的绘图单位（u）。图表只比较侧面轮廓内的平面面积，不表示真实细胞的尺寸、曲面面积或分泌量。</string>
+</resources>

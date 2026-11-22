@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_satellite_glial_sheath_gap_title">卫星胶质鞘内的示意间隙面积</string>
+    <string name="health_atlas_satellite_glial_sheath_gap_radius">图中神经元胞体半径</string>
+    <string name="health_atlas_satellite_glial_sheath_gap_width">图中间隙宽度</string>
+    <string name="health_atlas_satellite_glial_sheath_gap_companion">到胶质鞘内缘的半径：%1$s u</string>
+    <string name="health_atlas_satellite_glial_sheath_gap_formula">若胞体半径为 r，间隙宽度为 w，则到胶质鞘内缘的半径为 r + w。间隙面积 = &#960; &#215; [(r + w)&#178; &#8722; r&#178;]。长度用任意绘图单位（u），面积用平方绘图单位（u&#178;）。</string>
+    <string name="health_atlas_satellite_glial_sheath_gap_scope">在背根神经节内，扁平的卫星胶质细胞在感觉神经元胞体周围形成薄鞘，帮助调节紧邻胞体的狭窄细胞外间隙。在此示意横截面中，内圆是胞体轮廓，外圆是胶质鞘内缘。只计算两条线之间的空间，不计入胶质鞘本身；这一结构也不是轴突髓鞘。间隙为夸张示意，不代表真实尺寸。</string>
+</resources>

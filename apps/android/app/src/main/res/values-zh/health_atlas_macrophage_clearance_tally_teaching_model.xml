@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_macrophage_clearance_tally_title">巨噬细胞：摄入的图标数</string>
+    <string name="health_atlas_macrophage_clearance_tally_outside">轮廓外起始数量（个图标）</string>
+    <string name="health_atlas_macrophage_clearance_tally_spaces">轮廓内空位数（个）</string>
+    <string name="health_atlas_macrophage_clearance_tally_scope">巨噬细胞通过吞噬帮助清除细胞碎片。示意图中的简单图标起初位于轮廓外，轮廓内每个画出的空位可容纳一个图标。所有空位填满后，曲线趋于平坦。空位和数量均为虚构，不代表真实的细胞内结构、细胞的摄入量或摄入速度。</string>
+    <string name="health_atlas_macrophage_clearance_tally_formula">摄入图标数取轮廓外起始图标数和轮廓内空位数中的较小值。轮廓外剩余图标数 = 起始图标数减去摄入图标数。</string>
+    <string name="health_atlas_macrophage_clearance_tally_companion">轮廓外剩余图标数：%1$s</string>
+</resources>

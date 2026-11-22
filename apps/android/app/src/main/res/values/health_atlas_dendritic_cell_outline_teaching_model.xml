@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_dendritic_cell_outline_title">Dendritic Cell: Outline Marks</string>
+    <string name="health_atlas_dendritic_cell_outline_tabs">Drawn projections (square tiles)</string>
+    <string name="health_atlas_dendritic_cell_outline_scope">Dendritic cells can have projections and display small fragments on their surface. In this flat sketch, a 3 by 3 block of tiles has room for one extra square tile at the center of each side. Count one mark for each tile edge along the outer outline. Each added tile hides one old edge and exposes three new ones. These invented counts illustrate the outline, not real cell size, surface area, or how much a cell presents.</string>
+    <string name="health_atlas_dendritic_cell_outline_formula">Outline marks = 12 base marks plus 2 marks per added tile. Tiles in the sketch = 9 base tiles plus the added tiles.</string>
+    <string name="health_atlas_dendritic_cell_outline_companion">Tiles in the sketch: %1$s</string>
+</resources>

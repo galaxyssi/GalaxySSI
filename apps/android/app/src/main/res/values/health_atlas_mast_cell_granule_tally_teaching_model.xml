@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_mast_cell_granule_tally_title">Mast Cell: Released Share</string>
+    <string name="health_atlas_mast_cell_granule_tally_released">Released contents (dot icons)</string>
+    <string name="health_atlas_mast_cell_granule_tally_scope">Mast cells store substances in granules and can release those substances. Picture 20 dots inside an outline, some shown outside after release. The dots stand for contents, not whole granules. The chart shows the percentage of dots outside. The counts and percentages are invented; they do not describe real cells, rates, or what causes release.</string>
+    <string name="health_atlas_mast_cell_granule_tally_formula">Released share (%) = 100 times dots outside divided by 20. Dots still stored = 20 minus dots outside.</string>
+    <string name="health_atlas_mast_cell_granule_tally_companion">Dots still stored: %1$s</string>
+</resources>

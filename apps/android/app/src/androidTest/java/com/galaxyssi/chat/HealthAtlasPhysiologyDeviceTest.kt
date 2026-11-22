@@ -74,6 +74,30 @@ class HealthAtlasPhysiologyDeviceTest {
             assertTrue((it.view("atlas-physiology-output") as TextView).text.contains("20"))
         }
     }
+    @Test fun functionAnimationLinksToItsNumericalModelAndRestoresBothStates() = native { scenario ->
+        scenario.onActivity { activity ->
+            val id = "cell-macrophage"
+            activity.open(id, cell = true)
+            activity.view("atlas-tab-1").performClick()
+            activity.view("atlas-function-next").performClick()
+            val phase = (activity.view("atlas-function-player") as HealthAtlasFunctionPlayer).phase
+            assertTrue(phase > 0f)
+            activity.view("atlas-open-simulation").performClick()
+            val kind = requireNotNull(HealthAtlasPhysiologyKind.forItem(id))
+            val input = kind.inputs[kind.axis]
+            val sliderKey = "atlas-physiology-${input.key}"
+            val chart = activity.view("atlas-physiology-curve") as HealthAtlasPhysiologyChart
+            assertEquals(kind, chart.model.kind)
+            val slider = activity.view(sliderKey) as SeekBar
+            val adjusted = if (slider.progress == 0) slider.max else 0
+            slider.progress = adjusted
+            activity.view("atlas-tab-1").performClick()
+            assertEquals(phase, (activity.view("atlas-function-player") as HealthAtlasFunctionPlayer).phase, 0f)
+            activity.view("atlas-open-simulation").performClick()
+            assertEquals(adjusted, (activity.view(sliderKey) as SeekBar).progress)
+        }
+    }
+
     @Test fun publicAgentPreviewCarriesCurrentNumbersLimitsAndSource() = native { scenario ->
         scenario.onActivity {
             it.open("cell-neuron", cell = true)
@@ -131,6 +155,8 @@ class HealthAtlasPhysiologyDeviceTest {
     }
     @Test fun everyQuantitativeMappingUsesAnExistingCanonicalEntry() {
         val atlas = HealthBodyAtlas.load(context)
+        val missing = atlas.items.filter { HealthAtlasPhysiologyKind.forItem(it.id) == null }.map { it.id }
+        assertTrue("Entries without a numerical model: $missing", missing.isEmpty())
         val mapped = atlas.items.mapNotNull { item -> HealthAtlasPhysiologyKind.forItem(item.id)?.let { item.id to it } }
         val teaching = HealthAtlasPhysiologyKind.entries.filter { it.teaching != null }
         assertEquals(67 + teaching.sumOf { requireNotNull(it.teaching).entryIds.size }, mapped.size)

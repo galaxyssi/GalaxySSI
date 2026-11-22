@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_splenic_slit_sorting_title">Tokens passing through a splenic slit</string>
+    <string name="health_atlas_splenic_slit_sorting_width">Sketch slit width</string>
+    <string name="health_atlas_splenic_slit_sorting_companion">Tokens left on the cord side: %1$s</string>
+    <string name="health_atlas_splenic_slit_sorting_formula">The 12 tokens need widths of 1, 2, 2, 3, 3, 3, 4, 4, 5, 6, 7 and 8 u. Count one pass for every token whose required width is at most the sketch slit width, including an exact fit. Tokens left on the cord side = 12 &#8722; passes.</string>
+    <string name="health_atlas_splenic_slit_sorting_scope">In splenic red pulp, red blood cells can change shape to squeeze from a splenic cord through slits in the wall of a venous sinus. Cells that deform poorly may be held back. Picture a cord on the left, a slit in the middle and a sinus on the right. Each fictional token needs a minimum width to fit through, measured in sketch units (u). The graph counts tokens reaching the sinus side. This width-only rule illustrates sorting on one route; the values are not actual slit dimensions, cell measurements or retention rates.</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_microglia_surveillance_title">Distinct tiles sampled by microglial tips</string>
+    <string name="health_atlas_microglia_surveillance_width">Tiles per snapshot</string>
+    <string name="health_atlas_microglia_surveillance_offset">Second snapshot shift (tiles)</string>
+    <string name="health_atlas_microglia_surveillance_companion">Tiles sampled in both snapshots: %1$s</string>
+    <string name="health_atlas_microglia_surveillance_formula">With n tiles per snapshot and a shift of d tiles, the overlap is max(0, n &#8722; d). Distinct tiles = 2 &#215; n &#8722; overlap. Tiles in both snapshots count only once. The chart rounds inputs to whole tiles.</string>
+    <string name="health_atlas_microglia_surveillance_scope">Microglial tips can extend and retract while the cell body stays in place. Draw a row of 12 tiles for one nearby patch. The first snapshot marks a block starting at the left edge. The second marks an equally wide block shifted to the right. This invented patch compares two snapshots only. It does not model how far or how fast real branches move, what happens between snapshots, or how much material is cleared.</string>
+</resources>
