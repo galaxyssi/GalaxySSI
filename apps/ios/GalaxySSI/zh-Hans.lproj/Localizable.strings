@@ -7591,3 +7591,10 @@
 "health_atlas_view_external" = "外表面";
 "health_atlas_view_lateral" = "左侧面观";
 "health_atlas_view_liver" = "肝脏与相邻胆囊";
+"galaxyssi.conversation_actions.hint" = "会话名称";
+"galaxyssi.conversation_actions.rename" = "重命名会话";
+"galaxyssi.conversation_actions.invalid" = "请使用不超过 72 个字符的单行名称。";
+"galaxyssi.conversation_actions.required" = "请输入名称。";
+"galaxyssi.conversation_actions.failed" = "名称保存失败，请重试。";
+"galaxyssi.conversation_actions.saving" = "正在保存名称";
+"galaxyssi.conversation_actions.more" = "更多操作";
