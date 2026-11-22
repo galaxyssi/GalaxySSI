@@ -10,7 +10,8 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 
 internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAtlasFunctionStory,
-    initial: Float, openSource: (String) -> Unit, private val onPlay: () -> Unit = {}) : LinearLayout(activity) {
+    initial: Float, openSource: (String) -> Unit, showTitle: Boolean = true,
+    private val onPlay: () -> Unit = {}) : LinearLayout(activity) {
     private val ui = HealthCenterViews(activity)
     private val art = story.createArt(activity)
     private val caption = ui.text("", 15f).apply { tag = "atlas-function-caption" }
@@ -39,7 +40,7 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
     init {
         tag = "atlas-function-player"
         orientation = VERTICAL
-        ui.add(this, ui.text(context.getString(story.title), 18f, bold = true))
+        if (showTitle) ui.add(this, ui.text(context.getString(story.title), 18f, bold = true))
         ui.add(this, ui.line().apply {
             gravity = Gravity.CENTER
             tag = "atlas-function-controls"
@@ -50,7 +51,7 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
                 .apply { rotation = 180f; tag = "atlas-function-next" })
             addView(ui.icon(R.drawable.ic_reset_data, R.string.health_atlas_reset) { seek(0f) }
                 .apply { tag = "atlas-function-reset" })
-        }, 2)
+        }, if (showTitle) 2 else 0)
         ui.add(this, position)
         art.setOnClickListener { toggle() }
         art.isFocusable = true

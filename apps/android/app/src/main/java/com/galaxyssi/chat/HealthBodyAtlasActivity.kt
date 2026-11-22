@@ -440,7 +440,9 @@ class HealthBodyAtlasActivity : Activity() {
                 })
             }
             functionItem = item.id
-            val player = HealthAtlasFunctionPlayer(this, story, functionState.loadPhase(item.id, story), ::source) {
+            val tabAlreadyNamesLesson = choices.size in 2..3 && getString(story.choiceTitle) == getString(story.title)
+            val player = HealthAtlasFunctionPlayer(this, story, functionState.loadPhase(item.id, story), ::source,
+                showTitle = !tabAlreadyNamesLesson) {
                 simulation?.pause()
             }
             functionPlayer = player
