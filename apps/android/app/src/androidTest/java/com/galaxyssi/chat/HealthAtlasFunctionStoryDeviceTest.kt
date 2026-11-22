@@ -83,10 +83,15 @@ class HealthAtlasFunctionStoryDeviceTest {
                     assertEquals(HealthAtlasFunctionStory.ARTERIAL_PULSE, player().story)
                     assertEquals(.4f, player().phase, 0f)
                 }
+                scenario.openAtlasRelatedLesson("aorta")
                 scenario.recreate()
-                waitFor(scenario, "atlas-function-arterial-pulse-art")
+                waitFor(scenario, "atlas-function-heartbeat-art")
                 scenario.onActivity { activity ->
-                    assertEquals(.4f, activity.find<HealthAtlasFunctionPlayer>("atlas-function-player").phase, 0f)
+                    fun player() = activity.find<HealthAtlasFunctionPlayer>("atlas-function-player")
+                    assertEquals(HealthAtlasFunctionStory.HEARTBEAT, player().story)
+                    activity.onBackPressed()
+                    assertEquals(HealthAtlasFunctionStory.ARTERIAL_PULSE, player().story)
+                    assertEquals(.4f, player().phase, 0f)
                 }
             }
         } finally { clearHealthOverviewFixture(context, fixture) }

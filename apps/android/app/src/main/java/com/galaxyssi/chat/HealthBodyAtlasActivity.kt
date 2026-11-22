@@ -40,7 +40,8 @@ class HealthBodyAtlasActivity : Activity() {
     private var scrollY = 0
     private var scroller: ScrollView? = null
     private data class Destination(val id: String, val tab: HealthAtlasTab,
-        val research: HealthAtlasResearchTopic?, val scroll: Int, val functionScroll: Int)
+        val research: HealthAtlasResearchTopic?, val scroll: Int, val functionScroll: Int,
+        val lesson: HealthAtlasFunctionStory?, val lessonPhase: Float)
     private val history = arrayListOf<Destination>()
     private var dialog: Dialog? = null
     private var simulation: HealthAtlasSimulationPanel? = null
@@ -111,7 +112,9 @@ class HealthBodyAtlasActivity : Activity() {
             saved.getBundle(index.toString())?.let { entry -> history.add(Destination(entry.getString("id").orEmpty(),
                 HealthAtlasTab.entries.firstOrNull { it.name == entry.getString("tab") } ?: HealthAtlasTab.STRUCTURE,
                 HealthAtlasResearchTopic.entries.firstOrNull { it.name == entry.getString("research") },
-                entry.getInt("scroll").coerceAtLeast(0), entry.getInt("functionScroll").coerceAtLeast(0))) }
+                entry.getInt("scroll").coerceAtLeast(0), entry.getInt("functionScroll").coerceAtLeast(0),
+                HealthAtlasFunctionStory.entries.firstOrNull { it.name == entry.getString("lesson") },
+                HealthAtlasFunctionStory.safePhase(entry.getFloat("lessonPhase")))) }
         } }
         scrollY = state?.getInt("scroll") ?: 0
         state?.getBundle("simulations")?.let { saved -> saved.keySet().take(300).forEach { key ->
@@ -169,6 +172,7 @@ class HealthBodyAtlasActivity : Activity() {
             history.forEachIndexed { index, value -> putBundle(index.toString(), Bundle().apply {
                 putString("id", value.id); putString("tab", value.tab.name); putString("research", value.research?.name)
                 putInt("scroll", value.scroll); putInt("functionScroll", value.functionScroll)
+                putString("lesson", value.lesson?.name); putFloat("lessonPhase", value.lessonPhase)
             }) }
         })
         out.putString("researchTopic", researchTopic?.name)
@@ -204,19 +208,30 @@ class HealthBodyAtlasActivity : Activity() {
         }
         if (selection.isEmpty()) { finish(); return }
         val previous = if (history.isEmpty()) null else history.removeAt(history.lastIndex)
+        functionPlayer?.pause()
+        saveFunctionStory()
+        functionPlayer = null
         selection = previous?.id.orEmpty(); tab = previous?.tab ?: HealthAtlasTab.STRUCTURE
+        previous?.lesson?.let { lesson ->
+            functionState.choose(selection, lesson)
+            functionState.savePhase(selection, lesson, previous.lessonPhase)
+        }
         researchTopic = previous?.research; scrollY = previous?.scroll ?: 0
         researchReturnScroll = previous?.functionScroll ?: 0; render()
     }
     private fun select(item: HealthAtlasItem) = select(item, HealthAtlasTab.STRUCTURE)
 
-    private fun select(item: HealthAtlasItem, destination: HealthAtlasTab, showTrend: Boolean = false) {
+    private fun select(item: HealthAtlasItem, destination: HealthAtlasTab, showTrend: Boolean = false,
+        lesson: HealthAtlasFunctionStory? = null) {
         if (selection.isEmpty() && section == 0) wholeFocus = item.id
         if (selection.isNotEmpty()) {
-            history.add(Destination(selection, tab, researchTopic, scroller?.scrollY ?: 0, researchReturnScroll))
+            functionPlayer?.pause()
+            history.add(Destination(selection, tab, researchTopic, scroller?.scrollY ?: 0, researchReturnScroll,
+                functionPlayer?.story, functionPlayer?.phase ?: 0f))
             if (history.size > 32) history.removeAt(0)
         }
         selection = item.id; tab = destination; scrollY = 0
+        lesson?.let { functionState.choose(item.id, it) }
         revealTrend = showTrend
         researchTopic = null; researchReturnScroll = 0
         (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(root.windowToken, 0)
@@ -472,8 +487,7 @@ class HealthBodyAtlasActivity : Activity() {
             val related = story.relatedLessons.mapNotNull { (id, next) ->
                 val target = data[id] ?: return@mapNotNull null
                 getString(R.string.health_atlas_related_lesson_label, target.name, getString(next.title)) to {
-                    functionState.choose(id, next)
-                    select(target, HealthAtlasTab.FUNCTION)
+                    select(target, HealthAtlasTab.FUNCTION, lesson = next)
                 }
             }
             val player = HealthAtlasFunctionPlayer(this, story, functionState.loadPhase(item.id, story), ::source,
