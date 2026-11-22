@@ -6,6 +6,21 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthRecordsTests: XCTestCase {
+  @MainActor
+  private func retainAutomaticAssessment(_ approval: GalaxySSIHealthCareDiscussion.Approval,
+      records: GalaxySSIHealthRecords, now: Date) throws {
+    let concern = try XCTUnwrap(records.load().localCare?.current[approval.metric.rawValue])
+    let plan = try records.load().localCarePlans?[approval.id.uuidString]
+    let input: AgentMcpJSONObject = ["summary": .string("Synthetic review"), "rationale": .string("Current scoped inputs"),
+      "uncertainty": .string("Clinical applicability is unverified"), "next_step": .string("Review current evidence"),
+      "decision": .string(plan == nil ? "OBSERVE" : "PROPOSE_PLAN"), "review_events": .array([.string("SOURCE_CHANGE")]),
+      "records": .array(GalaxySSIHealthCareModelReview.references(concern).map(\.payload)),
+      "evidence_ids": .array(approval.evidence.map { .string($0.id.uuidString) }),
+      "plan_id": .string(plan?.id.uuidString ?? ""), "attention_requested": .bool(false),
+      "attention_reason": .string("No notification is requested"), "questions": .array([])]
+    _ = try records.recordLocalCareModelReview(approval, arguments: input, now: now)
+  }
+
   func testInstructionActionAcknowledgementStartsUncheckedAndSubmitsOnlyOnce() {
     var confirmation = GalaxySSIHealthInstruction.ActionAcknowledgement()
     XCTAssertFalse(confirmation.canConfirm)
@@ -1064,6 +1079,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertFalse(clarification.proposesPlan)
     XCTAssertEqual(clarification.researchHandoff?.payload["reasons"], .array([.string("initial_review")]))
     try records.beginLocalCareDiscussionTurn(clarification, now: now)
+    try retainAutomaticAssessment(clarification, records: records, now: now)
     try records.finishLocalCareDiscussionTurn(clarification, answer: "Was this collected fasting?", now: now)
     let confirmedAt = now.addingTimeInterval(1)
     try records.setLocalCareContext(concern, applicability: .applicable, now: confirmedAt)
@@ -1091,6 +1107,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       """
     let arguments = try JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(json.utf8))
     try records.saveLocalCarePlan(initial, arguments: arguments, now: confirmedAt)
+    try retainAutomaticAssessment(initial, records: records, now: confirmedAt)
+    try records.finishLocalCareDiscussionTurn(initial, answer: "Synthetic automatic plan response", now: confirmedAt)
     let research = try XCTUnwrap(records.load().localCareResearch)
     let key = concern.id.uuidString
     let authorization = try XCTUnwrap(research.authorizations[key])
@@ -1127,8 +1145,11 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
       handoff["newly_due_action_ids"]?.arrayValue?.first)
     let request = try GalaxySSIHealthCareDiscussion.request(followUp, key: "fixture-api-key")
     let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
-    XCTAssertNil(body["tools"])
+    let reviewTools = try XCTUnwrap(body["tools"] as? [[String: Any]])
+    XCTAssertEqual(reviewTools.count, 1)
+    XCTAssertEqual((reviewTools.first?["function"] as? [String: Any])?["name"] as? String, GalaxySSIHealthCareModelReview.function)
     try records.beginLocalCareDiscussionTurn(followUp, now: due)
+    try retainAutomaticAssessment(followUp, records: records, now: due)
     try records.finishLocalCareDiscussionTurn(followUp, answer: "The existing review is due.", now: due)
     let archive = try records.load()
     XCTAssertEqual(archive.localCarePlans?.count, 1)
@@ -1203,6 +1224,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     let initial = try dispatch(at: now)
     XCTAssertNotNil(initial.feedbackCursor)
     try records.saveLocalCarePlan(initial, arguments: plan(initial), now: now)
+    try retainAutomaticAssessment(initial, records: records, now: now)
+    try records.finishLocalCareDiscussionTurn(initial, answer: "Synthetic automatic plan response", now: now)
     let proposal = try XCTUnwrap(records.load().localCarePlans?[initial.id.uuidString])
     try records.resolveLocalCarePlan(proposal, selected: [0], currentDestination: initial.destinationDigest, now: now)
     let accepted = try XCTUnwrap(records.load().localCare?.current["glucose"])
@@ -1243,6 +1266,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     broadActions[0] = .object(firstBroadAction)
     broadPlan["actions"] = .array(broadActions)
     try records.saveLocalCarePlan(next, arguments: broadPlan, now: feedbackAt)
+    try retainAutomaticAssessment(next, records: records, now: feedbackAt)
+    try records.finishLocalCareDiscussionTurn(next, answer: "Synthetic feedback review", now: feedbackAt)
     XCTAssertThrowsError(try records.readLocalCareDiscussionFeedback(next, cursor: nextCursor, remaining: 0, now: feedbackAt))
     try records.authorizeLocalCareResearch(prepare(at: feedbackAt, standingHistory: true), sources: [source],
       sharesActionFeedback: true, now: feedbackAt)
@@ -1419,6 +1444,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(restored.threadID, thread.id)
     XCTAssertEqual(try restored.providerPayload(now: now), try approval.providerPayload(now: now))
     try reopened.validateLocalCareDiscussionTurn(restored, now: now)
+    try retainAutomaticAssessment(restored, records: reopened, now: now)
     try reopened.finishLocalCareDiscussionTurn(restored, answer: "Please confirm the measurement context.", now: now)
     XCTAssertTrue(try reopened.dispatchedLocalCareDesktopResearch().isEmpty)
     XCTAssertTrue(try reopened.reconcileLocalCareResearch(now: now).isEmpty)
@@ -1565,6 +1591,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(fresh.threadID, thread.id)
     XCTAssertThrowsError(try records.saveLocalCarePlan(fresh, arguments: arguments(old), now: nextAt))
     try records.saveLocalCarePlan(fresh, arguments: arguments(fresh), now: nextAt)
+    try retainAutomaticAssessment(fresh, records: records, now: nextAt)
+    try records.finishLocalCareDiscussionTurn(fresh, answer: "Synthetic current-evidence response", now: nextAt)
 
     let reopened = GalaxySSIHealthRecords(owner: records.owner, secrets: secrets, isolatedFile: file)
     let archive = try reopened.load()
@@ -4756,17 +4784,81 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
     let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 10, hour: 12)))
     let boundary = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 4)))
-    let weight = GalaxySSIHealthReading(metric: .weight, measuredAt: boundary, value: 65)
-    let older = GalaxySSIHealthReading(metric: .weight, measuredAt: boundary.addingTimeInterval(-1), value: 60)
-    let stale = GalaxySSIHealthReading(metric: .heartRate, measuredAt: boundary.addingTimeInterval(-1), value: 65)
-    let future = GalaxySSIHealthReading(metric: .weight, measuredAt: now.addingTimeInterval(1), value: 90)
-    let deleted = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 5, deleted: true)
+    let weight = GalaxySSIHealthReading(metric: .sleepDuration, measuredAt: boundary, value: 7)
+    let older = GalaxySSIHealthReading(metric: .sleepDuration, measuredAt: boundary.addingTimeInterval(-1), value: 6)
+    let stale = GalaxySSIHealthReading(metric: .restingHeartRate, measuredAt: boundary.addingTimeInterval(-1), value: 65)
+    let future = GalaxySSIHealthReading(metric: .sleepDuration, measuredAt: now.addingTimeInterval(1), value: 9)
+    let deleted = GalaxySSIHealthReading(metric: .bloodPressure, measuredAt: now, value: 120, diastolic: 80, deleted: true)
     let overview = GalaxySSIHealthOverview(current: [older, weight, stale, future, deleted],
                                           now: now, calendar: calendar)
     XCTAssertEqual(overview.recentCount, 1)
-    XCTAssertEqual(overview.metrics.first { $0.metric == .weight }?.reading?.id, weight.id)
-    XCTAssertEqual(overview.metrics.first { $0.metric == .heartRate }?.freshness, .stale)
-    XCTAssertEqual(overview.metrics.first { $0.metric == .glucose }?.freshness, .missing)
+    XCTAssertEqual(overview.metrics.map(\.metric), [.bloodPressure, .sleepDuration, .restingHeartRate, .steps])
+    XCTAssertEqual(overview.metrics.first { $0.metric == .sleepDuration }?.reading?.id, weight.id)
+    XCTAssertEqual(overview.metrics.first { $0.metric == .restingHeartRate }?.freshness, .stale)
+    XCTAssertEqual(overview.metrics.first { $0.metric == .bloodPressure }?.freshness, .missing)
+  }
+
+  func testOverviewRecentRecordsExcludeFutureDeletedInvalidAndOtherMetrics() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let latest = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 5)
+    let older = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-60), value: 6)
+    let other = GalaxySSIHealthReading(metric: .sleepDuration, measuredAt: now, value: 7)
+    let future = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(1), value: 8)
+    let deleted = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: 9, deleted: true)
+    let invalid = GalaxySSIHealthReading(metric: .glucose, measuredAt: now, value: -1)
+    let input = [older, future, deleted, invalid, latest, other]
+    XCTAssertEqual(GalaxySSIHealthOverview.recent(input, metric: .glucose, now: now).map(\.id), [latest.id, older.id])
+    XCTAssertEqual(Set(GalaxySSIHealthOverview.recent(input, metric: nil, now: now).map(\.id)),
+      Set([latest.id, older.id, other.id]))
+  }
+
+  func testOverviewHistoryGroupsByLocalDateAcrossDaylightSavingAndPagination() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+    let dates = try [(7, 23), (8, 1), (8, 3), (9, 1)].map { day, hour in
+      try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: day, hour: hour)))
+    }
+    let input = dates.map { GalaxySSIHealthReading(metric: .glucose, measuredAt: $0, value: 5) }
+    let groups = GalaxySSIHealthOverview.days(input, calendar: calendar)
+    XCTAssertEqual(groups.map { $0.readings.count }, [1, 2, 1])
+    XCTAssertEqual(groups.flatMap(\.readings).map(\.measuredAt), Array(dates.reversed()))
+    let page = GalaxySSIHealthOverview.days(Array(groups.flatMap(\.readings).prefix(2)), calendar: calendar)
+    XCTAssertEqual(page.map { $0.readings.count }, [1, 1])
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+    XCTAssertNotEqual(GalaxySSIHealthOverview.days(input, calendar: calendar).map(\.date), groups.map(\.date))
+  }
+
+  @MainActor
+  func testOverviewDiscussionRequiresCurrentReadingAndLocalPermissions() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets(), isolatedFile: file)
+    let now = Date()
+    let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: now.addingTimeInterval(-300),
+      value: 110, unitOverride: "mg/dL", referenceInterval: "70 - 99")
+    try records.write(reading)
+    try records.setPrivacy(.localCare, enabled: true)
+    try records.reconcileLocalCare(now: now)
+    XCTAssertNil(try records.overviewDiscussionConcern(reading: reading, now: now))
+    try records.setOverviewPermission(true)
+    try records.setPrivacy(.profileAnalysis, enabled: true)
+    let id = try XCTUnwrap(records.load().localCare?.current["glucose"]?.id)
+    let saved = try XCTUnwrap(records.load().current.first { $0.id == reading.id })
+    XCTAssertEqual(try records.overviewDiscussionConcern(reading: saved, now: now), id)
+    var revision = saved
+    revision.value = 112
+    try records.write(revision)
+    XCTAssertNil(try records.overviewDiscussionConcern(reading: saved, now: now))
+    try records.setOverviewPermission(false)
+    XCTAssertNil(try records.overviewDiscussionConcern(reading: revision, now: now))
+  }
+
+  @MainActor
+  func testCyclingOverviewUsesHoursOnlyAfterAFullHour() {
+    XCTAssertEqual(GalaxySSIHealthMotionView.cyclingDuration(59, language: "en"), "Under 1 min")
+    XCTAssertEqual(GalaxySSIHealthMotionView.cyclingDuration(60, language: "en"), "1 min")
+    XCTAssertEqual(GalaxySSIHealthMotionView.cyclingDuration(3599, language: "en"), "59 min")
+    XCTAssertEqual(GalaxySSIHealthMotionView.cyclingDuration(3660, language: "en"), "1 h 1 min")
   }
 
   @MainActor
@@ -5302,7 +5394,7 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   func testHealthCatalogTypedResultsDoNotEnterNumericTrendsOrMixUnits() throws {
-    XCTAssertEqual(GalaxySSIHealthMetric.allCases.count, 27)
+    XCTAssertEqual(GalaxySSIHealthMetric.allCases.count, 47)
     XCTAssertTrue(GalaxySSIHealthMetric.hemoglobin.matches("HGB g/L"))
     let bound = try XCTUnwrap(GalaxySSIHealthReportedResult.parse("< 2.50", metric: .glucose))
     XCTAssertEqual(bound.kind, .comparison)
@@ -5391,7 +5483,8 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     XCTAssertEqual(Set(archive.current.compactMap { $0.reported?.kind.rawValue }), ["comparison", "range", "qualitative"])
     let trend = GalaxySSIHealthTrend(current: archive.current, metric: .glucose, component: .value,
       now: date, dayCount: 7, calendar: .current)
-    XCTAssertEqual(trend.mean, 6)
+    XCTAssertNil(trend.mean)
+    XCTAssertEqual(trend.chartData(.latest, component: .value).map(\.value), [6])
     XCTAssertEqual(trend.points.last?.readings.map(\.id), [items[3].reading.id])
   }
 

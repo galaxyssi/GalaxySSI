@@ -39,6 +39,8 @@ final class MqttOutgoingChunks {
     var bitmap: Data
     var paths: Data
     var expiresAt: Int64
+    var chunkDataBytes: Int?
+    var requestStarted: Int64?
   }
 
   private let database: MqttChunkDatabase
@@ -58,7 +60,28 @@ final class MqttOutgoingChunks {
     self.limits = limits
   }
 
-  func prepare(authenticatedScope: String, parts: [[String: Any]]) throws -> Batch {
+  func prepare(authenticatedScope: String, wirePayload: String) throws -> Batch {
+    let transfer = MqttRouteProtocol.digest(Data(wirePayload.utf8))
+    let scope = try scopeKey(authenticatedScope)
+    let size = try database.transaction { () -> Int in
+      guard let row = try read(scope: scope, transfer: transfer), row.expiresAt > (try timestamp()) else {
+        return MqttSignalDelivery.publicBrokerChunkBytes
+      }
+      // Rows written before the smaller public-broker profile used 380 KiB fragments.
+      return row.chunkDataBytes ?? GalaxySSIMqttWireChunking.defaultChunkDataBytes
+    }
+    guard (1...MqttChunkManifest.dataBytes).contains(size) else { throw MqttChunkStorageError.corruptState }
+    let parts = try GalaxySSIMqttWireChunking.encode(wirePayload: wirePayload, directLimitBytes: 1,
+      chunkDataBytes: size).map { part -> [String: Any] in
+        guard let object = try JSONSerialization.jsonObject(with: Data(part.utf8)) as? [String: Any] else {
+          throw MqttRouteError.invalidPayload
+        }
+        return object
+      }
+    return try prepare(authenticatedScope: authenticatedScope, parts: parts, renewRequest: false)
+  }
+
+  func prepare(authenticatedScope: String, parts: [[String: Any]], renewRequest: Bool = true) throws -> Batch {
     let manifest = try validate(parts)
     let scope = try scopeKey(authenticatedScope)
     return try database.transaction {
@@ -68,19 +91,24 @@ final class MqttOutgoingChunks {
       try database.run("DELETE FROM mqtt_outgoing_chunks WHERE rowid IN (SELECT rowid FROM mqtt_outgoing_chunks WHERE expires_at<=? LIMIT 256)", [.number(at)])
       var row: Row
       if let previous = try read(scope: scope, transfer: manifest.transfer) {
-        guard previous.manifest == manifest.manifestHash, previous.count == manifest.count else { throw MqttChunkStorageError.corruptState }
+        guard previous.manifest == manifest.manifestHash, previous.count == manifest.count,
+              previous.chunkDataBytes.map({ $0 == manifest.data.count }) ?? true else { throw MqttChunkStorageError.corruptState }
         row = previous
       } else {
         try quota(scope: scope)
         row = Row(scope: scope, transfer: manifest.transfer, manifest: manifest.manifestHash, count: manifest.count,
           request: "", epoch: "", revision: -1, bitmap: Data(repeating: 0, count: (manifest.count + 7) / 8),
-          paths: Data(repeating: 0, count: manifest.count), expiresAt: at + Self.retentionMillis)
+          paths: Data(repeating: 0, count: manifest.count), expiresAt: at + Self.retentionMillis,
+          chunkDataBytes: manifest.data.count, requestStarted: nil)
       }
-      // Every publication round gets a fresh request. Keep known bits/path history,
-      // but allow the receiver's current store epoch to be learned again after restart.
-      row.request = MqttChunkReceipts.newRequest()
-      row.epoch = ""
-      row.revision = -1
+      // Keep the request while a congested round is still in flight. Otherwise a maintenance
+      // tick could invalidate the bitmap which is about to release its byte window.
+      if renewRequest || row.request.isEmpty || row.requestStarted.map({ at < $0 || at - $0 >= 30_000 }) ?? true {
+        row.request = MqttChunkReceipts.newRequest()
+        row.epoch = ""
+        row.revision = -1
+        row.requestStarted = at
+      }
       let query = try makeQuery(row)
       let selected = parts.enumerated().compactMap { index, part -> Selection? in
         guard row.bitmap[index / 8] & UInt8(1 << (index % 8)) == 0 else { return nil }
@@ -170,6 +198,8 @@ final class MqttOutgoingChunks {
         let encoded = try database.open(row.data(1, maximum: 16 * 1024), purpose: purpose(scope, transfer))
         let saved = try JSONDecoder().decode(Row.self, from: encoded)
         guard saved.scope == scope, saved.transfer == transfer,
+              saved.chunkDataBytes.map({ (1...MqttChunkManifest.dataBytes).contains($0) }) ?? true,
+              saved.requestStarted.map({ (0...MqttRouteProtocol.maximumInteger).contains($0) }) ?? true,
               (1...MqttChunkManifest.maximumCount).contains(saved.count),
               saved.bitmap.count == (saved.count + 7) / 8, saved.paths.count == saved.count,
               saved.paths.allSatisfy({ $0 & 0xf8 == 0 }),

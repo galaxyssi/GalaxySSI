@@ -149,10 +149,7 @@ enum AgentModelPlanParser {
         allowsNativeDependencies: allowsNativeDependencies))
     }
 
-    guard hasValidDraftPlanSemantics(context: context, actions: actions) else {
-      throw AgentModelPlanRejection("actions", "completion_mixed_with_execution",
-        "Return executable actions first. After reviewing receipts, use a single completion action in an eligible continuation.")
-    }
+    try validateDraftPlanSemantics(context: context, actions: actions)
     if actions.contains(where: { $0.kind == .draftPlan }), extractJson(raw, exact: true) == nil {
       throw AgentModelPlanRejection("$", "completion_envelope", "Return the completion object alone, with no surrounding prose.")
     }
@@ -675,17 +672,24 @@ enum AgentModelPlanParser {
     return resolved
   }
 
-  private static func hasValidDraftPlanSemantics(
+  private static func validateDraftPlanSemantics(
     context: AgentModelPlanParsingContext,
     actions: [AgentAction]
-  ) -> Bool {
+  ) throws {
     let drafts = actions.filter { $0.kind == .draftPlan }
-    guard !drafts.isEmpty else {
-      return true
+    guard !drafts.isEmpty else { return }
+    guard actions.count == 1 else {
+      throw AgentModelPlanRejection("actions", "completion_mixed_with_execution",
+        "Return executable actions separately, then review their receipts in the next response.")
     }
-    return !context.replanReason.trimmedForModelPlan.isEmpty &&
-      actions.count == 1 &&
-      drafts[0].target.caseInsensitiveCompare(taskCompleteTarget) == .orderedSame
+    guard drafts[0].target.caseInsensitiveCompare(taskCompleteTarget) == .orderedSame else {
+      throw AgentModelPlanRejection("actions[0].target", "invalid_completion_target",
+        "The completion marker target must be task-complete.")
+    }
+    guard !context.replanReason.trimmedForModelPlan.isEmpty else {
+      throw AgentModelPlanRejection("actions", "completion_before_observation",
+        "This route requires tool observations. Return the necessary action without a completion marker, then review its receipt.")
+    }
   }
 
   static func answerOnlyAction(_ raw: String) -> String? {
