@@ -103,8 +103,14 @@ internal class HealthAtlasNephronStoryView(context: Context) :
         canvas.drawRoundRect(bounds, 8f, 8f, paint)
         paint.shader = null
         canvas.save()
-        canvas.translate(55f, 17f)
-        canvas.scale(.20f, .20f)
+        val cutaway = stage == HealthAtlasNephronStage.FILTER || stage == HealthAtlasNephronStage.LOOP
+        if (cutaway) {
+            canvas.translate(96f, 2f)
+            canvas.scale(.13f, .13f)
+        } else {
+            canvas.translate(55f, 17f)
+            canvas.scale(.20f, .20f)
+        }
         canvas.drawBitmap(nephron, null, art, paint)
         if (stage == HealthAtlasNephronStage.PROXIMAL) vessel(canvas, periProximalLine, periProximal, t)
         if (stage == HealthAtlasNephronStage.DISTAL) vessel(canvas, periDistalLine, periDistal, t)
@@ -128,21 +134,13 @@ internal class HealthAtlasNephronStoryView(context: Context) :
         }
         canvas.restore()
         when (stage) {
-            HealthAtlasNephronStage.FILTER -> {
-                label(canvas, R.string.health_atlas_nephron_story_glomerulus, 84f, 122f)
-                legend(canvas, 78f, R.string.health_atlas_nephron_story_blood, blood)
-                legend(canvas, 231f, R.string.health_atlas_nephron_story_filtrate, crosses)
-            }
+            HealthAtlasNephronStage.FILTER -> filtrationBarrier(canvas, t)
             HealthAtlasNephronStage.PROXIMAL -> {
                 label(canvas, R.string.health_atlas_nephron_story_capillary, 95f, 150f)
                 legend(canvas, 84f, R.string.health_atlas_nephron_story_filtrate, fluid)
                 legend(canvas, 249f, R.string.health_atlas_nephron_story_reabsorb, crosses)
             }
-            HealthAtlasNephronStage.LOOP -> {
-                label(canvas, R.string.health_atlas_nephron_story_water, 113f, 168f, crosses)
-                label(canvas, R.string.health_atlas_nephron_story_salt, 217f, 194f, salt)
-                legend(canvas, 172f, R.string.health_atlas_nephron_story_filtrate, fluid)
-            }
+            HealthAtlasNephronStage.LOOP -> loopCutaway(canvas, t)
             HealthAtlasNephronStage.DISTAL -> {
                 label(canvas, R.string.health_atlas_nephron_story_capillary, 246f, 29f)
                 legend(canvas, 84f, R.string.health_atlas_nephron_story_filtrate, fluid)
@@ -154,6 +152,86 @@ internal class HealthAtlasNephronStoryView(context: Context) :
             }
         }
         canvas.restore()
+    }
+
+    private fun filtrationBarrier(canvas: Canvas, t: Float) {
+        rounded(canvas, 10f, 178f, 334f, 336f, 0xfffdfbf7.toInt())
+        rounded(canvas, 121f, 189f, 321f, 229f, 0xfff0cece.toInt())
+        rounded(canvas, 121f, 276f, 321f, 319f, 0xffd9eee9.toInt())
+        for (index in 0..6) {
+            val x = 123f + 29f * index
+            rounded(canvas, x, 232f, x + 23f, 243f, 0xffc57e81.toInt())
+            rounded(canvas, x + 1f, 253f, x + 24f, 272f, 0xff80b9ad.toInt())
+            if (index < 6) {
+                ink(fluid, 1.4f)
+                canvas.drawLine(x + 24f, 260f, x + 30f, 260f, paint)
+            }
+        }
+        rounded(canvas, 121f, 245f, 321f, 251f, 0xffdfbb89.toInt())
+        val cellX = 137f + 109f * t
+        ink(blood)
+        canvas.drawOval(cellX - 12f, 199f, cellX + 12f, 215f, paint)
+        ink(0xffee8d94.toInt(), 2f)
+        canvas.drawOval(cellX - 6f, 204f, cellX + 6f, 210f, paint)
+        for (index in 0..2) {
+            ink(secreted)
+            canvas.drawCircle(270f + index * 10f, 206f + (index % 2) * 7f, 4f, paint)
+            val x = 148f + index * 58f
+            transfer(canvas, x, 220f, x, 297f, crosses, t + index * .12f)
+        }
+        label(canvas, R.string.health_atlas_nephron_story_blood, 64f, 211f)
+        label(canvas, R.string.health_atlas_nephron_barrier_endothelium, 64f, 241f, blood)
+        label(canvas, R.string.health_atlas_nephron_barrier_basement, 64f, 254f, salt)
+        label(canvas, R.string.health_atlas_nephron_barrier_slits, 64f, 269f, fluid)
+        label(canvas, R.string.health_atlas_nephron_story_filtrate, 64f, 302f)
+    }
+
+    private fun loopCutaway(canvas: Canvas, t: Float) {
+        rounded(canvas, 10f, 178f, 334f, 336f, 0xfffdfbf7.toInt())
+        for (i in 0..3) {
+            ink(0xffbda176.toInt())
+            paint.alpha = 24 + i * 22
+            canvas.drawRect(31f, 204f + i * 23f, 313f, 227f + i * 23f, paint)
+        }
+        glyph.rewind()
+        glyph.moveTo(128f, 208f)
+        glyph.lineTo(128f, 276f)
+        glyph.cubicTo(128f, 313f, 215f, 313f, 215f, 276f)
+        glyph.lineTo(215f, 208f)
+        ink(0xff84b7ab.toInt(), 14f); canvas.drawPath(glyph, paint)
+        ink(0xffeaf5f3.toInt(), 8f); canvas.drawPath(glyph, paint)
+        for (i in 0..1) {
+            val y = 230f + i * 31f
+            transfer(canvas, 121f, y, 74f, y, crosses, t + i * .25f)
+            transfer(canvas, 223f, y, 269f, y, salt, t + i * .25f)
+        }
+        label(canvas, R.string.health_atlas_nephron_loop_descending, 87f, 197f)
+        label(canvas, R.string.health_atlas_nephron_loop_ascending, 254f, 197f)
+        label(canvas, R.string.health_atlas_nephron_story_water, 82f, 321f, crosses)
+        label(canvas, R.string.health_atlas_nephron_story_salt, 263f, 321f, salt)
+        label(canvas, R.string.health_atlas_nephron_loop_gradient, 172f, 273f, salt)
+    }
+
+    private fun rounded(canvas: Canvas, left: Float, top: Float, right: Float, bottom: Float, color: Int) {
+        ink(color)
+        canvas.drawRoundRect(left, top, right, bottom, 3f, 3f, paint)
+    }
+
+    private fun transfer(canvas: Canvas, x: Float, y: Float, endX: Float, endY: Float, color: Int, t: Float) {
+        val horizontal = y == endY
+        val end = if (horizontal) endX - 6f * kotlin.math.sign(endX - x) else endY - 6f
+        ink(color, 1.7f)
+        canvas.drawLine(x, y, endX, endY, paint)
+        if (horizontal) {
+            canvas.drawLine(endX, endY, end, endY - 4f, paint)
+            canvas.drawLine(endX, endY, end, endY + 4f, paint)
+        } else {
+            canvas.drawLine(endX, endY, endX - 4f, end, paint)
+            canvas.drawLine(endX, endY, endX + 4f, end, paint)
+        }
+        val time = (t * 1.27f) % 1f
+        ink(WHITE); canvas.drawCircle(x + (endX - x) * time, y + (endY - y) * time, 4.2f, paint)
+        ink(color); canvas.drawCircle(x + (endX - x) * time, y + (endY - y) * time, 3f, paint)
     }
 
     private fun vessel(canvas: Canvas, outline: Path, route: PathMeasure, t: Float) {

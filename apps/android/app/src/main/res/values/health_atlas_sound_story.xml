@@ -8,7 +8,7 @@
     <string name="health_atlas_hear_cochlea">A wave travels through the cochlea</string>
     <string name="health_atlas_hear_cochlea_caption">Movement at the oval window sets cochlear fluid in motion, causing a wave along the basilar membrane. The membrane responds most to higher pitches near the base and to lower pitches toward the apex.</string>
     <string name="health_atlas_hear_hair">Hair cells turn motion into a signal</string>
-    <string name="health_atlas_hear_hair_caption">The hair bundle tilts and opens mechanically sensitive channels. Inner hair cells release a chemical messenger at their synapses, activating nearby auditory nerve fibers.</string>
+    <string name="health_atlas_hear_hair_caption">Bending toward the tallest stereocilia tightens tip links. The channels admit mainly K⁺ from endolymph. The resulting depolarization promotes transmitter release.</string>
     <string name="health_atlas_hear_nerve">Auditory signals reach the brain</string>
     <string name="health_atlas_hear_nerve_caption">The auditory nerve carries electrical impulses to the brainstem. After several relays, signals reach the auditory cortex, where the brain helps interpret sound.</string>
     <string name="health_atlas_hear_canal">Ear canal</string>
@@ -20,6 +20,10 @@
     <string name="health_atlas_hear_base">Base</string>
     <string name="health_atlas_hear_apex">Apex</string>
     <string name="health_atlas_hear_bundle">Hair bundle</string>
+    <string name="health_atlas_hear_tip_link">Tip-link gating</string>
+    <string name="health_atlas_hear_endolymph">Endolymph</string>
+    <string name="health_atlas_hear_potassium">K⁺ enters</string>
+    <string name="health_atlas_hear_tip_source">Tip links and channel gating</string>
     <string name="health_atlas_hear_synapse">Synapse</string>
     <string name="health_atlas_hear_relays">Brainstem + relays</string>
     <string name="health_atlas_hear_cortex">Auditory cortex</string>

@@ -8,7 +8,7 @@
     <string name="health_atlas_hear_cochlea">耳蜗内形成行波</string>
     <string name="health_atlas_hear_cochlea_caption">卵圆窗的振动带动耳蜗内液体，使基底膜产生行波。耳蜗底部对较高音调更敏感，靠近顶端的位置对较低音调更敏感。</string>
     <string name="health_atlas_hear_hair">毛细胞把振动变成信号</string>
-    <string name="health_atlas_hear_hair_caption">毛束偏转会打开机械敏感通道。内毛细胞在突触释放递质，激活与它相连的听神经纤维。</string>
+    <string name="health_atlas_hear_hair_caption">毛束朝较高的静纤毛偏转，拉紧尖端连接。通道开放增加，钾离子从内淋巴流入；去极化促使释放递质。</string>
     <string name="health_atlas_hear_nerve">听神经信号传到大脑</string>
     <string name="health_atlas_hear_nerve_caption">听神经把电脉冲传到脑干。信号再经过多级中继到达听觉皮层，由大脑进一步处理声音。</string>
     <string name="health_atlas_hear_canal">外耳道</string>
@@ -20,6 +20,10 @@
     <string name="health_atlas_hear_base">底部</string>
     <string name="health_atlas_hear_apex">顶端</string>
     <string name="health_atlas_hear_bundle">毛束</string>
+    <string name="health_atlas_hear_tip_link">尖端连接牵开通道</string>
+    <string name="health_atlas_hear_endolymph">内淋巴</string>
+    <string name="health_atlas_hear_potassium">K⁺ 内流</string>
+    <string name="health_atlas_hear_tip_source">尖端连接与通道门控</string>
     <string name="health_atlas_hear_synapse">突触</string>
     <string name="health_atlas_hear_relays">脑干及中继</string>
     <string name="health_atlas_hear_cortex">听觉皮层</string>
