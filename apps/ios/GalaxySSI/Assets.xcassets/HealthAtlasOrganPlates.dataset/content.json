@@ -1,0 +1,289 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4323,
+    "mergeCommit": "7e480757a2aa9b2395390ee5b97e4369060fbdbb"
+  },
+  "entries": [
+    {
+      "id": "renal-cortex",
+      "kind": "organ",
+      "name": "health_atlas_renal_cortex_name",
+      "description": "health_atlas_renal_cortex_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "glomerulus",
+        "renal-tubules"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_renal_cortex_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "renal-medulla",
+      "kind": "organ",
+      "name": "health_atlas_renal_medulla_name",
+      "description": "health_atlas_renal_medulla_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "renal-tubules",
+        "collecting-ducts"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_renal_medulla_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "renal-pelvis",
+      "kind": "organ",
+      "name": "health_atlas_renal_pelvis_name",
+      "description": "health_atlas_renal_pelvis_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "ureters"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_renal_pelvis_aliases",
+      "color": "",
+      "icon": ""
+    }
+  ],
+  "insertAfter": {
+    "renal-cortex": "kidneys",
+    "renal-medulla": "kidneys",
+    "renal-pelvis": "kidneys"
+  },
+  "relatedAdditions": {
+    "kidneys": [
+      "renal-cortex",
+      "renal-medulla",
+      "renal-pelvis"
+    ]
+  },
+  "plates": [
+    {
+      "id": "whole",
+      "asset": "HealthAtlasBody",
+      "owner": null,
+      "viewLabel": "health_atlas_view_anterior",
+      "entryIDs": [
+        ""
+      ],
+      "aspectRatio": 0.6666666666666666,
+      "markers": [
+        {
+          "id": "brain",
+          "x": 0.5,
+          "y": 0.045
+        },
+        {
+          "id": "lungs",
+          "x": 0.6,
+          "y": 0.24
+        },
+        {
+          "id": "heart",
+          "x": 0.54,
+          "y": 0.28
+        },
+        {
+          "id": "liver",
+          "x": 0.45,
+          "y": 0.34
+        },
+        {
+          "id": "small-intestine",
+          "x": 0.51,
+          "y": 0.44
+        }
+      ]
+    },
+    {
+      "id": "heart",
+      "asset": "HealthAtlasHeart",
+      "owner": "heart",
+      "viewLabel": "health_atlas_view_external",
+      "entryIDs": [
+        "heart",
+        "cardio",
+        "atria",
+        "ventricles",
+        "coronary-vessels"
+      ],
+      "aspectRatio": 0.75,
+      "markers": [
+        {
+          "id": "atria",
+          "x": 0.28,
+          "y": 0.46
+        },
+        {
+          "id": "coronary-vessels",
+          "x": 0.57,
+          "y": 0.68
+        },
+        {
+          "id": "ventricles",
+          "x": 0.61,
+          "y": 0.84
+        }
+      ]
+    },
+    {
+      "id": "brain",
+      "asset": "HealthAtlasBrain",
+      "owner": "brain",
+      "viewLabel": "health_atlas_view_lateral",
+      "entryIDs": [
+        "brain",
+        "cerebrum",
+        "cerebellum",
+        "brainstem"
+      ],
+      "aspectRatio": 1,
+      "markers": [
+        {
+          "id": "cerebrum",
+          "x": 0.6,
+          "y": 0.34
+        },
+        {
+          "id": "cerebellum",
+          "x": 0.76,
+          "y": 0.73
+        },
+        {
+          "id": "brainstem",
+          "x": 0.53,
+          "y": 0.86
+        }
+      ]
+    },
+    {
+      "id": "lungs",
+      "asset": "HealthAtlasLungs",
+      "owner": "lungs",
+      "viewLabel": "health_atlas_view_anterior",
+      "entryIDs": [
+        "lungs",
+        "trachea",
+        "bronchi"
+      ],
+      "aspectRatio": 1,
+      "markers": [
+        {
+          "id": "trachea",
+          "x": 0.5,
+          "y": 0.22
+        },
+        {
+          "id": "bronchi",
+          "x": 0.53,
+          "y": 0.43
+        },
+        {
+          "id": "lungs",
+          "x": 0.8,
+          "y": 0.7
+        }
+      ]
+    },
+    {
+      "id": "liver",
+      "asset": "HealthAtlasLiver",
+      "owner": "liver",
+      "viewLabel": "health_atlas_view_liver",
+      "entryIDs": [
+        "liver",
+        "gallbladder"
+      ],
+      "aspectRatio": 1,
+      "markers": [
+        {
+          "id": "liver",
+          "x": 0.57,
+          "y": 0.44
+        },
+        {
+          "id": "gallbladder",
+          "x": 0.28,
+          "y": 0.73
+        }
+      ]
+    },
+    {
+      "id": "kidney",
+      "asset": "HealthAtlasKidney",
+      "owner": "kidneys",
+      "viewLabel": "health_atlas_view_coronal",
+      "entryIDs": [
+        "kidneys",
+        "renal-cortex",
+        "renal-medulla",
+        "renal-pelvis",
+        "ureters"
+      ],
+      "aspectRatio": 1,
+      "markers": [
+        {
+          "id": "renal-cortex",
+          "x": 0.37,
+          "y": 0.12
+        },
+        {
+          "id": "renal-medulla",
+          "x": 0.36,
+          "y": 0.24
+        },
+        {
+          "id": "renal-pelvis",
+          "x": 0.56,
+          "y": 0.51
+        },
+        {
+          "id": "ureters",
+          "x": 0.68,
+          "y": 0.85
+        }
+      ]
+    },
+    {
+      "id": "beta",
+      "asset": "HealthAtlasBetaCell",
+      "owner": "cell-pancreatic-beta-cell",
+      "viewLabel": "health_atlas_view_cell",
+      "entryIDs": [
+        "cell-pancreatic-beta-cell"
+      ],
+      "aspectRatio": 1,
+      "markers": []
+    }
+  ],
+  "english": {
+    "health_atlas_belongs": "Related structures and systems",
+    "health_atlas_plate_context": "Context: %1$@ · %2$@",
+    "health_atlas_renal_cortex_aliases": "kidney cortex",
+    "health_atlas_renal_cortex_description": "The outer kidney region contains renal corpuscles and many tubular segments involved in filtration and processing of filtrate.",
+    "health_atlas_renal_cortex_name": "Renal cortex",
+    "health_atlas_renal_medulla_aliases": "kidney medulla renal pyramids",
+    "health_atlas_renal_medulla_description": "The inner pyramidal region contains tubular loops and collecting ducts that contribute to concentrating urine.",
+    "health_atlas_renal_medulla_name": "Renal medulla",
+    "health_atlas_renal_pelvis_aliases": "kidney pelvis",
+    "health_atlas_renal_pelvis_description": "Collects urine from the calyces and directs it toward the ureter; this collecting space does not filter blood.",
+    "health_atlas_renal_pelvis_name": "Renal pelvis",
+    "health_atlas_view_anterior": "Anterior view",
+    "health_atlas_view_cell": "Cell cutaway",
+    "health_atlas_view_coronal": "Single kidney · coronal section",
+    "health_atlas_view_external": "External surface",
+    "health_atlas_view_lateral": "Left lateral view",
+    "health_atlas_view_liver": "Liver and associated gallbladder"
+  }
+}

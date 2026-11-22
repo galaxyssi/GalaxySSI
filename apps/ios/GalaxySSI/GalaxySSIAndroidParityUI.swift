@@ -97,6 +97,7 @@ struct AgentReplyRuntimeIndex {
 
 struct AgentHomeView: View {
   var onNavigateToMainTab: ((GalaxySSIMainTab) -> Void)? = nil
+  var atlasHandoffToken: UUID? = nil
 
   @Environment(\.galaxySSIInterfaceLanguage) var interfaceLanguage
   @Environment(\.scenePhase) var scenePhase
@@ -363,6 +364,7 @@ struct AgentHomeView: View {
         refreshVisibleAgentReplyReadState()
         _ = coordinator.requestCapabilityManifestRefresh()
         refreshAgentRouteState()
+        consumeHealthAtlasHandoff()
       }
       .onDisappear {
         cancelScreenPagePDFImport()

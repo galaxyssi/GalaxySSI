@@ -4,6 +4,34 @@ import XCTest
 
 @MainActor
 final class GalaxySSIHealthThemeTests: XCTestCase {
+  func testOrganPlateResourcePackCanShipWithoutTheUnmergedAtlasTypes() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self)
+    let data = try XCTUnwrap(NSDataAsset(name: "HealthAtlasOrganPlates", bundle: bundle)?.data)
+    let pack = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(pack["schema"] as? Int, 1)
+    let entries = try XCTUnwrap(pack["entries"] as? [[String: Any]])
+    XCTAssertEqual(entries.compactMap { $0["id"] as? String }, ["renal-cortex", "renal-medulla", "renal-pelvis"])
+    let plates = try XCTUnwrap(pack["plates"] as? [[String: Any]])
+    XCTAssertEqual(plates.count, 7)
+    for plate in plates {
+      for marker in try XCTUnwrap(plate["markers"] as? [[String: Any]]) {
+        XCTAssertTrue((0.0...1.0).contains(try XCTUnwrap(marker["x"] as? Double)))
+        XCTAssertTrue((0.0...1.0).contains(try XCTUnwrap(marker["y"] as? Double)))
+      }
+    }
+    let english = try XCTUnwrap(pack["english"] as? [String: String])
+    XCTAssertEqual(english.count, 17)
+    let chinesePath = try XCTUnwrap(bundle.path(forResource: "zh-Hans", ofType: "lproj"))
+    let chinese = try XCTUnwrap(Bundle(path: chinesePath))
+    for key in english.keys {
+      XCTAssertNotEqual(chinese.localizedString(forKey: key, value: key, table: nil), key)
+    }
+    for name in ["Brain", "Lungs", "Liver", "Kidney"] {
+      let image = try XCTUnwrap(UIImage(named: "HealthAtlas" + name, in: bundle, compatibleWith: nil)?.cgImage)
+      XCTAssertEqual(image.width, 1254); XCTAssertEqual(image.height, 1254)
+    }
+  }
+
   func testFeatureMenuMatchesAndroidOrderWithoutDuplicateOverview() {
     XCTAssertEqual(GalaxySSIHealthFeature.allCases.map(\.rawValue), [
       "care", "agenda", "recordCenter", "originals", "manual", "records", "catalog", "weekly",
