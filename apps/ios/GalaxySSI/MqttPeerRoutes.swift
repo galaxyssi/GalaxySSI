@@ -62,6 +62,8 @@ final class MqttPeerRoutes {
   private var snapshots: [String: MqttBrokerPathSnapshot] = [:]
   private var rotation: [String] = []
   private var urgent: [String] = []
+  private struct ReceiptKey: Hashable { let scope: String; let authentication: String; let digest: String }
+  private var receiptPublications: [ReceiptKey: MqttReceiptPublication] = [:]
 
   init(pool: GalaxySSIMqttBrokerPool, persistence: MqttRouteState,
        wall: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) },
@@ -97,6 +99,7 @@ final class MqttPeerRoutes {
         peer.active = false
         do { try peer.session.retire() } catch { failures.append((scope, error)) }
         pool.policy.forgetPeer(scope)
+        receiptPublications = receiptPublications.filter { $0.key.scope != scope }
       }
       var newlyEnabled: [String] = []
       for binding in bindings {
@@ -200,6 +203,18 @@ final class MqttPeerRoutes {
     }
   }
 
+  // A committed receipt may outlive its ingress socket, but never its authenticated relationship.
+  func withReceiptIdentity<T>(_ packet: VerifiedPacket, commit: (MqttBusinessIdentity) throws -> T) throws -> T {
+    try locked {
+      guard let peer = peers[packet.scope], peer.active, peer.binding.enabled,
+            peer.identity == packet.authenticationID, peer.binding.receiver == packet.sender,
+            peer.binding.sender == packet.receiver, peer.secretFingerprint == packet.ingress.secretFingerprint else {
+        throw MqttRouteError.identityChanged
+      }
+      return try commit(MqttBusinessIdentity(peer.binding))
+    }
+  }
+
   func decryptAndStore(_ packet: VerifiedPacket, using engine: GalaxySSISignalEngine,
                        remoteName: String) throws -> MqttBusinessInbox.Accepted {
     try withCurrentIdentity(packet) { identity in
@@ -211,7 +226,7 @@ final class MqttPeerRoutes {
   // Re-read committed storage, not a caller-retained Accepted value from an unfinished transaction.
   // Receipts can return before resume completes; they acknowledge storage, not route readiness.
   func prepareStoredReceipt(_ packet: VerifiedPacket, inbox: MqttBusinessInbox) throws -> MqttPathPublication? {
-    try withCurrentIdentity(packet) { identity in
+    try withReceiptIdentity(packet) { identity in
       guard packet.payload[MqttDeliveryEnvelope.field] != nil else { return nil }
       let frame = try MqttDeliveryEnvelope.parseVerifiedFrame(packet.payload, sender: identity.remote,
         receiver: identity.local, ingressBroker: packet.ingress.brokerID)
@@ -225,7 +240,7 @@ final class MqttPeerRoutes {
         secretFingerprint: binding.secretFingerprint, authorized: { [weak self, weak peer] in
           guard let self, let peer else { return false }
           return self.locked {
-            guard self.current(peer, binding: binding), self.isCurrent(packet) else { return false }
+            guard self.current(peer, binding: binding) else { return false }
             return (try? inbox.storedReceipt(identity: identity, messageID: receipt.messageID,
               wireHash: receipt.wireHash)) != nil
           }
@@ -235,12 +250,12 @@ final class MqttPeerRoutes {
 
   func publishStoredReceipt(_ packet: VerifiedPacket, inbox: MqttBusinessInbox) async throws -> Bool {
     guard let publication = try prepareStoredReceipt(packet, inbox: inbox) else { return false }
-    return await pool.publish(publication, brokerID: packet.ingress.brokerID).accepted
+    return try await publishReceipt(publication, packet: packet)
   }
 
   func publishIngressReply(_ packet: VerifiedPacket, payload: [String: Any],
                            stillValid: @escaping () throws -> Bool = { true }) async throws -> Bool {
-    let publication = try withCurrentIdentity(packet) { identity in
+    let publication = try withReceiptIdentity(packet) { identity in
       guard let peer = peers[identity.scope] else { throw MqttRouteError.identityChanged }
       let binding = peer.binding
       return MqttPathPublication(topic: binding.sendTopic, payload: try GalaxySSILinkProtocol.jsonData(payload),
@@ -248,11 +263,75 @@ final class MqttPeerRoutes {
         secretFingerprint: binding.secretFingerprint, authorized: { [weak self, weak peer] in
           guard let self, let peer else { return false }
           return self.locked {
-            self.current(peer, binding: binding) && self.isCurrent(packet) && (try? stillValid()) == true
+            self.current(peer, binding: binding) && (try? stillValid()) == true
           }
         })
     }
-    return await pool.publish(publication, brokerID: packet.ingress.brokerID).accepted
+    return try await publishReceipt(publication, packet: packet)
+  }
+
+  private func publishReceipt(_ publication: MqttPathPublication, packet: VerifiedPacket) async throws -> Bool {
+    let prepared: (MqttReceiptPublication, MqttMultipathPolicy.Dispatch, String)? = try withReceiptIdentity(packet) { identity in
+      guard let peer = peers[identity.scope], publication.authorized?() == true else { return nil }
+      let at = now()
+      receiptPublications = receiptPublications.filter { $0.value.expires > at }
+      let key = ReceiptKey(scope: identity.scope, authentication: packet.authenticationID,
+        digest: MqttRouteProtocol.digest(publication.payload))
+      let receipt: MqttReceiptPublication
+      if let existing = receiptPublications[key] { receipt = existing }
+      else {
+        guard receiptPublications.count < 1024,
+              receiptPublications.keys.filter({ $0.scope == identity.scope }).count < 64 else { return nil }
+        receipt = MqttReceiptPublication(payload: try GalaxySSILinkProtocol.sealWirePacket(publication.payload,
+          secret: peer.binding.secret), now: at)
+        receiptPublications[key] = receipt
+      }
+      if receipt.accepted { return (receipt, .init(brokerID: "", generation: 0, delayMillis: 0), "") }
+      let bytes = try MqttDeliveryDispatch.packetBytes(topic: publication.topic, payloadBytes: receipt.payload.count)
+      let eligible = peer.session.verifiedGenerations(generations(peer.binding))
+      let planned = pool.policy.plan(peer: identity.scope, messageID: key.digest, traffic: .receipt,
+        wireBytes: bytes, receiveTopics: publication.receiveTopics, now: at, ingress: packet.ingress.brokerID,
+        attempted: receipt.attempted, eligible: eligible).first
+      // A reply on its still-current authenticated ingress is valid before outgoing resume completes.
+      let ingress: MqttMultipathPolicy.Dispatch? = isCurrent(packet)
+        ? .init(brokerID: packet.ingress.brokerID, generation: packet.ingress.generation, delayMillis: 0) : nil
+      guard let path = planned ?? ingress,
+            let token = receipt.claim(broker: path.brokerID, generation: path.generation, now: at,
+              configuration: snapshots[path.brokerID]?.configurationID ?? "") else { return nil }
+      return (receipt, path, token)
+    }
+    guard let (receipt, path, token) = prepared else { return false }
+    if receipt.accepted { return true }
+    let bytes = try MqttDeliveryDispatch.packetBytes(topic: publication.topic, payloadBytes: receipt.payload.count)
+    let policy = pool.policy
+    guard policy.reserve(attemptID: token, attempt: .init(peer: packet.scope, messageID: token,
+      contentHash: MqttRouteProtocol.digest(receipt.payload), brokerID: path.brokerID, generation: path.generation,
+      wireBytes: bytes, traffic: .receipt, startedAt: now())) else {
+      receipt.finish(broker: path.brokerID, token: token, accepted: false)
+      return false
+    }
+    var copy = publication
+    copy.payload = receipt.payload
+    copy.generation = path.generation
+    copy.transientPriority = true
+    copy.authorized = { [weak self] in
+      guard let self else { return false }
+      return self.locked {
+        guard let peer = self.peers[packet.scope], peer.identity == packet.authenticationID else { return false }
+        let resumed = peer.session.verifiedGenerations(self.generations(peer.binding))[path.brokerID] == path.generation
+        let ingress = path.brokerID == packet.ingress.brokerID && path.generation == packet.ingress.generation && self.isCurrent(packet)
+        guard resumed || ingress else { return false }
+        return receipt.permits(broker: path.brokerID, token: token) && (publication.authorized?() ?? false)
+      }
+    }
+    let stillAuthorized = copy.authorized
+    copy.transientCompleted = { accepted in
+      policy.discardAttempt(token)
+      receipt.finish(broker: path.brokerID, token: token, accepted: accepted && (stillAuthorized?() ?? false))
+    }
+    let result = await pool.publish(copy, brokerID: path.brokerID)
+    if !result.accepted { copy.transientCompleted?(false) }
+    return receipt.accepted
   }
 
   // Queueing is allowed while offline, but approval, relationship key and destination must still be current.
@@ -333,6 +412,11 @@ final class MqttPeerRoutes {
     }
   }
 
+  func chunkPending(identity: MqttBusinessIdentity, query: MqttChunkReceipts.Query, index: Int) -> Bool {
+    index >= 0 && pool.policy.chunkPending(peer: identity.scope,
+      chunk: .init(transfer: query.transfer, request: query.request, index: index, sampleEligible: false), now: now())
+  }
+
   func publishChunk(topic: String, identity: MqttBusinessIdentity, message: MqttDeliveryEnvelope.Message,
                     query: MqttChunkReceipts.Query, selection: MqttOutgoingChunks.Selection, attempted: Set<String>,
                     isPending: @escaping () throws -> Bool) async throws -> String? {
@@ -346,7 +430,7 @@ final class MqttPeerRoutes {
       let eligible = peer.session.verifiedGenerations(generations(binding))
       let configuration = snapshots.mapValues(\.configurationID)
       let partKey = query.transfer + ":" + String(selection.index)
-      guard let path = pool.policy.plan(peer: identity.scope, messageID: partKey, traffic: .chunk,
+      guard let path = pool.policy.plan(peer: identity.scope, messageID: partKey, traffic: selection.index >= 0 ? .chunk : .control,
         wireBytes: bytes, receiveTopics: binding.receiveTopics, now: now(), attempted: attempted, eligible: eligible).first
       else { return nil }
       let authorized: (String, Int64) -> Bool = { [weak self, weak peer] broker, generation in
@@ -366,15 +450,15 @@ final class MqttPeerRoutes {
     let policy = pool.policy
     let started = now()
     let isFragment = selection.index >= 0
-    guard policy.reserve(attemptID: attempt.attemptID, attempt: .init(peer: identity.scope,
-      messageID: message.messageID, contentHash: message.contentHash, brokerID: path.brokerID,
-      generation: path.generation, traffic: .chunk, wireBytes: bytes, startedAt: started)) else { return nil }
     let observation = MqttChunkThroughput.Chunk(transfer: query.transfer, request: query.request, index: selection.index,
       sampleEligible: attempted.isEmpty)
-    if isFragment {
-      policy.trackChunk(peer: identity.scope, chunk: observation, broker: path.brokerID,
-        generation: path.generation, bytes: bytes, now: started)
-    }
+    let reservation = MqttMultipathPolicy.Attempt(peer: identity.scope, messageID: message.messageID,
+      contentHash: message.contentHash, brokerID: path.brokerID, generation: path.generation,
+      wireBytes: bytes, traffic: isFragment ? .chunk : .control, startedAt: started)
+    let admitted = isFragment
+      ? policy.reserveChunk(attemptID: attempt.attemptID, attempt: reservation, chunk: observation)
+      : policy.reserve(attemptID: attempt.attemptID, attempt: reservation)
+    guard admitted else { return nil }
     // This frame is local QoS1 attribution only. Chunk wire packets carry a query, not a business frame.
     let packet = MqttSealedPathPublication(publication: .init(topic: topic, payload: payload,
       frame: .init(message: message, attempt: attempt), receiveTopics: receiveTopics, secretFingerprint: fingerprint,

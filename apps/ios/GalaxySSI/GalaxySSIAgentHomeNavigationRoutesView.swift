@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct GalaxySSIAgentHomeNavigationRoutesView: View {
+  @EnvironmentObject private var store: GalaxySSIStore
   @Binding var recentTasksShortcutActive: Bool
   @Binding var agentSessionsShortcutActive: Bool
   @Binding var agentSettingsShortcutActive: Bool
@@ -11,6 +12,7 @@ struct GalaxySSIAgentHomeNavigationRoutesView: View {
   @Binding var agentKnowledgeShortcutActive: Bool
   @Binding var agentScreenContextShortcutActive: Bool
   @Binding var agentInsightsShortcutActive: Bool
+  @Binding var agentHealthShortcutActive: Bool
   @Binding var conversationHubShortcutActive: Bool
   @Binding var contactsShortcutActive: Bool
   @Binding var discoverShortcutActive: Bool
@@ -25,6 +27,7 @@ struct GalaxySSIAgentHomeNavigationRoutesView: View {
 
   var body: some View {
     Group {
+      Group {
       NavigationLink(
         destination: GalaxySSIAgentRecentTasksView(initialTask: recentTaskForDetails),
         isActive: $recentTasksShortcutActive
@@ -81,6 +84,8 @@ struct GalaxySSIAgentHomeNavigationRoutesView: View {
         EmptyView()
       }
       .hidden()
+      }
+      Group {
       NavigationLink(
         destination: GalaxySSIAgentScreenContextDetailView(
             screen: screen,
@@ -100,6 +105,12 @@ struct GalaxySSIAgentHomeNavigationRoutesView: View {
       ) {
         EmptyView()
       }
+      .hidden()
+      NavigationLink(
+        destination: GalaxySSIHealthCenterView(records: GalaxySSIHealthRecords(
+          owner: store.profile.identityFingerprint, secrets: store.secrets)).id(store.profile.identityFingerprint),
+        isActive: $agentHealthShortcutActive
+      ) { EmptyView() }
       .hidden()
       NavigationLink(
         destination: GalaxySSIConversationHubView(),
@@ -122,6 +133,7 @@ struct GalaxySSIAgentHomeNavigationRoutesView: View {
         EmptyView()
       }
       .hidden()
+      }
     }
   }
 }

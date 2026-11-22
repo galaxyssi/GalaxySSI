@@ -62,7 +62,7 @@ struct GalaxySSIHealthBackgroundPicker: View {
         }
       }
       .navigationTitle(t("background_title", "Saved health background"))
-      .navigationBarTitleDisplayMode(.inline)
+      .galaxySSIHealthTheme()
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button(t("background_cancel", "Cancel")) { dismiss() }

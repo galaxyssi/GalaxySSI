@@ -44,6 +44,7 @@ struct GalaxySSIHealthCareView: View {
       }
     }
     .navigationTitle(t("title", "Health Care"))
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) { _ in reload() }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
@@ -440,6 +441,7 @@ struct GalaxySSIHealthCareDetail: View {
       if scene == .active, failed { Text(t("unavailable", "Local health review could not be loaded.")) }
     }
     .navigationTitle(metric.title(language: language))
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) { _ in reload() }
     .onChange(of: store.profile.identityFingerprint) { _ in reload() }
@@ -485,7 +487,10 @@ struct GalaxySSIHealthCareDetail: View {
     return Picker(t("clarification.collection", "Collection condition"), selection: $answers.collection) {
       Text(t("none", "Not recorded")).tag(Collection?.none)
       Text(t("clarification.collection.fasting", "Fasting")).tag(Optional(Collection.fasting))
+      Text(GalaxySSIHealthReportQuickImport.text("non_fasting", "Not fasting", language)).tag(Optional(Collection.nonFasting))
       Text(t("clarification.collection.after_meal", "After a meal")).tag(Optional(Collection.afterMeal))
+      Text(GalaxySSIHealthReportBatch.conditionTitle("after_meal_1h", language: language)).tag(Optional(Collection.afterMeal1h))
+      Text(GalaxySSIHealthReportBatch.conditionTitle("after_meal_2h", language: language)).tag(Optional(Collection.afterMeal2h))
       Text(t("clarification.collection.resting", "Resting")).tag(Optional(Collection.resting))
       Text(t("clarification.collection.after_activity", "After activity")).tag(Optional(Collection.afterActivity))
     }

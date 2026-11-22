@@ -129,7 +129,7 @@ struct GalaxySSIHealthTableSourceView: View {
       }
     }
     .navigationTitle(t("title", "Table Original"))
-    .navigationBarTitleDisplayMode(.inline)
+    .galaxySSIHealthTheme()
     .onAppear(perform: reload)
     .onChange(of: scene) { phase in
       if phase == .active { reload() }

@@ -49,6 +49,8 @@ enum GalaxySSIHealthCareFollowUp {
     let requestedAt: Date
     var submittedFor: Date?
     var journalReview: JournalReview? = nil
+    var appointment: GalaxySSIHealthAppointmentReminder.Reference? = nil
+    var appointmentState: GalaxySSIHealthAppointmentReminder.State? = nil
 
     var identifier: String { GalaxySSIHealthCareFollowUp.prefix + id.uuidString }
   }
@@ -100,7 +102,13 @@ enum GalaxySSIHealthCareFollowUp {
     guard permitted, let preferences, preferences.enabled else { return .init() }
     var plan = DeliveryPlan()
     for reminder in reminders.sorted(by: { ($0.requestedAt, $0.identifier) < ($1.requestedAt, $1.identifier) }) {
+      if let expires = reminder.appointment?.plannedAt, expires <= now { continue }
+      if reminder.appointmentState == .cancelled || reminder.appointmentState == .expired { continue }
       let id = reminder.identifier
+      if reminder.appointmentState == .delivered {
+        if delivered.contains(id), preferences.nextAllowed(now, calendar: calendar) == now { plan.keepDelivered.insert(id) }
+        continue
+      }
       if delivered.contains(id) {
         if preferences.nextAllowed(now, calendar: calendar) == now { plan.keepDelivered.insert(id) }
         continue
@@ -113,6 +121,7 @@ enum GalaxySSIHealthCareFollowUp {
       } else {
         due = preferences.nextAllowed(max(reminder.requestedAt, now.addingTimeInterval(2)), calendar: calendar)
       }
+      if let expires = reminder.appointment?.plannedAt, due >= expires { continue }
       if plan.pending.count < maximumPending {
         plan.pending.append(.init(reminder: reminder, due: due))
       }
