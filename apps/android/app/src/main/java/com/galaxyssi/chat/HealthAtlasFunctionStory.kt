@@ -117,6 +117,7 @@ internal enum class HealthAtlasFunctionStory(
             R.string.health_atlas_vision_story_nei_source to "https://www.nei.nih.gov/eye-health-information/healthy-vision/how-eyes-work",
             R.string.health_atlas_vision_story_signal_source to
                 "https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception",
+            R.string.health_atlas_vision_story_cng_source to "https://pubmed.ncbi.nlm.nih.gov/2578616/",
         ),
         19_000L,
     ),

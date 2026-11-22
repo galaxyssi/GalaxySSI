@@ -4,7 +4,6 @@ import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.SystemClock
-import android.view.View
 import android.view.Gravity
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -20,7 +19,7 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
     private val caption = ui.text("", 15f).apply { tag = "atlas-function-caption" }
     private val chapterLabel = ui.text("", 14f, bold = true).apply {
         tag = "atlas-function-chapter"
-        setTextColor(context.getColor(R.color.health_overview_green))
+        setTextColor(context.getColor(R.color.health_atlas_film_chapter))
     }
     private val chapterLabels = story.chapters.mapIndexed { index, chapter ->
         context.getString(R.string.health_atlas_scene_chapter, index + 1, story.chapters.size, context.getString(chapter.first))
@@ -51,8 +50,10 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
         tag = "atlas-function-player"
         orientation = VERTICAL
         val scene = HealthAtlasSceneFrame(activity, "atlas-function-frame").apply {
-            reserveCaption(chapterLabel, chapterLabels, ui.dp(12) * 2)
-            reserveCaption(caption, chapterCaptions, ui.dp(12) * 2)
+            background = ui.background(context.getColor(R.color.health_atlas_film_ground))
+            val captionInset = 2 * ui.dp(14)
+            reserveCaption(chapterLabel, chapterLabels, captionInset)
+            reserveCaption(caption, chapterCaptions, captionInset)
             if (showTitle) ui.add(this, ui.text(context.getString(story.title), 16f, bold = true).apply {
                 setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(8))
             })
@@ -61,7 +62,9 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
             ui.add(this, art)
             ui.add(this, ui.column().apply {
                 tag = "atlas-function-subtitles"
-                setPadding(ui.dp(12), ui.dp(9), ui.dp(12), ui.dp(10))
+                setPadding(ui.dp(14), ui.dp(9), ui.dp(14), ui.dp(12))
+                setBackgroundColor(context.getColor(R.color.health_atlas_film_caption))
+                caption.setTextColor(context.getColor(R.color.health_atlas_film_text))
                 ui.add(this, chapterLabel)
                 ui.add(this, caption, 2)
             })

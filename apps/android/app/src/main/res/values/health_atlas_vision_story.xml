@@ -9,7 +9,7 @@
     <string name="health_atlas_vision_story_focus">Light is focused on the retina</string>
     <string name="health_atlas_vision_story_focus_caption">The cornea and lens bend light so that an image can focus on the retina. The lens can change shape to help focus at different distances.</string>
     <string name="health_atlas_vision_story_capture">Photoreceptors respond to light</string>
-    <string name="health_atlas_vision_story_capture_caption">Light changes a pigment in the outer segment. The photoreceptor becomes more negatively charged inside and releases less chemical transmitter.</string>
+    <string name="health_atlas_vision_story_capture_caption">In a rod, light activates rhodopsin and starts a chain that lowers cGMP. Ion channels close, the cell gets more negative inside, and it releases less glutamate.</string>
     <string name="health_atlas_vision_story_relay">Retinal cells relay the change</string>
     <string name="health_atlas_vision_story_relay_caption">In this simplified cone route, a cone signals to a bipolar cell and then a ganglion cell. Light moves toward the outer retina; the relay runs back toward the inner retina.</string>
     <string name="health_atlas_vision_story_output">The optic nerve carries impulses</string>
@@ -32,6 +32,14 @@
     <string name="health_atlas_vision_story_outer">Light-sensitive outer segment</string>
     <string name="health_atlas_vision_story_dark_release">More transmitter</string>
     <string name="health_atlas_vision_story_light_release">Less transmitter</string>
+    <string name="health_atlas_vision_story_unlit">In the dark</string>
+    <string name="health_atlas_vision_story_lit">After light arrives</string>
+    <string name="health_atlas_vision_story_dark_current" translatable="false">Na⁺ / Ca²⁺</string>
+    <string name="health_atlas_vision_story_cng_open">Ion channel open</string>
+    <string name="health_atlas_vision_story_cng_closed">Ion channel closed</string>
+    <string name="health_atlas_vision_story_cgmp" translatable="false">cGMP</string>
+    <string name="health_atlas_vision_story_resting">Dark membrane potential</string>
+    <string name="health_atlas_vision_story_hyperpolarized">More negative inside</string>
     <string name="health_atlas_vision_story_light_down">Light direction</string>
     <string name="health_atlas_vision_story_relay_up">Relay direction</string>
     <string name="health_atlas_vision_story_cone_route">Cone to bipolar to ganglion cell</string>
@@ -44,6 +52,7 @@
     <string name="health_atlas_vision_story_relative">Illustrative contributions, not measured activity</string>
     <string name="health_atlas_vision_story_nei_source">Source: how the eyes work (NEI)</string>
     <string name="health_atlas_vision_story_signal_source">Source: visual transduction (OpenStax)</string>
+    <string name="health_atlas_vision_story_cng_source">Experiment: cGMP-gated channels in rods</string>
     <string name="health_atlas_vision_story_mix_source">Study: human rod and cone signals in intermediate light</string>
     <string name="health_atlas_vision_story_dark_source">Study: dark adaptation in human cone pathways</string>
 </resources>
