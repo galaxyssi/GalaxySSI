@@ -88,6 +88,7 @@ internal enum class HealthAtlasFunctionStory(
         HealthAtlasSoundStage.entries.map { it.title to it.caption },
         listOf(
             R.string.health_atlas_hear_path_source to "https://www.nidcd.nih.gov/health/how-do-we-hear",
+            R.string.health_atlas_hear_tip_source to "https://doi.org/10.1073/pnas.2318270121",
             R.string.health_atlas_hear_cells_source to "https://pmc.ncbi.nlm.nih.gov/articles/PMC1413628/",
         ),
         19_000L,
@@ -101,6 +102,7 @@ internal enum class HealthAtlasFunctionStory(
         HealthAtlasNephronStage.entries.map { it.title to it.caption },
         listOf(
             R.string.health_atlas_nephron_story_kidney_source to "https://www.niddk.nih.gov/health-information/kidney-disease/kidneys-how-they-work",
+            R.string.health_atlas_nephron_barrier_source to "https://pmc.ncbi.nlm.nih.gov/articles/PMC4010685/",
             R.string.health_atlas_nephron_story_tubule_source to
                 "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption",
         ),

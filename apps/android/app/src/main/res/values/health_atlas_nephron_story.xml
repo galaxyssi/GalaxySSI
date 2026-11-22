@@ -2,11 +2,11 @@
 <resources>
     <string name="health_atlas_nephron_story_title">How a nephron forms urine</string>
     <string name="health_atlas_nephron_story_filter">Blood is filtered</string>
-    <string name="health_atlas_nephron_story_filter_caption">Water and small dissolved substances leave the glomerular capillaries and enter the capsule. Blood cells and most large proteins stay in the bloodstream.</string>
+    <string name="health_atlas_nephron_story_filter_caption">Pressure drives water and small solutes through the endothelium, basement membrane and podocyte slits. Blood cells and most large proteins remain in blood.</string>
     <string name="health_atlas_nephron_story_prox">Useful substances return to blood</string>
     <string name="health_atlas_nephron_story_prox_caption">The proximal tubule returns much of the filtered water and salts, as well as nutrients such as glucose, to the blood.</string>
     <string name="health_atlas_nephron_story_loop">The two limbs handle water and salt differently</string>
-    <string name="health_atlas_nephron_story_loop_caption">Water leaves the descending limb. The ascending limb moves salt into surrounding tissue but is largely impermeable to water.</string>
+    <string name="health_atlas_nephron_story_loop_caption">Water leaves the descending limb. The thick ascending limb moves salt out but not water. Together they help build the medullary gradient.</string>
     <string name="health_atlas_nephron_story_distal">Tubular secretion adds selected substances</string>
     <string name="health_atlas_nephron_story_distal_caption">Selected substances, such as hydrogen ions, may move from the blood side into the tubule. This is the opposite direction from reabsorption.</string>
     <string name="health_atlas_nephron_story_collect">The collecting duct carries urine away</string>
@@ -14,6 +14,13 @@
     <string name="health_atlas_nephron_story_glomerulus">Glomerulus</string>
     <string name="health_atlas_nephron_story_blood">Blood flow</string>
     <string name="health_atlas_nephron_story_filtrate">Filtrate</string>
+    <string name="health_atlas_nephron_barrier_endothelium">Endothelial pores</string>
+    <string name="health_atlas_nephron_barrier_basement">Basement layer</string>
+    <string name="health_atlas_nephron_barrier_slits">Podocyte slits</string>
+    <string name="health_atlas_nephron_barrier_source">The glomerular filtration barrier</string>
+    <string name="health_atlas_nephron_loop_descending">Descending limb</string>
+    <string name="health_atlas_nephron_loop_ascending">Thick ascending limb</string>
+    <string name="health_atlas_nephron_loop_gradient">Gradient</string>
     <string name="health_atlas_nephron_story_capillary">Nearby capillary</string>
     <string name="health_atlas_nephron_story_reabsorb">Toward blood</string>
     <string name="health_atlas_nephron_story_water">Water out</string>

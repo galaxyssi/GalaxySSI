@@ -2,11 +2,11 @@
 <resources>
     <string name="health_atlas_nephron_story_title">肾单位如何形成尿液</string>
     <string name="health_atlas_nephron_story_filter">肾小球滤过</string>
-    <string name="health_atlas_nephron_story_filter_caption">水和小分子溶质从肾小球毛细血管滤入肾小囊。血细胞和多数大分子蛋白质仍留在血液里。</string>
+    <string name="health_atlas_nephron_story_filter_caption">压力推动水和小溶质穿过内皮、基底膜和足细胞裂隙。血细胞和大部分大分子蛋白仍留在血液里。</string>
     <string name="health_atlas_nephron_story_prox">近端小管重吸收</string>
     <string name="health_atlas_nephron_story_prox_caption">近端小管将滤液中的大量水和盐，以及葡萄糖等营养物质，重新吸收回血液。</string>
     <string name="health_atlas_nephron_story_loop">髓袢分别转运水和盐</string>
-    <string name="health_atlas_nephron_story_loop_caption">水可从髓袢降支流出；升支把盐转运到周围组织，但水很难通过升支。</string>
+    <string name="health_atlas_nephron_story_loop_caption">水从髓袢降支流出；粗升支把盐转到周围而不让水通过。这种分工有助于建立髓质浓度梯度。</string>
     <string name="health_atlas_nephron_story_distal">小管分泌把物质送进管腔</string>
     <string name="health_atlas_nephron_story_distal_caption">氢离子等物质可从血液一侧进入小管腔。这是小管分泌，方向和重吸收相反。</string>
     <string name="health_atlas_nephron_story_collect">集合管继续调节并引流</string>
@@ -14,6 +14,13 @@
     <string name="health_atlas_nephron_story_glomerulus">肾小球</string>
     <string name="health_atlas_nephron_story_blood">血液流动</string>
     <string name="health_atlas_nephron_story_filtrate">滤液流动</string>
+    <string name="health_atlas_nephron_barrier_endothelium">内皮窗孔</string>
+    <string name="health_atlas_nephron_barrier_basement">基底膜</string>
+    <string name="health_atlas_nephron_barrier_slits">足细胞裂隙</string>
+    <string name="health_atlas_nephron_barrier_source">肾小球滤过屏障</string>
+    <string name="health_atlas_nephron_loop_descending">髓袢降支</string>
+    <string name="health_atlas_nephron_loop_ascending">髓袢粗升支</string>
+    <string name="health_atlas_nephron_loop_gradient">髓质梯度</string>
     <string name="health_atlas_nephron_story_capillary">周围毛细血管</string>
     <string name="health_atlas_nephron_story_reabsorb">重吸收 → 血液</string>
     <string name="health_atlas_nephron_story_water">水流出</string>

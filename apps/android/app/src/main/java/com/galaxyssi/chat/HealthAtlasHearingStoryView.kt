@@ -126,18 +126,50 @@ internal class HealthAtlasHearingStoryView(context: Context) :
 
     private fun hairMotion(canvas: Canvas, phase: Float) {
         val motion = HealthAtlasSoundStage.oscillation(phase)
-        bitmapMesh(canvas, hair, 45f, 0f, 222f, 333f) { x, y ->
+        bitmapMesh(canvas, hair, 12f, 27f, 145f, 240f) { x, y ->
             val taper = ((.29f - y) / .14f).coerceIn(0f, 1f)
-            12f * motion * taper * influence(x, .46f, .34f)
+            8f * motion * taper * influence(x, .46f, .34f)
         }
-        annotation(canvas, 149f + 7f * motion, 79f, 269f, 64f, R.string.health_atlas_hear_bundle, motionInk)
-        annotation(canvas, 160f, 272f, 56f, 306f, R.string.health_atlas_hear_synapse, nerveInk)
-        if (motion > 0f) {
-            val departure = 15f * motion
+        annotation(canvas, 79f + 5f * motion, 83f, 77f, 23f, R.string.health_atlas_hear_bundle, motionInk)
+        annotation(canvas, 86f, 225f, 82f, 290f, R.string.health_atlas_hear_synapse, nerveInk)
+        val opening = HealthAtlasSoundStage.relativeChannelOpening(motion)
+        if (opening > .32f) {
+            val departure = 15f * opening
             ink(0xfff1a337.toInt())
-            canvas.drawCircle(165f, 264f + departure, 3.5f, paint)
-            canvas.drawCircle(176f, 268f + departure, 2.5f, paint)
+            canvas.drawCircle(90f, 222f + departure, 3.5f, paint)
+            canvas.drawCircle(100f, 225f + departure, 2.5f, paint)
         }
+        tipLink(canvas, phase, motion, opening)
+    }
+
+    private fun tipLink(canvas: Canvas, time: Float, motion: Float, opening: Float) {
+        val right = 253f + 16f * motion
+        val tall = 293f + 24f * motion
+        ink(0xfff8fbf8.toInt())
+        canvas.drawRoundRect(157f, 27f, 333f, 304f, 9f, 9f, paint)
+        label(canvas, R.string.health_atlas_hear_tip_link, 245f, 55f, 13f)
+        label(canvas, R.string.health_atlas_hear_endolymph, 245f, 80f, 11f)
+        ink(0xffd8e9df.toInt())
+        canvas.drawRoundRect(168f, 218f, 322f, 260f, 10f, 10f, paint)
+        ink(0xff4d8f86.toInt(), 12f)
+        canvas.drawLine(205f, 228f, right - 45f, 180f, paint)
+        canvas.drawLine(245f, 228f, right, 150f, paint)
+        canvas.drawLine(285f, 228f, tall, 114f, paint)
+        ink(nerveInk, 1.7f + opening)
+        canvas.drawLine(right - 43f, 177f, right - 1f, 169f, paint)
+        canvas.drawLine(right + 2f, 150f, tall - 5f, 138f, paint)
+        val gap = 1f + opening * 5f
+        ink(motionInk)
+        canvas.drawRoundRect(right - 10f, 144f, right - gap, 149f, 2f, 2f, paint)
+        canvas.drawRoundRect(right + gap, 144f, right + 10f, 149f, 2f, 2f, paint)
+        if (opening > .32f) {
+            for (i in 0..2) {
+                val progress = loop(time * 5f + i / 3f)
+                ink(0xffa76623.toInt())
+                canvas.drawCircle(right, 118f + progress * 56f, 3f, paint)
+            }
+        }
+        label(canvas, R.string.health_atlas_hear_potassium, 245f, 285f, 12f)
     }
 
     private fun nerveSignal(canvas: Canvas, phase: Float) {

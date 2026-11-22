@@ -15,6 +15,9 @@ internal enum class HealthAtlasSoundStage(val title: Int, val caption: Int) {
         fun oscillation(progress: Float, delay: Float = 0f): Float =
             sin((progress * 3f - delay) * 2 * PI).toFloat()
 
+        fun relativeChannelOpening(towardTallest: Float): Float =
+            .19f + .76f * towardTallest.coerceIn(0f, 1f) + .16f * towardTallest.coerceIn(-1f, 0f)
+
         // A moving teaching packet, not a frequency response or speed measurement.
         fun packet(position: Float, progress: Float): Float {
             val center = progress * .92f

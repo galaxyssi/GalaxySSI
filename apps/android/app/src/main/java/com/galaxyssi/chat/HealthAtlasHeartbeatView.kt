@@ -26,6 +26,8 @@ internal class HealthAtlasHeartbeatView(context: Context) : HealthAtlasFunctionA
     private val mesh = FloatArray((MESH + 1) * (MESH + 1) * 2)
     private val blue = 0xff286ca0.toInt()
     private val rose = 0xffab304c.toInt()
+    private val atriumInk = 0xff247b72.toInt()
+    private val aortaInk = 0xffa36624.toInt()
     private val rightFill = path {
         moveTo(368f, 200f); cubicTo(361f, 310f, 352f, 355f, 375f, 441f)
         cubicTo(387f, 477f, 444f, 506f, 458f, 568f); cubicTo(477f, 635f, 407f, 654f, 451f, 707f)
@@ -59,6 +61,13 @@ internal class HealthAtlasHeartbeatView(context: Context) : HealthAtlasFunctionA
     }
     private val rightLabel = context.getString(R.string.health_atlas_beat_low)
     private val leftLabel = context.getString(R.string.health_atlas_beat_high)
+    private val chart = listOf(
+        PressureLine(R.string.health_atlas_beat_atrium_label, atriumInk, HealthAtlasBeatPressure::atrium),
+        PressureLine(R.string.health_atlas_beat_ventricle_label, rose, HealthAtlasBeatPressure::ventricle),
+        PressureLine(R.string.health_atlas_beat_aorta_label, aortaInk, HealthAtlasBeatPressure::aorta),
+    )
+
+    private data class PressureLine(val label: Int, val color: Int, val value: (HealthAtlasBeatPressure) -> Float)
 
     init { tag = "atlas-function-heartbeat-art" }
 
@@ -76,8 +85,8 @@ internal class HealthAtlasHeartbeatView(context: Context) : HealthAtlasFunctionA
         canvas.drawRoundRect(stageBounds, 8f, 8f, paint)
         paint.shader = null
         canvas.save()
-        canvas.translate(4f, 5f)
-        canvas.scale(336f / ART_SIZE, 336f / ART_SIZE)
+        canvas.translate(44f, 0f)
+        canvas.scale(256f / ART_SIZE, 256f / ART_SIZE)
         val atrialSqueeze = if (stage == HealthAtlasBeatStage.ATRIAL_SQUEEZE) sin(time * Math.PI).toFloat() else 0f
         drawHeart(canvas, contraction, atrialSqueeze)
         when (stage) {
@@ -103,9 +112,47 @@ internal class HealthAtlasHeartbeatView(context: Context) : HealthAtlasFunctionA
             gate(canvas, valve, open, contraction, active)
         }
         canvas.restore()
-        legend(canvas, FRAME / 4f, rightLabel, blue)
-        legend(canvas, FRAME * .75f, leftLabel, rose)
+        legend(canvas, FRAME / 4f, 239f, rightLabel, blue)
+        legend(canvas, FRAME * .75f, 239f, leftLabel, rose)
+        pressures(canvas, stage, time)
         canvas.restore()
+    }
+
+    private fun pressures(canvas: Canvas, current: HealthAtlasBeatStage, fraction: Float) {
+        val left = 20f
+        val right = 324f
+        val top = 277f
+        val bottom = 330f
+        val stages = HealthAtlasBeatStage.entries
+        val step = (right - left) / stages.size
+        val cursor = left + step * (current.ordinal + fraction)
+        fun y(value: Float) = bottom - (bottom - top) * value
+        ink(0xfffdfbf7.toInt())
+        canvas.drawRoundRect(9f, 244f, 335f, 339f, 7f, 7f, paint)
+        ink(0xff4a6061.toInt())
+        paint.textSize = 10f
+        canvas.drawText(context.getString(R.string.health_atlas_beat_pressure_axis), left, 256f, paint)
+        ink(0xffe5e5df.toInt())
+        canvas.drawRect(left + current.ordinal * step, top, left + (current.ordinal + 1) * step, bottom, paint)
+        ink(0xffa0a9a9.toInt(), .8f)
+        canvas.drawLine(left, bottom, right, bottom, paint)
+        canvas.drawLine(cursor, top, cursor, bottom, paint)
+        chart.forEachIndexed { index, line ->
+            legend(canvas, 63f + 109f * index, 271f, context.getString(line.label), line.color)
+            glyph.rewind()
+            stages.forEach { stage ->
+                for (sample in 0..12) {
+                    val local = sample / 12f
+                    val x = left + step * (stage.ordinal + local)
+                    val value = line.value(HealthAtlasBeatPressureTrace.sample(stage, local))
+                    if (stage.ordinal == 0 && sample == 0) glyph.moveTo(x, y(value)) else glyph.lineTo(x, y(value))
+                }
+            }
+            ink(line.color, 1.8f)
+            canvas.drawPath(glyph, paint)
+            ink(line.color)
+            canvas.drawCircle(cursor, y(line.value(HealthAtlasBeatPressureTrace.sample(current, fraction))), 3f, paint)
+        }
     }
 
     private fun drawHeart(canvas: Canvas, contraction: Float, atrialSqueeze: Float) {
@@ -172,13 +219,13 @@ internal class HealthAtlasHeartbeatView(context: Context) : HealthAtlasFunctionA
         canvas.restore()
     }
 
-    private fun legend(canvas: Canvas, center: Float, text: String, color: Int) {
+    private fun legend(canvas: Canvas, center: Float, baseline: Float, text: String, color: Int) {
         ink(0xff213d4d.toInt())
         paint.textSize = 11.5f
         val start = center - (paint.measureText(text) + 13f) / 2f
-        canvas.drawText(text, start + 13f, 329f, paint)
+        canvas.drawText(text, start + 13f, baseline, paint)
         ink(color)
-        canvas.drawCircle(start + 3.5f, 325f, 3.5f, paint)
+        canvas.drawCircle(start + 3.5f, baseline - 4f, 3.5f, paint)
     }
 
     private fun ink(color: Int, stroke: Float = 0f) {

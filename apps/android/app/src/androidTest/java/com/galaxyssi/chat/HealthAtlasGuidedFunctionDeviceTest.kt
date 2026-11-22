@@ -267,6 +267,60 @@ class HealthAtlasGuidedFunctionDeviceTest {
         }
     }
 
+    @Test fun heartEarAndNephronRenderMovingCloseUpsAlongsideTheirCaptions() = native { scenario ->
+        fun select(id: String) {
+            scenario.onActivity { activity ->
+                activity.view("atlas-tab-2").performClick()
+                (activity.view("atlas-search") as EditText).setText(id)
+                activity.view("atlas-entry-$id").performClick()
+                activity.view("atlas-tab-1").performClick()
+            }
+            runner.waitForIdleSync()
+        }
+        fun verify(artTag: String, chapter: Int, file: String, region: Rect) {
+            scenario.onActivity { activity ->
+                repeat(chapter) { activity.view("atlas-function-next").performClick() }
+                val player = activity.view("atlas-function-player") as HealthAtlasFunctionPlayer
+                assertEquals(chapter, player.story.chapter(player.phase))
+                val frame = activity.view("atlas-function-frame")
+                val art = activity.view(artTag) as HealthAtlasFunctionArt
+                val caption = activity.view("atlas-function-caption") as TextView
+                assertSame(frame, caption.parent.parent)
+                assertEquals(activity.getString(player.story.chapters[chapter].second), caption.text.toString())
+                val canvas = Bitmap.createBitmap(frame.width, frame.height, Bitmap.Config.ARGB_8888)
+                try {
+                    val size = minOf(art.width, art.height)
+                    val x = art.left + (art.width - size) / 2
+                    val y = art.top + (art.height - size) / 2
+                    val w = size * region.width() / 100
+                    val h = size * region.height() / 100
+                    val pixels = IntArray(w * h)
+                    fun hash(fraction: Float): Int {
+                        art.phase = (chapter + fraction) / player.story.chapters.size
+                        canvas.eraseColor(0)
+                        frame.draw(Canvas(canvas))
+                        canvas.getPixels(pixels, 0, w, x + size * region.left / 100,
+                            y + size * region.top / 100, w, h)
+                        return pixels.contentHashCode()
+                    }
+                    assertNotEquals(hash(.18f), hash(.42f))
+                    java.io.File(context.getExternalFilesDir(null), file).outputStream().use {
+                        canvas.compress(Bitmap.CompressFormat.PNG, 100, it)
+                    }
+                } finally { canvas.recycle() }
+                activity.onBackPressed()
+            }
+        }
+        select("heart")
+        verify("atlas-function-heartbeat-art", 2, "body-atlas-heart-pressure.png", Rect(5, 72, 95, 97))
+        select("ear")
+        verify("atlas-function-hearing-art", 3, "body-atlas-ear-tip-link.png", Rect(46, 8, 96, 88))
+        select("nephron")
+        verify("atlas-function-nephron-art", 0, "body-atlas-nephron-filter.png", Rect(3, 53, 97, 97))
+        select("nephron")
+        verify("atlas-function-nephron-art", 2, "body-atlas-nephron-loop.png", Rect(3, 53, 97, 97))
+    }
+
     @Test fun capturesAnAnimationAndItsPrincipleTogether() = native { scenario ->
         scenario.onActivity { activity ->
             activity.view("atlas-hotspot-heart").performClick()

@@ -30,3 +30,37 @@ internal enum class HealthAtlasBeatStage(val title: Int, val caption: Int) {
 
     private fun ease(value: Float) = value.coerceIn(0f, 1f).let { it * it * (3f - 2f * it) }
 }
+
+/** Qualitative left-heart pressures, synchronized to the illustrated valve sequence. */
+internal data class HealthAtlasBeatPressure(val atrium: Float, val ventricle: Float, val aorta: Float) {
+    fun interpolate(other: HealthAtlasBeatPressure, time: Float) = HealthAtlasBeatPressure(
+        atrium + (other.atrium - atrium) * time,
+        ventricle + (other.ventricle - ventricle) * time,
+        aorta + (other.aorta - aorta) * time,
+    )
+}
+
+internal object HealthAtlasBeatPressureTrace {
+    private val transitions = listOf(
+        HealthAtlasBeatPressure(.16f, .16f, .75f),
+        HealthAtlasBeatPressure(.17f, .10f, .70f),
+        HealthAtlasBeatPressure(.23f, .23f, .66f),
+        HealthAtlasBeatPressure(.16f, .65f, .65f),
+        HealthAtlasBeatPressure(.19f, .84f, .84f),
+        HealthAtlasBeatPressure(.16f, .16f, .75f),
+    )
+    private val midpoints = listOf(
+        HealthAtlasBeatPressure(.18f, .10f, .73f),
+        HealthAtlasBeatPressure(.28f, .18f, .68f),
+        HealthAtlasBeatPressure(.19f, .40f, .655f),
+        HealthAtlasBeatPressure(.17f, .98f, .94f),
+        HealthAtlasBeatPressure(.18f, .36f, .80f),
+    )
+
+    fun sample(stage: HealthAtlasBeatStage, fraction: Float): HealthAtlasBeatPressure {
+        val t = HealthAtlasFunctionStory.safePhase(fraction)
+        val mid = midpoints[stage.ordinal]
+        return if (t <= .5f) transitions[stage.ordinal].interpolate(mid, 2f * t)
+        else mid.interpolate(transitions[stage.ordinal + 1], 2f * t - 1f)
+    }
+}
