@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cutaneous_sebum_title">Average sebum surface density</string>
+    <string name="health_atlas_cutaneous_sebum_mass">Sebum mass</string>
+    <string name="health_atlas_cutaneous_sebum_area">Coated area</string>
+    <string name="health_atlas_cutaneous_sebum_companion">Total sebum in the coating: %1$s &#181;g</string>
+    <string name="health_atlas_cutaneous_sebum_formula">Average surface density = sebum mass &#247; coated area. At fixed mass, doubling the area halves the average density. At fixed area, doubling the mass doubles the average density.</string>
+    <string name="health_atlas_cutaneous_sebum_scope">Sebocytes in sebaceous glands produce sebum, which typically reaches the skin surface through hair follicles. This model assumes a uniform coating on a patch of skin with no sebum lost. The mass and area are illustrative, not measurements. The model does not describe actual surface distribution or predict individual secretion rates.</string>
+</resources>

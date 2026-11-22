@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_cutaneous_sebum_title">皮脂平均面密度</string>
+    <string name="health_atlas_cutaneous_sebum_mass">皮脂质量</string>
+    <string name="health_atlas_cutaneous_sebum_area">覆盖面积</string>
+    <string name="health_atlas_cutaneous_sebum_companion">覆盖层中的皮脂总质量：%1$s &#181;g</string>
+    <string name="health_atlas_cutaneous_sebum_formula">平均面密度 = 皮脂质量 ÷ 覆盖面积。质量不变时，面积加倍，平均面密度减半。面积不变时，质量加倍，平均面密度也加倍。</string>
+    <string name="health_atlas_cutaneous_sebum_scope">皮脂腺内的皮脂细胞产生皮脂，皮脂通常经毛囊到达皮肤表面。模型假设皮脂均匀覆盖一块皮肤，且没有损失。质量和面积均为示例，并非实测值。模型不描述皮脂在皮肤表面的实际分布，也不预测个人的皮脂分泌速率。</string>
+</resources>

@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_atlas_vestibular_tilt_title">耳石线索的方向角</string>
+    <string name="health_atlas_vestibular_tilt_lateral">侧向分量大小（L）</string>
+    <string name="health_atlas_vestibular_tilt_downward">沿头部向下轴的分量（D）</string>
+    <string name="health_atlas_vestibular_tilt_formula">线索方向与头部向下轴的夹角（度）= atan2(L, D) × 180 / π。矢量大小（g）= √(L² + D²)。两个分量均以 g（标准重力加速度的倍数）为单位。L 只表示大小，不区分左右；D 沿头部向下轴取正值。</string>
+    <string name="health_atlas_vestibular_tilt_magnitude">矢量大小：%1$s g</string>
+    <string name="health_atlas_vestibular_tilt_scope">耳石器感知的是一种合成线索。本示例将重力-惯性加速度矢量定义为重力加速度减去头部的线加速度。头部倾斜会改变重力在头部各轴上的分量。头部直立并向右加速时，线索的侧向分量指向左方。仅凭这一矢量无法区分头部倾斜和线加速度。这些模拟数值仅描述线索，不表示实际或感知到的头部倾斜，也不用于测量平衡能力或诊断。</string>
+</resources>

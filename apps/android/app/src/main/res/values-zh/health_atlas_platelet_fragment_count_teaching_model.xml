@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_platelet_fragment_count_title">血小板图块总数</string>
+    <string name="health_atlas_platelet_fragment_count_icons">巨核细胞图标数</string>
+    <string name="health_atlas_platelet_fragment_count_tiles_per_icon">每个图标对应的血小板图块数</string>
+    <string name="health_atlas_platelet_fragment_count_companion">每多一个图标增加的图块数：%1$s</string>
+    <string name="health_atlas_platelet_fragment_count_formula">图块总数 = 巨核细胞图标数 × 每个图标对应的血小板图块数。每个图标对应的图块数不变时，每增加一个图标，就加上这么多图块。图表将图标数四舍五入为整数。</string>
+    <string name="health_atlas_platelet_fragment_count_scope">真实的血小板是来自骨髓巨核细胞的细胞质碎片，并不是完整的细胞。在这个计数练习中，设想每个巨核细胞图标都有一组预先标记的图块，每个图块代表一枚假想的血小板。这些虚构数字不代表实际的血小板生成量、血液检验阈值或血栓生长，也不是实验操作指南。</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_thoracic_cross_section_title">理想化胸廓横截面积</string>
+    <string name="health_atlas_thoracic_cross_section_front_to_back">前后径</string>
+    <string name="health_atlas_thoracic_cross_section_side_to_side">左右径</string>
+    <string name="health_atlas_thoracic_cross_section_companion">形状比（前后径 ÷ 左右径）：%1$s</string>
+    <string name="health_atlas_thoracic_cross_section_formula">椭圆面积 = π ×（前后径 ÷ 2）×（左右径 ÷ 2）。直径以 cm 为单位，面积以 cm² 为单位。形状比为 1 时，截面为圆形；小于 1 时，左右宽度大于前后深度。</string>
+    <string name="health_atlas_thoracic_cross_section_scope">吸气时，肋骨抬高可带动胸骨向上、向前移动，使胸廓的前后径增大；肋骨也可向外摆动，使左右径增大。在这个理想化的水平截面中，固定一个直径，增大另一个直径，面积就会增大。直径仅为教学示例，并非实测值。本模型不能预测个体胸廓形状，不能估算肺容积或胸膜腔容积，也不能用于诊断。</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_bile_storage_title">Concentration during bile storage</string>
+    <string name="health_atlas_bile_storage_marker_amount">Marker amount</string>
+    <string name="health_atlas_bile_storage_water_removed">Water removed</string>
+    <string name="health_atlas_bile_storage_companion">Marker amount unchanged: %1$s TU</string>
+    <string name="health_atlas_bile_storage_formula">Remaining liquid volume = 12 VU − water removed. Marker concentration = marker amount ÷ remaining liquid volume. With no marker lost, halving the liquid volume doubles the concentration.</string>
+    <string name="health_atlas_bile_storage_scope">The liver makes bile. Between meals, the gallbladder stores bile, and its lining absorbs water and some salts, concentrating the bile. In this teaching model, an imaginary reservoir starts with 12 VU of liquid. Only water leaves, and the evenly mixed marker stays in the reservoir. TU and VU are imaginary units of marker amount and volume. The model does not simulate bile flow or predict actual bile concentrations.</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_thoracic_cross_section_title">Ideal thoracic cross-sectional area</string>
+    <string name="health_atlas_thoracic_cross_section_front_to_back">Front-to-back diameter</string>
+    <string name="health_atlas_thoracic_cross_section_side_to_side">Side-to-side diameter</string>
+    <string name="health_atlas_thoracic_cross_section_companion">Shape ratio (front-to-back ÷ side-to-side): %1$s</string>
+    <string name="health_atlas_thoracic_cross_section_formula">Ellipse area = π × (front-to-back diameter ÷ 2) × (side-to-side diameter ÷ 2). Diameters in cm give area in cm². A shape ratio of 1 means a circle; smaller ratios mean the slice is wider than it is deep.</string>
+    <string name="health_atlas_thoracic_cross_section_scope">During inhalation, the sternum can lift and move forward as the ribs rise, increasing front-to-back depth. The ribs can also swing outward, increasing side-to-side width. In this idealized horizontal slice, increasing either diameter while holding the other fixed increases area. The diameters are teaching examples, not measurements. This model does not predict individual chest shape, estimate lung or pleural volume, or diagnose conditions.</string>
+</resources>

@@ -1,0 +1,10 @@
+<resources>
+    <string name="health_atlas_airway_ciliary_clearance_title">Airway ciliary clearance</string>
+    <string name="health_atlas_airway_ciliary_clearance_cycles">Demo beat cycles</string>
+    <string name="health_atlas_airway_ciliary_clearance_advance">Marker advance per cycle</string>
+    <string name="health_atlas_airway_ciliary_clearance_scope">Coordinated beats of motile cilia move mucus along the ciliated respiratory lining. In the nasal cavity, they sweep mucus toward the throat; in the paranasal sinuses, they move it toward the natural openings into the nasal cavity. This example concerns only ciliated respiratory lining, not the outer nose or other nasal linings. A fictional marker advances by the same chosen distance each cycle. The values do not measure or predict real mucus transport.</string>
+    <string name="health_atlas_airway_ciliary_clearance_formula">Marker travel (u) = beat cycles × advance per cycle (u/cycle). Here u is a fictional distance unit; the demo track is 60 u long.</string>
+    <string name="health_atlas_airway_ciliary_clearance_progress">Demo track covered: %1$s%%</string>
+    <string name="health_atlas_airway_ciliary_clearance_diagram">A gold marker shows the distance travelled along the model mucus layer above the blue-green cilia.</string>
+    <string name="health_atlas_airway_ciliary_clearance_track">Cilia and marker track</string>
+</resources>

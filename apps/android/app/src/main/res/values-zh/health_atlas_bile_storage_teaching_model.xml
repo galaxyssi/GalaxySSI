@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_bile_storage_title">胆汁储存时的浓缩</string>
+    <string name="health_atlas_bile_storage_marker_amount">示踪物总量</string>
+    <string name="health_atlas_bile_storage_water_removed">移除的水量</string>
+    <string name="health_atlas_bile_storage_companion">示踪物总量不变：%1$s TU</string>
+    <string name="health_atlas_bile_storage_formula">剩余液体体积 = 12 VU − 移除的水量。示踪物浓度 = 示踪物总量 ÷ 剩余液体体积。示踪物没有流失时，液体体积减半，浓度就加倍。</string>
+    <string name="health_atlas_bile_storage_scope">肝脏生成胆汁。两餐之间，胆囊储存胆汁，其内壁会吸收水分和部分盐分，使胆汁浓缩。在这个教学模型中，一个虚构的容器最初装有 12 VU 液体。只有水被移除，均匀混合的示踪物始终留在容器中。TU 和 VU 分别是示踪物量和体积的虚构单位。模型不模拟胆汁流动，也不预测真实的胆汁浓度。</string>
+</resources>

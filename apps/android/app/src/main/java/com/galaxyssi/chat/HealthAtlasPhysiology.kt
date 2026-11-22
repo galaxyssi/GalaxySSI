@@ -108,7 +108,16 @@ internal enum class HealthAtlasPhysiologyKind(val inputs: List<HealthAtlasInput>
     BONE_SECTION(HealthAtlasBoneSectionTeachingModel.spec),
     RETINAL_CONVERGENCE(HealthAtlasRetinalConvergenceTeachingModel.spec),
     MUSCLE_SHORTENING(HealthAtlasMuscleShorteningTeachingModel.spec),
-    KERATIN_GROWTH(HealthAtlasKeratinGrowthTeachingModel.spec);
+    KERATIN_GROWTH(HealthAtlasKeratinGrowthTeachingModel.spec),
+    BLADDER_EXPANSION(HealthAtlasBladderExpansionTeachingModel.spec),
+    VESTIBULAR_TILT(HealthAtlasVestibularTiltTeachingModel.spec),
+    AIRWAY_CILIARY_CLEARANCE(HealthAtlasAirwayCiliaryClearanceTeachingModel.spec),
+    GASTRIC_LIQUID_EMPTYING(HealthAtlasGastricLiquidEmptyingTeachingModel.spec),
+    THORACIC_CROSS_SECTION(HealthAtlasThoracicCrossSectionTeachingModel.spec),
+    PLATELET_FRAGMENT_COUNT(HealthAtlasPlateletFragmentCountTeachingModel.spec),
+    BILE_STORAGE(HealthAtlasBileStorageTeachingModel.spec),
+    BONE_REMODELING_BALANCE(HealthAtlasBoneRemodelingBalanceTeachingModel.spec),
+    CUTANEOUS_SEBUM(HealthAtlasCutaneousSebumTeachingModel.spec);
 
     constructor(spec: HealthAtlasTeachingModelSpec) : this(spec.inputs.map { it.control }, spec.axis, spec.unit,
         spec.minimum, spec.maximum, spec.source, spec.extraSource, spec)

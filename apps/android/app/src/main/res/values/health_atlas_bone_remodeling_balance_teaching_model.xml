@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_atlas_bone_remodeling_balance_title">Net bone matrix change</string>
+    <string name="health_atlas_bone_remodeling_balance_resorbed">Matrix resorbed</string>
+    <string name="health_atlas_bone_remodeling_balance_formed">Matrix formed</string>
+    <string name="health_atlas_bone_remodeling_balance_companion">Final matrix amount: %1$s a.u.</string>
+    <string name="health_atlas_bone_remodeling_balance_formula">Net matrix change = matrix formed - matrix resorbed. Final matrix amount = 100 a.u. + net matrix change. A net change of zero means formation matches resorption.</string>
+    <string name="health_atlas_bone_remodeling_balance_scope">Osteocytes help coordinate remodeling by signaling. Osteoclasts resorb old matrix, and osteoblasts then lay down new matrix. This model only tallies amounts for one patch of bone, without simulating timing or signaling. The values are synthetic, in arbitrary units (a.u.), and do not estimate changes in real bone.</string>
+</resources>
