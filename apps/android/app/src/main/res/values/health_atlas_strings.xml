@@ -10,8 +10,11 @@
     <string name="health_atlas_structure">Structure</string>
     <string name="health_atlas_function">Function</string>
     <string name="health_atlas_function_outline">Complete process</string>
+    <string name="health_atlas_scene_chapter">%1$d/%2$d · %3$s</string>
+    <string name="health_atlas_scene_menu">Animation options</string>
+    <string name="health_atlas_scene_sources">References</string>
     <string name="health_atlas_inline_models">Models and parameters</string>
-    <string name="health_atlas_values">My metrics</string>
+    <string name="health_atlas_values">Metrics</string>
     <string name="health_atlas_simulation">Simulation</string>
     <string name="health_atlas_open_quantitative_model">Numerical model</string>
     <string name="health_atlas_quick_metrics">Metrics</string>

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_atlas_beat_choice">Cardiac cycle</string>
     <string name="health_atlas_beat_title">How the heart pumps blood</string>
     <string name="health_atlas_beat_fill">The ventricles fill</string>
     <string name="health_atlas_beat_fill_caption">Blood enters the right atrium from the body and the left atrium from the lungs. The tricuspid and mitral valves open and the ventricles fill.</string>

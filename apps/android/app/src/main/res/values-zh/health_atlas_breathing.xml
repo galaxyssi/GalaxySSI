@@ -1,18 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_atlas_breathe_choice">呼吸与换气</string>
     <string name="health_atlas_breathe_title">一次呼吸如何交换气体</string>
     <string name="health_atlas_breathe_inhale">膈肌下移，空气进入</string>
-    <string name="health_atlas_breathe_inhale_caption">吸气时，膈肌收缩并下移，肺扩张，空气沿气道流入。</string>
+    <string name="health_atlas_breathe_inhale_caption">膈肌收缩下移，胸腔容积增大。肺泡内压力低于外界，空气因此流入。</string>
     <string name="health_atlas_breathe_reach">空气到达肺泡</string>
     <string name="health_atlas_breathe_reach_caption">空气经支气管和更细的细支气管到达肺泡。每个肺泡周围都有毛细血管。</string>
     <string name="health_atlas_breathe_diffuse">两种气体反向扩散</string>
-    <string name="health_atlas_breathe_diffuse_caption">氧气穿过薄薄的气血屏障进入血液，同时二氧化碳从血液进入肺泡。两种气体各自由分压较高处向较低处扩散。</string>
+    <string name="health_atlas_breathe_diffuse_caption">氧气和二氧化碳沿各自的分压差，穿过肺泡上皮、共同基底膜和毛细血管内皮，向相反方向扩散。</string>
     <string name="health_atlas_breathe_perfuse">血液把氧气带走</string>
     <string name="health_atlas_breathe_perfuse_caption">红细胞流过毛细血管时结合氧气。含氧较高的血液经肺静脉回到左心。</string>
     <string name="health_atlas_breathe_exhale">肺回缩，空气流出</string>
     <string name="health_atlas_breathe_exhale_caption">平静呼气时，膈肌放松并上移，肺回缩，含二氧化碳的空气被呼出。两次呼吸之间，气体交换不会停止。</string>
     <string name="health_atlas_breathe_alveolar_air">肺泡内的空气</string>
     <string name="health_atlas_breathe_muscle">膈肌</string>
+    <string name="health_atlas_breathe_barrier">气血屏障</string>
+    <string name="health_atlas_breathe_blood">毛细血管血液</string>
+    <string name="health_atlas_breathe_cross_section">显微切面</string>
     <string name="health_atlas_breathe_air_in">空气流入</string>
     <string name="health_atlas_breathe_air_out">空气流出</string>
     <string name="health_atlas_breathe_oxygen">氧气 → 血液</string>

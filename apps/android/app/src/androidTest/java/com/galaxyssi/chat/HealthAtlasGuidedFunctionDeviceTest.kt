@@ -5,9 +5,11 @@ import android.app.KeyguardManager
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Rect
 import android.os.SystemClock
 import android.view.View
-import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
@@ -108,17 +110,15 @@ class HealthAtlasGuidedFunctionDeviceTest {
                 it.view("atlas-tab-1").performClick()
                 val player = it.view("atlas-function-player") as HealthAtlasFunctionPlayer
                 val page = it.view("atlas-scroll")
-                assertEquals(View.GONE, it.view("atlas-function-outline").visibility)
-                it.view("atlas-function-outline-toggle").performClick()
-                val outline = it.view("atlas-function-outline") as ViewGroup
-                assertEquals(player.story.chapters.size, outline.childCount)
+                val frame = it.view("atlas-function-frame")
+                val caption = it.view("atlas-function-caption") as TextView
+                assertSame(frame, caption.parent.parent)
+                assertNotNull(it.view("atlas-function-menu"))
+                assertNull(it.window.decorView.findViewWithTag<View>("atlas-function-outline"))
                 for ((index, chapter) in player.story.chapters.withIndex()) {
-                    val row = it.view("atlas-function-outline-stage-$index") as ViewGroup
-                    val labels = row.getChildAt(0) as ViewGroup
-                    assertEquals(it.getString(chapter.second), (labels.getChildAt(1) as TextView).text.toString())
-                    row.performClick()
+                    if (index > 0) it.view("atlas-function-next").performClick()
                     assertEquals(index, player.story.chapter(player.phase))
-                    assertEquals(it.getString(chapter.second), (it.view("atlas-function-caption") as TextView).text.toString())
+                    assertEquals(it.getString(chapter.second), caption.text.toString())
                 }
                 assertEquals(View.GONE, it.view("atlas-inline-models").visibility)
                 it.view("atlas-open-simulation").performClick()
@@ -164,6 +164,84 @@ class HealthAtlasGuidedFunctionDeviceTest {
                     }
                 }
             }
+        }
+    }
+
+    @Test fun synapticScenesRenderDifferentMechanismsAndKeepTheirCaptionsInsideTheFrame() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-2").performClick()
+            (activity.view("atlas-search") as EditText).setText("brain")
+            activity.view("atlas-entry-brain").performClick()
+            activity.view("atlas-tab-1").performClick()
+        }
+        runner.waitForIdleSync()
+        scenario.onActivity { activity ->
+            val player = activity.view("atlas-function-player") as HealthAtlasFunctionPlayer
+            assertEquals(HealthAtlasFunctionStory.SYNAPTIC_SIGNAL, player.story)
+            val frame = activity.view("atlas-function-frame")
+            val art = activity.view("atlas-function-synaptic-signal-art") as HealthAtlasFunctionArt
+            val subtitle = activity.view("atlas-function-subtitles")
+            val caption = activity.view("atlas-function-caption") as TextView
+            assertSame(frame, art.parent)
+            assertSame(frame, subtitle.parent)
+            assertTrue(art.bottom <= subtitle.top)
+            assertTrue(subtitle.bottom <= frame.height)
+            assertTrue("Missing animation artwork", art.width > 0 && art.height > 0)
+            val size = Rect(0, 0, frame.width, frame.height)
+            val hashes = mutableSetOf<Int>()
+            val bitmap = Bitmap.createBitmap(size.width(), size.height(), Bitmap.Config.ARGB_8888)
+            try {
+                for (index in player.story.chapters.indices) {
+                    if (index > 0) activity.view("atlas-function-next").performClick()
+                    assertEquals(activity.getString(player.story.chapters[index].second), caption.text.toString())
+                    val chapter = index.toFloat()
+                    art.phase = (chapter + .56f) / player.story.chapters.size
+                    bitmap.eraseColor(0)
+                    frame.draw(Canvas(bitmap))
+                    val pixels = IntArray(art.width * art.height)
+                    bitmap.getPixels(pixels, 0, art.width, art.left, art.top, art.width, art.height)
+                    hashes += pixels.contentHashCode()
+                    java.io.File(context.getExternalFilesDir(null), "body-atlas-brain-scene-${index + 1}.png")
+                        .outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                }
+            } finally {
+                bitmap.recycle()
+            }
+            assertEquals(player.story.chapters.size, hashes.size)
+            assertNull(activity.window.decorView.findViewWithTag<View>("atlas-function-principle"))
+        }
+    }
+
+    @Test fun breathingShowsAMovingBarrierCloseUpWithTheSameCaptionClock() = native { scenario ->
+        scenario.onActivity { activity ->
+            activity.view("atlas-tab-2").performClick()
+            (activity.view("atlas-search") as EditText).setText("lungs")
+            activity.view("atlas-entry-lungs").performClick()
+            activity.view("atlas-tab-1").performClick()
+            repeat(2) { activity.view("atlas-function-next").performClick() }
+        }
+        runner.waitForIdleSync()
+        scenario.onActivity { activity ->
+            val frame = activity.view("atlas-function-frame")
+            val art = activity.view("atlas-function-breathing-art") as HealthAtlasFunctionArt
+            val caption = activity.view("atlas-function-caption") as TextView
+            assertEquals(activity.getString(R.string.health_atlas_breathe_diffuse_caption), caption.text.toString())
+            assertSame(frame, caption.parent.parent)
+            val bitmap = Bitmap.createBitmap(frame.width, frame.height, Bitmap.Config.ARGB_8888)
+            try {
+                fun artHash(position: Float): Int {
+                    art.phase = position
+                    bitmap.eraseColor(0)
+                    frame.draw(Canvas(bitmap))
+                    val pixels = IntArray(art.width * art.height)
+                    bitmap.getPixels(pixels, 0, art.width, art.left, art.top, art.width, art.height)
+                    return pixels.contentHashCode()
+                }
+                assertNotEquals(artHash(.42f), artHash(.52f))
+                java.io.File(context.getExternalFilesDir(null), "body-atlas-lung-barrier.png").outputStream().use {
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+                }
+            } finally { bitmap.recycle() }
         }
     }
 

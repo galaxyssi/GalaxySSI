@@ -276,11 +276,11 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<View>("atlas-tab-2").performClick()
                     activity.find<EditText>("atlas-search").setText("lymphatic-vessels")
                     activity.find<View>("atlas-entry-lymphatic-vessels").performClick()
+                    activity.find<View>("atlas-feature-vessel-0")
                     activity.openAtlasModelDetails()
                     activity.find<android.widget.SeekBar>("atlas-physiology-lymph-pressure").progress = 70
                     activity.find<View>("atlas-tab-1").performClick()
                     activity.find<View>("atlas-function-lymph-return-art")
-                    activity.find<View>("atlas-feature-vessel-0")
                     repeat(2) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_lymph_flow_pump_caption),
                         activity.find<TextView>("atlas-function-caption").text)
@@ -454,7 +454,7 @@ class HealthAtlasFunctionStoryDeviceTest {
         } finally { clearHealthOverviewFixture(context, fixture) }
     }
 
-    @Test fun nephronOpensWithPlaybackControlsVisibleBeforeTheArtwork() {
+    @Test fun nephronOpensWithPlaybackControlsVisibleBelowTheFrame() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val fixture = HealthOverviewDatabases(UUID.randomUUID().toString())
         val intent = Intent(context, HealthBodyAtlasActivity::class.java).putHealthNavigationFixture(fixture)
@@ -470,7 +470,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                 }
                 instrumentation.waitForIdleSync()
                 scenario.onActivity { activity ->
-                    val art = activity.find<View>("atlas-function-nephron-art")
+                    val frame = activity.find<View>("atlas-function-frame")
                     val play = activity.find<View>("atlas-function-play")
                     val seeker = activity.find<View>("atlas-function-position")
                     val visible = Rect()
@@ -478,7 +478,7 @@ class HealthAtlasFunctionStoryDeviceTest {
                     assertEquals(play.height, visible.height())
                     assertTrue(seeker.getGlobalVisibleRect(visible))
                     assertEquals(seeker.height, visible.height())
-                    assertTrue(seeker.bottom < art.top)
+                    assertTrue(seeker.top >= frame.bottom)
                     repeat(3) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_nephron_story_distal_caption),
                         activity.find<TextView>("atlas-function-caption").text)
@@ -813,9 +813,9 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<View>("atlas-tab-1").performClick()
                     activity.find<EditText>("atlas-search").setText("nervous")
                     activity.find<View>("atlas-entry-nervous").performClick()
+                    activity.find<View>("atlas-hotspot-spinal-cord")
                     activity.find<View>("atlas-tab-1").performClick()
                     activity.find<View>("atlas-function-synaptic-signal-art")
-                    activity.find<View>("atlas-hotspot-spinal-cord")
                     repeat(2) { activity.find<View>("atlas-function-next").performClick() }
                     activity.find<View>("atlas-function-lesson-1").performClick()
                     activity.find<View>("atlas-function-myelin-signal-art")
@@ -831,9 +831,9 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<View>("atlas-tab-2").performClick()
                     activity.find<EditText>("atlas-search").setText("thyroid-gland")
                     activity.find<View>("atlas-entry-thyroid-gland").performClick()
+                    activity.find<View>("atlas-hotspot-cell-thyroid-follicular-cell")
                     activity.find<View>("atlas-tab-1").performClick()
                     activity.find<View>("atlas-function-thyroid-feedback-art")
-                    activity.find<View>("atlas-hotspot-cell-thyroid-follicular-cell")
                     repeat(4) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_signal_thyroid_feedback_caption),
                         activity.find<TextView>("atlas-function-caption").text)
@@ -860,9 +860,9 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<View>("atlas-tab-2").performClick()
                     activity.find<EditText>("atlas-search").setText("sweat-glands")
                     activity.find<View>("atlas-entry-sweat-glands").performClick()
+                    activity.find<View>("atlas-feature-sweat-pore")
                     activity.find<View>("atlas-tab-1").performClick()
                     activity.find<View>("atlas-function-sweat-cooling-art")
-                    activity.find<View>("atlas-feature-sweat-pore")
                     repeat(4) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_home_sweat_story_evaporate_caption),
                         activity.find<TextView>("atlas-function-caption").text)
@@ -886,12 +886,12 @@ class HealthAtlasFunctionStoryDeviceTest {
                     activity.find<View>("atlas-tab-1").performClick()
                     activity.find<EditText>("atlas-search").setText("skin")
                     activity.find<View>("atlas-entry-skin").performClick()
+                    activity.find<View>("atlas-hotspot-epidermis")
                     activity.find<View>("atlas-tab-1").performClick()
                     activity.find<View>("atlas-function-sweat-cooling-art")
                     activity.find<View>("atlas-function-next").performClick()
                     activity.find<View>("atlas-function-lesson-1").performClick()
                     activity.find<View>("atlas-function-epidermal-barrier-art")
-                    activity.find<View>("atlas-hotspot-epidermis")
                     repeat(3) { activity.find<View>("atlas-function-next").performClick() }
                     assertEquals(activity.getString(R.string.health_atlas_barrier_water_caption),
                         activity.find<TextView>("atlas-function-caption").text)
