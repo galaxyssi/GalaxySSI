@@ -16,7 +16,7 @@ class WechatArticleBrowserDeviceTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val page = "https://mp.weixin.qq.com/s/galaxyssi-browser-test"
 
-    @Test fun waitsForDynamicArticleAndLazyImageThenDeliversOnce() {
+    @Test fun waitsForDynamicBodyAndPreservesLazyImageSource() {
         val done = CountDownLatch(1)
         val calls = AtomicInteger()
         var result = ""
@@ -29,6 +29,32 @@ class WechatArticleBrowserDeviceTest {
             assertTrue(result.contains("data:image/png"))
             Thread.sleep(1700)
             assertEquals(1, calls.get())
+        }
+    }
+
+    @Test fun aBrokenImageDoesNotDelayAnOtherwiseReadyArticle() {
+        val done = CountDownLatch(1)
+        var result = ""
+        withBrowser({ _, html -> result = html; done.countDown() }, { fail("Unexpected verification") },
+            readinessTimeoutMillis = 6_000) { browser ->
+            load(browser, """<h1 id="activity-name">Fixture</h1>
+                <div id="js_content"><p>FIRST_PARAGRAPH</p>
+                <img src="data:image/png;base64,YmFk"><p>LAST_PARAGRAPH</p></div>""")
+            assertTrue("Failed inline image blocked the ready article", done.await(5, TimeUnit.SECONDS))
+            assertTrue(result.contains("LAST_PARAGRAPH"))
+        }
+    }
+
+    @Test fun aPageWithoutAnArticleReportsBodyUnavailableInsteadOfReturningHtml() {
+        val done = CountDownLatch(1)
+        var reason: WechatArticleBrowserFailure? = null
+        val exported = AtomicInteger()
+        withBrowser({ _, _ -> exported.incrementAndGet() }, { fail("Unexpected verification") },
+            readinessTimeoutMillis = 2_200, failure = { reason = it; done.countDown() }) { browser ->
+            load(browser, "<h1>Not an article</h1><p>Server placeholder</p>")
+            assertTrue(done.await(7, TimeUnit.SECONDS))
+            assertEquals(WechatArticleBrowserFailure.BODY_NOT_READY, reason)
+            assertEquals(0, exported.get())
         }
     }
 
@@ -66,11 +92,13 @@ class WechatArticleBrowserDeviceTest {
         browser.observeLoadedPage()
     }
 
-    private fun withBrowser(result: (String, String) -> Unit, verify: () -> Unit, test: (WechatArticleBrowser) -> Unit) {
+    private fun withBrowser(result: (String, String) -> Unit, verify: () -> Unit,
+        readinessTimeoutMillis: Long = 120_000, failure: (WechatArticleBrowserFailure) -> Unit = { fail("Browser failed: $it") },
+        test: (WechatArticleBrowser) -> Unit) {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var browser: WechatArticleBrowser
             scenario.onActivity { activity ->
-                browser = WechatArticleBrowser(activity, result, verify) { fail("Browser failed") }
+                browser = WechatArticleBrowser(activity, result, verify, failure, readinessTimeoutMillis)
                 activity.findViewById<ViewGroup>(android.R.id.content).addView(browser.view, ViewGroup.LayoutParams(800, 1000))
             }
             try { test(browser) } finally {

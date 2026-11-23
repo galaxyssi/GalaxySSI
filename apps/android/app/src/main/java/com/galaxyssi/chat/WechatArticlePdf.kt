@@ -16,11 +16,20 @@ import android.text.TextPaint
 import android.util.Base64
 import java.io.File
 
-internal data class WechatSavedArticle(val uri: Uri, val name: String, val pages: Int)
+internal data class WechatSavedArticle(val uri: Uri, val name: String, val pages: Int, val missingImages: Int = 0)
+internal data class WechatArticlePrintResult(val pages: Int, val missingImages: Int)
 
 /** Local PDF rendering; no model, remote renderer, or screen capture is involved. */
 internal object WechatArticlePdf {
-    fun render(html: String, destination: File, checkpoint: () -> Unit = {}): Int {
+    fun render(html: String, destination: File, checkpoint: () -> Unit = {}): Int =
+        print(html, destination, true, null, { "" }, checkpoint).pages
+
+    fun renderExport(html: String, destination: File, hasBodyText: Boolean, missingImageLabel: String,
+        footer: (Int) -> String, checkpoint: () -> Unit): WechatArticlePrintResult =
+        print(html, destination, hasBodyText, missingImageLabel, footer, checkpoint)
+
+    private fun print(html: String, destination: File, hasBodyText: Boolean, missingImageLabel: String?,
+        footer: (Int) -> String, checkpoint: () -> Unit): WechatArticlePrintResult {
         val document = PdfDocument()
         var page: PdfDocument.Page? = null
         var pageNumber = 0
@@ -28,6 +37,8 @@ internal object WechatArticlePdf {
         val width = 531
         val bottom = 806f
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 12f; color = Color.BLACK }
+        var writtenImages = 0
+        var missingImages = 0
         fun nextPage() {
             checkpoint()
             page?.let(document::finishPage)
@@ -35,50 +46,47 @@ internal object WechatArticlePdf {
             page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, ++pageNumber).create())
             y = 32f
         }
+        fun writeText(text: CharSequence) {
+            if (text.isEmpty()) return
+            val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false)
+                .setLineSpacing(4f, 1f).build()
+            var first = 0
+            while (first < layout.lineCount) {
+                checkpoint()
+                val top = layout.getLineTop(first)
+                var last = first
+                while (last < layout.lineCount && layout.getLineBottom(last) - top <= bottom - y) last++
+                if (last == first) {
+                    require(y > 32f) { "article_line_exceeds_page" }
+                    nextPage(); continue
+                }
+                val height = layout.getLineBottom(last - 1) - top
+                val canvas = page!!.canvas
+                canvas.save()
+                canvas.clipRect(32f, y, 563f, y + height)
+                canvas.translate(32f, y - top)
+                layout.draw(canvas)
+                canvas.restore()
+                y += height + 8
+                first = last
+                if (first < layout.lineCount) nextPage()
+            }
+        }
         try {
             nextPage()
             WechatArticleDocuments.blocks(html).forEach { block ->
                 checkpoint()
                 when (block) {
-                    is WechatArticleBlock.Text -> {
-                        val text = Html.fromHtml(block.html, Html.FROM_HTML_MODE_COMPACT).trim()
-                        if (text.isNotEmpty()) {
-                            val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
-                                .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false)
-                                .setLineSpacing(4f, 1f).build()
-                            var first = 0
-                            while (first < layout.lineCount) {
-                                checkpoint()
-                                val top = layout.getLineTop(first)
-                                var last = first
-                                while (last < layout.lineCount && layout.getLineBottom(last) - top <= bottom - y) last++
-                                if (last == first) {
-                                    require(y > 32f) { "article_line_exceeds_page" }
-                                    nextPage(); continue
-                                }
-                                val height = layout.getLineBottom(last - 1) - top
-                                val canvas = page!!.canvas
-                                canvas.save()
-                                canvas.clipRect(32f, y, 563f, y + height)
-                                canvas.translate(32f, y - top)
-                                layout.draw(canvas)
-                                canvas.restore()
-                                y += height + 8
-                                first = last
-                                if (first < layout.lineCount) nextPage()
-                            }
-                        }
-                    }
+                    is WechatArticleBlock.Text -> writeText(Html.fromHtml(block.html, Html.FROM_HTML_MODE_COMPACT).trim())
                     is WechatArticleBlock.Image -> {
-                        require(block.source.startsWith("data:image/")) { "article_image_missing" }
-                        val bytes = Base64.decode(block.source.substringAfter("base64,", ""), Base64.DEFAULT)
-                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "article_image_invalid" }
-                        var sample = 1
-                        while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 2400) sample *= 2
-                        val bitmap = requireNotNull(BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
-                            BitmapFactory.Options().apply { inSampleSize = sample }))
+                        val bitmap = decodeImage(block.source)
+                        if (bitmap == null) {
+                            requireNotNull(missingImageLabel) { "article_image_missing" }
+                            missingImages++
+                            writeText(missingImageLabel)
+                            return@forEach
+                        }
                         try {
                             val scale = minOf(width.toFloat() / bitmap.width, 750f / bitmap.height, 1f)
                             val w = bitmap.width * scale
@@ -87,23 +95,40 @@ internal object WechatArticlePdf {
                             val x = (595f - w) / 2
                             page!!.canvas.drawBitmap(bitmap, null, RectF(x, y, x + w, y + h),
                                 Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+                            writtenImages++
                             y += h + 10
                         } finally { bitmap.recycle() }
                     }
                 }
             }
+            if (!hasBodyText && writtenImages == 0) throw WechatArticleContentMissing()
+            writeText(footer(missingImages))
             page?.let(document::finishPage)
             page = null
             checkpoint()
             destination.outputStream().use(document::writeTo)
-            return pageNumber
+            return WechatArticlePrintResult(pageNumber, missingImages)
         } finally {
             page?.let { runCatching { document.finishPage(it) } }
             document.close()
         }
     }
 
-    fun save(context: Context, pdf: File, name: String, pages: Int, checkpoint: () -> Unit = {}): WechatSavedArticle {
+    private fun decodeImage(source: String): android.graphics.Bitmap? {
+        if (!source.startsWith("data:image/", ignoreCase = true)) return null
+        val encoded = source.substringAfter("base64,", "")
+        if (encoded.isEmpty()) return null
+        val bytes = try { Base64.decode(encoded, Base64.DEFAULT) } catch (_: IllegalArgumentException) { return null }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 2400) sample *= 2
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+    }
+
+    fun save(context: Context, pdf: File, name: String, pages: Int, missingImages: Int = 0,
+        checkpoint: () -> Unit = {}): WechatSavedArticle {
         require(name.endsWith(".pdf") && '/' !in name && '\\' !in name && pdf.length() > 0 && pages > 0)
         val resolver = context.contentResolver
         checkpoint()
@@ -121,7 +146,7 @@ internal object WechatArticlePdf {
             } }
             checkpoint()
             check(resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null) == 1)
-            return WechatSavedArticle(uri, name, pages)
+            return WechatSavedArticle(uri, name, pages, missingImages)
         } catch (error: Exception) {
             runCatching { resolver.delete(uri, null, null) }
             throw error

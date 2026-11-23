@@ -16,6 +16,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.text.Normalizer
 import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
@@ -84,4 +85,60 @@ class WechatArticlePdfDeviceTest {
             assertTrue(runCatching { WechatArticlePdf.render("<p>body</p><img src='https://example.com/missing.png'>", file) }.isFailure)
         } finally { file.delete() }
     }
+
+    @Test fun partialExportKeepsTheLastParagraphAndMarksFailedImagesInOrder() {
+        val url = "https://mp.weixin.qq.com/s/fixture-article"
+        val bitmap = Bitmap.createBitmap(200, 80, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
+        val png = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        bitmap.recycle()
+        val valid = Base64.encodeToString(png, Base64.NO_WRAP)
+        val html = """<h1 id="activity-name">Synthetic PDF fixture</h1><div id="js_content">
+            <p>FIRST_PARAGRAPH</p><img data-src="data:image/png;base64,$valid">
+            <img src="about:blank"><p>MIDDLE_PARAGRAPH</p>
+            <img src="data:image/png;base64,YmFk"><p>LAST_PARAGRAPH</p></div>"""
+        val saved = WechatArticleExporter.export(context, url, html) {}
+        try {
+            assertEquals(2, saved.missingImages)
+            PDFBoxResourceLoader.init(context)
+            if (InstrumentationRegistry.getArguments().getString("preview") == "true") {
+                context.contentResolver.openInputStream(saved.uri)!!.use { input ->
+                    File(context.cacheDir, "wechat-partial-fixture.pdf").outputStream().use { input.copyTo(it) }
+                }
+            }
+            context.contentResolver.openInputStream(saved.uri)!!.use { input ->
+                PDDocument.load(input).use { pdf ->
+                    val text = PDFTextStripper().getText(pdf)
+                    val compact = normalizePdfText(text)
+                    val missing = normalizePdfText(context.getString(R.string.wechat_article_missing_image))
+                    val firstMissing = compact.indexOf(missing)
+                    val nextMissing = compact.indexOf(missing, firstMissing + missing.length)
+                    assertTrue("Unexpected synthetic PDF text: $text",
+                        compact.indexOf("FIRST_PARAGRAPH") in 0 until firstMissing &&
+                            compact.indexOf("MIDDLE_PARAGRAPH") in firstMissing until nextMissing &&
+                            nextMissing >= 0 && compact.indexOf("LAST_PARAGRAPH") > nextMissing)
+                }
+            }
+            PdfRenderer(context.contentResolver.openFileDescriptor(saved.uri, "r")!!).use { pdf ->
+                val page = Bitmap.createBitmap(595, 842, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
+                try {
+                    pdf.openPage(0).use { it.render(page, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }
+                    assertTrue((0 until page.height step 5).any { y ->
+                        (0 until page.width step 5).any { x -> page.getPixel(x, y) == Color.BLUE }
+                    })
+                } finally { page.recycle() }
+            }
+        } finally { context.contentResolver.delete(saved.uri, null, null) }
+    }
+
+    @Test fun imageOnlyArticleWithoutAUsableImageDoesNotPublishAnEmptyPdf() {
+        val url = "https://mp.weixin.qq.com/s/fixture-article"
+        val html = """<h1 id="activity-name">Synthetic image-only fixture</h1>
+            <div id="js_content"><img src="data:image/png;base64,YmFk"></div>"""
+        val result = runCatching { WechatArticleExporter.export(context, url, html) {} }
+        result.getOrNull()?.let { context.contentResolver.delete(it.uri, null, null) }
+        assertTrue(result.exceptionOrNull() is WechatArticleContentMissing)
+    }
+
+    private fun normalizePdfText(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFKC)
+        .filterNot { it.isWhitespace() || Character.getType(it) == Character.FORMAT.toInt() }
 }
