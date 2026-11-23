@@ -2874,3 +2874,8 @@
 "health_atlas_monocyte_lesson_scope" = "Teaching view: recruitment from blood into tissue. Some recruited monocytes become macrophages; this is one possible outcome.";
 "health_atlas_dendritic_lesson_scope" = "Teaching view: a dendritic cell processes material and presents an antigen fragment to a T cell. Symbols do not represent molecular scale.";
 "health_atlas_plasma_lesson_scope" = "Teaching view: a plasma cell produces and releases antibodies. The pale Golgi region and protein-production structures are schematic.";
+"health_atlas_t_lesson_scope" = "Teaching view: a T cell responds to presented antigen and activation signals. Outcomes depend on the T-cell subtype.";
+"health_atlas_b_lesson_scope" = "Teaching view: one T-dependent B-cell response can lead to plasma cells or memory B cells. The receptor shapes are schematic.";
+"health_atlas_nk_lesson_scope" = "Teaching view: an NK cell responds to an example altered target. Symbols and timing are illustrative.";
+"health_atlas_mega_lesson_scope" = "Teaching view: a megakaryocyte extends cytoplasm near a vessel and releases platelet fragments. Scale and timing are illustrative.";
+"health_atlas_platelet_lesson_scope" = "Teaching view: activated platelets collect at a vessel injury and help form a plug. This is not a coagulation or treatment model.";

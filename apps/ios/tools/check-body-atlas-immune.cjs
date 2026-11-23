@@ -13,13 +13,12 @@ assert.equal(pack.schema, 1);
 assert.equal(pack.plates.length, 12);
 assert.equal(new Set(pack.plates.map(p => p.owner)).size, 12);
 const source = execFileSync('git', ['show', sha + ':apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasImmunePlates.kt'], {encoding: 'utf8'});
-let paths = 0, features = 0;
+let features = 0;
 for (const plate of pack.plates) {
   assert(source.includes('"' + plate.owner + '"'));
   assert.equal(plate.id, plate.owner);
   assert.deepEqual(plate.entryIDs, [plate.owner]);
-  const painted = ["cell-macrophage","cell-neutrophil","cell-eosinophil","cell-basophil","cell-monocyte","cell-dendritic-cell","cell-plasma-cell"].includes(plate.owner);
-  assert.equal(plate.aspectRatio, painted ? 1 : 360 / 280);
+  assert.equal(plate.aspectRatio, 1);
   assert.deepEqual(plate.markers, []);
   const ids = new Set();
   for (const feature of plate.features) {
@@ -35,18 +34,9 @@ for (const plate of pack.plates) {
   }
   const dir = path.join(assets, plate.asset + '.imageset');
   const metadata = JSON.parse(fs.readFileSync(path.join(dir, 'Contents.json')));
-  if (painted) {
-    assert(metadata.images.some(i=>i.filename==="cell.png"));
-    assert(!metadata.properties?.["preserves-vector-representation"]);
-    assert(!fs.existsSync(path.join(dir,"cell.pdf")));
-    continue;
-  }
-  const original = execFileSync('git', ['show', sha + ':' + plate.drawable], {encoding: 'utf8'});
-  paths += (original.match(/<path\b/g) || []).length;
-  assert.equal(metadata.properties['preserves-vector-representation'], true);
-  const pdf = fs.readFileSync(path.join(dir, metadata.images[0].filename));
-  assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+  assert(metadata.images.some(i=>i.filename==="cell.png"));
+  assert(!metadata.properties?.["preserves-vector-representation"]);
+  assert(!fs.existsSync(path.join(dir,"cell.pdf")));
 }
 assert.equal(features, 25);
-assert.equal(paths, 18);
-console.log('Immune resource audit: 12 plates, 25 local features, 18 retained vector paths and seven painted cells; bilingual keys resolved.');
+console.log('Immune resource audit: 12 painted plates, 25 local features; bilingual keys resolved and obsolete PDFs absent.');

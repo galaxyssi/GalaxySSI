@@ -14,9 +14,9 @@ const local=file=>fs.readFileSync(path.join(root,"apps/ios/GalaxySSI",file),"utf
   const features=[...kotlin.matchAll(/paintedFeature\("([^"]+)", (\d+), (\d+), R.string.(\w+), R.string.(\w+)\)/g)]
     .map(m=>({marker:{id:m[1],x:Number(m[2])/1254,y:Number(m[3])/1254},title:m[4],explanation:m[5]}));
   assert.equal(features.length,8);
-  const semantic=structuredClone(pack);delete semantic.granulocyteArtworkSource;delete semantic.immuneLinkArtworkSource;
+  const semantic=structuredClone(pack);delete semantic.granulocyteArtworkSource;delete semantic.immuneLinkArtworkSource;delete semantic.bloodDefenseArtworkSource;
   // #4367 has its own source audit; compare this increment only.
-  for(const id of ["cell-monocyte","cell-dendritic-cell","cell-plasma-cell"]){
+  for(const id of ["cell-monocyte","cell-dendritic-cell","cell-plasma-cell","cell-t-cell","cell-b-cell","cell-natural-killer-cell","cell-megakaryocyte","fragment-platelet"]){
     const restored=semantic.plates.find(p=>p.owner===id),previous=old.plates.find(p=>p.owner===id);
     restored.aspectRatio=previous.aspectRatio;restored.drawable=previous.drawable;
     for(const feature of restored.features)feature.marker=previous.features.find(f=>f.marker.id===feature.marker.id).marker;

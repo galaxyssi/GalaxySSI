@@ -134,6 +134,10 @@ enum GalaxySSIHealthAtlasQuestion {
        ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
       prompt += "\n" + t(lesson.scopeKey)
     }
+    if let lesson = GalaxySSIHealthAtlasBloodDefense(rawValue: entry.id),
+       ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
+      prompt += "\n" + t(lesson.scopeKey)
+    }
     if research {
       switch selection.research {
       case .physiology:
