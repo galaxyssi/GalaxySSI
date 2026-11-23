@@ -17,6 +17,27 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
      "elimination_assumptions": "Single-compartment teaching assumptions",
      "elimination_summary": "Half-life %1$lld h; after %2$lld h: %3$@%%"] [key] ?? key
   }
+  func testSensorySectionContextKeepsEarScopeAndCurrentLayerOwnerBound() throws {
+    for id in ["ear", "retina"] {
+      for stage in 0..<4 {
+        let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: Double(stage) / 4, first: 70, second: 70))
+        for language in ["en", "zh-Hans"] {
+          let lines = GalaxySSIHealthAtlasSectionLesson.context(id, stage: stage, language: language)
+          XCTAssertEqual(lines.count, id == "ear" ? 2 : 1)
+          for screen in Context.Screen.allCases {
+            let prompt = Context.prompt(anatomy: anatomy(id), screen: screen, simulation: simulation,
+              language: language, locale: locale, text: text)
+            if screen == .values { XCTAssertNil(prompt); continue }
+            for line in lines { XCTAssertEqual(try XCTUnwrap(prompt).contains(line), screen.includesPhysiology) }
+            let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("eye"), screen: screen,
+              simulation: simulation, language: language, locale: locale, text: text))
+            XCTAssertFalse(foreign.contains(lines[0]))
+          }
+        }
+      }
+    }
+  }
+
   func testGutSectionContextRequiresMatchingOwnerAndNeverUsesLymphOrientation() throws {
     for id in GalaxySSIHealthAtlas.GutPack.owners {
       let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: 0.5, first: 70, second: 70))

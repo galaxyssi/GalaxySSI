@@ -4,18 +4,27 @@ struct GalaxySSIHealthAtlasSectionLesson {
   struct Point: Decodable, Equatable {
     let x: Double
     let y: Double
-    var valid: Bool { x.isFinite && y.isFinite && (0...360).contains(x) && (0...280).contains(y) }
+    var valid: Bool { fits(width: 360) }
+    func fits(width: Double) -> Bool {
+      width.isFinite && width > 0 && x.isFinite && y.isFinite && (0...width).contains(x) && (0...280).contains(y)
+    }
   }
   struct Command: Decodable {
     enum Kind: String, Decodable { case line, quad, cubic }
     let kind: Kind
     let points: [Point]
-    var valid: Bool { points.count == (kind == .line ? 1 : kind == .quad ? 2 : 3) && points.allSatisfy(\.valid) }
+    var valid: Bool { fits(width: 360) }
+    func fits(width: Double) -> Bool {
+      points.count == (kind == .line ? 1 : kind == .quad ? 2 : 3) && points.allSatisfy { $0.fits(width: width) }
+    }
   }
   struct Route: Decodable {
     let start: Point
     let commands: [Command]
-    var valid: Bool { start.valid && (1...4).contains(commands.count) && commands.allSatisfy(\.valid) }
+    var valid: Bool { fits(width: 360) }
+    func fits(width: Double) -> Bool {
+      start.fits(width: width) && (1...4).contains(commands.count) && commands.allSatisfy { $0.fits(width: width) }
+    }
   }
   struct Phase: Equatable {
     let value: Double
@@ -32,12 +41,14 @@ struct GalaxySSIHealthAtlasSectionLesson {
   let stageFeatures: [Int]
   let routes: [Route]
   var notes: [String] = []
+  var artWidth: Double = 360
   func feature(stage: Int) -> GalaxySSIHealthAtlas.Feature? {
     guard stageFeatures.indices.contains(stage), plate.annotations.indices.contains(stageFeatures[stage]) else { return nil }
     return plate.annotations[stageFeatures[stage]]
   }
   func route(stage: Int) -> Route? { routes.indices.contains(stage) ? routes[stage] : nil }
   static func forEntry(_ id: String) -> Self? {
+    if let sensory = GalaxySSIHealthAtlasSensorySections.forEntry(id) { return sensory }
     if let pack = try? GalaxySSIHealthAtlas.GutPack.bundled.get(),
       let plate = pack.plates.first(where: { $0.owner == id }), let stages = pack.stageFeatures[id] {
       return Self(plate: plate, stageFeatures: stages, routes: pack.routes[id] ?? [], notes: pack.notes[id] ?? [])

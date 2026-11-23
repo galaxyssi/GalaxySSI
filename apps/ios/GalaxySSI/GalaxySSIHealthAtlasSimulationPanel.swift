@@ -56,7 +56,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       }
       if entry.id == "hair-follicles" { Text(t("context_hair_scope")).font(.footnote).foregroundColor(.secondary) }
       if retinal {
-        playbackControls
+        if section == nil { playbackControls }
         GalaxySSIHealthAtlasRetinaPathView(atlas: atlas, model: model, stage: simulation.stage, language: language,
           select: { playing = false; simulation.selectStage($0) }, open: { playing = false; structure = $0 })
       }

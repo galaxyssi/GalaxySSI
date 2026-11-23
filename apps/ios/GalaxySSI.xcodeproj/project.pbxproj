@@ -37,6 +37,7 @@
     C43490000000000000000003 /* GalaxySSIHealthAtlasEndocrinePath.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43490000000000000000004 /* GalaxySSIHealthAtlasEndocrinePath.swift */; };
     C43490000000000000000005 /* GalaxySSIHealthAtlasEndocrinePathView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43490000000000000000006 /* GalaxySSIHealthAtlasEndocrinePathView.swift */; };
     C43500000000000000000001 /* GalaxySSIHealthAtlasSensoryCells.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43500000000000000000002 /* GalaxySSIHealthAtlasSensoryCells.swift */; };
+    C43580000000000000000001 /* GalaxySSIHealthAtlasSensorySections.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43580000000000000000002 /* GalaxySSIHealthAtlasSensorySections.swift */; };
     C43500000000000000000003 /* GalaxySSIHealthAtlasRetinaPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43500000000000000000004 /* GalaxySSIHealthAtlasRetinaPath.swift */; };
     C43500000000000000000005 /* GalaxySSIHealthAtlasRetinaPathView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43500000000000000000006 /* GalaxySSIHealthAtlasRetinaPathView.swift */; };
     C43510000000000000000001 /* GalaxySSIHealthAtlasCellContexts.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43510000000000000000002 /* GalaxySSIHealthAtlasCellContexts.swift */; };
@@ -1526,6 +1527,7 @@
     C43490000000000000000004 /* GalaxySSIHealthAtlasEndocrinePath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEndocrinePath.swift; sourceTree = "<group>"; };
     C43490000000000000000006 /* GalaxySSIHealthAtlasEndocrinePathView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEndocrinePathView.swift; sourceTree = "<group>"; };
     C43500000000000000000002 /* GalaxySSIHealthAtlasSensoryCells.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSensoryCells.swift; sourceTree = "<group>"; };
+    C43580000000000000000002 /* GalaxySSIHealthAtlasSensorySections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSensorySections.swift; sourceTree = "<group>"; };
     C43500000000000000000004 /* GalaxySSIHealthAtlasRetinaPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasRetinaPath.swift; sourceTree = "<group>"; };
     C43500000000000000000006 /* GalaxySSIHealthAtlasRetinaPathView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasRetinaPathView.swift; sourceTree = "<group>"; };
     C43510000000000000000002 /* GalaxySSIHealthAtlasCellContexts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCellContexts.swift; sourceTree = "<group>"; };
@@ -3033,6 +3035,7 @@
         C43490000000000000000004 /* GalaxySSIHealthAtlasEndocrinePath.swift */,
         C43490000000000000000006 /* GalaxySSIHealthAtlasEndocrinePathView.swift */,
         C43500000000000000000002 /* GalaxySSIHealthAtlasSensoryCells.swift */,
+        C43580000000000000000002 /* GalaxySSIHealthAtlasSensorySections.swift */,
         C43500000000000000000004 /* GalaxySSIHealthAtlasRetinaPath.swift */,
         C43500000000000000000006 /* GalaxySSIHealthAtlasRetinaPathView.swift */,
         C43510000000000000000002 /* GalaxySSIHealthAtlasCellContexts.swift */,
@@ -4670,6 +4673,7 @@
         C43490000000000000000003 /* GalaxySSIHealthAtlasEndocrinePath.swift in Sources */,
         C43490000000000000000005 /* GalaxySSIHealthAtlasEndocrinePathView.swift in Sources */,
         C43500000000000000000001 /* GalaxySSIHealthAtlasSensoryCells.swift in Sources */,
+        C43580000000000000000001 /* GalaxySSIHealthAtlasSensorySections.swift in Sources */,
         C43500000000000000000003 /* GalaxySSIHealthAtlasRetinaPath.swift in Sources */,
         C43500000000000000000005 /* GalaxySSIHealthAtlasRetinaPathView.swift in Sources */,
         C43510000000000000000001 /* GalaxySSIHealthAtlasCellContexts.swift in Sources */,
