@@ -13,6 +13,7 @@ enum GalaxySSIHealthAtlasAgentContext {
     let mechanism: String
     let stages: [String]
     let source: URL
+    var tissueContext: [String] = []
   }
   struct Simulation {
     let entryID: String
@@ -64,6 +65,7 @@ enum GalaxySSIHealthAtlasAgentContext {
       return format.string(from: NSNumber(value: value)) ?? String(value)
     }
     var lines = [String(format: t("ask_context"), anatomy.name, anatomy.description, anatomy.mechanism, anatomy.source.absoluteString)]
+    lines += anatomy.tissueContext
     if let illustration, illustration.entryID == anatomy.id {
       lines += [illustration.caption, t("art_note")]
       if let source = illustration.source { lines.append(source.absoluteString) }
