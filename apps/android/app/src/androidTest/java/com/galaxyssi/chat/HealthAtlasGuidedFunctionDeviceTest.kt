@@ -59,22 +59,34 @@ class HealthAtlasGuidedFunctionDeviceTest {
         }
         runner.waitForIdleSync()
         val length = player.story.chapters.size * 5_000L
+        var startPhase = 0f
         var started = 0L
         runner.runOnMainSync {
+            assertTrue("The animation must be displayed before playing", art.isAttachedToWindow)
+            startPhase = player.phase
             started = SystemClock.uptimeMillis()
             assertTrue(art.performClick())
+            assertEquals(player.context.getString(R.string.health_body_pause), play.contentDescription)
+        }
+        scenario.onActivity {
+            it.view("atlas-tab-1").performClick()
+            assertSame("Retapping Function must not replace the running player", player, it.view("atlas-function-player"))
         }
         SystemClock.sleep(1_650)
         var paused = 0f
         var chapter = -1
         runner.runOnMainSync {
+            assertTrue("The animation window was detached during the test", art.isAttachedToWindow)
+            assertEquals("The player stopped before the pause tap",
+                player.context.getString(R.string.health_body_pause), play.contentDescription)
             val before = SystemClock.uptimeMillis() - started
-            art.performClick()
+            assertTrue(art.performClick())
             val after = SystemClock.uptimeMillis() - started
             paused = player.phase
             chapter = player.story.chapter(paused)
-            assertTrue("Paused at a different time from the actual tap: $before..$after",
-                (paused * length).toLong() in (before - 80)..(after + 80))
+            val elapsed = ((paused - startPhase) * length).toLong()
+            assertTrue("Paused after $elapsed ms; the tap was at $before..$after ms",
+                elapsed in (before - 80)..(after + 80))
             assertTrue(chapter < player.story.chapters.lastIndex)
             assertEquals(player.context.getString(player.story.chapters[chapter].second), caption.text.toString())
         }
@@ -180,9 +192,19 @@ class HealthAtlasGuidedFunctionDeviceTest {
             val caption = activity.view("atlas-simulation-stage") as TextView
             val references = activity.view("atlas-simulation-references")
             val diagram = activity.view("atlas-process")
-            assertSame(frame, caption.parent)
-            assertSame(frame, diagram.parent)
-            assertTrue(caption.top >= diagram.bottom)
+            val figure = activity.view("atlas-simulation-figure")
+            val legend = caption.parent as View
+            assertSame(frame, figure.parent)
+            assertSame(figure, legend.parent)
+            assertSame(figure, diagram.parent)
+            assertTrue(caption.top + legend.top < diagram.bottom)
+            val layout = figure as android.view.ViewGroup
+            for (index in 0..3) {
+                val button = activity.view("atlas-process-stage-$index")
+                val bounds = Rect(0, 0, button.width, button.height)
+                layout.offsetDescendantRectToMyCoords(button, bounds)
+                assertTrue("Legend covers stage $index", bounds.bottom <= legend.top)
+            }
             assertEquals(View.GONE, references.visibility)
             assertSame(references, activity.view("atlas-source-physiology").parent)
             assertSame(references, activity.view("atlas-source-circulation").parent)
@@ -221,8 +243,10 @@ class HealthAtlasGuidedFunctionDeviceTest {
             val caption = activity.view("atlas-function-caption") as TextView
             assertSame(frame, art.parent)
             assertSame(frame, subtitle.parent)
-            assertTrue(art.bottom <= subtitle.top)
+            assertTrue(subtitle.top + caption.top > art.top)
+            assertTrue(subtitle.top + subtitle.paddingTop < art.bottom)
             assertTrue(subtitle.bottom <= frame.height)
+            assertEquals(art.width, subtitle.width)
             assertTrue("Missing animation artwork", art.width > 0 && art.height > 0)
             val size = Rect(0, 0, frame.width, frame.height)
             val hashes = mutableSetOf<Int>()
@@ -235,6 +259,8 @@ class HealthAtlasGuidedFunctionDeviceTest {
                     art.phase = (chapter + .56f) / player.story.chapters.size
                     bitmap.eraseColor(0)
                     frame.draw(Canvas(bitmap))
+                    assertEquals(activity.getColor(R.color.health_atlas_film_ground),
+                        bitmap.getPixel(2, subtitle.top + subtitle.paddingTop + 2))
                     val pixels = IntArray(art.width * art.height)
                     bitmap.getPixels(pixels, 0, art.width, art.left, art.top, art.width, art.height)
                     hashes += pixels.contentHashCode()
@@ -246,6 +272,30 @@ class HealthAtlasGuidedFunctionDeviceTest {
             }
             assertEquals(player.story.chapters.size, hashes.size)
             assertNull(activity.window.decorView.findViewWithTag<View>("atlas-function-principle"))
+        }
+    }
+
+    @Test fun captionAtNarrowWidthHasRoomForEveryLongChapterWithoutCoveringTheDrawing() = native { scenario ->
+        scenario.onActivity { activity ->
+            val story = HealthAtlasFunctionStory.VISION
+            val player = HealthAtlasFunctionPlayer(activity, story, 0f, {})
+            val caption = player.findViewWithTag<TextView>("atlas-function-caption")
+            caption.textSize = 26f
+            val width = (320f * activity.resources.displayMetrics.density).toInt()
+            val art = player.findViewWithTag<View>("atlas-function-vision-art")
+            val subtitle = player.findViewWithTag<View>("atlas-function-subtitles")
+            val frame = player.findViewWithTag<View>("atlas-function-frame")
+            var expectedHeight = 0
+            repeat(story.chapters.size) { chapter ->
+                if (chapter != 0) player.findViewWithTag<View>("atlas-function-next").performClick()
+                player.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                player.layout(0, 0, width, player.measuredHeight)
+                assertTrue(subtitle.top + subtitle.paddingTop < art.bottom)
+                assertEquals(frame.height, subtitle.bottom)
+                assertTrue(caption.layout.height + caption.totalPaddingTop + caption.totalPaddingBottom <= caption.height)
+                if (chapter == 0) expectedHeight = frame.height else assertEquals(expectedHeight, frame.height)
+            }
         }
     }
 
@@ -311,6 +361,7 @@ class HealthAtlasGuidedFunctionDeviceTest {
         val region: Rect,
         val file: String,
         val lesson: Int = 0,
+        val late: Float = .42f,
     )
 
     @Test fun heartEarAndNephronRenderMovingCloseUpsAlongsideTheirCaptions() = verifyCloseUps(
@@ -326,19 +377,26 @@ class HealthAtlasGuidedFunctionDeviceTest {
         CloseUp("pancreas", "insulin-secretion", 1, Rect(10, 85, 92, 96), "beta-cell-voltage", lesson = 1),
     )
 
+    @Test fun rodMembraneChangesFromDarkCurrentToClosedChannels() = verifyCloseUps(
+        CloseUp("eye", "vision", 2, Rect(42, 33, 96, 82), "rod-ion-channel", late = .86f),
+    )
+
     private fun verifyCloseUps(vararg closeUps: CloseUp) = native { scenario ->
-        for ((id, artName, chapter, region, file, lesson) in closeUps) {
+        for ((id, artName, chapter, region, file, lesson, late) in closeUps) {
             scenario.onActivity { activity ->
                 activity.view("atlas-tab-2").performClick()
                 (activity.view("atlas-search") as EditText).setText(id)
-                activity.view("atlas-entry-$id").performClick()
+                assertTrue("Could not select $id", activity.view("atlas-entry-$id").performClick())
                 activity.view("atlas-tab-1").performClick()
                 if (lesson != 0) activity.view("atlas-function-lesson-$lesson").performClick()
+                assertNotNull("No player after opening $id", activity.window.decorView.findViewWithTag<View>("atlas-function-player"))
             }
             runner.waitForIdleSync()
             scenario.onActivity { activity ->
-                repeat(chapter) { activity.view("atlas-function-next").performClick() }
                 val player = activity.view("atlas-function-player") as HealthAtlasFunctionPlayer
+                val start = player.story.chapter(player.phase)
+                val direction = if (chapter >= start) "next" else "previous"
+                repeat(kotlin.math.abs(chapter - start)) { activity.view("atlas-function-$direction").performClick() }
                 assertEquals(chapter, player.story.chapter(player.phase))
                 val frame = activity.view("atlas-function-frame")
                 val art = activity.view("atlas-function-$artName-art") as HealthAtlasFunctionArt
@@ -352,6 +410,7 @@ class HealthAtlasGuidedFunctionDeviceTest {
                     val y = art.top + (art.height - size) / 2
                     val w = size * region.width() / 100
                     val h = size * region.height() / 100
+                    assertTrue("No visible artwork for $id", w > 0 && h > 0)
                     val pixels = IntArray(w * h)
                     fun hash(fraction: Float): Int {
                         art.phase = (chapter + fraction) / player.story.chapters.size
@@ -361,7 +420,7 @@ class HealthAtlasGuidedFunctionDeviceTest {
                             y + size * region.top / 100, w, h)
                         return pixels.contentHashCode()
                     }
-                    assertNotEquals(file, hash(.18f), hash(.42f))
+                    assertNotEquals(file, hash(.18f), hash(late))
                     java.io.File(context.getExternalFilesDir(null), "body-atlas-$file.png").outputStream().use {
                         canvas.compress(Bitmap.CompressFormat.PNG, 100, it)
                     }
@@ -372,16 +431,26 @@ class HealthAtlasGuidedFunctionDeviceTest {
     }
 
     @Test fun capturesAnAnimationAndItsPrincipleTogether() = native { scenario ->
+        lateinit var expectedCaption: String
         scenario.onActivity { activity ->
             activity.view("atlas-hotspot-heart").performClick()
             activity.view("atlas-tab-1").performClick()
             repeat(3) { activity.view("atlas-function-next").performClick() }
+            val player = activity.view("atlas-function-player") as HealthAtlasFunctionPlayer
+            assertEquals(HealthAtlasFunctionStory.HEARTBEAT, player.story)
+            assertEquals(3, player.story.chapter(player.phase))
+            expectedCaption = (activity.view("atlas-function-caption") as TextView).text.toString()
         }
         runner.waitForIdleSync()
         val deadline = SystemClock.elapsedRealtime() + 5_000
-        while (runner.uiAutomation.rootInActiveWindow?.packageName?.toString() != context.packageName &&
-            SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(40)
-        assertEquals(context.packageName, runner.uiAutomation.rootInActiveWindow?.packageName?.toString())
+        fun captionIsOnScreen(): Boolean {
+            val root = runner.uiAutomation.rootInActiveWindow ?: return false
+            return root.packageName?.toString() == context.packageName &&
+                root.findAccessibilityNodeInfosByText(expectedCaption).any { it.isVisibleToUser }
+        }
+        while (!captionIsOnScreen() && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(40)
+        assertTrue("The requested chapter was not visible on the device", captionIsOnScreen())
+        SystemClock.sleep(150)
         val bitmap = requireNotNull(runner.uiAutomation.takeScreenshot())
         try {
             java.io.File(context.getExternalFilesDir(null), "body-atlas-guided-heart.png").outputStream().use {

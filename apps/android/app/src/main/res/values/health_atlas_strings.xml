@@ -12,6 +12,8 @@
     <string name="health_atlas_function_outline">Complete process</string>
     <string name="health_atlas_scene_chapter">%1$d/%2$d · %3$s</string>
     <string name="health_atlas_scene_menu">Animation options</string>
+    <string name="health_atlas_related_lessons">Related animations</string>
+    <string name="health_atlas_related_lesson_label">%1$s · %2$s</string>
     <string name="health_atlas_scene_sources">References</string>
     <string name="health_atlas_inline_models">Models and parameters</string>
     <string name="health_atlas_values">Metrics</string>
@@ -27,6 +29,7 @@
     <string name="health_atlas_layers">Layers</string>
     <string name="health_atlas_reset">Reset view</string>
     <string name="health_atlas_illustration">Teaching illustration · not to scale</string>
+    <string name="health_atlas_symbol_only">Concept symbol · not an anatomical illustration</string>
     <string name="health_atlas_plate_context">Context: %1$s · %2$s</string>
     <string name="health_atlas_view_anterior">Anterior view</string>
     <string name="health_atlas_view_external">External surface</string>

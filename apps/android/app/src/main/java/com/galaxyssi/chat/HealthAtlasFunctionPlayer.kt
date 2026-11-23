@@ -4,7 +4,6 @@ import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.SystemClock
-import android.view.View
 import android.view.Gravity
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -14,6 +13,7 @@ import android.widget.TextView
 
 internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAtlasFunctionStory,
     initial: Float, openSource: (String) -> Unit, showTitle: Boolean = true,
+    relatedLessons: List<Pair<String, () -> Unit>> = emptyList(),
     private val onPlay: () -> Unit = {}) : LinearLayout(activity) {
     private val ui = HealthCenterViews(activity)
     private val art = story.createArt(activity)
@@ -50,21 +50,17 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
     init {
         tag = "atlas-function-player"
         orientation = VERTICAL
-        val scene = HealthAtlasSceneFrame(activity, "atlas-function-frame").apply {
-            reserveCaption(chapterLabel, chapterLabels, ui.dp(12) * 2)
-            reserveCaption(caption, chapterCaptions, ui.dp(12) * 2)
-            if (showTitle) ui.add(this, ui.text(context.getString(story.title), 16f, bold = true).apply {
-                setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(8))
-            })
-            art.setOnClickListener { toggle() }
-            art.isFocusable = true
-            ui.add(this, art)
-            ui.add(this, ui.column().apply {
-                tag = "atlas-function-subtitles"
-                setPadding(ui.dp(12), ui.dp(9), ui.dp(12), ui.dp(10))
-                ui.add(this, chapterLabel)
-                ui.add(this, caption, 2)
-            })
+        val title = if (showTitle) ui.text(context.getString(story.title), 16f, bold = true).apply {
+            setPadding(ui.dp(16), ui.dp(12), ui.dp(16), 0)
+        } else null
+        art.setOnClickListener { toggle() }
+        art.isFocusable = true
+        val scene = HealthAtlasFigureFrame(activity, art, "atlas-function-frame", title,
+            captionKey = "atlas-function-subtitles").apply {
+            reserveCaption(chapterLabel, chapterLabels)
+            reserveCaption(caption, chapterCaptions)
+            ui.add(legend, chapterLabel)
+            ui.add(legend, caption, 2)
         }
         ui.add(this, scene)
         ui.add(this, position)
@@ -89,6 +85,12 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
                         true
                     }
                     menu.add(R.string.health_atlas_reset).setOnMenuItemClickListener { seek(0f); true }
+                    if (relatedLessons.isNotEmpty()) {
+                        val related = menu.addSubMenu(R.string.health_atlas_related_lessons)
+                        relatedLessons.forEach { (label, open) ->
+                            related.add(label).setOnMenuItemClickListener { open(); true }
+                        }
+                    }
                     menu.add(R.string.health_atlas_evidence).setOnMenuItemClickListener {
                         AlertDialog.Builder(activity).setTitle(R.string.health_atlas_evidence)
                             .setMessage(context.getString(story.scope))

@@ -12,6 +12,7 @@
     <string name="health_atlas_function_outline">完整流程</string>
     <string name="health_atlas_scene_chapter">%1$d/%2$d · %3$s</string>
     <string name="health_atlas_scene_menu">动画选项</string>
+    <string name="health_atlas_related_lessons">相关动画</string>
     <string name="health_atlas_scene_sources">参考资料</string>
     <string name="health_atlas_inline_models">模型与参数</string>
     <string name="health_atlas_values">指标</string>
@@ -27,6 +28,7 @@
     <string name="health_atlas_layers">图层</string>
     <string name="health_atlas_reset">复位</string>
     <string name="health_atlas_illustration">教学示意 · 非解剖比例</string>
+    <string name="health_atlas_symbol_only">概念图标 · 非解剖图</string>
     <string name="health_atlas_plate_context">定位于%1$s示意图 · %2$s</string>
     <string name="health_atlas_view_anterior">前面观</string>
     <string name="health_atlas_view_external">外表面</string>

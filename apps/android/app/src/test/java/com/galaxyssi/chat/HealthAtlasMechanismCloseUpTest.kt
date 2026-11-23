@@ -64,4 +64,19 @@ class HealthAtlasMechanismCloseUpTest {
         assertEquals(0f, diagram.potassiumOpen(1f), 0f)
         assertEquals(1f, diagram.relativeDepolarization(1f), 0f)
     }
+
+    @Test fun lightLowersRodMessengerBeforeTheChannelClosesAndTransmitterReleaseFalls() {
+        val rod = HealthAtlasRodResponse
+        assertEquals(0f, rod.light(0f), 0f)
+        assertEquals(1f, rod.opening(0f), 0f)
+        assertEquals(1f, rod.release(0f), 0f)
+        assertTrue(rod.light(.29f) > 0f)
+        assertEquals(1f, rod.messenger(.29f), 0f)
+        assertTrue(rod.messenger(.37f) < 1f)
+        assertEquals(1f, rod.opening(.37f), 0f)
+        assertTrue(rod.opening(.55f) < 1f)
+        assertEquals(1f, rod.release(.55f), 0f)
+        assertEquals(0f, rod.opening(1f), 0f)
+        assertTrue(rod.release(1f) in 0f.. .25f)
+    }
 }
