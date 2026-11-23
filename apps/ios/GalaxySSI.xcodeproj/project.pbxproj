@@ -93,6 +93,9 @@
     C438400000000000000000D5 /* GalaxySSIHealthAtlasEndothelialMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000000D6 /* GalaxySSIHealthAtlasEndothelialMotion.swift */; };
     C438400000000000000000D7 /* GalaxySSIHealthAtlasEndothelialView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000000D8 /* GalaxySSIHealthAtlasEndothelialView.swift */; };
     C438400000000000000000D9 /* GalaxySSIHealthAtlasEndothelialDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000000DA /* GalaxySSIHealthAtlasEndothelialDrawing.swift */; };
+    C438400000000000000000DB /* GalaxySSIHealthAtlasPlateletMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000000DC /* GalaxySSIHealthAtlasPlateletMotion.swift */; };
+    C438400000000000000000DD /* GalaxySSIHealthAtlasPlateletView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000000DE /* GalaxySSIHealthAtlasPlateletView.swift */; };
+    C438400000000000000000DF /* GalaxySSIHealthAtlasPlateletDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000000E0 /* GalaxySSIHealthAtlasPlateletDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1659,6 +1662,9 @@
     C438400000000000000000D6 /* GalaxySSIHealthAtlasEndothelialMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEndothelialMotion.swift; sourceTree = "<group>"; };
     C438400000000000000000D8 /* GalaxySSIHealthAtlasEndothelialView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEndothelialView.swift; sourceTree = "<group>"; };
     C438400000000000000000DA /* GalaxySSIHealthAtlasEndothelialDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEndothelialDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000000DC /* GalaxySSIHealthAtlasPlateletMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPlateletMotion.swift; sourceTree = "<group>"; };
+    C438400000000000000000DE /* GalaxySSIHealthAtlasPlateletView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPlateletView.swift; sourceTree = "<group>"; };
+    C438400000000000000000E0 /* GalaxySSIHealthAtlasPlateletDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPlateletDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3244,6 +3250,9 @@
         C438400000000000000000D6 /* GalaxySSIHealthAtlasEndothelialMotion.swift */,
         C438400000000000000000D8 /* GalaxySSIHealthAtlasEndothelialView.swift */,
         C438400000000000000000DA /* GalaxySSIHealthAtlasEndothelialDrawing.swift */,
+        C438400000000000000000DC /* GalaxySSIHealthAtlasPlateletMotion.swift */,
+        C438400000000000000000DE /* GalaxySSIHealthAtlasPlateletView.swift */,
+        C438400000000000000000E0 /* GalaxySSIHealthAtlasPlateletDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -4959,6 +4968,9 @@
         C438400000000000000000D5 /* GalaxySSIHealthAtlasEndothelialMotion.swift in Sources */,
         C438400000000000000000D7 /* GalaxySSIHealthAtlasEndothelialView.swift in Sources */,
         C438400000000000000000D9 /* GalaxySSIHealthAtlasEndothelialDrawing.swift in Sources */,
+        C438400000000000000000DB /* GalaxySSIHealthAtlasPlateletMotion.swift in Sources */,
+        C438400000000000000000DD /* GalaxySSIHealthAtlasPlateletView.swift in Sources */,
+        C438400000000000000000DF /* GalaxySSIHealthAtlasPlateletDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,

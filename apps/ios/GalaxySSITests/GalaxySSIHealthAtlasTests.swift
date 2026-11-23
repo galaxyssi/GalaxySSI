@@ -1607,6 +1607,34 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testPlateletAdhesionRecruitmentMorphAndFibrin() throws {
+    typealias Motion = GalaxySSIHealthAtlasPlateletMotion
+    XCTAssertEqual(Motion.attached(step: 0, phase: 1), 0)
+    XCTAssertEqual(Motion.attached(step: 1, phase: 0.41), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.attached(step: 2, phase: 0), 1)
+    XCTAssertEqual(Motion.active(step: 1, phase: 1), 0)
+    XCTAssertEqual(Motion.active(step: 2, phase: 0.29), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.joined(step: 3, phase: 0.3, delay: 0.3), 0)
+    XCTAssertEqual(Motion.joined(step: 3, phase: 0.62, delay: 0.3), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.joined(step: 4, phase: 0, delay: 0.3), 1)
+    XCTAssertEqual(Motion.pose(Motion.anchor, fraction: 0), Motion.anchor.from)
+    XCTAssertEqual(Motion.pose(Motion.anchor, fraction: 1), Motion.anchor.to)
+    XCTAssertEqual(Motion.pose(Motion.anchor, fraction: 0.5), Motion.Pose(x: 135, y: 193, angle: -2))
+    let resting = Motion.outline(activation: 0), active = Motion.outline(activation: 1)
+    XCTAssertEqual(resting.count, 14); XCTAssertEqual(active.count, 14)
+    XCTAssertEqual(resting[0].y, -7, accuracy: 1e-12)
+    XCTAssertEqual(active[0].y, -16, accuracy: 1e-12)
+    XCTAssertEqual(hypot(active[1].x / 10, active[1].y / 8), 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion.outline(activation: .nan), resting)
+    XCTAssertEqual(Motion.recruits.map(\.delay), [0, 0.1, 0.2, 0.3])
+    XCTAssertEqual(Motion.strands.count, 5)
+    for i in Motion.strands.indices {
+      XCTAssertEqual(Motion.strandFraction(1, index: i), 1)
+      XCTAssertTrue(Motion.strands[i].commands.allSatisfy { $0.fits(width: 360, height: 360) })
+    }
+    XCTAssertGreaterThan(Motion.strandFraction(0, index: 0), 0)
+    XCTAssertEqual(Motion.strandFraction(0, index: 4), 0)
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
