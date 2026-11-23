@@ -17,6 +17,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
         Text(GalaxySSIHealthAtlasPhysiologyText.companion(model, language: language)).font(.subheadline).foregroundColor(.secondary)
         if let amounts = model.renalAmounts { renalBalance(amounts) }
         if let ear = model.middleEar { GalaxySSIHealthAtlasMiddleEarView(model: ear, language: language) }
+        if model.kind == .alveolarSurface { GalaxySSIHealthAtlasAlveolarSurfaceView(model: model, language: language) }
         if let forces = model.elbowForces { GalaxySSIHealthAtlasElbowView(forces: forces, language: language) }
         if let flow = model.vesselFlow { GalaxySSIHealthAtlasVesselFlowView(flow: flow, language: language) }
         if let eye = model.eyeOptics {
