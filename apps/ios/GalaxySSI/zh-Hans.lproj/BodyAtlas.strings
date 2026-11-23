@@ -2867,3 +2867,7 @@
 "health_atlas_process_fragment_platelet_1" = "活化并募集更多血小板";
 "health_atlas_process_fragment_platelet_2" = "聚集形成血小板栓";
 "health_atlas_process_fragment_platelet_3" = "支持凝血过程以稳定血小板栓";
+"health_atlas_granulocyte_stage" = "细胞反应：%1$@";
+"health_atlas_neutrophil_scope" = "教学示意：穿出血管后，吞入并处理示例目标。图中大小和时间不代表实测。";
+"health_atlas_eosinophil_scope" = "教学示意：接触示例目标的表面并释放颗粒内容物。图中大小和时间不代表实测。";
+"health_atlas_basophil_scope" = "教学示意：释放介质与局部血管反应。图中大小和时间不代表实测。";

@@ -46,15 +46,15 @@
       "entryIDs": [
         "cell-eosinophil"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets",
       "features": [
         {
           "marker": {
             "id": "bilobed",
-            "x": 0.4027777777777778,
-            "y": 0.475
+            "x": 0.38915470494417864,
+            "y": 0.48165869218500795
           },
           "title": "health_atlas_feature_bilobed",
           "explanation": "health_atlas_feature_bilobed_detail"
@@ -62,14 +62,14 @@
         {
           "marker": {
             "id": "eosin-granules",
-            "x": 0.6777777777777778,
-            "y": 0.5035714285714286
+            "x": 0.7208931419457735,
+            "y": 0.46810207336523124
           },
           "title": "health_atlas_feature_eosin_granules",
           "explanation": "health_atlas_feature_eosin_granules_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_eosinophil.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_cell_eosinophil.png"
     },
     {
       "id": "cell-basophil",
@@ -79,15 +79,15 @@
       "entryIDs": [
         "cell-basophil"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets",
       "features": [
         {
           "marker": {
             "id": "obscured-nucleus",
-            "x": 0.43333333333333335,
-            "y": 0.3821428571428571
+            "x": 0.39473684210526316,
+            "y": 0.38596491228070173
           },
           "title": "health_atlas_feature_obscured_nucleus",
           "explanation": "health_atlas_feature_obscured_nucleus_detail"
@@ -95,14 +95,14 @@
         {
           "marker": {
             "id": "baso-granules",
-            "x": 0.6305555555555555,
-            "y": 0.5357142857142857
+            "x": 0.7177033492822966,
+            "y": 0.4728867623604466
           },
           "title": "health_atlas_feature_baso_granules",
           "explanation": "health_atlas_feature_baso_granules_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_basophil.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_cell_basophil.png"
     },
     {
       "id": "cell-monocyte",
@@ -414,5 +414,9 @@
   "artworkSource": {
     "androidPR": 4365,
     "mergeCommit": "8ac01038b80a341c2c2f4912a455e834cd434daf"
+  },
+  "granulocyteArtworkSource": {
+    "androidPR": 4366,
+    "mergeCommit": "3aa202bc663c6d15bc8085a6af965b461f620899"
   }
 }

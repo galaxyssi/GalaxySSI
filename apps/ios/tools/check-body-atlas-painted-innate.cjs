@@ -13,7 +13,13 @@ const read=file=>fs.readFileSync(path.join(root,"apps/ios/GalaxySSI",file),"utf8
   const expected=[...kotlin.matchAll(/paintedFeature\("([^"]+)", (\d+), (\d+), R.string.(\w+), R.string.(\w+)\)/g)]
     .map(m=>({marker:{id:m[1],x:Number(m[2])/1254,y:Number(m[3])/1254},title:m[4],explanation:m[5]}));
   assert.equal(expected.length,4);
-  const semantic=structuredClone(pack);delete semantic.artworkSource;
+  const semantic=structuredClone(pack);delete semantic.artworkSource;delete semantic.granulocyteArtworkSource;
+  // Later #4366 artwork has its own pinned audit; retain the original #4365 scope here.
+  for(const id of ["cell-eosinophil","cell-basophil"]){
+    const restored=semantic.plates.find(p=>p.owner===id),previous=old.plates.find(p=>p.owner===id);
+    restored.aspectRatio=previous.aspectRatio;restored.drawable=previous.drawable;
+    for(const feature of restored.features) feature.marker=previous.features.find(f=>f.marker.id===feature.marker.id).marker;
+  }
   let anchors=0;
   for(const id of ["cell-neutrophil","cell-macrophage"]){
     const plate=pack.plates.find(p=>p.owner===id),previous=old.plates.find(p=>p.owner===id);

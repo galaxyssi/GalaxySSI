@@ -126,6 +126,25 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertFalse(idle.contains("phagocytosis_scope"))
   }
 
+  func testGranulocyteTeachingScopesRequireMatchingOwnerAndPhysiologyScreen() throws {
+    for lesson in GalaxySSIHealthAtlasGranulocyte.allCases {
+      let id = lesson.rawValue
+      let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: 0.625, first: 70, second: 70))
+      for screen in Context.Screen.allCases {
+        let prompt = Context.prompt(anatomy: anatomy(id), screen: screen, simulation: simulation, locale: locale, text: text)
+        if screen == .values { XCTAssertNil(prompt); continue }
+        let value = try XCTUnwrap(prompt)
+        XCTAssertEqual(value.contains(lesson.scopeKey), screen.includesPhysiology)
+        for other in GalaxySSIHealthAtlasGranulocyte.allCases where other != lesson { XCTAssertFalse(value.contains(other.scopeKey)) }
+        let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("cell-macrophage"), screen: screen,
+          simulation: simulation, locale: locale, text: text))
+        XCTAssertFalse(foreign.contains(lesson.scopeKey))
+      }
+      let idle = try XCTUnwrap(Context.prompt(anatomy: anatomy(id), screen: .simulation, locale: locale, text: text))
+      XCTAssertFalse(idle.contains(lesson.scopeKey))
+    }
+  }
+
   func testPodocyteBarrierStagesAndContextStayScoped() throws {
     typealias Stage = GalaxySSIHealthAtlasFiltrationStage
     XCTAssertNil(Stage(stage: -1)); XCTAssertNil(Stage(stage: 4))
