@@ -13,7 +13,7 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 
 ## Remaining Integration
 - [x] Import 3127 source-referenced chapter/caption/control/structure/scope strings per language into the dedicated AtlasFunction table; no English fallback in Chinese. Preserve existing BodyAtlas precedence, with new-table fallback for new structure keys.
-- [ ] Complete Function-tab player integration across all source courses. Core player, course selector, controls, source links, phase restoration and lifecycle are wired for GLUCOSE, HEARTBEAT, BREATHING, HEARING, NEPHRON, DIGESTION, COLON, VISION and LIGHT_ADAPTATION; other courses still await their dedicated renderers.
+- [ ] Complete Function-tab player integration across all source courses. Core player, course selector, controls, source links, phase restoration and lifecycle are wired for eleven courses through eight dedicated renderers; other courses still await their dedicated renderers.
 - [x] Connect optional persisted Function selections without changing quantitative simulation selections. Keep live animation phase outside published/serialized state; pause/exit commits it, while question snapshots read current live phase. Corrupt Function-only storage does not discard unrelated selections.
 - [ ] Import all new/revised illustration resources and cutaway geometry.
 - [ ] Port additional structure views, canonical/feature routing and related Function destination navigation.
@@ -24,7 +24,7 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 - [ ] Synchronize any newly merged predecessor PRs and update dependency scope before publication.
 
 ## Renderer Parity
-Next renderer: port HealthAtlasMovementStoryView, then continue the source-order list. Nine courses are enabled through seven dedicated renderers; do not broaden FunctionRendering before the corresponding native renderer is implemented.
+Next renderer: port HealthAtlasLymphPumpStage and HealthAtlasLymphImmuneStoryView, then continue the source-order list. Eleven courses are enabled through eight dedicated renderers; do not broaden FunctionRendering before the corresponding native renderer is implemented.
 
 - [x] `HealthAtlasUptakeView` — native 344-unit source geometry, four signal paths, relay thresholds, membrane fusion and glucose transport; source/resource/grammar checks only, native pixels unverified.
 - [x] `HealthAtlasHeartbeatView` — five source stages, seven exact cubic routes, shared valve anchors and 24x24 deformable heart mesh; Metal plus equivalent CoreGraphics triangle fallback, native shader/pixels unverified.
@@ -33,7 +33,7 @@ Next renderer: port HealthAtlasMovementStoryView, then continue the source-order
 - [x] `HealthAtlasNephronStoryView` — five source transport stages, thirteen exact line/quadratic/cubic routes, stage-specific flow counts and colors, proximal/distal capillary streams and original tall illustration; source/grammar checks only, native pixels unverified.
 - [x] `HealthAtlasDigestiveStoryView` — two independent five-stage courses, seventeen exact motion routes, source bolus/mixing/squeeze/secretion/absorption/water-recovery rules, six dedicated vector PDFs (35 paths / 21 gradients) and original villus PNG; source/grammar checks only, native pixels unverified. Existing structure plates remain pinned until the structure migration.
 - [x] `HealthAtlasVisionStoryView` — separate visual pathway and light-adaptation courses, six source routes including three converging rays, light-capture release threshold, rod/cone relative responses and source artwork; source/grammar checks only, native pixels unverified.
-- [ ] `HealthAtlasMovementStoryView`
+- [x] `HealthAtlasMovementStoryView` — separate muscle-motion and bone-remodeling courses, original nerve/tubule paths, fixed filament lengths, elbow rotation and changing muscle attachments, erosion/reversal/osteoid/mineralization scenes and native gradients; source/grammar checks only, native pixels unverified.
 - [ ] `HealthAtlasLymphImmuneStoryView`
 - [ ] `HealthAtlasInsulinStoryView`
 - [ ] `HealthAtlasHomeostasisStoryView`
@@ -111,7 +111,7 @@ Next renderer: port HealthAtlasMovementStoryView, then continue the source-order
 ## Verification Limits
 Current foundation checks pass: all 387 source hashes, exported catalogue/route invariants, iOS project/module configuration, two changed Swift grammar branches and whitespace. This proves foundation consistency only, not renderer or UI parity.
 
-Player checkpoint: dedicated source tables contain 3127 exact strings in each language; registry exposes nine courses through seven of 81 renderer classes (DIGESTION/COLON and VISION/LIGHT_ADAPTATION use their respective dedicated renderers). Uptake signaling, heart motion, breathing, hearing, nephron transport, digestive transit and visual/light-adaptation pathways are ported, but not run on a device. Generic chapter controls, lifecycle pause, references and separate live/persisted state are connected; no unsupported course is replaced by a generic picture.
+Player checkpoint: dedicated source tables contain 3127 exact strings in each language; registry exposes eleven courses through eight of 81 renderer classes (DIGESTION/COLON, VISION/LIGHT_ADAPTATION and MUSCLE_MOTION/BONE_REMODELING use their respective dedicated renderers). Uptake signaling, heart motion, breathing, hearing, nephron transport, digestive transit, visual/light-adaptation pathways, muscle motion and bone remodeling are ported, but not run on a device. Generic chapter controls, lifecycle pause, references and separate live/persisted state are connected; no unsupported course is replaced by a generic picture.
 
 Heartbeat uses the original byte-identical heart PNG and 625 mesh vertices / 1152 triangles. Triangle ordering follows the Android bitmap-mesh implementation in [AOSP SkiaCanvas](https://android.googlesource.com/platform/frameworks/base/+/d18c61ae8e7ec024352e71e405a040b829376f50/libs/hwui/SkiaCanvas.cpp). The Metal shader is registered in Sources for the bundle default library ([Apple Metal libraries](https://developer.apple.com/documentation/metal/metal-libraries)); textures explicitly use premultiplied RGBA and top-left coordinates. If Metal initialization fails, the same indexed triangles use clipped CoreGraphics affine transforms. Shader compilation, alpha/orientation correctness and rendered pixels still require native verification.
 

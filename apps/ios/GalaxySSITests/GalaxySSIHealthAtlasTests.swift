@@ -1208,6 +1208,50 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       XCTAssertEqual(focus.point, CGPoint(x: 255, y: 149))
     }
   }
+  func testMovementPreservesFilamentLengthsAnglesAndBoneSurfaceDepth() throws {
+    typealias Motion = GalaxySSIHealthAtlasMovementMotion
+    XCTAssertEqual(Motion.actinLength, 80)
+    XCTAssertEqual(Motion.myosinLength, 122)
+    XCTAssertEqual(Motion.sarcomereHalfWidth(0), 111)
+    XCTAssertEqual(Motion.sarcomereHalfWidth(0.5), 94.5)
+    XCTAssertEqual(Motion.sarcomereHalfWidth(1), 78)
+    XCTAssertEqual(Motion.elbowAngle(extending: false, fraction: 0), 0)
+    XCTAssertEqual(Motion.elbowAngle(extending: false, fraction: 1), 96)
+    XCTAssertEqual(Motion.elbowAngle(extending: true, fraction: 0), 96)
+    XCTAssertEqual(Motion.elbowAngle(extending: true, fraction: 1), 0)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      XCTAssertEqual(Motion.elbowAngle(extending: true, fraction: phase) +
+        Motion.elbowAngle(extending: false, fraction: phase), 96, accuracy: 1e-12)
+      XCTAssertEqual(Motion.erosionDepth(chapter: 0, fraction: phase), 0)
+      XCTAssertEqual(Motion.erosionDepth(chapter: 2, fraction: phase), 62)
+      XCTAssertEqual(Motion.exposedDepth(chapter: 4, fraction: phase), 14)
+      for chapter in 0..<5 {
+        let depth = Motion.exposedDepth(chapter: chapter, fraction: phase)
+        let surface = Motion.surfacePoints(depth)
+        XCTAssertEqual(surface.count, 75)
+        XCTAssertEqual(surface.first?.x, 22)
+        XCTAssertEqual(surface.last?.x, 318)
+        XCTAssertTrue(surface.allSatisfy { (151...213.000001).contains($0.y) })
+      }
+    }
+    XCTAssertEqual(Motion.erosionDepth(chapter: 1, fraction: 0.5), 31)
+    XCTAssertEqual(Motion.exposedDepth(chapter: 3, fraction: 0), 62)
+    XCTAssertEqual(Motion.exposedDepth(chapter: 3, fraction: 1), 14)
+    XCTAssertEqual(Motion.boneY(170, depth: 62), 213)
+    XCTAssertEqual(Motion.boneY(170, depth: 14), 165)
+    XCTAssertEqual(Motion.boneY(22, depth: 62), 151)
+    XCTAssertEqual(Motion.blend(0x8AC2B2, 0xECD5AB, fraction: 0.5), 0xFFBBCBAE)
+    XCTAssertEqual(Motion(courseID: "MUSCLE_MOTION", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "BONE_REMODELING", chapter: 8, fraction: .infinity).fraction, 0)
+    XCTAssertTrue(Motion(courseID: "BONE_REMODELING", chapter: 0, fraction: 0).bone)
+    XCTAssertEqual(Motion.tubule.commands.count, 8)
+    for route in [Motion.nerve, Motion.tubule] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 340, height: 340))
+        XCTAssertTrue((0...340).contains(sample.point.x) && (0...340).contains(sample.point.y))
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
