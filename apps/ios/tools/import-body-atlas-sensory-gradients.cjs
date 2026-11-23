@@ -3,24 +3,31 @@ const fs = require("node:fs"), path = require("node:path"), cp = require("node:c
 const {PDFDocument, PDFName, PDFDict, PDFOperator, PDFOperatorNames, drawSvgPath, clip, endPath,
   rgb, setLineJoin, LineJoinStyle, LineCapStyle} = require("pdf-lib");
 const root = path.resolve(__dirname, "../../.."), assets = path.join(root, "apps/ios/GalaxySSI/Assets.xcassets");
-const sha = "7e5841c21c313fd2ecee924e6805385e96a564a1";
-const frames = [
-  ["ear_section", "HealthAtlasEarSection", "ear.pdf"], ["eye_section", "HealthAtlasEyeSection", "eye.pdf"],
+const retinal = process.argv.includes("--retinal-cells");
+const sha = retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
+const frames = retinal ? [
+  ["sensory_aii", "HealthAtlasSensoryAii", "cell.pdf"], ["sensory_bipolar", "HealthAtlasSensoryBipolar", "cell.pdf"],
+  ["sensory_cone", "HealthAtlasSensoryCone", "cell.pdf"], ["sensory_ganglion", "HealthAtlasSensoryGanglion", "cell.pdf"],
+  ["sensory_rod", "HealthAtlasSensoryRod", "cell.pdf"], ["sensory_rpe", "HealthAtlasSensoryRpe", "cell.pdf"]
+] : [
+  ["eye_section", "HealthAtlasEyeSection", "eye.pdf"],
   ["sensory_cochlear_hair", "HealthAtlasSensoryCochlearHair", "cell.pdf"],
   ["sensory_retina_section", "HealthAtlasSensoryRetinaSection", "cell.pdf"]
 ];
+// Keep retained #4358 PDF resource IDs stable after retiring the ear's four gradients.
+const gradientOffset = retinal ? 0 : 4;
 function components(value) {
   if (!/^#[0-9a-f]{6}$/i.test(value)) throw Error("Unsupported colour " + value);
   return [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16) / 255);
 }
 (async () => {
-  let paths = 0, gradients = 0;
+  let paths = 0, gradients = gradientOffset;
   for (const [slug, asset, filename] of frames) {
     const vector = xml.xml2js(cp.execFileSync("git", ["show", sha + ":apps/android/app/src/main/res/drawable/health_atlas_" + slug + ".xml"],
       {cwd: root, encoding: "utf8"}), {compact: true}).vector;
     if (vector.group || !Array.isArray(vector.path)) throw Error("Unsupported vector structure");
     const pdf = await PDFDocument.create(), height = Number(vector._attributes["android:viewportHeight"]);
-    pdf.setTitle("GalaxySSI " + slug + " - Android #4358 vector paths and gradients");
+    pdf.setTitle("GalaxySSI " + slug + " - Android #" + (retinal ? 4359 : 4358) + " vector paths and gradients");
     pdf.setCreationDate(new Date("2026-11-24T00:00:00Z")); pdf.setModificationDate(new Date("2026-11-24T00:00:00Z"));
     const page = pdf.addPage([Number(vector._attributes["android:viewportWidth"]), height]);
     page.node.normalize();
@@ -69,6 +76,6 @@ function components(value) {
     }
     fs.writeFileSync(path.join(assets, asset + ".imageset", filename), await pdf.save());
   }
-  if (paths !== 63 || gradients !== 11) throw Error("Unexpected source geometry: " + paths + "/" + gradients);
-  console.log("Imported Android #4358: 63 original paths and 11 native PDF gradients across four vector assets.");
+  if (paths !== (retinal ? 49 : 46) || gradients - gradientOffset !== (retinal ? 17 : 7)) throw Error("Unexpected source geometry: " + paths + "/" + gradients);
+  console.log("Imported Android #" + (retinal ? 4359 : 4358) + ": " + paths + " original paths and " + (gradients - gradientOffset) + " native gradients across " + frames.length + " retained vector assets.");
 })().catch(error => { console.error(error); process.exitCode = 1; });

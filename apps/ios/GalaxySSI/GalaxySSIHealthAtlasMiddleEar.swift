@@ -21,10 +21,10 @@ struct GalaxySSIHealthAtlasMiddleEar: Equatable, Sendable {
   var volumeVelocityRatio: Double { 1 / pressureRatio }
   static let ids = ["ear", "external-ear", "middle-ear", "inner-ear", "cochlea", "vestibular-apparatus"]
   static let plate = GalaxySSIHealthAtlas.Plate(id: "ear", asset: "HealthAtlasEarSection", owner: "ear",
-    viewLabel: "health_atlas_view_ear_section", entryIDs: ids, aspectRatio: 460.0 / 280,
-    markers: [.init(id: "external-ear", x: 0.129, y: 0.354), .init(id: "middle-ear", x: 0.54, y: 0.447),
-      .init(id: "inner-ear", x: 0.686, y: 0.509), .init(id: "cochlea", x: 0.79, y: 0.668),
-      .init(id: "vestibular-apparatus", x: 0.797, y: 0.19)], source: anatomySource)
+    viewLabel: "health_atlas_view_ear_section", entryIDs: ids, aspectRatio: 3.0 / 2,
+    markers: [.init(id: "external-ear", x: 0.105, y: 0.251), .init(id: "middle-ear", x: 0.531, y: 0.420),
+      .init(id: "inner-ear", x: 0.656, y: 0.426), .init(id: "cochlea", x: 0.759, y: 0.556),
+      .init(id: "vestibular-apparatus", x: 0.742, y: 0.111)], source: anatomySource)
 }
 
 extension GalaxySSIHealthAtlas {

@@ -1098,7 +1098,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthAtlasSectionLesson.forEntry("cell-enterocyte"))
   }
 
-  func testEditorialArtworkRetainsResolutionTransparencyAndAllOneHundredHotspots() throws {
+  func testEditorialArtworkRetainsResolutionTransparencyAndAllOneHundredFiveHotspots() throws {
     let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
     let frames: [(String?, Int, Int)] = [(nil, 1024, 1536), ("heart", 1086, 1448),
       ("lungs", 1254, 1254), ("liver", 1254, 1254), ("kidneys", 1254, 1254),
@@ -1106,7 +1106,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       ("nephron", 1173, 1341), ("alveoli", 1254, 1254), ("cell-pancreatic-beta-cell", 1254, 1254),
       ("cell-erythrocyte", 1254, 1254), ("cell-neuron", 1024, 1536), ("skin", 1536, 1024),
       ("sensory", 1199, 1312), ("immune", 1312, 1199), ("respiratory", 1145, 1374),
-      ("digestive", 1246, 1263), ("endocrine", 1312, 1199)]
+      ("digestive", 1246, 1263), ("endocrine", 1312, 1199), ("ear", 1536, 1024)]
     let samples: [String: [CGPoint]] = [
       "pancreas": [CGPoint(x: 0.90, y: 0.72), CGPoint(x: 0.62, y: 0.30)],
       "urinary": [CGPoint(x: 0.50, y: 0.50), CGPoint(x: 0.66, y: 0.53)],
@@ -1136,7 +1136,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       let plate = try XCTUnwrap(atlas.plate(for: owner, viewKey: key))
       plates.append((plate, key == "skeletal-posterior" ? 887 : 1024, key == "skeletal-posterior" ? 1774 : 1536))
     }
-    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 24)
+    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 25)
     var count = 0
     for (plate, width, height) in plates {
       let image = try XCTUnwrap(UIImage(named: plate.asset, in: bundle, compatibleWith: nil)?.cgImage)
@@ -1154,12 +1154,31 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
           } else { XCTAssertGreaterThan(r, g + 40); XCTAssertGreaterThan(g, b + 12) }
         }
       }
+      if plate.owner == "ear" {
+        let lesson = try XCTUnwrap(GalaxySSIHealthAtlasSectionLesson.forEntry("ear"))
+        func at(_ point: CGPoint) throws -> [UInt8] {
+          try rgba(image, Int(point.x / CGFloat(lesson.artWidth) * CGFloat(width)), Int(point.y / 280 * CGFloat(height)))
+        }
+        for feature in lesson.plate.annotations {
+          XCTAssertGreaterThan(try at(CGPoint(x: feature.marker.x * lesson.artWidth, y: feature.marker.y * 280))[3], 200)
+        }
+        for route in lesson.routes {
+          for index in 0...12 {
+            let flow = try XCTUnwrap(GalaxySSIHealthAtlasSectionLessonView.flow(route, fraction: Double(index) / 12, width: lesson.artWidth))
+            XCTAssertGreaterThan(try at(flow.point)[3], 200)
+          }
+        }
+        let last = try XCTUnwrap(lesson.routes.last)
+        let endpoint = try XCTUnwrap(GalaxySSIHealthAtlasSectionLessonView.flow(last, fraction: 1, width: lesson.artWidth))
+        let colour = try at(endpoint.point)
+        XCTAssertGreaterThan(Int(colour[0]), Int(colour[2]) + 45)
+      }
       if let id = plate.owner, let sample = samples[id] {
         XCTAssertLessThanOrEqual(try alpha(image, Int(sample[0].x * CGFloat(width)), Int(sample[0].y * CGFloat(height))), 4)
         XCTAssertGreaterThanOrEqual(try alpha(image, Int(sample[1].x * CGFloat(width)), Int(sample[1].y * CGFloat(height))), 200)
       }
     }
-    XCTAssertEqual(count, 100)
+    XCTAssertEqual(count, 105)
     XCTAssertTrue(try XCTUnwrap(atlas.plate(for: nil)).markers.contains { $0.id == "lungs" })
   }
 
@@ -1201,7 +1220,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     typealias Diagram = GalaxySSIHealthAtlasSectionLessonView
     let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
     let ear = try XCTUnwrap(Lesson.forEntry("ear")), retina = try XCTUnwrap(Lesson.forEntry("retina"))
-    XCTAssertEqual(ear.artWidth, 460); XCTAssertEqual(ear.routes.count, 4)
+    XCTAssertEqual(ear.artWidth, 420); XCTAssertEqual(ear.routes.count, 4)
     XCTAssertEqual(ear.stageFeatures, [0, 1, 2, 3]); XCTAssertEqual(retina.stageFeatures, [0, 1, 2, 3])
     XCTAssertEqual(retina.artWidth, 360); XCTAssertTrue(retina.routes.isEmpty); XCTAssertTrue(retina.plate.markers.isEmpty)
     XCTAssertEqual(retina.plate.annotations.map(\.id),
@@ -1223,7 +1242,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
     let last = try XCTUnwrap(ear.routes.last)
     XCTAssertFalse(last.valid); XCTAssertNil(Diagram.flow(last, fraction: 0.5))
-    XCTAssertEqual(Diagram.path(last, width: 460).cgPath.currentPoint, CGPoint(x: 442, y: 198))
+    XCTAssertEqual(Diagram.path(last, width: 420).cgPath.currentPoint, CGPoint(x: 411, y: 135))
     XCTAssertNil(Diagram.flow(last, fraction: 0.5, width: .nan))
     XCTAssertNil(Diagram.flow(last, fraction: 0.5, width: 0))
     let earEntry = try XCTUnwrap(atlas.entry("ear")), retinaEntry = try XCTUnwrap(atlas.entry("retina"))
