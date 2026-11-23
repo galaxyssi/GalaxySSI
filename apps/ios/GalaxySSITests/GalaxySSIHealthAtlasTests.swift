@@ -743,6 +743,43 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthAtlasPhagocytosis.label(stage: 4, stages: stages, language: "en"))
   }
 
+  func testPhagocytosisFollowsSharedPhaseWithinEachStageAndRewindsExactly() throws {
+    typealias Frame = GalaxySSIHealthAtlasPhagocytosis.Frame
+    for stage in 0..<4 {
+      let start = try XCTUnwrap(Frame(Double(stage) / 4 + 0.02))
+      let later = try XCTUnwrap(Frame(Double(stage) / 4 + 0.15))
+      XCTAssertEqual(start.stage, stage); XCTAssertEqual(later.stage, stage)
+      XCTAssertGreaterThan(later.ease, start.ease)
+      XCTAssertEqual(start, Frame(Double(stage) / 4 + 0.02))
+      switch stage {
+      case 0: XCTAssertLessThan(later.particleX, start.particleX)
+      case 1:
+        XCTAssertLessThan(later.particleX, start.particleX)
+        XCTAssertGreaterThan(later.compartmentRadius, start.compartmentRadius)
+        XCTAssertGreaterThan(later.compartmentOpacity, start.compartmentOpacity)
+      case 2:
+        for (before, after) in zip(start.fragmentRadii, later.fragmentRadii) { XCTAssertLessThan(after, before) }
+      default: XCTAssertGreaterThan(later.signalDrift, start.signalDrift)
+      }
+    }
+    let halfway = try XCTUnwrap(Frame(0.125))
+    XCTAssertEqual(halfway.ease, 0.5, accuracy: 0.000001)
+    XCTAssertEqual(halfway.particleX, 258, accuracy: 0.000001)
+    let end = try XCTUnwrap(Frame(1))
+    XCTAssertEqual(end.stage, 3); XCTAssertEqual(end.signalDrift, 18)
+    XCTAssertEqual(Frame(-1), Frame(0)); XCTAssertEqual(Frame(2), Frame(1))
+    XCTAssertNil(Frame(.nan)); XCTAssertNil(Frame(.infinity))
+    var simulation = GalaxySSIHealthAtlasSimulation.initial("cell-macrophage")
+    for stage in 0..<4 {
+      XCTAssertTrue(simulation.selectStage(stage))
+      XCTAssertEqual(Frame(simulation.phase)?.stage, simulation.stage)
+    }
+    simulation.phase = 0.39
+    let saved = try JSONEncoder().encode(simulation)
+    let restored = try JSONDecoder().decode(GalaxySSIHealthAtlasSimulation.self, from: saved)
+    XCTAssertEqual(Frame(restored.phase), Frame(simulation.phase))
+  }
+
   func testTransportCellPlatesKeepLocalFeaturesAndExplicitSubtypeCaptions() throws {
     let bundle = Bundle(for: GalaxySSIStore.self), atlas = try completeCatalogue()
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.TransportCellPack.read(bundle: bundle))
@@ -1122,7 +1159,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       ("sensory", 1199, 1312), ("immune", 1312, 1199), ("respiratory", 1145, 1374),
       ("digestive", 1246, 1263), ("endocrine", 1312, 1199), ("ear", 1536, 1024), ("eye", 1536, 1024),
       ("cell-inner-ear-hair-cell", 1024, 1536), ("cell-rod-photoreceptor", 1024, 1536), ("cell-cone-photoreceptor", 1024, 1536),
-      ("nervous", 1024, 1536)]
+      ("nervous", 1024, 1536), ("cell-neutrophil", 1254, 1254), ("cell-macrophage", 1254, 1254)]
     let samples: [String: [CGPoint]] = [
       "pancreas": [CGPoint(x: 0.90, y: 0.72), CGPoint(x: 0.62, y: 0.30)],
       "urinary": [CGPoint(x: 0.50, y: 0.50), CGPoint(x: 0.66, y: 0.53)],
@@ -1153,7 +1190,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       let plate = try XCTUnwrap(atlas.plate(for: owner, viewKey: key))
       plates.append((plate, key == "skeletal-posterior" ? 887 : 1024, key == "skeletal-posterior" ? 1774 : 1536))
     }
-    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 31)
+    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 33)
     var count = 0
     for (plate, width, height) in plates {
       let image = try XCTUnwrap(UIImage(named: plate.asset, in: bundle, compatibleWith: nil)?.cgImage)
@@ -1178,6 +1215,11 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
           else if marker.id == "tendons" {
             XCTAssertGreaterThan(r, b + 30); XCTAssertGreaterThan(g, b + 25); XCTAssertLessThan(r - g, 40)
           } else { XCTAssertGreaterThan(r, g + 40); XCTAssertGreaterThan(g, b + 12) }
+        }
+      }
+      if ["cell-neutrophil", "cell-macrophage"].contains(plate.owner ?? "") {
+        for feature in plate.annotations {
+          XCTAssertGreaterThan(try alpha(image, Int(feature.marker.x * Double(width)), Int(feature.marker.y * Double(height))), 200)
         }
       }
       if plate.id == "heart-section" {

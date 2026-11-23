@@ -18,7 +18,8 @@ for (const plate of pack.plates) {
   assert(source.includes('"' + plate.owner + '"'));
   assert.equal(plate.id, plate.owner);
   assert.deepEqual(plate.entryIDs, [plate.owner]);
-  assert.equal(plate.aspectRatio, 360 / 280);
+  const painted = ["cell-macrophage","cell-neutrophil"].includes(plate.owner);
+  assert.equal(plate.aspectRatio, painted ? 1 : 360 / 280);
   assert.deepEqual(plate.markers, []);
   const ids = new Set();
   for (const feature of plate.features) {
@@ -32,14 +33,20 @@ for (const plate of pack.plates) {
     }
     features++;
   }
-  const original = execFileSync('git', ['show', sha + ':' + plate.drawable], {encoding: 'utf8'});
-  paths += (original.match(/<path\b/g) || []).length;
   const dir = path.join(assets, plate.asset + '.imageset');
   const metadata = JSON.parse(fs.readFileSync(path.join(dir, 'Contents.json')));
+  if (painted) {
+    assert(metadata.images.some(i=>i.filename==="cell.png"));
+    assert(!metadata.properties?.["preserves-vector-representation"]);
+    assert(!fs.existsSync(path.join(dir,"cell.pdf")));
+    continue;
+  }
+  const original = execFileSync('git', ['show', sha + ':' + plate.drawable], {encoding: 'utf8'});
+  paths += (original.match(/<path\b/g) || []).length;
   assert.equal(metadata.properties['preserves-vector-representation'], true);
   const pdf = fs.readFileSync(path.join(dir, metadata.images[0].filename));
   assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
 }
 assert.equal(features, 25);
-assert.equal(paths, 52);
-console.log('Immune resource audit: 12 plates, 25 local features, 52 original vector paths; bilingual keys resolved.');
+assert.equal(paths, 40);
+console.log('Immune resource audit: 12 plates, 25 local features, 40 retained vector paths and two painted cells; bilingual keys resolved.');

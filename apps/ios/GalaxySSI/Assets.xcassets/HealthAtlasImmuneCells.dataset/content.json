@@ -13,15 +13,15 @@
       "entryIDs": [
         "cell-neutrophil"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets",
       "features": [
         {
           "marker": {
             "id": "lobulated",
-            "x": 0.4722222222222222,
-            "y": 0.4107142857142857
+            "x": 0.4728867623604466,
+            "y": 0.430622009569378
           },
           "title": "health_atlas_feature_lobulated",
           "explanation": "health_atlas_feature_lobulated_detail"
@@ -29,14 +29,14 @@
         {
           "marker": {
             "id": "fine-granules",
-            "x": 0.6916666666666667,
-            "y": 0.5892857142857143
+            "x": 0.7312599681020734,
+            "y": 0.5199362041467305
           },
           "title": "health_atlas_feature_fine_granules",
           "explanation": "health_atlas_feature_fine_granules_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_neutrophil.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_cell_neutrophil.png"
     },
     {
       "id": "cell-eosinophil",
@@ -145,15 +145,15 @@
       "entryIDs": [
         "cell-macrophage"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-2-barrier-defenses-and-the-innate-immune-response",
       "features": [
         {
           "marker": {
             "id": "cell-projection",
-            "x": 0.7861111111111111,
-            "y": 0.31785714285714284
+            "x": 0.8197767145135566,
+            "y": 0.3269537480063796
           },
           "title": "health_atlas_feature_cell_projection",
           "explanation": "health_atlas_feature_cell_projection_detail"
@@ -161,14 +161,14 @@
         {
           "marker": {
             "id": "vesicle",
-            "x": 0.6277777777777778,
-            "y": 0.5035714285714286
+            "x": 0.5677830940988836,
+            "y": 0.4904306220095694
           },
           "title": "health_atlas_feature_vesicle",
           "explanation": "health_atlas_feature_vesicle_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_macrophage.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_cell_macrophage.png"
     },
     {
       "id": "cell-t-cell",
@@ -410,5 +410,9 @@
       ],
       "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_dendritic.xml"
     }
-  ]
+  ],
+  "artworkSource": {
+    "androidPR": 4365,
+    "mergeCommit": "8ac01038b80a341c2c2f4912a455e834cd434daf"
+  }
 }
