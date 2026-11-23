@@ -37,6 +37,10 @@ const frames = [
     const actual = key === "whole" ? parseSwift(whole) : key === "heart" ?
       parseSwift(heart.slice(heart.indexOf("static let exterior"), heart.indexOf("static let section"))) :
       packs.find(p => p.asset === "HealthAtlas" + name).markers;
+    if (key === "whole") {
+      assert.deepEqual([...packs.find(p => p.asset === "HealthAtlasBody").markers].sort((a,b) => a.id.localeCompare(b.id)),
+        [...expected].sort((a,b) => a.id.localeCompare(b.id)), "Bundled whole-body hotspot mismatch");
+    }
     assert.equal(actual.length, expected.length, key + " marker count");
     // Whole-body marker display order does not change their canonical coordinates.
     assert.deepEqual([...actual].sort((a,b) => a.id.localeCompare(b.id)), [...expected].sort((a,b) => a.id.localeCompare(b.id)));
