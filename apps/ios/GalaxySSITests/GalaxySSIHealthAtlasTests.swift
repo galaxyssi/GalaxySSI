@@ -2067,6 +2067,35 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion.cueTravel(1, delay: 0.29), 1)
     XCTAssertEqual(Motion.reachProgress(chapter: 1, phase: .nan), 0)
   }
+  func testMelaninEnvelopeCoreHandoffAndSupranuclearCap() throws {
+    typealias Motion = GalaxySSIHealthAtlasMelaninMotion
+    XCTAssertEqual(Motion.cells.count, 16); XCTAssertEqual(Motion.storage.count, 7)
+    XCTAssertEqual(Motion.arrivals.count, 3); XCTAssertEqual(Motion.capTracks.count, 5)
+    XCTAssertEqual(Motion.storageAmount(0.42, index: 6), 0.22, accuracy: 1e-12)
+    XCTAssertEqual(Motion.storageAmount(1, index: 6), 1)
+    XCTAssertEqual(Motion.mainFraction(1, index: 2), 0.69, accuracy: 1e-12)
+    XCTAssertEqual(Motion.sideFraction(1, branch: 2), 0.84)
+    if case .envelope(let f) = Motion.transfer(0.12, index: 0) { XCTAssertTrue((0.99...1).contains(f)) }
+    else { XCTFail("Cargo must retain its envelope before transfer") }
+    if case .core(let f) = Motion.transfer(0.13, index: 0) { XCTAssertGreaterThan(f, 0) }
+    else { XCTFail("Recipient transfer uses a pigment core") }
+    for index in 0...2 {
+      if case .core(let f) = Motion.transfer(1, index: index) { XCTAssertEqual(f, 1) }
+      else { XCTFail("Transfer should complete") }
+      XCTAssertEqual(Motion.transferTracks[index].start, .init(x: 197, y: 200))
+      XCTAssertEqual(Motion.transferTracks[index].commands.last?.points.last, Motion.arrivals[index])
+    }
+    XCTAssertEqual(Motion.uv(1, index: 0).alpha, 40)
+    XCTAssertEqual(Motion.uv(1, index: 1).alpha, 40)
+    XCTAssertEqual(Motion.uv(1, index: 2).alpha, 170)
+    XCTAssertEqual(Motion.uv(1, index: 2).endY, 205)
+    XCTAssertGreaterThan(Motion.progress(166, start: 161, end: 175), 0)
+    for track in Motion.branches + Motion.transferTracks + Motion.capTracks {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        XCTAssertNotNil(GalaxySSIHealthAtlasFunctionPath.sample(track, position: phase, width: 360, height: 360))
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
