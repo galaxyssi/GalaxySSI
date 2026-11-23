@@ -13,7 +13,12 @@ const local=file=>fs.readFileSync(path.join(root,"apps/ios/GalaxySSI",file),"utf
   const expected=[...kotlin.matchAll(/paintedFeature\("([^"]+)", (\d+), (\d+), R.string.(\w+), R.string.(\w+)\)/g)]
     .map(m=>({marker:{id:m[1],x:Number(m[2])/1254,y:Number(m[3])/1254},title:m[4],explanation:m[5]}));
   assert.equal(expected.length,15);
-  const semantic=structuredClone(pack);delete semantic.immuneLinkArtworkSource;
+  const semantic=structuredClone(pack);delete semantic.immuneLinkArtworkSource;delete semantic.bloodDefenseArtworkSource;
+  for(const id of ["cell-t-cell","cell-b-cell","cell-natural-killer-cell","cell-megakaryocyte","fragment-platelet"]){
+    const restored=semantic.plates.find(p=>p.owner===id),previous=old.plates.find(p=>p.owner===id);
+    restored.aspectRatio=previous.aspectRatio;restored.drawable=previous.drawable;
+    for(const feature of restored.features)feature.marker=previous.features.find(f=>f.marker.id===feature.marker.id).marker;
+  }
   let features=0;
   for(const id of ["cell-monocyte","cell-dendritic-cell","cell-plasma-cell"]){
     const plate=pack.plates.find(p=>p.owner===id),previous=old.plates.find(p=>p.owner===id);
@@ -52,8 +57,9 @@ const local=file=>fs.readFileSync(path.join(root,"apps/ios/GalaxySSI",file),"utf
     assert(pack.plates.some(p=>p.owner===target&&p.asset===asset));
   }
   for(const token of ["Gallery", "Timer", "@State"])assert(!swift.includes(token));
-  for(const token of ["GalaxySSIHealthAtlasCellScene.Frame(phase)",'identifier: "atlas-immune-link-diagram"','atlas.entry(lesson.relatedID)',
-    'Button { open(related.id) }','"atlas-immune-related-" + related.id'])assert(swift.includes(token),token);
+  for(const token of ["GalaxySSIHealthAtlasCellScene.Frame(phase)",'identifier: "atlas-immune-link-diagram"',
+    'GalaxySSIHealthAtlasCellSceneRelatedRow(atlas: atlas, entryID: lesson.relatedID'])assert(swift.includes(token),token);
+  for(const token of ['atlas.entry(entryID)','Button { open(related.id) }','"atlas-immune-related-" + related.id'])assert(scene.includes(token),token);
   const base=show(sha,"apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCellSceneView.kt").toString();
   assert(base.includes("200f / maxOf(width, height)"));assert(base.includes("progress * progress * (3f - 2f * progress)"));
   for(const token of ["GalaxySSIHealthAtlasSectionLesson.Phase(phase)","progress * progress * (3 - 2 * progress)",

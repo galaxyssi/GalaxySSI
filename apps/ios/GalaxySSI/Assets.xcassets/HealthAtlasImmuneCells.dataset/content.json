@@ -178,15 +178,15 @@
       "entryIDs": [
         "cell-t-cell"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types",
       "features": [
         {
           "marker": {
             "id": "t-receptor",
-            "x": 0.8361111111111111,
-            "y": 0.5321428571428571
+            "x": 0.8213716108452951,
+            "y": 0.5207336523125997
           },
           "title": "health_atlas_feature_t_receptor",
           "explanation": "health_atlas_feature_t_receptor_detail"
@@ -194,14 +194,14 @@
         {
           "marker": {
             "id": "lymphocyte-nucleus",
-            "x": 0.48055555555555557,
-            "y": 0.5178571428571429
+            "x": 0.474481658692185,
+            "y": 0.5135566188197768
           },
           "title": "health_atlas_feature_lymphocyte_nucleus",
           "explanation": "health_atlas_feature_lymphocyte_nucleus_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_t.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_cell_t.png"
     },
     {
       "id": "cell-b-cell",
@@ -211,15 +211,15 @@
       "entryIDs": [
         "cell-b-cell"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-4-the-adaptive-immune-response-b-lymphocytes-and-antibodies",
       "features": [
         {
           "marker": {
             "id": "b-receptor",
-            "x": 0.8416666666666667,
-            "y": 0.5357142857142857
+            "x": 0.8038277511961722,
+            "y": 0.5271132376395534
           },
           "title": "health_atlas_feature_b_receptor",
           "explanation": "health_atlas_feature_b_receptor_detail"
@@ -227,14 +227,14 @@
         {
           "marker": {
             "id": "lymphocyte-nucleus",
-            "x": 0.48055555555555557,
-            "y": 0.5178571428571429
+            "x": 0.474481658692185,
+            "y": 0.5063795853269537
           },
           "title": "health_atlas_feature_lymphocyte_nucleus",
           "explanation": "health_atlas_feature_lymphocyte_nucleus_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_b.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_cell_b.png"
     },
     {
       "id": "cell-natural-killer-cell",
@@ -244,15 +244,15 @@
       "entryIDs": [
         "cell-natural-killer-cell"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-2-barrier-defenses-and-the-innate-immune-response",
       "features": [
         {
           "marker": {
             "id": "cytotoxic-granules",
-            "x": 0.6638888888888889,
-            "y": 0.5928571428571429
+            "x": 0.6810207336523126,
+            "y": 0.48484848484848486
           },
           "title": "health_atlas_feature_cytotoxic_granules",
           "explanation": "health_atlas_feature_cytotoxic_granules_detail"
@@ -260,14 +260,14 @@
         {
           "marker": {
             "id": "lymphocyte-nucleus",
-            "x": 0.4305555555555556,
-            "y": 0.48214285714285715
+            "x": 0.43859649122807015,
+            "y": 0.48086124401913877
           },
           "title": "health_atlas_feature_lymphocyte_nucleus",
           "explanation": "health_atlas_feature_lymphocyte_nucleus_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_nk.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_cell_nk.png"
     },
     {
       "id": "cell-plasma-cell",
@@ -319,15 +319,15 @@
       "entryIDs": [
         "cell-megakaryocyte"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets",
       "features": [
         {
           "marker": {
             "id": "polyploid",
-            "x": 0.5111111111111111,
-            "y": 0.48214285714285715
+            "x": 0.48564593301435405,
+            "y": 0.4704944178628389
           },
           "title": "health_atlas_feature_polyploid",
           "explanation": "health_atlas_feature_polyploid_detail"
@@ -335,14 +335,14 @@
         {
           "marker": {
             "id": "proplatelet",
-            "x": 0.7805555555555556,
-            "y": 0.5642857142857143
+            "x": 0.861244019138756,
+            "y": 0.5119617224880383
           },
           "title": "health_atlas_feature_proplatelet",
           "explanation": "health_atlas_feature_proplatelet_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_megakaryocyte.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_cell_megakaryocyte.png"
     },
     {
       "id": "fragment-platelet",
@@ -352,15 +352,15 @@
       "entryIDs": [
         "fragment-platelet"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets",
       "features": [
         {
           "marker": {
             "id": "anucleate",
-            "x": 0.4,
-            "y": 0.5285714285714286
+            "x": 0.3492822966507177,
+            "y": 0.5382775119617225
           },
           "title": "health_atlas_feature_anucleate",
           "explanation": "health_atlas_feature_anucleate_detail"
@@ -368,14 +368,14 @@
         {
           "marker": {
             "id": "platelet-granules",
-            "x": 0.5805555555555556,
-            "y": 0.49642857142857144
+            "x": 0.5773524720893142,
+            "y": 0.49760765550239233
           },
           "title": "health_atlas_feature_platelet_granules",
           "explanation": "health_atlas_feature_platelet_granules_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_platelet.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_cell_platelet.png"
     },
     {
       "id": "cell-dendritic-cell",
@@ -422,5 +422,9 @@
   "immuneLinkArtworkSource": {
     "androidPR": 4367,
     "mergeCommit": "20de8dd75a18c257e7a8fdba844511d3bd98c37d"
+  },
+  "bloodDefenseArtworkSource": {
+    "androidPR": 4368,
+    "mergeCommit": "26b7b4395a27a74a3f9e3e45db9c46f217c505f9"
   }
 }

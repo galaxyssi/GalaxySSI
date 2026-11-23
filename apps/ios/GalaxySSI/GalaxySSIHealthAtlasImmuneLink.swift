@@ -85,18 +85,7 @@ struct GalaxySSIHealthAtlasImmuneLinkView: View {
           }
         }
         Text(GalaxySSIHealthAtlasText.get("health_atlas_" + lesson.scopeKey, language)).font(.footnote).foregroundColor(.secondary)
-        if let related = atlas.entry(lesson.relatedID) {
-          Button { open(related.id) } label: {
-            HStack(spacing: 10) {
-              Image(lesson.relatedAsset).resizable().scaledToFit().frame(width: 64, height: 52).accessibilityHidden(true)
-              VStack(alignment: .leading, spacing: 4) {
-                Text(GalaxySSIHealthAtlasText.get(related.name, language)).font(.headline)
-                Text(GalaxySSIHealthAtlasText.get(related.description, language)).font(.subheadline).foregroundColor(.secondary)
-              }.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
-              Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary).accessibilityHidden(true)
-            }.frame(minHeight: 52).contentShape(Rectangle())
-          }.buttonStyle(.plain).accessibilityIdentifier("atlas-immune-related-" + related.id)
-        }
+        GalaxySSIHealthAtlasCellSceneRelatedRow(atlas: atlas, entryID: lesson.relatedID, language: language, open: open)
       }
     }
   }

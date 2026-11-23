@@ -49,3 +49,26 @@ struct GalaxySSIHealthAtlasCellScene: View {
     context.draw(Image(asset), in: bounds)
   }
 }
+
+struct GalaxySSIHealthAtlasCellSceneRelatedRow: View {
+  let atlas: GalaxySSIHealthAtlas
+  let entryID: String
+  let language: String
+  let open: (String) -> Void
+  var body: some View {
+    if let related = atlas.entry(entryID) {
+      Button { open(related.id) } label: {
+        HStack(spacing: 10) {
+          if let plate = atlas.plate(for: related.id) {
+            Image(plate.asset).resizable().scaledToFit().frame(width: 64, height: 52).accessibilityHidden(true)
+          }
+          VStack(alignment: .leading, spacing: 4) {
+            Text(GalaxySSIHealthAtlasText.get(related.name, language)).font(.headline)
+            Text(GalaxySSIHealthAtlasText.get(related.description, language)).font(.subheadline).foregroundColor(.secondary)
+          }.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+          Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary).accessibilityHidden(true)
+        }.frame(minHeight: 52).contentShape(Rectangle())
+      }.buttonStyle(.plain).accessibilityIdentifier("atlas-immune-related-" + related.id)
+    }
+  }
+}

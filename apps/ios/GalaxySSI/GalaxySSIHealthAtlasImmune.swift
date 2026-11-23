@@ -17,8 +17,7 @@ extension GalaxySSIHealthAtlas {
     let plates: [Plate]
     static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
     static let phagocytosisOwner = "cell-macrophage"
-    static let paintedOwners = ["cell-neutrophil", "cell-eosinophil", "cell-basophil", "cell-monocyte",
-      "cell-macrophage", "cell-plasma-cell", "cell-dendritic-cell"]
+    static let paintedOwners = owners
     static let owners = ["cell-neutrophil", "cell-eosinophil", "cell-basophil", "cell-monocyte", "cell-macrophage",
       "cell-t-cell", "cell-b-cell", "cell-natural-killer-cell", "cell-plasma-cell", "cell-megakaryocyte",
       "fragment-platelet", "cell-dendritic-cell"]

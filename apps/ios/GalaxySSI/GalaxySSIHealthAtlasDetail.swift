@@ -25,7 +25,8 @@ struct GalaxySSIHealthAtlasDetail: View {
               (selection.wrappedValue.tab != .simulation ||
                 (!GalaxySSIHealthAtlasCirculation.supports(entry.id) && !GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id) &&
                   entry.id != GalaxySSIHealthAtlasPhagocytosis.owner && GalaxySSIHealthAtlasGranulocyte(rawValue: entry.id) == nil &&
-                  GalaxySSIHealthAtlasImmuneLink(rawValue: entry.id) == nil && entry.id != GalaxySSIHealthAtlasSarcomere.owner &&
+                  GalaxySSIHealthAtlasImmuneLink(rawValue: entry.id) == nil && GalaxySSIHealthAtlasBloodDefense(rawValue: entry.id) == nil &&
+                  entry.id != GalaxySSIHealthAtlasSarcomere.owner &&
                   entry.id != GalaxySSIHealthAtlasFiltrationStage.owner && !GalaxySSIHealthAtlasPancreatic.supports(entry.id) &&
                   GalaxySSIHealthAtlasEndocrinePath.forEntry(entry.id) == nil && entry.id != GalaxySSIHealthAtlasRetinaPath.owner &&
                   entry.id != GalaxySSIHealthAtlasSweat.owner && GalaxySSIHealthAtlasSectionLesson.forEntry(entry.id) == nil)) {

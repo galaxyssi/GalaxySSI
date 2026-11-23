@@ -867,6 +867,56 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Scene.Frame(2), Scene.Frame(1))
   }
 
+  func testBloodDefenseLessonsRemainIndependentAndPlateletStaysAFragment() throws {
+    typealias Lesson = GalaxySSIHealthAtlasBloodDefense
+    let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
+    XCTAssertEqual(Lesson.allCases.count, 5); XCTAssertNil(Lesson(rawValue: "cell-neutrophil"))
+    let targets = ["cell-t-cell":"cell-dendritic-cell", "cell-b-cell":"cell-plasma-cell",
+      "cell-megakaryocyte":"fragment-platelet", "fragment-platelet":"cell-megakaryocyte"]
+    for (index, lesson) in Lesson.allCases.enumerated() {
+      let entry = try XCTUnwrap(atlas.entry(lesson.rawValue))
+      let plate = try XCTUnwrap(atlas.plate(for: entry.id))
+      XCTAssertEqual(entry.kind, lesson == .platelet ? .fragment : .cell)
+      XCTAssertEqual(plate.asset, lesson.asset); XCTAssertEqual(plate.aspectRatio, 1)
+      XCTAssertEqual(lesson.relatedID, targets[entry.id])
+      if let id = lesson.relatedID { XCTAssertNotNil(atlas.entry(id)) }
+      for stage in 0..<4 {
+        let phase = Double(stage) / 4 + 0.1
+        let frame = try XCTUnwrap(Lesson.Frame(lesson, phase: phase))
+        XCTAssertEqual(frame.stage, stage); XCTAssertEqual(frame, Lesson.Frame(lesson, phase: phase))
+        XCTAssertEqual(frame.scene, GalaxySSIHealthAtlasCellScene.Frame(phase))
+        XCTAssertGreaterThan(frame.primary.size, 0)
+        for language in ["en", "zh-Hans"] {
+          XCTAssertNotNil(GalaxySSIHealthAtlasCellScene.label(stage: stage, stages: atlas.model(entry).stages, language: language))
+          XCTAssertNotEqual(GalaxySSIHealthAtlasText.get("health_atlas_" + lesson.scopeKey, language), "health_atlas_" + lesson.scopeKey)
+        }
+      }
+      var selection = state.binding(entry).wrappedValue
+      selection.tab = .simulation; selection.simulation.phase = Double(index) / 5
+      state.binding(entry).wrappedValue = selection
+      XCTAssertNil(Lesson.Frame(lesson, phase: .nan))
+      XCTAssertEqual(Lesson.Frame(lesson, phase: -1), Lesson.Frame(lesson, phase: 0))
+      XCTAssertEqual(Lesson.Frame(lesson, phase: 2), Lesson.Frame(lesson, phase: 1))
+    }
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    for (index, lesson) in Lesson.allCases.enumerated() {
+      let entry = try XCTUnwrap(atlas.entry(lesson.rawValue))
+      XCTAssertEqual(restored.binding(entry).wrappedValue.simulation.phase, Double(index) / 5)
+    }
+    let clones = try XCTUnwrap(Lesson.Frame(.tCell, phase: 0.625)).clones
+    XCTAssertEqual(clones.count, 2); XCTAssertEqual(clones[0].x, 100.5); XCTAssertEqual(clones[1].size, 97.5)
+    XCTAssertTrue(try XCTUnwrap(Lesson.Frame(.bCell, phase: 0.375)).clones.isEmpty)
+    XCTAssertEqual(try XCTUnwrap(Lesson.Frame(.naturalKiller, phase: 1)).targetRadius, 32)
+    let release = try XCTUnwrap(Lesson.Frame(.megakaryocyte, phase: 1)).releasedPlatelets
+    XCTAssertEqual(release.count, 3); XCTAssertEqual(release[0].x, 271)
+    XCTAssertEqual(release[2].y, 147); XCTAssertEqual(release[0].size, 42)
+    let recruitment = try XCTUnwrap(Lesson.Frame(.platelet, phase: 0.375)).plateletNeighbors
+    XCTAssertEqual(recruitment.count, 2); XCTAssertEqual(recruitment[0].x, 113.5); XCTAssertEqual(recruitment[1].y, 96)
+    let platelet = try XCTUnwrap(atlas.plate(for: "fragment-platelet"))
+    XCTAssertTrue(platelet.annotations.contains { $0.id == "anucleate" })
+    XCTAssertFalse(platelet.annotations.contains { $0.id.contains("nucleus") })
+  }
+
   func testTransportCellPlatesKeepLocalFeaturesAndExplicitSubtypeCaptions() throws {
     let bundle = Bundle(for: GalaxySSIStore.self), atlas = try completeCatalogue()
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.TransportCellPack.read(bundle: bundle))
@@ -1248,7 +1298,9 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       ("cell-inner-ear-hair-cell", 1024, 1536), ("cell-rod-photoreceptor", 1024, 1536), ("cell-cone-photoreceptor", 1024, 1536),
       ("nervous", 1024, 1536), ("cell-neutrophil", 1254, 1254), ("cell-macrophage", 1254, 1254),
       ("cell-eosinophil", 1254, 1254), ("cell-basophil", 1254, 1254),
-      ("cell-monocyte", 1254, 1254), ("cell-dendritic-cell", 1254, 1254), ("cell-plasma-cell", 1254, 1254)]
+      ("cell-monocyte", 1254, 1254), ("cell-dendritic-cell", 1254, 1254), ("cell-plasma-cell", 1254, 1254),
+      ("cell-t-cell", 1254, 1254), ("cell-b-cell", 1254, 1254), ("cell-natural-killer-cell", 1254, 1254),
+      ("cell-megakaryocyte", 1254, 1254), ("fragment-platelet", 1254, 1254)]
     let samples: [String: [CGPoint]] = [
       "pancreas": [CGPoint(x: 0.90, y: 0.72), CGPoint(x: 0.62, y: 0.30)],
       "urinary": [CGPoint(x: 0.50, y: 0.50), CGPoint(x: 0.66, y: 0.53)],
@@ -1279,7 +1331,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       let plate = try XCTUnwrap(atlas.plate(for: owner, viewKey: key))
       plates.append((plate, key == "skeletal-posterior" ? 887 : 1024, key == "skeletal-posterior" ? 1774 : 1536))
     }
-    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 38)
+    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 43)
     var count = 0
     for (plate, width, height) in plates {
       let image = try XCTUnwrap(UIImage(named: plate.asset, in: bundle, compatibleWith: nil)?.cgImage)
