@@ -1742,6 +1742,30 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
     }
   }
+  func testAbsorptionSeparateCargoRoutesAndNormalBasedBrushGeometry() throws {
+    typealias Motion = GalaxySSIHealthAtlasAbsorptionMotion
+    let routes = [Motion.bloodRoute, Motion.lipidIntake, Motion.lymphRoute, Motion.cellSolutes, Motion.cellLipids, Motion.cellExport]
+    XCTAssertEqual(routes.map(\.cargo), [.solute, .lipid, .chylomicron, .solute, .lipid, .chylomicron])
+    XCTAssertEqual(Motion.outline.commands.count, 6)
+    for route in routes.map(\.path) + [Motion.outline] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+        XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+      }
+    }
+    XCTAssertEqual(Motion.fraction(0.5, index: 0, count: 3), 0.47, accuracy: 1e-12)
+    XCTAssertEqual(Motion.fraction(0, index: 1, count: 3), 0.04 + 0.86 / 3, accuracy: 1e-12)
+    XCTAssertEqual(Motion.fraction(1, index: 0, count: 1), 0.04)
+    XCTAssertEqual(Motion.fraction(.nan, index: 0, count: 1), 0.04)
+    XCTAssertEqual(Motion.fraction(0.5, index: 0, count: 0), 0)
+    let features = GalaxySSIHealthAtlasAbsorptionShapes.features
+    var microMoves = 0, boundaryMoves = 0, nucleiClosed = 0
+    features.microvilli.cgPath.applyWithBlock { if $0.pointee.type == .moveToPoint { microMoves += 1 } }
+    features.cellBoundaries.cgPath.applyWithBlock { if $0.pointee.type == .moveToPoint { boundaryMoves += 1 } }
+    features.nuclei.cgPath.applyWithBlock { if $0.pointee.type == .closeSubpath { nucleiClosed += 1 } }
+    XCTAssertEqual(microMoves, 121); XCTAssertEqual(boundaryMoves, 31); XCTAssertEqual(nucleiClosed, 30)
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
