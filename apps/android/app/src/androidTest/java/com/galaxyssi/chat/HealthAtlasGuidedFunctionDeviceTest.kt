@@ -245,7 +245,7 @@ class HealthAtlasGuidedFunctionDeviceTest {
             assertSame(frame, art.parent)
             assertSame(frame, subtitle.parent)
             assertTrue(subtitle.top < art.bottom)
-            assertTrue(subtitle.bottom < art.bottom)
+            assertTrue(subtitle.right < art.left)
             assertTrue(subtitle.right <= frame.width)
             assertTrue("Missing animation artwork", art.width > 0 && art.height > 0)
             val size = Rect(0, 0, frame.width, frame.height)
@@ -294,7 +294,7 @@ class HealthAtlasGuidedFunctionDeviceTest {
                 player.layout(0, 0, width, player.measuredHeight)
                 assertTrue(subtitle.top < art.bottom)
                 assertTrue(subtitle.bottom < frame.height)
-                assertTrue("The note must be drawn partly over the image on a phone", subtitle.bottom > art.top)
+                assertTrue("The note should sit beside the image on a phone", subtitle.right < art.left)
                 assertTrue(caption.layout.height + caption.totalPaddingTop + caption.totalPaddingBottom <= caption.height)
                 if (chapter == 0) expectedHeight = frame.height else assertEquals(expectedHeight, frame.height)
             }
@@ -320,10 +320,7 @@ class HealthAtlasGuidedFunctionDeviceTest {
             val play = activity.view("atlas-function-play")
             assertTrue(play.getGlobalVisibleRect(visible))
             assertEquals(play.height, visible.height())
-            if (activity.resources.configuration.screenWidthDp < 580) {
-                assertTrue(Rect.intersects(Rect(art.left, art.top, art.right, art.bottom),
-                    Rect(note.left, note.top, note.right, note.bottom)))
-            }
+            assertTrue(note.right < art.left)
             assertTrue(note.performClick())
         }
         runner.waitForIdleSync()
@@ -332,11 +329,41 @@ class HealthAtlasGuidedFunctionDeviceTest {
             ?.any { it.isVisibleToUser && it.viewIdResourceName == "android:id/message" } == true
         while (!fullCopyShown() && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(40)
         assertTrue("The note did not show the full caption in the dialog", fullCopyShown())
-        runner.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        runner.tapAtlasPopupItem(context.getString(android.R.string.ok))
         runner.waitForIdleSync()
         scenario.onActivity {
             assertEquals(phase, (it.view("atlas-function-player") as HealthAtlasFunctionPlayer).phase, 0f)
         }
+    }
+
+    @Test fun enlargingAnAnimationPreservesItsCurrentChapter() = native { scenario ->
+        lateinit var expected: String
+        var before = 0
+        var phase = 0f
+        scenario.onActivity { activity ->
+            activity.view("atlas-hotspot-heart").performClick()
+            activity.view("atlas-tab-1").performClick()
+            repeat(3) { activity.view("atlas-function-next").performClick() }
+        }
+        runner.waitForIdleSync()
+        scenario.onActivity { activity ->
+            val art = activity.view("atlas-function-heartbeat-art")
+            expected = art.contentDescription.toString()
+            before = art.width
+            phase = (activity.view("atlas-function-player") as HealthAtlasFunctionPlayer).phase
+            assertTrue(activity.view("atlas-function-menu").performClick())
+        }
+        runner.tapAtlasPopupItem(context.getString(R.string.health_body_zoom))
+        val deadline = SystemClock.elapsedRealtime() + 5000
+        fun enlarged() = runner.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText(expected)
+            ?.any { it.isVisibleToUser && it.contentDescription?.toString() == expected &&
+                Rect().also(it::getBoundsInScreen).width() > before } == true
+        while (!enlarged() && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(40)
+        assertTrue("Enlarged diagram with the original chapter was not visible", enlarged())
+        assertTrue(runner.uiAutomation.performGlobalAction(
+            android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK))
+        runner.waitForIdleSync()
+        scenario.onActivity { assertEquals(phase, (it.view("atlas-function-player") as HealthAtlasFunctionPlayer).phase, 0f) }
     }
 
     @Test fun breathingShowsAMovingBarrierCloseUpWithTheSameCaptionClock() = native { scenario ->

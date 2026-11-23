@@ -98,7 +98,7 @@ internal class HealthAtlasEndocrinePathView(private val activity: Activity, priv
             }, if (path.separateBranches && branch == 1) 6 else 0)
         }
         ui.add(this, HealthAtlasFigureFrame(activity, art, "atlas-endocrine-figure",
-            subject = art, preferSideNote = true).apply {
+            subject = art).apply {
             reserveCaption(description, mechanism.stages)
             ui.add(legend, description)
             ui.add(legend, ui.text(activity.getString(path.scope), 11f, muted = true), 5)

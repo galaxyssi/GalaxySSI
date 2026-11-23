@@ -1,6 +1,7 @@
 package com.galaxyssi.chat
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.Instrumentation
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.InputDevice
@@ -41,16 +42,34 @@ internal fun ActivityScenario<HealthBodyAtlasActivity>.openAtlasRelatedLesson(id
             button.getGlobalVisibleRect(Rect()))
         assertTrue(button.performClick())
     }
-    val automation = runner.uiAutomation
+    runner.tapAtlasPopupItem(heading)
+    runner.tapAtlasPopupItem(label)
+    val deadline = SystemClock.elapsedRealtime() + 4_000L
+    while (SystemClock.elapsedRealtime() < deadline) {
+        var arrived = false
+        onActivity { activity ->
+            val root = activity.window.decorView
+            val player = root.findViewWithTag<HealthAtlasFunctionPlayer>("atlas-function-player")
+            val title = root.findViewWithTag<TextView>("health-page-title")?.text?.toString()
+            arrived = player !== originalPlayer && player?.story == targetStory && title == targetName
+        }
+        if (arrived) return
+        SystemClock.sleep(40)
+    }
+    throw AssertionError("Related animation did not open: $label")
+}
+
+internal fun Instrumentation.tapAtlasPopupItem(text: String) {
+    val automation = uiAutomation
     val service = automation.serviceInfo
     val originalFlags = service.flags
     service.flags = originalFlags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
     automation.serviceInfo = service
-    fun click(text: String) {
+    try {
         val deadline = SystemClock.elapsedRealtime() + 4_000L
         while (SystemClock.elapsedRealtime() < deadline) {
             val roots = automation.windows.mapNotNull { it.root } + listOfNotNull(automation.rootInActiveWindow)
-            val bounds = roots.asSequence().filter { it.packageName?.toString() == runner.targetContext.packageName }
+            val bounds = roots.asSequence().filter { it.packageName?.toString() == targetContext.packageName }
                 .flatMap { it.findAccessibilityNodeInfosByText(text).asSequence() }
                 .filter { it.isVisibleToUser && it.text?.toString() == text }
                 .map { node -> Rect().also(node::getBoundsInScreen) }
@@ -68,23 +87,6 @@ internal fun ActivityScenario<HealthBodyAtlasActivity>.openAtlasRelatedLesson(id
             SystemClock.sleep(40)
         }
         throw AssertionError("Could not open atlas menu item: $text")
-    }
-    try {
-        click(heading)
-        click(label)
-        val deadline = SystemClock.elapsedRealtime() + 4_000L
-        while (SystemClock.elapsedRealtime() < deadline) {
-            var arrived = false
-            onActivity { activity ->
-                val root = activity.window.decorView
-                val player = root.findViewWithTag<HealthAtlasFunctionPlayer>("atlas-function-player")
-                val title = root.findViewWithTag<TextView>("health-page-title")?.text?.toString()
-                arrived = player !== originalPlayer && player?.story == targetStory && title == targetName
-            }
-            if (arrived) return
-            SystemClock.sleep(40)
-        }
-        throw AssertionError("Related animation did not open: $label")
     } finally {
         service.flags = originalFlags
         automation.serviceInfo = service

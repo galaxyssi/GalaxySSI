@@ -488,6 +488,9 @@ class HealthBodyAtlasDeviceTest {
         }
         capture("whole")
         scenario.onActivity { it.view("atlas-hotspot-heart").performClick() }; capture("heart")
+        scenario.onActivity { it.view("atlas-structure-next").performClick() }; capture("heart-step-1")
+        scenario.onActivity { it.view("atlas-structure-next").performClick() }; capture("heart-step-2")
+        scenario.onActivity { repeat(2) { _ -> it.view("atlas-structure-previous").performClick() } }
         scenario.onActivity { it.view("atlas-tab-1").performClick() }; capture("function")
         scenario.onActivity { it.openAtlasModelDetails() }; capture("simulation")
         scenario.onActivity { it.onBackPressed(); it.view("atlas-tab-1").performClick() }; capture("systems")
@@ -507,6 +510,42 @@ class HealthBodyAtlasDeviceTest {
             it.view("atlas-tab-3").performClick(); (it.view("atlas-search") as EditText).setText("beta")
             it.view("atlas-entry-cell-pancreatic-beta-cell").performClick()
         }; capture("beta")
+    }
+
+    @Test fun structureRevealsOneLandmarkAtATimeAndRestoresTheSelectedStep() = native { scenario ->
+        val data = HealthBodyAtlas.load(context)
+        val heart = requireNotNull(HealthAtlasPlates.forId("heart"))
+        val ordered = heart.markers.sortedBy { it.y }
+        scenario.onActivity {
+            it.view("atlas-hotspot-heart").performClick()
+            assertFalse(it.view("atlas-structure-previous").isEnabled)
+            it.view("atlas-structure-next").performClick()
+        }
+        fun checkStep(activity: HealthBodyAtlasActivity, step: Int) {
+            val landmark = requireNotNull(data[ordered[step - 1].id])
+            val picture = activity.view("atlas-art-image")
+            val labelled = picture.parent as HealthAtlasLabeledImage
+            assertEquals(landmark.id, labelled.highlightedId)
+            assertEquals(landmark.name, (activity.view("atlas-art-caption") as TextView).text.toString())
+            assertEquals(landmark.description, (activity.view("atlas-art-explanation") as TextView).text.toString())
+            assertEquals(activity.getString(R.string.health_atlas_step_position, step, ordered.size),
+                (activity.view("atlas-structure-step") as TextView).text.toString())
+        }
+        scenario.onActivity { checkStep(it, 1) }
+        scenario.recreate()
+        await(scenario, "The landmark step did not restore") {
+            it.window.decorView.tagged("atlas-structure-step") != null
+        }
+        scenario.onActivity {
+            checkStep(it, 1)
+            val figure = it.view("atlas-structure-figure")
+            it.view("atlas-structure-next").performClick()
+            checkStep(it, 2)
+            assertSame(figure, it.view("atlas-structure-figure"))
+            it.view("atlas-structure-previous").performClick()
+            it.view("atlas-structure-previous").performClick()
+            assertFalse(it.view("atlas-structure-previous").isEnabled)
+        }
     }
 
     @Test fun systemsOrgansTissuesAndCellsShareTheInFigureExplanationAtLargeText() = native { scenario ->
