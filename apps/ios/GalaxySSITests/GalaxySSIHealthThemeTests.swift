@@ -140,6 +140,37 @@ final class GalaxySSIHealthThemeTests: XCTestCase {
     }
   }
 
+  func testSystemPlatePackHasMacroscopicRoutesAndReferenceSources() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self)
+    let data = try XCTUnwrap(NSDataAsset(name: "HealthAtlasSystemPlates", bundle: bundle)?.data)
+    let pack = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(pack["schema"] as? Int, 1)
+    let plates = try XCTUnwrap(pack["plates"] as? [[String: Any]])
+    XCTAssertEqual(plates.count, 3)
+    var routes = [String: String]()
+    for plate in plates {
+      let id = try XCTUnwrap(plate["id"] as? String)
+      let asset = try XCTUnwrap(plate["asset"] as? String)
+      let image = try XCTUnwrap(UIImage(named: asset, in: bundle, compatibleWith: nil))
+      XCTAssertEqual(Double(image.size.width / image.size.height), try XCTUnwrap(plate["aspectRatio"] as? Double), accuracy: 0.001)
+      let source = try XCTUnwrap(URL(string: try XCTUnwrap(plate["source"] as? String)))
+      XCTAssertEqual(source.scheme, "https"); XCTAssertEqual(source.host, "openstax.org")
+      for target in try XCTUnwrap(plate["entryIDs"] as? [String]) {
+        XCTAssertNil(routes.updateValue(id, forKey: target))
+        XCTAssertFalse(target.hasPrefix("cell-"))
+      }
+      for marker in try XCTUnwrap(plate["markers"] as? [[String: Any]]) {
+        XCTAssertTrue((0.0...1.0).contains(try XCTUnwrap(marker["x"] as? Double)))
+        XCTAssertTrue((0.0...1.0).contains(try XCTUnwrap(marker["y"] as? Double)))
+      }
+    }
+    XCTAssertEqual(routes["ureters"], "urinary")
+    XCTAssertNil(routes["kidneys"])
+    XCTAssertEqual(routes["pancreatic-duct"], "pancreas")
+    XCTAssertNil(routes["pancreatic-islets"])
+    XCTAssertNil(routes["pancreatic-acini"])
+  }
+
   func testHealthFeatureSymbolsAreDistinctAndAvailable() {
     let icons = [GalaxySSIHealthFeature.care, .profile, .body].map { $0.label.icon }
     XCTAssertEqual(icons, ["waveform.path.ecg", "person.text.rectangle", "figure.stand"])

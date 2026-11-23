@@ -15,6 +15,18 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
         Text(t("model_synthetic")).font(.footnote).foregroundColor(.secondary)
         Text(GalaxySSIHealthAtlasPhysiologyText.result(model, language: language)).font(.title3).fixedSize(horizontal: false, vertical: true)
         Text(GalaxySSIHealthAtlasPhysiologyText.companion(model, language: language)).font(.subheadline).foregroundColor(.secondary)
+        if let amounts = model.renalAmounts { renalBalance(amounts) }
+        if let ear = model.middleEar { GalaxySSIHealthAtlasMiddleEarView(model: ear, language: language) }
+        if let forces = model.elbowForces { GalaxySSIHealthAtlasElbowView(forces: forces, language: language) }
+        if let flow = model.vesselFlow { GalaxySSIHealthAtlasVesselFlowView(flow: flow, language: language) }
+        if let eye = model.eyeOptics {
+          GalaxySSIHealthAtlasEyeOpticsView(eye: eye, language: language)
+          Button {
+            inputs = model.changing(1, to: eye.targetPowerSteps)?.inputs
+          } label: {
+            Label(t("eye_match_plane"), systemImage: "scope").frame(minHeight: 44)
+          }.accessibilityIdentifier("atlas-eye-match-plane")
+        }
         chart(model)
         Text(String(format: t("model_axis"), t(model.kind.inputs[model.kind.axis].key), model.kind.inputs[model.kind.axis].unit))
           .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -24,7 +36,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
               .fixedSize(horizontal: false, vertical: true)
             Slider(value: binding(index, model: model), in: Double(spec.range.lowerBound)...Double(spec.range.upperBound), step: 1)
               .accessibilityLabel(t(spec.key))
-              .accessibilityValue(GalaxySSIHealthAtlasPhysiologyText.number(model.input(index), language: language) + " " + spec.unit)
+              .accessibilityValue(GalaxySSIHealthAtlasPhysiologyText.inputNumber(model.input(index), key: spec.key, language: language) + " " + spec.unit)
           }
         }
         Button { inputs = GalaxySSIHealthAtlasPhysiology(kind: model.kind).inputs } label: {
@@ -53,14 +65,37 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
       inputs = updated.inputs
     })
   }
+  private func renalBalance(_ amounts: GalaxySSIHealthAtlasRenalAmounts) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text(GalaxySSIHealthAtlasText.get("health_atlas_renal_balance_title", language)).font(.headline)
+      ForEach(0..<4) { index in
+        VStack(alignment: .leading, spacing: 4) {
+          Text(GalaxySSIHealthAtlasPhysiologyText.renalTransfer(amounts, index: index, language: language)).bold()
+            .fixedSize(horizontal: false, vertical: true)
+          HStack(alignment: .center, spacing: 8) {
+            Text(GalaxySSIHealthAtlasText.get(index == 3 ? "health_atlas_renal_lumen" : "health_atlas_renal_blood", language))
+              .frame(maxWidth: .infinity)
+            Image(systemName: index == 1 ? "arrow.left" : "arrow.right")
+              .frame(width: 32, height: 32).opacity(amounts.transfers[index] == 0 ? 0.2 : 1).accessibilityHidden(true)
+            Text(GalaxySSIHealthAtlasText.get(index == 3 ? "health_atlas_renal_urine" : "health_atlas_renal_lumen", language))
+              .frame(maxWidth: .infinity)
+          }.font(.caption).accessibilityElement(children: .ignore)
+            .accessibilityLabel(GalaxySSIHealthAtlasPhysiologyText.renalDirection(index, language: language))
+        }.accessibilityIdentifier("atlas-renal-amount-" + String(index))
+      }
+      Text(GalaxySSIHealthAtlasText.get("health_atlas_renal_balance_scope", language)).font(.footnote).foregroundColor(.secondary)
+    }.accessibilityIdentifier("atlas-renal-balance")
+  }
   private func chart(_ model: GalaxySSIHealthAtlasPhysiology) -> some View {
-    let low = model.kind.bounds.lowerBound, high = model.kind.bounds.upperBound
+    let low = model.kind.bounds.lowerBound, high = model.plotMaximum
     let left = model.axisRange.lowerBound, right = model.axisRange.upperBound
+    let output = { GalaxySSIHealthAtlasPhysiologyText.resultNumber($0, kind: model.kind, language: language) }
+    let input = { GalaxySSIHealthAtlasPhysiologyText.inputNumber($0, key: model.kind.inputs[model.kind.axis].key, language: language) }
     return VStack(alignment: .leading, spacing: 8) {
       Text(model.kind.unit).font(.caption)
       HStack(alignment: .top, spacing: 8) {
         VStack(alignment: .trailing) {
-          Text(number(high)); Spacer(); Text(number((low + high) / 2)); Spacer(); Text(number(low))
+          Text(output(high)); Spacer(); Text(output((low + high) / 2)); Spacer(); Text(output(low))
         }.font(.caption).frame(height: 160).fixedSize(horizontal: true, vertical: false)
         VStack(spacing: 8) {
           GeometryReader { geometry in
@@ -88,7 +123,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
             }.clipped()
           }.frame(height: 160)
           HStack {
-            Text(number(left)); Spacer(); Text(number((left + right) / 2)); Spacer(); Text(number(right))
+            Text(input(left)); Spacer(); Text(input((left + right) / 2)); Spacer(); Text(input(right))
           }.font(.caption)
         }
       }
@@ -99,5 +134,4 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
       GalaxySSIHealthAtlasPhysiologyText.input(model, index: model.kind.axis, language: language))
   }
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasPhysiologyText.string(key, language: language) }
-  private func number(_ value: Double) -> String { GalaxySSIHealthAtlasPhysiologyText.number(value, language: language) }
 }

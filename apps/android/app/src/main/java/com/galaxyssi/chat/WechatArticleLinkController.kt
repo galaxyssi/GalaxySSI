@@ -34,6 +34,10 @@ internal class WechatArticleLinkController(private val service: GalaxySSIAccessi
 
     fun start(saveArticle: Boolean = false) {
         if (running || closed) return
+        if (saveArticle && WechatArticleSaveService.active != null) {
+            toast(R.string.wechat_article_already_saving)
+            return
+        }
         if (PhoneAssistantTaskControl.hasActiveTask()) { toast(R.string.wechat_link_busy); return }
         if (!isTarget()) { toast(R.string.wechat_link_interrupted); return }
         running = true

@@ -31,6 +31,7 @@ final class GalaxySSIHealthAtlasAgentHandoff {
 enum GalaxySSIHealthAtlasQuestion {
   static func build(atlas: GalaxySSIHealthAtlas, entry: GalaxySSIHealthAtlas.Entry?,
                     selection: GalaxySSIHealthAtlasState.Selection, research: Bool, language: String) -> String {
+    guard research || selection.tab != .values else { return "" }
     func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     #if GALAXYSSI_ATLAS_AGENT_CONTEXT
     let screen: GalaxySSIHealthAtlasAgentContext.Screen
@@ -43,7 +44,9 @@ enum GalaxySSIHealthAtlasQuestion {
       GalaxySSIHealthAtlasAgentContext.Anatomy(id: item.id, name: GalaxySSIHealthAtlasText.get(item.name, language),
         description: GalaxySSIHealthAtlasText.get(item.description, language),
         mechanism: GalaxySSIHealthAtlasText.get(atlas.model(item).title, language),
-        stages: atlas.model(item).stages.map { GalaxySSIHealthAtlasText.get($0, language) }, source: atlas.model(item).source)
+        stages: atlas.model(item).stages.map { GalaxySSIHealthAtlasText.get($0, language) }, source: atlas.model(item).source,
+        tissueContext: atlas.tissueContext(item, language: language),
+        valveContext: GalaxySSIHealthAtlasHeartSection.context(item.id, stage: selection.simulation.stage, atlas: atlas, language: language))
     }
     var quantitative: GalaxySSIHealthAtlasAgentContext.Quantitative? = nil
     #if GALAXYSSI_ATLAS_PHYSIOLOGY
@@ -58,13 +61,27 @@ enum GalaxySSIHealthAtlasQuestion {
         first: selection.simulation.first, second: selection.simulation.second)
     }
     let elimination = GalaxySSIHealthAtlasAgentContext.Elimination(halfLife: selection.elimination.halfLife, elapsed: selection.elimination.elapsed)
+    let illustration = entry.flatMap { item in
+      atlas.plate(for: item.id, viewKey: selection.artworkView).flatMap { plate in
+        GalaxySSIHealthAtlasAgentContext.Illustration(entryID: item.id,
+          caption: atlas.caption(plate, selected: item, language: language), source: plate.source)
+      }
+    }
     return GalaxySSIHealthAtlasAgentContext.prompt(anatomy: anatomy, screen: screen, simulation: simulation,
-      quantitative: quantitative, elimination: elimination, locale: GalaxySSILocalization.interfaceLocale(language: language), text: t) ?? ""
+      quantitative: quantitative, elimination: elimination, illustration: illustration,
+      drugs: GalaxySSIHealthAtlasDrugState.restore(selection.drugInputs),
+      aging: selection.aging, language: language,
+      locale: GalaxySSILocalization.interfaceLocale(language: language), text: t) ?? ""
     #else
     guard let entry else { return t("ask_whole_context") }
     let model = atlas.model(entry)
     var prompt = String(format: t("ask_context"), GalaxySSIHealthAtlasText.get(entry.name, language),
       GalaxySSIHealthAtlasText.get(entry.description, language), GalaxySSIHealthAtlasText.get(model.title, language), model.source.absoluteString)
+    if entry.kind == .tissue { prompt += "\n" + atlas.tissueContext(entry, language: language).joined(separator: "\n") }
+    if research || selection.tab != .values, let plate = atlas.plate(for: entry.id, viewKey: selection.artworkView) {
+      prompt += "\n" + atlas.caption(plate, selected: entry, language: language) + "\n" + t("art_note")
+      if let source = plate.source { prompt += "\n" + source.absoluteString }
+    }
     #if GALAXYSSI_ATLAS_PHYSIOLOGY
     let physiology = ((!research && selection.tab == .simulation) || (research && selection.research == .physiology))
       ? GalaxySSIHealthAtlasPhysiology.resolved(entry.id, inputs: selection.physiologyInputs,
@@ -76,6 +93,14 @@ enum GalaxySSIHealthAtlasQuestion {
     #else
     let hasAssociatedPhysiology = false
     #endif
+    if ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
+       let counts = GalaxySSIHealthAtlasGermline.counts(entry.id, stage: selection.simulation.stage) {
+      prompt += "\n" + GalaxySSIHealthAtlasGermline.context(counts, language: language)
+    }
+    if ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
+       let context = GalaxySSIHealthAtlasHeartSection.context(entry.id, stage: selection.simulation.stage, atlas: atlas, language: language) {
+      prompt += "\n" + context
+    }
     if research {
       switch selection.research {
       case .physiology:
@@ -87,13 +112,19 @@ enum GalaxySSIHealthAtlasQuestion {
           prompt += "\n" + t(cardiac ? "stroke_volume" : "tidal") + ": \(Int(selection.simulation.second)) mL"
         } else if !hasAssociatedPhysiology { prompt += "\n" + t("qualitative_note") }
       case .drugs:
+        if let drugs = GalaxySSIHealthAtlasDrugState.restore(selection.drugInputs), drugs.mode == .two {
+          prompt += "\n" + t("drug_models") + "\n" +
+            drugs.distribution.context(locale: GalaxySSILocalization.interfaceLocale(language: language), text: t)
+        } else {
         prompt += "\n" + t("drug_note") + "\n" + t("elimination_assumptions") + "\n" + t("elimination_formula")
         prompt += "\n" + String(format: t("elimination_summary"), Int64(selection.elimination.halfLife), Int64(selection.elimination.elapsed),
           String(format: "%.1f", selection.elimination.percent(at: selection.elimination.elapsed)))
+        }
         prompt += "\nhttps://openstax.org/books/pharmacology/pages/2-2-pharmacokinetics-and-pharmacodynamics"
         prompt += "\nhttps://pharmacologyeducation.org/clinical-pharmacokinetics/"
       case .aging:
-        prompt += "\n" + t("aging_scope") + "\n" + t("aging_evidence") + "\nhttps://pubmed.ncbi.nlm.nih.gov/36599349/"
+        prompt += "\n" + GalaxySSIHealthAtlasAgingSelection.resolved(selection.aging, entryID: entry.id).context(language: language)
+        prompt += "\n" + t("aging_evidence") + "\n" + GalaxySSIHealthAtlasAgingTopic.source.absoluteString
       }
     }
     return prompt

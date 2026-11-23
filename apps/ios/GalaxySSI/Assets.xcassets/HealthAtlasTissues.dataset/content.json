@@ -1,0 +1,780 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4342,
+    "mergeCommit": "1ab5e34eb81502f725d0070c47482677ea5ce8fd"
+  },
+  "entries": [
+    {
+      "id": "tissue-epidermal",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_epidermal_name",
+      "description": "health_atlas_tissue_epidermal_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [
+        "cell-keratinocyte",
+        "cell-melanocyte"
+      ],
+      "mechanism": "tissue-epidermal",
+      "aliases": "health_atlas_tissue_epidermal_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "skin-organ",
+        "epidermis"
+      ]
+    },
+    {
+      "id": "tissue-respiratory-epithelium",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_respiratory_epithelium_name",
+      "description": "health_atlas_tissue_respiratory_epithelium_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "cell-ciliated-airway-cell",
+        "cell-goblet-cell"
+      ],
+      "mechanism": "tissue-respiratory-epithelium",
+      "aliases": "health_atlas_tissue_respiratory_epithelium_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "nasal-cavity",
+        "trachea",
+        "bronchi"
+      ]
+    },
+    {
+      "id": "tissue-intestinal-epithelium",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_intestinal_epithelium_name",
+      "description": "health_atlas_tissue_intestinal_epithelium_description",
+      "systems": [
+        "gut",
+        "digestive"
+      ],
+      "related": [
+        "cell-enterocyte",
+        "cell-enteroendocrine-cell"
+      ],
+      "mechanism": "tissue-intestinal-epithelium",
+      "aliases": "health_atlas_tissue_intestinal_epithelium_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "small-intestine",
+        "duodenum",
+        "jejunum",
+        "ileum"
+      ]
+    },
+    {
+      "id": "tissue-alveolar-epithelium",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_alveolar_epithelium_name",
+      "description": "health_atlas_tissue_alveolar_epithelium_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "cell-type-i-pneumocyte",
+        "cell-type-ii-pneumocyte"
+      ],
+      "mechanism": "tissue-alveolar-epithelium",
+      "aliases": "health_atlas_tissue_alveolar_epithelium_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "lungs",
+        "alveoli",
+        "respiratory-membrane"
+      ]
+    },
+    {
+      "id": "tissue-vascular-endothelium",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_vascular_endothelium_name",
+      "description": "health_atlas_tissue_vascular_endothelium_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "cell-vascular-endothelial-cell"
+      ],
+      "mechanism": "tissue-vascular-endothelium",
+      "aliases": "health_atlas_tissue_vascular_endothelium_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "blood-vessels",
+        "arteries",
+        "veins",
+        "capillaries",
+        "coronary-vessels"
+      ]
+    },
+    {
+      "id": "tissue-renal-tubular-epithelium",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_renal_tubular_epithelium_name",
+      "description": "health_atlas_tissue_renal_tubular_epithelium_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "cell-proximal-tubular-cell",
+        "cell-distal-tubular-cell"
+      ],
+      "mechanism": "tissue-renal-tubular-epithelium",
+      "aliases": "health_atlas_tissue_renal_tubular_epithelium_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "kidneys",
+        "renal-cortex",
+        "nephron",
+        "renal-tubules",
+        "proximal-tubule",
+        "distal-tubule"
+      ]
+    },
+    {
+      "id": "tissue-skeletal-muscle",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_skeletal_muscle_name",
+      "description": "health_atlas_tissue_skeletal_muscle_description",
+      "systems": [
+        "muscle"
+      ],
+      "related": [
+        "cell-skeletal-myocyte",
+        "cell-muscle-satellite-cell"
+      ],
+      "mechanism": "tissue-skeletal-muscle",
+      "aliases": "health_atlas_tissue_skeletal_muscle_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "biceps-brachii",
+        "triceps-brachii",
+        "deltoid",
+        "diaphragm",
+        "quadriceps-femoris",
+        "gastrocnemius"
+      ]
+    },
+    {
+      "id": "tissue-cardiac-muscle",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_cardiac_muscle_name",
+      "description": "health_atlas_tissue_cardiac_muscle_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "cell-cardiomyocyte"
+      ],
+      "mechanism": "tissue-cardiac-muscle",
+      "aliases": "health_atlas_tissue_cardiac_muscle_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "heart",
+        "atria",
+        "ventricles"
+      ]
+    },
+    {
+      "id": "tissue-smooth-muscle",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_smooth_muscle_name",
+      "description": "health_atlas_tissue_smooth_muscle_description",
+      "systems": [
+        "muscle",
+        "gut",
+        "digestive",
+        "urinary",
+        "female",
+        "cardio",
+        "respiratory"
+      ],
+      "related": [
+        "cell-smooth-muscle-cell"
+      ],
+      "mechanism": "tissue-smooth-muscle",
+      "aliases": "health_atlas_tissue_smooth_muscle_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "stomach",
+        "small-intestine",
+        "colon",
+        "bladder",
+        "uterus",
+        "arteries",
+        "bronchi"
+      ]
+    },
+    {
+      "id": "tissue-dense-regular-connective",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_dense_regular_connective_name",
+      "description": "health_atlas_tissue_dense_regular_connective_description",
+      "systems": [
+        "muscle",
+        "skeletal"
+      ],
+      "related": [
+        "cell-tenocyte",
+        "cell-fibroblast"
+      ],
+      "mechanism": "tissue-dense-regular-connective",
+      "aliases": "health_atlas_tissue_dense_regular_connective_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "tendons",
+        "ligaments"
+      ]
+    },
+    {
+      "id": "tissue-compact-bone",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_compact_bone_name",
+      "description": "health_atlas_tissue_compact_bone_description",
+      "systems": [
+        "skeletal"
+      ],
+      "related": [
+        "cell-osteocyte",
+        "cell-osteoblast",
+        "cell-osteoclast"
+      ],
+      "mechanism": "tissue-compact-bone",
+      "aliases": "health_atlas_tissue_compact_bone_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "humerus",
+        "radius",
+        "ulna",
+        "femur",
+        "tibia",
+        "fibula",
+        "skull"
+      ]
+    },
+    {
+      "id": "tissue-hyaline-cartilage",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_hyaline_cartilage_name",
+      "description": "health_atlas_tissue_hyaline_cartilage_description",
+      "systems": [
+        "skeletal",
+        "respiratory"
+      ],
+      "related": [
+        "cell-chondrocyte"
+      ],
+      "mechanism": "tissue-hyaline-cartilage",
+      "aliases": "health_atlas_tissue_hyaline_cartilage_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "cartilage",
+        "joints",
+        "trachea",
+        "bronchi"
+      ]
+    },
+    {
+      "id": "tissue-white-adipose",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_white_adipose_name",
+      "description": "health_atlas_tissue_white_adipose_description",
+      "systems": [
+        "skin"
+      ],
+      "related": [
+        "cell-adipocyte"
+      ],
+      "mechanism": "tissue-white-adipose",
+      "aliases": "health_atlas_tissue_white_adipose_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "skin-organ",
+        "subcutaneous-tissue"
+      ]
+    },
+    {
+      "id": "tissue-central-nervous",
+      "kind": "tissue",
+      "name": "health_atlas_tissue_central_nervous_name",
+      "description": "health_atlas_tissue_central_nervous_description",
+      "systems": [
+        "nervous"
+      ],
+      "related": [
+        "cell-neuron",
+        "cell-astrocyte",
+        "cell-oligodendrocyte",
+        "cell-microglia"
+      ],
+      "mechanism": "tissue-central-nervous",
+      "aliases": "health_atlas_tissue_central_nervous_aliases",
+      "color": "",
+      "icon": "",
+      "locatedIn": [
+        "brain",
+        "cerebrum",
+        "cerebellum",
+        "brainstem",
+        "spinal-cord"
+      ]
+    }
+  ],
+  "mechanisms": [
+    {
+      "id": "tissue-epidermal",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_epidermal_process",
+      "stages": [
+        "health_atlas_tissue_epidermal_step_0",
+        "health_atlas_tissue_epidermal_step_1",
+        "health_atlas_tissue_epidermal_step_2",
+        "health_atlas_tissue_epidermal_step_3"
+      ],
+      "chapter": "5-1-layers-of-the-skin"
+    },
+    {
+      "id": "tissue-respiratory-epithelium",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_respiratory_epithelium_process",
+      "stages": [
+        "health_atlas_tissue_respiratory_epithelium_step_0",
+        "health_atlas_tissue_respiratory_epithelium_step_1",
+        "health_atlas_tissue_respiratory_epithelium_step_2",
+        "health_atlas_tissue_respiratory_epithelium_step_3"
+      ],
+      "chapter": "4-2-epithelial-tissue"
+    },
+    {
+      "id": "tissue-intestinal-epithelium",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_intestinal_epithelium_process",
+      "stages": [
+        "health_atlas_tissue_intestinal_epithelium_step_0",
+        "health_atlas_tissue_intestinal_epithelium_step_1",
+        "health_atlas_tissue_intestinal_epithelium_step_2",
+        "health_atlas_tissue_intestinal_epithelium_step_3"
+      ],
+      "chapter": "4-2-epithelial-tissue"
+    },
+    {
+      "id": "tissue-alveolar-epithelium",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_alveolar_epithelium_process",
+      "stages": [
+        "health_atlas_tissue_alveolar_epithelium_step_0",
+        "health_atlas_tissue_alveolar_epithelium_step_1",
+        "health_atlas_tissue_alveolar_epithelium_step_2",
+        "health_atlas_tissue_alveolar_epithelium_step_3"
+      ],
+      "chapter": "22-1-organs-and-structures-of-the-respiratory-system"
+    },
+    {
+      "id": "tissue-vascular-endothelium",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_vascular_endothelium_process",
+      "stages": [
+        "health_atlas_tissue_vascular_endothelium_step_0",
+        "health_atlas_tissue_vascular_endothelium_step_1",
+        "health_atlas_tissue_vascular_endothelium_step_2",
+        "health_atlas_tissue_vascular_endothelium_step_3"
+      ],
+      "chapter": "4-2-epithelial-tissue"
+    },
+    {
+      "id": "tissue-renal-tubular-epithelium",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_renal_tubular_epithelium_process",
+      "stages": [
+        "health_atlas_tissue_renal_tubular_epithelium_step_0",
+        "health_atlas_tissue_renal_tubular_epithelium_step_1",
+        "health_atlas_tissue_renal_tubular_epithelium_step_2",
+        "health_atlas_tissue_renal_tubular_epithelium_step_3"
+      ],
+      "chapter": "25-4-microscopic-anatomy-of-the-kidney"
+    },
+    {
+      "id": "tissue-skeletal-muscle",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_skeletal_muscle_process",
+      "stages": [
+        "health_atlas_tissue_skeletal_muscle_step_0",
+        "health_atlas_tissue_skeletal_muscle_step_1",
+        "health_atlas_tissue_skeletal_muscle_step_2",
+        "health_atlas_tissue_skeletal_muscle_step_3"
+      ],
+      "chapter": "4-4-muscle-tissue-and-motion"
+    },
+    {
+      "id": "tissue-cardiac-muscle",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_cardiac_muscle_process",
+      "stages": [
+        "health_atlas_tissue_cardiac_muscle_step_0",
+        "health_atlas_tissue_cardiac_muscle_step_1",
+        "health_atlas_tissue_cardiac_muscle_step_2",
+        "health_atlas_tissue_cardiac_muscle_step_3"
+      ],
+      "chapter": "4-4-muscle-tissue-and-motion"
+    },
+    {
+      "id": "tissue-smooth-muscle",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_smooth_muscle_process",
+      "stages": [
+        "health_atlas_tissue_smooth_muscle_step_0",
+        "health_atlas_tissue_smooth_muscle_step_1",
+        "health_atlas_tissue_smooth_muscle_step_2",
+        "health_atlas_tissue_smooth_muscle_step_3"
+      ],
+      "chapter": "4-4-muscle-tissue-and-motion"
+    },
+    {
+      "id": "tissue-dense-regular-connective",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_dense_regular_connective_process",
+      "stages": [
+        "health_atlas_tissue_dense_regular_connective_step_0",
+        "health_atlas_tissue_dense_regular_connective_step_1",
+        "health_atlas_tissue_dense_regular_connective_step_2",
+        "health_atlas_tissue_dense_regular_connective_step_3"
+      ],
+      "chapter": "4-3-connective-tissue-supports-and-protects"
+    },
+    {
+      "id": "tissue-compact-bone",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_compact_bone_process",
+      "stages": [
+        "health_atlas_tissue_compact_bone_step_0",
+        "health_atlas_tissue_compact_bone_step_1",
+        "health_atlas_tissue_compact_bone_step_2",
+        "health_atlas_tissue_compact_bone_step_3"
+      ],
+      "chapter": "4-3-connective-tissue-supports-and-protects"
+    },
+    {
+      "id": "tissue-hyaline-cartilage",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_hyaline_cartilage_process",
+      "stages": [
+        "health_atlas_tissue_hyaline_cartilage_step_0",
+        "health_atlas_tissue_hyaline_cartilage_step_1",
+        "health_atlas_tissue_hyaline_cartilage_step_2",
+        "health_atlas_tissue_hyaline_cartilage_step_3"
+      ],
+      "chapter": "4-3-connective-tissue-supports-and-protects"
+    },
+    {
+      "id": "tissue-white-adipose",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_white_adipose_process",
+      "stages": [
+        "health_atlas_tissue_white_adipose_step_0",
+        "health_atlas_tissue_white_adipose_step_1",
+        "health_atlas_tissue_white_adipose_step_2",
+        "health_atlas_tissue_white_adipose_step_3"
+      ],
+      "chapter": "4-3-connective-tissue-supports-and-protects"
+    },
+    {
+      "id": "tissue-central-nervous",
+      "kind": "tissue",
+      "title": "health_atlas_tissue_central_nervous_process",
+      "stages": [
+        "health_atlas_tissue_central_nervous_step_0",
+        "health_atlas_tissue_central_nervous_step_1",
+        "health_atlas_tissue_central_nervous_step_2",
+        "health_atlas_tissue_central_nervous_step_3"
+      ],
+      "chapter": "4-5-nervous-tissue-mediates-perception-and-response"
+    }
+  ],
+  "plates": [
+    {
+      "id": "tissue-epidermal",
+      "asset": "HealthAtlasTissueEpidermal",
+      "owner": "tissue-epidermal",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-epidermal"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-keratinocyte",
+          "x": 0.2571,
+          "y": 0.575
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_epidermal.xml"
+    },
+    {
+      "id": "tissue-respiratory-epithelium",
+      "asset": "HealthAtlasTissueRespiratoryEpithelium",
+      "owner": "tissue-respiratory-epithelium",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-respiratory-epithelium"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-ciliated-airway-cell",
+          "x": 0.2286,
+          "y": 0.365
+        },
+        {
+          "id": "cell-goblet-cell",
+          "x": 0.4476,
+          "y": 0.39
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_respiratory_epithelium.xml"
+    },
+    {
+      "id": "tissue-intestinal-epithelium",
+      "asset": "HealthAtlasTissueIntestinalEpithelium",
+      "owner": "tissue-intestinal-epithelium",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-intestinal-epithelium"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-enterocyte",
+          "x": 0.2286,
+          "y": 0.465
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_intestinal_epithelium.xml"
+    },
+    {
+      "id": "tissue-alveolar-epithelium",
+      "asset": "HealthAtlasTissueAlveolarEpithelium",
+      "owner": "tissue-alveolar-epithelium",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-alveolar-epithelium"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-type-i-pneumocyte",
+          "x": 0.1976,
+          "y": 0.53
+        },
+        {
+          "id": "cell-type-ii-pneumocyte",
+          "x": 0.6071,
+          "y": 0.51
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_alveolar_epithelium.xml"
+    },
+    {
+      "id": "tissue-vascular-endothelium",
+      "asset": "HealthAtlasTissueVascularEndothelium",
+      "owner": "tissue-vascular-endothelium",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-vascular-endothelium"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-vascular-endothelial-cell",
+          "x": 0.3167,
+          "y": 0.585
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_vascular_endothelium.xml"
+    },
+    {
+      "id": "tissue-renal-tubular-epithelium",
+      "asset": "HealthAtlasTissueRenalTubularEpithelium",
+      "owner": "tissue-renal-tubular-epithelium",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-renal-tubular-epithelium"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-proximal-tubular-cell",
+          "x": 0.3595,
+          "y": 0.42
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_renal_tubular_epithelium.xml"
+    },
+    {
+      "id": "tissue-skeletal-muscle",
+      "asset": "HealthAtlasTissueSkeletalMuscle",
+      "owner": "tissue-skeletal-muscle",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-skeletal-muscle"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-skeletal-myocyte",
+          "x": 0.3143,
+          "y": 0.55
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_skeletal_muscle.xml"
+    },
+    {
+      "id": "tissue-cardiac-muscle",
+      "asset": "HealthAtlasTissueCardiacMuscle",
+      "owner": "tissue-cardiac-muscle",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-cardiac-muscle"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-cardiomyocyte",
+          "x": 0.269,
+          "y": 0.435
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_cardiac_muscle.xml"
+    },
+    {
+      "id": "tissue-smooth-muscle",
+      "asset": "HealthAtlasTissueSmoothMuscle",
+      "owner": "tissue-smooth-muscle",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-smooth-muscle"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-smooth-muscle-cell",
+          "x": 0.3048,
+          "y": 0.365
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_smooth_muscle.xml"
+    },
+    {
+      "id": "tissue-dense-regular-connective",
+      "asset": "HealthAtlasTissueDenseRegularConnective",
+      "owner": "tissue-dense-regular-connective",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-dense-regular-connective"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-tenocyte",
+          "x": 0.2976,
+          "y": 0.445
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_dense_regular_connective.xml"
+    },
+    {
+      "id": "tissue-compact-bone",
+      "asset": "HealthAtlasTissueCompactBone",
+      "owner": "tissue-compact-bone",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-compact-bone"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-osteocyte",
+          "x": 0.4952,
+          "y": 0.315
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_compact_bone.xml"
+    },
+    {
+      "id": "tissue-hyaline-cartilage",
+      "asset": "HealthAtlasTissueHyalineCartilage",
+      "owner": "tissue-hyaline-cartilage",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-hyaline-cartilage"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-chondrocyte",
+          "x": 0.3143,
+          "y": 0.475
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_hyaline_cartilage.xml"
+    },
+    {
+      "id": "tissue-white-adipose",
+      "asset": "HealthAtlasTissueWhiteAdipose",
+      "owner": "tissue-white-adipose",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-white-adipose"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-adipocyte",
+          "x": 0.2905,
+          "y": 0.335
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_white_adipose.xml"
+    },
+    {
+      "id": "tissue-central-nervous",
+      "asset": "HealthAtlasTissueCentralNervous",
+      "owner": "tissue-central-nervous",
+      "viewLabel": "health_atlas_view_tissue",
+      "entryIDs": [
+        "tissue-central-nervous"
+      ],
+      "aspectRatio": 2.1,
+      "markers": [
+        {
+          "id": "cell-neuron",
+          "x": 0.3119,
+          "y": 0.51
+        },
+        {
+          "id": "cell-astrocyte",
+          "x": 0.6119,
+          "y": 0.27
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tissue_central_nervous.xml"
+    }
+  ]
+}

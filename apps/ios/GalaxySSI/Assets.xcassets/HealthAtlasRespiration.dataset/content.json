@@ -1,0 +1,335 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "id": "respiratory",
+      "kind": "system",
+      "name": "health_atlas_respiratory_name",
+      "description": "health_atlas_respiratory_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "nose",
+        "nasal-cavity",
+        "paranasal-sinuses",
+        "pharynx",
+        "larynx",
+        "trachea",
+        "bronchi",
+        "bronchioles",
+        "lungs",
+        "alveoli",
+        "pleura",
+        "diaphragm",
+        "respiratory-membrane",
+        "pulmonary-capillaries"
+      ],
+      "mechanism": "respiratory",
+      "aliases": "health_atlas_respiratory_aliases",
+      "color": "#399fc1",
+      "icon": "wind"
+    },
+    {
+      "id": "capillaries",
+      "kind": "organ",
+      "name": "health_atlas_capillaries_name",
+      "description": "health_atlas_capillaries_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "pulmonary-capillaries"
+      ],
+      "mechanism": "cardio",
+      "aliases": "health_atlas_capillaries_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "alveoli",
+      "kind": "organ",
+      "name": "health_atlas_alveoli_name",
+      "description": "health_atlas_alveoli_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "respiratory-membrane",
+        "pulmonary-capillaries"
+      ],
+      "mechanism": "gas-exchange",
+      "aliases": "health_atlas_alveoli_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-erythrocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_erythrocyte_name",
+      "description": "health_atlas_cell_erythrocyte_description",
+      "systems": [
+        "cardio",
+        "immune"
+      ],
+      "related": [
+        "blood",
+        "bone-marrow",
+        "pulmonary-capillaries"
+      ],
+      "mechanism": "cell-erythrocyte",
+      "aliases": "health_atlas_cell_erythrocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-vascular-endothelial-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_vascular_endothelial_cell_name",
+      "description": "health_atlas_cell_vascular_endothelial_cell_description",
+      "systems": [
+        "cardio"
+      ],
+      "related": [
+        "blood-vessels",
+        "capillaries",
+        "respiratory-membrane",
+        "pulmonary-capillaries"
+      ],
+      "mechanism": "cell-vascular-endothelial-cell",
+      "aliases": "health_atlas_cell_vascular_endothelial_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-type-i-pneumocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_type_i_pneumocyte_name",
+      "description": "health_atlas_cell_type_i_pneumocyte_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "alveoli",
+        "respiratory-membrane"
+      ],
+      "mechanism": "cell-type-i-pneumocyte",
+      "aliases": "health_atlas_cell_type_i_pneumocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-type-ii-pneumocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_type_ii_pneumocyte_name",
+      "description": "health_atlas_cell_type_ii_pneumocyte_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "alveoli"
+      ],
+      "mechanism": "cell-type-ii-pneumocyte",
+      "aliases": "health_atlas_cell_type_ii_pneumocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-ciliated-airway-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_ciliated_airway_cell_name",
+      "description": "health_atlas_cell_ciliated_airway_cell_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "trachea",
+        "bronchi"
+      ],
+      "mechanism": "cell-ciliated-airway-cell",
+      "aliases": "health_atlas_cell_ciliated_airway_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-goblet-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_goblet_cell_name",
+      "description": "health_atlas_cell_goblet_cell_description",
+      "systems": [
+        "respiratory",
+        "gut"
+      ],
+      "related": [
+        "trachea",
+        "bronchi",
+        "small-intestine",
+        "large-intestine"
+      ],
+      "mechanism": "cell-goblet-cell",
+      "aliases": "health_atlas_cell_goblet_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-club-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_club_cell_name",
+      "description": "health_atlas_cell_club_cell_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "bronchioles"
+      ],
+      "mechanism": "cell-club-cell",
+      "aliases": "health_atlas_cell_club_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "respiratory-membrane",
+      "kind": "organ",
+      "name": "health_atlas_respiratory_membrane_name",
+      "description": "health_atlas_respiratory_membrane_description",
+      "systems": [
+        "respiratory"
+      ],
+      "related": [
+        "pulmonary-capillaries"
+      ],
+      "mechanism": "gas-exchange",
+      "aliases": "health_atlas_respiratory_membrane_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "pulmonary-capillaries",
+      "kind": "organ",
+      "name": "health_atlas_pulmonary_capillaries_name",
+      "description": "health_atlas_pulmonary_capillaries_description",
+      "systems": [
+        "respiratory",
+        "cardio"
+      ],
+      "related": [],
+      "mechanism": "gas-exchange",
+      "aliases": "health_atlas_pulmonary_capillaries_aliases",
+      "color": "",
+      "icon": ""
+    }
+  ],
+  "mechanisms": [
+    {
+      "id": "gas-exchange",
+      "kind": "lung",
+      "title": "health_atlas_gas_title",
+      "stages": [
+        "health_atlas_gas_0",
+        "health_atlas_gas_1",
+        "health_atlas_gas_2",
+        "health_atlas_gas_3"
+      ],
+      "chapter": "22-4-gas-exchange"
+    },
+    {
+      "id": "cell-type-i-pneumocyte",
+      "kind": "cell",
+      "title": "health_atlas_resp_type_i_pneumocyte_title",
+      "stages": [
+        "health_atlas_resp_type_i_pneumocyte_0",
+        "health_atlas_resp_type_i_pneumocyte_1",
+        "health_atlas_resp_type_i_pneumocyte_2",
+        "health_atlas_resp_type_i_pneumocyte_3"
+      ],
+      "chapter": "22-1-organs-and-structures-of-the-respiratory-system"
+    },
+    {
+      "id": "cell-type-ii-pneumocyte",
+      "kind": "cell",
+      "title": "health_atlas_resp_type_ii_pneumocyte_title",
+      "stages": [
+        "health_atlas_resp_type_ii_pneumocyte_0",
+        "health_atlas_resp_type_ii_pneumocyte_1",
+        "health_atlas_resp_type_ii_pneumocyte_2",
+        "health_atlas_resp_type_ii_pneumocyte_3"
+      ],
+      "chapter": "22-1-organs-and-structures-of-the-respiratory-system"
+    },
+    {
+      "id": "cell-ciliated-airway-cell",
+      "kind": "cell",
+      "title": "health_atlas_resp_ciliated_airway_cell_title",
+      "stages": [
+        "health_atlas_resp_ciliated_airway_cell_0",
+        "health_atlas_resp_ciliated_airway_cell_1",
+        "health_atlas_resp_ciliated_airway_cell_2",
+        "health_atlas_resp_ciliated_airway_cell_3"
+      ],
+      "chapter": "22-1-organs-and-structures-of-the-respiratory-system"
+    },
+    {
+      "id": "cell-goblet-cell",
+      "kind": "cell",
+      "title": "health_atlas_resp_goblet_cell_title",
+      "stages": [
+        "health_atlas_resp_goblet_cell_0",
+        "health_atlas_resp_goblet_cell_1",
+        "health_atlas_resp_goblet_cell_2",
+        "health_atlas_resp_goblet_cell_3"
+      ],
+      "chapter": "22-1-organs-and-structures-of-the-respiratory-system"
+    },
+    {
+      "id": "cell-club-cell",
+      "kind": "cell",
+      "title": "health_atlas_resp_club_cell_title",
+      "stages": [
+        "health_atlas_resp_club_cell_0",
+        "health_atlas_resp_club_cell_1",
+        "health_atlas_resp_club_cell_2",
+        "health_atlas_resp_club_cell_3"
+      ],
+      "chapter": "22-1-organs-and-structures-of-the-respiratory-system",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/29874100/"
+    }
+  ],
+  "insertAfter": {
+    "respiratory-membrane": "fragment-platelet",
+    "pulmonary-capillaries": "fragment-platelet"
+  },
+  "source": {
+    "androidPR": 4331,
+    "mergeCommit": "c3b829446f44109b585b55a37a13e1d683d96919"
+  },
+  "plate": {
+    "id": "alveolus",
+    "asset": "HealthAtlasAlveolus",
+    "owner": "alveoli",
+    "viewLabel": "health_atlas_view_alveolus",
+    "entryIDs": [
+      "alveoli",
+      "respiratory-membrane",
+      "pulmonary-capillaries"
+    ],
+    "aspectRatio": 1,
+    "markers": [
+      {
+        "id": "alveoli",
+        "x": 0.48,
+        "y": 0.48
+      },
+      {
+        "id": "respiratory-membrane",
+        "x": 0.66,
+        "y": 0.67
+      },
+      {
+        "id": "pulmonary-capillaries",
+        "x": 0.74,
+        "y": 0.69
+      }
+    ],
+    "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-4-gas-exchange"
+  }
+}
