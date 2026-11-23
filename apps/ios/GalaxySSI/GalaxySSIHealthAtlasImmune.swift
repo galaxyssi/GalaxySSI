@@ -35,7 +35,8 @@ extension GalaxySSIHealthAtlas {
         zip(plates, chapters).allSatisfy({ plate, chapter in
           guard let owner = plate.owner, let entry = atlas.entry(owner), [.cell, .fragment].contains(entry.kind),
             plate.id == owner, plate.entryIDs == [owner], plate.markers.isEmpty,
-            plate.asset.hasPrefix("HealthAtlasImmune"), plate.aspectRatio == 360.0 / 280,
+            plate.asset.hasPrefix("HealthAtlasImmune"),
+            plate.aspectRatio == (["cell-neutrophil", Self.phagocytosisOwner].contains(owner) ? 1 : 360.0 / 280),
             UIImage(named: plate.asset, in: bundle, compatibleWith: nil) != nil,
             plate.source?.absoluteString == "https://openstax.org/books/anatomy-and-physiology-2e/pages/" + chapter,
             (2...3).contains(plate.annotations.count),

@@ -12,6 +12,7 @@ const color = (hex) => {
 (async () => {
   let count = 0;
   for (const plate of pack.plates) {
+    if (["cell-macrophage", "cell-neutrophil"].includes(plate.owner)) continue;
     const vector = xml.xml2js(cp.execFileSync("git", ["show", pack.source.mergeCommit + ":" + plate.drawable],
       { cwd: root, encoding: "utf8" }), { compact: true }).vector;
     if (vector.group || !Array.isArray(vector.path)) throw Error("Unsupported vector structure " + plate.id);
@@ -32,5 +33,6 @@ const color = (hex) => {
     }
     fs.writeFileSync(path.join(assets, plate.asset + ".imageset/cell.pdf"), await pdf.save()); count += vector.path.length;
   }
-  console.log("Imported 12 immune diagrams / " + count + " original paths.");
+  cp.execFileSync(process.execPath,[path.join(__dirname,"import-body-atlas-painted-innate.cjs")],{cwd:root,stdio:"inherit"});
+  console.log("Imported 10 retained immune vectors / " + count + " original paths and two painted cells.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

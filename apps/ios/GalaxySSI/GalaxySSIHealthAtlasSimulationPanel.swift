@@ -83,7 +83,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       }
       if entry.id == GalaxySSIHealthAtlasPhagocytosis.owner {
         playbackControls
-        GalaxySSIHealthAtlasPhagocytosis(stage: simulation.stage, stages: model.stages, language: language)
+        GalaxySSIHealthAtlasPhagocytosis(phase: simulation.phase, stages: model.stages, language: language)
         Text(t("phagocytosis_scope")).font(.footnote).foregroundColor(.secondary)
       }
       if GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id) {
