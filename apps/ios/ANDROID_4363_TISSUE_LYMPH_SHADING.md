@@ -2,8 +2,8 @@
 
 ## Review Scope
 - Ports Android #4363 at `b8fbf1191367153af2824506df99bbc5c5bae56e`.
-- Formal non-draft PR, base main. Continues without waiting for predecessor iOS #4484 (Android #4362), as requested.
-- Dependency: #4484 is not yet merged at publication. Its existing commits are inherited in the main-based diff, not duplicate implementations or new #4363 scope. Review this increment against `73c51b8a42a1882a15125110d335a62eeda438cd`; synchronize main after #4484 merges.
+- Formal non-draft PR, base main. Predecessor iOS #4484 (Android #4362) is merged.
+- Synchronized main at `f1e172543` after its merge. The main-based diff now contains only this #4363 tissue/lymph increment; no inherited #4362 artwork changes remain.
 - New scope: 23 updated PDFs, two artwork-provenance fields, current import entry points and gradient/resource audits. iOS only; no version, graph, model, localization, navigation, personal-health or IPA changes.
 
 ## Implementation
