@@ -157,13 +157,13 @@
         },
         {
           "id": "rectus-abdominis",
-          "x": 0.54,
-          "y": 0.35
+          "x": 0.53,
+          "y": 0.365
         },
         {
           "id": "oblique-abdominal-muscles",
-          "x": 0.61,
-          "y": 0.38
+          "x": 0.585,
+          "y": 0.37
         },
         {
           "id": "quadriceps-femoris",
@@ -193,8 +193,8 @@
       "markers": [
         {
           "id": "trapezius",
-          "x": 0.57,
-          "y": 0.2
+          "x": 0.54,
+          "y": 0.19
         },
         {
           "id": "triceps-brachii",
@@ -218,16 +218,20 @@
         },
         {
           "id": "gastrocnemius",
-          "x": 0.6,
-          "y": 0.77
+          "x": 0.64,
+          "y": 0.765
         },
         {
           "id": "tendons",
-          "x": 0.6,
-          "y": 0.9
+          "x": 0.661,
+          "y": 0.884
         }
       ],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/11-2-naming-skeletal-muscles"
     }
-  ]
+  ],
+  "artworkSource": {
+    "androidPR": 4357,
+    "mergeCommit": "96b3f950e85c839173e473ddb2435fe88f1acb75"
+  }
 }

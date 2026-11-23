@@ -68,8 +68,8 @@
         },
         {
           "id": "larynx",
-          "x": 0.48,
-          "y": 0.33
+          "x": 0.489,
+          "y": 0.353
         },
         {
           "id": "trachea",
@@ -111,7 +111,7 @@
         {
           "id": "sublingual-glands",
           "x": 0.38,
-          "y": 0.29
+          "y": 0.3
         },
         {
           "id": "submandibular-glands",
@@ -455,5 +455,9 @@
   },
   "relatedAdditions": {
     "cardio": ["aorta", "pulmonary-trunk", "lungs"]
+  },
+  "artworkSource": {
+    "androidPR": 4357,
+    "mergeCommit": "96b3f950e85c839173e473ddb2435fe88f1acb75"
   }
 }
