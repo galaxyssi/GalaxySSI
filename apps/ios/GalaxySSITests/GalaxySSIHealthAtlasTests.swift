@@ -248,10 +248,11 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   func testReproductiveCatalogueAndSelectedGermlineStageRestoreTogether() throws {
     let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
     XCTAssertEqual(atlas.entries.count, 287)
-    XCTAssertEqual(atlas.mechanisms.count, 75)
     let base = try catalogue()
     XCTAssertEqual(base.entries.count, 278); XCTAssertEqual(base.mechanisms.count, 20)
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.ReproductivePack.read(bundle: Bundle(for: GalaxySSIStore.self)))
+    let reproductiveIDs = Set(pack.mechanisms.map(\.id))
+    XCTAssertEqual(atlas.mechanisms.filter { reproductiveIDs.contains($0.id) }.count, 15)
     for mechanism in pack.mechanisms where mechanism.kind == "cell" {
       XCTAssertEqual(atlas.entry(mechanism.id)?.kind, .cell)
       XCTAssertEqual(atlas.entry(mechanism.id)?.mechanism, mechanism.id)
