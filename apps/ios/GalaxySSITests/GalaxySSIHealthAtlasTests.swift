@@ -858,6 +858,48 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testEndocrinePlatesPathsAndMechanismsPreserveStructuralAndCellIdentities() throws {
+    let atlas = try catalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.EndocrinePack.read(bundle: bundle))
+    XCTAssertEqual(pack.plates.count, 18)
+    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 37)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 4)
+    XCTAssertEqual(pack.mechanisms.count, 4)
+    for plate in pack.plates {
+      let owner = try XCTUnwrap(plate.owner)
+      XCTAssertEqual(atlas.plate(for: owner)?.asset, plate.asset)
+      for feature in plate.annotations {
+        XCTAssertNil(atlas.entry(feature.id))
+        guard case .feature = plate.labelTarget(feature.id, in: atlas) else { return XCTFail("Expected local explanation") }
+      }
+      for marker in plate.markers {
+        guard case .anatomy(let id) = plate.labelTarget(marker.id, in: atlas) else { return XCTFail("Expected anatomy navigation") }
+        XCTAssertNotNil(atlas.entry(id))
+      }
+      if atlas.entry(owner)?.kind == .cell { XCTAssertEqual(atlas.entry(owner)?.mechanism, owner) }
+    }
+    for (id, path) in pack.paths {
+      let entry = try XCTUnwrap(atlas.entry(id))
+      XCTAssertEqual(entry.mechanism, id); XCTAssertEqual(atlas.model(entry).kind, "secretion")
+      XCTAssertEqual(path.steps.count, 4)
+      for step in path.steps { if let id = step.destination { XCTAssertNotNil(atlas.entry(id)) } }
+      let state = GalaxySSIHealthAtlasState(); state.binding(entry).wrappedValue.simulation.selectStage(3)
+      if id == "thyroid-gland" { state.binding(entry).wrappedValue.physiologyInputs = [100, 300] }
+      let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+      XCTAssertEqual(restored.binding(entry).wrappedValue.simulation.stage, 3)
+      if id == "thyroid-gland" { XCTAssertEqual(restored.binding(entry).wrappedValue.physiologyInputs, [100, 300]) }
+      for language in ["en", "zh-Hans"] {
+        var selection = state.binding(entry).wrappedValue; selection.tab = .simulation
+        let prompt = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: entry, selection: selection,
+          research: false, language: language)
+        XCTAssertTrue(prompt.contains(GalaxySSIHealthAtlasText.get(path.scope, language)))
+        selection.tab = .values
+        XCTAssertEqual(GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: entry, selection: selection,
+          research: false, language: language), "")
+      }
+    }
+  }
+
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
     let handoff = GalaxySSIHealthAtlasAgentHandoff()
     let token = try XCTUnwrap(handoff.prepare(owner: "a", conversation: "c", prompt: "Public teaching", now: 10))

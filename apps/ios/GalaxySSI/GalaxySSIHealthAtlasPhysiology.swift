@@ -29,6 +29,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case ventilation, renal, potassium, elbow, vessel, eye
     case middleEar
     case nerveTransit
+    case thyroidFeedback
     case alveolarSurface
     case bicarbonateMix
     case ejection
@@ -37,6 +38,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     #endif
     var inputs: [Input] {
       switch self {
+      case .thyroidFeedback:
+        return [.init(key: "endocrine_feedback_drive", range: 20...100, initial: 80, unit: "%"),
+          .init(key: "endocrine_feedback_gain", range: 0...300, initial: 100, scale: 100, unit: "\u{00d7}")]
       case .alveolarSurface:
         return [.init(key: "alveolar_tension", range: 5...35, initial: 15, unit: "mN/m"),
           .init(key: "alveolar_radius", range: 50...200, initial: 100, unit: "\u{03bc}m")]
@@ -85,6 +89,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       }
     }
     var axis: Int {
+      if self == .thyroidFeedback { return 0 }
       if self == .alveolarSurface { return 0 }
       if self == .elbow { return 0 }
       if self == .middleEar { return 0 }
@@ -96,6 +101,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .potassium ? 0 : 1
     }
     var unit: String {
+      if self == .thyroidFeedback { return "%" }
       if self == .alveolarSurface { return "Pa" }
       if self == .bicarbonateMix { return "mmol/L" }
       if self == .eye { return "mm" }
@@ -110,6 +116,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .ventilation ? "L/min" : self == .renal ? "mg/min" : "mV"
     }
     var bounds: ClosedRange<Double> {
+      if self == .thyroidFeedback { return 0...100 }
       if self == .alveolarSurface { return 0...1400 }
       if self == .bicarbonateMix { return 0...100 }
       if self == .eye { return -3...3 }
@@ -125,6 +132,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var source: URL {
       switch self {
+      case .thyroidFeedback: return URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-4-the-thyroid-gland")!
       case .alveolarSurface: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/20724566/")!
       case .bicarbonateMix: return URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder")!
       case .nerveTransit: return URL(string: "https://www.ncbi.nlm.nih.gov/books/NBK10921/")!
@@ -151,6 +159,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     static func forEntry(_ id: String) -> Self? {
       switch id {
+      case "thyroid-gland": return .thyroidFeedback
       case "cell-type-ii-pneumocyte": return .alveolarSurface
       case "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell": return .bicarbonateMix
       case "cranial-nerves", "spinal-nerves", "peripheral-nerves": return .nerveTransit
@@ -193,6 +202,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var result: Double { evaluate(inputs.indices.map(input)) }
   var companionValue: Double {
     switch kind {
+    case .thyroidFeedback: return input(0) - result
     case .alveolarSurface: return result / 2
     case .bicarbonateMix: return 20 + input(0) * input(1)
     case .nerveTransit: return 100 / input(1)
@@ -258,6 +268,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
+    // Static dimensionless feedback: output = drive - gain * output.
+    case .thyroidFeedback: return values[0] / (1 + values[1])
     // Young-Laplace for a single spherical interface: mN/m and micrometres converted to SI.
     case .alveolarSurface: return 2000 * values[0] / values[1]
     case .bicarbonateMix: return (20 + values[0] * values[1]) / (1 + values[0])

@@ -1,0 +1,774 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4349,
+    "mergeCommit": "7281138717425cc4a5fb905f65084de0c14141d5"
+  },
+  "plates": [
+    {
+      "id": "cell-thyroid-follicular-cell",
+      "owner": "cell-thyroid-follicular-cell",
+      "asset": "HealthAtlasEndocrineFollicular",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-thyroid-follicular-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-4-the-thyroid-gland",
+      "features": [
+        {
+          "marker": {
+            "id": "thy-apical",
+            "x": 0.4861111111111111,
+            "y": 0.3607142857142857
+          },
+          "title": "health_atlas_endocrine_thy_apical",
+          "explanation": "health_atlas_endocrine_thy_apical_detail"
+        },
+        {
+          "marker": {
+            "id": "thy-basal",
+            "x": 0.525,
+            "y": 0.7285714285714285
+          },
+          "title": "health_atlas_endocrine_thy_basal",
+          "explanation": "health_atlas_endocrine_thy_basal_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_follicular.xml"
+    },
+    {
+      "id": "cell-thyroid-parafollicular-cell",
+      "owner": "cell-thyroid-parafollicular-cell",
+      "asset": "HealthAtlasEndocrineParafollicular",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-thyroid-parafollicular-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-4-the-thyroid-gland",
+      "features": [
+        {
+          "marker": {
+            "id": "c-cell-periphery",
+            "x": 0.475,
+            "y": 0.6642857142857143
+          },
+          "title": "health_atlas_endocrine_c_cell_periphery",
+          "explanation": "health_atlas_endocrine_c_cell_periphery_detail"
+        },
+        {
+          "marker": {
+            "id": "c-cell-granules",
+            "x": 0.55,
+            "y": 0.7142857142857143
+          },
+          "title": "health_atlas_endocrine_c_cell_granules",
+          "explanation": "health_atlas_endocrine_c_cell_granules_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_parafollicular.xml"
+    },
+    {
+      "id": "cell-parathyroid-chief-cell",
+      "owner": "cell-parathyroid-chief-cell",
+      "asset": "HealthAtlasEndocrineParathyroidChief",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-parathyroid-chief-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-5-the-parathyroid-glands",
+      "features": [
+        {
+          "marker": {
+            "id": "chief-calcium-sensing",
+            "x": 0.3388888888888889,
+            "y": 0.40714285714285714
+          },
+          "title": "health_atlas_endocrine_chief_calcium_sensing",
+          "explanation": "health_atlas_endocrine_chief_calcium_sensing_detail"
+        },
+        {
+          "marker": {
+            "id": "chief-pth-granules",
+            "x": 0.5472222222222223,
+            "y": 0.6214285714285714
+          },
+          "title": "health_atlas_endocrine_chief_pth_granules",
+          "explanation": "health_atlas_endocrine_chief_pth_granules_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_parathyroid_chief.xml"
+    },
+    {
+      "id": "cell-adrenocortical-cell",
+      "owner": "cell-adrenocortical-cell",
+      "asset": "HealthAtlasEndocrineCortical",
+      "viewLabel": "health_atlas_endocrine_fasciculata_view",
+      "entryIDs": [
+        "cell-adrenocortical-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-6-the-adrenal-glands",
+      "features": [
+        {
+          "marker": {
+            "id": "cortex-lipid",
+            "x": 0.5722222222222222,
+            "y": 0.44285714285714284
+          },
+          "title": "health_atlas_endocrine_cortex_lipid",
+          "explanation": "health_atlas_endocrine_cortex_lipid_detail"
+        },
+        {
+          "marker": {
+            "id": "cortex-mitochondrion",
+            "x": 0.6138888888888889,
+            "y": 0.5857142857142857
+          },
+          "title": "health_atlas_endocrine_cortex_mitochondrion",
+          "explanation": "health_atlas_endocrine_cortex_mitochondrion_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_cortical.xml"
+    },
+    {
+      "id": "cell-chromaffin-cell",
+      "owner": "cell-chromaffin-cell",
+      "asset": "HealthAtlasEndocrineChromaffin",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-chromaffin-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-6-the-adrenal-glands",
+      "features": [
+        {
+          "marker": {
+            "id": "chroma-neural-input",
+            "x": 0.41388888888888886,
+            "y": 0.29642857142857143
+          },
+          "title": "health_atlas_endocrine_chroma_neural_input",
+          "explanation": "health_atlas_endocrine_chroma_neural_input_detail"
+        },
+        {
+          "marker": {
+            "id": "chroma-vesicles",
+            "x": 0.575,
+            "y": 0.6321428571428571
+          },
+          "title": "health_atlas_endocrine_chroma_vesicles",
+          "explanation": "health_atlas_endocrine_chroma_vesicles_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_chromaffin.xml"
+    },
+    {
+      "id": "cell-somatotroph",
+      "owner": "cell-somatotroph",
+      "asset": "HealthAtlasEndocrineSomatotroph",
+      "viewLabel": "health_atlas_endocrine_identity_view",
+      "entryIDs": [
+        "cell-somatotroph"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-3-the-pituitary-gland-and-hypothalamus",
+      "features": [
+        {
+          "marker": {
+            "id": "somatotroph-hormone",
+            "x": 0.5694444444444444,
+            "y": 0.5821428571428572
+          },
+          "title": "health_atlas_endocrine_somatotroph_hormone",
+          "explanation": "health_atlas_endocrine_somatotroph_hormone_detail"
+        },
+        {
+          "marker": {
+            "id": "somatotroph-nucleus",
+            "x": 0.425,
+            "y": 0.5
+          },
+          "title": "health_atlas_endocrine_somatotroph_nucleus",
+          "explanation": "health_atlas_endocrine_somatotroph_nucleus_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_somatotroph.xml"
+    },
+    {
+      "id": "cell-lactotroph",
+      "owner": "cell-lactotroph",
+      "asset": "HealthAtlasEndocrineLactotroph",
+      "viewLabel": "health_atlas_endocrine_identity_view",
+      "entryIDs": [
+        "cell-lactotroph"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-3-the-pituitary-gland-and-hypothalamus",
+      "features": [
+        {
+          "marker": {
+            "id": "lactotroph-hormone",
+            "x": 0.6111111111111112,
+            "y": 0.46785714285714286
+          },
+          "title": "health_atlas_endocrine_lactotroph_hormone",
+          "explanation": "health_atlas_endocrine_lactotroph_hormone_detail"
+        },
+        {
+          "marker": {
+            "id": "lactotroph-nucleus",
+            "x": 0.4305555555555556,
+            "y": 0.6071428571428571
+          },
+          "title": "health_atlas_endocrine_lactotroph_nucleus",
+          "explanation": "health_atlas_endocrine_lactotroph_nucleus_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_lactotroph.xml"
+    },
+    {
+      "id": "cell-corticotroph",
+      "owner": "cell-corticotroph",
+      "asset": "HealthAtlasEndocrineCorticotroph",
+      "viewLabel": "health_atlas_endocrine_identity_view",
+      "entryIDs": [
+        "cell-corticotroph"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-3-the-pituitary-gland-and-hypothalamus",
+      "features": [
+        {
+          "marker": {
+            "id": "corticotroph-hormone",
+            "x": 0.5527777777777778,
+            "y": 0.65
+          },
+          "title": "health_atlas_endocrine_corticotroph_hormone",
+          "explanation": "health_atlas_endocrine_corticotroph_hormone_detail"
+        },
+        {
+          "marker": {
+            "id": "corticotroph-nucleus",
+            "x": 0.4027777777777778,
+            "y": 0.45357142857142857
+          },
+          "title": "health_atlas_endocrine_corticotroph_nucleus",
+          "explanation": "health_atlas_endocrine_corticotroph_nucleus_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_corticotroph.xml"
+    },
+    {
+      "id": "cell-thyrotroph",
+      "owner": "cell-thyrotroph",
+      "asset": "HealthAtlasEndocrineThyrotroph",
+      "viewLabel": "health_atlas_endocrine_identity_view",
+      "entryIDs": [
+        "cell-thyrotroph"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-3-the-pituitary-gland-and-hypothalamus",
+      "features": [
+        {
+          "marker": {
+            "id": "thyrotroph-hormone",
+            "x": 0.3888888888888889,
+            "y": 0.6214285714285714
+          },
+          "title": "health_atlas_endocrine_thyrotroph_hormone",
+          "explanation": "health_atlas_endocrine_thyrotroph_hormone_detail"
+        },
+        {
+          "marker": {
+            "id": "thyrotroph-nucleus",
+            "x": 0.5277777777777778,
+            "y": 0.5071428571428571
+          },
+          "title": "health_atlas_endocrine_thyrotroph_nucleus",
+          "explanation": "health_atlas_endocrine_thyrotroph_nucleus_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_thyrotroph.xml"
+    },
+    {
+      "id": "cell-gonadotroph",
+      "owner": "cell-gonadotroph",
+      "asset": "HealthAtlasEndocrineGonadotroph",
+      "viewLabel": "health_atlas_endocrine_identity_view",
+      "entryIDs": [
+        "cell-gonadotroph"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-3-the-pituitary-gland-and-hypothalamus",
+      "features": [
+        {
+          "marker": {
+            "id": "gonadotroph-hormone",
+            "x": 0.5722222222222222,
+            "y": 0.6464285714285715
+          },
+          "title": "health_atlas_endocrine_gonadotroph_hormone",
+          "explanation": "health_atlas_endocrine_gonadotroph_hormone_detail"
+        },
+        {
+          "marker": {
+            "id": "gonadotroph-nucleus",
+            "x": 0.4222222222222222,
+            "y": 0.55
+          },
+          "title": "health_atlas_endocrine_gonadotroph_nucleus",
+          "explanation": "health_atlas_endocrine_gonadotroph_nucleus_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_gonadotroph.xml"
+    },
+    {
+      "id": "cell-pinealocyte",
+      "owner": "cell-pinealocyte",
+      "asset": "HealthAtlasEndocrinePinealocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-pinealocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-7-the-pineal-gland",
+      "features": [
+        {
+          "marker": {
+            "id": "pineal-process",
+            "x": 0.6805555555555556,
+            "y": 0.49642857142857144
+          },
+          "title": "health_atlas_endocrine_pineal_process",
+          "explanation": "health_atlas_endocrine_pineal_process_detail"
+        },
+        {
+          "marker": {
+            "id": "pineal-body",
+            "x": 0.39444444444444443,
+            "y": 0.5107142857142857
+          },
+          "title": "health_atlas_endocrine_pineal_body",
+          "explanation": "health_atlas_endocrine_pineal_body_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_pinealocyte.xml"
+    },
+    {
+      "id": "cell-leydig-cell",
+      "owner": "cell-leydig-cell",
+      "asset": "HealthAtlasEndocrineLeydig",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-leydig-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-1-anatomy-and-physiology-of-the-testicular-reproductive-system",
+      "features": [
+        {
+          "marker": {
+            "id": "leydig-interstitium",
+            "x": 0.46944444444444444,
+            "y": 0.5285714285714286
+          },
+          "title": "health_atlas_endocrine_leydig_interstitium",
+          "explanation": "health_atlas_endocrine_leydig_interstitium_detail"
+        },
+        {
+          "marker": {
+            "id": "leydig-lipid",
+            "x": 0.5638888888888889,
+            "y": 0.5892857142857143
+          },
+          "title": "health_atlas_endocrine_leydig_lipid",
+          "explanation": "health_atlas_endocrine_leydig_lipid_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_leydig.xml"
+    },
+    {
+      "id": "cell-granulosa-cell",
+      "owner": "cell-granulosa-cell",
+      "asset": "HealthAtlasEndocrineGranulosa",
+      "viewLabel": "health_atlas_endocrine_follicle_view",
+      "entryIDs": [
+        "cell-granulosa-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system",
+      "features": [
+        {
+          "marker": {
+            "id": "granulosa-lining",
+            "x": 0.6944444444444444,
+            "y": 0.5428571428571428
+          },
+          "title": "health_atlas_endocrine_granulosa_lining",
+          "explanation": "health_atlas_endocrine_granulosa_lining_detail"
+        },
+        {
+          "marker": {
+            "id": "granulosa-oocyte",
+            "x": 0.3972222222222222,
+            "y": 0.48214285714285715
+          },
+          "title": "health_atlas_endocrine_granulosa_oocyte",
+          "explanation": "health_atlas_endocrine_granulosa_oocyte_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_granulosa.xml"
+    },
+    {
+      "id": "cell-theca-cell",
+      "owner": "cell-theca-cell",
+      "asset": "HealthAtlasEndocrineTheca",
+      "viewLabel": "health_atlas_endocrine_follicle_view",
+      "entryIDs": [
+        "cell-theca-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system",
+      "features": [
+        {
+          "marker": {
+            "id": "theca-outer-zone",
+            "x": 0.4861111111111111,
+            "y": 0.19285714285714287
+          },
+          "title": "health_atlas_endocrine_theca_outer_zone",
+          "explanation": "health_atlas_endocrine_theca_outer_zone_detail"
+        },
+        {
+          "marker": {
+            "id": "theca-vascular-side",
+            "x": 0.7611111111111111,
+            "y": 0.28214285714285714
+          },
+          "title": "health_atlas_endocrine_theca_vascular_side",
+          "explanation": "health_atlas_endocrine_theca_vascular_side_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_theca.xml"
+    },
+    {
+      "id": "thyroid-gland",
+      "owner": "thyroid-gland",
+      "asset": "HealthAtlasEndocrineThyroidSection",
+      "viewLabel": "health_atlas_endocrine_thyroid_section_view",
+      "entryIDs": [
+        "thyroid-gland",
+        "cell-thyroid-follicular-cell",
+        "cell-thyroid-parafollicular-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-thyroid-follicular-cell",
+          "x": 0.36666666666666664,
+          "y": 0.6321428571428571
+        },
+        {
+          "id": "cell-thyroid-parafollicular-cell",
+          "x": 0.5888888888888889,
+          "y": 0.35714285714285715
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-4-the-thyroid-gland",
+      "features": [
+        {
+          "marker": {
+            "id": "thy-follicle-colloid",
+            "x": 0.39444444444444443,
+            "y": 0.4035714285714286
+          },
+          "title": "health_atlas_endocrine_thy_follicle_colloid",
+          "explanation": "health_atlas_endocrine_thy_follicle_colloid_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_thyroid_section.xml"
+    },
+    {
+      "id": "parathyroid-glands",
+      "owner": "parathyroid-glands",
+      "asset": "HealthAtlasEndocrineParathyroidBack",
+      "viewLabel": "health_atlas_endocrine_parathyroid_back_view",
+      "entryIDs": [
+        "parathyroid-glands",
+        "thyroid-gland"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "thyroid-gland",
+          "x": 0.2388888888888889,
+          "y": 0.5214285714285715
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-5-the-parathyroid-glands",
+      "features": [
+        {
+          "marker": {
+            "id": "para-pair-upper",
+            "x": 0.30833333333333335,
+            "y": 0.37142857142857144
+          },
+          "title": "health_atlas_endocrine_para_pair_upper",
+          "explanation": "health_atlas_endocrine_para_pair_upper_detail"
+        },
+        {
+          "marker": {
+            "id": "para-pair-lower",
+            "x": 0.6916666666666667,
+            "y": 0.6321428571428571
+          },
+          "title": "health_atlas_endocrine_para_pair_lower",
+          "explanation": "health_atlas_endocrine_para_pair_lower_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_parathyroid_back.xml"
+    },
+    {
+      "id": "adrenal-glands",
+      "owner": "adrenal-glands",
+      "asset": "HealthAtlasEndocrineAdrenalSection",
+      "viewLabel": "health_atlas_endocrine_adrenal_section_view",
+      "entryIDs": [
+        "adrenal-glands"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-6-the-adrenal-glands",
+      "features": [
+        {
+          "marker": {
+            "id": "adrenal-capsule",
+            "x": 0.4583333333333333,
+            "y": 0.21071428571428572
+          },
+          "title": "health_atlas_endocrine_adrenal_capsule",
+          "explanation": "health_atlas_endocrine_adrenal_capsule_detail"
+        },
+        {
+          "marker": {
+            "id": "adrenal-cortex",
+            "x": 0.25833333333333336,
+            "y": 0.6071428571428571
+          },
+          "title": "health_atlas_endocrine_adrenal_cortex",
+          "explanation": "health_atlas_endocrine_adrenal_cortex_detail"
+        },
+        {
+          "marker": {
+            "id": "adrenal-medulla",
+            "x": 0.49722222222222223,
+            "y": 0.5964285714285714
+          },
+          "title": "health_atlas_endocrine_adrenal_medulla",
+          "explanation": "health_atlas_endocrine_adrenal_medulla_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_adrenal_section.xml"
+    },
+    {
+      "id": "pituitary-gland",
+      "owner": "pituitary-gland",
+      "asset": "HealthAtlasEndocrinePituitarySection",
+      "viewLabel": "health_atlas_endocrine_pituitary_section_view",
+      "entryIDs": [
+        "pituitary-gland",
+        "hypothalamus"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "hypothalamus",
+          "x": 0.5305555555555556,
+          "y": 0.18928571428571428
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-3-the-pituitary-gland-and-hypothalamus",
+      "features": [
+        {
+          "marker": {
+            "id": "pit-anterior",
+            "x": 0.3638888888888889,
+            "y": 0.6607142857142857
+          },
+          "title": "health_atlas_endocrine_pit_anterior",
+          "explanation": "health_atlas_endocrine_pit_anterior_detail"
+        },
+        {
+          "marker": {
+            "id": "pit-posterior",
+            "x": 0.65,
+            "y": 0.6214285714285714
+          },
+          "title": "health_atlas_endocrine_pit_posterior",
+          "explanation": "health_atlas_endocrine_pit_posterior_detail"
+        },
+        {
+          "marker": {
+            "id": "pit-stalk",
+            "x": 0.5361111111111111,
+            "y": 0.35714285714285715
+          },
+          "title": "health_atlas_endocrine_pit_stalk",
+          "explanation": "health_atlas_endocrine_pit_stalk_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_endocrine_pituitary_section.xml"
+    }
+  ],
+  "paths": {
+    "thyroid-gland": {
+      "scope": "health_atlas_endocrine_thyroid_scope",
+      "separateBranches": false,
+      "steps": [
+        {
+          "label": "health_atlas_endocrine_stage_trh",
+          "destination": "hypothalamus"
+        },
+        {
+          "label": "health_atlas_endocrine_stage_tsh",
+          "destination": "cell-thyrotroph"
+        },
+        {
+          "label": "health_atlas_endocrine_stage_t3t4",
+          "destination": "cell-thyroid-follicular-cell"
+        },
+        {
+          "label": "health_atlas_endocrine_stage_feedback"
+        }
+      ]
+    },
+    "parathyroid-glands": {
+      "scope": "health_atlas_endocrine_parathyroid_scope",
+      "separateBranches": false,
+      "steps": [
+        {
+          "label": "health_atlas_endocrine_stage_low_ca"
+        },
+        {
+          "label": "health_atlas_endocrine_stage_pth",
+          "destination": "cell-parathyroid-chief-cell"
+        },
+        {
+          "label": "health_atlas_endocrine_stage_ca_response",
+          "destination": "kidneys"
+        },
+        {
+          "label": "health_atlas_endocrine_stage_feedback"
+        }
+      ]
+    },
+    "adrenal-glands": {
+      "scope": "health_atlas_endocrine_adrenal_scope",
+      "separateBranches": true,
+      "steps": [
+        {
+          "label": "health_atlas_endocrine_stage_crh_acth",
+          "destination": "cell-corticotroph"
+        },
+        {
+          "label": "health_atlas_endocrine_stage_cortisol",
+          "destination": "cell-adrenocortical-cell"
+        },
+        {
+          "label": "health_atlas_endocrine_stage_sympathetic",
+          "destination": "nervous"
+        },
+        {
+          "label": "health_atlas_endocrine_stage_catecholamines",
+          "destination": "cell-chromaffin-cell"
+        }
+      ]
+    },
+    "pituitary-gland": {
+      "scope": "health_atlas_endocrine_pituitary_scope",
+      "separateBranches": true,
+      "steps": [
+        {
+          "label": "health_atlas_endocrine_stage_activation",
+          "destination": "hypothalamus"
+        },
+        {
+          "label": "health_atlas_endocrine_stage_anterior"
+        },
+        {
+          "label": "health_atlas_endocrine_stage_activation",
+          "destination": "hypothalamus"
+        },
+        {
+          "label": "health_atlas_endocrine_stage_posterior"
+        }
+      ]
+    }
+  },
+  "mechanisms": [
+    {
+      "id": "pituitary-gland",
+      "kind": "secretion",
+      "title": "health_atlas_endocrine_pituitary_path_title",
+      "stages": [
+        "health_atlas_endocrine_pituitary_path_0",
+        "health_atlas_endocrine_pituitary_path_1",
+        "health_atlas_endocrine_pituitary_path_2",
+        "health_atlas_endocrine_pituitary_path_3"
+      ],
+      "chapter": "17-3-the-pituitary-gland-and-hypothalamus"
+    },
+    {
+      "id": "thyroid-gland",
+      "kind": "secretion",
+      "title": "health_atlas_endocrine_thyroid_path_title",
+      "stages": [
+        "health_atlas_endocrine_thyroid_path_0",
+        "health_atlas_endocrine_thyroid_path_1",
+        "health_atlas_endocrine_thyroid_path_2",
+        "health_atlas_endocrine_thyroid_path_3"
+      ],
+      "chapter": "17-4-the-thyroid-gland"
+    },
+    {
+      "id": "parathyroid-glands",
+      "kind": "secretion",
+      "title": "health_atlas_endocrine_parathyroid_path_title",
+      "stages": [
+        "health_atlas_endocrine_parathyroid_path_0",
+        "health_atlas_endocrine_parathyroid_path_1",
+        "health_atlas_endocrine_parathyroid_path_2",
+        "health_atlas_endocrine_parathyroid_path_3"
+      ],
+      "chapter": "17-5-the-parathyroid-glands"
+    },
+    {
+      "id": "adrenal-glands",
+      "kind": "secretion",
+      "title": "health_atlas_endocrine_adrenal_path_title",
+      "stages": [
+        "health_atlas_endocrine_adrenal_path_0",
+        "health_atlas_endocrine_adrenal_path_1",
+        "health_atlas_endocrine_adrenal_path_2",
+        "health_atlas_endocrine_adrenal_path_3"
+      ],
+      "chapter": "17-6-the-adrenal-glands"
+    }
+  ]
+}

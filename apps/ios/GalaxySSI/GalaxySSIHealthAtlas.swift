@@ -58,6 +58,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try HeartSectionPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try OverviewPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try DigestivePack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try EndocrinePack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     return result
   }
 
@@ -266,6 +267,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try? OverviewPack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if let pack = try? TissuePack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if GalaxySSIHealthAtlasEyeOptics.plate.entryIDs.contains(id ?? "") { return GalaxySSIHealthAtlasEyeOptics.plate }
+    if let pack = try? EndocrinePack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if let pack = try? DigestivePack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if let pack = try? SystemPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     if let pack = try? ImmunePack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
