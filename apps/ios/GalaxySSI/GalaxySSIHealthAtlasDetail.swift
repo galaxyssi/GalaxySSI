@@ -41,12 +41,12 @@ struct GalaxySSIHealthAtlasDetail: View {
             }
             Button(t("research")) { research = true }
             Divider()
+            Link(t("evidence"), destination: atlas.model(entry).source)
+            Text(t("art_note")).font(.footnote).foregroundColor(.secondary)
             if selection.wrappedValue.tab == .structure || selection.wrappedValue.tab == .function,
                let source = atlas.plate(for: entry.id)?.source {
               Link(t("plate_source"), destination: source).frame(minHeight: 44)
             }
-            Link(t("evidence"), destination: atlas.model(entry).source)
-            Text(t("art_note")).font(.footnote).foregroundColor(.secondary)
           }.padding()
         }
       }
