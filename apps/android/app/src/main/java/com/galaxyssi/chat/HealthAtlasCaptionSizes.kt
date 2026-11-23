@@ -1,39 +1,30 @@
 package com.galaxyssi.chat
 
-import android.app.Activity
 import android.os.Build
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 
-internal class HealthAtlasSceneFrame(activity: Activity, key: String) : LinearLayout(activity) {
+internal class HealthAtlasCaptionSizes {
     private data class Caption(val view: TextView, val texts: List<String>, val inset: Int)
     private val captions = mutableListOf<Caption>()
     private var measuredWidthForText = 0
 
-    init {
-        orientation = VERTICAL
-        tag = key
-        background = HealthCenterViews(activity).background()
-        clipToOutline = true
-    }
-
-    fun reserveCaption(view: TextView, texts: List<String>, inset: Int = 0) {
+    fun add(view: TextView, texts: List<String>, inset: Int) {
         require(texts.isNotEmpty())
         captions += Caption(view, texts, inset)
         measuredWidthForText = 0
     }
 
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val width = MeasureSpec.getSize(widthMeasureSpec) - paddingStart - paddingEnd
+    fun measure(width: Int) {
         if (width > 0 && width != measuredWidthForText) {
             measuredWidthForText = width
             for ((view, texts, inset) in captions) {
-                val widthSpec = MeasureSpec.makeMeasureSpec((width - inset).coerceAtLeast(1), MeasureSpec.EXACTLY)
-                val heightSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+                val widthSpec = View.MeasureSpec.makeMeasureSpec((width - inset).coerceAtLeast(1), View.MeasureSpec.EXACTLY)
+                val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
                 // Measure with TextView so mixed-script fallback fonts use the same line metrics as playback.
-                val probe = TextView(context).apply {
-                    layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+                val probe = TextView(view.context).apply {
+                    layoutParams = LinearLayout.LayoutParams(-1, -2)
                     paint.set(view.paint)
                     setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, view.paddingBottom)
                     includeFontPadding = view.includeFontPadding
@@ -56,6 +47,5 @@ internal class HealthAtlasSceneFrame(activity: Activity, key: String) : LinearLa
                 view.minHeight = reserved
             }
         }
-        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 }

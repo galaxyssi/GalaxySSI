@@ -72,7 +72,10 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
             }
         }
         if (!quantitativeAfterArt) addQuantitative()
-        val scene = HealthAtlasSceneFrame(activity, "atlas-simulation-frame").apply {
+        val scene = ui.column().apply {
+            tag = "atlas-simulation-frame"
+            background = ui.background()
+            clipToOutline = true
             setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8))
         }
         ui.add(body, scene)
@@ -129,16 +132,20 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
             it.lesson.notes.forEach { res -> note(res) }
         }
         if (item.id == "hair-follicles") note(R.string.health_atlas_context_hair_scope)
-        (diagram ?: process)?.let { ui.add(scene, it, 8) }
-        if (circulation != null) note(R.string.health_atlas_circuit_scope, 8)
-        if (gasExchange != null) note(R.string.health_atlas_gas_scope, 8)
-        if (retinalPath == null && endocrinePath == null) {
+        val processArt = diagram ?: process
+        val processFigure = if (retinalPath == null && endocrinePath == null && processArt != null) {
+            processArt.setPadding(processArt.paddingLeft, processArt.paddingTop, processArt.paddingRight,
+                processArt.paddingBottom + ui.dp(HealthAtlasFigureFrame.LEGEND_OVERLAP_DP))
             val caption = ui.text("", 15f, bold = true).apply { tag = "atlas-simulation-stage" }
             stage = caption
-            scene.reserveCaption(caption, mechanism.stages.indices.map(::stageCaption))
-            if (germline != null) scene.addView(caption, scene.indexOfChild(germline), LinearLayout.LayoutParams(-1, -2))
-            else ui.add(scene, caption, 6)
-        }
+            HealthAtlasFigureFrame(activity, processArt, "atlas-simulation-figure").apply {
+                reserveCaption(caption, mechanism.stages.indices.map(::stageCaption))
+                ui.add(legend, caption)
+            }
+        } else null
+        (processFigure ?: processArt)?.let { ui.add(scene, it, 8) }
+        if (circulation != null) note(R.string.health_atlas_circuit_scope, 8)
+        if (gasExchange != null) note(R.string.health_atlas_gas_scope, 8)
         val controls = ui.line().apply {
             gravity = Gravity.CENTER
             addView(ui.icon(R.drawable.ic_navigation_back, R.string.health_body_previous_step) { pause(); setPhase((values.stage - 1).coerceAtLeast(0) / 4f) })
@@ -151,7 +158,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
                 pause(); values = HealthAtlasSimulation.initial(item.id); resetInputs.forEach { it() }; setPhase(0f); updateOutput(); quantitative?.reset()
             }.apply { tag = "atlas-simulation-reset" })
         }
-        val controlsAnchor = diagram ?: closeUp
+        val controlsAnchor = if (diagram != null) processFigure ?: diagram else closeUp
         if (controlsAnchor != null && !inline) scene.addView(controls, scene.indexOfChild(controlsAnchor),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
         else ui.add(scene, controls, 8)

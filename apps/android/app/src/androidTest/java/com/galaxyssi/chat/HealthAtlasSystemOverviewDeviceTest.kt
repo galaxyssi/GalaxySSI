@@ -288,7 +288,7 @@ class HealthAtlasSystemOverviewDeviceTest {
             it.open("skin"); it.view("atlas-hotspot-epidermis").performClick()
             assertNotNull(it.view("atlas-feature-skin-layers-lucidum"))
             it.view("atlas-view-1").performClick()
-            it.view("atlas-entry-cell-keratinocyte").performClick()
+            it.openAtlasFromFigureOrSearch("cell-keratinocyte")
             assertNotNull(it.view("atlas-feature-keratin-filaments"))
             assertNull(it.window.decorView.tagged("atlas-hotspot-epidermis"))
             it.view("atlas-tab-1").performClick(); it.openAtlasModelDetails()
@@ -296,6 +296,7 @@ class HealthAtlasSystemOverviewDeviceTest {
         }
         scenario.recreate(); ready(scenario, "atlas-process-stage-0")
         scenario.onActivity {
+            it.closeAtlasStandaloneModel()
             it.onBackPressed(); assertTrue(it.view("atlas-hotspot-epidermis").isSelected)
             it.onBackPressed(); assertFalse(it.view("atlas-hotspot-epidermis").isSelected)
         }

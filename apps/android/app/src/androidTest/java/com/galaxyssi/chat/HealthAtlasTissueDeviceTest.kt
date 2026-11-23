@@ -54,32 +54,37 @@ class HealthAtlasTissueDeviceTest {
         } finally { clearHealthOverviewFixture(context, fixture) }
     }
 
-    @Test fun heartLayerSwapsLocallyAndDrillsThroughTissueToTheNamedCell() = native { scenario ->
+    @Test fun structureUsesOneIllustrationAndTissueStillDrillsThroughToItsNamedCell() = native { scenario ->
         scenario.onActivity {
             it.view("atlas-hotspot-heart").performClick()
-            val scroll = it.view("atlas-scroll")
-            val agent = it.view("atlas-ask")
-            it.view("atlas-structure-layer-1").performClick()
-            assertSame(scroll, it.view("atlas-scroll"))
-            assertSame(agent, it.view("atlas-ask"))
-            assertNull(it.find("atlas-entry-tissue-skeletal-muscle"))
-            it.view("atlas-entry-$cardiac").performClick()
+            assertNull(it.find("atlas-structure-layer-1"))
+            assertNull(it.find("atlas-entry-$cardiac"))
+            assertNull(it.find("atlas-entry-$myocyte"))
+            assertSame(it.view("atlas-structure-figure"), it.view("atlas-figure-legend").parent)
+            assertSame(it.view("atlas-figure-legend"), it.view("atlas-art-explanation").parent)
+            it.onBackPressed()
+            it.openCardiacTissue()
             assertNotNull(it.find("atlas-art-caption"))
-            assertNotNull(it.find("atlas-entry-heart"))
-            assertNotNull(it.find("atlas-entry-$myocyte"))
+            assertNull(it.find("atlas-entry-heart"))
+            assertNull(it.find("atlas-entry-$myocyte"))
             it.view("atlas-hotspot-$myocyte").performClick()
+            assertNotNull(it.find("atlas-art-explanation"))
             it.onBackPressed()
             assertNotNull(it.find("atlas-hotspot-$myocyte"))
-            it.onBackPressed()
-            assertTrue(it.view("atlas-structure-layer-1").isSelected)
         }
         scenario.recreate()
-        ready(scenario, "atlas-entry-$cardiac")
+        ready(scenario, "atlas-hotspot-$myocyte")
         scenario.onActivity {
-            it.view("atlas-structure-layer-2").performClick()
-            assertNotNull(it.find("atlas-entry-$myocyte"))
+            assertNotNull(it.find("atlas-art-explanation"))
             assertNull(it.find("atlas-entry-$cardiac"))
         }
+    }
+
+    private fun Activity.openCardiacTissue() {
+        view("atlas-tab-2").performClick()
+        view("atlas-catalogue-layer-1").performClick()
+        (view("atlas-search") as EditText).setText(cardiac)
+        view("atlas-entry-$cardiac").performClick()
     }
 
     @Test fun catalogueSearchStaysMountedAndSelectionSurvivesRecreation() = native { scenario ->
@@ -101,7 +106,7 @@ class HealthAtlasTissueDeviceTest {
             it.view("atlas-catalogue-layer-0").performClick()
             (it.view("atlas-search") as EditText).setText("lens")
             it.view("atlas-entry-lens").performClick()
-            it.view("atlas-structure-layer-1").performClick()
+            assertNull(it.find("atlas-structure-layer-1"))
             assertNull(it.find("atlas-entry-$cardiac"))
             assertNull(it.find("atlas-entry-tissue-epidermal"))
         }
@@ -111,9 +116,7 @@ class HealthAtlasTissueDeviceTest {
         val atlas = HealthBodyAtlas.load(context)
         val stage = atlas.mechanism(atlas[cardiac]!!).stages[2]
         scenario.onActivity {
-            it.view("atlas-hotspot-heart").performClick()
-            it.view("atlas-structure-layer-1").performClick()
-            it.view("atlas-entry-$cardiac").performClick()
+            it.openCardiacTissue()
             it.openAtlasModelDetails()
             it.view("atlas-process-stage-2").performClick()
             assertTrue((it.view("atlas-simulation-stage") as TextView).text.contains(stage))

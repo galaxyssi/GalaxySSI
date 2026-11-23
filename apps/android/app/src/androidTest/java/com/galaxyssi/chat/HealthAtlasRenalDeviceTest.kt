@@ -95,12 +95,12 @@ class HealthAtlasRenalDeviceTest {
     }
     @Test fun kidneyToNephronToCellNavigationRestoresItsOwnStage() = native { scenario ->
         scenario.onActivity {
-            it.open("kidneys"); it.view("atlas-entry-nephron").performClick()
+            it.open("kidneys"); it.openAtlasFromFigureOrSearch("nephron")
             it.view("atlas-hotspot-proximal-tubule").performClick()
             assertTrue(it.view("atlas-view-0").isSelected)
             it.view("atlas-view-1").performClick()
             assertTrue(it.view("atlas-hotspot-proximal-tubule").isSelected)
-            it.view("atlas-entry-cell-proximal-tubular-cell").performClick()
+            it.openAtlasFromFigureOrSearch("cell-proximal-tubular-cell")
             assertNotNull(it.view("atlas-feature-prox-brush"))
             assertNull(it.window.decorView.tagged("atlas-hotspot-proximal-tubule"))
             it.openAtlasModelDetails(); it.view("atlas-process-stage-2").performClick()
@@ -110,6 +110,7 @@ class HealthAtlasRenalDeviceTest {
         scenario.onActivity {
             assertTrue(it.view("atlas-process-stage-2").isSelected)
             assertEquals(50, (it.view("atlas-physiology-reabsorbed") as SeekBar).progress)
+            it.closeAtlasStandaloneModel()
             it.onBackPressed(); assertTrue(it.view("atlas-hotspot-proximal-tubule").isSelected)
             it.onBackPressed(); assertFalse(it.view("atlas-hotspot-proximal-tubule").isSelected)
             it.onBackPressed(); assertNotNull(it.view("atlas-hotspot-renal-cortex"))
