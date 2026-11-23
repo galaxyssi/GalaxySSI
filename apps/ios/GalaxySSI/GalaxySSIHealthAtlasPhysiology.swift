@@ -26,12 +26,17 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     let unit: String
   }
   enum Kind: String, CaseIterable, Sendable {
-    case ventilation, renal, potassium, elbow
+    case ventilation, renal, potassium, elbow, vessel
     #if GALAXYSSI_ATLAS_OXYGEN
     case oxygen
     #endif
     var inputs: [Input] {
       switch self {
+      case .vessel:
+        return [.init(key: "vessel_pressure", range: 0...20, initial: 10, unit: "mmHg"),
+          .init(key: "vessel_radius", range: 50...200, initial: 100, scale: 1000, unit: "mm"),
+          .init(key: "vessel_length", range: 20...100, initial: 50, unit: "mm"),
+          .init(key: "vessel_viscosity", range: 20...60, initial: 35, scale: 10, unit: "mPa s")]
       case .elbow:
         return [.init(key: "elbow_load", range: 0...100, initial: 40, scale: 10, unit: "kg"),
           .init(key: "elbow_load_arm", range: 20...50, initial: 38, unit: "cm"),
@@ -63,6 +68,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .potassium ? 0 : 1
     }
     var unit: String {
+      if self == .vessel { return "mL/min" }
       if self == .elbow { return "N" }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return "%" }
@@ -70,6 +76,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .ventilation ? "L/min" : self == .renal ? "mg/min" : "mV"
     }
     var bounds: ClosedRange<Double> {
+      if self == .vessel { return 0...3 }
       if self == .elbow { return 0...2700 }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return 0...100 }
@@ -78,6 +85,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var source: URL {
       switch self {
+      case .vessel: return GalaxySSIHealthAtlasVesselFlow.sources[0]
       case .elbow: return GalaxySSIHealthAtlasElbow.source
       case .ventilation: return URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-3-the-process-of-breathing")!
       case .renal: return URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption")!
@@ -88,6 +96,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       }
     }
     var sources: [URL] {
+      if self == .vessel { return GalaxySSIHealthAtlasVesselFlow.sources }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return GalaxySSIHealthAtlasOxygen.sources }
       #endif
@@ -95,6 +104,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     static func forEntry(_ id: String) -> Self? {
       switch id {
+      case "blood-vessels", "arteries", "veins", "coronary-vessels": return .vessel
       case "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna": return .elbow
       case "respiratory", "lungs", "alveoli": return .ventilation
       case "urinary", "kidneys", "nephron", "renal-tubules", "collecting-ducts", "proximal-tubule", "nephron-loop",
@@ -130,6 +140,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var result: Double { evaluate(inputs.indices.map(input)) }
   var companionValue: Double {
     switch kind {
+    case .vessel: return vesselFlow!.resistanceMmHgMinutesPerMl
     case .elbow: return elbowForces!.jointDown
     case .ventilation: return input(0) * input(1) / 1000
     case .renal: return renalAmounts!.reabsorbed
@@ -145,7 +156,20 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var elbowForces: GalaxySSIHealthAtlasElbow.Forces? {
     kind == .elbow ? GalaxySSIHealthAtlasElbow.forces(loadKg: input(0), loadArmCm: input(1), muscleArmMm: input(2)) : nil
   }
-  var plotMaximum: Double { kind == .elbow ? ceil(resultAt(axisRange.upperBound)! / 100) * 100 : kind.bounds.upperBound }
+  var vesselFlow: GalaxySSIHealthAtlasVesselFlow? {
+    kind == .vessel ? GalaxySSIHealthAtlasVesselFlow(pressureMmHg: input(0), radiusMm: input(1),
+      lengthMm: input(2), viscosityMilliPascalSeconds: input(3)) : nil
+  }
+  var plotMaximum: Double {
+    if kind == .elbow { return ceil(resultAt(axisRange.upperBound)! / 100) * 100 }
+    if kind == .vessel {
+      let peak = resultAt(axisRange.upperBound)!
+      guard peak > 0 else { return 0.01 }
+      let scale = pow(10, floor(log10(peak)))
+      return ceil(peak / scale) * scale
+    }
+    return kind.bounds.upperBound
+  }
   #if GALAXYSSI_ATLAS_OXYGEN
   var oxygenAmounts: GalaxySSIHealthAtlasOxygen.Amounts? {
     kind == .oxygen ? GalaxySSIHealthAtlasOxygen.amounts(pressure: input(0), p50: input(1), hemoglobinGramsPerLiter: input(2)) : nil
@@ -167,6 +191,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
+    case .vessel: return GalaxySSIHealthAtlasVesselFlow(pressureMmHg: values[0], radiusMm: values[1],
+      lengthMm: values[2], viscosityMilliPascalSeconds: values[3])!.flowMlPerMinute
     case .elbow: return GalaxySSIHealthAtlasElbow.forces(loadKg: values[0], loadArmCm: values[1], muscleArmMm: values[2])!.muscle
     case .ventilation: return values[0] * (values[1] - values[2]) / 1000
     case .renal: return GalaxySSIHealthAtlasRenalAmounts(filtered: values[0], reabsorbedPercent: values[1], secreted: values[2])!.excreted

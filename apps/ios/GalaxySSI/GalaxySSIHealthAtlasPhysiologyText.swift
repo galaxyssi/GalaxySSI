@@ -2,6 +2,9 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let vesselKey = ["model_vessel": "vessel_title", "model_vessel_scope": "vessel_scope", "model_vessel_formula": "vessel_formula"][key]
+    if let vesselKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + vesselKey, language) }
+    if key.hasPrefix("vessel_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     let elbowKey = ["model_elbow": "elbow_title", "model_elbow_scope": "elbow_scope", "model_elbow_formula": "elbow_formula"][key]
     if let elbowKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + elbowKey, language) }
     if key.hasPrefix("elbow_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
@@ -20,12 +23,21 @@ enum GalaxySSIHealthAtlasPhysiologyText {
   }
   static func input(_ model: GalaxySSIHealthAtlasPhysiology, index: Int, language: String) -> String {
     let spec = model.kind.inputs[index]
-    return string(spec.key, language: language) + ": " + number(model.input(index), language: language) + " " + spec.unit
+    return string(spec.key, language: language) + ": " + inputNumber(model.input(index), key: spec.key, language: language) + " " + spec.unit
+  }
+  static func inputNumber(_ value: Double, key: String, language: String) -> String {
+    number(value, digits: key == "vessel_radius" ? 3 : 2, language: language)
+  }
+  static func resultNumber(_ value: Double, kind: GalaxySSIHealthAtlasPhysiology.Kind, language: String) -> String {
+    number(value, digits: kind == .vessel ? 6 : 2, language: language)
   }
   static func result(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
-    string("model_" + model.kind.rawValue, language: language) + ": " + number(model.result, language: language) + " " + model.kind.unit
+    string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if let flow = model.vesselFlow {
+      return String(format: string("vessel_resistance", language: language), number(flow.resistanceMmHgMinutesPerMl, language: language))
+    }
     if let forces = model.elbowForces {
       return String(format: string("elbow_joint", language: language), number(forces.jointDown, language: language))
     }
@@ -40,6 +52,9 @@ enum GalaxySSIHealthAtlasPhysiologyText {
       number(model.companionValue, digits: model.kind == .potassium ? 4 : 2, language: language))
   }
   static func sourceTitle(_ kind: GalaxySSIHealthAtlasPhysiology.Kind, index: Int, language: String) -> String {
+    if kind == .vessel && index > 0 {
+      return string(index == 1 ? "vessel_profile_source" : "vessel_units_source", language: language)
+    }
     #if GALAXYSSI_ATLAS_OXYGEN
     if kind == .oxygen {
       return string(index == 0 ? "model_oxygen_binding_source" : "model_oxygen_content_source", language: language)
@@ -60,6 +75,7 @@ enum GalaxySSIHealthAtlasPhysiologyText {
       [result(model, language: language), companion(model, language: language)] +
       (model.renalAmounts.map { renalContext($0, language: language) } ?? []) +
       (model.elbowForces.map { elbowContext($0, language: language) } ?? []) +
+      (model.vesselFlow.map { vesselContext($0, language: language) } ?? []) +
       [
        string("model_" + model.kind.rawValue + "_formula", language: language)] + model.kind.sources.map(\.absoluteString))
       .joined(separator: "\n")
@@ -69,6 +85,20 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     guard labels.indices.contains(index) else { return "" }
     return String(format: GalaxySSIHealthAtlasText.get("health_atlas_renal_balance_" + labels[index], language),
       number(amounts.transfers[index], language: language))
+  }
+  static func vesselGeometry(_ flow: GalaxySSIHealthAtlasVesselFlow, language: String) -> String {
+    String(format: string("vessel_geometry", language: language), number(flow.radiusMm, digits: 3, language: language),
+      number(flow.lengthMm, language: language))
+  }
+  static func vesselValues(_ flow: GalaxySSIHealthAtlasVesselFlow, language: String) -> [String] {
+    zip(["vessel_mean_speed", "vessel_centre_speed", "vessel_shear"],
+      [flow.meanSpeedMmPerSecond, flow.centreSpeedMmPerSecond, flow.wallShearPascals]).map { key, value in
+        String(format: string(key, language: language), number(value, digits: 4, language: language))
+      }
+  }
+  static func vesselContext(_ flow: GalaxySSIHealthAtlasVesselFlow, language: String) -> [String] {
+    [string("vessel_diagram", language: language), vesselGeometry(flow, language: language)] +
+      vesselValues(flow, language: language) + [string("vessel_diagram_scope", language: language)]
   }
   static func elbowLabels(_ forces: GalaxySSIHealthAtlasElbow.Forces, language: String) -> [String] {
     zip(["elbow_muscle_force", "elbow_joint_force", "elbow_arm_weight", "elbow_load_weight"],

@@ -176,8 +176,9 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     let ids = ["respiratory", "lungs", "alveoli", "urinary", "kidneys", "nephron", "renal-tubules", "collecting-ducts",
       "cell-proximal-tubular-cell", "cell-distal-tubular-cell", "cell-collecting-duct-principal-cell",
       "cell-collecting-duct-intercalated-cell", "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron",
-      "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna"]
-    XCTAssertEqual(ids.count, 26)
+      "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna",
+      "blood-vessels", "arteries", "veins", "coronary-vessels"]
+    XCTAssertEqual(ids.count, 30)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
     for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-ii-pneumocyte", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
@@ -215,6 +216,86 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     XCTAssertNil(Model.restore("biceps-brachii", inputs: [40, 38, 0]))
     XCTAssertNil(Model.Kind.forEntry("triceps-brachii"))
     XCTAssertNil(Model.Kind.forEntry("cell-skeletal-muscle-fiber"))
+  }
+
+  func testVesselIndependentSIConversionsAndProfileConservation() throws {
+    typealias Flow = GalaxySSIHealthAtlasVesselFlow
+    let baseline = try XCTUnwrap(Flow())
+    XCTAssertEqual(baseline.flowMlPerMinute, 0.017950485959955423, accuracy: 1e-12)
+    XCTAssertEqual(baseline.resistanceMmHgMinutesPerMl, 557.0879820361606, accuracy: 1e-9)
+    XCTAssertEqual(baseline.meanSpeedMmPerSecond, 9.523028571428572, accuracy: 1e-10)
+    XCTAssertEqual(baseline.centreSpeedMmPerSecond, 19.046057142857144, accuracy: 1e-10)
+    XCTAssertEqual(baseline.wallShearPascals, 1.333224, accuracy: 1e-10)
+    let maximum = try XCTUnwrap(Flow(pressureMmHg: 20, radiusMm: 0.2, lengthMm: 20, viscosityMilliPascalSeconds: 2))
+    XCTAssertEqual(maximum.flowMlPerMinute, 2.5130680343937595, accuracy: 1e-10)
+    let minimum = try XCTUnwrap(Flow(pressureMmHg: 1, radiusMm: 0.05, lengthMm: 100, viscosityMilliPascalSeconds: 6))
+    XCTAssertEqual(minimum.flowMlPerMinute, 0.00003272224003116874, accuracy: 1e-14)
+    XCTAssertEqual(try XCTUnwrap(Flow(radiusMm: 0.2)).flowMlPerMinute, baseline.flowMlPerMinute * 16, accuracy: 1e-10)
+    XCTAssertEqual(try XCTUnwrap(Flow(pressureMmHg: 20)).flowMlPerMinute, baseline.flowMlPerMinute * 2, accuracy: 1e-10)
+    XCTAssertEqual(try XCTUnwrap(Flow(lengthMm: 100)).flowMlPerMinute, baseline.flowMlPerMinute / 2, accuracy: 1e-10)
+    let viscous = try XCTUnwrap(Flow(viscosityMilliPascalSeconds: 5))
+    XCTAssertEqual(viscous.flowMlPerMinute, baseline.flowMlPerMinute * 3.5 / 5, accuracy: 1e-10)
+    XCTAssertEqual(viscous.wallShearPascals, baseline.wallShearPascals, accuracy: 1e-10)
+    var volume = 0.0
+    for index in 0..<10000 {
+      let inner = Double(index) / 10000, outer = Double(index + 1) / 10000
+      let relative = (inner + outer) / 2
+      let speed = try XCTUnwrap(baseline.speedMmPerSecond(relativeRadius: relative))
+      XCTAssertEqual(baseline.speedMmPerSecond(relativeRadius: -relative), speed)
+      volume += Double.pi * pow(baseline.radiusMm, 2) * (outer * outer - inner * inner) * speed
+    }
+    XCTAssertEqual(volume * 0.06, baseline.flowMlPerMinute, accuracy: 1e-9)
+    XCTAssertEqual(baseline.speedMmPerSecond(relativeRadius: 1), 0)
+    XCTAssertEqual(baseline.speedMmPerSecond(relativeRadius: -1), 0)
+    XCTAssertEqual(baseline.speedMmPerSecond(relativeRadius: 0), baseline.centreSpeedMmPerSecond)
+  }
+
+  func testVesselZeroPressureBoundsRestorationAndLocalizedPrecision() throws {
+    typealias Flow = GalaxySSIHealthAtlasVesselFlow
+    let zero = try XCTUnwrap(Flow(pressureMmHg: 0))
+    XCTAssertEqual(zero.flowMlPerMinute, 0)
+    XCTAssertEqual(zero.meanSpeedMmPerSecond, 0)
+    XCTAssertEqual(zero.wallShearPascals, 0)
+    XCTAssertEqual(zero.resistanceMmHgMinutesPerMl, try XCTUnwrap(Flow()).resistanceMmHgMinutesPerMl)
+    XCTAssertEqual(try XCTUnwrap(Model(kind: .vessel).changing(0, to: 0)).plotMaximum, 0.01)
+    for p in [0, 1, 10, 20] {
+      for r in [50, 101, 200] {
+        for l in [20, 50, 100] {
+          for m in [20, 35, 60] {
+            let model = try XCTUnwrap(Model(kind: .vessel, inputs: [p, r, l, m]))
+            XCTAssertEqual(model.result * model.companionValue, Double(p), accuracy: 1e-9)
+            XCTAssertTrue((0...model.plotMaximum).contains(model.result))
+            XCTAssertLessThanOrEqual(model.plotMaximum, 3)
+            for point in model.response { XCTAssertTrue((0...model.plotMaximum).contains(point.y)) }
+          }
+        }
+      }
+    }
+    for invalid in [Double.nan, .infinity, -.infinity, -1, 21] { XCTAssertNil(Flow(pressureMmHg: invalid)) }
+    for invalid in [Double.nan, .infinity, 0, 0.049, 0.201] { XCTAssertNil(Flow(radiusMm: invalid)) }
+    for invalid in [Double.nan, .infinity, 0, 19, 101] { XCTAssertNil(Flow(lengthMm: invalid)) }
+    for invalid in [Double.nan, .infinity, 0, 1.9, 6.1] { XCTAssertNil(Flow(viscosityMilliPascalSeconds: invalid)) }
+    for invalid in [Double.nan, .infinity, -1.01, 1.01] { XCTAssertNil(zero.speedMmPerSecond(relativeRadius: invalid)) }
+    for id in ["blood-vessels", "arteries", "veins", "coronary-vessels"] {
+      XCTAssertEqual(Model.Kind.forEntry(id), .vessel)
+      XCTAssertEqual(Model.restore(id, inputs: [10, 101, 50, 35])?.inputs, [10, 101, 50, 35])
+      XCTAssertNil(Model.restore(id, inputs: [10, 100, 50]))
+      XCTAssertNil(Model.restore(id, inputs: [10, 49, 50, 35]))
+    }
+    for id in ["heart", "cardiovascular", "capillaries", "cell-vascular-endothelium"] {
+      XCTAssertNotEqual(Model.Kind.forEntry(id), .vessel)
+    }
+    XCTAssertNil(Model(kind: .potassium).vesselFlow)
+    typealias Text = GalaxySSIHealthAtlasPhysiologyText
+    XCTAssertEqual(Text.inputNumber(0.051, key: "vessel_radius", language: "en"), "0.051")
+    XCTAssertEqual(Text.resultNumber(0.00003272224003116874, kind: .vessel, language: "en"), "0.000033")
+    for language in ["en", "zh-Hans"] {
+      let model = Model(kind: .vessel)
+      let context = Text.context(model, language: language)
+      for line in Text.vesselContext(try XCTUnwrap(model.vesselFlow), language: language) { XCTAssertTrue(context.contains(line)) }
+      for source in Flow.sources { XCTAssertTrue(context.contains(source.absoluteString)) }
+      XCTAssertFalse(context.contains("health_atlas_vessel_"))
+    }
   }
 
   func testLegacyVentilationMigrationAndIndependentEntryRestoration() throws {
