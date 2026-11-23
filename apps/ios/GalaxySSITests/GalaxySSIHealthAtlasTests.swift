@@ -313,6 +313,13 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("cell-pancreatic-beta-cell"), [.glucose, .hba1c])
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("fragment-platelet"), [.platelets])
     XCTAssertTrue(GalaxySSIHealthAtlasMetrics.forEntry("brain").isEmpty)
+    for id in ["urinary", "kidneys", "renal-cortex", "renal-medulla", "renal-pelvis", "nephron", "glomerulus",
+      "renal-tubules", "collecting-ducts", "cell-podocyte", "bowmans-capsule", "proximal-tubule", "nephron-loop", "distal-tubule"] {
+      XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry(id), [.creatinine, .urea, .urineProtein], id)
+    }
+    for id in ["cell-proximal-tubular-cell", "cell-distal-tubular-cell", "unknown"] {
+      XCTAssertTrue(GalaxySSIHealthAtlasMetrics.forEntry(id).isEmpty, id)
+    }
   }
 
   func testCellMechanismsMustBeOwnedByTheirCanonicalCell() throws {
