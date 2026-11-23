@@ -4,15 +4,20 @@ const {execFileSync} = require("node:child_process"), xml = require("xml-js");
 const {PDFDocument, PDFName, PDFDict, PDFArray, decodePDFRawStream} = require("pdf-lib");
 const root = path.resolve(__dirname, "../GalaxySSI"), assets = path.join(root, "Assets.xcassets");
 const retinal = process.argv.includes("--retinal-cells");
-const sha = retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
+const systems = process.argv.includes("--system-overviews");
+const sha = systems ? "5ca99f3dde521cd65ca0f0f84b5550a31da5b9f2" : retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
 const source = file => execFileSync("git", ["show", sha + ":" + file], {encoding: "utf8", maxBuffer: 4_000_000});
-const frames = retinal ? [
+const frames = systems ? [
+  ["system_cardio", "HealthAtlasOverviewCardio", "overview.pdf", 0],
+  ["system_testicular", "HealthAtlasOverviewTesticular", "overview.pdf", 3],
+  ["system_ovarian", "HealthAtlasOverviewOvarian", "overview.pdf", 9]
+] : retinal ? [
   ["sensory_aii", "HealthAtlasSensoryAii", "cell.pdf", 0], ["sensory_bipolar", "HealthAtlasSensoryBipolar", "cell.pdf", 3],
   ["sensory_ganglion", "HealthAtlasSensoryGanglion", "cell.pdf", 8], ["sensory_rpe", "HealthAtlasSensoryRpe", "cell.pdf", 13]
 ] : [
   ["sensory_retina_section", "HealthAtlasSensoryRetinaSection", "cell.pdf"]
 ];
-const gradientOffset = retinal ? 0 : 9;
+const gradientOffset = systems || retinal ? 0 : 9;
 const array = (dict, key) => dict.lookup(PDFName.of(key), PDFArray).asArray().map(n => n.asNumber());
 const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 255);
 (async () => {
@@ -53,7 +58,11 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
     }
     paths += vector.path.length;
   }
-  assert.equal(paths, retinal ? 35 : 24); assert.equal(gradientCount, retinal ? 11 : 2);
+  assert.equal(paths, systems ? 39 : retinal ? 35 : 24); assert.equal(gradientCount, systems ? 18 : retinal ? 11 : 2);
+  if (systems) {
+    console.log("Android #4362: three vector PDFs, 39 paths, 18 exact native gradients and unchanged viewports; no raster flattening.");
+    return;
+  }
   const kotlin = execFileSync("git", ["show", "b513fe5023b8699e4e64e1f914f09be98ddeeacb:apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSensorySections.kt"], {encoding: "utf8"});
   const swift = fs.readFileSync(path.join(root, "GalaxySSIHealthAtlasSensorySections.swift"), "utf8");
   const expectedRoutes = [...kotlin.matchAll(/atlasSectionTrack\(([\d.]+)f, ([\d.]+)f\) \{([^}]+)\}/g)].map(m => ({

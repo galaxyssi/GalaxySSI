@@ -1,5 +1,4 @@
 {
-  "images": [{ "filename": "overview.pdf", "idiom": "universal" }],
-  "info": { "author": "xcode", "version": 1 },
-  "properties": { "preserves-vector-representation": true }
+  "images": [{ "filename": "overview.png", "idiom": "universal" }],
+  "info": { "author": "xcode", "version": 1 }
 }

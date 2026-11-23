@@ -1098,7 +1098,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthAtlasSectionLesson.forEntry("cell-enterocyte"))
   }
 
-  func testEditorialArtworkRetainsResolutionTransparencyAndAllOneHundredEightHotspots() throws {
+  func testEditorialArtworkRetainsResolutionTransparencyAndAllOneHundredThirteenHotspots() throws {
     let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
     let frames: [(String?, Int, Int)] = [(nil, 1024, 1536), ("heart", 1086, 1448),
       ("lungs", 1254, 1254), ("liver", 1254, 1254), ("kidneys", 1254, 1254),
@@ -1107,7 +1107,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       ("cell-erythrocyte", 1254, 1254), ("cell-neuron", 1024, 1536), ("skin", 1536, 1024),
       ("sensory", 1199, 1312), ("immune", 1312, 1199), ("respiratory", 1145, 1374),
       ("digestive", 1246, 1263), ("endocrine", 1312, 1199), ("ear", 1536, 1024), ("eye", 1536, 1024),
-      ("cell-inner-ear-hair-cell", 1024, 1536), ("cell-rod-photoreceptor", 1024, 1536), ("cell-cone-photoreceptor", 1024, 1536)]
+      ("cell-inner-ear-hair-cell", 1024, 1536), ("cell-rod-photoreceptor", 1024, 1536), ("cell-cone-photoreceptor", 1024, 1536),
+      ("nervous", 1024, 1536)]
     let samples: [String: [CGPoint]] = [
       "pancreas": [CGPoint(x: 0.90, y: 0.72), CGPoint(x: 0.62, y: 0.30)],
       "urinary": [CGPoint(x: 0.50, y: 0.50), CGPoint(x: 0.66, y: 0.53)],
@@ -1137,7 +1138,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       let plate = try XCTUnwrap(atlas.plate(for: owner, viewKey: key))
       plates.append((plate, key == "skeletal-posterior" ? 887 : 1024, key == "skeletal-posterior" ? 1774 : 1536))
     }
-    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 29)
+    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 30)
     var count = 0
     for (plate, width, height) in plates {
       let image = try XCTUnwrap(UIImage(named: plate.asset, in: bundle, compatibleWith: nil)?.cgImage)
@@ -1146,6 +1147,15 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       for marker in plate.markers {
         XCTAssertGreaterThanOrEqual(try alpha(image, Int(marker.x * Double(width)), Int(marker.y * Double(height))), 200)
         XCTAssertNotNil(atlas.entry(marker.id)); count += 1
+        if plate.owner == "nervous" {
+          var matched = false
+          for dx in -1...1 { for dy in -1...1 {
+            let pixel = try rgba(image, Int(marker.x * Double(width)) + dx, Int(marker.y * Double(height)) + dy)
+            let r = Int(pixel[0]), g = Int(pixel[1]), b = Int(pixel[2])
+            matched = matched || (pixel[3] > 200 && (marker.id == "brain" ? b > r + 10 : r > b + 45 && g > b + 30))
+          } }
+          XCTAssertTrue(matched, marker.id)
+        }
         if plate.owner == "muscle" {
           let pixel = try rgba(image, Int(marker.x * Double(width)), Int(marker.y * Double(height)))
           let r = Int(pixel[0]), g = Int(pixel[1]), b = Int(pixel[2])
@@ -1179,7 +1189,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(try alpha(image, Int(sample[1].x * CGFloat(width)), Int(sample[1].y * CGFloat(height))), 200)
       }
     }
-    XCTAssertEqual(count, 108)
+    XCTAssertEqual(count, 113)
     XCTAssertTrue(try XCTUnwrap(atlas.plate(for: nil)).markers.contains { $0.id == "lungs" })
   }
 
