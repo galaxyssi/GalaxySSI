@@ -3,7 +3,7 @@
 Ports Android merge `40c28fba70c17ab4fad0a301799b0f202bc48b13` to iOS 15+.
 
 ## Dependency and review scope
-This branch uses the actual commits of prerequisite iOS PR #4468 (Android #4345), not reimplemented copies. Base remains `main` and this is a formal, non-draft PR. While #4468 is unmerged, GitHub's base-to-head diff also contains its 12 immune-cell plates, 25 annotations, shared feature decoder/label-dialog infrastructure, and macrophage drawing. Those prerequisite changes are documented in `ANDROID_4345_IMMUNE_ANNOTATIONS.md`; they are not newly attributed to Android #4346. Once #4468 is merged, its identical commits naturally disappear from this PR's diff. No merge or approval is claimed here.
+Prerequisite iOS PR #4468 (Android #4345) has merged to `main` as `9426d0d6635a887a342cbe0af24c817d095c0eb5`. This branch reuses its existing feature decoder, labels and explanation dialogs; it does not copy or reattribute its immune-cell implementation. Base remains `main`, and the diff contains only the #4346 port described below. This is a formal, non-draft PR; approval or native build acceptance is not claimed.
 
 ## New work for #4346
 - Import the remaining 18 original cell plates as vector-preserving PDFs (119 original drawing paths), with all 39 local feature explanations and exact source chapters/coordinates. Together with #4468 this completes all 30 core cell plate identities.
