@@ -55,6 +55,7 @@ enum GalaxySSIHealthAtlasAgentContext {
 
   static func prompt(anatomy: Anatomy?, screen: Screen, simulation: Simulation? = nil, quantitative: Quantitative? = nil,
                      elimination: Elimination? = nil, illustration: Illustration? = nil, drugs: GalaxySSIHealthAtlasDrugState? = nil,
+                     aging: GalaxySSIHealthAtlasAgingSelection? = nil, language: String = "en",
                      locale: Locale, text t: (String) -> String) -> String? {
     guard screen != .values else { return nil }
     guard let anatomy else { return t("ask_whole_context") }
@@ -110,7 +111,8 @@ enum GalaxySSIHealthAtlasAgentContext {
       lines += ["https://openstax.org/books/pharmacology/pages/2-2-pharmacokinetics-and-pharmacodynamics",
         "https://pharmacologyeducation.org/clinical-pharmacokinetics/"]
     case .aging:
-      lines += [t("aging"), t("aging_evidence"), "https://pubmed.ncbi.nlm.nih.gov/36599349/", anatomy.source.absoluteString]
+      lines += [t("aging"), GalaxySSIHealthAtlasAgingSelection.resolved(aging, entryID: anatomy.id).context(language: language),
+        t("aging_evidence"), GalaxySSIHealthAtlasAgingTopic.source.absoluteString, anatomy.source.absoluteString]
     default: break
     }
     return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)

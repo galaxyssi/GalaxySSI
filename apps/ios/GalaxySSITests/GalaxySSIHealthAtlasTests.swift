@@ -425,6 +425,46 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(restored.entries.count, 1)
   }
 
+  func testAgingTopicsLocalizeStagesAndKeepIndependentRestorableState() throws {
+    typealias Topic = GalaxySSIHealthAtlasAgingTopic
+    typealias Aging = GalaxySSIHealthAtlasAgingSelection
+    let atlas = try catalogue(), state = GalaxySSIHealthAtlasState()
+    XCTAssertEqual(Topic.allCases.count, 12)
+    XCTAssertEqual(Topic.allCases.filter { $0.study != nil }, [.telomeres, .senescence])
+    XCTAssertEqual(Topic.forEntry("heart"), .mitochondria)
+    XCTAssertEqual(Topic.forEntry("skin-organ"), .telomeres)
+    XCTAssertEqual(Topic.forEntry("cell-t-cell"), .senescence)
+    XCTAssertEqual(Topic.forEntry("colon"), .dysbiosis)
+    XCTAssertEqual(Topic.forEntry("unknown"), .genome)
+    for topic in Topic.allCases {
+      XCTAssertNotNil(atlas.entry(topic.exampleID))
+      XCTAssertNil(Aging(topic: topic, step: -1))
+      XCTAssertNil(Aging(topic: topic, step: 4))
+      for step in 0..<4 {
+        let selected = try XCTUnwrap(Aging(topic: topic, step: step))
+        XCTAssertEqual(try JSONDecoder().decode(Aging.self, from: JSONEncoder().encode(selected)), selected)
+        for language in ["en", "zh-Hans"] {
+          XCTAssertEqual(selected.stages(language: language).count, 4)
+          XCTAssertFalse(selected.context(language: language).contains("health_atlas_"))
+          XCTAssertTrue(selected.context(language: language).contains(selected.stages(language: language)[step]))
+        }
+      }
+    }
+    let heart = try XCTUnwrap(atlas.entry("heart")), skin = try XCTUnwrap(atlas.entry("skin-organ"))
+    state.binding(heart).wrappedValue.aging = Aging(topic: .senescence, step: 3)
+    state.binding(skin).wrappedValue.aging = Aging(topic: .telomeres, step: 1)
+    state.binding(heart).wrappedValue.tab = .simulation
+    let next = GalaxySSIHealthAtlasState()
+    next.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(next.binding(heart).wrappedValue.aging, Aging(topic: .senescence, step: 3))
+    XCTAssertEqual(next.binding(skin).wrappedValue.aging, Aging(topic: .telomeres, step: 1))
+    let legacy = GalaxySSIHealthAtlasState.Selection()
+    XCTAssertNil(legacy.aging)
+    XCTAssertEqual(Aging.resolved(legacy.aging, entryID: heart.id).topic, .mitochondria)
+    let malformed = try JSONDecoder().decode(Aging.self, from: Data(#"{"topic":"telomeres","step":99}"#.utf8))
+    XCTAssertEqual(Aging.resolved(malformed, entryID: "heart"), Aging(topic: .mitochondria))
+  }
+
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
     let handoff = GalaxySSIHealthAtlasAgentHandoff()
     let token = try XCTUnwrap(handoff.prepare(owner: "a", conversation: "c", prompt: "Public teaching", now: 10))

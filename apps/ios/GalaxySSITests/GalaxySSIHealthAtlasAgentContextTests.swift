@@ -53,6 +53,33 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertTrue(prompt.contains("openstax.org"))
     XCTAssertFalse(prompt.contains("Single-compartment"))
   }
+
+  func testAgingPreviewContainsOnlyActiveThemeStageAndStudy() throws {
+    typealias Aging = GalaxySSIHealthAtlasAgingSelection
+    let selected = try XCTUnwrap(Aging(topic: .telomeres, step: 2))
+    for language in ["en", "zh-Hans"] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .aging,
+        aging: selected, language: language, locale: locale, text: text))
+      XCTAssertTrue(prompt.contains(selected.context(language: language)))
+      XCTAssertTrue(prompt.contains("PMC3615479"))
+      XCTAssertFalse(prompt.contains("19485966"))
+      XCTAssertFalse(prompt.contains(GalaxySSIHealthAtlasAgingTopic.senescence.study!.text("result", language: language)))
+      for screen in [Context.Screen.structure, .function, .simulation, .physiology, .drugs] {
+        let inactive = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: screen,
+          aging: selected, language: language, locale: locale, text: text))
+        XCTAssertFalse(inactive.contains("PMC3615479"))
+      }
+      XCTAssertNil(Context.prompt(anatomy: anatomy(), screen: .values, aging: selected,
+        language: language, locale: locale, text: text))
+    }
+    let senescence = Aging(topic: .senescence)
+    let study = senescence.context(language: "en")
+    XCTAssertTrue(study.contains("170 donors")); XCTAssertTrue(study.contains("0.63"))
+    XCTAssertTrue(study.contains("19485966")); XCTAssertFalse(study.contains("PMC3615479"))
+    let telomeres = selected.context(language: "en")
+    XCTAssertTrue(telomeres.contains("87 adults")); XCTAssertTrue(telomeres.contains("0.83"))
+    XCTAssertTrue(telomeres.contains("cross-sectional"))
+  }
   func testInactiveResearchAndForeignModelsNeverEnterThePublicQuestion() throws {
     let simulation = try XCTUnwrap(Context.Simulation(entryID: "heart", phase: 0.5, first: 80, second: 70))
     let quantitative = Context.Quantitative(entryID: "heart", context: "ACTIVE_QUANTITATIVE_CONTEXT")

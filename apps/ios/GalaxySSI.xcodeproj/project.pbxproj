@@ -21,6 +21,8 @@
     C43380000000000000000001 /* GalaxySSIHealthAtlasVesselFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43380000000000000000002 /* GalaxySSIHealthAtlasVesselFlow.swift */; };
     C43380000000000000000003 /* GalaxySSIHealthAtlasVesselFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43380000000000000000004 /* GalaxySSIHealthAtlasVesselFlowView.swift */; };
     C43350000000000000000003 /* GalaxySSIHealthAtlasElbowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43350000000000000000004 /* GalaxySSIHealthAtlasElbowView.swift */; };
+    C43390000000000000000001 /* GalaxySSIHealthAtlasAging.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43390000000000000000002 /* GalaxySSIHealthAtlasAging.swift */; };
+    C43390000000000000000003 /* GalaxySSIHealthAtlasAgingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43390000000000000000004 /* GalaxySSIHealthAtlasAgingPanel.swift */; };
     F81EA90A113A7DE2667956C6 /* GalaxySSIHealthAtlasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */; };
     1AA5A2AD38BCAE4FA01FE49A /* GalaxySSIHealthAtlasTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8967AB28E2E61CC057AEBD3 /* GalaxySSIHealthAtlasTests.swift */; };
     40A8F2E0933DD60C3E202D5C /* body-atlas in Resources */ = {isa = PBXBuildFile; fileRef = B85158A6D23086CFED45AC26 /* body-atlas */; };
@@ -1476,6 +1478,8 @@
     C43380000000000000000002 /* GalaxySSIHealthAtlasVesselFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasVesselFlow.swift; sourceTree = "<group>"; };
     C43380000000000000000004 /* GalaxySSIHealthAtlasVesselFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasVesselFlowView.swift; sourceTree = "<group>"; };
     C43350000000000000000004 /* GalaxySSIHealthAtlasElbowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasElbowView.swift; sourceTree = "<group>"; };
+    C43390000000000000000002 /* GalaxySSIHealthAtlasAging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAging.swift; sourceTree = "<group>"; };
+    C43390000000000000000004 /* GalaxySSIHealthAtlasAgingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAgingPanel.swift; sourceTree = "<group>"; };
     490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasState.swift; sourceTree = "<group>"; };
     A8967AB28E2E61CC057AEBD3 /* GalaxySSIHealthAtlasTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTests.swift; sourceTree = "<group>"; };
     B85158A6D23086CFED45AC26 /* body-atlas */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "body-atlas"; sourceTree = "<group>"; };
@@ -2949,6 +2953,8 @@
         C43380000000000000000002 /* GalaxySSIHealthAtlasVesselFlow.swift */,
         C43380000000000000000004 /* GalaxySSIHealthAtlasVesselFlowView.swift */,
         C43350000000000000000004 /* GalaxySSIHealthAtlasElbowView.swift */,
+        C43390000000000000000002 /* GalaxySSIHealthAtlasAging.swift */,
+        C43390000000000000000004 /* GalaxySSIHealthAtlasAgingPanel.swift */,
         490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */,
         B85158A6D23086CFED45AC26 /* body-atlas */,
         42B68EDFC3BE81F4555E8974 /* BodyAtlas.strings */,
@@ -4552,6 +4558,8 @@
         C43380000000000000000001 /* GalaxySSIHealthAtlasVesselFlow.swift in Sources */,
         C43380000000000000000003 /* GalaxySSIHealthAtlasVesselFlowView.swift in Sources */,
         C43350000000000000000003 /* GalaxySSIHealthAtlasElbowView.swift in Sources */,
+        C43390000000000000000001 /* GalaxySSIHealthAtlasAging.swift in Sources */,
+        C43390000000000000000003 /* GalaxySSIHealthAtlasAgingPanel.swift in Sources */,
         F81EA90A113A7DE2667956C6 /* GalaxySSIHealthAtlasState.swift in Sources */,
         F12666000000000000000001 /* AgentInteractiveProgress.swift in Sources */,
         F12666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift in Sources */,
