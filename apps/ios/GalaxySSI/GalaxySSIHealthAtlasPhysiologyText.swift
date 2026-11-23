@@ -2,6 +2,9 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let eyeKey = ["model_eye": "eye_title", "model_eye_scope": "eye_scope", "model_eye_formula": "eye_formula"][key]
+    if let eyeKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + eyeKey, language) }
+    if key.hasPrefix("eye_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     let vesselKey = ["model_vessel": "vessel_title", "model_vessel_scope": "vessel_scope", "model_vessel_formula": "vessel_formula"][key]
     if let vesselKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + vesselKey, language) }
     if key.hasPrefix("vessel_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
@@ -33,7 +36,7 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     number(value, digits: key == "vessel_radius" ? 3 : 2, language: language)
   }
   static func resultNumber(_ value: Double, kind: GalaxySSIHealthAtlasPhysiology.Kind, language: String) -> String {
-    number(value, digits: kind == .vessel ? 6 : 2, language: language)
+    number(kind == .eye && abs(value) < 0.005 ? 0 : value, digits: kind == .vessel ? 6 : 2, language: language)
   }
   static func result(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
@@ -41,6 +44,9 @@ enum GalaxySSIHealthAtlasPhysiologyText {
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
     if let ear = model.middleEar {
       return String(format: string("middle_ear_gain_db", language: language), number(ear.pressureGainDb, language: language))
+    }
+    if let eye = model.eyeOptics {
+      return String(format: string("eye_target_power", language: language), number(eye.targetPowerDiopters, language: language))
     }
     if let flow = model.vesselFlow {
       return String(format: string("vessel_resistance", language: language), number(flow.resistanceMmHgMinutesPerMl, language: language))
@@ -85,6 +91,7 @@ enum GalaxySSIHealthAtlasPhysiologyText {
       (model.middleEar.map { middleEarContext($0, language: language) } ?? []) +
       (model.elbowForces.map { elbowContext($0, language: language) } ?? []) +
       (model.vesselFlow.map { vesselContext($0, language: language) } ?? []) +
+      (model.eyeOptics.map { eyeContext($0, language: language) } ?? []) +
       [
        string("model_" + model.kind.rawValue + "_formula", language: language)] + model.kind.sources.map(\.absoluteString))
       .joined(separator: "\n")
@@ -98,6 +105,12 @@ enum GalaxySSIHealthAtlasPhysiologyText {
   static func vesselGeometry(_ flow: GalaxySSIHealthAtlasVesselFlow, language: String) -> String {
     String(format: string("vessel_geometry", language: language), number(flow.radiusMm, digits: 3, language: language),
       number(flow.lengthMm, language: language))
+  }
+  static func eyeContext(_ eye: GalaxySSIHealthAtlasEyeOptics, language: String) -> [String] {
+    [string("eye_" + eye.focusSide.rawValue, language: language),
+      String(format: string("eye_image_distance", language: language), number(eye.imageDistanceMm, language: language),
+        number(GalaxySSIHealthAtlasEyeOptics.retinalPlaneMm, language: language)),
+      string("eye_ray_legend", language: language)]
   }
   static func vesselValues(_ flow: GalaxySSIHealthAtlasVesselFlow, language: String) -> [String] {
     zip(["vessel_mean_speed", "vessel_centre_speed", "vessel_shear"],

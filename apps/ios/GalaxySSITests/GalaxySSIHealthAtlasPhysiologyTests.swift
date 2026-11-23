@@ -141,7 +141,7 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
           XCTAssertTrue(point.y.isFinite)
           XCTAssertTrue(kind.bounds.contains(point.y))
           if let previous {
-            if kind == .renal { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
+            if kind == .renal || kind == .eye { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
             else { XCTAssertGreaterThanOrEqual(point.y, previous - 1e-9) }
           }
           previous = point.y
@@ -177,8 +177,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "cell-proximal-tubular-cell", "cell-distal-tubular-cell", "cell-collecting-duct-principal-cell",
       "cell-collecting-duct-intercalated-cell", "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron",
       "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna",
-      "blood-vessels", "arteries", "veins", "coronary-vessels", "ear", "middle-ear"]
-    XCTAssertEqual(ids.count, 32)
+      "blood-vessels", "arteries", "veins", "coronary-vessels", "eye", "lens", "ear", "middle-ear"]
+    XCTAssertEqual(ids.count, 34)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
     for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-ii-pneumocyte", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
@@ -289,6 +289,58 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       for line in GalaxySSIHealthAtlasPhysiologyText.middleEarContext(baseline, language: language) { XCTAssertTrue(text.contains(line)) }
       XCTAssertTrue(text.contains(Ear.source.absoluteString)); XCTAssertTrue(text.contains(Ear.measurementSource.absoluteString))
       XCTAssertFalse(text.contains("health_atlas_middle_ear_"))
+    }
+  }
+
+  func testEyeThinLensFixturesSignedOffsetAndRayIntersection() throws {
+    typealias Eye = GalaxySSIHealthAtlasEyeOptics
+    let baseline = try XCTUnwrap(Eye())
+    XCTAssertEqual(baseline.imageDistanceMm, 17.001020061203672, accuracy: 1e-10)
+    XCTAssertEqual(baseline.focusSide, .at_plane)
+    XCTAssertEqual(try XCTUnwrap(Eye(distanceMetres: 0.25, powerDiopters: 55)).offsetMm, 2.6078431372549034, accuracy: 1e-10)
+    XCTAssertEqual(try XCTUnwrap(Eye(distanceMetres: 6, powerDiopters: 65)).offsetMm, -1.5758354755784065, accuracy: 1e-10)
+    XCTAssertEqual(try XCTUnwrap(Eye(distanceMetres: 0.5, powerDiopters: 60)).offsetMm, 0.24137931034482563, accuracy: 1e-10)
+    XCTAssertEqual(try XCTUnwrap(Eye(distanceMetres: 0.25)).targetPowerDiopters, 62.8235294117647, accuracy: 1e-10)
+    for distance in 25...600 {
+      let eye = try XCTUnwrap(Eye(distanceMetres: Double(distance) / 100))
+      let aligned = try XCTUnwrap(Eye(distanceMetres: eye.distanceMetres, powerDiopters: Double(eye.targetPowerSteps) / 100))
+      XCTAssertLessThan(abs(aligned.offsetMm), 0.002)
+      XCTAssertEqual(aligned.focusSide, .at_plane)
+      XCTAssertEqual(try XCTUnwrap(Eye(distanceMetres: eye.distanceMetres, powerDiopters: 55)).focusSide, .behind)
+      XCTAssertEqual(try XCTUnwrap(Eye(distanceMetres: eye.distanceMetres, powerDiopters: 65)).focusSide, .in_front)
+      for height in [-1.0, 1.0] {
+        XCTAssertEqual(try XCTUnwrap(eye.rayHeight(axialMm: -1000 * eye.distanceMetres, heightAtLensMm: height)), 0, accuracy: 1e-12)
+        XCTAssertEqual(eye.rayHeight(axialMm: 0, heightAtLensMm: height), height)
+        XCTAssertEqual(try XCTUnwrap(eye.rayHeight(axialMm: eye.imageDistanceMm, heightAtLensMm: height)), 0, accuracy: 1e-12)
+        XCTAssertEqual(try XCTUnwrap(eye.rayHeight(axialMm: 2 * eye.imageDistanceMm, heightAtLensMm: height)), -height, accuracy: 1e-12)
+      }
+    }
+    XCTAssertNil(baseline.rayHeight(axialMm: .nan, heightAtLensMm: 1))
+    XCTAssertNil(baseline.rayHeight(axialMm: 1, heightAtLensMm: .infinity))
+    XCTAssertEqual(GalaxySSIHealthAtlasPhysiologyText.resultNumber(baseline.offsetMm, kind: .eye, language: "en"), "0")
+  }
+
+  func testEyeInputsRestoreOnlyForEyeAndLensAndPublicContextStaysScoped() throws {
+    typealias Eye = GalaxySSIHealthAtlasEyeOptics
+    for invalid in [Double.nan, .infinity, 0.24, 6.01] { XCTAssertNil(Eye(distanceMetres: invalid)) }
+    for invalid in [Double.nan, -.infinity, 54.99, 65.01] { XCTAssertNil(Eye(powerDiopters: invalid)) }
+    for id in ["eye", "lens"] {
+      XCTAssertEqual(Model.Kind.forEntry(id), .eye)
+      XCTAssertEqual(Model.restore(id, inputs: [25, 6500])?.inputs, [25, 6500])
+      XCTAssertNil(Model.restore(id, inputs: [25, 6501]))
+      XCTAssertNil(Model.restore(id, inputs: [25]))
+    }
+    for id in ["ear", "cornea", "retina", "cell-rod-photoreceptor", "sensory"] {
+      XCTAssertNil(Model.restore(id, inputs: [25, 6500]))
+    }
+    for language in ["en", "zh-Hans"] {
+      let model = Model(kind: .eye)
+      let context = GalaxySSIHealthAtlasPhysiologyText.context(model, language: language)
+      for line in GalaxySSIHealthAtlasPhysiologyText.eyeContext(try XCTUnwrap(model.eyeOptics), language: language) {
+        XCTAssertTrue(context.contains(line))
+      }
+      XCTAssertTrue(context.contains(Eye.source.absoluteString))
+      XCTAssertFalse(context.contains("health_atlas_eye_"))
     }
   }
 

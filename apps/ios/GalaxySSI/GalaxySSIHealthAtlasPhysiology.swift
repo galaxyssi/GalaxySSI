@@ -26,13 +26,16 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     let unit: String
   }
   enum Kind: String, CaseIterable, Sendable {
-    case ventilation, renal, potassium, elbow, vessel
+    case ventilation, renal, potassium, elbow, vessel, eye
     case middleEar
     #if GALAXYSSI_ATLAS_OXYGEN
     case oxygen
     #endif
     var inputs: [Input] {
       switch self {
+      case .eye:
+        return [.init(key: "eye_object_distance", range: 25...600, initial: 100, scale: 100, unit: "m"),
+          .init(key: "eye_power", range: 5500...6500, initial: 5982, scale: 100, unit: "D")]
       case .vessel:
         return [.init(key: "vessel_pressure", range: 0...20, initial: 10, unit: "mmHg"),
           .init(key: "vessel_radius", range: 50...200, initial: 100, scale: 1000, unit: "mm"),
@@ -74,6 +77,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .potassium ? 0 : 1
     }
     var unit: String {
+      if self == .eye { return "mm" }
       if self == .vessel { return "mL/min" }
       if self == .elbow { return "N" }
       if self == .middleEar { return "\u{00d7}" }
@@ -83,6 +87,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .ventilation ? "L/min" : self == .renal ? "mg/min" : "mV"
     }
     var bounds: ClosedRange<Double> {
+      if self == .eye { return -3...3 }
       if self == .vessel { return 0...3 }
       if self == .elbow { return 0...2700 }
       if self == .middleEar { return 0...60 }
@@ -93,6 +98,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var source: URL {
       switch self {
+      case .eye: return GalaxySSIHealthAtlasEyeOptics.source
       case .vessel: return GalaxySSIHealthAtlasVesselFlow.sources[0]
       case .elbow: return GalaxySSIHealthAtlasElbow.source
       case .ventilation: return URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-3-the-process-of-breathing")!
@@ -114,6 +120,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     static func forEntry(_ id: String) -> Self? {
       switch id {
+      case "eye", "lens": return .eye
       case "blood-vessels", "arteries", "veins", "coronary-vessels": return .vessel
       case "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna": return .elbow
       case "respiratory", "lungs", "alveoli": return .ventilation
@@ -151,6 +158,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var result: Double { evaluate(inputs.indices.map(input)) }
   var companionValue: Double {
     switch kind {
+    case .eye: return eyeOptics!.targetPowerDiopters
     case .vessel: return vesselFlow!.resistanceMmHgMinutesPerMl
     case .elbow: return elbowForces!.jointDown
     case .ventilation: return input(0) * input(1) / 1000
@@ -174,6 +182,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var vesselFlow: GalaxySSIHealthAtlasVesselFlow? {
     kind == .vessel ? GalaxySSIHealthAtlasVesselFlow(pressureMmHg: input(0), radiusMm: input(1),
       lengthMm: input(2), viscosityMilliPascalSeconds: input(3)) : nil
+  }
+  var eyeOptics: GalaxySSIHealthAtlasEyeOptics? {
+    kind == .eye ? GalaxySSIHealthAtlasEyeOptics(distanceMetres: input(0), powerDiopters: input(1)) : nil
   }
   var plotMaximum: Double {
     if kind == .elbow { return ceil(resultAt(axisRange.upperBound)! / 100) * 100 }
@@ -206,6 +217,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
+    case .eye: return GalaxySSIHealthAtlasEyeOptics(distanceMetres: values[0], powerDiopters: values[1])!.offsetMm
     case .vessel: return GalaxySSIHealthAtlasVesselFlow(pressureMmHg: values[0], radiusMm: values[1],
       lengthMm: values[2], viscosityMilliPascalSeconds: values[3])!.flowMlPerMinute
     case .elbow: return GalaxySSIHealthAtlasElbow.forces(loadKg: values[0], loadArmCm: values[1], muscleArmMm: values[2])!.muscle
