@@ -1668,6 +1668,32 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion.flowFraction(0, index: 0), 0.04)
     XCTAssertEqual(Motion.flowFraction(0, index: 1), 0.5, accuracy: 1e-12)
   }
+  func testSmoothMuscleChapterContinuityAndOpenTubeEnds() {
+    typealias Motion = GalaxySSIHealthAtlasSmoothMuscleMotion
+    XCTAssertEqual(Motion.positions, [58, 99, 102, 137, 239, 309])
+    for step in 0..<4 {
+      let a = Motion(step: step, fraction: 1), b = Motion(step: step + 1, fraction: 0)
+      XCTAssertEqual(a.center, b.center); XCTAssertEqual(a.opening, b.opening)
+      XCTAssertEqual(a.squeeze, b.squeeze); XCTAssertEqual(a.fullness, b.fullness)
+      XCTAssertEqual(a.stretch, b.stretch); XCTAssertEqual(a.heightScale, b.heightScale)
+      for x in stride(from: 16.0, through: 344, by: 2) { XCTAssertEqual(a.radius(x), b.radius(x)) }
+    }
+    XCTAssertEqual(Motion.bump(0, width: 34), 1)
+    XCTAssertEqual(Motion.bump(34, width: 34), 0)
+    XCTAssertEqual(Motion.bump(-17, width: 34), 0.5)
+    XCTAssertEqual(Motion.bump(.nan, width: 34), 0)
+    for step in 0...4 {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let frame = Motion(step: step, fraction: phase)
+        XCTAssertEqual(frame.radius(16), 28); XCTAssertEqual(frame.radius(344), 28)
+        XCTAssertEqual(frame.behind, frame.center - 48); XCTAssertEqual(frame.ahead, frame.center + 44)
+        XCTAssertEqual(frame.stretch * frame.heightScale, 1.18 + 0.025 * frame.fullness, accuracy: 1e-12)
+        for x in stride(from: 16.0, through: 344, by: 2) { XCTAssertGreaterThan(frame.radius(x), 0) }
+      }
+    }
+    XCTAssertEqual(Motion(step: -1, fraction: .nan).center, 58)
+    XCTAssertEqual(Motion(step: 100, fraction: 1).center, 309)
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
