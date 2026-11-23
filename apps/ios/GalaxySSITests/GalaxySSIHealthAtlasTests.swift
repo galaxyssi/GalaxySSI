@@ -1003,6 +1003,57 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion(chapter: 3, fraction: .nan), Motion(chapter: 3, fraction: 0))
   }
 
+  func testBreathingStagesKeepExpansionZoomAndOpposingGasDirections() throws {
+    typealias Motion = GalaxySSIHealthAtlasBreathingMotion
+    XCTAssertEqual(Motion.Stage.allCases.count, 5)
+    XCTAssertEqual(Motion.Stage.inhale.expansion(0), 0)
+    XCTAssertEqual(Motion.Stage.inhale.expansion(1), 1)
+    XCTAssertEqual(Motion.Stage.exhale.expansion(0), 1)
+    XCTAssertEqual(Motion.Stage.exhale.expansion(1), 0)
+    XCTAssertEqual(Motion.Stage.reachAlveolus.closeUp(0.12), 0)
+    XCTAssertEqual(Motion.Stage.reachAlveolus.closeUp(0.74), 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion.Stage.exhale.closeUp(0.35), 0)
+    XCTAssertEqual(Motion.Stage.diffuse.closeUp(0), 1)
+    XCTAssertEqual(Motion.Stage.perfuse.closeUp(1), 1)
+    let detail = Motion(chapter: 2, fraction: 0.5, phase: 0.5)
+    XCTAssertEqual(detail.detailSpan, 286)
+    XCTAssertEqual(detail.detailX, 31)
+    XCTAssertEqual(detail.detailY, 18)
+    XCTAssertEqual(detail.bloodPositions.count, 7)
+    XCTAssertEqual(detail.diffusionPositions.count, 3)
+    for phase in detail.diffusionPositions {
+      XCTAssertEqual(GalaxySSIHealthAtlasGasExchange.position(.oxygen, phase: phase) +
+        GalaxySSIHealthAtlasGasExchange.position(.carbon, phase: phase), 1, accuracy: 1e-12)
+    }
+    let inhale = Motion(chapter: 0, fraction: 0.5, phase: 0.1)
+    let exhale = Motion(chapter: 4, fraction: 0.5, phase: 0.1)
+    for (forward, backward) in zip(inhale.airPositions, exhale.airPositions) {
+      XCTAssertEqual(forward + backward, 1, accuracy: 1e-12)
+    }
+    let invalid = Motion(chapter: -1, fraction: .nan, phase: .infinity)
+    XCTAssertEqual(invalid.stage, .inhale)
+    XCTAssertEqual(invalid.fraction, 0)
+    XCTAssertEqual(invalid.phase, 0)
+    XCTAssertEqual(Motion.loop(.nan), 0)
+    let routes = [GalaxySSIHealthAtlasBreathingView.toRightLung, GalaxySSIHealthAtlasBreathingView.toLeftLung,
+      GalaxySSIHealthAtlasBreathingView.blood, GalaxySSIHealthAtlasBreathingView.oxygen, GalaxySSIHealthAtlasBreathingView.carbon]
+    XCTAssertEqual(GalaxySSIHealthAtlasBreathingView.blood.commands.count, 9)
+    for route in routes {
+      for phase in [0.0, 0.2, 0.5, 0.8, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasBreathingView.sample(route, position: phase))
+        XCTAssertTrue(sample.point.x.isFinite && sample.point.y.isFinite)
+        XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+      }
+      let start = try XCTUnwrap(GalaxySSIHealthAtlasBreathingView.sample(route, position: 0))
+      XCTAssertEqual(start.point.x, route.start.x)
+      XCTAssertEqual(start.point.y, route.start.y)
+      let end = try XCTUnwrap(GalaxySSIHealthAtlasBreathingView.sample(route, position: 1))
+      let last = try XCTUnwrap(route.commands.last?.points.last)
+      XCTAssertEqual(end.point.x, last.x, accuracy: 1e-8)
+      XCTAssertEqual(end.point.y, last.y, accuracy: 1e-8)
+      XCTAssertNil(GalaxySSIHealthAtlasBreathingView.sample(route, position: .nan))
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion

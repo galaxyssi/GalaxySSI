@@ -36,6 +36,8 @@
     C43840000000000000000045 /* GalaxySSIHealthAtlasMeshImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000046 /* GalaxySSIHealthAtlasMeshImage.swift */; };
     C43840000000000000000047 /* GalaxySSIHealthAtlasHeartbeatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000048 /* GalaxySSIHealthAtlasHeartbeatView.swift */; };
     C43840000000000000000049 /* GalaxySSIHealthAtlasMesh.metal in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000050 /* GalaxySSIHealthAtlasMesh.metal */; };
+    C43840000000000000000051 /* GalaxySSIHealthAtlasBreathingMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000052 /* GalaxySSIHealthAtlasBreathingMotion.swift */; };
+    C43840000000000000000053 /* GalaxySSIHealthAtlasBreathingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000054 /* GalaxySSIHealthAtlasBreathingView.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1545,6 +1547,8 @@
     C43840000000000000000046 /* GalaxySSIHealthAtlasMeshImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMeshImage.swift; sourceTree = "<group>"; };
     C43840000000000000000048 /* GalaxySSIHealthAtlasHeartbeatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasHeartbeatView.swift; sourceTree = "<group>"; };
     C43840000000000000000050 /* GalaxySSIHealthAtlasMesh.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = GalaxySSIHealthAtlasMesh.metal; sourceTree = "<group>"; };
+    C43840000000000000000052 /* GalaxySSIHealthAtlasBreathingMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasBreathingMotion.swift; sourceTree = "<group>"; };
+    C43840000000000000000054 /* GalaxySSIHealthAtlasBreathingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasBreathingView.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3073,6 +3077,8 @@
         C43840000000000000000046 /* GalaxySSIHealthAtlasMeshImage.swift */,
         C43840000000000000000048 /* GalaxySSIHealthAtlasHeartbeatView.swift */,
         C43840000000000000000050 /* GalaxySSIHealthAtlasMesh.metal */,
+        C43840000000000000000052 /* GalaxySSIHealthAtlasBreathingMotion.swift */,
+        C43840000000000000000054 /* GalaxySSIHealthAtlasBreathingView.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -4731,6 +4737,8 @@
         C43840000000000000000045 /* GalaxySSIHealthAtlasMeshImage.swift in Sources */,
         C43840000000000000000047 /* GalaxySSIHealthAtlasHeartbeatView.swift in Sources */,
         C43840000000000000000049 /* GalaxySSIHealthAtlasMesh.metal in Sources */,
+        C43840000000000000000051 /* GalaxySSIHealthAtlasBreathingMotion.swift in Sources */,
+        C43840000000000000000053 /* GalaxySSIHealthAtlasBreathingView.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
