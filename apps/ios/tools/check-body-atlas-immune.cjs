@@ -18,7 +18,7 @@ for (const plate of pack.plates) {
   assert(source.includes('"' + plate.owner + '"'));
   assert.equal(plate.id, plate.owner);
   assert.deepEqual(plate.entryIDs, [plate.owner]);
-  const painted = ["cell-macrophage","cell-neutrophil"].includes(plate.owner);
+  const painted = ["cell-macrophage","cell-neutrophil","cell-eosinophil","cell-basophil"].includes(plate.owner);
   assert.equal(plate.aspectRatio, painted ? 1 : 360 / 280);
   assert.deepEqual(plate.markers, []);
   const ids = new Set();
@@ -48,5 +48,5 @@ for (const plate of pack.plates) {
   assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
 }
 assert.equal(features, 25);
-assert.equal(paths, 40);
-console.log('Immune resource audit: 12 plates, 25 local features, 40 retained vector paths and two painted cells; bilingual keys resolved.');
+assert.equal(paths, 30);
+console.log('Immune resource audit: 12 plates, 25 local features, 30 retained vector paths and four painted cells; bilingual keys resolved.');

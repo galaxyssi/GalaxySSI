@@ -86,6 +86,11 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         GalaxySSIHealthAtlasPhagocytosis(phase: simulation.phase, stages: model.stages, language: language)
         Text(t("phagocytosis_scope")).font(.footnote).foregroundColor(.secondary)
       }
+      if let lesson = GalaxySSIHealthAtlasGranulocyte(rawValue: entry.id) {
+        playbackControls
+        GalaxySSIHealthAtlasGranulocyteView(lesson: lesson, phase: simulation.phase, stages: model.stages, language: language)
+        Text(t(lesson.scopeKey)).font(.footnote).foregroundColor(.secondary)
+      }
       if GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id) {
         playbackControls
         GalaxySSIHealthAtlasValvePanel(atlas: atlas, entryID: entry.id, stage: simulation.stage, language: language,
@@ -144,7 +149,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       Slider(value: $simulation.phase, in: 0...1, onEditingChanged: { _ in playing = false })
         .accessibilityLabel(t("phase"))
       if !GalaxySSIHealthAtlasCirculation.supports(entry.id), !GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id),
-         germline == nil, entry.id != GalaxySSIHealthAtlasPhagocytosis.owner,
+         germline == nil, entry.id != GalaxySSIHealthAtlasPhagocytosis.owner, GalaxySSIHealthAtlasGranulocyte(rawValue: entry.id) == nil,
          entry.id != GalaxySSIHealthAtlasSarcomere.owner, entry.id != GalaxySSIHealthAtlasFiltrationStage.owner,
          !GalaxySSIHealthAtlasPancreatic.supports(entry.id), endocrine == nil, !retinal, !sweat, section == nil { playbackControls }
       if reduceMotion { Text(bodyText("motion_disabled")).font(.caption) }
