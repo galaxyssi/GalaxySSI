@@ -179,8 +179,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna",
       "blood-vessels", "arteries", "veins", "coronary-vessels", "eye", "lens", "ear", "middle-ear",
       "cranial-nerves", "spinal-nerves", "peripheral-nerves", "ventricles", "left-ventricle", "right-ventricle", "cell-type-ii-pneumocyte",
-      "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell", "thyroid-gland", "cell-rod-photoreceptor", "sweat-glands"]
-    XCTAssertEqual(ids.count, 47)
+      "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell", "thyroid-gland", "cell-rod-photoreceptor", "sweat-glands", "lymphatic-vessels"]
+    XCTAssertEqual(ids.count, 48)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
     for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-i-pneumocyte", "cell-podocyte", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
@@ -609,6 +609,30 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       let context = GalaxySSIHealthAtlasPhysiologyText.context(model, language: language)
       XCTAssertTrue(context.contains(GalaxySSIHealthAtlasText.get("health_atlas_context_evap_scope", language)))
       XCTAssertTrue(context.contains(model.kind.source.absoluteString)); XCTAssertFalse(context.contains("health_atlas_"))
+    }
+  }
+
+  func testLymphValveSeparatesForwardFlowFromSignedNoValveComparison() throws {
+    let baseline = Model(kind: .lymphValve)
+    XCTAssertEqual(baseline.result, 0.5, accuracy: 1e-12)
+    XCTAssertEqual(baseline.companionValue, 0.5, accuracy: 1e-12)
+    let reverse = try XCTUnwrap(baseline.changing(0, to: -20))
+    XCTAssertEqual(reverse.result, 0)
+    XCTAssertEqual(reverse.companionValue, -0.5, accuracy: 1e-12)
+    XCTAssertEqual(try XCTUnwrap(baseline.changing(0, to: 0)).result, 0)
+    XCTAssertEqual(try XCTUnwrap(Model(kind: .lymphValve, inputs: [40, 20])).result, 2)
+    XCTAssertNil(Model(kind: .lymphValve, inputs: [20, 0]))
+    XCTAssertEqual(Model.Kind.forEntry("lymphatic-vessels"), .lymphValve)
+    for id in ["thoracic-duct", "lymph-nodes", "cell-lymphatic-endothelial-cell"] {
+      XCTAssertNil(Model.Kind.forEntry(id))
+    }
+    XCTAssertEqual(Model.restore("lymphatic-vessels", inputs: [-20, 40]), reverse)
+    XCTAssertNil(Model.restore("thoracic-duct", inputs: [-20, 40]))
+    for language in ["en", "zh-Hans"] {
+      for model in [baseline, reverse, try XCTUnwrap(baseline.changing(0, to: 0))] {
+        XCTAssertFalse(GalaxySSIHealthAtlasPhysiologyText.companion(model, language: language).contains("health_atlas_"))
+        XCTAssertFalse(GalaxySSIHealthAtlasPhysiologyText.string("model_lymphValve_scope", language: language).contains("health_atlas_"))
+      }
     }
   }
 

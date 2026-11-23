@@ -1,0 +1,1035 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4352,
+    "mergeCommit": "108afffd1545f2ba10633e754ba907dc38495132"
+  },
+  "plates": [
+    {
+      "id": "bone-marrow",
+      "owner": "bone-marrow",
+      "asset": "HealthAtlasLymphMarrow",
+      "viewLabel": "health_atlas_lymph_marrow_view",
+      "entryIDs": [
+        "bone-marrow",
+        "cell-hematopoietic-stem-cell",
+        "cell-megakaryocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-hematopoietic-stem-cell",
+          "x": 0.4361111111111111,
+          "y": 0.375
+        },
+        {
+          "id": "cell-megakaryocyte",
+          "x": 0.7333333333333333,
+          "y": 0.5642857142857143
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems",
+      "features": [
+        {
+          "marker": {
+            "id": "marrow-0",
+            "x": 0.21666666666666667,
+            "y": 0.2857142857142857
+          },
+          "title": "health_atlas_lymph_marrow_feature_0",
+          "explanation": "health_atlas_lymph_marrow_detail_0"
+        },
+        {
+          "marker": {
+            "id": "marrow-1",
+            "x": 0.41944444444444445,
+            "y": 0.4857142857142857
+          },
+          "title": "health_atlas_lymph_marrow_feature_1",
+          "explanation": "health_atlas_lymph_marrow_detail_1"
+        },
+        {
+          "marker": {
+            "id": "marrow-2",
+            "x": 0.5694444444444444,
+            "y": 0.7321428571428571
+          },
+          "title": "health_atlas_lymph_marrow_feature_2",
+          "explanation": "health_atlas_lymph_marrow_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_lymph_marrow.xml"
+    },
+    {
+      "id": "thymus",
+      "owner": "thymus",
+      "asset": "HealthAtlasLymphThymus",
+      "viewLabel": "health_atlas_lymph_thymus_view",
+      "entryIDs": [
+        "thymus",
+        "cell-t-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-t-cell",
+          "x": 0.525,
+          "y": 0.4928571428571429
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems",
+      "features": [
+        {
+          "marker": {
+            "id": "thymus-0",
+            "x": 0.2638888888888889,
+            "y": 0.425
+          },
+          "title": "health_atlas_lymph_thymus_feature_0",
+          "explanation": "health_atlas_lymph_thymus_detail_0"
+        },
+        {
+          "marker": {
+            "id": "thymus-1",
+            "x": 0.375,
+            "y": 0.6785714285714286
+          },
+          "title": "health_atlas_lymph_thymus_feature_1",
+          "explanation": "health_atlas_lymph_thymus_detail_1"
+        },
+        {
+          "marker": {
+            "id": "thymus-2",
+            "x": 0.475,
+            "y": 0.5821428571428572
+          },
+          "title": "health_atlas_lymph_thymus_feature_2",
+          "explanation": "health_atlas_lymph_thymus_detail_2"
+        },
+        {
+          "marker": {
+            "id": "thymus-3",
+            "x": 0.625,
+            "y": 0.5571428571428572
+          },
+          "title": "health_atlas_lymph_thymus_feature_3",
+          "explanation": "health_atlas_lymph_thymus_detail_3"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_lymph_thymus.xml"
+    },
+    {
+      "id": "spleen",
+      "owner": "spleen",
+      "asset": "HealthAtlasLymphSpleen",
+      "viewLabel": "health_atlas_lymph_spleen_view",
+      "entryIDs": [
+        "spleen",
+        "cell-macrophage",
+        "cell-b-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-macrophage",
+          "x": 0.34444444444444444,
+          "y": 0.7071428571428572
+        },
+        {
+          "id": "cell-b-cell",
+          "x": 0.41944444444444445,
+          "y": 0.4035714285714286
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems",
+      "features": [
+        {
+          "marker": {
+            "id": "spleen-0",
+            "x": 0.6333333333333333,
+            "y": 0.5357142857142857
+          },
+          "title": "health_atlas_lymph_spleen_feature_0",
+          "explanation": "health_atlas_lymph_spleen_detail_0"
+        },
+        {
+          "marker": {
+            "id": "spleen-1",
+            "x": 0.4861111111111111,
+            "y": 0.37142857142857144
+          },
+          "title": "health_atlas_lymph_spleen_feature_1",
+          "explanation": "health_atlas_lymph_spleen_detail_1"
+        },
+        {
+          "marker": {
+            "id": "spleen-2",
+            "x": 0.2916666666666667,
+            "y": 0.6
+          },
+          "title": "health_atlas_lymph_spleen_feature_2",
+          "explanation": "health_atlas_lymph_spleen_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_lymph_spleen.xml"
+    },
+    {
+      "id": "lymph-nodes",
+      "owner": "lymph-nodes",
+      "asset": "HealthAtlasLymphNode",
+      "viewLabel": "health_atlas_lymph_node_view",
+      "entryIDs": [
+        "lymph-nodes",
+        "cell-b-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-b-cell",
+          "x": 0.5027777777777778,
+          "y": 0.40714285714285714
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems",
+      "features": [
+        {
+          "marker": {
+            "id": "node-0",
+            "x": 0.2611111111111111,
+            "y": 0.18214285714285713
+          },
+          "title": "health_atlas_lymph_node_feature_0",
+          "explanation": "health_atlas_lymph_node_detail_0"
+        },
+        {
+          "marker": {
+            "id": "node-1",
+            "x": 0.2777777777777778,
+            "y": 0.3678571428571429
+          },
+          "title": "health_atlas_lymph_node_feature_1",
+          "explanation": "health_atlas_lymph_node_detail_1"
+        },
+        {
+          "marker": {
+            "id": "node-2",
+            "x": 0.5555555555555556,
+            "y": 0.6535714285714286
+          },
+          "title": "health_atlas_lymph_node_feature_2",
+          "explanation": "health_atlas_lymph_node_detail_2"
+        },
+        {
+          "marker": {
+            "id": "node-3",
+            "x": 0.8305555555555556,
+            "y": 0.6571428571428571
+          },
+          "title": "health_atlas_lymph_node_feature_3",
+          "explanation": "health_atlas_lymph_node_detail_3"
+        },
+        {
+          "marker": {
+            "id": "node-4",
+            "x": 0.4027777777777778,
+            "y": 0.4357142857142857
+          },
+          "title": "health_atlas_lymph_node_feature_4",
+          "explanation": "health_atlas_lymph_node_detail_4"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_lymph_node.xml"
+    },
+    {
+      "id": "lymphatic-vessels",
+      "owner": "lymphatic-vessels",
+      "asset": "HealthAtlasLymphVessel",
+      "viewLabel": "health_atlas_lymph_vessel_view",
+      "entryIDs": [
+        "lymphatic-vessels",
+        "cell-lymphatic-endothelial-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-lymphatic-endothelial-cell",
+          "x": 0.4722222222222222,
+          "y": 0.425
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems",
+      "features": [
+        {
+          "marker": {
+            "id": "vessel-0",
+            "x": 0.2916666666666667,
+            "y": 0.4642857142857143
+          },
+          "title": "health_atlas_lymph_vessel_feature_0",
+          "explanation": "health_atlas_lymph_vessel_detail_0"
+        },
+        {
+          "marker": {
+            "id": "vessel-1",
+            "x": 0.5305555555555556,
+            "y": 0.37142857142857144
+          },
+          "title": "health_atlas_lymph_vessel_feature_1",
+          "explanation": "health_atlas_lymph_vessel_detail_1"
+        },
+        {
+          "marker": {
+            "id": "vessel-2",
+            "x": 0.7222222222222222,
+            "y": 0.5178571428571429
+          },
+          "title": "health_atlas_lymph_vessel_feature_2",
+          "explanation": "health_atlas_lymph_vessel_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_lymph_vessel.xml"
+    },
+    {
+      "id": "thoracic-duct",
+      "owner": "thoracic-duct",
+      "asset": "HealthAtlasLymphDuct",
+      "viewLabel": "health_atlas_lymph_duct_view",
+      "entryIDs": [
+        "thoracic-duct",
+        "lymphatic-vessels"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "lymphatic-vessels",
+          "x": 0.44722222222222224,
+          "y": 0.6571428571428571
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems",
+      "features": [
+        {
+          "marker": {
+            "id": "duct-0",
+            "x": 0.4527777777777778,
+            "y": 0.8
+          },
+          "title": "health_atlas_lymph_duct_feature_0",
+          "explanation": "health_atlas_lymph_duct_detail_0"
+        },
+        {
+          "marker": {
+            "id": "duct-1",
+            "x": 0.5,
+            "y": 0.49642857142857144
+          },
+          "title": "health_atlas_lymph_duct_feature_1",
+          "explanation": "health_atlas_lymph_duct_detail_1"
+        },
+        {
+          "marker": {
+            "id": "duct-2",
+            "x": 0.6416666666666667,
+            "y": 0.21785714285714286
+          },
+          "title": "health_atlas_lymph_duct_feature_2",
+          "explanation": "health_atlas_lymph_duct_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_lymph_duct.xml"
+    },
+    {
+      "id": "tonsils",
+      "owner": "tonsils",
+      "asset": "HealthAtlasLymphTonsil",
+      "viewLabel": "health_atlas_lymph_tonsil_view",
+      "entryIDs": [
+        "tonsils",
+        "cell-b-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-b-cell",
+          "x": 0.29444444444444445,
+          "y": 0.43214285714285716
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems",
+      "features": [
+        {
+          "marker": {
+            "id": "tonsil-0",
+            "x": 0.4888888888888889,
+            "y": 0.26785714285714285
+          },
+          "title": "health_atlas_lymph_tonsil_feature_0",
+          "explanation": "health_atlas_lymph_tonsil_detail_0"
+        },
+        {
+          "marker": {
+            "id": "tonsil-1",
+            "x": 0.41388888888888886,
+            "y": 0.5464285714285714
+          },
+          "title": "health_atlas_lymph_tonsil_feature_1",
+          "explanation": "health_atlas_lymph_tonsil_detail_1"
+        },
+        {
+          "marker": {
+            "id": "tonsil-2",
+            "x": 0.6666666666666666,
+            "y": 0.49642857142857144
+          },
+          "title": "health_atlas_lymph_tonsil_feature_2",
+          "explanation": "health_atlas_lymph_tonsil_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_lymph_tonsil.xml"
+    },
+    {
+      "id": "adenoids",
+      "owner": "adenoids",
+      "asset": "HealthAtlasLymphAdenoid",
+      "viewLabel": "health_atlas_lymph_adenoid_view",
+      "entryIDs": [
+        "adenoids",
+        "cell-dendritic-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-dendritic-cell",
+          "x": 0.775,
+          "y": 0.42857142857142855
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems",
+      "features": [
+        {
+          "marker": {
+            "id": "adenoid-0",
+            "x": 0.6,
+            "y": 0.275
+          },
+          "title": "health_atlas_lymph_adenoid_feature_0",
+          "explanation": "health_atlas_lymph_adenoid_detail_0"
+        },
+        {
+          "marker": {
+            "id": "adenoid-1",
+            "x": 0.6583333333333333,
+            "y": 0.45714285714285713
+          },
+          "title": "health_atlas_lymph_adenoid_feature_1",
+          "explanation": "health_atlas_lymph_adenoid_detail_1"
+        },
+        {
+          "marker": {
+            "id": "adenoid-2",
+            "x": 0.7388888888888889,
+            "y": 0.375
+          },
+          "title": "health_atlas_lymph_adenoid_feature_2",
+          "explanation": "health_atlas_lymph_adenoid_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_lymph_adenoid.xml"
+    },
+    {
+      "id": "gut-associated-lymphoid-tissue",
+      "owner": "gut-associated-lymphoid-tissue",
+      "asset": "HealthAtlasLymphGalt",
+      "viewLabel": "health_atlas_lymph_galt_view",
+      "entryIDs": [
+        "gut-associated-lymphoid-tissue",
+        "cell-dendritic-cell",
+        "cell-b-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-dendritic-cell",
+          "x": 0.5416666666666666,
+          "y": 0.4714285714285714
+        },
+        {
+          "id": "cell-b-cell",
+          "x": 0.5861111111111111,
+          "y": 0.6321428571428571
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems",
+      "features": [
+        {
+          "marker": {
+            "id": "galt-0",
+            "x": 0.49444444444444446,
+            "y": 0.29642857142857143
+          },
+          "title": "health_atlas_lymph_galt_feature_0",
+          "explanation": "health_atlas_lymph_galt_detail_0"
+        },
+        {
+          "marker": {
+            "id": "galt-1",
+            "x": 0.46944444444444444,
+            "y": 0.4357142857142857
+          },
+          "title": "health_atlas_lymph_galt_feature_1",
+          "explanation": "health_atlas_lymph_galt_detail_1"
+        },
+        {
+          "marker": {
+            "id": "galt-2",
+            "x": 0.525,
+            "y": 0.6571428571428571
+          },
+          "title": "health_atlas_lymph_galt_feature_2",
+          "explanation": "health_atlas_lymph_galt_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_lymph_galt.xml"
+    }
+  ],
+  "stageFeatures": {
+    "bone-marrow": [
+      1,
+      1,
+      1,
+      2
+    ],
+    "thymus": [
+      1,
+      0,
+      2,
+      1
+    ],
+    "spleen": [
+      0,
+      1,
+      2,
+      0
+    ],
+    "lymph-nodes": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "lymphatic-vessels": [
+      0,
+      1,
+      2,
+      2
+    ],
+    "thoracic-duct": [
+      0,
+      1,
+      1,
+      2
+    ],
+    "tonsils": [
+      0,
+      1,
+      1,
+      2
+    ],
+    "adenoids": [
+      0,
+      1,
+      2,
+      2
+    ],
+    "gut-associated-lymphoid-tissue": [
+      0,
+      0,
+      1,
+      2
+    ]
+  },
+  "routes": {
+    "lymph-nodes": [
+      {
+        "start": {
+          "x": 94,
+          "y": 40
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 92,
+                "y": 69
+              },
+              {
+                "x": 94,
+                "y": 82
+              },
+              {
+                "x": 100,
+                "y": 103
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 100,
+          "y": 103
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 98,
+                "y": 123
+              },
+              {
+                "x": 104,
+                "y": 148
+              },
+              {
+                "x": 123,
+                "y": 170
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 123,
+          "y": 170
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 146,
+                "y": 192
+              },
+              {
+                "x": 166,
+                "y": 199
+              },
+              {
+                "x": 200,
+                "y": 183
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 200,
+          "y": 183
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 222,
+                "y": 174
+              },
+              {
+                "x": 252,
+                "y": 181
+              },
+              {
+                "x": 272,
+                "y": 188
+              }
+            ]
+          },
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 295,
+                "y": 191
+              },
+              {
+                "x": 320,
+                "y": 169
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "thoracic-duct": [
+      {
+        "start": {
+          "x": 126,
+          "y": 230
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 140,
+                "y": 221
+              },
+              {
+                "x": 163,
+                "y": 224
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 163,
+          "y": 224
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 153,
+                "y": 214
+              },
+              {
+                "x": 164,
+                "y": 198
+              }
+            ]
+          },
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 178,
+                "y": 177
+              },
+              {
+                "x": 173,
+                "y": 145
+              },
+              {
+                "x": 180,
+                "y": 139
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 180,
+          "y": 139
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 184,
+                "y": 124
+              },
+              {
+                "x": 192,
+                "y": 110
+              },
+              {
+                "x": 205,
+                "y": 99
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 205,
+          "y": 99
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 214,
+                "y": 76
+              },
+              {
+                "x": 231,
+                "y": 61
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "entries": [
+    {
+      "id": "bone-marrow",
+      "kind": "organ",
+      "name": "health_atlas_bone_marrow_name",
+      "description": "health_atlas_bone_marrow_description",
+      "systems": [
+        "immune",
+        "skeletal"
+      ],
+      "related": [
+        "cell-hematopoietic-stem-cell",
+        "cell-megakaryocyte"
+      ],
+      "mechanism": "bone-marrow",
+      "aliases": "health_atlas_bone_marrow_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "thymus",
+      "kind": "organ",
+      "name": "health_atlas_thymus_name",
+      "description": "health_atlas_thymus_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "cell-t-cell"
+      ],
+      "mechanism": "thymus",
+      "aliases": "health_atlas_thymus_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "spleen",
+      "kind": "organ",
+      "name": "health_atlas_spleen_name",
+      "description": "health_atlas_spleen_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "cell-macrophage",
+        "cell-b-cell"
+      ],
+      "mechanism": "spleen",
+      "aliases": "health_atlas_spleen_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "lymph-nodes",
+      "kind": "organ",
+      "name": "health_atlas_lymph_nodes_name",
+      "description": "health_atlas_lymph_nodes_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "cell-b-cell"
+      ],
+      "mechanism": "lymph-nodes",
+      "aliases": "health_atlas_lymph_nodes_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "lymphatic-vessels",
+      "kind": "organ",
+      "name": "health_atlas_lymphatic_vessels_name",
+      "description": "health_atlas_lymphatic_vessels_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "cell-lymphatic-endothelial-cell"
+      ],
+      "mechanism": "lymphatic-vessels",
+      "aliases": "health_atlas_lymphatic_vessels_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "thoracic-duct",
+      "kind": "organ",
+      "name": "health_atlas_thoracic_duct_name",
+      "description": "health_atlas_thoracic_duct_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "lymphatic-vessels"
+      ],
+      "mechanism": "thoracic-duct",
+      "aliases": "health_atlas_thoracic_duct_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "tonsils",
+      "kind": "organ",
+      "name": "health_atlas_tonsils_name",
+      "description": "health_atlas_tonsils_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "cell-b-cell"
+      ],
+      "mechanism": "tonsils",
+      "aliases": "health_atlas_tonsils_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "adenoids",
+      "kind": "organ",
+      "name": "health_atlas_adenoids_name",
+      "description": "health_atlas_adenoids_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "cell-dendritic-cell"
+      ],
+      "mechanism": "adenoids",
+      "aliases": "health_atlas_adenoids_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "gut-associated-lymphoid-tissue",
+      "kind": "organ",
+      "name": "health_atlas_gut_associated_lymphoid_tissue_name",
+      "description": "health_atlas_gut_associated_lymphoid_tissue_description",
+      "systems": [
+        "immune"
+      ],
+      "related": [
+        "cell-dendritic-cell",
+        "cell-b-cell"
+      ],
+      "mechanism": "gut-associated-lymphoid-tissue",
+      "aliases": "health_atlas_gut_associated_lymphoid_tissue_aliases",
+      "color": "",
+      "icon": ""
+    }
+  ],
+  "mechanisms": [
+    {
+      "id": "bone-marrow",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_marrow_title",
+      "stages": [
+        "health_atlas_lymph_marrow_stage_0",
+        "health_atlas_lymph_marrow_stage_1",
+        "health_atlas_lymph_marrow_stage_2",
+        "health_atlas_lymph_marrow_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "thymus",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_thymus_title",
+      "stages": [
+        "health_atlas_lymph_thymus_stage_0",
+        "health_atlas_lymph_thymus_stage_1",
+        "health_atlas_lymph_thymus_stage_2",
+        "health_atlas_lymph_thymus_stage_3"
+      ],
+      "chapter": "21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types"
+    },
+    {
+      "id": "spleen",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_spleen_title",
+      "stages": [
+        "health_atlas_lymph_spleen_stage_0",
+        "health_atlas_lymph_spleen_stage_1",
+        "health_atlas_lymph_spleen_stage_2",
+        "health_atlas_lymph_spleen_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "lymph-nodes",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_node_title",
+      "stages": [
+        "health_atlas_lymph_node_stage_0",
+        "health_atlas_lymph_node_stage_1",
+        "health_atlas_lymph_node_stage_2",
+        "health_atlas_lymph_node_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "lymphatic-vessels",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_vessel_title",
+      "stages": [
+        "health_atlas_lymph_vessel_stage_0",
+        "health_atlas_lymph_vessel_stage_1",
+        "health_atlas_lymph_vessel_stage_2",
+        "health_atlas_lymph_vessel_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "thoracic-duct",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_duct_title",
+      "stages": [
+        "health_atlas_lymph_duct_stage_0",
+        "health_atlas_lymph_duct_stage_1",
+        "health_atlas_lymph_duct_stage_2",
+        "health_atlas_lymph_duct_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "tonsils",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_tonsil_title",
+      "stages": [
+        "health_atlas_lymph_tonsil_stage_0",
+        "health_atlas_lymph_tonsil_stage_1",
+        "health_atlas_lymph_tonsil_stage_2",
+        "health_atlas_lymph_tonsil_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "adenoids",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_adenoid_title",
+      "stages": [
+        "health_atlas_lymph_adenoid_stage_0",
+        "health_atlas_lymph_adenoid_stage_1",
+        "health_atlas_lymph_adenoid_stage_2",
+        "health_atlas_lymph_adenoid_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "gut-associated-lymphoid-tissue",
+      "kind": "lymphoid-organ",
+      "title": "health_atlas_lymph_galt_title",
+      "stages": [
+        "health_atlas_lymph_galt_stage_0",
+        "health_atlas_lymph_galt_stage_1",
+        "health_atlas_lymph_galt_stage_2",
+        "health_atlas_lymph_galt_stage_3"
+      ],
+      "chapter": "21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    }
+  ]
+}

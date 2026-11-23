@@ -1008,6 +1008,52 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testLymphOrganLessonsPreserveCanonicalLinksAndIndependentSelections() throws {
+    let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.LymphPack.read(bundle: bundle))
+    XCTAssertEqual(atlas.entries.count, 313); XCTAssertEqual(atlas.mechanisms.count, 178)
+    XCTAssertEqual(pack.plates.count, 9); XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 30)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 12)
+    let state = GalaxySSIHealthAtlasState()
+    for (index, id) in GalaxySSIHealthAtlas.LymphPack.owners.enumerated() {
+      let entry = try XCTUnwrap(atlas.entry(id)), lesson = try XCTUnwrap(GalaxySSIHealthAtlasLymphLesson.forEntry(id))
+      XCTAssertEqual(entry.mechanism, id); XCTAssertEqual(atlas.model(entry).kind, "lymphoid-organ")
+      XCTAssertEqual(entry.related, lesson.plate.markers.map(\.id))
+      XCTAssertEqual(atlas.plate(for: id)?.asset, lesson.plate.asset)
+      XCTAssertNotNil(UIImage(named: lesson.plate.asset, in: bundle, compatibleWith: nil))
+      for feature in lesson.plate.annotations {
+        XCTAssertNil(atlas.entry(feature.id))
+        guard case .feature = lesson.plate.labelTarget(feature.id, in: atlas) else { return XCTFail("Expected local feature") }
+      }
+      for marker in lesson.plate.markers {
+        guard case .anatomy = lesson.plate.labelTarget(marker.id, in: atlas) else { return XCTFail("Expected canonical link") }
+      }
+      for stage in 0..<4 {
+        let phase = try XCTUnwrap(GalaxySSIHealthAtlasLymphLesson.Phase(Double(stage) / 4))
+        XCTAssertEqual(phase.stage, stage); XCTAssertEqual(phase.fraction, 0)
+        XCTAssertNotNil(lesson.feature(stage: stage))
+        if let route = lesson.route(stage: stage) {
+          let endpoint = try XCTUnwrap(route.commands.last?.points.last)
+          XCTAssertEqual(GalaxySSIHealthAtlasLymphLessonView.path(route).cgPath.currentPoint, CGPoint(x: endpoint.x, y: endpoint.y))
+        }
+      }
+      XCTAssertNil(lesson.feature(stage: -1)); XCTAssertNil(lesson.feature(stage: 4))
+      state.binding(entry).wrappedValue.simulation.phase = Double(index) / 10
+    }
+    let vessel = try XCTUnwrap(atlas.entry("lymphatic-vessels"))
+    state.binding(vessel).wrappedValue.physiologyInputs = [-20, 40]
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    for (index, id) in GalaxySSIHealthAtlas.LymphPack.owners.enumerated() {
+      XCTAssertEqual(restored.binding(try XCTUnwrap(atlas.entry(id))).wrappedValue.simulation.phase, Double(index) / 10)
+    }
+    XCTAssertEqual(restored.binding(vessel).wrappedValue.physiologyInputs, [-20, 40])
+    XCTAssertNil(GalaxySSIHealthAtlasLymphLesson.Phase(.nan))
+    XCTAssertNil(GalaxySSIHealthAtlasLymphLesson.Phase(.infinity))
+    XCTAssertEqual(GalaxySSIHealthAtlasLymphLesson.Phase(2)?.fraction, 1)
+    XCTAssertEqual(GalaxySSIHealthAtlasLymphLesson.Phase(-1)?.stage, 0)
+    XCTAssertNil(GalaxySSIHealthAtlasLymphLesson.forEntry("cell-b-cell"))
+  }
+
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
     let handoff = GalaxySSIHealthAtlasAgentHandoff()
     let token = try XCTUnwrap(handoff.prepare(owner: "a", conversation: "c", prompt: "Public teaching", now: 10))

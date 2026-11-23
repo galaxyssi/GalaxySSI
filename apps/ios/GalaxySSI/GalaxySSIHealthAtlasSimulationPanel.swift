@@ -20,6 +20,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   private var gasExchange: Bool { GalaxySSIHealthAtlasGasExchange.supports(entry.id) }
   private var retinal: Bool { entry.id == GalaxySSIHealthAtlasRetinaPath.owner }
   private var sweat: Bool { entry.id == GalaxySSIHealthAtlasSweat.owner }
+  private var lymph: GalaxySSIHealthAtlasLymphLesson? { .forEntry(entry.id) }
   private var endocrine: GalaxySSIHealthAtlasEndocrinePath? { GalaxySSIHealthAtlasEndocrinePath.forEntry(entry.id) }
   private var germline: GalaxySSIHealthAtlasGermline.Counts? {
     GalaxySSIHealthAtlasGermline.counts(entry.id, stage: simulation.stage)
@@ -35,12 +36,20 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
-      if !gasExchange, entry.id != "pancreas", endocrine == nil, !retinal, !sweat {
+      if !gasExchange, entry.id != "pancreas", endocrine == nil, !retinal, !sweat, lymph == nil {
       GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
         legacyVentilation: lung ? [simulation.first, simulation.second] : nil)
       }
       #endif
       Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(model.title, language))).font(.headline)
+      if let lymph {
+        playbackControls
+        GalaxySSIHealthAtlasLymphLessonView(lesson: lymph, phase: simulation.phase, stages: model.stages, language: language)
+        Text(t("lymph_illustration_scope")).font(.footnote).foregroundColor(.secondary)
+        if entry.id == "thoracic-duct" {
+          Text(t("lymph_duct_orientation")).font(.footnote).foregroundColor(.secondary)
+        }
+      }
       if sweat {
         playbackControls
         GalaxySSIHealthAtlasSweatView(phase: simulation.phase, stages: model.stages, language: language)
@@ -137,7 +146,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       if !GalaxySSIHealthAtlasCirculation.supports(entry.id), !GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id),
          germline == nil, entry.id != GalaxySSIHealthAtlasPhagocytosis.owner,
          entry.id != GalaxySSIHealthAtlasSarcomere.owner, entry.id != GalaxySSIHealthAtlasFiltrationStage.owner,
-         !GalaxySSIHealthAtlasPancreatic.supports(entry.id), endocrine == nil, !retinal, !sweat { playbackControls }
+         !GalaxySSIHealthAtlasPancreatic.supports(entry.id), endocrine == nil, !retinal, !sweat, lymph == nil { playbackControls }
       if reduceMotion { Text(bodyText("motion_disabled")).font(.caption) }
       Text(t("speed") + " · " + String(format: "%.1f×", simulation.speed))
       Slider(value: $simulation.speed, in: 0.5...2, step: 0.5).accessibilityLabel(t("speed"))
@@ -146,7 +155,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         Link(t("digestive_routes_reference"), destination: GalaxySSIHealthAtlasPancreatic.source)
       }
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
-      if sweat {
+      if sweat || lymph != nil {
         GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language)
       }
       if endocrine != nil {
