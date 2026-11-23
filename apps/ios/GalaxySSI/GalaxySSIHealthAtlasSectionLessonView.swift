@@ -9,20 +9,21 @@ struct GalaxySSIHealthAtlasSectionLessonView: View {
   private static let highlight = Color(red: 23/255, green: 106/255, blue: 90/255)
   private static let flowColor = Color(red: 40/255, green: 95/255, blue: 130/255)
   var body: some View {
-    if let selected = GalaxySSIHealthAtlasSectionLesson.Phase(phase), let feature = lesson.feature(stage: selected.stage), stages.count == 4, lesson.artWidth.isFinite, lesson.artWidth > 0 {
+    if let selected = GalaxySSIHealthAtlasSectionLesson.Phase(phase), let feature = lesson.feature(stage: selected.stage),
+      stages.count == 4, lesson.artWidth.isFinite, lesson.artWidth > 0, lesson.artHeight.isFinite, lesson.artHeight > 0 {
       Canvas { context, size in
         var drawing = context
-        let scale = min(size.width / lesson.artWidth, size.height / 280)
-        drawing.translateBy(x: (size.width - lesson.artWidth * scale) / 2, y: (size.height - 280 * scale) / 2)
+        let scale = min(size.width / lesson.artWidth, size.height / lesson.artHeight)
+        drawing.translateBy(x: (size.width - lesson.artWidth * scale) / 2, y: (size.height - lesson.artHeight * scale) / 2)
         drawing.scaleBy(x: scale, y: scale)
         let picture = drawing.resolve(Image(lesson.plate.asset))
-        drawing.draw(picture, in: CGRect(x: 0, y: 0, width: lesson.artWidth, height: 280))
+        drawing.draw(picture, in: CGRect(x: 0, y: 0, width: lesson.artWidth, height: lesson.artHeight))
         let radius = selected.radius(hasRoute: !lesson.routes.isEmpty)
-        let x = feature.marker.x * lesson.artWidth, y = feature.marker.y * 280
+        let x = feature.marker.x * lesson.artWidth, y = feature.marker.y * lesson.artHeight
         let ring = Path(ellipseIn: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2))
         drawing.stroke(ring, with: .color(Self.rim), lineWidth: 5)
         drawing.stroke(ring, with: .color(Self.highlight), lineWidth: 2.6)
-        if let route = lesson.route(stage: selected.stage), let flow = Self.flow(route, fraction: selected.fraction, width: lesson.artWidth) {
+        if let route = lesson.route(stage: selected.stage), let flow = Self.flow(route, fraction: selected.fraction, width: lesson.artWidth, height: lesson.artHeight) {
           drawing.stroke(flow.trail, with: .color(Color(red: 249/255, green: 252/255, blue: 1).opacity(234.0/255)),
             style: StrokeStyle(lineWidth: 5.6, lineCap: .round))
           drawing.stroke(flow.trail, with: .color(Self.flowColor), style: StrokeStyle(lineWidth: 2.7, lineCap: .round))
@@ -31,7 +32,7 @@ struct GalaxySSIHealthAtlasSectionLessonView: View {
           drawing.stroke(flow.tip, with: .color(edge), style: StrokeStyle(lineWidth: 2.6, lineJoin: .round))
           drawing.fill(flow.tip, with: .color(Self.flowColor))
         }
-      }.aspectRatio(lesson.artWidth / 280, contentMode: .fit).frame(maxHeight: 226)
+      }.aspectRatio(lesson.artWidth / lesson.artHeight, contentMode: .fit).frame(maxHeight: lesson.artHeight > lesson.artWidth ? 280 : 226)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(GalaxySSIHealthAtlasText.get(feature.title, language) + ". " +
           GalaxySSIHealthAtlasText.get(stages[selected.stage], language))
@@ -44,8 +45,8 @@ struct GalaxySSIHealthAtlasSectionLessonView: View {
     let direction: CGVector
     let tip: Path
   }
-  static func flow(_ route: GalaxySSIHealthAtlasSectionLesson.Route, fraction: Double, width: Double = 360) -> Flow? {
-    guard route.fits(width: width), fraction.isFinite, (0...1).contains(fraction), let first = route.commands.first else { return nil }
+  static func flow(_ route: GalaxySSIHealthAtlasSectionLesson.Route, fraction: Double, width: Double = 360, height: Double = 280) -> Flow? {
+    guard route.fits(width: width, height: height), fraction.isFinite, (0...1).contains(fraction), let first = route.commands.first else { return nil }
     let start = CGPoint(x: route.start.x, y: route.start.y)
     func tangent(to end: CGPoint, from candidates: [CGPoint]) -> CGVector {
       for candidate in candidates {
@@ -60,7 +61,7 @@ struct GalaxySSIHealthAtlasSectionLessonView: View {
       delta = tangent(to: CGPoint(x: control.x, y: control.y), from: [start])
       if hypot(delta.dx, delta.dy) > 1e-12 { break }
     }
-    let trail = fraction == 0 ? Path() : path(route, width: width).trimmedPath(from: 0, to: CGFloat(fraction))
+    let trail = fraction == 0 ? Path() : path(route, width: width, height: height).trimmedPath(from: 0, to: CGFloat(fraction))
     var point = start
     trail.cgPath.applyWithBlock { pointer in
       let element = pointer.pointee
@@ -86,10 +87,10 @@ struct GalaxySSIHealthAtlasSectionLessonView: View {
     tip.closeSubpath()
     return Flow(trail: trail, point: point, direction: CGVector(dx: dx, dy: dy), tip: tip)
   }
-  static func path(_ route: GalaxySSIHealthAtlasSectionLesson.Route, width: Double = 360) -> Path {
+  static func path(_ route: GalaxySSIHealthAtlasSectionLesson.Route, width: Double = 360, height: Double = 280) -> Path {
     var path = Path(); path.move(to: CGPoint(x: route.start.x, y: route.start.y))
     for command in route.commands {
-      guard command.fits(width: width) else { continue }
+      guard command.fits(width: width, height: height) else { continue }
       let points = command.points.map { CGPoint(x: $0.x, y: $0.y) }
       switch command.kind {
       case .line: path.addLine(to: points[0])

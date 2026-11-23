@@ -17,6 +17,27 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
      "elimination_assumptions": "Single-compartment teaching assumptions",
      "elimination_summary": "Half-life %1$lld h; after %2$lld h: %3$@%%"] [key] ?? key
   }
+  func testPortraitSensoryContextNamesOnlyTheMatchingCurrentFeatureOnTeachingScreens() throws {
+    for id in ["cell-inner-ear-hair-cell", "cell-rod-photoreceptor", "cell-cone-photoreceptor"] {
+      for stage in 0..<4 {
+        let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: Double(stage) / 4, first: 70, second: 70))
+        for language in ["en", "zh-Hans"] {
+          let lines = GalaxySSIHealthAtlasSectionLesson.context(id, stage: stage, language: language)
+          XCTAssertEqual(lines.count, 1)
+          for screen in Context.Screen.allCases {
+            let prompt = Context.prompt(anatomy: anatomy(id), screen: screen, simulation: simulation,
+              language: language, locale: locale, text: text)
+            if screen == .values { XCTAssertNil(prompt); continue }
+            XCTAssertEqual(try XCTUnwrap(prompt).contains(lines[0]), screen.includesPhysiology)
+            let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("cell-retinal-ganglion-cell"), screen: screen,
+              simulation: simulation, language: language, locale: locale, text: text))
+            XCTAssertFalse(foreign.contains(lines[0]))
+          }
+        }
+      }
+    }
+  }
+
   func testSensorySectionContextKeepsEarScopeAndCurrentLayerOwnerBound() throws {
     for id in ["ear", "retina"] {
       for stage in 0..<4 {

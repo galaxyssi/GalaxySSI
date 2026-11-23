@@ -9,6 +9,7 @@ extension GalaxySSIHealthAtlas {
     let plates: [Plate]
     static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
     static let relayIDs = ["cell-retinal-bipolar-cell", "cell-retinal-aii-amacrine-cell"]
+    static let portraitOwners: Set<String> = ["cell-rod-photoreceptor", "cell-cone-photoreceptor", "cell-inner-ear-hair-cell"]
     static let owners = ["cell-oligodendrocyte", "cell-microglia", "cell-ependymal-cell", "cell-satellite-glial-cell", "cell-rod-photoreceptor", "cell-cone-photoreceptor", "cell-retinal-pigment-epithelial-cell", "cell-retinal-ganglion-cell", "cell-inner-ear-hair-cell", "cell-olfactory-receptor-neuron", "cell-taste-receptor-cell", "cell-corneal-epithelial-cell", "cell-merkel-cell", "cell-retinal-bipolar-cell", "cell-retinal-aii-amacrine-cell", "retina"]
     static let sources = [
       "cell-oligodendrocyte": "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-2-nervous-tissue",
@@ -65,7 +66,7 @@ extension GalaxySSIHealthAtlas {
           guard let owner = plate.owner, atlas.entry(owner)?.kind == (owner == "retina" ? .organ : .cell),
             plate.id == owner, plate.entryIDs == [owner] + plate.markers.map(\.id), plate.source?.absoluteString == Self.sources[owner],
             plate.asset.hasPrefix("HealthAtlasSensory"), UIImage(named: plate.asset, in: bundle, compatibleWith: nil) != nil,
-            plate.aspectRatio == 360.0 / 280, (2...4).contains(plate.annotations.count),
+            plate.aspectRatio == (Self.portraitOwners.contains(owner) ? 2.0 / 3 : 360.0 / 280), (2...4).contains(plate.annotations.count),
             Set(plate.markers.map(\.id) + plate.annotations.map(\.id)).count == plate.markers.count + plate.annotations.count
           else { return false }
           if owner == "retina" {

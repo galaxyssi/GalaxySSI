@@ -145,15 +145,15 @@
       "entryIDs": [
         "cell-rod-photoreceptor"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 0.6666666666666666,
       "markers": [],
       "source": "https://www.ncbi.nlm.nih.gov/books/NBK10885/",
       "features": [
         {
           "marker": {
             "id": "rod-discs",
-            "x": 0.5,
-            "y": 0.28214285714285714
+            "x": 0.492,
+            "y": 0.255
           },
           "title": "health_atlas_sensory_rod_discs",
           "explanation": "health_atlas_sensory_rod_discs_detail"
@@ -161,14 +161,14 @@
         {
           "marker": {
             "id": "rod-spherule",
-            "x": 0.5,
-            "y": 0.8178571428571428
+            "x": 0.498,
+            "y": 0.957
           },
           "title": "health_atlas_sensory_rod_spherule",
           "explanation": "health_atlas_sensory_rod_spherule_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_rod.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_sensory_rod.png"
     },
     {
       "id": "cell-cone-photoreceptor",
@@ -178,15 +178,15 @@
       "entryIDs": [
         "cell-cone-photoreceptor"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 0.6666666666666666,
       "markers": [],
       "source": "https://www.ncbi.nlm.nih.gov/books/NBK10885/",
       "features": [
         {
           "marker": {
             "id": "cone-outer-segment",
-            "x": 0.5,
-            "y": 0.29642857142857143
+            "x": 0.517,
+            "y": 0.197
           },
           "title": "health_atlas_sensory_cone_outer_segment",
           "explanation": "health_atlas_sensory_cone_outer_segment_detail"
@@ -194,14 +194,14 @@
         {
           "marker": {
             "id": "cone-pedicle",
-            "x": 0.5,
-            "y": 0.8035714285714286
+            "x": 0.52,
+            "y": 0.955
           },
           "title": "health_atlas_sensory_cone_pedicle",
           "explanation": "health_atlas_sensory_cone_pedicle_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_cone.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_sensory_cone.png"
     },
     {
       "id": "cell-retinal-pigment-epithelial-cell",
@@ -277,15 +277,15 @@
       "entryIDs": [
         "cell-inner-ear-hair-cell"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 0.6666666666666666,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception",
       "features": [
         {
           "marker": {
             "id": "hair-bundle",
-            "x": 0.5166666666666667,
-            "y": 0.25
+            "x": 0.542,
+            "y": 0.219
           },
           "title": "health_atlas_sensory_hair_bundle",
           "explanation": "health_atlas_sensory_hair_bundle_detail"
@@ -293,14 +293,14 @@
         {
           "marker": {
             "id": "hair-afferent-contact",
-            "x": 0.49166666666666664,
-            "y": 0.7392857142857143
+            "x": 0.517,
+            "y": 0.825
           },
           "title": "health_atlas_sensory_hair_afferent_contact",
           "explanation": "health_atlas_sensory_hair_afferent_contact_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_cochlear_hair.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_sensory_cochlear_hair.png"
     },
     {
       "id": "cell-olfactory-receptor-neuron",
@@ -649,5 +649,9 @@
       "chapter": "14-1-sensory-perception",
       "reference": "https://pubmed.ncbi.nlm.nih.gov/28856684/"
     }
-  ]
+  ],
+  "artworkSource": {
+    "androidPR": 4361,
+    "mergeCommit": "ac7ab99df542b67a7a0ea6a28999a7334b79aada"
+  }
 }

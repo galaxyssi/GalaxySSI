@@ -1106,7 +1106,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       ("nephron", 1173, 1341), ("alveoli", 1254, 1254), ("cell-pancreatic-beta-cell", 1254, 1254),
       ("cell-erythrocyte", 1254, 1254), ("cell-neuron", 1024, 1536), ("skin", 1536, 1024),
       ("sensory", 1199, 1312), ("immune", 1312, 1199), ("respiratory", 1145, 1374),
-      ("digestive", 1246, 1263), ("endocrine", 1312, 1199), ("ear", 1536, 1024), ("eye", 1536, 1024)]
+      ("digestive", 1246, 1263), ("endocrine", 1312, 1199), ("ear", 1536, 1024), ("eye", 1536, 1024),
+      ("cell-inner-ear-hair-cell", 1024, 1536), ("cell-rod-photoreceptor", 1024, 1536), ("cell-cone-photoreceptor", 1024, 1536)]
     let samples: [String: [CGPoint]] = [
       "pancreas": [CGPoint(x: 0.90, y: 0.72), CGPoint(x: 0.62, y: 0.30)],
       "urinary": [CGPoint(x: 0.50, y: 0.50), CGPoint(x: 0.66, y: 0.53)],
@@ -1136,7 +1137,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       let plate = try XCTUnwrap(atlas.plate(for: owner, viewKey: key))
       plates.append((plate, key == "skeletal-posterior" ? 887 : 1024, key == "skeletal-posterior" ? 1774 : 1536))
     }
-    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 26)
+    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 29)
     var count = 0
     for (plate, width, height) in plates {
       let image = try XCTUnwrap(UIImage(named: plate.asset, in: bundle, compatibleWith: nil)?.cgImage)
@@ -1352,6 +1353,58 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertFalse(try JSONDecoder().decode(GalaxySSIHealthAtlas.Plate.self, from: JSONSerialization.data(withJSONObject: object)).splitCallouts)
     object["splitCallouts"] = true
     XCTAssertTrue(try JSONDecoder().decode(GalaxySSIHealthAtlas.Plate.self, from: JSONSerialization.data(withJSONObject: object)).splitCallouts)
+  }
+
+  func testPortraitSensoryStagesHighlightTheirOwnOutputsWithoutChangingPhotonInputs() throws {
+    typealias Lesson = GalaxySSIHealthAtlasSectionLesson
+    let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
+    let fixtures = [
+      ("cell-inner-ear-hair-cell", [0, 0, 2, 1], "hair-afferent-contact"),
+      ("cell-rod-photoreceptor", [0, 0, 0, 1], "rod-spherule"),
+      ("cell-cone-photoreceptor", [0, 0, 0, 1], "cone-pedicle")
+    ]
+    for (id, stages, output) in fixtures {
+      let entry = try XCTUnwrap(atlas.entry(id)), lesson = try XCTUnwrap(Lesson.forEntry(id))
+      XCTAssertEqual(lesson.plate.owner, id); XCTAssertEqual(lesson.plate.aspectRatio, 2.0 / 3)
+      XCTAssertEqual(lesson.artWidth, 280); XCTAssertEqual(lesson.artHeight, 420)
+      XCTAssertEqual(lesson.stageFeatures, stages); XCTAssertTrue(lesson.routes.isEmpty)
+      XCTAssertEqual(lesson.feature(stage: 3)?.id, output)
+      XCTAssertNotEqual(lesson.feature(stage: 0)?.id, lesson.feature(stage: 3)?.id)
+      XCTAssertEqual(atlas.plate(for: id)?.annotations.count, 2)
+      XCTAssertEqual(lesson.plate.annotations.count, id == "cell-inner-ear-hair-cell" ? 3 : 2)
+      if id == "cell-inner-ear-hair-cell" { XCTAssertEqual(lesson.feature(stage: 2)?.id, "hair-cell-receptor-body") }
+      for stage in 0..<4 {
+        let feature = try XCTUnwrap(lesson.feature(stage: stage))
+        XCTAssertTrue((0...1).contains(feature.marker.x)); XCTAssertTrue((0...1).contains(feature.marker.y))
+        for language in ["en", "zh-Hans"] {
+          XCTAssertNotEqual(GalaxySSIHealthAtlasText.get(feature.title, language), feature.title)
+          XCTAssertNotEqual(GalaxySSIHealthAtlasText.get(feature.explanation, language), feature.explanation)
+        }
+      }
+      state.binding(entry).wrappedValue.simulation.phase = 0.9
+    }
+    let rod = try XCTUnwrap(atlas.entry("cell-rod-photoreceptor"))
+    state.binding(rod).wrappedValue.physiologyInputs = [225]
+    state.binding(rod).wrappedValue.simulation.selectStage(0)
+    XCTAssertEqual(state.binding(rod).wrappedValue.physiologyInputs, [225])
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.binding(rod).wrappedValue.simulation.stage, 0)
+    XCTAssertEqual(restored.binding(rod).wrappedValue.physiologyInputs, [225])
+    for id in ["cell-inner-ear-hair-cell", "cell-cone-photoreceptor"] {
+      let entry = try XCTUnwrap(atlas.entry(id))
+      XCTAssertEqual(restored.binding(entry).wrappedValue.simulation.stage, 3)
+      XCTAssertNil(restored.binding(entry).wrappedValue.physiologyInputs)
+    }
+    let route = Lesson.Route(start: .init(x: 140, y: 20),
+      commands: [.init(kind: .line, points: [.init(x: 140, y: 400)])])
+    XCTAssertFalse(route.valid); XCTAssertTrue(route.fits(width: 280, height: 420))
+    XCTAssertNil(GalaxySSIHealthAtlasSectionLessonView.flow(route, fraction: 0.5, width: 280))
+    let point = try XCTUnwrap(GalaxySSIHealthAtlasSectionLessonView.flow(route, fraction: 0.5, width: 280, height: 420)).point
+    XCTAssertEqual(point, CGPoint(x: 140, y: 210))
+    XCTAssertFalse(route.fits(width: 280, height: .nan)); XCTAssertFalse(route.fits(width: 280, height: 0))
+    for id in GalaxySSIHealthAtlas.LymphPack.owners + GalaxySSIHealthAtlas.GutPack.owners {
+      XCTAssertEqual(try XCTUnwrap(Lesson.forEntry(id)).artHeight, 280)
+    }
   }
 
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {

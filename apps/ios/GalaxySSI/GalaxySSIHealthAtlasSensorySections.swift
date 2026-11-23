@@ -8,6 +8,9 @@ enum GalaxySSIHealthAtlasSensorySections {
     switch id {
     case "ear": return ear
     case "retina": return retina
+    case "cell-inner-ear-hair-cell": return hairCell
+    case "cell-rod-photoreceptor": return rod
+    case "cell-cone-photoreceptor": return cone
     default: return nil
     }
   }
@@ -58,4 +61,17 @@ enum GalaxySSIHealthAtlasSensorySections {
     // Render-only layer highlights do not replace the structure view's navigation markers.
     return Lesson(plate: copy(original, features: features, keepMarkers: false), stageFeatures: [0, 1, 2, 3], routes: [])
   }()
+  private static func portrait(_ id: String, stages: [Int], receptorBody: Bool = false) -> Lesson? {
+    guard let pack = try? GalaxySSIHealthAtlas.SensoryPack.bundled.get(),
+      let plate = pack.plates.first(where: { $0.owner == id }) else { return nil }
+    var features = plate.annotations
+    if receptorBody {
+      features.append(Feature(marker: .init(id: "hair-cell-receptor-body", x: 0.431, y: 0.574),
+        title: "health_atlas_cell_inner_ear_hair_cell_name", explanation: "health_atlas_process_cell_inner_ear_hair_cell_2"))
+    }
+    return Lesson(plate: copy(plate, features: features), stageFeatures: stages, routes: [], artWidth: 280, artHeight: 420)
+  }
+  static let rod = portrait("cell-rod-photoreceptor", stages: [0, 0, 0, 1])
+  static let cone = portrait("cell-cone-photoreceptor", stages: [0, 0, 0, 1])
+  static let hairCell = portrait("cell-inner-ear-hair-cell", stages: [0, 0, 2, 1], receptorBody: true)
 }
