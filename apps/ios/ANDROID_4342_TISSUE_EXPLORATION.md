@@ -27,6 +27,8 @@ Base: main. Android source: #4342, merge 1ab5e34eb81502f725d0070c47482677ea5ce8f
 - 238 localized tissue strings match Android XML.
 - Static resource audit confirms 14 exact entries/mechanisms, 53 locations,
   26 cells, 14 vector assets and 17 valid cell hotspots.
+- Full bundled-resource composition equals Android #4342: 301 entries and
+  147 mechanisms. All 17 hotspot positions intersect nonblank rendered artwork.
 - All 14 PDFs were rendered with Poppler and visually reviewed together.
   This verifies assets, not native iOS layout or device behavior.
 - Added XCTest source for graph validation, layer persistence, legacy defaults,
