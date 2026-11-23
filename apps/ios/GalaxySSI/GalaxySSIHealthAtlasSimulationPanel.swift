@@ -32,12 +32,17 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
-      if !gasExchange {
+      if !gasExchange, entry.id != "pancreas" {
       GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
         legacyVentilation: lung ? [simulation.first, simulation.second] : nil)
       }
       #endif
       Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(model.title, language))).font(.headline)
+      if GalaxySSIHealthAtlasPancreatic.supports(entry.id) {
+        playbackControls
+        GalaxySSIHealthAtlasPancreaticPanel(atlas: atlas, entryID: entry.id, stage: simulation.stage, language: language,
+          open: { playing = false; structure = $0 })
+      }
       if entry.id == GalaxySSIHealthAtlasSarcomere.owner {
         playbackControls
         GalaxySSIHealthAtlasSarcomerePanel(stage: simulation.stage, stages: model.stages, language: language)
@@ -106,11 +111,17 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         .accessibilityLabel(t("phase"))
       if !GalaxySSIHealthAtlasCirculation.supports(entry.id), !GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id),
          germline == nil, entry.id != GalaxySSIHealthAtlasPhagocytosis.owner,
-         entry.id != GalaxySSIHealthAtlasSarcomere.owner { playbackControls }
+         entry.id != GalaxySSIHealthAtlasSarcomere.owner, !GalaxySSIHealthAtlasPancreatic.supports(entry.id) { playbackControls }
       if reduceMotion { Text(bodyText("motion_disabled")).font(.caption) }
       Text(t("speed") + " · " + String(format: "%.1f×", simulation.speed))
       Slider(value: $simulation.speed, in: 0.5...2, step: 0.5).accessibilityLabel(t("speed"))
+      if entry.id == "pancreas" {
+        Link(t("digestive_routes_reference"), destination: GalaxySSIHealthAtlasPancreatic.source)
+      }
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
+      if entry.id == "pancreas" {
+        GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language)
+      }
       if gasExchange {
         GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
           legacyVentilation: entry.id == "alveoli" ? [simulation.first, simulation.second] : nil)

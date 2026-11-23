@@ -2,6 +2,10 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let digestiveKey = ["model_bicarbonateMix": "digestive_bicarb_title", "model_bicarbonateMix_scope": "digestive_bicarb_scope",
+      "model_bicarbonateMix_formula": "digestive_bicarb_formula"][key]
+    if let digestiveKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + digestiveKey, language) }
+    if key.hasPrefix("digestive_bicarb_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     let nerveKey = ["model_nerveTransit": "nerve_transit", "model_nerveTransit_scope": "nerve_transit_scope",
       "model_nerveTransit_formula": "nerve_transit_formula"][key]
     if let nerveKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + nerveKey, language) }
@@ -50,6 +54,9 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if model.kind == .bicarbonateMix {
+      return String(format: string("digestive_bicarb_companion", language: language), number(model.companionValue, language: language))
+    }
     if model.kind == .nerveTransit {
       return String(format: string("nerve_transit_over_ten", language: language), number(model.companionValue, language: language))
     }

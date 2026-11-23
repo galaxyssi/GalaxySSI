@@ -103,6 +103,10 @@ enum GalaxySSIHealthAtlasQuestion {
        let context = GalaxySSIHealthAtlasHeartSection.context(entry.id, stage: selection.simulation.stage, atlas: atlas, language: language) {
       prompt += "\n" + context
     }
+    if ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
+      let context = GalaxySSIHealthAtlasPancreatic.context(entry.id, text: t)
+      if !context.isEmpty { prompt += "\n" + context.joined(separator: "\n") }
+    }
     if entry.id == GalaxySSIHealthAtlasSarcomere.owner,
        ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
        let sarcomere = GalaxySSIHealthAtlasSarcomere(stage: selection.simulation.stage) {

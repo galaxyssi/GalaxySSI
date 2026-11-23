@@ -27,6 +27,9 @@
     C43460000000000000000001 /* GalaxySSIHealthAtlasCoreCells.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43460000000000000000002 /* GalaxySSIHealthAtlasCoreCells.swift */; };
     C43460000000000000000003 /* GalaxySSIHealthAtlasSarcomere.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43460000000000000000004 /* GalaxySSIHealthAtlasSarcomere.swift */; };
     C43460000000000000000005 /* GalaxySSIHealthAtlasSarcomerePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43460000000000000000006 /* GalaxySSIHealthAtlasSarcomerePanel.swift */; };
+    C43480000000000000000001 /* GalaxySSIHealthAtlasDigestiveCells.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43480000000000000000002 /* GalaxySSIHealthAtlasDigestiveCells.swift */; };
+    C43480000000000000000003 /* GalaxySSIHealthAtlasPancreatic.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43480000000000000000004 /* GalaxySSIHealthAtlasPancreatic.swift */; };
+    C43480000000000000000005 /* GalaxySSIHealthAtlasPancreaticPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43480000000000000000006 /* GalaxySSIHealthAtlasPancreaticPanel.swift */; };
     C43350000000000000000001 /* GalaxySSIHealthAtlasElbow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43350000000000000000002 /* GalaxySSIHealthAtlasElbow.swift */; };
     C43380000000000000000001 /* GalaxySSIHealthAtlasVesselFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43380000000000000000002 /* GalaxySSIHealthAtlasVesselFlow.swift */; };
     C43400000000000000000001 /* GalaxySSIHealthAtlasEyeOptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43400000000000000000002 /* GalaxySSIHealthAtlasEyeOptics.swift */; };
@@ -1496,6 +1499,9 @@
     C43460000000000000000002 /* GalaxySSIHealthAtlasCoreCells.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoreCells.swift; sourceTree = "<group>"; };
     C43460000000000000000004 /* GalaxySSIHealthAtlasSarcomere.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSarcomere.swift; sourceTree = "<group>"; };
     C43460000000000000000006 /* GalaxySSIHealthAtlasSarcomerePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSarcomerePanel.swift; sourceTree = "<group>"; };
+    C43480000000000000000002 /* GalaxySSIHealthAtlasDigestiveCells.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDigestiveCells.swift; sourceTree = "<group>"; };
+    C43480000000000000000004 /* GalaxySSIHealthAtlasPancreatic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPancreatic.swift; sourceTree = "<group>"; };
+    C43480000000000000000006 /* GalaxySSIHealthAtlasPancreaticPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPancreaticPanel.swift; sourceTree = "<group>"; };
     C43350000000000000000002 /* GalaxySSIHealthAtlasElbow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasElbow.swift; sourceTree = "<group>"; };
     C43380000000000000000002 /* GalaxySSIHealthAtlasVesselFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasVesselFlow.swift; sourceTree = "<group>"; };
     C43400000000000000000002 /* GalaxySSIHealthAtlasEyeOptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEyeOptics.swift; sourceTree = "<group>"; };
@@ -2983,6 +2989,9 @@
         C43460000000000000000002 /* GalaxySSIHealthAtlasCoreCells.swift */,
         C43460000000000000000004 /* GalaxySSIHealthAtlasSarcomere.swift */,
         C43460000000000000000006 /* GalaxySSIHealthAtlasSarcomerePanel.swift */,
+        C43480000000000000000002 /* GalaxySSIHealthAtlasDigestiveCells.swift */,
+        C43480000000000000000004 /* GalaxySSIHealthAtlasPancreatic.swift */,
+        C43480000000000000000006 /* GalaxySSIHealthAtlasPancreaticPanel.swift */,
         C43350000000000000000002 /* GalaxySSIHealthAtlasElbow.swift */,
         C43380000000000000000002 /* GalaxySSIHealthAtlasVesselFlow.swift */,
         C43400000000000000000002 /* GalaxySSIHealthAtlasEyeOptics.swift */,
@@ -4600,6 +4609,9 @@
         C43460000000000000000001 /* GalaxySSIHealthAtlasCoreCells.swift in Sources */,
         C43460000000000000000003 /* GalaxySSIHealthAtlasSarcomere.swift in Sources */,
         C43460000000000000000005 /* GalaxySSIHealthAtlasSarcomerePanel.swift in Sources */,
+        C43480000000000000000001 /* GalaxySSIHealthAtlasDigestiveCells.swift in Sources */,
+        C43480000000000000000003 /* GalaxySSIHealthAtlasPancreatic.swift in Sources */,
+        C43480000000000000000005 /* GalaxySSIHealthAtlasPancreaticPanel.swift in Sources */,
         C43350000000000000000001 /* GalaxySSIHealthAtlasElbow.swift in Sources */,
         C43380000000000000000001 /* GalaxySSIHealthAtlasVesselFlow.swift in Sources */,
         C43400000000000000000001 /* GalaxySSIHealthAtlasEyeOptics.swift in Sources */,
