@@ -1163,6 +1163,51 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testVisionPathwayAndLightAdaptationRetainSourceResponses() throws {
+    typealias Motion = GalaxySSIHealthAtlasVisionMotion
+    XCTAssertEqual(Motion.Stage.allCases.count, 10)
+    XCTAssertEqual(Motion.Stage.pathway, [.entry, .focus, .capture, .relay, .output])
+    XCTAssertEqual(Motion.Stage.adaptation, [.dim, .rod, .mixed, .bright, .color])
+    let rods = [[1, 2, 3], [1, 3, 5], [3, 3, 2], [0, 0, 0], [0, 0, 0]]
+    let cones = [[4, 3, 1], [0, 0, 0], [1, 2, 4], [5, 5, 5], [5, 5, 5]]
+    let light = [[0.68, 0.415, 0.15], [0.15, 0.15, 0.15], [0.15, 0.365, 0.58],
+      [0.58, 0.76, 0.94], [0.94, 0.94, 0.94]]
+    for chapter in 0..<5 {
+      for (index, phase) in [0.0, 0.5, 1.0].enumerated() {
+        let motion = Motion(courseID: "LIGHT_ADAPTATION", chapter: chapter, fraction: phase)
+        XCTAssertEqual(motion.stage, Motion.Stage.adaptation[chapter])
+        XCTAssertEqual(motion.rodCount, rods[chapter][index])
+        XCTAssertEqual(motion.coneCount, cones[chapter][index])
+        XCTAssertEqual(motion.light, light[chapter][index], accuracy: 1e-12)
+        XCTAssertTrue((0...1).contains(motion.chroma))
+      }
+    }
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 0, fraction: 0).opticsDrawn, 0.43)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 0, fraction: 1).opticsDrawn, 0.8, accuracy: 1e-12)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 1, fraction: 0).opticsDrawn, 1)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.459).captureCount, 6)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.46).captureCount, 2)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.1).incident, 0)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.48).incident, 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion(courseID: "LIGHT_ADAPTATION", chapter: 4, fraction: 1).emphasis, 2)
+    XCTAssertEqual(Motion.blend(0, 0xFFFFFF, fraction: 0.5), 0x7F7F7F)
+    XCTAssertEqual(Motion.blend(0x123456, 0xFFFFFF, fraction: .nan), 0x123456)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: -1, fraction: .nan).stage, .entry)
+    XCTAssertEqual(Motion(courseID: "LIGHT_ADAPTATION", chapter: 20, fraction: .infinity).fraction, 0)
+    XCTAssertEqual(Motion.rays.count, 3)
+    let routes = Motion.rays + [Motion.lightInRetina, Motion.coneRelay, Motion.nerve]
+    for route in routes {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 344, height: 344))
+        XCTAssertTrue((0...344).contains(sample.point.x) && (0...344).contains(sample.point.y))
+        XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+      }
+    }
+    for ray in Motion.rays {
+      let focus = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(ray, position: 1, width: 344, height: 344))
+      XCTAssertEqual(focus.point, CGPoint(x: 255, y: 149))
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
