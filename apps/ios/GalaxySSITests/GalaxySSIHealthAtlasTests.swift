@@ -1842,6 +1842,30 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testSalivaTracksStreamingAndDirectionalIonExchange() throws {
+    typealias Motion = GalaxySSIHealthAtlasSalivaMotion
+    XCTAssertEqual(Motion.streamFraction(0.5, index: 0, count: 4, end: 1), 0.5)
+    XCTAssertEqual(Motion.streamFraction(0.5, index: 2, count: 4, end: 1), 0)
+    XCTAssertEqual(Motion.streamFraction(0, index: 1, count: 3, end: 0.88), 0.88 / 3, accuracy: 1e-12)
+    XCTAssertEqual(Motion.streamFraction(.nan, index: 0, count: 4, end: 1), 0)
+    XCTAssertEqual(Motion.streamFraction(1, index: 0, count: 0, end: 1), 0)
+    XCTAssertEqual(Motion.ductX(0, index: 0), 173)
+    XCTAssertEqual(Motion.ductX(1, index: 0), 173)
+    XCTAssertEqual(Motion.sodium(0), .init(x: 209, y: 262))
+    XCTAssertEqual(Motion.sodium(1), .init(x: 220, y: 232))
+    XCTAssertEqual(Motion.potassium(0), .init(x: 284, y: 300))
+    XCTAssertEqual(Motion.potassium(1), .init(x: 273, y: 270))
+    XCTAssertEqual(Motion.cheekTrack.commands.first?.points, Motion.mouthTrack.commands.first?.points)
+    XCTAssertEqual(Motion.mouthTrack.commands.count, 2)
+    for route in [Motion.cheekTrack, Motion.mouthTrack, Motion.fluidTrack, Motion.proteinTrack] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        XCTAssertNotNil(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+      }
+    }
+    for index in 0...6 {
+      XCTAssertTrue((173...325).contains(Motion.ductX(0.5, index: index)))
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
