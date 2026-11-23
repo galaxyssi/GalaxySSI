@@ -40,7 +40,8 @@ for(const key of ["muscle","air_out","air_in","alveolar_air","oxygen","carbon"])
 }
 for(const token of ["layer.drawLayer","layer.opacity = 1 - motion.zoom","layer.opacity = motion.zoom",
   "GalaxySSIHealthAtlasGasExchange.position(.oxygen","GalaxySSIHealthAtlasGasExchange.position(.carbon",
-  "path.trimmedPath(from: 0, to: CGFloat(position))","reverse: true, size: 17","atlas-function-breathing-art"])assert(view.includes(token),token);
+  "GalaxySSIHealthAtlasFunctionPath.sample","reverse: true, size: 17","atlas-function-breathing-art"])assert(view.includes(token),token);
+assert(local("GalaxySSIHealthAtlasFunctionPath.swift").includes("path.trimmedPath(from: 0, to: CGFloat(position))"));
 assert(local("GalaxySSIHealthAtlasFunctionArtwork.swift").includes('case "BREATHING": GalaxySSIHealthAtlasBreathingView'));
 const project=fs.readFileSync(path.join(root,"apps/ios/GalaxySSI.xcodeproj/project.pbxproj"),"utf8");
 for(const file of ["GalaxySSIHealthAtlasBreathingMotion.swift","GalaxySSIHealthAtlasBreathingView.swift"]){

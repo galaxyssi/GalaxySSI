@@ -90,40 +90,9 @@ struct GalaxySSIHealthAtlasBreathingView: View {
     context.stroke(glyph, with: .color(.white), style: StrokeStyle(lineWidth: size * 1.25, lineCap: .round, lineJoin: .round))
     context.stroke(glyph, with: .color(color), style: StrokeStyle(lineWidth: size * 0.66, lineCap: .round, lineJoin: .round))
   }
-  struct Sample { let point: CGPoint; let direction: CGVector }
-  static func sample(_ route: Route, position: Double) -> Sample? {
+  static func sample(_ route: Route, position: Double) -> GalaxySSIHealthAtlasFunctionPath.Sample? {
     // This source blood path has nine curves, unlike the four-command structure annotations.
-    guard position.isFinite, (0...1).contains(position), route.start.fits(width: 1254, height: 1254),
-      !route.commands.isEmpty, route.commands.count <= 16,
-      route.commands.allSatisfy({ $0.fits(width: 1254, height: 1254) }) else { return nil }
-    let start = CGPoint(x: route.start.x, y: route.start.y)
-    var point = start, delta = CGVector.zero
-    for control in route.commands[0].points {
-      delta = CGVector(dx: control.x - start.x, dy: control.y - start.y)
-      if hypot(delta.dx, delta.dy) > 1e-12 { break }
-    }
-    let path = GalaxySSIHealthAtlasSectionLessonView.path(route, width: 1254, height: 1254)
-    let partial = position == 0 ? Path() : path.trimmedPath(from: 0, to: CGFloat(position))
-    partial.cgPath.applyWithBlock { element in
-      let value = element.pointee
-      let end: CGPoint
-      let controls: [CGPoint]
-      switch value.type {
-      case .moveToPoint: point = value.points[0]; return
-      case .addLineToPoint: end = value.points[0]; controls = [point]
-      case .addQuadCurveToPoint: end = value.points[1]; controls = [value.points[0], point]
-      case .addCurveToPoint: end = value.points[2]; controls = [value.points[1], value.points[0], point]
-      default: return
-      }
-      for control in controls {
-        delta = CGVector(dx: end.x - control.x, dy: end.y - control.y)
-        if hypot(delta.dx, delta.dy) > 1e-12 { break }
-      }
-      point = end
-    }
-    let length = hypot(delta.dx, delta.dy)
-    guard length > 1e-12 else { return nil }
-    return Sample(point: point, direction: CGVector(dx: delta.dx / length, dy: delta.dy / length))
+    GalaxySSIHealthAtlasFunctionPath.sample(route, position: position, width: 1254, height: 1254)
   }
   private func legend(in context: GraphicsContext, center: Double, text: String, color: Color) {
     let width = (text as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: 11.5)]).width

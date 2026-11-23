@@ -1054,6 +1054,42 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       XCTAssertNil(GalaxySSIHealthAtlasBreathingView.sample(route, position: .nan))
     }
   }
+  func testHearingStagesPreserveOscillationPacketAndMeshExtents() throws {
+    typealias Motion = GalaxySSIHealthAtlasHearingMotion
+    XCTAssertEqual(Motion.Stage.allCases.count, 5)
+    XCTAssertEqual(Motion.oscillation(1.0 / 12), 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion.oscillation(1.0 / 4), -1, accuracy: 1e-12)
+    XCTAssertEqual(Motion.packet(1, progress: 0), 0)
+    XCTAssertEqual(Motion.packet(0.46, progress: 0.5), Motion.oscillation(0.5, delay: 0.46 * 2.8), accuracy: 1e-12)
+    XCTAssertEqual(Motion.influence(0.5, center: 0.5, radius: 0.2), 1)
+    XCTAssertEqual(Motion.influence(1, center: 0.5, radius: 0.2), 0)
+    XCTAssertEqual(Motion.influence(.nan, center: 0.5, radius: 0.2), 0)
+    XCTAssertEqual(Motion.oscillation(.infinity), 0)
+    let stillEar = Motion(chapter: 1, fraction: 0), stillHair = Motion(chapter: 3, fraction: 0)
+    XCTAssertEqual(stillEar.mesh.count, 841)
+    XCTAssertEqual(stillEar.mesh.first, CGPoint(x: 16, y: 58))
+    XCTAssertEqual(stillEar.mesh.last, CGPoint(x: 328, y: 266))
+    XCTAssertEqual(stillHair.mesh.first, CGPoint(x: 45, y: 0))
+    XCTAssertEqual(stillHair.mesh.last, CGPoint(x: 267, y: 333))
+    let movingEar = Motion(chapter: 1, fraction: 1.0 / 12), movingHair = Motion(chapter: 3, fraction: 1.0 / 12)
+    XCTAssertGreaterThan(movingEar.mesh[14 * 29 + 12].x, stillEar.mesh[14 * 29 + 12].x)
+    XCTAssertGreaterThan(movingHair.mesh[4 * 29 + 13].x, stillHair.mesh[4 * 29 + 13].x)
+    for (moving, still) in zip(movingHair.mesh, stillHair.mesh) { XCTAssertEqual(moving.y, still.y) }
+    XCTAssertEqual(Motion(chapter: 0, fraction: 0).soundDistances.count, 6)
+    XCTAssertEqual(Motion(chapter: 4, fraction: 0).nervePositions.count, 4)
+    XCTAssertNil(Motion(chapter: 0, fraction: 0).meshAsset)
+    XCTAssertNil(Motion(chapter: 2, fraction: 0).meshAsset)
+    XCTAssertNil(Motion(chapter: 4, fraction: 0).meshAsset)
+    XCTAssertEqual(Motion(chapter: -1, fraction: .nan).stage, .sound)
+    XCTAssertEqual(Motion(chapter: -1, fraction: .nan).fraction, 0)
+    for route in [GalaxySSIHealthAtlasHearingView.cochlea, GalaxySSIHealthAtlasHearingView.nerveRoute] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 344, height: 344))
+        XCTAssertTrue((0...344).contains(sample.point.x) && (0...344).contains(sample.point.y))
+        XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
