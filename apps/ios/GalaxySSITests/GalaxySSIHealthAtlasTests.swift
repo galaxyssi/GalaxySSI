@@ -241,6 +241,31 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(Germline.counts("cell-granulosa-cell", stage: 1))
     XCTAssertNil(Germline.counts("cell-spermatocyte", stage: 4))
     XCTAssertNil(Germline.counts("cell-spermatocyte", stage: -1))
+    XCTAssertNil(Germline.Counts(sets: 3, dnaContent: 3, target: .cell))
+    XCTAssertNil(Germline.Counts(sets: 1, dnaContent: 4, target: .cell))
+  }
+
+  func testReproductiveCatalogueAndSelectedGermlineStageRestoreTogether() throws {
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    XCTAssertEqual(atlas.entries.count, 287)
+    XCTAssertEqual(atlas.mechanisms.count, 75)
+    let base = try catalogue()
+    XCTAssertEqual(base.entries.count, 278); XCTAssertEqual(base.mechanisms.count, 20)
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.ReproductivePack.read(bundle: Bundle(for: GalaxySSIStore.self)))
+    for mechanism in pack.mechanisms where mechanism.kind == "cell" {
+      XCTAssertEqual(atlas.entry(mechanism.id)?.kind, .cell)
+      XCTAssertEqual(atlas.entry(mechanism.id)?.mechanism, mechanism.id)
+      XCTAssertEqual(mechanism.stages.count, 4)
+    }
+    let id = "cell-oocyte-or-ovum", state = GalaxySSIHealthAtlasState()
+    var selection = GalaxySSIHealthAtlasState.Selection()
+    selection.tab = .simulation; selection.simulation.phase = 0.75
+    state.entries[id] = selection
+    let restored = GalaxySSIHealthAtlasState()
+    restored.restore(state.serialized, atlas: atlas)
+    let stage = try XCTUnwrap(restored.entries[id]?.simulation.stage)
+    XCTAssertEqual(stage, 3)
+    XCTAssertEqual(GalaxySSIHealthAtlasGermline.counts(id, stage: stage)?.target, .combined)
   }
 
   func testMetricAssociationsDoNotInventMissingOrganFunctionReadings() {

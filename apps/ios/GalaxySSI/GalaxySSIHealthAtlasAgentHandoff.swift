@@ -88,6 +88,10 @@ enum GalaxySSIHealthAtlasQuestion {
     #else
     let hasAssociatedPhysiology = false
     #endif
+    if ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
+       let counts = GalaxySSIHealthAtlasGermline.counts(entry.id, stage: selection.simulation.stage) {
+      prompt += "\n" + GalaxySSIHealthAtlasGermline.context(counts, language: language)
+    }
     if research {
       switch selection.research {
       case .physiology:

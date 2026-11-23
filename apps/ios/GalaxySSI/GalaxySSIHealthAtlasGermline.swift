@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import SwiftUI
 
 /// Stage-end teaching counts, not division intermediates, genetic testing or patient inference.
 enum GalaxySSIHealthAtlasGermline {
@@ -8,6 +9,10 @@ enum GalaxySSIHealthAtlasGermline {
     let sets: Int
     let dnaContent: Int
     let target: Target
+    init?(sets: Int, dnaContent: Int, target: Target) {
+      guard (1...2).contains(sets), dnaContent == sets || dnaContent == 2 * sets else { return nil }
+      self.sets = sets; self.dnaContent = dnaContent; self.target = target
+    }
     var chromosomes: Int { 23 * sets }
     var dnaMolecules: Int { 23 * dnaContent }
     var duplicated: Bool { dnaContent == 2 * sets }
@@ -30,14 +35,58 @@ enum GalaxySSIHealthAtlasGermline {
     }
   }
   static func numbers(_ counts: Counts, language: String) -> String {
-    String(format: GalaxySSIHealthAtlasText.get("health_atlas_germline_counts", language),
+    numbers(counts, text: { GalaxySSIHealthAtlasText.get("health_atlas_" + $0, language) })
+  }
+  static func numbers(_ counts: Counts, text t: (String) -> String) -> String {
+    String(format: t("germline_counts"),
       Int64(counts.chromosomes), Int64(counts.dnaMolecules), counts.sets == 1 ? "n" : "2n", String(counts.dnaContent) + "C")
   }
   static func context(_ counts: Counts, language: String) -> String {
-    ["health_atlas_germline_title", "health_atlas_germline_" + counts.target.rawValue]
-      .map { GalaxySSIHealthAtlasText.get($0, language) }.joined(separator: "\n") + "\n" +
-      numbers(counts, language: language) + "\n" +
-      GalaxySSIHealthAtlasText.get("health_atlas_germline_scope", language) + "\n" + source.absoluteString
+    context(counts, text: { GalaxySSIHealthAtlasText.get("health_atlas_" + $0, language) })
+  }
+  static func context(_ counts: Counts, text t: (String) -> String) -> String {
+    [t("germline_title"), t("germline_" + counts.target.rawValue), numbers(counts, text: t),
+      t("germline_scope"), source.absoluteString].joined(separator: "\n")
+  }
+}
+
+struct GalaxySSIHealthAtlasGermlineView: View {
+  let counts: GalaxySSIHealthAtlasGermline.Counts
+  let language: String
+  private func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_germline_" + key, language) }
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(t("title")).font(.headline)
+      Text(t(counts.target.rawValue)).font(.subheadline).bold().fixedSize(horizontal: false, vertical: true)
+        .accessibilityIdentifier("atlas-germline-target")
+      Text(GalaxySSIHealthAtlasGermline.numbers(counts, language: language)).font(.headline)
+        .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("atlas-germline-numbers")
+      GeometryReader { geometry in
+        let radius = min(geometry.size.width * 0.44, geometry.size.height * 0.43)
+        let cx = geometry.size.width / 2, cy = geometry.size.height / 2
+        ZStack {
+          Circle().stroke(Color.secondary, lineWidth: 2).frame(width: radius * 2, height: radius * 2).position(x: cx, y: cy)
+          ForEach(0..<(counts.sets * 2), id: \.self) { index in
+            let x = cx + (CGFloat(index) - CGFloat(counts.sets * 2 - 1) / 2) * radius * 0.42
+            let half = radius * 0.28
+            Path { path in
+              if counts.duplicated {
+                path.move(to: CGPoint(x: x - half * 0.35, y: cy - half))
+                path.addLine(to: CGPoint(x: x + half * 0.35, y: cy + half))
+                path.move(to: CGPoint(x: x + half * 0.35, y: cy - half))
+                path.addLine(to: CGPoint(x: x - half * 0.35, y: cy + half))
+              } else {
+                path.move(to: CGPoint(x: x, y: cy - half)); path.addLine(to: CGPoint(x: x, y: cy + half))
+              }
+            }.stroke(GalaxySSIHealthTheme.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+          }
+        }
+      }.frame(height: 150).accessibilityHidden(true)
+      Text(t("symbols")).font(.footnote).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+      Text(t("timing")).font(.footnote).fixedSize(horizontal: false, vertical: true)
+      Text(t("scope")).font(.footnote).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+      Link(t("source"), destination: GalaxySSIHealthAtlasGermline.source).frame(minHeight: 44)
+    }.accessibilityIdentifier("atlas-germline")
   }
 }
 
