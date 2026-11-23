@@ -96,7 +96,7 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
       addSubview(guides)
       image.isAccessibilityElement = false; backgroundColor = .systemBackground
     }
-    required init?(coder: NSCoder) { nil }
+    required init?(coder: NSCoder) { return nil }
     func configure(_ input: GalaxySSIAtlasLabeledScroll) {
       let previous = self.input
       self.input = input
@@ -142,7 +142,7 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
     func requiredHeight(width: CGFloat) -> CGFloat {
       let column = columnWidth(width)
       let labels = buttons.reduce(CGFloat(16)) { $0 + labelHeight($1, width: column) + 8 }
-      return ceil(max(300, labels, (width - column - 12) / CGFloat(input?.aspectRatio ?? 1)))
+      return ceil(max(300, max(labels, (width - column - 12) / CGFloat(input?.aspectRatio ?? 1))))
     }
     override func layoutSubviews() {
       super.layoutSubviews()
