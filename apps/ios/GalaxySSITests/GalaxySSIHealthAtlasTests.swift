@@ -2096,6 +2096,55 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testLarynxSharedGapAndRecoveryTiming() {
+    typealias Motion = GalaxySSIHealthAtlasLarynxMotion
+    for step in 0...4 {
+      for sample in 0...300 {
+        let frame = Motion(step: step, fraction: Double(sample) / 300)
+        XCTAssertTrue(frame.gap.isFinite)
+        XCTAssertGreaterThanOrEqual(frame.gap, 1 - 1e-10)
+        XCTAssertLessThanOrEqual(frame.gap, 43 + 1e-10)
+        XCTAssertGreaterThanOrEqual(frame.above, 0)
+        XCTAssertLessThanOrEqual(frame.above, 1)
+      }
+    }
+    for step in 0...3 {
+      XCTAssertEqual(Motion(step: step, fraction: 1).gap, Motion(step: step + 1, fraction: 0).gap, accuracy: 1e-10)
+    }
+    XCTAssertEqual(Motion(step: 3, fraction: 0).gap, 1, accuracy: 1e-10)
+    XCTAssertEqual(Motion(step: 3, fraction: 1.0 / 6).gap, 12, accuracy: 1e-10)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.4).vibration, 0, accuracy: 1e-10)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.4).breath, 0, accuracy: 1e-10)
+    XCTAssertGreaterThan(Motion(step: 4, fraction: 0.7).breath, 0)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).gap, 36, accuracy: 1e-10)
+    XCTAssertEqual(Motion.unit(-0.25), 0.75, accuracy: 1e-10)
+    XCTAssertEqual(Motion(step: 2, fraction: .nan).gap, 4)
+  }
+
+  func testLarynxFlowAndAcousticFrontsStayInsideSourceLumen() {
+    typealias Motion = GalaxySSIHealthAtlasLarynxMotion
+    for up in [true, false] {
+      XCTAssertNil(Motion.airflow(travel: 0, index: 0, up: up, below: 1, above: 1))
+      for sample in 0...300 {
+        for index in 0...4 {
+          guard let flow = Motion.airflow(travel: Double(sample) / 300, index: index, up: up, below: 1, above: 0.5) else { continue }
+          XCTAssertTrue((175...185).contains(flow.x))
+          XCTAssertTrue((249...337).contains(flow.y))
+          XCTAssertTrue((0...255).contains(flow.alpha))
+          XCTAssertEqual(flow.direction, up ? -1 : 1)
+        }
+      }
+    }
+    for sample in 0...300 {
+      for index in 0...1 {
+        let pulse = Motion.acoustic(cycle: Double(sample) / 100, index: index, strength: 1)
+        XCTAssertTrue((249...270).contains(pulse.y))
+        XCTAssertTrue((4...28).contains(pulse.halfWidth))
+        XCTAssertTrue((0...255).contains(pulse.alpha))
+      }
+    }
+  }
+
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
