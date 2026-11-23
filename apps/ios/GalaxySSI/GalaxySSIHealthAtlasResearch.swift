@@ -18,13 +18,19 @@ struct GalaxySSIHealthAtlasResearch: View {
         switch selection.wrappedValue.research {
         case .physiology:
           GalaxySSIHealthAtlasSimulationPanel(entry: entry, model: atlas.model(entry), simulation: selection.simulation,
-            physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented)
+            physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented,
+            destination: { id in
+              if let target = atlas.entry(id), depth < 32 {
+                return AnyView(GalaxySSIHealthAtlasDetail(atlas: atlas, entry: target, state: state, records: records, depth: depth + 1))
+              }
+              return AnyView(EmptyView())
+            })
         case .drugs:
           drugs
         case .aging:
           aging
         }
-        Link(t("structure_source"), destination: atlas.model(entry).source)
+        Link(t(atlas.model(entry).reference == nil ? "structure_source" : "reference_pubmed"), destination: atlas.model(entry).source)
       }.padding()
     }
     .navigationTitle(t("research")).navigationBarTitleDisplayMode(.inline).galaxySSIHealthTheme()

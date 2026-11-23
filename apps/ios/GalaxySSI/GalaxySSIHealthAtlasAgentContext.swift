@@ -55,6 +55,14 @@ enum GalaxySSIHealthAtlasAgentContext {
     if screen.includesPhysiology {
       if let simulation, simulation.entryID == anatomy.id {
         lines.append(t("teaching_note"))
+        if GalaxySSIHealthAtlasGasExchange.supports(anatomy.id) {
+          lines.append(t("gas_scope"))
+          lines += GalaxySSIHealthAtlasGasExchange.gradients.map {
+            String(format: t("gas_summary"), t("gas_" + $0.gas.rawValue), Int64($0.alveolar), Int64($0.incomingBlood),
+              t($0.towardBlood ? "gas_to_blood" : "gas_to_air"))
+          }
+          lines.append(GalaxySSIHealthAtlasGasExchange.source.absoluteString)
+        }
         lines.append(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4), anatomy.stages[simulation.stage]))
         if ["heart", "cardio"].contains(anatomy.id) {
           lines.append(t("heart_rate") + ": " + number(simulation.first) + " bpm")

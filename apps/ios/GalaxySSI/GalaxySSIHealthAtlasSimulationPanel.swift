@@ -6,6 +6,8 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   @Binding var simulation: GalaxySSIHealthAtlasSimulation
   @Binding var physiologyInputs: [Int]?
   @Binding var previewPresented: Bool
+  let destination: (String) -> AnyView
+  @State private var structure: String?
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -14,6 +16,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
   private var cardiac: Bool { ["cardio", "heart"].contains(entry.id) }
   private var lung: Bool { ["lungs", "respiratory"].contains(entry.id) }
+  private var gasExchange: Bool { GalaxySSIHealthAtlasGasExchange.supports(entry.id) }
   private var hasPhysiology: Bool {
     #if GALAXYSSI_ATLAS_PHYSIOLOGY
     return GalaxySSIHealthAtlasPhysiology.Kind.forEntry(entry.id) != nil
@@ -25,8 +28,10 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
+      if !gasExchange {
       GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
         legacyVentilation: lung ? [simulation.first, simulation.second] : nil)
+      }
       #endif
       Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(model.title, language))).font(.headline)
       Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
@@ -35,6 +40,13 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         Text(note).font(.footnote).foregroundColor(.secondary)
       }
       #endif
+      if gasExchange {
+        GalaxySSIHealthAtlasGasExchangeView(phase: simulation.phase, language: language, stages: model.stages,
+          selected: { playing = false; simulation.selectStage($0) },
+          open: { playing = false; structure = $0 })
+        Text(t("gas_scope")).font(.footnote).foregroundColor(.secondary)
+        Link(t("gas_reference"), destination: GalaxySSIHealthAtlasGasExchange.source)
+      } else {
       LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
         ForEach([0, 1, 3, 2], id: \.self) { stage in
           Button { playing = false; simulation.selectStage(stage) } label: {
@@ -51,11 +63,18 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
             .accessibilityIdentifier("health-atlas-stage-" + entry.id + "-" + String(stage))
         }
       }
+      }
       ProgressView(value: simulation.phase).accessibilityLabel(t("phase"))
       Text(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4),
         GalaxySSIHealthAtlasText.get(model.stages[simulation.stage], language)))
       Slider(value: $simulation.phase, in: 0...1, onEditingChanged: { _ in playing = false })
         .accessibilityLabel(t("phase"))
+      #if GALAXYSSI_ATLAS_PHYSIOLOGY
+      if gasExchange {
+        GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
+          legacyVentilation: entry.id == "alveoli" ? [simulation.first, simulation.second] : nil)
+      }
+      #endif
       HStack {
         control("backward.step", "previous_step") { playing = false; simulation.selectStage(max(0, simulation.stage - 1)) }
         control(playing ? "pause.fill" : "play.fill", playing ? "pause" : "play") {
@@ -82,6 +101,9 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         Text(t(cardiac ? "cardiac_formula" : "ventilation_formula")).font(.footnote)
       } else if !hasPhysiology { Text(t("qualitative_note")).font(.footnote) }
     }
+    .background(NavigationLink(isActive: Binding(get: { structure != nil }, set: { if !$0 { structure = nil } })) {
+      if let structure { destination(structure) }
+    } label: { EmptyView() })
     .onReceive(timer) { now in
       guard playing, scene == .active, !reduceMotion, !previewPresented else { return }
       defer { lastTick = now }
