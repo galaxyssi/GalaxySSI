@@ -149,6 +149,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     var viewKey: String? = nil
     var selectorLabel: String? = nil
     var features: [Feature]? = nil
+    var splitCallouts: Bool = false
     var annotations: [Feature] { features ?? [] }
     var hasLabels: Bool { !markers.isEmpty || !annotations.isEmpty }
   }

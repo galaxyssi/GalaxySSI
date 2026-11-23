@@ -1098,7 +1098,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthAtlasSectionLesson.forEntry("cell-enterocyte"))
   }
 
-  func testEditorialArtworkRetainsResolutionTransparencyAndAllOneHundredFiveHotspots() throws {
+  func testEditorialArtworkRetainsResolutionTransparencyAndAllOneHundredEightHotspots() throws {
     let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
     let frames: [(String?, Int, Int)] = [(nil, 1024, 1536), ("heart", 1086, 1448),
       ("lungs", 1254, 1254), ("liver", 1254, 1254), ("kidneys", 1254, 1254),
@@ -1106,7 +1106,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       ("nephron", 1173, 1341), ("alveoli", 1254, 1254), ("cell-pancreatic-beta-cell", 1254, 1254),
       ("cell-erythrocyte", 1254, 1254), ("cell-neuron", 1024, 1536), ("skin", 1536, 1024),
       ("sensory", 1199, 1312), ("immune", 1312, 1199), ("respiratory", 1145, 1374),
-      ("digestive", 1246, 1263), ("endocrine", 1312, 1199), ("ear", 1536, 1024)]
+      ("digestive", 1246, 1263), ("endocrine", 1312, 1199), ("ear", 1536, 1024), ("eye", 1536, 1024)]
     let samples: [String: [CGPoint]] = [
       "pancreas": [CGPoint(x: 0.90, y: 0.72), CGPoint(x: 0.62, y: 0.30)],
       "urinary": [CGPoint(x: 0.50, y: 0.50), CGPoint(x: 0.66, y: 0.53)],
@@ -1136,7 +1136,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       let plate = try XCTUnwrap(atlas.plate(for: owner, viewKey: key))
       plates.append((plate, key == "skeletal-posterior" ? 887 : 1024, key == "skeletal-posterior" ? 1774 : 1536))
     }
-    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 25)
+    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 26)
     var count = 0
     for (plate, width, height) in plates {
       let image = try XCTUnwrap(UIImage(named: plate.asset, in: bundle, compatibleWith: nil)?.cgImage)
@@ -1178,7 +1178,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(try alpha(image, Int(sample[1].x * CGFloat(width)), Int(sample[1].y * CGFloat(height))), 200)
       }
     }
-    XCTAssertEqual(count, 105)
+    XCTAssertEqual(count, 108)
     XCTAssertTrue(try XCTUnwrap(atlas.plate(for: nil)).markers.contains { $0.id == "lungs" })
   }
 
@@ -1254,6 +1254,104 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(restored.binding(retinaEntry).wrappedValue.simulation.stage, 2)
     XCTAssertEqual(restored.binding(earEntry).wrappedValue.physiologyInputs, [65, 40, 150])
     XCTAssertNil(Lesson.forEntry("eye")); XCTAssertNil(Lesson.forEntry("cell-cochlear-hair-cell"))
+  }
+
+  func testSplitCalloutRailsMeasureRealLocalizedTextAndKeepLeadersInTheirHalf() throws {
+    let atlas = try completeCatalogue()
+    for id in ["eye", "ear", "sensory", "immune", "endocrine"] {
+      let plate = try XCTUnwrap(atlas.plate(for: id))
+      XCTAssertTrue(plate.splitCallouts)
+      for language in ["en", "zh-Hans"] {
+        let names = try plate.markers.map { marker in
+          GalaxySSIHealthAtlasText.get(try XCTUnwrap(atlas.entry(marker.id)).name, language)
+        }
+        for category in [UIContentSizeCategory.large, .accessibilityExtraExtraExtraLarge] {
+          let traits = UITraitCollection(preferredContentSizeCategory: category)
+          let font = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits)
+          let labels = names.map { name -> UILabel in
+            let label = UILabel(); label.text = name; label.font = font
+            label.numberOfLines = 0; label.lineBreakMode = .byWordWrapping; return label
+          }
+          for width in [CGFloat(320), 390, 768] {
+            let plan = try XCTUnwrap(GalaxySSIHealthAtlasCalloutLayout.make(width: width, aspectRatio: plate.aspectRatio,
+              anchors: plate.markers.map { CGPoint(x: $0.x, y: $0.y) }, splitRequested: plate.splitCallouts,
+              accessibility: category.isAccessibilityCategory,
+              preferredWidths: names.map { ($0 as NSString).size(withAttributes: [.font: font]).width + 6 },
+              measureHeight: { labels[$0].sizeThatFits(CGSize(width: max(1, $1 - 6), height: .greatestFiniteMagnitude)).height + 16 }))
+            XCTAssertTrue(plan.split); XCTAssertFalse(plan.left.isEmpty); XCTAssertFalse(plan.right.isEmpty)
+            XCTAssertGreaterThanOrEqual(plan.imageRect.width, width / 2)
+            XCTAssertLessThanOrEqual(plan.leftWidth, floor(width * 0.24))
+            XCTAssertLessThanOrEqual(plan.rightWidth, floor(width * 0.24))
+            for rail in [plan.left, plan.right] {
+              var bottom: CGFloat = 0
+              for index in rail {
+                let frame = plan.labelFrames[index]
+                XCTAssertGreaterThanOrEqual(frame.minY, bottom)
+                XCTAssertGreaterThanOrEqual(frame.height, 48); XCTAssertGreaterThanOrEqual(frame.width, 48)
+                XCTAssertGreaterThanOrEqual(frame.minX, 0); XCTAssertLessThanOrEqual(frame.maxX, width)
+                XCTAssertLessThanOrEqual(frame.maxY, plan.height)
+                XCTAssertGreaterThanOrEqual(frame.height, labels[index].sizeThatFits(CGSize(width: frame.width - 6, height: .greatestFiniteMagnitude)).height + 16)
+                bottom = frame.maxY + 8
+              }
+            }
+            let points = plate.markers.map { CGPoint(x: plan.imageRect.minX + plan.imageRect.width * CGFloat($0.x),
+              y: plan.imageRect.minY + plan.imageRect.height * CGFloat($0.y)) }
+            for (index, start) in points.enumerated() {
+              let left = plan.left.contains(index), frame = plan.labelFrames[index]
+              let end = CGPoint(x: left ? frame.maxX : frame.minX, y: frame.midY)
+              let obstacles = points.enumerated().filter { $0.offset != index }.map(\.element)
+              let route = GalaxySSIHealthAtlasLeaderRoutes.route(start: start, end: end, obstacles: obstacles, clearance: 8,
+                minX: left ? -.infinity : plan.imageRect.midX, maxX: left ? plan.imageRect.midX : .infinity)
+              XCTAssertGreaterThanOrEqual(route.count, 2)
+              XCTAssertEqual(route.first, start); XCTAssertEqual(route.last, end)
+              XCTAssertTrue(route.allSatisfy { left ? $0.x <= plan.imageRect.midX : $0.x >= plan.imageRect.midX })
+              for (a, b) in zip(route, route.dropFirst()) {
+                for obstacle in obstacles {
+                  XCTAssertGreaterThanOrEqual(GalaxySSIHealthAtlasLeaderRoutes.segmentDistance(obstacle, start: a, end: b), 8 - 1e-6)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    XCTAssertTrue(GalaxySSIHealthAtlasRetinaPath.eyeContext.splitCallouts)
+    for id in ["heart", "skin", "respiratory", "digestive", "retina"] {
+      XCTAssertFalse(try XCTUnwrap(atlas.plate(for: id)).splitCallouts)
+    }
+  }
+
+  func testSplitCalloutFallbackAndBoundedLeaderValidation() throws {
+    let anchors = [CGPoint(x: 0.2, y: 0.2), CGPoint(x: 0.3, y: 0.8)]
+    let plan = try XCTUnwrap(GalaxySSIHealthAtlasCalloutLayout.make(width: 320, aspectRatio: 1,
+      anchors: anchors, splitRequested: true, accessibility: false, preferredWidths: [50, 70],
+      measureHeight: { _, _ in 48 }))
+    XCTAssertFalse(plan.split); XCTAssertTrue(plan.left.isEmpty); XCTAssertEqual(plan.right, [0, 1])
+    XCTAssertEqual(plan.rightWidth, 320 * 0.36, accuracy: 1e-6)
+    let independent = try XCTUnwrap(GalaxySSIHealthAtlasCalloutLayout.make(width: 400, aspectRatio: 1.5,
+      anchors: [CGPoint(x: 0.2, y: 0.5), CGPoint(x: 0.8, y: 0.5)], splitRequested: true, accessibility: false,
+      preferredWidths: [48, 72], measureHeight: { _, _ in 48 }))
+    XCTAssertEqual(independent.leftWidth, 48); XCTAssertEqual(independent.rightWidth, 72)
+    XCTAssertNil(GalaxySSIHealthAtlasCalloutLayout.make(width: .nan, aspectRatio: 1,
+      anchors: anchors, splitRequested: true, accessibility: false, preferredWidths: [50, 70], measureHeight: { _, _ in 48 }))
+    XCTAssertNil(GalaxySSIHealthAtlasCalloutLayout.make(width: 320, aspectRatio: 1,
+      anchors: anchors, splitRequested: true, accessibility: false, preferredWidths: [50, 70], measureHeight: { _, _ in .nan }))
+    for scale in [CGFloat(0.5), 1, 2, 3] {
+      let start = CGPoint(x: 60 * scale, y: 0), end = CGPoint(x: 110 * scale, y: 0)
+      let route = GalaxySSIHealthAtlasLeaderRoutes.route(start: start, end: end,
+        obstacles: [CGPoint(x: 80 * scale, y: 0)], clearance: 8 * scale, minX: 55 * scale, maxX: 120 * scale)
+      XCTAssertEqual(route.first, start); XCTAssertEqual(route.last, end); XCTAssertGreaterThan(route.count, 2)
+      XCTAssertTrue(route.allSatisfy { (55 * scale...120 * scale).contains($0.x) })
+    }
+    XCTAssertTrue(GalaxySSIHealthAtlasLeaderRoutes.route(start: .zero, end: CGPoint(x: 1, y: 1),
+      obstacles: [], clearance: 8, minX: 2).isEmpty)
+    XCTAssertTrue(GalaxySSIHealthAtlasLeaderRoutes.route(start: .zero, end: CGPoint(x: 1, y: 1),
+      obstacles: [], clearance: 8, minX: .nan).isEmpty)
+    var object: [String: Any] = ["id": "fixture", "asset": "Fixture", "owner": "eye", "viewLabel": "fixture",
+      "entryIDs": ["eye"], "aspectRatio": 1, "markers": []]
+    XCTAssertFalse(try JSONDecoder().decode(GalaxySSIHealthAtlas.Plate.self, from: JSONSerialization.data(withJSONObject: object)).splitCallouts)
+    object["splitCallouts"] = true
+    XCTAssertTrue(try JSONDecoder().decode(GalaxySSIHealthAtlas.Plate.self, from: JSONSerialization.data(withJSONObject: object)).splitCallouts)
   }
 
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {

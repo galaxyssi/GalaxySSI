@@ -125,7 +125,7 @@ struct GalaxySSIHealthAtlasArtwork: View {
   private func canvas(_ art: String) -> some View {
     if layers, !spots.isEmpty {
       return AnyView(GalaxySSIHealthAtlasLabeledArtwork(asset: art, aspectRatio: plate?.aspectRatio ?? 1, zoom: $zoom,
-        currentID: entry?.id, spots: spots, labels: labels, featureIDs: featureIDs, onSelect: choose))
+        currentID: entry?.id, spots: spots, labels: labels, featureIDs: featureIDs, splitCallouts: plate?.splitCallouts ?? false, onSelect: choose))
     }
     return AnyView(GalaxySSIHealthAtlasZoomCanvas(asset: art, zoom: $zoom, currentID: entry?.id, spots: layers ? spots : [],
       labels: labels, onSelect: choose)

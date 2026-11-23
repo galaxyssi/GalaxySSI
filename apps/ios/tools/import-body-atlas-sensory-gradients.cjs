@@ -10,12 +10,11 @@ const frames = retinal ? [
   ["sensory_cone", "HealthAtlasSensoryCone", "cell.pdf"], ["sensory_ganglion", "HealthAtlasSensoryGanglion", "cell.pdf"],
   ["sensory_rod", "HealthAtlasSensoryRod", "cell.pdf"], ["sensory_rpe", "HealthAtlasSensoryRpe", "cell.pdf"]
 ] : [
-  ["eye_section", "HealthAtlasEyeSection", "eye.pdf"],
   ["sensory_cochlear_hair", "HealthAtlasSensoryCochlearHair", "cell.pdf"],
   ["sensory_retina_section", "HealthAtlasSensoryRetinaSection", "cell.pdf"]
 ];
-// Keep retained #4358 PDF resource IDs stable after retiring the ear's four gradients.
-const gradientOffset = retinal ? 0 : 4;
+// Keep retained #4358 PDF resource IDs stable after retiring the ear's four and eye's three gradients.
+const gradientOffset = retinal ? 0 : 7;
 function components(value) {
   if (!/^#[0-9a-f]{6}$/i.test(value)) throw Error("Unsupported colour " + value);
   return [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16) / 255);
@@ -76,6 +75,6 @@ function components(value) {
     }
     fs.writeFileSync(path.join(assets, asset + ".imageset", filename), await pdf.save());
   }
-  if (paths !== (retinal ? 49 : 46) || gradients - gradientOffset !== (retinal ? 17 : 7)) throw Error("Unexpected source geometry: " + paths + "/" + gradients);
+  if (paths !== (retinal ? 49 : 30) || gradients - gradientOffset !== (retinal ? 17 : 4)) throw Error("Unexpected source geometry: " + paths + "/" + gradients);
   console.log("Imported Android #" + (retinal ? 4359 : 4358) + ": " + paths + " original paths and " + (gradients - gradientOffset) + " native gradients across " + frames.length + " retained vector assets.");
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -62,7 +62,7 @@ extension GalaxySSIHealthAtlas.Plate {
     return .anatomy(id)
   }
   private enum CodingKeys: String, CodingKey {
-    case id, asset, owner, viewLabel, entryIDs, aspectRatio, markers, source, viewKey, selectorLabel, features
+    case id, asset, owner, viewLabel, entryIDs, aspectRatio, markers, source, viewKey, selectorLabel, features, splitCallouts
   }
   init(from decoder: Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -71,7 +71,8 @@ extension GalaxySSIHealthAtlas.Plate {
       entryIDs: try values.decode([String].self, forKey: .entryIDs), aspectRatio: try values.decode(Double.self, forKey: .aspectRatio),
       markers: try values.decode([GalaxySSIHealthAtlas.Marker].self, forKey: .markers), source: try values.decodeIfPresent(URL.self, forKey: .source),
       viewKey: try values.decodeIfPresent(String.self, forKey: .viewKey), selectorLabel: try values.decodeIfPresent(String.self, forKey: .selectorLabel),
-      features: try values.decodeIfPresent([GalaxySSIHealthAtlas.Feature].self, forKey: .features))
+      features: try values.decodeIfPresent([GalaxySSIHealthAtlas.Feature].self, forKey: .features),
+      splitCallouts: try values.decodeIfPresent(Bool.self, forKey: .splitCallouts) ?? false)
     let points = markers + annotations.map(\.marker), ids = points.map(\.id)
     guard Set(ids).count == ids.count, points.count <= 64, points.allSatisfy({
       !$0.id.isEmpty && $0.x.isFinite && $0.y.isFinite && (0...1).contains($0.x) && (0...1).contains($0.y)

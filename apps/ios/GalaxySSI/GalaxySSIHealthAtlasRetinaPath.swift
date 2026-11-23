@@ -18,6 +18,6 @@ enum GalaxySSIHealthAtlasRetinaPath {
     let eye = GalaxySSIHealthAtlasEyeOptics.plate
     return .init(id: "retina-eye-context", asset: eye.asset, owner: eye.owner, viewLabel: eye.viewLabel,
       entryIDs: eye.entryIDs, aspectRatio: eye.aspectRatio, markers: eye.markers, source: eye.source,
-      viewKey: "retina-eye-context", selectorLabel: "health_atlas_sensory_retinal_eye_location")
+      viewKey: "retina-eye-context", selectorLabel: "health_atlas_sensory_retinal_eye_location", splitCallouts: eye.splitCallouts)
   }
 }

@@ -40,7 +40,8 @@
           "y": 0.73
         }
       ],
-      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception"
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception",
+      "splitCallouts": true
     },
     {
       "id": "respiratory",
@@ -170,7 +171,8 @@
           "y": 0.71
         }
       ],
-      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-1-an-overview-of-the-endocrine-system"
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-1-an-overview-of-the-endocrine-system",
+      "splitCallouts": true
     },
     {
       "id": "immune",
@@ -207,7 +209,8 @@
           "y": 0.76
         }
       ],
-      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems"
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems",
+      "splitCallouts": true
     },
     {
       "id": "skin",
@@ -459,5 +462,9 @@
   "artworkSource": {
     "androidPR": 4357,
     "mergeCommit": "96b3f950e85c839173e473ddb2435fe88f1acb75"
+  },
+  "calloutSource": {
+    "androidPR": 4360,
+    "mergeCommit": "920ede43e4c010f166d459ca2f5e674414766683"
   }
 }

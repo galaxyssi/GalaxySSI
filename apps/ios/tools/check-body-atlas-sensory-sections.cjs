@@ -11,11 +11,10 @@ const frames = retinal ? [
   ["sensory_cone", "HealthAtlasSensoryCone", "cell.pdf"], ["sensory_ganglion", "HealthAtlasSensoryGanglion", "cell.pdf"],
   ["sensory_rod", "HealthAtlasSensoryRod", "cell.pdf"], ["sensory_rpe", "HealthAtlasSensoryRpe", "cell.pdf"]
 ] : [
-  ["eye_section", "HealthAtlasEyeSection", "eye.pdf"],
   ["sensory_cochlear_hair", "HealthAtlasSensoryCochlearHair", "cell.pdf"],
   ["sensory_retina_section", "HealthAtlasSensoryRetinaSection", "cell.pdf"]
 ];
-const gradientOffset = retinal ? 0 : 4;
+const gradientOffset = retinal ? 0 : 7;
 const array = (dict, key) => dict.lookup(PDFName.of(key), PDFArray).asArray().map(n => n.asNumber());
 const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 255);
 (async () => {
@@ -55,7 +54,7 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
     }
     paths += vector.path.length;
   }
-  assert.equal(paths, retinal ? 49 : 46); assert.equal(gradients - gradientOffset, retinal ? 17 : 7);
+  assert.equal(paths, retinal ? 49 : 30); assert.equal(gradients - gradientOffset, retinal ? 17 : 4);
   const kotlin = execFileSync("git", ["show", "b513fe5023b8699e4e64e1f914f09be98ddeeacb:apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSensorySections.kt"], {encoding: "utf8"});
   const swift = fs.readFileSync(path.join(root, "GalaxySSIHealthAtlasSensorySections.swift"), "utf8");
   const expectedRoutes = [...kotlin.matchAll(/atlasSectionTrack\(([\d.]+)f, ([\d.]+)f\) \{([^}]+)\}/g)].map(m => ({
