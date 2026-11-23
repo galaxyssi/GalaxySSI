@@ -39,6 +39,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     var result = try validated(JSONDecoder().decode(Self.self, from: Data(contentsOf: url)))
     guard includeExtensions else { return result }
     if let pack = try ArtworkPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try RenalPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try CellPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     return result
   }
@@ -96,6 +97,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     let entryIDs: [String]
     let aspectRatio: Double
     let markers: [Marker]
+    var source: URL? = nil
   }
   /// An additive, bundled-only asset pack can land independently of the atlas UI.
   struct ArtworkPack: Decodable {
@@ -170,6 +172,7 @@ struct GalaxySSIHealthAtlas: Decodable {
   }
   func plate(for id: String?) -> Plate? {
     if let pack = try? CellPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
+    if let pack = try? RenalPack.bundled.get(), pack.plate.entryIDs.contains(id ?? "") { return pack.plate }
     if let pack = try? ArtworkPack.bundled.get() {
       return pack.plates.first { $0.entryIDs.contains(id ?? "") }
     }

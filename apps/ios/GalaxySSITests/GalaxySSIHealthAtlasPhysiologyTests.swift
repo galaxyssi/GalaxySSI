@@ -4,6 +4,36 @@ import XCTest
 final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
   typealias Model = GalaxySSIHealthAtlasPhysiology
 
+  func testRenalTransfersConserveSoluteAndRejectInvalidInputs() throws {
+    typealias Amounts = GalaxySSIHealthAtlasRenalAmounts
+    let baseline = try XCTUnwrap(Amounts(filtered: 100, reabsorbedPercent: 90, secreted: 10))
+    XCTAssertEqual(baseline.transfers, [100, 90, 10, 20])
+    for filtered in [0.0, 100, 200] {
+      for fraction in [0.0, 50, 100] {
+        let values = try XCTUnwrap(Amounts(filtered: filtered, reabsorbedPercent: fraction, secreted: 30))
+        XCTAssertEqual(values.filtered + values.secreted, values.reabsorbed + values.excreted, accuracy: 1e-9)
+      }
+    }
+    XCTAssertNil(Amounts(filtered: .infinity, reabsorbedPercent: 90, secreted: 10))
+    XCTAssertNil(Amounts(filtered: -1, reabsorbedPercent: 90, secreted: 10))
+    XCTAssertNil(Amounts(filtered: 100, reabsorbedPercent: .nan, secreted: 10))
+    XCTAssertNil(Amounts(filtered: 100, reabsorbedPercent: 101, secreted: 10))
+    XCTAssertNil(Amounts(filtered: 100, reabsorbedPercent: 90, secreted: -1))
+    XCTAssertNil(Amounts(filtered: .greatestFiniteMagnitude, reabsorbedPercent: 0, secreted: .greatestFiniteMagnitude))
+    for id in ["proximal-tubule", "nephron-loop", "distal-tubule"] {
+      XCTAssertEqual(Model.Kind.forEntry(id), .renal)
+    }
+    let model = Model(kind: .renal)
+    XCTAssertEqual(model.renalAmounts, baseline)
+    XCTAssertEqual(model.result, baseline.excreted)
+    XCTAssertEqual(model.companionValue, baseline.reabsorbed)
+    let prompt = GalaxySSIHealthAtlasPhysiologyText.context(model, language: "en")
+    XCTAssertTrue(prompt.contains("Whole-nephron solute balance"))
+    XCTAssertTrue(prompt.contains("Blood → tubular lumen"))
+    XCTAssertTrue(prompt.contains("Tubular lumen → blood"))
+    XCTAssertTrue(prompt.contains("Tubular lumen → urine"))
+  }
+
   func testVentilationSeparatesAlveolarAndTotalFlow() throws {
     let model = Model(kind: .ventilation)
     XCTAssertEqual(model.result, 4.2, accuracy: 1e-9)

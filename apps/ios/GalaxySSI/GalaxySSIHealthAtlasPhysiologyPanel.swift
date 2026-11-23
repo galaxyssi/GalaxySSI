@@ -15,6 +15,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
         Text(t("model_synthetic")).font(.footnote).foregroundColor(.secondary)
         Text(GalaxySSIHealthAtlasPhysiologyText.result(model, language: language)).font(.title3).fixedSize(horizontal: false, vertical: true)
         Text(GalaxySSIHealthAtlasPhysiologyText.companion(model, language: language)).font(.subheadline).foregroundColor(.secondary)
+        if let amounts = model.renalAmounts { renalBalance(amounts) }
         chart(model)
         Text(String(format: t("model_axis"), t(model.kind.inputs[model.kind.axis].key), model.kind.inputs[model.kind.axis].unit))
           .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -52,6 +53,27 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
         let updated = self.model?.changing(index, to: Int(value.rounded())) else { return }
       inputs = updated.inputs
     })
+  }
+  private func renalBalance(_ amounts: GalaxySSIHealthAtlasRenalAmounts) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text(GalaxySSIHealthAtlasText.get("health_atlas_renal_balance_title", language)).font(.headline)
+      ForEach(0..<4) { index in
+        VStack(alignment: .leading, spacing: 4) {
+          Text(GalaxySSIHealthAtlasPhysiologyText.renalTransfer(amounts, index: index, language: language)).bold()
+            .fixedSize(horizontal: false, vertical: true)
+          HStack(alignment: .center, spacing: 8) {
+            Text(GalaxySSIHealthAtlasText.get(index == 3 ? "health_atlas_renal_lumen" : "health_atlas_renal_blood", language))
+              .frame(maxWidth: .infinity)
+            Image(systemName: index == 1 ? "arrow.left" : "arrow.right")
+              .frame(width: 32, height: 32).opacity(amounts.transfers[index] == 0 ? 0.2 : 1).accessibilityHidden(true)
+            Text(GalaxySSIHealthAtlasText.get(index == 3 ? "health_atlas_renal_urine" : "health_atlas_renal_lumen", language))
+              .frame(maxWidth: .infinity)
+          }.font(.caption).accessibilityElement(children: .ignore)
+            .accessibilityLabel(GalaxySSIHealthAtlasPhysiologyText.renalDirection(index, language: language))
+        }.accessibilityIdentifier("atlas-renal-amount-" + String(index))
+      }
+      Text(GalaxySSIHealthAtlasText.get("health_atlas_renal_balance_scope", language)).font(.footnote).foregroundColor(.secondary)
+    }.accessibilityIdentifier("atlas-renal-balance")
   }
   private func chart(_ model: GalaxySSIHealthAtlasPhysiology) -> some View {
     let low = model.kind.bounds.lowerBound, high = model.kind.bounds.upperBound

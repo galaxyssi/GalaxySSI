@@ -7,6 +7,31 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self), includeExtensions: false)
   }
 
+  func testRenalPackPreservesCanonicalStructuresAndOwnedCellProcesses() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self)
+    let base = try catalogue()
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.RenalPack.read(bundle: bundle))
+    let atlas = try pack.applying(to: base, bundle: bundle)
+    XCTAssertEqual(atlas.entries.count, base.entries.count + 4)
+    XCTAssertEqual(atlas.mechanisms.count, base.mechanisms.count + 7)
+    for id in ["bowmans-capsule", "proximal-tubule", "nephron-loop", "distal-tubule"] {
+      XCTAssertEqual(atlas.entry(id)?.kind, .organ)
+      XCTAssertEqual(atlas.entry(id)?.systems, ["urinary"])
+    }
+    for model in pack.mechanisms {
+      XCTAssertEqual(model.kind, "cell")
+      XCTAssertEqual(atlas.entry(model.id)?.mechanism, model.id)
+      XCTAssertEqual(atlas.entry(model.id)?.kind, .cell)
+      XCTAssertEqual(model.stages.count, 4)
+    }
+    XCTAssertEqual(pack.plate.entryIDs.count, 8)
+    XCTAssertEqual(pack.plate.markers.count, 6)
+    XCTAssertEqual(pack.plate.source?.host, "openstax.org")
+    XCTAssertFalse(pack.plate.entryIDs.contains("kidneys"))
+    XCTAssertFalse(pack.plate.entryIDs.contains("cell-podocyte"))
+    XCTAssertThrowsError(try pack.applying(to: atlas, bundle: bundle))
+  }
+
   func testFrozenCatalogueCountsAndCanonicalGraph() throws {
     let atlas = try catalogue()
     XCTAssertEqual(atlas.entries.count, 278)
