@@ -21,7 +21,7 @@
 | Personal values | Existing `GalaxySSIHealthTrendView`: associated metric allowlist, latest actual reading/source, week/calendar-month/calendar-year, chart audit and record navigation; existing consent and scoped Agent analysis flow retained |
 | Ask Agent | `GalaxySSIHealthAtlasAgentHandoff.swift`: public-only preview, new `body-atlas` conversation, owner/conversation-bound in-process capability, one use, 120 seconds, maximum 8 pending |
 | Selection restoration | Bounded SceneStorage of public entry/tab/research/teaching/metric-period/zoom choices only; no observations, files, source records or decrypted chart data are serialized |
-| Languages | Dedicated English and Simplified Chinese `BodyAtlas.strings` tables, 1,026 keys each; Android XML quoting and format placeholders converted |
+| Languages | Dedicated English and Simplified Chinese `BodyAtlas.strings` tables, 1,027 keys each (including the shared plate-context primitive); Android XML quoting and format placeholders converted |
 
 ## Boundaries
 
@@ -46,6 +46,8 @@ The PNGs and JSON are unmodified blobs from the isolated Android commit. Android
 The existing iOS encrypted archive/trend implementation is reused rather than introducing Android's SQLite repository. Atlas filters and Agent disclosure are scoped to selected metrics/periods, but this PR does not claim to replace the underlying encrypted archive with Android's indexed storage engine. Native zoom/fullscreen and navigation follow iOS conventions rather than pixel-identical Android widgets.
 
 ## Additive Resource Contract
+
+The optional Android #4328 system-plate pack supplies macroscopic urinary, gut and pancreas artwork without changing the graph. Its explicit visible-target routes take precedence over earlier plates (in particular ureters); microscopic cells and fragments cannot be routed to these system plates. HTTPS OpenStax references appear on Structure/Function. Shared captions, schematic limitations and optional references also enter the public Agent preview, never the Values flow. The separately gated context module receives a typed illustration descriptor; no personal readings are added. Pack validation and backward-compatible source decoding have XCTest source coverage, not Windows runtime acceptance.
 
 The atlas optionally consumes the bundled `HealthAtlasOrganPlates` data asset. With no pack, the original 278-entry catalogue and three illustrations remain unchanged. A pack can only add uniquely identified entries at existing anchors and prepend explicit relationships; schema, IDs, markers, coordinates, image availability and normalized aspect ratios are validated before opening the atlas. It cannot load a network document or executable code.
 
