@@ -1,14 +1,15 @@
 // Static Android/source parity, not app or XCTest execution.
 const fs = require("node:fs"), cp = require("node:child_process"), path = require("node:path");
 const assert = require("node:assert/strict");
-const root = path.resolve(__dirname, "../../.."), sha = "80d46ca59dd3db25e3e7d266c70f082232f4788b";
+const root = path.resolve(__dirname, "../../.."), sha = "96b3f950e85c839173e473ddb2435fe88f1acb75";
 const prefix = "apps/android/app/src/main/", assets = path.join(root, "apps/ios/GalaxySSI/Assets.xcassets");
 const show = (file) => cp.execFileSync("git", ["show", sha + ":" + file], { cwd: root, maxBuffer: 32000000 });
 const pack = JSON.parse(fs.readFileSync(path.join(assets, "HealthAtlasMusculoskeletal.dataset/content.json")));
 const kotlin = show(prefix + "java/com/galaxyssi/chat/HealthAtlasMusculoskeletalPlates.kt").toString();
 const graph = JSON.parse(show(prefix + "assets/health/body-atlas.json"));
 const entries = new Map(graph.entries.map((entry) => [entry.id, entry]));
-assert.equal(pack.schema, 1); assert.equal(pack.source.mergeCommit, sha); assert.equal(pack.plates.length, 4);
+assert.equal(pack.schema, 1); assert.equal(pack.source.mergeCommit, "80d46ca59dd3db25e3e7d266c70f082232f4788b");
+assert.equal(pack.artworkSource.androidPR, 4357); assert.equal(pack.artworkSource.mergeCommit, sha); assert.equal(pack.plates.length, 4);
 assert.deepEqual(pack.plates.map((p) => p.viewKey), ["skeletal-anterior", "skeletal-posterior", "muscle-anterior", "muscle-posterior"]);
 for (const plate of pack.plates) {
   const start = kotlin.indexOf("HealthAtlasPlate(R.drawable." + plate.viewLabel);
@@ -27,4 +28,4 @@ for (const plate of pack.plates) {
   assert.equal(png.readUInt32BE(16) / png.readUInt32BE(20), plate.aspectRatio);
 }
 assert.equal(pack.plates.flatMap((plate) => plate.markers).length, 28);
-console.log("Android #4334 parity: 4 original PNGs, 28 visible hotspots, 4 bounded view keys and exact references.");
+console.log("Android #4357 visual parity / #4334 routing: 4 original PNGs, 28 calibrated hotspots, 4 bounded view keys and exact references.");

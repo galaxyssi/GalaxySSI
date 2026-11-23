@@ -1,14 +1,15 @@
 // Static Android resource comparison; not native execution.
 const fs = require("node:fs"), cp = require("node:child_process"), path = require("node:path");
 const assert = require("node:assert/strict");
-const root = path.resolve(__dirname, "../../.."), sha = "9401329c48ea31a4c3e06e7e48b1e73ca5433eff";
+const root = path.resolve(__dirname, "../../.."), sha = "96b3f950e85c839173e473ddb2435fe88f1acb75";
 const prefix = "apps/android/app/src/main/", assets = path.join(root, "apps/ios/GalaxySSI/Assets.xcassets");
 const show = (file) => cp.execFileSync("git", ["show", sha + ":" + file], { cwd: root, maxBuffer: 32000000 });
 const pack = JSON.parse(fs.readFileSync(path.join(assets, "HealthAtlasSystemOverviews.dataset/content.json")));
 const kotlin = show(prefix + "java/com/galaxyssi/chat/HealthAtlasSystemPlates.kt").toString();
 const graph = JSON.parse(show(prefix + "assets/health/body-atlas.json"));
 const entries = new Map(graph.entries.map((entry) => [entry.id, entry]));
-assert.equal(pack.schema, 1); assert.equal(pack.source.mergeCommit, sha); assert.equal(pack.plates.length, 10);
+assert.equal(pack.schema, 1); assert.equal(pack.source.mergeCommit, "9401329c48ea31a4c3e06e7e48b1e73ca5433eff");
+assert.equal(pack.artworkSource.androidPR, 4357); assert.equal(pack.artworkSource.mergeCommit, sha); assert.equal(pack.plates.length, 10);
 const original = pack.plates.filter((plate) => !plate.drawable);
 assert.equal(original.length, 6);
 const seen = new Set();
@@ -37,4 +38,4 @@ for (const plate of original) {
 assert.equal(seen.size, 32);
 for (const dedicated of ["lungs", "trachea", "liver", "gallbladder", "pancreas", "cell-neuron"]) assert.ok(!seen.has(dedicated));
 assert.equal(original.flatMap((p) => p.markers).length, 30);
-console.log("Android #4332 parity: 6 original PNGs, 32 non-cell routes, 30 markers, dedicated-organ precedence retained.");
+console.log("Android #4357 visual parity / #4332 routing: 6 original PNGs, 32 non-cell routes, 30 calibrated markers, dedicated-organ precedence retained.");
