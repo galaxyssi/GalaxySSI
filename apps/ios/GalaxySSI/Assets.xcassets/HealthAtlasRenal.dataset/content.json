@@ -1,0 +1,371 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4330,
+    "mergeCommit": "8ecbef31cfcc6c4fb8fdf9b9aeea006cc56562d9"
+  },
+  "entries": [
+    {
+      "id": "nephron",
+      "kind": "organ",
+      "name": "health_atlas_nephron_name",
+      "description": "health_atlas_nephron_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "glomerulus",
+        "bowmans-capsule",
+        "renal-tubules",
+        "collecting-ducts"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_nephron_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "renal-tubules",
+      "kind": "organ",
+      "name": "health_atlas_renal_tubules_name",
+      "description": "health_atlas_renal_tubules_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "proximal-tubule",
+        "nephron-loop",
+        "distal-tubule"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_renal_tubules_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "bowmans-capsule",
+      "kind": "organ",
+      "name": "health_atlas_bowmans_capsule_name",
+      "description": "health_atlas_bowmans_capsule_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "glomerulus",
+        "proximal-tubule"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_bowmans_capsule_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "proximal-tubule",
+      "kind": "organ",
+      "name": "health_atlas_proximal_tubule_name",
+      "description": "health_atlas_proximal_tubule_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "nephron-loop"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_proximal_tubule_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "nephron-loop",
+      "kind": "organ",
+      "name": "health_atlas_nephron_loop_name",
+      "description": "health_atlas_nephron_loop_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "distal-tubule"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_nephron_loop_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "distal-tubule",
+      "kind": "organ",
+      "name": "health_atlas_distal_tubule_name",
+      "description": "health_atlas_distal_tubule_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "collecting-ducts"
+      ],
+      "mechanism": "urinary",
+      "aliases": "health_atlas_distal_tubule_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-podocyte",
+      "kind": "cell",
+      "name": "health_atlas_cell_podocyte_name",
+      "description": "health_atlas_cell_podocyte_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "kidneys",
+        "glomerulus"
+      ],
+      "mechanism": "cell-podocyte",
+      "aliases": "health_atlas_cell_podocyte_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-mesangial-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_mesangial_cell_name",
+      "description": "health_atlas_cell_mesangial_cell_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "glomerulus"
+      ],
+      "mechanism": "cell-mesangial-cell",
+      "aliases": "health_atlas_cell_mesangial_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-proximal-tubular-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_proximal_tubular_cell_name",
+      "description": "health_atlas_cell_proximal_tubular_cell_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "kidneys",
+        "renal-tubules",
+        "proximal-tubule"
+      ],
+      "mechanism": "cell-proximal-tubular-cell",
+      "aliases": "health_atlas_cell_proximal_tubular_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-distal-tubular-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_distal_tubular_cell_name",
+      "description": "health_atlas_cell_distal_tubular_cell_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "kidneys",
+        "renal-tubules",
+        "distal-tubule"
+      ],
+      "mechanism": "cell-distal-tubular-cell",
+      "aliases": "health_atlas_cell_distal_tubular_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-collecting-duct-principal-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_collecting_duct_principal_cell_name",
+      "description": "health_atlas_cell_collecting_duct_principal_cell_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "collecting-ducts"
+      ],
+      "mechanism": "cell-collecting-duct-principal-cell",
+      "aliases": "health_atlas_cell_collecting_duct_principal_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-collecting-duct-intercalated-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_collecting_duct_intercalated_cell_name",
+      "description": "health_atlas_cell_collecting_duct_intercalated_cell_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "collecting-ducts"
+      ],
+      "mechanism": "cell-collecting-duct-intercalated-cell",
+      "aliases": "health_atlas_cell_collecting_duct_intercalated_cell_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-urothelial-cell",
+      "kind": "cell",
+      "name": "health_atlas_cell_urothelial_cell_name",
+      "description": "health_atlas_cell_urothelial_cell_description",
+      "systems": [
+        "urinary"
+      ],
+      "related": [
+        "bladder",
+        "ureters"
+      ],
+      "mechanism": "cell-urothelial-cell",
+      "aliases": "health_atlas_cell_urothelial_cell_aliases",
+      "color": "",
+      "icon": ""
+    }
+  ],
+  "mechanisms": [
+    {
+      "id": "cell-podocyte",
+      "kind": "cell",
+      "title": "health_atlas_renal_podocyte_title",
+      "stages": [
+        "health_atlas_renal_podocyte_0",
+        "health_atlas_renal_podocyte_1",
+        "health_atlas_renal_podocyte_2",
+        "health_atlas_renal_podocyte_3"
+      ],
+      "chapter": "25-5-physiology-of-urine-formation"
+    },
+    {
+      "id": "cell-mesangial-cell",
+      "kind": "cell",
+      "title": "health_atlas_renal_mesangial_cell_title",
+      "stages": [
+        "health_atlas_renal_mesangial_cell_0",
+        "health_atlas_renal_mesangial_cell_1",
+        "health_atlas_renal_mesangial_cell_2",
+        "health_atlas_renal_mesangial_cell_3"
+      ],
+      "chapter": "25-4-microscopic-anatomy-of-the-kidney"
+    },
+    {
+      "id": "cell-proximal-tubular-cell",
+      "kind": "cell",
+      "title": "health_atlas_renal_proximal_tubular_cell_title",
+      "stages": [
+        "health_atlas_renal_proximal_tubular_cell_0",
+        "health_atlas_renal_proximal_tubular_cell_1",
+        "health_atlas_renal_proximal_tubular_cell_2",
+        "health_atlas_renal_proximal_tubular_cell_3"
+      ],
+      "chapter": "25-6-tubular-reabsorption"
+    },
+    {
+      "id": "cell-distal-tubular-cell",
+      "kind": "cell",
+      "title": "health_atlas_renal_distal_tubular_cell_title",
+      "stages": [
+        "health_atlas_renal_distal_tubular_cell_0",
+        "health_atlas_renal_distal_tubular_cell_1",
+        "health_atlas_renal_distal_tubular_cell_2",
+        "health_atlas_renal_distal_tubular_cell_3"
+      ],
+      "chapter": "25-6-tubular-reabsorption"
+    },
+    {
+      "id": "cell-collecting-duct-principal-cell",
+      "kind": "cell",
+      "title": "health_atlas_renal_collecting_duct_principal_cell_title",
+      "stages": [
+        "health_atlas_renal_collecting_duct_principal_cell_0",
+        "health_atlas_renal_collecting_duct_principal_cell_1",
+        "health_atlas_renal_collecting_duct_principal_cell_2",
+        "health_atlas_renal_collecting_duct_principal_cell_3"
+      ],
+      "chapter": "25-6-tubular-reabsorption"
+    },
+    {
+      "id": "cell-collecting-duct-intercalated-cell",
+      "kind": "cell",
+      "title": "health_atlas_renal_collecting_duct_intercalated_cell_title",
+      "stages": [
+        "health_atlas_renal_collecting_duct_intercalated_cell_0",
+        "health_atlas_renal_collecting_duct_intercalated_cell_1",
+        "health_atlas_renal_collecting_duct_intercalated_cell_2",
+        "health_atlas_renal_collecting_duct_intercalated_cell_3"
+      ],
+      "chapter": "25-6-tubular-reabsorption"
+    },
+    {
+      "id": "cell-urothelial-cell",
+      "kind": "cell",
+      "title": "health_atlas_renal_urothelial_cell_title",
+      "stages": [
+        "health_atlas_renal_urothelial_cell_0",
+        "health_atlas_renal_urothelial_cell_1",
+        "health_atlas_renal_urothelial_cell_2",
+        "health_atlas_renal_urothelial_cell_3"
+      ],
+      "chapter": "25-2-gross-anatomy-of-urine-transport"
+    }
+  ],
+  "insertAfter": {
+    "bowmans-capsule": "renal-tubules",
+    "proximal-tubule": "renal-tubules",
+    "nephron-loop": "renal-tubules",
+    "distal-tubule": "renal-tubules"
+  },
+  "plate": {
+    "id": "nephron",
+    "asset": "HealthAtlasNephron",
+    "owner": "nephron",
+    "viewLabel": "health_atlas_view_nephron",
+    "entryIDs": [
+      "nephron",
+      "glomerulus",
+      "bowmans-capsule",
+      "renal-tubules",
+      "proximal-tubule",
+      "nephron-loop",
+      "distal-tubule",
+      "collecting-ducts"
+    ],
+    "aspectRatio": 0.8747203579418344,
+    "markers": [
+      {
+        "id": "glomerulus",
+        "x": 0.243,
+        "y": 0.175
+      },
+      {
+        "id": "bowmans-capsule",
+        "x": 0.288,
+        "y": 0.095
+      },
+      {
+        "id": "proximal-tubule",
+        "x": 0.45,
+        "y": 0.275
+      },
+      {
+        "id": "nephron-loop",
+        "x": 0.494,
+        "y": 0.902
+      },
+      {
+        "id": "distal-tubule",
+        "x": 0.716,
+        "y": 0.184
+      },
+      {
+        "id": "collecting-ducts",
+        "x": 0.853,
+        "y": 0.644
+      }
+    ],
+    "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-4-microscopic-anatomy-of-the-kidney"
+  }
+}

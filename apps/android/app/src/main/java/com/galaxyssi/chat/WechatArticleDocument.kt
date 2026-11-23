@@ -6,6 +6,7 @@ import org.jsoup.nodes.Node
 import java.net.URI
 
 internal data class WechatArticleDocument(val title: String, val html: String)
+internal class WechatArticleContentMissing : IllegalStateException("article_content_missing")
 internal sealed class WechatArticleBlock {
     data class Text(val html: String) : WechatArticleBlock()
     data class Image(val source: String) : WechatArticleBlock()
@@ -39,11 +40,11 @@ internal object WechatArticleDocuments {
     fun extract(url: String, bytes: ByteArray): WechatArticleDocument {
         require(articleUrl(url) != null)
         val source = bytes.inputStream().use { Jsoup.parse(it, null, url) }
-        val content = requireNotNull(source.selectFirst("#js_content")) { "article_body_missing" }.clone()
+        val content = source.selectFirst("#js_content")?.clone() ?: throw WechatArticleContentMissing()
         val title = source.selectFirst("#activity-name")?.text()?.trim().orEmpty()
             .ifBlank { source.selectFirst("meta[property=og:title]")?.attr("content").orEmpty().trim() }
-        require(title.isNotBlank()) { "article_title_missing" }
-        require(content.text().isNotBlank() || content.select("img").isNotEmpty()) { "article_body_empty" }
+        if (title.isBlank() || (content.text().isBlank() && content.select("img").isEmpty()))
+            throw WechatArticleContentMissing()
         val document = Jsoup.parse("<html><head><meta charset=utf-8></head><body></body></html>")
         document.title(title)
         document.body().appendElement("h1").text(title)
