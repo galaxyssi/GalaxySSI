@@ -219,6 +219,55 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertFalse(pack.plates.flatMap(\.entryIDs).contains("cell-neuron"))
   }
 
+  func testGermlineStageEndsSeparateMaternalPaternalAndCombinedCounts() throws {
+    typealias Germline = GalaxySSIHealthAtlasGermline
+    let fixtures: [(String, [Int], [Int])] = [
+      ("cell-spermatogonium", [46, 46, 46, 46], [46, 46, 92, 92]),
+      ("cell-spermatocyte", [46, 23, 23, 23], [92, 46, 23, 23]),
+      ("cell-spermatozoon", [23, 23, 23, 23], [23, 23, 23, 23]),
+      ("cell-oocyte-or-ovum", [23, 23, 23, 46], [46, 46, 23, 46])
+    ]
+    for (id, chromosomes, dna) in fixtures {
+      for stage in 0..<4 {
+        let counts = try XCTUnwrap(Germline.counts(id, stage: stage))
+        XCTAssertEqual(counts.chromosomes, chromosomes[stage])
+        XCTAssertEqual(counts.dnaMolecules, dna[stage])
+        XCTAssertTrue(counts.dnaContent == counts.sets || counts.dnaContent == 2 * counts.sets)
+      }
+    }
+    XCTAssertEqual(Germline.counts("cell-spermatozoon", stage: 3)?.target, .paternal)
+    XCTAssertEqual(Germline.counts("cell-oocyte-or-ovum", stage: 2)?.target, .maternal)
+    XCTAssertEqual(Germline.counts("cell-oocyte-or-ovum", stage: 3)?.target, .combined)
+    XCTAssertNil(Germline.counts("cell-granulosa-cell", stage: 1))
+    XCTAssertNil(Germline.counts("cell-spermatocyte", stage: 4))
+    XCTAssertNil(Germline.counts("cell-spermatocyte", stage: -1))
+    XCTAssertNil(Germline.Counts(sets: 3, dnaContent: 3, target: .cell))
+    XCTAssertNil(Germline.Counts(sets: 1, dnaContent: 4, target: .cell))
+  }
+
+  func testReproductiveCatalogueAndSelectedGermlineStageRestoreTogether() throws {
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    XCTAssertEqual(atlas.entries.count, 287)
+    XCTAssertEqual(atlas.mechanisms.count, 75)
+    let base = try catalogue()
+    XCTAssertEqual(base.entries.count, 278); XCTAssertEqual(base.mechanisms.count, 20)
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.ReproductivePack.read(bundle: Bundle(for: GalaxySSIStore.self)))
+    for mechanism in pack.mechanisms where mechanism.kind == "cell" {
+      XCTAssertEqual(atlas.entry(mechanism.id)?.kind, .cell)
+      XCTAssertEqual(atlas.entry(mechanism.id)?.mechanism, mechanism.id)
+      XCTAssertEqual(mechanism.stages.count, 4)
+    }
+    let id = "cell-oocyte-or-ovum", state = GalaxySSIHealthAtlasState()
+    var selection = GalaxySSIHealthAtlasState.Selection()
+    selection.tab = .simulation; selection.simulation.phase = 0.75
+    state.entries[id] = selection
+    let restored = GalaxySSIHealthAtlasState()
+    restored.restore(state.serialized, atlas: atlas)
+    let stage = try XCTUnwrap(restored.entries[id]?.simulation.stage)
+    XCTAssertEqual(stage, 3)
+    XCTAssertEqual(GalaxySSIHealthAtlasGermline.counts(id, stage: stage)?.target, .combined)
+  }
+
   func testMetricAssociationsDoNotInventMissingOrganFunctionReadings() {
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("heart"), [.bloodPressure, .restingHeartRate, .ldl, .hdl, .triglycerides])
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("cell-pancreatic-beta-cell"), [.glucose, .hba1c])

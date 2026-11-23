@@ -75,6 +75,9 @@ enum GalaxySSIHealthAtlasAgentContext {
           lines += [t("circuit_scope"), t("circuit_path"), GalaxySSIHealthAtlasCirculation.source.absoluteString]
         }
         lines.append(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4), anatomy.stages[simulation.stage]))
+        if let counts = GalaxySSIHealthAtlasGermline.counts(anatomy.id, stage: simulation.stage) {
+          lines.append(GalaxySSIHealthAtlasGermline.context(counts, text: t))
+        }
         if ["heart", "cardio"].contains(anatomy.id) {
           lines.append(t("heart_rate") + ": " + number(simulation.first) + " bpm")
           lines.append(t("stroke_volume") + ": " + number(simulation.second) + " mL")

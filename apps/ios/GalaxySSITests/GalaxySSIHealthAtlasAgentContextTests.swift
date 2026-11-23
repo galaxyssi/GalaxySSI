@@ -141,6 +141,30 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
       simulation: simulation, locale: locale, text: text))
   }
 
+  func testGermlinePreviewUsesCurrentStageAndExcludesOtherTopicsAndEntries() throws {
+    let id = "cell-oocyte-or-ovum"
+    func localized(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, "en") }
+    for stage in 0..<4 {
+      let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: Double(stage) / 4, first: 70, second: 70))
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(id), screen: .simulation,
+        simulation: simulation, locale: locale, text: localized))
+      let counts = try XCTUnwrap(GalaxySSIHealthAtlasGermline.counts(id, stage: stage))
+      XCTAssertTrue(prompt.contains(GalaxySSIHealthAtlasGermline.numbers(counts, language: "en")))
+      XCTAssertTrue(prompt.contains(localized("germline_" + counts.target.rawValue)))
+      XCTAssertTrue(prompt.contains(GalaxySSIHealthAtlasGermline.source.absoluteString))
+    }
+    let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: 0.75, first: 70, second: 70))
+    for screen in [Context.Screen.structure, .function, .drugs, .aging] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(id), screen: screen,
+        simulation: simulation, locale: locale, text: localized))
+      XCTAssertFalse(prompt.contains(GalaxySSIHealthAtlasGermline.source.absoluteString))
+    }
+    let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("cell-granulosa-cell"), screen: .physiology,
+      simulation: simulation, locale: locale, text: localized))
+    XCTAssertFalse(foreign.contains(GalaxySSIHealthAtlasGermline.source.absoluteString))
+    XCTAssertNil(Context.prompt(anatomy: anatomy(id), screen: .values, simulation: simulation, locale: locale, text: localized))
+  }
+
   func testDrugAndAgingContextUseOnlyTheirCurrentSourcesAndParameters() throws {
     let drug = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .drugs,
       elimination: Context.Elimination(halfLife: 4, elapsed: 8), locale: locale, text: text))
