@@ -31,5 +31,5 @@ assert(state.includes("functionSelection?.sanitize"));assert(state.includes("fun
 const detail=local("GalaxySSIHealthAtlasDetail");
 assert(detail.includes("selectionSnapshot: { state.functionSnapshot(entry) }"));assert(detail.includes("GalaxySSIHealthAtlasFunctionPanel"));
 const registry=local("GalaxySSIHealthAtlasFunctionArtwork");
-assert(registry.includes('implemented: Set<String> = ["GLUCOSE", "HEARTBEAT", "BREATHING", "HEARING", "NEPHRON", "DIGESTION", "COLON", "VISION", "LIGHT_ADAPTATION", "MUSCLE_MOTION", "BONE_REMODELING", "LYMPH_RETURN", "ANTIBODY_RESPONSE"]'),"Update coverage audit deliberately when new source renderers land");
+assert(registry.includes('implemented: Set<String> = ["GLUCOSE", "HEARTBEAT", "BREATHING", "HEARING", "NEPHRON", "DIGESTION", "COLON", "VISION", "LIGHT_ADAPTATION", "MUSCLE_MOTION", "BONE_REMODELING", "LYMPH_RETURN", "ANTIBODY_RESPONSE", "INSULIN_SECRETION"]'),"Update coverage audit deliberately when new source renderers land");
 console.log("Android #4384 partial player: 2x3127 exact strings, independent persisted/live phase paths, lifecycle/control wiring and dedicated uptake source geometry. Other source renderers are still pending; no native playback executed.");
