@@ -508,6 +508,20 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testPaintedCardiacSectionSharesNormalizedLeafletAnchors() throws {
+    typealias Heart = GalaxySSIHealthAtlasHeartSection
+    XCTAssertEqual(Heart.section.aspectRatio, 1); XCTAssertEqual(Heart.valves.aspectRatio, 1)
+    let expected: [(String, Double, Double)] = [("tricuspid-valve",451,707),("mitral-valve",859,659),
+      ("pulmonary-valve",599,603),("aortic-valve",708,589)]
+    for (valve, value) in zip(Heart.Valve.allCases, expected) {
+      let marker = try XCTUnwrap(Heart.valves.markers.first { $0.id == valve.id })
+      XCTAssertEqual(marker.id, value.0)
+      XCTAssertEqual(marker.x, value.1 / 1254, accuracy: 0.000001)
+      XCTAssertEqual(marker.y, value.2 / 1254, accuracy: 0.000001)
+      XCTAssertEqual(marker.x, valve.marker.x); XCTAssertEqual(marker.y, valve.marker.y)
+    }
+  }
+
   func testHeartArtworkAndIndependentEjectionSelectionsRestorePerEntry() throws {
     let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
     let state = GalaxySSIHealthAtlasState(), restored = GalaxySSIHealthAtlasState()
@@ -1098,7 +1112,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthAtlasSectionLesson.forEntry("cell-enterocyte"))
   }
 
-  func testEditorialArtworkRetainsResolutionTransparencyAndAllOneHundredThirteenHotspots() throws {
+  func testEditorialArtworkRetainsResolutionTransparencyAndAllOneHundredNineteenHotspots() throws {
     let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
     let frames: [(String?, Int, Int)] = [(nil, 1024, 1536), ("heart", 1086, 1448),
       ("lungs", 1254, 1254), ("liver", 1254, 1254), ("kidneys", 1254, 1254),
@@ -1133,12 +1147,13 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     var plates: [(GalaxySSIHealthAtlas.Plate, Int, Int)] = try frames.map { id, width, height in
       (try XCTUnwrap(atlas.plate(for: id)), width, height)
     }
+    plates.append((GalaxySSIHealthAtlasHeartSection.section, 1254, 1254))
     for key in GalaxySSIHealthAtlas.MusculoskeletalPack.keys {
       let owner = key.hasPrefix("skeletal") ? "skeletal" : "muscle"
       let plate = try XCTUnwrap(atlas.plate(for: owner, viewKey: key))
       plates.append((plate, key == "skeletal-posterior" ? 887 : 1024, key == "skeletal-posterior" ? 1774 : 1536))
     }
-    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 30)
+    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 31)
     var count = 0
     for (plate, width, height) in plates {
       let image = try XCTUnwrap(UIImage(named: plate.asset, in: bundle, compatibleWith: nil)?.cgImage)
@@ -1165,6 +1180,23 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
           } else { XCTAssertGreaterThan(r, g + 40); XCTAssertGreaterThan(g, b + 12) }
         }
       }
+      if plate.id == "heart-section" {
+        for marker in plate.markers + GalaxySSIHealthAtlasHeartSection.valves.markers {
+          var matched = false
+          for dx in -1...1 { for dy in -1...1 {
+            let pixel = try rgba(image, Int(marker.x * Double(width)) + dx, Int(marker.y * Double(height)) + dy)
+            let r = Int(pixel[0]), g = Int(pixel[1]), b = Int(pixel[2])
+            let expected: Bool
+            switch marker.id {
+            case "right-atrium", "right-ventricle", "pulmonary-trunk": expected = b > r + 20
+            case "aorta", "left-atrium", "left-ventricle": expected = r > g + 50 && r > b + 60
+            default: expected = r > 229 && g > 201 && g > b && b > 158
+            }
+            matched = matched || (pixel[3] > 200 && expected)
+          } }
+          XCTAssertTrue(matched, marker.id)
+        }
+      }
       if plate.owner == "ear" {
         let lesson = try XCTUnwrap(GalaxySSIHealthAtlasSectionLesson.forEntry("ear"))
         func at(_ point: CGPoint) throws -> [UInt8] {
@@ -1189,7 +1221,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(try alpha(image, Int(sample[1].x * CGFloat(width)), Int(sample[1].y * CGFloat(height))), 200)
       }
     }
-    XCTAssertEqual(count, 113)
+    XCTAssertEqual(count, 119)
     XCTAssertTrue(try XCTUnwrap(atlas.plate(for: nil)).markers.contains { $0.id == "lungs" })
   }
 

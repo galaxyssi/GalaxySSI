@@ -10,11 +10,14 @@ enum GalaxySSIHealthAtlasHeartSection {
     var id: String { rawValue + "-valve" }
     var point: (x: Double, y: Double) {
       switch self {
-      case .tricuspid: return (171, 266)
-      case .mitral: return (324, 248)
-      case .pulmonary: return (228, 222)
-      case .aortic: return (275, 215)
+      case .tricuspid: return (451, 707)
+      case .mitral: return (859, 659)
+      case .pulmonary: return (599, 603)
+      case .aortic: return (708, 589)
       }
+    }
+    var marker: GalaxySSIHealthAtlas.Marker {
+      GalaxySSIHealthAtlasHeartSection.marker(id, point.x, point.y)
     }
     func openAt(_ stage: Int) -> Bool? {
       guard (0..<4).contains(stage) else { return nil }
@@ -23,7 +26,7 @@ enum GalaxySSIHealthAtlasHeartSection {
     static func supports(_ id: String) -> Bool { id == "heart-valves" || allCases.contains { $0.id == id } }
   }
   private static func marker(_ id: String, _ x: Double, _ y: Double) -> GalaxySSIHealthAtlas.Marker {
-    .init(id: id, x: x / 480, y: y / 460)
+    .init(id: id, x: x / 1254, y: y / 1254)
   }
   static let exterior = GalaxySSIHealthAtlas.Plate(id: "heart-exterior", asset: "HealthAtlasHeart", owner: "heart",
     viewLabel: "health_atlas_view_external", entryIDs: ["heart", "atria", "ventricles", "coronary-vessels"],
@@ -32,13 +35,13 @@ enum GalaxySSIHealthAtlasHeartSection {
     source: anatomySource, viewKey: "heart-exterior", selectorLabel: "health_atlas_cardiac_exterior")
   static let section = GalaxySSIHealthAtlas.Plate(id: "heart-section", asset: "HealthAtlasHeartSection", owner: "heart",
     viewLabel: "health_atlas_view_cardiac_section", entryIDs: ["heart", "aorta", "pulmonary-trunk", "left-atrium", "right-atrium",
-      "right-ventricle", "left-ventricle"], aspectRatio: 480.0 / 460,
-    markers: [marker("aorta", 336, 55), marker("pulmonary-trunk", 237, 153), marker("left-atrium", 336, 193),
-      marker("right-atrium", 171, 207), marker("right-ventricle", 198, 303), marker("left-ventricle", 321, 298)],
+      "right-ventricle", "left-ventricle"], aspectRatio: 1,
+    markers: [marker("aorta", 885, 177), marker("pulmonary-trunk", 613, 459), marker("left-atrium", 860, 531),
+      marker("right-atrium", 423, 563), marker("right-ventricle", 443, 838), marker("left-ventricle", 788, 885)],
     source: anatomySource, viewKey: "heart-section", selectorLabel: "health_atlas_cardiac_section")
   static let valves = GalaxySSIHealthAtlas.Plate(id: "heart-valves", asset: "HealthAtlasHeartSection", owner: "heart",
     viewLabel: "health_atlas_view_cardiac_valves", entryIDs: ["heart-valves"] + Valve.allCases.map(\.id),
-    aspectRatio: 480.0 / 460, markers: Valve.allCases.map { marker($0.id, $0.point.x, $0.point.y) }, source: anatomySource)
+    aspectRatio: 1, markers: Valve.allCases.map(\.marker), source: anatomySource)
   static func plate(for id: String) -> GalaxySSIHealthAtlas.Plate? {
     if Valve.supports(id) { return valves }
     return section.markers.contains { $0.id == id } ? section : nil

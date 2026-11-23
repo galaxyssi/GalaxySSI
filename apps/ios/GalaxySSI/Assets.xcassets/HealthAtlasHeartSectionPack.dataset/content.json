@@ -1,5 +1,9 @@
 {
   "schema": 1,
+  "artworkSource": {
+    "androidPR": 4364,
+    "mergeCommit": "24748a84e848040dbe0cba323cbd5d6b970fb537"
+  },
   "source": {
     "androidPR": 4343,
     "mergeCommit": "fcd784640f7e01f12767fdedfb4cc75be09f9d74"
