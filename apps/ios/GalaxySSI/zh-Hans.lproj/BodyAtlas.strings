@@ -1025,3 +1025,9 @@
 "health_atlas_week" = "周";
 "health_atlas_whole" = "全身";
 "health_atlas_year" = "年";
+"health_atlas_view_system_sensory" = "眼、耳、鼻与舌 · 独立放大视图，非等比例";
+"health_atlas_view_system_respiratory" = "上呼吸道剖面与肺部前视 · 组合示意";
+"health_atlas_view_system_digestive" = "唾液腺与腹部辅助器官 · 独立视图，非等比例";
+"health_atlas_view_system_endocrine" = "部分主要内分泌腺 · 独立放大视图，非位置图";
+"health_atlas_view_system_immune" = "部分主要免疫结构 · 独立视图，非等比例";
+"health_atlas_view_system_skin" = "皮肤剖面 · 厚度与颜色为示意";

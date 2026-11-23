@@ -37,6 +37,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     guard let url = bundle.url(forResource: "body-atlas", withExtension: "json", subdirectory: "body-atlas")
     else { throw Invalid.catalogue }
     var result = try validated(JSONDecoder().decode(Self.self, from: Data(contentsOf: url)))
+    if includeExtensions, let pack = try OverviewPack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     guard includeExtensions else { return result }
     if let pack = try ArtworkPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try CellPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
@@ -96,6 +97,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     let entryIDs: [String]
     let aspectRatio: Double
     let markers: [Marker]
+    var source: URL? = nil
   }
   /// An additive, bundled-only asset pack can land independently of the atlas UI.
   struct ArtworkPack: Decodable {
@@ -171,7 +173,7 @@ struct GalaxySSIHealthAtlas: Decodable {
   func plate(for id: String?) -> Plate? {
     if let pack = try? CellPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     if let pack = try? ArtworkPack.bundled.get() {
-      return pack.plates.first { $0.entryIDs.contains(id ?? "") }
+      if let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     }
     if id == nil {
       return Plate(id: "whole", asset: "HealthAtlasBody", owner: nil, viewLabel: "health_atlas_illustration", entryIDs: [""],
@@ -187,6 +189,7 @@ struct GalaxySSIHealthAtlas: Decodable {
       return Plate(id: "beta-cell", asset: "HealthAtlasBetaCell", owner: id, viewLabel: "health_atlas_illustration",
         entryIDs: [id!], aspectRatio: 1, markers: [])
     }
+    if let pack = try? OverviewPack.bundled.get() { return pack.plates.first { $0.entryIDs.contains(id ?? "") } }
     return nil
   }
 }

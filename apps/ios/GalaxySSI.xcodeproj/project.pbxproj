@@ -11,6 +11,8 @@
     8D35CFD559C1355DCB35BDED /* GalaxySSIHealthAtlasAgentHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C60A63B797B0A797C0B802 /* GalaxySSIHealthAtlasAgentHandoff.swift */; };
     1E81F8D329E13C8B46E1D204 /* GalaxySSIHealthAtlasArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77250658843A3AAD50E9681B /* GalaxySSIHealthAtlasArtwork.swift */; };
     56668657960EE8B00531B479 /* GalaxySSIHealthAtlasDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A44D7D7AAABC6353A3E171 /* GalaxySSIHealthAtlasDetail.swift */; };
+    C43320000000000000000001 /* GalaxySSIHealthAtlasOverviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43320000000000000000002 /* GalaxySSIHealthAtlasOverviews.swift */; };
+    C43320000000000000000003 /* GalaxySSIHealthAtlasLabeledArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43320000000000000000004 /* GalaxySSIHealthAtlasLabeledArtwork.swift */; };
     3A27D153792D057E63607118 /* GalaxySSIHealthAtlasResearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */; };
     11A6C0253F091CDA9CEA0803 /* GalaxySSIHealthAtlasSimulationPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */; };
     F81EA90A113A7DE2667956C6 /* GalaxySSIHealthAtlasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */; };
@@ -1452,6 +1454,8 @@
     37C60A63B797B0A797C0B802 /* GalaxySSIHealthAtlasAgentHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAgentHandoff.swift; sourceTree = "<group>"; };
     77250658843A3AAD50E9681B /* GalaxySSIHealthAtlasArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasArtwork.swift; sourceTree = "<group>"; };
     94A44D7D7AAABC6353A3E171 /* GalaxySSIHealthAtlasDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDetail.swift; sourceTree = "<group>"; };
+    C43320000000000000000002 /* GalaxySSIHealthAtlasOverviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasOverviews.swift; sourceTree = "<group>"; };
+    C43320000000000000000004 /* GalaxySSIHealthAtlasLabeledArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLabeledArtwork.swift; sourceTree = "<group>"; };
     41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasResearch.swift; sourceTree = "<group>"; };
     2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSimulationPanel.swift; sourceTree = "<group>"; };
     490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasState.swift; sourceTree = "<group>"; };
@@ -2911,6 +2915,8 @@
         37C60A63B797B0A797C0B802 /* GalaxySSIHealthAtlasAgentHandoff.swift */,
         77250658843A3AAD50E9681B /* GalaxySSIHealthAtlasArtwork.swift */,
         94A44D7D7AAABC6353A3E171 /* GalaxySSIHealthAtlasDetail.swift */,
+        C43320000000000000000002 /* GalaxySSIHealthAtlasOverviews.swift */,
+        C43320000000000000000004 /* GalaxySSIHealthAtlasLabeledArtwork.swift */,
         41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */,
         2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */,
         490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */,
@@ -4500,6 +4506,8 @@
         8D35CFD559C1355DCB35BDED /* GalaxySSIHealthAtlasAgentHandoff.swift in Sources */,
         1E81F8D329E13C8B46E1D204 /* GalaxySSIHealthAtlasArtwork.swift in Sources */,
         56668657960EE8B00531B479 /* GalaxySSIHealthAtlasDetail.swift in Sources */,
+        C43320000000000000000001 /* GalaxySSIHealthAtlasOverviews.swift in Sources */,
+        C43320000000000000000003 /* GalaxySSIHealthAtlasLabeledArtwork.swift in Sources */,
         3A27D153792D057E63607118 /* GalaxySSIHealthAtlasResearch.swift in Sources */,
         11A6C0253F091CDA9CEA0803 /* GalaxySSIHealthAtlasSimulationPanel.swift in Sources */,
         F81EA90A113A7DE2667956C6 /* GalaxySSIHealthAtlasState.swift in Sources */,

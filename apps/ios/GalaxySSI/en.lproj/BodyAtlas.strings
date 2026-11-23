@@ -1025,3 +1025,9 @@
 "health_atlas_week" = "Week";
 "health_atlas_whole" = "Whole body";
 "health_atlas_year" = "Year";
+"health_atlas_view_system_sensory" = "Eye, ear, nose and tongue · separate enlarged views, not to scale";
+"health_atlas_view_system_respiratory" = "Upper airway section and frontal lungs · composite view";
+"health_atlas_view_system_digestive" = "Salivary glands and abdominal accessory organs · separate views, not to scale";
+"health_atlas_view_system_endocrine" = "Selected endocrine glands · separate enlarged views, not a location map";
+"health_atlas_view_system_immune" = "Selected immune structures · separate views, not to scale";
+"health_atlas_view_system_skin" = "Skin cutaway · layer thickness and colors are schematic";

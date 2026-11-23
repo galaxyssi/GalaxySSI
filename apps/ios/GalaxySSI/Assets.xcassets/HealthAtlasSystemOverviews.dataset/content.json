@@ -1,0 +1,263 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4332,
+    "mergeCommit": "9401329c48ea31a4c3e06e7e48b1e73ca5433eff"
+  },
+  "plates": [
+    {
+      "id": "sensory",
+      "asset": "HealthAtlasOverviewSensory",
+      "owner": "sensory",
+      "viewLabel": "health_atlas_view_system_sensory",
+      "entryIDs": [
+        "sensory",
+        "eye",
+        "ear",
+        "nose",
+        "tongue"
+      ],
+      "aspectRatio": 0.9138719512195121,
+      "markers": [
+        {
+          "id": "eye",
+          "x": 0.24,
+          "y": 0.26
+        },
+        {
+          "id": "ear",
+          "x": 0.71,
+          "y": 0.24
+        },
+        {
+          "id": "nose",
+          "x": 0.14,
+          "y": 0.79
+        },
+        {
+          "id": "tongue",
+          "x": 0.76,
+          "y": 0.73
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception"
+    },
+    {
+      "id": "respiratory",
+      "asset": "HealthAtlasOverviewRespiratory",
+      "owner": "respiratory",
+      "viewLabel": "health_atlas_view_system_respiratory",
+      "entryIDs": [
+        "respiratory",
+        "nasal-cavity",
+        "pharynx",
+        "larynx",
+        "diaphragm"
+      ],
+      "aspectRatio": 0.8333333333333334,
+      "markers": [
+        {
+          "id": "nasal-cavity",
+          "x": 0.42,
+          "y": 0.15
+        },
+        {
+          "id": "pharynx",
+          "x": 0.52,
+          "y": 0.23
+        },
+        {
+          "id": "larynx",
+          "x": 0.48,
+          "y": 0.33
+        },
+        {
+          "id": "trachea",
+          "x": 0.49,
+          "y": 0.45
+        },
+        {
+          "id": "lungs",
+          "x": 0.68,
+          "y": 0.64
+        },
+        {
+          "id": "diaphragm",
+          "x": 0.51,
+          "y": 0.83
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system"
+    },
+    {
+      "id": "digestive",
+      "asset": "HealthAtlasOverviewDigestive",
+      "owner": "digestive",
+      "viewLabel": "health_atlas_view_system_digestive",
+      "entryIDs": [
+        "digestive",
+        "salivary-glands",
+        "parotid-glands",
+        "submandibular-glands",
+        "sublingual-glands"
+      ],
+      "aspectRatio": 0.9865399841646872,
+      "markers": [
+        {
+          "id": "parotid-glands",
+          "x": 0.6,
+          "y": 0.18
+        },
+        {
+          "id": "sublingual-glands",
+          "x": 0.38,
+          "y": 0.29
+        },
+        {
+          "id": "submandibular-glands",
+          "x": 0.51,
+          "y": 0.33
+        },
+        {
+          "id": "liver",
+          "x": 0.42,
+          "y": 0.49
+        },
+        {
+          "id": "gallbladder",
+          "x": 0.35,
+          "y": 0.63
+        },
+        {
+          "id": "pancreas",
+          "x": 0.63,
+          "y": 0.73
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-1-overview-of-the-digestive-system"
+    },
+    {
+      "id": "endocrine",
+      "asset": "HealthAtlasOverviewEndocrine",
+      "owner": "endocrine",
+      "viewLabel": "health_atlas_view_system_endocrine",
+      "entryIDs": [
+        "endocrine",
+        "pituitary-gland",
+        "thyroid-gland",
+        "adrenal-glands"
+      ],
+      "aspectRatio": 1.0942452043369475,
+      "markers": [
+        {
+          "id": "pituitary-gland",
+          "x": 0.23,
+          "y": 0.42
+        },
+        {
+          "id": "thyroid-gland",
+          "x": 0.81,
+          "y": 0.31
+        },
+        {
+          "id": "adrenal-glands",
+          "x": 0.37,
+          "y": 0.58
+        },
+        {
+          "id": "pancreas",
+          "x": 0.71,
+          "y": 0.71
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-1-an-overview-of-the-endocrine-system"
+    },
+    {
+      "id": "immune",
+      "asset": "HealthAtlasOverviewImmune",
+      "owner": "immune",
+      "viewLabel": "health_atlas_view_system_immune",
+      "entryIDs": [
+        "immune",
+        "thymus",
+        "spleen",
+        "lymph-nodes",
+        "bone-marrow"
+      ],
+      "aspectRatio": 1.0942452043369475,
+      "markers": [
+        {
+          "id": "thymus",
+          "x": 0.285,
+          "y": 0.2
+        },
+        {
+          "id": "spleen",
+          "x": 0.82,
+          "y": 0.33
+        },
+        {
+          "id": "lymph-nodes",
+          "x": 0.28,
+          "y": 0.7
+        },
+        {
+          "id": "bone-marrow",
+          "x": 0.7,
+          "y": 0.76
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems"
+    },
+    {
+      "id": "skin",
+      "asset": "HealthAtlasOverviewSkin",
+      "owner": "skin",
+      "viewLabel": "health_atlas_view_system_skin",
+      "entryIDs": [
+        "skin",
+        "skin-organ",
+        "epidermis",
+        "dermis",
+        "subcutaneous-tissue",
+        "sebaceous-glands",
+        "hair-follicles",
+        "sweat-glands"
+      ],
+      "aspectRatio": 1.5,
+      "markers": [
+        {
+          "id": "epidermis",
+          "x": 0.32,
+          "y": 0.34
+        },
+        {
+          "id": "dermis",
+          "x": 0.51,
+          "y": 0.46
+        },
+        {
+          "id": "sebaceous-glands",
+          "x": 0.43,
+          "y": 0.53
+        },
+        {
+          "id": "hair-follicles",
+          "x": 0.325,
+          "y": 0.58
+        },
+        {
+          "id": "sweat-glands",
+          "x": 0.6,
+          "y": 0.67
+        },
+        {
+          "id": "subcutaneous-tissue",
+          "x": 0.47,
+          "y": 0.84
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin"
+    }
+  ]
+}
