@@ -67,6 +67,7 @@ enum GalaxySSIHealthAtlasQuestion {
     return GalaxySSIHealthAtlasAgentContext.prompt(anatomy: anatomy, screen: screen, simulation: simulation,
       quantitative: quantitative, elimination: elimination, illustration: illustration,
       drugs: GalaxySSIHealthAtlasDrugState.restore(selection.drugInputs),
+      aging: selection.aging, language: language,
       locale: GalaxySSILocalization.interfaceLocale(language: language), text: t) ?? ""
     #else
     guard let entry else { return t("ask_whole_context") }
@@ -114,7 +115,8 @@ enum GalaxySSIHealthAtlasQuestion {
         prompt += "\nhttps://openstax.org/books/pharmacology/pages/2-2-pharmacokinetics-and-pharmacodynamics"
         prompt += "\nhttps://pharmacologyeducation.org/clinical-pharmacokinetics/"
       case .aging:
-        prompt += "\n" + t("aging_scope") + "\n" + t("aging_evidence") + "\nhttps://pubmed.ncbi.nlm.nih.gov/36599349/"
+        prompt += "\n" + GalaxySSIHealthAtlasAgingSelection.resolved(selection.aging, entryID: entry.id).context(language: language)
+        prompt += "\n" + t("aging_evidence") + "\n" + GalaxySSIHealthAtlasAgingTopic.source.absoluteString
       }
     }
     return prompt

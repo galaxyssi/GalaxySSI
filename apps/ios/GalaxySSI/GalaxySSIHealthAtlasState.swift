@@ -16,6 +16,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     var layers = true
     var zoom: Double = 1
     var artworkView: String?
+    var aging: GalaxySSIHealthAtlasAgingSelection?
   }
   @Published var entries: [String: Selection] = [:]
   @Published var previewPresented = false
@@ -38,6 +39,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
       entries[id]?.physiologyInputs = restored
       #endif
       entries[id]?.elimination.sanitize()
+      if let aging = entries[id]?.aging { entries[id]?.aging = .resolved(aging, entryID: id) }
       entries[id]?.drugInputs = GalaxySSIHealthAtlasDrugState.restore(entries[id]?.drugInputs)?.encoded
       if let zoom = entries[id]?.zoom { entries[id]?.zoom = zoom.isFinite ? min(4, max(1, zoom)) : 1 }
       if let metric = entries[id]?.metric, !GalaxySSIHealthAtlasMetrics.forEntry(id).contains(metric) { entries[id]?.metric = nil }

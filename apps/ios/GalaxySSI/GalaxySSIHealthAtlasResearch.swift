@@ -83,17 +83,13 @@ struct GalaxySSIHealthAtlasResearch: View {
     }
   }
   private var aging: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      Text(t("aging_scope")); Text(t("aging_note")).font(.footnote)
-      ForEach(["genome", "proteins", "energy", "cells"], id: \.self) { theme in
-        Text(t("aging_" + theme)).font(.headline)
-        Text(t("aging_" + theme + "_note"))
-      }
-      Divider()
-      Text(t("evidence_boundary")).font(.headline)
-      Text(t("aging_evidence"))
-      Link(t("aging_source"), destination: URL(string: "https://pubmed.ncbi.nlm.nih.gov/36599349/")!)
-    }
+    GalaxySSIHealthAtlasAgingPanel(atlas: atlas, entry: entry, saved: selection.aging, language: language,
+      destination: { id in
+        if let target = atlas.entry(id), depth < 32 {
+          return AnyView(GalaxySSIHealthAtlasDetail(atlas: atlas, entry: target, state: state, records: records, depth: depth + 1))
+        }
+        return AnyView(EmptyView())
+      })
   }
   private var curve: some View {
     VStack(alignment: .leading, spacing: 6) {
