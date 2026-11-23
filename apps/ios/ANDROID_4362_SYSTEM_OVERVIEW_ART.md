@@ -2,7 +2,7 @@
 
 ## Review Scope
 - Ports Android #4362 at `5ca99f3dde521cd65ca0f0f84b5550a31da5b9f2`.
-- Formal non-draft PR targeting main. Predecessor iOS #4483 (Android #4361) is merged; synchronize main before publication.
+- Formal non-draft PR targeting main. Predecessor iOS #4483 (Android #4361) is merged; synchronized with main at `9829bc90f` before publication. Only this four-plate increment remains in the diff.
 - iOS only. No Android/Desktop edits, version bump, graph/model changes, new strings, personal-health changes or IPA.
 
 ## Implementation
