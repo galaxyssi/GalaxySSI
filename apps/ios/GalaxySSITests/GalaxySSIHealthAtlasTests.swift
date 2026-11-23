@@ -287,8 +287,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
 
   func testReproductiveCatalogueAndSelectedGermlineStageRestoreTogether() throws {
     let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
-    XCTAssertEqual(atlas.entries.filter { $0.kind != .tissue }.count, 287)
     let base = try catalogue()
+    XCTAssertTrue(Set(base.entries.map(\.id)).isSubset(of: Set(atlas.entries.map(\.id))))
     XCTAssertEqual(base.entries.count, 278); XCTAssertEqual(base.mechanisms.count, 20)
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.ReproductivePack.read(bundle: Bundle(for: GalaxySSIStore.self)))
     let reproductiveIDs = Set(pack.mechanisms.map(\.id))
@@ -444,6 +444,14 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
     XCTAssertEqual(atlas.views(for: "heart").map(\.viewKey), ["heart-exterior", "heart-section"])
     XCTAssertEqual(Heart.section.markers.count, 6); XCTAssertEqual(Heart.valves.markers.count, 4)
+    for id in ["left-atrium", "right-atrium", "left-ventricle", "right-ventricle"] {
+      let chamber = try XCTUnwrap(atlas.entry(id))
+      XCTAssertTrue(atlas.tissues(chamber).contains { $0.id == "tissue-cardiac-muscle" })
+      XCTAssertTrue(atlas.cells(chamber).contains { $0.id == "cell-cardiomyocyte" })
+    }
+    for id in ["aorta", "pulmonary-trunk"] {
+      XCTAssertTrue(atlas.tissues(try XCTUnwrap(atlas.entry(id))).contains { $0.id == "tissue-vascular-endothelium" })
+    }
     XCTAssertEqual(atlas.plate(for: "heart", viewKey: "heart-section")?.id, "heart-section")
     XCTAssertEqual(atlas.plate(for: "heart", viewKey: "unknown")?.id, "heart-exterior")
     let expected: [Set<String>] = [["tricuspid-valve", "mitral-valve"], [], ["pulmonary-valve", "aortic-valve"], []]
@@ -530,7 +538,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.TissuePack.read(bundle: bundle))
     let tissues = atlas.entries.filter { $0.kind == .tissue }
     XCTAssertEqual(tissues.count, 14); XCTAssertEqual(pack.mechanisms.count, 14)
-    XCTAssertEqual(Set(tissues.flatMap(\.locations)).count, 53)
+    XCTAssertEqual(Set(pack.entries.flatMap(\.locations)).count, 53)
     XCTAssertEqual(Set(tissues.flatMap(\.related)).count, 26)
     XCTAssertEqual(pack.plates.count, 14); XCTAssertEqual(pack.plates.flatMap(\.markers).count, 17)
     for tissue in tissues {

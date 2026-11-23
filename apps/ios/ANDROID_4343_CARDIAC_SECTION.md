@@ -22,6 +22,7 @@ Base: main. Android source: #4343, merge fcd784640f7e01f12767fdedfb4cc75be09f9d7
 
 - iOS project structure and changed-source Swift grammar checks.
 - Static Android/iOS catalogue delta and localized resource comparison.
+- Full resource composition equals Android #4343: 311 entries / 158 mechanisms.
 - PDF rendered using Poppler and visually inspected; this is asset review,
   not a native iOS screenshot or device acceptance.
 - Added XCTest source for all sixteen valve/stage states, ejection fixtures,
