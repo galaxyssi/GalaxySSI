@@ -1,5 +1,21 @@
 import Foundation
 
+/// Steady-state solute transfers only, not urine volume or a patient clearance estimate.
+struct GalaxySSIHealthAtlasRenalAmounts: Equatable, Sendable {
+  let filtered: Double
+  let reabsorbed: Double
+  let secreted: Double
+  var excreted: Double { filtered - reabsorbed + secreted }
+  init?(filtered: Double, reabsorbedPercent: Double, secreted: Double) {
+    guard filtered.isFinite, filtered >= 0, reabsorbedPercent.isFinite, (0...100).contains(reabsorbedPercent),
+      secreted.isFinite, secreted >= 0 else { return nil }
+    let recovered = filtered * (reabsorbedPercent / 100)
+    guard (filtered - recovered + secreted).isFinite else { return nil }
+    self.filtered = filtered; self.reabsorbed = recovered; self.secreted = secreted
+  }
+  var transfers: [Double] { [filtered, reabsorbed, secreted, excreted] }
+}
+
 /// Synthetic teaching inputs only. This model has no archive, observation, file or transport dependency.
 struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   struct Input: Equatable, Sendable {
@@ -10,12 +26,29 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     let unit: String
   }
   enum Kind: String, CaseIterable, Sendable {
-    case ventilation, renal, potassium
+    case ventilation, renal, potassium, elbow, vessel, eye
+    case middleEar
+    case ejection
     #if GALAXYSSI_ATLAS_OXYGEN
     case oxygen
     #endif
     var inputs: [Input] {
       switch self {
+      case .ejection:
+        return [.init(key: "ejection_stroke_volume", range: 0...180, initial: 70, unit: "mL"),
+          .init(key: "ejection_residual_volume", range: 5...180, initial: 60, unit: "mL")]
+      case .eye:
+        return [.init(key: "eye_object_distance", range: 25...600, initial: 100, scale: 100, unit: "m"),
+          .init(key: "eye_power", range: 5500...6500, initial: 5982, scale: 100, unit: "D")]
+      case .vessel:
+        return [.init(key: "vessel_pressure", range: 0...20, initial: 10, unit: "mmHg"),
+          .init(key: "vessel_radius", range: 50...200, initial: 100, scale: 1000, unit: "mm"),
+          .init(key: "vessel_length", range: 20...100, initial: 50, unit: "mm"),
+          .init(key: "vessel_viscosity", range: 20...60, initial: 35, scale: 10, unit: "mPa s")]
+      case .elbow:
+        return [.init(key: "elbow_load", range: 0...100, initial: 40, scale: 10, unit: "kg"),
+          .init(key: "elbow_load_arm", range: 20...50, initial: 38, unit: "cm"),
+          .init(key: "elbow_muscle_arm", range: 20...60, initial: 40, unit: "mm")]
       case .ventilation:
         return [.init(key: "rate", range: 6...30, initial: 12, unit: "/min"),
           .init(key: "tidal", range: 200...900, initial: 500, unit: "mL"),
@@ -24,6 +57,10 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
         return [.init(key: "model_filtered", range: 0...200, initial: 100, unit: "mg/min"),
           .init(key: "model_reabsorbed", range: 0...100, initial: 90, unit: "%"),
           .init(key: "model_secreted", range: 0...100, initial: 10, unit: "mg/min")]
+      case .middleEar:
+        return [.init(key: "middle_ear_input_area", range: 35...75, initial: 55, unit: "mm\u{00b2}"),
+          .init(key: "middle_ear_output_area", range: 20...50, initial: 32, scale: 10, unit: "mm\u{00b2}"),
+          .init(key: "middle_ear_lever_ratio", range: 100...160, initial: 130, scale: 100, unit: "\u{00d7}")]
       case .potassium:
         return [.init(key: "model_outside", range: 10...200, initial: 40, scale: 10, unit: "mmol/L"),
           .init(key: "model_inside", range: 50...200, initial: 140, unit: "mmol/L")]
@@ -36,18 +73,31 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       }
     }
     var axis: Int {
+      if self == .elbow { return 0 }
+      if self == .middleEar { return 0 }
+      if self == .ejection { return 0 }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return 0 }
       #endif
       return self == .potassium ? 0 : 1
     }
     var unit: String {
+      if self == .eye { return "mm" }
+      if self == .vessel { return "mL/min" }
+      if self == .elbow { return "N" }
+      if self == .middleEar { return "\u{00d7}" }
+      if self == .ejection { return "%" }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return "%" }
       #endif
       return self == .ventilation ? "L/min" : self == .renal ? "mg/min" : "mV"
     }
     var bounds: ClosedRange<Double> {
+      if self == .eye { return -3...3 }
+      if self == .vessel { return 0...3 }
+      if self == .elbow { return 0...2700 }
+      if self == .middleEar { return 0...60 }
+      if self == .ejection { return 0...100 }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return 0...100 }
       #endif
@@ -55,8 +105,13 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var source: URL {
       switch self {
+      case .ejection: return GalaxySSIHealthAtlasHeartSection.ejectionSource
+      case .eye: return GalaxySSIHealthAtlasEyeOptics.source
+      case .vessel: return GalaxySSIHealthAtlasVesselFlow.sources[0]
+      case .elbow: return GalaxySSIHealthAtlasElbow.source
       case .ventilation: return URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-3-the-process-of-breathing")!
       case .renal: return URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption")!
+      case .middleEar: return GalaxySSIHealthAtlasMiddleEar.source
       case .potassium: return URL(string: "https://neurotext.library.stonybrook.edu/C2/C2_4/C2_4.html")!
       #if GALAXYSSI_ATLAS_OXYGEN
       case .oxygen: return GalaxySSIHealthAtlasOxygen.bindingSource
@@ -64,6 +119,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       }
     }
     var sources: [URL] {
+      if self == .middleEar { return [GalaxySSIHealthAtlasMiddleEar.source, GalaxySSIHealthAtlasMiddleEar.measurementSource] }
+      if self == .vessel { return GalaxySSIHealthAtlasVesselFlow.sources }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return GalaxySSIHealthAtlasOxygen.sources }
       #endif
@@ -71,10 +128,16 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     static func forEntry(_ id: String) -> Self? {
       switch id {
+      case "ventricles", "left-ventricle", "right-ventricle": return .ejection
+      case "eye", "lens": return .eye
+      case "blood-vessels", "arteries", "veins", "coronary-vessels": return .vessel
+      case "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna": return .elbow
       case "respiratory", "lungs", "alveoli": return .ventilation
-      case "urinary", "kidneys", "nephron", "renal-tubules", "collecting-ducts", "cell-proximal-tubular-cell",
+      case "urinary", "kidneys", "nephron", "renal-tubules", "collecting-ducts", "proximal-tubule", "nephron-loop",
+           "distal-tubule", "cell-proximal-tubular-cell",
            "cell-distal-tubular-cell", "cell-collecting-duct-principal-cell", "cell-collecting-duct-intercalated-cell": return .renal
       case "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron": return .potassium
+      case "ear", "middle-ear": return .middleEar
       #if GALAXYSSI_ATLAS_OXYGEN
       case "blood", "cell-erythrocyte": return .oxygen
       #endif
@@ -104,13 +167,44 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var result: Double { evaluate(inputs.indices.map(input)) }
   var companionValue: Double {
     switch kind {
+    case .ejection: return input(0) + input(1)
+    case .eye: return eyeOptics!.targetPowerDiopters
+    case .vessel: return vesselFlow!.resistanceMmHgMinutesPerMl
+    case .elbow: return elbowForces!.jointDown
     case .ventilation: return input(0) * input(1) / 1000
-    case .renal: return input(0) * input(1) / 100
+    case .renal: return renalAmounts!.reabsorbed
     case .potassium: return input(0) / input(1)
+    case .middleEar: return middleEar!.pressureGainDb
     #if GALAXYSSI_ATLAS_OXYGEN
     case .oxygen: return oxygenAmounts!.total
     #endif
     }
+  }
+  var renalAmounts: GalaxySSIHealthAtlasRenalAmounts? {
+    kind == .renal ? GalaxySSIHealthAtlasRenalAmounts(filtered: input(0), reabsorbedPercent: input(1), secreted: input(2)) : nil
+  }
+  var elbowForces: GalaxySSIHealthAtlasElbow.Forces? {
+    kind == .elbow ? GalaxySSIHealthAtlasElbow.forces(loadKg: input(0), loadArmCm: input(1), muscleArmMm: input(2)) : nil
+  }
+  var middleEar: GalaxySSIHealthAtlasMiddleEar? {
+    kind == .middleEar ? GalaxySSIHealthAtlasMiddleEar(membraneAreaMm2: input(0), footplateAreaMm2: input(1), leverRatio: input(2)) : nil
+  }
+  var vesselFlow: GalaxySSIHealthAtlasVesselFlow? {
+    kind == .vessel ? GalaxySSIHealthAtlasVesselFlow(pressureMmHg: input(0), radiusMm: input(1),
+      lengthMm: input(2), viscosityMilliPascalSeconds: input(3)) : nil
+  }
+  var eyeOptics: GalaxySSIHealthAtlasEyeOptics? {
+    kind == .eye ? GalaxySSIHealthAtlasEyeOptics(distanceMetres: input(0), powerDiopters: input(1)) : nil
+  }
+  var plotMaximum: Double {
+    if kind == .elbow { return ceil(resultAt(axisRange.upperBound)! / 100) * 100 }
+    if kind == .vessel {
+      let peak = resultAt(axisRange.upperBound)!
+      guard peak > 0 else { return 0.01 }
+      let scale = pow(10, floor(log10(peak)))
+      return ceil(peak / scale) * scale
+    }
+    return kind.bounds.upperBound
   }
   #if GALAXYSSI_ATLAS_OXYGEN
   var oxygenAmounts: GalaxySSIHealthAtlasOxygen.Amounts? {
@@ -133,9 +227,15 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
+    case .ejection: return 100 * values[0] / (values[0] + values[1])
+    case .eye: return GalaxySSIHealthAtlasEyeOptics(distanceMetres: values[0], powerDiopters: values[1])!.offsetMm
+    case .vessel: return GalaxySSIHealthAtlasVesselFlow(pressureMmHg: values[0], radiusMm: values[1],
+      lengthMm: values[2], viscosityMilliPascalSeconds: values[3])!.flowMlPerMinute
+    case .elbow: return GalaxySSIHealthAtlasElbow.forces(loadKg: values[0], loadArmCm: values[1], muscleArmMm: values[2])!.muscle
     case .ventilation: return values[0] * (values[1] - values[2]) / 1000
-    case .renal: return values[0] * (1 - values[1] / 100) + values[2]
+    case .renal: return GalaxySSIHealthAtlasRenalAmounts(filtered: values[0], reabsorbedPercent: values[1], secreted: values[2])!.excreted
     case .potassium: return Self.potassiumPotential(outside: values[0], inside: values[1])!
+    case .middleEar: return GalaxySSIHealthAtlasMiddleEar(membraneAreaMm2: values[0], footplateAreaMm2: values[1], leverRatio: values[2])!.pressureRatio
     #if GALAXYSSI_ATLAS_OXYGEN
     case .oxygen: return 100 * GalaxySSIHealthAtlasOxygen.saturation(pressure: values[0], p50: values[1])!
     #endif

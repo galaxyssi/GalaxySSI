@@ -1,0 +1,130 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4328,
+    "mergeCommit": "dd6e7c26e3d89736ee65a05dab45223c0db2538e"
+  },
+  "plates": [
+    {
+      "id": "urinary",
+      "asset": "HealthAtlasUrinary",
+      "owner": "urinary",
+      "viewLabel": "health_atlas_view_urinary",
+      "entryIDs": [
+        "urinary",
+        "ureters",
+        "bladder",
+        "urethra"
+      ],
+      "aspectRatio": 0.6666666666666666,
+      "markers": [
+        {
+          "id": "kidneys",
+          "x": 0.73,
+          "y": 0.22
+        },
+        {
+          "id": "ureters",
+          "x": 0.66,
+          "y": 0.53
+        },
+        {
+          "id": "bladder",
+          "x": 0.5,
+          "y": 0.79
+        },
+        {
+          "id": "urethra",
+          "x": 0.48,
+          "y": 0.91
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-2-gross-anatomy-of-urine-transport"
+    },
+    {
+      "id": "gut",
+      "asset": "HealthAtlasGut",
+      "owner": "gut",
+      "viewLabel": "health_atlas_view_gut",
+      "entryIDs": [
+        "gut",
+        "esophagus",
+        "stomach",
+        "small-intestine",
+        "large-intestine",
+        "appendix",
+        "rectum"
+      ],
+      "aspectRatio": 0.6666666666666666,
+      "markers": [
+        {
+          "id": "esophagus",
+          "x": 0.56,
+          "y": 0.08
+        },
+        {
+          "id": "stomach",
+          "x": 0.66,
+          "y": 0.24
+        },
+        {
+          "id": "large-intestine",
+          "x": 0.85,
+          "y": 0.52
+        },
+        {
+          "id": "small-intestine",
+          "x": 0.47,
+          "y": 0.6
+        },
+        {
+          "id": "appendix",
+          "x": 0.26,
+          "y": 0.79
+        },
+        {
+          "id": "rectum",
+          "x": 0.5,
+          "y": 0.9
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-1-overview-of-the-digestive-system"
+    },
+    {
+      "id": "pancreas",
+      "asset": "HealthAtlasPancreas",
+      "owner": "pancreas",
+      "viewLabel": "health_atlas_view_pancreas",
+      "entryIDs": [
+        "pancreas",
+        "pancreatic-duct",
+        "duodenum"
+      ],
+      "aspectRatio": 1.5,
+      "markers": [
+        {
+          "id": "pancreas",
+          "x": 0.62,
+          "y": 0.3
+        },
+        {
+          "id": "pancreatic-duct",
+          "x": 0.57,
+          "y": 0.41
+        },
+        {
+          "id": "duodenum",
+          "x": 0.12,
+          "y": 0.48
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder"
+    }
+  ],
+  "english": {
+    "health_atlas_view_urinary": "Urinary organs · schematic anterior view; urethral length simplified",
+    "health_atlas_view_gut": "Esophagus to rectum · anterior schematic; accessory organs omitted",
+    "health_atlas_view_pancreas": "Pancreas and adjacent duodenum · main duct exposed",
+    "health_atlas_plate_source": "Anatomical illustration reference"
+  }
+}

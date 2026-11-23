@@ -7,6 +7,14 @@
     <string name="wechat_article_fetch">Downloading article and images…</string>
     <string name="wechat_article_render">Creating PDF…</string>
     <string name="wechat_article_saved">Saved %1$d pages to Download/GalaxySSI/GongZhongHao\n%2$s</string>
+    <string name="wechat_article_saved_partial">Saved %1$d pages to Download/GalaxySSI/GongZhongHao. Missing images: %3$d, marked in the PDF.\n%2$s</string>
+    <string name="wechat_article_missing_image">[Image unavailable]</string>
+    <string name="wechat_article_already_saving">A WeChat article is already being saved. Check the saving notification to finish or cancel it.</string>
+    <string name="wechat_article_body_unavailable">The article body did not finish loading. No PDF was saved.</string>
+    <string name="wechat_article_load_failed">The background browser could not load the article. No PDF was saved.</string>
+    <string name="wechat_article_too_large">The article is too large to save as one PDF.</string>
+    <string name="wechat_article_pdf_failed">The article was loaded, but the PDF could not be created or saved.</string>
+    <string name="wechat_article_verification_expired">WeChat verification timed out. Open the article again to retry.</string>
     <string name="wechat_article_failed">Could not save the complete article. Check your network and that the article is publicly accessible, then try again.</string>
     <string name="wechat_article_clipboard_failed">Could not read a newly copied WeChat article link. Return to the article and try again.</string>
     <string name="wechat_article_open">Open PDF</string>
