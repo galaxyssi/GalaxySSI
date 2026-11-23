@@ -1979,6 +1979,31 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testCalciumFeedbackStrengthCargoFadeAndResponseRoutes() throws {
+    typealias Motion = GalaxySSIHealthAtlasCalciumMotion
+    XCTAssertEqual(Motion.State(step: 0, fraction: 0).calcium, 1)
+    XCTAssertEqual(Motion.State(step: 0, fraction: 1).calcium, 0.34, accuracy: 1e-12)
+    XCTAssertEqual(Motion.State(step: 1, fraction: 0).hormone, 0.24)
+    XCTAssertEqual(Motion.State(step: 1, fraction: 1).hormone, 1)
+    XCTAssertEqual(Motion.State(step: 4, fraction: 1).calcium, 1)
+    XCTAssertEqual(Motion.State(step: 4, fraction: 1).hormone, 0.2, accuracy: 1e-12)
+    XCTAssertEqual(Motion.presence(0.34, index: 0, count: 7), 1)
+    XCTAssertEqual(Motion.presence(0.34, index: 2, count: 7), 0.38, accuracy: 1e-12)
+    XCTAssertEqual(Motion.presence(0.34, index: 3, count: 7), 0)
+    XCTAssertEqual(Motion.flowAlpha(0.5, index: 0, count: 5), 255)
+    XCTAssertEqual(Motion.flowAlpha(0, index: 0, count: 5), 0)
+    XCTAssertEqual(Motion.flowAlpha(0.5, index: 4, count: 5, strength: 0.2), 0)
+    XCTAssertEqual(Motion.wrap(.nan), 0)
+    XCTAssertEqual(Motion.fraction(1, index: 0, count: 5), 0)
+    XCTAssertEqual(Motion.fraction(0.5, index: 0, count: 0), 0)
+    XCTAssertEqual(GalaxySSIHealthAtlasCalciumShapes.villusDots.count, 40)
+    for route in [Motion.neckBlood, Motion.release, Motion.tubule, Motion.renalBlood, Motion.retention,
+      Motion.activeVitaminD, Motion.villus, Motion.villusBlood, Motion.uptake, Motion.intestinalSignal] {
+      for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        XCTAssertNotNil(GalaxySSIHealthAtlasFunctionPath.sample(route, position: t, width: 360, height: 360))
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion

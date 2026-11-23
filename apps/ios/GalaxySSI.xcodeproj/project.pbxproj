@@ -138,6 +138,11 @@
     C4384000000000000000012F /* GalaxySSIHealthAtlasPleuraMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000130 /* GalaxySSIHealthAtlasPleuraMotion.swift */; };
     C43840000000000000000131 /* GalaxySSIHealthAtlasPleuraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000132 /* GalaxySSIHealthAtlasPleuraView.swift */; };
     C43840000000000000000133 /* GalaxySSIHealthAtlasPleuraDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000134 /* GalaxySSIHealthAtlasPleuraDrawing.swift */; };
+    C43840000000000000000135 /* GalaxySSIHealthAtlasCalciumMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000136 /* GalaxySSIHealthAtlasCalciumMotion.swift */; };
+    C43840000000000000000137 /* GalaxySSIHealthAtlasCalciumView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000138 /* GalaxySSIHealthAtlasCalciumView.swift */; };
+    C43840000000000000000139 /* GalaxySSIHealthAtlasCalciumParticleDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000013A /* GalaxySSIHealthAtlasCalciumParticleDrawing.swift */; };
+    C4384000000000000000013B /* GalaxySSIHealthAtlasCalciumParathyroidDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000013C /* GalaxySSIHealthAtlasCalciumParathyroidDrawing.swift */; };
+    C4384000000000000000013D /* GalaxySSIHealthAtlasCalciumResponseDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000013E /* GalaxySSIHealthAtlasCalciumResponseDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1749,6 +1754,11 @@
     C43840000000000000000130 /* GalaxySSIHealthAtlasPleuraMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPleuraMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000132 /* GalaxySSIHealthAtlasPleuraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPleuraView.swift; sourceTree = "<group>"; };
     C43840000000000000000134 /* GalaxySSIHealthAtlasPleuraDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPleuraDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000136 /* GalaxySSIHealthAtlasCalciumMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCalciumMotion.swift; sourceTree = "<group>"; };
+    C43840000000000000000138 /* GalaxySSIHealthAtlasCalciumView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCalciumView.swift; sourceTree = "<group>"; };
+    C4384000000000000000013A /* GalaxySSIHealthAtlasCalciumParticleDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCalciumParticleDrawing.swift; sourceTree = "<group>"; };
+    C4384000000000000000013C /* GalaxySSIHealthAtlasCalciumParathyroidDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCalciumParathyroidDrawing.swift; sourceTree = "<group>"; };
+    C4384000000000000000013E /* GalaxySSIHealthAtlasCalciumResponseDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCalciumResponseDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3379,6 +3389,11 @@
         C43840000000000000000130 /* GalaxySSIHealthAtlasPleuraMotion.swift */,
         C43840000000000000000132 /* GalaxySSIHealthAtlasPleuraView.swift */,
         C43840000000000000000134 /* GalaxySSIHealthAtlasPleuraDrawing.swift */,
+        C43840000000000000000136 /* GalaxySSIHealthAtlasCalciumMotion.swift */,
+        C43840000000000000000138 /* GalaxySSIHealthAtlasCalciumView.swift */,
+        C4384000000000000000013A /* GalaxySSIHealthAtlasCalciumParticleDrawing.swift */,
+        C4384000000000000000013C /* GalaxySSIHealthAtlasCalciumParathyroidDrawing.swift */,
+        C4384000000000000000013E /* GalaxySSIHealthAtlasCalciumResponseDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5139,6 +5154,11 @@
         C4384000000000000000012F /* GalaxySSIHealthAtlasPleuraMotion.swift in Sources */,
         C43840000000000000000131 /* GalaxySSIHealthAtlasPleuraView.swift in Sources */,
         C43840000000000000000133 /* GalaxySSIHealthAtlasPleuraDrawing.swift in Sources */,
+        C43840000000000000000135 /* GalaxySSIHealthAtlasCalciumMotion.swift in Sources */,
+        C43840000000000000000137 /* GalaxySSIHealthAtlasCalciumView.swift in Sources */,
+        C43840000000000000000139 /* GalaxySSIHealthAtlasCalciumParticleDrawing.swift in Sources */,
+        C4384000000000000000013B /* GalaxySSIHealthAtlasCalciumParathyroidDrawing.swift in Sources */,
+        C4384000000000000000013D /* GalaxySSIHealthAtlasCalciumResponseDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
