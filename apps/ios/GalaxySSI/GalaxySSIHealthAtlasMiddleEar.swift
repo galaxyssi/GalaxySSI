@@ -24,7 +24,7 @@ struct GalaxySSIHealthAtlasMiddleEar: Equatable, Sendable {
     viewLabel: "health_atlas_view_ear_section", entryIDs: ids, aspectRatio: 3.0 / 2,
     markers: [.init(id: "external-ear", x: 0.105, y: 0.251), .init(id: "middle-ear", x: 0.531, y: 0.420),
       .init(id: "inner-ear", x: 0.656, y: 0.426), .init(id: "cochlea", x: 0.759, y: 0.556),
-      .init(id: "vestibular-apparatus", x: 0.742, y: 0.111)], source: anatomySource)
+      .init(id: "vestibular-apparatus", x: 0.742, y: 0.111)], source: anatomySource, splitCallouts: true)
 }
 
 extension GalaxySSIHealthAtlas {

@@ -14,7 +14,8 @@ enum GalaxySSIHealthAtlasSensorySections {
   private static func copy(_ original: Plate, features: [Feature], keepMarkers: Bool = true) -> Plate {
     Plate(id: original.id, asset: original.asset, owner: original.owner, viewLabel: original.viewLabel,
       entryIDs: original.entryIDs, aspectRatio: original.aspectRatio, markers: keepMarkers ? original.markers : [],
-      source: original.source, viewKey: original.viewKey, selectorLabel: original.selectorLabel, features: features)
+      source: original.source, viewKey: original.viewKey, selectorLabel: original.selectorLabel, features: features,
+      splitCallouts: original.splitCallouts)
   }
   static let ear: Lesson = {
     func feature(_ id: String, _ x: Double, _ y: Double, _ title: String, _ stage: Int) -> Feature {

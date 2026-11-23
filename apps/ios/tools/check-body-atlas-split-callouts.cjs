@@ -1,0 +1,45 @@
+// Pinned resource/metadata audit, not UIKit layout or XCTest execution.
+const fs = require("node:fs"), path = require("node:path"), assert = require("node:assert/strict");
+const {execFileSync} = require("node:child_process"), sharp = require("sharp");
+const root = path.resolve(__dirname, "../GalaxySSI"), assets = path.join(root, "Assets.xcassets");
+const sha = "920ede43e4c010f166d459ca2f5e674414766683";
+const source = file => execFileSync("git", ["show", sha + ":" + file], {maxBuffer: 16_000_000});
+(async () => {
+  const dir = path.join(assets, "HealthAtlasEyeSection.imageset"), meta = JSON.parse(fs.readFileSync(path.join(dir, "Contents.json")));
+  assert(meta.images.some(i => i.filename === "eye.png")); assert(!meta.properties?.["preserves-vector-representation"]);
+  assert(!fs.existsSync(path.join(dir, "eye.pdf")));
+  const png = fs.readFileSync(path.join(dir, "eye.png"));
+  assert(png.equals(source("apps/android/app/src/main/res/drawable-nodpi/health_atlas_eye_section.png")));
+  const image = sharp(png), info = await image.metadata();
+  assert.equal(info.width, 1536); assert.equal(info.height, 1024);
+  const raw = await image.ensureAlpha().raw().toBuffer();
+  const alpha = (x,y) => raw[(Math.floor(y * info.height) * info.width + Math.floor(x * info.width)) * 4 + 3];
+  for (const x of [0,info.width-1]) for (const y of [0,info.height-1]) assert(raw[(y*info.width+x)*4+3] <= 4);
+  const kotlin = source("apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPlates.kt").toString();
+  const start = kotlin.indexOf("private val eye ="), block = kotlin.slice(start, kotlin.indexOf("private val ear =",start));
+  const expected = [...block.matchAll(/HealthAtlasMarker\("([^"]+)", ([\d.]+)f, ([\d.]+)f\)/g)].map(m => ({id:m[1],x:Number(m[2]),y:Number(m[3])}));
+  const eye = fs.readFileSync(path.join(root, "GalaxySSIHealthAtlasEyeOptics.swift"),"utf8");
+  const actual = [...eye.matchAll(/\.init\(id: "([^"]+)", x: ([\d.]+), y: ([\d.]+)\)/g)].map(m => ({id:m[1],x:Number(m[2]),y:Number(m[3])}));
+  assert.deepEqual(actual, expected); assert.equal(actual.length,3);
+  for (const marker of actual) assert(alpha(marker.x,marker.y) > 200, marker.id);
+  assert(eye.includes("aspectRatio: 3.0 / 2")); assert(eye.includes("splitCallouts: true"));
+  const ear = fs.readFileSync(path.join(root, "GalaxySSIHealthAtlasMiddleEar.swift"),"utf8");
+  assert(ear.includes("splitCallouts: true"));
+  const pack = JSON.parse(fs.readFileSync(path.join(assets,"HealthAtlasSystemOverviews.dataset/content.json")));
+  assert.deepEqual(pack.calloutSource,{androidPR:4360,mergeCommit:sha});
+  const system = source("apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSystemPlates.kt").toString();
+  const flags = [...system.matchAll(/private val (\w+) = HealthAtlasPlate\(([\s\S]*?)(?=\n    private val|\n    private fun)/g)]
+    .filter(m=>m[2].includes("splitCallouts = true")).map(m=>m[1]).sort();
+  assert.deepEqual(flags,["endocrine","immune","sensory"]);
+  assert.deepEqual(pack.plates.filter(p=>p.splitCallouts).map(p=>p.owner).sort(),flags);
+  const retinal = fs.readFileSync(path.join(root,"GalaxySSIHealthAtlasRetinaPath.swift"),"utf8");
+  assert(retinal.includes("splitCallouts: eye.splitCallouts"));
+  const customDecoder = fs.readFileSync(path.join(root,"GalaxySSIHealthAtlasImmune.swift"),"utf8");
+  assert(customDecoder.includes("decodeIfPresent(Bool.self, forKey: .splitCallouts) ?? false"));
+  const layout = fs.readFileSync(path.join(root,"GalaxySSIHealthAtlasCalloutLayout.swift"),"utf8");
+  assert(layout.includes("width * 0.24")); assert(layout.includes("max(48, measured)"));
+  const labeled = fs.readFileSync(path.join(root,"GalaxySSIHealthAtlasLabeledArtwork.swift"),"utf8");
+  assert(labeled.includes("minX: plan.split && !onLeft ? imageRect.midX"));
+  assert(labeled.includes("maxX: plan.split && onLeft ? imageRect.midX"));
+  console.log("Android #4360 resource parity: original painted eye, three exact opaque callouts, five split-callout owners, inherited retinal context flag and legacy false default. Native layout remains unverified.");
+})().catch(error=>{console.error(error);process.exit(1);});

@@ -9,8 +9,10 @@ enum GalaxySSIHealthAtlasLeaderRoutes {
     let t = min(1, max(0, ((point.x - start.x) * dx + (point.y - start.y) * dy) / length))
     return hypot(point.x - start.x - t * dx, point.y - start.y - t * dy)
   }
-  static func route(start: CGPoint, end: CGPoint, obstacles: [CGPoint], clearance: CGFloat) -> [CGPoint] {
+  static func route(start: CGPoint, end: CGPoint, obstacles: [CGPoint], clearance: CGFloat,
+                    minX: CGFloat = -.infinity, maxX: CGFloat = .infinity) -> [CGPoint] {
     guard clearance.isFinite, clearance > 0, obstacles.count <= 32,
+      !minX.isNaN, !maxX.isNaN, minX <= maxX, start.x >= minX, start.x <= maxX, end.x >= minX, end.x <= maxX,
       ([start, end] + obstacles).allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else { return [] }
     func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
     func visible(_ a: CGPoint, _ b: CGPoint) -> Bool {
@@ -23,7 +25,8 @@ enum GalaxySSIHealthAtlasLeaderRoutes {
     for point in obstacles {
       for candidate in [CGPoint(x: point.x - offset, y: point.y - offset), CGPoint(x: point.x + offset, y: point.y - offset),
         CGPoint(x: point.x + offset, y: point.y + offset), CGPoint(x: point.x - offset, y: point.y + offset)] {
-        if !points.contains(candidate), obstacles.allSatisfy({ distance(candidate, $0) >= clearance }) { points.append(candidate) }
+        if candidate.x >= minX, candidate.x <= maxX, !points.contains(candidate),
+          obstacles.allSatisfy({ distance(candidate, $0) >= clearance }) { points.append(candidate) }
       }
     }
     var best = Array(repeating: CGFloat.infinity, count: points.count)

@@ -24,7 +24,7 @@ struct GalaxySSIHealthAtlasEyeOptics: Equatable, Sendable {
     return result.isFinite ? result : nil
   }
   static let plate = GalaxySSIHealthAtlas.Plate(id: "eye", asset: "HealthAtlasEyeSection", owner: "eye",
-    viewLabel: "health_atlas_view_eye_section", entryIDs: ["eye", "cornea", "lens", "retina"], aspectRatio: 400.0 / 280,
-    markers: [.init(id: "cornea", x: 0.138, y: 0.39), .init(id: "lens", x: 0.30, y: 0.49),
-      .init(id: "retina", x: 0.663, y: 0.669)], source: anatomySource)
+    viewLabel: "health_atlas_view_eye_section", entryIDs: ["eye", "cornea", "lens", "retina"], aspectRatio: 3.0 / 2,
+    markers: [.init(id: "cornea", x: 0.159, y: 0.475), .init(id: "lens", x: 0.324, y: 0.496),
+      .init(id: "retina", x: 0.758, y: 0.479)], source: anatomySource, splitCallouts: true)
 }

@@ -9,11 +9,12 @@ struct GalaxySSIHealthAtlasLabeledArtwork: View {
   let spots: [(String, Double, Double)]
   let labels: [String]
   var featureIDs: Set<String> = []
+  var splitCallouts: Bool = false
   let onSelect: (String) -> Void
   @State private var height: CGFloat = 360
   var body: some View {
     GalaxySSIAtlasLabeledScroll(asset: asset, aspectRatio: aspectRatio, zoom: $zoom, height: $height,
-      currentID: currentID, spots: spots, labels: labels, featureIDs: featureIDs, onSelect: onSelect)
+      currentID: currentID, spots: spots, labels: labels, featureIDs: featureIDs, splitCallouts: splitCallouts, onSelect: onSelect)
       .frame(height: height)
   }
 }
@@ -27,6 +28,7 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
   let spots: [(String, Double, Double)]
   let labels: [String]
   let featureIDs: Set<String>
+  let splitCallouts: Bool
   let onSelect: (String) -> Void
   func makeCoordinator() -> Coordinator { Coordinator(self) }
   func makeUIView(context: Context) -> UIScrollView {
@@ -104,6 +106,7 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
       self.input = input
       let unchanged = previous.map { old in
         old.asset == input.asset && old.aspectRatio == input.aspectRatio && old.currentID == input.currentID &&
+          old.splitCallouts == input.splitCallouts &&
           old.labels == input.labels && old.featureIDs == input.featureIDs && old.spots.map({ $0.0 }) == input.spots.map({ $0.0 }) &&
           old.spots.map({ $0.1 }) == input.spots.map({ $0.1 }) && old.spots.map({ $0.2 }) == input.spots.map({ $0.2 })
       } ?? false
@@ -114,12 +117,18 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
       for (index, spot) in input.spots.enumerated() {
         let button = UIButton(type: .system)
         button.setTitle(input.labels.indices.contains(index) ? input.labels[index] : spot.0, for: .normal)
+        button.titleLabel?.text = input.labels.indices.contains(index) ? input.labels[index] : spot.0
         button.titleLabel?.numberOfLines = 0
-        button.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
+        button.titleLabel?.lineBreakMode = .byWordWrapping
+        button.titleLabel?.font = .preferredFont(forTextStyle: .subheadline, compatibleWith: traitCollection)
         button.titleLabel?.adjustsFontForContentSizeCategory = true
-        button.contentHorizontalAlignment = .leading
-        button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 6, bottom: 8, right: 6)
+        let split = input.splitCallouts && input.spots.contains { $0.1 < 0.5 } && input.spots.contains { $0.1 >= 0.5 }
+        let left = split && spot.1 < 0.5
+        button.contentHorizontalAlignment = left ? .right : .left
+        button.titleLabel?.textAlignment = left ? .right : .left
+        button.contentEdgeInsets = UIEdgeInsets(top: 8, left: left ? 0 : 6, bottom: 8, right: split && !left ? 0 : 6)
         button.setTitleColor(.label, for: .normal); button.setTitleColor(.label, for: .disabled)
+        button.setTitleColor(GalaxySSIHealthTheme.accentUIColor, for: [.selected, .disabled])
         let feature = input.featureIDs.contains(spot.0)
         button.isSelected = !feature && spot.0 == input.currentID; button.isEnabled = !button.isSelected
         if button.isSelected { button.accessibilityTraits.insert(.isSelected) }
@@ -127,6 +136,9 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
         button.addAction(UIAction { [weak self] _ in self?.input?.onSelect(spot.0) }, for: .touchUpInside)
         addSubview(button); buttons.append(button)
       }
+      accessibilityElements = input.spots.indices.sorted {
+        input.spots[$0].2 == input.spots[$1].2 ? input.spots[$0].1 < input.spots[$1].1 : input.spots[$0].2 < input.spots[$1].2
+      }.map { buttons[$0] }
       setNeedsLayout()
     }
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -136,37 +148,41 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
       }
       guides.setNeedsDisplay()
     }
-    private func columnWidth(_ width: CGFloat) -> CGFloat {
-      width * (traitCollection.preferredContentSizeCategory.isAccessibilityCategory ? 0.55 : 0.36)
-    }
     private func labelHeight(_ button: UIButton, width: CGFloat) -> CGFloat {
-      max(48, (button.titleLabel?.sizeThatFits(CGSize(width: max(1, width - 12), height: .greatestFiniteMagnitude)).height ?? 0) + 16)
+      let insets = button.contentEdgeInsets
+      return max(48, (button.titleLabel?.sizeThatFits(CGSize(width: max(1, width - insets.left - insets.right),
+        height: .greatestFiniteMagnitude)).height ?? 0) + insets.top + insets.bottom)
     }
-    func requiredHeight(width: CGFloat) -> CGFloat {
-      let column = columnWidth(width)
-      let labels = buttons.reduce(CGFloat(16)) { $0 + labelHeight($1, width: column) + 8 }
-      return ceil(max(300, max(labels, (width - column - 12) / CGFloat(input?.aspectRatio ?? 1))))
+    private func plan(width: CGFloat) -> GalaxySSIHealthAtlasCalloutLayout? {
+      guard let input, buttons.count == input.spots.count else { return nil }
+      let preferred = buttons.map { button -> CGFloat in
+        let font = button.titleLabel?.font ?? UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traitCollection)
+        let title = (button.title(for: .normal) ?? "") as NSString
+        return title.size(withAttributes: [.font: font]).width +
+          button.contentEdgeInsets.left + button.contentEdgeInsets.right
+      }
+      return GalaxySSIHealthAtlasCalloutLayout.make(width: width, aspectRatio: input.aspectRatio,
+        anchors: input.spots.map { CGPoint(x: $0.1, y: $0.2) }, splitRequested: input.splitCallouts,
+        accessibility: traitCollection.preferredContentSizeCategory.isAccessibilityCategory,
+        preferredWidths: preferred, measureHeight: { self.labelHeight(self.buttons[$0], width: $1) })
     }
+    func requiredHeight(width: CGFloat) -> CGFloat { plan(width: width)?.height ?? 300 }
     override func layoutSubviews() {
       super.layoutSubviews()
-      guard let input, bounds.width > 0 else { return }
-      let column = columnWidth(bounds.width), available = CGRect(x: 0, y: 0, width: max(1, bounds.width - column - 12), height: bounds.height)
-      let ratio = CGFloat(input.aspectRatio)
-      let width = min(available.width, available.height * ratio), height = width / ratio
-      imageRect = CGRect(x: available.midX - width / 2, y: available.midY - height / 2, width: width, height: height)
-      image.frame = imageRect
-      guides.frame = bounds
-      let points = input.spots.map { CGPoint(x: imageRect.minX + imageRect.width * CGFloat($0.1), y: imageRect.minY + imageRect.height * CGFloat($0.2)) }
-      var y: CGFloat = 8
-      for index in buttons.indices {
-        let height = labelHeight(buttons[index], width: column)
-        buttons[index].frame = CGRect(x: bounds.width - column, y: y, width: column, height: height)
-        y += height + 8
-      }
+      guard let input, let plan = plan(width: bounds.width) else { return }
+      imageRect = plan.imageRect
+      image.frame = imageRect; guides.frame = bounds
+      let points = input.spots.map { CGPoint(x: imageRect.minX + imageRect.width * CGFloat($0.1),
+        y: imageRect.minY + imageRect.height * CGFloat($0.2)) }
+      for index in buttons.indices { buttons[index].frame = plan.labelFrames[index] }
+      let left = Set(plan.left)
       routes = points.enumerated().map { index, point in
-        GalaxySSIHealthAtlasLeaderRoutes.route(start: point,
-          end: CGPoint(x: buttons[index].frame.minX, y: buttons[index].frame.midY),
-          obstacles: points.enumerated().filter { $0.offset != index }.map(\.element), clearance: 8)
+        let frame = buttons[index].frame, onLeft = left.contains(index)
+        return GalaxySSIHealthAtlasLeaderRoutes.route(start: point,
+          end: CGPoint(x: onLeft ? frame.maxX : frame.minX, y: frame.midY),
+          obstacles: points.enumerated().filter { $0.offset != index }.map(\.element), clearance: 8,
+          minX: plan.split && !onLeft ? imageRect.midX : -.infinity,
+          maxX: plan.split && onLeft ? imageRect.midX : .infinity)
       }
       guides.setNeedsDisplay()
     }
