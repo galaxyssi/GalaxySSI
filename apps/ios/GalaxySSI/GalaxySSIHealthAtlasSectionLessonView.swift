@@ -1,7 +1,7 @@
 import SwiftUI
 
-struct GalaxySSIHealthAtlasLymphLessonView: View {
-  let lesson: GalaxySSIHealthAtlasLymphLesson
+struct GalaxySSIHealthAtlasSectionLessonView: View {
+  let lesson: GalaxySSIHealthAtlasSectionLesson
   let phase: Double
   let stages: [String]
   let language: String
@@ -9,7 +9,7 @@ struct GalaxySSIHealthAtlasLymphLessonView: View {
   private static let highlight = Color(red: 23/255, green: 106/255, blue: 90/255)
   private static let flow = Color(red: 33/255, green: 86/255, blue: 117/255)
   var body: some View {
-    if let selected = GalaxySSIHealthAtlasLymphLesson.Phase(phase), let feature = lesson.feature(stage: selected.stage), stages.count == 4 {
+    if let selected = GalaxySSIHealthAtlasSectionLesson.Phase(phase), let feature = lesson.feature(stage: selected.stage), stages.count == 4 {
       Canvas { context, size in
         var drawing = context
         let scale = min(size.width / 360, size.height / 280)
@@ -32,15 +32,16 @@ struct GalaxySSIHealthAtlasLymphLessonView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(GalaxySSIHealthAtlasText.get(feature.title, language) + ". " +
           GalaxySSIHealthAtlasText.get(stages[selected.stage], language))
-        .accessibilityIdentifier("atlas-lymph-diagram")
+        .accessibilityIdentifier("atlas-section-diagram")
     }
   }
-  static func path(_ route: GalaxySSIHealthAtlasLymphLesson.Route) -> Path {
+  static func path(_ route: GalaxySSIHealthAtlasSectionLesson.Route) -> Path {
     var path = Path(); path.move(to: CGPoint(x: route.start.x, y: route.start.y))
     for command in route.commands {
       guard command.valid else { continue }
       let points = command.points.map { CGPoint(x: $0.x, y: $0.y) }
       switch command.kind {
+      case .line: path.addLine(to: points[0])
       case .quad: path.addQuadCurve(to: points[1], control: points[0])
       case .cubic: path.addCurve(to: points[2], control1: points[0], control2: points[1])
       }
@@ -48,3 +49,5 @@ struct GalaxySSIHealthAtlasLymphLessonView: View {
     return path
   }
 }
+
+typealias GalaxySSIHealthAtlasLymphLessonView = GalaxySSIHealthAtlasSectionLessonView

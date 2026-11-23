@@ -30,6 +30,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case middleEar
     case nerveTransit
     case lymphValve
+    case villusArea
     case sweatEvaporation
     case photonCapture
     case thyroidFeedback
@@ -41,6 +42,10 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     #endif
     var inputs: [Input] {
       switch self {
+      case .villusArea:
+        return [.init(key: "gut_section_area_density", range: 0...24, initial: 12, unit: "/mm\u{00b2}"),
+          .init(key: "gut_section_area_radius", range: 25...70, initial: 45, scale: 1000, unit: "mm"),
+          .init(key: "gut_section_area_height", range: 20...120, initial: 60, scale: 100, unit: "mm")]
       case .lymphValve:
         return [.init(key: "lymph_valve_pressure", range: -40...40, initial: 20, scale: 10, unit: "mmHg"),
           .init(key: "lymph_valve_resistance", range: 20...200, initial: 40, scale: 10, unit: "mmHg\u{00b7}min/mL")]
@@ -100,6 +105,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       }
     }
     var axis: Int {
+      if self == .villusArea { return 0 }
       if self == .lymphValve { return 0 }
       if self == .sweatEvaporation { return 0 }
       if self == .photonCapture { return 0 }
@@ -115,6 +121,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .potassium ? 0 : 1
     }
     var unit: String {
+      if self == .villusArea { return "\u{00d7}" }
       if self == .lymphValve { return "mL/min" }
       if self == .sweatEvaporation { return "W" }
       if self == .photonCapture { return "%" }
@@ -133,6 +140,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .ventilation ? "L/min" : self == .renal ? "mg/min" : "mV"
     }
     var bounds: ClosedRange<Double> {
+      if self == .villusArea { return 1...14 }
       if self == .lymphValve { return 0...2 }
       if self == .sweatEvaporation { return 0...900 }
       if self == .photonCapture { return 0...100 }
@@ -152,6 +160,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var source: URL {
       switch self {
+      case .villusArea: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/24694282/")!
       case .lymphValve: return URL(string: "https://pmc.ncbi.nlm.nih.gov/articles/PMC4500195/")!
       case .sweatEvaporation: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/23459754/")!
       case .photonCapture: return URL(string: "https://www.itl.nist.gov/div898/handbook/eda/section3/eda366j.htm")!
@@ -183,6 +192,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     static func forEntry(_ id: String) -> Self? {
       switch id {
+      case "small-intestine", "jejunum": return .villusArea
       case "lymphatic-vessels": return .lymphValve
       case "sweat-glands": return .sweatEvaporation
       case "cell-rod-photoreceptor": return .photonCapture
@@ -229,6 +239,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var result: Double { evaluate(inputs.indices.map(input)) }
   var companionValue: Double {
     switch kind {
+    case .villusArea: return result - 1
     case .lymphValve: return input(0) / input(1)
     case .sweatEvaporation: return input(0) * input(1) / 100
     case .photonCapture: return 100 * exp(-input(0))
@@ -298,6 +309,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
+    case .villusArea: return 1 + values[0] * 2 * .pi * values[1] * values[2]
     case .lymphValve: return max(values[0], 0) / values[1]
     // Evaporated g/min times the example latent heat near 30 C, converted to watts.
     case .sweatEvaporation: return values[0] * values[1] / 100 * 2426 / 60
