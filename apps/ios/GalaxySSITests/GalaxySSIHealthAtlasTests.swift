@@ -1928,6 +1928,36 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(renewed.replacementTip, growing.tip)
     XCTAssertEqual(Motion(step: 2, fraction: .nan).bulb, 282)
   }
+  func testUrineChannelNormalsReservoirAndPulseClipping() throws {
+    typealias Motion = GalaxySSIHealthAtlasUrineMotion
+    typealias Shapes = GalaxySSIHealthAtlasUrineShapes
+    for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      let front = Motion.front(t), pinch = front - 0.16
+      XCTAssertEqual(Motion.ureterRadius(pinch, time: t), 3, accuracy: 1e-12)
+      XCTAssertEqual(Motion.ureterRadius(front, time: t), 16, accuracy: 1e-12)
+    }
+    let filled = Motion.Reservoir(time: 1, emptying: false), emptyStart = Motion.Reservoir(time: 0, emptying: true)
+    XCTAssertEqual(filled.half, emptyStart.half); XCTAssertEqual(filled.dome, emptyStart.dome); XCTAssertEqual(filled.level, emptyStart.level)
+    XCTAssertEqual(filled.half, 113); XCTAssertEqual(filled.dome, 72); XCTAssertEqual(filled.level, 111)
+    XCTAssertEqual(filled.outletRadius(0.43), 0.35, accuracy: 1e-12)
+    let flowing = Motion.Reservoir(time: 0.5, emptying: true)
+    XCTAssertEqual(flowing.open, 1); XCTAssertEqual(flowing.outletRadius(0.43), 7)
+    XCTAssertEqual(Motion.Reservoir(time: 1, emptying: true).open, 0)
+    XCTAssertNil(Motion.pulseInterval(front: -0.1, length: 0.2))
+    XCTAssertNil(Motion.pulseInterval(front: 1.5, length: 0.2))
+    XCTAssertNil(Motion.pulseInterval(front: 0.1, length: 0.2, from: 0.13))
+    XCTAssertNil(Motion.pulseInterval(front: .nan, length: 0.2))
+    let clip = try XCTUnwrap(Motion.pulseInterval(front: 1.1, length: 0.2))
+    XCTAssertEqual(clip.start, 0.9, accuracy: 1e-12); XCTAssertEqual(clip.end, 1)
+    for optional in [Shapes.ureterChannel, Shapes.tunnelChannel, Shapes.outletChannel] {
+      let channel = try XCTUnwrap(optional)
+      XCTAssertEqual(channel.samples.count, 65)
+      for sample in channel.samples { XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10) }
+    }
+    let outlet = try XCTUnwrap(Shapes.outletChannel)
+    XCTAssertEqual(outlet.samples.first?.point, CGPoint(x: 180, y: 252))
+    XCTAssertEqual(outlet.samples.last?.point, CGPoint(x: 180, y: 324))
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
