@@ -1464,6 +1464,34 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testChemicalSenseKeepsDelayedTransferAndOdorChannelPatterns() throws {
+    typealias Motion = GalaxySSIHealthAtlasChemicalSenseMotion
+    XCTAssertEqual(Motion.odorChannels(false), [0, 2])
+    XCTAssertEqual(Motion.odorChannels(true), [1, 2])
+    XCTAssertEqual(Motion.transfer(0, index: 0), 0)
+    XCTAssertEqual(Motion.transfer(1, index: 0), 1)
+    XCTAssertEqual(Motion.transfer(0.2, index: 0, startsAt: 0.2), 0)
+    XCTAssertEqual(Motion.transfer(0.2, index: 0), 0.31, accuracy: 1e-12)
+    XCTAssertEqual(Motion.transfer(0.12, index: 0, startsAt: 0.12), 0)
+    XCTAssertEqual(Motion.transfer(0.5, index: 2), (0.5 - 0.156) * 1.55, accuracy: 1e-12)
+    XCTAssertEqual(Motion.transfer(.nan, index: 0), 0)
+    XCTAssertEqual(Motion.transfer(0.5, index: 8), 0)
+    XCTAssertEqual(Motion.transfer(0.5, index: 0, startsAt: .infinity), 0)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      for index in 1...4 { XCTAssertLessThanOrEqual(Motion.transfer(phase, index: index), Motion.transfer(phase, index: index - 1)) }
+    }
+    XCTAssertTrue(Motion(courseID: "OLFACTION", chapter: 0, fraction: 0).smell)
+    XCTAssertFalse(Motion(courseID: "TASTE_SIGNAL", chapter: 0, fraction: 0).smell)
+    XCTAssertEqual(Motion(courseID: "OLFACTION", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "TASTE_SIGNAL", chapter: 20, fraction: .infinity).fraction, 0)
+    XCTAssertEqual(Motion.smellRoutes.count, 3)
+    for route in [Motion.airway, Motion.tasteNerve] + Motion.smellRoutes {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
