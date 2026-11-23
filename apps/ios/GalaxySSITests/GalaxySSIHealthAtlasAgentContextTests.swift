@@ -17,6 +17,31 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
      "elimination_assumptions": "Single-compartment teaching assumptions",
      "elimination_summary": "Half-life %1$lld h; after %2$lld h: %3$@%%"] [key] ?? key
   }
+  func testCirculationRoutesBoundsAndPublicContextScope() throws {
+    typealias Circuit = GalaxySSIHealthAtlasCirculation
+    XCTAssertEqual(Circuit.legs.map(\.oxygenRich), [false, false, true, true])
+    XCTAssertEqual(Circuit.stage(.nan), 0)
+    XCTAssertEqual(Circuit.stage(-1), 0)
+    XCTAssertEqual(Circuit.stage(1), 3)
+    XCTAssertEqual(Circuit.fraction(1), 1)
+    XCTAssertEqual(Circuit.stage(0.5), 2)
+    for id in ["heart", "cardio", "atria", "ventricles", "coronary-vessels",
+      "blood-vessels", "arteries", "veins", "capillaries", "blood"] { XCTAssertTrue(Circuit.supports(id)) }
+    for id in ["lungs", "brain", "cell-erythrocyte", "heart-valves"] { XCTAssertFalse(Circuit.supports(id)) }
+    let simulation = try XCTUnwrap(Context.Simulation(entryID: "heart", phase: 0.5, first: 70, second: 70))
+    for screen in [Context.Screen.simulation, .physiology] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: screen,
+        simulation: simulation, locale: locale, text: text))
+      XCTAssertTrue(prompt.contains("circuit_scope")); XCTAssertTrue(prompt.contains("circuit_path"))
+      XCTAssertTrue(prompt.contains(Circuit.source.absoluteString))
+    }
+    for screen in [Context.Screen.structure, .function, .drugs, .aging] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: screen,
+        simulation: simulation, locale: locale, text: text))
+      XCTAssertFalse(prompt.contains("circuit_scope"))
+    }
+  }
+
   func testCardiacPreviewContainsTheCurrentStageInputsResultAndAssumptions() throws {
     let simulation = try XCTUnwrap(Context.Simulation(entryID: "heart", phase: 0.76, first: 80, second: 70))
     let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .simulation, simulation: simulation, locale: locale, text: text))
@@ -27,6 +52,69 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertTrue(prompt.contains("not a patient model"))
     XCTAssertTrue(prompt.contains("openstax.org"))
     XCTAssertFalse(prompt.contains("Single-compartment"))
+  }
+
+  func testValveContextAppearsOnlyForTheMatchingActiveSimulation() throws {
+    let valves = Context.Anatomy(id: "mitral-valve", name: "Mitral valve", description: "Public valve description",
+      mechanism: "Mitral opening and closure", stages: ["Fill", "Contract", "Eject", "Relax"],
+      source: GalaxySSIHealthAtlasHeartSection.cycleSource, valveContext: "ACTIVE_MITRAL_CLOSED")
+    let simulation = try XCTUnwrap(Context.Simulation(entryID: valves.id, phase: 0.5, first: 0, second: 0))
+    for screen in [Context.Screen.simulation, .physiology] {
+      XCTAssertTrue(try XCTUnwrap(Context.prompt(anatomy: valves, screen: screen, simulation: simulation,
+        locale: locale, text: text)).contains("ACTIVE_MITRAL_CLOSED"))
+    }
+    for screen in [Context.Screen.structure, .function, .drugs, .aging] {
+      XCTAssertFalse(try XCTUnwrap(Context.prompt(anatomy: valves, screen: screen, simulation: simulation,
+        locale: locale, text: text)).contains("ACTIVE_MITRAL_CLOSED"))
+    }
+    let foreign = try XCTUnwrap(Context.Simulation(entryID: "heart", phase: 0.5, first: 70, second: 70))
+    XCTAssertFalse(try XCTUnwrap(Context.prompt(anatomy: valves, screen: .simulation, simulation: foreign,
+      locale: locale, text: text)).contains("ACTIVE_MITRAL_CLOSED"))
+    XCTAssertNil(Context.prompt(anatomy: valves, screen: .values, simulation: simulation, locale: locale, text: text))
+  }
+
+  func testTissueRelationshipContextIsBoundToTheSelectedAnatomyAndExcludedFromValues() throws {
+    let tissue = Context.Anatomy(id: "tissue-cardiac-muscle", name: "Cardiac muscle tissue",
+      description: "Public tissue description", mechanism: "Public tissue process",
+      stages: ["Excitation", "Coupling", "Calcium", "Tension"],
+      source: URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/10-7-cardiac-muscle-tissue")!,
+      tissueContext: ["Example locations: Heart", "Cell examples: Cardiomyocyte"])
+    let simulation = try XCTUnwrap(Context.Simulation(entryID: tissue.id, phase: 0.5, first: 0, second: 0))
+    let prompt = try XCTUnwrap(Context.prompt(anatomy: tissue, screen: .simulation, simulation: simulation, locale: locale, text: text))
+    XCTAssertTrue(prompt.contains("Example locations: Heart"))
+    XCTAssertTrue(prompt.contains("Cell examples: Cardiomyocyte"))
+    XCTAssertTrue(prompt.contains("Stage 3 / 4: Calcium"))
+    XCTAssertNil(Context.prompt(anatomy: tissue, screen: .values, simulation: simulation, locale: locale, text: text))
+    let other = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .structure, simulation: simulation, locale: locale, text: text))
+    XCTAssertFalse(other.contains("Example locations"))
+    XCTAssertFalse(other.contains("Stage 3"))
+  }
+
+  func testAgingPreviewContainsOnlyActiveThemeStageAndStudy() throws {
+    typealias Aging = GalaxySSIHealthAtlasAgingSelection
+    let selected = try XCTUnwrap(Aging(topic: .telomeres, step: 2))
+    for language in ["en", "zh-Hans"] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .aging,
+        aging: selected, language: language, locale: locale, text: text))
+      XCTAssertTrue(prompt.contains(selected.context(language: language)))
+      XCTAssertTrue(prompt.contains("PMC3615479"))
+      XCTAssertFalse(prompt.contains("19485966"))
+      XCTAssertFalse(prompt.contains(GalaxySSIHealthAtlasAgingTopic.senescence.study!.text("result", language: language)))
+      for screen in [Context.Screen.structure, .function, .simulation, .physiology, .drugs] {
+        let inactive = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: screen,
+          aging: selected, language: language, locale: locale, text: text))
+        XCTAssertFalse(inactive.contains("PMC3615479"))
+      }
+      XCTAssertNil(Context.prompt(anatomy: anatomy(), screen: .values, aging: selected,
+        language: language, locale: locale, text: text))
+    }
+    let senescence = Aging(topic: .senescence)
+    let study = senescence.context(language: "en")
+    XCTAssertTrue(study.contains("170 donors")); XCTAssertTrue(study.contains("0.63"))
+    XCTAssertTrue(study.contains("19485966")); XCTAssertFalse(study.contains("PMC3615479"))
+    let telomeres = selected.context(language: "en")
+    XCTAssertTrue(telomeres.contains("87 adults")); XCTAssertTrue(telomeres.contains("0.83"))
+    XCTAssertTrue(telomeres.contains("cross-sectional"))
   }
   func testInactiveResearchAndForeignModelsNeverEnterThePublicQuestion() throws {
     let simulation = try XCTUnwrap(Context.Simulation(entryID: "heart", phase: 0.5, first: 80, second: 70))
@@ -48,11 +136,141 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertTrue(active.contains("ACTIVE_QUANTITATIVE_CONTEXT"))
     XCTAssertTrue(active.contains("Stage 3 / 4: Stage three"))
   }
+  func testIllustrationStaysWithSelectedPublicAnatomy() throws {
+    let source = URL(string: "https://openstax.org/books/anatomy/plate")!
+    let plate = try XCTUnwrap(Context.Illustration(entryID: "heart", caption: "SELECTED_PLATE", source: source))
+    let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .structure,
+      illustration: plate, locale: locale, text: text))
+    XCTAssertTrue(prompt.contains("SELECTED_PLATE"))
+    XCTAssertTrue(prompt.contains("art_note"))
+    XCTAssertTrue(prompt.contains(source.absoluteString))
+    let foreign = Context.prompt(anatomy: anatomy("lungs"), screen: .function, illustration: plate, locale: locale, text: text)
+    XCTAssertFalse(foreign?.contains("SELECTED_PLATE") ?? true)
+    XCTAssertNil(Context.prompt(anatomy: anatomy(), screen: .values, illustration: plate, locale: locale, text: text))
+    XCTAssertEqual(Context.prompt(anatomy: nil, screen: .structure, illustration: plate, locale: locale, text: text),
+      "Public whole-body teaching only")
+    XCTAssertNil(Context.Illustration(entryID: "heart", caption: " ", source: source))
+    XCTAssertNil(Context.Illustration(entryID: "heart", caption: "Plate", source: URL(string: "http://openstax.org/books")))
+    XCTAssertNil(Context.Illustration(entryID: "heart", caption: "Plate", source: URL(string: "https://user@openstax.org/books")))
+  }
+
+  func testMiddleEarAnatomySourceAndTeachingContextArePreviewScoped() throws {
+    let source = GalaxySSIHealthAtlasMiddleEar.anatomySource
+    let illustration = try XCTUnwrap(Context.Illustration(entryID: "ear", caption: "EAR_SECTION", source: source))
+    let model = GalaxySSIHealthAtlasPhysiology(kind: .middleEar)
+    let teaching = GalaxySSIHealthAtlasPhysiologyText.context(model, language: "en")
+    let quantitative = Context.Quantitative(entryID: "ear", context: teaching)
+    for screen in [Context.Screen.physiology, .simulation] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy("ear"), screen: screen, quantitative: quantitative,
+        illustration: illustration, locale: locale, text: text))
+      XCTAssertTrue(prompt.contains(teaching)); XCTAssertTrue(prompt.contains(source.absoluteString))
+    }
+    for screen in [Context.Screen.structure, .function, .drugs, .aging] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy("ear"), screen: screen,
+        quantitative: quantitative, locale: locale, text: text))
+      XCTAssertFalse(prompt.contains(teaching))
+    }
+    XCTAssertNil(Context.prompt(anatomy: anatomy("ear"), screen: .values, quantitative: quantitative, locale: locale, text: text))
+    XCTAssertNil(Context.Illustration(entryID: "ear", caption: "", source: source))
+    XCTAssertNil(Context.Illustration(entryID: "ear", caption: "EAR", source: URL(string: "https://www.nidcd.nih.gov/other")))
+  }
+
+  func testEyePreviewAllowsExactAnatomyReferenceAndScopesQuantitativeContext() throws {
+    let source = GalaxySSIHealthAtlasEyeOptics.anatomySource
+    let illustration = try XCTUnwrap(Context.Illustration(entryID: "eye", caption: "EYE_SECTION", source: source))
+    let model = GalaxySSIHealthAtlasPhysiology(kind: .eye)
+    let teaching = GalaxySSIHealthAtlasPhysiologyText.context(model, language: "en")
+    let quantitative = Context.Quantitative(entryID: "eye", context: teaching)
+    for screen in [Context.Screen.simulation, .physiology] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy("eye"), screen: screen,
+        quantitative: quantitative, illustration: illustration, locale: locale, text: text))
+      XCTAssertTrue(prompt.contains(teaching))
+      XCTAssertTrue(prompt.contains(source.absoluteString))
+    }
+    for screen in [Context.Screen.structure, .function, .aging, .drugs] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy("eye"), screen: screen,
+        quantitative: quantitative, illustration: illustration, locale: locale, text: text))
+      XCTAssertFalse(prompt.contains(teaching))
+    }
+    XCTAssertNil(Context.prompt(anatomy: anatomy("eye"), screen: .values, quantitative: quantitative,
+      illustration: illustration, locale: locale, text: text))
+    XCTAssertNil(Context.Illustration(entryID: "eye", caption: "EYE_SECTION", source: URL(string: "https://www.nei.nih.gov/other")))
+  }
+
+  func testTwoCompartmentPreviewOnlyAppearsForSelectedDrugMode() throws {
+    let drugs = GalaxySSIHealthAtlasDrugState(mode: .two, distribution: .standard)
+    func localized(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, "en") }
+    let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .drugs, drugs: drugs,
+      locale: locale, text: localized))
+    XCTAssertTrue(prompt.contains(GalaxySSIHealthAtlasDistribution.source.absoluteString))
+    XCTAssertTrue(prompt.contains("31.31"))
+    XCTAssertTrue(prompt.contains("46.72"))
+    XCTAssertTrue(prompt.contains("21.97"))
+    XCTAssertTrue(prompt.contains(localized("distribution_boundary")))
+    XCTAssertFalse(prompt.contains(localized("elimination_assumptions")))
+    let single = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .drugs,
+      drugs: .init(mode: .single, distribution: .standard), locale: locale, text: localized))
+    XCTAssertFalse(single.contains(GalaxySSIHealthAtlasDistribution.source.absoluteString))
+    XCTAssertTrue(single.contains(localized("elimination_assumptions")))
+    for screen in [Context.Screen.structure, .function, .simulation, .physiology, .aging] {
+      let excluded = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: screen, drugs: drugs,
+        locale: locale, text: localized))
+      XCTAssertFalse(excluded.contains(GalaxySSIHealthAtlasDistribution.source.absoluteString))
+    }
+    XCTAssertNil(Context.prompt(anatomy: anatomy(), screen: .values, drugs: drugs, locale: locale, text: localized))
+    XCTAssertEqual(Context.prompt(anatomy: nil, screen: .drugs, drugs: drugs, locale: locale, text: localized),
+      localized("ask_whole_context"))
+  }
+
   func testPersonalValuesHasNoPublicFallbackIncludingAnEmptyMetric() {
     XCTAssertNil(Context.prompt(anatomy: anatomy(), screen: .values, locale: locale, text: text))
     XCTAssertNil(Context.prompt(anatomy: nil, screen: .values, locale: locale, text: text))
     XCTAssertEqual(Context.prompt(anatomy: nil, screen: .structure, locale: locale, text: text), "Public whole-body teaching only")
   }
+  func testGasExamplesOnlyEnterMatchingActivePhysiologyContext() throws {
+    let simulation = try XCTUnwrap(Context.Simulation(entryID: "alveoli", phase: 0.5, first: 12, second: 500))
+    for screen in [Context.Screen.simulation, .physiology] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy("alveoli"), screen: screen,
+        simulation: simulation, locale: locale, text: text))
+      XCTAssertTrue(prompt.contains("gas_scope"))
+      XCTAssertTrue(prompt.contains(GalaxySSIHealthAtlasGasExchange.source.absoluteString))
+    }
+    for screen in [Context.Screen.structure, .function, .drugs, .aging] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy("alveoli"), screen: screen,
+        simulation: simulation, locale: locale, text: text))
+      XCTAssertFalse(prompt.contains("gas_scope"))
+    }
+    let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("lungs"), screen: .physiology,
+      simulation: simulation, locale: locale, text: text))
+    XCTAssertFalse(foreign.contains("gas_scope"))
+    XCTAssertNil(Context.prompt(anatomy: anatomy("alveoli"), screen: .values,
+      simulation: simulation, locale: locale, text: text))
+  }
+
+  func testGermlinePreviewUsesCurrentStageAndExcludesOtherTopicsAndEntries() throws {
+    let id = "cell-oocyte-or-ovum"
+    func localized(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, "en") }
+    for stage in 0..<4 {
+      let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: Double(stage) / 4, first: 70, second: 70))
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(id), screen: .simulation,
+        simulation: simulation, locale: locale, text: localized))
+      let counts = try XCTUnwrap(GalaxySSIHealthAtlasGermline.counts(id, stage: stage))
+      XCTAssertTrue(prompt.contains(GalaxySSIHealthAtlasGermline.numbers(counts, language: "en")))
+      XCTAssertTrue(prompt.contains(localized("germline_" + counts.target.rawValue)))
+      XCTAssertTrue(prompt.contains(GalaxySSIHealthAtlasGermline.source.absoluteString))
+    }
+    let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: 0.75, first: 70, second: 70))
+    for screen in [Context.Screen.structure, .function, .drugs, .aging] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(id), screen: screen,
+        simulation: simulation, locale: locale, text: localized))
+      XCTAssertFalse(prompt.contains(GalaxySSIHealthAtlasGermline.source.absoluteString))
+    }
+    let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("cell-granulosa-cell"), screen: .physiology,
+      simulation: simulation, locale: locale, text: localized))
+    XCTAssertFalse(foreign.contains(GalaxySSIHealthAtlasGermline.source.absoluteString))
+    XCTAssertNil(Context.prompt(anatomy: anatomy(id), screen: .values, simulation: simulation, locale: locale, text: localized))
+  }
+
   func testDrugAndAgingContextUseOnlyTheirCurrentSourcesAndParameters() throws {
     let drug = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .drugs,
       elimination: Context.Elimination(halfLife: 4, elapsed: 8), locale: locale, text: text))
