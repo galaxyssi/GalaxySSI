@@ -3,7 +3,7 @@
 Ports Android merge `7281138717425cc4a5fb905f65084de0c14141d5` to iOS 15+.
 
 ## Dependency and review scope
-This branch continues from the actual commits of prerequisite PR #4471 (Android #4348), without copying its implementation. Base remains `main`. While #4471 is unmerged, the base-to-head diff also includes its digestive-cell plates, pancreatic routes and bicarbonate mixing model, documented in `ANDROID_4348_DIGESTIVE_PANCREATIC.md`; they are not new work attributed to #4349. The inherited diff disappears once those commits enter `main`. This is a formal, non-draft PR; approval and native build acceptance are not claimed.
+Prerequisite PR #4471 (Android #4348) has merged into `main` as `f1d72a1e3a10bda2a428dc354c7689e93d559061`. This branch reuses those actual commits without copying their implementation. The base-to-head diff contains only this #4349 endocrine port, not the preceding digestive-cell or pancreatic work. Base remains `main`; this is a formal, non-draft PR. Approval and native build acceptance are not claimed.
 
 ## New work for #4349
 - Import 14 original endocrine-cell illustrations and four gland sections as vector-preserving PDFs (239 source paths), with all 37 bilingual feature explanations and four direct anatomical links.
