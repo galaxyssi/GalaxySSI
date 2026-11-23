@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct GalaxySSIHealthAtlasSimulationPanel: View {
+  let atlas: GalaxySSIHealthAtlas
   let entry: GalaxySSIHealthAtlas.Entry
   let model: GalaxySSIHealthAtlas.Mechanism
   @Binding var simulation: GalaxySSIHealthAtlasSimulation
@@ -37,6 +38,11 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       }
       #endif
       Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(model.title, language))).font(.headline)
+      if GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id) {
+        playbackControls
+        GalaxySSIHealthAtlasValvePanel(atlas: atlas, entryID: entry.id, stage: simulation.stage, language: language,
+          open: { playing = false; structure = $0 })
+      }
       if let germline {
         playbackControls
         Text(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4),
@@ -89,7 +95,8 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       }
       Slider(value: $simulation.phase, in: 0...1, onEditingChanged: { _ in playing = false })
         .accessibilityLabel(t("phase"))
-      if !GalaxySSIHealthAtlasCirculation.supports(entry.id), germline == nil { playbackControls }
+      if !GalaxySSIHealthAtlasCirculation.supports(entry.id), !GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id),
+         germline == nil { playbackControls }
       if reduceMotion { Text(bodyText("motion_disabled")).font(.caption) }
       Text(t("speed") + " · " + String(format: "%.1f×", simulation.speed))
       Slider(value: $simulation.speed, in: 0.5...2, step: 0.5).accessibilityLabel(t("speed"))
