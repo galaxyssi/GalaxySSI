@@ -1,0 +1,653 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4350,
+    "mergeCommit": "e533b182cc41df22e2e1a6291f7751e4848f8bb4"
+  },
+  "plates": [
+    {
+      "id": "cell-oligodendrocyte",
+      "owner": "cell-oligodendrocyte",
+      "asset": "HealthAtlasSensoryOligodendrocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-oligodendrocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-2-nervous-tissue",
+      "features": [
+        {
+          "marker": {
+            "id": "oligo-process",
+            "x": 0.6055555555555555,
+            "y": 0.3607142857142857
+          },
+          "title": "health_atlas_sensory_oligo_process",
+          "explanation": "health_atlas_sensory_oligo_process_detail"
+        },
+        {
+          "marker": {
+            "id": "oligo-myelin",
+            "x": 0.6638888888888889,
+            "y": 0.21785714285714286
+          },
+          "title": "health_atlas_sensory_oligo_myelin",
+          "explanation": "health_atlas_sensory_oligo_myelin_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_oligodendrocyte.xml"
+    },
+    {
+      "id": "cell-microglia",
+      "owner": "cell-microglia",
+      "asset": "HealthAtlasSensoryMicroglia",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-microglia"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-2-nervous-tissue",
+      "features": [
+        {
+          "marker": {
+            "id": "microglia-surveillance",
+            "x": 0.6583333333333333,
+            "y": 0.3535714285714286
+          },
+          "title": "health_atlas_sensory_microglia_surveillance",
+          "explanation": "health_atlas_sensory_microglia_surveillance_detail"
+        },
+        {
+          "marker": {
+            "id": "microglia-body",
+            "x": 0.45555555555555555,
+            "y": 0.5071428571428571
+          },
+          "title": "health_atlas_sensory_microglia_body",
+          "explanation": "health_atlas_sensory_microglia_body_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_microglia.xml"
+    },
+    {
+      "id": "cell-ependymal-cell",
+      "owner": "cell-ependymal-cell",
+      "asset": "HealthAtlasSensoryEpendymal",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-ependymal-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-2-nervous-tissue",
+      "features": [
+        {
+          "marker": {
+            "id": "ependymal-cilia",
+            "x": 0.5111111111111111,
+            "y": 0.23214285714285715
+          },
+          "title": "health_atlas_sensory_ependymal_cilia",
+          "explanation": "health_atlas_sensory_ependymal_cilia_detail"
+        },
+        {
+          "marker": {
+            "id": "ependymal-lining",
+            "x": 0.5694444444444444,
+            "y": 0.5071428571428571
+          },
+          "title": "health_atlas_sensory_ependymal_lining",
+          "explanation": "health_atlas_sensory_ependymal_lining_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_ependymal.xml"
+    },
+    {
+      "id": "cell-satellite-glial-cell",
+      "owner": "cell-satellite-glial-cell",
+      "asset": "HealthAtlasSensorySatelliteGlia",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-satellite-glial-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-2-nervous-tissue",
+      "features": [
+        {
+          "marker": {
+            "id": "satellite-glial-shell",
+            "x": 0.46944444444444444,
+            "y": 0.20357142857142857
+          },
+          "title": "health_atlas_sensory_satellite_glial_shell",
+          "explanation": "health_atlas_sensory_satellite_glial_shell_detail"
+        },
+        {
+          "marker": {
+            "id": "satellite-neuron",
+            "x": 0.4888888888888889,
+            "y": 0.49642857142857144
+          },
+          "title": "health_atlas_sensory_satellite_neuron",
+          "explanation": "health_atlas_sensory_satellite_neuron_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_satellite_glia.xml"
+    },
+    {
+      "id": "cell-rod-photoreceptor",
+      "owner": "cell-rod-photoreceptor",
+      "asset": "HealthAtlasSensoryRod",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-rod-photoreceptor"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://www.ncbi.nlm.nih.gov/books/NBK10885/",
+      "features": [
+        {
+          "marker": {
+            "id": "rod-discs",
+            "x": 0.5,
+            "y": 0.28214285714285714
+          },
+          "title": "health_atlas_sensory_rod_discs",
+          "explanation": "health_atlas_sensory_rod_discs_detail"
+        },
+        {
+          "marker": {
+            "id": "rod-spherule",
+            "x": 0.5,
+            "y": 0.8178571428571428
+          },
+          "title": "health_atlas_sensory_rod_spherule",
+          "explanation": "health_atlas_sensory_rod_spherule_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_rod.xml"
+    },
+    {
+      "id": "cell-cone-photoreceptor",
+      "owner": "cell-cone-photoreceptor",
+      "asset": "HealthAtlasSensoryCone",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-cone-photoreceptor"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://www.ncbi.nlm.nih.gov/books/NBK10885/",
+      "features": [
+        {
+          "marker": {
+            "id": "cone-outer-segment",
+            "x": 0.5,
+            "y": 0.29642857142857143
+          },
+          "title": "health_atlas_sensory_cone_outer_segment",
+          "explanation": "health_atlas_sensory_cone_outer_segment_detail"
+        },
+        {
+          "marker": {
+            "id": "cone-pedicle",
+            "x": 0.5,
+            "y": 0.8035714285714286
+          },
+          "title": "health_atlas_sensory_cone_pedicle",
+          "explanation": "health_atlas_sensory_cone_pedicle_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_cone.xml"
+    },
+    {
+      "id": "cell-retinal-pigment-epithelial-cell",
+      "owner": "cell-retinal-pigment-epithelial-cell",
+      "asset": "HealthAtlasSensoryRpe",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-retinal-pigment-epithelial-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/15987797/",
+      "features": [
+        {
+          "marker": {
+            "id": "rpe-apical",
+            "x": 0.5416666666666666,
+            "y": 0.325
+          },
+          "title": "health_atlas_sensory_rpe_apical",
+          "explanation": "health_atlas_sensory_rpe_apical_detail"
+        },
+        {
+          "marker": {
+            "id": "rpe-pigment",
+            "x": 0.5416666666666666,
+            "y": 0.48214285714285715
+          },
+          "title": "health_atlas_sensory_rpe_pigment",
+          "explanation": "health_atlas_sensory_rpe_pigment_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_rpe.xml"
+    },
+    {
+      "id": "cell-retinal-ganglion-cell",
+      "owner": "cell-retinal-ganglion-cell",
+      "asset": "HealthAtlasSensoryGanglion",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-retinal-ganglion-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://www.ncbi.nlm.nih.gov/books/NBK10885/",
+      "features": [
+        {
+          "marker": {
+            "id": "rgc-dendrites",
+            "x": 0.6027777777777777,
+            "y": 0.275
+          },
+          "title": "health_atlas_sensory_rgc_dendrites",
+          "explanation": "health_atlas_sensory_rgc_dendrites_detail"
+        },
+        {
+          "marker": {
+            "id": "rgc-axon",
+            "x": 0.6138888888888889,
+            "y": 0.8
+          },
+          "title": "health_atlas_sensory_rgc_axon",
+          "explanation": "health_atlas_sensory_rgc_axon_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_ganglion.xml"
+    },
+    {
+      "id": "cell-inner-ear-hair-cell",
+      "owner": "cell-inner-ear-hair-cell",
+      "asset": "HealthAtlasSensoryCochlearHair",
+      "viewLabel": "health_atlas_sensory_inner_hair_view",
+      "entryIDs": [
+        "cell-inner-ear-hair-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception",
+      "features": [
+        {
+          "marker": {
+            "id": "hair-bundle",
+            "x": 0.5166666666666667,
+            "y": 0.25
+          },
+          "title": "health_atlas_sensory_hair_bundle",
+          "explanation": "health_atlas_sensory_hair_bundle_detail"
+        },
+        {
+          "marker": {
+            "id": "hair-afferent-contact",
+            "x": 0.49166666666666664,
+            "y": 0.7392857142857143
+          },
+          "title": "health_atlas_sensory_hair_afferent_contact",
+          "explanation": "health_atlas_sensory_hair_afferent_contact_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_cochlear_hair.xml"
+    },
+    {
+      "id": "cell-olfactory-receptor-neuron",
+      "owner": "cell-olfactory-receptor-neuron",
+      "asset": "HealthAtlasSensoryOlfactory",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-olfactory-receptor-neuron"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception",
+      "features": [
+        {
+          "marker": {
+            "id": "olfactory-cilia-field",
+            "x": 0.4166666666666667,
+            "y": 0.23214285714285715
+          },
+          "title": "health_atlas_sensory_olfactory_cilia_field",
+          "explanation": "health_atlas_sensory_olfactory_cilia_field_detail"
+        },
+        {
+          "marker": {
+            "id": "olfactory-basal-axon",
+            "x": 0.5027777777777778,
+            "y": 0.8464285714285714
+          },
+          "title": "health_atlas_sensory_olfactory_basal_axon",
+          "explanation": "health_atlas_sensory_olfactory_basal_axon_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_olfactory.xml"
+    },
+    {
+      "id": "cell-taste-receptor-cell",
+      "owner": "cell-taste-receptor-cell",
+      "asset": "HealthAtlasSensoryTaste",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-taste-receptor-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception",
+      "features": [
+        {
+          "marker": {
+            "id": "taste-microvilli",
+            "x": 0.4722222222222222,
+            "y": 0.2785714285714286
+          },
+          "title": "health_atlas_sensory_taste_microvilli",
+          "explanation": "health_atlas_sensory_taste_microvilli_detail"
+        },
+        {
+          "marker": {
+            "id": "taste-afferent",
+            "x": 0.5361111111111111,
+            "y": 0.7571428571428571
+          },
+          "title": "health_atlas_sensory_taste_afferent",
+          "explanation": "health_atlas_sensory_taste_afferent_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_taste.xml"
+    },
+    {
+      "id": "cell-corneal-epithelial-cell",
+      "owner": "cell-corneal-epithelial-cell",
+      "asset": "HealthAtlasSensoryCornealEpithelium",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-corneal-epithelial-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/26310149/",
+      "features": [
+        {
+          "marker": {
+            "id": "cornea-apical",
+            "x": 0.5166666666666667,
+            "y": 0.2357142857142857
+          },
+          "title": "health_atlas_sensory_cornea_apical",
+          "explanation": "health_atlas_sensory_cornea_apical_detail"
+        },
+        {
+          "marker": {
+            "id": "cornea-epithelial-basal",
+            "x": 0.4638888888888889,
+            "y": 0.6214285714285714
+          },
+          "title": "health_atlas_sensory_cornea_epithelial_basal",
+          "explanation": "health_atlas_sensory_cornea_epithelial_basal_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_corneal_epithelium.xml"
+    },
+    {
+      "id": "cell-merkel-cell",
+      "owner": "cell-merkel-cell",
+      "asset": "HealthAtlasSensoryMerkel",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-merkel-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/14-1-sensory-perception",
+      "features": [
+        {
+          "marker": {
+            "id": "merkel-basal-cell",
+            "x": 0.5,
+            "y": 0.5642857142857143
+          },
+          "title": "health_atlas_sensory_merkel_basal_cell",
+          "explanation": "health_atlas_sensory_merkel_basal_cell_detail"
+        },
+        {
+          "marker": {
+            "id": "merkel-afferent",
+            "x": 0.5305555555555556,
+            "y": 0.6821428571428572
+          },
+          "title": "health_atlas_sensory_merkel_afferent",
+          "explanation": "health_atlas_sensory_merkel_afferent_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_merkel.xml"
+    },
+    {
+      "id": "cell-retinal-bipolar-cell",
+      "owner": "cell-retinal-bipolar-cell",
+      "asset": "HealthAtlasSensoryBipolar",
+      "viewLabel": "health_atlas_sensory_bipolar_view",
+      "entryIDs": [
+        "cell-retinal-bipolar-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/28856684/",
+      "features": [
+        {
+          "marker": {
+            "id": "bipolar-dendrites",
+            "x": 0.42777777777777776,
+            "y": 0.32142857142857145
+          },
+          "title": "health_atlas_sensory_bipolar_dendrites",
+          "explanation": "health_atlas_sensory_bipolar_dendrites_detail"
+        },
+        {
+          "marker": {
+            "id": "bipolar-terminal",
+            "x": 0.5055555555555555,
+            "y": 0.7607142857142857
+          },
+          "title": "health_atlas_sensory_bipolar_terminal",
+          "explanation": "health_atlas_sensory_bipolar_terminal_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_bipolar.xml"
+    },
+    {
+      "id": "cell-retinal-aii-amacrine-cell",
+      "owner": "cell-retinal-aii-amacrine-cell",
+      "asset": "HealthAtlasSensoryAii",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-retinal-aii-amacrine-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/28856684/",
+      "features": [
+        {
+          "marker": {
+            "id": "aii-rod-input",
+            "x": 0.4666666666666667,
+            "y": 0.42142857142857143
+          },
+          "title": "health_atlas_sensory_aii_rod_input",
+          "explanation": "health_atlas_sensory_aii_rod_input_detail"
+        },
+        {
+          "marker": {
+            "id": "aii-on-connection",
+            "x": 0.6611111111111111,
+            "y": 0.7464285714285714
+          },
+          "title": "health_atlas_sensory_aii_on_connection",
+          "explanation": "health_atlas_sensory_aii_on_connection_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_aii.xml"
+    },
+    {
+      "id": "retina",
+      "owner": "retina",
+      "asset": "HealthAtlasSensoryRetinaSection",
+      "viewLabel": "health_atlas_sensory_retina_section_view",
+      "entryIDs": [
+        "retina",
+        "cell-retinal-ganglion-cell",
+        "cell-rod-photoreceptor",
+        "cell-cone-photoreceptor"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-retinal-ganglion-cell",
+          "x": 0.49444444444444446,
+          "y": 0.2392857142857143
+        },
+        {
+          "id": "cell-rod-photoreceptor",
+          "x": 0.28888888888888886,
+          "y": 0.7214285714285714
+        },
+        {
+          "id": "cell-cone-photoreceptor",
+          "x": 0.6583333333333333,
+          "y": 0.6964285714285714
+        }
+      ],
+      "source": "https://www.ncbi.nlm.nih.gov/books/NBK10885/",
+      "features": [
+        {
+          "marker": {
+            "id": "retina-support-sheet",
+            "x": 0.25277777777777777,
+            "y": 0.8178571428571428
+          },
+          "title": "health_atlas_sensory_retina_support_sheet",
+          "explanation": "health_atlas_sensory_retina_support_sheet_detail"
+        },
+        {
+          "marker": {
+            "id": "retina-relay-layer",
+            "x": 0.49444444444444446,
+            "y": 0.475
+          },
+          "title": "health_atlas_sensory_retina_relay_layer",
+          "explanation": "health_atlas_sensory_retina_relay_layer_detail"
+        },
+        {
+          "marker": {
+            "id": "retina-light-direction",
+            "x": 0.18611111111111112,
+            "y": 0.45714285714285713
+          },
+          "title": "health_atlas_sensory_retina_light_direction",
+          "explanation": "health_atlas_sensory_retina_light_direction_detail"
+        },
+        {
+          "marker": {
+            "id": "retina-signal-direction",
+            "x": 0.8027777777777778,
+            "y": 0.45714285714285713
+          },
+          "title": "health_atlas_sensory_retina_signal_direction",
+          "explanation": "health_atlas_sensory_retina_signal_direction_detail"
+        }
+      ],
+      "viewKey": "retina-layers",
+      "selectorLabel": "health_atlas_sensory_retinal_layers",
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sensory_retina_section.xml"
+    }
+  ],
+  "entries": [
+    {
+      "id": "cell-retinal-bipolar-cell",
+      "kind": "cell",
+      "name": "health_atlas_sensory_bipolar_name",
+      "description": "health_atlas_sensory_bipolar_description",
+      "systems": [
+        "sensory",
+        "nervous"
+      ],
+      "related": [
+        "retina"
+      ],
+      "mechanism": "cell-retinal-bipolar-cell",
+      "aliases": "health_atlas_sensory_bipolar_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cell-retinal-aii-amacrine-cell",
+      "kind": "cell",
+      "name": "health_atlas_sensory_aii_name",
+      "description": "health_atlas_sensory_aii_description",
+      "systems": [
+        "sensory",
+        "nervous"
+      ],
+      "related": [
+        "retina"
+      ],
+      "mechanism": "cell-retinal-aii-amacrine-cell",
+      "aliases": "health_atlas_sensory_aii_aliases",
+      "color": "",
+      "icon": ""
+    }
+  ],
+  "mechanisms": [
+    {
+      "id": "retina",
+      "kind": "vision",
+      "title": "health_atlas_sensory_retinal_path_title",
+      "stages": [
+        "health_atlas_sensory_retinal_path_0",
+        "health_atlas_sensory_retinal_path_1",
+        "health_atlas_sensory_retinal_path_2",
+        "health_atlas_sensory_retinal_path_3"
+      ],
+      "chapter": "14-1-sensory-perception",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/28856684/"
+    },
+    {
+      "id": "cell-retinal-bipolar-cell",
+      "kind": "cell",
+      "title": "health_atlas_sensory_bipolar_title",
+      "stages": [
+        "health_atlas_sensory_bipolar_stage_0",
+        "health_atlas_sensory_bipolar_stage_1",
+        "health_atlas_sensory_bipolar_stage_2",
+        "health_atlas_sensory_bipolar_stage_3"
+      ],
+      "chapter": "14-1-sensory-perception",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/28856684/"
+    },
+    {
+      "id": "cell-retinal-aii-amacrine-cell",
+      "kind": "cell",
+      "title": "health_atlas_sensory_aii_title",
+      "stages": [
+        "health_atlas_sensory_aii_stage_0",
+        "health_atlas_sensory_aii_stage_1",
+        "health_atlas_sensory_aii_stage_2",
+        "health_atlas_sensory_aii_stage_3"
+      ],
+      "chapter": "14-1-sensory-perception",
+      "reference": "https://pubmed.ncbi.nlm.nih.gov/28856684/"
+    }
+  ]
+}

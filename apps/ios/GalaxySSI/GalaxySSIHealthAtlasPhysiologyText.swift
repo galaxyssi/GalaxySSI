@@ -2,6 +2,10 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let photonKey = ["model_photonCapture": "sensory_photon_title", "model_photonCapture_scope": "sensory_photon_scope",
+      "model_photonCapture_formula": "sensory_photon_formula"][key]
+    if let photonKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + photonKey, language) }
+    if key.hasPrefix("sensory_photon_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     let feedbackKey = ["model_thyroidFeedback": "endocrine_feedback_title", "model_thyroidFeedback_scope": "endocrine_feedback_scope",
       "model_thyroidFeedback_formula": "endocrine_feedback_formula"][key]
     if let feedbackKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + feedbackKey, language) }
@@ -50,7 +54,8 @@ enum GalaxySSIHealthAtlasPhysiologyText {
   }
   static func input(_ model: GalaxySSIHealthAtlasPhysiology, index: Int, language: String) -> String {
     let spec = model.kind.inputs[index]
-    return string(spec.key, language: language) + ": " + inputNumber(model.input(index), key: spec.key, language: language) + " " + spec.unit
+    return string(spec.key, language: language) + ": " + inputNumber(model.input(index), key: spec.key, language: language) +
+      (spec.unit.isEmpty ? "" : " " + spec.unit)
   }
   static func inputNumber(_ value: Double, key: String, language: String) -> String {
     number(value, digits: key == "vessel_radius" ? 3 : 2, language: language)
@@ -62,6 +67,9 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if model.kind == .photonCapture {
+      return String(format: string("sensory_photon_zero", language: language), number(model.companionValue, language: language))
+    }
     if model.kind == .thyroidFeedback {
       return String(format: string("endocrine_feedback_reduction", language: language), number(model.companionValue, language: language))
     }
@@ -100,6 +108,7 @@ enum GalaxySSIHealthAtlasPhysiologyText {
       number(model.companionValue, digits: model.kind == .potassium ? 4 : 2, language: language))
   }
   static func sourceTitle(_ kind: GalaxySSIHealthAtlasPhysiology.Kind, index: Int, language: String) -> String {
+    if kind == .photonCapture && index == 1 { return string("sensory_photon_photo_source", language: language) }
     if kind == .middleEar && index == 1 { return string("middle_ear_measurement_source", language: language) }
     if kind == .vessel && index > 0 {
       return string(index == 1 ? "vessel_profile_source" : "vessel_units_source", language: language)

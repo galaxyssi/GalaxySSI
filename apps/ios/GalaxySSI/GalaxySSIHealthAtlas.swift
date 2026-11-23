@@ -59,6 +59,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try OverviewPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try DigestivePack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try EndocrinePack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try SensoryPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     return result
   }
 
@@ -244,6 +245,10 @@ struct GalaxySSIHealthAtlas: Decodable {
       }) else { throw Invalid.catalogue }
   }
   func views(for id: String?) -> [Plate] {
+    if id == GalaxySSIHealthAtlasRetinaPath.owner, let pack = try? SensoryPack.bundled.get(),
+       let layers = pack.plates.first(where: { $0.owner == id }) {
+      return [layers, GalaxySSIHealthAtlasRetinaPath.eyeContext]
+    }
     if id == "heart" { return [GalaxySSIHealthAtlasHeartSection.exterior, GalaxySSIHealthAtlasHeartSection.section] }
     if let id, let plate = GalaxySSIHealthAtlasHeartSection.plate(for: id) { return [plate] }
     if GalaxySSIHealthAtlasMiddleEar.ids.contains(id ?? "") { return [GalaxySSIHealthAtlasMiddleEar.plate] }
@@ -257,13 +262,15 @@ struct GalaxySSIHealthAtlas: Decodable {
     guard let source else { return true }
     return source.scheme == "https" && source.user == nil && source.password == nil &&
       (source.host == "openstax.org" || source == GalaxySSIHealthAtlasEyeOptics.anatomySource ||
-        source == GalaxySSIHealthAtlasMiddleEar.anatomySource || DigestivePack.paperSources.contains(source))
+        source == GalaxySSIHealthAtlasMiddleEar.anatomySource || DigestivePack.paperSources.contains(source) ||
+        SensoryPack.externalSources.contains(source))
   }
   func plate(for id: String?, viewKey: String? = nil) -> Plate? {
     let available = views(for: id)
     return available.first(where: { $0.viewKey == viewKey }) ?? available.first
   }
   private func defaultPlate(for id: String?) -> Plate? {
+    if let pack = try? SensoryPack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if let pack = try? OverviewPack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if let pack = try? TissuePack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if GalaxySSIHealthAtlasEyeOptics.plate.entryIDs.contains(id ?? "") { return GalaxySSIHealthAtlasEyeOptics.plate }

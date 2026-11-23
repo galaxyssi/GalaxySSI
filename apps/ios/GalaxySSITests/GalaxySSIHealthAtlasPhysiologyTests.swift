@@ -179,8 +179,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna",
       "blood-vessels", "arteries", "veins", "coronary-vessels", "eye", "lens", "ear", "middle-ear",
       "cranial-nerves", "spinal-nerves", "peripheral-nerves", "ventricles", "left-ventricle", "right-ventricle", "cell-type-ii-pneumocyte",
-      "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell", "thyroid-gland"]
-    XCTAssertEqual(ids.count, 45)
+      "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell", "thyroid-gland", "cell-rod-photoreceptor"]
+    XCTAssertEqual(ids.count, 46)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
     for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-i-pneumocyte", "cell-podocyte", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
@@ -556,6 +556,32 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       XCTAssertTrue(context.contains(GalaxySSIHealthAtlasText.get("health_atlas_endocrine_feedback_scope", language)))
       XCTAssertTrue(context.contains(model.kind.source.absoluteString))
       XCTAssertFalse(context.contains("health_atlas_")); XCTAssertFalse(context.contains("measuredAt"))
+    }
+  }
+
+  func testPhotonAbsorptionUsesStablePoissonComplementAndOnlyOneUnitlessInput() throws {
+    let model = try XCTUnwrap(Model.restore("cell-rod-photoreceptor", inputs: [100]))
+    XCTAssertEqual(model.kind, .photonCapture); XCTAssertEqual(model.kind.inputs.count, 1)
+    XCTAssertTrue(model.kind.inputs[0].unit.isEmpty)
+    XCTAssertEqual(model.kind.sources.count, 2)
+    XCTAssertEqual(model.result, 63.21205588, accuracy: 1e-8)
+    XCTAssertEqual(try XCTUnwrap(model.changing(0, to: 0)).result, 0, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(model.changing(0, to: 500)).result, 99.3262053, accuracy: 1e-7)
+    for count in 0...500 {
+      let value = try XCTUnwrap(model.changing(0, to: count))
+      XCTAssertEqual(value.result + value.companionValue, 100, accuracy: 1e-9)
+      XCTAssertEqual(value.input(0), Double(count) / 100, accuracy: 1e-12)
+    }
+    XCTAssertNil(model.changing(0, to: 501)); XCTAssertNil(Model.restore("cell-rod-photoreceptor", inputs: [100, 100]))
+    for id in ["retina", "cell-cone-photoreceptor", "cell-retinal-bipolar-cell", "cell-retinal-aii-amacrine-cell"] {
+      XCTAssertNotEqual(Model.Kind.forEntry(id), .photonCapture)
+    }
+    for language in ["en", "zh-Hans"] {
+      let context = GalaxySSIHealthAtlasPhysiologyText.context(model, language: language)
+      XCTAssertTrue(context.contains(GalaxySSIHealthAtlasText.get("health_atlas_sensory_photon_scope", language)))
+      for source in model.kind.sources { XCTAssertTrue(context.contains(source.absoluteString)) }
+      XCTAssertFalse(context.contains("health_atlas_"))
+      XCTAssertFalse(GalaxySSIHealthAtlasPhysiologyText.input(model, index: 0, language: language).hasSuffix(" "))
     }
   }
 

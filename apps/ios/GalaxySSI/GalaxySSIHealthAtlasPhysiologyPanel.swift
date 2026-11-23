@@ -28,18 +28,18 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
             Label(t("eye_match_plane"), systemImage: "scope").frame(minHeight: 44)
           }.accessibilityIdentifier("atlas-eye-match-plane")
         }
-        chart(model)
-        Text(String(format: t("model_axis"), t(model.kind.inputs[model.kind.axis].key), model.kind.inputs[model.kind.axis].unit))
-          .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+        if model.kind != .photonCapture && model.kind != .alveolarSurface { chartAndAxis(model) }
         ForEach(Array(model.kind.inputs.enumerated()), id: \.offset) { index, spec in
           VStack(alignment: .leading, spacing: 4) {
             Text(GalaxySSIHealthAtlasPhysiologyText.input(model, index: index, language: language))
               .fixedSize(horizontal: false, vertical: true)
             Slider(value: binding(index, model: model), in: Double(spec.range.lowerBound)...Double(spec.range.upperBound), step: 1)
               .accessibilityLabel(t(spec.key))
-              .accessibilityValue(GalaxySSIHealthAtlasPhysiologyText.inputNumber(model.input(index), key: spec.key, language: language) + " " + spec.unit)
+              .accessibilityValue(GalaxySSIHealthAtlasPhysiologyText.inputNumber(model.input(index), key: spec.key, language: language) +
+                (spec.unit.isEmpty ? "" : " " + spec.unit))
           }
         }
+        if model.kind == .photonCapture || model.kind == .alveolarSurface { chartAndAxis(model) }
         Button { inputs = GalaxySSIHealthAtlasPhysiology(kind: model.kind).inputs } label: {
           Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
         }.accessibilityLabel(t("reset")).help(t("reset"))
@@ -51,6 +51,14 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
         }
       }
       .onAppear { inputs = model.inputs }
+    }
+  }
+  private func chartAndAxis(_ model: GalaxySSIHealthAtlasPhysiology) -> some View {
+    let spec = model.kind.inputs[model.kind.axis]
+    return Group {
+      chart(model)
+      Text(spec.unit.isEmpty ? t(spec.key) : String(format: t("model_axis"), t(spec.key), spec.unit))
+        .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
     }
   }
   private func binding(_ index: Int, model: GalaxySSIHealthAtlasPhysiology) -> Binding<Double> {

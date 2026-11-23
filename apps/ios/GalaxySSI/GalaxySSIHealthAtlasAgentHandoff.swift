@@ -106,6 +106,8 @@ enum GalaxySSIHealthAtlasQuestion {
     if ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
       let context = GalaxySSIHealthAtlasPancreatic.context(entry.id, text: t)
       if !context.isEmpty { prompt += "\n" + context.joined(separator: "\n") }
+      let retinal = GalaxySSIHealthAtlasRetinaPath.context(entry.id, text: t)
+      if !retinal.isEmpty { prompt += "\n" + retinal.joined(separator: "\n") }
       if let context = GalaxySSIHealthAtlasEndocrinePath.context(entry.id, language: language) { prompt += "\n" + context }
     }
     if entry.id == GalaxySSIHealthAtlasFiltrationStage.owner,
