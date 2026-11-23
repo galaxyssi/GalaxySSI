@@ -1,12 +1,13 @@
 // Static pinned-resource/PDF/source audit. No native Swift or UI execution.
 const fs = require("node:fs"), path = require("node:path"), assert = require("node:assert/strict");
 const {execFileSync} = require("node:child_process"), xml = require("xml-js");
-const {PDFDocument, PDFName, PDFDict, PDFArray, decodePDFRawStream} = require("pdf-lib");
+const {PDFDocument, PDFName, PDFDict, PDFArray, decodePDFRawStream, drawSvgPath, rgb} = require("pdf-lib");
 const root = path.resolve(__dirname, "../GalaxySSI"), assets = path.join(root, "Assets.xcassets");
 const retinal = process.argv.includes("--retinal-cells");
 const systems = process.argv.includes("--system-overviews");
 const batch = process.argv.includes("--tissue-lymph");
-const sha = batch ? "b8fbf1191367153af2824506df99bbc5c5bae56e" : systems ? "5ca99f3dde521cd65ca0f0f84b5550a31da5b9f2" : retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
+const digestion = process.argv.includes("--function-digestion");
+const sha = digestion ? "ab78711d467c013444883dbaeca23c39a601c875" : batch ? "b8fbf1191367153af2824506df99bbc5c5bae56e" : systems ? "5ca99f3dde521cd65ca0f0f84b5550a31da5b9f2" : retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
 const source = file => execFileSync("git", ["show", sha + ":" + file], {encoding: "utf8", maxBuffer: 4_000_000});
 const batchFrames = [];
 if (batch) for (const [name, filename] of [["HealthAtlasTissues","tissue.pdf"],["HealthAtlasLymphOrgans","cell.pdf"]]) {
@@ -14,7 +15,8 @@ if (batch) for (const [name, filename] of [["HealthAtlasTissues","tissue.pdf"],[
   assert.deepEqual(pack.artworkSource,{androidPR:4363,mergeCommit:sha});
   for (const plate of pack.plates) batchFrames.push([path.basename(plate.drawable,".xml").replace("health_atlas_",""),plate.asset,filename]);
 }
-const frames = batch ? batchFrames : systems ? [
+const frames = digestion ? ["mouth", "esophagus", "stomach", "duodenum", "large", "rectum"].map(slug =>
+  ["gut_" + slug, "HealthAtlasFunctionGut" + slug[0].toUpperCase() + slug.slice(1), "art.pdf"]) : batch ? batchFrames : systems ? [
   ["system_cardio", "HealthAtlasOverviewCardio", "overview.pdf", 0],
   ["system_testicular", "HealthAtlasOverviewTesticular", "overview.pdf", 3],
   ["system_ovarian", "HealthAtlasOverviewOvarian", "overview.pdf", 9]
@@ -24,7 +26,7 @@ const frames = batch ? batchFrames : systems ? [
 ] : [
   ["sensory_retina_section", "HealthAtlasSensoryRetinaSection", "cell.pdf"]
 ];
-const gradientOffset = batch || systems || retinal ? 0 : 9;
+const gradientOffset = digestion || batch || systems || retinal ? 0 : 9;
 const array = (dict, key) => dict.lookup(PDFName.of(key), PDFArray).asArray().map(n => n.asNumber());
 const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 255);
 (async () => {
@@ -46,6 +48,11 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
     assert(!images || images.keys().length === 0, "Gradient/path PDF must not be rasterized");
     const contents = page.node.Contents().asArray().map(ref =>
       Buffer.from(decodePDFRawStream(pdf.context.lookup(ref)).decode()).toString()).join("\n");
+    if (digestion) for (const item of vector.path) {
+      const geometry = drawSvgPath(item._attributes["android:pathData"], {x:0,y:box.height,color:rgb(0,0,0)})
+        .map(op=>op.toString()).filter(op=>/(?:^|\s)(?:m|l|c|v|y|h)$/.test(op)).join("\n");
+      assert(geometry.length > 0 && contents.includes(geometry), "Missing original geometry " + slug);
+    }
     const strokeGradients = expected.filter(p => p["aapt:attr"]._attributes.name === "android:strokeColor");
     assert.equal((contents.match(/\/AtlasGradient\d+ sh/g) || []).length, expected.length - strokeGradients.length);
     assert.equal((contents.match(/\/AtlasGradient\d+ SCN/g) || []).length, strokeGradients.length);
@@ -81,7 +88,11 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
     }
     paths += vector.path.length;
   }
-  assert.equal(paths, batch ? 646 : systems ? 39 : retinal ? 35 : 24); assert.equal(gradientCount, batch ? 210 : systems ? 18 : retinal ? 11 : 2);
+  assert.equal(paths, digestion ? 35 : batch ? 646 : systems ? 39 : retinal ? 35 : 24); assert.equal(gradientCount, digestion ? 21 : batch ? 210 : systems ? 18 : retinal ? 11 : 2);
+  if (digestion) {
+    console.log("Android #4384 digestive Function artwork: six original vector PDFs, 35 exact path geometries and 21 native fill/stroke gradients; no native pixel verification.");
+    return;
+  }
   if (batch) {
     console.log("Android #4363: 23 vector PDFs, 646 paths, 210 exact gradients including native stroked shading patterns; no raster flattening.");
     return;

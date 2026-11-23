@@ -6,16 +6,18 @@ const root = path.resolve(__dirname, "../../.."), assets = path.join(root, "apps
 const retinal = process.argv.includes("--retinal-cells");
 const systems = process.argv.includes("--system-overviews");
 const tissues = process.argv.includes("--tissues"), lymph = process.argv.includes("--lymph");
+const digestion = process.argv.includes("--function-digestion");
 const batch = tissues || lymph;
-const revision = batch ? 4363 : systems ? 4362 : retinal ? 4359 : 4358;
-const sha = batch ? "b8fbf1191367153af2824506df99bbc5c5bae56e" : systems ? "5ca99f3dde521cd65ca0f0f84b5550a31da5b9f2" : retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
+const revision = digestion ? 4384 : batch ? 4363 : systems ? 4362 : retinal ? 4359 : 4358;
+const sha = digestion ? "ab78711d467c013444883dbaeca23c39a601c875" : batch ? "b8fbf1191367153af2824506df99bbc5c5bae56e" : systems ? "5ca99f3dde521cd65ca0f0f84b5550a31da5b9f2" : retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
 const batchFrames = [];
 for (const [enabled, name, filename] of [[tissues, "HealthAtlasTissues", "tissue.pdf"], [lymph, "HealthAtlasLymphOrgans", "cell.pdf"]]) {
   if (!enabled) continue;
   const pack = JSON.parse(fs.readFileSync(path.join(assets, name + ".dataset/content.json")));
   for (const plate of pack.plates) batchFrames.push([path.basename(plate.drawable, ".xml").replace("health_atlas_", ""), plate.asset, filename]);
 }
-const frames = batch ? batchFrames : systems ? [
+const frames = digestion ? ["mouth", "esophagus", "stomach", "duodenum", "large", "rectum"].map(slug =>
+  ["gut_" + slug, "HealthAtlasFunctionGut" + slug[0].toUpperCase() + slug.slice(1), "art.pdf"]) : batch ? batchFrames : systems ? [
   ["system_cardio", "HealthAtlasOverviewCardio", "overview.pdf", 0],
   ["system_testicular", "HealthAtlasOverviewTesticular", "overview.pdf", 3],
   ["system_ovarian", "HealthAtlasOverviewOvarian", "overview.pdf", 9]
@@ -26,7 +28,7 @@ const frames = batch ? batchFrames : systems ? [
   ["sensory_retina_section", "HealthAtlasSensoryRetinaSection", "cell.pdf"]
 ];
 // Keep retained #4358 PDF resource IDs stable when earlier ear, eye and sensory-cell gradients retire.
-const gradientOffset = batch || systems || retinal ? 0 : 9;
+const gradientOffset = digestion || batch || systems || retinal ? 0 : 9;
 function components(value) {
   if (!/^#[0-9a-f]{6}$/i.test(value)) throw Error("Unsupported colour " + value);
   return [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16) / 255);
@@ -109,10 +111,18 @@ function components(value) {
       } else page.drawSvgPath(a["android:pathData"], options);
       paths++;
     }
-    fs.writeFileSync(path.join(assets, asset + ".imageset", filename), await pdf.save());
+    const directory = path.join(assets, asset + ".imageset");
+    if (digestion) {
+      fs.mkdirSync(directory, {recursive: true});
+      fs.writeFileSync(path.join(directory, "Contents.json"), JSON.stringify({
+        images: [{filename, idiom: "universal"}], info: {author: "xcode", version: 1},
+        properties: {"preserves-vector-representation": true}
+      }, null, 2) + "\n");
+    }
+    fs.writeFileSync(path.join(directory, filename), await pdf.save());
   }
-  const expectedPaths = batch ? (tissues ? 546 : 0) + (lymph ? 100 : 0) : systems ? 39 : retinal ? 35 : 24;
-  const expectedGradients = batch ? (tissues ? 150 : 0) + (lymph ? 60 : 0) : systems ? 18 : retinal ? 11 : 2;
+  const expectedPaths = digestion ? 35 : batch ? (tissues ? 546 : 0) + (lymph ? 100 : 0) : systems ? 39 : retinal ? 35 : 24;
+  const expectedGradients = digestion ? 21 : batch ? (tissues ? 150 : 0) + (lymph ? 60 : 0) : systems ? 18 : retinal ? 11 : 2;
   if (paths !== expectedPaths || gradientCount !== expectedGradients) throw Error("Unexpected source geometry: " + paths + "/" + gradients);
   console.log("Imported Android #" + revision + ": " + paths + " original paths and " + gradientCount + " native gradients across " + frames.length + " retained vector assets.");
 })().catch(error => { console.error(error); process.exitCode = 1; });

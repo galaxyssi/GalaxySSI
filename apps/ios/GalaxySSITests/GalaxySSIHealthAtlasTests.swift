@@ -1121,6 +1121,48 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion(chapter: -1, fraction: .nan).stage, .filter)
     XCTAssertEqual(Motion(chapter: -1, fraction: .nan).fraction, 0)
   }
+  func testDigestionAndColonKeepSeparateStagesAndTransportGeometry() throws {
+    typealias Motion = GalaxySSIHealthAtlasDigestionMotion
+    XCTAssertEqual(Motion.Stage.allCases.count, 10)
+    XCTAssertEqual(Motion.Stage.meal, [.swallow, .peristalsis, .stomach, .duodenum, .villus])
+    XCTAssertEqual(Motion.Stage.colon, [.cecum, .mix, .water, .propulsion, .rectum])
+    for chapter in 0..<5 {
+      XCTAssertEqual(Motion(courseID: "DIGESTION", chapter: chapter, fraction: 0).stage, Motion.Stage.meal[chapter])
+      XCTAssertEqual(Motion(courseID: "COLON", chapter: chapter, fraction: 0).stage, Motion.Stage.colon[chapter])
+    }
+    let start = Motion(courseID: "DIGESTION", chapter: 2, fraction: 0)
+    let end = Motion(courseID: "DIGESTION", chapter: 2, fraction: 1)
+    XCTAssertEqual(start.stomachParticles.count, 11)
+    XCTAssertEqual(start.stomachParticles[0].point, CGPoint(x: 244, y: 133))
+    XCTAssertEqual(start.stomachParticles[0].radius, 4.3)
+    for (first, last) in zip(start.stomachParticles, end.stomachParticles) {
+      XCTAssertEqual(first.radius - last.radius, 2, accuracy: 1e-12)
+      XCTAssertTrue(last.point.x.isFinite && last.point.y.isFinite && last.radius > 0)
+    }
+    XCTAssertEqual(end.duodenalPositions.count, 6)
+    XCTAssertTrue(end.duodenalPositions.allSatisfy { (0..<1).contains($0) })
+    XCTAssertEqual(start.flowPositions(count: 4), [0, 0.25, 0.5, 0.75])
+    XCTAssertEqual(end.flowPositions(count: 4), [0.25, 0.5, 0.75, 0])
+    XCTAssertTrue(start.flowPositions(count: 0).isEmpty)
+    XCTAssertTrue(start.flowPositions(count: 17).isEmpty)
+    XCTAssertTrue(start.flowPositions(count: 4, time: .nan).isEmpty)
+    XCTAssertEqual(Motion(courseID: "COLON", chapter: 4, fraction: 0).rectalAdvance, 0.52)
+    XCTAssertEqual(Motion(courseID: "COLON", chapter: 4, fraction: 0.58).rectalAdvance, 0.66)
+    XCTAssertEqual(Motion(courseID: "COLON", chapter: 4, fraction: 1).rectalAdvance, 0.9372, accuracy: 1e-12)
+    XCTAssertEqual(Motion(courseID: "DIGESTION", chapter: -1, fraction: .nan).stage, .swallow)
+    XCTAssertEqual(Motion(courseID: "COLON", chapter: 20, fraction: .infinity).fraction, 0)
+    let routes = [Motion.swallow, Motion.downEsophagus, Motion.stomachExit, Motion.smallBowel, Motion.bile,
+      Motion.enzymes, Motion.waterSoluble, Motion.dietaryFat, Motion.colonEntry, Motion.ascending,
+      Motion.transverse, Motion.descending, Motion.colonFlow, Motion.rectal] + Motion.waterTracks
+    XCTAssertEqual(routes.count, 17)
+    for route in routes {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+        XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
