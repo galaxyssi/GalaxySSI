@@ -91,6 +91,28 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertNil(Context.Illustration(entryID: "heart", caption: "Plate", source: URL(string: "https://user@openstax.org/books")))
   }
 
+  func testEyePreviewAllowsExactAnatomyReferenceAndScopesQuantitativeContext() throws {
+    let source = GalaxySSIHealthAtlasEyeOptics.anatomySource
+    let illustration = try XCTUnwrap(Context.Illustration(entryID: "eye", caption: "EYE_SECTION", source: source))
+    let model = GalaxySSIHealthAtlasPhysiology(kind: .eye)
+    let teaching = GalaxySSIHealthAtlasPhysiologyText.context(model, language: "en")
+    let quantitative = Context.Quantitative(entryID: "eye", context: teaching)
+    for screen in [Context.Screen.simulation, .physiology] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy("eye"), screen: screen,
+        quantitative: quantitative, illustration: illustration, locale: locale, text: text))
+      XCTAssertTrue(prompt.contains(teaching))
+      XCTAssertTrue(prompt.contains(source.absoluteString))
+    }
+    for screen in [Context.Screen.structure, .function, .aging, .drugs] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy("eye"), screen: screen,
+        quantitative: quantitative, illustration: illustration, locale: locale, text: text))
+      XCTAssertFalse(prompt.contains(teaching))
+    }
+    XCTAssertNil(Context.prompt(anatomy: anatomy("eye"), screen: .values, quantitative: quantitative,
+      illustration: illustration, locale: locale, text: text))
+    XCTAssertNil(Context.Illustration(entryID: "eye", caption: "EYE_SECTION", source: URL(string: "https://www.nei.nih.gov/other")))
+  }
+
   func testTwoCompartmentPreviewOnlyAppearsForSelectedDrugMode() throws {
     let drugs = GalaxySSIHealthAtlasDrugState(mode: .two, distribution: .standard)
     func localized(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, "en") }
