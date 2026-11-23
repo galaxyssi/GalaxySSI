@@ -107,6 +107,11 @@ enum GalaxySSIHealthAtlasQuestion {
        ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
       prompt += "\n" + t("podocyte_scope")
     }
+    if entry.id == GalaxySSIHealthAtlasSarcomere.owner,
+       ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
+       let sarcomere = GalaxySSIHealthAtlasSarcomere(stage: selection.simulation.stage) {
+      prompt += "\n" + sarcomere.context(text: t).joined(separator: "\n")
+    }
     if entry.id == GalaxySSIHealthAtlas.ImmunePack.phagocytosisOwner,
        ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
       prompt += "\n" + t("phagocytosis_scope")

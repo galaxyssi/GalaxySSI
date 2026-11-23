@@ -12,7 +12,7 @@ Ports Android merge `ee54cfd25d31e05eb34bd97f1557a404ae337b10` to iOS 15+.
 - Preserve GalaxySSI branding, the existing app version and catalogue graph. No Android/Desktop implementation or packaging changes.
 
 ## Review boundary
-This branch starts from `main` after #4468 (shared annotation support). It does not require or include the unmerged #4469 core-cell/sarcomere port. Each Android port remains a separate formal PR with base `main`.
+This branch is synchronized with `main` at `30785e741957e0bd5f25f7c2e013fe275df888dd`, including the now-merged #4469 core-cell/sarcomere port. The merge retains both sets of plate lookup, playback, localized resources, context and test source. The base-to-head diff contains only this #4347 port, not a second copy of #4469. Each Android port remains a separate formal PR with base `main`.
 
 ## Verification performed
 - `node apps/ios/tools/check-body-atlas-transport-cells.cjs`: passed; exact 12-plate/25-feature/88-path ownership, source, caption and coordinate audit, bilingual keys and PDF asset headers.

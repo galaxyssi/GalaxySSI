@@ -43,6 +43,10 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         GalaxySSIHealthAtlasPodocyteView(stage: simulation.stage, stages: model.stages, language: language)
         Text(t("podocyte_scope")).font(.footnote).foregroundColor(.secondary)
       }
+      if entry.id == GalaxySSIHealthAtlasSarcomere.owner {
+        playbackControls
+        GalaxySSIHealthAtlasSarcomerePanel(stage: simulation.stage, stages: model.stages, language: language)
+      }
       if entry.id == GalaxySSIHealthAtlasPhagocytosis.owner {
         playbackControls
         GalaxySSIHealthAtlasPhagocytosis(stage: simulation.stage, stages: model.stages, language: language)
@@ -107,7 +111,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         .accessibilityLabel(t("phase"))
       if !GalaxySSIHealthAtlasCirculation.supports(entry.id), !GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id),
          germline == nil, entry.id != GalaxySSIHealthAtlasPhagocytosis.owner,
-         entry.id != GalaxySSIHealthAtlasFiltrationStage.owner { playbackControls }
+         entry.id != GalaxySSIHealthAtlasSarcomere.owner, entry.id != GalaxySSIHealthAtlasFiltrationStage.owner { playbackControls }
       if reduceMotion { Text(bodyText("motion_disabled")).font(.caption) }
       Text(t("speed") + " · " + String(format: "%.1f×", simulation.speed))
       Slider(value: $simulation.speed, in: 0.5...2, step: 0.5).accessibilityLabel(t("speed"))
