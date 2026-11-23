@@ -21,7 +21,9 @@ struct GalaxySSIHealthAtlasDetail: View {
       } else {
         ScrollView {
           VStack(alignment: .leading, spacing: 18) {
-            GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
+            if selection.wrappedValue.tab != .simulation || !GalaxySSIHealthAtlasCirculation.supports(entry.id) {
+              GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
+            }
             Text(GalaxySSIHealthAtlasText.get(entry.description, language))
             if selection.wrappedValue.tab == .structure {
               relationships(atlas.children(entry), title: t("related"))
@@ -37,7 +39,13 @@ struct GalaxySSIHealthAtlasDetail: View {
               Button(t("simulation")) { selection.wrappedValue.tab = .simulation }
             } else {
               GalaxySSIHealthAtlasSimulationPanel(entry: entry, model: atlas.model(entry), simulation: selection.simulation,
-                physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented)
+                physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented,
+                destination: { id in
+                  if let target = atlas.entry(id), depth < 32 {
+                    return AnyView(GalaxySSIHealthAtlasDetail(atlas: atlas, entry: target, state: state, records: records, depth: depth + 1))
+                  }
+                  return AnyView(EmptyView())
+                })
             }
             Button(t("research")) { research = true }
             Divider()

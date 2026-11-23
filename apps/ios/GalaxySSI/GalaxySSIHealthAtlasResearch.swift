@@ -18,7 +18,13 @@ struct GalaxySSIHealthAtlasResearch: View {
         switch selection.wrappedValue.research {
         case .physiology:
           GalaxySSIHealthAtlasSimulationPanel(entry: entry, model: atlas.model(entry), simulation: selection.simulation,
-            physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented)
+            physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented,
+            destination: { id in
+              if let target = atlas.entry(id), depth < 32 {
+                return AnyView(GalaxySSIHealthAtlasDetail(atlas: atlas, entry: target, state: state, records: records, depth: depth + 1))
+              }
+              return AnyView(EmptyView())
+            })
         case .drugs:
           drugs
         case .aging:
