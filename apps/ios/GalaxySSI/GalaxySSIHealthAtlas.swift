@@ -41,6 +41,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if includeExtensions, let pack = try MusculoskeletalPack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     if includeExtensions, let pack = try OverviewPack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     guard includeExtensions else { return result }
+    try validatePlates([GalaxySSIHealthAtlasEyeOptics.plate], in: result, bundle: bundle)
     if let pack = try ReproductivePack.read(bundle: bundle) { result = try pack.applying(to: result) }
     if let pack = try SystemPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try ArtworkPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
@@ -203,8 +204,7 @@ struct GalaxySSIHealthAtlas: Decodable {
       plates.allSatisfy({ plate in
         !plate.entryIDs.isEmpty && plate.entryIDs.allSatisfy({ $0.isEmpty || atlas.entry($0) != nil }) &&
         (plate.owner == nil || atlas.entry(plate.owner!) != nil) &&
-        (plate.source == nil || (plate.source?.scheme == "https" && plate.source?.host == "openstax.org" &&
-          plate.source?.user == nil && plate.source?.password == nil)) &&
+        Self.trustedPlateSource(plate.source) &&
         plate.asset.hasPrefix("HealthAtlas") && UIImage(named: plate.asset, in: bundle, compatibleWith: nil) != nil &&
         plate.aspectRatio.isFinite && (0.1...3).contains(plate.aspectRatio) &&
         plate.markers.allSatisfy({ atlas.entry($0.id) != nil && $0.x.isFinite && $0.y.isFinite &&
@@ -218,11 +218,17 @@ struct GalaxySSIHealthAtlas: Decodable {
     }
     return defaultPlate(for: id).map { [$0] } ?? []
   }
+  static func trustedPlateSource(_ source: URL?) -> Bool {
+    guard let source else { return true }
+    return source.scheme == "https" && source.user == nil && source.password == nil &&
+      (source.host == "openstax.org" || source == GalaxySSIHealthAtlasEyeOptics.anatomySource)
+  }
   func plate(for id: String?, viewKey: String? = nil) -> Plate? {
     let available = views(for: id)
     return available.first(where: { $0.viewKey == viewKey }) ?? available.first
   }
   private func defaultPlate(for id: String?) -> Plate? {
+    if GalaxySSIHealthAtlasEyeOptics.plate.entryIDs.contains(id ?? "") { return GalaxySSIHealthAtlasEyeOptics.plate }
     if let pack = try? SystemPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     if let pack = try? CellPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     if let pack = try? RenalPack.bundled.get(), pack.plate.entryIDs.contains(id ?? "") { return pack.plate }

@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import GalaxySSI
 
 @MainActor
@@ -400,6 +401,26 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(elimination.percent(at: 8), 25, accuracy: 0.0001)
     elimination.halfLife = .nan; elimination.elapsed = 90; elimination.sanitize()
     XCTAssertEqual(elimination.halfLife, 4); XCTAssertEqual(elimination.elapsed, 48)
+  }
+
+  func testDedicatedEyePlateOverridesOverviewAndUsesExactTrustedSource() throws {
+    let atlas = try catalogue()
+    for id in ["eye", "cornea", "lens", "retina"] {
+      let plate = try XCTUnwrap(atlas.plate(for: id))
+      XCTAssertEqual(plate.id, "eye")
+      XCTAssertEqual(plate.owner, "eye")
+      XCTAssertEqual(plate.asset, "HealthAtlasEyeSection")
+      XCTAssertEqual(plate.markers.map(\.id), ["cornea", "lens", "retina"])
+      XCTAssertEqual(plate.source, GalaxySSIHealthAtlasEyeOptics.anatomySource)
+      XCTAssertNotNil(UIImage(named: plate.asset, in: Bundle(for: GalaxySSIStore.self), compatibleWith: nil))
+    }
+    XCTAssertNotEqual(atlas.plate(for: "sensory")?.id, "eye")
+    XCTAssertNotEqual(atlas.plate(for: "cell-rod-photoreceptor")?.id, "eye")
+    XCTAssertTrue(GalaxySSIHealthAtlas.trustedPlateSource(GalaxySSIHealthAtlasEyeOptics.anatomySource))
+    for source in ["http://www.nei.nih.gov/eye-health-information/healthy-vision/nei-for-kids/about-eye",
+      "https://www.nei.nih.gov/other", "https://user@www.nei.nih.gov/eye-health-information/healthy-vision/nei-for-kids/about-eye"] {
+      XCTAssertFalse(GalaxySSIHealthAtlas.trustedPlateSource(URL(string: source)))
+    }
   }
 
   func testCalendarMonthYearWindowsAcrossLeapDay() throws {

@@ -19,6 +19,8 @@
     C43300000000000000000001 /* GalaxySSIHealthAtlasRenalPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43300000000000000000002 /* GalaxySSIHealthAtlasRenalPack.swift */; };
     C43350000000000000000001 /* GalaxySSIHealthAtlasElbow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43350000000000000000002 /* GalaxySSIHealthAtlasElbow.swift */; };
     C43380000000000000000001 /* GalaxySSIHealthAtlasVesselFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43380000000000000000002 /* GalaxySSIHealthAtlasVesselFlow.swift */; };
+    C43400000000000000000001 /* GalaxySSIHealthAtlasEyeOptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43400000000000000000002 /* GalaxySSIHealthAtlasEyeOptics.swift */; };
+    C43400000000000000000003 /* GalaxySSIHealthAtlasEyeOpticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43400000000000000000004 /* GalaxySSIHealthAtlasEyeOpticsView.swift */; };
     C43380000000000000000003 /* GalaxySSIHealthAtlasVesselFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43380000000000000000004 /* GalaxySSIHealthAtlasVesselFlowView.swift */; };
     C43350000000000000000003 /* GalaxySSIHealthAtlasElbowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43350000000000000000004 /* GalaxySSIHealthAtlasElbowView.swift */; };
     C43390000000000000000001 /* GalaxySSIHealthAtlasAging.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43390000000000000000002 /* GalaxySSIHealthAtlasAging.swift */; };
@@ -1476,6 +1478,8 @@
     C43300000000000000000002 /* GalaxySSIHealthAtlasRenalPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasRenalPack.swift; sourceTree = "<group>"; };
     C43350000000000000000002 /* GalaxySSIHealthAtlasElbow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasElbow.swift; sourceTree = "<group>"; };
     C43380000000000000000002 /* GalaxySSIHealthAtlasVesselFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasVesselFlow.swift; sourceTree = "<group>"; };
+    C43400000000000000000002 /* GalaxySSIHealthAtlasEyeOptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEyeOptics.swift; sourceTree = "<group>"; };
+    C43400000000000000000004 /* GalaxySSIHealthAtlasEyeOpticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEyeOpticsView.swift; sourceTree = "<group>"; };
     C43380000000000000000004 /* GalaxySSIHealthAtlasVesselFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasVesselFlowView.swift; sourceTree = "<group>"; };
     C43350000000000000000004 /* GalaxySSIHealthAtlasElbowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasElbowView.swift; sourceTree = "<group>"; };
     C43390000000000000000002 /* GalaxySSIHealthAtlasAging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAging.swift; sourceTree = "<group>"; };
@@ -2951,6 +2955,8 @@
         C43300000000000000000002 /* GalaxySSIHealthAtlasRenalPack.swift */,
         C43350000000000000000002 /* GalaxySSIHealthAtlasElbow.swift */,
         C43380000000000000000002 /* GalaxySSIHealthAtlasVesselFlow.swift */,
+        C43400000000000000000002 /* GalaxySSIHealthAtlasEyeOptics.swift */,
+        C43400000000000000000004 /* GalaxySSIHealthAtlasEyeOpticsView.swift */,
         C43380000000000000000004 /* GalaxySSIHealthAtlasVesselFlowView.swift */,
         C43350000000000000000004 /* GalaxySSIHealthAtlasElbowView.swift */,
         C43390000000000000000002 /* GalaxySSIHealthAtlasAging.swift */,
@@ -4556,6 +4562,8 @@
         C43300000000000000000001 /* GalaxySSIHealthAtlasRenalPack.swift in Sources */,
         C43350000000000000000001 /* GalaxySSIHealthAtlasElbow.swift in Sources */,
         C43380000000000000000001 /* GalaxySSIHealthAtlasVesselFlow.swift in Sources */,
+        C43400000000000000000001 /* GalaxySSIHealthAtlasEyeOptics.swift in Sources */,
+        C43400000000000000000003 /* GalaxySSIHealthAtlasEyeOpticsView.swift in Sources */,
         C43380000000000000000003 /* GalaxySSIHealthAtlasVesselFlowView.swift in Sources */,
         C43350000000000000000003 /* GalaxySSIHealthAtlasElbowView.swift in Sources */,
         C43390000000000000000001 /* GalaxySSIHealthAtlasAging.swift in Sources */,

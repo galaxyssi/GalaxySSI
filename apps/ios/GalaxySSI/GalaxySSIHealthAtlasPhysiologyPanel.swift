@@ -18,6 +18,14 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
         if let amounts = model.renalAmounts { renalBalance(amounts) }
         if let forces = model.elbowForces { GalaxySSIHealthAtlasElbowView(forces: forces, language: language) }
         if let flow = model.vesselFlow { GalaxySSIHealthAtlasVesselFlowView(flow: flow, language: language) }
+        if let eye = model.eyeOptics {
+          GalaxySSIHealthAtlasEyeOpticsView(eye: eye, language: language)
+          Button {
+            inputs = model.changing(1, to: eye.targetPowerSteps)?.inputs
+          } label: {
+            Label(t("eye_match_plane"), systemImage: "scope").frame(minHeight: 44)
+          }.accessibilityIdentifier("atlas-eye-match-plane")
+        }
         chart(model)
         Text(String(format: t("model_axis"), t(model.kind.inputs[model.kind.axis].key), model.kind.inputs[model.kind.axis].unit))
           .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)

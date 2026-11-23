@@ -33,8 +33,7 @@ enum GalaxySSIHealthAtlasAgentContext {
     let source: URL?
     init?(entryID: String, caption: String, source: URL?) {
       guard !entryID.isEmpty, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-        source == nil || (source?.scheme == "https" && source?.host == "openstax.org" &&
-          source?.user == nil && source?.password == nil) else { return nil }
+        GalaxySSIHealthAtlas.trustedPlateSource(source) else { return nil }
       self.entryID = entryID; self.caption = caption; self.source = source
     }
   }
