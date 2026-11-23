@@ -1252,6 +1252,50 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testLymphPumpAndAntibodyExpansionKeepSourceTiming() throws {
+    typealias Motion = GalaxySSIHealthAtlasLymphImmuneMotion
+    XCTAssertEqual(Motion.PumpStage.at(0), .filling)
+    XCTAssertEqual(Motion.PumpStage.at(0.409), .filling)
+    XCTAssertEqual(Motion.PumpStage.at(0.41), .holding)
+    XCTAssertEqual(Motion.PumpStage.at(0.57), .emptying)
+    XCTAssertEqual(Motion.PumpStage.at(0.97), .holding)
+    XCTAssertTrue(Motion.PumpStage.filling.inletOpen)
+    XCTAssertFalse(Motion.PumpStage.filling.outletOpen)
+    XCTAssertFalse(Motion.PumpStage.holding.inletOpen)
+    XCTAssertFalse(Motion.PumpStage.holding.outletOpen)
+    XCTAssertFalse(Motion.PumpStage.emptying.inletOpen)
+    XCTAssertTrue(Motion.PumpStage.emptying.outletOpen)
+    XCTAssertEqual(Motion.PumpStage.expansion(0), 0)
+    XCTAssertEqual(Motion.PumpStage.expansion(0.41), 1)
+    XCTAssertEqual(Motion.PumpStage.expansion(0.57), 1)
+    XCTAssertEqual(Motion.PumpStage.expansion(0.77), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.PumpStage.expansion(0.97), 0)
+    XCTAssertEqual(Motion(courseID: "LYMPH_RETURN", chapter: 2, fraction: 1).pumpCycle, 0.75)
+    let initial = Motion(courseID: "ANTIBODY_RESPONSE", chapter: 2, fraction: 0).clones
+    let split = Motion(courseID: "ANTIBODY_RESPONSE", chapter: 2, fraction: 0.47).clones
+    let last = Motion(courseID: "ANTIBODY_RESPONSE", chapter: 2, fraction: 1).clones
+    XCTAssertEqual(initial.centers.count, 2)
+    XCTAssertEqual(initial.diameter, 121)
+    XCTAssertEqual(split.centers.count, 4)
+    XCTAssertEqual(split.diameter, 105)
+    XCTAssertEqual(last.centers.count, 4)
+    XCTAssertEqual(last.diameter, 85)
+    XCTAssertEqual(last.centers, [CGPoint(x: 122, y: 126), CGPoint(x: 122, y: 224), CGPoint(x: 238, y: 126), CGPoint(x: 238, y: 224)])
+    XCTAssertEqual(Motion.cellBounds(x: 112, y: 181, diameter: 220), CGRect(x: 2, y: 71, width: 220, height: 220))
+    XCTAssertEqual(Motion.cellBounds(x: 100.2, y: 100.2, diameter: 93), CGRect(x: 53, y: 53, width: 93, height: 93))
+    XCTAssertNil(Motion.cellBounds(x: .nan, y: 0, diameter: 100))
+    XCTAssertNil(Motion.cellBounds(x: 0, y: 0, diameter: 0))
+    XCTAssertEqual(Motion(courseID: "LYMPH_RETURN", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "LYMPH_RETURN", chapter: 10, fraction: .infinity).fraction, 0)
+    XCTAssertEqual(Set(Motion.sections.keys), ["lymph-nodes", "thoracic-duct"])
+    for section in Motion.sections.values {
+      XCTAssertEqual(section.route.commands.count, 5)
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(section.route, position: phase, width: 360, height: 280))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...280).contains(sample.point.y))
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
