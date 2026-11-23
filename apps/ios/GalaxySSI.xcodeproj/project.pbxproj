@@ -364,6 +364,8 @@
     A10000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift */; };
     A10000000000000000009805 /* GalaxySSIHealthBodyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009805 /* GalaxySSIHealthBodyView.swift */; };
     A10000000000000000009806 /* GalaxySSIHealthBodyText.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009806 /* GalaxySSIHealthBodyText.swift */; };
+    C43330000000000000000003 /* GalaxySSIHealthAtlasDistributionPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43330000000000000000004 /* GalaxySSIHealthAtlasDistributionPanel.swift */; };
+    C43330000000000000000001 /* GalaxySSIHealthAtlasDistribution.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43330000000000000000002 /* GalaxySSIHealthAtlasDistribution.swift */; };
     C43290000000000000000001 /* GalaxySSIHealthAtlasCirculation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43290000000000000000002 /* GalaxySSIHealthAtlasCirculation.swift */; };
     58236C684BF52CD0627E1B30 /* GalaxySSIHealthAtlasOxygen.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02B03B900B47D546DB439D9 /* GalaxySSIHealthAtlasOxygen.swift */; };
     415CCB24AC983596F186422C /* GalaxySSIHealthAtlasOxygenText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A9CC6DF454702C3FE6F392 /* GalaxySSIHealthAtlasOxygenText.swift */; };
@@ -1806,6 +1808,8 @@
     A20000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareProfileScopeView.swift; sourceTree = "<group>"; };
     A20000000000000000009805 /* GalaxySSIHealthBodyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthBodyView.swift; sourceTree = "<group>"; };
     A20000000000000000009806 /* GalaxySSIHealthBodyText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthBodyText.swift; sourceTree = "<group>"; };
+    C43330000000000000000004 /* GalaxySSIHealthAtlasDistributionPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDistributionPanel.swift; sourceTree = "<group>"; };
+    C43330000000000000000002 /* GalaxySSIHealthAtlasDistribution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDistribution.swift; sourceTree = "<group>"; };
     C43290000000000000000002 /* GalaxySSIHealthAtlasCirculation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCirculation.swift; sourceTree = "<group>"; };
     F02B03B900B47D546DB439D9 /* GalaxySSIHealthAtlasOxygen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasOxygen.swift; sourceTree = "<group>"; };
     76A9CC6DF454702C3FE6F392 /* GalaxySSIHealthAtlasOxygenText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasOxygenText.swift; sourceTree = "<group>"; };
@@ -3856,6 +3860,8 @@
         A20000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift */,
         A20000000000000000009805 /* GalaxySSIHealthBodyView.swift */,
         A20000000000000000009806 /* GalaxySSIHealthBodyText.swift */,
+        C43330000000000000000004 /* GalaxySSIHealthAtlasDistributionPanel.swift */,
+        C43330000000000000000002 /* GalaxySSIHealthAtlasDistribution.swift */,
         C43290000000000000000002 /* GalaxySSIHealthAtlasCirculation.swift */,
         F02B03B900B47D546DB439D9 /* GalaxySSIHealthAtlasOxygen.swift */,
         76A9CC6DF454702C3FE6F392 /* GalaxySSIHealthAtlasOxygenText.swift */,
@@ -5431,6 +5437,8 @@
         A10000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift in Sources */,
         A10000000000000000009805 /* GalaxySSIHealthBodyView.swift in Sources */,
         A10000000000000000009806 /* GalaxySSIHealthBodyText.swift in Sources */,
+        C43330000000000000000003 /* GalaxySSIHealthAtlasDistributionPanel.swift in Sources */,
+        C43330000000000000000001 /* GalaxySSIHealthAtlasDistribution.swift in Sources */,
         C43290000000000000000001 /* GalaxySSIHealthAtlasCirculation.swift in Sources */,
         58236C684BF52CD0627E1B30 /* GalaxySSIHealthAtlasOxygen.swift in Sources */,
         415CCB24AC983596F186422C /* GalaxySSIHealthAtlasOxygenText.swift in Sources */,

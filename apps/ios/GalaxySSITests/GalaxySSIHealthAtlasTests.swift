@@ -72,6 +72,38 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertTrue(atlas.search("not-a-real-organ", kind: nil, system: "", language: "en").isEmpty)
   }
 
+  func testDrugStateRestorationPreservesBothModelsAndLegacySelections() throws {
+    let atlas = try catalogue()
+    let legacy = GalaxySSIHealthAtlasState.Selection()
+    let legacyData = try JSONEncoder().encode(["heart": legacy])
+    let restored = GalaxySSIHealthAtlasState()
+    restored.restore(try XCTUnwrap(String(data: legacyData, encoding: .utf8)), atlas: atlas)
+    XCTAssertNotNil(restored.entries["heart"])
+    XCTAssertNil(restored.entries["heart"]?.drugInputs)
+    var selection = legacy
+    selection.research = .drugs
+    selection.elimination.halfLife = 7
+    selection.elimination.elapsed = 13
+    let distribution = try XCTUnwrap(GalaxySSIHealthAtlasDistribution(outward: 100, returning: 50, elimination: 20, quarterHours: 47))
+    var drugs = GalaxySSIHealthAtlasDrugState(mode: .two, distribution: distribution)
+    drugs.mode = .single
+    selection.drugInputs = drugs.encoded
+    restored.entries["heart"] = selection
+    let next = GalaxySSIHealthAtlasState()
+    next.restore(restored.serialized, atlas: atlas)
+    let roundTrip = try XCTUnwrap(next.entries["heart"])
+    XCTAssertEqual(roundTrip.elimination, selection.elimination)
+    XCTAssertEqual(GalaxySSIHealthAtlasDrugState.restore(roundTrip.drugInputs), drugs)
+    for invalid in [[2, 30, 15, 10, 16], [1, 301, 15, 10, 16], []] {
+      selection.drugInputs = invalid
+      restored.entries["heart"] = selection
+      next.restore(restored.serialized, atlas: atlas)
+      XCTAssertNil(next.entries["heart"]?.drugInputs)
+      XCTAssertEqual(next.entries["heart"]?.elimination, selection.elimination)
+      XCTAssertEqual(next.entries["heart"]?.research, .drugs)
+    }
+  }
+
   func testMetricAssociationsDoNotInventMissingOrganFunctionReadings() {
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("heart"), [.bloodPressure, .restingHeartRate, .ldl, .hdl, .triglycerides])
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("cell-pancreatic-beta-cell"), [.glucose, .hba1c])

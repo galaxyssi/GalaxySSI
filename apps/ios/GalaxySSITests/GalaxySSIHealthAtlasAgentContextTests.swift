@@ -91,6 +91,31 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertNil(Context.Illustration(entryID: "heart", caption: "Plate", source: URL(string: "https://user@openstax.org/books")))
   }
 
+  func testTwoCompartmentPreviewOnlyAppearsForSelectedDrugMode() throws {
+    let drugs = GalaxySSIHealthAtlasDrugState(mode: .two, distribution: .standard)
+    func localized(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, "en") }
+    let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .drugs, drugs: drugs,
+      locale: locale, text: localized))
+    XCTAssertTrue(prompt.contains(GalaxySSIHealthAtlasDistribution.source.absoluteString))
+    XCTAssertTrue(prompt.contains("31.31"))
+    XCTAssertTrue(prompt.contains("46.72"))
+    XCTAssertTrue(prompt.contains("21.97"))
+    XCTAssertTrue(prompt.contains(localized("distribution_boundary")))
+    XCTAssertFalse(prompt.contains(localized("elimination_assumptions")))
+    let single = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .drugs,
+      drugs: .init(mode: .single, distribution: .standard), locale: locale, text: localized))
+    XCTAssertFalse(single.contains(GalaxySSIHealthAtlasDistribution.source.absoluteString))
+    XCTAssertTrue(single.contains(localized("elimination_assumptions")))
+    for screen in [Context.Screen.structure, .function, .simulation, .physiology, .aging] {
+      let excluded = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: screen, drugs: drugs,
+        locale: locale, text: localized))
+      XCTAssertFalse(excluded.contains(GalaxySSIHealthAtlasDistribution.source.absoluteString))
+    }
+    XCTAssertNil(Context.prompt(anatomy: anatomy(), screen: .values, drugs: drugs, locale: locale, text: localized))
+    XCTAssertEqual(Context.prompt(anatomy: nil, screen: .drugs, drugs: drugs, locale: locale, text: localized),
+      localized("ask_whole_context"))
+  }
+
   func testPersonalValuesHasNoPublicFallbackIncludingAnEmptyMetric() {
     XCTAssertNil(Context.prompt(anatomy: anatomy(), screen: .values, locale: locale, text: text))
     XCTAssertNil(Context.prompt(anatomy: nil, screen: .values, locale: locale, text: text))

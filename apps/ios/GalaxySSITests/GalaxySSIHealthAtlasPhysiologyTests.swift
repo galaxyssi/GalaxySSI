@@ -4,6 +4,53 @@ import XCTest
 final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
   typealias Model = GalaxySSIHealthAtlasPhysiology
 
+  func testTwoCompartmentSolutionMatchesIndependentAndroidMatrixExponentialFixtures() throws {
+    typealias Distribution = GalaxySSIHealthAtlasDistribution
+    let fixtures: [(Distribution?, [Double])] = [
+      (.init(outward: 30, returning: 15, elimination: 10, quarterHours: 16),
+        [31.31146654418996, 46.72275917640283, 21.96577427940722]),
+      (.init(outward: 300, returning: 100, elimination: 10, quarterHours: 8),
+        [22.94872068963114, 70.48922199949571, 6.56205731087311]),
+      (.init(outward: 1, returning: 300, elimination: 1, quarterHours: 192),
+        [61.77014723483772, 0.20658681812629, 38.02326594703583]),
+      (.init(outward: 300, returning: 0, elimination: 10, quarterHours: 16),
+        [0.000411858870753571, 96.7737949752864, 3.22579316584287])
+    ]
+    for (candidate, expected) in fixtures {
+      let model = try XCTUnwrap(candidate)
+      for (actual, value) in zip(model.amounts.values, expected) { XCTAssertEqual(actual, value, accuracy: 1e-10) }
+    }
+    for a in [0, 1, 99, 300] {
+      for b in [0, 1, 99, 300] {
+        for e in [0, 1, 99, 300] {
+          let model = try XCTUnwrap(Distribution(outward: a, returning: b, elimination: e))
+          var previousLoss = 0.0
+          for step in 0...192 {
+            let value = try XCTUnwrap(model.at(Double(step) / 4))
+            XCTAssertEqual(value.values.reduce(0, +), 100, accuracy: 1e-10)
+            XCTAssertTrue(value.values.allSatisfy { $0.isFinite && (0...100).contains($0) })
+            XCTAssertGreaterThanOrEqual(value.eliminated + 1e-10, previousLoss)
+            previousLoss = value.eliminated
+          }
+        }
+      }
+    }
+  }
+
+  func testDrugModesRestoreBoundedInputsAndHandleRepeatedRoot() throws {
+    typealias Distribution = GalaxySSIHealthAtlasDistribution
+    let model = try XCTUnwrap(Distribution(outward: 0, returning: 10, elimination: 10))
+    let amounts = try XCTUnwrap(model.at(4))
+    XCTAssertEqual(amounts.central, 100 * exp(-0.4), accuracy: 1e-12)
+    XCTAssertEqual(amounts.peripheral, 0)
+    let state = GalaxySSIHealthAtlasDrugState(mode: .two, distribution: .standard)
+    XCTAssertEqual(GalaxySSIHealthAtlasDrugState.restore(state.encoded), state)
+    for invalid in [nil, [], [2, 30, 15, 10, 16], [1, 301, 15, 10, 16], [1, 30, 15, 10, -1]] as [[Int]?] {
+      XCTAssertNil(GalaxySSIHealthAtlasDrugState.restore(invalid))
+    }
+    for invalid in [Double.nan, .infinity, -1, 49] { XCTAssertNil(model.at(invalid)) }
+  }
+
   func testRenalTransfersConserveSoluteAndRejectInvalidInputs() throws {
     typealias Amounts = GalaxySSIHealthAtlasRenalAmounts
     let baseline = try XCTUnwrap(Amounts(filtered: 100, reabsorbedPercent: 90, secreted: 10))

@@ -66,6 +66,7 @@ enum GalaxySSIHealthAtlasQuestion {
     }
     return GalaxySSIHealthAtlasAgentContext.prompt(anatomy: anatomy, screen: screen, simulation: simulation,
       quantitative: quantitative, elimination: elimination, illustration: illustration,
+      drugs: GalaxySSIHealthAtlasDrugState.restore(selection.drugInputs),
       locale: GalaxySSILocalization.interfaceLocale(language: language), text: t) ?? ""
     #else
     guard let entry else { return t("ask_whole_context") }
@@ -98,9 +99,14 @@ enum GalaxySSIHealthAtlasQuestion {
           prompt += "\n" + t(cardiac ? "stroke_volume" : "tidal") + ": \(Int(selection.simulation.second)) mL"
         } else if !hasAssociatedPhysiology { prompt += "\n" + t("qualitative_note") }
       case .drugs:
+        if let drugs = GalaxySSIHealthAtlasDrugState.restore(selection.drugInputs), drugs.mode == .two {
+          prompt += "\n" + t("drug_models") + "\n" +
+            drugs.distribution.context(locale: GalaxySSILocalization.interfaceLocale(language: language), text: t)
+        } else {
         prompt += "\n" + t("drug_note") + "\n" + t("elimination_assumptions") + "\n" + t("elimination_formula")
         prompt += "\n" + String(format: t("elimination_summary"), Int64(selection.elimination.halfLife), Int64(selection.elimination.elapsed),
           String(format: "%.1f", selection.elimination.percent(at: selection.elimination.elapsed)))
+        }
         prompt += "\nhttps://openstax.org/books/pharmacology/pages/2-2-pharmacokinetics-and-pharmacodynamics"
         prompt += "\nhttps://pharmacologyeducation.org/clinical-pharmacokinetics/"
       case .aging:
