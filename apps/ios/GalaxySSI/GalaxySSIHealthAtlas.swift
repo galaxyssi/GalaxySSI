@@ -334,7 +334,8 @@ enum GalaxySSIHealthAtlasMetrics {
     case "endocrine": return [.glucose, .hba1c, .tsh]
     case "thyroid-gland", "cell-thyroid-follicular-cell", "cell-thyrotroph": return [.tsh]
     case "liver", "cell-hepatocyte", "digestive": return [.alt, .ast, .albumin, .totalBilirubin]
-    case "urinary", "kidneys", "nephron", "glomerulus", "renal-tubules", "collecting-ducts", "cell-podocyte":
+    case "urinary", "kidneys", "renal-cortex", "renal-medulla", "renal-pelvis", "nephron", "glomerulus",
+         "renal-tubules", "collecting-ducts", "cell-podocyte", "bowmans-capsule", "proximal-tubule", "nephron-loop", "distal-tubule":
       return [.creatinine, .urea, .urineProtein]
     case "respiratory", "lungs", "alveoli", "respiratory-membrane", "pulmonary-capillaries",
          "cell-type-i-pneumocyte", "cell-type-ii-pneumocyte": return [.oxygenSaturation]
