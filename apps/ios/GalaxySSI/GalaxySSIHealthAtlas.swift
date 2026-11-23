@@ -223,7 +223,8 @@ struct GalaxySSIHealthAtlas: Decodable {
   static func trustedPlateSource(_ source: URL?) -> Bool {
     guard let source else { return true }
     return source.scheme == "https" && source.user == nil && source.password == nil &&
-      (source.host == "openstax.org" || source == GalaxySSIHealthAtlasEyeOptics.anatomySource)
+      (source.host == "openstax.org" || source == GalaxySSIHealthAtlasEyeOptics.anatomySource ||
+        source == GalaxySSIHealthAtlasMiddleEar.anatomySource)
   }
   func plate(for id: String?, viewKey: String? = nil) -> Plate? {
     let available = views(for: id)
