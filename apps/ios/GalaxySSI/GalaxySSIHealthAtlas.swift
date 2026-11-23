@@ -49,6 +49,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try CellPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try RespirationPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try ExtendedCellPack.read(bundle: bundle) { result = try pack.applying(to: result) }
+    if let pack = try EarPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     return result
   }
 
@@ -212,6 +213,7 @@ struct GalaxySSIHealthAtlas: Decodable {
       }) else { throw Invalid.catalogue }
   }
   func views(for id: String?) -> [Plate] {
+    if GalaxySSIHealthAtlasMiddleEar.ids.contains(id ?? "") { return [GalaxySSIHealthAtlasMiddleEar.plate] }
     if let pack = try? MusculoskeletalPack.bundled.get() {
       let views = pack.plates.filter { $0.entryIDs.contains(id ?? "") }
       if !views.isEmpty { return views }
@@ -221,7 +223,8 @@ struct GalaxySSIHealthAtlas: Decodable {
   static func trustedPlateSource(_ source: URL?) -> Bool {
     guard let source else { return true }
     return source.scheme == "https" && source.user == nil && source.password == nil &&
-      (source.host == "openstax.org" || source == GalaxySSIHealthAtlasEyeOptics.anatomySource)
+      (source.host == "openstax.org" || source == GalaxySSIHealthAtlasEyeOptics.anatomySource ||
+        source == GalaxySSIHealthAtlasMiddleEar.anatomySource)
   }
   func plate(for id: String?, viewKey: String? = nil) -> Plate? {
     let available = views(for: id)

@@ -14,6 +14,10 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     #if GALAXYSSI_ATLAS_OXYGEN
     if let value = GalaxySSIHealthAtlasOxygenText.string(key, language: language) { return value }
     #endif
+    let earKey = ["model_middleEar": "middle_ear_pressure_ratio", "model_middleEar_scope": "middle_ear_scope",
+      "model_middleEar_formula": "middle_ear_formula"][key]
+    if let earKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + earKey, language) }
+    if key.hasPrefix("middle_ear_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     let resource = "health_atlas_" + key
     return GalaxySSILocalization.string(resource, fallback: english[resource] ?? resource, language: language)
   }
@@ -38,6 +42,9 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if let ear = model.middleEar {
+      return String(format: string("middle_ear_gain_db", language: language), number(ear.pressureGainDb, language: language))
+    }
     if let eye = model.eyeOptics {
       return String(format: string("eye_target_power", language: language), number(eye.targetPowerDiopters, language: language))
     }
@@ -58,6 +65,7 @@ enum GalaxySSIHealthAtlasPhysiologyText {
       number(model.companionValue, digits: model.kind == .potassium ? 4 : 2, language: language))
   }
   static func sourceTitle(_ kind: GalaxySSIHealthAtlasPhysiology.Kind, index: Int, language: String) -> String {
+    if kind == .middleEar && index == 1 { return string("middle_ear_measurement_source", language: language) }
     if kind == .vessel && index > 0 {
       return string(index == 1 ? "vessel_profile_source" : "vessel_units_source", language: language)
     }
@@ -80,6 +88,7 @@ enum GalaxySSIHealthAtlasPhysiologyText {
       model.inputs.indices.map { input(model, index: $0, language: language) } +
       [result(model, language: language), companion(model, language: language)] +
       (model.renalAmounts.map { renalContext($0, language: language) } ?? []) +
+      (model.middleEar.map { middleEarContext($0, language: language) } ?? []) +
       (model.elbowForces.map { elbowContext($0, language: language) } ?? []) +
       (model.vesselFlow.map { vesselContext($0, language: language) } ?? []) +
       (model.eyeOptics.map { eyeContext($0, language: language) } ?? []) +
@@ -126,6 +135,14 @@ enum GalaxySSIHealthAtlasPhysiologyText {
   }
   static func renalDirection(_ index: Int, language: String) -> String {
     GalaxySSIHealthAtlasText.get("health_atlas_renal_" + (index == 1 ? "lumen_blood" : index == 3 ? "lumen_urine" : "blood_lumen"), language)
+  }
+  static func middleEarRatios(_ ear: GalaxySSIHealthAtlasMiddleEar, language: String) -> String {
+    String(format: string("middle_ear_ratios", language: language), number(ear.areaRatio, language: language),
+      number(ear.leverRatio, language: language), number(ear.volumeVelocityRatio, digits: 3, language: language))
+  }
+  static func middleEarContext(_ ear: GalaxySSIHealthAtlasMiddleEar, language: String) -> [String] {
+    [string("middle_ear_transformer", language: language), middleEarRatios(ear, language: language),
+      string("middle_ear_diagram_scope", language: language)]
   }
   static func renalContext(_ amounts: GalaxySSIHealthAtlasRenalAmounts, language: String) -> [String] {
     [GalaxySSIHealthAtlasText.get("health_atlas_renal_balance_scope", language)] +

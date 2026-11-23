@@ -118,6 +118,27 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertNil(Context.Illustration(entryID: "heart", caption: "Plate", source: URL(string: "https://user@openstax.org/books")))
   }
 
+  func testMiddleEarAnatomySourceAndTeachingContextArePreviewScoped() throws {
+    let source = GalaxySSIHealthAtlasMiddleEar.anatomySource
+    let illustration = try XCTUnwrap(Context.Illustration(entryID: "ear", caption: "EAR_SECTION", source: source))
+    let model = GalaxySSIHealthAtlasPhysiology(kind: .middleEar)
+    let teaching = GalaxySSIHealthAtlasPhysiologyText.context(model, language: "en")
+    let quantitative = Context.Quantitative(entryID: "ear", context: teaching)
+    for screen in [Context.Screen.physiology, .simulation] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy("ear"), screen: screen, quantitative: quantitative,
+        illustration: illustration, locale: locale, text: text))
+      XCTAssertTrue(prompt.contains(teaching)); XCTAssertTrue(prompt.contains(source.absoluteString))
+    }
+    for screen in [Context.Screen.structure, .function, .drugs, .aging] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy("ear"), screen: screen,
+        quantitative: quantitative, locale: locale, text: text))
+      XCTAssertFalse(prompt.contains(teaching))
+    }
+    XCTAssertNil(Context.prompt(anatomy: anatomy("ear"), screen: .values, quantitative: quantitative, locale: locale, text: text))
+    XCTAssertNil(Context.Illustration(entryID: "ear", caption: "", source: source))
+    XCTAssertNil(Context.Illustration(entryID: "ear", caption: "EAR", source: URL(string: "https://www.nidcd.nih.gov/other")))
+  }
+
   func testEyePreviewAllowsExactAnatomyReferenceAndScopesQuantitativeContext() throws {
     let source = GalaxySSIHealthAtlasEyeOptics.anatomySource
     let illustration = try XCTUnwrap(Context.Illustration(entryID: "eye", caption: "EYE_SECTION", source: source))
