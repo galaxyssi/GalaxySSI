@@ -2,7 +2,7 @@ import SwiftUI
 
 enum GalaxySSIHealthAtlasFunctionRendering {
   // Expand only when each source renderer has its own native implementation.
-  static let implemented: Set<String> = ["GLUCOSE", "HEARTBEAT", "BREATHING", "HEARING", "NEPHRON", "DIGESTION", "COLON", "VISION", "LIGHT_ADAPTATION", "MUSCLE_MOTION", "BONE_REMODELING", "LYMPH_RETURN", "ANTIBODY_RESPONSE", "INSULIN_SECRETION", "GLUCAGON_RESPONSE", "SWEAT_COOLING"]
+  static let implemented: Set<String> = ["GLUCOSE", "HEARTBEAT", "BREATHING", "HEARING", "NEPHRON", "DIGESTION", "COLON", "VISION", "LIGHT_ADAPTATION", "MUSCLE_MOTION", "BONE_REMODELING", "LYMPH_RETURN", "ANTIBODY_RESPONSE", "INSULIN_SECRETION", "GLUCAGON_RESPONSE", "SWEAT_COOLING", "SYNAPTIC_SIGNAL", "MYELIN_SIGNAL", "THYROID_FEEDBACK"]
 }
 
 struct GalaxySSIHealthAtlasFunctionArtwork: View {
@@ -22,6 +22,7 @@ struct GalaxySSIHealthAtlasFunctionArtwork: View {
     case "LYMPH_RETURN", "ANTIBODY_RESPONSE": GalaxySSIHealthAtlasLymphImmuneView(story: story, phase: phase, language: language)
     case "INSULIN_SECRETION": GalaxySSIHealthAtlasInsulinView(story: story, phase: phase, language: language)
     case "GLUCAGON_RESPONSE", "SWEAT_COOLING": GalaxySSIHealthAtlasHomeostasisView(story: story, phase: phase, language: language)
+    case "SYNAPTIC_SIGNAL", "MYELIN_SIGNAL", "THYROID_FEEDBACK": GalaxySSIHealthAtlasSignalView(story: story, phase: phase, language: language)
     default: EmptyView()
     }
   }

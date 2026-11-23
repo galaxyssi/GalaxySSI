@@ -1359,6 +1359,54 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testSignalTimingsAndPhysicalTrailLength() throws {
+    typealias Motion = GalaxySSIHealthAtlasSignalMotion
+    XCTAssertEqual(Motion.axonTravel(1, myelinated: true), 0.98)
+    XCTAssertEqual(Motion.axonTravel(1, myelinated: false), 0.63)
+    XCTAssertEqual(Motion.axonTravel(.nan, myelinated: true), 0)
+    XCTAssertEqual(Motion.upstreamDrive(0), 1)
+    XCTAssertEqual(Motion.upstreamDrive(1), 0.3, accuracy: 1e-12)
+    XCTAssertEqual(Motion.upstreamDrive(2), 0.3, accuracy: 1e-12)
+    for i in 0...4 {
+      XCTAssertEqual(Motion.synapticRelease(0.38 + Double(i) * 0.085, index: i), 0, accuracy: 1e-12)
+      XCTAssertEqual(Motion.synapticRelease(0.38 + Double(i) * 0.085 + 0.39, index: i), 1, accuracy: 1e-12)
+    }
+    XCTAssertEqual(Motion.synapticRelease(1, index: 4), 0.28 / 0.39, accuracy: 1e-12)
+    XCTAssertEqual(Motion.synapticRelease(.nan, index: 0), 0)
+    XCTAssertEqual(Motion.nodes, [94, 160, 226, 292])
+    XCTAssertEqual(try XCTUnwrap(Motion.trailStart(0.5, length: 100)), 0.23, accuracy: 1e-12)
+    XCTAssertEqual(Motion.trailStart(0.1, length: 100), 0)
+    XCTAssertEqual(Motion.trailStart(1, length: 10), 0)
+    XCTAssertNil(Motion.trailStart(.nan, length: 100))
+    XCTAssertNil(Motion.trailStart(0.5, length: 0))
+    XCTAssertEqual(Motion(courseID: "SYNAPTIC_SIGNAL", chapter: -1, fraction: .nan).course, .synaptic)
+    XCTAssertEqual(Motion(courseID: "MYELIN_SIGNAL", chapter: 0, fraction: 0).course, .myelin)
+    XCTAssertEqual(Motion(courseID: "THYROID_FEEDBACK", chapter: 0, fraction: 0).course, .thyroid)
+    XCTAssertEqual(Motion.dendriteLengths.count, 2)
+    for length in Motion.dendriteLengths + [Motion.axonLength] { XCTAssertGreaterThan(try XCTUnwrap(length), 27) }
+    for route in Motion.dendrites + [Motion.axon, Motion.portal, Motion.tshRoute, Motion.thyroidOut] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+      }
+    }
+  }
+  func testCurveLengthUsesBoundedSubdivisionAgainstAnalyticCurves() throws {
+    typealias Length = GalaxySSIHealthAtlasCurveLength
+    XCTAssertEqual(try XCTUnwrap(Length.bezier([.zero, CGPoint(x: 3, y: 4)])), 5)
+    let quadratic = [CGPoint.zero, CGPoint(x: 50, y: 100), CGPoint(x: 100, y: 0)]
+    XCTAssertEqual(try XCTUnwrap(Length.bezier(quadratic)), 50 * sqrt(5) + 25 * asinh(2), accuracy: 0.0001)
+    let cubic = [CGPoint.zero, CGPoint(x: 100, y: 0), CGPoint(x: 100, y: 100), CGPoint(x: 0, y: 100)]
+    XCTAssertEqual(try XCTUnwrap(Length.bezier(cubic)), 200, accuracy: 0.0001)
+    let half = [CGPoint.zero, CGPoint(x: 50, y: 0), CGPoint(x: 75, y: 25), CGPoint(x: 75, y: 50)]
+    XCTAssertEqual(try XCTUnwrap(Length.bezier(half)), 100, accuracy: 0.0001)
+    let closed = [CGPoint.zero, CGPoint(x: 100, y: 100), CGPoint(x: -100, y: 100), CGPoint.zero]
+    XCTAssertGreaterThan(try XCTUnwrap(Length.bezier(closed)), 200)
+    XCTAssertEqual(try XCTUnwrap(Length.bezier([.zero, .zero, .zero, .zero])), 0)
+    XCTAssertNil(Length.bezier([.zero]))
+    XCTAssertNil(Length.bezier([.zero, CGPoint(x: CGFloat.nan, y: 0)]))
+    XCTAssertNil(Length.bezier(quadratic, accuracy: 0))
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
