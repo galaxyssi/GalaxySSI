@@ -665,6 +665,12 @@
 "health_atlas_latissimus_dorsi_description" = "Supports shoulder extension, adduction and medial rotation.";
 "health_atlas_latissimus_dorsi_name" = "Latissimus dorsi";
 "health_atlas_layers" = "Layers";
+"health_atlas_view_front" = "Front";
+"health_atlas_view_back" = "Back";
+"health_atlas_skeleton_front" = "Skeleton · Anterior overview";
+"health_atlas_skeleton_back" = "Skeleton · Posterior overview";
+"health_atlas_muscle_front" = "Superficial muscles · Anterior overview";
+"health_atlas_muscle_back" = "Superficial muscles · Posterior overview; tendon shown at the heel";
 "health_atlas_lens_aliases" = "";
 "health_atlas_lens_description" = "Changes shape to help focus light.";
 "health_atlas_lens_name" = "Lens";
@@ -1155,9 +1161,3 @@
 "health_atlas_renal_lumen_blood" = "Tubular lumen → blood";
 "health_atlas_renal_lumen_urine" = "Tubular lumen → urine";
 "health_atlas_renal_balance_scope" = "Whole-nephron solute balance, not water volume or eGFR. Separate transport steps are summarized; arrows show direction, not anatomical position or flow speed.";
-"health_atlas_view_front" = "Front";
-"health_atlas_view_back" = "Back";
-"health_atlas_skeleton_front" = "Skeleton · Anterior overview";
-"health_atlas_skeleton_back" = "Skeleton · Posterior overview";
-"health_atlas_muscle_front" = "Superficial muscles · Anterior overview";
-"health_atlas_muscle_back" = "Superficial muscles · Posterior overview; tendon shown at the heel";
