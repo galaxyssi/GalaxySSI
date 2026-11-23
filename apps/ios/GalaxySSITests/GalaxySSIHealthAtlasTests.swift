@@ -287,7 +287,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
 
   func testReproductiveCatalogueAndSelectedGermlineStageRestoreTogether() throws {
     let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
-    XCTAssertEqual(atlas.entries.count, 287)
+    XCTAssertEqual(atlas.entries.filter { $0.kind != .tissue }.count, 287)
     let base = try catalogue()
     XCTAssertEqual(base.entries.count, 278); XCTAssertEqual(base.mechanisms.count, 20)
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.ReproductivePack.read(bundle: Bundle(for: GalaxySSIStore.self)))
@@ -474,6 +474,83 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertFalse(first.serialized.contains("measuredAt"))
     restored.restore(String(repeating: "x", count: 256_001), atlas: atlas)
     XCTAssertEqual(restored.entries.count, 1)
+  }
+
+  func testTissueCatalogueHasExplicitLocationsExamplesAndIndependentMechanisms() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self)
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: bundle)
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.TissuePack.read(bundle: bundle))
+    let tissues = atlas.entries.filter { $0.kind == .tissue }
+    XCTAssertEqual(tissues.count, 14); XCTAssertEqual(pack.mechanisms.count, 14)
+    XCTAssertEqual(Set(tissues.flatMap(\.locations)).count, 53)
+    XCTAssertEqual(Set(tissues.flatMap(\.related)).count, 26)
+    XCTAssertEqual(pack.plates.count, 14); XCTAssertEqual(pack.plates.flatMap(\.markers).count, 17)
+    for tissue in tissues {
+      XCTAssertEqual(tissue.mechanism, tissue.id); XCTAssertEqual(atlas.model(tissue).kind, "tissue")
+      XCTAssertEqual(atlas.cells(tissue).map(\.id), tissue.related)
+      XCTAssertEqual(atlas.plate(for: tissue.id)?.owner, tissue.id)
+      for location in tissue.locations {
+        let organ = try XCTUnwrap(atlas.entry(location))
+        XCTAssertEqual(organ.kind, .organ)
+        XCTAssertTrue(atlas.tissues(organ).contains { $0.id == tissue.id })
+        XCTAssertTrue(atlas.parents(tissue).contains { $0.id == organ.id })
+      }
+      for language in ["en", "zh-Hans"] {
+        let name = GalaxySSIHealthAtlasText.get(tissue.name, language)
+        XCTAssertTrue(atlas.search(name, kind: .tissue, system: "", language: language).contains { $0.id == tissue.id })
+        for key in [tissue.name, tissue.description, tissue.aliases, atlas.model(tissue).title] + atlas.model(tissue).stages {
+          XCTAssertNotEqual(GalaxySSIHealthAtlasText.get(key, language), key)
+        }
+      }
+      XCTAssertTrue(GalaxySSIHealthAtlasMetrics.forEntry(tissue.id).isEmpty)
+    }
+    XCTAssertThrowsError(try pack.applying(to: atlas, bundle: bundle))
+  }
+
+  func testTissueGraphRejectsInvalidLocationsExamplesAndBorrowedMechanisms() throws {
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    let cardiac = try XCTUnwrap(atlas.entry("tissue-cardiac-muscle"))
+    func reject(_ replacement: GalaxySSIHealthAtlas.Entry) {
+      let revised = atlas.entries.map { $0.id == replacement.id ? replacement : $0 }
+      XCTAssertThrowsError(try GalaxySSIHealthAtlas.validated(.init(schema: atlas.schema, entries: revised, mechanisms: atlas.mechanisms)))
+    }
+    for locations in [[], ["heart", "heart"], ["missing"], ["cell-cardiomyocyte"], ["skin-organ"]] {
+      var invalid = cardiac; invalid.locatedIn = locations; reject(invalid)
+    }
+    reject(cardiac.replacing(related: ["ventricles"]))
+    reject(cardiac.replacing(related: []))
+    reject(cardiac.replacing(mechanism: "tissue-skeletal-muscle"))
+    var heart = try XCTUnwrap(atlas.entry("heart")); heart.locatedIn = ["heart"]; reject(heart)
+    reject(try XCTUnwrap(atlas.entry("heart")).replacing(mechanism: cardiac.id))
+    let legacy = try catalogue()
+    XCTAssertTrue(legacy.entries.allSatisfy { $0.locations.isEmpty })
+  }
+
+  func testOrganStructureLayerRestoresIndependentlyAndTissuePreviewStaysPublic() throws {
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    let state = GalaxySSIHealthAtlasState(), restored = GalaxySSIHealthAtlasState()
+    let heart = try XCTUnwrap(atlas.entry("heart")), lung = try XCTUnwrap(atlas.entry("lungs"))
+    state.binding(heart).wrappedValue.selectedStructureLayer = .tissue
+    state.binding(lung).wrappedValue.selectedStructureLayer = .cell
+    restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.binding(heart).wrappedValue.selectedStructureLayer, .tissue)
+    XCTAssertEqual(restored.binding(lung).wrappedValue.selectedStructureLayer, .cell)
+    state.binding(heart).wrappedValue.structureLayer = "unknown"
+    restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.binding(heart).wrappedValue.selectedStructureLayer, .organ)
+    let tissue = try XCTUnwrap(atlas.entry("tissue-cardiac-muscle"))
+    var selection = GalaxySSIHealthAtlasState.Selection()
+    selection.tab = .simulation; selection.simulation.phase = 0.5
+    for language in ["en", "zh-Hans"] {
+      let prompt = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: tissue, selection: selection, research: false, language: language)
+      for line in atlas.tissueContext(tissue, language: language) { XCTAssertTrue(prompt.contains(line)) }
+      XCTAssertTrue(prompt.contains(GalaxySSIHealthAtlasText.get(atlas.model(tissue).stages[2], language)))
+      XCTAssertFalse(prompt.contains("measuredAt"))
+      XCTAssertFalse(prompt.contains("tissue_epidermal"))
+      var values = selection; values.tab = .values
+      XCTAssertEqual(GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: tissue, selection: values,
+        research: false, language: language), "")
+    }
   }
 
   func testAgingTopicsLocalizeStagesAndKeepIndependentRestorableState() throws {

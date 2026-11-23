@@ -31,6 +31,7 @@ final class GalaxySSIHealthAtlasAgentHandoff {
 enum GalaxySSIHealthAtlasQuestion {
   static func build(atlas: GalaxySSIHealthAtlas, entry: GalaxySSIHealthAtlas.Entry?,
                     selection: GalaxySSIHealthAtlasState.Selection, research: Bool, language: String) -> String {
+    guard research || selection.tab != .values else { return "" }
     func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     #if GALAXYSSI_ATLAS_AGENT_CONTEXT
     let screen: GalaxySSIHealthAtlasAgentContext.Screen
@@ -43,7 +44,8 @@ enum GalaxySSIHealthAtlasQuestion {
       GalaxySSIHealthAtlasAgentContext.Anatomy(id: item.id, name: GalaxySSIHealthAtlasText.get(item.name, language),
         description: GalaxySSIHealthAtlasText.get(item.description, language),
         mechanism: GalaxySSIHealthAtlasText.get(atlas.model(item).title, language),
-        stages: atlas.model(item).stages.map { GalaxySSIHealthAtlasText.get($0, language) }, source: atlas.model(item).source)
+        stages: atlas.model(item).stages.map { GalaxySSIHealthAtlasText.get($0, language) }, source: atlas.model(item).source,
+        tissueContext: atlas.tissueContext(item, language: language))
     }
     var quantitative: GalaxySSIHealthAtlasAgentContext.Quantitative? = nil
     #if GALAXYSSI_ATLAS_PHYSIOLOGY
@@ -74,6 +76,7 @@ enum GalaxySSIHealthAtlasQuestion {
     let model = atlas.model(entry)
     var prompt = String(format: t("ask_context"), GalaxySSIHealthAtlasText.get(entry.name, language),
       GalaxySSIHealthAtlasText.get(entry.description, language), GalaxySSIHealthAtlasText.get(model.title, language), model.source.absoluteString)
+    if entry.kind == .tissue { prompt += "\n" + atlas.tissueContext(entry, language: language).joined(separator: "\n") }
     if research || selection.tab != .values, let plate = atlas.plate(for: entry.id, viewKey: selection.artworkView) {
       prompt += "\n" + atlas.caption(plate, selected: entry, language: language) + "\n" + t("art_note")
       if let source = plate.source { prompt += "\n" + source.absoluteString }

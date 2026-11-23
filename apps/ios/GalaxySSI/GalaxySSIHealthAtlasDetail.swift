@@ -21,15 +21,13 @@ struct GalaxySSIHealthAtlasDetail: View {
       } else {
         ScrollView {
           VStack(alignment: .leading, spacing: 18) {
-            if selection.wrappedValue.tab != .simulation || !GalaxySSIHealthAtlasCirculation.supports(entry.id) {
+            if selection.wrappedValue.tab != .structure &&
+              (selection.wrappedValue.tab != .simulation || !GalaxySSIHealthAtlasCirculation.supports(entry.id)) {
               GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
             }
-            Text(GalaxySSIHealthAtlasText.get(entry.description, language))
+            if selection.wrappedValue.tab != .structure { Text(GalaxySSIHealthAtlasText.get(entry.description, language)) }
             if selection.wrappedValue.tab == .structure {
-              relationships(atlas.children(entry), title: t("related"))
-              relationships(atlas.cells(entry), title: t("cells"))
-              let parents = atlas.parents(entry) + entry.systems.compactMap(atlas.entry)
-              relationships(parents.filter { $0.id != entry.id }, title: t("belongs"))
+              structure
             } else if selection.wrappedValue.tab == .function {
               Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(atlas.model(entry).title, language))).font(.headline)
               ForEach(Array(atlas.model(entry).stages.enumerated()), id: \.offset) { index, key in
@@ -71,6 +69,39 @@ struct GalaxySSIHealthAtlasDetail: View {
       GalaxySSIHealthAtlasResearch(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
     } label: { EmptyView() }.hidden())
     .galaxySSIHealthTheme()
+  }
+  @ViewBuilder private var structure: some View {
+    if entry.kind == .organ {
+      Picker(t("structure"), selection: selection.selectedStructureLayer) {
+        Text(t("organ_layer")).tag(GalaxySSIHealthAtlasState.StructureLayer.organ)
+        Text(t("tissues")).tag(GalaxySSIHealthAtlasState.StructureLayer.tissue)
+        Text(t("cells")).tag(GalaxySSIHealthAtlasState.StructureLayer.cell)
+      }.pickerStyle(.segmented).accessibilityIdentifier("atlas-structure-layer")
+      switch selection.wrappedValue.selectedStructureLayer {
+      case .organ: anatomy
+      case .tissue:
+        let tissues = atlas.tissues(entry)
+        if tissues.isEmpty { Text(t("no_linked_tissues")).foregroundColor(.secondary) }
+        else { relationships(tissues, title: t("tissues")) }
+      case .cell:
+        let cells = atlas.cells(entry)
+        if cells.isEmpty { Text(t("no_linked_cells")).foregroundColor(.secondary) }
+        else { relationships(cells, title: t("cells")) }
+      }
+    } else { anatomy }
+  }
+  @ViewBuilder private var anatomy: some View {
+    GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
+    Text(GalaxySSIHealthAtlasText.get(entry.description, language))
+    let cells = entry.kind == .cell || entry.kind == .fragment ? [] : atlas.cells(entry)
+    relationships(atlas.children(entry).filter { item in !cells.contains(where: { $0.id == item.id }) }, title: t("related"))
+    if entry.kind == .system { relationships(atlas.tissues(entry), title: t("tissues")) }
+    relationships(cells, title: t(entry.kind == .tissue ? "tissue_cell_examples" : "cells"))
+    let systems = entry.systems.compactMap(atlas.entry).filter { $0.id != entry.id }
+    if entry.kind == .tissue {
+      relationships(entry.locations.compactMap(atlas.entry), title: t("tissue_locations"))
+      relationships(systems, title: t("belongs"))
+    } else { relationships((atlas.parents(entry) + systems).filter { $0.id != entry.id }, title: t("belongs")) }
   }
   @ViewBuilder private func relationships(_ entries: [GalaxySSIHealthAtlas.Entry], title: String) -> some View {
     let unique = entries.reduce(into: [GalaxySSIHealthAtlas.Entry]()) { result, entry in

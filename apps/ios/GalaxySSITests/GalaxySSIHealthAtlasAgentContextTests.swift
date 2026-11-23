@@ -54,6 +54,23 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertFalse(prompt.contains("Single-compartment"))
   }
 
+  func testTissueRelationshipContextIsBoundToTheSelectedAnatomyAndExcludedFromValues() throws {
+    let tissue = Context.Anatomy(id: "tissue-cardiac-muscle", name: "Cardiac muscle tissue",
+      description: "Public tissue description", mechanism: "Public tissue process",
+      stages: ["Excitation", "Coupling", "Calcium", "Tension"],
+      source: URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/10-7-cardiac-muscle-tissue")!,
+      tissueContext: ["Example locations: Heart", "Cell examples: Cardiomyocyte"])
+    let simulation = try XCTUnwrap(Context.Simulation(entryID: tissue.id, phase: 0.5, first: 0, second: 0))
+    let prompt = try XCTUnwrap(Context.prompt(anatomy: tissue, screen: .simulation, simulation: simulation, locale: locale, text: text))
+    XCTAssertTrue(prompt.contains("Example locations: Heart"))
+    XCTAssertTrue(prompt.contains("Cell examples: Cardiomyocyte"))
+    XCTAssertTrue(prompt.contains("Stage 3 / 4: Calcium"))
+    XCTAssertNil(Context.prompt(anatomy: tissue, screen: .values, simulation: simulation, locale: locale, text: text))
+    let other = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .structure, simulation: simulation, locale: locale, text: text))
+    XCTAssertFalse(other.contains("Example locations"))
+    XCTAssertFalse(other.contains("Stage 3"))
+  }
+
   func testAgingPreviewContainsOnlyActiveThemeStageAndStudy() throws {
     typealias Aging = GalaxySSIHealthAtlasAgingSelection
     let selected = try XCTUnwrap(Aging(topic: .telomeres, step: 2))
