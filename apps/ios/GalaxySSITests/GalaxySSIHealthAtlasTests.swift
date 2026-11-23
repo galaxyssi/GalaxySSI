@@ -1766,6 +1766,33 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     features.nuclei.cgPath.applyWithBlock { if $0.pointee.type == .closeSubpath { nucleiClosed += 1 } }
     XCTAssertEqual(microMoves, 121); XCTAssertEqual(boundaryMoves, 31); XCTAssertEqual(nucleiClosed, 30)
   }
+  func testKneeSharedPosesAndRotatingAttachmentCoordinates() {
+    typealias Motion = GalaxySSIHealthAtlasKneeMotion
+    XCTAssertEqual(Motion.poses.count, 6)
+    for step in 0..<4 {
+      let from = Motion.at(step: step, fraction: 1), to = Motion.at(step: step + 1, fraction: 0)
+      XCTAssertEqual(from.bend, to.bend, accuracy: 1e-12)
+      XCTAssertEqual(from.extensor, to.extensor, accuracy: 1e-12)
+      XCTAssertEqual(from.flexor, to.flexor, accuracy: 1e-12)
+    }
+    let last = Motion.at(step: 4, fraction: 1), first = Motion.at(step: 0, fraction: 0)
+    XCTAssertEqual(last.bend, first.bend, accuracy: 1e-12)
+    XCTAssertEqual(last.extensor, first.extensor, accuracy: 1e-12)
+    XCTAssertEqual(last.flexor, first.flexor, accuracy: 1e-12)
+    XCTAssertEqual(Motion.local(-23, 32, angle: 0), .init(x: 155, y: 224))
+    XCTAssertEqual(Motion.at(step: -1, fraction: .nan).bend, 0.12)
+    XCTAssertEqual(Motion.at(step: 100, fraction: 0).bend, 0.18)
+    for step in 0...4 {
+      for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let pose = Motion.at(step: step, fraction: t), angle = -58 * pose.bend
+        for point in [Motion.local(-23, 32, angle: angle), Motion.local(24, 24, angle: angle), Motion.local(0, 100, angle: angle)] {
+          XCTAssertTrue(point.fits(width: 360, height: 360))
+        }
+        let shin = Motion.local(0, 100, angle: angle)
+        XCTAssertEqual(hypot(shin.x - 178, shin.y - 192), 100, accuracy: 1e-10)
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
