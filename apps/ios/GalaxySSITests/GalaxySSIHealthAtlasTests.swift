@@ -1818,6 +1818,30 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testRedCellOxygenPlasmaHandoffAndTissueDiffusion() {
+    typealias Motion = GalaxySSIHealthAtlasRedCellMotion
+    XCTAssertEqual(Motion.ease(0.5), 0.5)
+    XCTAssertEqual(Motion.ease(.nan), 0)
+    XCTAssertEqual(Motion.peripheralFlow(1, diffuse: false), Motion.peripheralFlow(0, diffuse: true))
+    XCTAssertEqual(Motion.cellX(1, diffuse: false), Motion.cellX(0, diffuse: true))
+    XCTAssertEqual(Motion.cellX(0, diffuse: false), 137)
+    XCTAssertEqual(Motion.cellX(1, diffuse: true), 195)
+    for index in 0...2 {
+      let end = Motion.peripheralOxygen(1, index: index, diffuse: false)
+      let start = Motion.peripheralOxygen(0, index: index, diffuse: true)
+      XCTAssertEqual(end, start)
+      XCTAssertEqual(end.x, Double(146 + 20 * index))
+      XCTAssertEqual(end.y, Double(173 + 3 * (index % 2)))
+      let tissue = Motion.peripheralOxygen(1, index: index, diffuse: true)
+      XCTAssertEqual(tissue, .init(x: Double(86 + 94 * index), y: 268))
+      let lung = Motion.lungOxygen(1, index: index)
+      XCTAssertEqual(lung, .init(x: Double(180 + 10 * index), y: Double(208 - 4 * (index % 2))))
+      for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        XCTAssertTrue(Motion.peripheralOxygen(t, index: index, diffuse: true).fits(width: 360, height: 360))
+        XCTAssertTrue(Motion.peripheralOxygen(t, index: index, diffuse: false).fits(width: 360, height: 360))
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
