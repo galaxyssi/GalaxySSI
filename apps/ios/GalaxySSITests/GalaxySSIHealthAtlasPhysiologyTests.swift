@@ -177,8 +177,9 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "cell-proximal-tubular-cell", "cell-distal-tubular-cell", "cell-collecting-duct-principal-cell",
       "cell-collecting-duct-intercalated-cell", "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron",
       "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna",
-      "blood-vessels", "arteries", "veins", "coronary-vessels", "eye", "lens", "ear", "middle-ear"]
-    XCTAssertEqual(ids.count, 34)
+      "blood-vessels", "arteries", "veins", "coronary-vessels", "eye", "lens", "ear", "middle-ear",
+      "ventricles", "left-ventricle", "right-ventricle"]
+    XCTAssertEqual(ids.count, 37)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
     for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-ii-pneumocyte", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
@@ -401,6 +402,40 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     XCTAssertEqual(Model.resolved("alveoli", inputs: nil, legacyVentilation: [24, 600])?.inputs, [12, 500, 150])
     XCTAssertEqual(Model.restore("brain", inputs: [80, 140])?.inputs, [80, 140])
     XCTAssertEqual(Model.restore("kidneys", inputs: [100, 50, 10])?.inputs, [100, 50, 10])
+  }
+
+  func testEjectionUsesSyntheticEjectedAndResidualVolumesWithoutInferringNormality() throws {
+    let model = Model(kind: .ejection)
+    XCTAssertEqual(model.companionValue, 130)
+    XCTAssertEqual(model.result, 100.0 * 70 / 130, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(model.changing(0, to: 60)).result, 50, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(model.changing(0, to: 0)).result, 0)
+    XCTAssertLessThan(try XCTUnwrap(model.changing(1, to: 100)).result, model.result)
+    XCTAssertGreaterThan(try XCTUnwrap(model.changing(0, to: 100)).result, model.result)
+    for id in ["ventricles", "right-ventricle", "left-ventricle"] {
+      let restored = try XCTUnwrap(Model.restore(id, inputs: [90, 60]))
+      XCTAssertEqual(restored.result, 60, accuracy: 1e-9)
+      XCTAssertEqual(restored.resultAt(90), restored.result)
+      XCTAssertNil(Model.restore(id, inputs: [90, 0]))
+      XCTAssertNil(Model.restore(id, inputs: [181, 60]))
+      XCTAssertNil(Model.restore(id, inputs: [90]))
+    }
+    for id in ["left-atrium", "right-atrium", "aorta", "mitral-valve", "heart-valves", "tissue-cardiac-muscle"] {
+      XCTAssertNil(Model.restore(id, inputs: [90, 60]))
+    }
+    for stroke in [0, 1, 70, 180] {
+      for residual in [5, 60, 180] {
+        let value = try XCTUnwrap(Model(kind: .ejection, inputs: [stroke, residual]))
+        XCTAssertEqual(value.companionValue, Double(stroke + residual))
+        XCTAssertEqual(value.result, 100 * Double(stroke) / Double(stroke + residual), accuracy: 1e-9)
+        XCTAssertTrue((0...100).contains(value.result))
+      }
+    }
+    for language in ["en", "zh-Hans"] {
+      let context = GalaxySSIHealthAtlasPhysiologyText.context(model, language: language)
+      XCTAssertTrue(context.contains(GalaxySSIHealthAtlasHeartSection.ejectionSource.absoluteString))
+      XCTAssertFalse(context.contains("health_atlas_ejection_"))
+    }
   }
 
   func testPublicContextIncludesSyntheticInputsOutputAssumptionsAndSource() {

@@ -11,7 +11,7 @@ enum GalaxySSIHealthAtlasCirculation {
     Leg(from: .leftHeart, to: .tissues, oxygenRich: true)
   ]
   static func supports(_ id: String) -> Bool {
-    ["cardio", "heart", "atria", "ventricles", "heart-valves", "coronary-vessels",
+    ["cardio", "heart", "atria", "ventricles", "coronary-vessels",
      "blood-vessels", "arteries", "veins", "capillaries", "blood"].contains(id)
   }
   static func phase(_ value: Double) -> Double { value.isFinite ? min(1, max(0, value)) : 0 }

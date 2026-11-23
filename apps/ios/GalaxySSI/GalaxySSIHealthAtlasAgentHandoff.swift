@@ -31,6 +31,7 @@ final class GalaxySSIHealthAtlasAgentHandoff {
 enum GalaxySSIHealthAtlasQuestion {
   static func build(atlas: GalaxySSIHealthAtlas, entry: GalaxySSIHealthAtlas.Entry?,
                     selection: GalaxySSIHealthAtlasState.Selection, research: Bool, language: String) -> String {
+    guard research || selection.tab != .values else { return "" }
     func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     #if GALAXYSSI_ATLAS_AGENT_CONTEXT
     let screen: GalaxySSIHealthAtlasAgentContext.Screen
@@ -43,7 +44,8 @@ enum GalaxySSIHealthAtlasQuestion {
       GalaxySSIHealthAtlasAgentContext.Anatomy(id: item.id, name: GalaxySSIHealthAtlasText.get(item.name, language),
         description: GalaxySSIHealthAtlasText.get(item.description, language),
         mechanism: GalaxySSIHealthAtlasText.get(atlas.model(item).title, language),
-        stages: atlas.model(item).stages.map { GalaxySSIHealthAtlasText.get($0, language) }, source: atlas.model(item).source)
+        stages: atlas.model(item).stages.map { GalaxySSIHealthAtlasText.get($0, language) }, source: atlas.model(item).source,
+        valveContext: GalaxySSIHealthAtlasHeartSection.context(item.id, stage: selection.simulation.stage, atlas: atlas, language: language))
     }
     var quantitative: GalaxySSIHealthAtlasAgentContext.Quantitative? = nil
     #if GALAXYSSI_ATLAS_PHYSIOLOGY
@@ -92,6 +94,10 @@ enum GalaxySSIHealthAtlasQuestion {
     if ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
        let counts = GalaxySSIHealthAtlasGermline.counts(entry.id, stage: selection.simulation.stage) {
       prompt += "\n" + GalaxySSIHealthAtlasGermline.context(counts, language: language)
+    }
+    if ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
+       let context = GalaxySSIHealthAtlasHeartSection.context(entry.id, stage: selection.simulation.stage, atlas: atlas, language: language) {
+      prompt += "\n" + context
     }
     if research {
       switch selection.research {

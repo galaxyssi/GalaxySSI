@@ -433,6 +433,54 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(elimination.halfLife, 4); XCTAssertEqual(elimination.elapsed, 48)
   }
 
+  func testHeartSectionViewsAndValveStatesMatchAndroidOwnershipAndPhases() throws {
+    typealias Heart = GalaxySSIHealthAtlasHeartSection
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.HeartSectionPack.read(bundle: Bundle(for: GalaxySSIStore.self)))
+    XCTAssertEqual(pack.entries.count, 17); XCTAssertEqual(pack.mechanisms.count, 11)
+    for model in pack.mechanisms {
+      let entry = try XCTUnwrap(atlas.entry(model.id))
+      XCTAssertEqual(entry.mechanism, model.id); XCTAssertEqual(atlas.model(entry).stages.count, 4)
+    }
+    XCTAssertEqual(atlas.views(for: "heart").map(\.viewKey), ["heart-exterior", "heart-section"])
+    XCTAssertEqual(Heart.section.markers.count, 6); XCTAssertEqual(Heart.valves.markers.count, 4)
+    XCTAssertEqual(atlas.plate(for: "heart", viewKey: "heart-section")?.id, "heart-section")
+    XCTAssertEqual(atlas.plate(for: "heart", viewKey: "unknown")?.id, "heart-exterior")
+    let expected: [Set<String>] = [["tricuspid-valve", "mitral-valve"], [], ["pulmonary-valve", "aortic-valve"], []]
+    for stage in 0..<4 {
+      XCTAssertEqual(Set(Heart.Valve.allCases.filter { $0.openAt(stage) == true }.map(\.id)), expected[stage])
+      for valve in Heart.Valve.allCases {
+        XCTAssertEqual(atlas.plate(for: valve.id)?.id, "heart-valves")
+        XCTAssertFalse(GalaxySSIHealthAtlasCirculation.supports(valve.id))
+      }
+    }
+    for valve in Heart.Valve.allCases {
+      XCTAssertNil(valve.openAt(-1)); XCTAssertNil(valve.openAt(4))
+    }
+    XCTAssertFalse(GalaxySSIHealthAtlasCirculation.supports("heart-valves"))
+    for language in ["en", "zh-Hans"] {
+      let context = try XCTUnwrap(Heart.context("mitral-valve", stage: 2, atlas: atlas, language: language))
+      XCTAssertTrue(context.contains(try XCTUnwrap(Heart.label(.mitral, stage: 2, atlas: atlas, language: language))))
+      XCTAssertFalse(context.contains(try XCTUnwrap(Heart.label(.aortic, stage: 2, atlas: atlas, language: language))))
+      XCTAssertTrue(context.contains(Heart.cycleSource.absoluteString))
+    }
+  }
+
+  func testHeartArtworkAndIndependentEjectionSelectionsRestorePerEntry() throws {
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    let state = GalaxySSIHealthAtlasState(), restored = GalaxySSIHealthAtlasState()
+    var heart = GalaxySSIHealthAtlasState.Selection()
+    heart.artworkView = "heart-section"; state.entries["heart"] = heart
+    var left = GalaxySSIHealthAtlasState.Selection()
+    left.physiologyInputs = [90, 60]; state.entries["left-ventricle"] = left
+    var right = GalaxySSIHealthAtlasState.Selection()
+    right.physiologyInputs = [70, 80]; state.entries["right-ventricle"] = right
+    restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.entries["heart"]?.artworkView, "heart-section")
+    XCTAssertEqual(restored.entries["left-ventricle"]?.physiologyInputs, [90, 60])
+    XCTAssertEqual(restored.entries["right-ventricle"]?.physiologyInputs, [70, 80])
+  }
+
   func testDedicatedEyePlateOverridesOverviewAndUsesExactTrustedSource() throws {
     let atlas = try catalogue()
     for id in ["eye", "cornea", "lens", "retina"] {

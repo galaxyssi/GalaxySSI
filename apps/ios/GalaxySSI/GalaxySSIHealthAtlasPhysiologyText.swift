@@ -2,6 +2,10 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let ejectionKey = ["model_ejection": "ejection_fraction", "model_ejection_formula": "ejection_formula",
+      "model_ejection_scope": "ejection_scope"][key]
+    if let ejectionKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + ejectionKey, language) }
+    if key.hasPrefix("ejection_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     let eyeKey = ["model_eye": "eye_title", "model_eye_scope": "eye_scope", "model_eye_formula": "eye_formula"][key]
     if let eyeKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + eyeKey, language) }
     if key.hasPrefix("eye_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
@@ -42,6 +46,9 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if model.kind == .ejection {
+      return String(format: string("ejection_end_diastolic", language: language), number(model.companionValue, language: language))
+    }
     if let ear = model.middleEar {
       return String(format: string("middle_ear_gain_db", language: language), number(ear.pressureGainDb, language: language))
     }

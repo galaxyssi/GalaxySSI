@@ -18,6 +18,8 @@
     3A27D153792D057E63607118 /* GalaxySSIHealthAtlasResearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */; };
     11A6C0253F091CDA9CEA0803 /* GalaxySSIHealthAtlasSimulationPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */; };
     C43340000000000000000001 /* GalaxySSIHealthAtlasMusculoskeletal.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43340000000000000000002 /* GalaxySSIHealthAtlasMusculoskeletal.swift */; };
+    C43430000000000000000001 /* GalaxySSIHealthAtlasHeartSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43430000000000000000002 /* GalaxySSIHealthAtlasHeartSection.swift */; };
+    C43430000000000000000003 /* GalaxySSIHealthAtlasValvePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43430000000000000000004 /* GalaxySSIHealthAtlasValvePanel.swift */; };
     C43300000000000000000001 /* GalaxySSIHealthAtlasRenalPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43300000000000000000002 /* GalaxySSIHealthAtlasRenalPack.swift */; };
     C43350000000000000000001 /* GalaxySSIHealthAtlasElbow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43350000000000000000002 /* GalaxySSIHealthAtlasElbow.swift */; };
     C43380000000000000000001 /* GalaxySSIHealthAtlasVesselFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43380000000000000000002 /* GalaxySSIHealthAtlasVesselFlow.swift */; };
@@ -1479,6 +1481,8 @@
     41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasResearch.swift; sourceTree = "<group>"; };
     2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSimulationPanel.swift; sourceTree = "<group>"; };
     C43340000000000000000002 /* GalaxySSIHealthAtlasMusculoskeletal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMusculoskeletal.swift; sourceTree = "<group>"; };
+    C43430000000000000000002 /* GalaxySSIHealthAtlasHeartSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasHeartSection.swift; sourceTree = "<group>"; };
+    C43430000000000000000004 /* GalaxySSIHealthAtlasValvePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasValvePanel.swift; sourceTree = "<group>"; };
     C43300000000000000000002 /* GalaxySSIHealthAtlasRenalPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasRenalPack.swift; sourceTree = "<group>"; };
     C43350000000000000000002 /* GalaxySSIHealthAtlasElbow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasElbow.swift; sourceTree = "<group>"; };
     C43380000000000000000002 /* GalaxySSIHealthAtlasVesselFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasVesselFlow.swift; sourceTree = "<group>"; };
@@ -2958,6 +2962,8 @@
         41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */,
         2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */,
         C43340000000000000000002 /* GalaxySSIHealthAtlasMusculoskeletal.swift */,
+        C43430000000000000000002 /* GalaxySSIHealthAtlasHeartSection.swift */,
+        C43430000000000000000004 /* GalaxySSIHealthAtlasValvePanel.swift */,
         C43300000000000000000002 /* GalaxySSIHealthAtlasRenalPack.swift */,
         C43350000000000000000002 /* GalaxySSIHealthAtlasElbow.swift */,
         C43380000000000000000002 /* GalaxySSIHealthAtlasVesselFlow.swift */,
@@ -4567,6 +4573,8 @@
         3A27D153792D057E63607118 /* GalaxySSIHealthAtlasResearch.swift in Sources */,
         11A6C0253F091CDA9CEA0803 /* GalaxySSIHealthAtlasSimulationPanel.swift in Sources */,
         C43340000000000000000001 /* GalaxySSIHealthAtlasMusculoskeletal.swift in Sources */,
+        C43430000000000000000001 /* GalaxySSIHealthAtlasHeartSection.swift in Sources */,
+        C43430000000000000000003 /* GalaxySSIHealthAtlasValvePanel.swift in Sources */,
         C43300000000000000000001 /* GalaxySSIHealthAtlasRenalPack.swift in Sources */,
         C43350000000000000000001 /* GalaxySSIHealthAtlasElbow.swift in Sources */,
         C43380000000000000000001 /* GalaxySSIHealthAtlasVesselFlow.swift in Sources */,
