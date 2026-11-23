@@ -147,6 +147,10 @@
     C43840000000000000000141 /* GalaxySSIHealthAtlasMammaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000142 /* GalaxySSIHealthAtlasMammaryView.swift */; };
     C43840000000000000000143 /* GalaxySSIHealthAtlasMammaryTissueDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000144 /* GalaxySSIHealthAtlasMammaryTissueDrawing.swift */; };
     C43840000000000000000145 /* GalaxySSIHealthAtlasMammaryDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000146 /* GalaxySSIHealthAtlasMammaryDrawing.swift */; };
+    C43840000000000000000147 /* GalaxySSIHealthAtlasCerebellumMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000148 /* GalaxySSIHealthAtlasCerebellumMotion.swift */; };
+    C43840000000000000000149 /* GalaxySSIHealthAtlasCerebellumView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000014A /* GalaxySSIHealthAtlasCerebellumView.swift */; };
+    C4384000000000000000014B /* GalaxySSIHealthAtlasCerebellumAnatomyDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000014C /* GalaxySSIHealthAtlasCerebellumAnatomyDrawing.swift */; };
+    C4384000000000000000014D /* GalaxySSIHealthAtlasCerebellumReachDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000014E /* GalaxySSIHealthAtlasCerebellumReachDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1767,6 +1771,10 @@
     C43840000000000000000142 /* GalaxySSIHealthAtlasMammaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMammaryView.swift; sourceTree = "<group>"; };
     C43840000000000000000144 /* GalaxySSIHealthAtlasMammaryTissueDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMammaryTissueDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000146 /* GalaxySSIHealthAtlasMammaryDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMammaryDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000148 /* GalaxySSIHealthAtlasCerebellumMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCerebellumMotion.swift; sourceTree = "<group>"; };
+    C4384000000000000000014A /* GalaxySSIHealthAtlasCerebellumView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCerebellumView.swift; sourceTree = "<group>"; };
+    C4384000000000000000014C /* GalaxySSIHealthAtlasCerebellumAnatomyDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCerebellumAnatomyDrawing.swift; sourceTree = "<group>"; };
+    C4384000000000000000014E /* GalaxySSIHealthAtlasCerebellumReachDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCerebellumReachDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3406,6 +3414,10 @@
         C43840000000000000000142 /* GalaxySSIHealthAtlasMammaryView.swift */,
         C43840000000000000000144 /* GalaxySSIHealthAtlasMammaryTissueDrawing.swift */,
         C43840000000000000000146 /* GalaxySSIHealthAtlasMammaryDrawing.swift */,
+        C43840000000000000000148 /* GalaxySSIHealthAtlasCerebellumMotion.swift */,
+        C4384000000000000000014A /* GalaxySSIHealthAtlasCerebellumView.swift */,
+        C4384000000000000000014C /* GalaxySSIHealthAtlasCerebellumAnatomyDrawing.swift */,
+        C4384000000000000000014E /* GalaxySSIHealthAtlasCerebellumReachDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5175,6 +5187,10 @@
         C43840000000000000000141 /* GalaxySSIHealthAtlasMammaryView.swift in Sources */,
         C43840000000000000000143 /* GalaxySSIHealthAtlasMammaryTissueDrawing.swift in Sources */,
         C43840000000000000000145 /* GalaxySSIHealthAtlasMammaryDrawing.swift in Sources */,
+        C43840000000000000000147 /* GalaxySSIHealthAtlasCerebellumMotion.swift in Sources */,
+        C43840000000000000000149 /* GalaxySSIHealthAtlasCerebellumView.swift in Sources */,
+        C4384000000000000000014B /* GalaxySSIHealthAtlasCerebellumAnatomyDrawing.swift in Sources */,
+        C4384000000000000000014D /* GalaxySSIHealthAtlasCerebellumReachDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,

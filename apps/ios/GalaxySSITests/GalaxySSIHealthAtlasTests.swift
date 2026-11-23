@@ -2036,6 +2036,37 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       XCTAssertEqual(closes, 0)
     }
   }
+  func testCerebellarRepeatsReducedDeviationAndFixedArmLengths() throws {
+    typealias Motion = GalaxySSIHealthAtlasCerebellumMotion
+    for step in 0..<4 {
+      XCTAssertEqual(Motion.reachProgress(chapter: step, phase: 1), Motion.reachProgress(chapter: step + 1, phase: 0), accuracy: 1e-12)
+    }
+    for (time, expected) in [(0.0, 1.0), (0.18, 0), (0.48, 1), (0.66, 0), (1.0, 1)] {
+      XCTAssertEqual(Motion.reachProgress(chapter: 4, phase: time), expected, accuracy: 1e-12)
+    }
+    XCTAssertEqual(Motion.laterDeviation(0.17), 1)
+    XCTAssertEqual(Motion.laterDeviation(0.18), 0.67)
+    XCTAssertEqual(Motion.laterDeviation(0.66), 0.32)
+    XCTAssertEqual(Motion.point(0.5, deviation: 1).y - Motion.point(0.5, deviation: 0).y, 22, accuracy: 1e-12)
+    XCTAssertEqual(Motion.point(0, deviation: 1), .init(x: 212, y: 187))
+    XCTAssertEqual(Motion.point(1, deviation: 0.32).x, 318)
+    XCTAssertEqual(Motion.point(1, deviation: 0.32).y, 162, accuracy: 1e-12)
+    for step in 0...4 {
+      for time in stride(from: 0.0, through: 1, by: 0.01) {
+        let progress = Motion.reachProgress(chapter: step, phase: time)
+        let finger = Motion.point(progress, deviation: step == 4 ? Motion.laterDeviation(time) : 1)
+        let arm = try XCTUnwrap(Motion.arm(finger))
+        XCTAssertEqual(hypot(arm.elbow.x - 164, arm.elbow.y - 243), 81, accuracy: 1e-9)
+        XCTAssertEqual(hypot(finger.x - arm.elbow.x, finger.y - arm.elbow.y), 98, accuracy: 1e-9)
+        XCTAssertTrue(arm.upperAngle.isFinite && arm.lowerAngle.isFinite)
+      }
+    }
+    XCTAssertNil(Motion.arm(.init(x: 164, y: 243)))
+    XCTAssertNil(Motion.cueTravel(0.17, delay: 0.18))
+    XCTAssertEqual(Motion.cueTravel(0.18, delay: 0.18), 0)
+    XCTAssertEqual(Motion.cueTravel(1, delay: 0.29), 1)
+    XCTAssertEqual(Motion.reachProgress(chapter: 1, phase: .nan), 0)
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
