@@ -1,0 +1,233 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4334,
+    "mergeCommit": "80d46ca59dd3db25e3e7d266c70f082232f4788b"
+  },
+  "plates": [
+    {
+      "id": "skeletal-anterior",
+      "viewKey": "skeletal-anterior",
+      "owner": "skeletal",
+      "asset": "HealthAtlasSkeletonFront",
+      "aspectRatio": 0.6666666666666666,
+      "viewLabel": "health_atlas_skeleton_front",
+      "entryIDs": [
+        "skeletal",
+        "skull",
+        "clavicle",
+        "sternum",
+        "ribs",
+        "pelvis",
+        "femur",
+        "patella",
+        "tibia"
+      ],
+      "markers": [
+        {
+          "id": "skull",
+          "x": 0.5,
+          "y": 0.07
+        },
+        {
+          "id": "clavicle",
+          "x": 0.6,
+          "y": 0.17
+        },
+        {
+          "id": "sternum",
+          "x": 0.5,
+          "y": 0.22
+        },
+        {
+          "id": "ribs",
+          "x": 0.6,
+          "y": 0.293
+        },
+        {
+          "id": "pelvis",
+          "x": 0.6,
+          "y": 0.43
+        },
+        {
+          "id": "femur",
+          "x": 0.6,
+          "y": 0.58
+        },
+        {
+          "id": "patella",
+          "x": 0.58,
+          "y": 0.69
+        },
+        {
+          "id": "tibia",
+          "x": 0.57,
+          "y": 0.8
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/7-1-divisions-of-the-skeletal-system"
+    },
+    {
+      "id": "skeletal-posterior",
+      "viewKey": "skeletal-posterior",
+      "owner": "skeletal",
+      "asset": "HealthAtlasSkeletonBack",
+      "aspectRatio": 0.5,
+      "viewLabel": "health_atlas_skeleton_back",
+      "entryIDs": [
+        "skeletal",
+        "scapula",
+        "humerus",
+        "vertebrae",
+        "ulna",
+        "hand-bones",
+        "fibula",
+        "foot-bones"
+      ],
+      "markers": [
+        {
+          "id": "scapula",
+          "x": 0.63,
+          "y": 0.22
+        },
+        {
+          "id": "humerus",
+          "x": 0.75,
+          "y": 0.27
+        },
+        {
+          "id": "vertebrae",
+          "x": 0.51,
+          "y": 0.34
+        },
+        {
+          "id": "ulna",
+          "x": 0.82,
+          "y": 0.41
+        },
+        {
+          "id": "hand-bones",
+          "x": 0.91,
+          "y": 0.52
+        },
+        {
+          "id": "fibula",
+          "x": 0.645,
+          "y": 0.79
+        },
+        {
+          "id": "foot-bones",
+          "x": 0.66,
+          "y": 0.97
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/7-1-divisions-of-the-skeletal-system"
+    },
+    {
+      "id": "muscle-anterior",
+      "viewKey": "muscle-anterior",
+      "owner": "muscle",
+      "asset": "HealthAtlasMuscleFront",
+      "aspectRatio": 0.6666666666666666,
+      "viewLabel": "health_atlas_muscle_front",
+      "entryIDs": [
+        "muscle",
+        "deltoid",
+        "pectoralis-major",
+        "biceps-brachii",
+        "rectus-abdominis",
+        "oblique-abdominal-muscles",
+        "quadriceps-femoris"
+      ],
+      "markers": [
+        {
+          "id": "deltoid",
+          "x": 0.66,
+          "y": 0.22
+        },
+        {
+          "id": "pectoralis-major",
+          "x": 0.57,
+          "y": 0.24
+        },
+        {
+          "id": "biceps-brachii",
+          "x": 0.68,
+          "y": 0.3
+        },
+        {
+          "id": "rectus-abdominis",
+          "x": 0.54,
+          "y": 0.35
+        },
+        {
+          "id": "oblique-abdominal-muscles",
+          "x": 0.61,
+          "y": 0.38
+        },
+        {
+          "id": "quadriceps-femoris",
+          "x": 0.59,
+          "y": 0.58
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/11-2-naming-skeletal-muscles"
+    },
+    {
+      "id": "muscle-posterior",
+      "viewKey": "muscle-posterior",
+      "owner": "muscle",
+      "asset": "HealthAtlasMuscleBack",
+      "aspectRatio": 0.6666666666666666,
+      "viewLabel": "health_atlas_muscle_back",
+      "entryIDs": [
+        "muscle",
+        "trapezius",
+        "triceps-brachii",
+        "latissimus-dorsi",
+        "gluteus-maximus",
+        "hamstrings",
+        "gastrocnemius",
+        "tendons"
+      ],
+      "markers": [
+        {
+          "id": "trapezius",
+          "x": 0.57,
+          "y": 0.2
+        },
+        {
+          "id": "triceps-brachii",
+          "x": 0.67,
+          "y": 0.29
+        },
+        {
+          "id": "latissimus-dorsi",
+          "x": 0.6,
+          "y": 0.31
+        },
+        {
+          "id": "gluteus-maximus",
+          "x": 0.58,
+          "y": 0.46
+        },
+        {
+          "id": "hamstrings",
+          "x": 0.59,
+          "y": 0.58
+        },
+        {
+          "id": "gastrocnemius",
+          "x": 0.6,
+          "y": 0.77
+        },
+        {
+          "id": "tendons",
+          "x": 0.6,
+          "y": 0.9
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/11-2-naming-skeletal-muscles"
+    }
+  ]
+}

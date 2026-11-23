@@ -15,6 +15,7 @@
     C43320000000000000000003 /* GalaxySSIHealthAtlasLabeledArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43320000000000000000004 /* GalaxySSIHealthAtlasLabeledArtwork.swift */; };
     3A27D153792D057E63607118 /* GalaxySSIHealthAtlasResearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */; };
     11A6C0253F091CDA9CEA0803 /* GalaxySSIHealthAtlasSimulationPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */; };
+    C43340000000000000000001 /* GalaxySSIHealthAtlasMusculoskeletal.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43340000000000000000002 /* GalaxySSIHealthAtlasMusculoskeletal.swift */; };
     C43300000000000000000001 /* GalaxySSIHealthAtlasRenalPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43300000000000000000002 /* GalaxySSIHealthAtlasRenalPack.swift */; };
     F81EA90A113A7DE2667956C6 /* GalaxySSIHealthAtlasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */; };
     1AA5A2AD38BCAE4FA01FE49A /* GalaxySSIHealthAtlasTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8967AB28E2E61CC057AEBD3 /* GalaxySSIHealthAtlasTests.swift */; };
@@ -366,6 +367,8 @@
     A10000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift */; };
     A10000000000000000009805 /* GalaxySSIHealthBodyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009805 /* GalaxySSIHealthBodyView.swift */; };
     A10000000000000000009806 /* GalaxySSIHealthBodyText.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009806 /* GalaxySSIHealthBodyText.swift */; };
+    C43330000000000000000003 /* GalaxySSIHealthAtlasDistributionPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43330000000000000000004 /* GalaxySSIHealthAtlasDistributionPanel.swift */; };
+    C43330000000000000000001 /* GalaxySSIHealthAtlasDistribution.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43330000000000000000002 /* GalaxySSIHealthAtlasDistribution.swift */; };
     C43290000000000000000001 /* GalaxySSIHealthAtlasCirculation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43290000000000000000002 /* GalaxySSIHealthAtlasCirculation.swift */; };
     58236C684BF52CD0627E1B30 /* GalaxySSIHealthAtlasOxygen.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02B03B900B47D546DB439D9 /* GalaxySSIHealthAtlasOxygen.swift */; };
     C43310000000000000000001 /* GalaxySSIHealthAtlasGasExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43310000000000000000002 /* GalaxySSIHealthAtlasGasExchange.swift */; };
@@ -1462,6 +1465,7 @@
     C43320000000000000000004 /* GalaxySSIHealthAtlasLabeledArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLabeledArtwork.swift; sourceTree = "<group>"; };
     41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasResearch.swift; sourceTree = "<group>"; };
     2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSimulationPanel.swift; sourceTree = "<group>"; };
+    C43340000000000000000002 /* GalaxySSIHealthAtlasMusculoskeletal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMusculoskeletal.swift; sourceTree = "<group>"; };
     C43300000000000000000002 /* GalaxySSIHealthAtlasRenalPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasRenalPack.swift; sourceTree = "<group>"; };
     490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasState.swift; sourceTree = "<group>"; };
     A8967AB28E2E61CC057AEBD3 /* GalaxySSIHealthAtlasTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTests.swift; sourceTree = "<group>"; };
@@ -1812,6 +1816,8 @@
     A20000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthCareProfileScopeView.swift; sourceTree = "<group>"; };
     A20000000000000000009805 /* GalaxySSIHealthBodyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthBodyView.swift; sourceTree = "<group>"; };
     A20000000000000000009806 /* GalaxySSIHealthBodyText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthBodyText.swift; sourceTree = "<group>"; };
+    C43330000000000000000004 /* GalaxySSIHealthAtlasDistributionPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDistributionPanel.swift; sourceTree = "<group>"; };
+    C43330000000000000000002 /* GalaxySSIHealthAtlasDistribution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDistribution.swift; sourceTree = "<group>"; };
     C43290000000000000000002 /* GalaxySSIHealthAtlasCirculation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCirculation.swift; sourceTree = "<group>"; };
     F02B03B900B47D546DB439D9 /* GalaxySSIHealthAtlasOxygen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasOxygen.swift; sourceTree = "<group>"; };
     C43310000000000000000002 /* GalaxySSIHealthAtlasGasExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGasExchange.swift; sourceTree = "<group>"; };
@@ -2927,6 +2933,7 @@
         C43320000000000000000004 /* GalaxySSIHealthAtlasLabeledArtwork.swift */,
         41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */,
         2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */,
+        C43340000000000000000002 /* GalaxySSIHealthAtlasMusculoskeletal.swift */,
         C43300000000000000000002 /* GalaxySSIHealthAtlasRenalPack.swift */,
         490571816B934BB58FEF12F1 /* GalaxySSIHealthAtlasState.swift */,
         B85158A6D23086CFED45AC26 /* body-atlas */,
@@ -3866,6 +3873,8 @@
         A20000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift */,
         A20000000000000000009805 /* GalaxySSIHealthBodyView.swift */,
         A20000000000000000009806 /* GalaxySSIHealthBodyText.swift */,
+        C43330000000000000000004 /* GalaxySSIHealthAtlasDistributionPanel.swift */,
+        C43330000000000000000002 /* GalaxySSIHealthAtlasDistribution.swift */,
         C43290000000000000000002 /* GalaxySSIHealthAtlasCirculation.swift */,
         F02B03B900B47D546DB439D9 /* GalaxySSIHealthAtlasOxygen.swift */,
         C43310000000000000000002 /* GalaxySSIHealthAtlasGasExchange.swift */,
@@ -4522,6 +4531,7 @@
         C43320000000000000000003 /* GalaxySSIHealthAtlasLabeledArtwork.swift in Sources */,
         3A27D153792D057E63607118 /* GalaxySSIHealthAtlasResearch.swift in Sources */,
         11A6C0253F091CDA9CEA0803 /* GalaxySSIHealthAtlasSimulationPanel.swift in Sources */,
+        C43340000000000000000001 /* GalaxySSIHealthAtlasMusculoskeletal.swift in Sources */,
         C43300000000000000000001 /* GalaxySSIHealthAtlasRenalPack.swift in Sources */,
         F81EA90A113A7DE2667956C6 /* GalaxySSIHealthAtlasState.swift in Sources */,
         F12666000000000000000001 /* AgentInteractiveProgress.swift in Sources */,
@@ -5445,6 +5455,8 @@
         A10000000000000000009877 /* GalaxySSIHealthCareProfileScopeView.swift in Sources */,
         A10000000000000000009805 /* GalaxySSIHealthBodyView.swift in Sources */,
         A10000000000000000009806 /* GalaxySSIHealthBodyText.swift in Sources */,
+        C43330000000000000000003 /* GalaxySSIHealthAtlasDistributionPanel.swift in Sources */,
+        C43330000000000000000001 /* GalaxySSIHealthAtlasDistribution.swift in Sources */,
         C43290000000000000000001 /* GalaxySSIHealthAtlasCirculation.swift in Sources */,
         58236C684BF52CD0627E1B30 /* GalaxySSIHealthAtlasOxygen.swift in Sources */,
         C43310000000000000000001 /* GalaxySSIHealthAtlasGasExchange.swift in Sources */,

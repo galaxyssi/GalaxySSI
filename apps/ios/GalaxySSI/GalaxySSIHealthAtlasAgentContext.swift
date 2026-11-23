@@ -54,7 +54,7 @@ enum GalaxySSIHealthAtlasAgentContext {
   }
 
   static func prompt(anatomy: Anatomy?, screen: Screen, simulation: Simulation? = nil, quantitative: Quantitative? = nil,
-                     elimination: Elimination? = nil, illustration: Illustration? = nil,
+                     elimination: Elimination? = nil, illustration: Illustration? = nil, drugs: GalaxySSIHealthAtlasDrugState? = nil,
                      locale: Locale, text t: (String) -> String) -> String? {
     guard screen != .values else { return nil }
     guard let anatomy else { return t("ask_whole_context") }
@@ -96,10 +96,15 @@ enum GalaxySSIHealthAtlasAgentContext {
     case .physiology:
       lines += [t("physiology"), t("teaching_note"), anatomy.source.absoluteString]
     case .drugs:
-      let values = elimination ?? Elimination(halfLife: 4, elapsed: 8)!
-      lines += [t("drugs"), t("elimination_assumptions"),
-        String(format: t("elimination_summary"), Int64(values.halfLife), Int64(values.elapsed), number(values.percent)),
-        "https://openstax.org/books/pharmacology/pages/2-2-pharmacokinetics-and-pharmacodynamics",
+      lines.append(t("drugs"))
+      if let drugs, drugs.mode == .two {
+        lines += [t("drug_models"), drugs.distribution.context(locale: locale, text: t)]
+      } else {
+        let values = elimination ?? Elimination(halfLife: 4, elapsed: 8)!
+        lines += [t("elimination_assumptions"),
+          String(format: t("elimination_summary"), Int64(values.halfLife), Int64(values.elapsed), number(values.percent))]
+      }
+      lines += ["https://openstax.org/books/pharmacology/pages/2-2-pharmacokinetics-and-pharmacodynamics",
         "https://pharmacologyeducation.org/clinical-pharmacokinetics/"]
     case .aging:
       lines += [t("aging"), t("aging_evidence"), "https://pubmed.ncbi.nlm.nih.gov/36599349/", anatomy.source.absoluteString]

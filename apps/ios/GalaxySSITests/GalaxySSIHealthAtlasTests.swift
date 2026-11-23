@@ -32,6 +32,38 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertThrowsError(try pack.applying(to: atlas, bundle: bundle))
   }
 
+  func testDrugStateRestorationPreservesBothModelsAndLegacySelections() throws {
+    let atlas = try catalogue()
+    let legacy = GalaxySSIHealthAtlasState.Selection()
+    let legacyData = try JSONEncoder().encode(["heart": legacy])
+    let restored = GalaxySSIHealthAtlasState()
+    restored.restore(try XCTUnwrap(String(data: legacyData, encoding: .utf8)), atlas: atlas)
+    XCTAssertNotNil(restored.entries["heart"])
+    XCTAssertNil(restored.entries["heart"]?.drugInputs)
+    var selection = legacy
+    selection.research = .drugs
+    selection.elimination.halfLife = 7
+    selection.elimination.elapsed = 13
+    let distribution = try XCTUnwrap(GalaxySSIHealthAtlasDistribution(outward: 100, returning: 50, elimination: 20, quarterHours: 47))
+    var drugs = GalaxySSIHealthAtlasDrugState(mode: .two, distribution: distribution)
+    drugs.mode = .single
+    selection.drugInputs = drugs.encoded
+    restored.entries["heart"] = selection
+    let next = GalaxySSIHealthAtlasState()
+    next.restore(restored.serialized, atlas: atlas)
+    let roundTrip = try XCTUnwrap(next.entries["heart"])
+    XCTAssertEqual(roundTrip.elimination, selection.elimination)
+    XCTAssertEqual(GalaxySSIHealthAtlasDrugState.restore(roundTrip.drugInputs), drugs)
+    for invalid in [[2, 30, 15, 10, 16], [1, 301, 15, 10, 16], []] {
+      selection.drugInputs = invalid
+      restored.entries["heart"] = selection
+      next.restore(restored.serialized, atlas: atlas)
+      XCTAssertNil(next.entries["heart"]?.drugInputs)
+      XCTAssertEqual(next.entries["heart"]?.elimination, selection.elimination)
+      XCTAssertEqual(next.entries["heart"]?.research, .drugs)
+    }
+  }
+
   func testFrozenCatalogueCountsAndCanonicalGraph() throws {
     let atlas = try catalogue()
     XCTAssertEqual(atlas.entries.count, 278)
@@ -107,6 +139,44 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
         XCTAssertEqual(model.source.absoluteString, address)
       } else { XCTAssertThrowsError(try GalaxySSIHealthAtlas.validated(candidate)) }
     }
+  }
+
+  func testMusculoskeletalViewsOnlyExposeVisibleSurfaceStructures() throws {
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    XCTAssertEqual(atlas.views(for: "skeletal").compactMap(\.viewKey), ["skeletal-anterior", "skeletal-posterior"])
+    XCTAssertEqual(atlas.views(for: "muscle").compactMap(\.viewKey), ["muscle-anterior", "muscle-posterior"])
+    XCTAssertEqual(atlas.views(for: "scapula").compactMap(\.viewKey), ["skeletal-posterior"])
+    XCTAssertEqual(atlas.views(for: "femur").compactMap(\.viewKey), ["skeletal-anterior"])
+    XCTAssertEqual(atlas.views(for: "triceps-brachii").compactMap(\.viewKey), ["muscle-posterior"])
+    XCTAssertEqual(atlas.plate(for: "femur", viewKey: "skeletal-posterior")?.viewKey, "skeletal-anterior")
+    XCTAssertEqual(atlas.plate(for: "skeletal", viewKey: "invalid")?.viewKey, "skeletal-anterior")
+    XCTAssertFalse(atlas.views(for: "cell-osteocyte").contains { $0.owner == "skeletal" })
+    XCTAssertFalse(atlas.plate(for: "skeletal", viewKey: "skeletal-anterior")!.markers.contains { $0.id == "scapula" })
+    XCTAssertFalse(atlas.plate(for: "muscle", viewKey: "muscle-posterior")!.markers.contains { $0.id == "quadriceps-femoris" })
+  }
+
+  func testPosteriorViewRestorationAndQuestionUseTheSelectedPlate() throws {
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    let entry = try XCTUnwrap(atlas.entry("skeletal"))
+    var selection = GalaxySSIHealthAtlasState.Selection()
+    selection.artworkView = "skeletal-posterior"
+    selection.zoom = 2
+    let state = GalaxySSIHealthAtlasState()
+    state.entries[entry.id] = selection
+    let restored = GalaxySSIHealthAtlasState()
+    restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.entries[entry.id]?.artworkView, "skeletal-posterior")
+    XCTAssertEqual(restored.entries[entry.id]?.zoom, 2)
+    let question = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: entry, selection: selection, research: false, language: "en")
+    XCTAssertTrue(question.contains(GalaxySSIHealthAtlasText.get("health_atlas_skeleton_back", "en")))
+    XCTAssertFalse(question.contains(GalaxySSIHealthAtlasText.get("health_atlas_skeleton_front", "en")))
+    selection.artworkView = "muscle-anterior"
+    state.entries[entry.id] = selection
+    restored.restore(state.serialized, atlas: atlas)
+    XCTAssertNil(restored.entries[entry.id]?.artworkView)
+    XCTAssertEqual(restored.entries[entry.id]?.zoom, 2)
+    let old = GalaxySSIHealthAtlasState.Selection()
+    XCTAssertNil(try JSONDecoder().decode(GalaxySSIHealthAtlasState.Selection.self, from: JSONEncoder().encode(old)).artworkView)
   }
 
   func testSearchUsesAllWordsAndIncludesFragmentsOnlyInCellFilter() throws {
