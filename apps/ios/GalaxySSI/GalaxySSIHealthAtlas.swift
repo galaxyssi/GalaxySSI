@@ -295,7 +295,8 @@ struct GalaxySSIHealthAtlas: Decodable {
        let pack = try? RespirationPack.bundled.get() { return pack.plate }
     if id == nil {
       return Plate(id: "whole", asset: "HealthAtlasBody", owner: nil, viewLabel: "health_atlas_illustration", entryIDs: [""],
-        aspectRatio: 2.0 / 3.0, markers: [Marker(id: "brain", x: 0.5, y: 0.045), Marker(id: "heart", x: 0.54, y: 0.28),
+        aspectRatio: 2.0 / 3.0, markers: [Marker(id: "brain", x: 0.5, y: 0.045), Marker(id: "lungs", x: 0.60, y: 0.24),
+          Marker(id: "heart", x: 0.54, y: 0.28),
           Marker(id: "liver", x: 0.45, y: 0.34), Marker(id: "small-intestine", x: 0.51, y: 0.44)])
     }
     if ["heart", "atria", "ventricles", "coronary-vessels"].contains(id ?? "") {

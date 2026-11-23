@@ -1098,6 +1098,70 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthAtlasSectionLesson.forEntry("cell-enterocyte"))
   }
 
+  func testEditorialArtworkRetainsResolutionTransparencyAndAllTwentySixHotspots() throws {
+    let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    let frames: [(String?, Int, Int)] = [(nil, 1024, 1536), ("heart", 1086, 1448),
+      ("lungs", 1254, 1254), ("liver", 1254, 1254), ("kidneys", 1254, 1254),
+      ("brain", 1254, 1254), ("gut", 1024, 1536)]
+    func alpha(_ image: CGImage, _ x: Int, _ y: Int) throws -> UInt8 {
+      let sample = try XCTUnwrap(image.cropping(to: CGRect(x: CGFloat(x), y: CGFloat(y), width: 1, height: 1)))
+      var pixel = [UInt8](repeating: 0, count: 4)
+      try pixel.withUnsafeMutableBytes { bytes in
+        let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+          bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+        context.draw(sample, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+      }
+      return pixel[3]
+    }
+    var count = 0
+    for (id, width, height) in frames {
+      let plate = try XCTUnwrap(atlas.plate(for: id))
+      let image = try XCTUnwrap(UIImage(named: plate.asset, in: bundle, compatibleWith: nil)?.cgImage)
+      XCTAssertEqual(image.width, width); XCTAssertEqual(image.height, height)
+      for x in [0, width - 1] { for y in [0, height - 1] { XCTAssertEqual(try alpha(image, x, y), 0) } }
+      for marker in plate.markers {
+        XCTAssertGreaterThanOrEqual(try alpha(image, Int(marker.x * Double(width)), Int(marker.y * Double(height))), 200)
+        XCTAssertNotNil(atlas.entry(marker.id)); count += 1
+      }
+    }
+    XCTAssertEqual(count, 26)
+    XCTAssertTrue(try XCTUnwrap(atlas.plate(for: nil)).markers.contains { $0.id == "lungs" })
+  }
+
+  func testSectionFlowUsesCurveTangentsAndRewindClearsTheTrail() throws {
+    typealias Lesson = GalaxySSIHealthAtlasSectionLesson
+    typealias Diagram = GalaxySSIHealthAtlasSectionLessonView
+    let quadratic = Lesson.Route(start: .init(x: 10, y: 10),
+      commands: [.init(kind: .quad, points: [.init(x: 10, y: 30), .init(x: 30, y: 30)])])
+    let start = try XCTUnwrap(Diagram.flow(quadratic, fraction: 0))
+    XCTAssertTrue(start.trail.isEmpty); XCTAssertFalse(start.tip.isEmpty)
+    XCTAssertEqual(start.point, CGPoint(x: 10, y: 10))
+    XCTAssertEqual(start.direction.dx, 0, accuracy: 1e-9); XCTAssertEqual(start.direction.dy, 1, accuracy: 1e-9)
+    let end = try XCTUnwrap(Diagram.flow(quadratic, fraction: 1))
+    XCTAssertEqual(end.point, CGPoint(x: 30, y: 30))
+    XCTAssertEqual(end.direction.dx, 1, accuracy: 1e-9); XCTAssertEqual(end.direction.dy, 0, accuracy: 1e-9)
+    let advancing = try XCTUnwrap(Diagram.flow(quadratic, fraction: 0.8))
+    XCTAssertFalse(advancing.trail.isEmpty)
+    XCTAssertGreaterThan(advancing.point.x, start.point.x)
+    XCTAssertTrue(try XCTUnwrap(Diagram.flow(quadratic, fraction: 0)).trail.isEmpty)
+    for invalid in [Double.nan, .infinity, -0.1, 1.1] { XCTAssertNil(Diagram.flow(quadratic, fraction: invalid)) }
+    let cubic = Lesson.Route(start: .init(x: 20, y: 20), commands: [.init(kind: .cubic,
+      points: [.init(x: 40, y: 20), .init(x: 60, y: 40), .init(x: 60, y: 60)])])
+    XCTAssertEqual(try XCTUnwrap(Diagram.flow(cubic, fraction: 0)).direction.dx, 1, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Diagram.flow(cubic, fraction: 1)).direction.dy, 1, accuracy: 1e-9)
+    for id in GalaxySSIHealthAtlas.LymphPack.owners + GalaxySSIHealthAtlas.GutPack.owners {
+      let lesson = try XCTUnwrap(Lesson.forEntry(id))
+      for route in lesson.routes {
+        for fraction in [0.0, 0.2, 0.8, 1] {
+          let flow = try XCTUnwrap(Diagram.flow(route, fraction: fraction))
+          XCTAssertEqual(hypot(flow.direction.dx, flow.direction.dy), 1, accuracy: 1e-8)
+          XCTAssertEqual(flow.trail.isEmpty, fraction == 0)
+        }
+      }
+    }
+  }
+
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
     let handoff = GalaxySSIHealthAtlasAgentHandoff()
     let token = try XCTUnwrap(handoff.prepare(owner: "a", conversation: "c", prompt: "Public teaching", now: 10))
