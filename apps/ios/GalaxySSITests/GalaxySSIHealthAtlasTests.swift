@@ -323,6 +323,29 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testEarPackOwnsSixDistinctProcessesAndFiveAnatomyHotspots() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self), base = try catalogue()
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.EarPack.read(bundle: bundle))
+    let atlas = try pack.applying(to: base, bundle: bundle)
+    XCTAssertEqual(atlas.entries.count, base.entries.count)
+    XCTAssertEqual(atlas.mechanisms.count, base.mechanisms.count + 6)
+    for id in GalaxySSIHealthAtlasMiddleEar.ids {
+      let entry = try XCTUnwrap(atlas.entry(id)), model = atlas.model(entry)
+      XCTAssertEqual(entry.mechanism, id)
+      XCTAssertEqual(model.id, id); XCTAssertEqual(model.kind, "organ"); XCTAssertEqual(model.stages.count, 4)
+      XCTAssertEqual(atlas.plate(for: id)?.id, "ear")
+    }
+    let plate = GalaxySSIHealthAtlasMiddleEar.plate
+    XCTAssertEqual(plate.markers.count, 5); XCTAssertEqual(plate.entryIDs.count, 6)
+    XCTAssertEqual(plate.source, GalaxySSIHealthAtlasMiddleEar.anatomySource)
+    XCTAssertThrowsError(try pack.applying(to: atlas, bundle: bundle))
+    for language in ["en", "zh-Hans"] {
+      for model in pack.mechanisms {
+        for key in [model.title] + model.stages { XCTAssertNotEqual(GalaxySSIHealthAtlasText.get(key, language), key) }
+      }
+    }
+  }
+
   func testCellMechanismsMustBeOwnedByTheirCanonicalCell() throws {
     let base = try catalogue()
     let cell = GalaxySSIHealthAtlas.Mechanism(id: "cell-neuron", kind: "cell", title: "Cell process",
