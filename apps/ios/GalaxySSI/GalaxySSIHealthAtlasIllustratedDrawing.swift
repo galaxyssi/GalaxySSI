@@ -48,6 +48,10 @@ struct GalaxySSIHealthAtlasIllustratedDrawing {
       at: CGPoint(x: x - width / 2, y: baseline - font.ascender), anchor: .topLeading)
   }
   func wave(_ t: Double) -> Double { sin(t * 2 * .pi) }
+  func at(_ route: GalaxySSIHealthAtlasSectionLesson.Route, _ fraction: Double, draw: (Double, Double) -> Void) {
+    let phase = fraction.isFinite ? min(1, max(0, fraction)) : 0
+    if let sample = GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360) { draw(sample.point.x, sample.point.y) }
+  }
   static func color(_ value: UInt32) -> Color {
     Color(red: Double((value >> 16) & 255) / 255, green: Double((value >> 8) & 255) / 255, blue: Double(value & 255) / 255,
       opacity: value > 0xFFFFFF ? Double(value >> 24) / 255 : 1)

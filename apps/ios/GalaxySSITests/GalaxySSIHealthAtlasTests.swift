@@ -1433,6 +1433,37 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion(chapter: -1, fraction: .nan).chapter, 0)
     XCTAssertEqual(Motion(chapter: 20, fraction: .infinity).fraction, 0)
   }
+  func testGameteTransportPreservesReleasePickupAndMovingConstriction() throws {
+    typealias Motion = GalaxySSIHealthAtlasGameteMotion
+    XCTAssertEqual(Motion.follicleOpens, 0.30)
+    XCTAssertEqual(Motion.release(0.299), 0)
+    XCTAssertEqual(Motion.release(0.30), 0)
+    XCTAssertEqual(Motion.release(0.65), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.release(1), 1)
+    XCTAssertEqual(Motion.pickup(0), 0)
+    XCTAssertEqual(Motion.pickup(0.5), 0.5)
+    XCTAssertEqual(Motion.pickup(1), 1)
+    XCTAssertEqual(Motion.pickup(.nan), 0)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      let center = 16 + 328 * phase
+      XCTAssertEqual(Motion.ductRadius(center, phase), 11)
+      XCTAssertEqual(Motion.ductRadius(center + 26, phase), 28 - 17 / exp(1), accuracy: 1e-12)
+      XCTAssertEqual(Motion.ductRadius(center - 26, phase), Motion.ductRadius(center + 26, phase), accuracy: 1e-12)
+      for x in stride(from: 24, through: 336, by: 4) { XCTAssertTrue((11...28).contains(Motion.ductRadius(Double(x), phase))) }
+    }
+    XCTAssertEqual(Motion.ductRadius(.nan, 0.5), 28)
+    XCTAssertTrue(Motion(courseID: "SPERM_TRANSPORT", chapter: 0, fraction: 0).sperm)
+    XCTAssertFalse(Motion(courseID: "OVUM_TRANSPORT", chapter: 0, fraction: 0).sperm)
+    XCTAssertEqual(Motion(courseID: "SPERM_TRANSPORT", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "OVUM_TRANSPORT", chapter: 20, fraction: .infinity).fraction, 0)
+    XCTAssertEqual(Motion.epididymis.commands.count, 8)
+    for route in [Motion.rete, Motion.epididymis, Motion.vas, Motion.pickupPath, Motion.ampulla] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
