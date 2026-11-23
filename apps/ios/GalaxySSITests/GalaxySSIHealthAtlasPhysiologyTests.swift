@@ -175,12 +175,46 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
   func testCanonicalAssignmentMatchesAndroidAndDoesNotExpandToRelatedCells() {
     let ids = ["respiratory", "lungs", "alveoli", "urinary", "kidneys", "nephron", "renal-tubules", "collecting-ducts",
       "cell-proximal-tubular-cell", "cell-distal-tubular-cell", "cell-collecting-duct-principal-cell",
-      "cell-collecting-duct-intercalated-cell", "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron"]
-    XCTAssertEqual(ids.count, 17)
+      "cell-collecting-duct-intercalated-cell", "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron",
+      "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna"]
+    XCTAssertEqual(ids.count, 26)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
     for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-ii-pneumocyte", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
     }
+  }
+
+  func testElbowFixturesBalanceForcesAndMomentsWithStrictUnitConversion() throws {
+    let forces = try XCTUnwrap(GalaxySSIHealthAtlasElbow.forces(loadKg: 4, loadArmCm: 38, muscleArmMm: 40))
+    XCTAssertEqual(forces.muscle, 470.4, accuracy: 1e-9)
+    XCTAssertEqual(forces.jointDown, 406.7, accuracy: 1e-9)
+    XCTAssertEqual(forces.torque, 18.816, accuracy: 1e-9)
+    let model = Model(kind: .elbow)
+    XCTAssertEqual(model.result, forces.muscle, accuracy: 1e-9)
+    XCTAssertEqual(model.companionValue, forces.jointDown, accuracy: 1e-9)
+    XCTAssertEqual(model.plotMaximum, 1100)
+    for load in stride(from: 0, through: 100, by: 5) {
+      for distance in stride(from: 20, through: 50, by: 3) {
+        for arm in stride(from: 20, through: 60, by: 4) {
+          let result = try XCTUnwrap(GalaxySSIHealthAtlasElbow.forces(loadKg: Double(load) / 10,
+            loadArmCm: Double(distance), muscleArmMm: Double(arm)))
+          XCTAssertEqual(result.muscle - result.jointDown - result.armWeight - result.loadWeight, 0, accuracy: 1e-9)
+          XCTAssertEqual(result.muscle * result.muscleArmMetres,
+            result.armWeight * 0.16 + result.loadWeight * result.loadArmMetres, accuracy: 1e-9)
+          let changed = try XCTUnwrap(Model(kind: .elbow, inputs: [load, distance, arm]))
+          XCTAssertTrue((0...changed.plotMaximum).contains(changed.result))
+          XCTAssertLessThanOrEqual(changed.plotMaximum, 2700)
+        }
+      }
+    }
+    for invalid in [Double.nan, .infinity, -1, 11] {
+      XCTAssertNil(GalaxySSIHealthAtlasElbow.forces(loadKg: invalid, loadArmCm: 38, muscleArmMm: 40))
+    }
+    XCTAssertNil(GalaxySSIHealthAtlasElbow.forces(loadKg: 4, loadArmCm: 19, muscleArmMm: 40))
+    XCTAssertNil(GalaxySSIHealthAtlasElbow.forces(loadKg: 4, loadArmCm: 38, muscleArmMm: 61))
+    XCTAssertNil(Model.restore("biceps-brachii", inputs: [40, 38, 0]))
+    XCTAssertNil(Model.Kind.forEntry("triceps-brachii"))
+    XCTAssertNil(Model.Kind.forEntry("cell-skeletal-muscle-fiber"))
   }
 
   func testLegacyVentilationMigrationAndIndependentEntryRestoration() throws {
