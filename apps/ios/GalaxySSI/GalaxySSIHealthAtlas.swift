@@ -50,6 +50,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try CellPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try RespirationPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try ExtendedCellPack.read(bundle: bundle) { result = try pack.applying(to: result) }
+    if let pack = try ImmunePack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     if let pack = try EarPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try TissuePack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try HeartSectionPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
@@ -139,6 +140,9 @@ struct GalaxySSIHealthAtlas: Decodable {
     var source: URL? = nil
     var viewKey: String? = nil
     var selectorLabel: String? = nil
+    var features: [Feature]? = nil
+    var annotations: [Feature] { features ?? [] }
+    var hasLabels: Bool { !markers.isEmpty || !annotations.isEmpty }
   }
   /// An additive, bundled-only asset pack can land independently of the atlas UI.
   struct ArtworkPack: Decodable {
@@ -260,6 +264,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try? TissuePack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if GalaxySSIHealthAtlasEyeOptics.plate.entryIDs.contains(id ?? "") { return GalaxySSIHealthAtlasEyeOptics.plate }
     if let pack = try? SystemPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
+    if let pack = try? ImmunePack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if let pack = try? CellPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     if let pack = try? RenalPack.bundled.get(), pack.plate.entryIDs.contains(id ?? "") { return pack.plate }
     if let pack = try? ArtworkPack.bundled.get() {

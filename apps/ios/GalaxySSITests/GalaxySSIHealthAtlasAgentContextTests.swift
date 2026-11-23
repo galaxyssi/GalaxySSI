@@ -17,6 +17,28 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
      "elimination_assumptions": "Single-compartment teaching assumptions",
      "elimination_summary": "Half-life %1$lld h; after %2$lld h: %3$@%%"] [key] ?? key
   }
+  func testImmuneIllustrationAndPhagocytosisContextAreOwnerAndScreenScoped() throws {
+    let id = GalaxySSIHealthAtlas.ImmunePack.phagocytosisOwner
+    let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: 0.5, first: 70, second: 70))
+    let illustration = try XCTUnwrap(Context.Illustration(entryID: id, caption: "Cell morphology", source: nil,
+      featureContext: "Local feature titles only"))
+    for screen in Context.Screen.allCases {
+      let prompt = Context.prompt(anatomy: anatomy(id), screen: screen, simulation: simulation,
+        illustration: illustration, locale: locale, text: text)
+      if screen == .values { XCTAssertNil(prompt); continue }
+      let value = try XCTUnwrap(prompt)
+      XCTAssertTrue(value.contains("Local feature titles only"))
+      XCTAssertEqual(value.contains("phagocytosis_scope"), screen.includesPhysiology)
+      XCTAssertFalse(value.contains("measuredAt"))
+      let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("cell-t-cell"), screen: screen,
+        simulation: simulation, illustration: illustration, locale: locale, text: text))
+      XCTAssertFalse(foreign.contains("Local feature titles only"))
+      XCTAssertFalse(foreign.contains("phagocytosis_scope"))
+    }
+    let idle = try XCTUnwrap(Context.prompt(anatomy: anatomy(id), screen: .simulation, locale: locale, text: text))
+    XCTAssertFalse(idle.contains("phagocytosis_scope"))
+  }
+
   func testCirculationRoutesBoundsAndPublicContextScope() throws {
     typealias Circuit = GalaxySSIHealthAtlasCirculation
     XCTAssertEqual(Circuit.legs.map(\.oxygenRich), [false, false, true, true])

@@ -33,10 +33,12 @@ enum GalaxySSIHealthAtlasAgentContext {
     let entryID: String
     let caption: String
     let source: URL?
-    init?(entryID: String, caption: String, source: URL?) {
+    var featureContext: String? = nil
+    init?(entryID: String, caption: String, source: URL?, featureContext: String? = nil) {
       guard !entryID.isEmpty, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
         GalaxySSIHealthAtlas.trustedPlateSource(source) else { return nil }
       self.entryID = entryID; self.caption = caption; self.source = source
+      self.featureContext = featureContext
     }
   }
   struct Quantitative {
@@ -70,6 +72,7 @@ enum GalaxySSIHealthAtlasAgentContext {
     if let illustration, illustration.entryID == anatomy.id {
       lines += [illustration.caption, t("art_note")]
       if let source = illustration.source { lines.append(source.absoluteString) }
+      if let features = illustration.featureContext { lines.append(features) }
     }
     if screen.includesPhysiology {
       if let simulation, simulation.entryID == anatomy.id {
@@ -79,6 +82,7 @@ enum GalaxySSIHealthAtlasAgentContext {
         }
         lines.append(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4), anatomy.stages[simulation.stage]))
         if let context = anatomy.valveContext { lines.append(context) }
+        if anatomy.id == GalaxySSIHealthAtlas.ImmunePack.phagocytosisOwner { lines.append(t("phagocytosis_scope")) }
         if let counts = GalaxySSIHealthAtlasGermline.counts(anatomy.id, stage: simulation.stage) {
           lines.append(GalaxySSIHealthAtlasGermline.context(counts, text: t))
         }

@@ -64,7 +64,8 @@ enum GalaxySSIHealthAtlasQuestion {
     let illustration = entry.flatMap { item in
       atlas.plate(for: item.id, viewKey: selection.artworkView).flatMap { plate in
         GalaxySSIHealthAtlasAgentContext.Illustration(entryID: item.id,
-          caption: atlas.caption(plate, selected: item, language: language), source: plate.source)
+          caption: atlas.caption(plate, selected: item, language: language), source: plate.source,
+          featureContext: plate.featureContext(language: language))
       }
     }
     return GalaxySSIHealthAtlasAgentContext.prompt(anatomy: anatomy, screen: screen, simulation: simulation,
@@ -81,6 +82,7 @@ enum GalaxySSIHealthAtlasQuestion {
     if research || selection.tab != .values, let plate = atlas.plate(for: entry.id, viewKey: selection.artworkView) {
       prompt += "\n" + atlas.caption(plate, selected: entry, language: language) + "\n" + t("art_note")
       if let source = plate.source { prompt += "\n" + source.absoluteString }
+      if let features = plate.featureContext(language: language) { prompt += "\n" + features }
     }
     #if GALAXYSSI_ATLAS_PHYSIOLOGY
     let physiology = ((!research && selection.tab == .simulation) || (research && selection.research == .physiology))
@@ -100,6 +102,10 @@ enum GalaxySSIHealthAtlasQuestion {
     if ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
        let context = GalaxySSIHealthAtlasHeartSection.context(entry.id, stage: selection.simulation.stage, atlas: atlas, language: language) {
       prompt += "\n" + context
+    }
+    if entry.id == GalaxySSIHealthAtlas.ImmunePack.phagocytosisOwner,
+       ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
+      prompt += "\n" + t("phagocytosis_scope")
     }
     if research {
       switch selection.research {

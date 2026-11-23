@@ -680,6 +680,52 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Aging.resolved(malformed, entryID: "heart"), Aging(topic: .mitochondria))
   }
 
+  func testImmuneFeaturesAreLocalExplanationsAndLegacyMarkersStillNavigate() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self), atlas = try catalogue()
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.ImmunePack.read(bundle: bundle))
+    try pack.validating(in: atlas, bundle: bundle)
+    XCTAssertEqual(pack.plates.count, 12)
+    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 25)
+    for plate in pack.plates {
+      for feature in plate.annotations {
+        XCTAssertNil(atlas.entry(feature.id))
+        guard case .feature(let selected) = plate.labelTarget(feature.id, in: atlas) else {
+          return XCTFail("Local annotation must open an explanation")
+        }
+        XCTAssertEqual(selected.id, feature.id)
+        for language in ["en", "zh-Hans"] {
+          XCTAssertNotEqual(GalaxySSIHealthAtlasText.get(feature.explanation, language), feature.explanation)
+          XCTAssertTrue(try XCTUnwrap(plate.featureContext(language: language)).contains(
+            GalaxySSIHealthAtlasText.get(feature.title, language)))
+        }
+      }
+      XCTAssertNil(plate.labelTarget("heart", in: atlas))
+      XCTAssertNil(plate.labelTarget("unknown", in: atlas))
+    }
+    let legacy: [String: Any] = ["id": "legacy", "asset": "legacy", "viewLabel": "legacy",
+      "entryIDs": ["heart"], "aspectRatio": 1, "markers": [["id": "heart", "x": 0.5, "y": 0.5]]]
+    func decode(_ object: [String: Any]) throws -> GalaxySSIHealthAtlas.Plate {
+      try JSONDecoder().decode(GalaxySSIHealthAtlas.Plate.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+    let old = try decode(legacy)
+    XCTAssertNil(old.features)
+    XCTAssertNil(old.featureContext(language: "en"))
+    guard case .anatomy("heart") = old.labelTarget("heart", in: atlas) else { return XCTFail("Legacy route lost") }
+    var duplicate = legacy
+    duplicate["features"] = [["marker": ["id": "heart", "x": 0.5, "y": 0.5],
+      "title": "local", "explanation": "local_detail"]]
+    XCTAssertThrowsError(try decode(duplicate))
+    var outside = legacy
+    outside["markers"] = [["id": "heart", "x": 1.1, "y": 0.5]]
+    XCTAssertThrowsError(try decode(outside))
+    let owner = try XCTUnwrap(atlas.entry(GalaxySSIHealthAtlas.ImmunePack.phagocytosisOwner))
+    let stages = atlas.model(owner).stages
+    for stage in 0..<4 {
+      XCTAssertNotNil(GalaxySSIHealthAtlasPhagocytosis.label(stage: stage, stages: stages, language: "en"))
+    }
+    XCTAssertNil(GalaxySSIHealthAtlasPhagocytosis.label(stage: 4, stages: stages, language: "en"))
+  }
+
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
     let handoff = GalaxySSIHealthAtlasAgentHandoff()
     let token = try XCTUnwrap(handoff.prepare(owner: "a", conversation: "c", prompt: "Public teaching", now: 10))

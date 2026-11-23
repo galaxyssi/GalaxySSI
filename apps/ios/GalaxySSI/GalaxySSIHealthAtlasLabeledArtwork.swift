@@ -8,11 +8,12 @@ struct GalaxySSIHealthAtlasLabeledArtwork: View {
   let currentID: String?
   let spots: [(String, Double, Double)]
   let labels: [String]
+  var featureIDs: Set<String> = []
   let onSelect: (String) -> Void
   @State private var height: CGFloat = 360
   var body: some View {
     GalaxySSIAtlasLabeledScroll(asset: asset, aspectRatio: aspectRatio, zoom: $zoom, height: $height,
-      currentID: currentID, spots: spots, labels: labels, onSelect: onSelect)
+      currentID: currentID, spots: spots, labels: labels, featureIDs: featureIDs, onSelect: onSelect)
       .frame(height: height)
   }
 }
@@ -25,6 +26,7 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
   let currentID: String?
   let spots: [(String, Double, Double)]
   let labels: [String]
+  let featureIDs: Set<String>
   let onSelect: (String) -> Void
   func makeCoordinator() -> Coordinator { Coordinator(self) }
   func makeUIView(context: Context) -> UIScrollView {
@@ -102,7 +104,7 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
       self.input = input
       let unchanged = previous.map { old in
         old.asset == input.asset && old.aspectRatio == input.aspectRatio && old.currentID == input.currentID &&
-          old.labels == input.labels && old.spots.map({ $0.0 }) == input.spots.map({ $0.0 }) &&
+          old.labels == input.labels && old.featureIDs == input.featureIDs && old.spots.map({ $0.0 }) == input.spots.map({ $0.0 }) &&
           old.spots.map({ $0.1 }) == input.spots.map({ $0.1 }) && old.spots.map({ $0.2 }) == input.spots.map({ $0.2 })
       } ?? false
       if unchanged, fontCategory == traitCollection.preferredContentSizeCategory { return }
@@ -118,9 +120,10 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
         button.contentHorizontalAlignment = .leading
         button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 6, bottom: 8, right: 6)
         button.setTitleColor(.label, for: .normal); button.setTitleColor(.label, for: .disabled)
-        button.isSelected = spot.0 == input.currentID; button.isEnabled = !button.isSelected
+        let feature = input.featureIDs.contains(spot.0)
+        button.isSelected = !feature && spot.0 == input.currentID; button.isEnabled = !button.isSelected
         if button.isSelected { button.accessibilityTraits.insert(.isSelected) }
-        button.accessibilityIdentifier = "atlas-structure-label-" + spot.0
+        button.accessibilityIdentifier = (feature ? "atlas-feature-" : "atlas-structure-label-") + spot.0
         button.addAction(UIAction { [weak self] _ in self?.input?.onSelect(spot.0) }, for: .touchUpInside)
         addSubview(button); buttons.append(button)
       }
