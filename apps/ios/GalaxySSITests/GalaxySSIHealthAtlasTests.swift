@@ -726,6 +726,47 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthAtlasPhagocytosis.label(stage: 4, stages: stages, language: "en"))
   }
 
+  func testCoreCellsUseDedicatedAnnotatedPlatesWithoutChangingCatalogueIdentity() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self), atlas = try catalogue()
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.CoreCellPack.read(bundle: bundle))
+    try pack.validating(in: atlas, bundle: bundle)
+    XCTAssertEqual(pack.plates.count, 18)
+    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 39)
+    let immune = try XCTUnwrap(GalaxySSIHealthAtlas.ImmunePack.read(bundle: bundle))
+    let combined = pack.plates + immune.plates
+    XCTAssertEqual(Set(combined.compactMap(\.owner)).count, 30)
+    for plate in combined {
+      let owner = try XCTUnwrap(plate.owner)
+      XCTAssertEqual(atlas.plate(for: owner)?.asset, plate.asset)
+      for feature in plate.annotations {
+        XCTAssertNil(atlas.entry(feature.id))
+        guard case .feature(let selected) = plate.labelTarget(feature.id, in: atlas) else {
+          return XCTFail("Core cell feature navigated out of its illustration")
+        }
+        XCTAssertEqual(selected.id, feature.id)
+      }
+    }
+    let cell = try XCTUnwrap(atlas.entry(GalaxySSIHealthAtlasSarcomere.owner))
+    let state = GalaxySSIHealthAtlasState(), restored = GalaxySSIHealthAtlasState()
+    state.binding(cell).wrappedValue.tab = .simulation
+    state.binding(cell).wrappedValue.simulation.selectStage(2)
+    restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.binding(cell).wrappedValue.simulation.stage, 2)
+    for language in ["en", "zh-Hans"] {
+      let selection = state.binding(cell).wrappedValue
+      let prompt = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: cell, selection: selection,
+        research: false, language: language)
+      let model = try XCTUnwrap(GalaxySSIHealthAtlasSarcomere(stage: 2))
+      for line in model.context(text: { GalaxySSIHealthAtlasText.get("health_atlas_" + $0, language) }) {
+        XCTAssertTrue(prompt.contains(line))
+      }
+      var structure = selection; structure.tab = .structure
+      let publicStructure = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: cell, selection: structure,
+        research: false, language: language)
+      XCTAssertFalse(publicStructure.contains(GalaxySSIHealthAtlasText.get("health_atlas_sarcomere_scope", language)))
+    }
+  }
+
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
     let handoff = GalaxySSIHealthAtlasAgentHandoff()
     let token = try XCTUnwrap(handoff.prepare(owner: "a", conversation: "c", prompt: "Public teaching", now: 10))

@@ -39,6 +39,32 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertFalse(idle.contains("phagocytosis_scope"))
   }
 
+  func testSarcomereGeometryAndAgentContextKeepFixedFilamentLengths() throws {
+    typealias Sarcomere = GalaxySSIHealthAtlasSarcomere
+    XCTAssertNil(Sarcomere(stage: -1)); XCTAssertNil(Sarcomere(stage: 4))
+    for stage in 0..<4 {
+      let model = try XCTUnwrap(Sarcomere(stage: stage))
+      XCTAssertEqual(model.thinLength, 86); XCTAssertEqual(model.thickLength, 136)
+      XCTAssertEqual(model.rightZ - model.leftZ, model.zDistance)
+      XCTAssertEqual(model.rightThick - model.leftThick, model.thickLength)
+      XCTAssertEqual(model.leftZ + model.rightZ, 360)
+      XCTAssertEqual(model.leftThick + model.rightThick, 360)
+      XCTAssertEqual(model.relativeLengthPercent, stage == 2 ? 72 : 100)
+      XCTAssertEqual(model.overlap, stage == 2 ? 64 : 29)
+      let simulation = try XCTUnwrap(Context.Simulation(entryID: Sarcomere.owner,
+        phase: (Double(stage) + 0.1) / 4, first: 70, second: 70))
+      for screen in Context.Screen.allCases {
+        let prompt = Context.prompt(anatomy: anatomy(Sarcomere.owner), screen: screen,
+          simulation: simulation, locale: locale, text: text)
+        if screen == .values { XCTAssertNil(prompt); continue }
+        XCTAssertEqual(try XCTUnwrap(prompt).contains("sarcomere_scope"), screen.includesPhysiology)
+        let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("heart"), screen: screen,
+          simulation: simulation, locale: locale, text: text))
+        XCTAssertFalse(foreign.contains("sarcomere_scope"))
+      }
+    }
+  }
+
   func testCirculationRoutesBoundsAndPublicContextScope() throws {
     typealias Circuit = GalaxySSIHealthAtlasCirculation
     XCTAssertEqual(Circuit.legs.map(\.oxygenRich), [false, false, true, true])
