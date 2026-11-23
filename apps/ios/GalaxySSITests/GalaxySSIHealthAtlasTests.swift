@@ -1003,6 +1003,65 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion(chapter: 3, fraction: .nan), Motion(chapter: 3, fraction: 0))
   }
 
+  func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
+    typealias Stage = GalaxySSIHealthAtlasBeatStage
+    typealias Motion = GalaxySSIHealthAtlasBeatMotion
+    typealias Valve = GalaxySSIHealthAtlasHeartSection.Valve
+    XCTAssertEqual(Stage.allCases.count, 5)
+    XCTAssertEqual(Stage.filling.ventricularNarrowing(0), 1)
+    XCTAssertEqual(Stage.filling.ventricularNarrowing(1), 0.16, accuracy: 0.000001)
+    XCTAssertEqual(Stage.atrialSqueeze.ventricularNarrowing(0), 0.16)
+    XCTAssertEqual(Stage.atrialSqueeze.ventricularNarrowing(1), 0)
+    XCTAssertEqual(Stage.pressureRise.ventricularNarrowing(0.5), 0)
+    XCTAssertEqual(Stage.ejection.ventricularNarrowing(0), 0)
+    XCTAssertEqual(Stage.ejection.ventricularNarrowing(1), 1)
+    XCTAssertEqual(Stage.relaxation.ventricularNarrowing(0.5), 1)
+    for valve in Valve.allCases {
+      XCTAssertEqual(Stage.filling.valveOpenness(valve, fraction: 0.5), valve.openAt(0) == true ? 1 : 0)
+      XCTAssertEqual(Stage.ejection.valveOpenness(valve, fraction: 0.5), valve.openAt(2) == true ? 1 : 0)
+      XCTAssertEqual(Stage.pressureRise.valveOpenness(valve, fraction: 0.5), 0)
+      XCTAssertEqual(Stage.relaxation.valveOpenness(valve, fraction: 0.5), 0)
+      XCTAssertEqual(Stage.ejection.valveOpenness(valve, fraction: 1), 0)
+    }
+    let closing = Motion(chapter: 2, fraction: 0)
+    XCTAssertEqual(closing.emphasis(.mitral), 21); XCTAssertEqual(closing.emphasis(.aortic), 0)
+    let relaxing = Motion(chapter: 4, fraction: 0)
+    XCTAssertEqual(relaxing.emphasis(.aortic), 21); XCTAssertEqual(relaxing.emphasis(.mitral), 0)
+    let ejection = Motion(chapter: 3, fraction: 1)
+    XCTAssertEqual(ejection.warpedX(450, y: 1052), 501.3, accuracy: 0.000001)
+    XCTAssertEqual(ejection.warpedY(1052), 988)
+    let atrial = Motion(chapter: 1, fraction: 0.5)
+    XCTAssertEqual(atrial.meshPoint(x: 426, y: 500).y, 500 + 27 * (1 - 27.0 / 132) * 0.55, accuracy: 0.000001)
+    XCTAssertEqual(atrial.mesh, Motion(chapter: 1, fraction: 0.5).mesh)
+    XCTAssertNotEqual(atrial.mesh, Motion(chapter: 1, fraction: 0.1).mesh)
+    XCTAssertEqual(Motion(chapter: 0, fraction: .nan), Motion(chapter: 0, fraction: 0))
+    XCTAssertTrue(Motion.streamPositions(0).isEmpty); XCTAssertTrue(Motion.streamPositions(.nan).isEmpty)
+    XCTAssertTrue(Motion.streamPositions(0.5).allSatisfy { $0 > 0 && $0 < 1 })
+    for route in [GalaxySSIHealthAtlasHeartbeatView.rightFill, GalaxySSIHealthAtlasHeartbeatView.leftFill,
+      GalaxySSIHealthAtlasHeartbeatView.rightOut, GalaxySSIHealthAtlasHeartbeatView.leftOutFront,
+      GalaxySSIHealthAtlasHeartbeatView.leftOutArch, GalaxySSIHealthAtlasHeartbeatView.shortToRight, GalaxySSIHealthAtlasHeartbeatView.shortToLeft] {
+      XCTAssertTrue(route.fits(width: 1254, height: 1254))
+      XCTAssertNotNil(GalaxySSIHealthAtlasSectionLessonView.flow(route, fraction: 0.5, width: 1254, height: 1254))
+    }
+  }
+
+  func testImageMeshPreservesBitmapTopologyAndAffineFallback() throws {
+    typealias Mesh = GalaxySSIHealthAtlasImageMesh
+    let indices = Mesh.indices(columns: 24, rows: 24)
+    XCTAssertEqual(indices.count, 3456); XCTAssertEqual(Array(indices.prefix(6)), [0,25,26,0,26,1])
+    XCTAssertEqual(Array(indices.suffix(6)), [598,623,624,598,624,599])
+    XCTAssertEqual(indices.max(), 624)
+    let source = Mesh.sourcePoints(columns: 24, rows: 24, size: CGSize(width: 1254, height: 1254))
+    XCTAssertEqual(source.count, 625); XCTAssertEqual(source.last, CGPoint(x: 1254, y: 1254))
+    XCTAssertEqual(GalaxySSIHealthAtlasBeatMotion(chapter: 2, fraction: 0.5).mesh, source)
+    XCTAssertTrue(Mesh.indices(columns: 0, rows: 24).isEmpty)
+    let from = [CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 0), CGPoint(x: 1, y: 1)]
+    let to = [CGPoint(x: 1, y: 2), CGPoint(x: 3, y: 2), CGPoint(x: 3, y: 5)]
+    let transform = try XCTUnwrap(Mesh.transform(source: from, destination: to))
+    for (s, d) in zip(from, to) { XCTAssertEqual(s.applying(transform), d) }
+    XCTAssertNil(Mesh.transform(source: [.zero,.zero,.zero], destination: to))
+  }
+
   func testTransportCellPlatesKeepLocalFeaturesAndExplicitSubtypeCaptions() throws {
     let bundle = Bundle(for: GalaxySSIStore.self), atlas = try completeCatalogue()
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.TransportCellPack.read(bundle: bundle))

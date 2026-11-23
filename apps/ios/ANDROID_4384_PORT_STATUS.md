@@ -24,10 +24,10 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 - [ ] Synchronize any newly merged predecessor PRs and update dependency scope before publication.
 
 ## Renderer Parity
-Next renderer: port HealthAtlasBeatStage and HealthAtlasHeartbeatView together, then continue the source-order list. Only GLUCOSE is currently enabled in FunctionRendering; do not broaden that registry before the corresponding native renderer is implemented.
+Next renderer: port HealthAtlasBreathingStage and HealthAtlasBreathingView together, then continue the source-order list. GLUCOSE and HEARTBEAT are currently enabled in FunctionRendering; do not broaden that registry before the corresponding native renderer is implemented.
 
 - [x] `HealthAtlasUptakeView` — native 344-unit source geometry, four signal paths, relay thresholds, membrane fusion and glucose transport; source/resource/grammar checks only, native pixels unverified.
-- [ ] `HealthAtlasHeartbeatView`
+- [x] `HealthAtlasHeartbeatView` — five source stages, seven exact cubic routes, shared valve anchors and 24x24 deformable heart mesh; Metal plus equivalent CoreGraphics triangle fallback, native shader/pixels unverified.
 - [ ] `HealthAtlasBreathingView`
 - [ ] `HealthAtlasHearingStoryView`
 - [ ] `HealthAtlasNephronStoryView`
@@ -111,7 +111,9 @@ Next renderer: port HealthAtlasBeatStage and HealthAtlasHeartbeatView together, 
 ## Verification Limits
 Current foundation checks pass: all 387 source hashes, exported catalogue/route invariants, iOS project/module configuration, two changed Swift grammar branches and whitespace. This proves foundation consistency only, not renderer or UI parity.
 
-Player checkpoint: dedicated source tables contain 3127 exact strings in each language; registry exposes only the implemented GLUCOSE course. Its UIKit/SwiftUI motion, four signal routes, relay nodes and membrane fusion are ported, but not run on a device. Generic chapter controls, lifecycle pause, references and separate live/persisted state are connected; no unsupported course is replaced by a generic picture.
+Player checkpoint: dedicated source tables contain 3127 exact strings in each language; registry exposes the implemented GLUCOSE and HEARTBEAT courses (2 of 81 renderer classes). Uptake signaling and five-stage heart motion are ported, but not run on a device. Generic chapter controls, lifecycle pause, references and separate live/persisted state are connected; no unsupported course is replaced by a generic picture.
+
+Heartbeat uses the original byte-identical heart PNG and 625 mesh vertices / 1152 triangles. Triangle ordering follows the Android bitmap-mesh implementation in [AOSP SkiaCanvas](https://android.googlesource.com/platform/frameworks/base/+/d18c61ae8e7ec024352e71e405a040b829376f50/libs/hwui/SkiaCanvas.cpp). The Metal shader is registered in Sources for the bundle default library ([Apple Metal libraries](https://developer.apple.com/documentation/metal/metal-libraries)); textures explicitly use premultiplied RGBA and top-left coordinates. If Metal initialization fails, the same indexed triangles use clipped CoreGraphics affine transforms. Shader compilation, alpha/orientation correctness and rendered pixels still require native verification.
 
 The player does not serialize the entire atlas each frame. A non-published live phase cache supplies current question snapshots; pause/reset/exit commit the bound course phase. Dedicated Function decoding tolerates corrupt Function-only state without discarding other selection fields. New XCTest source covers timing, snapshots, restoration and uptake checkpoints; it has not been executed.
 
