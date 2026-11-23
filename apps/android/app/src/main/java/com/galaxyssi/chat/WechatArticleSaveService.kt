@@ -34,7 +34,8 @@ class WechatArticleSaveService : Service() {
     internal var needsVerification = false
         private set
     internal var onFinished: (() -> Unit)? = null
-    private val timeout = Runnable { complete(R.string.wechat_article_failed) }
+    private val timeout = Runnable { complete(if (needsVerification) R.string.wechat_article_verification_expired
+        else R.string.wechat_article_failed) }
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -43,7 +44,7 @@ class WechatArticleSaveService : Service() {
             return START_NOT_STICKY
         }
         if (started) {
-            Toast.makeText(this, R.string.wechat_link_busy, Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.wechat_article_already_saving, Toast.LENGTH_SHORT).show()
             return START_NOT_STICKY
         }
         started = true
@@ -60,7 +61,7 @@ class WechatArticleSaveService : Service() {
             return START_NOT_STICKY
         }
         runCatching {
-            browser = WechatArticleBrowser(this, ::export, ::verificationRequired) { complete(R.string.wechat_article_failed) }
+            browser = WechatArticleBrowser(this, ::export, ::verificationRequired, ::browserFailed)
             attachHiddenBrowser()
             handler.postDelayed(timeout, 300_000)
             browser!!.load(url)
@@ -135,6 +136,16 @@ class WechatArticleSaveService : Service() {
         Toast.makeText(this, R.string.wechat_article_verification_notification, Toast.LENGTH_LONG).show()
     }
 
+    private fun browserFailed(reason: WechatArticleBrowserFailure) {
+        Log.w("WechatArticleSave", "stage=browser_failed reason=${reason.name}")
+        complete(when (reason) {
+            WechatArticleBrowserFailure.BODY_NOT_READY, WechatArticleBrowserFailure.BODY_UNSTABLE,
+            WechatArticleBrowserFailure.SNAPSHOT -> R.string.wechat_article_body_unavailable
+            WechatArticleBrowserFailure.TOO_LARGE -> R.string.wechat_article_too_large
+            WechatArticleBrowserFailure.LOAD, WechatArticleBrowserFailure.RENDERER -> R.string.wechat_article_load_failed
+        })
+    }
+
     private fun export(url: String, html: String) {
         if (finished) return
         Log.i("WechatArticleSave", "stage=export html_chars=${html.length}")
@@ -152,16 +163,19 @@ class WechatArticleSaveService : Service() {
                 }
             }
             handler.post {
-                if (!finished) result.fold({ complete(R.string.wechat_article_saved, it) }, {
+                if (!finished) result.fold({
+                    complete(if (it.missingImages == 0) R.string.wechat_article_saved else R.string.wechat_article_saved_partial, it)
+                }, {
                     Log.w("WechatArticleSave", "stage=export failure=${it.javaClass.simpleName}")
-                    complete(R.string.wechat_article_failed)
+                    complete(if (it is WechatArticleContentMissing) R.string.wechat_article_body_unavailable
+                        else R.string.wechat_article_pdf_failed)
                 })
             }
         }
     }
 
     private fun notification(message: Int, saved: WechatSavedArticle? = null, terminal: Boolean = false): Notification {
-        val text = if (saved == null) getString(message) else getString(message, saved.pages, saved.name)
+        val text = resultText(message, saved)
         val builder = Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_tab_chat_filled)
             .setContentTitle(getString(R.string.wechat_article_save)).setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text)).setOnlyAlertOnce(true)
@@ -192,7 +206,7 @@ class WechatArticleSaveService : Service() {
 
     private fun complete(message: Int, saved: WechatSavedArticle? = null) {
         if (finished) return
-        Log.i("WechatArticleSave", "stage=finished saved=${saved != null} message=$message")
+        Log.i("WechatArticleSave", "stage=finished saved=${saved != null} missing_images=${saved?.missingImages ?: 0} message=$message")
         finished = true
         cancelled = true
         handler.removeCallbacksAndMessages(null)
@@ -202,12 +216,15 @@ class WechatArticleSaveService : Service() {
         worker.shutdownNow()
         stopForeground(STOP_FOREGROUND_REMOVE)
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification(message, saved, terminal = true))
-        Toast.makeText(this, if (saved == null) getString(message) else getString(message, saved.pages, saved.name), Toast.LENGTH_LONG).show()
+        Toast.makeText(this, resultText(message, saved), Toast.LENGTH_LONG).show()
         onFinished?.invoke()
         onFinished = null
         if (active === this) active = null
         stopSelf()
     }
+
+    private fun resultText(message: Int, saved: WechatSavedArticle?) =
+        if (saved == null) getString(message) else getString(message, saved.pages, saved.name, saved.missingImages)
 
     override fun onDestroy() {
         if (!finished) complete(R.string.wechat_article_failed)
