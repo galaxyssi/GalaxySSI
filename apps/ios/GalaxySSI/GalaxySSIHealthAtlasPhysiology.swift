@@ -27,6 +27,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   enum Kind: String, CaseIterable, Sendable {
     case ventilation, renal, potassium, elbow, vessel
+    case middleEar
     #if GALAXYSSI_ATLAS_OXYGEN
     case oxygen
     #endif
@@ -49,6 +50,10 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
         return [.init(key: "model_filtered", range: 0...200, initial: 100, unit: "mg/min"),
           .init(key: "model_reabsorbed", range: 0...100, initial: 90, unit: "%"),
           .init(key: "model_secreted", range: 0...100, initial: 10, unit: "mg/min")]
+      case .middleEar:
+        return [.init(key: "middle_ear_input_area", range: 35...75, initial: 55, unit: "mm\u{00b2}"),
+          .init(key: "middle_ear_output_area", range: 20...50, initial: 32, scale: 10, unit: "mm\u{00b2}"),
+          .init(key: "middle_ear_lever_ratio", range: 100...160, initial: 130, scale: 100, unit: "\u{00d7}")]
       case .potassium:
         return [.init(key: "model_outside", range: 10...200, initial: 40, scale: 10, unit: "mmol/L"),
           .init(key: "model_inside", range: 50...200, initial: 140, unit: "mmol/L")]
@@ -62,6 +67,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var axis: Int {
       if self == .elbow { return 0 }
+      if self == .middleEar { return 0 }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return 0 }
       #endif
@@ -70,6 +76,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     var unit: String {
       if self == .vessel { return "mL/min" }
       if self == .elbow { return "N" }
+      if self == .middleEar { return "\u{00d7}" }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return "%" }
       #endif
@@ -78,6 +85,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     var bounds: ClosedRange<Double> {
       if self == .vessel { return 0...3 }
       if self == .elbow { return 0...2700 }
+      if self == .middleEar { return 0...60 }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return 0...100 }
       #endif
@@ -89,6 +97,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       case .elbow: return GalaxySSIHealthAtlasElbow.source
       case .ventilation: return URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-3-the-process-of-breathing")!
       case .renal: return URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption")!
+      case .middleEar: return GalaxySSIHealthAtlasMiddleEar.source
       case .potassium: return URL(string: "https://neurotext.library.stonybrook.edu/C2/C2_4/C2_4.html")!
       #if GALAXYSSI_ATLAS_OXYGEN
       case .oxygen: return GalaxySSIHealthAtlasOxygen.bindingSource
@@ -96,6 +105,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       }
     }
     var sources: [URL] {
+      if self == .middleEar { return [GalaxySSIHealthAtlasMiddleEar.source, GalaxySSIHealthAtlasMiddleEar.measurementSource] }
       if self == .vessel { return GalaxySSIHealthAtlasVesselFlow.sources }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return GalaxySSIHealthAtlasOxygen.sources }
@@ -111,6 +121,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
            "distal-tubule", "cell-proximal-tubular-cell",
            "cell-distal-tubular-cell", "cell-collecting-duct-principal-cell", "cell-collecting-duct-intercalated-cell": return .renal
       case "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron": return .potassium
+      case "ear", "middle-ear": return .middleEar
       #if GALAXYSSI_ATLAS_OXYGEN
       case "blood", "cell-erythrocyte": return .oxygen
       #endif
@@ -145,6 +156,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case .ventilation: return input(0) * input(1) / 1000
     case .renal: return renalAmounts!.reabsorbed
     case .potassium: return input(0) / input(1)
+    case .middleEar: return middleEar!.pressureGainDb
     #if GALAXYSSI_ATLAS_OXYGEN
     case .oxygen: return oxygenAmounts!.total
     #endif
@@ -155,6 +167,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   var elbowForces: GalaxySSIHealthAtlasElbow.Forces? {
     kind == .elbow ? GalaxySSIHealthAtlasElbow.forces(loadKg: input(0), loadArmCm: input(1), muscleArmMm: input(2)) : nil
+  }
+  var middleEar: GalaxySSIHealthAtlasMiddleEar? {
+    kind == .middleEar ? GalaxySSIHealthAtlasMiddleEar(membraneAreaMm2: input(0), footplateAreaMm2: input(1), leverRatio: input(2)) : nil
   }
   var vesselFlow: GalaxySSIHealthAtlasVesselFlow? {
     kind == .vessel ? GalaxySSIHealthAtlasVesselFlow(pressureMmHg: input(0), radiusMm: input(1),
@@ -197,6 +212,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case .ventilation: return values[0] * (values[1] - values[2]) / 1000
     case .renal: return GalaxySSIHealthAtlasRenalAmounts(filtered: values[0], reabsorbedPercent: values[1], secreted: values[2])!.excreted
     case .potassium: return Self.potassiumPotential(outside: values[0], inside: values[1])!
+    case .middleEar: return GalaxySSIHealthAtlasMiddleEar(membraneAreaMm2: values[0], footplateAreaMm2: values[1], leverRatio: values[2])!.pressureRatio
     #if GALAXYSSI_ATLAS_OXYGEN
     case .oxygen: return 100 * GalaxySSIHealthAtlasOxygen.saturation(pressure: values[0], p50: values[1])!
     #endif

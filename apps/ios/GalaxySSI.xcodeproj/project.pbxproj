@@ -13,6 +13,8 @@
     56668657960EE8B00531B479 /* GalaxySSIHealthAtlasDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A44D7D7AAABC6353A3E171 /* GalaxySSIHealthAtlasDetail.swift */; };
     C43320000000000000000001 /* GalaxySSIHealthAtlasOverviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43320000000000000000002 /* GalaxySSIHealthAtlasOverviews.swift */; };
     C43320000000000000000003 /* GalaxySSIHealthAtlasLabeledArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43320000000000000000004 /* GalaxySSIHealthAtlasLabeledArtwork.swift */; };
+    C43410000000000000000001 /* GalaxySSIHealthAtlasMiddleEar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43410000000000000000002 /* GalaxySSIHealthAtlasMiddleEar.swift */; };
+    C43410000000000000000003 /* GalaxySSIHealthAtlasMiddleEarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43410000000000000000004 /* GalaxySSIHealthAtlasMiddleEarView.swift */; };
     3A27D153792D057E63607118 /* GalaxySSIHealthAtlasResearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */; };
     11A6C0253F091CDA9CEA0803 /* GalaxySSIHealthAtlasSimulationPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */; };
     C43340000000000000000001 /* GalaxySSIHealthAtlasMusculoskeletal.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43340000000000000000002 /* GalaxySSIHealthAtlasMusculoskeletal.swift */; };
@@ -1470,6 +1472,8 @@
     94A44D7D7AAABC6353A3E171 /* GalaxySSIHealthAtlasDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDetail.swift; sourceTree = "<group>"; };
     C43320000000000000000002 /* GalaxySSIHealthAtlasOverviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasOverviews.swift; sourceTree = "<group>"; };
     C43320000000000000000004 /* GalaxySSIHealthAtlasLabeledArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLabeledArtwork.swift; sourceTree = "<group>"; };
+    C43410000000000000000002 /* GalaxySSIHealthAtlasMiddleEar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMiddleEar.swift; sourceTree = "<group>"; };
+    C43410000000000000000004 /* GalaxySSIHealthAtlasMiddleEarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMiddleEarView.swift; sourceTree = "<group>"; };
     41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasResearch.swift; sourceTree = "<group>"; };
     2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSimulationPanel.swift; sourceTree = "<group>"; };
     C43340000000000000000002 /* GalaxySSIHealthAtlasMusculoskeletal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMusculoskeletal.swift; sourceTree = "<group>"; };
@@ -2945,6 +2949,8 @@
         94A44D7D7AAABC6353A3E171 /* GalaxySSIHealthAtlasDetail.swift */,
         C43320000000000000000002 /* GalaxySSIHealthAtlasOverviews.swift */,
         C43320000000000000000004 /* GalaxySSIHealthAtlasLabeledArtwork.swift */,
+        C43410000000000000000002 /* GalaxySSIHealthAtlasMiddleEar.swift */,
+        C43410000000000000000004 /* GalaxySSIHealthAtlasMiddleEarView.swift */,
         41639F50E210D6BD1CFC07E1 /* GalaxySSIHealthAtlasResearch.swift */,
         2F56DE0871BD44BA3A77ADC3 /* GalaxySSIHealthAtlasSimulationPanel.swift */,
         C43340000000000000000002 /* GalaxySSIHealthAtlasMusculoskeletal.swift */,
@@ -4550,6 +4556,8 @@
         56668657960EE8B00531B479 /* GalaxySSIHealthAtlasDetail.swift in Sources */,
         C43320000000000000000001 /* GalaxySSIHealthAtlasOverviews.swift in Sources */,
         C43320000000000000000003 /* GalaxySSIHealthAtlasLabeledArtwork.swift in Sources */,
+        C43410000000000000000001 /* GalaxySSIHealthAtlasMiddleEar.swift in Sources */,
+        C43410000000000000000003 /* GalaxySSIHealthAtlasMiddleEarView.swift in Sources */,
         3A27D153792D057E63607118 /* GalaxySSIHealthAtlasResearch.swift in Sources */,
         11A6C0253F091CDA9CEA0803 /* GalaxySSIHealthAtlasSimulationPanel.swift in Sources */,
         C43340000000000000000001 /* GalaxySSIHealthAtlasMusculoskeletal.swift in Sources */,

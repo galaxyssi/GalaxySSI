@@ -32,6 +32,11 @@ enum GalaxySSIHealthAtlasAgentContext {
     let caption: String
     let source: URL?
     init?(entryID: String, caption: String, source: URL?) {
+      if source == GalaxySSIHealthAtlasMiddleEar.anatomySource, !entryID.isEmpty,
+        !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        self.entryID = entryID; self.caption = caption; self.source = source
+        return
+      }
       guard !entryID.isEmpty, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
         source == nil || (source?.scheme == "https" && source?.host == "openstax.org" &&
           source?.user == nil && source?.password == nil) else { return nil }

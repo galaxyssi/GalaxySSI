@@ -177,8 +177,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "cell-proximal-tubular-cell", "cell-distal-tubular-cell", "cell-collecting-duct-principal-cell",
       "cell-collecting-duct-intercalated-cell", "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron",
       "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna",
-      "blood-vessels", "arteries", "veins", "coronary-vessels"]
-    XCTAssertEqual(ids.count, 30)
+      "blood-vessels", "arteries", "veins", "coronary-vessels", "ear", "middle-ear"]
+    XCTAssertEqual(ids.count, 32)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
     for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-ii-pneumocyte", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
@@ -248,6 +248,48 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     XCTAssertEqual(baseline.speedMmPerSecond(relativeRadius: 1), 0)
     XCTAssertEqual(baseline.speedMmPerSecond(relativeRadius: -1), 0)
     XCTAssertEqual(baseline.speedMmPerSecond(relativeRadius: 0), baseline.centreSpeedMmPerSecond)
+  }
+
+  func testMiddleEarSeparatesPressureFromDbAndConservesVolumeVelocityProduct() throws {
+    typealias Ear = GalaxySSIHealthAtlasMiddleEar
+    let baseline = try XCTUnwrap(Ear())
+    XCTAssertEqual(baseline.areaRatio, 17.1875, accuracy: 1e-10)
+    XCTAssertEqual(baseline.pressureRatio, 22.34375, accuracy: 1e-10)
+    XCTAssertEqual(baseline.pressureGainDb, 26.983121269623492, accuracy: 1e-10)
+    XCTAssertEqual(baseline.volumeVelocityRatio, 0.044755244755244755, accuracy: 1e-10)
+    XCTAssertEqual(try XCTUnwrap(Ear(membraneAreaMm2: 35, footplateAreaMm2: 5, leverRatio: 1)).pressureRatio, 7, accuracy: 1e-10)
+    XCTAssertEqual(try XCTUnwrap(Ear(membraneAreaMm2: 75, footplateAreaMm2: 2, leverRatio: 1.6)).pressureGainDb, 35.56302500767287, accuracy: 1e-10)
+    for input in [35, 55, 75] {
+      for output in [20, 32, 50] {
+        for lever in [100, 130, 160] {
+          let model = try XCTUnwrap(Model(kind: .middleEar, inputs: [input, output, lever]))
+          let ear = try XCTUnwrap(model.middleEar)
+          XCTAssertEqual(ear.pressureRatio * ear.volumeVelocityRatio, 1, accuracy: 1e-12)
+          XCTAssertEqual(model.result, ear.pressureRatio); XCTAssertEqual(model.companionValue, ear.pressureGainDb)
+          XCTAssertEqual(try XCTUnwrap(model.resultAt(model.input(model.kind.axis))), model.result, accuracy: 1e-12)
+          XCTAssertTrue((7...60).contains(model.result))
+        }
+      }
+    }
+    for bad in [Double.nan, .infinity, 34, 76] { XCTAssertNil(Ear(membraneAreaMm2: bad)) }
+    for bad in [Double.nan, -.infinity, 0, 1.9, 5.1] { XCTAssertNil(Ear(footplateAreaMm2: bad)) }
+    for bad in [Double.nan, .infinity, 0.99, 1.61] { XCTAssertNil(Ear(leverRatio: bad)) }
+    for id in ["ear", "middle-ear"] {
+      XCTAssertEqual(Model.Kind.forEntry(id), .middleEar)
+      XCTAssertEqual(Model.restore(id, inputs: [35, 20, 160])?.inputs, [35, 20, 160])
+      XCTAssertNil(Model.restore(id, inputs: [35, 0, 160]))
+      XCTAssertNil(Model.restore(id, inputs: [35, 20]))
+    }
+    for id in ["external-ear", "inner-ear", "cochlea", "vestibular-apparatus", "cell-inner-ear-hair-cell"] {
+      XCTAssertNil(Model.Kind.forEntry(id))
+    }
+    for language in ["en", "zh-Hans"] {
+      let model = Model(kind: .middleEar)
+      let text = GalaxySSIHealthAtlasPhysiologyText.context(model, language: language)
+      for line in GalaxySSIHealthAtlasPhysiologyText.middleEarContext(baseline, language: language) { XCTAssertTrue(text.contains(line)) }
+      XCTAssertTrue(text.contains(Ear.source.absoluteString)); XCTAssertTrue(text.contains(Ear.measurementSource.absoluteString))
+      XCTAssertFalse(text.contains("health_atlas_middle_ear_"))
+    }
   }
 
   func testVesselZeroPressureBoundsRestorationAndLocalizedPrecision() throws {
