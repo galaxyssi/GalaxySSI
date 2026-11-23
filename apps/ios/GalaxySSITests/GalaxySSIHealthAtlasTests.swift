@@ -55,6 +55,19 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       GalaxySSIHealthAtlasText.get("health_atlas_heart_name", "zh-Hans"))
   }
 
+  func testRespirationPackLoadsCanonicalGasRoutesAndHumanClubCellReference() throws {
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    for id in ["alveoli", "respiratory-membrane", "pulmonary-capillaries"] {
+      let entry = try XCTUnwrap(atlas.entry(id))
+      XCTAssertEqual(entry.mechanism, "gas-exchange")
+      XCTAssertEqual(atlas.plate(for: id)?.id, "alveolus")
+    }
+    let club = try XCTUnwrap(atlas.entry("cell-club-cell"))
+    XCTAssertEqual(atlas.model(club).source.absoluteString, "https://pubmed.ncbi.nlm.nih.gov/29874100/")
+    XCTAssertEqual(atlas.model(club).stages.count, 4)
+    XCTAssertNil(atlas.plate(for: club.id))
+  }
+
   func testMechanismResearchReferencesCannotEscapePubMedArticleAllowlist() throws {
     let base = try catalogue()
     let original = try XCTUnwrap(base.mechanisms.first)

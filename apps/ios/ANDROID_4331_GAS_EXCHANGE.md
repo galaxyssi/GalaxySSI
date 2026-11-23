@@ -17,6 +17,8 @@ Independent formal main-based iOS increment, not a replacement for earlier atlas
 
 ## Verification
 
+Shared plate captions/reference preview use the separate integration repair [#4451](https://github.com/galaxyssi/GalaxySSI/pull/4451). That repair is not duplicated here. The full 287/63 composition also includes the preceding renal increment [#4450](https://github.com/galaxyssi/GalaxySSI/pull/4450); this PR adds only respiratory content. The respiratory pack and code remain independently compilable against main.
+
 Static graph, PNG, route and marker parity is checked by the resource audit. Project registration, source grammar, localization and Git merge compatibility are checked separately.
 XCTest source covers gas direction/bounds, matching prompt scope, metrics and restrictive PubMed references.
 No XCTest, Xcode compilation, IPA, simulator/device rendering or live Provider acceptance is claimed on Windows.
