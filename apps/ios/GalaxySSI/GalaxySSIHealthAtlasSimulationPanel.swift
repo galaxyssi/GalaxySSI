@@ -17,6 +17,9 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   private var cardiac: Bool { ["cardio", "heart"].contains(entry.id) }
   private var lung: Bool { ["lungs", "respiratory"].contains(entry.id) }
   private var gasExchange: Bool { GalaxySSIHealthAtlasGasExchange.supports(entry.id) }
+  private var germline: GalaxySSIHealthAtlasGermline.Counts? {
+    GalaxySSIHealthAtlasGermline.counts(entry.id, stage: simulation.stage)
+  }
   private var hasPhysiology: Bool {
     #if GALAXYSSI_ATLAS_PHYSIOLOGY
     return GalaxySSIHealthAtlasPhysiology.Kind.forEntry(entry.id) != nil
@@ -34,6 +37,12 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       }
       #endif
       Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(model.title, language))).font(.headline)
+      if let germline {
+        playbackControls
+        Text(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4),
+          GalaxySSIHealthAtlasText.get(model.stages[simulation.stage], language)))
+        GalaxySSIHealthAtlasGermlineView(counts: germline, language: language)
+      }
       if gasExchange {
         GalaxySSIHealthAtlasGasExchangeView(phase: simulation.phase, language: language, stages: model.stages,
           selected: { playing = false; simulation.selectStage($0) },
@@ -74,11 +83,13 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       }
       }
       ProgressView(value: simulation.phase).accessibilityLabel(t("phase"))
+      if germline == nil {
       Text(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4),
         GalaxySSIHealthAtlasText.get(model.stages[simulation.stage], language)))
+      }
       Slider(value: $simulation.phase, in: 0...1, onEditingChanged: { _ in playing = false })
         .accessibilityLabel(t("phase"))
-      if !GalaxySSIHealthAtlasCirculation.supports(entry.id) { playbackControls }
+      if !GalaxySSIHealthAtlasCirculation.supports(entry.id), germline == nil { playbackControls }
       if reduceMotion { Text(bodyText("motion_disabled")).font(.caption) }
       Text(t("speed") + " · " + String(format: "%.1f×", simulation.speed))
       Slider(value: $simulation.speed, in: 0.5...2, step: 0.5).accessibilityLabel(t("speed"))
@@ -97,7 +108,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
           range: cardiac ? 30...120 : 200...900, unit: "mL")
         Text(t(cardiac ? "cardiac_output" : "ventilation") + ": " + String(format: "%.2f L/min", simulation.output)).font(.headline)
         Text(t(cardiac ? "cardiac_formula" : "ventilation_formula")).font(.footnote)
-      } else if !hasPhysiology { Text(t("qualitative_note")).font(.footnote) }
+      } else if !hasPhysiology, germline == nil { Text(t("qualitative_note")).font(.footnote) }
     }
     .background(NavigationLink(isActive: Binding(get: { structure != nil }, set: { if !$0 { structure = nil } })) {
       if let structure { destination(structure) }
