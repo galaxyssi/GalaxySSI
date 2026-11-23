@@ -2,8 +2,8 @@
 
 ## Review Scope
 - Ports Android #4365 at `8ac01038b80a341c2c2f4912a455e834cd434daf`.
-- Formal non-draft PR, base main. Predecessor iOS #4485 is merged; iOS #4486 (Android #4364) is pending and inherited.
-- Review this increment against #4486 head `79ae61936`. Both branches include main at `6d6ae3fe6`; only the pending cardiac increment is inherited, not duplicate implementations or new #4365 scope. Continue without waiting for its merge, as requested.
+- Formal non-draft PR, base main. Predecessors iOS #4485 and #4486 are merged.
+- Synchronized main at `09e301f31` before publication. No preceding feature changes are inherited in the diff; a small #4364 scope-note correction is retained because it merged before that documentation update reached main.
 - iOS only. No version bump, graph, model equations, localization, personal-health or IPA changes.
 
 ## Implementation
