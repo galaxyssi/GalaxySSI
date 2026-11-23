@@ -108,6 +108,7 @@ enum GalaxySSIHealthAtlasQuestion {
       if !context.isEmpty { prompt += "\n" + context.joined(separator: "\n") }
       let retinal = GalaxySSIHealthAtlasRetinaPath.context(entry.id, text: t)
       if !retinal.isEmpty { prompt += "\n" + retinal.joined(separator: "\n") }
+      if let context = GalaxySSIHealthAtlasSweat.context(entry.id, text: t) { prompt += "\n" + context }
       if let context = GalaxySSIHealthAtlasEndocrinePath.context(entry.id, language: language) { prompt += "\n" + context }
     }
     if entry.id == GalaxySSIHealthAtlasFiltrationStage.owner,

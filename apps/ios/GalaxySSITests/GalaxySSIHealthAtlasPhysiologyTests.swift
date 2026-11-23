@@ -179,8 +179,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna",
       "blood-vessels", "arteries", "veins", "coronary-vessels", "eye", "lens", "ear", "middle-ear",
       "cranial-nerves", "spinal-nerves", "peripheral-nerves", "ventricles", "left-ventricle", "right-ventricle", "cell-type-ii-pneumocyte",
-      "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell", "thyroid-gland", "cell-rod-photoreceptor"]
-    XCTAssertEqual(ids.count, 46)
+      "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell", "thyroid-gland", "cell-rod-photoreceptor", "sweat-glands"]
+    XCTAssertEqual(ids.count, 47)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
     for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-i-pneumocyte", "cell-podocyte", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
@@ -582,6 +582,33 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       for source in model.kind.sources { XCTAssertTrue(context.contains(source.absoluteString)) }
       XCTAssertFalse(context.contains("health_atlas_"))
       XCTAssertFalse(GalaxySSIHealthAtlasPhysiologyText.input(model, index: 0, language: language).hasSuffix(" "))
+    }
+  }
+
+  func testOnlyEvaporatedSweatContributesExampleLatentHeat() throws {
+    let model = try XCTUnwrap(Model.restore("sweat-glands", inputs: [60, 50]))
+    XCTAssertEqual(model.kind, .sweatEvaporation); XCTAssertEqual(model.kind.unit, "W")
+    XCTAssertEqual(model.kind.axis, 0)
+    XCTAssertEqual(model.companionValue, 3, accuracy: 1e-9)
+    XCTAssertEqual(model.result, 121.3, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(model.changing(0, to: 0)).result, 0, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(model.changing(1, to: 0)).result, 0, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(model.changing(1, to: 100)).result, 242.6, accuracy: 1e-9)
+    for mass in stride(from: 0, through: 200, by: 5) {
+      for fraction in stride(from: 0, through: 100, by: 5) {
+        let value = try XCTUnwrap(Model(kind: .sweatEvaporation, inputs: [mass, fraction]))
+        XCTAssertEqual(value.result * 60, value.companionValue * 2426, accuracy: 1e-8)
+        XCTAssertLessThanOrEqual(value.companionValue, value.input(0))
+        XCTAssertTrue(value.kind.bounds.contains(value.result))
+      }
+    }
+    for id in ["hair-follicles", "skin-organ", "cell-sweat-gland-secretory-cell", "cell-sebocyte"] {
+      XCTAssertNotEqual(Model.Kind.forEntry(id), .sweatEvaporation)
+    }
+    for language in ["en", "zh-Hans"] {
+      let context = GalaxySSIHealthAtlasPhysiologyText.context(model, language: language)
+      XCTAssertTrue(context.contains(GalaxySSIHealthAtlasText.get("health_atlas_context_evap_scope", language)))
+      XCTAssertTrue(context.contains(model.kind.source.absoluteString)); XCTAssertFalse(context.contains("health_atlas_"))
     }
   }
 

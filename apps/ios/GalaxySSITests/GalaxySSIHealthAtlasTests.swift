@@ -964,6 +964,50 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testAllMicroscopicOwnersHaveDistinctDedicatedPicturesAndContextSectionsNavigate() throws {
+    let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.TissueContextPack.read(bundle: bundle))
+    XCTAssertEqual(pack.plates.count, 23); XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 46)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 2)
+    let microscopic = atlas.entries.filter { $0.kind == .cell || $0.kind == .fragment }
+    let pictures = try microscopic.map { try XCTUnwrap(atlas.plate(for: $0.id)) }
+    XCTAssertEqual(microscopic.count, 108); XCTAssertEqual(Set(pictures.map(\.asset)).count, 108)
+    for (entry, picture) in zip(microscopic, pictures) {
+      XCTAssertEqual(picture.owner, entry.id)
+      XCTAssertNotNil(UIImage(named: picture.asset, in: bundle, compatibleWith: nil))
+    }
+    for plate in pack.plates {
+      XCTAssertEqual(atlas.plate(for: plate.owner)?.asset, plate.asset)
+      for feature in plate.annotations {
+        XCTAssertNil(atlas.entry(feature.id))
+        guard case .feature = plate.labelTarget(feature.id, in: atlas) else { return XCTFail("Expected local explanation") }
+      }
+      for marker in plate.markers {
+        guard case .anatomy(let id) = plate.labelTarget(marker.id, in: atlas) else { return XCTFail("Expected cell navigation") }
+        XCTAssertEqual(atlas.entry(id)?.kind, .cell)
+      }
+    }
+    let sweat = try XCTUnwrap(atlas.entry("sweat-glands")), state = GalaxySSIHealthAtlasState()
+    state.binding(sweat).wrappedValue.simulation.phase = 0.9
+    state.binding(sweat).wrappedValue.physiologyInputs = [200, 75]
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.binding(sweat).wrappedValue.simulation.phase, 0.9)
+    XCTAssertEqual(restored.binding(sweat).wrappedValue.physiologyInputs, [200, 75])
+    XCTAssertEqual(GalaxySSIHealthAtlasSweatView.duct.cgPath.currentPoint, CGPoint(x: 192, y: 216))
+    for id in ["sweat-glands", "hair-follicles"] {
+      let entry = try XCTUnwrap(atlas.entry(id))
+      XCTAssertEqual(entry.mechanism, id); XCTAssertEqual(atlas.model(entry).kind, "skin")
+      for language in ["en", "zh-Hans"] {
+        var selection = state.binding(entry).wrappedValue; selection.tab = .simulation
+        let prompt = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: entry, selection: selection, research: false, language: language)
+        let scope = try XCTUnwrap(GalaxySSIHealthAtlasSweat.context(id, text: { GalaxySSIHealthAtlasText.get("health_atlas_" + $0, language) }))
+        XCTAssertTrue(prompt.contains(scope)); XCTAssertFalse(prompt.contains("measuredAt"))
+        selection.tab = .values
+        XCTAssertEqual(GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: entry, selection: selection, research: false, language: language), "")
+      }
+    }
+  }
+
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
     let handoff = GalaxySSIHealthAtlasAgentHandoff()
     let token = try XCTUnwrap(handoff.prepare(owner: "a", conversation: "c", prompt: "Public teaching", now: 10))

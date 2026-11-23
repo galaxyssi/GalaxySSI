@@ -1,0 +1,808 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4351,
+    "mergeCommit": "3db9c86a0fdb74f52ffbba29dd87c652dddb6587"
+  },
+  "plates": [
+    {
+      "id": "cell-mast-cell",
+      "owner": "cell-mast-cell",
+      "asset": "HealthAtlasContextMast",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-mast-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-6-diseases-associated-with-depressed-or-overactive-immune-responses",
+      "features": [
+        {
+          "marker": {
+            "id": "mast-granules",
+            "x": 0.5694444444444444,
+            "y": 0.49642857142857144
+          },
+          "title": "health_atlas_context_mast_granules",
+          "explanation": "health_atlas_context_mast_granules_detail"
+        },
+        {
+          "marker": {
+            "id": "mast-resident",
+            "x": 0.4111111111111111,
+            "y": 0.6321428571428571
+          },
+          "title": "health_atlas_context_mast_resident",
+          "explanation": "health_atlas_context_mast_resident_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_mast.xml"
+    },
+    {
+      "id": "cell-hematopoietic-stem-cell",
+      "owner": "cell-hematopoietic-stem-cell",
+      "asset": "HealthAtlasContextHematopoietic",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-hematopoietic-stem-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-2-production-of-the-formed-elements",
+      "features": [
+        {
+          "marker": {
+            "id": "hsc-body",
+            "x": 0.45555555555555555,
+            "y": 0.44642857142857145
+          },
+          "title": "health_atlas_context_hsc_body",
+          "explanation": "health_atlas_context_hsc_body_detail"
+        },
+        {
+          "marker": {
+            "id": "hsc-niche",
+            "x": 0.48055555555555557,
+            "y": 0.6857142857142857
+          },
+          "title": "health_atlas_context_hsc_niche",
+          "explanation": "health_atlas_context_hsc_niche_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_hematopoietic.xml"
+    },
+    {
+      "id": "cell-helper-t-cell",
+      "owner": "cell-helper-t-cell",
+      "asset": "HealthAtlasContextHelperT",
+      "viewLabel": "health_atlas_context_role_view",
+      "entryIDs": [
+        "cell-helper-t-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types",
+      "features": [
+        {
+          "marker": {
+            "id": "helper-recognition",
+            "x": 0.5083333333333333,
+            "y": 0.4357142857142857
+          },
+          "title": "health_atlas_context_helper_recognition",
+          "explanation": "health_atlas_context_helper_recognition_detail"
+        },
+        {
+          "marker": {
+            "id": "helper-coordination",
+            "x": 0.575,
+            "y": 0.575
+          },
+          "title": "health_atlas_context_helper_coordination",
+          "explanation": "health_atlas_context_helper_coordination_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_helper_t.xml"
+    },
+    {
+      "id": "cell-cytotoxic-t-cell",
+      "owner": "cell-cytotoxic-t-cell",
+      "asset": "HealthAtlasContextCytotoxicT",
+      "viewLabel": "health_atlas_context_role_view",
+      "entryIDs": [
+        "cell-cytotoxic-t-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types",
+      "features": [
+        {
+          "marker": {
+            "id": "cytotoxic-interface",
+            "x": 0.5361111111111111,
+            "y": 0.475
+          },
+          "title": "health_atlas_context_cytotoxic_interface",
+          "explanation": "health_atlas_context_cytotoxic_interface_detail"
+        },
+        {
+          "marker": {
+            "id": "cytotoxic-granules",
+            "x": 0.4722222222222222,
+            "y": 0.5285714285714286
+          },
+          "title": "health_atlas_context_cytotoxic_granules",
+          "explanation": "health_atlas_context_cytotoxic_granules_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_cytotoxic_t.xml"
+    },
+    {
+      "id": "cell-regulatory-t-cell",
+      "owner": "cell-regulatory-t-cell",
+      "asset": "HealthAtlasContextRegulatoryT",
+      "viewLabel": "health_atlas_context_role_view",
+      "entryIDs": [
+        "cell-regulatory-t-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types",
+      "features": [
+        {
+          "marker": {
+            "id": "regulatory-contact",
+            "x": 0.5222222222222223,
+            "y": 0.5
+          },
+          "title": "health_atlas_context_regulatory_contact",
+          "explanation": "health_atlas_context_regulatory_contact_detail"
+        },
+        {
+          "marker": {
+            "id": "regulatory-neighbor",
+            "x": 0.725,
+            "y": 0.49642857142857144
+          },
+          "title": "health_atlas_context_regulatory_neighbor",
+          "explanation": "health_atlas_context_regulatory_neighbor_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_regulatory_t.xml"
+    },
+    {
+      "id": "cell-pericyte",
+      "owner": "cell-pericyte",
+      "asset": "HealthAtlasContextPericyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-pericyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/16166562/",
+      "features": [
+        {
+          "marker": {
+            "id": "pericyte-outer",
+            "x": 0.5111111111111111,
+            "y": 0.3142857142857143
+          },
+          "title": "health_atlas_context_pericyte_outer",
+          "explanation": "health_atlas_context_pericyte_outer_detail"
+        },
+        {
+          "marker": {
+            "id": "pericyte-wrap",
+            "x": 0.6305555555555555,
+            "y": 0.625
+          },
+          "title": "health_atlas_context_pericyte_wrap",
+          "explanation": "health_atlas_context_pericyte_wrap_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_pericyte.xml"
+    },
+    {
+      "id": "cell-lymphatic-endothelial-cell",
+      "owner": "cell-lymphatic-endothelial-cell",
+      "asset": "HealthAtlasContextLymphaticEndothelium",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-lymphatic-endothelial-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems",
+      "features": [
+        {
+          "marker": {
+            "id": "lymph-flap",
+            "x": 0.48333333333333334,
+            "y": 0.4107142857142857
+          },
+          "title": "health_atlas_context_lymph_flap",
+          "explanation": "health_atlas_context_lymph_flap_detail"
+        },
+        {
+          "marker": {
+            "id": "lymph-lumen",
+            "x": 0.5388888888888889,
+            "y": 0.55
+          },
+          "title": "health_atlas_context_lymph_lumen",
+          "explanation": "health_atlas_context_lymph_lumen_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_lymphatic_endothelium.xml"
+    },
+    {
+      "id": "cell-sertoli-cell",
+      "owner": "cell-sertoli-cell",
+      "asset": "HealthAtlasContextSertoli",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-sertoli-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-1-anatomy-and-physiology-of-the-testicular-reproductive-system",
+      "features": [
+        {
+          "marker": {
+            "id": "sertoli-germ-support",
+            "x": 0.4888888888888889,
+            "y": 0.45
+          },
+          "title": "health_atlas_context_sertoli_germ_support",
+          "explanation": "health_atlas_context_sertoli_germ_support_detail"
+        },
+        {
+          "marker": {
+            "id": "sertoli-junction",
+            "x": 0.3638888888888889,
+            "y": 0.6785714285714286
+          },
+          "title": "health_atlas_context_sertoli_junction",
+          "explanation": "health_atlas_context_sertoli_junction_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_sertoli.xml"
+    },
+    {
+      "id": "cell-spermatogonium",
+      "owner": "cell-spermatogonium",
+      "asset": "HealthAtlasContextSpermatogonium",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-spermatogonium"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-1-anatomy-and-physiology-of-the-testicular-reproductive-system",
+      "features": [
+        {
+          "marker": {
+            "id": "spermatogonia-basal",
+            "x": 0.4722222222222222,
+            "y": 0.7142857142857143
+          },
+          "title": "health_atlas_context_spermatogonia_basal",
+          "explanation": "health_atlas_context_spermatogonia_basal_detail"
+        },
+        {
+          "marker": {
+            "id": "spermatogonia-lamina",
+            "x": 0.5138888888888888,
+            "y": 0.8178571428571428
+          },
+          "title": "health_atlas_context_spermatogonia_lamina",
+          "explanation": "health_atlas_context_spermatogonia_lamina_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_spermatogonium.xml"
+    },
+    {
+      "id": "cell-spermatocyte",
+      "owner": "cell-spermatocyte",
+      "asset": "HealthAtlasContextSpermatocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-spermatocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-1-anatomy-and-physiology-of-the-testicular-reproductive-system",
+      "features": [
+        {
+          "marker": {
+            "id": "spermatocyte-primary",
+            "x": 0.5083333333333333,
+            "y": 0.5035714285714286
+          },
+          "title": "health_atlas_context_spermatocyte_primary",
+          "explanation": "health_atlas_context_spermatocyte_primary_detail"
+        },
+        {
+          "marker": {
+            "id": "spermatocyte-bivalent",
+            "x": 0.48333333333333334,
+            "y": 0.4857142857142857
+          },
+          "title": "health_atlas_context_spermatocyte_bivalent",
+          "explanation": "health_atlas_context_spermatocyte_bivalent_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_spermatocyte.xml"
+    },
+    {
+      "id": "cell-ciliated-oviduct-cell",
+      "owner": "cell-ciliated-oviduct-cell",
+      "asset": "HealthAtlasContextOviductCiliated",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-ciliated-oviduct-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system",
+      "features": [
+        {
+          "marker": {
+            "id": "oviduct-cilia",
+            "x": 0.5,
+            "y": 0.225
+          },
+          "title": "health_atlas_context_oviduct_cilia",
+          "explanation": "health_atlas_context_oviduct_cilia_detail"
+        },
+        {
+          "marker": {
+            "id": "oviduct-fold",
+            "x": 0.5416666666666666,
+            "y": 0.44285714285714284
+          },
+          "title": "health_atlas_context_oviduct_fold",
+          "explanation": "health_atlas_context_oviduct_fold_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_oviduct_ciliated.xml"
+    },
+    {
+      "id": "cell-endometrial-epithelial-cell",
+      "owner": "cell-endometrial-epithelial-cell",
+      "asset": "HealthAtlasContextEndometrialEpithelium",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-endometrial-epithelial-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system",
+      "features": [
+        {
+          "marker": {
+            "id": "endometrium-surface",
+            "x": 0.4,
+            "y": 0.2857142857142857
+          },
+          "title": "health_atlas_context_endometrium_surface",
+          "explanation": "health_atlas_context_endometrium_surface_detail"
+        },
+        {
+          "marker": {
+            "id": "endometrium-gland",
+            "x": 0.5666666666666667,
+            "y": 0.5928571428571429
+          },
+          "title": "health_atlas_context_endometrium_gland",
+          "explanation": "health_atlas_context_endometrium_gland_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_endometrial_epithelium.xml"
+    },
+    {
+      "id": "cell-endometrial-stromal-cell",
+      "owner": "cell-endometrial-stromal-cell",
+      "asset": "HealthAtlasContextEndometrialStroma",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-endometrial-stromal-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/25141152/",
+      "features": [
+        {
+          "marker": {
+            "id": "stroma-fibroblast",
+            "x": 0.46944444444444444,
+            "y": 0.5535714285714286
+          },
+          "title": "health_atlas_context_stroma_fibroblast",
+          "explanation": "health_atlas_context_stroma_fibroblast_detail"
+        },
+        {
+          "marker": {
+            "id": "stroma-matrix",
+            "x": 0.625,
+            "y": 0.6964285714285714
+          },
+          "title": "health_atlas_context_stroma_matrix",
+          "explanation": "health_atlas_context_stroma_matrix_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_endometrial_stroma.xml"
+    },
+    {
+      "id": "cell-mammary-luminal-cell",
+      "owner": "cell-mammary-luminal-cell",
+      "asset": "HealthAtlasContextMammaryLuminal",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-mammary-luminal-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/28-6-lactation",
+      "features": [
+        {
+          "marker": {
+            "id": "mammary-luminal-apex",
+            "x": 0.5388888888888889,
+            "y": 0.4357142857142857
+          },
+          "title": "health_atlas_context_mammary_luminal_apex",
+          "explanation": "health_atlas_context_mammary_luminal_apex_detail"
+        },
+        {
+          "marker": {
+            "id": "mammary-myo-context",
+            "x": 0.42777777777777776,
+            "y": 0.7285714285714285
+          },
+          "title": "health_atlas_context_mammary_myo_context",
+          "explanation": "health_atlas_context_mammary_myo_context_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_mammary_luminal.xml"
+    },
+    {
+      "id": "cell-trophoblast",
+      "owner": "cell-trophoblast",
+      "asset": "HealthAtlasContextTrophoblast",
+      "viewLabel": "health_atlas_context_villus_view",
+      "entryIDs": [
+        "cell-trophoblast"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/28-2-embryonic-development",
+      "features": [
+        {
+          "marker": {
+            "id": "trophoblast-syncytium",
+            "x": 0.5305555555555556,
+            "y": 0.2892857142857143
+          },
+          "title": "health_atlas_context_trophoblast_syncytium",
+          "explanation": "health_atlas_context_trophoblast_syncytium_detail"
+        },
+        {
+          "marker": {
+            "id": "trophoblast-villus",
+            "x": 0.5305555555555556,
+            "y": 0.5571428571428572
+          },
+          "title": "health_atlas_context_trophoblast_villus",
+          "explanation": "health_atlas_context_trophoblast_villus_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_trophoblast.xml"
+    },
+    {
+      "id": "cell-langerhans-cell",
+      "owner": "cell-langerhans-cell",
+      "asset": "HealthAtlasContextLangerhans",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-langerhans-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/23246038/",
+      "features": [
+        {
+          "marker": {
+            "id": "langerhans-dendrite",
+            "x": 0.5944444444444444,
+            "y": 0.3678571428571429
+          },
+          "title": "health_atlas_context_langerhans_dendrite",
+          "explanation": "health_atlas_context_langerhans_dendrite_detail"
+        },
+        {
+          "marker": {
+            "id": "langerhans-body",
+            "x": 0.4777777777777778,
+            "y": 0.5357142857142857
+          },
+          "title": "health_atlas_context_langerhans_body",
+          "explanation": "health_atlas_context_langerhans_body_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_langerhans.xml"
+    },
+    {
+      "id": "cell-sebocyte",
+      "owner": "cell-sebocyte",
+      "asset": "HealthAtlasContextSebocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-sebocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin",
+      "features": [
+        {
+          "marker": {
+            "id": "sebocyte-lipid",
+            "x": 0.45555555555555555,
+            "y": 0.5107142857142857
+          },
+          "title": "health_atlas_context_sebocyte_lipid",
+          "explanation": "health_atlas_context_sebocyte_lipid_detail"
+        },
+        {
+          "marker": {
+            "id": "sebocyte-duct",
+            "x": 0.6333333333333333,
+            "y": 0.5392857142857143
+          },
+          "title": "health_atlas_context_sebocyte_duct",
+          "explanation": "health_atlas_context_sebocyte_duct_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_sebocyte.xml"
+    },
+    {
+      "id": "cell-sweat-gland-secretory-cell",
+      "owner": "cell-sweat-gland-secretory-cell",
+      "asset": "HealthAtlasContextSweatSecretory",
+      "viewLabel": "health_atlas_context_eccrine_section_view",
+      "entryIDs": [
+        "cell-sweat-gland-secretory-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin",
+      "features": [
+        {
+          "marker": {
+            "id": "eccrine-secretory-apex",
+            "x": 0.4888888888888889,
+            "y": 0.4142857142857143
+          },
+          "title": "health_atlas_context_eccrine_secretory_apex",
+          "explanation": "health_atlas_context_eccrine_secretory_apex_detail"
+        },
+        {
+          "marker": {
+            "id": "eccrine-lumen",
+            "x": 0.49444444444444446,
+            "y": 0.5178571428571429
+          },
+          "title": "health_atlas_context_eccrine_lumen",
+          "explanation": "health_atlas_context_eccrine_lumen_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_sweat_secretory.xml"
+    },
+    {
+      "id": "cell-hair-matrix-cell",
+      "owner": "cell-hair-matrix-cell",
+      "asset": "HealthAtlasContextHairMatrix",
+      "viewLabel": "health_atlas_context_hair_bulb_view",
+      "entryIDs": [
+        "cell-hair-matrix-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin",
+      "features": [
+        {
+          "marker": {
+            "id": "hair-matrix-bulb",
+            "x": 0.39444444444444443,
+            "y": 0.5928571428571429
+          },
+          "title": "health_atlas_context_hair_matrix_bulb",
+          "explanation": "health_atlas_context_hair_matrix_bulb_detail"
+        },
+        {
+          "marker": {
+            "id": "hair-papilla-neighbor",
+            "x": 0.5027777777777778,
+            "y": 0.7785714285714286
+          },
+          "title": "health_atlas_context_hair_papilla_neighbor",
+          "explanation": "health_atlas_context_hair_papilla_neighbor_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_hair_matrix.xml"
+    },
+    {
+      "id": "cell-muscle-satellite-cell",
+      "owner": "cell-muscle-satellite-cell",
+      "asset": "HealthAtlasContextMuscleSatellite",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-muscle-satellite-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/10-9-development-and-regeneration-of-muscle-tissue",
+      "features": [
+        {
+          "marker": {
+            "id": "muscle-satellite-body",
+            "x": 0.5083333333333333,
+            "y": 0.4
+          },
+          "title": "health_atlas_context_muscle_satellite_body",
+          "explanation": "health_atlas_context_muscle_satellite_body_detail"
+        },
+        {
+          "marker": {
+            "id": "muscle-satellite-fiber",
+            "x": 0.5944444444444444,
+            "y": 0.5714285714285714
+          },
+          "title": "health_atlas_context_muscle_satellite_fiber",
+          "explanation": "health_atlas_context_muscle_satellite_fiber_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_muscle_satellite.xml"
+    },
+    {
+      "id": "cell-tenocyte",
+      "owner": "cell-tenocyte",
+      "asset": "HealthAtlasContextTenocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-tenocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/24571576/",
+      "features": [
+        {
+          "marker": {
+            "id": "tenocyte-nucleus",
+            "x": 0.4777777777777778,
+            "y": 0.5178571428571429
+          },
+          "title": "health_atlas_context_tenocyte_nucleus",
+          "explanation": "health_atlas_context_tenocyte_nucleus_detail"
+        },
+        {
+          "marker": {
+            "id": "tenocyte-collagen",
+            "x": 0.6277777777777778,
+            "y": 0.3
+          },
+          "title": "health_atlas_context_tenocyte_collagen",
+          "explanation": "health_atlas_context_tenocyte_collagen_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_tenocyte.xml"
+    },
+    {
+      "id": "sweat-glands",
+      "owner": "sweat-glands",
+      "asset": "HealthAtlasContextSweatGlandSection",
+      "viewLabel": "health_atlas_context_sweat_gland_view",
+      "entryIDs": [
+        "sweat-glands",
+        "cell-sweat-gland-secretory-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-sweat-gland-secretory-cell",
+          "x": 0.5,
+          "y": 0.8
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin",
+      "features": [
+        {
+          "marker": {
+            "id": "sweat-duct",
+            "x": 0.48333333333333334,
+            "y": 0.5214285714285715
+          },
+          "title": "health_atlas_context_sweat_duct",
+          "explanation": "health_atlas_context_sweat_duct_detail"
+        },
+        {
+          "marker": {
+            "id": "sweat-pore",
+            "x": 0.48055555555555557,
+            "y": 0.22142857142857142
+          },
+          "title": "health_atlas_context_sweat_pore",
+          "explanation": "health_atlas_context_sweat_pore_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_sweat_gland_section.xml"
+    },
+    {
+      "id": "hair-follicles",
+      "owner": "hair-follicles",
+      "asset": "HealthAtlasContextHairFollicleSection",
+      "viewLabel": "health_atlas_context_hair_follicle_view",
+      "entryIDs": [
+        "hair-follicles",
+        "cell-hair-matrix-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-hair-matrix-cell",
+          "x": 0.425,
+          "y": 0.7142857142857143
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin",
+      "features": [
+        {
+          "marker": {
+            "id": "hair-section-shaft",
+            "x": 0.5138888888888888,
+            "y": 0.175
+          },
+          "title": "health_atlas_context_hair_section_shaft",
+          "explanation": "health_atlas_context_hair_section_shaft_detail"
+        },
+        {
+          "marker": {
+            "id": "hair-section-papilla",
+            "x": 0.49722222222222223,
+            "y": 0.7857142857142857
+          },
+          "title": "health_atlas_context_hair_section_papilla",
+          "explanation": "health_atlas_context_hair_section_papilla_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_hair_follicle_section.xml"
+    }
+  ],
+  "mechanisms": [
+    {
+      "id": "sweat-glands",
+      "kind": "skin",
+      "title": "health_atlas_context_sweat_title",
+      "stages": [
+        "health_atlas_context_sweat_stage_0",
+        "health_atlas_context_sweat_stage_1",
+        "health_atlas_context_sweat_stage_2",
+        "health_atlas_context_sweat_stage_3"
+      ],
+      "chapter": "5-2-accessory-structures-of-the-skin"
+    },
+    {
+      "id": "hair-follicles",
+      "kind": "skin",
+      "title": "health_atlas_context_hair_title",
+      "stages": [
+        "health_atlas_context_hair_stage_0",
+        "health_atlas_context_hair_stage_1",
+        "health_atlas_context_hair_stage_2",
+        "health_atlas_context_hair_stage_3"
+      ],
+      "chapter": "5-2-accessory-structures-of-the-skin"
+    }
+  ]
+}

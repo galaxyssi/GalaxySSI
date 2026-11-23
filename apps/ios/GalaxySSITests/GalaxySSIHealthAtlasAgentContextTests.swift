@@ -156,6 +156,31 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     }
   }
 
+  func testSweatTransportAndSurfaceStagesStayContinuousAndOwnerScoped() throws {
+    typealias Sweat = GalaxySSIHealthAtlasSweat
+    XCTAssertNil(Sweat(phase: .nan)); XCTAssertNil(Sweat(phase: .infinity))
+    XCTAssertEqual(Sweat(phase: -1)?.phase, 0); XCTAssertEqual(Sweat(phase: 2)?.phase, 1)
+    XCTAssertEqual(try XCTUnwrap(Sweat(phase: 0)?.transportFraction), 1, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Sweat(phase: 0.25)?.transportFraction), 0.75, accuracy: 1e-9)
+    XCTAssertNil(Sweat(phase: 0.5)?.transportFraction)
+    XCTAssertEqual(Sweat(phase: 0.5)?.surfaceRadius, 5)
+    XCTAssertEqual(Sweat(phase: 0.625)?.surfaceRadius, 6.5)
+    XCTAssertEqual(Sweat(phase: 0.75)?.stage, 3)
+    XCTAssertEqual(Sweat(phase: 1)?.fraction, 1)
+    for id in [Sweat.owner, "hair-follicles"] {
+      let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: 0.9, first: 70, second: 70))
+      let scope = try XCTUnwrap(Sweat.context(id, text: text))
+      for screen in Context.Screen.allCases {
+        let prompt = Context.prompt(anatomy: anatomy(id), screen: screen, simulation: simulation, locale: locale, text: text)
+        if screen == .values { XCTAssertNil(prompt); continue }
+        XCTAssertEqual(try XCTUnwrap(prompt).contains(scope), screen.includesPhysiology)
+        let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("cell-sweat-gland-secretory-cell"), screen: screen,
+          simulation: simulation, locale: locale, text: text))
+        XCTAssertFalse(foreign.contains(scope))
+      }
+    }
+  }
+
   func testCirculationRoutesBoundsAndPublicContextScope() throws {
     typealias Circuit = GalaxySSIHealthAtlasCirculation
     XCTAssertEqual(Circuit.legs.map(\.oxygenRich), [false, false, true, true])

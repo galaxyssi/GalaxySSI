@@ -29,6 +29,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case ventilation, renal, potassium, elbow, vessel, eye
     case middleEar
     case nerveTransit
+    case sweatEvaporation
     case photonCapture
     case thyroidFeedback
     case alveolarSurface
@@ -39,6 +40,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     #endif
     var inputs: [Input] {
       switch self {
+      case .sweatEvaporation:
+        return [.init(key: "context_evap_rate", range: 0...200, initial: 60, scale: 10, unit: "g/min"),
+          .init(key: "context_evap_fraction", range: 0...100, initial: 50, unit: "%")]
       case .photonCapture:
         return [.init(key: "sensory_photon_mean", range: 0...500, initial: 100, scale: 100, unit: "")]
       case .thyroidFeedback:
@@ -92,6 +96,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       }
     }
     var axis: Int {
+      if self == .sweatEvaporation { return 0 }
       if self == .photonCapture { return 0 }
       if self == .thyroidFeedback { return 0 }
       if self == .alveolarSurface { return 0 }
@@ -105,6 +110,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .potassium ? 0 : 1
     }
     var unit: String {
+      if self == .sweatEvaporation { return "W" }
       if self == .photonCapture { return "%" }
       if self == .thyroidFeedback { return "%" }
       if self == .alveolarSurface { return "Pa" }
@@ -121,6 +127,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .ventilation ? "L/min" : self == .renal ? "mg/min" : "mV"
     }
     var bounds: ClosedRange<Double> {
+      if self == .sweatEvaporation { return 0...900 }
       if self == .photonCapture { return 0...100 }
       if self == .thyroidFeedback { return 0...100 }
       if self == .alveolarSurface { return 0...1400 }
@@ -138,6 +145,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var source: URL {
       switch self {
+      case .sweatEvaporation: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/23459754/")!
       case .photonCapture: return URL(string: "https://www.itl.nist.gov/div898/handbook/eda/section3/eda366j.htm")!
       case .thyroidFeedback: return URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-4-the-thyroid-gland")!
       case .alveolarSurface: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/20724566/")!
@@ -167,6 +175,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     static func forEntry(_ id: String) -> Self? {
       switch id {
+      case "sweat-glands": return .sweatEvaporation
       case "cell-rod-photoreceptor": return .photonCapture
       case "thyroid-gland": return .thyroidFeedback
       case "cell-type-ii-pneumocyte": return .alveolarSurface
@@ -211,6 +220,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var result: Double { evaluate(inputs.indices.map(input)) }
   var companionValue: Double {
     switch kind {
+    case .sweatEvaporation: return input(0) * input(1) / 100
     case .photonCapture: return 100 * exp(-input(0))
     case .thyroidFeedback: return input(0) - result
     case .alveolarSurface: return result / 2
@@ -278,6 +288,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
+    // Evaporated g/min times the example latent heat near 30 C, converted to watts.
+    case .sweatEvaporation: return values[0] * values[1] / 100 * 2426 / 60
     case .photonCapture: return -100 * expm1(-values[0])
     // Static dimensionless feedback: output = drive - gain * output.
     case .thyroidFeedback: return values[0] / (1 + values[1])
