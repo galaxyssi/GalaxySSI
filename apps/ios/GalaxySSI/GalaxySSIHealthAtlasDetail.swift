@@ -11,6 +11,13 @@ struct GalaxySSIHealthAtlasDetail: View {
   @State private var research = false
 
   private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.binding(entry) }
+  private var functionCatalogue: GalaxySSIHealthAtlasFunctionCatalogue? { try? GalaxySSIHealthAtlasFunctionCatalogue.bundled.get() }
+  private var hasFunctionPlayer: Bool {
+    functionCatalogue?.choices(for: entry.id).contains { GalaxySSIHealthAtlasFunctionRendering.implemented.contains($0.id) } == true
+  }
+  private var functionSelection: Binding<GalaxySSIHealthAtlasFunctionSelection> {
+    Binding(get: { selection.wrappedValue.functionSelection ?? .init() }, set: { selection.wrappedValue.functionSelection = $0 })
+  }
   var body: some View {
     VStack(spacing: 0) {
       Picker(name, selection: selection.tab) {
@@ -21,7 +28,12 @@ struct GalaxySSIHealthAtlasDetail: View {
       } else {
         ScrollView {
           VStack(alignment: .leading, spacing: 18) {
-            if selection.wrappedValue.tab != .structure &&
+            if selection.wrappedValue.tab == .function, hasFunctionPlayer, let catalogue = functionCatalogue {
+              GalaxySSIHealthAtlasFunctionPanel(catalogue: catalogue, entryID: entry.id, language: language,
+                previewPresented: state.previewPresented, selection: functionSelection,
+                onPhase: { state.recordFunctionPhase(entryID: entry.id, storyID: $0, phase: $1) })
+            }
+            if selection.wrappedValue.tab != .structure && !(selection.wrappedValue.tab == .function && hasFunctionPlayer) &&
               (selection.wrappedValue.tab != .simulation ||
                 (!GalaxySSIHealthAtlasCirculation.supports(entry.id) && !GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id) &&
                   entry.id != GalaxySSIHealthAtlasPhagocytosis.owner && GalaxySSIHealthAtlasGranulocyte(rawValue: entry.id) == nil &&
@@ -67,8 +79,8 @@ struct GalaxySSIHealthAtlasDetail: View {
     .navigationTitle(name).navigationBarTitleDisplayMode(.inline)
     .safeAreaInset(edge: .bottom) {
       if selection.wrappedValue.tab != .values {
-        GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: selection.wrappedValue,
-          selectionSnapshot: { selection.wrappedValue }, onPreviewStateChange: { state.previewPresented = $0 })
+        GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: state.functionSnapshot(entry),
+          selectionSnapshot: { state.functionSnapshot(entry) }, onPreviewStateChange: { state.previewPresented = $0 })
           .padding(.horizontal)
       }
     }

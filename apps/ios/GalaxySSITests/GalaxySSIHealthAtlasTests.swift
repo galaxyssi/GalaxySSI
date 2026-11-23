@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import SwiftUI
 @testable import GalaxySSI
 
 @MainActor
@@ -942,6 +943,64 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(second.selected); XCTAssertNil(second.phases["HEARTBEAT"]); XCTAssertEqual(second.phases["DIGESTION"], 1)
     let restored = try JSONDecoder().decode(GalaxySSIHealthAtlasFunctionSelection.self, from: JSONEncoder().encode(first))
     XCTAssertEqual(restored, first)
+  }
+
+  func testFunctionPlaybackSnapshotDoesNotSerializeEveryAnimationFrame() throws {
+    let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
+    let entry = try XCTUnwrap(atlas.entry("tissue-skeletal-muscle"))
+    let foreign = try XCTUnwrap(atlas.entry("cell-adipocyte"))
+    state.recordFunctionPhase(entryID: entry.id, storyID: "GLUCOSE", phase: 0.57)
+    state.recordFunctionPhase(entryID: entry.id, storyID: "HEARTBEAT", phase: 0.9)
+    XCTAssertTrue(state.entries.isEmpty)
+    let snapshot = state.functionSnapshot(entry)
+    XCTAssertEqual(snapshot.functionSelection?.phases["GLUCOSE"], 0.57)
+    XCTAssertNil(snapshot.functionSelection?.phases["HEARTBEAT"])
+    XCTAssertNil(state.functionSnapshot(foreign).functionSelection)
+    XCTAssertEqual(snapshot.simulation, state.binding(entry).wrappedValue.simulation)
+    var value = state.binding(entry).wrappedValue
+    value.functionSelection = snapshot.functionSelection
+    state.binding(entry).wrappedValue = value
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.binding(entry).wrappedValue.functionSelection?.phases["GLUCOSE"], 0.57)
+    let committed = restored.binding(entry).wrappedValue.functionSelection
+    restored.recordFunctionPhase(entryID: entry.id, storyID: "GLUCOSE", phase: 0.82)
+    XCTAssertEqual(restored.binding(entry).wrappedValue.functionSelection, committed)
+    XCTAssertEqual(restored.functionSnapshot(entry).functionSelection?.phases["GLUCOSE"], 0.82)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(state.serialized.utf8)) as? [String: [String: Any]])
+    object[entry.id]?["functionSelection"] = "corrupt"
+    let damaged = try JSONSerialization.data(withJSONObject: object)
+    let recovered = GalaxySSIHealthAtlasState()
+    recovered.restore(try XCTUnwrap(String(data: damaged, encoding: .utf8)), atlas: atlas)
+    XCTAssertEqual(recovered.binding(entry).wrappedValue.simulation, value.simulation)
+    XCTAssertTrue(recovered.binding(entry).wrappedValue.functionSelection?.phases.isEmpty == true)
+    typealias Player = GalaxySSIHealthAtlasFunctionPlayer<EmptyView>
+    XCTAssertEqual(Player.advance(0.4, elapsed: 0.1, durationMs: 15_000), 0.4 + 0.1 / 15, accuracy: 0.000001)
+    XCTAssertEqual(Player.advance(0.4, elapsed: 2, durationMs: 15_000), 0.4 + 2.0 / 15, accuracy: 0.000001)
+    XCTAssertEqual(Player.advance(0.99, elapsed: 30, durationMs: 15_000), 1)
+    XCTAssertEqual(Player.advance(0.4, elapsed: -1, durationMs: 15_000), 0.4)
+    XCTAssertEqual(Player.advance(0.4, elapsed: .nan, durationMs: 15_000), 0.4)
+  }
+
+  func testUptakeFusionTracksSourceGeometryAndIndependentRelayStages() throws {
+    typealias Motion = GalaxySSIHealthAtlasUptakeMotion
+    let resting = Motion(chapter: 0, fraction: 0)
+    XCTAssertEqual(resting.vesicleX, 158); XCTAssertEqual(resting.vesicleY, 210)
+    XCTAssertEqual(resting.transporterRotation, -90); XCTAssertFalse(resting.bound)
+    XCTAssertTrue(Motion(chapter: 0, fraction: 0.95).bound)
+    XCTAssertFalse(Motion(chapter: 1, fraction: 0.81).irsActive)
+    XCTAssertTrue(Motion(chapter: 1, fraction: 0.82).irsActive)
+    let docking = Motion(chapter: 3, fraction: 0.58)
+    XCTAssertEqual(docking.approach, 1); XCTAssertEqual(docking.flatten, 0)
+    XCTAssertEqual(docking.vesicleX, 245); XCTAssertEqual(docking.vesicleY, 252)
+    let fused = Motion(chapter: 4, fraction: 1)
+    XCTAssertEqual(fused.flatten, 1); XCTAssertEqual(fused.radiusY, 0)
+    XCTAssertEqual(fused.transporterX, 268); XCTAssertEqual(fused.transporterY, 275)
+    XCTAssertEqual(fused.transporterRotation, 0)
+    XCTAssertEqual(fused.glucoseTravel(0), 1); XCTAssertEqual(fused.glucoseTravel(2), 1)
+    let relay = Motion(chapter: 2, fraction: 0.2)
+    XCTAssertEqual(relay.signalProgress(2), 0.7, accuracy: 0.000001)
+    XCTAssertEqual(relay, Motion(chapter: 2, fraction: 0.2))
+    XCTAssertEqual(Motion(chapter: 3, fraction: .nan), Motion(chapter: 3, fraction: 0))
   }
 
   func testTransportCellPlatesKeepLocalFeaturesAndExplicitSubtypeCaptions() throws {

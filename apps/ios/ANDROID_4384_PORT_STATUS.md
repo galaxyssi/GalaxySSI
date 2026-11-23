@@ -12,9 +12,9 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 - [x] Register the new Swift source and data asset. Add XCTest source for catalogue and selection contracts; XCTest not executed.
 
 ## Remaining Integration
-- [ ] Import all required English/Chinese chapter, caption, control, structure and teaching-scope resources.
-- [ ] Add native Function-tab player, course selection, controls, source links, phase restoration and lifecycle handling.
-- [ ] Connect persisted Function selections without changing existing quantitative simulation selections.
+- [x] Import 3127 source-referenced chapter/caption/control/structure/scope strings per language into the dedicated AtlasFunction table; no English fallback in Chinese. Preserve existing BodyAtlas precedence, with new-table fallback for new structure keys.
+- [ ] Complete Function-tab player integration across all source courses. Core player, course selector, controls, source links, phase restoration and lifecycle are wired for the first supported course (GLUCOSE); all other courses still await their dedicated renderers.
+- [x] Connect optional persisted Function selections without changing quantitative simulation selections. Keep live animation phase outside published/serialized state; pause/exit commits it, while question snapshots read current live phase. Corrupt Function-only storage does not discard unrelated selections.
 - [ ] Import all new/revised illustration resources and cutaway geometry.
 - [ ] Port additional structure views, canonical/feature routing and related Function destination navigation.
 - [ ] Port ventilation, diffusion and skeletal model changes and their parameter/result UI.
@@ -24,7 +24,9 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 - [ ] Synchronize any newly merged predecessor PRs and update dependency scope before publication.
 
 ## Renderer Parity
-- [ ] `HealthAtlasUptakeView`
+Next renderer: port HealthAtlasBeatStage and HealthAtlasHeartbeatView together, then continue the source-order list. Only GLUCOSE is currently enabled in FunctionRendering; do not broaden that registry before the corresponding native renderer is implemented.
+
+- [x] `HealthAtlasUptakeView` — native 344-unit source geometry, four signal paths, relay thresholds, membrane fusion and glucose transport; source/resource/grammar checks only, native pixels unverified.
 - [ ] `HealthAtlasHeartbeatView`
 - [ ] `HealthAtlasBreathingView`
 - [ ] `HealthAtlasHearingStoryView`
@@ -108,6 +110,10 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 
 ## Verification Limits
 Current foundation checks pass: all 387 source hashes, exported catalogue/route invariants, iOS project/module configuration, two changed Swift grammar branches and whitespace. This proves foundation consistency only, not renderer or UI parity.
+
+Player checkpoint: dedicated source tables contain 3127 exact strings in each language; registry exposes only the implemented GLUCOSE course. Its UIKit/SwiftUI motion, four signal routes, relay nodes and membrane fusion are ported, but not run on a device. Generic chapter controls, lifecycle pause, references and separate live/persisted state are connected; no unsupported course is replaced by a generic picture.
+
+The player does not serialize the entire atlas each frame. A non-published live phase cache supplies current question snapshots; pause/reset/exit commit the bound course phase. Dedicated Function decoding tolerates corrupt Function-only state without discarding other selection fields. New XCTest source covers timing, snapshots, restoration and uptake checkpoints; it has not been executed.
 
 Kotlin evaluation is catalogue-data extraction with resource/constant stubs, not an Android build, renderer fixture or test run.
 Windows has no Xcode. Do not claim Swift type checking, native compilation, device/simulator, VoiceOver or pixel acceptance.

@@ -75,6 +75,7 @@ struct GalaxySSIHealthAtlasFunctionCatalogue: Decodable {
 }
 
 struct GalaxySSIHealthAtlasFunctionSelection: Codable, Equatable {
+  private enum CodingKeys: String, CodingKey { case selected, phases }
   var selected: String?
   var phases: [String: Double] = [:]
   func current(entryID: String, catalogue: GalaxySSIHealthAtlasFunctionCatalogue) -> GalaxySSIHealthAtlasFunctionCatalogue.Story? {
@@ -95,5 +96,15 @@ struct GalaxySSIHealthAtlasFunctionSelection: Codable, Equatable {
     let allowed = Set(catalogue.routes[entryID] ?? [])
     if let selected, !allowed.contains(selected) { self.selected = nil }
     phases = phases.filter { allowed.contains($0.key) }.mapValues(GalaxySSIHealthAtlasFunctionCatalogue.Story.safePhase)
+  }
+}
+
+extension GalaxySSIHealthAtlasFunctionSelection {
+  init(from decoder: Decoder) throws {
+    guard let values = try? decoder.container(keyedBy: CodingKeys.self) else {
+      selected = nil; phases = [:]; return
+    }
+    selected = try? values.decode(String.self, forKey: .selected)
+    phases = (try? values.decode([String: Double].self, forKey: .phases)) ?? [:]
   }
 }

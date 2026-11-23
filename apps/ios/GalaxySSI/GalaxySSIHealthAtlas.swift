@@ -326,8 +326,9 @@ enum GalaxySSIHealthAtlasText {
     let cells = try? GalaxySSIHealthAtlas.CellPack.bundled.get()
     let systems = try? GalaxySSIHealthAtlas.SystemPack.bundled.get()
     let extensionText = systems?.english[key] ?? cells?.english[key] ?? organ?.english[key]
-    let english = extensionText ?? localized(key, locale: "en", fallback: key)
-    return localized(key, locale: name, fallback: english, table: extensionText == nil ? "BodyAtlas" : "Localizable")
+    let english = extensionText ?? localized(key, locale: "en", fallback: localized(key, locale: "en", fallback: key, table: "AtlasFunction"))
+    let fallback = localized(key, locale: name, fallback: english, table: "AtlasFunction")
+    return localized(key, locale: name, fallback: fallback, table: extensionText == nil ? "BodyAtlas" : "Localizable")
   }
   private static func localized(_ key: String, locale: String, fallback: String, table: String = "BodyAtlas") -> String {
     guard let path = Bundle.main.path(forResource: locale, ofType: "lproj"), let bundle = Bundle(path: path) else { return fallback }
