@@ -7,6 +7,9 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   private func catalogue() throws -> GalaxySSIHealthAtlas {
     try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self), includeExtensions: false)
   }
+  private func completeCatalogue() throws -> GalaxySSIHealthAtlas {
+    try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+  }
 
   func testRenalPackPreservesCanonicalStructuresAndOwnedCellProcesses() throws {
     let bundle = Bundle(for: GalaxySSIStore.self)
@@ -198,9 +201,9 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   func testCompleteMicroscopicCatalogueRejectsInheritedProcessesAndSharedStageKeys() throws {
     let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
     let cells = atlas.entries.filter { $0.kind == .cell || $0.kind == .fragment }
-    XCTAssertEqual(cells.filter { $0.kind == .cell }.count, 105)
+    XCTAssertEqual(cells.filter { $0.kind == .cell }.count, 107)
     XCTAssertEqual(cells.filter { $0.kind == .fragment }.count, 1)
-    XCTAssertEqual(atlas.mechanisms.filter { ["cell", "fragment"].contains($0.kind) }.count, 106)
+    XCTAssertEqual(atlas.mechanisms.filter { ["cell", "fragment"].contains($0.kind) }.count, 108)
     XCTAssertNoThrow(try GalaxySSIHealthAtlas.validated(atlas, requireCompleteMicroscopic: true))
     for entry in cells {
       XCTAssertEqual(entry.mechanism, entry.id)
@@ -681,7 +684,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   }
 
   func testImmuneFeaturesAreLocalExplanationsAndLegacyMarkersStillNavigate() throws {
-    let bundle = Bundle(for: GalaxySSIStore.self), atlas = try catalogue()
+    let bundle = Bundle(for: GalaxySSIStore.self), atlas = try completeCatalogue()
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.ImmunePack.read(bundle: bundle))
     try pack.validating(in: atlas, bundle: bundle)
     XCTAssertEqual(pack.plates.count, 12)
@@ -727,7 +730,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   }
 
   func testTransportCellPlatesKeepLocalFeaturesAndExplicitSubtypeCaptions() throws {
-    let bundle = Bundle(for: GalaxySSIStore.self), atlas = try catalogue()
+    let bundle = Bundle(for: GalaxySSIStore.self), atlas = try completeCatalogue()
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.TransportCellPack.read(bundle: bundle))
     try pack.validating(in: atlas, bundle: bundle)
     XCTAssertEqual(pack.plates.count, 12)
@@ -767,7 +770,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   }
 
   func testCoreCellsUseDedicatedAnnotatedPlatesWithoutChangingCatalogueIdentity() throws {
-    let bundle = Bundle(for: GalaxySSIStore.self), atlas = try catalogue()
+    let bundle = Bundle(for: GalaxySSIStore.self), atlas = try completeCatalogue()
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.CoreCellPack.read(bundle: bundle))
     try pack.validating(in: atlas, bundle: bundle)
     XCTAssertEqual(pack.plates.count, 18)
@@ -808,7 +811,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   }
 
   func testDigestivePlatesAndSeparatePancreaticMechanismsPreserveCellIdentity() throws {
-    let atlas = try catalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.DigestivePack.read(bundle: bundle))
     XCTAssertEqual(pack.plates.count, 14)
     XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 27)
@@ -859,7 +862,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   }
 
   func testEndocrinePlatesPathsAndMechanismsPreserveStructuralAndCellIdentities() throws {
-    let atlas = try catalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.EndocrinePack.read(bundle: bundle))
     XCTAssertEqual(pack.plates.count, 18)
     XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 37)
@@ -897,6 +900,67 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
         XCTAssertEqual(GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: entry, selection: selection,
           research: false, language: language), "")
       }
+    }
+  }
+
+  func testSensoryCellsAndRetinalViewsKeepDistinctLayerAndLocationContext() throws {
+    let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.SensoryPack.read(bundle: bundle))
+    XCTAssertEqual(pack.entries.count, 2); XCTAssertEqual(pack.mechanisms.count, 3)
+    XCTAssertEqual(pack.plates.count, 16); XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 34)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 3)
+    let ganglionIndex = try XCTUnwrap(atlas.entries.firstIndex { $0.id == "cell-retinal-ganglion-cell" })
+    XCTAssertEqual(Array(atlas.entries.dropFirst(ganglionIndex + 1).prefix(2).map(\.id)), GalaxySSIHealthAtlas.SensoryPack.relayIDs)
+    for plate in pack.plates {
+      let owner = try XCTUnwrap(plate.owner)
+      XCTAssertEqual(atlas.plate(for: owner)?.asset, plate.asset)
+      XCTAssertTrue(GalaxySSIHealthAtlas.trustedPlateSource(plate.source))
+      for feature in plate.annotations {
+        XCTAssertNil(atlas.entry(feature.id))
+        guard case .feature = plate.labelTarget(feature.id, in: atlas) else { return XCTFail("Expected explanation") }
+      }
+      for marker in plate.markers {
+        guard case .anatomy(let id) = plate.labelTarget(marker.id, in: atlas) else { return XCTFail("Expected cell navigation") }
+        XCTAssertNotNil(atlas.entry(id))
+      }
+    }
+    for id in GalaxySSIHealthAtlas.SensoryPack.relayIDs {
+      let cell = try XCTUnwrap(atlas.entry(id))
+      XCTAssertEqual(cell.kind, .cell); XCTAssertEqual(cell.mechanism, id)
+      XCTAssertEqual(atlas.model(cell).kind, "cell")
+      for language in ["en", "zh-Hans"] {
+        let name = GalaxySSIHealthAtlasText.get(cell.name, language)
+        XCTAssertNotEqual(name, cell.name)
+        XCTAssertTrue(atlas.search(name, kind: .cell, system: "sensory", language: language).contains { $0.id == id })
+      }
+    }
+    let views = atlas.views(for: "retina")
+    XCTAssertEqual(views.compactMap(\.viewKey), ["retina-layers", "retina-eye-context"])
+    XCTAssertEqual(views.last?.asset, GalaxySSIHealthAtlasEyeOptics.plate.asset)
+    XCTAssertTrue(views.last?.annotations.isEmpty == true)
+    let retina = try XCTUnwrap(atlas.entry("retina")), rod = try XCTUnwrap(atlas.entry("cell-rod-photoreceptor"))
+    XCTAssertEqual(retina.mechanism, retina.id)
+    let state = GalaxySSIHealthAtlasState(), restored = GalaxySSIHealthAtlasState()
+    state.binding(retina).wrappedValue.artworkView = "retina-eye-context"
+    state.binding(retina).wrappedValue.simulation.selectStage(1)
+    state.binding(rod).wrappedValue.physiologyInputs = [500]
+    restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.binding(retina).wrappedValue.artworkView, "retina-eye-context")
+    XCTAssertEqual(restored.binding(retina).wrappedValue.simulation.stage, 1)
+    XCTAssertEqual(restored.binding(rod).wrappedValue.physiologyInputs, [500])
+    for language in ["en", "zh-Hans"] {
+      var selection = state.binding(retina).wrappedValue; selection.tab = .structure
+      let feature = GalaxySSIHealthAtlasText.get("health_atlas_sensory_retina_light_direction", language)
+      let eye = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: retina, selection: selection, research: false, language: language)
+      XCTAssertFalse(eye.contains(feature))
+      selection.artworkView = "retina-layers"
+      let layers = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: retina, selection: selection, research: false, language: language)
+      XCTAssertTrue(layers.contains(feature))
+      selection.tab = .values
+      XCTAssertEqual(GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: retina, selection: selection, research: false, language: language), "")
+    }
+    for bad in ["https://www.ncbi.nlm.nih.gov/books/NBK1/", "https://pubmed.ncbi.nlm.nih.gov/15987797/?x=1"] {
+      XCTAssertFalse(GalaxySSIHealthAtlas.trustedPlateSource(URL(string: bad)))
     }
   }
 

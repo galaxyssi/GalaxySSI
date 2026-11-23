@@ -134,6 +134,28 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     }
   }
 
+  func testRetinalRelayDestinationsAndContextStaySeparateFromConeAndAbsorptionModels() throws {
+    typealias Retina = GalaxySSIHealthAtlasRetinaPath
+    XCTAssertEqual(Retina.destinations(stage: 0), ["cell-rod-photoreceptor"])
+    XCTAssertEqual(Retina.destinations(stage: 1), ["cell-retinal-bipolar-cell", "cell-retinal-aii-amacrine-cell"])
+    XCTAssertEqual(Retina.destinations(stage: 2), ["cell-cone-photoreceptor"])
+    XCTAssertEqual(Retina.destinations(stage: 3), ["cell-retinal-ganglion-cell"])
+    XCTAssertNil(Retina.destinations(stage: -1)); XCTAssertNil(Retina.destinations(stage: 4))
+    let simulation = try XCTUnwrap(Context.Simulation(entryID: Retina.owner, phase: 0.3, first: 70, second: 70))
+    for screen in Context.Screen.allCases {
+      let prompt = Context.prompt(anatomy: anatomy(Retina.owner), screen: screen, simulation: simulation, locale: locale, text: text)
+      if screen == .values { XCTAssertNil(prompt); continue }
+      let value = try XCTUnwrap(prompt)
+      XCTAssertEqual(value.contains("sensory_retinal_scope"), screen.includesPhysiology)
+      XCTAssertEqual(value.contains("sensory_retinal_relay_rod"), screen.includesPhysiology)
+      XCTAssertEqual(value.contains(Retina.source.absoluteString), screen.includesPhysiology)
+      for id in ["cell-rod-photoreceptor", "cell-cone-photoreceptor", "eye"] {
+        let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy(id), screen: screen, simulation: simulation, locale: locale, text: text))
+        XCTAssertFalse(foreign.contains("sensory_retinal_scope"))
+      }
+    }
+  }
+
   func testCirculationRoutesBoundsAndPublicContextScope() throws {
     typealias Circuit = GalaxySSIHealthAtlasCirculation
     XCTAssertEqual(Circuit.legs.map(\.oxygenRich), [false, false, true, true])
