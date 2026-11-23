@@ -12,7 +12,7 @@ const color = (hex) => {
 (async () => {
   let count = 0;
   for (const plate of pack.plates) {
-    if (["cell-macrophage", "cell-neutrophil", "cell-eosinophil", "cell-basophil"].includes(plate.owner)) continue;
+    if (["cell-macrophage", "cell-neutrophil", "cell-eosinophil", "cell-basophil", "cell-monocyte", "cell-dendritic-cell", "cell-plasma-cell"].includes(plate.owner)) continue;
     const vector = xml.xml2js(cp.execFileSync("git", ["show", pack.source.mergeCommit + ":" + plate.drawable],
       { cwd: root, encoding: "utf8" }), { compact: true }).vector;
     if (vector.group || !Array.isArray(vector.path)) throw Error("Unsupported vector structure " + plate.id);
@@ -35,5 +35,6 @@ const color = (hex) => {
   }
   cp.execFileSync(process.execPath,[path.join(__dirname,"import-body-atlas-painted-innate.cjs")],{cwd:root,stdio:"inherit"});
   cp.execFileSync(process.execPath,[path.join(__dirname,"import-body-atlas-painted-granulocytes.cjs")],{cwd:root,stdio:"inherit"});
-  console.log("Imported 8 retained immune vectors / " + count + " original paths and four painted cells.");
+  cp.execFileSync(process.execPath,[path.join(__dirname,"import-body-atlas-immune-links.cjs")],{cwd:root,stdio:"inherit"});
+  console.log("Imported 5 retained immune vectors / " + count + " original paths and seven painted cells.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -17,6 +17,8 @@ extension GalaxySSIHealthAtlas {
     let plates: [Plate]
     static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
     static let phagocytosisOwner = "cell-macrophage"
+    static let paintedOwners = ["cell-neutrophil", "cell-eosinophil", "cell-basophil", "cell-monocyte",
+      "cell-macrophage", "cell-plasma-cell", "cell-dendritic-cell"]
     static let owners = ["cell-neutrophil", "cell-eosinophil", "cell-basophil", "cell-monocyte", "cell-macrophage",
       "cell-t-cell", "cell-b-cell", "cell-natural-killer-cell", "cell-plasma-cell", "cell-megakaryocyte",
       "fragment-platelet", "cell-dendritic-cell"]
@@ -36,7 +38,7 @@ extension GalaxySSIHealthAtlas {
           guard let owner = plate.owner, let entry = atlas.entry(owner), [.cell, .fragment].contains(entry.kind),
             plate.id == owner, plate.entryIDs == [owner], plate.markers.isEmpty,
             plate.asset.hasPrefix("HealthAtlasImmune"),
-            plate.aspectRatio == (["cell-neutrophil", "cell-eosinophil", "cell-basophil", Self.phagocytosisOwner].contains(owner) ? 1 : 360.0 / 280),
+            plate.aspectRatio == (Self.paintedOwners.contains(owner) ? 1 : 360.0 / 280),
             UIImage(named: plate.asset, in: bundle, compatibleWith: nil) != nil,
             plate.source?.absoluteString == "https://openstax.org/books/anatomy-and-physiology-2e/pages/" + chapter,
             (2...3).contains(plate.annotations.count),

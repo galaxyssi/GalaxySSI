@@ -14,7 +14,13 @@ const local=file=>fs.readFileSync(path.join(root,"apps/ios/GalaxySSI",file),"utf
   const features=[...kotlin.matchAll(/paintedFeature\("([^"]+)", (\d+), (\d+), R.string.(\w+), R.string.(\w+)\)/g)]
     .map(m=>({marker:{id:m[1],x:Number(m[2])/1254,y:Number(m[3])/1254},title:m[4],explanation:m[5]}));
   assert.equal(features.length,8);
-  const semantic=structuredClone(pack);delete semantic.granulocyteArtworkSource;
+  const semantic=structuredClone(pack);delete semantic.granulocyteArtworkSource;delete semantic.immuneLinkArtworkSource;
+  // #4367 has its own source audit; compare this increment only.
+  for(const id of ["cell-monocyte","cell-dendritic-cell","cell-plasma-cell"]){
+    const restored=semantic.plates.find(p=>p.owner===id),previous=old.plates.find(p=>p.owner===id);
+    restored.aspectRatio=previous.aspectRatio;restored.drawable=previous.drawable;
+    for(const feature of restored.features)feature.marker=previous.features.find(f=>f.marker.id===feature.marker.id).marker;
+  }
   for(const id of ["cell-eosinophil","cell-basophil"]){
     const plate=pack.plates.find(p=>p.owner===id),previous=old.plates.find(p=>p.owner===id);
     assert.equal(plate.aspectRatio,1);
@@ -51,9 +57,11 @@ const local=file=>fs.readFileSync(path.join(root,"apps/ios/GalaxySSI",file),"utf
     ["166 + t * 88","166f + t * 88f"],["4 + 9 * t","4f + 9f * t"],["215 - t * 8","215f - t * 8f"]
   ];
   for(const [native,source] of pairs){assert(swift.includes(native),native);assert(android.includes(source),source);}
-  for(const token of ["GalaxySSIHealthAtlasSectionLesson.Phase(phase)","progress * progress * (3 - 2 * progress)",
+  const scene=local("GalaxySSIHealthAtlasCellScene.swift");
+  for(const token of ["GalaxySSIHealthAtlasSectionLesson.Phase(phase)","progress * progress * (3 - 2 * progress)","health_atlas_granulocyte_stage","size.height / 200"])assert(scene.includes(token),token);
+  for(const token of ["GalaxySSIHealthAtlasCellScene.Frame(phase)",
     "context.draw(Image(lesson.asset), in: frame.cellBounds)","case .neutrophil: neutrophil","case .eosinophil: eosinophil",
-    "case .basophil: basophil","atlas-granulocyte-diagram","health_atlas_granulocyte_stage","size.height / 200"])assert(swift.includes(token),token);
+    "case .basophil: basophil","atlas-granulocyte-diagram"])assert(swift.includes(token),token);
   assert(!swift.includes("Timer")&&!swift.includes("@State")&&!swift.includes("GalaxySSIHealthRecords"));
   const panel=local("GalaxySSIHealthAtlasSimulationPanel.swift"),detail=local("GalaxySSIHealthAtlasDetail.swift");
   assert(panel.includes("GalaxySSIHealthAtlasGranulocyteView(lesson: lesson, phase: simulation.phase, stages: model.stages, language: language)"));

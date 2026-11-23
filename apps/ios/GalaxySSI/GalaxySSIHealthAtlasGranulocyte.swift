@@ -12,13 +12,12 @@ enum GalaxySSIHealthAtlasGranulocyte: String, CaseIterable {
   }
   struct Frame: Equatable {
     let lesson: GalaxySSIHealthAtlasGranulocyte
-    let stage: Int
-    let ease: Double
+    let scene: GalaxySSIHealthAtlasCellScene.Frame
+    var stage: Int { scene.stage }
+    var ease: Double { scene.ease }
     init?(_ lesson: GalaxySSIHealthAtlasGranulocyte, phase: Double) {
-      guard let value = GalaxySSIHealthAtlasSectionLesson.Phase(phase) else { return nil }
-      self.lesson = lesson; stage = value.stage
-      let progress = value.fraction
-      ease = progress * progress * (3 - 2 * progress)
+      guard let scene = GalaxySSIHealthAtlasCellScene.Frame(phase) else { return nil }
+      self.lesson = lesson; self.scene = scene
     }
     var cellBounds: CGRect {
       let x: Double, y: Double, size: Double, widthRatio: Double
@@ -41,9 +40,7 @@ enum GalaxySSIHealthAtlasGranulocyte: String, CaseIterable {
     var vesselResponse: Double { stage == 3 ? 9 * ease : 0 }
   }
   static func label(stage: Int, stages: [String], language: String) -> String? {
-    guard stages.count == 4, stages.indices.contains(stage) else { return nil }
-    return String(format: GalaxySSIHealthAtlasText.get("health_atlas_granulocyte_stage", language),
-      GalaxySSIHealthAtlasText.get(stages[stage], language))
+    GalaxySSIHealthAtlasCellScene.label(stage: stage, stages: stages, language: language)
   }
 }
 
@@ -54,20 +51,14 @@ struct GalaxySSIHealthAtlasGranulocyteView: View {
   let language: String
   private static let vessel = color(0x64869D), plum = color(0x654A7D), gold = color(0xAB692D), coral = color(0xA75144)
   var body: some View {
-    if let frame = GalaxySSIHealthAtlasGranulocyte.Frame(lesson, phase: phase),
-       let label = GalaxySSIHealthAtlasGranulocyte.label(stage: frame.stage, stages: stages, language: language) {
-      Canvas { context, size in
-        var drawing = context
-        let scale = min(size.width / 360, size.height / 200)
-        drawing.translateBy(x: (size.width - 360 * scale) / 2, y: (size.height - 200 * scale) / 2)
-        drawing.scaleBy(x: scale, y: scale)
+    if let frame = GalaxySSIHealthAtlasGranulocyte.Frame(lesson, phase: phase) {
+      GalaxySSIHealthAtlasCellScene(frame: frame.scene, stages: stages, language: language, identifier: "atlas-granulocyte-diagram") { drawing in
         switch lesson {
         case .neutrophil: neutrophil(in: drawing, frame: frame)
         case .eosinophil: eosinophil(in: drawing, frame: frame)
         case .basophil: basophil(in: drawing, frame: frame)
         }
-      }.aspectRatio(360.0 / 200, contentMode: .fit).frame(maxHeight: 240).clipped()
-        .accessibilityElement(children: .ignore).accessibilityLabel(label).accessibilityIdentifier("atlas-granulocyte-diagram")
+      }
     }
   }
   private func cell(in context: GraphicsContext, frame: GalaxySSIHealthAtlasGranulocyte.Frame) {

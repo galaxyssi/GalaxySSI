@@ -112,15 +112,15 @@
       "entryIDs": [
         "cell-monocyte"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets",
       "features": [
         {
           "marker": {
             "id": "kidney-nucleus",
-            "x": 0.35555555555555557,
-            "y": 0.46785714285714286
+            "x": 0.3373205741626794,
+            "y": 0.49282296650717705
           },
           "title": "health_atlas_feature_kidney_nucleus",
           "explanation": "health_atlas_feature_kidney_nucleus_detail"
@@ -128,14 +128,14 @@
         {
           "marker": {
             "id": "monocyte-cytoplasm",
-            "x": 0.6611111111111111,
-            "y": 0.5428571428571428
+            "x": 0.6866028708133971,
+            "y": 0.5629984051036683
           },
           "title": "health_atlas_feature_monocyte_cytoplasm",
           "explanation": "health_atlas_feature_monocyte_cytoplasm_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_monocyte.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_cell_monocyte.png"
     },
     {
       "id": "cell-macrophage",
@@ -277,15 +277,15 @@
       "entryIDs": [
         "cell-plasma-cell"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-4-the-adaptive-immune-response-b-lymphocytes-and-antibodies",
       "features": [
         {
           "marker": {
             "id": "plasma-nucleus",
-            "x": 0.33611111111111114,
-            "y": 0.5178571428571429
+            "x": 0.2974481658692185,
+            "y": 0.4784688995215311
           },
           "title": "health_atlas_feature_plasma_nucleus",
           "explanation": "health_atlas_feature_plasma_nucleus_detail"
@@ -293,8 +293,8 @@
         {
           "marker": {
             "id": "golgi-zone",
-            "x": 0.5194444444444445,
-            "y": 0.5
+            "x": 0.5239234449760766,
+            "y": 0.47129186602870815
           },
           "title": "health_atlas_feature_golgi_zone",
           "explanation": "health_atlas_feature_golgi_zone_detail"
@@ -302,14 +302,14 @@
         {
           "marker": {
             "id": "rough-er",
-            "x": 0.6833333333333333,
-            "y": 0.6107142857142858
+            "x": 0.759170653907496,
+            "y": 0.5311004784688995
           },
           "title": "health_atlas_feature_rough_er",
           "explanation": "health_atlas_feature_rough_er_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_plasma.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_cell_plasma.png"
     },
     {
       "id": "cell-megakaryocyte",
@@ -385,15 +385,15 @@
       "entryIDs": [
         "cell-dendritic-cell"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-2-barrier-defenses-and-the-innate-immune-response",
       "features": [
         {
           "marker": {
             "id": "dendritic-process",
-            "x": 0.7888888888888889,
-            "y": 0.3535714285714286
+            "x": 0.817384370015949,
+            "y": 0.3652312599681021
           },
           "title": "health_atlas_feature_dendritic_process",
           "explanation": "health_atlas_feature_dendritic_process_detail"
@@ -401,14 +401,14 @@
         {
           "marker": {
             "id": "dendritic-nucleus",
-            "x": 0.475,
-            "y": 0.5178571428571429
+            "x": 0.43859649122807015,
+            "y": 0.48883572567783096
           },
           "title": "health_atlas_feature_dendritic_nucleus",
           "explanation": "health_atlas_feature_dendritic_nucleus_detail"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_dendritic.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_cell_dendritic.png"
     }
   ],
   "artworkSource": {
@@ -418,5 +418,9 @@
   "granulocyteArtworkSource": {
     "androidPR": 4366,
     "mergeCommit": "3aa202bc663c6d15bc8085a6af965b461f620899"
+  },
+  "immuneLinkArtworkSource": {
+    "androidPR": 4367,
+    "mergeCommit": "20de8dd75a18c257e7a8fdba844511d3bd98c37d"
   }
 }
