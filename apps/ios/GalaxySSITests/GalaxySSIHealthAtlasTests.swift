@@ -2004,6 +2004,38 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testMammaryOpenDuctSqueezeStorageAndFiniteFlow() throws {
+    typealias Motion = GalaxySSIHealthAtlasMammaryMotion
+    XCTAssertEqual(Motion(step: 0, fraction: 0).amount, 0.14)
+    XCTAssertEqual(Motion(step: 1, fraction: 1).amount, Motion(step: 2, fraction: 0).amount)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).amount, 1)
+    XCTAssertEqual(Motion(step: 3, fraction: 0.32).squeeze, 0)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).radius, 73)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).radius, Motion(step: 4, fraction: 0).radius)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).radius, 88)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).amount, 0.35, accuracy: 1e-12)
+    XCTAssertEqual(Motion.point(88, 0), .init(x: 226, y: 177))
+    XCTAssertEqual(Motion.flow(0, index: 0), .init(x: 193, y: 170.5))
+    XCTAssertNil(Motion.flow(0, index: 1))
+    XCTAssertNil(Motion.flow(1, index: 0))
+    XCTAssertNotNil(Motion.flow(1, index: 5))
+    XCTAssertEqual(Motion(step: 3, fraction: 1).signal(1, index: 0).radius, 0)
+    for step in 0...4 {
+      let frame = Motion(step: step, fraction: 0.5)
+      for i in 0...18 {
+        if let dot = frame.milkDot(i) {
+          XCTAssertGreaterThanOrEqual(abs(dot.point.y - 177), 11)
+          XCTAssertGreaterThan(dot.radius, 0)
+          XCTAssertTrue(dot.point.fits(width: 360, height: 360))
+        }
+      }
+      let outline = GalaxySSIHealthAtlasMammaryInk.outline(frame.radius).cgPath
+      XCTAssertEqual(outline.currentPoint, CGPoint(x: 333, y: 153))
+      var closes = 0
+      outline.applyWithBlock { if $0.pointee.type == .closeSubpath { closes += 1 } }
+      XCTAssertEqual(closes, 0)
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
