@@ -130,6 +130,25 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertThrowsError(try pack().applying(to: merged, bundle: bundle))
   }
 
+  func testSystemPlatesRequireVisibleMacroscopicTargetsAndTrustedReferences() throws {
+    let atlas = try catalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    func pack(target: String = "ureters", source: String = "https://openstax.org/books/anatomy") -> GalaxySSIHealthAtlas.SystemPack {
+      .init(schema: 1, plates: [.init(id: "urinary", asset: "HealthAtlasBody", owner: "urinary",
+        viewLabel: "health_atlas_view_urinary", entryIDs: ["urinary", target], aspectRatio: 2.0 / 3.0,
+        markers: [.init(id: target, x: 0.5, y: 0.5)], source: URL(string: source))],
+        english: ["health_atlas_view_urinary": "Urinary schematic"])
+    }
+    XCTAssertNoThrow(try pack().applying(to: atlas, bundle: bundle))
+    for target in ["cell-pancreatic-beta-cell", "fragment-platelet", "missing"] {
+      XCTAssertThrowsError(try pack(target: target).applying(to: atlas, bundle: bundle))
+    }
+    for source in ["http://openstax.org/books", "https://example.com/books", "https://user@openstax.org/books"] {
+      XCTAssertThrowsError(try pack(source: source).applying(to: atlas, bundle: bundle))
+    }
+    let legacy = Data(#"{"id":"old","asset":"HealthAtlasBody","viewLabel":"health_atlas_illustration","entryIDs":[""],"aspectRatio":1,"markers":[]}"#.utf8)
+    XCTAssertNil(try JSONDecoder().decode(GalaxySSIHealthAtlas.Plate.self, from: legacy).source)
+  }
+
   func testTeachingEquationsAndDefensiveRestoration() {
     var heart = GalaxySSIHealthAtlasSimulation.initial("heart")
     XCTAssertEqual(heart.output, 4.9, accuracy: 0.0001)

@@ -1,5 +1,7 @@
 # Android #4325: Scoped Atlas Agent Actions
 
+The optional Android #4328 illustration descriptor preserves the selected public plate caption, schematic-art note and HTTPS OpenStax reference. Mismatched entry descriptors are ignored; Values and whole-body early returns never inherit illustration context. This is public catalogue metadata only, not a personal-health read. Regression XCTest source is included but was not executed on Windows.
+
 ## Source and PR Scope
 
 - Android PR: https://github.com/galaxyssi/GalaxySSI/pull/4325

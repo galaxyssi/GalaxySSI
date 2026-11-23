@@ -38,6 +38,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     else { throw Invalid.catalogue }
     var result = try validated(JSONDecoder().decode(Self.self, from: Data(contentsOf: url)))
     guard includeExtensions else { return result }
+    if let pack = try SystemPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try ArtworkPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try RenalPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try CellPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
@@ -158,12 +159,37 @@ struct GalaxySSIHealthAtlas: Decodable {
       return result
     }
   }
+  struct SystemPack: Decodable {
+    let schema: Int
+    let plates: [Plate]
+    let english: [String: String]
+    static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
+    static func read(bundle: Bundle) throws -> Self? {
+      guard let asset = NSDataAsset(name: "HealthAtlasSystemPlates", bundle: bundle) else { return nil }
+      guard asset.data.count <= 128_000 else { throw Invalid.catalogue }
+      return try JSONDecoder().decode(Self.self, from: asset.data)
+    }
+    func applying(to base: GalaxySSIHealthAtlas, bundle: Bundle) throws -> GalaxySSIHealthAtlas {
+      guard schema == 1, !plates.isEmpty, english.count <= 128, english.values.allSatisfy({ !$0.isEmpty }),
+        english.keys.allSatisfy({ $0.hasPrefix("health_atlas_view_") || $0 == "health_atlas_plate_source" }) else { throw Invalid.catalogue }
+      try GalaxySSIHealthAtlas.validatePlates(plates, in: base, bundle: bundle)
+      guard plates.allSatisfy({ plate in
+        guard let owner = plate.owner, let entry = base.entry(owner), entry.kind == .system || entry.kind == .organ,
+          plate.entryIDs.contains(owner), plate.source != nil, english[plate.viewLabel] != nil else { return false }
+        let visible = Set(plate.markers.map(\.id) + [owner])
+        return plate.entryIDs.allSatisfy { visible.contains($0) && base.entry($0)?.kind != .cell && base.entry($0)?.kind != .fragment }
+      }) else { throw Invalid.catalogue }
+      return base
+    }
+  }
   private static func validatePlates(_ plates: [Plate], in atlas: Self, bundle: Bundle) throws {
     guard plates.count <= 64, Set(plates.map(\.id)).count == plates.count,
       Set(plates.flatMap(\.entryIDs)).count == plates.flatMap(\.entryIDs).count,
       plates.allSatisfy({ plate in
         !plate.entryIDs.isEmpty && plate.entryIDs.allSatisfy({ $0.isEmpty || atlas.entry($0) != nil }) &&
         (plate.owner == nil || atlas.entry(plate.owner!) != nil) &&
+        (plate.source == nil || (plate.source?.scheme == "https" && plate.source?.host == "openstax.org" &&
+          plate.source?.user == nil && plate.source?.password == nil)) &&
         plate.asset.hasPrefix("HealthAtlas") && UIImage(named: plate.asset, in: bundle, compatibleWith: nil) != nil &&
         plate.aspectRatio.isFinite && (0.1...3).contains(plate.aspectRatio) &&
         plate.markers.allSatisfy({ atlas.entry($0.id) != nil && $0.x.isFinite && $0.y.isFinite &&
@@ -171,6 +197,7 @@ struct GalaxySSIHealthAtlas: Decodable {
       }) else { throw Invalid.catalogue }
   }
   func plate(for id: String?) -> Plate? {
+    if let pack = try? SystemPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     if let pack = try? CellPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     if let pack = try? RenalPack.bundled.get(), pack.plate.entryIDs.contains(id ?? "") { return pack.plate }
     if let pack = try? ArtworkPack.bundled.get() {
@@ -192,6 +219,13 @@ struct GalaxySSIHealthAtlas: Decodable {
     }
     return nil
   }
+  func caption(_ plate: Plate, selected entry: Entry?, language: String) -> String {
+    let view = GalaxySSIHealthAtlasText.get(plate.viewLabel, language)
+    guard let owner = plate.owner, owner != entry?.id, let structure = self.entry(owner) else { return view }
+    let name = GalaxySSIHealthAtlasText.get(structure.name, language)
+    let key = plate.viewLabel == "health_atlas_illustration" ? "health_atlas_related_process" : "health_atlas_plate_context"
+    return String(format: GalaxySSIHealthAtlasText.get(key, language), name, view)
+  }
 }
 
 enum GalaxySSIHealthAtlasText {
@@ -199,7 +233,8 @@ enum GalaxySSIHealthAtlasText {
     let name = LanguagePolicySettings.resolveInterface(language) == LanguagePolicySettings.zhCN ? "zh-Hans" : "en"
     let organ = try? GalaxySSIHealthAtlas.ArtworkPack.bundled.get()
     let cells = try? GalaxySSIHealthAtlas.CellPack.bundled.get()
-    let extensionText = cells?.english[key] ?? organ?.english[key]
+    let systems = try? GalaxySSIHealthAtlas.SystemPack.bundled.get()
+    let extensionText = systems?.english[key] ?? cells?.english[key] ?? organ?.english[key]
     let english = extensionText ?? localized(key, locale: "en", fallback: key)
     return localized(key, locale: name, fallback: english, table: extensionText == nil ? "BodyAtlas" : "Localizable")
   }

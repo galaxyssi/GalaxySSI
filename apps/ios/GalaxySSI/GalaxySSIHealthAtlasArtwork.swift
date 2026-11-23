@@ -27,11 +27,7 @@ struct GalaxySSIHealthAtlasArtwork: View {
   }
   private var caption: String {
     guard let plate else { return t("illustration") }
-    let view = GalaxySSIHealthAtlasText.get(plate.viewLabel, language)
-    guard let owner = plate.owner, owner != entry?.id, let structure = atlas.entry(owner) else { return view }
-    let name = GalaxySSIHealthAtlasText.get(structure.name, language)
-    return plate.viewLabel == "health_atlas_illustration" ? String(format: t("related_process"), name) :
-      String(format: t("plate_context"), name, view)
+    return atlas.caption(plate, selected: entry, language: language)
   }
   var body: some View {
     if let art {

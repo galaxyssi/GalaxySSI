@@ -1,4 +1,6 @@
 /* Android #4322 teaching catalogue, frozen at 17cc2c33b. */
+/* Shared illustration context introduced by Android #4323. */
+"health_atlas_plate_context" = "定位于%1$@示意图 · %2$@";
 "health_atlas_absorption" = "吸收";
 "health_atlas_absorption_note" = "许多口服药物经过消化道内壁进入血液。";
 "health_atlas_adenoids_aliases" = "";
