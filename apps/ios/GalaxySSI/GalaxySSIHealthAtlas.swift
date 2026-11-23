@@ -173,11 +173,11 @@ struct GalaxySSIHealthAtlas: Decodable {
   }
   func plate(for id: String?) -> Plate? {
     if let pack = try? CellPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
+    if let pack = try? ArtworkPack.bundled.get() {
+      if let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
+    }
     if ["alveoli", "respiratory-membrane", "pulmonary-capillaries"].contains(id ?? ""),
        let pack = try? RespirationPack.bundled.get() { return pack.plate }
-    if let pack = try? ArtworkPack.bundled.get() {
-      return pack.plates.first { $0.entryIDs.contains(id ?? "") }
-    }
     if id == nil {
       return Plate(id: "whole", asset: "HealthAtlasBody", owner: nil, viewLabel: "health_atlas_illustration", entryIDs: [""],
         aspectRatio: 2.0 / 3.0, markers: [Marker(id: "brain", x: 0.5, y: 0.045), Marker(id: "heart", x: 0.54, y: 0.28),
