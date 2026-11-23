@@ -1866,6 +1866,41 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       XCTAssertTrue((173...325).contains(Motion.ductX(0.5, index: index)))
     }
   }
+  func testVenousValveHandoffCompressionAndFlowFade() {
+    typealias Motion = GalaxySSIHealthAtlasVenousMotion
+    XCTAssertEqual(Motion(step: 1, fraction: 1).squeeze, 0.82)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).squeeze, 1)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).squeeze, 0)
+    for (step, time) in [(1, 0.32), (4, 0.29)] {
+      let state = Motion(step: step, fraction: time)
+      XCTAssertEqual(state.proximalOpen, 0); XCTAssertEqual(state.distalOpen, 0)
+    }
+    XCTAssertEqual(Motion(step: 1, fraction: 0.86).proximalOpen, 1)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.62).distalOpen, 1)
+    for step in 0...4 {
+      for t in stride(from: 0.0, through: 1, by: 0.01) {
+        let frame = Motion(step: step, fraction: t)
+        XCTAssertEqual(frame.proximalOpen * frame.distalOpen, 0)
+        XCTAssertTrue((0...1).contains(frame.squeeze))
+      }
+    }
+    XCTAssertEqual(Motion.ringAlpha(0.5), 213)
+    XCTAssertEqual(Motion.ringAlpha(0), 0); XCTAssertEqual(Motion.ringAlpha(1), 0)
+    XCTAssertEqual(Motion.ringAlpha(.nan), 0)
+    let packet = Motion.flow(0.25, index: 0, from: 210, to: 82)
+    XCTAssertEqual(packet.y, 146); XCTAssertEqual(packet.alpha, 255)
+    XCTAssertEqual(Motion.flow(0, index: 0, from: 210, to: 82).alpha, 0)
+    XCTAssertEqual(Motion.flow(0.25, index: 0, from: 210, to: 82, strength: 0.5).alpha, 127)
+    func waists(_ squeeze: Double) -> [CGFloat] {
+      var points: [CGFloat] = []
+      GalaxySSIHealthAtlasVenousShapes.lumen(squeeze).cgPath.applyWithBlock { pointer in
+        let element = pointer.pointee
+        if element.type == .addCurveToPoint && element.points[2].y == 181 { points.append(element.points[2].x) }
+      }
+      return points.sorted()
+    }
+    XCTAssertEqual(waists(0), [211, 249]); XCTAssertEqual(waists(1), [219, 241])
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
