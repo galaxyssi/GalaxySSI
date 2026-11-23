@@ -274,36 +274,36 @@
         "ganglia",
         "peripheral-nerves"
       ],
-      "aspectRatio": 0.75,
+      "aspectRatio": 0.6666666666666666,
       "markers": [
         {
           "id": "brain",
-          "x": 0.48333333333333334,
-          "y": 0.10892857142857143
+          "x": 0.486,
+          "y": 0.05
         },
         {
           "id": "spinal-cord",
-          "x": 0.5,
-          "y": 0.2357142857142857
+          "x": 0.499,
+          "y": 0.12
         },
         {
           "id": "spinal-nerves",
-          "x": 0.37857142857142856,
-          "y": 0.3821428571428571
+          "x": 0.444,
+          "y": 0.189
         },
         {
           "id": "ganglia",
-          "x": 0.5261904761904762,
-          "y": 0.4714285714285714
+          "x": 0.475,
+          "y": 0.257
         },
         {
           "id": "peripheral-nerves",
-          "x": 0.5833333333333334,
-          "y": 0.8857142857142857
+          "x": 0.573,
+          "y": 0.703
         }
       ],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-1-basic-structure-and-function-of-the-nervous-system",
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_system_nervous.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_system_nervous.png"
     },
     {
       "id": "cardio",
@@ -466,5 +466,9 @@
   "calloutSource": {
     "androidPR": 4360,
     "mergeCommit": "920ede43e4c010f166d459ca2f5e674414766683"
+  },
+  "finalArtworkSource": {
+    "androidPR": 4362,
+    "mergeCommit": "5ca99f3dde521cd65ca0f0f84b5550a31da5b9f2"
   }
 }

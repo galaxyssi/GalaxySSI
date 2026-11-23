@@ -4,15 +4,21 @@ const {PDFDocument, PDFName, PDFDict, PDFOperator, PDFOperatorNames, drawSvgPath
   rgb, setLineJoin, LineJoinStyle, LineCapStyle} = require("pdf-lib");
 const root = path.resolve(__dirname, "../../.."), assets = path.join(root, "apps/ios/GalaxySSI/Assets.xcassets");
 const retinal = process.argv.includes("--retinal-cells");
-const sha = retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
-const frames = retinal ? [
+const systems = process.argv.includes("--system-overviews");
+const revision = systems ? 4362 : retinal ? 4359 : 4358;
+const sha = systems ? "5ca99f3dde521cd65ca0f0f84b5550a31da5b9f2" : retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
+const frames = systems ? [
+  ["system_cardio", "HealthAtlasOverviewCardio", "overview.pdf", 0],
+  ["system_testicular", "HealthAtlasOverviewTesticular", "overview.pdf", 3],
+  ["system_ovarian", "HealthAtlasOverviewOvarian", "overview.pdf", 9]
+] : retinal ? [
   ["sensory_aii", "HealthAtlasSensoryAii", "cell.pdf", 0], ["sensory_bipolar", "HealthAtlasSensoryBipolar", "cell.pdf", 3],
   ["sensory_ganglion", "HealthAtlasSensoryGanglion", "cell.pdf", 8], ["sensory_rpe", "HealthAtlasSensoryRpe", "cell.pdf", 13]
 ] : [
   ["sensory_retina_section", "HealthAtlasSensoryRetinaSection", "cell.pdf"]
 ];
 // Keep retained #4358 PDF resource IDs stable when earlier ear, eye and sensory-cell gradients retire.
-const gradientOffset = retinal ? 0 : 9;
+const gradientOffset = systems || retinal ? 0 : 9;
 function components(value) {
   if (!/^#[0-9a-f]{6}$/i.test(value)) throw Error("Unsupported colour " + value);
   return [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16) / 255);
@@ -25,7 +31,7 @@ function components(value) {
       {cwd: root, encoding: "utf8"}), {compact: true}).vector;
     if (vector.group || !Array.isArray(vector.path)) throw Error("Unsupported vector structure");
     const pdf = await PDFDocument.create(), height = Number(vector._attributes["android:viewportHeight"]);
-    pdf.setTitle("GalaxySSI " + slug + " - Android #" + (retinal ? 4359 : 4358) + " vector paths and gradients");
+    pdf.setTitle("GalaxySSI " + slug + " - Android #" + revision + " vector paths and gradients");
     pdf.setCreationDate(new Date("2026-11-24T00:00:00Z")); pdf.setModificationDate(new Date("2026-11-24T00:00:00Z"));
     const page = pdf.addPage([Number(vector._attributes["android:viewportWidth"]), height]);
     page.node.normalize();
@@ -74,6 +80,6 @@ function components(value) {
     }
     fs.writeFileSync(path.join(assets, asset + ".imageset", filename), await pdf.save());
   }
-  if (paths !== (retinal ? 35 : 24) || gradientCount !== (retinal ? 11 : 2)) throw Error("Unexpected source geometry: " + paths + "/" + gradients);
-  console.log("Imported Android #" + (retinal ? 4359 : 4358) + ": " + paths + " original paths and " + gradientCount + " native gradients across " + frames.length + " retained vector assets.");
+  if (paths !== (systems ? 39 : retinal ? 35 : 24) || gradientCount !== (systems ? 18 : retinal ? 11 : 2)) throw Error("Unexpected source geometry: " + paths + "/" + gradients);
+  console.log("Imported Android #" + revision + ": " + paths + " original paths and " + gradientCount + " native gradients across " + frames.length + " retained vector assets.");
 })().catch(error => { console.error(error); process.exitCode = 1; });
