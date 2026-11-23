@@ -55,6 +55,9 @@ enum GalaxySSIHealthAtlasAgentContext {
     if screen.includesPhysiology {
       if let simulation, simulation.entryID == anatomy.id {
         lines.append(t("teaching_note"))
+        if GalaxySSIHealthAtlasCirculation.supports(anatomy.id) {
+          lines += [t("circuit_scope"), t("circuit_path"), GalaxySSIHealthAtlasCirculation.source.absoluteString]
+        }
         lines.append(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4), anatomy.stages[simulation.stage]))
         if ["heart", "cardio"].contains(anatomy.id) {
           lines.append(t("heart_rate") + ": " + number(simulation.first) + " bpm")

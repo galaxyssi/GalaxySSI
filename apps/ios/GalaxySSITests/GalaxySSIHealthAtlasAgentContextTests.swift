@@ -17,6 +17,31 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
      "elimination_assumptions": "Single-compartment teaching assumptions",
      "elimination_summary": "Half-life %1$lld h; after %2$lld h: %3$@%%"] [key] ?? key
   }
+  func testCirculationRoutesBoundsAndPublicContextScope() throws {
+    typealias Circuit = GalaxySSIHealthAtlasCirculation
+    XCTAssertEqual(Circuit.legs.map(\.oxygenRich), [false, false, true, true])
+    XCTAssertEqual(Circuit.stage(.nan), 0)
+    XCTAssertEqual(Circuit.stage(-1), 0)
+    XCTAssertEqual(Circuit.stage(1), 3)
+    XCTAssertEqual(Circuit.fraction(1), 1)
+    XCTAssertEqual(Circuit.stage(0.5), 2)
+    for id in ["heart", "cardio", "atria", "ventricles", "heart-valves", "coronary-vessels",
+      "blood-vessels", "arteries", "veins", "capillaries", "blood"] { XCTAssertTrue(Circuit.supports(id)) }
+    for id in ["lungs", "brain", "cell-erythrocyte"] { XCTAssertFalse(Circuit.supports(id)) }
+    let simulation = try XCTUnwrap(Context.Simulation(entryID: "heart", phase: 0.5, first: 70, second: 70))
+    for screen in [Context.Screen.simulation, .physiology] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: screen,
+        simulation: simulation, locale: locale, text: text))
+      XCTAssertTrue(prompt.contains("circuit_scope")); XCTAssertTrue(prompt.contains("circuit_path"))
+      XCTAssertTrue(prompt.contains(Circuit.source.absoluteString))
+    }
+    for screen in [Context.Screen.structure, .function, .drugs, .aging] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: screen,
+        simulation: simulation, locale: locale, text: text))
+      XCTAssertFalse(prompt.contains("circuit_scope"))
+    }
+  }
+
   func testCardiacPreviewContainsTheCurrentStageInputsResultAndAssumptions() throws {
     let simulation = try XCTUnwrap(Context.Simulation(entryID: "heart", phase: 0.76, first: 80, second: 70))
     let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .simulation, simulation: simulation, locale: locale, text: text))
