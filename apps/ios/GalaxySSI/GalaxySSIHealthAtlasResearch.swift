@@ -9,6 +9,10 @@ struct GalaxySSIHealthAtlasResearch: View {
   let depth: Int
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.binding(entry) }
+  private var drugState: Binding<GalaxySSIHealthAtlasDrugState> {
+    Binding(get: { GalaxySSIHealthAtlasDrugState.restore(selection.wrappedValue.drugInputs) ?? .init() },
+      set: { selection.wrappedValue.drugInputs = $0.encoded })
+  }
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 18) {
@@ -17,14 +21,20 @@ struct GalaxySSIHealthAtlasResearch: View {
         }.pickerStyle(.segmented)
         switch selection.wrappedValue.research {
         case .physiology:
-          GalaxySSIHealthAtlasSimulationPanel(entry: entry, model: atlas.model(entry), simulation: selection.simulation,
-            physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented)
+          GalaxySSIHealthAtlasSimulationPanel(atlas: atlas, entry: entry, model: atlas.model(entry), simulation: selection.simulation,
+            physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented,
+            destination: { id in
+              if let target = atlas.entry(id), depth < 32 {
+                return AnyView(GalaxySSIHealthAtlasDetail(atlas: atlas, entry: target, state: state, records: records, depth: depth + 1))
+              }
+              return AnyView(EmptyView())
+            })
         case .drugs:
           drugs
         case .aging:
           aging
         }
-        Link(t("structure_source"), destination: atlas.model(entry).source)
+        Link(t(atlas.model(entry).reference == nil ? "structure_source" : "reference_pubmed"), destination: atlas.model(entry).source)
       }.padding()
     }
     .navigationTitle(t("research")).navigationBarTitleDisplayMode(.inline).galaxySSIHealthTheme()
@@ -49,7 +59,14 @@ struct GalaxySSIHealthAtlasResearch: View {
         }
       }
       Divider()
-      Text(t("elimination_title")).font(.headline)
+      Text(t("drug_models")).font(.headline)
+      Picker(t("drug_models"), selection: drugState.mode) {
+        Text(t("drug_single")).tag(GalaxySSIHealthAtlasDrugState.Mode.single)
+        Text(t("drug_two")).tag(GalaxySSIHealthAtlasDrugState.Mode.two)
+      }.pickerStyle(.segmented)
+      if drugState.wrappedValue.mode == .two {
+        GalaxySSIHealthAtlasDistributionPanel(model: drugState.distribution, language: language)
+      } else {
       Text(t("elimination_assumptions")).font(.footnote)
       hours("half_life", value: selection.elimination.halfLife, range: 1...24)
       hours("elapsed", value: selection.elimination.elapsed, range: 0...48)
@@ -57,22 +74,22 @@ struct GalaxySSIHealthAtlasResearch: View {
       Text(String(format: t("elimination_summary"), Int64(selection.wrappedValue.elimination.halfLife),
         Int64(selection.wrappedValue.elimination.elapsed), String(format: "%.1f", selection.wrappedValue.elimination.percent(at: selection.wrappedValue.elimination.elapsed))))
       Text(t("elimination_formula")).font(.footnote)
+      Button { selection.wrappedValue.elimination = .init() } label: {
+        Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
+      }.accessibilityLabel(t("reset")).help(t("reset"))
+      }
       Link(t("pharmacology_source"), destination: URL(string: "https://openstax.org/books/pharmacology/pages/2-2-pharmacokinetics-and-pharmacodynamics")!)
       Link(t("kinetics_source"), destination: URL(string: "https://pharmacologyeducation.org/clinical-pharmacokinetics/")!)
     }
   }
   private var aging: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      Text(t("aging_scope")); Text(t("aging_note")).font(.footnote)
-      ForEach(["genome", "proteins", "energy", "cells"], id: \.self) { theme in
-        Text(t("aging_" + theme)).font(.headline)
-        Text(t("aging_" + theme + "_note"))
-      }
-      Divider()
-      Text(t("evidence_boundary")).font(.headline)
-      Text(t("aging_evidence"))
-      Link(t("aging_source"), destination: URL(string: "https://pubmed.ncbi.nlm.nih.gov/36599349/")!)
-    }
+    GalaxySSIHealthAtlasAgingPanel(atlas: atlas, entry: entry, saved: selection.aging, language: language,
+      destination: { id in
+        if let target = atlas.entry(id), depth < 32 {
+          return AnyView(GalaxySSIHealthAtlasDetail(atlas: atlas, entry: target, state: state, records: records, depth: depth + 1))
+        }
+        return AnyView(EmptyView())
+      })
   }
   private var curve: some View {
     VStack(alignment: .leading, spacing: 6) {

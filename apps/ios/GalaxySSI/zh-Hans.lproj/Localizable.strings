@@ -781,6 +781,10 @@
 
 "galaxyssi.health.body.heading" = "从记录，认识身体";
 "galaxyssi.health.body.subtitle" = "身体机制探索 · 教学模型";
+"health_atlas_view_urinary" = "泌尿器官 · 简化前视图，尿道长度仅作示意";
+"health_atlas_view_gut" = "食管至直肠 · 前面观示意，未显示消化腺";
+"health_atlas_view_pancreas" = "胰腺与相邻十二指肠 · 胰管剖露";
+"health_atlas_plate_source" = "结构图参考来源";
 "galaxyssi.health.body.organ" = "器官";
 "galaxyssi.health.body.tissue" = "组织";
 "galaxyssi.health.body.cell" = "细胞";

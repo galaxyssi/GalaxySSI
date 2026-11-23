@@ -4,16 +4,25 @@ import SwiftUI
 final class GalaxySSIHealthAtlasState: ObservableObject {
   enum Tab: String, CaseIterable, Codable { case structure, function, values, simulation }
   enum Research: String, CaseIterable, Codable { case physiology, drugs, aging }
+  enum StructureLayer: String, CaseIterable { case organ, tissue, cell }
   struct Selection: Codable, Equatable {
     var tab = Tab.structure
     var research = Research.physiology
     var simulation = GalaxySSIHealthAtlasSimulation()
     var physiologyInputs: [Int]?
     var elimination = GalaxySSIHealthAtlasElimination()
+    var drugInputs: [Int]?
     var metric: GalaxySSIHealthMetric?
     var window = GalaxySSIHealthAtlasWindow.month
     var layers = true
     var zoom: Double = 1
+    var artworkView: String?
+    var aging: GalaxySSIHealthAtlasAgingSelection?
+    var structureLayer: String?
+    var selectedStructureLayer: StructureLayer {
+      get { StructureLayer(rawValue: structureLayer ?? "") ?? .organ }
+      set { structureLayer = newValue.rawValue }
+    }
   }
   @Published var entries: [String: Selection] = [:]
   @Published var previewPresented = false
@@ -27,12 +36,20 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
       let decoded = try? JSONDecoder().decode([String: Selection].self, from: data), decoded.count <= 300 else { return }
     entries = decoded.filter { atlas.entry($0.key) != nil }.mapValues { $0 }
     for id in Array(entries.keys) {
+      if atlas.entry(id)?.kind != .organ || StructureLayer(rawValue: entries[id]?.structureLayer ?? "") == nil {
+        entries[id]?.structureLayer = nil
+      }
+      if let view = entries[id]?.artworkView, !atlas.views(for: id).contains(where: { $0.viewKey == view }) {
+        entries[id]?.artworkView = nil
+      }
       entries[id]?.simulation.sanitize(id)
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
       let restored = GalaxySSIHealthAtlasPhysiology.restore(id, inputs: entries[id]?.physiologyInputs)?.inputs
       entries[id]?.physiologyInputs = restored
       #endif
       entries[id]?.elimination.sanitize()
+      if let aging = entries[id]?.aging { entries[id]?.aging = .resolved(aging, entryID: id) }
+      entries[id]?.drugInputs = GalaxySSIHealthAtlasDrugState.restore(entries[id]?.drugInputs)?.encoded
       if let zoom = entries[id]?.zoom { entries[id]?.zoom = zoom.isFinite ? min(4, max(1, zoom)) : 1 }
       if let metric = entries[id]?.metric, !GalaxySSIHealthAtlasMetrics.forEntry(id).contains(metric) { entries[id]?.metric = nil }
     }
@@ -47,9 +64,10 @@ struct GalaxySSIHealthAtlasView: View {
   @StateObject private var state = GalaxySSIHealthAtlasState()
   @SceneStorage("galaxyssi.health.atlas.public-selection.v1") private var saved = "{}"
   @State private var atlas: GalaxySSIHealthAtlas?
-  @State private var query = ""
-  @State private var kind = "whole"
-  @State private var system = ""
+  @SceneStorage("galaxyssi.health.atlas.query.v1") private var query = ""
+  @SceneStorage("galaxyssi.health.atlas.kind.v1") private var kind = "whole"
+  @SceneStorage("galaxyssi.health.atlas.system.v1") private var system = ""
+  @SceneStorage("galaxyssi.health.atlas.tissue-catalogue.v1") private var showTissues = false
   @State private var limit = 24
 
   var body: some View {
@@ -65,7 +83,8 @@ struct GalaxySSIHealthAtlasView: View {
           if kind == "whole" {
             GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: nil, state: state, records: records, depth: 0)
             Text(String(format: t("counts"), Int64(atlas.entries.filter { $0.kind == .system }.count),
-              Int64(atlas.entries.filter { $0.kind == .organ }.count), Int64(atlas.entries.filter { $0.kind == .cell }.count)))
+              Int64(atlas.entries.filter { $0.kind == .organ }.count), Int64(atlas.entries.filter { $0.kind == .tissue }.count),
+              Int64(atlas.entries.filter { $0.kind == .cell }.count)))
               .font(.subheadline).foregroundColor(.secondary)
             ForEach(["heart", "cell-pancreatic-beta-cell"], id: \.self) { id in
               if let entry = atlas.entry(id) { link(entry, atlas: atlas) }
@@ -77,6 +96,12 @@ struct GalaxySSIHealthAtlasView: View {
               }
             }
           } else {
+            if kind == "organ" {
+              Picker(t("organs"), selection: $showTissues) {
+                Text(t("organs")).tag(false)
+                Text(t("tissues")).tag(true)
+              }.pickerStyle(.segmented).accessibilityIdentifier("atlas-catalogue-layer")
+            }
             TextField(t("search"), text: $query)
               .onChange(of: query) { value in
                 if value.count > 100 { query = String(value.prefix(100)) }
@@ -90,7 +115,8 @@ struct GalaxySSIHealthAtlasView: View {
                 }
               }
             }
-            let matches = atlas.search(query, kind: GalaxySSIHealthAtlas.Kind(rawValue: kind), system: system, language: language)
+            let matches = atlas.search(query, kind: kind == "organ" && showTissues ? .tissue : GalaxySSIHealthAtlas.Kind(rawValue: kind),
+              system: system, language: language)
             if matches.isEmpty { Text(t("no_matches")) }
             ForEach(Array(matches.prefix(limit))) { link($0, atlas: atlas) }
             if matches.count > limit { Button(t("more")) { limit += 24 } }
@@ -113,6 +139,7 @@ struct GalaxySSIHealthAtlasView: View {
     .onChange(of: state.serialized) { saved = $0 }
     .onChange(of: kind) { _ in system = ""; limit = 24 }
     .onChange(of: system) { _ in limit = 24 }
+    .onChange(of: showTissues) { _ in limit = 24 }
   }
 
   private func link(_ entry: GalaxySSIHealthAtlas.Entry, atlas: GalaxySSIHealthAtlas) -> some View {
@@ -121,7 +148,13 @@ struct GalaxySSIHealthAtlasView: View {
     }
   }
   private func load() {
-    do { let content = try GalaxySSIHealthAtlas.load(); state.restore(saved, atlas: content); atlas = content }
+    do {
+      let content = try GalaxySSIHealthAtlas.load()
+      if !["whole", "system", "organ", "cell"].contains(kind) { kind = "whole" }
+      if !system.isEmpty, content.entry(system)?.kind != .system { system = "" }
+      query = String(query.prefix(100))
+      state.restore(saved, atlas: content); atlas = content
+    }
     catch { atlas = nil }
   }
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }

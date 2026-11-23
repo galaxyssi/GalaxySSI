@@ -7,6 +7,14 @@
     <string name="wechat_article_fetch">正在下载文章正文和图片…</string>
     <string name="wechat_article_render">正在生成 PDF…</string>
     <string name="wechat_article_saved">已保存 %1$d 页到 Download/GalaxySSI/GongZhongHao\n%2$s</string>
+    <string name="wechat_article_saved_partial">已保存 %1$d 页到 Download/GalaxySSI/GongZhongHao，有 %3$d 张图片未保存，已在 PDF 中标注。\n%2$s</string>
+    <string name="wechat_article_missing_image">[图片未能保存]</string>
+    <string name="wechat_article_already_saving">已有一篇公众号文章正在保存。可在保存通知中查看进度、继续验证或取消。</string>
+    <string name="wechat_article_body_unavailable">未能完整加载文章正文，未保存 PDF。</string>
+    <string name="wechat_article_load_failed">后台浏览器无法加载这篇文章，未保存 PDF。</string>
+    <string name="wechat_article_too_large">文章太大，无法保存为一份 PDF。</string>
+    <string name="wechat_article_pdf_failed">文章已加载，但生成或写入 PDF 失败。</string>
+    <string name="wechat_article_verification_expired">等待微信验证超时，请重新打开文章后重试。</string>
     <string name="wechat_article_failed">未能保存完整文章。请检查网络及文章是否可公开访问，然后重试。</string>
     <string name="wechat_article_clipboard_failed">未能读取刚复制的公众号文章链接，请返回文章重新操作。</string>
     <string name="wechat_article_open">打开 PDF</string>

@@ -3,7 +3,7 @@ import UIKit
 
 /// Public teaching content only: this graph never loads the health archive.
 struct GalaxySSIHealthAtlas: Decodable {
-  enum Kind: String, Decodable { case system, organ, cell, fragment }
+  enum Kind: String, Decodable { case system, organ, tissue, cell, fragment }
   struct Entry: Decodable, Identifiable {
     let id: String
     let kind: Kind
@@ -15,9 +15,11 @@ struct GalaxySSIHealthAtlas: Decodable {
     let aliases: String
     let color: String
     let icon: String
+    var locatedIn: [String]? = nil
+    var locations: [String] { locatedIn ?? [] }
     func replacing(mechanism: String? = nil, related: [String]? = nil) -> Self {
       Self(id: id, kind: kind, name: name, description: description, systems: systems, related: related ?? self.related,
-        mechanism: mechanism ?? self.mechanism, aliases: aliases, color: color, icon: icon)
+        mechanism: mechanism ?? self.mechanism, aliases: aliases, color: color, icon: icon, locatedIn: locatedIn)
     }
   }
   struct Mechanism: Decodable, Identifiable {
@@ -26,7 +28,8 @@ struct GalaxySSIHealthAtlas: Decodable {
     let title: String
     let stages: [String]
     let chapter: String
-    var source: URL { URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/" + chapter)! }
+    var reference: URL? = nil
+    var source: URL { reference ?? URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/" + chapter)! }
   }
   let schema: Int
   let entries: [Entry]
@@ -37,13 +40,24 @@ struct GalaxySSIHealthAtlas: Decodable {
     guard let url = bundle.url(forResource: "body-atlas", withExtension: "json", subdirectory: "body-atlas")
     else { throw Invalid.catalogue }
     var result = try validated(JSONDecoder().decode(Self.self, from: Data(contentsOf: url)))
+    if includeExtensions, let pack = try MusculoskeletalPack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
+    if includeExtensions, let pack = try OverviewPack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     guard includeExtensions else { return result }
+    try validatePlates([GalaxySSIHealthAtlasEyeOptics.plate], in: result, bundle: bundle)
+    if let pack = try ReproductivePack.read(bundle: bundle) { result = try pack.applying(to: result) }
+    if let pack = try SystemPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try ArtworkPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try RenalPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try CellPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try RespirationPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try ExtendedCellPack.read(bundle: bundle) { result = try pack.applying(to: result) }
+    if let pack = try EarPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try TissuePack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try HeartSectionPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     return result
   }
 
-  static func validated(_ atlas: Self) throws -> Self {
+  static func validated(_ atlas: Self, requireCompleteMicroscopic: Bool = false) throws -> Self {
     let ids = Set(atlas.entries.map(\.id)), models = Set(atlas.mechanisms.map(\.id))
     guard atlas.schema == 1, ids.count == atlas.entries.count, models.count == atlas.mechanisms.count,
       !ids.isEmpty, !models.isEmpty,
@@ -54,22 +68,48 @@ struct GalaxySSIHealthAtlas: Decodable {
         entry.related.allSatisfy(ids.contains) && !entry.related.contains(entry.id) && models.contains(entry.mechanism)
       }), atlas.mechanisms.allSatisfy({ model in
         model.stages.count == 4 && model.stages.allSatisfy({ !$0.isEmpty }) &&
+        (model.reference == nil || model.reference!.absoluteString.range(of: "^https://pubmed\\.ncbi\\.nlm\\.nih\\.gov/[1-9][0-9]*/$", options: .regularExpression) != nil) &&
         model.chapter.range(of: "^[a-z0-9-]+$", options: .regularExpression) != nil
       }) else { throw Invalid.catalogue }
-    guard atlas.mechanisms.filter({ $0.kind == "cell" }).allSatisfy({ mechanism in
-      atlas.entry(mechanism.id).map { $0.kind == .cell && $0.mechanism == mechanism.id } == true
+    let microscopicKinds = ["cell", "fragment"]
+    guard atlas.mechanisms.filter({ microscopicKinds.contains($0.kind) }).allSatisfy({ mechanism in
+      atlas.entry(mechanism.id).map { $0.kind.rawValue == mechanism.kind && $0.mechanism == mechanism.id } == true
     }), atlas.entries.allSatisfy({ entry in
-      atlas.model(entry).kind != "cell" || entry.mechanism == entry.id
+      !microscopicKinds.contains(atlas.model(entry).kind) || entry.mechanism == entry.id
     }) else { throw Invalid.catalogue }
+    if requireCompleteMicroscopic {
+      let microscopic = atlas.entries.filter { microscopicKinds.contains($0.kind.rawValue) }
+      guard microscopic.allSatisfy({ $0.mechanism == $0.id && atlas.model($0).kind == $0.kind.rawValue }) else { throw Invalid.catalogue }
+      let textKeys = microscopic.flatMap { [atlas.model($0).title] + atlas.model($0).stages }
+      guard Set(textKeys).count == textKeys.count else { throw Invalid.catalogue }
+    }
+    guard atlas.entries.allSatisfy({ entry in
+      guard entry.kind == .tissue else { return entry.locations.isEmpty && atlas.model(entry).kind != "tissue" }
+      return !entry.locations.isEmpty && Set(entry.locations).count == entry.locations.count &&
+        entry.locations.allSatisfy { id in
+          atlas.entry(id).map { $0.kind == .organ && !$0.systems.filter(entry.systems.contains).isEmpty } == true
+        } && !entry.related.isEmpty && Set(entry.related).count == entry.related.count &&
+        entry.related.allSatisfy { atlas.entry($0)?.kind == .cell } &&
+        entry.mechanism == entry.id && atlas.model(entry).kind == "tissue"
+    }), atlas.mechanisms.filter({ $0.kind == "tissue" }).allSatisfy({ atlas.entry($0.id)?.kind == .tissue })
+    else { throw Invalid.catalogue }
     return atlas
   }
 
   func entry(_ id: String) -> Entry? { entries.first { $0.id == id } }
   func model(_ entry: Entry) -> Mechanism { mechanisms.first { $0.id == entry.mechanism }! }
   func children(_ entry: Entry) -> [Entry] { entry.related.compactMap(self.entry) }
-  func parents(_ entry: Entry) -> [Entry] { entries.filter { $0.kind != .system && $0.related.contains(entry.id) } }
+  func parents(_ entry: Entry) -> [Entry] {
+    (entry.locations.compactMap(self.entry) + entries.filter { $0.kind != .system && $0.related.contains(entry.id) })
+      .reduce(into: []) { result, item in if !result.contains(where: { $0.id == item.id }) { result.append(item) } }
+  }
+  func tissues(_ entry: Entry) -> [Entry] {
+    entries.filter { $0.kind == .tissue && (entry.kind == .system ? $0.systems.contains(entry.id) :
+      entry.kind == .organ && $0.locations.contains(entry.id)) }
+  }
   func cells(_ entry: Entry) -> [Entry] {
-    entries.filter { ($0.kind == .cell || $0.kind == .fragment) &&
+    if entry.kind == .tissue { return children(entry) }
+    return entries.filter { ($0.kind == .cell || $0.kind == .fragment) &&
       (entry.kind == .system ? $0.systems.contains(entry.id) : $0.related.contains(entry.id)) }
   }
   func search(_ query: String, kind: Kind?, system: String, language: String) -> [Entry] {
@@ -96,6 +136,9 @@ struct GalaxySSIHealthAtlas: Decodable {
     let entryIDs: [String]
     let aspectRatio: Double
     let markers: [Marker]
+    var source: URL? = nil
+    var viewKey: String? = nil
+    var selectorLabel: String? = nil
   }
   /// An additive, bundled-only asset pack can land independently of the atlas UI.
   struct ArtworkPack: Decodable {
@@ -156,38 +199,94 @@ struct GalaxySSIHealthAtlas: Decodable {
       return result
     }
   }
+  struct SystemPack: Decodable {
+    let schema: Int
+    let plates: [Plate]
+    let english: [String: String]
+    static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
+    static func read(bundle: Bundle) throws -> Self? {
+      guard let asset = NSDataAsset(name: "HealthAtlasSystemPlates", bundle: bundle) else { return nil }
+      guard asset.data.count <= 128_000 else { throw Invalid.catalogue }
+      return try JSONDecoder().decode(Self.self, from: asset.data)
+    }
+    func applying(to base: GalaxySSIHealthAtlas, bundle: Bundle) throws -> GalaxySSIHealthAtlas {
+      guard schema == 1, !plates.isEmpty, english.count <= 128, english.values.allSatisfy({ !$0.isEmpty }),
+        english.keys.allSatisfy({ $0.hasPrefix("health_atlas_view_") || $0 == "health_atlas_plate_source" }) else { throw Invalid.catalogue }
+      try GalaxySSIHealthAtlas.validatePlates(plates, in: base, bundle: bundle)
+      guard plates.allSatisfy({ plate in
+        guard let owner = plate.owner, let entry = base.entry(owner), entry.kind == .system || entry.kind == .organ,
+          plate.entryIDs.contains(owner), plate.source != nil, english[plate.viewLabel] != nil else { return false }
+        let visible = Set(plate.markers.map(\.id) + [owner])
+        return plate.entryIDs.allSatisfy { visible.contains($0) && base.entry($0)?.kind != .cell && base.entry($0)?.kind != .fragment }
+      }) else { throw Invalid.catalogue }
+      return base
+    }
+  }
   private static func validatePlates(_ plates: [Plate], in atlas: Self, bundle: Bundle) throws {
     guard plates.count <= 64, Set(plates.map(\.id)).count == plates.count,
       Set(plates.flatMap(\.entryIDs)).count == plates.flatMap(\.entryIDs).count,
       plates.allSatisfy({ plate in
         !plate.entryIDs.isEmpty && plate.entryIDs.allSatisfy({ $0.isEmpty || atlas.entry($0) != nil }) &&
         (plate.owner == nil || atlas.entry(plate.owner!) != nil) &&
+        Self.trustedPlateSource(plate.source) &&
         plate.asset.hasPrefix("HealthAtlas") && UIImage(named: plate.asset, in: bundle, compatibleWith: nil) != nil &&
         plate.aspectRatio.isFinite && (0.1...3).contains(plate.aspectRatio) &&
         plate.markers.allSatisfy({ atlas.entry($0.id) != nil && $0.x.isFinite && $0.y.isFinite &&
           (0...1).contains($0.x) && (0...1).contains($0.y) })
       }) else { throw Invalid.catalogue }
   }
-  func plate(for id: String?) -> Plate? {
-    if let pack = try? CellPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
-    if let pack = try? ArtworkPack.bundled.get() {
-      return pack.plates.first { $0.entryIDs.contains(id ?? "") }
+  func views(for id: String?) -> [Plate] {
+    if id == "heart" { return [GalaxySSIHealthAtlasHeartSection.exterior, GalaxySSIHealthAtlasHeartSection.section] }
+    if let id, let plate = GalaxySSIHealthAtlasHeartSection.plate(for: id) { return [plate] }
+    if GalaxySSIHealthAtlasMiddleEar.ids.contains(id ?? "") { return [GalaxySSIHealthAtlasMiddleEar.plate] }
+    if let pack = try? MusculoskeletalPack.bundled.get() {
+      let views = pack.plates.filter { $0.entryIDs.contains(id ?? "") }
+      if !views.isEmpty { return views }
     }
+    return defaultPlate(for: id).map { [$0] } ?? []
+  }
+  static func trustedPlateSource(_ source: URL?) -> Bool {
+    guard let source else { return true }
+    return source.scheme == "https" && source.user == nil && source.password == nil &&
+      (source.host == "openstax.org" || source == GalaxySSIHealthAtlasEyeOptics.anatomySource ||
+        source == GalaxySSIHealthAtlasMiddleEar.anatomySource)
+  }
+  func plate(for id: String?, viewKey: String? = nil) -> Plate? {
+    let available = views(for: id)
+    return available.first(where: { $0.viewKey == viewKey }) ?? available.first
+  }
+  private func defaultPlate(for id: String?) -> Plate? {
+    if let pack = try? TissuePack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
+    if GalaxySSIHealthAtlasEyeOptics.plate.entryIDs.contains(id ?? "") { return GalaxySSIHealthAtlasEyeOptics.plate }
+    if let pack = try? SystemPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
+    if let pack = try? CellPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
+    if let pack = try? RenalPack.bundled.get(), pack.plate.entryIDs.contains(id ?? "") { return pack.plate }
+    if let pack = try? ArtworkPack.bundled.get() {
+      if let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
+    }
+    if ["alveoli", "respiratory-membrane", "pulmonary-capillaries"].contains(id ?? ""),
+       let pack = try? RespirationPack.bundled.get() { return pack.plate }
     if id == nil {
       return Plate(id: "whole", asset: "HealthAtlasBody", owner: nil, viewLabel: "health_atlas_illustration", entryIDs: [""],
         aspectRatio: 2.0 / 3.0, markers: [Marker(id: "brain", x: 0.5, y: 0.045), Marker(id: "heart", x: 0.54, y: 0.28),
           Marker(id: "liver", x: 0.45, y: 0.34), Marker(id: "small-intestine", x: 0.51, y: 0.44)])
     }
-    if ["heart", "cardio", "atria", "ventricles", "heart-valves", "coronary-vessels"].contains(id ?? "") {
-      return Plate(id: "heart", asset: "HealthAtlasHeart", owner: "heart", viewLabel: "health_atlas_illustration", entryIDs: [id!],
-        aspectRatio: 3.0 / 4.0, markers: [Marker(id: "atria", x: 0.28, y: 0.46), Marker(id: "coronary-vessels", x: 0.57, y: 0.68),
-          Marker(id: "ventricles", x: 0.61, y: 0.84)])
+    if ["heart", "cardio", "atria", "ventricles", "coronary-vessels"].contains(id ?? "") {
+      return GalaxySSIHealthAtlasHeartSection.exterior
     }
     if id == "cell-pancreatic-beta-cell" {
       return Plate(id: "beta-cell", asset: "HealthAtlasBetaCell", owner: id, viewLabel: "health_atlas_illustration",
         entryIDs: [id!], aspectRatio: 1, markers: [])
     }
+    if let pack = try? OverviewPack.bundled.get() { return pack.plates.first { $0.entryIDs.contains(id ?? "") } }
     return nil
+  }
+  func caption(_ plate: Plate, selected entry: Entry?, language: String) -> String {
+    let view = GalaxySSIHealthAtlasText.get(plate.viewLabel, language)
+    guard let owner = plate.owner, owner != entry?.id, let structure = self.entry(owner) else { return view }
+    let name = GalaxySSIHealthAtlasText.get(structure.name, language)
+    let key = plate.viewLabel == "health_atlas_illustration" ? "health_atlas_related_process" : "health_atlas_plate_context"
+    return String(format: GalaxySSIHealthAtlasText.get(key, language), name, view)
   }
 }
 
@@ -196,7 +295,8 @@ enum GalaxySSIHealthAtlasText {
     let name = LanguagePolicySettings.resolveInterface(language) == LanguagePolicySettings.zhCN ? "zh-Hans" : "en"
     let organ = try? GalaxySSIHealthAtlas.ArtworkPack.bundled.get()
     let cells = try? GalaxySSIHealthAtlas.CellPack.bundled.get()
-    let extensionText = cells?.english[key] ?? organ?.english[key]
+    let systems = try? GalaxySSIHealthAtlas.SystemPack.bundled.get()
+    let extensionText = systems?.english[key] ?? cells?.english[key] ?? organ?.english[key]
     let english = extensionText ?? localized(key, locale: "en", fallback: key)
     return localized(key, locale: name, fallback: english, table: extensionText == nil ? "BodyAtlas" : "Localizable")
   }
@@ -219,10 +319,10 @@ struct GalaxySSIHealthAtlasSimulation: Equatable, Codable {
     return true
   }
   static func initial(_ id: String) -> Self {
-    ["lungs", "respiratory"].contains(id) ? Self(first: 12, second: 500) : Self()
+    ["lungs", "respiratory", "alveoli"].contains(id) ? Self(first: 12, second: 500) : Self()
   }
   mutating func sanitize(_ id: String) {
-    let lung = ["lungs", "respiratory"].contains(id)
+    let lung = ["lungs", "respiratory", "alveoli"].contains(id)
     first = first.isFinite ? min(lung ? 30 : 160, max(lung ? 6 : 40, first.rounded())) : (lung ? 12 : 70)
     second = second.isFinite ? min(lung ? 900 : 120, max(lung ? 200 : 30, second.rounded())) : (lung ? 500 : 70)
     phase = phase.isFinite ? min(1, max(0, phase)) : 0
@@ -261,9 +361,11 @@ enum GalaxySSIHealthAtlasMetrics {
     case "endocrine": return [.glucose, .hba1c, .tsh]
     case "thyroid-gland", "cell-thyroid-follicular-cell", "cell-thyrotroph": return [.tsh]
     case "liver", "cell-hepatocyte", "digestive": return [.alt, .ast, .albumin, .totalBilirubin]
-    case "urinary", "kidneys", "nephron", "glomerulus", "renal-tubules", "collecting-ducts", "cell-podocyte":
+    case "urinary", "kidneys", "renal-cortex", "renal-medulla", "renal-pelvis", "nephron", "glomerulus",
+         "renal-tubules", "collecting-ducts", "cell-podocyte", "bowmans-capsule", "proximal-tubule", "nephron-loop", "distal-tubule":
       return [.creatinine, .urea, .urineProtein]
-    case "respiratory", "lungs", "alveoli", "cell-type-i-pneumocyte", "cell-type-ii-pneumocyte": return [.oxygenSaturation]
+    case "respiratory", "lungs", "alveoli", "respiratory-membrane", "pulmonary-capillaries",
+         "cell-type-i-pneumocyte", "cell-type-ii-pneumocyte": return [.oxygenSaturation]
     case "blood", "bone-marrow", "immune": return [.hemoglobin, .redBloodCells, .whiteBloodCells, .platelets]
     case "cell-erythrocyte": return [.redBloodCells, .hemoglobin, .hematocrit]
     case "fragment-platelet", "cell-megakaryocyte": return [.platelets]

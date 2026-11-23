@@ -13,6 +13,8 @@ enum GalaxySSIHealthAtlasAgentContext {
     let mechanism: String
     let stages: [String]
     let source: URL
+    var tissueContext: [String] = []
+    var valveContext: String? = nil
   }
   struct Simulation {
     let entryID: String
@@ -25,6 +27,16 @@ enum GalaxySSIHealthAtlasAgentContext {
         !["heart", "cardio"].contains(entryID) || ((40...160).contains(first) && (30...120).contains(second) &&
           first.rounded() == first && second.rounded() == second) else { return nil }
       self.entryID = entryID; self.phase = phase; self.first = first; self.second = second
+    }
+  }
+  struct Illustration {
+    let entryID: String
+    let caption: String
+    let source: URL?
+    init?(entryID: String, caption: String, source: URL?) {
+      guard !entryID.isEmpty, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        GalaxySSIHealthAtlas.trustedPlateSource(source) else { return nil }
+      self.entryID = entryID; self.caption = caption; self.source = source
     }
   }
   struct Quantitative {
@@ -43,7 +55,9 @@ enum GalaxySSIHealthAtlasAgentContext {
   }
 
   static func prompt(anatomy: Anatomy?, screen: Screen, simulation: Simulation? = nil, quantitative: Quantitative? = nil,
-                     elimination: Elimination? = nil, locale: Locale, text t: (String) -> String) -> String? {
+                     elimination: Elimination? = nil, illustration: Illustration? = nil, drugs: GalaxySSIHealthAtlasDrugState? = nil,
+                     aging: GalaxySSIHealthAtlasAgingSelection? = nil, language: String = "en",
+                     locale: Locale, text t: (String) -> String) -> String? {
     guard screen != .values else { return nil }
     guard let anatomy else { return t("ask_whole_context") }
     guard anatomy.stages.count == 4 else { return nil }
@@ -52,10 +66,22 @@ enum GalaxySSIHealthAtlasAgentContext {
       return format.string(from: NSNumber(value: value)) ?? String(value)
     }
     var lines = [String(format: t("ask_context"), anatomy.name, anatomy.description, anatomy.mechanism, anatomy.source.absoluteString)]
+    lines += anatomy.tissueContext
+    if let illustration, illustration.entryID == anatomy.id {
+      lines += [illustration.caption, t("art_note")]
+      if let source = illustration.source { lines.append(source.absoluteString) }
+    }
     if screen.includesPhysiology {
       if let simulation, simulation.entryID == anatomy.id {
         lines.append(t("teaching_note"))
+        if GalaxySSIHealthAtlasCirculation.supports(anatomy.id) {
+          lines += [t("circuit_scope"), t("circuit_path"), GalaxySSIHealthAtlasCirculation.source.absoluteString]
+        }
         lines.append(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4), anatomy.stages[simulation.stage]))
+        if let context = anatomy.valveContext { lines.append(context) }
+        if let counts = GalaxySSIHealthAtlasGermline.counts(anatomy.id, stage: simulation.stage) {
+          lines.append(GalaxySSIHealthAtlasGermline.context(counts, text: t))
+        }
         if ["heart", "cardio"].contains(anatomy.id) {
           lines.append(t("heart_rate") + ": " + number(simulation.first) + " bpm")
           lines.append(t("stroke_volume") + ": " + number(simulation.second) + " mL")
@@ -64,18 +90,32 @@ enum GalaxySSIHealthAtlasAgentContext {
         }
       }
       if let quantitative, quantitative.entryID == anatomy.id, !quantitative.context.isEmpty { lines.append(quantitative.context) }
+      if let simulation, simulation.entryID == anatomy.id, GalaxySSIHealthAtlasGasExchange.supports(anatomy.id) {
+        lines.append(t("gas_scope"))
+        lines += GalaxySSIHealthAtlasGasExchange.gradients.map {
+          String(format: t("gas_summary"), t("gas_" + $0.gas.rawValue), Int64($0.alveolar), Int64($0.incomingBlood),
+            t($0.towardBlood ? "gas_to_blood" : "gas_to_air"))
+        }
+        lines.append(GalaxySSIHealthAtlasGasExchange.source.absoluteString)
+      }
     }
     switch screen {
     case .physiology:
       lines += [t("physiology"), t("teaching_note"), anatomy.source.absoluteString]
     case .drugs:
-      let values = elimination ?? Elimination(halfLife: 4, elapsed: 8)!
-      lines += [t("drugs"), t("elimination_assumptions"),
-        String(format: t("elimination_summary"), Int64(values.halfLife), Int64(values.elapsed), number(values.percent)),
-        "https://openstax.org/books/pharmacology/pages/2-2-pharmacokinetics-and-pharmacodynamics",
+      lines.append(t("drugs"))
+      if let drugs, drugs.mode == .two {
+        lines += [t("drug_models"), drugs.distribution.context(locale: locale, text: t)]
+      } else {
+        let values = elimination ?? Elimination(halfLife: 4, elapsed: 8)!
+        lines += [t("elimination_assumptions"),
+          String(format: t("elimination_summary"), Int64(values.halfLife), Int64(values.elapsed), number(values.percent))]
+      }
+      lines += ["https://openstax.org/books/pharmacology/pages/2-2-pharmacokinetics-and-pharmacodynamics",
         "https://pharmacologyeducation.org/clinical-pharmacokinetics/"]
     case .aging:
-      lines += [t("aging"), t("aging_evidence"), "https://pubmed.ncbi.nlm.nih.gov/36599349/", anatomy.source.absoluteString]
+      lines += [t("aging"), GalaxySSIHealthAtlasAgingSelection.resolved(aging, entryID: anatomy.id).context(language: language),
+        t("aging_evidence"), GalaxySSIHealthAtlasAgingTopic.source.absoluteString, anatomy.source.absoluteString]
     default: break
     }
     return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
