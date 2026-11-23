@@ -272,7 +272,7 @@ struct GalaxySSIHealthAtlas: Decodable {
         aspectRatio: 2.0 / 3.0, markers: [Marker(id: "brain", x: 0.5, y: 0.045), Marker(id: "heart", x: 0.54, y: 0.28),
           Marker(id: "liver", x: 0.45, y: 0.34), Marker(id: "small-intestine", x: 0.51, y: 0.44)])
     }
-    if ["heart", "cardio", "atria", "ventricles", "coronary-vessels"].contains(id ?? "") {
+    if ["heart", "atria", "ventricles", "coronary-vessels"].contains(id ?? "") {
       return GalaxySSIHealthAtlasHeartSection.exterior
     }
     if id == "cell-pancreatic-beta-cell" {

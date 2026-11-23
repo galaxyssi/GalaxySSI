@@ -26,6 +26,7 @@ Base: main. Android source: #4344, merge 583bcc0f3ff45112db88220326322948defaafb
 - Original six overview PNGs remain byte-identical to Android #4332.
 - New overview audit compares all four vectors' 23 anchors and exact canonical
   routes to Android #4344; the combined pack has 54 unique routes.
+- Full bundled graph composition matches Android #4344: 311 entries / 158 mechanisms.
 - Four PDFs rendered with Poppler and visually reviewed; all 23 landmarks
   intersect nonblank artwork. This is asset review, not native UI acceptance.
 - Added XCTest source for all 14 category routes, dedicated child precedence,
