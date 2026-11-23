@@ -3,17 +3,23 @@ const fs = require("node:fs"), path = require("node:path"), assert = require("no
 const {execFileSync} = require("node:child_process"), xml = require("xml-js");
 const {PDFDocument, PDFName, PDFDict, PDFArray, decodePDFRawStream} = require("pdf-lib");
 const root = path.resolve(__dirname, "../GalaxySSI"), assets = path.join(root, "Assets.xcassets");
-const sha = "7e5841c21c313fd2ecee924e6805385e96a564a1";
+const retinal = process.argv.includes("--retinal-cells");
+const sha = retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
 const source = file => execFileSync("git", ["show", sha + ":" + file], {encoding: "utf8", maxBuffer: 4_000_000});
-const frames = [
-  ["ear_section", "HealthAtlasEarSection", "ear.pdf"], ["eye_section", "HealthAtlasEyeSection", "eye.pdf"],
+const frames = retinal ? [
+  ["sensory_aii", "HealthAtlasSensoryAii", "cell.pdf"], ["sensory_bipolar", "HealthAtlasSensoryBipolar", "cell.pdf"],
+  ["sensory_cone", "HealthAtlasSensoryCone", "cell.pdf"], ["sensory_ganglion", "HealthAtlasSensoryGanglion", "cell.pdf"],
+  ["sensory_rod", "HealthAtlasSensoryRod", "cell.pdf"], ["sensory_rpe", "HealthAtlasSensoryRpe", "cell.pdf"]
+] : [
+  ["eye_section", "HealthAtlasEyeSection", "eye.pdf"],
   ["sensory_cochlear_hair", "HealthAtlasSensoryCochlearHair", "cell.pdf"],
   ["sensory_retina_section", "HealthAtlasSensoryRetinaSection", "cell.pdf"]
 ];
+const gradientOffset = retinal ? 0 : 4;
 const array = (dict, key) => dict.lookup(PDFName.of(key), PDFArray).asArray().map(n => n.asNumber());
 const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 255);
 (async () => {
-  let paths = 0, gradients = 0;
+  let paths = 0, gradients = gradientOffset;
   for (const [slug, asset, filename] of frames) {
     const vector = xml.xml2js(source("apps/android/app/src/main/res/drawable/health_atlas_" + slug + ".xml"), {compact: true}).vector;
     const dir = path.join(assets, asset + ".imageset"), metadata = JSON.parse(fs.readFileSync(path.join(dir, "Contents.json")));
@@ -49,8 +55,8 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
     }
     paths += vector.path.length;
   }
-  assert.equal(paths, 63); assert.equal(gradients, 11);
-  const kotlin = source("apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSensorySections.kt");
+  assert.equal(paths, retinal ? 49 : 46); assert.equal(gradients - gradientOffset, retinal ? 17 : 7);
+  const kotlin = execFileSync("git", ["show", "b513fe5023b8699e4e64e1f914f09be98ddeeacb:apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSensorySections.kt"], {encoding: "utf8"});
   const swift = fs.readFileSync(path.join(root, "GalaxySSIHealthAtlasSensorySections.swift"), "utf8");
   const expectedRoutes = [...kotlin.matchAll(/atlasSectionTrack\(([\d.]+)f, ([\d.]+)f\) \{([^}]+)\}/g)].map(m => ({
     start: {x: Number(m[1]), y: Number(m[2])}, commands: [...m[3].matchAll(/(lineTo|quadTo|cubicTo)\(([^)]+)\)/g)].map(c => {
@@ -78,5 +84,5 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
     for (const key of ["health_atlas_hearing_eardrum", "health_atlas_hearing_ossicles", "health_atlas_hearing_route_scope"])
       assert.equal(values.get(key), resource.find(r => r._attributes.name === key)._text);
   }
-  console.log("Android #4358 parity: four vector PDFs, 63 source paths, 11 native gradients with exact stops/coordinates, four ear routes/features and six localized values. No native UI execution.");
+  console.log("Sensory parity: " + frames.length + " retained vector PDFs / " + paths + " source paths / " + (gradients - gradientOffset) + " exact native gradients; Android #4359 ear routes/features and six inherited localized values. No native UI execution.");
 })().catch(error => { console.error(error); process.exit(1); });

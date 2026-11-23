@@ -18,28 +18,28 @@ enum GalaxySSIHealthAtlasSensorySections {
   }
   static let ear: Lesson = {
     func feature(_ id: String, _ x: Double, _ y: Double, _ title: String, _ stage: Int) -> Feature {
-      Feature(marker: .init(id: id, x: x / 460, y: y / 280), title: "health_atlas_" + title,
+      Feature(marker: .init(id: id, x: x / 420, y: y / 280), title: "health_atlas_" + title,
         explanation: "health_atlas_hearing_ear_" + String(stage))
     }
-    let features = [feature("ear-canal", 148, 140, "external_ear_name", 0),
-      feature("eardrum", 214, 138, "hearing_eardrum", 1),
-      feature("ossicles", 254, 111, "hearing_ossicles", 2),
-      feature("cochlea-output", 361, 177, "cochlea_name", 3)]
+    let features = [feature("ear-canal", 135, 145, "external_ear_name", 0),
+      feature("eardrum", 187, 139, "hearing_eardrum", 1),
+      feature("ossicles", 223, 118, "hearing_ossicles", 2),
+      feature("cochlea-output", 319, 156, "cochlea_name", 3)]
     let routes: [Lesson.Route] = [
-      .init(start: .init(x: 40, y: 137), commands: [
-        .init(kind: .cubic, points: [.init(x: 66, y: 130), .init(x: 77, y: 137), .init(x: 95, y: 140)]),
-        .init(kind: .quad, points: [.init(x: 132, y: 136), .init(x: 179, y: 137)])]),
-      .init(start: .init(x: 179, y: 137), commands: [.init(kind: .quad, points: [.init(x: 193, y: 140), .init(x: 214, y: 138)])]),
-      .init(start: .init(x: 220, y: 137), commands: [
-        .init(kind: .line, points: [.init(x: 231, y: 106)]),
-        .init(kind: .quad, points: [.init(x: 248, y: 91), .init(x: 255, y: 109)]),
-        .init(kind: .line, points: [.init(x: 262, y: 141)]),
-        .init(kind: .line, points: [.init(x: 289, y: 141)])]),
-      .init(start: .init(x: 357, y: 179), commands: [
-        .init(kind: .cubic, points: [.init(x: 377, y: 176), .init(x: 397, y: 181), .init(x: 442, y: 198)])])
+      .init(start: .init(x: 79, y: 149), commands: [
+        .init(kind: .cubic, points: [.init(x: 100, y: 146), .init(x: 124, y: 144), .init(x: 153, y: 145)])]),
+      .init(start: .init(x: 153, y: 145), commands: [.init(kind: .quad, points: [.init(x: 172, y: 145), .init(x: 187, y: 139)])]),
+      .init(start: .init(x: 195, y: 145), commands: [
+        .init(kind: .quad, points: [.init(x: 202, y: 111), .init(x: 211, y: 109)]),
+        .init(kind: .cubic, points: [.init(x: 221, y: 109), .init(x: 228, y: 113), .init(x: 229, y: 120)]),
+        .init(kind: .quad, points: [.init(x: 233, y: 133), .init(x: 236, y: 143)]),
+        .init(kind: .line, points: [.init(x: 266, y: 144)])]),
+      .init(start: .init(x: 319, y: 156), commands: [
+        .init(kind: .cubic, points: [.init(x: 344, y: 153), .init(x: 351, y: 151), .init(x: 361, y: 147)]),
+        .init(kind: .cubic, points: [.init(x: 382, y: 143), .init(x: 395, y: 138), .init(x: 411, y: 135)])])
     ]
     return Lesson(plate: copy(GalaxySSIHealthAtlasMiddleEar.plate, features: features), stageFeatures: [0, 1, 2, 3],
-      routes: routes, notes: ["health_atlas_hearing_route_scope"], artWidth: 460)
+      routes: routes, notes: ["health_atlas_hearing_route_scope"], artWidth: 420)
   }()
   static let retina: Lesson? = {
     guard let pack = try? GalaxySSIHealthAtlas.SensoryPack.bundled.get(),
