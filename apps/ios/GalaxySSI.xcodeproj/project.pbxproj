@@ -114,6 +114,9 @@
     C438400000000000000000FF /* GalaxySSIHealthAtlasKneeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000100 /* GalaxySSIHealthAtlasKneeMotion.swift */; };
     C43840000000000000000101 /* GalaxySSIHealthAtlasKneeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000102 /* GalaxySSIHealthAtlasKneeView.swift */; };
     C43840000000000000000103 /* GalaxySSIHealthAtlasKneeDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000104 /* GalaxySSIHealthAtlasKneeDrawing.swift */; };
+    C43840000000000000000105 /* GalaxySSIHealthAtlasCardiacSignalMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000106 /* GalaxySSIHealthAtlasCardiacSignalMotion.swift */; };
+    C43840000000000000000107 /* GalaxySSIHealthAtlasCardiacSignalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000108 /* GalaxySSIHealthAtlasCardiacSignalView.swift */; };
+    C43840000000000000000109 /* GalaxySSIHealthAtlasCardiacSignalDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000010A /* GalaxySSIHealthAtlasCardiacSignalDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1701,6 +1704,9 @@
     C43840000000000000000100 /* GalaxySSIHealthAtlasKneeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasKneeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000102 /* GalaxySSIHealthAtlasKneeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasKneeView.swift; sourceTree = "<group>"; };
     C43840000000000000000104 /* GalaxySSIHealthAtlasKneeDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasKneeDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000106 /* GalaxySSIHealthAtlasCardiacSignalMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCardiacSignalMotion.swift; sourceTree = "<group>"; };
+    C43840000000000000000108 /* GalaxySSIHealthAtlasCardiacSignalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCardiacSignalView.swift; sourceTree = "<group>"; };
+    C4384000000000000000010A /* GalaxySSIHealthAtlasCardiacSignalDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCardiacSignalDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3307,6 +3313,9 @@
         C43840000000000000000100 /* GalaxySSIHealthAtlasKneeMotion.swift */,
         C43840000000000000000102 /* GalaxySSIHealthAtlasKneeView.swift */,
         C43840000000000000000104 /* GalaxySSIHealthAtlasKneeDrawing.swift */,
+        C43840000000000000000106 /* GalaxySSIHealthAtlasCardiacSignalMotion.swift */,
+        C43840000000000000000108 /* GalaxySSIHealthAtlasCardiacSignalView.swift */,
+        C4384000000000000000010A /* GalaxySSIHealthAtlasCardiacSignalDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5043,6 +5052,9 @@
         C438400000000000000000FF /* GalaxySSIHealthAtlasKneeMotion.swift in Sources */,
         C43840000000000000000101 /* GalaxySSIHealthAtlasKneeView.swift in Sources */,
         C43840000000000000000103 /* GalaxySSIHealthAtlasKneeDrawing.swift in Sources */,
+        C43840000000000000000105 /* GalaxySSIHealthAtlasCardiacSignalMotion.swift in Sources */,
+        C43840000000000000000107 /* GalaxySSIHealthAtlasCardiacSignalView.swift in Sources */,
+        C43840000000000000000109 /* GalaxySSIHealthAtlasCardiacSignalDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,

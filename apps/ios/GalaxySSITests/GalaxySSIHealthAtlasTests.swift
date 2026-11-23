@@ -1793,6 +1793,31 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testCardiacExcitationBranchTimingAndCellRecovery() throws {
+    typealias Motion = GalaxySSIHealthAtlasCardiacSignalMotion
+    XCTAssertEqual(Motion.routes.count, 5)
+    XCTAssertEqual(Motion.progress(step: 0, fraction: 0.5, route: 0), 0.5)
+    XCTAssertEqual(Motion.progress(step: 0, fraction: 0.5, route: 1), 0.5)
+    XCTAssertNil(Motion.progress(step: 0, fraction: 0.5, route: 2))
+    XCTAssertNil(Motion.progress(step: 1, fraction: 0.5, route: 2))
+    XCTAssertEqual(try XCTUnwrap(Motion.progress(step: 2, fraction: 0.28, route: 2)), 0.5, accuracy: 1e-12)
+    XCTAssertNil(Motion.progress(step: 2, fraction: 0.55, route: 3))
+    XCTAssertEqual(Motion.progress(step: 2, fraction: 0.56, route: 3), 0)
+    XCTAssertEqual(try XCTUnwrap(Motion.progress(step: 2, fraction: 0.78, route: 4)), 0.5, accuracy: 1e-12)
+    XCTAssertNil(Motion.progress(step: 2, fraction: 1, route: 5))
+    XCTAssertEqual(Motion.shortening(step: 2, fraction: 1), 0)
+    XCTAssertEqual(Motion.shortening(step: 3, fraction: 0.5), 0.5)
+    XCTAssertEqual(Motion.shortening(step: 3, fraction: 1), Motion.shortening(step: 4, fraction: 0))
+    XCTAssertEqual(Motion.shortening(step: 4, fraction: 1), 0)
+    XCTAssertEqual(Motion.shortening(step: 3, fraction: .nan), 0)
+    XCTAssertEqual(Motion.routes[1].commands.last?.points.last, Motion.routes[2].start)
+    for index in 3...4 { XCTAssertEqual(Motion.routes[2].commands.last?.points.last, Motion.routes[index].start) }
+    for route in Motion.routes {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        XCTAssertNotNil(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
