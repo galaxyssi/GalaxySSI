@@ -21,7 +21,8 @@ for(const [swift,kotlin] of [
 ]){assert(all.includes(swift),swift);assert(source.includes(kotlin),kotlin);}
 const block=source.match(/private val bloodRoute = PathMeasure\(Path\(\).apply \{([\s\S]*?)\n    \}, false\)/);assert(block);
 const expected=[...block[1].matchAll(/(?:moveTo|quadTo)\(([^)]+)\)/g)].map(m=>m[1].split(",").map(v=>Number(v.trim().replace(/f$/,""))));
-const actual=[[190,111],...[...motion.matchAll(/\.init\(kind: \.quad, points: \[([^\]]+)\]/g)].map(m=>[...m[1].matchAll(/\.init\(x: ([\d.]+), y: ([\d.]+)\)/g)].flatMap(p=>[Number(p[1]),Number(p[2])]))];
+const start=motion.match(/static let bloodRoute = [^\n]+start: \.init\(x: ([\d.]+), y: ([\d.]+)\)/);assert(start);
+const actual=[[Number(start[1]),Number(start[2])],...[...motion.matchAll(/\.init\(kind: \.quad, points: \[([^\]]+)\]/g)].map(m=>[...m[1].matchAll(/\.init\(x: ([\d.]+), y: ([\d.]+)\)/g)].flatMap(p=>[Number(p[1]),Number(p[2])]))];
 assert.deepEqual(actual,expected);
 for(const token of ["var body = membrane","gate - 18, y: y - 8, width: 36, height: 16","FillStyle(eoFill: true)",
   "drawing.stroke(membrane, Self.membrane, 8)","drawing.stroke(membrane, 0xECC6A0, 5.5)",

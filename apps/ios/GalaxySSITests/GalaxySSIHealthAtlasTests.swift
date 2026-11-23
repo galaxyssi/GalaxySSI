@@ -1328,6 +1328,37 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       XCTAssertTrue((0...360).contains(sample.point.x) && (0...280).contains(sample.point.y))
     }
   }
+  func testHomeostasisRetainsRelativeHumidityGlycogenAndSourceDuct() throws {
+    typealias Motion = GalaxySSIHealthAtlasHomeostasisMotion
+    XCTAssertEqual(Motion.liquidRemaining(0, humid: false), 1)
+    XCTAssertEqual(Motion.liquidRemaining(0, humid: true), 1)
+    XCTAssertEqual(Motion.liquidRemaining(1, humid: false), 0.09, accuracy: 1e-12)
+    XCTAssertEqual(Motion.liquidRemaining(1, humid: true), 0.65, accuracy: 1e-12)
+    XCTAssertEqual(Motion.liquidRemaining(-1, humid: false), 1)
+    XCTAssertEqual(Motion.liquidRemaining(.nan, humid: false), 1)
+    XCTAssertEqual(Motion.glycogenRemaining(0), 1)
+    XCTAssertEqual(Motion.glycogenRemaining(1), 0.28, accuracy: 1e-12)
+    XCTAssertEqual(Motion(courseID: "GLUCAGON_RESPONSE", chapter: 3, fraction: 0).glycogenCount, 12)
+    XCTAssertEqual(Motion(courseID: "GLUCAGON_RESPONSE", chapter: 3, fraction: 0.5).glycogenCount, 7)
+    XCTAssertEqual(Motion(courseID: "GLUCAGON_RESPONSE", chapter: 3, fraction: 1).glycogenCount, 3)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      XCTAssertGreaterThanOrEqual(Motion.liquidRemaining(phase, humid: true), Motion.liquidRemaining(phase, humid: false))
+      XCTAssertGreaterThan(21 * sqrt(Motion.liquidRemaining(phase, humid: false)), 0)
+    }
+    XCTAssertTrue(Motion(courseID: "SWEAT_COOLING", chapter: 0, fraction: 0).cooling)
+    XCTAssertFalse(Motion(courseID: "GLUCAGON_RESPONSE", chapter: 0, fraction: 0).cooling)
+    XCTAssertEqual(Motion(courseID: "SWEAT_COOLING", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "GLUCAGON_RESPONSE", chapter: 20, fraction: .infinity).fraction, 0)
+    XCTAssertEqual(Motion.sweatDuct.commands.count, 11)
+    XCTAssertEqual(Motion.glucoseExit.start.y, 281)
+    for route in [Motion.nerve, Motion.alphaExit, Motion.liverEntry, Motion.glucoseExit, Motion.sweatDuct] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+        XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
