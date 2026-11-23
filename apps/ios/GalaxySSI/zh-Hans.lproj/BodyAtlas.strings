@@ -527,6 +527,12 @@
 "health_atlas_elimination_formula" = "剩余比例 = 100% × 2^(−经过时间 / 半衰期)。比例不等于有效或安全浓度，不能据此决定剂量或用药间隔。";
 "health_atlas_elimination_summary" = "半衰期 %1$lld 小时 · 经过 %2$lld 小时后，教学模型中剩余 %3$@%%。";
 "health_atlas_elimination_title" = "半衰期探索";
+"health_atlas_view_system_sensory" = "眼、耳、鼻与舌 · 独立放大视图，非等比例";
+"health_atlas_view_system_respiratory" = "上呼吸道剖面与肺部前视 · 组合示意";
+"health_atlas_view_system_digestive" = "唾液腺与腹部辅助器官 · 独立视图，非等比例";
+"health_atlas_view_system_endocrine" = "部分主要内分泌腺 · 独立放大视图，非位置图";
+"health_atlas_view_system_immune" = "部分主要免疫结构 · 独立视图，非等比例";
+"health_atlas_view_system_skin" = "皮肤剖面 · 厚度与颜色为示意";
 "health_atlas_endocrine_aliases" = "";
 "health_atlas_endocrine_description" = "激素信号与生长、代谢、生殖调节";
 "health_atlas_endocrine_name" = "内分泌系统";

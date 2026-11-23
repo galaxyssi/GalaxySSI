@@ -118,6 +118,37 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertTrue(atlas.search("not-a-real-organ", kind: nil, system: "", language: "en").isEmpty)
   }
 
+  func testLeaderRoutesAvoidOtherMarkersAndOmitAmbiguousTargets() {
+    typealias Routes = GalaxySSIHealthAtlasLeaderRoutes
+    let start = CGPoint(x: 0, y: 0), end = CGPoint(x: 100, y: 0), obstacle = CGPoint(x: 50, y: 0)
+    XCTAssertEqual(Routes.route(start: start, end: end, obstacles: [], clearance: 8), [start, end])
+    let path = Routes.route(start: start, end: end, obstacles: [obstacle], clearance: 8)
+    XCTAssertEqual(path.first, start); XCTAssertEqual(path.last, end)
+    XCTAssertGreaterThan(path.count, 2)
+    for (a, b) in zip(path, path.dropFirst()) {
+      XCTAssertGreaterThanOrEqual(Routes.segmentDistance(obstacle, start: a, end: b), 8)
+    }
+    XCTAssertTrue(Routes.route(start: start, end: end, obstacles: [start], clearance: 8).isEmpty)
+    XCTAssertTrue(Routes.route(start: start, end: end, obstacles: [], clearance: .nan).isEmpty)
+    XCTAssertEqual(Routes.segmentDistance(CGPoint(x: 3, y: 4), start: start, end: start), 5)
+  }
+
+  func testOverviewPackPreservesDedicatedOrganRoutes() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self)
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.OverviewPack.read(bundle: bundle))
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: bundle)
+    XCTAssertEqual(pack.plates.count, 6)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 30)
+    XCTAssertEqual(pack.plates.flatMap(\.entryIDs).count, 32)
+    XCTAssertNoThrow(try pack.validating(in: atlas, bundle: bundle))
+    for owner in ["sensory", "respiratory", "digestive", "endocrine", "immune", "skin"] {
+      XCTAssertEqual(atlas.plate(for: owner)?.owner, owner)
+    }
+    XCTAssertEqual(atlas.plate(for: "lungs")?.id, "lungs")
+    XCTAssertEqual(atlas.plate(for: "liver")?.id, "liver")
+    XCTAssertFalse(pack.plates.flatMap(\.entryIDs).contains("cell-neuron"))
+  }
+
   func testMetricAssociationsDoNotInventMissingOrganFunctionReadings() {
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("heart"), [.bloodPressure, .restingHeartRate, .ldl, .hdl, .triglycerides])
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("cell-pancreatic-beta-cell"), [.glucose, .hba1c])

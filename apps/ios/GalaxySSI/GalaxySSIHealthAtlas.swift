@@ -38,6 +38,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     guard let url = bundle.url(forResource: "body-atlas", withExtension: "json", subdirectory: "body-atlas")
     else { throw Invalid.catalogue }
     var result = try validated(JSONDecoder().decode(Self.self, from: Data(contentsOf: url)))
+    if includeExtensions, let pack = try OverviewPack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     guard includeExtensions else { return result }
     if let pack = try SystemPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try ArtworkPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
@@ -221,6 +222,7 @@ struct GalaxySSIHealthAtlas: Decodable {
       return Plate(id: "beta-cell", asset: "HealthAtlasBetaCell", owner: id, viewLabel: "health_atlas_illustration",
         entryIDs: [id!], aspectRatio: 1, markers: [])
     }
+    if let pack = try? OverviewPack.bundled.get() { return pack.plates.first { $0.entryIDs.contains(id ?? "") } }
     return nil
   }
   func caption(_ plate: Plate, selected entry: Entry?, language: String) -> String {
