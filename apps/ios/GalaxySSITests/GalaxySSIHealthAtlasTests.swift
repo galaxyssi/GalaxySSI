@@ -1534,6 +1534,33 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testOcularTransferLimbalMigrationAndRelayDelay() throws {
+    typealias Motion = GalaxySSIHealthAtlasOcularMotion
+    XCTAssertEqual(Motion.transfer(0, returnToRod: false), 172)
+    XCTAssertEqual(Motion.transfer(1, returnToRod: false), 238)
+    XCTAssertEqual(Motion.transfer(0, returnToRod: true), 238)
+    XCTAssertEqual(Motion.transfer(1, returnToRod: true), 172)
+    XCTAssertEqual(Motion.transfer(0.5, returnToRod: false), 205)
+    XCTAssertEqual(Motion.limbalRadius(0), 104)
+    XCTAssertEqual(Motion.limbalRadius(0.5), 66)
+    XCTAssertEqual(Motion.limbalRadius(1), 28)
+    XCTAssertEqual(Motion.limbalRadius(.nan), 104)
+    XCTAssertEqual(Motion.relayFraction(0.08, index: 1), 0)
+    XCTAssertEqual(Motion.relayFraction(0.5, index: 2), 0.4216, accuracy: 1e-12)
+    XCTAssertEqual(Motion.relayFraction(.infinity, index: 0), 0)
+    XCTAssertEqual(Motion.relayFraction(1, index: 8), 0)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      XCTAssertEqual(Motion.transfer(phase, returnToRod: true) + Motion.transfer(phase, returnToRod: false), 410)
+      XCTAssertTrue((28...104).contains(Motion.limbalRadius(phase)))
+      XCTAssertGreaterThanOrEqual(Motion.relayFraction(phase, index: 0), Motion.relayFraction(phase, index: 2))
+    }
+    for index in 0...2 { XCTAssertEqual(Motion.relayFraction(1, index: index), 1) }
+    XCTAssertEqual(Motion(courseID: "RPE_VISUAL_CYCLE", chapter: 0, fraction: 0).course, .visualCycle)
+    XCTAssertEqual(Motion(courseID: "DIM_LIGHT_RELAY", chapter: 0, fraction: 0).course, .dimRelay)
+    XCTAssertEqual(Motion(courseID: "CORNEAL_SURFACE_RENEWAL", chapter: 0, fraction: 0).course, .cornea)
+    XCTAssertEqual(Motion(courseID: "RPE_VISUAL_CYCLE", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "DIM_LIGHT_RELAY", chapter: 20, fraction: .infinity).fraction, 0)
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
