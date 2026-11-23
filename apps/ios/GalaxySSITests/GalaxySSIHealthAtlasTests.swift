@@ -1098,11 +1098,22 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthAtlasSectionLesson.forEntry("cell-enterocyte"))
   }
 
-  func testEditorialArtworkRetainsResolutionTransparencyAndAllTwentySixHotspots() throws {
+  func testEditorialArtworkRetainsResolutionTransparencyAndAllFortyTwoHotspots() throws {
     let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
     let frames: [(String?, Int, Int)] = [(nil, 1024, 1536), ("heart", 1086, 1448),
       ("lungs", 1254, 1254), ("liver", 1254, 1254), ("kidneys", 1254, 1254),
-      ("brain", 1254, 1254), ("gut", 1024, 1536)]
+      ("brain", 1254, 1254), ("gut", 1024, 1536), ("pancreas", 1536, 1024), ("urinary", 1024, 1536),
+      ("nephron", 1173, 1341), ("alveoli", 1254, 1254), ("cell-pancreatic-beta-cell", 1254, 1254),
+      ("cell-erythrocyte", 1254, 1254), ("cell-neuron", 1024, 1536)]
+    let samples: [String: [CGPoint]] = [
+      "pancreas": [CGPoint(x: 0.90, y: 0.72), CGPoint(x: 0.62, y: 0.30)],
+      "urinary": [CGPoint(x: 0.50, y: 0.50), CGPoint(x: 0.66, y: 0.53)],
+      "nephron": [CGPoint(x: 0.77, y: 0.45), CGPoint(x: 0.853, y: 0.644)],
+      "alveoli": [CGPoint(x: 0.38, y: 0.10), CGPoint(x: 0.48, y: 0.48)],
+      "cell-pancreatic-beta-cell": [CGPoint(x: 0.95, y: 0.10), CGPoint(x: 0.36, y: 0.39)],
+      "cell-erythrocyte": [CGPoint(x: 0.50, y: 0.12), CGPoint(x: 0.50, y: 0.50)],
+      "cell-neuron": [CGPoint(x: 0.08, y: 0.84), CGPoint(x: 0.38, y: 0.31)]
+    ]
     func alpha(_ image: CGImage, _ x: Int, _ y: Int) throws -> UInt8 {
       let sample = try XCTUnwrap(image.cropping(to: CGRect(x: CGFloat(x), y: CGFloat(y), width: 1, height: 1)))
       var pixel = [UInt8](repeating: 0, count: 4)
@@ -1124,8 +1135,12 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(try alpha(image, Int(marker.x * Double(width)), Int(marker.y * Double(height))), 200)
         XCTAssertNotNil(atlas.entry(marker.id)); count += 1
       }
+      if let id, let sample = samples[id] {
+        XCTAssertLessThanOrEqual(try alpha(image, Int(sample[0].x * CGFloat(width)), Int(sample[0].y * CGFloat(height))), 4)
+        XCTAssertGreaterThanOrEqual(try alpha(image, Int(sample[1].x * CGFloat(width)), Int(sample[1].y * CGFloat(height))), 200)
+      }
     }
-    XCTAssertEqual(count, 26)
+    XCTAssertEqual(count, 42)
     XCTAssertTrue(try XCTUnwrap(atlas.plate(for: nil)).markers.contains { $0.id == "lungs" })
   }
 
