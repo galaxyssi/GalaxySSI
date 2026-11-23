@@ -1694,6 +1694,30 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion(step: -1, fraction: .nan).center, 58)
     XCTAssertEqual(Motion(step: 100, fraction: 1).center, 309)
   }
+  func testTendonLoadContinuityFixedInsertionAndCollagenUncrimping() {
+    typealias Motion = GalaxySSIHealthAtlasTendonMotion
+    XCTAssertEqual(Motion(step: 0, fraction: 1).load, 0)
+    XCTAssertEqual(Motion(step: 1, fraction: 1).load, 0.28)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).load, 0.82, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).load, 1)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).load, 0)
+    for step in 0..<4 {
+      XCTAssertEqual(Motion(step: step, fraction: 1).load, Motion(step: step + 1, fraction: 0).load, accuracy: 1e-12)
+    }
+    let rest = Motion(step: 0, fraction: 0), loaded = Motion(step: 3, fraction: 1)
+    XCTAssertEqual(rest.join, 148); XCTAssertEqual(loaded.join, 133)
+    XCTAssertEqual(rest.crimp, 10); XCTAssertEqual(loaded.crimp, 1.2, accuracy: 1e-12)
+    XCTAssertEqual(rest.first + rest.halfWave * 8, 304)
+    XCTAssertEqual(loaded.first + loaded.halfWave * 8, 304)
+    XCTAssertEqual(loaded.narrow, 2); XCTAssertEqual(loaded.bulge, 5)
+    XCTAssertEqual(loaded.arrowLength, 53); XCTAssertEqual(loaded.arrowAlpha, 255)
+    XCTAssertEqual(rest.arrowAlpha, 0)
+    XCTAssertEqual(Motion.focusAlpha(0.5), 220)
+    XCTAssertEqual(Motion.focusAlpha(0.25), 110)
+    XCTAssertEqual(Motion.focusAlpha(0), 0); XCTAssertEqual(Motion.focusAlpha(1), 0)
+    XCTAssertEqual(Motion.focusAlpha(.nan), 0)
+    XCTAssertEqual(Motion(step: 1, fraction: .nan).load, 0)
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion

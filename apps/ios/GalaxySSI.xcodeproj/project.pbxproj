@@ -102,6 +102,9 @@
     C438400000000000000000E7 /* GalaxySSIHealthAtlasSmoothMuscleMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000000E8 /* GalaxySSIHealthAtlasSmoothMuscleMotion.swift */; };
     C438400000000000000000E9 /* GalaxySSIHealthAtlasSmoothMuscleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000000EA /* GalaxySSIHealthAtlasSmoothMuscleView.swift */; };
     C438400000000000000000EB /* GalaxySSIHealthAtlasSmoothMuscleDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000000EC /* GalaxySSIHealthAtlasSmoothMuscleDrawing.swift */; };
+    C438400000000000000000ED /* GalaxySSIHealthAtlasTendonMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000000EE /* GalaxySSIHealthAtlasTendonMotion.swift */; };
+    C438400000000000000000EF /* GalaxySSIHealthAtlasTendonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000000F0 /* GalaxySSIHealthAtlasTendonView.swift */; };
+    C438400000000000000000F1 /* GalaxySSIHealthAtlasTendonDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000000F2 /* GalaxySSIHealthAtlasTendonDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1677,6 +1680,9 @@
     C438400000000000000000E8 /* GalaxySSIHealthAtlasSmoothMuscleMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSmoothMuscleMotion.swift; sourceTree = "<group>"; };
     C438400000000000000000EA /* GalaxySSIHealthAtlasSmoothMuscleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSmoothMuscleView.swift; sourceTree = "<group>"; };
     C438400000000000000000EC /* GalaxySSIHealthAtlasSmoothMuscleDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSmoothMuscleDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000000EE /* GalaxySSIHealthAtlasTendonMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTendonMotion.swift; sourceTree = "<group>"; };
+    C438400000000000000000F0 /* GalaxySSIHealthAtlasTendonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTendonView.swift; sourceTree = "<group>"; };
+    C438400000000000000000F2 /* GalaxySSIHealthAtlasTendonDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTendonDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3271,6 +3277,9 @@
         C438400000000000000000E8 /* GalaxySSIHealthAtlasSmoothMuscleMotion.swift */,
         C438400000000000000000EA /* GalaxySSIHealthAtlasSmoothMuscleView.swift */,
         C438400000000000000000EC /* GalaxySSIHealthAtlasSmoothMuscleDrawing.swift */,
+        C438400000000000000000EE /* GalaxySSIHealthAtlasTendonMotion.swift */,
+        C438400000000000000000F0 /* GalaxySSIHealthAtlasTendonView.swift */,
+        C438400000000000000000F2 /* GalaxySSIHealthAtlasTendonDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -4995,6 +5004,9 @@
         C438400000000000000000E7 /* GalaxySSIHealthAtlasSmoothMuscleMotion.swift in Sources */,
         C438400000000000000000E9 /* GalaxySSIHealthAtlasSmoothMuscleView.swift in Sources */,
         C438400000000000000000EB /* GalaxySSIHealthAtlasSmoothMuscleDrawing.swift in Sources */,
+        C438400000000000000000ED /* GalaxySSIHealthAtlasTendonMotion.swift in Sources */,
+        C438400000000000000000EF /* GalaxySSIHealthAtlasTendonView.swift in Sources */,
+        C438400000000000000000F1 /* GalaxySSIHealthAtlasTendonDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
