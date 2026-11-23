@@ -2871,3 +2871,6 @@
 "health_atlas_neutrophil_scope" = "Teaching view: movement through a vessel wall, followed by uptake and handling of an example target. Size and timing are illustrative.";
 "health_atlas_eosinophil_scope" = "Teaching view: contact and granule release at an example target surface. Size and timing are illustrative.";
 "health_atlas_basophil_scope" = "Teaching view: mediator release and a local vessel response. Size and timing are illustrative.";
+"health_atlas_monocyte_lesson_scope" = "Teaching view: recruitment from blood into tissue. Some recruited monocytes become macrophages; this is one possible outcome.";
+"health_atlas_dendritic_lesson_scope" = "Teaching view: a dendritic cell processes material and presents an antigen fragment to a T cell. Symbols do not represent molecular scale.";
+"health_atlas_plasma_lesson_scope" = "Teaching view: a plasma cell produces and releases antibodies. The pale Golgi region and protein-production structures are schematic.";

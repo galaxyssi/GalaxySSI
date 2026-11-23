@@ -26,6 +26,8 @@
     C43450000000000000000001 /* GalaxySSIHealthAtlasImmune.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43450000000000000000002 /* GalaxySSIHealthAtlasImmune.swift */; };
     C43450000000000000000003 /* GalaxySSIHealthAtlasPhagocytosis.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43450000000000000000004 /* GalaxySSIHealthAtlasPhagocytosis.swift */; };
     C43660000000000000000001 /* GalaxySSIHealthAtlasGranulocyte.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43660000000000000000002 /* GalaxySSIHealthAtlasGranulocyte.swift */; };
+    C43670000000000000000001 /* GalaxySSIHealthAtlasCellScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43670000000000000000002 /* GalaxySSIHealthAtlasCellScene.swift */; };
+    C43670000000000000000003 /* GalaxySSIHealthAtlasImmuneLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43670000000000000000004 /* GalaxySSIHealthAtlasImmuneLink.swift */; };
     C43460000000000000000001 /* GalaxySSIHealthAtlasCoreCells.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43460000000000000000002 /* GalaxySSIHealthAtlasCoreCells.swift */; };
     C43460000000000000000003 /* GalaxySSIHealthAtlasSarcomere.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43460000000000000000004 /* GalaxySSIHealthAtlasSarcomere.swift */; };
     C43460000000000000000005 /* GalaxySSIHealthAtlasSarcomerePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43460000000000000000006 /* GalaxySSIHealthAtlasSarcomerePanel.swift */; };
@@ -1518,6 +1520,8 @@
     C43450000000000000000002 /* GalaxySSIHealthAtlasImmune.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasImmune.swift; sourceTree = "<group>"; };
     C43450000000000000000004 /* GalaxySSIHealthAtlasPhagocytosis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPhagocytosis.swift; sourceTree = "<group>"; };
     C43660000000000000000002 /* GalaxySSIHealthAtlasGranulocyte.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGranulocyte.swift; sourceTree = "<group>"; };
+    C43670000000000000000002 /* GalaxySSIHealthAtlasCellScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCellScene.swift; sourceTree = "<group>"; };
+    C43670000000000000000004 /* GalaxySSIHealthAtlasImmuneLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasImmuneLink.swift; sourceTree = "<group>"; };
     C43460000000000000000002 /* GalaxySSIHealthAtlasCoreCells.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoreCells.swift; sourceTree = "<group>"; };
     C43460000000000000000004 /* GalaxySSIHealthAtlasSarcomere.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSarcomere.swift; sourceTree = "<group>"; };
     C43460000000000000000006 /* GalaxySSIHealthAtlasSarcomerePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSarcomerePanel.swift; sourceTree = "<group>"; };
@@ -3028,6 +3032,8 @@
         C43450000000000000000002 /* GalaxySSIHealthAtlasImmune.swift */,
         C43450000000000000000004 /* GalaxySSIHealthAtlasPhagocytosis.swift */,
         C43660000000000000000002 /* GalaxySSIHealthAtlasGranulocyte.swift */,
+        C43670000000000000000002 /* GalaxySSIHealthAtlasCellScene.swift */,
+        C43670000000000000000004 /* GalaxySSIHealthAtlasImmuneLink.swift */,
         C43460000000000000000002 /* GalaxySSIHealthAtlasCoreCells.swift */,
         C43460000000000000000004 /* GalaxySSIHealthAtlasSarcomere.swift */,
         C43460000000000000000006 /* GalaxySSIHealthAtlasSarcomerePanel.swift */,
@@ -4668,6 +4674,8 @@
         C43450000000000000000001 /* GalaxySSIHealthAtlasImmune.swift in Sources */,
         C43450000000000000000003 /* GalaxySSIHealthAtlasPhagocytosis.swift in Sources */,
         C43660000000000000000001 /* GalaxySSIHealthAtlasGranulocyte.swift in Sources */,
+        C43670000000000000000001 /* GalaxySSIHealthAtlasCellScene.swift in Sources */,
+        C43670000000000000000003 /* GalaxySSIHealthAtlasImmuneLink.swift in Sources */,
         C43460000000000000000001 /* GalaxySSIHealthAtlasCoreCells.swift in Sources */,
         C43460000000000000000003 /* GalaxySSIHealthAtlasSarcomere.swift in Sources */,
         C43460000000000000000005 /* GalaxySSIHealthAtlasSarcomerePanel.swift in Sources */,
