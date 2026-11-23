@@ -8,10 +8,7 @@ const read = (file) => JSON.parse(fs.readFileSync(file));
 const pack = (name) => read(path.join(assets, name + ".dataset/content.json"));
 const extended = pack("HealthAtlasExtendedCells");
 const reproductivePath = "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasReproductiveCells.dataset/content.json";
-const pending = !fs.existsSync(path.join(root, reproductivePath));
-const reproductive = pending
-  ? JSON.parse(show("origin/ios/android-4336-germline-20261123", reproductivePath))
-  : read(path.join(root, reproductivePath));
+const reproductive = read(path.join(root, reproductivePath));
 let atlas = read(path.join(app, "body-atlas/body-atlas.json"));
 function revise(delta) {
   const entries = new Map(delta.entries.map((entry) => [entry.id, entry]));
@@ -52,4 +49,3 @@ for (const entry of microscopic) {
 }
 assert.equal(new Set(keys).size, 530);
 console.log("Complete composition equals Android #4337: 287 entries / 127 mechanisms; 106 exclusive microscopic owners.");
-if (pending) console.log("Integration dependency: reproductive asset read from PR #4457 branch, not from current main. Merge #4457 first.");
