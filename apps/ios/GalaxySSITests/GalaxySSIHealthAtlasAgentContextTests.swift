@@ -96,6 +96,26 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertNil(Context.prompt(anatomy: nil, screen: .values, locale: locale, text: text))
     XCTAssertEqual(Context.prompt(anatomy: nil, screen: .structure, locale: locale, text: text), "Public whole-body teaching only")
   }
+  func testGasExamplesOnlyEnterMatchingActivePhysiologyContext() throws {
+    let simulation = try XCTUnwrap(Context.Simulation(entryID: "alveoli", phase: 0.5, first: 12, second: 500))
+    for screen in [Context.Screen.simulation, .physiology] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy("alveoli"), screen: screen,
+        simulation: simulation, locale: locale, text: text))
+      XCTAssertTrue(prompt.contains("gas_scope"))
+      XCTAssertTrue(prompt.contains(GalaxySSIHealthAtlasGasExchange.source.absoluteString))
+    }
+    for screen in [Context.Screen.structure, .function, .drugs, .aging] {
+      let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy("alveoli"), screen: screen,
+        simulation: simulation, locale: locale, text: text))
+      XCTAssertFalse(prompt.contains("gas_scope"))
+    }
+    let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("lungs"), screen: .physiology,
+      simulation: simulation, locale: locale, text: text))
+    XCTAssertFalse(foreign.contains("gas_scope"))
+    XCTAssertNil(Context.prompt(anatomy: anatomy("alveoli"), screen: .values,
+      simulation: simulation, locale: locale, text: text))
+  }
+
   func testDrugAndAgingContextUseOnlyTheirCurrentSourcesAndParameters() throws {
     let drug = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .drugs,
       elimination: Context.Elimination(halfLife: 4, elapsed: 8), locale: locale, text: text))

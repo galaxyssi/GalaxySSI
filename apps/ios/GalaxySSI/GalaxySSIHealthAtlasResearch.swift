@@ -30,7 +30,7 @@ struct GalaxySSIHealthAtlasResearch: View {
         case .aging:
           aging
         }
-        Link(t("structure_source"), destination: atlas.model(entry).source)
+        Link(t(atlas.model(entry).reference == nil ? "structure_source" : "reference_pubmed"), destination: atlas.model(entry).source)
       }.padding()
     }
     .navigationTitle(t("research")).navigationBarTitleDisplayMode(.inline).galaxySSIHealthTheme()

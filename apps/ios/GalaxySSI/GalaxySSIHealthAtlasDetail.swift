@@ -49,7 +49,7 @@ struct GalaxySSIHealthAtlasDetail: View {
             }
             Button(t("research")) { research = true }
             Divider()
-            Link(t("evidence"), destination: atlas.model(entry).source)
+            Link(t(atlas.model(entry).reference == nil ? "evidence" : "reference_pubmed"), destination: atlas.model(entry).source)
             Text(t("art_note")).font(.footnote).foregroundColor(.secondary)
             if selection.wrappedValue.tab == .structure || selection.wrappedValue.tab == .function,
                let source = atlas.plate(for: entry.id)?.source {

@@ -49,6 +49,23 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertTrue(atlas.parents(try XCTUnwrap(atlas.entry("ventricles"))).contains { $0.id == "heart" })
   }
 
+  func testGasExchangeExamplesAreFixedAndMoveInOppositeDirections() {
+    typealias Gas = GalaxySSIHealthAtlasGasExchange
+    XCTAssertEqual(Gas.gradients.map(\.alveolar), [104, 40])
+    XCTAssertEqual(Gas.gradients.map(\.incomingBlood), [40, 45])
+    XCTAssertEqual(Gas.gradients.map(\.towardBlood), [true, false])
+    XCTAssertEqual(Gas.gradients.map(\.difference), [64, 5])
+    XCTAssertEqual(Gas.stage(.nan), 0); XCTAssertEqual(Gas.stage(.infinity), 0)
+    XCTAssertEqual(Gas.stage(-1), 0); XCTAssertEqual(Gas.stage(1), 3)
+    XCTAssertEqual(Gas.position(.oxygen, phase: 0.25), 0.25)
+    XCTAssertEqual(Gas.position(.carbon, phase: 0.25), 0.75)
+    for id in ["alveoli", "respiratory-membrane", "pulmonary-capillaries"] { XCTAssertTrue(Gas.supports(id)) }
+    for id in ["lungs", "cell-type-i-pneumocyte", "blood"] { XCTAssertFalse(Gas.supports(id)) }
+    XCTAssertEqual(GalaxySSIHealthAtlasSimulation.initial("alveoli").first, 12)
+    XCTAssertEqual(GalaxySSIHealthAtlasSimulation.initial("alveoli").second, 500)
+    XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("respiratory-membrane"), [.oxygenSaturation])
+  }
+
   func testEveryCatalogueKeyResolvesInBothLanguagesWithoutAndroidQuoteDelimiters() throws {
     let atlas = try catalogue()
     let keys = atlas.entries.flatMap { [$0.name, $0.description, $0.aliases] } + atlas.mechanisms.flatMap { [$0.title] + $0.stages }
@@ -61,6 +78,35 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
     XCTAssertNotEqual(GalaxySSIHealthAtlasText.get("health_atlas_heart_name", "en"),
       GalaxySSIHealthAtlasText.get("health_atlas_heart_name", "zh-Hans"))
+  }
+
+  func testRespirationPackLoadsCanonicalGasRoutesAndHumanClubCellReference() throws {
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    for id in ["alveoli", "respiratory-membrane", "pulmonary-capillaries"] {
+      let entry = try XCTUnwrap(atlas.entry(id))
+      XCTAssertEqual(entry.mechanism, "gas-exchange")
+      XCTAssertEqual(atlas.plate(for: id)?.id, "alveolus")
+    }
+    let club = try XCTUnwrap(atlas.entry("cell-club-cell"))
+    XCTAssertEqual(atlas.model(club).source.absoluteString, "https://pubmed.ncbi.nlm.nih.gov/29874100/")
+    XCTAssertEqual(atlas.model(club).stages.count, 4)
+    XCTAssertNil(atlas.plate(for: club.id))
+  }
+
+  func testMechanismResearchReferencesCannotEscapePubMedArticleAllowlist() throws {
+    let base = try catalogue()
+    let original = try XCTUnwrap(base.mechanisms.first)
+    for address in ["https://pubmed.ncbi.nlm.nih.gov/29874100/", "https://example.com/29874100/",
+      "http://pubmed.ncbi.nlm.nih.gov/29874100/", "https://pubmed.ncbi.nlm.nih.gov/0/",
+      "https://pubmed.ncbi.nlm.nih.gov/29874100/?token=private"] {
+      var model = original
+      model.reference = URL(string: address)
+      let candidate = GalaxySSIHealthAtlas(schema: base.schema, entries: base.entries, mechanisms: [model] + base.mechanisms.dropFirst())
+      if address == "https://pubmed.ncbi.nlm.nih.gov/29874100/" {
+        XCTAssertNoThrow(try GalaxySSIHealthAtlas.validated(candidate))
+        XCTAssertEqual(model.source.absoluteString, address)
+      } else { XCTAssertThrowsError(try GalaxySSIHealthAtlas.validated(candidate)) }
+    }
   }
 
   func testSearchUsesAllWordsAndIncludesFragmentsOnlyInCellFilter() throws {

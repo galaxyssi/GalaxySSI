@@ -16,6 +16,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
   private var cardiac: Bool { ["cardio", "heart"].contains(entry.id) }
   private var lung: Bool { ["lungs", "respiratory"].contains(entry.id) }
+  private var gasExchange: Bool { GalaxySSIHealthAtlasGasExchange.supports(entry.id) }
   private var hasPhysiology: Bool {
     #if GALAXYSSI_ATLAS_PHYSIOLOGY
     return GalaxySSIHealthAtlasPhysiology.Kind.forEntry(entry.id) != nil
@@ -27,10 +28,19 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
+      if !gasExchange {
       GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
         legacyVentilation: lung ? [simulation.first, simulation.second] : nil)
+      }
       #endif
       Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(model.title, language))).font(.headline)
+      if gasExchange {
+        GalaxySSIHealthAtlasGasExchangeView(phase: simulation.phase, language: language, stages: model.stages,
+          selected: { playing = false; simulation.selectStage($0) },
+          open: { playing = false; structure = $0 })
+        Text(t("gas_scope")).font(.footnote).foregroundColor(.secondary)
+        Link(t("gas_reference"), destination: GalaxySSIHealthAtlasGasExchange.source)
+      }
       Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
       if hasPhysiology, let note = GalaxySSIHealthAtlasPhysiologyText.processNote(language: language) {
@@ -47,7 +57,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         Link(t("circuit_reference"), destination: GalaxySSIHealthAtlasCirculation.source)
       } else {
       LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-        ForEach([0, 1, 3, 2], id: \.self) { stage in
+        ForEach(gasExchange ? [] : [0, 1, 3, 2], id: \.self) { stage in
           Button { playing = false; simulation.selectStage(stage) } label: {
             VStack(spacing: 8) {
               Text("\(stage + 1)").font(.headline).frame(width: 32, height: 32)
@@ -72,6 +82,12 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       if reduceMotion { Text(bodyText("motion_disabled")).font(.caption) }
       Text(t("speed") + " · " + String(format: "%.1f×", simulation.speed))
       Slider(value: $simulation.speed, in: 0.5...2, step: 0.5).accessibilityLabel(t("speed"))
+      #if GALAXYSSI_ATLAS_PHYSIOLOGY
+      if gasExchange {
+        GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
+          legacyVentilation: entry.id == "alveoli" ? [simulation.first, simulation.second] : nil)
+      }
+      #endif
       Text(t("teaching_note")).font(.footnote).foregroundColor(.secondary)
       if cardiac || (lung && !hasPhysiology) {
         Text(t("parameters")).font(.headline)

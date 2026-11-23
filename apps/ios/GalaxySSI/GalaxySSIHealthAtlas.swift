@@ -26,7 +26,8 @@ struct GalaxySSIHealthAtlas: Decodable {
     let title: String
     let stages: [String]
     let chapter: String
-    var source: URL { URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/" + chapter)! }
+    var reference: URL? = nil
+    var source: URL { reference ?? URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/" + chapter)! }
   }
   let schema: Int
   let entries: [Entry]
@@ -42,7 +43,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try ArtworkPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try RenalPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try CellPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
-    return result
+    return try RespirationPack.read(bundle: bundle)?.applying(to: result, bundle: bundle) ?? result
   }
 
   static func validated(_ atlas: Self) throws -> Self {
@@ -56,6 +57,7 @@ struct GalaxySSIHealthAtlas: Decodable {
         entry.related.allSatisfy(ids.contains) && !entry.related.contains(entry.id) && models.contains(entry.mechanism)
       }), atlas.mechanisms.allSatisfy({ model in
         model.stages.count == 4 && model.stages.allSatisfy({ !$0.isEmpty }) &&
+        (model.reference == nil || model.reference!.absoluteString.range(of: "^https://pubmed\\.ncbi\\.nlm\\.nih\\.gov/[1-9][0-9]*/$", options: .regularExpression) != nil) &&
         model.chapter.range(of: "^[a-z0-9-]+$", options: .regularExpression) != nil
       }) else { throw Invalid.catalogue }
     guard atlas.mechanisms.filter({ $0.kind == "cell" }).allSatisfy({ mechanism in
@@ -201,8 +203,10 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try? CellPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     if let pack = try? RenalPack.bundled.get(), pack.plate.entryIDs.contains(id ?? "") { return pack.plate }
     if let pack = try? ArtworkPack.bundled.get() {
-      return pack.plates.first { $0.entryIDs.contains(id ?? "") }
+      if let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     }
+    if ["alveoli", "respiratory-membrane", "pulmonary-capillaries"].contains(id ?? ""),
+       let pack = try? RespirationPack.bundled.get() { return pack.plate }
     if id == nil {
       return Plate(id: "whole", asset: "HealthAtlasBody", owner: nil, viewLabel: "health_atlas_illustration", entryIDs: [""],
         aspectRatio: 2.0 / 3.0, markers: [Marker(id: "brain", x: 0.5, y: 0.045), Marker(id: "heart", x: 0.54, y: 0.28),
@@ -257,10 +261,10 @@ struct GalaxySSIHealthAtlasSimulation: Equatable, Codable {
     return true
   }
   static func initial(_ id: String) -> Self {
-    ["lungs", "respiratory"].contains(id) ? Self(first: 12, second: 500) : Self()
+    ["lungs", "respiratory", "alveoli"].contains(id) ? Self(first: 12, second: 500) : Self()
   }
   mutating func sanitize(_ id: String) {
-    let lung = ["lungs", "respiratory"].contains(id)
+    let lung = ["lungs", "respiratory", "alveoli"].contains(id)
     first = first.isFinite ? min(lung ? 30 : 160, max(lung ? 6 : 40, first.rounded())) : (lung ? 12 : 70)
     second = second.isFinite ? min(lung ? 900 : 120, max(lung ? 200 : 30, second.rounded())) : (lung ? 500 : 70)
     phase = phase.isFinite ? min(1, max(0, phase)) : 0
@@ -301,7 +305,8 @@ enum GalaxySSIHealthAtlasMetrics {
     case "liver", "cell-hepatocyte", "digestive": return [.alt, .ast, .albumin, .totalBilirubin]
     case "urinary", "kidneys", "nephron", "glomerulus", "renal-tubules", "collecting-ducts", "cell-podocyte":
       return [.creatinine, .urea, .urineProtein]
-    case "respiratory", "lungs", "alveoli", "cell-type-i-pneumocyte", "cell-type-ii-pneumocyte": return [.oxygenSaturation]
+    case "respiratory", "lungs", "alveoli", "respiratory-membrane", "pulmonary-capillaries",
+         "cell-type-i-pneumocyte", "cell-type-ii-pneumocyte": return [.oxygenSaturation]
     case "blood", "bone-marrow", "immune": return [.hemoglobin, .redBloodCells, .whiteBloodCells, .platelets]
     case "cell-erythrocyte": return [.redBloodCells, .hemoglobin, .hematocrit]
     case "fragment-platelet", "cell-megakaryocyte": return [.platelets]

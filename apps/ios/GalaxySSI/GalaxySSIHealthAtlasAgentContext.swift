@@ -83,6 +83,14 @@ enum GalaxySSIHealthAtlasAgentContext {
         }
       }
       if let quantitative, quantitative.entryID == anatomy.id, !quantitative.context.isEmpty { lines.append(quantitative.context) }
+      if let simulation, simulation.entryID == anatomy.id, GalaxySSIHealthAtlasGasExchange.supports(anatomy.id) {
+        lines.append(t("gas_scope"))
+        lines += GalaxySSIHealthAtlasGasExchange.gradients.map {
+          String(format: t("gas_summary"), t("gas_" + $0.gas.rawValue), Int64($0.alveolar), Int64($0.incomingBlood),
+            t($0.towardBlood ? "gas_to_blood" : "gas_to_air"))
+        }
+        lines.append(GalaxySSIHealthAtlasGasExchange.source.absoluteString)
+      }
     }
     switch screen {
     case .physiology:
