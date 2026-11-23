@@ -13,7 +13,26 @@ struct GalaxySSIHealthAtlasArtwork: View {
   @State private var zoom: Double = 1
   @State private var fullscreen = false
   @State private var selected: String?
-  private var plate: GalaxySSIHealthAtlas.Plate? { atlas.plate(for: entry?.id) }
+  private var plate: GalaxySSIHealthAtlas.Plate? {
+    atlas.plate(for: entry?.id, viewKey: entry.map { state.binding($0).wrappedValue.artworkView } ?? nil)
+  }
+  private var artworkView: Binding<String> {
+    Binding(get: { plate?.viewKey ?? "" }, set: { key in
+      guard let entry, atlas.views(for: entry.id).contains(where: { $0.viewKey == key }) else { return }
+      state.binding(entry).wrappedValue.artworkView = key
+      zoom = 1
+    })
+  }
+  @ViewBuilder private var viewPicker: some View {
+    let views = atlas.views(for: entry?.id)
+    if views.count > 1 {
+      Picker(t("illustration"), selection: artworkView) {
+        ForEach(views) { view in
+          Text(t(view.viewKey?.hasSuffix("posterior") == true ? "view_back" : "view_front")).tag(view.viewKey ?? "")
+        }
+      }.pickerStyle(.segmented).accessibilityIdentifier("atlas-artwork-view")
+    }
+  }
   private var art: String? { plate?.asset }
   private var spots: [(String, Double, Double)] {
     plate?.markers.map { ($0.id, $0.x, $0.y) } ?? []
@@ -32,6 +51,7 @@ struct GalaxySSIHealthAtlasArtwork: View {
   var body: some View {
     if let art, entry.map({ state.binding($0).wrappedValue.tab != .simulation || !GalaxySSIHealthAtlasGasExchange.supports($0.id) }) ?? true {
       VStack(alignment: .leading, spacing: 8) {
+        viewPicker
         canvas(art)
         HStack {
           Menu {
@@ -56,6 +76,7 @@ struct GalaxySSIHealthAtlasArtwork: View {
         NavigationView {
           ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+              viewPicker
               canvas(art)
               Text(caption).font(.subheadline).fixedSize(horizontal: false, vertical: true)
               Text(t("illustration")).font(.caption).foregroundColor(.secondary)

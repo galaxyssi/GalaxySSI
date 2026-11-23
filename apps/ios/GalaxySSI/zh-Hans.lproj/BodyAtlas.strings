@@ -665,6 +665,12 @@
 "health_atlas_latissimus_dorsi_description" = "参与肩关节伸展、内收及内旋。";
 "health_atlas_latissimus_dorsi_name" = "背阔肌";
 "health_atlas_layers" = "图层";
+"health_atlas_view_front" = "正面";
+"health_atlas_view_back" = "背面";
+"health_atlas_skeleton_front" = "骨骼 · 正面概览";
+"health_atlas_skeleton_back" = "骨骼 · 背面概览";
+"health_atlas_muscle_front" = "表层肌肉 · 正面概览";
+"health_atlas_muscle_back" = "表层肌肉 · 背面概览；肌腱以足跟处为例";
 "health_atlas_lens_aliases" = "";
 "health_atlas_lens_description" = "通过形状调节参与聚焦。";
 "health_atlas_lens_name" = "晶状体";

@@ -52,7 +52,7 @@ struct GalaxySSIHealthAtlasDetail: View {
             Link(t(atlas.model(entry).reference == nil ? "evidence" : "reference_pubmed"), destination: atlas.model(entry).source)
             Text(t("art_note")).font(.footnote).foregroundColor(.secondary)
             if selection.wrappedValue.tab == .structure || selection.wrappedValue.tab == .function,
-               let source = atlas.plate(for: entry.id)?.source {
+               let source = atlas.plate(for: entry.id, viewKey: selection.wrappedValue.artworkView)?.source {
               Link(t("plate_source"), destination: source).frame(minHeight: 44)
             }
           }.padding()

@@ -15,6 +15,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     var window = GalaxySSIHealthAtlasWindow.month
     var layers = true
     var zoom: Double = 1
+    var artworkView: String?
   }
   @Published var entries: [String: Selection] = [:]
   @Published var previewPresented = false
@@ -28,6 +29,9 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
       let decoded = try? JSONDecoder().decode([String: Selection].self, from: data), decoded.count <= 300 else { return }
     entries = decoded.filter { atlas.entry($0.key) != nil }.mapValues { $0 }
     for id in Array(entries.keys) {
+      if let view = entries[id]?.artworkView, !atlas.views(for: id).contains(where: { $0.viewKey == view }) {
+        entries[id]?.artworkView = nil
+      }
       entries[id]?.simulation.sanitize(id)
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
       let restored = GalaxySSIHealthAtlasPhysiology.restore(id, inputs: entries[id]?.physiologyInputs)?.inputs
