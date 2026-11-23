@@ -2,6 +2,10 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let nerveKey = ["model_nerveTransit": "nerve_transit", "model_nerveTransit_scope": "nerve_transit_scope",
+      "model_nerveTransit_formula": "nerve_transit_formula"][key]
+    if let nerveKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + nerveKey, language) }
+    if key.hasPrefix("nerve_transit_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     let eyeKey = ["model_eye": "eye_title", "model_eye_scope": "eye_scope", "model_eye_formula": "eye_formula"][key]
     if let eyeKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + eyeKey, language) }
     if key.hasPrefix("eye_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
@@ -42,6 +46,9 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if model.kind == .nerveTransit {
+      return String(format: string("nerve_transit_over_ten", language: language), number(model.companionValue, language: language))
+    }
     if let ear = model.middleEar {
       return String(format: string("middle_ear_gain_db", language: language), number(ear.pressureGainDb, language: language))
     }

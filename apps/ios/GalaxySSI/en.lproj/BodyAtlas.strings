@@ -1137,6 +1137,16 @@
 "health_atlas_nervous_aliases" = "";
 "health_atlas_nervous_description" = "Sensation, information processing and motor regulation.";
 "health_atlas_nervous_name" = "Nervous system";
+"health_atlas_view_system_nervous" = "Central and peripheral nervous pathways";
+"health_atlas_view_system_cardio" = "Pulmonary and systemic circulation";
+"health_atlas_view_system_testicular" = "Testicular reproductive tract · side view";
+"health_atlas_view_system_ovarian" = "Ovarian reproductive tract · front view";
+"health_atlas_nerve_transit" = "Axon signal travel time";
+"health_atlas_nerve_transit_distance" = "Example path length";
+"health_atlas_nerve_transit_speed" = "Example conduction speed";
+"health_atlas_nerve_transit_over_ten" = "At this speed, 10 cm takes %1$@ ms";
+"health_atlas_nerve_transit_formula" = "Time (ms) = 10 × length (cm) ÷ speed (m/s)";
+"health_atlas_nerve_transit_scope" = "Constant speed along one hypothetical axon. Does not include synaptic delay, predict reaction time or interpret a nerve conduction test.";
 "health_atlas_no_matches" = "No matching entries";
 "health_atlas_no_metrics" = "No matching measurement type is currently linked to this structure. This does not imply normal or abnormal function.";
 "health_atlas_nose_aliases" = "";

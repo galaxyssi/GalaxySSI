@@ -1137,6 +1137,16 @@
 "health_atlas_nervous_aliases" = "";
 "health_atlas_nervous_description" = "感知、信息处理与运动调节";
 "health_atlas_nervous_name" = "神经系统";
+"health_atlas_view_system_nervous" = "中枢与周围神经通路";
+"health_atlas_view_system_cardio" = "肺循环与体循环";
+"health_atlas_view_system_testicular" = "男性生殖通路 · 侧面";
+"health_atlas_view_system_ovarian" = "女性生殖通路 · 正面";
+"health_atlas_nerve_transit" = "轴突信号传导时间";
+"health_atlas_nerve_transit_distance" = "示例传导距离";
+"health_atlas_nerve_transit_speed" = "示例传导速度";
+"health_atlas_nerve_transit_over_ten" = "以此速度通过 10 cm 需要 %1$@ ms";
+"health_atlas_nerve_transit_formula" = "时间（ms）= 10 × 距离（cm）÷ 速度（m/s）";
+"health_atlas_nerve_transit_scope" = "假设信号沿一条轴突匀速传递。不计突触延迟，不预测反应时间，也不用于解读神经传导检查。";
 "health_atlas_no_matches" = "没有匹配的条目";
 "health_atlas_no_metrics" = "该结构暂未关联可记录的检测指标，不代表其功能正常或异常。";
 "health_atlas_nose_aliases" = "";

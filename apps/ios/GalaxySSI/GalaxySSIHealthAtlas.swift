@@ -41,7 +41,6 @@ struct GalaxySSIHealthAtlas: Decodable {
     else { throw Invalid.catalogue }
     var result = try validated(JSONDecoder().decode(Self.self, from: Data(contentsOf: url)))
     if includeExtensions, let pack = try MusculoskeletalPack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
-    if includeExtensions, let pack = try OverviewPack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     guard includeExtensions else { return result }
     try validatePlates([GalaxySSIHealthAtlasEyeOptics.plate], in: result, bundle: bundle)
     if let pack = try ReproductivePack.read(bundle: bundle) { result = try pack.applying(to: result) }
@@ -53,6 +52,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try ExtendedCellPack.read(bundle: bundle) { result = try pack.applying(to: result) }
     if let pack = try EarPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try TissuePack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try OverviewPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     return result
   }
 
@@ -252,6 +252,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     return available.first(where: { $0.viewKey == viewKey }) ?? available.first
   }
   private func defaultPlate(for id: String?) -> Plate? {
+    if let pack = try? OverviewPack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if let pack = try? TissuePack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if GalaxySSIHealthAtlasEyeOptics.plate.entryIDs.contains(id ?? "") { return GalaxySSIHealthAtlasEyeOptics.plate }
     if let pack = try? SystemPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
