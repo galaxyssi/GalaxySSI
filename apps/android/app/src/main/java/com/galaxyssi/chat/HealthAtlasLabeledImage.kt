@@ -10,20 +10,33 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
+import java.text.NumberFormat
 import kotlin.math.ceil
 
 internal class HealthAtlasLabeledImage(private val activity: Activity, plate: HealthAtlasPlate, description: String,
-    data: HealthBodyAtlas, currentId: String?,
+    data: HealthBodyAtlas, currentId: String?, private val numbered: Boolean = false,
     selected: (HealthAtlasItem) -> Unit) : FrameLayout(activity) {
     private val ui = HealthCenterViews(activity)
     private val features = plate.features.associateBy { it.marker.id }
     private val markers = (plate.markers + plate.features.map { it.marker }).sortedBy { it.y }
-    private val split = plate.splitCallouts && markers.any { it.x < .5f } && markers.any { it.x >= .5f }
+    private val split = !numbered && plate.splitCallouts && markers.any { it.x < .5f } && markers.any { it.x >= .5f }
     private val leftRail = markers.indices.filter { split && markers[it].x < .5f }
     private val rightRail = markers.indices.filterNot { it in leftRail }
     private var featureDialog: android.app.AlertDialog? = null
     var labelsShown = true
         private set
+    var highlightedId: String? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            for ((index, label) in labels.withIndex()) {
+                val highlighted = markers[index].id == value
+                label.alpha = if (!numbered || value == null || highlighted) 1f else .55f
+                label.setTextColor(activity.getColor(if (highlighted || label.isSelected)
+                    R.color.health_overview_green else R.color.text_primary))
+            }
+            guides.invalidate()
+        }
     val image = ImageView(activity).apply {
         setImageResource(plate.drawable); scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = description
         tag = "atlas-art-image"
@@ -35,14 +48,17 @@ internal class HealthAtlasLabeledImage(private val activity: Activity, plate: He
         val feature = features[marker.id]
         val item = if (feature == null) data[marker.id]!! else null
         val current = item != null && item.id == currentId
-        ui.text(item?.name ?: activity.getString(requireNotNull(feature).title), 13f, bold = current).apply {
+        val name = item?.name ?: activity.getString(requireNotNull(feature).title)
+        ui.text(if (numbered) NumberFormat.getIntegerInstance().format(index + 1) else name, 13f, bold = current).apply {
             val left = index in leftRail
             gravity = Gravity.CENTER_VERTICAL or when {
+                numbered -> Gravity.CENTER_HORIZONTAL
                 left -> Gravity.RIGHT
                 split -> Gravity.LEFT
                 else -> Gravity.START
             }
             minimumHeight = ui.dp(48)
+            if (numbered) contentDescription = name
             isSelected = current
             if (isSelected) setTextColor(activity.getColor(R.color.health_overview_green))
             else {
@@ -57,7 +73,8 @@ internal class HealthAtlasLabeledImage(private val activity: Activity, plate: He
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         override fun onDraw(canvas: Canvas) {
             paint.strokeWidth = resources.displayMetrics.density
-            paint.color = activity.getColor(R.color.text_primary)
+            paint.color = activity.getColor(if (numbered) R.color.text_secondary else R.color.text_primary)
+            if (numbered) paint.alpha = 112
             leaderPaths.values.forEach { path -> path.zipWithNext().forEach { (start, end) ->
                 canvas.drawLine(start.x, start.y, end.x, end.y, paint)
             } }
@@ -66,7 +83,9 @@ internal class HealthAtlasLabeledImage(private val activity: Activity, plate: He
                 val y = imageRect.top + imageRect.height() * marker.y
                 val label = labels[index]
                 paint.color = activity.getColor(R.color.health_overview_green)
-                canvas.drawCircle(x, y, ui.dp(if (label.isSelected) 5 else 3).toFloat(), paint)
+                val active = marker.id == highlightedId || label.isSelected
+                if (numbered && !active) paint.alpha = 128
+                canvas.drawCircle(x, y, ui.dp(if (active) 5 else 3).toFloat(), paint)
             }
         }
     }
@@ -106,7 +125,11 @@ internal class HealthAtlasLabeledImage(private val activity: Activity, plate: He
             }.coerceAtLeast(ui.dp(48)).coerceAtMost(railLimit)
         }
         var leftWidth = preferred(leftRail)
-        var rightWidth = if (split) preferred(rightRail) else (w * .28f).toInt()
+        var rightWidth = when {
+            numbered -> minOf(ui.dp(48), (w * .37f).toInt())
+            split -> preferred(rightRail)
+            else -> (w * .28f).toInt()
+        }
         fun measureRail(indices: List<Int>, width: Int): Int {
             indices.forEach { labels[it].measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)) }
@@ -115,7 +138,7 @@ internal class HealthAtlasLabeledImage(private val activity: Activity, plate: He
         fun measureLabels() = maxOf(measureRail(leftRail, leftWidth), measureRail(rightRail, rightWidth))
         var required = measureLabels()
         // A constrained height needs a wider label column before packing large text upward.
-        if (MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) {
+        if (!numbered && MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) {
             val limit = MeasureSpec.getSize(heightMeasureSpec)
             while (required > limit && (rightWidth < railLimit || (split && leftWidth < railLimit))) {
                 if (split) leftWidth = (leftWidth + ui.dp(8)).coerceAtMost(railLimit)

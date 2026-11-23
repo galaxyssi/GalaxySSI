@@ -32,15 +32,17 @@ class HealthAtlasCalloutDeviceTest {
             val views = HealthAtlasPlates.viewsForId(item?.id).map { it.viewKey }.ifEmpty { listOf(null) }
             views.forEach { key ->
                 val art = HealthAtlasArtwork(activity, data, item, {}, { _, _ -> }, {}, initialView = key)
-                layout(art, viewport.dp(380))
                 val figure = requireNotNull(art.findViewWithTag<HealthAtlasFigureFrame>("atlas-structure-figure"))
-                if (item != null) {
-                    val copy = requireNotNull(figure.findViewWithTag<TextView>("atlas-art-explanation"))
-                    assertEquals(item.id, item.description, copy.text.toString())
-                    assertTrue(item.id, copy.layout.height + copy.totalPaddingTop + copy.totalPaddingBottom <= copy.height)
+                for (width in listOf(280, 380)) {
+                    layout(art, viewport.dp(width))
+                    if (item != null) {
+                        val copy = requireNotNull(figure.findViewWithTag<TextView>("atlas-art-explanation"))
+                        assertEquals(item.id, item.description, copy.text.toString())
+                        assertTrue(item.id, copy.layout.height + copy.totalPaddingTop + copy.totalPaddingBottom <= copy.height)
+                    }
+                    assertCallout(activity, figure, item?.id ?: "whole")
+                    assertLabelsClear(figure, item?.id ?: "whole")
                 }
-                assertCallout(activity, figure, item?.id ?: "whole")
-                assertLabelsClear(figure, item?.id ?: "whole")
                 plates++
             }
         }
@@ -55,7 +57,7 @@ class HealthAtlasCalloutDeviceTest {
             val copy = player.findViewWithTag<TextView>("atlas-function-caption")
             val next = player.findViewWithTag<View>("atlas-function-next")
             val previous = player.findViewWithTag<View>("atlas-function-previous")
-            for (dp in listOf(320, 720)) {
+            for (dp in listOf(280, 380, 720)) {
                 repeat(story.chapters.size) { previous.performClick() }
                 var height = 0
                 story.chapters.forEachIndexed { index, chapter ->
@@ -97,6 +99,8 @@ class HealthAtlasCalloutDeviceTest {
         val note = figure.legend
         val picture = figure.getChildAt(figure.indexOfChild(note) - 1)
         assertTrue(id, note.top < picture.bottom)
+        assertTrue("$id no longer has its note to the left", note.right < picture.left)
+        assertTrue(id, note.bottom > picture.top)
         assertTrue(id, note.bottom <= figure.height && note.right <= figure.width)
         val sample = Bitmap.createBitmap(3, 3, Bitmap.Config.ARGB_8888)
         try {
