@@ -41,7 +41,6 @@ struct GalaxySSIHealthAtlas: Decodable {
     else { throw Invalid.catalogue }
     var result = try validated(JSONDecoder().decode(Self.self, from: Data(contentsOf: url)))
     if includeExtensions, let pack = try MusculoskeletalPack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
-    if includeExtensions, let pack = try OverviewPack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     guard includeExtensions else { return result }
     try validatePlates([GalaxySSIHealthAtlasEyeOptics.plate], in: result, bundle: bundle)
     if let pack = try ReproductivePack.read(bundle: bundle) { result = try pack.applying(to: result) }
@@ -54,6 +53,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try EarPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try TissuePack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try HeartSectionPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try OverviewPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     return result
   }
 
@@ -256,6 +256,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     return available.first(where: { $0.viewKey == viewKey }) ?? available.first
   }
   private func defaultPlate(for id: String?) -> Plate? {
+    if let pack = try? OverviewPack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if let pack = try? TissuePack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if GalaxySSIHealthAtlasEyeOptics.plate.entryIDs.contains(id ?? "") { return GalaxySSIHealthAtlasEyeOptics.plate }
     if let pack = try? SystemPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
@@ -271,7 +272,7 @@ struct GalaxySSIHealthAtlas: Decodable {
         aspectRatio: 2.0 / 3.0, markers: [Marker(id: "brain", x: 0.5, y: 0.045), Marker(id: "heart", x: 0.54, y: 0.28),
           Marker(id: "liver", x: 0.45, y: 0.34), Marker(id: "small-intestine", x: 0.51, y: 0.44)])
     }
-    if ["heart", "cardio", "atria", "ventricles", "coronary-vessels"].contains(id ?? "") {
+    if ["heart", "atria", "ventricles", "coronary-vessels"].contains(id ?? "") {
       return GalaxySSIHealthAtlasHeartSection.exterior
     }
     if id == "cell-pancreatic-beta-cell" {

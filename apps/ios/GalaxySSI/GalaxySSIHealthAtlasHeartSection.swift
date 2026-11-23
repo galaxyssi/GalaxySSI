@@ -26,7 +26,7 @@ enum GalaxySSIHealthAtlasHeartSection {
     .init(id: id, x: x / 480, y: y / 460)
   }
   static let exterior = GalaxySSIHealthAtlas.Plate(id: "heart-exterior", asset: "HealthAtlasHeart", owner: "heart",
-    viewLabel: "health_atlas_view_external", entryIDs: ["heart", "cardio", "atria", "ventricles", "coronary-vessels"],
+    viewLabel: "health_atlas_view_external", entryIDs: ["heart", "atria", "ventricles", "coronary-vessels"],
     aspectRatio: 3.0 / 4, markers: [.init(id: "atria", x: 0.28, y: 0.46),
       .init(id: "coronary-vessels", x: 0.57, y: 0.68), .init(id: "ventricles", x: 0.61, y: 0.84)],
     source: anatomySource, viewKey: "heart-exterior", selectorLabel: "health_atlas_cardiac_exterior")

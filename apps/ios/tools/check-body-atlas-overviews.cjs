@@ -8,9 +8,11 @@ const pack = JSON.parse(fs.readFileSync(path.join(assets, "HealthAtlasSystemOver
 const kotlin = show(prefix + "java/com/galaxyssi/chat/HealthAtlasSystemPlates.kt").toString();
 const graph = JSON.parse(show(prefix + "assets/health/body-atlas.json"));
 const entries = new Map(graph.entries.map((entry) => [entry.id, entry]));
-assert.equal(pack.schema, 1); assert.equal(pack.source.mergeCommit, sha); assert.equal(pack.plates.length, 6);
+assert.equal(pack.schema, 1); assert.equal(pack.source.mergeCommit, sha); assert.equal(pack.plates.length, 10);
+const original = pack.plates.filter((plate) => !plate.drawable);
+assert.equal(original.length, 6);
 const seen = new Set();
-for (const plate of pack.plates) {
+for (const plate of original) {
   const start = kotlin.indexOf("private val " + plate.id + " =");
   const next = kotlin.indexOf("    private val ", start + 1);
   const block = kotlin.slice(start, next < 0 ? kotlin.indexOf("    val all") : next);
@@ -34,5 +36,5 @@ for (const plate of pack.plates) {
 }
 assert.equal(seen.size, 32);
 for (const dedicated of ["lungs", "trachea", "liver", "gallbladder", "pancreas", "cell-neuron"]) assert.ok(!seen.has(dedicated));
-assert.equal(pack.plates.flatMap((p) => p.markers).length, 30);
+assert.equal(original.flatMap((p) => p.markers).length, 30);
 console.log("Android #4332 parity: 6 original PNGs, 32 non-cell routes, 30 markers, dedicated-organ precedence retained.");

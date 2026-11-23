@@ -178,8 +178,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "cell-collecting-duct-intercalated-cell", "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron",
       "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna",
       "blood-vessels", "arteries", "veins", "coronary-vessels", "eye", "lens", "ear", "middle-ear",
-      "ventricles", "left-ventricle", "right-ventricle"]
-    XCTAssertEqual(ids.count, 37)
+      "cranial-nerves", "spinal-nerves", "peripheral-nerves", "ventricles", "left-ventricle", "right-ventricle"]
+    XCTAssertEqual(ids.count, 40)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
     for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-ii-pneumocyte", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
@@ -402,6 +402,36 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     XCTAssertEqual(Model.resolved("alveoli", inputs: nil, legacyVentilation: [24, 600])?.inputs, [12, 500, 150])
     XCTAssertEqual(Model.restore("brain", inputs: [80, 140])?.inputs, [80, 140])
     XCTAssertEqual(Model.restore("kidneys", inputs: [100, 50, 10])?.inputs, [100, 50, 10])
+  }
+
+  func testNerveTransitConvertsCentimetresSecondsAndMillisecondsWithBoundedInputs() throws {
+    let model = Model(kind: .nerveTransit)
+    XCTAssertEqual(model.result, 12, accuracy: 1e-9)
+    XCTAssertEqual(model.companionValue, 2, accuracy: 1e-9)
+    XCTAssertEqual(model.plotMaximum, 30)
+    XCTAssertEqual(try XCTUnwrap(model.changing(1, to: 120)).plotMaximum, 20)
+    XCTAssertEqual(try XCTUnwrap(model.changing(0, to: 120)).result, 24, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(model.changing(1, to: 100)).result, 6, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Model(kind: .nerveTransit, inputs: [150, 1])).result, 1500, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Model(kind: .nerveTransit, inputs: [10, 120])).result, 10.0 / 12, accuracy: 1e-9)
+    for id in ["cranial-nerves", "spinal-nerves", "peripheral-nerves"] {
+      let stored = try XCTUnwrap(Model.restore(id, inputs: [75, 30]))
+      XCTAssertEqual(stored.kind, .nerveTransit)
+      XCTAssertEqual(stored.result, 25, accuracy: 1e-9)
+      XCTAssertNil(Model.restore(id, inputs: [75, 0]))
+      XCTAssertNil(Model.restore(id, inputs: [9, 30]))
+      XCTAssertNil(Model.restore(id, inputs: [75, 121]))
+    }
+    XCTAssertEqual(Model.Kind.forEntry("spinal-cord"), .potassium)
+    XCTAssertNil(Model.Kind.forEntry("ganglia")); XCTAssertNil(Model.Kind.forEntry("ovaries"))
+    for distance in [10, 60, 150] {
+      for speed in [1, 50, 120] {
+        let value = try XCTUnwrap(Model(kind: .nerveTransit, inputs: [distance, speed]))
+        XCTAssertEqual(value.resultAt(Double(distance)), value.result)
+        XCTAssertEqual(value.result, 10 * Double(distance) / Double(speed), accuracy: 1e-9)
+        XCTAssertTrue((0...value.plotMaximum).contains(value.result))
+      }
+    }
   }
 
   func testEjectionUsesSyntheticEjectedAndResidualVolumesWithoutInferringNormality() throws {

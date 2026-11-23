@@ -247,16 +247,47 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     let bundle = Bundle(for: GalaxySSIStore.self)
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.OverviewPack.read(bundle: bundle))
     let atlas = try GalaxySSIHealthAtlas.load(bundle: bundle)
-    XCTAssertEqual(pack.plates.count, 6)
-    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 30)
-    XCTAssertEqual(pack.plates.flatMap(\.entryIDs).count, 32)
+    XCTAssertEqual(pack.plates.count, 10)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 53)
+    XCTAssertEqual(pack.plates.flatMap(\.entryIDs).count, 54)
     XCTAssertNoThrow(try pack.validating(in: atlas, bundle: bundle))
-    for owner in ["sensory", "respiratory", "digestive", "endocrine", "immune", "skin"] {
+    for owner in ["sensory", "respiratory", "digestive", "endocrine", "immune", "skin", "nervous", "cardio", "male", "female"] {
       XCTAssertEqual(atlas.plate(for: owner)?.owner, owner)
     }
     XCTAssertEqual(atlas.plate(for: "lungs")?.id, "lungs")
     XCTAssertEqual(atlas.plate(for: "liver")?.id, "liver")
     XCTAssertFalse(pack.plates.flatMap(\.entryIDs).contains("cell-neuron"))
+    let categories = atlas.entries.filter { $0.kind == .system }
+    XCTAssertEqual(categories.count, 14)
+    for category in categories { XCTAssertNotNil(atlas.plate(for: category.id), category.id) }
+    for id in ["spinal-cord", "spinal-nerves", "ganglia", "peripheral-nerves"] {
+      XCTAssertEqual(atlas.plate(for: id)?.owner, "nervous")
+    }
+    for id in ["veins", "capillaries"] { XCTAssertEqual(atlas.plate(for: id)?.owner, "cardio") }
+    XCTAssertEqual(atlas.plate(for: "brain")?.id, "brain")
+    XCTAssertEqual(atlas.plate(for: "heart", viewKey: "heart-section")?.viewKey, "heart-section")
+    XCTAssertEqual(atlas.plate(for: "aorta")?.id, "heart-section")
+    XCTAssertEqual(atlas.plate(for: "mitral-valve")?.id, "heart-valves")
+    let cardio = try XCTUnwrap(atlas.entry("cardio"))
+    for id in ["aorta", "pulmonary-trunk", "lungs"] { XCTAssertTrue(atlas.children(cardio).contains { $0.id == id }) }
+  }
+
+  func testNervePreviewSeparatesAnatomyPlateAndQuantitativeSources() throws {
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    let entry = try XCTUnwrap(atlas.entry("spinal-nerves"))
+    var selection = GalaxySSIHealthAtlasState.Selection()
+    selection.tab = .simulation; selection.physiologyInputs = [75, 30]
+    for language in ["en", "zh-Hans"] {
+      let prompt = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: entry, selection: selection, research: false, language: language)
+      XCTAssertTrue(prompt.contains("https://openstax.org/books/anatomy-and-physiology-2e/pages/12-4-the-action-potential"))
+      XCTAssertTrue(prompt.contains("https://openstax.org/books/anatomy-and-physiology-2e/pages/12-1-basic-structure-and-function-of-the-nervous-system"))
+      XCTAssertTrue(prompt.contains("https://www.ncbi.nlm.nih.gov/books/NBK10921/"))
+      let model = try XCTUnwrap(GalaxySSIHealthAtlasPhysiology.restore(entry.id, inputs: [75, 30]))
+      XCTAssertTrue(prompt.contains(GalaxySSIHealthAtlasPhysiologyText.result(model, language: language)))
+    }
+    XCTAssertEqual(GalaxySSIHealthAtlasPhysiology.Kind.forEntry("spinal-cord"), .potassium)
+    XCTAssertEqual(GalaxySSIHealthAtlasPhysiology.Kind.forEntry("left-ventricle"), .ejection)
+    XCTAssertEqual(GalaxySSIHealthAtlasPhysiology.Kind.forEntry("right-ventricle"), .ejection)
   }
 
   func testGermlineStageEndsSeparateMaternalPaternalAndCombinedCounts() throws {

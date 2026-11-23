@@ -52,6 +52,7 @@ extension GalaxySSIHealthAtlas {
   struct OverviewPack: Decodable {
     let schema: Int
     let plates: [Plate]
+    var relatedAdditions: [String: [String]]? = nil
     static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
     static func read(bundle: Bundle) throws -> Self? {
       guard let data = NSDataAsset(name: "HealthAtlasSystemOverviews", bundle: bundle)?.data else { return nil }
@@ -59,12 +60,12 @@ extension GalaxySSIHealthAtlas {
       return try JSONDecoder().decode(Self.self, from: data)
     }
     func validating(in atlas: GalaxySSIHealthAtlas, bundle: Bundle) throws {
-      guard schema == 1, plates.count == 6, Set(plates.map(\.id)).count == plates.count,
+      guard schema == 1, plates.count == 10, Set(plates.map(\.id)).count == plates.count,
         Set(plates.flatMap(\.entryIDs)).count == plates.flatMap(\.entryIDs).count,
         plates.allSatisfy({ plate in
           guard let owner = plate.owner, atlas.entry(owner)?.kind == .system,
             plate.entryIDs.contains(owner), !plate.entryIDs.isEmpty,
-            plate.viewLabel == "health_atlas_view_system_" + owner,
+            plate.viewLabel == "health_atlas_view_system_" + (["male": "testicular", "female": "ovarian"][owner] ?? owner),
             plate.entryIDs.allSatisfy({ atlas.entry($0)?.kind == .system || atlas.entry($0)?.kind == .organ }),
             plate.source?.scheme == "https", plate.source?.host == "openstax.org",
             plate.source?.user == nil, plate.source?.password == nil,
@@ -77,6 +78,16 @@ extension GalaxySSIHealthAtlas {
               (0...1).contains(marker.x) && (0...1).contains(marker.y)
           }
         }) else { throw Invalid.catalogue }
+    }
+    func applying(to atlas: GalaxySSIHealthAtlas, bundle: Bundle) throws -> GalaxySSIHealthAtlas {
+      let additions = relatedAdditions ?? [:]
+      guard additions.isEmpty || additions == ["cardio": ["aorta", "pulmonary-trunk", "lungs"]] else { throw Invalid.catalogue }
+      let revised = atlas.entries.map { entry in
+        entry.replacing(related: entry.related + (additions[entry.id] ?? []).filter { !entry.related.contains($0) })
+      }
+      let result = try GalaxySSIHealthAtlas.validated(.init(schema: atlas.schema, entries: revised, mechanisms: atlas.mechanisms))
+      try validating(in: result, bundle: bundle)
+      return result
     }
   }
 }

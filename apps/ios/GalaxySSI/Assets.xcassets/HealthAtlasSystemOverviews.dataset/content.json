@@ -258,6 +258,202 @@
         }
       ],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin"
+    },
+    {
+      "id": "nervous",
+      "asset": "HealthAtlasOverviewNervous",
+      "owner": "nervous",
+      "viewLabel": "health_atlas_view_system_nervous",
+      "entryIDs": [
+        "nervous",
+        "spinal-cord",
+        "spinal-nerves",
+        "ganglia",
+        "peripheral-nerves"
+      ],
+      "aspectRatio": 0.75,
+      "markers": [
+        {
+          "id": "brain",
+          "x": 0.48333333333333334,
+          "y": 0.10892857142857143
+        },
+        {
+          "id": "spinal-cord",
+          "x": 0.5,
+          "y": 0.2357142857142857
+        },
+        {
+          "id": "spinal-nerves",
+          "x": 0.37857142857142856,
+          "y": 0.3821428571428571
+        },
+        {
+          "id": "ganglia",
+          "x": 0.5261904761904762,
+          "y": 0.4714285714285714
+        },
+        {
+          "id": "peripheral-nerves",
+          "x": 0.5833333333333334,
+          "y": 0.8857142857142857
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-1-basic-structure-and-function-of-the-nervous-system",
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_system_nervous.xml"
+    },
+    {
+      "id": "cardio",
+      "asset": "HealthAtlasOverviewCardio",
+      "owner": "cardio",
+      "viewLabel": "health_atlas_view_system_cardio",
+      "entryIDs": [
+        "cardio",
+        "veins",
+        "capillaries"
+      ],
+      "aspectRatio": 0.75,
+      "markers": [
+        {
+          "id": "aorta",
+          "x": 0.5785714285714286,
+          "y": 0.29285714285714287
+        },
+        {
+          "id": "lungs",
+          "x": 0.6404761904761904,
+          "y": 0.4089285714285714
+        },
+        {
+          "id": "pulmonary-trunk",
+          "x": 0.5023809523809524,
+          "y": 0.34464285714285714
+        },
+        {
+          "id": "heart",
+          "x": 0.5428571428571428,
+          "y": 0.41964285714285715
+        },
+        {
+          "id": "veins",
+          "x": 0.4714285714285714,
+          "y": 0.5142857142857142
+        },
+        {
+          "id": "capillaries",
+          "x": 0.430952380952381,
+          "y": 0.9392857142857143
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/20-5-circulatory-pathways",
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_system_cardio.xml"
+    },
+    {
+      "id": "male",
+      "asset": "HealthAtlasOverviewTesticular",
+      "owner": "male",
+      "viewLabel": "health_atlas_view_system_testicular",
+      "entryIDs": [
+        "male",
+        "testes",
+        "epididymis",
+        "vas-deferens",
+        "seminal-vesicles",
+        "ejaculatory-ducts",
+        "prostate"
+      ],
+      "aspectRatio": 1.05,
+      "markers": [
+        {
+          "id": "vas-deferens",
+          "x": 0.36904761904761907,
+          "y": 0.2625
+        },
+        {
+          "id": "seminal-vesicles",
+          "x": 0.6452380952380953,
+          "y": 0.4225
+        },
+        {
+          "id": "prostate",
+          "x": 0.5190476190476191,
+          "y": 0.485
+        },
+        {
+          "id": "ejaculatory-ducts",
+          "x": 0.5571428571428572,
+          "y": 0.5225
+        },
+        {
+          "id": "testes",
+          "x": 0.4238095238095238,
+          "y": 0.8125
+        },
+        {
+          "id": "epididymis",
+          "x": 0.5071428571428571,
+          "y": 0.8175
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-1-anatomy-and-physiology-of-the-testicular-reproductive-system",
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_system_testicular.xml"
+    },
+    {
+      "id": "female",
+      "asset": "HealthAtlasOverviewOvarian",
+      "owner": "female",
+      "viewLabel": "health_atlas_view_system_ovarian",
+      "entryIDs": [
+        "female",
+        "ovaries",
+        "uterine-tubes",
+        "uterus",
+        "endometrium",
+        "cervix",
+        "vagina"
+      ],
+      "aspectRatio": 1.05,
+      "markers": [
+        {
+          "id": "uterine-tubes",
+          "x": 0.7166666666666667,
+          "y": 0.265
+        },
+        {
+          "id": "ovaries",
+          "x": 0.7619047619047619,
+          "y": 0.4275
+        },
+        {
+          "id": "uterus",
+          "x": 0.5738095238095238,
+          "y": 0.4625
+        },
+        {
+          "id": "endometrium",
+          "x": 0.43333333333333335,
+          "y": 0.3875
+        },
+        {
+          "id": "cervix",
+          "x": 0.5,
+          "y": 0.665
+        },
+        {
+          "id": "vagina",
+          "x": 0.5119047619047619,
+          "y": 0.815
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system",
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_system_ovarian.xml"
     }
-  ]
+  ],
+  "extensionSource": {
+    "androidPR": 4344,
+    "mergeCommit": "583bcc0f3ff45112db88220326322948defaafbf"
+  },
+  "relatedAdditions": {
+    "cardio": ["aorta", "pulmonary-trunk", "lungs"]
+  }
 }
