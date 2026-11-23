@@ -40,6 +40,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     var result = try validated(JSONDecoder().decode(Self.self, from: Data(contentsOf: url)))
     if includeExtensions, let pack = try OverviewPack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     guard includeExtensions else { return result }
+    if let pack = try ReproductivePack.read(bundle: bundle) { result = try pack.applying(to: result) }
     if let pack = try SystemPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try ArtworkPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try RenalPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }

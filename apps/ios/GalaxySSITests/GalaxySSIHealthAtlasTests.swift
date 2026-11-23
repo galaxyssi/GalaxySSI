@@ -149,6 +149,30 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertFalse(pack.plates.flatMap(\.entryIDs).contains("cell-neuron"))
   }
 
+  func testGermlineStageEndsSeparateMaternalPaternalAndCombinedCounts() throws {
+    typealias Germline = GalaxySSIHealthAtlasGermline
+    let fixtures: [(String, [Int], [Int])] = [
+      ("cell-spermatogonium", [46, 46, 46, 46], [46, 46, 92, 92]),
+      ("cell-spermatocyte", [46, 23, 23, 23], [92, 46, 23, 23]),
+      ("cell-spermatozoon", [23, 23, 23, 23], [23, 23, 23, 23]),
+      ("cell-oocyte-or-ovum", [23, 23, 23, 46], [46, 46, 23, 46])
+    ]
+    for (id, chromosomes, dna) in fixtures {
+      for stage in 0..<4 {
+        let counts = try XCTUnwrap(Germline.counts(id, stage: stage))
+        XCTAssertEqual(counts.chromosomes, chromosomes[stage])
+        XCTAssertEqual(counts.dnaMolecules, dna[stage])
+        XCTAssertTrue(counts.dnaContent == counts.sets || counts.dnaContent == 2 * counts.sets)
+      }
+    }
+    XCTAssertEqual(Germline.counts("cell-spermatozoon", stage: 3)?.target, .paternal)
+    XCTAssertEqual(Germline.counts("cell-oocyte-or-ovum", stage: 2)?.target, .maternal)
+    XCTAssertEqual(Germline.counts("cell-oocyte-or-ovum", stage: 3)?.target, .combined)
+    XCTAssertNil(Germline.counts("cell-granulosa-cell", stage: 1))
+    XCTAssertNil(Germline.counts("cell-spermatocyte", stage: 4))
+    XCTAssertNil(Germline.counts("cell-spermatocyte", stage: -1))
+  }
+
   func testMetricAssociationsDoNotInventMissingOrganFunctionReadings() {
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("heart"), [.bloodPressure, .restingHeartRate, .ldl, .hdl, .triglycerides])
     XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry("cell-pancreatic-beta-cell"), [.glucose, .hba1c])
