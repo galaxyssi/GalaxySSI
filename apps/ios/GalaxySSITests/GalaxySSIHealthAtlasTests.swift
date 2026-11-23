@@ -1407,6 +1407,32 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(Length.bezier([.zero, CGPoint(x: CGFloat.nan, y: 0)]))
     XCTAssertNil(Length.bezier(quadratic, accuracy: 0))
   }
+  func testEpidermalBarrierKeepsAscentAndDisruptionComparison() throws {
+    typealias Motion = GalaxySSIHealthAtlasBarrierMotion
+    XCTAssertEqual(Motion.ascent(0), 277)
+    XCTAssertEqual(Motion.ascent(0.5), 212.5)
+    XCTAssertEqual(Motion.ascent(1), 148)
+    XCTAssertEqual(Motion.ascent(-1), 277)
+    XCTAssertEqual(Motion.ascent(.nan), 277)
+    XCTAssertEqual(Motion.escape(1, disrupted: false, index: 0), 0.98)
+    XCTAssertEqual(Motion.escape(1, disrupted: false, index: 1), 0.342, accuracy: 1e-12)
+    XCTAssertEqual(Motion.escape(0.25, disrupted: true, index: 5), 0)
+    for index in 0...5 {
+      XCTAssertEqual(Motion.escape(0, disrupted: true, index: index), 0)
+      XCTAssertEqual(Motion.escape(1, disrupted: true, index: index), 1)
+      var previous = 0.0
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let broken = Motion.escape(phase, disrupted: true, index: index)
+        XCTAssertGreaterThanOrEqual(broken, Motion.escape(phase, disrupted: false, index: index))
+        XCTAssertGreaterThanOrEqual(broken, previous)
+        XCTAssertTrue((0...1).contains(broken)); previous = broken
+      }
+    }
+    XCTAssertEqual(Motion.escape(.infinity, disrupted: true, index: 0), 0)
+    XCTAssertEqual(Motion.escape(1, disrupted: true, index: 6), 0)
+    XCTAssertEqual(Motion(chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(chapter: 20, fraction: .infinity).fraction, 0)
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
