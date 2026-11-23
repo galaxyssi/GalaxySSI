@@ -179,8 +179,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna",
       "blood-vessels", "arteries", "veins", "coronary-vessels", "eye", "lens", "ear", "middle-ear",
       "cranial-nerves", "spinal-nerves", "peripheral-nerves", "ventricles", "left-ventricle", "right-ventricle", "cell-type-ii-pneumocyte",
-      "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell"]
-    XCTAssertEqual(ids.count, 44)
+      "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell", "thyroid-gland"]
+    XCTAssertEqual(ids.count, 45)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
     for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-i-pneumocyte", "cell-podocyte", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
@@ -526,6 +526,36 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       XCTAssertFalse(text.contains("health_atlas_"))
       XCTAssertTrue(text.contains("https://pubmed.ncbi.nlm.nih.gov/20724566/"))
       XCTAssertTrue(text.contains(GalaxySSIHealthAtlasText.get("health_atlas_alveolar_surface_scope", language)))
+    }
+  }
+
+  func testThyroidFeedbackIsDimensionlessAndDoesNotExpandToOtherEndocrineEntries() throws {
+    let model = Model(kind: .thyroidFeedback)
+    XCTAssertEqual(model.inputs, [80, 100])
+    XCTAssertEqual(model.result, 40, accuracy: 1e-9)
+    XCTAssertEqual(model.companionValue, 40, accuracy: 1e-9)
+    XCTAssertEqual(model.kind.axis, 0)
+    XCTAssertEqual(try XCTUnwrap(model.changing(1, to: 0)).result, 80, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(model.changing(1, to: 300)).result, 20, accuracy: 1e-9)
+    XCTAssertEqual(Model.restore("thyroid-gland", inputs: [80, 100]), model)
+    for id in ["pituitary-gland", "parathyroid-glands", "adrenal-glands", "cell-thyrotroph", "cell-thyroid-follicular-cell"] {
+      XCTAssertNotEqual(Model.Kind.forEntry(id), .thyroidFeedback)
+    }
+    XCTAssertNil(model.changing(0, to: 19)); XCTAssertNil(model.changing(1, to: 301))
+    for drive in stride(from: 20, through: 100, by: 5) {
+      var previous = Double(drive)
+      for gain in stride(from: 0, through: 300, by: 10) {
+        let value = try XCTUnwrap(Model(kind: .thyroidFeedback, inputs: [drive, gain]))
+        XCTAssertEqual(value.result * (1 + Double(gain) / 100), Double(drive), accuracy: 1e-9)
+        XCTAssertEqual(value.result + value.companionValue, Double(drive), accuracy: 1e-9)
+        XCTAssertLessThanOrEqual(value.result, previous + 1e-9); previous = value.result
+      }
+    }
+    for language in ["en", "zh-Hans"] {
+      let context = GalaxySSIHealthAtlasPhysiologyText.context(model, language: language)
+      XCTAssertTrue(context.contains(GalaxySSIHealthAtlasText.get("health_atlas_endocrine_feedback_scope", language)))
+      XCTAssertTrue(context.contains(model.kind.source.absoluteString))
+      XCTAssertFalse(context.contains("health_atlas_")); XCTAssertFalse(context.contains("measuredAt"))
     }
   }
 

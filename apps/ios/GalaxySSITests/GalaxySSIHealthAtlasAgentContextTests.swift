@@ -106,6 +106,34 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     }
   }
 
+  func testEndocrinePathLoopsBranchesDestinationsAndContextMatchSelection() throws {
+    typealias Path = GalaxySSIHealthAtlasEndocrinePath
+    let thyroid = try XCTUnwrap(Path.forEntry("thyroid-gland"))
+    XCTAssertEqual(thyroid.row(0), [0, 1]); XCTAssertEqual(thyroid.row(1), [3, 2])
+    XCTAssertEqual(thyroid.steps.map(\.destination), ["hypothalamus", "cell-thyrotroph", "cell-thyroid-follicular-cell", nil])
+    let adrenal = try XCTUnwrap(Path.forEntry("adrenal-glands"))
+    XCTAssertEqual(adrenal.row(1), [2, 3])
+    XCTAssertEqual(adrenal.steps.map(\.destination), ["cell-corticotroph", "cell-adrenocortical-cell", "nervous", "cell-chromaffin-cell"])
+    XCTAssertNil(thyroid.step(-1)); XCTAssertNil(thyroid.step(4)); XCTAssertNil(thyroid.row(2))
+    XCTAssertNil(Path.forEntry("cell-thyrotroph"))
+    for id in ["thyroid-gland", "parathyroid-glands", "adrenal-glands", "pituitary-gland"] {
+      let path = try XCTUnwrap(Path.forEntry(id))
+      let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: 0.6, first: 70, second: 70))
+      for language in ["en", "zh-Hans"] {
+        let scope = GalaxySSIHealthAtlasText.get(path.scope, language)
+        for screen in Context.Screen.allCases {
+          let prompt = Context.prompt(anatomy: anatomy(id), screen: screen, simulation: simulation,
+            language: language, locale: locale, text: text)
+          if screen == .values { XCTAssertNil(prompt); continue }
+          XCTAssertEqual(try XCTUnwrap(prompt).contains(scope), screen.includesPhysiology)
+          let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("cell-thyrotroph"), screen: screen,
+            simulation: simulation, language: language, locale: locale, text: text))
+          XCTAssertFalse(foreign.contains(scope))
+        }
+      }
+    }
+  }
+
   func testCirculationRoutesBoundsAndPublicContextScope() throws {
     typealias Circuit = GalaxySSIHealthAtlasCirculation
     XCTAssertEqual(Circuit.legs.map(\.oxygenRich), [false, false, true, true])

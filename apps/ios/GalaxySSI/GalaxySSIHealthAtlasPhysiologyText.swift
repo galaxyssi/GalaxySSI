@@ -2,6 +2,10 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let feedbackKey = ["model_thyroidFeedback": "endocrine_feedback_title", "model_thyroidFeedback_scope": "endocrine_feedback_scope",
+      "model_thyroidFeedback_formula": "endocrine_feedback_formula"][key]
+    if let feedbackKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + feedbackKey, language) }
+    if key.hasPrefix("endocrine_feedback_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     let alveolarKey = ["model_alveolarSurface": "alveolar_surface", "model_alveolarSurface_scope": "alveolar_surface_scope",
       "model_alveolarSurface_formula": "alveolar_surface_formula"][key]
     if let alveolarKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + alveolarKey, language) }
@@ -58,6 +62,9 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if model.kind == .thyroidFeedback {
+      return String(format: string("endocrine_feedback_reduction", language: language), number(model.companionValue, language: language))
+    }
     if model.kind == .bicarbonateMix {
       return String(format: string("digestive_bicarb_companion", language: language), number(model.companionValue, language: language))
     }
