@@ -5,9 +5,16 @@ const {PDFDocument, PDFName, PDFDict, PDFArray, decodePDFRawStream} = require("p
 const root = path.resolve(__dirname, "../GalaxySSI"), assets = path.join(root, "Assets.xcassets");
 const retinal = process.argv.includes("--retinal-cells");
 const systems = process.argv.includes("--system-overviews");
-const sha = systems ? "5ca99f3dde521cd65ca0f0f84b5550a31da5b9f2" : retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
+const batch = process.argv.includes("--tissue-lymph");
+const sha = batch ? "b8fbf1191367153af2824506df99bbc5c5bae56e" : systems ? "5ca99f3dde521cd65ca0f0f84b5550a31da5b9f2" : retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
 const source = file => execFileSync("git", ["show", sha + ":" + file], {encoding: "utf8", maxBuffer: 4_000_000});
-const frames = systems ? [
+const batchFrames = [];
+if (batch) for (const [name, filename] of [["HealthAtlasTissues","tissue.pdf"],["HealthAtlasLymphOrgans","cell.pdf"]]) {
+  const pack = JSON.parse(fs.readFileSync(path.join(assets,name+".dataset/content.json")));
+  assert.deepEqual(pack.artworkSource,{androidPR:4363,mergeCommit:sha});
+  for (const plate of pack.plates) batchFrames.push([path.basename(plate.drawable,".xml").replace("health_atlas_",""),plate.asset,filename]);
+}
+const frames = batch ? batchFrames : systems ? [
   ["system_cardio", "HealthAtlasOverviewCardio", "overview.pdf", 0],
   ["system_testicular", "HealthAtlasOverviewTesticular", "overview.pdf", 3],
   ["system_ovarian", "HealthAtlasOverviewOvarian", "overview.pdf", 9]
@@ -17,7 +24,7 @@ const frames = systems ? [
 ] : [
   ["sensory_retina_section", "HealthAtlasSensoryRetinaSection", "cell.pdf"]
 ];
-const gradientOffset = systems || retinal ? 0 : 9;
+const gradientOffset = batch || systems || retinal ? 0 : 9;
 const array = (dict, key) => dict.lookup(PDFName.of(key), PDFArray).asArray().map(n => n.asNumber());
 const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 255);
 (async () => {
@@ -39,26 +46,46 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
     assert(!images || images.keys().length === 0, "Gradient/path PDF must not be rasterized");
     const contents = page.node.Contents().asArray().map(ref =>
       Buffer.from(decodePDFRawStream(pdf.context.lookup(ref)).decode()).toString()).join("\n");
-    assert.equal((contents.match(/\/AtlasGradient\d+ sh/g) || []).length, expected.length);
+    const strokeGradients = expected.filter(p => p["aapt:attr"]._attributes.name === "android:strokeColor");
+    assert.equal((contents.match(/\/AtlasGradient\d+ sh/g) || []).length, expected.length - strokeGradients.length);
+    assert.equal((contents.match(/\/AtlasGradient\d+ SCN/g) || []).length, strokeGradients.length);
     for (const item of expected) {
       const g = item["aapt:attr"].gradient._attributes, shade = shades.lookup(PDFName.of("AtlasGradient" + gradients++), PDFDict);
       const radial = g["android:type"] === "radial";
+      if (item["aapt:attr"]._attributes.name === "android:strokeColor") {
+        const patterns = resources.lookup(PDFName.of("Pattern"),PDFDict);
+        const pattern = patterns.lookup(PDFName.of("AtlasGradient"+(gradients-1)),PDFDict);
+        assert.equal(pattern.lookup(PDFName.of("PatternType")).asNumber(),2);
+        assert.deepEqual(array(pattern,"Matrix"),[1,0,0,-1,0,box.height]);
+        assert.equal(pattern.lookup(PDFName.of("Shading"),PDFDict),shade);
+      }
       assert.equal(shade.lookup(PDFName.of("ShadingType")).asNumber(), radial ? 3 : 2);
       const coords = radial ? [g["android:centerX"], g["android:centerY"], 0, g["android:centerX"], g["android:centerY"], g["android:gradientRadius"]].map(Number) :
         ["startX","startY","endX","endY"].map(k => Number(g["android:" + k]));
       assert.deepEqual(array(shade, "Coords"), coords);
       const fn = shade.lookup(PDFName.of("Function"), PDFDict);
-      const colours = [g["android:startColor"], ...(g["android:centerColor"] ? [g["android:centerColor"]] : []), g["android:endColor"]].map(colour);
+      const rawStops = item["aapt:attr"].gradient.item;
+      const stops = rawStops ? (Array.isArray(rawStops)?rawStops:[rawStops]).map(s=>({color:s._attributes["android:color"],offset:Number(s._attributes["android:offset"])})) :
+        [g["android:startColor"], ...(g["android:centerColor"] ? [g["android:centerColor"]] : []), g["android:endColor"]].map((color,i,all)=>({color,offset:i/(all.length-1)}));
+      const colours = stops.map(s=>colour(s.color));
       const functions = fn.lookup(PDFName.of("FunctionType")).asNumber() === 3 ?
         fn.lookup(PDFName.of("Functions"), PDFArray).asArray().map(ref => pdf.context.lookup(ref, PDFDict)) : [fn];
       assert.equal(functions.length, colours.length - 1);
+      if (functions.length > 1) {
+        assert.deepEqual(array(fn,"Bounds"),stops.slice(1,-1).map(s=>s.offset));
+        assert.deepEqual(array(fn,"Encode"),functions.flatMap(()=>[0,1]));
+      }
       for (const [index, f] of functions.entries()) {
         assert.deepEqual(array(f, "C0"), colours[index]); assert.deepEqual(array(f, "C1"), colours[index + 1]);
       }
     }
     paths += vector.path.length;
   }
-  assert.equal(paths, systems ? 39 : retinal ? 35 : 24); assert.equal(gradientCount, systems ? 18 : retinal ? 11 : 2);
+  assert.equal(paths, batch ? 646 : systems ? 39 : retinal ? 35 : 24); assert.equal(gradientCount, batch ? 210 : systems ? 18 : retinal ? 11 : 2);
+  if (batch) {
+    console.log("Android #4363: 23 vector PDFs, 646 paths, 210 exact gradients including native stroked shading patterns; no raster flattening.");
+    return;
+  }
   if (systems) {
     console.log("Android #4362: three vector PDFs, 39 paths, 18 exact native gradients and unchanged viewports; no raster flattening.");
     return;
