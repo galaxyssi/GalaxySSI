@@ -1588,6 +1588,25 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
     XCTAssertEqual(Motion.clearance.commands.last?.points.last, Motion.toEsophagus.start)
   }
+  func testEndothelialExchangeTravelAndLymphCollection() throws {
+    typealias Motion = GalaxySSIHealthAtlasEndothelialMotion
+    XCTAssertEqual(Motion.travel(0.08), 0)
+    XCTAssertEqual(Motion.travel(0.41), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.travel(0.74), 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion.travel(0.5, delay: 1), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.travel(.nan), 0)
+    XCTAssertEqual(Motion.lymphRoutes.count, 3)
+    for i in 0..<3 {
+      XCTAssertEqual(Motion.lymphRoutes[i].start.x, Motion.waterTissueX(i))
+      XCTAssertEqual(Motion.lymphRoutes[i].start.y, Motion.waterTissueY(i))
+      XCTAssertEqual(Motion.lymphRoutes[i].commands.last?.points.last?.y, 287 - 2 * Double(i))
+      XCTAssertLessThanOrEqual(Motion.travel(0.5, delay: i), Motion.travel(0.5))
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(Motion.lymphRoutes[i], position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
