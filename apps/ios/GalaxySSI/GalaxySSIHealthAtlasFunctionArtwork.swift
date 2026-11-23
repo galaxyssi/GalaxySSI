@@ -2,7 +2,7 @@ import SwiftUI
 
 enum GalaxySSIHealthAtlasFunctionRendering {
   // Expand only when each source renderer has its own native implementation.
-  static let implemented: Set<String> = ["GLUCOSE", "HEARTBEAT", "BREATHING", "HEARING", "NEPHRON", "DIGESTION", "COLON", "VISION", "LIGHT_ADAPTATION", "MUSCLE_MOTION", "BONE_REMODELING", "LYMPH_RETURN", "ANTIBODY_RESPONSE", "INSULIN_SECRETION", "GLUCAGON_RESPONSE", "SWEAT_COOLING", "SYNAPTIC_SIGNAL", "MYELIN_SIGNAL", "THYROID_FEEDBACK", "EPIDERMAL_BARRIER", "SPERM_TRANSPORT", "OVUM_TRANSPORT", "OLFACTION", "TASTE_SIGNAL", "TOUCH_SIGNAL", "VESTIBULAR_BALANCE", "RPE_VISUAL_CYCLE", "DIM_LIGHT_RELAY", "CORNEAL_SURFACE_RENEWAL", "AIRWAY_CLEARANCE", "ENDOTHELIAL_EXCHANGE", "PLATELET_HEMOSTASIS", "CARTILAGE_LOAD", "SMOOTH_MUSCLE_WAVE", "TENDON_FORCE_TRANSFER"]
+  static let implemented: Set<String> = ["GLUCOSE", "HEARTBEAT", "BREATHING", "HEARING", "NEPHRON", "DIGESTION", "COLON", "VISION", "LIGHT_ADAPTATION", "MUSCLE_MOTION", "BONE_REMODELING", "LYMPH_RETURN", "ANTIBODY_RESPONSE", "INSULIN_SECRETION", "GLUCAGON_RESPONSE", "SWEAT_COOLING", "SYNAPTIC_SIGNAL", "MYELIN_SIGNAL", "THYROID_FEEDBACK", "EPIDERMAL_BARRIER", "SPERM_TRANSPORT", "OVUM_TRANSPORT", "OLFACTION", "TASTE_SIGNAL", "TOUCH_SIGNAL", "VESTIBULAR_BALANCE", "RPE_VISUAL_CYCLE", "DIM_LIGHT_RELAY", "CORNEAL_SURFACE_RENEWAL", "AIRWAY_CLEARANCE", "ENDOTHELIAL_EXCHANGE", "PLATELET_HEMOSTASIS", "CARTILAGE_LOAD", "SMOOTH_MUSCLE_WAVE", "TENDON_FORCE_TRANSFER", "ALVEOLAR_SURFACTANT"]
 }
 
 struct GalaxySSIHealthAtlasFunctionArtwork: View {
@@ -34,6 +34,7 @@ struct GalaxySSIHealthAtlasFunctionArtwork: View {
     case "CARTILAGE_LOAD": GalaxySSIHealthAtlasCartilageView(story: story, phase: phase, language: language)
     case "SMOOTH_MUSCLE_WAVE": GalaxySSIHealthAtlasSmoothMuscleView(story: story, phase: phase, language: language)
     case "TENDON_FORCE_TRANSFER": GalaxySSIHealthAtlasTendonView(story: story, phase: phase, language: language)
+    case "ALVEOLAR_SURFACTANT": GalaxySSIHealthAtlasSurfactantView(story: story, phase: phase, language: language)
     default: EmptyView()
     }
   }

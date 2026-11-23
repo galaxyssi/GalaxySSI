@@ -1718,6 +1718,30 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion.focusAlpha(.nan), 0)
     XCTAssertEqual(Motion(step: 1, fraction: .nan).load, 0)
   }
+  func testSurfactantReleaseSpreadAndBreathWidth() throws {
+    typealias Motion = GalaxySSIHealthAtlasSurfactantMotion
+    XCTAssertEqual(Motion.width(step: 2, fraction: 1), 0.89)
+    XCTAssertEqual(Motion.width(step: 3, fraction: 0), Motion.width(step: 2, fraction: 1))
+    XCTAssertEqual(Motion.width(step: 3, fraction: 1), 1.07, accuracy: 1e-12)
+    XCTAssertEqual(Motion.width(step: 4, fraction: 0), Motion.width(step: 3, fraction: 1))
+    XCTAssertEqual(Motion.width(step: 4, fraction: 1), 0.89)
+    XCTAssertEqual(Motion.approach(0.24), 0.5)
+    XCTAssertEqual(Motion.approach(0.48), 1)
+    XCTAssertEqual(Motion.release(0.48), 0)
+    XCTAssertEqual(Motion.release(0.74), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.release(1), 1)
+    XCTAssertEqual(Motion.spread(0.2, side: -1), 0.35)
+    XCTAssertEqual(Motion.spread(1, side: -1), 0.03, accuracy: 1e-12)
+    XCTAssertEqual(Motion.spread(1, side: 1), 0.95, accuracy: 1e-12)
+    XCTAssertEqual(Motion.stretch(180, center: 180, width: 1.07), 180)
+    XCTAssertEqual(Motion.width(step: 3, fraction: .nan), 0.89)
+    XCTAssertEqual(Motion.filmTrack.commands.count, 4)
+    XCTAssertEqual(Motion.filmTrack.start, .init(x: 28, y: 233))
+    for phase in [0.0, 0.03, 0.35, 0.77, 0.95, 1.0] {
+      let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(Motion.filmTrack, position: phase, width: 360, height: 360))
+      XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
