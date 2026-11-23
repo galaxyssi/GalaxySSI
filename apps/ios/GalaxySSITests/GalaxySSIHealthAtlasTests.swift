@@ -807,6 +807,57 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testDigestivePlatesAndSeparatePancreaticMechanismsPreserveCellIdentity() throws {
+    let atlas = try catalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.DigestivePack.read(bundle: bundle))
+    XCTAssertEqual(pack.plates.count, 14)
+    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 27)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 4)
+    for plate in pack.plates {
+      let owner = try XCTUnwrap(plate.owner)
+      XCTAssertEqual(atlas.plate(for: owner)?.asset, plate.asset)
+      XCTAssertTrue(GalaxySSIHealthAtlas.trustedPlateSource(plate.source))
+      for feature in plate.annotations {
+        XCTAssertNil(atlas.entry(feature.id))
+        guard case .feature = plate.labelTarget(feature.id, in: atlas) else { return XCTFail("Expected local explanation") }
+      }
+      for marker in plate.markers {
+        guard case .anatomy(let id) = plate.labelTarget(marker.id, in: atlas) else { return XCTFail("Expected cell navigation") }
+        XCTAssertEqual(atlas.entry(id)?.kind, .cell)
+      }
+    }
+    for id in ["pancreas", "pancreatic-islets"] {
+      let entry = try XCTUnwrap(atlas.entry(id))
+      XCTAssertEqual(entry.mechanism, id); XCTAssertEqual(atlas.model(entry).kind, "secretion")
+      XCTAssertEqual(atlas.model(entry).stages.count, 4)
+    }
+    for id in GalaxySSIHealthAtlasPancreatic.isletCells {
+      XCTAssertEqual(atlas.entry(id)?.mechanism, id)
+      XCTAssertNotNil(atlas.plate(for: id))
+    }
+    let pancreas = try XCTUnwrap(atlas.entry("pancreas")), state = GalaxySSIHealthAtlasState()
+    state.binding(pancreas).wrappedValue.physiologyInputs = [40, 120]
+    state.binding(pancreas).wrappedValue.simulation.selectStage(3)
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.binding(pancreas).wrappedValue.physiologyInputs, [40, 120])
+    XCTAssertEqual(restored.binding(pancreas).wrappedValue.simulation.stage, 3)
+    for bad in ["https://pubmed.ncbi.nlm.nih.gov/1/", "https://pubmed.ncbi.nlm.nih.gov/16461897/?x=1",
+      "https://pubmed.ncbi.nlm.nih.gov.evil.invalid/16461897/"] {
+      XCTAssertFalse(GalaxySSIHealthAtlas.trustedPlateSource(URL(string: bad)))
+    }
+    for language in ["en", "zh-Hans"] {
+      var selection = state.binding(pancreas).wrappedValue; selection.tab = .simulation
+      let prompt = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: pancreas, selection: selection,
+        research: false, language: language)
+      for line in GalaxySSIHealthAtlasPancreatic.context(pancreas.id, text: { GalaxySSIHealthAtlasText.get("health_atlas_" + $0, language) }) {
+        XCTAssertTrue(prompt.contains(line))
+      }
+      selection.tab = .values
+      XCTAssertEqual(GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: pancreas, selection: selection,
+        research: false, language: language), "")
+    }
+  }
+
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
     let handoff = GalaxySSIHealthAtlasAgentHandoff()
     let token = try XCTUnwrap(handoff.prepare(owner: "a", conversation: "c", prompt: "Public teaching", now: 10))

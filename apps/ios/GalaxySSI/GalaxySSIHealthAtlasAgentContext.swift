@@ -82,6 +82,7 @@ enum GalaxySSIHealthAtlasAgentContext {
         }
         lines.append(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4), anatomy.stages[simulation.stage]))
         if let context = anatomy.valveContext { lines.append(context) }
+        lines += GalaxySSIHealthAtlasPancreatic.context(anatomy.id, text: t)
         if anatomy.id == GalaxySSIHealthAtlas.ImmunePack.phagocytosisOwner { lines.append(t("phagocytosis_scope")) }
         if anatomy.id == GalaxySSIHealthAtlasSarcomere.owner,
            let sarcomere = GalaxySSIHealthAtlasSarcomere(stage: simulation.stage) {

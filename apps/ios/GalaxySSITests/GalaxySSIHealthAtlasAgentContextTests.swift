@@ -85,6 +85,27 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     }
   }
 
+  func testPancreaticDestinationsAndIsletCellRolesRemainOwnerAndScreenScoped() throws {
+    typealias Pancreatic = GalaxySSIHealthAtlasPancreatic
+    XCTAssertEqual((0..<4).compactMap { Pancreatic.Route.duct.active(stage: $0) }, [true, true, true, false])
+    XCTAssertEqual((0..<4).compactMap { Pancreatic.Route.blood.active(stage: $0) }, [true, false, false, true])
+    XCTAssertNil(Pancreatic.Route.duct.active(stage: -1)); XCTAssertNil(Pancreatic.Route.blood.active(stage: 4))
+    XCTAssertEqual((0..<4).compactMap { Pancreatic.isletCell(stage: $0) }, Pancreatic.isletCells)
+    XCTAssertNil(Pancreatic.isletCell(stage: 4))
+    for id in ["pancreas", "pancreatic-islets"] {
+      let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: 0.5, first: 70, second: 70))
+      let scope = id == "pancreas" ? "digestive_routes_scope" : "digestive_islets_scope"
+      for screen in Context.Screen.allCases {
+        let prompt = Context.prompt(anatomy: anatomy(id), screen: screen, simulation: simulation, locale: locale, text: text)
+        if screen == .values { XCTAssertNil(prompt); continue }
+        XCTAssertEqual(try XCTUnwrap(prompt).contains(scope), screen.includesPhysiology)
+        let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("cell-pancreatic-acinar-cell"), screen: screen,
+          simulation: simulation, locale: locale, text: text))
+        XCTAssertFalse(foreign.contains(scope))
+      }
+    }
+  }
+
   func testCirculationRoutesBoundsAndPublicContextScope() throws {
     typealias Circuit = GalaxySSIHealthAtlasCirculation
     XCTAssertEqual(Circuit.legs.map(\.oxygenRich), [false, false, true, true])

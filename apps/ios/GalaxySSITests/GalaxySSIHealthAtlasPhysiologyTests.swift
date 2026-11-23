@@ -178,8 +178,9 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "cell-collecting-duct-intercalated-cell", "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron",
       "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna",
       "blood-vessels", "arteries", "veins", "coronary-vessels", "eye", "lens", "ear", "middle-ear",
-      "cranial-nerves", "spinal-nerves", "peripheral-nerves", "ventricles", "left-ventricle", "right-ventricle", "cell-type-ii-pneumocyte"]
-    XCTAssertEqual(ids.count, 41)
+      "cranial-nerves", "spinal-nerves", "peripheral-nerves", "ventricles", "left-ventricle", "right-ventricle", "cell-type-ii-pneumocyte",
+      "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell"]
+    XCTAssertEqual(ids.count, 44)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
     for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-i-pneumocyte", "cell-podocyte", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
@@ -465,6 +466,37 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       let context = GalaxySSIHealthAtlasPhysiologyText.context(model, language: language)
       XCTAssertTrue(context.contains(GalaxySSIHealthAtlasHeartSection.ejectionSource.absoluteString))
       XCTAssertFalse(context.contains("health_atlas_ejection_"))
+    }
+  }
+
+  func testBicarbonateMixConservesSoluteWithNoAddedFlowAndAtBounds() throws {
+    let model = Model(kind: .bicarbonateMix)
+    XCTAssertEqual(model.result, 50, accuracy: 1e-9)
+    XCTAssertEqual(model.companionValue, 100, accuracy: 1e-9)
+    XCTAssertEqual(model.input(0), 1); XCTAssertEqual(model.kind.axis, 1)
+    XCTAssertEqual(model.kind.unit, "mmol/L")
+    XCTAssertEqual(try XCTUnwrap(Model(kind: .bicarbonateMix, inputs: [0, 120])).result, 20, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Model(kind: .bicarbonateMix, inputs: [40, 120])).result, 100, accuracy: 1e-9)
+    for flow in 0...40 {
+      for concentration in stride(from: 20, through: 120, by: 5) {
+        let value = try XCTUnwrap(Model(kind: .bicarbonateMix, inputs: [flow, concentration]))
+        XCTAssertEqual(value.result * (1 + Double(flow) / 10), value.companionValue, accuracy: 1e-8)
+        XCTAssertGreaterThanOrEqual(value.result, 20 - 1e-9)
+        XCTAssertLessThanOrEqual(value.result, Double(concentration) + 1e-9)
+      }
+    }
+    for id in ["pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell"] {
+      XCTAssertEqual(Model.restore(id, inputs: [10, 80]), model)
+      XCTAssertNil(Model.restore(id, inputs: [-1, 80]))
+    }
+    for id in ["pancreatic-islets", "cell-pancreatic-acinar-cell", "cell-pancreatic-beta-cell", "cell-cholangiocyte"] {
+      XCTAssertNotEqual(Model.Kind.forEntry(id), .bicarbonateMix)
+    }
+    for language in ["en", "zh-Hans"] {
+      let context = GalaxySSIHealthAtlasPhysiologyText.context(model, language: language)
+      XCTAssertTrue(context.contains(GalaxySSIHealthAtlasText.get("health_atlas_digestive_bicarb_scope", language)))
+      XCTAssertTrue(context.contains(model.kind.source.absoluteString))
+      XCTAssertFalse(context.contains("health_atlas_"))
     }
   }
 

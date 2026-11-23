@@ -1,0 +1,513 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4348,
+    "mergeCommit": "c37bf1deaf377b1092972e64f8bfbc9e05eb225b"
+  },
+  "plates": [
+    {
+      "id": "cell-gastric-parietal-cell",
+      "owner": "cell-gastric-parietal-cell",
+      "asset": "HealthAtlasDigestiveParietal",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-gastric-parietal-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-4-the-stomach",
+      "features": [
+        {
+          "marker": {
+            "id": "parietal-canaliculus",
+            "x": 0.5166666666666667,
+            "y": 0.40714285714285714
+          },
+          "title": "health_atlas_digestive_parietal_canaliculus",
+          "explanation": "health_atlas_digestive_parietal_canaliculus_detail"
+        },
+        {
+          "marker": {
+            "id": "parietal-mitochondria",
+            "x": 0.3333333333333333,
+            "y": 0.575
+          },
+          "title": "health_atlas_digestive_parietal_mitochondria",
+          "explanation": "health_atlas_digestive_parietal_mitochondria_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_parietal.xml"
+    },
+    {
+      "id": "cell-gastric-chief-cell",
+      "owner": "cell-gastric-chief-cell",
+      "asset": "HealthAtlasDigestiveChief",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-gastric-chief-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-4-the-stomach",
+      "features": [
+        {
+          "marker": {
+            "id": "chief-granules",
+            "x": 0.5,
+            "y": 0.3464285714285714
+          },
+          "title": "health_atlas_digestive_chief_granules",
+          "explanation": "health_atlas_digestive_chief_granules_detail"
+        },
+        {
+          "marker": {
+            "id": "chief-basal-rer",
+            "x": 0.49166666666666664,
+            "y": 0.7285714285714285
+          },
+          "title": "health_atlas_digestive_chief_basal_rer",
+          "explanation": "health_atlas_digestive_chief_basal_rer_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_chief.xml"
+    },
+    {
+      "id": "cell-paneth-cell",
+      "owner": "cell-paneth-cell",
+      "asset": "HealthAtlasDigestivePaneth",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-paneth-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+      "features": [
+        {
+          "marker": {
+            "id": "paneth-crypt-face",
+            "x": 0.5,
+            "y": 0.5928571428571429
+          },
+          "title": "health_atlas_digestive_paneth_crypt_face",
+          "explanation": "health_atlas_digestive_paneth_crypt_face_detail"
+        },
+        {
+          "marker": {
+            "id": "paneth-basal-nucleus",
+            "x": 0.5,
+            "y": 0.7678571428571429
+          },
+          "title": "health_atlas_digestive_paneth_basal_nucleus",
+          "explanation": "health_atlas_digestive_paneth_basal_nucleus_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_paneth.xml"
+    },
+    {
+      "id": "cell-enteroendocrine-cell",
+      "owner": "cell-enteroendocrine-cell",
+      "asset": "HealthAtlasDigestiveEnteroendocrine",
+      "viewLabel": "health_atlas_digestive_open_view",
+      "entryIDs": [
+        "cell-enteroendocrine-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+      "features": [
+        {
+          "marker": {
+            "id": "ee-open-apex",
+            "x": 0.49722222222222223,
+            "y": 0.18928571428571428
+          },
+          "title": "health_atlas_digestive_ee_open_apex",
+          "explanation": "health_atlas_digestive_ee_open_apex_detail"
+        },
+        {
+          "marker": {
+            "id": "ee-basal-granules",
+            "x": 0.5666666666666667,
+            "y": 0.7035714285714286
+          },
+          "title": "health_atlas_digestive_ee_basal_granules",
+          "explanation": "health_atlas_digestive_ee_basal_granules_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_enteroendocrine.xml"
+    },
+    {
+      "id": "cell-intestinal-stem-cell",
+      "owner": "cell-intestinal-stem-cell",
+      "asset": "HealthAtlasDigestiveCryptStem",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-intestinal-stem-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/32586946/",
+      "features": [
+        {
+          "marker": {
+            "id": "crypt-basal-cell",
+            "x": 0.5055555555555555,
+            "y": 0.7428571428571429
+          },
+          "title": "health_atlas_digestive_crypt_basal_cell",
+          "explanation": "health_atlas_digestive_crypt_basal_cell_detail"
+        },
+        {
+          "marker": {
+            "id": "crypt-paneth-neighbor",
+            "x": 0.6138888888888889,
+            "y": 0.7392857142857143
+          },
+          "title": "health_atlas_digestive_crypt_paneth_neighbor",
+          "explanation": "health_atlas_digestive_crypt_paneth_neighbor_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_crypt_stem.xml"
+    },
+    {
+      "id": "cell-cholangiocyte",
+      "owner": "cell-cholangiocyte",
+      "asset": "HealthAtlasDigestiveBileDuct",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-cholangiocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/27563020/",
+      "features": [
+        {
+          "marker": {
+            "id": "duct-cilium",
+            "x": 0.5055555555555555,
+            "y": 0.2392857142857143
+          },
+          "title": "health_atlas_digestive_duct_cilium",
+          "explanation": "health_atlas_digestive_duct_cilium_detail"
+        },
+        {
+          "marker": {
+            "id": "bile-apical-membrane",
+            "x": 0.5527777777777778,
+            "y": 0.3535714285714286
+          },
+          "title": "health_atlas_digestive_bile_apical_membrane",
+          "explanation": "health_atlas_digestive_bile_apical_membrane_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_bile_duct.xml"
+    },
+    {
+      "id": "cell-pancreatic-acinar-cell",
+      "owner": "cell-pancreatic-acinar-cell",
+      "asset": "HealthAtlasDigestivePancreaticAcinar",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-pancreatic-acinar-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder",
+      "features": [
+        {
+          "marker": {
+            "id": "pancreatic-zymogen",
+            "x": 0.4222222222222222,
+            "y": 0.4142857142857143
+          },
+          "title": "health_atlas_digestive_pancreatic_zymogen",
+          "explanation": "health_atlas_digestive_pancreatic_zymogen_detail"
+        },
+        {
+          "marker": {
+            "id": "pancreatic-acinar-lumen",
+            "x": 0.5055555555555555,
+            "y": 0.48928571428571427
+          },
+          "title": "health_atlas_digestive_pancreatic_acinar_lumen",
+          "explanation": "health_atlas_digestive_pancreatic_acinar_lumen_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_pancreatic_acinar.xml"
+    },
+    {
+      "id": "cell-pancreatic-ductal-cell",
+      "owner": "cell-pancreatic-ductal-cell",
+      "asset": "HealthAtlasDigestivePancreaticDuct",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-pancreatic-ductal-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder",
+      "features": [
+        {
+          "marker": {
+            "id": "pancreatic-duct-apical",
+            "x": 0.5277777777777778,
+            "y": 0.35
+          },
+          "title": "health_atlas_digestive_pancreatic_duct_apical",
+          "explanation": "health_atlas_digestive_pancreatic_duct_apical_detail"
+        },
+        {
+          "marker": {
+            "id": "pancreatic-duct-basal",
+            "x": 0.5166666666666667,
+            "y": 0.7607142857142857
+          },
+          "title": "health_atlas_digestive_pancreatic_duct_basal",
+          "explanation": "health_atlas_digestive_pancreatic_duct_basal_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_pancreatic_duct.xml"
+    },
+    {
+      "id": "cell-salivary-acinar-cell",
+      "owner": "cell-salivary-acinar-cell",
+      "asset": "HealthAtlasDigestiveSalivaryAcinar",
+      "viewLabel": "health_atlas_digestive_serous_view",
+      "entryIDs": [
+        "cell-salivary-acinar-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-3-the-mouth-pharynx-and-esophagus",
+      "features": [
+        {
+          "marker": {
+            "id": "salivary-granules",
+            "x": 0.5972222222222222,
+            "y": 0.39285714285714285
+          },
+          "title": "health_atlas_digestive_salivary_granules",
+          "explanation": "health_atlas_digestive_salivary_granules_detail"
+        },
+        {
+          "marker": {
+            "id": "salivary-lumen",
+            "x": 0.5138888888888888,
+            "y": 0.48928571428571427
+          },
+          "title": "health_atlas_digestive_salivary_lumen",
+          "explanation": "health_atlas_digestive_salivary_lumen_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_salivary_acinar.xml"
+    },
+    {
+      "id": "cell-pancreatic-alpha-cell",
+      "owner": "cell-pancreatic-alpha-cell",
+      "asset": "HealthAtlasDigestiveAlpha",
+      "viewLabel": "health_atlas_digestive_identity_view",
+      "entryIDs": [
+        "cell-pancreatic-alpha-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-9-the-endocrine-pancreas",
+      "features": [
+        {
+          "marker": {
+            "id": "alpha-glucagon",
+            "x": 0.5694444444444444,
+            "y": 0.5428571428571428
+          },
+          "title": "health_atlas_digestive_alpha_glucagon",
+          "explanation": "health_atlas_digestive_alpha_glucagon_detail"
+        },
+        {
+          "marker": {
+            "id": "alpha-capillary",
+            "x": 0.5972222222222222,
+            "y": 0.8142857142857143
+          },
+          "title": "health_atlas_digestive_alpha_capillary",
+          "explanation": "health_atlas_digestive_alpha_capillary_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_alpha.xml"
+    },
+    {
+      "id": "cell-pancreatic-delta-cell",
+      "owner": "cell-pancreatic-delta-cell",
+      "asset": "HealthAtlasDigestiveDelta",
+      "viewLabel": "health_atlas_digestive_identity_view",
+      "entryIDs": [
+        "cell-pancreatic-delta-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-9-the-endocrine-pancreas",
+      "features": [
+        {
+          "marker": {
+            "id": "delta-projection",
+            "x": 0.6583333333333333,
+            "y": 0.41785714285714287
+          },
+          "title": "health_atlas_digestive_delta_projection",
+          "explanation": "health_atlas_digestive_delta_projection_detail"
+        },
+        {
+          "marker": {
+            "id": "delta-granules",
+            "x": 0.4777777777777778,
+            "y": 0.5535714285714286
+          },
+          "title": "health_atlas_digestive_delta_granules",
+          "explanation": "health_atlas_digestive_delta_granules_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_delta.xml"
+    },
+    {
+      "id": "cell-pancreatic-pp-cell",
+      "owner": "cell-pancreatic-pp-cell",
+      "asset": "HealthAtlasDigestivePp",
+      "viewLabel": "health_atlas_digestive_identity_view",
+      "entryIDs": [
+        "cell-pancreatic-pp-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-9-the-endocrine-pancreas",
+      "features": [
+        {
+          "marker": {
+            "id": "pp-hormone-granules",
+            "x": 0.5694444444444444,
+            "y": 0.5714285714285714
+          },
+          "title": "health_atlas_digestive_pp_hormone_granules",
+          "explanation": "health_atlas_digestive_pp_hormone_granules_detail"
+        },
+        {
+          "marker": {
+            "id": "pp-islet-interface",
+            "x": 0.6277777777777778,
+            "y": 0.6285714285714286
+          },
+          "title": "health_atlas_digestive_pp_islet_interface",
+          "explanation": "health_atlas_digestive_pp_islet_interface_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_pp.xml"
+    },
+    {
+      "id": "cell-myoepithelial-cell",
+      "owner": "cell-myoepithelial-cell",
+      "asset": "HealthAtlasDigestiveMyoepithelial",
+      "viewLabel": "health_atlas_digestive_mammary_view",
+      "entryIDs": [
+        "cell-myoepithelial-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/28-6-lactation",
+      "features": [
+        {
+          "marker": {
+            "id": "myo-contractile-arms",
+            "x": 0.2611111111111111,
+            "y": 0.5714285714285714
+          },
+          "title": "health_atlas_digestive_myo_contractile_arms",
+          "explanation": "health_atlas_digestive_myo_contractile_arms_detail"
+        },
+        {
+          "marker": {
+            "id": "myo-cell-body",
+            "x": 0.41944444444444445,
+            "y": 0.7535714285714286
+          },
+          "title": "health_atlas_digestive_myo_cell_body",
+          "explanation": "health_atlas_digestive_myo_cell_body_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_myoepithelial.xml"
+    },
+    {
+      "id": "pancreatic-islets",
+      "owner": "pancreatic-islets",
+      "asset": "HealthAtlasDigestiveIslet",
+      "viewLabel": "health_atlas_digestive_islet_view",
+      "entryIDs": [
+        "pancreatic-islets",
+        "cell-pancreatic-alpha-cell",
+        "cell-pancreatic-beta-cell",
+        "cell-pancreatic-delta-cell",
+        "cell-pancreatic-pp-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-pancreatic-alpha-cell",
+          "x": 0.33055555555555555,
+          "y": 0.3678571428571429
+        },
+        {
+          "id": "cell-pancreatic-beta-cell",
+          "x": 0.5138888888888888,
+          "y": 0.34285714285714286
+        },
+        {
+          "id": "cell-pancreatic-delta-cell",
+          "x": 0.38055555555555554,
+          "y": 0.6857142857142857
+        },
+        {
+          "id": "cell-pancreatic-pp-cell",
+          "x": 0.5861111111111111,
+          "y": 0.6678571428571428
+        }
+      ],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/16461897/",
+      "features": [
+        {
+          "marker": {
+            "id": "islet-capillary",
+            "x": 0.7277777777777777,
+            "y": 0.40714285714285714
+          },
+          "title": "health_atlas_digestive_islet_capillary",
+          "explanation": "health_atlas_digestive_islet_capillary_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_digestive_islet.xml"
+    }
+  ],
+  "mechanisms": [
+    {
+      "id": "pancreas",
+      "kind": "secretion",
+      "title": "health_atlas_digestive_pancreas_title",
+      "stages": [
+        "health_atlas_digestive_pancreas_0",
+        "health_atlas_digestive_pancreas_1",
+        "health_atlas_digestive_pancreas_2",
+        "health_atlas_digestive_pancreas_3"
+      ],
+      "chapter": "23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder"
+    },
+    {
+      "id": "pancreatic-islets",
+      "kind": "secretion",
+      "title": "health_atlas_digestive_islets_title",
+      "stages": [
+        "health_atlas_digestive_islets_0",
+        "health_atlas_digestive_islets_1",
+        "health_atlas_digestive_islets_2",
+        "health_atlas_digestive_islets_3"
+      ],
+      "chapter": "17-9-the-endocrine-pancreas"
+    }
+  ]
+}

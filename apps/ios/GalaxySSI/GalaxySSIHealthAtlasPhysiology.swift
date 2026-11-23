@@ -30,6 +30,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case middleEar
     case nerveTransit
     case alveolarSurface
+    case bicarbonateMix
     case ejection
     #if GALAXYSSI_ATLAS_OXYGEN
     case oxygen
@@ -39,6 +40,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       case .alveolarSurface:
         return [.init(key: "alveolar_tension", range: 5...35, initial: 15, unit: "mN/m"),
           .init(key: "alveolar_radius", range: 50...200, initial: 100, unit: "\u{03bc}m")]
+      case .bicarbonateMix:
+        return [.init(key: "digestive_bicarb_flow", range: 0...40, initial: 10, scale: 10, unit: "mL/min"),
+          .init(key: "digestive_bicarb_concentration", range: 20...120, initial: 80, unit: "mmol/L")]
       case .nerveTransit:
         return [.init(key: "nerve_transit_distance", range: 10...150, initial: 60, unit: "cm"),
           .init(key: "nerve_transit_speed", range: 1...120, initial: 50, unit: "m/s")]
@@ -93,6 +97,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var unit: String {
       if self == .alveolarSurface { return "Pa" }
+      if self == .bicarbonateMix { return "mmol/L" }
       if self == .eye { return "mm" }
       if self == .vessel { return "mL/min" }
       if self == .elbow { return "N" }
@@ -106,6 +111,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var bounds: ClosedRange<Double> {
       if self == .alveolarSurface { return 0...1400 }
+      if self == .bicarbonateMix { return 0...100 }
       if self == .eye { return -3...3 }
       if self == .vessel { return 0...3 }
       if self == .elbow { return 0...2700 }
@@ -120,6 +126,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     var source: URL {
       switch self {
       case .alveolarSurface: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/20724566/")!
+      case .bicarbonateMix: return URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder")!
       case .nerveTransit: return URL(string: "https://www.ncbi.nlm.nih.gov/books/NBK10921/")!
       case .ejection: return GalaxySSIHealthAtlasHeartSection.ejectionSource
       case .eye: return GalaxySSIHealthAtlasEyeOptics.source
@@ -145,6 +152,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     static func forEntry(_ id: String) -> Self? {
       switch id {
       case "cell-type-ii-pneumocyte": return .alveolarSurface
+      case "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell": return .bicarbonateMix
       case "cranial-nerves", "spinal-nerves", "peripheral-nerves": return .nerveTransit
       case "ventricles", "left-ventricle", "right-ventricle": return .ejection
       case "eye", "lens": return .eye
@@ -186,6 +194,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var companionValue: Double {
     switch kind {
     case .alveolarSurface: return result / 2
+    case .bicarbonateMix: return 20 + input(0) * input(1)
     case .nerveTransit: return 100 / input(1)
     case .ejection: return input(0) + input(1)
     case .eye: return eyeOptics!.targetPowerDiopters
@@ -251,6 +260,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     switch kind {
     // Young-Laplace for a single spherical interface: mN/m and micrometres converted to SI.
     case .alveolarSurface: return 2000 * values[0] / values[1]
+    case .bicarbonateMix: return (20 + values[0] * values[1]) / (1 + values[0])
     case .nerveTransit: return 10 * values[0] / values[1]
     case .ejection: return 100 * values[0] / (values[0] + values[1])
     case .eye: return GalaxySSIHealthAtlasEyeOptics(distanceMetres: values[0], powerDiopters: values[1])!.offsetMm
