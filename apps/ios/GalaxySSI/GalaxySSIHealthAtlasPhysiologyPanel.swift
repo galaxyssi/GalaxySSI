@@ -16,6 +16,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
         Text(GalaxySSIHealthAtlasPhysiologyText.result(model, language: language)).font(.title3).fixedSize(horizontal: false, vertical: true)
         Text(GalaxySSIHealthAtlasPhysiologyText.companion(model, language: language)).font(.subheadline).foregroundColor(.secondary)
         if let amounts = model.renalAmounts { renalBalance(amounts) }
+        if let forces = model.elbowForces { GalaxySSIHealthAtlasElbowView(forces: forces, language: language) }
         chart(model)
         Text(String(format: t("model_axis"), t(model.kind.inputs[model.kind.axis].key), model.kind.inputs[model.kind.axis].unit))
           .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -76,7 +77,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
     }.accessibilityIdentifier("atlas-renal-balance")
   }
   private func chart(_ model: GalaxySSIHealthAtlasPhysiology) -> some View {
-    let low = model.kind.bounds.lowerBound, high = model.kind.bounds.upperBound
+    let low = model.kind.bounds.lowerBound, high = model.plotMaximum
     let left = model.axisRange.lowerBound, right = model.axisRange.upperBound
     return VStack(alignment: .leading, spacing: 8) {
       Text(model.kind.unit).font(.caption)

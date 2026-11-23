@@ -2,6 +2,9 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let elbowKey = ["model_elbow": "elbow_title", "model_elbow_scope": "elbow_scope", "model_elbow_formula": "elbow_formula"][key]
+    if let elbowKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + elbowKey, language) }
+    if key.hasPrefix("elbow_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     #if GALAXYSSI_ATLAS_OXYGEN
     if let value = GalaxySSIHealthAtlasOxygenText.string(key, language: language) { return value }
     #endif
@@ -23,6 +26,9 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + number(model.result, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if let forces = model.elbowForces {
+      return String(format: string("elbow_joint", language: language), number(forces.jointDown, language: language))
+    }
     #if GALAXYSSI_ATLAS_OXYGEN
     if let amounts = model.oxygenAmounts {
       return String(format: string("model_oxygen_content", language: language), number(amounts.total, language: language),
@@ -53,6 +59,7 @@ enum GalaxySSIHealthAtlasPhysiologyText {
       model.inputs.indices.map { input(model, index: $0, language: language) } +
       [result(model, language: language), companion(model, language: language)] +
       (model.renalAmounts.map { renalContext($0, language: language) } ?? []) +
+      (model.elbowForces.map { elbowContext($0, language: language) } ?? []) +
       [
        string("model_" + model.kind.rawValue + "_formula", language: language)] + model.kind.sources.map(\.absoluteString))
       .joined(separator: "\n")
@@ -62,6 +69,17 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     guard labels.indices.contains(index) else { return "" }
     return String(format: GalaxySSIHealthAtlasText.get("health_atlas_renal_balance_" + labels[index], language),
       number(amounts.transfers[index], language: language))
+  }
+  static func elbowLabels(_ forces: GalaxySSIHealthAtlasElbow.Forces, language: String) -> [String] {
+    zip(["elbow_muscle_force", "elbow_joint_force", "elbow_arm_weight", "elbow_load_weight"],
+      [forces.muscle, forces.jointDown, forces.armWeight, forces.loadWeight]).map { key, value in
+        String(format: string(key, language: language), number(value, language: language))
+      }
+  }
+  static func elbowContext(_ forces: GalaxySSIHealthAtlasElbow.Forces, language: String) -> [String] {
+    [string("elbow_diagram", language: language)] + elbowLabels(forces, language: language) +
+      [String(format: string("elbow_torque", language: language), number(forces.torque, language: language)),
+       string("elbow_fixed", language: language)]
   }
   static func renalDirection(_ index: Int, language: String) -> String {
     GalaxySSIHealthAtlasText.get("health_atlas_renal_" + (index == 1 ? "lumen_blood" : index == 3 ? "lumen_urine" : "blood_lumen"), language)
