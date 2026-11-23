@@ -3,6 +3,7 @@ package com.galaxyssi.chat
 import android.app.Activity
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.PointF
 import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
@@ -74,8 +75,8 @@ internal object HealthAtlasUi {
             tag = "atlas-art-caption"
             setTextColor(activity.getColor(R.color.health_overview_green))
         })
-        item?.let { ui.add(legend, ui.text(it.description, 15f).apply { tag = "atlas-art-explanation" }, 3) }
-        ui.add(legend, ui.text(activity.getString(note), 12f, muted = true), 6)
+        item?.let { ui.add(legend, ui.text(it.description, 14f).apply { tag = "atlas-art-explanation" }, 3) }
+        ui.add(legend, ui.text(activity.getString(note), 11f, muted = true), 5)
     }
     fun row(activity: Activity, item: HealthAtlasItem, data: HealthBodyAtlas, action: () -> Unit): LinearLayout {
         val ui = HealthCenterViews(activity)
@@ -173,8 +174,7 @@ internal class HealthAtlasArtwork(
             val caption = plate.caption(activity, data, item)
             val description = (item?.name ?: activity.getString(R.string.health_atlas_whole)) + " · " + caption
             val labeled = if (plate.hasLabels) HealthAtlasLabeledImage(activity, plate,
-                description, data, item?.id,
-                legendInset = HealthAtlasFigureFrame.LEGEND_OVERLAP_DP, selected = selected) else null
+                description, data, item?.id, selected = selected) else null
             val art = object : FrameLayout(activity) {
                 override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
                     labeled?.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
@@ -186,7 +186,6 @@ internal class HealthAtlasArtwork(
                 setImageResource(resource); scaleType = ImageView.ScaleType.FIT_CENTER
                 contentDescription = description
                 tag = "atlas-art-image"
-                setPadding(ui.dp(12), 0, ui.dp(12), ui.dp(20))
             }
             val target = labeled ?: picture
             val viewport = GalaxySSIPinchZoomViewport(activity).apply { attach(target) }
@@ -216,8 +215,13 @@ internal class HealthAtlasArtwork(
                     }.apply { tag = "atlas-source-structure" })
                 }
             }
-            addView(HealthAtlasFigureFrame(activity, art, "atlas-structure-figure", controls).apply {
-                HealthAtlasUi.illustrationNotes(activity, legend, caption, item)
+            val focus = plate.markers.firstOrNull { it.id == item?.id }?.let { PointF(it.x, it.y) }
+                ?: if (plate.owner == "cell-pancreatic-beta-cell") PointF(.82f, .44f) else null
+            addView(HealthAtlasFigureFrame(activity, art, "atlas-structure-figure", controls,
+                subject = picture, subjectPoint = focus, preferSideNote = !plate.hasLabels,
+                overlayNote = plate.hasLabels && item != null && !plate.splitCallouts &&
+                    plate.features.isEmpty() && plate.markers.size <= 3).apply {
+                HealthAtlasUi.illustrationNotes(activity, legend, if (item == null) description else caption, item)
             }, LayoutParams(-1, -2))
         } else {
             val entry = requireNotNull(item)
@@ -229,7 +233,8 @@ internal class HealthAtlasArtwork(
                 setPadding(ui.dp(36), ui.dp(22), ui.dp(36), ui.dp(30))
                 importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
             }
-            addView(HealthAtlasFigureFrame(activity, symbol, "atlas-structure-figure").apply {
+            addView(HealthAtlasFigureFrame(activity, symbol, "atlas-structure-figure",
+                subject = symbol, preferSideNote = true).apply {
                 HealthAtlasUi.illustrationNotes(activity, legend, entry.name, entry, R.string.health_atlas_symbol_only)
             }, LayoutParams(-1, -2))
         }

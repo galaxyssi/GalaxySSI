@@ -32,19 +32,26 @@ internal class HealthAtlasResearchPanel(
     }
     private fun drugs() {
         heading(R.string.health_atlas_adme_title)
-        note(R.string.health_atlas_adme_scope)
         val stages = listOf(R.string.health_atlas_absorption, R.string.health_atlas_distribution,
             R.string.health_atlas_metabolism, R.string.health_atlas_excretion)
         val model = HealthAtlasMechanism("adme", "teaching", activity.getString(R.string.health_atlas_adme_title),
             stages.map(activity::getString), "")
-        body.addView(HealthAtlasProcessView(activity, model).apply { phase = 1f }, LinearLayout.LayoutParams(-1, -2))
         val structures = listOf("small-intestine", "blood-vessels", "liver", "kidneys")
         val descriptions = listOf(R.string.health_atlas_absorption_note, R.string.health_atlas_distribution_note,
             R.string.health_atlas_metabolism_note, R.string.health_atlas_excretion_note)
+        val notes = descriptions.map(activity::getString)
+        val explanation = ui.text(notes.first(), 14f).apply { tag = "atlas-adme-explanation" }
+        val process = HealthAtlasProcessView(activity, model) { index -> explanation.text = notes[index] }
+        ui.add(body, HealthAtlasFigureFrame(activity, process, "atlas-adme-figure").apply {
+            reserveCaption(explanation, notes)
+            ui.add(legend, explanation)
+            ui.add(legend, ui.text(activity.getString(R.string.health_atlas_adme_scope), 11f, muted = true), 5)
+        }, 8)
         structures.forEachIndexed { index, id ->
             val structure = requireNotNull(atlas[id])
-            ui.add(body, ui.row(activity.getString(stages[index]) + " · " + structure.name,
-                activity.getString(descriptions[index])) { select(structure) }.apply { tag = "atlas-adme-$id" }, 8)
+            ui.add(body, ui.row(activity.getString(stages[index]) + " · " + structure.name) {
+                select(structure)
+            }.apply { tag = "atlas-adme-$id" }, 8)
         }
         heading(R.string.health_atlas_drug_models)
         val choice = ui.column()

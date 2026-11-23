@@ -492,6 +492,18 @@ class HealthBodyAtlasDeviceTest {
         scenario.onActivity { it.openAtlasModelDetails() }; capture("simulation")
         scenario.onActivity { it.onBackPressed(); it.view("atlas-tab-1").performClick() }; capture("systems")
         scenario.onActivity {
+            (it.view("atlas-search") as EditText).setText("cardio")
+            it.view("atlas-entry-cardio").performClick()
+        }; capture("cardio")
+        scenario.onActivity {
+            it.onBackPressed()
+            it.view("atlas-tab-2").performClick()
+            it.view("atlas-catalogue-layer-1").performClick()
+            (it.view("atlas-search") as EditText).setText("tissue-cardiac-muscle")
+            it.view("atlas-entry-tissue-cardiac-muscle").performClick()
+        }; capture("cardiac-tissue")
+        scenario.onActivity {
+            it.onBackPressed()
             it.view("atlas-tab-3").performClick(); (it.view("atlas-search") as EditText).setText("beta")
             it.view("atlas-entry-cell-pancreatic-beta-cell").performClick()
         }; capture("beta")
@@ -513,9 +525,8 @@ class HealthBodyAtlasDeviceTest {
                 art.layout(0, 0, width, art.measuredHeight)
                 assertEquals(item.description, description.text.toString())
                 assertTrue(id, description.layout.height + description.totalPaddingTop + description.totalPaddingBottom <= description.height)
-                assertEquals(figure.height, legend.bottom)
                 val picture = figure.getChildAt(figure.indexOfChild(legend) - 1)
-                assertTrue(id, legend.top + legend.paddingTop < picture.bottom)
+                assertTrue(id, legend.top < picture.bottom)
                 assertTrue(id, picture.measuredHeight > 0)
             }
         }

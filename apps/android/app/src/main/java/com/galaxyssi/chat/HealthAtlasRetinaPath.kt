@@ -64,16 +64,22 @@ internal class HealthAtlasRetinaPath(activity: Activity, atlas: HealthBodyAtlas,
             ui.add(this, heading(R.string.health_atlas_sensory_retinal_cone_route))
             ui.add(this, nodes[2], 4)
         }
-        ui.add(this, ui.line().apply {
-            gravity = Gravity.TOP
-            addView(dim, LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) })
-            addView(bright, LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(6) })
+        val route = ui.column().apply {
+            ui.add(this, ui.line().apply {
+                gravity = Gravity.TOP
+                addView(dim, LayoutParams(0, -2, 1f).apply { marginEnd = ui.dp(6) })
+                addView(bright, LayoutParams(0, -2, 1f).apply { marginStart = ui.dp(6) })
+            })
+            ui.add(this, arrow("\u2198    \u2199"))
+            ui.add(this, nodes[3])
+        }
+        ui.add(this, HealthAtlasFigureFrame(activity, route, "atlas-retina-figure",
+            activeNode = { nodes[stage] }).apply {
+            reserveCaption(description, mechanism.stages)
+            ui.add(legend, description)
+            ui.add(legend, ui.text(context.getString(R.string.health_atlas_sensory_retinal_scope), 11f, muted = true), 5)
         })
-        ui.add(this, arrow("\u2198    \u2199"))
-        ui.add(this, nodes[3])
-        ui.add(this, description, 12)
         ui.add(this, actions, 2)
-        ui.add(this, ui.text(context.getString(R.string.health_atlas_sensory_retinal_scope), 12f, muted = true), 4)
         bind()
     }
     private fun heading(label: Int) = ui.text(context.getString(label), 13f, muted = true).apply { gravity = Gravity.CENTER }
@@ -90,6 +96,7 @@ internal class HealthAtlasRetinaPath(activity: Activity, atlas: HealthBodyAtlas,
             node.setTextColor(if (active) accent else context.getColor(R.color.text_primary))
         }
         description.text = nodes[stage].contentDescription
+        (description.parent?.parent as? HealthAtlasFigureFrame)?.invalidate()
         actions.removeAllViews()
         destinations[stage].forEach { ui.add(actions, it) }
     }
