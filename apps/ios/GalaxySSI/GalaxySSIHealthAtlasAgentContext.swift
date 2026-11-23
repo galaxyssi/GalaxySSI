@@ -85,7 +85,7 @@ enum GalaxySSIHealthAtlasAgentContext {
         lines += GalaxySSIHealthAtlasPancreatic.context(anatomy.id, text: t)
         lines += GalaxySSIHealthAtlasRetinaPath.context(anatomy.id, text: t)
         if let context = GalaxySSIHealthAtlasSweat.context(anatomy.id, text: t) { lines.append(context) }
-        lines += GalaxySSIHealthAtlasLymphLesson.context(anatomy.id, stage: simulation.stage, language: language)
+        lines += GalaxySSIHealthAtlasSectionLesson.context(anatomy.id, stage: simulation.stage, language: language)
         if let context = GalaxySSIHealthAtlasEndocrinePath.context(anatomy.id, language: language) { lines.append(context) }
         if anatomy.id == GalaxySSIHealthAtlas.ImmunePack.phagocytosisOwner { lines.append(t("phagocytosis_scope")) }
         if anatomy.id == GalaxySSIHealthAtlasSarcomere.owner,

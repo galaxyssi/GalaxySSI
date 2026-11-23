@@ -179,8 +179,9 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna",
       "blood-vessels", "arteries", "veins", "coronary-vessels", "eye", "lens", "ear", "middle-ear",
       "cranial-nerves", "spinal-nerves", "peripheral-nerves", "ventricles", "left-ventricle", "right-ventricle", "cell-type-ii-pneumocyte",
-      "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell", "thyroid-gland", "cell-rod-photoreceptor", "sweat-glands", "lymphatic-vessels"]
-    XCTAssertEqual(ids.count, 48)
+      "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell", "thyroid-gland", "cell-rod-photoreceptor", "sweat-glands", "lymphatic-vessels",
+      "small-intestine", "jejunum"]
+    XCTAssertEqual(ids.count, 50)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
     for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-i-pneumocyte", "cell-podocyte", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
@@ -609,6 +610,31 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       let context = GalaxySSIHealthAtlasPhysiologyText.context(model, language: language)
       XCTAssertTrue(context.contains(GalaxySSIHealthAtlasText.get("health_atlas_context_evap_scope", language)))
       XCTAssertTrue(context.contains(model.kind.source.absoluteString)); XCTAssertFalse(context.contains("health_atlas_"))
+    }
+  }
+
+  func testVillusAreaUsesGeometryRatherThanAbsorptionAndKeepsRadiusPrecision() throws {
+    let model = Model(kind: .villusArea)
+    XCTAssertEqual(model.result, 1 + 12 * 2 * Double.pi * 0.045 * 0.6, accuracy: 1e-12)
+    XCTAssertEqual(model.companionValue, model.result - 1, accuracy: 1e-12)
+    XCTAssertEqual(try XCTUnwrap(model.changing(0, to: 0)).result, 1)
+    let maximum = try XCTUnwrap(Model(kind: .villusArea, inputs: [24, 70, 120]))
+    XCTAssertEqual(maximum.result, 1 + 24 * 2 * Double.pi * 0.07 * 1.2, accuracy: 1e-12)
+    XCTAssertTrue(maximum.result < 14)
+    XCTAssertEqual(Model.Kind.forEntry("small-intestine"), .villusArea)
+    XCTAssertEqual(Model.Kind.forEntry("jejunum"), .villusArea)
+    for id in ["duodenum", "ileum", "cell-enterocyte", "lymphatic-vessels"] {
+      XCTAssertNotEqual(Model.Kind.forEntry(id), .villusArea)
+    }
+    XCTAssertNil(Model(kind: .villusArea, inputs: [25, 45, 60]))
+    XCTAssertNil(Model(kind: .villusArea, inputs: [12, 0, 60]))
+    XCTAssertEqual(Model.restore("jejunum", inputs: [24, 70, 120]), maximum)
+    XCTAssertNil(Model.restore("ileum", inputs: [24, 70, 120]))
+    for language in ["en", "zh-Hans"] {
+      let radius = GalaxySSIHealthAtlasPhysiologyText.inputNumber(0.045, key: "gut_section_area_radius", language: language)
+      XCTAssertEqual(radius, "0.045")
+      XCTAssertFalse(GalaxySSIHealthAtlasPhysiologyText.string("model_villusArea_scope", language: language).contains("health_atlas_"))
+      XCTAssertFalse(GalaxySSIHealthAtlasPhysiologyText.companion(model, language: language).contains("health_atlas_"))
     }
   }
 

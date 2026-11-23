@@ -109,8 +109,8 @@ enum GalaxySSIHealthAtlasQuestion {
       let retinal = GalaxySSIHealthAtlasRetinaPath.context(entry.id, text: t)
       if !retinal.isEmpty { prompt += "\n" + retinal.joined(separator: "\n") }
       if let context = GalaxySSIHealthAtlasSweat.context(entry.id, text: t) { prompt += "\n" + context }
-      let lymph = GalaxySSIHealthAtlasLymphLesson.context(entry.id, stage: selection.simulation.stage, language: language)
-      if !lymph.isEmpty { prompt += "\n" + lymph.joined(separator: "\n") }
+      let section = GalaxySSIHealthAtlasSectionLesson.context(entry.id, stage: selection.simulation.stage, language: language)
+      if !section.isEmpty { prompt += "\n" + section.joined(separator: "\n") }
       if let context = GalaxySSIHealthAtlasEndocrinePath.context(entry.id, language: language) { prompt += "\n" + context }
     }
     if entry.id == GalaxySSIHealthAtlasFiltrationStage.owner,

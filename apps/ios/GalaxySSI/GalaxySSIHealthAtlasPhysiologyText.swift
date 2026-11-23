@@ -2,6 +2,10 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let areaKey = ["model_villusArea": "gut_section_area_title", "model_villusArea_scope": "gut_section_area_scope",
+      "model_villusArea_formula": "gut_section_area_formula"][key]
+    if let areaKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + areaKey, language) }
+    if key.hasPrefix("gut_section_area_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     let valveKey = ["model_lymphValve": "lymph_valve_model_title", "model_lymphValve_scope": "lymph_valve_model_scope",
       "model_lymphValve_formula": "lymph_valve_model_formula"][key]
     if let valveKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + valveKey, language) }
@@ -66,7 +70,7 @@ enum GalaxySSIHealthAtlasPhysiologyText {
       (spec.unit.isEmpty ? "" : " " + spec.unit)
   }
   static func inputNumber(_ value: Double, key: String, language: String) -> String {
-    number(value, digits: key == "vessel_radius" ? 3 : 2, language: language)
+    number(value, digits: ["vessel_radius", "gut_section_area_radius"].contains(key) ? 3 : 2, language: language)
   }
   static func resultNumber(_ value: Double, kind: GalaxySSIHealthAtlasPhysiology.Kind, language: String) -> String {
     number(kind == .eye && abs(value) < 0.005 ? 0 : value, digits: kind == .vessel ? 6 : 2, language: language)
@@ -75,6 +79,9 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if model.kind == .villusArea {
+      return String(format: string("gut_section_area_extra", language: language), number(model.companionValue, language: language))
+    }
     if model.kind == .lymphValve {
       let state = model.input(0) > 0 ? "forward" : model.input(0) < 0 ? "closed" : "balance"
       return String(format: string("lymph_valve_model_" + state, language: language), number(model.companionValue, language: language))

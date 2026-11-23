@@ -1,0 +1,2085 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4353,
+    "mergeCommit": "eb17db473412f018fe6b67eb364bdbe482210b5b"
+  },
+  "plates": [
+    {
+      "id": "oral-cavity",
+      "owner": "oral-cavity",
+      "asset": "HealthAtlasGutMouth",
+      "viewLabel": "health_atlas_gut_section_mouth_view",
+      "entryIDs": [
+        "oral-cavity",
+        "teeth",
+        "tongue",
+        "pharynx"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "teeth",
+          "x": 0.2861111111111111,
+          "y": 0.4392857142857143
+        },
+        {
+          "id": "tongue",
+          "x": 0.48055555555555557,
+          "y": 0.5964285714285714
+        },
+        {
+          "id": "pharynx",
+          "x": 0.7611111111111111,
+          "y": 0.5892857142857143
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-3-the-mouth-pharynx-and-esophagus",
+      "features": [
+        {
+          "marker": {
+            "id": "mouth-0",
+            "x": 0.4305555555555556,
+            "y": 0.3678571428571429
+          },
+          "title": "health_atlas_gut_section_mouth_feature_0",
+          "explanation": "health_atlas_gut_section_mouth_detail_0"
+        },
+        {
+          "marker": {
+            "id": "mouth-1",
+            "x": 0.42777777777777776,
+            "y": 0.5535714285714286
+          },
+          "title": "health_atlas_gut_section_mouth_feature_1",
+          "explanation": "health_atlas_gut_section_mouth_detail_1"
+        },
+        {
+          "marker": {
+            "id": "mouth-2",
+            "x": 0.7194444444444444,
+            "y": 0.5464285714285714
+          },
+          "title": "health_atlas_gut_section_mouth_feature_2",
+          "explanation": "health_atlas_gut_section_mouth_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_mouth.xml"
+    },
+    {
+      "id": "teeth",
+      "owner": "teeth",
+      "asset": "HealthAtlasGutTooth",
+      "viewLabel": "health_atlas_gut_section_tooth_view",
+      "entryIDs": [
+        "teeth"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-3-the-mouth-pharynx-and-esophagus",
+      "features": [
+        {
+          "marker": {
+            "id": "tooth-0",
+            "x": 0.40555555555555556,
+            "y": 0.21785714285714286
+          },
+          "title": "health_atlas_gut_section_tooth_feature_0",
+          "explanation": "health_atlas_gut_section_tooth_detail_0"
+        },
+        {
+          "marker": {
+            "id": "tooth-1",
+            "x": 0.41944444444444445,
+            "y": 0.3678571428571429
+          },
+          "title": "health_atlas_gut_section_tooth_feature_1",
+          "explanation": "health_atlas_gut_section_tooth_detail_1"
+        },
+        {
+          "marker": {
+            "id": "tooth-2",
+            "x": 0.5083333333333333,
+            "y": 0.41785714285714287
+          },
+          "title": "health_atlas_gut_section_tooth_feature_2",
+          "explanation": "health_atlas_gut_section_tooth_detail_2"
+        },
+        {
+          "marker": {
+            "id": "tooth-3",
+            "x": 0.6277777777777778,
+            "y": 0.6535714285714286
+          },
+          "title": "health_atlas_gut_section_tooth_feature_3",
+          "explanation": "health_atlas_gut_section_tooth_detail_3"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_tooth.xml"
+    },
+    {
+      "id": "esophagus",
+      "owner": "esophagus",
+      "asset": "HealthAtlasGutEsophagus",
+      "viewLabel": "health_atlas_gut_section_esophagus_view",
+      "entryIDs": [
+        "esophagus",
+        "stomach"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "stomach",
+          "x": 0.5722222222222222,
+          "y": 0.8642857142857143
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-3-the-mouth-pharynx-and-esophagus",
+      "features": [
+        {
+          "marker": {
+            "id": "esophagus-0",
+            "x": 0.49722222222222223,
+            "y": 0.17857142857142858
+          },
+          "title": "health_atlas_gut_section_esophagus_feature_0",
+          "explanation": "health_atlas_gut_section_esophagus_detail_0"
+        },
+        {
+          "marker": {
+            "id": "esophagus-1",
+            "x": 0.4027777777777778,
+            "y": 0.3964285714285714
+          },
+          "title": "health_atlas_gut_section_esophagus_feature_1",
+          "explanation": "health_atlas_gut_section_esophagus_detail_1"
+        },
+        {
+          "marker": {
+            "id": "esophagus-2",
+            "x": 0.5,
+            "y": 0.6321428571428571
+          },
+          "title": "health_atlas_gut_section_esophagus_feature_2",
+          "explanation": "health_atlas_gut_section_esophagus_detail_2"
+        },
+        {
+          "marker": {
+            "id": "esophagus-3",
+            "x": 0.5305555555555556,
+            "y": 0.7964285714285714
+          },
+          "title": "health_atlas_gut_section_esophagus_feature_3",
+          "explanation": "health_atlas_gut_section_esophagus_detail_3"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_esophagus.xml"
+    },
+    {
+      "id": "stomach",
+      "owner": "stomach",
+      "asset": "HealthAtlasGutStomach",
+      "viewLabel": "health_atlas_gut_section_stomach_view",
+      "entryIDs": [
+        "stomach",
+        "duodenum",
+        "cell-gastric-parietal-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "duodenum",
+          "x": 0.16666666666666666,
+          "y": 0.6928571428571428
+        },
+        {
+          "id": "cell-gastric-parietal-cell",
+          "x": 0.6638888888888889,
+          "y": 0.4107142857142857
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-4-the-stomach",
+      "features": [
+        {
+          "marker": {
+            "id": "stomach-0",
+            "x": 0.6138888888888889,
+            "y": 0.2357142857142857
+          },
+          "title": "health_atlas_gut_section_stomach_feature_0",
+          "explanation": "health_atlas_gut_section_stomach_detail_0"
+        },
+        {
+          "marker": {
+            "id": "stomach-1",
+            "x": 0.575,
+            "y": 0.4142857142857143
+          },
+          "title": "health_atlas_gut_section_stomach_feature_1",
+          "explanation": "health_atlas_gut_section_stomach_detail_1"
+        },
+        {
+          "marker": {
+            "id": "stomach-2",
+            "x": 0.4027777777777778,
+            "y": 0.6571428571428571
+          },
+          "title": "health_atlas_gut_section_stomach_feature_2",
+          "explanation": "health_atlas_gut_section_stomach_detail_2"
+        },
+        {
+          "marker": {
+            "id": "stomach-3",
+            "x": 0.25277777777777777,
+            "y": 0.6321428571428571
+          },
+          "title": "health_atlas_gut_section_stomach_feature_3",
+          "explanation": "health_atlas_gut_section_stomach_detail_3"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_stomach.xml"
+    },
+    {
+      "id": "small-intestine",
+      "owner": "small-intestine",
+      "asset": "HealthAtlasGutSmall",
+      "viewLabel": "health_atlas_gut_section_small_view",
+      "entryIDs": [
+        "small-intestine",
+        "duodenum",
+        "jejunum",
+        "ileum"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "duodenum",
+          "x": 0.39444444444444443,
+          "y": 0.29285714285714287
+        },
+        {
+          "id": "jejunum",
+          "x": 0.6083333333333333,
+          "y": 0.375
+        },
+        {
+          "id": "ileum",
+          "x": 0.5527777777777778,
+          "y": 0.6214285714285714
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+      "features": [
+        {
+          "marker": {
+            "id": "small-0",
+            "x": 0.28888888888888886,
+            "y": 0.24285714285714285
+          },
+          "title": "health_atlas_gut_section_small_feature_0",
+          "explanation": "health_atlas_gut_section_small_detail_0"
+        },
+        {
+          "marker": {
+            "id": "small-1",
+            "x": 0.4888888888888889,
+            "y": 0.49642857142857144
+          },
+          "title": "health_atlas_gut_section_small_feature_1",
+          "explanation": "health_atlas_gut_section_small_detail_1"
+        },
+        {
+          "marker": {
+            "id": "small-2",
+            "x": 0.6305555555555555,
+            "y": 0.8
+          },
+          "title": "health_atlas_gut_section_small_feature_2",
+          "explanation": "health_atlas_gut_section_small_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_small.xml"
+    },
+    {
+      "id": "duodenum",
+      "owner": "duodenum",
+      "asset": "HealthAtlasGutDuodenum",
+      "viewLabel": "health_atlas_gut_section_duodenum_view",
+      "entryIDs": [
+        "duodenum",
+        "pancreatic-duct",
+        "biliary-tract",
+        "jejunum"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "pancreatic-duct",
+          "x": 0.44166666666666665,
+          "y": 0.5285714285714286
+        },
+        {
+          "id": "biliary-tract",
+          "x": 0.5833333333333334,
+          "y": 0.33214285714285713
+        },
+        {
+          "id": "jejunum",
+          "x": 0.2833333333333333,
+          "y": 0.7642857142857142
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+      "features": [
+        {
+          "marker": {
+            "id": "duodenum-0",
+            "x": 0.7222222222222222,
+            "y": 0.23214285714285715
+          },
+          "title": "health_atlas_gut_section_duodenum_feature_0",
+          "explanation": "health_atlas_gut_section_duodenum_detail_0"
+        },
+        {
+          "marker": {
+            "id": "duodenum-1",
+            "x": 0.7138888888888889,
+            "y": 0.4785714285714286
+          },
+          "title": "health_atlas_gut_section_duodenum_feature_1",
+          "explanation": "health_atlas_gut_section_duodenum_detail_1"
+        },
+        {
+          "marker": {
+            "id": "duodenum-2",
+            "x": 0.38055555555555554,
+            "y": 0.7071428571428572
+          },
+          "title": "health_atlas_gut_section_duodenum_feature_2",
+          "explanation": "health_atlas_gut_section_duodenum_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_duodenum.xml"
+    },
+    {
+      "id": "jejunum",
+      "owner": "jejunum",
+      "asset": "HealthAtlasGutJejunum",
+      "viewLabel": "health_atlas_gut_section_jejunum_view",
+      "entryIDs": [
+        "jejunum",
+        "cell-enterocyte",
+        "lymphatic-vessels"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-enterocyte",
+          "x": 0.45,
+          "y": 0.3142857142857143
+        },
+        {
+          "id": "lymphatic-vessels",
+          "x": 0.5027777777777778,
+          "y": 0.6142857142857143
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+      "features": [
+        {
+          "marker": {
+            "id": "jejunum-0",
+            "x": 0.2638888888888889,
+            "y": 0.6285714285714286
+          },
+          "title": "health_atlas_gut_section_jejunum_feature_0",
+          "explanation": "health_atlas_gut_section_jejunum_detail_0"
+        },
+        {
+          "marker": {
+            "id": "jejunum-1",
+            "x": 0.46944444444444444,
+            "y": 0.2571428571428571
+          },
+          "title": "health_atlas_gut_section_jejunum_feature_1",
+          "explanation": "health_atlas_gut_section_jejunum_detail_1"
+        },
+        {
+          "marker": {
+            "id": "jejunum-2",
+            "x": 0.45,
+            "y": 0.4714285714285714
+          },
+          "title": "health_atlas_gut_section_jejunum_feature_2",
+          "explanation": "health_atlas_gut_section_jejunum_detail_2"
+        },
+        {
+          "marker": {
+            "id": "jejunum-3",
+            "x": 0.5027777777777778,
+            "y": 0.525
+          },
+          "title": "health_atlas_gut_section_jejunum_feature_3",
+          "explanation": "health_atlas_gut_section_jejunum_detail_3"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_jejunum.xml"
+    },
+    {
+      "id": "ileum",
+      "owner": "ileum",
+      "asset": "HealthAtlasGutIleum",
+      "viewLabel": "health_atlas_gut_section_ileum_view",
+      "entryIDs": [
+        "ileum",
+        "cecum",
+        "gut-associated-lymphoid-tissue"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cecum",
+          "x": 0.7416666666666667,
+          "y": 0.6464285714285715
+        },
+        {
+          "id": "gut-associated-lymphoid-tissue",
+          "x": 0.4444444444444444,
+          "y": 0.6107142857142858
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+      "features": [
+        {
+          "marker": {
+            "id": "ileum-0",
+            "x": 0.2611111111111111,
+            "y": 0.42142857142857143
+          },
+          "title": "health_atlas_gut_section_ileum_feature_0",
+          "explanation": "health_atlas_gut_section_ileum_detail_0"
+        },
+        {
+          "marker": {
+            "id": "ileum-1",
+            "x": 0.3888888888888889,
+            "y": 0.575
+          },
+          "title": "health_atlas_gut_section_ileum_feature_1",
+          "explanation": "health_atlas_gut_section_ileum_detail_1"
+        },
+        {
+          "marker": {
+            "id": "ileum-2",
+            "x": 0.5944444444444444,
+            "y": 0.49642857142857144
+          },
+          "title": "health_atlas_gut_section_ileum_feature_2",
+          "explanation": "health_atlas_gut_section_ileum_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_ileum.xml"
+    },
+    {
+      "id": "large-intestine",
+      "owner": "large-intestine",
+      "asset": "HealthAtlasGutLarge",
+      "viewLabel": "health_atlas_gut_section_large_view",
+      "entryIDs": [
+        "large-intestine",
+        "cecum",
+        "colon",
+        "rectum",
+        "anal-canal"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cecum",
+          "x": 0.21388888888888888,
+          "y": 0.7392857142857143
+        },
+        {
+          "id": "colon",
+          "x": 0.7361111111111112,
+          "y": 0.38571428571428573
+        },
+        {
+          "id": "rectum",
+          "x": 0.5,
+          "y": 0.8714285714285714
+        },
+        {
+          "id": "anal-canal",
+          "x": 0.49166666666666664,
+          "y": 0.925
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+      "features": [
+        {
+          "marker": {
+            "id": "large-0",
+            "x": 0.2361111111111111,
+            "y": 0.6607142857142857
+          },
+          "title": "health_atlas_gut_section_large_feature_0",
+          "explanation": "health_atlas_gut_section_large_detail_0"
+        },
+        {
+          "marker": {
+            "id": "large-1",
+            "x": 0.5,
+            "y": 0.20357142857142857
+          },
+          "title": "health_atlas_gut_section_large_feature_1",
+          "explanation": "health_atlas_gut_section_large_detail_1"
+        },
+        {
+          "marker": {
+            "id": "large-2",
+            "x": 0.6555555555555556,
+            "y": 0.7071428571428572
+          },
+          "title": "health_atlas_gut_section_large_feature_2",
+          "explanation": "health_atlas_gut_section_large_detail_2"
+        },
+        {
+          "marker": {
+            "id": "large-3",
+            "x": 0.49166666666666664,
+            "y": 0.8321428571428572
+          },
+          "title": "health_atlas_gut_section_large_feature_3",
+          "explanation": "health_atlas_gut_section_large_detail_3"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_large.xml"
+    },
+    {
+      "id": "cecum",
+      "owner": "cecum",
+      "asset": "HealthAtlasGutCecum",
+      "viewLabel": "health_atlas_gut_section_cecum_view",
+      "entryIDs": [
+        "cecum",
+        "ileum",
+        "appendix",
+        "colon"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "ileum",
+          "x": 0.2833333333333333,
+          "y": 0.45357142857142857
+        },
+        {
+          "id": "appendix",
+          "x": 0.40555555555555556,
+          "y": 0.7928571428571428
+        },
+        {
+          "id": "colon",
+          "x": 0.5972222222222222,
+          "y": 0.18928571428571428
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+      "features": [
+        {
+          "marker": {
+            "id": "cecum-0",
+            "x": 0.4222222222222222,
+            "y": 0.48214285714285715
+          },
+          "title": "health_atlas_gut_section_cecum_feature_0",
+          "explanation": "health_atlas_gut_section_cecum_detail_0"
+        },
+        {
+          "marker": {
+            "id": "cecum-1",
+            "x": 0.6,
+            "y": 0.6535714285714286
+          },
+          "title": "health_atlas_gut_section_cecum_feature_1",
+          "explanation": "health_atlas_gut_section_cecum_detail_1"
+        },
+        {
+          "marker": {
+            "id": "cecum-2",
+            "x": 0.4583333333333333,
+            "y": 0.6785714285714286
+          },
+          "title": "health_atlas_gut_section_cecum_feature_2",
+          "explanation": "health_atlas_gut_section_cecum_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_cecum.xml"
+    },
+    {
+      "id": "appendix",
+      "owner": "appendix",
+      "asset": "HealthAtlasGutAppendix",
+      "viewLabel": "health_atlas_gut_section_appendix_view",
+      "entryIDs": [
+        "appendix",
+        "cell-b-cell",
+        "gut-associated-lymphoid-tissue"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-b-cell",
+          "x": 0.6138888888888889,
+          "y": 0.6321428571428571
+        },
+        {
+          "id": "gut-associated-lymphoid-tissue",
+          "x": 0.3472222222222222,
+          "y": 0.6071428571428571
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+      "features": [
+        {
+          "marker": {
+            "id": "appendix-0",
+            "x": 0.4888888888888889,
+            "y": 0.46785714285714286
+          },
+          "title": "health_atlas_gut_section_appendix_feature_0",
+          "explanation": "health_atlas_gut_section_appendix_detail_0"
+        },
+        {
+          "marker": {
+            "id": "appendix-1",
+            "x": 0.4111111111111111,
+            "y": 0.4142857142857143
+          },
+          "title": "health_atlas_gut_section_appendix_feature_1",
+          "explanation": "health_atlas_gut_section_appendix_detail_1"
+        },
+        {
+          "marker": {
+            "id": "appendix-2",
+            "x": 0.6166666666666667,
+            "y": 0.5714285714285714
+          },
+          "title": "health_atlas_gut_section_appendix_feature_2",
+          "explanation": "health_atlas_gut_section_appendix_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_appendix.xml"
+    },
+    {
+      "id": "colon",
+      "owner": "colon",
+      "asset": "HealthAtlasGutColon",
+      "viewLabel": "health_atlas_gut_section_colon_view",
+      "entryIDs": [
+        "colon",
+        "cell-goblet-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "cell-goblet-cell",
+          "x": 0.5138888888888888,
+          "y": 0.575
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+      "features": [
+        {
+          "marker": {
+            "id": "colon-0",
+            "x": 0.21388888888888888,
+            "y": 0.375
+          },
+          "title": "health_atlas_gut_section_colon_feature_0",
+          "explanation": "health_atlas_gut_section_colon_detail_0"
+        },
+        {
+          "marker": {
+            "id": "colon-1",
+            "x": 0.46111111111111114,
+            "y": 0.5285714285714286
+          },
+          "title": "health_atlas_gut_section_colon_feature_1",
+          "explanation": "health_atlas_gut_section_colon_detail_1"
+        },
+        {
+          "marker": {
+            "id": "colon-2",
+            "x": 0.7027777777777777,
+            "y": 0.43214285714285716
+          },
+          "title": "health_atlas_gut_section_colon_feature_2",
+          "explanation": "health_atlas_gut_section_colon_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_colon.xml"
+    },
+    {
+      "id": "rectum",
+      "owner": "rectum",
+      "asset": "HealthAtlasGutRectum",
+      "viewLabel": "health_atlas_gut_section_rectum_view",
+      "entryIDs": [
+        "rectum",
+        "anal-canal"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "anal-canal",
+          "x": 0.5583333333333333,
+          "y": 0.8285714285714286
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+      "features": [
+        {
+          "marker": {
+            "id": "rectum-0",
+            "x": 0.39166666666666666,
+            "y": 0.21785714285714286
+          },
+          "title": "health_atlas_gut_section_rectum_feature_0",
+          "explanation": "health_atlas_gut_section_rectum_detail_0"
+        },
+        {
+          "marker": {
+            "id": "rectum-1",
+            "x": 0.5111111111111111,
+            "y": 0.4607142857142857
+          },
+          "title": "health_atlas_gut_section_rectum_feature_1",
+          "explanation": "health_atlas_gut_section_rectum_detail_1"
+        },
+        {
+          "marker": {
+            "id": "rectum-2",
+            "x": 0.4888888888888889,
+            "y": 0.7142857142857143
+          },
+          "title": "health_atlas_gut_section_rectum_feature_2",
+          "explanation": "health_atlas_gut_section_rectum_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_rectum.xml"
+    },
+    {
+      "id": "anal-canal",
+      "owner": "anal-canal",
+      "asset": "HealthAtlasGutAnal",
+      "viewLabel": "health_atlas_gut_section_anal_view",
+      "entryIDs": [
+        "anal-canal",
+        "rectum",
+        "cell-skeletal-myocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [
+        {
+          "id": "rectum",
+          "x": 0.5027777777777778,
+          "y": 0.17857142857142858
+        },
+        {
+          "id": "cell-skeletal-myocyte",
+          "x": 0.6333333333333333,
+          "y": 0.7214285714285714
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+      "features": [
+        {
+          "marker": {
+            "id": "anal-0",
+            "x": 0.40555555555555556,
+            "y": 0.5321428571428571
+          },
+          "title": "health_atlas_gut_section_anal_feature_0",
+          "explanation": "health_atlas_gut_section_anal_detail_0"
+        },
+        {
+          "marker": {
+            "id": "anal-1",
+            "x": 0.6166666666666667,
+            "y": 0.6107142857142858
+          },
+          "title": "health_atlas_gut_section_anal_feature_1",
+          "explanation": "health_atlas_gut_section_anal_detail_1"
+        },
+        {
+          "marker": {
+            "id": "anal-2",
+            "x": 0.5027777777777778,
+            "y": 0.6357142857142857
+          },
+          "title": "health_atlas_gut_section_anal_feature_2",
+          "explanation": "health_atlas_gut_section_anal_detail_2"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_anal.xml"
+    }
+  ],
+  "stageFeatures": {
+    "oral-cavity": [
+      0,
+      1,
+      1,
+      2
+    ],
+    "teeth": [
+      0,
+      1,
+      3,
+      2
+    ],
+    "esophagus": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "stomach": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "small-intestine": [
+      0,
+      1,
+      1,
+      2
+    ],
+    "duodenum": [
+      0,
+      1,
+      1,
+      2
+    ],
+    "jejunum": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "ileum": [
+      0,
+      0,
+      1,
+      2
+    ],
+    "large-intestine": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "cecum": [
+      0,
+      1,
+      2,
+      1
+    ],
+    "appendix": [
+      0,
+      1,
+      2,
+      2
+    ],
+    "colon": [
+      0,
+      1,
+      2,
+      0
+    ],
+    "rectum": [
+      0,
+      1,
+      1,
+      2
+    ],
+    "anal-canal": [
+      0,
+      0,
+      1,
+      2
+    ]
+  },
+  "routes": {
+    "esophagus": [
+      {
+        "start": {
+          "x": 180,
+          "y": 45
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 179,
+                "y": 63
+              },
+              {
+                "x": 177,
+                "y": 82
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 177,
+          "y": 82
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 168,
+                "y": 106
+              },
+              {
+                "x": 174,
+                "y": 129
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 174,
+          "y": 129
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 182,
+                "y": 146
+              },
+              {
+                "x": 189,
+                "y": 172
+              },
+              {
+                "x": 193,
+                "y": 195
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 193,
+          "y": 195
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 195,
+                "y": 225
+              },
+              {
+                "x": 194,
+                "y": 232
+              },
+              {
+                "x": 226,
+                "y": 246
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "stomach": [
+      {
+        "start": {
+          "x": 186,
+          "y": 45
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 185,
+                "y": 68
+              },
+              {
+                "x": 193,
+                "y": 88
+              },
+              {
+                "x": 212,
+                "y": 94
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 212,
+          "y": 94
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 249,
+                "y": 74
+              },
+              {
+                "x": 278,
+                "y": 102
+              },
+              {
+                "x": 256,
+                "y": 133
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 256,
+          "y": 133
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 239,
+                "y": 159
+              },
+              {
+                "x": 172,
+                "y": 197
+              },
+              {
+                "x": 132,
+                "y": 175
+              }
+            ]
+          },
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 160,
+                "y": 155
+              },
+              {
+                "x": 204,
+                "y": 148
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 204,
+          "y": 148
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 169,
+                "y": 186
+              },
+              {
+                "x": 104,
+                "y": 177
+              }
+            ]
+          },
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 85,
+                "y": 181
+              },
+              {
+                "x": 66,
+                "y": 190
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "small-intestine": [
+      {
+        "start": {
+          "x": 78,
+          "y": 59
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 97,
+                "y": 60
+              },
+              {
+                "x": 104,
+                "y": 68
+              }
+            ]
+          },
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 122,
+                "y": 88
+              },
+              {
+                "x": 142,
+                "y": 82
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 142,
+          "y": 82
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 173,
+                "y": 69
+              },
+              {
+                "x": 217,
+                "y": 74
+              },
+              {
+                "x": 219,
+                "y": 105
+              }
+            ]
+          },
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 220,
+                "y": 129
+              },
+              {
+                "x": 193,
+                "y": 134
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 193,
+          "y": 134
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 153,
+                "y": 142
+              },
+              {
+                "x": 146,
+                "y": 154
+              }
+            ]
+          },
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 142,
+                "y": 173
+              },
+              {
+                "x": 170,
+                "y": 178
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 170,
+          "y": 178
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 225,
+                "y": 166
+              },
+              {
+                "x": 233,
+                "y": 187
+              }
+            ]
+          },
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 247,
+                "y": 210
+              },
+              {
+                "x": 227,
+                "y": 224
+              }
+            ]
+          },
+          {
+            "kind": "line",
+            "points": [
+              {
+                "x": 246,
+                "y": 240
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "duodenum": [
+      {
+        "start": {
+          "x": 175,
+          "y": 65
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 235,
+                "y": 58
+              },
+              {
+                "x": 260,
+                "y": 65
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 260,
+          "y": 65
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 286,
+                "y": 75
+              },
+              {
+                "x": 290,
+                "y": 107
+              },
+              {
+                "x": 278,
+                "y": 138
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 278,
+          "y": 138
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 265,
+                "y": 180
+              },
+              {
+                "x": 218,
+                "y": 195
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 218,
+          "y": 195
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 175,
+                "y": 213
+              },
+              {
+                "x": 128,
+                "y": 183
+              },
+              {
+                "x": 102,
+                "y": 214
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "large-intestine": [
+      {
+        "start": {
+          "x": 45,
+          "y": 173
+        },
+        "commands": [
+          {
+            "kind": "cubic",
+            "points": [
+              {
+                "x": 60,
+                "y": 172
+              },
+              {
+                "x": 67,
+                "y": 181
+              },
+              {
+                "x": 83,
+                "y": 185
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 83,
+          "y": 185
+        },
+        "commands": [
+          {
+            "kind": "line",
+            "points": [
+              {
+                "x": 83,
+                "y": 95
+              }
+            ]
+          },
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 83,
+                "y": 57
+              },
+              {
+                "x": 112,
+                "y": 57
+              }
+            ]
+          },
+          {
+            "kind": "line",
+            "points": [
+              {
+                "x": 180,
+                "y": 57
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 180,
+          "y": 57
+        },
+        "commands": [
+          {
+            "kind": "line",
+            "points": [
+              {
+                "x": 233,
+                "y": 57
+              }
+            ]
+          },
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 270,
+                "y": 58
+              },
+              {
+                "x": 272,
+                "y": 98
+              }
+            ]
+          },
+          {
+            "kind": "line",
+            "points": [
+              {
+                "x": 269,
+                "y": 164
+              }
+            ]
+          },
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 264,
+                "y": 181
+              },
+              {
+                "x": 244,
+                "y": 192
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 244,
+          "y": 192
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 228,
+                "y": 210
+              },
+              {
+                "x": 203,
+                "y": 206
+              }
+            ]
+          },
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 177,
+                "y": 202
+              },
+              {
+                "x": 177,
+                "y": 233
+              }
+            ]
+          },
+          {
+            "kind": "line",
+            "points": [
+              {
+                "x": 177,
+                "y": 247
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "cecum": [
+      {
+        "start": {
+          "x": 57,
+          "y": 114
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 120,
+                "y": 119
+              },
+              {
+                "x": 167,
+                "y": 138
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 167,
+          "y": 138
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 201,
+                "y": 146
+              },
+              {
+                "x": 216,
+                "y": 183
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 216,
+          "y": 183
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 225,
+                "y": 188
+              },
+              {
+                "x": 232,
+                "y": 174
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "start": {
+          "x": 232,
+          "y": 174
+        },
+        "commands": [
+          {
+            "kind": "quad",
+            "points": [
+              {
+                "x": 219,
+                "y": 115
+              },
+              {
+                "x": 215,
+                "y": 53
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "notes": {
+    "oral-cavity": [
+      "health_atlas_gut_section_regional_scope"
+    ],
+    "teeth": [
+      "health_atlas_gut_section_regional_scope"
+    ],
+    "esophagus": [
+      "health_atlas_gut_section_motion_scope"
+    ],
+    "stomach": [
+      "health_atlas_gut_section_motion_scope"
+    ],
+    "small-intestine": [
+      "health_atlas_gut_section_motion_scope",
+      "health_atlas_gut_section_regional_map_note"
+    ],
+    "duodenum": [
+      "health_atlas_gut_section_motion_scope"
+    ],
+    "jejunum": [
+      "health_atlas_gut_section_regional_scope"
+    ],
+    "ileum": [
+      "health_atlas_gut_section_regional_scope"
+    ],
+    "large-intestine": [
+      "health_atlas_gut_section_motion_scope",
+      "health_atlas_gut_section_front_note"
+    ],
+    "cecum": [
+      "health_atlas_gut_section_motion_scope",
+      "health_atlas_gut_section_case_valve"
+    ],
+    "appendix": [
+      "health_atlas_gut_section_regional_scope"
+    ],
+    "colon": [
+      "health_atlas_gut_section_regional_scope"
+    ],
+    "rectum": [
+      "health_atlas_gut_section_regional_scope"
+    ],
+    "anal-canal": [
+      "health_atlas_gut_section_regional_scope"
+    ]
+  },
+  "entries": [
+    {
+      "id": "oral-cavity",
+      "kind": "organ",
+      "name": "health_atlas_oral_cavity_name",
+      "description": "health_atlas_oral_cavity_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "teeth",
+        "tongue",
+        "pharynx"
+      ],
+      "mechanism": "oral-cavity",
+      "aliases": "health_atlas_oral_cavity_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "teeth",
+      "kind": "organ",
+      "name": "health_atlas_teeth_name",
+      "description": "health_atlas_teeth_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [],
+      "mechanism": "teeth",
+      "aliases": "health_atlas_teeth_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "esophagus",
+      "kind": "organ",
+      "name": "health_atlas_esophagus_name",
+      "description": "health_atlas_esophagus_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "stomach"
+      ],
+      "mechanism": "esophagus",
+      "aliases": "health_atlas_esophagus_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "stomach",
+      "kind": "organ",
+      "name": "health_atlas_stomach_name",
+      "description": "health_atlas_stomach_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "duodenum",
+        "cell-gastric-parietal-cell"
+      ],
+      "mechanism": "stomach",
+      "aliases": "health_atlas_stomach_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "small-intestine",
+      "kind": "organ",
+      "name": "health_atlas_small_intestine_name",
+      "description": "health_atlas_small_intestine_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "duodenum",
+        "jejunum",
+        "ileum"
+      ],
+      "mechanism": "small-intestine",
+      "aliases": "health_atlas_small_intestine_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "duodenum",
+      "kind": "organ",
+      "name": "health_atlas_duodenum_name",
+      "description": "health_atlas_duodenum_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "pancreatic-duct",
+        "biliary-tract",
+        "jejunum"
+      ],
+      "mechanism": "duodenum",
+      "aliases": "health_atlas_duodenum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "jejunum",
+      "kind": "organ",
+      "name": "health_atlas_jejunum_name",
+      "description": "health_atlas_jejunum_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "cell-enterocyte",
+        "lymphatic-vessels"
+      ],
+      "mechanism": "jejunum",
+      "aliases": "health_atlas_jejunum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "ileum",
+      "kind": "organ",
+      "name": "health_atlas_ileum_name",
+      "description": "health_atlas_ileum_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "cecum",
+        "gut-associated-lymphoid-tissue"
+      ],
+      "mechanism": "ileum",
+      "aliases": "health_atlas_ileum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "large-intestine",
+      "kind": "organ",
+      "name": "health_atlas_large_intestine_name",
+      "description": "health_atlas_large_intestine_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "cecum",
+        "colon",
+        "rectum",
+        "anal-canal"
+      ],
+      "mechanism": "large-intestine",
+      "aliases": "health_atlas_large_intestine_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "cecum",
+      "kind": "organ",
+      "name": "health_atlas_cecum_name",
+      "description": "health_atlas_cecum_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "ileum",
+        "appendix",
+        "colon"
+      ],
+      "mechanism": "cecum",
+      "aliases": "health_atlas_cecum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "appendix",
+      "kind": "organ",
+      "name": "health_atlas_appendix_name",
+      "description": "health_atlas_appendix_description",
+      "systems": [
+        "gut",
+        "immune"
+      ],
+      "related": [
+        "cell-b-cell",
+        "gut-associated-lymphoid-tissue"
+      ],
+      "mechanism": "appendix",
+      "aliases": "health_atlas_appendix_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "colon",
+      "kind": "organ",
+      "name": "health_atlas_colon_name",
+      "description": "health_atlas_colon_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "cell-goblet-cell"
+      ],
+      "mechanism": "colon",
+      "aliases": "health_atlas_colon_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "rectum",
+      "kind": "organ",
+      "name": "health_atlas_rectum_name",
+      "description": "health_atlas_rectum_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "anal-canal"
+      ],
+      "mechanism": "rectum",
+      "aliases": "health_atlas_rectum_aliases",
+      "color": "",
+      "icon": ""
+    },
+    {
+      "id": "anal-canal",
+      "kind": "organ",
+      "name": "health_atlas_anal_canal_name",
+      "description": "health_atlas_anal_canal_description",
+      "systems": [
+        "gut"
+      ],
+      "related": [
+        "rectum",
+        "cell-skeletal-myocyte"
+      ],
+      "mechanism": "anal-canal",
+      "aliases": "health_atlas_anal_canal_aliases",
+      "color": "",
+      "icon": ""
+    }
+  ],
+  "mechanisms": [
+    {
+      "id": "oral-cavity",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_mouth_title",
+      "stages": [
+        "health_atlas_gut_section_mouth_stage_0",
+        "health_atlas_gut_section_mouth_stage_1",
+        "health_atlas_gut_section_mouth_stage_2",
+        "health_atlas_gut_section_mouth_stage_3"
+      ],
+      "chapter": "23-3-the-mouth-pharynx-and-esophagus"
+    },
+    {
+      "id": "teeth",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_tooth_title",
+      "stages": [
+        "health_atlas_gut_section_tooth_stage_0",
+        "health_atlas_gut_section_tooth_stage_1",
+        "health_atlas_gut_section_tooth_stage_2",
+        "health_atlas_gut_section_tooth_stage_3"
+      ],
+      "chapter": "23-3-the-mouth-pharynx-and-esophagus"
+    },
+    {
+      "id": "esophagus",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_esophagus_title",
+      "stages": [
+        "health_atlas_gut_section_esophagus_stage_0",
+        "health_atlas_gut_section_esophagus_stage_1",
+        "health_atlas_gut_section_esophagus_stage_2",
+        "health_atlas_gut_section_esophagus_stage_3"
+      ],
+      "chapter": "23-3-the-mouth-pharynx-and-esophagus"
+    },
+    {
+      "id": "stomach",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_stomach_title",
+      "stages": [
+        "health_atlas_gut_section_stomach_stage_0",
+        "health_atlas_gut_section_stomach_stage_1",
+        "health_atlas_gut_section_stomach_stage_2",
+        "health_atlas_gut_section_stomach_stage_3"
+      ],
+      "chapter": "23-4-the-stomach"
+    },
+    {
+      "id": "small-intestine",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_small_title",
+      "stages": [
+        "health_atlas_gut_section_small_stage_0",
+        "health_atlas_gut_section_small_stage_1",
+        "health_atlas_gut_section_small_stage_2",
+        "health_atlas_gut_section_small_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "duodenum",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_duodenum_title",
+      "stages": [
+        "health_atlas_gut_section_duodenum_stage_0",
+        "health_atlas_gut_section_duodenum_stage_1",
+        "health_atlas_gut_section_duodenum_stage_2",
+        "health_atlas_gut_section_duodenum_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "jejunum",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_jejunum_title",
+      "stages": [
+        "health_atlas_gut_section_jejunum_stage_0",
+        "health_atlas_gut_section_jejunum_stage_1",
+        "health_atlas_gut_section_jejunum_stage_2",
+        "health_atlas_gut_section_jejunum_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "ileum",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_ileum_title",
+      "stages": [
+        "health_atlas_gut_section_ileum_stage_0",
+        "health_atlas_gut_section_ileum_stage_1",
+        "health_atlas_gut_section_ileum_stage_2",
+        "health_atlas_gut_section_ileum_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "large-intestine",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_large_title",
+      "stages": [
+        "health_atlas_gut_section_large_stage_0",
+        "health_atlas_gut_section_large_stage_1",
+        "health_atlas_gut_section_large_stage_2",
+        "health_atlas_gut_section_large_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "cecum",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_cecum_title",
+      "stages": [
+        "health_atlas_gut_section_cecum_stage_0",
+        "health_atlas_gut_section_cecum_stage_1",
+        "health_atlas_gut_section_cecum_stage_2",
+        "health_atlas_gut_section_cecum_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "appendix",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_appendix_title",
+      "stages": [
+        "health_atlas_gut_section_appendix_stage_0",
+        "health_atlas_gut_section_appendix_stage_1",
+        "health_atlas_gut_section_appendix_stage_2",
+        "health_atlas_gut_section_appendix_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "colon",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_colon_title",
+      "stages": [
+        "health_atlas_gut_section_colon_stage_0",
+        "health_atlas_gut_section_colon_stage_1",
+        "health_atlas_gut_section_colon_stage_2",
+        "health_atlas_gut_section_colon_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "rectum",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_rectum_title",
+      "stages": [
+        "health_atlas_gut_section_rectum_stage_0",
+        "health_atlas_gut_section_rectum_stage_1",
+        "health_atlas_gut_section_rectum_stage_2",
+        "health_atlas_gut_section_rectum_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    },
+    {
+      "id": "anal-canal",
+      "kind": "alimentary-organ",
+      "title": "health_atlas_gut_section_anal_title",
+      "stages": [
+        "health_atlas_gut_section_anal_stage_0",
+        "health_atlas_gut_section_anal_stage_1",
+        "health_atlas_gut_section_anal_stage_2",
+        "health_atlas_gut_section_anal_stage_3"
+      ],
+      "chapter": "23-5-the-small-and-large-intestines"
+    }
+  ]
+}

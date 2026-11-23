@@ -27,7 +27,7 @@ struct GalaxySSIHealthAtlasDetail: View {
                   entry.id != GalaxySSIHealthAtlasPhagocytosis.owner && entry.id != GalaxySSIHealthAtlasSarcomere.owner &&
                   entry.id != GalaxySSIHealthAtlasFiltrationStage.owner && !GalaxySSIHealthAtlasPancreatic.supports(entry.id) &&
                   GalaxySSIHealthAtlasEndocrinePath.forEntry(entry.id) == nil && entry.id != GalaxySSIHealthAtlasRetinaPath.owner &&
-                  entry.id != GalaxySSIHealthAtlasSweat.owner && GalaxySSIHealthAtlasLymphLesson.forEntry(entry.id) == nil)) {
+                  entry.id != GalaxySSIHealthAtlasSweat.owner && GalaxySSIHealthAtlasSectionLesson.forEntry(entry.id) == nil)) {
               GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
             }
             if selection.wrappedValue.tab != .structure { Text(GalaxySSIHealthAtlasText.get(entry.description, language)) }

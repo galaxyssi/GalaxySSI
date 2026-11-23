@@ -1011,7 +1011,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   func testLymphOrganLessonsPreserveCanonicalLinksAndIndependentSelections() throws {
     let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.LymphPack.read(bundle: bundle))
-    XCTAssertEqual(atlas.entries.count, 313); XCTAssertEqual(atlas.mechanisms.count, 178)
+    XCTAssertEqual(atlas.entries.count, 313); XCTAssertEqual(atlas.mechanisms.count, 192)
     XCTAssertEqual(pack.plates.count, 9); XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 30)
     XCTAssertEqual(pack.plates.flatMap(\.markers).count, 12)
     let state = GalaxySSIHealthAtlasState()
@@ -1052,6 +1052,50 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(GalaxySSIHealthAtlasLymphLesson.Phase(2)?.fraction, 1)
     XCTAssertEqual(GalaxySSIHealthAtlasLymphLesson.Phase(-1)?.stage, 0)
     XCTAssertNil(GalaxySSIHealthAtlasLymphLesson.forEntry("cell-b-cell"))
+  }
+
+  func testAlimentarySectionsShareRendererWithoutBorrowingLymphaticLessons() throws {
+    let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.GutPack.read(bundle: bundle))
+    XCTAssertEqual(pack.plates.count, 14); XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 47)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 29); XCTAssertEqual(pack.routes.count, 6)
+    let state = GalaxySSIHealthAtlasState()
+    for (index, id) in GalaxySSIHealthAtlas.GutPack.owners.enumerated() {
+      let entry = try XCTUnwrap(atlas.entry(id)), lesson = try XCTUnwrap(GalaxySSIHealthAtlasSectionLesson.forEntry(id))
+      XCTAssertEqual(entry.mechanism, id); XCTAssertEqual(atlas.model(entry).kind, "alimentary-organ")
+      XCTAssertEqual(entry.related, lesson.plate.markers.map(\.id))
+      XCTAssertEqual(atlas.plate(for: id)?.asset, lesson.plate.asset)
+      for feature in lesson.plate.annotations {
+        XCTAssertNil(atlas.entry(feature.id))
+        guard case .feature = lesson.plate.labelTarget(feature.id, in: atlas) else { return XCTFail("Expected feature") }
+      }
+      for stage in 0..<4 {
+        let feature = try XCTUnwrap(lesson.feature(stage: stage))
+        if let route = lesson.route(stage: stage) {
+          XCTAssertTrue(route.valid)
+          let end = try XCTUnwrap(route.commands.last?.points.last)
+          XCTAssertEqual(GalaxySSIHealthAtlasSectionLessonView.path(route).cgPath.currentPoint, CGPoint(x: end.x, y: end.y))
+        }
+        for language in ["en", "zh-Hans"] {
+          let lines = GalaxySSIHealthAtlasSectionLesson.context(id, stage: stage, language: language)
+          XCTAssertTrue(lines.contains(GalaxySSIHealthAtlasText.get(feature.title, language)))
+          XCTAssertFalse(lines.contains { $0.contains("health_atlas_") })
+          XCTAssertFalse(lines.contains(GalaxySSIHealthAtlasText.get("health_atlas_lymph_duct_orientation", language)))
+        }
+      }
+      state.binding(entry).wrappedValue.simulation.phase = Double(index) / 20
+    }
+    let small = try XCTUnwrap(atlas.entry("small-intestine")), jejunum = try XCTUnwrap(atlas.entry("jejunum"))
+    state.binding(small).wrappedValue.physiologyInputs = [0, 25, 20]
+    state.binding(jejunum).wrappedValue.physiologyInputs = [24, 70, 120]
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    for (index, id) in GalaxySSIHealthAtlas.GutPack.owners.enumerated() {
+      XCTAssertEqual(restored.binding(try XCTUnwrap(atlas.entry(id))).wrappedValue.simulation.phase, Double(index) / 20)
+    }
+    XCTAssertEqual(restored.binding(small).wrappedValue.physiologyInputs, [0, 25, 20])
+    XCTAssertEqual(restored.binding(jejunum).wrappedValue.physiologyInputs, [24, 70, 120])
+    XCTAssertNotNil(GalaxySSIHealthAtlasSectionLesson.forEntry("thoracic-duct"))
+    XCTAssertNil(GalaxySSIHealthAtlasSectionLesson.forEntry("cell-enterocyte"))
   }
 
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
