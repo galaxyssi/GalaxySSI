@@ -2,6 +2,10 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let evaporationKey = ["model_sweatEvaporation": "context_evap_title", "model_sweatEvaporation_scope": "context_evap_scope",
+      "model_sweatEvaporation_formula": "context_evap_formula"][key]
+    if let evaporationKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + evaporationKey, language) }
+    if key.hasPrefix("context_evap_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     let photonKey = ["model_photonCapture": "sensory_photon_title", "model_photonCapture_scope": "sensory_photon_scope",
       "model_photonCapture_formula": "sensory_photon_formula"][key]
     if let photonKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + photonKey, language) }
@@ -67,6 +71,9 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if model.kind == .sweatEvaporation {
+      return String(format: string("context_evap_mass", language: language), number(model.companionValue, language: language))
+    }
     if model.kind == .photonCapture {
       return String(format: string("sensory_photon_zero", language: language), number(model.companionValue, language: language))
     }
