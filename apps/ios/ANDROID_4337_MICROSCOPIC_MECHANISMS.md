@@ -1,0 +1,24 @@
+# Android #4337: Complete Microscopic Mechanisms
+
+Source: [Android #4337](https://github.com/galaxyssi/GalaxySSI/pull/4337),
+merge `9036622e301ac95b6f8fe4b4364444d532286974`.
+Independent formal PR based on main; no Android/Desktop or version changes.
+
+## Integration Order
+
+**Merge [#4457](https://github.com/galaxyssi/GalaxySSI/pull/4457) first.**
+Its twelve reproductive mechanisms are required by the complete-catalogue invariant.
+Without that preceding resource pack the new complete validation intentionally rejects the partial atlas rather than silently presenting inherited macro processes. This PR is not runtime-independent of #4457; it is kept main-based and does not duplicate that PR's code/resources.
+
+## Changes
+
+- Adds only the 52 Android delta mechanisms and matching assignments, including the platelet fragment.
+- Full composition has 105 cell types and one fragment with exclusive matching mechanism ID/kind, four owned stages and 530 distinct microscopic text keys.
+- Rejects orphan/mismatched microscopic owners, macro entries reusing microscopic models and incomplete full catalogues.
+- Frozen baseline and staged loader fixtures retain explicitly partial validation; the final installed extended pack requires complete validation.
+- Preserves exact Android public content, anatomical chapters and restrictive PubMed references.
+- English/Chinese resources add 260 keys each. Existing detail/function/simulation and Agent preview resolve the newly owned model without a duplicate UI path.
+
+Static composition audit compares actual iOS resources plus the explicit pending #4457 pack with Android: 287 entries / 127 mechanisms.
+Project/source registration, grammar, localized XML parity and merge simulations are checked.
+XCTest regression source covers the stricter ownership invariants. No XCTest, Xcode compilation, IPA, native screenshots or device acceptance is claimed on Windows.

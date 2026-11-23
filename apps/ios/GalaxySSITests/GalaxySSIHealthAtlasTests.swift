@@ -179,6 +179,45 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(try JSONDecoder().decode(GalaxySSIHealthAtlasState.Selection.self, from: JSONEncoder().encode(old)).artworkView)
   }
 
+  func testMicroscopicValidationRejectsFallbackAndCrossOwnedFragments() throws {
+    let base = try catalogue()
+    XCTAssertThrowsError(try GalaxySSIHealthAtlas.validated(base, requireCompleteMicroscopic: true))
+    let fragment = try XCTUnwrap(base.entry("fragment-platelet"))
+    let model = GalaxySSIHealthAtlas.Mechanism(id: fragment.id, kind: "fragment", title: "Fragment title",
+      stages: ["Adhere", "Activate", "Aggregate", "Support"], chapter: "18-5-hemostasis")
+    let revised = base.entries.map { $0.id == fragment.id ? $0.replacing(mechanism: fragment.id) : $0 }
+    let owned = GalaxySSIHealthAtlas(schema: base.schema, entries: revised, mechanisms: base.mechanisms + [model])
+    XCTAssertNoThrow(try GalaxySSIHealthAtlas.validated(owned))
+    let crossOwned = revised.map { $0.id == "heart" ? $0.replacing(mechanism: fragment.id) : $0 }
+    XCTAssertThrowsError(try GalaxySSIHealthAtlas.validated(.init(schema: base.schema, entries: crossOwned, mechanisms: owned.mechanisms)))
+    let wrongKind = GalaxySSIHealthAtlas.Mechanism(id: fragment.id, kind: "cell", title: model.title, stages: model.stages, chapter: model.chapter)
+    XCTAssertThrowsError(try GalaxySSIHealthAtlas.validated(.init(schema: base.schema, entries: revised, mechanisms: base.mechanisms + [wrongKind])))
+  }
+
+  func testCompleteMicroscopicCatalogueRejectsInheritedProcessesAndSharedStageKeys() throws {
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    let cells = atlas.entries.filter { $0.kind == .cell || $0.kind == .fragment }
+    XCTAssertEqual(cells.filter { $0.kind == .cell }.count, 105)
+    XCTAssertEqual(cells.filter { $0.kind == .fragment }.count, 1)
+    XCTAssertEqual(atlas.mechanisms.count, 127)
+    XCTAssertNoThrow(try GalaxySSIHealthAtlas.validated(atlas, requireCompleteMicroscopic: true))
+    for entry in cells {
+      XCTAssertEqual(entry.mechanism, entry.id)
+      XCTAssertEqual(atlas.model(entry).kind, entry.kind.rawValue)
+    }
+    for id in ["cell-dendritic-cell", "fragment-platelet"] {
+      let inherited = atlas.entries.map { $0.id == id ? $0.replacing(mechanism: "immune") : $0 }
+      let missing = GalaxySSIHealthAtlas(schema: atlas.schema, entries: inherited, mechanisms: atlas.mechanisms.filter { $0.id != id })
+      XCTAssertThrowsError(try GalaxySSIHealthAtlas.validated(missing, requireCompleteMicroscopic: true))
+    }
+    let first = atlas.model(cells[0]), second = atlas.model(cells[1])
+    let duplicate = GalaxySSIHealthAtlas.Mechanism(id: first.id, kind: first.kind, title: second.title,
+      stages: second.stages, chapter: first.chapter)
+    let shared = GalaxySSIHealthAtlas(schema: atlas.schema, entries: atlas.entries,
+      mechanisms: atlas.mechanisms.map { $0.id == first.id ? duplicate : $0 })
+    XCTAssertThrowsError(try GalaxySSIHealthAtlas.validated(shared, requireCompleteMicroscopic: true))
+  }
+
   func testSearchUsesAllWordsAndIncludesFragmentsOnlyInCellFilter() throws {
     let atlas = try catalogue()
     XCTAssertTrue(atlas.search("pancreatic beta", kind: .cell, system: "endocrine", language: "en")
