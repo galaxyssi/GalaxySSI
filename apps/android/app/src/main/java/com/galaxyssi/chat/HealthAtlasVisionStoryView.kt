@@ -14,6 +14,18 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
 
+internal object HealthAtlasRodResponse {
+    fun light(t: Float) = transition(t, .24f, .36f)
+    fun messenger(t: Float) = 1f - .86f * transition(t, .30f, .61f)
+    fun opening(t: Float) = 1f - transition(t, .38f, .72f)
+    fun release(t: Float) = 1f - .77f * transition(t, .56f, .92f)
+
+    private fun transition(t: Float, start: Float, end: Float): Float {
+        val f = ((t - start) / (end - start)).coerceIn(0f, 1f)
+        return f * f * (3f - 2f * f)
+    }
+}
+
 internal class HealthAtlasVisionStoryView(context: Context, story: HealthAtlasFunctionStory) :
     HealthAtlasFunctionArt(context, story) {
     private val adaptation = story == HealthAtlasFunctionStory.LIGHT_ADAPTATION
@@ -104,22 +116,62 @@ internal class HealthAtlasVisionStoryView(context: Context, story: HealthAtlasFu
     }
 
     private fun capture(canvas: Canvas, t: Float) {
-        picture(canvas, R.drawable.health_atlas_sensory_rod, 70, 26, 260, 311)
-        val incident = ((t - .10f) / .38f).coerceIn(0f, 1f)
-        val y = 18f + incident * 34f
-        if (t < .51f) dot(canvas, 163f, y, 3.5f, gold)
-        if (t >= .46f) {
-            ink(gold, 2f)
-            canvas.drawCircle(164f, 61f, 9f + sin(t * 8f) * 2f, paint)
+        picture(canvas, R.drawable.health_atlas_sensory_rod, 4, 43, 142, 290)
+        val light = HealthAtlasRodResponse.light(t)
+        val target = 73f
+        if (t in .10f.. .24f) {
+            val incident = (t - .10f) / .14f
+            dot(canvas, target, 26f + 66f * incident, 4f, gold)
         }
-        val count = if (t < .46f) 6 else 2
+        val count = (6f * HealthAtlasRodResponse.release(t)).toInt().coerceAtLeast(1)
         repeat(count) { i ->
             val move = loop(t * 2.4f + i / count.toFloat())
-            dot(canvas, 154f + (i % 3) * 10f, 309f + move * 17f, 2.6f, neural)
+            dot(canvas, target + (i % 3 - 1) * 9f, 284f + move * 17f, 2.6f, neural)
         }
-        leader(canvas, 174f, 78f, 256f, 70f, R.string.health_atlas_vision_story_outer, gold)
-        label(canvas, 249f, 301f, if (t < .46f) R.string.health_atlas_vision_story_dark_release
-            else R.string.health_atlas_vision_story_light_release, 11f)
+        ink(if (light > .5f) gold else rod, 1.6f)
+        canvas.drawCircle(target, 92f, 19f, paint)
+        canvas.drawLine(target + 19f, 92f, 147f, 108f, paint)
+        label(canvas, target, 326f, if (count > 3) R.string.health_atlas_vision_story_dark_release
+            else R.string.health_atlas_vision_story_light_release, 11.5f)
+        rodMembrane(canvas, t, light)
+    }
+
+    private fun rodMembrane(canvas: Canvas, t: Float, light: Float) {
+        ink(0xffeef7f5.toInt())
+        canvas.drawRoundRect(142f, 38f, 333f, 306f, 8f, 8f, paint)
+        ink(0xfff6ecdf.toInt())
+        canvas.drawRoundRect(142f, 150f, 333f, 306f, 8f, 8f, paint)
+        label(canvas, 237f, 59f, if (light > .5f) R.string.health_atlas_vision_story_lit
+            else R.string.health_atlas_vision_story_unlit, 12.5f)
+        label(canvas, 237f, 91f, R.string.health_atlas_vision_story_dark_current, 11f)
+
+        val gate = HealthAtlasRodResponse.opening(t)
+        val gap = 9f * gate
+        ink(0xffad7a70.toInt(), 3f)
+        for (row in 0..1) {
+            val y = 136f + 15f * row
+            canvas.drawLine(151f, y, 214f, y, paint)
+            canvas.drawLine(260f, y, 324f, y, paint)
+        }
+        ink(rod)
+        canvas.drawRoundRect(211f, 125f, 237f - gap, 162f, 7f, 7f, paint)
+        canvas.drawRoundRect(237f + gap, 125f, 263f, 162f, 7f, 7f, paint)
+        for (i in 0 until (gate * 4f + .5f).toInt()) {
+            val f = loop(t * 2.2f + i * .25f)
+            dot(canvas, 237f, 104f + 74f * f, 3.1f, neural)
+        }
+        label(canvas, 238f, 190f, if (gate > .22f) R.string.health_atlas_vision_story_cng_open
+            else R.string.health_atlas_vision_story_cng_closed, 11.5f)
+
+        val messenger = HealthAtlasRodResponse.messenger(t)
+        for (i in 0..6) {
+            val x = 169f + i * 22f
+            dot(canvas, x, 216f + sin(t * 6f + i) * 3f, 4.3f,
+                if (i < messenger * 7f) gold else 0xffc9bcae.toInt())
+        }
+        label(canvas, 237f, 241f, R.string.health_atlas_vision_story_cgmp, 11.5f)
+        label(canvas, 237f, 274f, if (gate <= .22f) R.string.health_atlas_vision_story_hyperpolarized
+            else R.string.health_atlas_vision_story_resting, 11.5f)
     }
 
     private fun relay(canvas: Canvas, t: Float) {

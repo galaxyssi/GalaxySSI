@@ -223,6 +223,8 @@ class HealthAtlasGuidedFunctionDeviceTest {
             assertSame(frame, subtitle.parent)
             assertTrue(art.bottom <= subtitle.top)
             assertTrue(subtitle.bottom <= frame.height)
+            assertEquals(art.bottom, subtitle.top)
+            assertEquals(art.width, subtitle.width)
             assertTrue("Missing animation artwork", art.width > 0 && art.height > 0)
             val size = Rect(0, 0, frame.width, frame.height)
             val hashes = mutableSetOf<Int>()
@@ -235,6 +237,8 @@ class HealthAtlasGuidedFunctionDeviceTest {
                     art.phase = (chapter + .56f) / player.story.chapters.size
                     bitmap.eraseColor(0)
                     frame.draw(Canvas(bitmap))
+                    assertEquals(activity.getColor(R.color.health_atlas_film_caption),
+                        bitmap.getPixel(subtitle.width / 2, subtitle.top + 2))
                     val pixels = IntArray(art.width * art.height)
                     bitmap.getPixels(pixels, 0, art.width, art.left, art.top, art.width, art.height)
                     hashes += pixels.contentHashCode()
@@ -246,6 +250,30 @@ class HealthAtlasGuidedFunctionDeviceTest {
             }
             assertEquals(player.story.chapters.size, hashes.size)
             assertNull(activity.window.decorView.findViewWithTag<View>("atlas-function-principle"))
+        }
+    }
+
+    @Test fun captionAtNarrowWidthHasRoomForEveryLongChapterWithoutCoveringTheDrawing() = native { scenario ->
+        scenario.onActivity { activity ->
+            val story = HealthAtlasFunctionStory.VISION
+            val player = HealthAtlasFunctionPlayer(activity, story, 0f, {})
+            val caption = player.findViewWithTag<TextView>("atlas-function-caption")
+            caption.textSize = 26f
+            val width = (320f * activity.resources.displayMetrics.density).toInt()
+            val art = player.findViewWithTag<View>("atlas-function-vision-art")
+            val subtitle = player.findViewWithTag<View>("atlas-function-subtitles")
+            val frame = player.findViewWithTag<View>("atlas-function-frame")
+            var expectedHeight = 0
+            repeat(story.chapters.size) { chapter ->
+                if (chapter != 0) player.findViewWithTag<View>("atlas-function-next").performClick()
+                player.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                player.layout(0, 0, width, player.measuredHeight)
+                assertEquals(art.bottom, subtitle.top)
+                assertEquals(frame.height, subtitle.bottom)
+                assertTrue(caption.layout.height + caption.totalPaddingTop + caption.totalPaddingBottom <= caption.height)
+                if (chapter == 0) expectedHeight = frame.height else assertEquals(expectedHeight, frame.height)
+            }
         }
     }
 
@@ -311,6 +339,7 @@ class HealthAtlasGuidedFunctionDeviceTest {
         val region: Rect,
         val file: String,
         val lesson: Int = 0,
+        val late: Float = .42f,
     )
 
     @Test fun heartEarAndNephronRenderMovingCloseUpsAlongsideTheirCaptions() = verifyCloseUps(
@@ -326,8 +355,12 @@ class HealthAtlasGuidedFunctionDeviceTest {
         CloseUp("pancreas", "insulin-secretion", 1, Rect(10, 85, 92, 96), "beta-cell-voltage", lesson = 1),
     )
 
+    @Test fun rodMembraneChangesFromDarkCurrentToClosedChannels() = verifyCloseUps(
+        CloseUp("eye", "vision", 2, Rect(42, 33, 96, 82), "rod-ion-channel", late = .86f),
+    )
+
     private fun verifyCloseUps(vararg closeUps: CloseUp) = native { scenario ->
-        for ((id, artName, chapter, region, file, lesson) in closeUps) {
+        for ((id, artName, chapter, region, file, lesson, late) in closeUps) {
             scenario.onActivity { activity ->
                 activity.view("atlas-tab-2").performClick()
                 (activity.view("atlas-search") as EditText).setText(id)
@@ -361,7 +394,7 @@ class HealthAtlasGuidedFunctionDeviceTest {
                             y + size * region.top / 100, w, h)
                         return pixels.contentHashCode()
                     }
-                    assertNotEquals(file, hash(.18f), hash(.42f))
+                    assertNotEquals(file, hash(.18f), hash(late))
                     java.io.File(context.getExternalFilesDir(null), "body-atlas-$file.png").outputStream().use {
                         canvas.compress(Bitmap.CompressFormat.PNG, 100, it)
                     }
@@ -372,16 +405,26 @@ class HealthAtlasGuidedFunctionDeviceTest {
     }
 
     @Test fun capturesAnAnimationAndItsPrincipleTogether() = native { scenario ->
+        lateinit var expectedCaption: String
         scenario.onActivity { activity ->
             activity.view("atlas-hotspot-heart").performClick()
             activity.view("atlas-tab-1").performClick()
             repeat(3) { activity.view("atlas-function-next").performClick() }
+            val player = activity.view("atlas-function-player") as HealthAtlasFunctionPlayer
+            assertEquals(HealthAtlasFunctionStory.HEARTBEAT, player.story)
+            assertEquals(3, player.story.chapter(player.phase))
+            expectedCaption = (activity.view("atlas-function-caption") as TextView).text.toString()
         }
         runner.waitForIdleSync()
         val deadline = SystemClock.elapsedRealtime() + 5_000
-        while (runner.uiAutomation.rootInActiveWindow?.packageName?.toString() != context.packageName &&
-            SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(40)
-        assertEquals(context.packageName, runner.uiAutomation.rootInActiveWindow?.packageName?.toString())
+        fun captionIsOnScreen(): Boolean {
+            val root = runner.uiAutomation.rootInActiveWindow ?: return false
+            return root.packageName?.toString() == context.packageName &&
+                root.findAccessibilityNodeInfosByText(expectedCaption).any { it.isVisibleToUser }
+        }
+        while (!captionIsOnScreen() && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(40)
+        assertTrue("The requested chapter was not visible on the device", captionIsOnScreen())
+        SystemClock.sleep(150)
         val bitmap = requireNotNull(runner.uiAutomation.takeScreenshot())
         try {
             java.io.File(context.getExternalFilesDir(null), "body-atlas-guided-heart.png").outputStream().use {

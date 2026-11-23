@@ -1,7 +1,8 @@
 package com.galaxyssi.chat
 
 import android.app.Activity
-import android.text.StaticLayout
+import android.os.Build
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -28,16 +29,31 @@ internal class HealthAtlasSceneFrame(activity: Activity, key: String) : LinearLa
         if (width > 0 && width != measuredWidthForText) {
             measuredWidthForText = width
             for ((view, texts, inset) in captions) {
-                val textWidth = (width - inset - view.totalPaddingStart - view.totalPaddingEnd).coerceAtLeast(1)
-                val lines = texts.maxOf { text ->
-                    StaticLayout.Builder.obtain(text, 0, text.length, view.paint, textWidth)
-                        .setIncludePad(view.includeFontPadding)
-                        .setLineSpacing(view.lineSpacingExtra, view.lineSpacingMultiplier)
-                        .setBreakStrategy(view.breakStrategy)
-                        .setHyphenationFrequency(view.hyphenationFrequency)
-                        .build().height
+                val widthSpec = MeasureSpec.makeMeasureSpec((width - inset).coerceAtLeast(1), MeasureSpec.EXACTLY)
+                val heightSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+                // Measure with TextView so mixed-script fallback fonts use the same line metrics as playback.
+                val probe = TextView(context).apply {
+                    layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+                    paint.set(view.paint)
+                    setPadding(view.paddingLeft, view.paddingTop, view.paddingRight, view.paddingBottom)
+                    includeFontPadding = view.includeFontPadding
+                    setLineSpacing(view.lineSpacingExtra, view.lineSpacingMultiplier)
+                    breakStrategy = view.breakStrategy
+                    hyphenationFrequency = view.hyphenationFrequency
+                    textDirection = view.textDirection
+                    if (Build.VERSION.SDK_INT >= 28) isFallbackLineSpacing = view.isFallbackLineSpacing
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        lineBreakStyle = view.lineBreakStyle
+                        lineBreakWordStyle = view.lineBreakWordStyle
+                    }
                 }
-                view.minimumHeight = lines + view.totalPaddingTop + view.totalPaddingBottom
+                val reserved = texts.maxOf { text ->
+                    probe.text = text
+                    probe.forceLayout()
+                    probe.measure(widthSpec, heightSpec)
+                    probe.measuredHeight
+                }
+                view.minHeight = reserved
             }
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
