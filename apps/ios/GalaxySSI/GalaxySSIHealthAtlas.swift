@@ -3,7 +3,7 @@ import UIKit
 
 /// Public teaching content only: this graph never loads the health archive.
 struct GalaxySSIHealthAtlas: Decodable {
-  enum Kind: String, Decodable { case system, organ, cell, fragment }
+  enum Kind: String, Decodable { case system, organ, tissue, cell, fragment }
   struct Entry: Decodable, Identifiable {
     let id: String
     let kind: Kind
@@ -15,9 +15,11 @@ struct GalaxySSIHealthAtlas: Decodable {
     let aliases: String
     let color: String
     let icon: String
+    var locatedIn: [String]? = nil
+    var locations: [String] { locatedIn ?? [] }
     func replacing(mechanism: String? = nil, related: [String]? = nil) -> Self {
       Self(id: id, kind: kind, name: name, description: description, systems: systems, related: related ?? self.related,
-        mechanism: mechanism ?? self.mechanism, aliases: aliases, color: color, icon: icon)
+        mechanism: mechanism ?? self.mechanism, aliases: aliases, color: color, icon: icon, locatedIn: locatedIn)
     }
   }
   struct Mechanism: Decodable, Identifiable {
@@ -50,6 +52,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try RespirationPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try ExtendedCellPack.read(bundle: bundle) { result = try pack.applying(to: result) }
     if let pack = try EarPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try TissuePack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try HeartSectionPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     return result
   }
@@ -80,15 +83,33 @@ struct GalaxySSIHealthAtlas: Decodable {
       let textKeys = microscopic.flatMap { [atlas.model($0).title] + atlas.model($0).stages }
       guard Set(textKeys).count == textKeys.count else { throw Invalid.catalogue }
     }
+    guard atlas.entries.allSatisfy({ entry in
+      guard entry.kind == .tissue else { return entry.locations.isEmpty && atlas.model(entry).kind != "tissue" }
+      return !entry.locations.isEmpty && Set(entry.locations).count == entry.locations.count &&
+        entry.locations.allSatisfy { id in
+          atlas.entry(id).map { $0.kind == .organ && !$0.systems.filter(entry.systems.contains).isEmpty } == true
+        } && !entry.related.isEmpty && Set(entry.related).count == entry.related.count &&
+        entry.related.allSatisfy { atlas.entry($0)?.kind == .cell } &&
+        entry.mechanism == entry.id && atlas.model(entry).kind == "tissue"
+    }), atlas.mechanisms.filter({ $0.kind == "tissue" }).allSatisfy({ atlas.entry($0.id)?.kind == .tissue })
+    else { throw Invalid.catalogue }
     return atlas
   }
 
   func entry(_ id: String) -> Entry? { entries.first { $0.id == id } }
   func model(_ entry: Entry) -> Mechanism { mechanisms.first { $0.id == entry.mechanism }! }
   func children(_ entry: Entry) -> [Entry] { entry.related.compactMap(self.entry) }
-  func parents(_ entry: Entry) -> [Entry] { entries.filter { $0.kind != .system && $0.related.contains(entry.id) } }
+  func parents(_ entry: Entry) -> [Entry] {
+    (entry.locations.compactMap(self.entry) + entries.filter { $0.kind != .system && $0.related.contains(entry.id) })
+      .reduce(into: []) { result, item in if !result.contains(where: { $0.id == item.id }) { result.append(item) } }
+  }
+  func tissues(_ entry: Entry) -> [Entry] {
+    entries.filter { $0.kind == .tissue && (entry.kind == .system ? $0.systems.contains(entry.id) :
+      entry.kind == .organ && $0.locations.contains(entry.id)) }
+  }
   func cells(_ entry: Entry) -> [Entry] {
-    entries.filter { ($0.kind == .cell || $0.kind == .fragment) &&
+    if entry.kind == .tissue { return children(entry) }
+    return entries.filter { ($0.kind == .cell || $0.kind == .fragment) &&
       (entry.kind == .system ? $0.systems.contains(entry.id) : $0.related.contains(entry.id)) }
   }
   func search(_ query: String, kind: Kind?, system: String, language: String) -> [Entry] {
@@ -235,6 +256,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     return available.first(where: { $0.viewKey == viewKey }) ?? available.first
   }
   private func defaultPlate(for id: String?) -> Plate? {
+    if let pack = try? TissuePack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if GalaxySSIHealthAtlasEyeOptics.plate.entryIDs.contains(id ?? "") { return GalaxySSIHealthAtlasEyeOptics.plate }
     if let pack = try? SystemPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     if let pack = try? CellPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }

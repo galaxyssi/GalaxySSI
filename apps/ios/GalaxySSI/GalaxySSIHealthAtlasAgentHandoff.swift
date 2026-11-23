@@ -45,6 +45,7 @@ enum GalaxySSIHealthAtlasQuestion {
         description: GalaxySSIHealthAtlasText.get(item.description, language),
         mechanism: GalaxySSIHealthAtlasText.get(atlas.model(item).title, language),
         stages: atlas.model(item).stages.map { GalaxySSIHealthAtlasText.get($0, language) }, source: atlas.model(item).source,
+        tissueContext: atlas.tissueContext(item, language: language),
         valveContext: GalaxySSIHealthAtlasHeartSection.context(item.id, stage: selection.simulation.stage, atlas: atlas, language: language))
     }
     var quantitative: GalaxySSIHealthAtlasAgentContext.Quantitative? = nil
@@ -76,6 +77,7 @@ enum GalaxySSIHealthAtlasQuestion {
     let model = atlas.model(entry)
     var prompt = String(format: t("ask_context"), GalaxySSIHealthAtlasText.get(entry.name, language),
       GalaxySSIHealthAtlasText.get(entry.description, language), GalaxySSIHealthAtlasText.get(model.title, language), model.source.absoluteString)
+    if entry.kind == .tissue { prompt += "\n" + atlas.tissueContext(entry, language: language).joined(separator: "\n") }
     if research || selection.tab != .values, let plate = atlas.plate(for: entry.id, viewKey: selection.artworkView) {
       prompt += "\n" + atlas.caption(plate, selected: entry, language: language) + "\n" + t("art_note")
       if let source = plate.source { prompt += "\n" + source.absoluteString }
