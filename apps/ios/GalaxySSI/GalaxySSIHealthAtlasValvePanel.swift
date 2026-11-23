@@ -13,8 +13,8 @@ struct GalaxySSIHealthAtlasValvePanel: View {
         .accessibilityIdentifier("atlas-valve-phase")
       Image("HealthAtlasHeartSection").resizable().scaledToFit().frame(maxHeight: 300)
         .overlay(GeometryReader { geometry in
-          let scale = min(geometry.size.width / 480, geometry.size.height / 460)
-          let left = (geometry.size.width - 480 * scale) / 2, top = (geometry.size.height - 460 * scale) / 2
+          let scale = min(geometry.size.width, geometry.size.height) / 480
+          let left = (geometry.size.width - 480 * scale) / 2, top = (geometry.size.height - 480 * scale) / 2
           ForEach(Heart.Valve.allCases, id: \.self) { valve in
             let active = valve.openAt(stage) ?? false
             let selected = valve.id == entryID
@@ -25,7 +25,7 @@ struct GalaxySSIHealthAtlasValvePanel: View {
               if !active {
                 Rectangle().fill(Color.primary).frame(width: 10 * scale, height: 2.6 * scale)
               }
-            }.position(x: left + CGFloat(valve.point.x) * scale, y: top + CGFloat(valve.point.y) * scale)
+            }.position(x: left + CGFloat(valve.marker.x) * 480 * scale, y: top + CGFloat(valve.marker.y) * 480 * scale)
           }
         }).accessibilityHidden(true).accessibilityIdentifier("atlas-valve-diagram")
       ForEach(Heart.Valve.allCases, id: \.self) { valve in

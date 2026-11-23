@@ -19,6 +19,9 @@ for (const id of ["left-atrium", "right-atrium", "left-ventricle", "right-ventri
   assert.ok(cardiacTissue.locatedIn.includes(id)); assert.ok(cardiomyocyte.related.includes(id));
 }
 const image = path.join(assetRoot, "HealthAtlasHeartSection.imageset");
-assert.equal(fs.readFileSync(path.join(image, "heart.pdf")).subarray(0, 5).toString(), "%PDF-");
-assert.equal(JSON.parse(fs.readFileSync(path.join(image, "Contents.json"))).properties["preserves-vector-representation"], true);
+assert.equal(fs.readFileSync(path.join(image, "heart.png")).subarray(1, 4).toString(), "PNG");
+const metadata = JSON.parse(fs.readFileSync(path.join(image, "Contents.json")));
+assert(metadata.images.some(i => i.filename === "heart.png"));
+assert(!metadata.properties?.["preserves-vector-representation"]);
+assert(!fs.existsSync(path.join(image, "heart.pdf")));
 console.log("Heart delta matches Android #4343: 10 new structures, 11 mechanisms and exact tissue/cell links.");
