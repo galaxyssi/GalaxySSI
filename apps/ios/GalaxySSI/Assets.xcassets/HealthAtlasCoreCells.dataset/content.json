@@ -1,0 +1,630 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4346,
+    "mergeCommit": "40c28fba70c17ab4fad0a301799b0f202bc48b13"
+  },
+  "plates": [
+    {
+      "id": "cell-astrocyte",
+      "owner": "cell-astrocyte",
+      "asset": "HealthAtlasCoreAstrocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-astrocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-2-nervous-tissue",
+      "features": [
+        {
+          "marker": {
+            "id": "astrocyte-endfoot",
+            "x": 0.7138888888888889,
+            "y": 0.7607142857142857
+          },
+          "title": "health_atlas_feature_astrocyte_endfoot",
+          "explanation": "health_atlas_feature_astrocyte_endfoot_detail"
+        },
+        {
+          "marker": {
+            "id": "astrocyte-branches",
+            "x": 0.33611111111111114,
+            "y": 0.3392857142857143
+          },
+          "title": "health_atlas_feature_astrocyte_branches",
+          "explanation": "health_atlas_feature_astrocyte_branches_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_astrocyte.xml"
+    },
+    {
+      "id": "cell-schwann-cell",
+      "owner": "cell-schwann-cell",
+      "asset": "HealthAtlasCoreSchwann",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-schwann-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-2-nervous-tissue",
+      "features": [
+        {
+          "marker": {
+            "id": "schwann-myelin",
+            "x": 0.5,
+            "y": 0.3964285714285714
+          },
+          "title": "health_atlas_feature_schwann_myelin",
+          "explanation": "health_atlas_feature_schwann_myelin_detail"
+        },
+        {
+          "marker": {
+            "id": "schwann-nucleus",
+            "x": 0.5305555555555556,
+            "y": 0.275
+          },
+          "title": "health_atlas_feature_schwann_nucleus",
+          "explanation": "health_atlas_feature_schwann_nucleus_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_schwann.xml"
+    },
+    {
+      "id": "cell-skeletal-myocyte",
+      "owner": "cell-skeletal-myocyte",
+      "asset": "HealthAtlasCoreSkeletalMyocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-skeletal-myocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/10-3-muscle-fiber-contraction-and-relaxation",
+      "features": [
+        {
+          "marker": {
+            "id": "skeletal-striations",
+            "x": 0.4861111111111111,
+            "y": 0.525
+          },
+          "title": "health_atlas_feature_skeletal_striations",
+          "explanation": "health_atlas_feature_skeletal_striations_detail"
+        },
+        {
+          "marker": {
+            "id": "peripheral-nuclei",
+            "x": 0.2638888888888889,
+            "y": 0.35714285714285715
+          },
+          "title": "health_atlas_feature_peripheral_nuclei",
+          "explanation": "health_atlas_feature_peripheral_nuclei_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_skeletal_myocyte.xml"
+    },
+    {
+      "id": "cell-cardiomyocyte",
+      "owner": "cell-cardiomyocyte",
+      "asset": "HealthAtlasCoreCardiomyocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-cardiomyocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/10-7-cardiac-muscle-tissue",
+      "features": [
+        {
+          "marker": {
+            "id": "intercalated-disc",
+            "x": 0.7027777777777777,
+            "y": 0.44285714285714284
+          },
+          "title": "health_atlas_feature_intercalated_disc",
+          "explanation": "health_atlas_feature_intercalated_disc_detail"
+        },
+        {
+          "marker": {
+            "id": "cardiac-central-nucleus",
+            "x": 0.4638888888888889,
+            "y": 0.5321428571428571
+          },
+          "title": "health_atlas_feature_cardiac_central_nucleus",
+          "explanation": "health_atlas_feature_cardiac_central_nucleus_detail"
+        },
+        {
+          "marker": {
+            "id": "cardiac-branch",
+            "x": 0.6111111111111112,
+            "y": 0.41785714285714287
+          },
+          "title": "health_atlas_feature_cardiac_branch",
+          "explanation": "health_atlas_feature_cardiac_branch_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_cardiomyocyte.xml"
+    },
+    {
+      "id": "cell-smooth-muscle-cell",
+      "owner": "cell-smooth-muscle-cell",
+      "asset": "HealthAtlasCoreSmoothMuscleCell",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-smooth-muscle-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/10-8-smooth-muscle",
+      "features": [
+        {
+          "marker": {
+            "id": "smooth-spindle",
+            "x": 0.2861111111111111,
+            "y": 0.5035714285714286
+          },
+          "title": "health_atlas_feature_smooth_spindle",
+          "explanation": "health_atlas_feature_smooth_spindle_detail"
+        },
+        {
+          "marker": {
+            "id": "smooth-central-nucleus",
+            "x": 0.49722222222222223,
+            "y": 0.4928571428571429
+          },
+          "title": "health_atlas_feature_smooth_central_nucleus",
+          "explanation": "health_atlas_feature_smooth_central_nucleus_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_smooth_muscle_cell.xml"
+    },
+    {
+      "id": "cell-keratinocyte",
+      "owner": "cell-keratinocyte",
+      "asset": "HealthAtlasCoreKeratinocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-keratinocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin",
+      "features": [
+        {
+          "marker": {
+            "id": "keratin-filaments",
+            "x": 0.6,
+            "y": 0.55
+          },
+          "title": "health_atlas_feature_keratin_filaments",
+          "explanation": "health_atlas_feature_keratin_filaments_detail"
+        },
+        {
+          "marker": {
+            "id": "cell-junction",
+            "x": 0.675,
+            "y": 0.36428571428571427
+          },
+          "title": "health_atlas_feature_cell_junction",
+          "explanation": "health_atlas_feature_cell_junction_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_keratinocyte.xml"
+    },
+    {
+      "id": "cell-melanocyte",
+      "owner": "cell-melanocyte",
+      "asset": "HealthAtlasCoreMelanocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-melanocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin",
+      "features": [
+        {
+          "marker": {
+            "id": "melanosomes",
+            "x": 0.5444444444444444,
+            "y": 0.4357142857142857
+          },
+          "title": "health_atlas_feature_melanosomes",
+          "explanation": "health_atlas_feature_melanosomes_detail"
+        },
+        {
+          "marker": {
+            "id": "melanocyte-dendrite",
+            "x": 0.7138888888888889,
+            "y": 0.575
+          },
+          "title": "health_atlas_feature_melanocyte_dendrite",
+          "explanation": "health_atlas_feature_melanocyte_dendrite_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_melanocyte.xml"
+    },
+    {
+      "id": "cell-fibroblast",
+      "owner": "cell-fibroblast",
+      "asset": "HealthAtlasCoreFibroblast",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-fibroblast"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/4-3-connective-tissue-supports-and-protects",
+      "features": [
+        {
+          "marker": {
+            "id": "fibroblast-spindle",
+            "x": 0.6083333333333333,
+            "y": 0.44642857142857145
+          },
+          "title": "health_atlas_feature_fibroblast_spindle",
+          "explanation": "health_atlas_feature_fibroblast_spindle_detail"
+        },
+        {
+          "marker": {
+            "id": "fibroblast-matrix",
+            "x": 0.625,
+            "y": 0.7071428571428572
+          },
+          "title": "health_atlas_feature_fibroblast_matrix",
+          "explanation": "health_atlas_feature_fibroblast_matrix_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_fibroblast.xml"
+    },
+    {
+      "id": "cell-adipocyte",
+      "owner": "cell-adipocyte",
+      "asset": "HealthAtlasCoreAdipocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-adipocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/4-3-connective-tissue-supports-and-protects",
+      "features": [
+        {
+          "marker": {
+            "id": "lipid-droplet",
+            "x": 0.5,
+            "y": 0.4714285714285714
+          },
+          "title": "health_atlas_feature_lipid_droplet",
+          "explanation": "health_atlas_feature_lipid_droplet_detail"
+        },
+        {
+          "marker": {
+            "id": "adipocyte-nucleus",
+            "x": 0.25833333333333336,
+            "y": 0.6678571428571428
+          },
+          "title": "health_atlas_feature_adipocyte_nucleus",
+          "explanation": "health_atlas_feature_adipocyte_nucleus_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_adipocyte.xml"
+    },
+    {
+      "id": "cell-osteoblast",
+      "owner": "cell-osteoblast",
+      "asset": "HealthAtlasCoreOsteoblast",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-osteoblast"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/6-3-bone-structure",
+      "features": [
+        {
+          "marker": {
+            "id": "osteoblast-surface",
+            "x": 0.5138888888888888,
+            "y": 0.3964285714285714
+          },
+          "title": "health_atlas_feature_osteoblast_surface",
+          "explanation": "health_atlas_feature_osteoblast_surface_detail"
+        },
+        {
+          "marker": {
+            "id": "osteoid",
+            "x": 0.5,
+            "y": 0.5857142857142857
+          },
+          "title": "health_atlas_feature_osteoid",
+          "explanation": "health_atlas_feature_osteoid_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_osteoblast.xml"
+    },
+    {
+      "id": "cell-osteocyte",
+      "owner": "cell-osteocyte",
+      "asset": "HealthAtlasCoreOsteocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-osteocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/6-3-bone-structure",
+      "features": [
+        {
+          "marker": {
+            "id": "osteocyte-lacuna",
+            "x": 0.5027777777777778,
+            "y": 0.49642857142857144
+          },
+          "title": "health_atlas_feature_osteocyte_lacuna",
+          "explanation": "health_atlas_feature_osteocyte_lacuna_detail"
+        },
+        {
+          "marker": {
+            "id": "canaliculi",
+            "x": 0.6777777777777778,
+            "y": 0.5964285714285714
+          },
+          "title": "health_atlas_feature_canaliculi",
+          "explanation": "health_atlas_feature_canaliculi_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_osteocyte.xml"
+    },
+    {
+      "id": "cell-osteoclast",
+      "owner": "cell-osteoclast",
+      "asset": "HealthAtlasCoreOsteoclast",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-osteoclast"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/6-3-bone-structure",
+      "features": [
+        {
+          "marker": {
+            "id": "multiple-nuclei",
+            "x": 0.5027777777777778,
+            "y": 0.40714285714285714
+          },
+          "title": "health_atlas_feature_multiple_nuclei",
+          "explanation": "health_atlas_feature_multiple_nuclei_detail"
+        },
+        {
+          "marker": {
+            "id": "ruffled-border",
+            "x": 0.5138888888888888,
+            "y": 0.6357142857142857
+          },
+          "title": "health_atlas_feature_ruffled_border",
+          "explanation": "health_atlas_feature_ruffled_border_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_osteoclast.xml"
+    },
+    {
+      "id": "cell-chondrocyte",
+      "owner": "cell-chondrocyte",
+      "asset": "HealthAtlasCoreChondrocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-chondrocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/4-3-connective-tissue-supports-and-protects",
+      "features": [
+        {
+          "marker": {
+            "id": "cartilage-lacuna",
+            "x": 0.6333333333333333,
+            "y": 0.5107142857142857
+          },
+          "title": "health_atlas_feature_cartilage_lacuna",
+          "explanation": "health_atlas_feature_cartilage_lacuna_detail"
+        },
+        {
+          "marker": {
+            "id": "cartilage-matrix",
+            "x": 0.7444444444444445,
+            "y": 0.6321428571428571
+          },
+          "title": "health_atlas_feature_cartilage_matrix",
+          "explanation": "health_atlas_feature_cartilage_matrix_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_chondrocyte.xml"
+    },
+    {
+      "id": "cell-vascular-endothelial-cell",
+      "owner": "cell-vascular-endothelial-cell",
+      "asset": "HealthAtlasCoreVascularEndothelialCell",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-vascular-endothelial-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/20-1-structure-and-function-of-blood-vessels",
+      "features": [
+        {
+          "marker": {
+            "id": "endothelial-sheet",
+            "x": 0.31666666666666665,
+            "y": 0.5285714285714286
+          },
+          "title": "health_atlas_feature_endothelial_sheet",
+          "explanation": "health_atlas_feature_endothelial_sheet_detail"
+        },
+        {
+          "marker": {
+            "id": "endothelial-nucleus",
+            "x": 0.5194444444444445,
+            "y": 0.5392857142857143
+          },
+          "title": "health_atlas_feature_endothelial_nucleus",
+          "explanation": "health_atlas_feature_endothelial_nucleus_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_vascular_endothelial_cell.xml"
+    },
+    {
+      "id": "cell-hepatocyte",
+      "owner": "cell-hepatocyte",
+      "asset": "HealthAtlasCoreHepatocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-hepatocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder",
+      "features": [
+        {
+          "marker": {
+            "id": "hepatocyte-body",
+            "x": 0.5194444444444445,
+            "y": 0.41785714285714287
+          },
+          "title": "health_atlas_feature_hepatocyte_body",
+          "explanation": "health_atlas_feature_hepatocyte_body_detail"
+        },
+        {
+          "marker": {
+            "id": "bile-canaliculus",
+            "x": 0.6555555555555556,
+            "y": 0.49642857142857144
+          },
+          "title": "health_atlas_feature_bile_canaliculus",
+          "explanation": "health_atlas_feature_bile_canaliculus_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_hepatocyte.xml"
+    },
+    {
+      "id": "cell-enterocyte",
+      "owner": "cell-enterocyte",
+      "asset": "HealthAtlasCoreEnterocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-enterocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-7-chemical-digestion-and-absorption-a-closer-look",
+      "features": [
+        {
+          "marker": {
+            "id": "microvilli",
+            "x": 0.4583333333333333,
+            "y": 0.21071428571428572
+          },
+          "title": "health_atlas_feature_microvilli",
+          "explanation": "health_atlas_feature_microvilli_detail"
+        },
+        {
+          "marker": {
+            "id": "enterocyte-basal",
+            "x": 0.5111111111111111,
+            "y": 0.8035714285714286
+          },
+          "title": "health_atlas_feature_enterocyte_basal",
+          "explanation": "health_atlas_feature_enterocyte_basal_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_enterocyte.xml"
+    },
+    {
+      "id": "cell-spermatozoon",
+      "owner": "cell-spermatozoon",
+      "asset": "HealthAtlasCoreSpermatozoon",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-spermatozoon"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/28-1-fertilization",
+      "features": [
+        {
+          "marker": {
+            "id": "acrosome",
+            "x": 0.20277777777777778,
+            "y": 0.45714285714285713
+          },
+          "title": "health_atlas_feature_acrosome",
+          "explanation": "health_atlas_feature_acrosome_detail"
+        },
+        {
+          "marker": {
+            "id": "sperm-midpiece",
+            "x": 0.44166666666666665,
+            "y": 0.5
+          },
+          "title": "health_atlas_feature_sperm_midpiece",
+          "explanation": "health_atlas_feature_sperm_midpiece_detail"
+        },
+        {
+          "marker": {
+            "id": "flagellum",
+            "x": 0.7305555555555555,
+            "y": 0.5964285714285714
+          },
+          "title": "health_atlas_feature_flagellum",
+          "explanation": "health_atlas_feature_flagellum_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_spermatozoon.xml"
+    },
+    {
+      "id": "cell-oocyte-or-ovum",
+      "owner": "cell-oocyte-or-ovum",
+      "asset": "HealthAtlasCoreOocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-oocyte-or-ovum"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/28-1-fertilization",
+      "features": [
+        {
+          "marker": {
+            "id": "oocyte-zona",
+            "x": 0.7527777777777778,
+            "y": 0.5392857142857143
+          },
+          "title": "health_atlas_feature_oocyte_zona",
+          "explanation": "health_atlas_feature_oocyte_zona_detail"
+        },
+        {
+          "marker": {
+            "id": "polar-body",
+            "x": 0.5777777777777777,
+            "y": 0.26785714285714285
+          },
+          "title": "health_atlas_feature_polar_body",
+          "explanation": "health_atlas_feature_polar_body_detail"
+        },
+        {
+          "marker": {
+            "id": "corona-radiata",
+            "x": 0.2833333333333333,
+            "y": 0.225
+          },
+          "title": "health_atlas_feature_corona_radiata",
+          "explanation": "health_atlas_feature_corona_radiata_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_core_oocyte.xml"
+    }
+  ]
+}
