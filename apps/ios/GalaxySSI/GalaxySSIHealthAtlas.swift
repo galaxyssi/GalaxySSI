@@ -61,6 +61,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try EndocrinePack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try SensoryPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try TissueContextPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try LymphPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     return result
   }
 
@@ -271,6 +272,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     return available.first(where: { $0.viewKey == viewKey }) ?? available.first
   }
   private func defaultPlate(for id: String?) -> Plate? {
+    if let pack = try? LymphPack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if let pack = try? TissueContextPack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if let pack = try? SensoryPack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if let pack = try? OverviewPack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }

@@ -2,6 +2,10 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let valveKey = ["model_lymphValve": "lymph_valve_model_title", "model_lymphValve_scope": "lymph_valve_model_scope",
+      "model_lymphValve_formula": "lymph_valve_model_formula"][key]
+    if let valveKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + valveKey, language) }
+    if key.hasPrefix("lymph_valve_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     let evaporationKey = ["model_sweatEvaporation": "context_evap_title", "model_sweatEvaporation_scope": "context_evap_scope",
       "model_sweatEvaporation_formula": "context_evap_formula"][key]
     if let evaporationKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + evaporationKey, language) }
@@ -71,6 +75,10 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if model.kind == .lymphValve {
+      let state = model.input(0) > 0 ? "forward" : model.input(0) < 0 ? "closed" : "balance"
+      return String(format: string("lymph_valve_model_" + state, language: language), number(model.companionValue, language: language))
+    }
     if model.kind == .sweatEvaporation {
       return String(format: string("context_evap_mass", language: language), number(model.companionValue, language: language))
     }

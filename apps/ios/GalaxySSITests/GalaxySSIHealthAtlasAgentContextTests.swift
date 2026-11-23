@@ -17,6 +17,32 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
      "elimination_assumptions": "Single-compartment teaching assumptions",
      "elimination_summary": "Half-life %1$lld h; after %2$lld h: %3$@%%"] [key] ?? key
   }
+  func testLymphFeatureAndDuctOrientationRequireMatchingSimulationAndScreen() throws {
+    for id in GalaxySSIHealthAtlas.LymphPack.owners {
+      for stage in 0..<4 {
+        let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: Double(stage) / 4, first: 70, second: 70))
+        for language in ["en", "zh-Hans"] {
+          let lines = GalaxySSIHealthAtlasLymphLesson.context(id, stage: stage, language: language)
+          XCTAssertEqual(lines.count, id == "thoracic-duct" ? 3 : 2)
+          for screen in Context.Screen.allCases {
+            let prompt = Context.prompt(anatomy: anatomy(id), screen: screen, simulation: simulation,
+              language: language, locale: locale, text: text)
+            if screen == .values { XCTAssertNil(prompt); continue }
+            let value = try XCTUnwrap(prompt)
+            for line in lines { XCTAssertEqual(value.contains(line), screen.includesPhysiology) }
+            let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("heart"), screen: screen,
+              simulation: simulation, language: language, locale: locale, text: text))
+            XCTAssertFalse(foreign.contains(lines[0]))
+          }
+          let idle = try XCTUnwrap(Context.prompt(anatomy: anatomy(id), screen: .simulation,
+            language: language, locale: locale, text: text))
+          XCTAssertFalse(idle.contains(lines[0]))
+        }
+      }
+    }
+    XCTAssertTrue(GalaxySSIHealthAtlasLymphLesson.context("thoracic-duct", stage: 4, language: "en").isEmpty)
+  }
+
   func testImmuneIllustrationAndPhagocytosisContextAreOwnerAndScreenScoped() throws {
     let id = GalaxySSIHealthAtlas.ImmunePack.phagocytosisOwner
     let simulation = try XCTUnwrap(Context.Simulation(entryID: id, phase: 0.5, first: 70, second: 70))
