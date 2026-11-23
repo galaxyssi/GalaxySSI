@@ -66,6 +66,7 @@ class HealthBodyAtlasActivity : Activity() {
     private val drugStates = linkedMapOf<String, HealthAtlasDrugState>()
     private val agingSelections = linkedMapOf<String, HealthAtlasAgingSelection>()
     private val artworkViews = linkedMapOf<String, String>()
+    private val artworkSteps = linkedMapOf<String, Int>()
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -86,6 +87,9 @@ class HealthBodyAtlasActivity : Activity() {
                 if (HealthAtlasPlates.forId(key, view)?.viewKey == view) artworkViews[key] = view
             }
         } }
+        state?.getBundle("artworkStepsV1")?.let { saved ->
+            saved.keySet().take(400).forEach { key -> artworkSteps[key] = saved.getInt(key) }
+        }
         state?.getBundle("drugModelsV1")?.let { saved -> saved.keySet().take(300).forEach { key ->
             HealthAtlasDrugState.restore(saved.getIntArray(key))?.let { drugStates[key] = it }
         } }
@@ -169,6 +173,9 @@ class HealthBodyAtlasActivity : Activity() {
         out.putInt("researchReturnScroll", researchReturnScroll)
         out.putStringArrayList("expandedModels", ArrayList(expandedModels))
         out.putBundle("artworkViewsV1", Bundle().apply { artworkViews.forEach { (id, view) -> putString(id, view) } })
+        out.putBundle("artworkStepsV1", Bundle().apply {
+            artworkSteps.entries.toList().takeLast(400).forEach { (key, step) -> putInt(key, step) }
+        })
         out.putBundle("drugModelsV1", Bundle().apply { drugStates.forEach { (id, value) -> putIntArray(id, value.encode()) } })
         out.putBundle("agingSelectionsV1", Bundle().apply { agingSelections.forEach { (id, value) -> putBundle(id, Bundle().apply {
             putString("topic", value.topic.name); putInt("step", value.step)
@@ -296,7 +303,8 @@ class HealthBodyAtlasActivity : Activity() {
     private fun catalogue(data: HealthBodyAtlas) {
         if (section == 0) {
             ui.add(content, HealthAtlasArtwork(this, data, null, ::select,
-                { plate, title -> zoomAnatomy(data, null, plate, title) }, ::source).apply { tag = "atlas-whole-art" })
+                { plate, title -> zoomAnatomy(data, null, plate, title) }, ::source, steps = artworkSteps)
+                .apply { tag = "atlas-whole-art" })
             val focus = wholeItem(data)
             ui.add(content, HealthAtlasUi.wholeBodyActions(this, data, focus,
                 structure = { select(focus) },
@@ -488,7 +496,9 @@ class HealthBodyAtlasActivity : Activity() {
     }
 
     private fun artwork(data: HealthBodyAtlas, item: HealthAtlasItem) = HealthAtlasArtwork(this, data, item, ::select,
-        { plate, title -> zoomAnatomy(data, item.id, plate, title) }, ::source, artworkViews[item.id]) { artworkViews[item.id] = it }
+        { plate, title -> zoomAnatomy(data, item.id, plate, title) }, ::source, artworkViews[item.id], steps = artworkSteps) {
+        artworkViews[item.id] = it
+    }
     private fun saveSimulation() { simulation?.let {
         simulationStates[simulationItem] = it.snapshot
         it.quantitativeSnapshot?.let { model -> physiologyStates[simulationItem] = model }

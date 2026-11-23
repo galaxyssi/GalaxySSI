@@ -3,7 +3,9 @@ package com.galaxyssi.chat
 import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.os.SystemClock
+import android.text.TextUtils
 import android.view.Gravity
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -17,7 +19,11 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
     private val onPlay: () -> Unit = {}) : LinearLayout(activity) {
     private val ui = HealthCenterViews(activity)
     private val art = story.createArt(activity)
-    private val caption = ui.text("", 15f).apply { tag = "atlas-function-caption" }
+    private val caption = ui.text("", 13f).apply {
+        tag = "atlas-function-caption"
+        maxLines = 4
+        ellipsize = TextUtils.TruncateAt.END
+    }
     private val chapterLabel = ui.text("", 14f, bold = true).apply {
         tag = "atlas-function-chapter"
         setTextColor(context.getColor(R.color.health_overview_green))
@@ -44,23 +50,30 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
         })
     }
     private var renderedChapter = -1
+    private var enlargement: Dialog? = null
     var phase = 0f
         private set
 
     init {
         tag = "atlas-function-player"
         orientation = VERTICAL
-        val title = if (showTitle) ui.text(context.getString(story.title), 16f, bold = true).apply {
-            setPadding(ui.dp(16), ui.dp(12), ui.dp(16), 0)
-        } else null
         art.setOnClickListener { toggle() }
         art.isFocusable = true
-        val scene = HealthAtlasFigureFrame(activity, art, "atlas-function-frame", title,
+        val scene = HealthAtlasFigureFrame(activity, art, "atlas-function-frame",
             captionKey = "atlas-function-subtitles").apply {
             reserveCaption(chapterLabel, chapterLabels)
             reserveCaption(caption, chapterCaptions)
             ui.add(legend, chapterLabel)
             ui.add(legend, caption, 2)
+            legend.isFocusable = true
+            legend.setOnClickListener {
+                pause()
+                AlertDialog.Builder(activity)
+                    .setTitle(if (showTitle) context.getString(story.title) else chapterLabel.text)
+                    .setMessage(if (showTitle) "${chapterLabel.text}\n\n${caption.text}" else caption.text)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
         }
         ui.add(this, scene)
         ui.add(this, position)
@@ -75,6 +88,10 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
             addView(ui.icon(R.drawable.ic_more_horizontal, R.string.health_atlas_scene_menu) {
                 pause()
                 PopupMenu(activity, findViewWithTag("atlas-function-menu")).apply {
+                    menu.add(R.string.health_body_zoom).setOnMenuItemClickListener {
+                        enlarge(activity)
+                        true
+                    }
                     menu.add(R.string.health_atlas_function_outline).setOnMenuItemClickListener {
                         AlertDialog.Builder(activity).setTitle(R.string.health_atlas_function_outline)
                             .setSingleChoiceItems(chapterLabels.toTypedArray(), story.chapter(phase)) { dialog, index ->
@@ -112,6 +129,28 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
     private fun skip(direction: Int) {
         val position = timeline.sample(SystemClock.uptimeMillis())
         seek(story.startOf(story.chapter(position) + direction))
+    }
+
+    private fun enlarge(activity: Activity) {
+        pause()
+        enlargement?.dismiss()
+        val enlarged = story.createArt(activity).apply {
+            phase = art.phase
+            tag = "atlas-function-enlarged-art"
+        }
+        val dialog = Dialog(activity, android.R.style.Theme_Material_Light_NoActionBar)
+        val content = ui.column().apply {
+            setBackgroundColor(context.getColor(R.color.page_bg))
+            addView(ui.toolbar(story.title, dialog::dismiss))
+            addView(GalaxySSIPinchZoomViewport(activity).apply {
+                attach(enlarged)
+            }, LayoutParams(-1, 0, 1f))
+        }
+        enlargement = dialog
+        dialog.setContentView(content)
+        dialog.setOnDismissListener { if (enlargement === dialog) enlargement = null }
+        dialog.show()
+        dialog.window?.setLayout(-1, -1)
     }
 
     private fun showPhase(value: Float) {
@@ -163,5 +202,9 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
         advance()
     }
 
-    override fun onDetachedFromWindow() { pause(); super.onDetachedFromWindow() }
+    override fun onDetachedFromWindow() {
+        enlargement?.dismiss()
+        pause()
+        super.onDetachedFromWindow()
+    }
 }

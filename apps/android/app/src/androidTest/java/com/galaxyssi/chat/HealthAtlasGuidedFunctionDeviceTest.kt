@@ -197,13 +197,14 @@ class HealthAtlasGuidedFunctionDeviceTest {
             assertSame(frame, figure.parent)
             assertSame(figure, legend.parent)
             assertSame(figure, diagram.parent)
-            assertTrue(caption.top + legend.top < diagram.bottom)
+            assertTrue(legend.top < diagram.bottom)
             val layout = figure as android.view.ViewGroup
             for (index in 0..3) {
                 val button = activity.view("atlas-process-stage-$index")
                 val bounds = Rect(0, 0, button.width, button.height)
                 layout.offsetDescendantRectToMyCoords(button, bounds)
-                assertTrue("Legend covers stage $index", bounds.bottom <= legend.top)
+                assertFalse("Note covers stage $index", Rect.intersects(bounds,
+                    Rect(legend.left, legend.top, legend.right, legend.bottom)))
             }
             assertEquals(View.GONE, references.visibility)
             assertSame(references, activity.view("atlas-source-physiology").parent)
@@ -243,10 +244,9 @@ class HealthAtlasGuidedFunctionDeviceTest {
             val caption = activity.view("atlas-function-caption") as TextView
             assertSame(frame, art.parent)
             assertSame(frame, subtitle.parent)
-            assertTrue(subtitle.top + caption.top > art.top)
-            assertTrue(subtitle.top + subtitle.paddingTop < art.bottom)
-            assertTrue(subtitle.bottom <= frame.height)
-            assertEquals(art.width, subtitle.width)
+            assertTrue(subtitle.top < art.bottom)
+            assertTrue(subtitle.right < art.left)
+            assertTrue(subtitle.right <= frame.width)
             assertTrue("Missing animation artwork", art.width > 0 && art.height > 0)
             val size = Rect(0, 0, frame.width, frame.height)
             val hashes = mutableSetOf<Int>()
@@ -259,8 +259,9 @@ class HealthAtlasGuidedFunctionDeviceTest {
                     art.phase = (chapter + .56f) / player.story.chapters.size
                     bitmap.eraseColor(0)
                     frame.draw(Canvas(bitmap))
-                    assertEquals(activity.getColor(R.color.health_atlas_film_ground),
-                        bitmap.getPixel(2, subtitle.top + subtitle.paddingTop + 2))
+                    val point = (frame as HealthAtlasFigureFrame).annotationTarget!!
+                    assertEquals(activity.getColor(R.color.health_overview_green),
+                        bitmap.getPixel(point.x.toInt(), point.y.toInt()))
                     val pixels = IntArray(art.width * art.height)
                     bitmap.getPixels(pixels, 0, art.width, art.left, art.top, art.width, art.height)
                     hashes += pixels.contentHashCode()
@@ -291,12 +292,78 @@ class HealthAtlasGuidedFunctionDeviceTest {
                 player.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
                 player.layout(0, 0, width, player.measuredHeight)
-                assertTrue(subtitle.top + subtitle.paddingTop < art.bottom)
-                assertEquals(frame.height, subtitle.bottom)
+                assertTrue(subtitle.top < art.bottom)
+                assertTrue(subtitle.bottom < frame.height)
+                assertTrue("The note should sit beside the image on a phone", subtitle.right < art.left)
                 assertTrue(caption.layout.height + caption.totalPaddingTop + caption.totalPaddingBottom <= caption.height)
                 if (chapter == 0) expectedHeight = frame.height else assertEquals(expectedHeight, frame.height)
             }
         }
+    }
+
+    @Test fun tappingTheInImageNoteShowsItsFullCaptionWithoutLosingTheCurrentChapter() = native { scenario ->
+        lateinit var expected: String
+        var phase = 0f
+        scenario.onActivity { activity ->
+            activity.view("atlas-hotspot-heart").performClick()
+            activity.view("atlas-tab-1").performClick()
+            repeat(3) { activity.view("atlas-function-next").performClick() }
+        }
+        runner.waitForIdleSync()
+        scenario.onActivity { activity ->
+            val player = activity.view("atlas-function-player") as HealthAtlasFunctionPlayer
+            val art = activity.view("atlas-function-heartbeat-art")
+            val note = activity.view("atlas-function-subtitles")
+            phase = player.phase
+            expected = (activity.view("atlas-function-caption") as TextView).text.toString()
+            val visible = Rect()
+            val play = activity.view("atlas-function-play")
+            assertTrue(play.getGlobalVisibleRect(visible))
+            assertEquals(play.height, visible.height())
+            assertTrue(note.right < art.left)
+            assertTrue(note.performClick())
+        }
+        runner.waitForIdleSync()
+        val deadline = SystemClock.elapsedRealtime() + 5000
+        fun fullCopyShown() = runner.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText(expected)
+            ?.any { it.isVisibleToUser && it.viewIdResourceName == "android:id/message" } == true
+        while (!fullCopyShown() && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(40)
+        assertTrue("The note did not show the full caption in the dialog", fullCopyShown())
+        runner.tapAtlasPopupItem(context.getString(android.R.string.ok))
+        runner.waitForIdleSync()
+        scenario.onActivity {
+            assertEquals(phase, (it.view("atlas-function-player") as HealthAtlasFunctionPlayer).phase, 0f)
+        }
+    }
+
+    @Test fun enlargingAnAnimationPreservesItsCurrentChapter() = native { scenario ->
+        lateinit var expected: String
+        var before = 0
+        var phase = 0f
+        scenario.onActivity { activity ->
+            activity.view("atlas-hotspot-heart").performClick()
+            activity.view("atlas-tab-1").performClick()
+            repeat(3) { activity.view("atlas-function-next").performClick() }
+        }
+        runner.waitForIdleSync()
+        scenario.onActivity { activity ->
+            val art = activity.view("atlas-function-heartbeat-art")
+            expected = art.contentDescription.toString()
+            before = art.width
+            phase = (activity.view("atlas-function-player") as HealthAtlasFunctionPlayer).phase
+            assertTrue(activity.view("atlas-function-menu").performClick())
+        }
+        runner.tapAtlasPopupItem(context.getString(R.string.health_body_zoom))
+        val deadline = SystemClock.elapsedRealtime() + 5000
+        fun enlarged() = runner.uiAutomation.rootInActiveWindow?.findAccessibilityNodeInfosByText(expected)
+            ?.any { it.isVisibleToUser && it.contentDescription?.toString() == expected &&
+                Rect().also(it::getBoundsInScreen).width() > before } == true
+        while (!enlarged() && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(40)
+        assertTrue("Enlarged diagram with the original chapter was not visible", enlarged())
+        assertTrue(runner.uiAutomation.performGlobalAction(
+            android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK))
+        runner.waitForIdleSync()
+        scenario.onActivity { assertEquals(phase, (it.view("atlas-function-player") as HealthAtlasFunctionPlayer).phase, 0f) }
     }
 
     @Test fun breathingShowsAMovingBarrierCloseUpWithTheSameCaptionClock() = native { scenario ->

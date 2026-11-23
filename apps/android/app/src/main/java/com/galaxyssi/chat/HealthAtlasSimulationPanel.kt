@@ -30,6 +30,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
     private val inlineFrame = Runnable { advanceInline() }
     private lateinit var play: ImageButton
     private var stage: TextView? = null
+    private var stageFigure: HealthAtlasFigureFrame? = null
     private var renderedStage = -1
     private lateinit var progress: SeekBar
     private lateinit var output: TextView
@@ -134,14 +135,13 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         if (item.id == "hair-follicles") note(R.string.health_atlas_context_hair_scope)
         val processArt = diagram ?: process
         val processFigure = if (retinalPath == null && endocrinePath == null && processArt != null) {
-            processArt.setPadding(processArt.paddingLeft, processArt.paddingTop, processArt.paddingRight,
-                processArt.paddingBottom + ui.dp(HealthAtlasFigureFrame.LEGEND_OVERLAP_DP))
-            val caption = ui.text("", 15f, bold = true).apply { tag = "atlas-simulation-stage" }
+            val caption = ui.text("", 14f, bold = true).apply { tag = "atlas-simulation-stage" }
             stage = caption
-            HealthAtlasFigureFrame(activity, processArt, "atlas-simulation-figure").apply {
+            HealthAtlasFigureFrame(activity, processArt, "atlas-simulation-figure",
+                activeNode = { processArt.findViewWithTag("atlas-process-stage-${values.stage}") }).apply {
                 reserveCaption(caption, mechanism.stages.indices.map(::stageCaption))
                 ui.add(legend, caption)
-            }
+            }.also { stageFigure = it }
         } else null
         (processFigure ?: processArt)?.let { ui.add(scene, it, 8) }
         if (circulation != null) note(R.string.health_atlas_circuit_scope, 8)
@@ -262,6 +262,7 @@ internal class HealthAtlasSimulationPanel(private val activity: Activity, privat
         if (renderedStage != values.stage) {
             renderedStage = values.stage
             stage?.text = stageCaption(values.stage)
+            stageFigure?.invalidate()
         }
         if (::progress.isInitialized) progress.progress = (values.phase * 1000).toInt()
     }

@@ -28,12 +28,16 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   enum Kind: String, CaseIterable, Sendable {
     case ventilation, renal, potassium, elbow, vessel, eye
     case middleEar
+    case nerveTransit
     case ejection
     #if GALAXYSSI_ATLAS_OXYGEN
     case oxygen
     #endif
     var inputs: [Input] {
       switch self {
+      case .nerveTransit:
+        return [.init(key: "nerve_transit_distance", range: 10...150, initial: 60, unit: "cm"),
+          .init(key: "nerve_transit_speed", range: 1...120, initial: 50, unit: "m/s")]
       case .ejection:
         return [.init(key: "ejection_stroke_volume", range: 0...180, initial: 70, unit: "mL"),
           .init(key: "ejection_residual_volume", range: 5...180, initial: 60, unit: "mL")]
@@ -75,6 +79,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     var axis: Int {
       if self == .elbow { return 0 }
       if self == .middleEar { return 0 }
+      if self == .nerveTransit { return 0 }
       if self == .ejection { return 0 }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return 0 }
@@ -86,6 +91,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       if self == .vessel { return "mL/min" }
       if self == .elbow { return "N" }
       if self == .middleEar { return "\u{00d7}" }
+      if self == .nerveTransit { return "ms" }
       if self == .ejection { return "%" }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return "%" }
@@ -97,6 +103,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       if self == .vessel { return 0...3 }
       if self == .elbow { return 0...2700 }
       if self == .middleEar { return 0...60 }
+      if self == .nerveTransit { return 0...1500 }
       if self == .ejection { return 0...100 }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return 0...100 }
@@ -105,6 +112,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var source: URL {
       switch self {
+      case .nerveTransit: return URL(string: "https://www.ncbi.nlm.nih.gov/books/NBK10921/")!
       case .ejection: return GalaxySSIHealthAtlasHeartSection.ejectionSource
       case .eye: return GalaxySSIHealthAtlasEyeOptics.source
       case .vessel: return GalaxySSIHealthAtlasVesselFlow.sources[0]
@@ -128,6 +136,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     static func forEntry(_ id: String) -> Self? {
       switch id {
+      case "cranial-nerves", "spinal-nerves", "peripheral-nerves": return .nerveTransit
       case "ventricles", "left-ventricle", "right-ventricle": return .ejection
       case "eye", "lens": return .eye
       case "blood-vessels", "arteries", "veins", "coronary-vessels": return .vessel
@@ -167,6 +176,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var result: Double { evaluate(inputs.indices.map(input)) }
   var companionValue: Double {
     switch kind {
+    case .nerveTransit: return 100 / input(1)
     case .ejection: return input(0) + input(1)
     case .eye: return eyeOptics!.targetPowerDiopters
     case .vessel: return vesselFlow!.resistanceMmHgMinutesPerMl
@@ -197,6 +207,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     kind == .eye ? GalaxySSIHealthAtlasEyeOptics(distanceMetres: input(0), powerDiopters: input(1)) : nil
   }
   var plotMaximum: Double {
+    if kind == .nerveTransit { return ceil(resultAt(axisRange.upperBound)! / 10) * 10 }
     if kind == .elbow { return ceil(resultAt(axisRange.upperBound)! / 100) * 100 }
     if kind == .vessel {
       let peak = resultAt(axisRange.upperBound)!
@@ -227,6 +238,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
+    case .nerveTransit: return 10 * values[0] / values[1]
     case .ejection: return 100 * values[0] / (values[0] + values[1])
     case .eye: return GalaxySSIHealthAtlasEyeOptics(distanceMetres: values[0], powerDiopters: values[1])!.offsetMm
     case .vessel: return GalaxySSIHealthAtlasVesselFlow(pressureMmHg: values[0], radiusMm: values[1],

@@ -53,13 +53,16 @@ internal class HealthAtlasPhysiologyPanel(private val activity: Activity, privat
         vocal?.let { ui.add(body, it, 8) }
         placenta?.let { ui.add(body, it, 8) }
         pleura?.let { ui.add(body, it, 8) }
+        fun illustratedNote(art: android.view.View, explanation: Int, key: String) {
+            ui.add(body, HealthAtlasFigureFrame(activity, art, key).apply {
+                ui.add(legend, ui.text(activity.getString(explanation), 13f))
+            }, 8)
+        }
         villus?.let {
-            ui.add(body, it, 8)
-            ui.add(body, ui.text(activity.getString(R.string.health_atlas_gut_section_area_views), 12f, muted = true), 4)
+            illustratedNote(it, R.string.health_atlas_gut_section_area_views, "atlas-villus-figure")
         }
         materialResponse?.let {
-            ui.add(body, it, 8)
-            ui.add(body, ui.text(activity.getString(it.diagramDescription), 12f, muted = true), 4)
+            illustratedNote(it, it.diagramDescription, "atlas-material-figure")
         }
         val axisKey = kind.inputs[kind.axis].key
         fun addChart() {

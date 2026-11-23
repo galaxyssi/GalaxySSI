@@ -22,8 +22,7 @@ internal class HealthAtlasAnatomyDialog(
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val labeled = if (plate.hasLabels) {
-            HealthAtlasLabeledImage(activity, plate, description, data, currentId,
-                legendInset = HealthAtlasFigureFrame.LEGEND_OVERLAP_DP) { item ->
+            HealthAtlasLabeledImage(activity, plate, description, data, currentId) { item ->
                 dismiss()
                 selected(item)
             }.also { it.image.tag = "atlas-fullscreen-image" }
@@ -50,7 +49,8 @@ internal class HealthAtlasAnatomyDialog(
         val root = ui.column().apply {
             setBackgroundColor(activity.getColor(R.color.page_bg))
             addView(ui.toolbar(R.string.health_body_title, close))
-            addView(HealthAtlasFigureFrame(activity, viewport, "atlas-fullscreen-figure").apply {
+            addView(HealthAtlasFigureFrame(activity, viewport, "atlas-fullscreen-figure",
+                subject = labeled?.image ?: target as? ImageView).apply {
                 HealthAtlasUi.illustrationNotes(activity, legend, description, null)
             }, LinearLayout.LayoutParams(-1, 0, 1f))
             addView(ui.line().apply {

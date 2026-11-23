@@ -102,6 +102,29 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertFalse(prompt.contains("Single-compartment"))
   }
 
+  func testNerveTeachingValuesAndAnatomyReferencesRemainSeparateAndScoped() throws {
+    let model = GalaxySSIHealthAtlasPhysiology(kind: .nerveTransit)
+    for language in ["en", "zh-Hans"] {
+      let teaching = GalaxySSIHealthAtlasPhysiologyText.context(model, language: language)
+      XCTAssertTrue(teaching.contains(model.kind.source.absoluteString))
+      XCTAssertFalse(teaching.contains("health_atlas_nerve_"))
+      let quantitative = Context.Quantitative(entryID: "spinal-nerves", context: teaching)
+      let simulation = try XCTUnwrap(Context.Simulation(entryID: "spinal-nerves", phase: 0.5, first: 0, second: 0))
+      let active = try XCTUnwrap(Context.prompt(anatomy: anatomy("spinal-nerves"), screen: .physiology,
+        simulation: simulation, quantitative: quantitative, locale: locale, text: text))
+      XCTAssertTrue(active.contains(teaching))
+      XCTAssertTrue(active.contains(anatomy().source.absoluteString))
+      for screen in [Context.Screen.structure, .function, .drugs, .aging] {
+        XCTAssertFalse(try XCTUnwrap(Context.prompt(anatomy: anatomy("spinal-nerves"), screen: screen,
+          simulation: simulation, quantitative: quantitative, locale: locale, text: text)).contains(teaching))
+      }
+      XCTAssertFalse(try XCTUnwrap(Context.prompt(anatomy: anatomy("brain"), screen: .physiology,
+        quantitative: quantitative, locale: locale, text: text)).contains(teaching))
+      XCTAssertNil(Context.prompt(anatomy: anatomy("spinal-nerves"), screen: .values,
+        quantitative: quantitative, locale: locale, text: text))
+    }
+  }
+
   func testValveContextAppearsOnlyForTheMatchingActiveSimulation() throws {
     let valves = Context.Anatomy(id: "mitral-valve", name: "Mitral valve", description: "Public valve description",
       mechanism: "Mitral opening and closure", stages: ["Fill", "Contract", "Eject", "Relax"],

@@ -3,7 +3,9 @@ package com.galaxyssi.chat
 import android.app.Activity
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.PointF
 import android.graphics.Typeface
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -74,8 +76,8 @@ internal object HealthAtlasUi {
             tag = "atlas-art-caption"
             setTextColor(activity.getColor(R.color.health_overview_green))
         })
-        item?.let { ui.add(legend, ui.text(it.description, 15f).apply { tag = "atlas-art-explanation" }, 3) }
-        ui.add(legend, ui.text(activity.getString(note), 12f, muted = true), 6)
+        item?.let { ui.add(legend, ui.text(it.description, 14f).apply { tag = "atlas-art-explanation" }, 3) }
+        ui.add(legend, ui.text(activity.getString(note), 11f, muted = true), 5)
     }
     fun row(activity: Activity, item: HealthAtlasItem, data: HealthBodyAtlas, action: () -> Unit): LinearLayout {
         val ui = HealthCenterViews(activity)
@@ -146,6 +148,7 @@ internal class HealthAtlasArtwork(
     private val activity: Activity, private val data: HealthBodyAtlas, private val item: HealthAtlasItem?,
     private val selected: (HealthAtlasItem) -> Unit, private val zoom: (HealthAtlasPlate, String) -> Unit,
     private val openSource: (String) -> Unit, initialView: String? = null,
+    private val steps: MutableMap<String, Int> = mutableMapOf(),
     private val viewChanged: (String) -> Unit = {},
 ) : LinearLayout(activity) {
     private val ui = HealthCenterViews(activity)
@@ -173,8 +176,7 @@ internal class HealthAtlasArtwork(
             val caption = plate.caption(activity, data, item)
             val description = (item?.name ?: activity.getString(R.string.health_atlas_whole)) + " · " + caption
             val labeled = if (plate.hasLabels) HealthAtlasLabeledImage(activity, plate,
-                description, data, item?.id,
-                legendInset = HealthAtlasFigureFrame.LEGEND_OVERLAP_DP, selected = selected) else null
+                description, data, item?.id, numbered = true, selected = selected) else null
             val art = object : FrameLayout(activity) {
                 override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
                     labeled?.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
@@ -186,7 +188,6 @@ internal class HealthAtlasArtwork(
                 setImageResource(resource); scaleType = ImageView.ScaleType.FIT_CENTER
                 contentDescription = description
                 tag = "atlas-art-image"
-                setPadding(ui.dp(12), 0, ui.dp(12), ui.dp(20))
             }
             val target = labeled ?: picture
             val viewport = GalaxySSIPinchZoomViewport(activity).apply { attach(target) }
@@ -216,8 +217,13 @@ internal class HealthAtlasArtwork(
                     }.apply { tag = "atlas-source-structure" })
                 }
             }
-            addView(HealthAtlasFigureFrame(activity, art, "atlas-structure-figure", controls).apply {
-                HealthAtlasUi.illustrationNotes(activity, legend, caption, item)
+            val focus = plate.markers.firstOrNull { it.id == item?.id }?.let { PointF(it.x, it.y) }
+                ?: if (plate.owner == "cell-pancreatic-beta-cell") PointF(.82f, .44f) else null
+            var subjectPoint = focus
+            addView(HealthAtlasFigureFrame(activity, art, "atlas-structure-figure", controls,
+                subject = picture, subjectPoint = { subjectPoint }).apply {
+                HealthAtlasUi.illustrationNotes(activity, legend, if (item == null) description else caption, item)
+                if (labeled != null) bindSteps(this, plate, labeled, focus) { subjectPoint = it }
             }, LayoutParams(-1, -2))
         } else {
             val entry = requireNotNull(item)
@@ -229,10 +235,71 @@ internal class HealthAtlasArtwork(
                 setPadding(ui.dp(36), ui.dp(22), ui.dp(36), ui.dp(30))
                 importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
             }
-            addView(HealthAtlasFigureFrame(activity, symbol, "atlas-structure-figure").apply {
+            addView(HealthAtlasFigureFrame(activity, symbol, "atlas-structure-figure", subject = symbol).apply {
                 HealthAtlasUi.illustrationNotes(activity, legend, entry.name, entry, R.string.health_atlas_symbol_only)
             }, LayoutParams(-1, -2))
         }
     }
+
+    private fun bindSteps(figure: HealthAtlasFigureFrame, plate: HealthAtlasPlate, labeled: HealthAtlasLabeledImage,
+        overviewPoint: PointF?, setPoint: (PointF?) -> Unit) {
+        val key = "${item?.id.orEmpty()}|${plate.viewKey.orEmpty()}"
+        val landmarks = (plate.markers.mapNotNull { marker ->
+            data[marker.id]?.let { Triple(marker, it.name, it.description) }
+        } + plate.features.map { Triple(it.marker, activity.getString(it.title), activity.getString(it.explanation)) })
+            .sortedBy { it.first.y }
+        if (landmarks.isEmpty()) return
+        val title = figure.findViewWithTag<TextView>("atlas-art-caption")
+        val body = figure.findViewWithTag<TextView>("atlas-art-explanation") ?: ui.text(
+            activity.getString(R.string.health_atlas_body_overview), 14f,
+        ).apply {
+            figure.legend.addView(this, 1, LayoutParams(-1, -2).apply { topMargin = ui.dp(3) })
+        }
+        val titles = listOf(title.text.toString()) + landmarks.map { it.second }
+        val descriptions = listOf(body.text.toString()) + landmarks.map { it.third }
+        body.maxLines = 5
+        body.ellipsize = TextUtils.TruncateAt.END
+        figure.reserveCaption(title, titles)
+        figure.reserveCaption(body, descriptions)
+        var step = (steps[key] ?: 0).coerceIn(0, landmarks.size)
+        val position = ui.text("", 11f, muted = true).apply {
+            gravity = Gravity.CENTER
+            tag = "atlas-structure-step"
+            accessibilityLiveRegion = ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        lateinit var previous: View
+        lateinit var next: View
+        fun show(index: Int) {
+            step = index.coerceIn(0, landmarks.size)
+            if (step == 0) steps.remove(key) else steps[key] = step
+            val mark = landmarks.getOrNull(step - 1)?.first
+            setPoint(mark?.let { PointF(it.x, it.y) } ?: overviewPoint)
+            labeled.highlightedId = mark?.id
+            title.text = titles[step]
+            body.text = descriptions[step]
+            position.text = if (step == 0) activity.getString(R.string.health_atlas_step_overview)
+                else activity.getString(R.string.health_atlas_step_position, step, landmarks.size)
+            previous.isEnabled = step > 0
+            next.isEnabled = step < landmarks.size
+            previous.alpha = if (previous.isEnabled) 1f else .4f
+            next.alpha = if (next.isEnabled) 1f else .4f
+            figure.invalidate()
+        }
+        ui.add(figure.legend, position, 5)
+        figure.legend.addView(ui.line().apply {
+            previous = ui.icon(R.drawable.ic_navigation_back, R.string.health_body_previous_step) { show(step - 1) }
+                .apply { tag = "atlas-structure-previous" }
+            next = ui.icon(R.drawable.ic_navigation_back, R.string.health_body_next_step) { show(step + 1) }
+                .apply { tag = "atlas-structure-next"; rotation = 180f }
+            addView(previous, LayoutParams(0, ui.dp(48), 1f))
+            addView(next, LayoutParams(0, ui.dp(48), 1f))
+        }, LayoutParams(-1, -2))
+        body.setOnClickListener {
+            android.app.AlertDialog.Builder(activity).setTitle(titles[step]).setMessage(descriptions[step])
+                .setPositiveButton(android.R.string.ok, null).show()
+        }
+        show(step)
+    }
+
     override fun onDetachedFromWindow() { layers?.dismiss(); layers = null; super.onDetachedFromWindow() }
 }
