@@ -2,7 +2,7 @@ import SwiftUI
 
 enum GalaxySSIHealthAtlasFunctionRendering {
   // Expand only when each source renderer has its own native implementation.
-  static let implemented: Set<String> = ["GLUCOSE", "HEARTBEAT", "BREATHING", "HEARING", "NEPHRON", "DIGESTION", "COLON", "VISION", "LIGHT_ADAPTATION", "MUSCLE_MOTION", "BONE_REMODELING", "LYMPH_RETURN", "ANTIBODY_RESPONSE", "INSULIN_SECRETION", "GLUCAGON_RESPONSE", "SWEAT_COOLING", "SYNAPTIC_SIGNAL", "MYELIN_SIGNAL", "THYROID_FEEDBACK", "EPIDERMAL_BARRIER", "SPERM_TRANSPORT", "OVUM_TRANSPORT", "OLFACTION", "TASTE_SIGNAL"]
+  static let implemented: Set<String> = ["GLUCOSE", "HEARTBEAT", "BREATHING", "HEARING", "NEPHRON", "DIGESTION", "COLON", "VISION", "LIGHT_ADAPTATION", "MUSCLE_MOTION", "BONE_REMODELING", "LYMPH_RETURN", "ANTIBODY_RESPONSE", "INSULIN_SECRETION", "GLUCAGON_RESPONSE", "SWEAT_COOLING", "SYNAPTIC_SIGNAL", "MYELIN_SIGNAL", "THYROID_FEEDBACK", "EPIDERMAL_BARRIER", "SPERM_TRANSPORT", "OVUM_TRANSPORT", "OLFACTION", "TASTE_SIGNAL", "TOUCH_SIGNAL", "VESTIBULAR_BALANCE"]
 }
 
 struct GalaxySSIHealthAtlasFunctionArtwork: View {
@@ -26,6 +26,7 @@ struct GalaxySSIHealthAtlasFunctionArtwork: View {
     case "EPIDERMAL_BARRIER": GalaxySSIHealthAtlasBarrierView(story: story, phase: phase, language: language)
     case "SPERM_TRANSPORT", "OVUM_TRANSPORT": GalaxySSIHealthAtlasGameteView(story: story, phase: phase, language: language)
     case "OLFACTION", "TASTE_SIGNAL": GalaxySSIHealthAtlasChemicalSenseView(story: story, phase: phase, language: language)
+    case "TOUCH_SIGNAL", "VESTIBULAR_BALANCE": GalaxySSIHealthAtlasMotionSenseView(story: story, phase: phase, language: language)
     default: EmptyView()
     }
   }

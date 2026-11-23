@@ -1492,6 +1492,48 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testMotionSensePreservesLoadReleaseFluidAndCounterRotation() throws {
+    typealias Motion = GalaxySSIHealthAtlasMotionSenseMotion
+    XCTAssertEqual(Motion.touchLoad(step: 0, time: 0.31), 0)
+    XCTAssertEqual(Motion.touchLoad(step: 0, time: 1), 1)
+    XCTAssertEqual(Motion.touchLoad(step: 1, time: 0), 0.66)
+    XCTAssertEqual(Motion.touchLoad(step: 1, time: 1), 0.86, accuracy: 1e-12)
+    XCTAssertEqual(Motion.touchLoad(step: 2, time: 1), 0.94, accuracy: 1e-12)
+    XCTAssertEqual(Motion.touchLoad(step: 4, time: 0), 0.91)
+    XCTAssertEqual(Motion.touchLoad(step: 4, time: 0.74), 0)
+    XCTAssertEqual(Motion.touchLoad(step: 4, time: 1), 0)
+    XCTAssertEqual(Motion.touchLift(step: 0, time: 0), 22)
+    XCTAssertEqual(Motion.touchLift(step: 0, time: 0.31), 0)
+    XCTAssertEqual(Motion.touchLift(step: 4, time: 0.74), 0)
+    XCTAssertEqual(Motion.touchLift(step: 4, time: 1), 28, accuracy: 1e-12)
+    XCTAssertEqual(Motion.deflection(179, load: 0.5), 14.5)
+    XCTAssertEqual(Motion.deflection(237, load: 0.5), 14.5 / exp(1), accuracy: 1e-12)
+    XCTAssertEqual(Motion.pressure(sample: 0), 0)
+    XCTAssertEqual(Motion.pressure(sample: 41), 42)
+    XCTAssertEqual(Motion.pressure(sample: 255), 42)
+    XCTAssertFalse(Motion.spike(sample: 27))
+    XCTAssertTrue(Motion.spike(sample: 33))
+    XCTAssertTrue(Motion.spike(sample: 34))
+    XCTAssertFalse(Motion.spike(sample: 35))
+    XCTAssertTrue(Motion.spike(sample: 93))
+    XCTAssertEqual(Motion.relativeFluid(0.5), -16)
+    XCTAssertEqual(Motion.relativeFluid(1), 0, accuracy: 1e-12)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      XCTAssertEqual(Motion.headHeading(phase) + Motion.gazeCounterRotation(phase), 0)
+      XCTAssertEqual(Motion.touchLoad(step: 3, time: phase), 0.91)
+      XCTAssertTrue((-16...0).contains(Motion.relativeFluid(phase)))
+    }
+    XCTAssertTrue(Motion(courseID: "VESTIBULAR_BALANCE", chapter: 0, fraction: 0).balance)
+    XCTAssertFalse(Motion(courseID: "TOUCH_SIGNAL", chapter: 0, fraction: 0).balance)
+    XCTAssertEqual(Motion(courseID: "TOUCH_SIGNAL", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "VESTIBULAR_BALANCE", chapter: 20, fraction: .infinity).fraction, 0)
+    for route in [Motion.canal, Motion.lateralCanal, Motion.posteriorCanal, Motion.touchNerve] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
