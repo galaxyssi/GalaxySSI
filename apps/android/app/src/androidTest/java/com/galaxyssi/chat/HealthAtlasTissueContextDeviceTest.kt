@@ -217,10 +217,12 @@ class HealthAtlasTissueContextDeviceTest {
         capture("terminal-bronchiole", scenario.localized(R.string.health_atlas_bronchioles_plate_caption))
         scenario.onActivity {
             it.view("atlas-tab-1").performClick()
-            it.view("atlas-related-lesson-cell-club-cell").performClick()
+        }
+        scenario.openAtlasRelatedLesson("cell-club-cell")
+        scenario.onActivity {
             assertNotNull(it.view("atlas-function-club-cell-airway-art"))
             it.onBackPressed()
-            assertNotNull(it.view("atlas-related-lesson-cell-club-cell"))
+            assertNotNull(it.view("atlas-function-menu"))
         }
     }
 
@@ -402,7 +404,9 @@ class HealthAtlasTissueContextDeviceTest {
         scenario.onActivity { activity ->
             activity.view("atlas-tab-1").performClick()
             assertNotNull(activity.view("atlas-function-ankle-mortise-art"))
-            activity.view("atlas-related-lesson-tibia").performClick()
+        }
+        scenario.openAtlasRelatedLesson("tibia")
+        scenario.onActivity { activity ->
             activity.onBackPressed()
             assertNotNull(activity.view("atlas-function-ankle-mortise-art"))
         }
@@ -527,7 +531,9 @@ class HealthAtlasTissueContextDeviceTest {
         scenario.onActivity { activity ->
             activity.view("atlas-tab-1").performClick()
             assertNotNull(activity.view("atlas-function-thoracic-frame-art"))
-            activity.view("atlas-related-lesson-lungs").performClick()
+        }
+        scenario.openAtlasRelatedLesson("lungs")
+        scenario.onActivity { activity ->
             activity.onBackPressed()
             assertNotNull(activity.view("atlas-function-thoracic-frame-art"))
         }

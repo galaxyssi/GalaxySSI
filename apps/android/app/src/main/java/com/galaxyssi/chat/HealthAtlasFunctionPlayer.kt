@@ -13,6 +13,7 @@ import android.widget.TextView
 
 internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAtlasFunctionStory,
     initial: Float, openSource: (String) -> Unit, showTitle: Boolean = true,
+    relatedLessons: List<Pair<String, () -> Unit>> = emptyList(),
     private val onPlay: () -> Unit = {}) : LinearLayout(activity) {
     private val ui = HealthCenterViews(activity)
     private val art = story.createArt(activity)
@@ -92,6 +93,12 @@ internal class HealthAtlasFunctionPlayer(activity: Activity, val story: HealthAt
                         true
                     }
                     menu.add(R.string.health_atlas_reset).setOnMenuItemClickListener { seek(0f); true }
+                    if (relatedLessons.isNotEmpty()) {
+                        val related = menu.addSubMenu(R.string.health_atlas_related_lessons)
+                        relatedLessons.forEach { (label, open) ->
+                            related.add(label).setOnMenuItemClickListener { open(); true }
+                        }
+                    }
                     menu.add(R.string.health_atlas_evidence).setOnMenuItemClickListener {
                         AlertDialog.Builder(activity).setTitle(R.string.health_atlas_evidence)
                             .setMessage(context.getString(story.scope))
