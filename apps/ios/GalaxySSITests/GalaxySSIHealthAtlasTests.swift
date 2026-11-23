@@ -1635,6 +1635,39 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertGreaterThan(Motion.strandFraction(0, index: 0), 0)
     XCTAssertEqual(Motion.strandFraction(0, index: 4), 0)
   }
+  func testCartilageContactSmoothingAndShoulderFlow() throws {
+    typealias Motion = GalaxySSIHealthAtlasCartilageMotion
+    XCTAssertEqual(Motion(step: 0, fraction: 1).depth, 0)
+    XCTAssertEqual(Motion(step: 1, fraction: 0).travel, 0)
+    XCTAssertEqual(Motion(step: 1, fraction: 1).depth, 7)
+    XCTAssertEqual(Motion(step: 1, fraction: 1).pressure, 1)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).depth, 21)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).travel, 37)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).pressure, 0.17, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).depth, 17)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).travel, 0)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).depth, 0)
+    XCTAssertEqual(Motion(step: 1, fraction: .nan).depth, 0)
+    XCTAssertEqual(Motion.faceY(180, depth: 21), 205)
+    XCTAssertEqual(Motion.matrixY(180, depth: 21, fraction: 1), Motion.baseY(180))
+    XCTAssertEqual(Motion.matrixY(180, depth: 21, fraction: 0), Motion.faceY(180, depth: 21))
+    for depth in [0.1, 7.0, 17, 21] {
+      XCTAssertEqual(Motion.faceY(32, depth: depth), Motion.faceY(32, depth: 0))
+      for side in [-1, 1] {
+        let route = Motion.flowRoute(side: side, depth: depth)
+        let exit = 180 + Double(side) * 110
+        XCTAssertEqual(route.commands.first?.points.last?.y, Motion.faceY(exit, depth: depth) - 8)
+        XCTAssertTrue(route.commands.allSatisfy { $0.fits(width: 360, height: 360) })
+      }
+      let edge = min(3, depth * 0.5), x = 180 + sqrt(depth / 0.0029)
+      XCTAssertEqual(Motion.faceY(x, depth: depth), Motion.faceY(x, depth: 0) + edge / 4, accuracy: 1e-10)
+    }
+    XCTAssertEqual(Motion.flowAlpha(0.875, returning: true), 127)
+    XCTAssertEqual(Motion.flowAlpha(1, returning: true), 0)
+    XCTAssertEqual(Motion.flowAlpha(1, returning: false), 255)
+    XCTAssertEqual(Motion.flowFraction(0, index: 0), 0.04)
+    XCTAssertEqual(Motion.flowFraction(0, index: 1), 0.5, accuracy: 1e-12)
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
