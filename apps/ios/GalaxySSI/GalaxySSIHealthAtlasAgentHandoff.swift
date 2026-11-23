@@ -45,7 +45,8 @@ enum GalaxySSIHealthAtlasQuestion {
         description: GalaxySSIHealthAtlasText.get(item.description, language),
         mechanism: GalaxySSIHealthAtlasText.get(atlas.model(item).title, language),
         stages: atlas.model(item).stages.map { GalaxySSIHealthAtlasText.get($0, language) }, source: atlas.model(item).source,
-        tissueContext: atlas.tissueContext(item, language: language))
+        tissueContext: atlas.tissueContext(item, language: language),
+        valveContext: GalaxySSIHealthAtlasHeartSection.context(item.id, stage: selection.simulation.stage, atlas: atlas, language: language))
     }
     var quantitative: GalaxySSIHealthAtlasAgentContext.Quantitative? = nil
     #if GALAXYSSI_ATLAS_PHYSIOLOGY
@@ -95,6 +96,10 @@ enum GalaxySSIHealthAtlasQuestion {
     if ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
        let counts = GalaxySSIHealthAtlasGermline.counts(entry.id, stage: selection.simulation.stage) {
       prompt += "\n" + GalaxySSIHealthAtlasGermline.context(counts, language: language)
+    }
+    if ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
+       let context = GalaxySSIHealthAtlasHeartSection.context(entry.id, stage: selection.simulation.stage, atlas: atlas, language: language) {
+      prompt += "\n" + context
     }
     if research {
       switch selection.research {

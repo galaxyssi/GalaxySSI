@@ -14,6 +14,7 @@ enum GalaxySSIHealthAtlasAgentContext {
     let stages: [String]
     let source: URL
     var tissueContext: [String] = []
+    var valveContext: String? = nil
   }
   struct Simulation {
     let entryID: String
@@ -77,6 +78,7 @@ enum GalaxySSIHealthAtlasAgentContext {
           lines += [t("circuit_scope"), t("circuit_path"), GalaxySSIHealthAtlasCirculation.source.absoluteString]
         }
         lines.append(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4), anatomy.stages[simulation.stage]))
+        if let context = anatomy.valveContext { lines.append(context) }
         if let counts = GalaxySSIHealthAtlasGermline.counts(anatomy.id, stage: simulation.stage) {
           lines.append(GalaxySSIHealthAtlasGermline.context(counts, text: t))
         }

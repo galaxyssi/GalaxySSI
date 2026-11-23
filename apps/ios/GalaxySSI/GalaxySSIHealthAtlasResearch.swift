@@ -21,7 +21,7 @@ struct GalaxySSIHealthAtlasResearch: View {
         }.pickerStyle(.segmented)
         switch selection.wrappedValue.research {
         case .physiology:
-          GalaxySSIHealthAtlasSimulationPanel(entry: entry, model: atlas.model(entry), simulation: selection.simulation,
+          GalaxySSIHealthAtlasSimulationPanel(atlas: atlas, entry: entry, model: atlas.model(entry), simulation: selection.simulation,
             physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented,
             destination: { id in
               if let target = atlas.entry(id), depth < 32 {

@@ -28,7 +28,8 @@ struct GalaxySSIHealthAtlasArtwork: View {
     if views.count > 1 {
       Picker(t("illustration"), selection: artworkView) {
         ForEach(views) { view in
-          Text(t(view.viewKey?.hasSuffix("posterior") == true ? "view_back" : "view_front")).tag(view.viewKey ?? "")
+          Text(view.selectorLabel.map { GalaxySSIHealthAtlasText.get($0, language) } ??
+            t(view.viewKey?.hasSuffix("posterior") == true ? "view_back" : "view_front")).tag(view.viewKey ?? "")
         }
       }.pickerStyle(.segmented).accessibilityIdentifier("atlas-artwork-view")
     }

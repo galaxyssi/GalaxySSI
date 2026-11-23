@@ -22,7 +22,8 @@ struct GalaxySSIHealthAtlasDetail: View {
         ScrollView {
           VStack(alignment: .leading, spacing: 18) {
             if selection.wrappedValue.tab != .structure &&
-              (selection.wrappedValue.tab != .simulation || !GalaxySSIHealthAtlasCirculation.supports(entry.id)) {
+              (selection.wrappedValue.tab != .simulation ||
+                (!GalaxySSIHealthAtlasCirculation.supports(entry.id) && !GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id))) {
               GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
             }
             if selection.wrappedValue.tab != .structure { Text(GalaxySSIHealthAtlasText.get(entry.description, language)) }
@@ -36,7 +37,7 @@ struct GalaxySSIHealthAtlasDetail: View {
               Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
               Button(t("simulation")) { selection.wrappedValue.tab = .simulation }
             } else {
-              GalaxySSIHealthAtlasSimulationPanel(entry: entry, model: atlas.model(entry), simulation: selection.simulation,
+              GalaxySSIHealthAtlasSimulationPanel(atlas: atlas, entry: entry, model: atlas.model(entry), simulation: selection.simulation,
                 physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented,
                 destination: { id in
                   if let target = atlas.entry(id), depth < 32 {

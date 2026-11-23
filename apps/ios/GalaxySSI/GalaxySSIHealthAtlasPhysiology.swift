@@ -29,6 +29,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case ventilation, renal, potassium, elbow, vessel, eye
     case middleEar
     case nerveTransit
+    case ejection
     #if GALAXYSSI_ATLAS_OXYGEN
     case oxygen
     #endif
@@ -37,6 +38,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       case .nerveTransit:
         return [.init(key: "nerve_transit_distance", range: 10...150, initial: 60, unit: "cm"),
           .init(key: "nerve_transit_speed", range: 1...120, initial: 50, unit: "m/s")]
+      case .ejection:
+        return [.init(key: "ejection_stroke_volume", range: 0...180, initial: 70, unit: "mL"),
+          .init(key: "ejection_residual_volume", range: 5...180, initial: 60, unit: "mL")]
       case .eye:
         return [.init(key: "eye_object_distance", range: 25...600, initial: 100, scale: 100, unit: "m"),
           .init(key: "eye_power", range: 5500...6500, initial: 5982, scale: 100, unit: "D")]
@@ -76,6 +80,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       if self == .elbow { return 0 }
       if self == .middleEar { return 0 }
       if self == .nerveTransit { return 0 }
+      if self == .ejection { return 0 }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return 0 }
       #endif
@@ -87,6 +92,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       if self == .elbow { return "N" }
       if self == .middleEar { return "\u{00d7}" }
       if self == .nerveTransit { return "ms" }
+      if self == .ejection { return "%" }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return "%" }
       #endif
@@ -98,6 +104,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       if self == .elbow { return 0...2700 }
       if self == .middleEar { return 0...60 }
       if self == .nerveTransit { return 0...1500 }
+      if self == .ejection { return 0...100 }
       #if GALAXYSSI_ATLAS_OXYGEN
       if self == .oxygen { return 0...100 }
       #endif
@@ -106,6 +113,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     var source: URL {
       switch self {
       case .nerveTransit: return URL(string: "https://www.ncbi.nlm.nih.gov/books/NBK10921/")!
+      case .ejection: return GalaxySSIHealthAtlasHeartSection.ejectionSource
       case .eye: return GalaxySSIHealthAtlasEyeOptics.source
       case .vessel: return GalaxySSIHealthAtlasVesselFlow.sources[0]
       case .elbow: return GalaxySSIHealthAtlasElbow.source
@@ -129,6 +137,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     static func forEntry(_ id: String) -> Self? {
       switch id {
       case "cranial-nerves", "spinal-nerves", "peripheral-nerves": return .nerveTransit
+      case "ventricles", "left-ventricle", "right-ventricle": return .ejection
       case "eye", "lens": return .eye
       case "blood-vessels", "arteries", "veins", "coronary-vessels": return .vessel
       case "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna": return .elbow
@@ -168,6 +177,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var companionValue: Double {
     switch kind {
     case .nerveTransit: return 100 / input(1)
+    case .ejection: return input(0) + input(1)
     case .eye: return eyeOptics!.targetPowerDiopters
     case .vessel: return vesselFlow!.resistanceMmHgMinutesPerMl
     case .elbow: return elbowForces!.jointDown
@@ -229,6 +239,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
     case .nerveTransit: return 10 * values[0] / values[1]
+    case .ejection: return 100 * values[0] / (values[0] + values[1])
     case .eye: return GalaxySSIHealthAtlasEyeOptics(distanceMetres: values[0], powerDiopters: values[1])!.offsetMm
     case .vessel: return GalaxySSIHealthAtlasVesselFlow(pressureMmHg: values[0], radiusMm: values[1],
       lengthMm: values[2], viscosityMilliPascalSeconds: values[3])!.flowMlPerMinute

@@ -25,9 +25,9 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertEqual(Circuit.stage(1), 3)
     XCTAssertEqual(Circuit.fraction(1), 1)
     XCTAssertEqual(Circuit.stage(0.5), 2)
-    for id in ["heart", "cardio", "atria", "ventricles", "heart-valves", "coronary-vessels",
+    for id in ["heart", "cardio", "atria", "ventricles", "coronary-vessels",
       "blood-vessels", "arteries", "veins", "capillaries", "blood"] { XCTAssertTrue(Circuit.supports(id)) }
-    for id in ["lungs", "brain", "cell-erythrocyte"] { XCTAssertFalse(Circuit.supports(id)) }
+    for id in ["lungs", "brain", "cell-erythrocyte", "heart-valves"] { XCTAssertFalse(Circuit.supports(id)) }
     let simulation = try XCTUnwrap(Context.Simulation(entryID: "heart", phase: 0.5, first: 70, second: 70))
     for screen in [Context.Screen.simulation, .physiology] {
       let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: screen,
@@ -75,6 +75,25 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
       XCTAssertNil(Context.prompt(anatomy: anatomy("spinal-nerves"), screen: .values,
         quantitative: quantitative, locale: locale, text: text))
     }
+  }
+
+  func testValveContextAppearsOnlyForTheMatchingActiveSimulation() throws {
+    let valves = Context.Anatomy(id: "mitral-valve", name: "Mitral valve", description: "Public valve description",
+      mechanism: "Mitral opening and closure", stages: ["Fill", "Contract", "Eject", "Relax"],
+      source: GalaxySSIHealthAtlasHeartSection.cycleSource, valveContext: "ACTIVE_MITRAL_CLOSED")
+    let simulation = try XCTUnwrap(Context.Simulation(entryID: valves.id, phase: 0.5, first: 0, second: 0))
+    for screen in [Context.Screen.simulation, .physiology] {
+      XCTAssertTrue(try XCTUnwrap(Context.prompt(anatomy: valves, screen: screen, simulation: simulation,
+        locale: locale, text: text)).contains("ACTIVE_MITRAL_CLOSED"))
+    }
+    for screen in [Context.Screen.structure, .function, .drugs, .aging] {
+      XCTAssertFalse(try XCTUnwrap(Context.prompt(anatomy: valves, screen: screen, simulation: simulation,
+        locale: locale, text: text)).contains("ACTIVE_MITRAL_CLOSED"))
+    }
+    let foreign = try XCTUnwrap(Context.Simulation(entryID: "heart", phase: 0.5, first: 70, second: 70))
+    XCTAssertFalse(try XCTUnwrap(Context.prompt(anatomy: valves, screen: .simulation, simulation: foreign,
+      locale: locale, text: text)).contains("ACTIVE_MITRAL_CLOSED"))
+    XCTAssertNil(Context.prompt(anatomy: valves, screen: .values, simulation: simulation, locale: locale, text: text))
   }
 
   func testTissueRelationshipContextIsBoundToTheSelectedAnatomyAndExcludedFromValues() throws {

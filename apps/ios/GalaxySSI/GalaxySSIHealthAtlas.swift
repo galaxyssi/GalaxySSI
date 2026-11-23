@@ -52,6 +52,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try ExtendedCellPack.read(bundle: bundle) { result = try pack.applying(to: result) }
     if let pack = try EarPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try TissuePack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try HeartSectionPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try OverviewPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     return result
   }
@@ -137,6 +138,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     let markers: [Marker]
     var source: URL? = nil
     var viewKey: String? = nil
+    var selectorLabel: String? = nil
   }
   /// An additive, bundled-only asset pack can land independently of the atlas UI.
   struct ArtworkPack: Decodable {
@@ -234,6 +236,8 @@ struct GalaxySSIHealthAtlas: Decodable {
       }) else { throw Invalid.catalogue }
   }
   func views(for id: String?) -> [Plate] {
+    if id == "heart" { return [GalaxySSIHealthAtlasHeartSection.exterior, GalaxySSIHealthAtlasHeartSection.section] }
+    if let id, let plate = GalaxySSIHealthAtlasHeartSection.plate(for: id) { return [plate] }
     if GalaxySSIHealthAtlasMiddleEar.ids.contains(id ?? "") { return [GalaxySSIHealthAtlasMiddleEar.plate] }
     if let pack = try? MusculoskeletalPack.bundled.get() {
       let views = pack.plates.filter { $0.entryIDs.contains(id ?? "") }
@@ -268,10 +272,8 @@ struct GalaxySSIHealthAtlas: Decodable {
         aspectRatio: 2.0 / 3.0, markers: [Marker(id: "brain", x: 0.5, y: 0.045), Marker(id: "heart", x: 0.54, y: 0.28),
           Marker(id: "liver", x: 0.45, y: 0.34), Marker(id: "small-intestine", x: 0.51, y: 0.44)])
     }
-    if ["heart", "cardio", "atria", "ventricles", "heart-valves", "coronary-vessels"].contains(id ?? "") {
-      return Plate(id: "heart", asset: "HealthAtlasHeart", owner: "heart", viewLabel: "health_atlas_illustration", entryIDs: [id!],
-        aspectRatio: 3.0 / 4.0, markers: [Marker(id: "atria", x: 0.28, y: 0.46), Marker(id: "coronary-vessels", x: 0.57, y: 0.68),
-          Marker(id: "ventricles", x: 0.61, y: 0.84)])
+    if ["heart", "cardio", "atria", "ventricles", "coronary-vessels"].contains(id ?? "") {
+      return GalaxySSIHealthAtlasHeartSection.exterior
     }
     if id == "cell-pancreatic-beta-cell" {
       return Plate(id: "beta-cell", asset: "HealthAtlasBetaCell", owner: id, viewLabel: "health_atlas_illustration",
