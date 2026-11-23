@@ -2,7 +2,7 @@
 
 ## Review Scope
 - Ports Android #4366 at `3aa202bc663c6d15bc8085a6af965b461f620899`.
-- Formal non-draft PR, base main. Predecessor iOS #4487 is merged; synchronize latest main before publication.
+- Formal non-draft PR, base main. Predecessor iOS #4487 is merged; synchronized main at `80564a40d` before publication. No preceding feature changes remain in the main-based diff.
 - New scope: two painted plates, four recalibrated features, three native lesson renderers, shared playback integration, bilingual scope/stage labels and scoped public Agent context.
 - iOS only. No Android/Desktop edits, version bump, anatomy graph/model equations, personal-health storage or IPA changes.
 
