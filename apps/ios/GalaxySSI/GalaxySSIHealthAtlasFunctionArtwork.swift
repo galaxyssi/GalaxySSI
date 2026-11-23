@@ -2,7 +2,7 @@ import SwiftUI
 
 enum GalaxySSIHealthAtlasFunctionRendering {
   // Expand only when each source renderer has its own native implementation.
-  static let implemented: Set<String> = ["GLUCOSE", "HEARTBEAT", "BREATHING", "HEARING"]
+  static let implemented: Set<String> = ["GLUCOSE", "HEARTBEAT", "BREATHING", "HEARING", "NEPHRON"]
 }
 
 struct GalaxySSIHealthAtlasFunctionArtwork: View {
@@ -15,6 +15,7 @@ struct GalaxySSIHealthAtlasFunctionArtwork: View {
     case "HEARTBEAT": GalaxySSIHealthAtlasHeartbeatView(story: story, phase: phase, language: language)
     case "BREATHING": GalaxySSIHealthAtlasBreathingView(story: story, phase: phase, language: language)
     case "HEARING": GalaxySSIHealthAtlasHearingView(story: story, phase: phase, language: language)
+    case "NEPHRON": GalaxySSIHealthAtlasNephronView(story: story, phase: phase, language: language)
     default: EmptyView()
     }
   }

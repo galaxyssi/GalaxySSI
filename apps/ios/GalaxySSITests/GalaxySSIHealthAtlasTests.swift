@@ -1090,6 +1090,37 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       }
     }
   }
+  func testNephronHasStageSpecificTransportAndTallArtworkRoutes() throws {
+    typealias Motion = GalaxySSIHealthAtlasNephronMotion
+    XCTAssertEqual(Motion.Stage.allCases.count, 5)
+    let counts = [[5, 2], [5, 2], [8, 2, 2], [7, 3], [2, 7]]
+    let inks: [[Motion.Ink]] = [[.blood, .crosses], [.fluid, .crosses], [.fluid, .crosses, .salt],
+      [.fluid, .secreted], [.crosses, .salt]]
+    for stage in Motion.Stage.allCases {
+      let motion = Motion(chapter: stage.rawValue, fraction: 0.6)
+      XCTAssertEqual(motion.streams.map(\.count), counts[stage.rawValue])
+      XCTAssertEqual(motion.streams.map(\.ink), inks[stage.rawValue])
+      XCTAssertEqual(motion.vessel != nil, stage == .proximal || stage == .distal)
+      for stream in motion.streams {
+        let positions = motion.positions(count: stream.count)
+        XCTAssertEqual(positions.count, stream.count)
+        XCTAssertTrue(positions.allSatisfy { (0..<1).contains($0) })
+        for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+          let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(stream.route, position: phase, width: 1173, height: 1341))
+          XCTAssertTrue((0...1173).contains(sample.point.x) && (0...1341).contains(sample.point.y))
+          XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+        }
+      }
+    }
+    XCTAssertEqual(Motion.distal.commands.count, 8)
+    XCTAssertEqual(Motion.loop.commands.count, 5)
+    XCTAssertEqual(Motion(chapter: 4, fraction: 0).positions(count: 2), [0, 0.5])
+    XCTAssertEqual(Motion(chapter: 4, fraction: 1).positions(count: 2)[0], 0.3, accuracy: 1e-12)
+    XCTAssertTrue(Motion(chapter: 0, fraction: 0).positions(count: 0).isEmpty)
+    XCTAssertTrue(Motion(chapter: 0, fraction: 0).positions(count: 17).isEmpty)
+    XCTAssertEqual(Motion(chapter: -1, fraction: .nan).stage, .filter)
+    XCTAssertEqual(Motion(chapter: -1, fraction: .nan).fraction, 0)
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
