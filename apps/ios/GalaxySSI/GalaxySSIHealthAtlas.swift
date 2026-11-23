@@ -46,10 +46,12 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try ArtworkPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try RenalPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try CellPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
-    return try RespirationPack.read(bundle: bundle)?.applying(to: result, bundle: bundle) ?? result
+    if let pack = try RespirationPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
+    if let pack = try ExtendedCellPack.read(bundle: bundle) { result = try pack.applying(to: result) }
+    return result
   }
 
-  static func validated(_ atlas: Self) throws -> Self {
+  static func validated(_ atlas: Self, requireCompleteMicroscopic: Bool = false) throws -> Self {
     let ids = Set(atlas.entries.map(\.id)), models = Set(atlas.mechanisms.map(\.id))
     guard atlas.schema == 1, ids.count == atlas.entries.count, models.count == atlas.mechanisms.count,
       !ids.isEmpty, !models.isEmpty,
@@ -63,11 +65,18 @@ struct GalaxySSIHealthAtlas: Decodable {
         (model.reference == nil || model.reference!.absoluteString.range(of: "^https://pubmed\\.ncbi\\.nlm\\.nih\\.gov/[1-9][0-9]*/$", options: .regularExpression) != nil) &&
         model.chapter.range(of: "^[a-z0-9-]+$", options: .regularExpression) != nil
       }) else { throw Invalid.catalogue }
-    guard atlas.mechanisms.filter({ $0.kind == "cell" }).allSatisfy({ mechanism in
-      atlas.entry(mechanism.id).map { $0.kind == .cell && $0.mechanism == mechanism.id } == true
+    let microscopicKinds = ["cell", "fragment"]
+    guard atlas.mechanisms.filter({ microscopicKinds.contains($0.kind) }).allSatisfy({ mechanism in
+      atlas.entry(mechanism.id).map { $0.kind.rawValue == mechanism.kind && $0.mechanism == mechanism.id } == true
     }), atlas.entries.allSatisfy({ entry in
-      atlas.model(entry).kind != "cell" || entry.mechanism == entry.id
+      !microscopicKinds.contains(atlas.model(entry).kind) || entry.mechanism == entry.id
     }) else { throw Invalid.catalogue }
+    if requireCompleteMicroscopic {
+      let microscopic = atlas.entries.filter { microscopicKinds.contains($0.kind.rawValue) }
+      guard microscopic.allSatisfy({ $0.mechanism == $0.id && atlas.model($0).kind == $0.kind.rawValue }) else { throw Invalid.catalogue }
+      let textKeys = microscopic.flatMap { [atlas.model($0).title] + atlas.model($0).stages }
+      guard Set(textKeys).count == textKeys.count else { throw Invalid.catalogue }
+    }
     return atlas
   }
 
