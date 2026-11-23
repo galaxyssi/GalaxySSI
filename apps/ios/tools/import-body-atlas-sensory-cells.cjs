@@ -10,8 +10,11 @@ const color = (hex) => {
   return rgb(...[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255));
 };
 (async () => {
-  let count = 0;
+  let count = 0, diagrams = 0;
+  const current = new Set(["HealthAtlasSensoryCochlearHair", "HealthAtlasSensoryRod", "HealthAtlasSensoryCone",
+    "HealthAtlasSensoryAii", "HealthAtlasSensoryBipolar", "HealthAtlasSensoryGanglion", "HealthAtlasSensoryRpe", "HealthAtlasSensoryRetinaSection"]);
   for (const plate of pack.plates) {
+    if (current.has(plate.asset)) continue;
     const vector = xml.xml2js(cp.execFileSync("git", ["show", pack.source.mergeCommit + ":" + plate.drawable],
       { cwd: root, encoding: "utf8" }), { compact: true }).vector;
     if (vector.group || !Array.isArray(vector.path)) throw Error("Unsupported vector structure " + plate.id);
@@ -30,7 +33,11 @@ const color = (hex) => {
       page.pushOperators(setLineJoin(item["android:strokeLineJoin"] === "round" ? LineJoinStyle.Round : LineJoinStyle.Miter));
       page.drawSvgPath(item["android:pathData"], options);
     }
-    fs.writeFileSync(path.join(assets, plate.asset + ".imageset/cell.pdf"), await pdf.save()); count += vector.path.length;
+    fs.writeFileSync(path.join(assets, plate.asset + ".imageset/cell.pdf"), await pdf.save()); count += vector.path.length; diagrams++;
   }
-  console.log("Imported 16 sensory diagrams / " + count + " original paths.");
+  console.log("Imported " + diagrams + " unchanged sensory diagrams / " + count + " original paths.");
+  for (const args of [["import-body-atlas-sensory-gradients.cjs"], ["import-body-atlas-sensory-gradients.cjs", "--retinal-cells"],
+    ["import-body-atlas-portrait-cells.cjs"]]) {
+    cp.execFileSync(process.execPath, [path.join(__dirname, args[0]), ...args.slice(1)], {stdio: "inherit"});
+  }
 })().catch((error) => { console.error(error); process.exitCode = 1; });

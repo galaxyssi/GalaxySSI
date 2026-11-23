@@ -21,6 +21,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   private var retinal: Bool { entry.id == GalaxySSIHealthAtlasRetinaPath.owner }
   private var sweat: Bool { entry.id == GalaxySSIHealthAtlasSweat.owner }
   private var section: GalaxySSIHealthAtlasSectionLesson? { .forEntry(entry.id) }
+  private var quantitativeAfterSection: Bool { section != nil && entry.kind != .cell }
   private var endocrine: GalaxySSIHealthAtlasEndocrinePath? { GalaxySSIHealthAtlasEndocrinePath.forEntry(entry.id) }
   private var germline: GalaxySSIHealthAtlasGermline.Counts? {
     GalaxySSIHealthAtlasGermline.counts(entry.id, stage: simulation.stage)
@@ -36,7 +37,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
-      if !gasExchange, entry.id != "pancreas", endocrine == nil, !retinal, !sweat, section == nil {
+      if !gasExchange, entry.id != "pancreas", endocrine == nil, !retinal, !sweat, !quantitativeAfterSection {
       GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
         legacyVentilation: lung ? [simulation.first, simulation.second] : nil)
       }
@@ -154,7 +155,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         Link(t("digestive_routes_reference"), destination: GalaxySSIHealthAtlasPancreatic.source)
       }
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
-      if sweat || section != nil {
+      if sweat || quantitativeAfterSection {
         GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language)
       }
       if endocrine != nil {

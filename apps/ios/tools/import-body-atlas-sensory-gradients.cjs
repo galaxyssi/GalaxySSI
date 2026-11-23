@@ -6,22 +6,21 @@ const root = path.resolve(__dirname, "../../.."), assets = path.join(root, "apps
 const retinal = process.argv.includes("--retinal-cells");
 const sha = retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
 const frames = retinal ? [
-  ["sensory_aii", "HealthAtlasSensoryAii", "cell.pdf"], ["sensory_bipolar", "HealthAtlasSensoryBipolar", "cell.pdf"],
-  ["sensory_cone", "HealthAtlasSensoryCone", "cell.pdf"], ["sensory_ganglion", "HealthAtlasSensoryGanglion", "cell.pdf"],
-  ["sensory_rod", "HealthAtlasSensoryRod", "cell.pdf"], ["sensory_rpe", "HealthAtlasSensoryRpe", "cell.pdf"]
+  ["sensory_aii", "HealthAtlasSensoryAii", "cell.pdf", 0], ["sensory_bipolar", "HealthAtlasSensoryBipolar", "cell.pdf", 3],
+  ["sensory_ganglion", "HealthAtlasSensoryGanglion", "cell.pdf", 8], ["sensory_rpe", "HealthAtlasSensoryRpe", "cell.pdf", 13]
 ] : [
-  ["sensory_cochlear_hair", "HealthAtlasSensoryCochlearHair", "cell.pdf"],
   ["sensory_retina_section", "HealthAtlasSensoryRetinaSection", "cell.pdf"]
 ];
-// Keep retained #4358 PDF resource IDs stable after retiring the ear's four and eye's three gradients.
-const gradientOffset = retinal ? 0 : 7;
+// Keep retained #4358 PDF resource IDs stable when earlier ear, eye and sensory-cell gradients retire.
+const gradientOffset = retinal ? 0 : 9;
 function components(value) {
   if (!/^#[0-9a-f]{6}$/i.test(value)) throw Error("Unsupported colour " + value);
   return [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16) / 255);
 }
 (async () => {
-  let paths = 0, gradients = gradientOffset;
-  for (const [slug, asset, filename] of frames) {
+  let paths = 0, gradients = gradientOffset, gradientCount = 0;
+  for (const [slug, asset, filename, firstGradient] of frames) {
+    if (firstGradient !== undefined) gradients = firstGradient;
     const vector = xml.xml2js(cp.execFileSync("git", ["show", sha + ":apps/android/app/src/main/res/drawable/health_atlas_" + slug + ".xml"],
       {cwd: root, encoding: "utf8"}), {compact: true}).vector;
     if (vector.group || !Array.isArray(vector.path)) throw Error("Unsupported vector structure");
@@ -60,7 +59,7 @@ function components(value) {
         const coordinates = radial ? [g["android:centerX"], g["android:centerY"], 0, g["android:centerX"], g["android:centerY"], g["android:gradientRadius"]].map(Number) :
           ["startX", "startY", "endX", "endY"].map(key => Number(g["android:" + key]));
         if (!coordinates.every(Number.isFinite)) throw Error("Invalid gradient coordinates");
-        const name = PDFName.of("AtlasGradient" + gradients++);
+        const name = PDFName.of("AtlasGradient" + gradients++); gradientCount++;
         shadings.set(name, pdf.context.register(pdf.context.obj({
           ShadingType: radial ? 3 : 2, ColorSpace: "DeviceRGB", Coords: coordinates, Function: fn, Extend: [true, true]
         })));
@@ -75,6 +74,6 @@ function components(value) {
     }
     fs.writeFileSync(path.join(assets, asset + ".imageset", filename), await pdf.save());
   }
-  if (paths !== (retinal ? 49 : 30) || gradients - gradientOffset !== (retinal ? 17 : 4)) throw Error("Unexpected source geometry: " + paths + "/" + gradients);
-  console.log("Imported Android #" + (retinal ? 4359 : 4358) + ": " + paths + " original paths and " + (gradients - gradientOffset) + " native gradients across " + frames.length + " retained vector assets.");
+  if (paths !== (retinal ? 35 : 24) || gradientCount !== (retinal ? 11 : 2)) throw Error("Unexpected source geometry: " + paths + "/" + gradients);
+  console.log("Imported Android #" + (retinal ? 4359 : 4358) + ": " + paths + " original paths and " + gradientCount + " native gradients across " + frames.length + " retained vector assets.");
 })().catch(error => { console.error(error); process.exitCode = 1; });

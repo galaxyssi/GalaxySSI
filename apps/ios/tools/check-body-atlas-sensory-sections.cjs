@@ -7,19 +7,18 @@ const retinal = process.argv.includes("--retinal-cells");
 const sha = retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
 const source = file => execFileSync("git", ["show", sha + ":" + file], {encoding: "utf8", maxBuffer: 4_000_000});
 const frames = retinal ? [
-  ["sensory_aii", "HealthAtlasSensoryAii", "cell.pdf"], ["sensory_bipolar", "HealthAtlasSensoryBipolar", "cell.pdf"],
-  ["sensory_cone", "HealthAtlasSensoryCone", "cell.pdf"], ["sensory_ganglion", "HealthAtlasSensoryGanglion", "cell.pdf"],
-  ["sensory_rod", "HealthAtlasSensoryRod", "cell.pdf"], ["sensory_rpe", "HealthAtlasSensoryRpe", "cell.pdf"]
+  ["sensory_aii", "HealthAtlasSensoryAii", "cell.pdf", 0], ["sensory_bipolar", "HealthAtlasSensoryBipolar", "cell.pdf", 3],
+  ["sensory_ganglion", "HealthAtlasSensoryGanglion", "cell.pdf", 8], ["sensory_rpe", "HealthAtlasSensoryRpe", "cell.pdf", 13]
 ] : [
-  ["sensory_cochlear_hair", "HealthAtlasSensoryCochlearHair", "cell.pdf"],
   ["sensory_retina_section", "HealthAtlasSensoryRetinaSection", "cell.pdf"]
 ];
-const gradientOffset = retinal ? 0 : 7;
+const gradientOffset = retinal ? 0 : 9;
 const array = (dict, key) => dict.lookup(PDFName.of(key), PDFArray).asArray().map(n => n.asNumber());
 const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 255);
 (async () => {
-  let paths = 0, gradients = gradientOffset;
-  for (const [slug, asset, filename] of frames) {
+  let paths = 0, gradients = gradientOffset, gradientCount = 0;
+  for (const [slug, asset, filename, firstGradient] of frames) {
+    if (firstGradient !== undefined) gradients = firstGradient;
     const vector = xml.xml2js(source("apps/android/app/src/main/res/drawable/health_atlas_" + slug + ".xml"), {compact: true}).vector;
     const dir = path.join(assets, asset + ".imageset"), metadata = JSON.parse(fs.readFileSync(path.join(dir, "Contents.json")));
     assert(metadata.properties["preserves-vector-representation"]); assert(metadata.images.some(i => i.filename === filename));
@@ -29,7 +28,7 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
     assert.equal(box.width, Number(vector._attributes["android:viewportWidth"]));
     assert.equal(box.height, Number(vector._attributes["android:viewportHeight"]));
     const resources = page.node.Resources(), shades = resources.lookup(PDFName.of("Shading"), PDFDict);
-    const expected = vector.path.filter(p => p["aapt:attr"]);
+    const expected = vector.path.filter(p => p["aapt:attr"]); gradientCount += expected.length;
     assert.equal(shades.keys().length, expected.length);
     const images = resources.lookupMaybe(PDFName.of("XObject"), PDFDict);
     assert(!images || images.keys().length === 0, "Gradient/path PDF must not be rasterized");
@@ -54,7 +53,7 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
     }
     paths += vector.path.length;
   }
-  assert.equal(paths, retinal ? 49 : 30); assert.equal(gradients - gradientOffset, retinal ? 17 : 4);
+  assert.equal(paths, retinal ? 35 : 24); assert.equal(gradientCount, retinal ? 11 : 2);
   const kotlin = execFileSync("git", ["show", "b513fe5023b8699e4e64e1f914f09be98ddeeacb:apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSensorySections.kt"], {encoding: "utf8"});
   const swift = fs.readFileSync(path.join(root, "GalaxySSIHealthAtlasSensorySections.swift"), "utf8");
   const expectedRoutes = [...kotlin.matchAll(/atlasSectionTrack\(([\d.]+)f, ([\d.]+)f\) \{([^}]+)\}/g)].map(m => ({
@@ -83,5 +82,5 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
     for (const key of ["health_atlas_hearing_eardrum", "health_atlas_hearing_ossicles", "health_atlas_hearing_route_scope"])
       assert.equal(values.get(key), resource.find(r => r._attributes.name === key)._text);
   }
-  console.log("Sensory parity: " + frames.length + " retained vector PDFs / " + paths + " source paths / " + (gradients - gradientOffset) + " exact native gradients; Android #4359 ear routes/features and six inherited localized values. No native UI execution.");
+  console.log("Sensory parity: " + frames.length + " retained vector PDFs / " + paths + " source paths / " + gradientCount + " exact native gradients; Android #4359 ear routes/features and six inherited localized values. No native UI execution.");
 })().catch(error => { console.error(error); process.exit(1); });
