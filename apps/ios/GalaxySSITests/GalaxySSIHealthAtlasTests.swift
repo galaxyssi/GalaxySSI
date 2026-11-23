@@ -1958,6 +1958,27 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(outlet.samples.first?.point, CGPoint(x: 180, y: 252))
     XCTAssertEqual(outlet.samples.last?.point, CGPoint(x: 180, y: 324))
   }
+  func testPleuralBreathContinuityAndSheetAttachedTicks() {
+    typealias Motion = GalaxySSIHealthAtlasPleuraMotion
+    for step in 0..<4 {
+      XCTAssertEqual(Motion(step: step, fraction: 1).breath, Motion(step: step + 1, fraction: 0).breath, accuracy: 1e-12)
+    }
+    XCTAssertEqual(Motion(step: 0, fraction: 0.5).breath, 0.28, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).breath, 1)
+    XCTAssertEqual(Motion(step: 3, fraction: 0.5).breath, 0.28, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).breath, 0)
+    XCTAssertEqual(Motion(step: 1, fraction: .nan).breath, 0)
+    for step in 0...4 {
+      for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let frame = Motion(step: step, fraction: t)
+        XCTAssertTrue((0...1).contains(frame.breath))
+        XCTAssertEqual(frame.widen, 1 + 0.11 * frame.breath)
+        for i in 0...4 {
+          XCTAssertEqual(frame.lungTick(i) - frame.wallTick(i), 26 * frame.breath, accuracy: 1e-10)
+        }
+      }
+    }
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
