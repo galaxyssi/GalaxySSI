@@ -1901,6 +1901,33 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
     XCTAssertEqual(waists(0), [211, 249]); XCTAssertEqual(waists(1), [219, 241])
   }
+  func testHairCycleRegressionRestSheddingAndReplacement() {
+    typealias Motion = GalaxySSIHealthAtlasHairMotion
+    XCTAssertEqual(Motion.axis(132), 173)
+    XCTAssertEqual(Motion.axis(183), 182.69, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 1, fraction: 1).tip, 74)
+    XCTAssertEqual(Motion(step: 2, fraction: 0.5).matrix, 0)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).bulb, 201)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).root, 183)
+    let resting = Motion(step: 3, fraction: 0)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      let state = Motion(step: 3, fraction: phase)
+      XCTAssertEqual(state.bulb, resting.bulb); XCTAssertEqual(state.root, resting.root)
+      XCTAssertEqual(state.tip, resting.tip); XCTAssertEqual(state.matrix, 0)
+    }
+    let early = Motion(step: 4, fraction: 0.45)
+    XCTAssertEqual(early.renew, 0)
+    let released = Motion(step: 4, fraction: 0.56)
+    XCTAssertEqual(released.lift, 65)
+    XCTAssertEqual(released.drift, 22.35, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.8).opacity, 0)
+    let renewed = Motion(step: 4, fraction: 1), growing = Motion(step: 0, fraction: 0)
+    XCTAssertEqual(renewed.bulb, growing.bulb)
+    XCTAssertEqual(renewed.matrix, growing.matrix)
+    XCTAssertEqual(renewed.replacementRoot, growing.root)
+    XCTAssertEqual(renewed.replacementTip, growing.tip)
+    XCTAssertEqual(Motion(step: 2, fraction: .nan).bulb, 282)
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
