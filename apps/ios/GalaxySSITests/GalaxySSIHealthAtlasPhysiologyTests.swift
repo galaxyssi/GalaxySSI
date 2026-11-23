@@ -178,11 +178,11 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "cell-collecting-duct-intercalated-cell", "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron",
       "proximal-tubule", "nephron-loop", "distal-tubule", "skeletal", "muscle", "biceps-brachii", "humerus", "radius", "ulna",
       "blood-vessels", "arteries", "veins", "coronary-vessels", "eye", "lens", "ear", "middle-ear",
-      "cranial-nerves", "spinal-nerves", "peripheral-nerves", "ventricles", "left-ventricle", "right-ventricle",
+      "cranial-nerves", "spinal-nerves", "peripheral-nerves", "ventricles", "left-ventricle", "right-ventricle", "cell-type-ii-pneumocyte",
       "pancreas", "pancreatic-duct", "cell-pancreatic-ductal-cell"]
-    XCTAssertEqual(ids.count, 43)
+    XCTAssertEqual(ids.count, 44)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
-    for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-ii-pneumocyte", "heart"] {
+    for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-i-pneumocyte", "cell-podocyte", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
     }
   }
@@ -497,6 +497,35 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       XCTAssertTrue(context.contains(GalaxySSIHealthAtlasText.get("health_atlas_digestive_bicarb_scope", language)))
       XCTAssertTrue(context.contains(model.kind.source.absoluteString))
       XCTAssertFalse(context.contains("health_atlas_"))
+    }
+  }
+
+  func testAlveolarSurfaceUsesSingleInterfaceSIUnitsAndStrictOwnership() throws {
+    let model = try XCTUnwrap(Model.restore("cell-type-ii-pneumocyte", inputs: [15, 100]))
+    XCTAssertEqual(model.kind, .alveolarSurface)
+    XCTAssertEqual(model.kind.axis, 0); XCTAssertEqual(model.kind.unit, "Pa")
+    XCTAssertEqual(model.result, 300, accuracy: 1e-9)
+    XCTAssertEqual(model.companionValue, 150, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(model.changing(1, to: 200)).result, model.companionValue, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(model.changing(0, to: 30)).result, 600, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Model(kind: .alveolarSurface, inputs: [5, 200])).result, 50, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Model(kind: .alveolarSurface, inputs: [35, 50])).result, 1400, accuracy: 1e-9)
+    XCTAssertNil(Model.restore("cell-type-ii-pneumocyte", inputs: [15, 0]))
+    for id in ["cell-type-i-pneumocyte", "cell-podocyte", "cell-club-cell", "lungs", "alveoli"] {
+      XCTAssertNotEqual(Model.Kind.forEntry(id), .alveolarSurface)
+    }
+    for tension in [5, 15, 35] {
+      for radius in [50, 100, 200] {
+        let value = try XCTUnwrap(Model(kind: .alveolarSurface, inputs: [tension, radius]))
+        XCTAssertEqual(value.result, 2 * (Double(tension) / 1000) / (Double(radius) / 1_000_000), accuracy: 1e-9)
+        XCTAssertGreaterThanOrEqual(value.plotMaximum, try XCTUnwrap(value.response.map(\.y).max()))
+      }
+    }
+    for language in ["en", "zh-Hans"] {
+      let text = GalaxySSIHealthAtlasPhysiologyText.context(model, language: language)
+      XCTAssertFalse(text.contains("health_atlas_"))
+      XCTAssertTrue(text.contains("https://pubmed.ncbi.nlm.nih.gov/20724566/"))
+      XCTAssertTrue(text.contains(GalaxySSIHealthAtlasText.get("health_atlas_alveolar_surface_scope", language)))
     }
   }
 

@@ -39,6 +39,26 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertFalse(idle.contains("phagocytosis_scope"))
   }
 
+  func testPodocyteBarrierStagesAndContextStayScoped() throws {
+    typealias Stage = GalaxySSIHealthAtlasFiltrationStage
+    XCTAssertNil(Stage(stage: -1)); XCTAssertNil(Stage(stage: 4))
+    XCTAssertEqual((0..<4).compactMap { Stage(stage: $0)?.arrowEnd }, [57, 116, 135, 181])
+    XCTAssertEqual((0..<4).compactMap { Stage(stage: $0)?.showsSlitDiaphragms }, [false, false, true, true])
+    for stage in 0..<4 {
+      let simulation = try XCTUnwrap(Context.Simulation(entryID: Stage.owner,
+        phase: (Double(stage) + 0.1) / 4, first: 70, second: 70))
+      for screen in Context.Screen.allCases {
+        let prompt = Context.prompt(anatomy: anatomy(Stage.owner), screen: screen,
+          simulation: simulation, locale: locale, text: text)
+        if screen == .values { XCTAssertNil(prompt); continue }
+        XCTAssertEqual(try XCTUnwrap(prompt).contains("podocyte_scope"), screen.includesPhysiology)
+        let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("cell-mesangial-cell"), screen: screen,
+          simulation: simulation, locale: locale, text: text))
+        XCTAssertFalse(foreign.contains("podocyte_scope"))
+      }
+    }
+  }
+
   func testSarcomereGeometryAndAgentContextKeepFixedFilamentLengths() throws {
     typealias Sarcomere = GalaxySSIHealthAtlasSarcomere
     XCTAssertNil(Sarcomere(stage: -1)); XCTAssertNil(Sarcomere(stage: 4))

@@ -88,6 +88,7 @@ enum GalaxySSIHealthAtlasAgentContext {
            let sarcomere = GalaxySSIHealthAtlasSarcomere(stage: simulation.stage) {
           lines += sarcomere.context(text: t)
         }
+        if anatomy.id == GalaxySSIHealthAtlasFiltrationStage.owner { lines.append(t("podocyte_scope")) }
         if let counts = GalaxySSIHealthAtlasGermline.counts(anatomy.id, stage: simulation.stage) {
           lines.append(GalaxySSIHealthAtlasGermline.context(counts, text: t))
         }

@@ -107,6 +107,10 @@ enum GalaxySSIHealthAtlasQuestion {
       let context = GalaxySSIHealthAtlasPancreatic.context(entry.id, text: t)
       if !context.isEmpty { prompt += "\n" + context.joined(separator: "\n") }
     }
+    if entry.id == GalaxySSIHealthAtlasFiltrationStage.owner,
+       ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
+      prompt += "\n" + t("podocyte_scope")
+    }
     if entry.id == GalaxySSIHealthAtlasSarcomere.owner,
        ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
        let sarcomere = GalaxySSIHealthAtlasSarcomere(stage: selection.simulation.stage) {
