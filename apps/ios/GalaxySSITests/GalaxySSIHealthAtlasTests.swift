@@ -1561,6 +1561,33 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion(courseID: "RPE_VISUAL_CYCLE", chapter: -1, fraction: .nan).chapter, 0)
     XCTAssertEqual(Motion(courseID: "DIM_LIGHT_RELAY", chapter: 20, fraction: .infinity).fraction, 0)
   }
+  func testAirwaySettlingSurfaceTravelAndCiliaryWave() throws {
+    typealias Motion = GalaxySSIHealthAtlasAirwayMotion
+    XCTAssertEqual(Motion.surfaceTravel(step: 2, fraction: 1), 0)
+    XCTAssertEqual(Motion.surfaceTravel(step: 3, fraction: 1), 0.84)
+    XCTAssertEqual(Motion.surfaceTravel(step: 4, fraction: 0), 0.84)
+    XCTAssertEqual(Motion.surfaceTravel(step: 4, fraction: 1), 1)
+    XCTAssertEqual(Motion.surfaceTravel(step: 3, fraction: .nan), 0)
+    XCTAssertEqual(Motion.fall(step: 0, fraction: 0, index: 2), 0)
+    XCTAssertEqual(Motion.fall(step: 0, fraction: 0.5, index: 2), 0.45, accuracy: 1e-12)
+    XCTAssertEqual(Motion.fall(step: 0, fraction: 1, index: 2), 1)
+    XCTAssertEqual(Motion.fall(step: 1, fraction: 0, index: 2), 1)
+    XCTAssertEqual(Motion.secretion(0, index: -1), 0)
+    XCTAssertEqual(Motion.secretion(0.5, index: 1), 0.3036, accuracy: 1e-12)
+    XCTAssertEqual(Motion.secretion(1, index: -1), 1)
+    XCTAssertEqual(Motion.ciliaryBeat(step: 1, fraction: 0.5, column: 0, fiber: 0), 2)
+    XCTAssertEqual(Motion.ciliaryBeat(step: 2, fraction: 0.125, column: 0, fiber: 0), 13, accuracy: 1e-12)
+    XCTAssertNotEqual(Motion.ciliaryBeat(step: 2, fraction: 0.125, column: 0, fiber: 0),
+      Motion.ciliaryBeat(step: 2, fraction: 0.125, column: 1, fiber: 0))
+    for route in [Motion.clearance, Motion.toEsophagus] {
+      XCTAssertEqual(route.commands.count, 2)
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+      }
+    }
+    XCTAssertEqual(Motion.clearance.commands.last?.points.last, Motion.toEsophagus.start)
+  }
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
