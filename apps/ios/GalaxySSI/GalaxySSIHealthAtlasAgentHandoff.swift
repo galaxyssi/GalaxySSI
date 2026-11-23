@@ -58,13 +58,24 @@ enum GalaxySSIHealthAtlasQuestion {
         first: selection.simulation.first, second: selection.simulation.second)
     }
     let elimination = GalaxySSIHealthAtlasAgentContext.Elimination(halfLife: selection.elimination.halfLife, elapsed: selection.elimination.elapsed)
+    let illustration = entry.flatMap { item in
+      atlas.plate(for: item.id).flatMap { plate in
+        GalaxySSIHealthAtlasAgentContext.Illustration(entryID: item.id,
+          caption: atlas.caption(plate, selected: item, language: language), source: plate.source)
+      }
+    }
     return GalaxySSIHealthAtlasAgentContext.prompt(anatomy: anatomy, screen: screen, simulation: simulation,
-      quantitative: quantitative, elimination: elimination, locale: GalaxySSILocalization.interfaceLocale(language: language), text: t) ?? ""
+      quantitative: quantitative, elimination: elimination, illustration: illustration,
+      locale: GalaxySSILocalization.interfaceLocale(language: language), text: t) ?? ""
     #else
     guard let entry else { return t("ask_whole_context") }
     let model = atlas.model(entry)
     var prompt = String(format: t("ask_context"), GalaxySSIHealthAtlasText.get(entry.name, language),
       GalaxySSIHealthAtlasText.get(entry.description, language), GalaxySSIHealthAtlasText.get(model.title, language), model.source.absoluteString)
+    if research || selection.tab != .values, let plate = atlas.plate(for: entry.id) {
+      prompt += "\n" + atlas.caption(plate, selected: entry, language: language) + "\n" + t("art_note")
+      if let source = plate.source { prompt += "\n" + source.absoluteString }
+    }
     #if GALAXYSSI_ATLAS_PHYSIOLOGY
     let physiology = ((!research && selection.tab == .simulation) || (research && selection.research == .physiology))
       ? GalaxySSIHealthAtlasPhysiology.resolved(entry.id, inputs: selection.physiologyInputs,

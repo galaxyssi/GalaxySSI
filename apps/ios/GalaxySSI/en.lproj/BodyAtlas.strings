@@ -1,4 +1,6 @@
 /* Android #4322 teaching catalogue, frozen at 17cc2c33b. */
+/* Shared illustration context introduced by Android #4323. */
+"health_atlas_plate_context" = "Context: %1$@ · %2$@";
 "health_atlas_absorption" = "Absorption";
 "health_atlas_absorption_note" = "For many oral medicines, material crosses the gut lining into blood.";
 "health_atlas_adenoids_aliases" = "";
