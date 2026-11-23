@@ -2,8 +2,8 @@
 
 ## Review Scope
 - Ports Android #4360 at `920ede43e4c010f166d459ca2f5e674414766683`.
-- Formal non-draft PR targeting `main`; depends on iOS #4481 (Android #4359).
-- Development continues without waiting for #4481. While that PR is open, main-based comparison includes its real commits. This increment starts after `32a1934d65e69e9019de344d6f93ce5313f55e48` and changes the eye bitmap/callouts, split-layout metadata and renderer, bounded leader routes, regression source and import/audit tools. No copied predecessor implementation.
+- Formal non-draft PR targeting `main`; predecessor iOS #4481 (Android #4359) is merged.
+- Branch synchronized with main after #4481 merged. Review scope contains only this increment: eye bitmap/callouts, split-layout metadata and renderer, bounded leader routes, regression source and import/audit tools (22 files). No inherited unmerged feature scope or copied predecessor implementation.
 - iOS only; no version bump, model equations, graph entries, personal health storage, Android/Desktop changes or IPA.
 
 ## Implementation
