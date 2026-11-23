@@ -27,6 +27,17 @@ enum GalaxySSIHealthAtlasAgentContext {
       self.entryID = entryID; self.phase = phase; self.first = first; self.second = second
     }
   }
+  struct Illustration {
+    let entryID: String
+    let caption: String
+    let source: URL?
+    init?(entryID: String, caption: String, source: URL?) {
+      guard !entryID.isEmpty, !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        source == nil || (source?.scheme == "https" && source?.host == "openstax.org" &&
+          source?.user == nil && source?.password == nil) else { return nil }
+      self.entryID = entryID; self.caption = caption; self.source = source
+    }
+  }
   struct Quantitative {
     let entryID: String
     let context: String
@@ -43,7 +54,8 @@ enum GalaxySSIHealthAtlasAgentContext {
   }
 
   static func prompt(anatomy: Anatomy?, screen: Screen, simulation: Simulation? = nil, quantitative: Quantitative? = nil,
-                     elimination: Elimination? = nil, locale: Locale, text t: (String) -> String) -> String? {
+                     elimination: Elimination? = nil, illustration: Illustration? = nil,
+                     locale: Locale, text t: (String) -> String) -> String? {
     guard screen != .values else { return nil }
     guard let anatomy else { return t("ask_whole_context") }
     guard anatomy.stages.count == 4 else { return nil }
@@ -52,6 +64,10 @@ enum GalaxySSIHealthAtlasAgentContext {
       return format.string(from: NSNumber(value: value)) ?? String(value)
     }
     var lines = [String(format: t("ask_context"), anatomy.name, anatomy.description, anatomy.mechanism, anatomy.source.absoluteString)]
+    if let illustration, illustration.entryID == anatomy.id {
+      lines += [illustration.caption, t("art_note")]
+      if let source = illustration.source { lines.append(source.absoluteString) }
+    }
     if screen.includesPhysiology {
       if let simulation, simulation.entryID == anatomy.id {
         lines.append(t("teaching_note"))

@@ -48,6 +48,24 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
     XCTAssertTrue(active.contains("ACTIVE_QUANTITATIVE_CONTEXT"))
     XCTAssertTrue(active.contains("Stage 3 / 4: Stage three"))
   }
+  func testIllustrationStaysWithSelectedPublicAnatomy() throws {
+    let source = URL(string: "https://openstax.org/books/anatomy/plate")!
+    let plate = try XCTUnwrap(Context.Illustration(entryID: "heart", caption: "SELECTED_PLATE", source: source))
+    let prompt = try XCTUnwrap(Context.prompt(anatomy: anatomy(), screen: .structure,
+      illustration: plate, locale: locale, text: text))
+    XCTAssertTrue(prompt.contains("SELECTED_PLATE"))
+    XCTAssertTrue(prompt.contains("art_note"))
+    XCTAssertTrue(prompt.contains(source.absoluteString))
+    let foreign = Context.prompt(anatomy: anatomy("lungs"), screen: .function, illustration: plate, locale: locale, text: text)
+    XCTAssertFalse(foreign?.contains("SELECTED_PLATE") ?? true)
+    XCTAssertNil(Context.prompt(anatomy: anatomy(), screen: .values, illustration: plate, locale: locale, text: text))
+    XCTAssertEqual(Context.prompt(anatomy: nil, screen: .structure, illustration: plate, locale: locale, text: text),
+      "Public whole-body teaching only")
+    XCTAssertNil(Context.Illustration(entryID: "heart", caption: " ", source: source))
+    XCTAssertNil(Context.Illustration(entryID: "heart", caption: "Plate", source: URL(string: "http://openstax.org/books")))
+    XCTAssertNil(Context.Illustration(entryID: "heart", caption: "Plate", source: URL(string: "https://user@openstax.org/books")))
+  }
+
   func testPersonalValuesHasNoPublicFallbackIncludingAnEmptyMetric() {
     XCTAssertNil(Context.prompt(anatomy: anatomy(), screen: .values, locale: locale, text: text))
     XCTAssertNil(Context.prompt(anatomy: nil, screen: .values, locale: locale, text: text))
