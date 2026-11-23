@@ -30,6 +30,7 @@
     C43670000000000000000003 /* GalaxySSIHealthAtlasImmuneLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43670000000000000000004 /* GalaxySSIHealthAtlasImmuneLink.swift */; };
     C43680000000000000000001 /* GalaxySSIHealthAtlasBloodDefense.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43680000000000000000002 /* GalaxySSIHealthAtlasBloodDefense.swift */; };
     C43680000000000000000003 /* GalaxySSIHealthAtlasBloodDefenseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43680000000000000000004 /* GalaxySSIHealthAtlasBloodDefenseView.swift */; };
+    C43840000000000000000001 /* GalaxySSIHealthAtlasFunctionCatalogue.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000002 /* GalaxySSIHealthAtlasFunctionCatalogue.swift */; };
     C43460000000000000000001 /* GalaxySSIHealthAtlasCoreCells.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43460000000000000000002 /* GalaxySSIHealthAtlasCoreCells.swift */; };
     C43460000000000000000003 /* GalaxySSIHealthAtlasSarcomere.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43460000000000000000004 /* GalaxySSIHealthAtlasSarcomere.swift */; };
     C43460000000000000000005 /* GalaxySSIHealthAtlasSarcomerePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43460000000000000000006 /* GalaxySSIHealthAtlasSarcomerePanel.swift */; };
@@ -1526,6 +1527,7 @@
     C43670000000000000000004 /* GalaxySSIHealthAtlasImmuneLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasImmuneLink.swift; sourceTree = "<group>"; };
     C43680000000000000000002 /* GalaxySSIHealthAtlasBloodDefense.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasBloodDefense.swift; sourceTree = "<group>"; };
     C43680000000000000000004 /* GalaxySSIHealthAtlasBloodDefenseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasBloodDefenseView.swift; sourceTree = "<group>"; };
+    C43840000000000000000002 /* GalaxySSIHealthAtlasFunctionCatalogue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionCatalogue.swift; sourceTree = "<group>"; };
     C43460000000000000000002 /* GalaxySSIHealthAtlasCoreCells.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoreCells.swift; sourceTree = "<group>"; };
     C43460000000000000000004 /* GalaxySSIHealthAtlasSarcomere.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSarcomere.swift; sourceTree = "<group>"; };
     C43460000000000000000006 /* GalaxySSIHealthAtlasSarcomerePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSarcomerePanel.swift; sourceTree = "<group>"; };
@@ -3040,6 +3042,7 @@
         C43670000000000000000004 /* GalaxySSIHealthAtlasImmuneLink.swift */,
         C43680000000000000000002 /* GalaxySSIHealthAtlasBloodDefense.swift */,
         C43680000000000000000004 /* GalaxySSIHealthAtlasBloodDefenseView.swift */,
+        C43840000000000000000002 /* GalaxySSIHealthAtlasFunctionCatalogue.swift */,
         C43460000000000000000002 /* GalaxySSIHealthAtlasCoreCells.swift */,
         C43460000000000000000004 /* GalaxySSIHealthAtlasSarcomere.swift */,
         C43460000000000000000006 /* GalaxySSIHealthAtlasSarcomerePanel.swift */,
@@ -4684,6 +4687,7 @@
         C43670000000000000000003 /* GalaxySSIHealthAtlasImmuneLink.swift in Sources */,
         C43680000000000000000001 /* GalaxySSIHealthAtlasBloodDefense.swift in Sources */,
         C43680000000000000000003 /* GalaxySSIHealthAtlasBloodDefenseView.swift in Sources */,
+        C43840000000000000000001 /* GalaxySSIHealthAtlasFunctionCatalogue.swift in Sources */,
         C43460000000000000000001 /* GalaxySSIHealthAtlasCoreCells.swift in Sources */,
         C43460000000000000000003 /* GalaxySSIHealthAtlasSarcomere.swift in Sources */,
         C43460000000000000000005 /* GalaxySSIHealthAtlasSarcomerePanel.swift in Sources */,

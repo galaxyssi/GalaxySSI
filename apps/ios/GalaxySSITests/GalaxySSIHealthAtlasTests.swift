@@ -917,6 +917,33 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertFalse(platelet.annotations.contains { $0.id.contains("nucleus") })
   }
 
+  func testFunctionCataloguePreservesIndependentChoicesAndChapterBoundaries() throws {
+    let catalogue = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: Bundle(for: GalaxySSIStore.self)))
+    try catalogue.validate(in: completeCatalogue())
+    XCTAssertEqual(catalogue.stories.count, 101); XCTAssertEqual(catalogue.routes.count, 268)
+    XCTAssertEqual(catalogue.stories.reduce(0) { $0 + $1.chapters.count }, 491)
+    XCTAssertEqual(catalogue.choices(for: "pancreas").map(\.id), ["DIGESTION", "INSULIN_SECRETION", "GLUCAGON_RESPONSE"])
+    XCTAssertTrue(catalogue.choices(for: "unknown").isEmpty)
+    let heartbeat = try XCTUnwrap(catalogue.story("HEARTBEAT"))
+    XCTAssertEqual(heartbeat.chapter(0), 0); XCTAssertEqual(heartbeat.chapter(1), 4)
+    XCTAssertEqual(heartbeat.fraction(1), 1); XCTAssertEqual(heartbeat.startOf(3), 0.6)
+    XCTAssertEqual(heartbeat.chapter(.nan), 0); XCTAssertEqual(heartbeat.startOf(-1), 0)
+    XCTAssertEqual(catalogue.initialPhase(entryID: "aorta", storyID: heartbeat.id), 0.6)
+    var first = GalaxySSIHealthAtlasFunctionSelection(), second = GalaxySSIHealthAtlasFunctionSelection()
+    first.choose("INSULIN_SECRETION", entryID: "pancreas", catalogue: catalogue)
+    first.save(0.7, storyID: "INSULIN_SECRETION", entryID: "pancreas", catalogue: catalogue)
+    first.save(0.2, storyID: "DIGESTION", entryID: "pancreas", catalogue: catalogue)
+    first.choose("HEARTBEAT", entryID: "pancreas", catalogue: catalogue)
+    XCTAssertEqual(first.current(entryID: "pancreas", catalogue: catalogue)?.id, "INSULIN_SECRETION")
+    XCTAssertEqual(first.phase(entryID: "pancreas", storyID: "DIGESTION", catalogue: catalogue), 0.2)
+    XCTAssertEqual(second.phase(entryID: "pancreas", storyID: "INSULIN_SECRETION", catalogue: catalogue), 0)
+    second.selected = "HEARTBEAT"; second.phases = ["HEARTBEAT": 0.5, "DIGESTION": 2]
+    second.sanitize(entryID: "pancreas", catalogue: catalogue)
+    XCTAssertNil(second.selected); XCTAssertNil(second.phases["HEARTBEAT"]); XCTAssertEqual(second.phases["DIGESTION"], 1)
+    let restored = try JSONDecoder().decode(GalaxySSIHealthAtlasFunctionSelection.self, from: JSONEncoder().encode(first))
+    XCTAssertEqual(restored, first)
+  }
+
   func testTransportCellPlatesKeepLocalFeaturesAndExplicitSubtypeCaptions() throws {
     let bundle = Bundle(for: GalaxySSIStore.self), atlas = try completeCatalogue()
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.TransportCellPack.read(bundle: bundle))
