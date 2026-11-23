@@ -34,21 +34,21 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       }
       #endif
       Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(model.title, language))).font(.headline)
-      Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
-      #if GALAXYSSI_ATLAS_PHYSIOLOGY
-      if hasPhysiology, let note = GalaxySSIHealthAtlasPhysiologyText.processNote(language: language) {
-        Text(note).font(.footnote).foregroundColor(.secondary)
-      }
-      #endif
       if gasExchange {
         GalaxySSIHealthAtlasGasExchangeView(phase: simulation.phase, language: language, stages: model.stages,
           selected: { playing = false; simulation.selectStage($0) },
           open: { playing = false; structure = $0 })
         Text(t("gas_scope")).font(.footnote).foregroundColor(.secondary)
         Link(t("gas_reference"), destination: GalaxySSIHealthAtlasGasExchange.source)
-      } else {
+      }
+      Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
+      #if GALAXYSSI_ATLAS_PHYSIOLOGY
+      if hasPhysiology, let note = GalaxySSIHealthAtlasPhysiologyText.processNote(language: language) {
+        Text(note).font(.footnote).foregroundColor(.secondary)
+      }
+      #endif
       LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-        ForEach([0, 1, 3, 2], id: \.self) { stage in
+        ForEach(gasExchange ? [] : [0, 1, 3, 2], id: \.self) { stage in
           Button { playing = false; simulation.selectStage(stage) } label: {
             VStack(spacing: 8) {
               Text("\(stage + 1)").font(.headline).frame(width: 32, height: 32)
@@ -62,7 +62,6 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
             .accessibilitySortPriority(Double(4 - stage))
             .accessibilityIdentifier("health-atlas-stage-" + entry.id + "-" + String(stage))
         }
-      }
       }
       ProgressView(value: simulation.phase).accessibilityLabel(t("phase"))
       Text(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4),

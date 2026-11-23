@@ -21,9 +21,7 @@ struct GalaxySSIHealthAtlasDetail: View {
       } else {
         ScrollView {
           VStack(alignment: .leading, spacing: 18) {
-            if selection.wrappedValue.tab != .simulation || !GalaxySSIHealthAtlasGasExchange.supports(entry.id) {
-              GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
-            }
+            GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
             Text(GalaxySSIHealthAtlasText.get(entry.description, language))
             if selection.wrappedValue.tab == .structure {
               relationships(atlas.children(entry), title: t("related"))

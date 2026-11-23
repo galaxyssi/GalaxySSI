@@ -34,7 +34,7 @@ struct GalaxySSIHealthAtlasArtwork: View {
       String(format: t("plate_context"), name, view)
   }
   var body: some View {
-    if let art {
+    if let art, entry.map({ state.binding($0).wrappedValue.tab != .simulation || !GalaxySSIHealthAtlasGasExchange.supports($0.id) }) ?? true {
       VStack(alignment: .leading, spacing: 8) {
         canvas(art)
         HStack {
