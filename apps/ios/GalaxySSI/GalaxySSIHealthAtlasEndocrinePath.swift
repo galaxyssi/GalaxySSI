@@ -21,4 +21,3 @@ struct GalaxySSIHealthAtlasEndocrinePath: Decodable {
     forEntry(id).map { GalaxySSIHealthAtlasText.get($0.scope, language) }
   }
 }
-
