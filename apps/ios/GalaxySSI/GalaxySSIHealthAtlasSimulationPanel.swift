@@ -38,6 +38,11 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       }
       #endif
       Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(model.title, language))).font(.headline)
+      if entry.id == GalaxySSIHealthAtlasPhagocytosis.owner {
+        playbackControls
+        GalaxySSIHealthAtlasPhagocytosis(stage: simulation.stage, stages: model.stages, language: language)
+        Text(t("phagocytosis_scope")).font(.footnote).foregroundColor(.secondary)
+      }
       if GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id) {
         playbackControls
         GalaxySSIHealthAtlasValvePanel(atlas: atlas, entryID: entry.id, stage: simulation.stage, language: language,
@@ -96,7 +101,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       Slider(value: $simulation.phase, in: 0...1, onEditingChanged: { _ in playing = false })
         .accessibilityLabel(t("phase"))
       if !GalaxySSIHealthAtlasCirculation.supports(entry.id), !GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id),
-         germline == nil { playbackControls }
+         germline == nil, entry.id != GalaxySSIHealthAtlasPhagocytosis.owner { playbackControls }
       if reduceMotion { Text(bodyText("motion_disabled")).font(.caption) }
       Text(t("speed") + " · " + String(format: "%.1f×", simulation.speed))
       Slider(value: $simulation.speed, in: 0.5...2, step: 0.5).accessibilityLabel(t("speed"))
