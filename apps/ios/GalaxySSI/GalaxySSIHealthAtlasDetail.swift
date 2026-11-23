@@ -24,7 +24,7 @@ struct GalaxySSIHealthAtlasDetail: View {
             if selection.wrappedValue.tab != .structure &&
               (selection.wrappedValue.tab != .simulation ||
                 (!GalaxySSIHealthAtlasCirculation.supports(entry.id) && !GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id) &&
-                  entry.id != GalaxySSIHealthAtlasPhagocytosis.owner)) {
+                  entry.id != GalaxySSIHealthAtlasPhagocytosis.owner && entry.id != GalaxySSIHealthAtlasFiltrationStage.owner)) {
               GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
             }
             if selection.wrappedValue.tab != .structure { Text(GalaxySSIHealthAtlasText.get(entry.description, language)) }

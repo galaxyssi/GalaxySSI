@@ -103,6 +103,10 @@ enum GalaxySSIHealthAtlasQuestion {
        let context = GalaxySSIHealthAtlasHeartSection.context(entry.id, stage: selection.simulation.stage, atlas: atlas, language: language) {
       prompt += "\n" + context
     }
+    if entry.id == GalaxySSIHealthAtlasFiltrationStage.owner,
+       ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
+      prompt += "\n" + t("podocyte_scope")
+    }
     if entry.id == GalaxySSIHealthAtlas.ImmunePack.phagocytosisOwner,
        ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
       prompt += "\n" + t("phagocytosis_scope")

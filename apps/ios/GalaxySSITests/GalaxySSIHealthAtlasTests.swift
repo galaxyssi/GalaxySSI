@@ -726,6 +726,46 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthAtlasPhagocytosis.label(stage: 4, stages: stages, language: "en"))
   }
 
+  func testTransportCellPlatesKeepLocalFeaturesAndExplicitSubtypeCaptions() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self), atlas = try catalogue()
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.TransportCellPack.read(bundle: bundle))
+    try pack.validating(in: atlas, bundle: bundle)
+    XCTAssertEqual(pack.plates.count, 12)
+    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 25)
+    for plate in pack.plates {
+      let owner = try XCTUnwrap(plate.owner)
+      XCTAssertEqual(atlas.plate(for: owner)?.asset, plate.asset)
+      XCTAssertEqual(atlas.entry(owner)?.kind, .cell)
+      for feature in plate.annotations {
+        XCTAssertNil(atlas.entry(feature.id))
+        guard case .feature(let selected) = plate.labelTarget(feature.id, in: atlas) else { return XCTFail("Feature must explain locally") }
+        XCTAssertEqual(selected.id, feature.id)
+        for language in ["en", "zh-Hans"] {
+          XCTAssertNotEqual(GalaxySSIHealthAtlasText.get(feature.explanation, language), feature.explanation)
+        }
+      }
+    }
+    XCTAssertEqual(atlas.plate(for: "cell-collecting-duct-intercalated-cell")?.viewLabel, "health_atlas_type_a_intercalated_view")
+    XCTAssertEqual(atlas.plate(for: "cell-urothelial-cell")?.viewLabel, "health_atlas_umbrella_view")
+    let podocyte = try XCTUnwrap(atlas.entry(GalaxySSIHealthAtlasFiltrationStage.owner))
+    let typeII = try XCTUnwrap(atlas.entry("cell-type-ii-pneumocyte"))
+    let state = GalaxySSIHealthAtlasState(), restored = GalaxySSIHealthAtlasState()
+    state.binding(podocyte).wrappedValue.simulation.selectStage(3)
+    state.binding(typeII).wrappedValue.physiologyInputs = [30, 200]
+    restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.binding(podocyte).wrappedValue.simulation.stage, 3)
+    XCTAssertEqual(restored.binding(typeII).wrappedValue.physiologyInputs, [30, 200])
+    for language in ["en", "zh-Hans"] {
+      var selection = state.binding(podocyte).wrappedValue; selection.tab = .simulation
+      let prompt = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: podocyte, selection: selection,
+        research: false, language: language)
+      XCTAssertTrue(prompt.contains(GalaxySSIHealthAtlasText.get("health_atlas_podocyte_scope", language)))
+      selection.tab = .values
+      XCTAssertEqual(GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: podocyte, selection: selection,
+        research: false, language: language), "")
+    }
+  }
+
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
     let handoff = GalaxySSIHealthAtlasAgentHandoff()
     let token = try XCTUnwrap(handoff.prepare(owner: "a", conversation: "c", prompt: "Public teaching", now: 10))

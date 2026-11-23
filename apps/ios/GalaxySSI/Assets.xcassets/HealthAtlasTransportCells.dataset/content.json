@@ -1,0 +1,414 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4347,
+    "mergeCommit": "ee54cfd25d31e05eb34bd97f1557a404ae337b10"
+  },
+  "plates": [
+    {
+      "id": "cell-type-i-pneumocyte",
+      "owner": "cell-type-i-pneumocyte",
+      "asset": "HealthAtlasTransportPneumocyteI",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-type-i-pneumocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system",
+      "features": [
+        {
+          "marker": {
+            "id": "attenuated",
+            "x": 0.25,
+            "y": 0.5285714285714286
+          },
+          "title": "health_atlas_feature_attenuated",
+          "explanation": "health_atlas_feature_attenuated_detail"
+        },
+        {
+          "marker": {
+            "id": "flat-nucleus",
+            "x": 0.5111111111111111,
+            "y": 0.48928571428571427
+          },
+          "title": "health_atlas_feature_flat_nucleus",
+          "explanation": "health_atlas_feature_flat_nucleus_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_transport_pneumocyte_i.xml"
+    },
+    {
+      "id": "cell-type-ii-pneumocyte",
+      "owner": "cell-type-ii-pneumocyte",
+      "asset": "HealthAtlasTransportPneumocyteIi",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-type-ii-pneumocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system",
+      "features": [
+        {
+          "marker": {
+            "id": "lamellar-body",
+            "x": 0.5444444444444444,
+            "y": 0.43214285714285716
+          },
+          "title": "health_atlas_feature_lamellar_body",
+          "explanation": "health_atlas_feature_lamellar_body_detail"
+        },
+        {
+          "marker": {
+            "id": "at2-surface",
+            "x": 0.5583333333333333,
+            "y": 0.26071428571428573
+          },
+          "title": "health_atlas_feature_at2_surface",
+          "explanation": "health_atlas_feature_at2_surface_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_transport_pneumocyte_ii.xml"
+    },
+    {
+      "id": "cell-ciliated-airway-cell",
+      "owner": "cell-ciliated-airway-cell",
+      "asset": "HealthAtlasTransportCiliatedAirway",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-ciliated-airway-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system",
+      "features": [
+        {
+          "marker": {
+            "id": "motile-cilia",
+            "x": 0.4527777777777778,
+            "y": 0.2357142857142857
+          },
+          "title": "health_atlas_feature_motile_cilia",
+          "explanation": "health_atlas_feature_motile_cilia_detail"
+        },
+        {
+          "marker": {
+            "id": "ciliated-apical",
+            "x": 0.5833333333333334,
+            "y": 0.29642857142857143
+          },
+          "title": "health_atlas_feature_ciliated_apical",
+          "explanation": "health_atlas_feature_ciliated_apical_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_transport_ciliated_airway.xml"
+    },
+    {
+      "id": "cell-goblet-cell",
+      "owner": "cell-goblet-cell",
+      "asset": "HealthAtlasTransportGoblet",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-goblet-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system",
+      "features": [
+        {
+          "marker": {
+            "id": "mucin-granules",
+            "x": 0.49444444444444446,
+            "y": 0.375
+          },
+          "title": "health_atlas_feature_mucin_granules",
+          "explanation": "health_atlas_feature_mucin_granules_detail"
+        },
+        {
+          "marker": {
+            "id": "goblet-neck",
+            "x": 0.5083333333333333,
+            "y": 0.7071428571428572
+          },
+          "title": "health_atlas_feature_goblet_neck",
+          "explanation": "health_atlas_feature_goblet_neck_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_transport_goblet.xml"
+    },
+    {
+      "id": "cell-club-cell",
+      "owner": "cell-club-cell",
+      "asset": "HealthAtlasTransportClub",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-club-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system",
+      "features": [
+        {
+          "marker": {
+            "id": "club-dome",
+            "x": 0.49722222222222223,
+            "y": 0.2357142857142857
+          },
+          "title": "health_atlas_feature_club_dome",
+          "explanation": "health_atlas_feature_club_dome_detail"
+        },
+        {
+          "marker": {
+            "id": "club-granules",
+            "x": 0.5416666666666666,
+            "y": 0.38571428571428573
+          },
+          "title": "health_atlas_feature_club_granules",
+          "explanation": "health_atlas_feature_club_granules_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_transport_club.xml"
+    },
+    {
+      "id": "cell-podocyte",
+      "owner": "cell-podocyte",
+      "asset": "HealthAtlasTransportPodocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-podocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-4-microscopic-anatomy-of-the-kidney",
+      "features": [
+        {
+          "marker": {
+            "id": "podocyte-foot",
+            "x": 0.35555555555555557,
+            "y": 0.6678571428571428
+          },
+          "title": "health_atlas_feature_podocyte_foot",
+          "explanation": "health_atlas_feature_podocyte_foot_detail"
+        },
+        {
+          "marker": {
+            "id": "gbm",
+            "x": 0.6555555555555556,
+            "y": 0.7178571428571429
+          },
+          "title": "health_atlas_feature_gbm",
+          "explanation": "health_atlas_feature_gbm_detail"
+        },
+        {
+          "marker": {
+            "id": "podocyte-body",
+            "x": 0.4861111111111111,
+            "y": 0.3357142857142857
+          },
+          "title": "health_atlas_feature_podocyte_body",
+          "explanation": "health_atlas_feature_podocyte_body_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_transport_podocyte.xml"
+    },
+    {
+      "id": "cell-mesangial-cell",
+      "owner": "cell-mesangial-cell",
+      "asset": "HealthAtlasTransportMesangial",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-mesangial-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-4-microscopic-anatomy-of-the-kidney",
+      "features": [
+        {
+          "marker": {
+            "id": "mesangial-core",
+            "x": 0.4722222222222222,
+            "y": 0.4785714285714286
+          },
+          "title": "health_atlas_feature_mesangial_core",
+          "explanation": "health_atlas_feature_mesangial_core_detail"
+        },
+        {
+          "marker": {
+            "id": "mesangial-support",
+            "x": 0.6194444444444445,
+            "y": 0.5678571428571428
+          },
+          "title": "health_atlas_feature_mesangial_support",
+          "explanation": "health_atlas_feature_mesangial_support_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_transport_mesangial.xml"
+    },
+    {
+      "id": "cell-proximal-tubular-cell",
+      "owner": "cell-proximal-tubular-cell",
+      "asset": "HealthAtlasTransportProximal",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-proximal-tubular-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption",
+      "features": [
+        {
+          "marker": {
+            "id": "prox-brush",
+            "x": 0.4666666666666667,
+            "y": 0.20357142857142857
+          },
+          "title": "health_atlas_feature_prox_brush",
+          "explanation": "health_atlas_feature_prox_brush_detail"
+        },
+        {
+          "marker": {
+            "id": "prox-mito",
+            "x": 0.5916666666666667,
+            "y": 0.6642857142857143
+          },
+          "title": "health_atlas_feature_prox_mito",
+          "explanation": "health_atlas_feature_prox_mito_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_transport_proximal.xml"
+    },
+    {
+      "id": "cell-distal-tubular-cell",
+      "owner": "cell-distal-tubular-cell",
+      "asset": "HealthAtlasTransportDistal",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-distal-tubular-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption",
+      "features": [
+        {
+          "marker": {
+            "id": "distal-microvilli",
+            "x": 0.4861111111111111,
+            "y": 0.26071428571428573
+          },
+          "title": "health_atlas_feature_distal_microvilli",
+          "explanation": "health_atlas_feature_distal_microvilli_detail"
+        },
+        {
+          "marker": {
+            "id": "distal-inflections",
+            "x": 0.5111111111111111,
+            "y": 0.7071428571428572
+          },
+          "title": "health_atlas_feature_distal_inflections",
+          "explanation": "health_atlas_feature_distal_inflections_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_transport_distal.xml"
+    },
+    {
+      "id": "cell-collecting-duct-principal-cell",
+      "owner": "cell-collecting-duct-principal-cell",
+      "asset": "HealthAtlasTransportPrincipal",
+      "viewLabel": "health_atlas_cell_morphology",
+      "entryIDs": [
+        "cell-collecting-duct-principal-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption",
+      "features": [
+        {
+          "marker": {
+            "id": "principal-apical",
+            "x": 0.5333333333333333,
+            "y": 0.2714285714285714
+          },
+          "title": "health_atlas_feature_principal_apical",
+          "explanation": "health_atlas_feature_principal_apical_detail"
+        },
+        {
+          "marker": {
+            "id": "principal-body",
+            "x": 0.5722222222222222,
+            "y": 0.6
+          },
+          "title": "health_atlas_feature_principal_body",
+          "explanation": "health_atlas_feature_principal_body_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_transport_principal.xml"
+    },
+    {
+      "id": "cell-collecting-duct-intercalated-cell",
+      "owner": "cell-collecting-duct-intercalated-cell",
+      "asset": "HealthAtlasTransportIntercalated",
+      "viewLabel": "health_atlas_type_a_intercalated_view",
+      "entryIDs": [
+        "cell-collecting-duct-intercalated-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption",
+      "features": [
+        {
+          "marker": {
+            "id": "type-a-pump",
+            "x": 0.5055555555555555,
+            "y": 0.2714285714285714
+          },
+          "title": "health_atlas_feature_type_a_pump",
+          "explanation": "health_atlas_feature_type_a_pump_detail"
+        },
+        {
+          "marker": {
+            "id": "intercalated-mito",
+            "x": 0.6,
+            "y": 0.4714285714285714
+          },
+          "title": "health_atlas_feature_intercalated_mito",
+          "explanation": "health_atlas_feature_intercalated_mito_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_transport_intercalated.xml"
+    },
+    {
+      "id": "cell-urothelial-cell",
+      "owner": "cell-urothelial-cell",
+      "asset": "HealthAtlasTransportUrothelial",
+      "viewLabel": "health_atlas_umbrella_view",
+      "entryIDs": [
+        "cell-urothelial-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-2-gross-anatomy-of-urine-transport",
+      "features": [
+        {
+          "marker": {
+            "id": "umbrella-surface",
+            "x": 0.5,
+            "y": 0.30357142857142855
+          },
+          "title": "health_atlas_feature_umbrella_surface",
+          "explanation": "health_atlas_feature_umbrella_surface_detail"
+        },
+        {
+          "marker": {
+            "id": "urothelial-apical",
+            "x": 0.6166666666666667,
+            "y": 0.30714285714285716
+          },
+          "title": "health_atlas_feature_urothelial_apical",
+          "explanation": "health_atlas_feature_urothelial_apical_detail"
+        }
+      ],
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_transport_urothelial.xml"
+    }
+  ]
+}
