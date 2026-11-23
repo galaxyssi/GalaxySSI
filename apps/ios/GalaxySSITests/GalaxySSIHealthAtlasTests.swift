@@ -2145,6 +2145,36 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testAstrocyteTransferTimingAndRouteHandoffs() throws {
+    typealias Motion = GalaxySSIHealthAtlasAstrocyteMotion
+    for index in 0...2 {
+      XCTAssertEqual(Motion.signal(0, index: index), 0)
+      XCTAssertEqual(Motion.signal(1, index: index), 1)
+      XCTAssertEqual(Motion.uptake(0, index: index), 0)
+      XCTAssertEqual(Motion.uptake(1, index: index), 1)
+      XCTAssertEqual(Motion.conversion(0, index: index), 0)
+      XCTAssertEqual(Motion.conversion(1, index: index), 1)
+      XCTAssertEqual(Motion.recycle(0, index: index), 0)
+      XCTAssertEqual(Motion.recycle(1, index: index), 1)
+      XCTAssertEqual(Motion.buffer(0, index: index), 0)
+      XCTAssertEqual(Motion.buffer(1, index: index), 1)
+      let uptakeEnd = try XCTUnwrap(Motion.uptakeRoutes[index].commands.last?.points.last)
+      let conversionEnd = try XCTUnwrap(Motion.conversionRoutes[index].commands.last?.points.last)
+      let signalEnd = try XCTUnwrap(Motion.signalRoutes[index].commands[0].points.last)
+      let returnEnd = try XCTUnwrap(Motion.returnRoutes[index].commands.last?.points.last)
+      XCTAssertEqual(Motion.uptakeRoutes[index].start, signalEnd)
+      XCTAssertEqual(uptakeEnd, Motion.conversionRoutes[index].start)
+      XCTAssertEqual(conversionEnd, Motion.returnRoutes[index].start)
+      XCTAssertEqual(returnEnd, .init(x: 125, y: 91))
+    }
+    XCTAssertEqual(Motion.travel(0.5, start: 0.25, duration: 0.5), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.travel(.nan, start: 0.25, duration: 0.5), 0)
+    XCTAssertLessThan(Motion.signal(0.4, index: 1), Motion.signal(0.4, index: 0))
+    XCTAssertLessThan(Motion.conversion(0.3, index: 0), 0.58)
+    XCTAssertGreaterThan(Motion.conversion(0.5, index: 0), 0.58)
+    XCTAssertEqual(Motion.bufferRoutes.count, 3)
+  }
+
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion

@@ -160,6 +160,11 @@
     C4384000000000000000015B /* GalaxySSIHealthAtlasLarynxSuperiorDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000015C /* GalaxySSIHealthAtlasLarynxSuperiorDrawing.swift */; };
     C4384000000000000000015D /* GalaxySSIHealthAtlasLarynxFrontalDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000015E /* GalaxySSIHealthAtlasLarynxFrontalDrawing.swift */; };
     C4384000000000000000015F /* GalaxySSIHealthAtlasLarynxSignalDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000160 /* GalaxySSIHealthAtlasLarynxSignalDrawing.swift */; };
+    C43840000000000000000161 /* GalaxySSIHealthAtlasAstrocyteMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000162 /* GalaxySSIHealthAtlasAstrocyteMotion.swift */; };
+    C43840000000000000000163 /* GalaxySSIHealthAtlasAstrocyteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000164 /* GalaxySSIHealthAtlasAstrocyteView.swift */; };
+    C43840000000000000000165 /* GalaxySSIHealthAtlasAstrocyteShapes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000166 /* GalaxySSIHealthAtlasAstrocyteShapes.swift */; };
+    C43840000000000000000167 /* GalaxySSIHealthAtlasAstrocyteAnatomyDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000168 /* GalaxySSIHealthAtlasAstrocyteAnatomyDrawing.swift */; };
+    C43840000000000000000169 /* GalaxySSIHealthAtlasAstrocyteDynamicsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000016A /* GalaxySSIHealthAtlasAstrocyteDynamicsDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1793,6 +1798,11 @@
     C4384000000000000000015C /* GalaxySSIHealthAtlasLarynxSuperiorDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLarynxSuperiorDrawing.swift; sourceTree = "<group>"; };
     C4384000000000000000015E /* GalaxySSIHealthAtlasLarynxFrontalDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLarynxFrontalDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000160 /* GalaxySSIHealthAtlasLarynxSignalDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLarynxSignalDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000162 /* GalaxySSIHealthAtlasAstrocyteMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAstrocyteMotion.swift; sourceTree = "<group>"; };
+    C43840000000000000000164 /* GalaxySSIHealthAtlasAstrocyteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAstrocyteView.swift; sourceTree = "<group>"; };
+    C43840000000000000000166 /* GalaxySSIHealthAtlasAstrocyteShapes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAstrocyteShapes.swift; sourceTree = "<group>"; };
+    C43840000000000000000168 /* GalaxySSIHealthAtlasAstrocyteAnatomyDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAstrocyteAnatomyDrawing.swift; sourceTree = "<group>"; };
+    C4384000000000000000016A /* GalaxySSIHealthAtlasAstrocyteDynamicsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAstrocyteDynamicsDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3445,6 +3455,11 @@
         C4384000000000000000015C /* GalaxySSIHealthAtlasLarynxSuperiorDrawing.swift */,
         C4384000000000000000015E /* GalaxySSIHealthAtlasLarynxFrontalDrawing.swift */,
         C43840000000000000000160 /* GalaxySSIHealthAtlasLarynxSignalDrawing.swift */,
+        C43840000000000000000162 /* GalaxySSIHealthAtlasAstrocyteMotion.swift */,
+        C43840000000000000000164 /* GalaxySSIHealthAtlasAstrocyteView.swift */,
+        C43840000000000000000166 /* GalaxySSIHealthAtlasAstrocyteShapes.swift */,
+        C43840000000000000000168 /* GalaxySSIHealthAtlasAstrocyteAnatomyDrawing.swift */,
+        C4384000000000000000016A /* GalaxySSIHealthAtlasAstrocyteDynamicsDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5227,6 +5242,11 @@
         C4384000000000000000015B /* GalaxySSIHealthAtlasLarynxSuperiorDrawing.swift in Sources */,
         C4384000000000000000015D /* GalaxySSIHealthAtlasLarynxFrontalDrawing.swift in Sources */,
         C4384000000000000000015F /* GalaxySSIHealthAtlasLarynxSignalDrawing.swift in Sources */,
+        C43840000000000000000161 /* GalaxySSIHealthAtlasAstrocyteMotion.swift in Sources */,
+        C43840000000000000000163 /* GalaxySSIHealthAtlasAstrocyteView.swift in Sources */,
+        C43840000000000000000165 /* GalaxySSIHealthAtlasAstrocyteShapes.swift in Sources */,
+        C43840000000000000000167 /* GalaxySSIHealthAtlasAstrocyteAnatomyDrawing.swift in Sources */,
+        C43840000000000000000169 /* GalaxySSIHealthAtlasAstrocyteDynamicsDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
