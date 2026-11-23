@@ -2,7 +2,7 @@
 
 ## Review Scope
 - Ports Android #4367 at `20de8dd75a18c257e7a8fdba844511d3bd98c37d`.
-- Formal non-draft PR, base main. Predecessor iOS #4488 is merged; synchronize latest main before publication.
+- Formal non-draft PR, base main. Predecessor iOS #4488 is merged; synchronized main at `3ea3e7262` before publication. No preceding feature changes remain in the main-based diff.
 - New scope: three painted plates/seven recalibrated features, three independent native lessons, canonical related-cell navigation, shared scene framing and public teaching-scope integration.
 - iOS only. No version, anatomy graph/model equations, Android/Desktop, personal-health storage or IPA changes.
 
