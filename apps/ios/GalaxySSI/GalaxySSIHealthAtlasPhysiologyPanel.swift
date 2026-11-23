@@ -17,6 +17,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
         Text(GalaxySSIHealthAtlasPhysiologyText.companion(model, language: language)).font(.subheadline).foregroundColor(.secondary)
         if let amounts = model.renalAmounts { renalBalance(amounts) }
         if let forces = model.elbowForces { GalaxySSIHealthAtlasElbowView(forces: forces, language: language) }
+        if let flow = model.vesselFlow { GalaxySSIHealthAtlasVesselFlowView(flow: flow, language: language) }
         chart(model)
         Text(String(format: t("model_axis"), t(model.kind.inputs[model.kind.axis].key), model.kind.inputs[model.kind.axis].unit))
           .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -26,7 +27,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
               .fixedSize(horizontal: false, vertical: true)
             Slider(value: binding(index, model: model), in: Double(spec.range.lowerBound)...Double(spec.range.upperBound), step: 1)
               .accessibilityLabel(t(spec.key))
-              .accessibilityValue(GalaxySSIHealthAtlasPhysiologyText.number(model.input(index), language: language) + " " + spec.unit)
+              .accessibilityValue(GalaxySSIHealthAtlasPhysiologyText.inputNumber(model.input(index), key: spec.key, language: language) + " " + spec.unit)
           }
         }
         Button { inputs = GalaxySSIHealthAtlasPhysiology(kind: model.kind).inputs } label: {
@@ -79,11 +80,13 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
   private func chart(_ model: GalaxySSIHealthAtlasPhysiology) -> some View {
     let low = model.kind.bounds.lowerBound, high = model.plotMaximum
     let left = model.axisRange.lowerBound, right = model.axisRange.upperBound
+    let output = { GalaxySSIHealthAtlasPhysiologyText.resultNumber($0, kind: model.kind, language: language) }
+    let input = { GalaxySSIHealthAtlasPhysiologyText.inputNumber($0, key: model.kind.inputs[model.kind.axis].key, language: language) }
     return VStack(alignment: .leading, spacing: 8) {
       Text(model.kind.unit).font(.caption)
       HStack(alignment: .top, spacing: 8) {
         VStack(alignment: .trailing) {
-          Text(number(high)); Spacer(); Text(number((low + high) / 2)); Spacer(); Text(number(low))
+          Text(output(high)); Spacer(); Text(output((low + high) / 2)); Spacer(); Text(output(low))
         }.font(.caption).frame(height: 160).fixedSize(horizontal: true, vertical: false)
         VStack(spacing: 8) {
           GeometryReader { geometry in
@@ -111,7 +114,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
             }.clipped()
           }.frame(height: 160)
           HStack {
-            Text(number(left)); Spacer(); Text(number((left + right) / 2)); Spacer(); Text(number(right))
+            Text(input(left)); Spacer(); Text(input((left + right) / 2)); Spacer(); Text(input(right))
           }.font(.caption)
         }
       }
@@ -122,5 +125,4 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
       GalaxySSIHealthAtlasPhysiologyText.input(model, index: model.kind.axis, language: language))
   }
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasPhysiologyText.string(key, language: language) }
-  private func number(_ value: Double) -> String { GalaxySSIHealthAtlasPhysiologyText.number(value, language: language) }
 }
