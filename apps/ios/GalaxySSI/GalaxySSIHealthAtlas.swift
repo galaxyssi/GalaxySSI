@@ -173,7 +173,8 @@ struct GalaxySSIHealthAtlas: Decodable {
   }
   func plate(for id: String?) -> Plate? {
     if let pack = try? CellPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
-    if let pack = try? RespirationPack.bundled.get(), pack.plate.entryIDs.contains(id ?? "") { return pack.plate }
+    if ["alveoli", "respiratory-membrane", "pulmonary-capillaries"].contains(id ?? ""),
+       let pack = try? RespirationPack.bundled.get() { return pack.plate }
     if let pack = try? ArtworkPack.bundled.get() {
       return pack.plates.first { $0.entryIDs.contains(id ?? "") }
     }
