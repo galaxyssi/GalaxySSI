@@ -41,6 +41,9 @@
 "health_atlas_hearing_ear_1" = "The eardrum vibrates";
 "health_atlas_hearing_ear_2" = "Ossicles move the oval window";
 "health_atlas_hearing_ear_3" = "Cochlear hair cells drive an auditory signal";
+"health_atlas_hearing_eardrum" = "Eardrum";
+"health_atlas_hearing_ossicles" = "Ossicles";
+"health_atlas_hearing_route_scope" = "Air-conduction schematic. Playback does not represent the speed, strength or frequency of the signal.";
 "health_atlas_hearing_external_ear_title" = "Collecting sound in the outer ear";
 "health_atlas_hearing_external_ear_0" = "The pinna receives sound";
 "health_atlas_hearing_external_ear_1" = "Its folds shape incoming sound";

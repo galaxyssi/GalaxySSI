@@ -1196,6 +1196,47 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testSensorySectionsUseWideEarTracksAndRetinalCircuitStageWithoutReplacingNavigation() throws {
+    typealias Lesson = GalaxySSIHealthAtlasSectionLesson
+    typealias Diagram = GalaxySSIHealthAtlasSectionLessonView
+    let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
+    let ear = try XCTUnwrap(Lesson.forEntry("ear")), retina = try XCTUnwrap(Lesson.forEntry("retina"))
+    XCTAssertEqual(ear.artWidth, 460); XCTAssertEqual(ear.routes.count, 4)
+    XCTAssertEqual(ear.stageFeatures, [0, 1, 2, 3]); XCTAssertEqual(retina.stageFeatures, [0, 1, 2, 3])
+    XCTAssertEqual(retina.artWidth, 360); XCTAssertTrue(retina.routes.isEmpty); XCTAssertTrue(retina.plate.markers.isEmpty)
+    XCTAssertEqual(retina.plate.annotations.map(\.id),
+      ["cell-rod-photoreceptor", "retina-relay-layer", "cell-cone-photoreceptor", "cell-retinal-ganglion-cell"])
+    XCTAssertEqual(atlas.plate(for: "retina")?.markers.count, 3)
+    XCTAssertEqual(atlas.plate(for: "ear")?.markers.count, 5)
+    for lesson in [ear, retina] {
+      for stage in 0..<4 {
+        let feature = try XCTUnwrap(lesson.feature(stage: stage))
+        for language in ["en", "zh-Hans"] {
+          XCTAssertNotEqual(GalaxySSIHealthAtlasText.get(feature.title, language), feature.title)
+          XCTAssertNotEqual(GalaxySSIHealthAtlasText.get(feature.explanation, language), feature.explanation)
+        }
+        if let route = lesson.route(stage: stage) {
+          XCTAssertTrue(route.fits(width: lesson.artWidth))
+          for fraction in [0.0, 0.4, 1] { XCTAssertNotNil(Diagram.flow(route, fraction: fraction, width: lesson.artWidth)) }
+        }
+      }
+    }
+    let last = try XCTUnwrap(ear.routes.last)
+    XCTAssertFalse(last.valid); XCTAssertNil(Diagram.flow(last, fraction: 0.5))
+    XCTAssertEqual(Diagram.path(last, width: 460).cgPath.currentPoint, CGPoint(x: 442, y: 198))
+    XCTAssertNil(Diagram.flow(last, fraction: 0.5, width: .nan))
+    XCTAssertNil(Diagram.flow(last, fraction: 0.5, width: 0))
+    let earEntry = try XCTUnwrap(atlas.entry("ear")), retinaEntry = try XCTUnwrap(atlas.entry("retina"))
+    state.binding(earEntry).wrappedValue.simulation.phase = 0.75
+    state.binding(earEntry).wrappedValue.physiologyInputs = [65, 40, 150]
+    state.binding(retinaEntry).wrappedValue.simulation.phase = 0.5
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.binding(earEntry).wrappedValue.simulation.stage, 3)
+    XCTAssertEqual(restored.binding(retinaEntry).wrappedValue.simulation.stage, 2)
+    XCTAssertEqual(restored.binding(earEntry).wrappedValue.physiologyInputs, [65, 40, 150])
+    XCTAssertNil(Lesson.forEntry("eye")); XCTAssertNil(Lesson.forEntry("cell-cochlear-hair-cell"))
+  }
+
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
     let handoff = GalaxySSIHealthAtlasAgentHandoff()
     let token = try XCTUnwrap(handoff.prepare(owner: "a", conversation: "c", prompt: "Public teaching", now: 10))
