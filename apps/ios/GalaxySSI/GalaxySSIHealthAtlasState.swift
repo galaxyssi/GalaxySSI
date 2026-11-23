@@ -10,6 +10,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     var simulation = GalaxySSIHealthAtlasSimulation()
     var physiologyInputs: [Int]?
     var elimination = GalaxySSIHealthAtlasElimination()
+    var artworkView: String?
     var metric: GalaxySSIHealthMetric?
     var window = GalaxySSIHealthAtlasWindow.month
     var layers = true
@@ -33,6 +34,9 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
       entries[id]?.physiologyInputs = restored
       #endif
       entries[id]?.elimination.sanitize()
+      if let view = entries[id]?.artworkView, !atlas.views(for: id).contains(where: { $0.viewKey == view }) {
+        entries[id]?.artworkView = nil
+      }
       if let zoom = entries[id]?.zoom { entries[id]?.zoom = zoom.isFinite ? min(4, max(1, zoom)) : 1 }
       if let metric = entries[id]?.metric, !GalaxySSIHealthAtlasMetrics.forEntry(id).contains(metric) { entries[id]?.metric = nil }
     }

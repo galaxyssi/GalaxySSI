@@ -38,6 +38,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     guard let url = bundle.url(forResource: "body-atlas", withExtension: "json", subdirectory: "body-atlas")
     else { throw Invalid.catalogue }
     var result = try validated(JSONDecoder().decode(Self.self, from: Data(contentsOf: url)))
+    if includeExtensions, let pack = try MusculoskeletalPack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     if includeExtensions, let pack = try OverviewPack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     guard includeExtensions else { return result }
     if let pack = try SystemPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
@@ -102,6 +103,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     let aspectRatio: Double
     let markers: [Marker]
     var source: URL? = nil
+    var viewKey: String? = nil
   }
   /// An additive, bundled-only asset pack can land independently of the atlas UI.
   struct ArtworkPack: Decodable {
@@ -199,7 +201,18 @@ struct GalaxySSIHealthAtlas: Decodable {
           (0...1).contains($0.x) && (0...1).contains($0.y) })
       }) else { throw Invalid.catalogue }
   }
-  func plate(for id: String?) -> Plate? {
+  func views(for id: String?) -> [Plate] {
+    if let pack = try? MusculoskeletalPack.bundled.get() {
+      let views = pack.plates.filter { $0.entryIDs.contains(id ?? "") }
+      if !views.isEmpty { return views }
+    }
+    return defaultPlate(for: id).map { [$0] } ?? []
+  }
+  func plate(for id: String?, viewKey: String? = nil) -> Plate? {
+    let available = views(for: id)
+    return available.first(where: { $0.viewKey == viewKey }) ?? available.first
+  }
+  private func defaultPlate(for id: String?) -> Plate? {
     if let pack = try? SystemPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     if let pack = try? CellPack.bundled.get(), let plate = pack.plates.first(where: { $0.entryIDs.contains(id ?? "") }) { return plate }
     if let pack = try? RenalPack.bundled.get(), pack.plate.entryIDs.contains(id ?? "") { return pack.plate }

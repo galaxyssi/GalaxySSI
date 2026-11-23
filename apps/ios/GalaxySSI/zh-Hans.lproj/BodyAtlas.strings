@@ -1155,3 +1155,9 @@
 "health_atlas_renal_lumen_blood" = "肾小管腔 → 血液";
 "health_atlas_renal_lumen_urine" = "肾小管腔 → 尿液";
 "health_atlas_renal_balance_scope" = "全肾单位的溶质收支，不是尿量或 eGFR。各段转运经过汇总；箭头仅表示方向，不代表解剖位置或流速。";
+"health_atlas_view_front" = "正面";
+"health_atlas_view_back" = "背面";
+"health_atlas_skeleton_front" = "骨骼 · 正面概览";
+"health_atlas_skeleton_back" = "骨骼 · 背面概览";
+"health_atlas_muscle_front" = "表层肌肉 · 正面概览";
+"health_atlas_muscle_back" = "表层肌肉 · 背面概览；肌腱以足跟处为例";

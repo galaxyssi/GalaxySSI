@@ -59,7 +59,7 @@ enum GalaxySSIHealthAtlasQuestion {
     }
     let elimination = GalaxySSIHealthAtlasAgentContext.Elimination(halfLife: selection.elimination.halfLife, elapsed: selection.elimination.elapsed)
     let illustration = entry.flatMap { item in
-      atlas.plate(for: item.id).flatMap { plate in
+      atlas.plate(for: item.id, viewKey: selection.artworkView).flatMap { plate in
         GalaxySSIHealthAtlasAgentContext.Illustration(entryID: item.id,
           caption: atlas.caption(plate, selected: item, language: language), source: plate.source)
       }
@@ -72,7 +72,7 @@ enum GalaxySSIHealthAtlasQuestion {
     let model = atlas.model(entry)
     var prompt = String(format: t("ask_context"), GalaxySSIHealthAtlasText.get(entry.name, language),
       GalaxySSIHealthAtlasText.get(entry.description, language), GalaxySSIHealthAtlasText.get(model.title, language), model.source.absoluteString)
-    if research || selection.tab != .values, let plate = atlas.plate(for: entry.id) {
+    if research || selection.tab != .values, let plate = atlas.plate(for: entry.id, viewKey: selection.artworkView) {
       prompt += "\n" + atlas.caption(plate, selected: entry, language: language) + "\n" + t("art_note")
       if let source = plate.source { prompt += "\n" + source.absoluteString }
     }
