@@ -68,12 +68,6 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         GalaxySSIHealthAtlasText.get(model.stages[simulation.stage], language)))
       Slider(value: $simulation.phase, in: 0...1, onEditingChanged: { _ in playing = false })
         .accessibilityLabel(t("phase"))
-      #if GALAXYSSI_ATLAS_PHYSIOLOGY
-      if gasExchange {
-        GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
-          legacyVentilation: entry.id == "alveoli" ? [simulation.first, simulation.second] : nil)
-      }
-      #endif
       HStack {
         control("backward.step", "previous_step") { playing = false; simulation.selectStage(max(0, simulation.stage - 1)) }
         control(playing ? "pause.fill" : "play.fill", playing ? "pause" : "play") {
@@ -89,6 +83,12 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       if reduceMotion { Text(bodyText("motion_disabled")).font(.caption) }
       Text(t("speed") + " · " + String(format: "%.1f×", simulation.speed))
       Slider(value: $simulation.speed, in: 0.5...2, step: 0.5).accessibilityLabel(t("speed"))
+      #if GALAXYSSI_ATLAS_PHYSIOLOGY
+      if gasExchange {
+        GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
+          legacyVentilation: entry.id == "alveoli" ? [simulation.first, simulation.second] : nil)
+      }
+      #endif
       Text(t("teaching_note")).font(.footnote).foregroundColor(.secondary)
       if cardiac || (lung && !hasPhysiology) {
         Text(t("parameters")).font(.headline)
