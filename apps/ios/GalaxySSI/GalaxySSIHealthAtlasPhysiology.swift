@@ -1,5 +1,21 @@
 import Foundation
 
+/// Steady-state solute transfers only, not urine volume or a patient clearance estimate.
+struct GalaxySSIHealthAtlasRenalAmounts: Equatable, Sendable {
+  let filtered: Double
+  let reabsorbed: Double
+  let secreted: Double
+  var excreted: Double { filtered - reabsorbed + secreted }
+  init?(filtered: Double, reabsorbedPercent: Double, secreted: Double) {
+    guard filtered.isFinite, filtered >= 0, reabsorbedPercent.isFinite, (0...100).contains(reabsorbedPercent),
+      secreted.isFinite, secreted >= 0 else { return nil }
+    let recovered = filtered * (reabsorbedPercent / 100)
+    guard (filtered - recovered + secreted).isFinite else { return nil }
+    self.filtered = filtered; self.reabsorbed = recovered; self.secreted = secreted
+  }
+  var transfers: [Double] { [filtered, reabsorbed, secreted, excreted] }
+}
+
 /// Synthetic teaching inputs only. This model has no archive, observation, file or transport dependency.
 struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   struct Input: Equatable, Sendable {
@@ -72,7 +88,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     static func forEntry(_ id: String) -> Self? {
       switch id {
       case "respiratory", "lungs", "alveoli": return .ventilation
-      case "urinary", "kidneys", "nephron", "renal-tubules", "collecting-ducts", "cell-proximal-tubular-cell",
+      case "urinary", "kidneys", "nephron", "renal-tubules", "collecting-ducts", "proximal-tubule", "nephron-loop",
+           "distal-tubule", "cell-proximal-tubular-cell",
            "cell-distal-tubular-cell", "cell-collecting-duct-principal-cell", "cell-collecting-duct-intercalated-cell": return .renal
       case "nervous", "brain", "spinal-cord", "cell-neuron", "cell-olfactory-receptor-neuron": return .potassium
       #if GALAXYSSI_ATLAS_OXYGEN
@@ -105,12 +122,15 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var companionValue: Double {
     switch kind {
     case .ventilation: return input(0) * input(1) / 1000
-    case .renal: return input(0) * input(1) / 100
+    case .renal: return renalAmounts!.reabsorbed
     case .potassium: return input(0) / input(1)
     #if GALAXYSSI_ATLAS_OXYGEN
     case .oxygen: return oxygenAmounts!.total
     #endif
     }
+  }
+  var renalAmounts: GalaxySSIHealthAtlasRenalAmounts? {
+    kind == .renal ? GalaxySSIHealthAtlasRenalAmounts(filtered: input(0), reabsorbedPercent: input(1), secreted: input(2)) : nil
   }
   #if GALAXYSSI_ATLAS_OXYGEN
   var oxygenAmounts: GalaxySSIHealthAtlasOxygen.Amounts? {
@@ -134,7 +154,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
     case .ventilation: return values[0] * (values[1] - values[2]) / 1000
-    case .renal: return values[0] * (1 - values[1] / 100) + values[2]
+    case .renal: return GalaxySSIHealthAtlasRenalAmounts(filtered: values[0], reabsorbedPercent: values[1], secreted: values[2])!.excreted
     case .potassium: return Self.potassiumPotential(outside: values[0], inside: values[1])!
     #if GALAXYSSI_ATLAS_OXYGEN
     case .oxygen: return 100 * GalaxySSIHealthAtlasOxygen.saturation(pressure: values[0], p50: values[1])!

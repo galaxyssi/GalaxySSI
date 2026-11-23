@@ -51,9 +51,24 @@ enum GalaxySSIHealthAtlasPhysiologyText {
   static func context(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
     ([string("model_synthetic", language: language), string("model_" + model.kind.rawValue + "_scope", language: language)] +
       model.inputs.indices.map { input(model, index: $0, language: language) } +
-      [result(model, language: language), companion(model, language: language),
+      [result(model, language: language), companion(model, language: language)] +
+      (model.renalAmounts.map { renalContext($0, language: language) } ?? []) +
+      [
        string("model_" + model.kind.rawValue + "_formula", language: language)] + model.kind.sources.map(\.absoluteString))
       .joined(separator: "\n")
+  }
+  static func renalTransfer(_ amounts: GalaxySSIHealthAtlasRenalAmounts, index: Int, language: String) -> String {
+    let labels = ["filtered", "reabsorbed", "secreted", "excreted"]
+    guard labels.indices.contains(index) else { return "" }
+    return String(format: GalaxySSIHealthAtlasText.get("health_atlas_renal_balance_" + labels[index], language),
+      number(amounts.transfers[index], language: language))
+  }
+  static func renalDirection(_ index: Int, language: String) -> String {
+    GalaxySSIHealthAtlasText.get("health_atlas_renal_" + (index == 1 ? "lumen_blood" : index == 3 ? "lumen_urine" : "blood_lumen"), language)
+  }
+  static func renalContext(_ amounts: GalaxySSIHealthAtlasRenalAmounts, language: String) -> [String] {
+    [GalaxySSIHealthAtlasText.get("health_atlas_renal_balance_scope", language)] +
+      (0..<4).map { renalTransfer(amounts, index: $0, language: language) + ": " + renalDirection($0, language: language) }
   }
   private static let english: [String: String] = [
     "health_atlas_model_axis": "%1$@ (%2$@) · Other inputs held fixed",
