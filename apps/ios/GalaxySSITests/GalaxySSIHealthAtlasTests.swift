@@ -122,12 +122,13 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     for id in ["alveoli", "respiratory-membrane", "pulmonary-capillaries"] {
       let entry = try XCTUnwrap(atlas.entry(id))
       XCTAssertEqual(entry.mechanism, "gas-exchange")
-      XCTAssertEqual(atlas.plate(for: id)?.id, "alveolus")
+      XCTAssertTrue(atlas.views(for: id).contains { $0.id == "alveolus" })
+      XCTAssertEqual(atlas.plate(for: id)?.owner, id)
     }
     let club = try XCTUnwrap(atlas.entry("cell-club-cell"))
     XCTAssertEqual(atlas.model(club).source.absoluteString, "https://pubmed.ncbi.nlm.nih.gov/29874100/")
     XCTAssertEqual(atlas.model(club).stages.count, 4)
-    XCTAssertNil(atlas.plate(for: club.id))
+    XCTAssertEqual(atlas.plate(for: club.id)?.owner, club.id)
   }
 
   func testMechanismResearchReferencesCannotEscapePubMedArticleAllowlist() throws {
@@ -271,7 +272,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       XCTAssertEqual(atlas.views(for: id).map(\.owner), [id, "nervous"])
     }
     XCTAssertEqual(atlas.views(for: "spinal-cord").map(\.owner), ["spinal-cord", "nervous"])
-    for id in ["veins", "capillaries"] { XCTAssertEqual(atlas.plate(for: id)?.owner, "cardio") }
+    for id in ["veins", "capillaries"] { XCTAssertEqual(atlas.views(for: id).map(\.owner), [id, "cardio"]) }
     XCTAssertEqual(atlas.plate(for: "brain")?.id, "brain")
     XCTAssertEqual(atlas.plate(for: "heart", viewKey: "heart-section")?.viewKey, "heart-section")
     XCTAssertEqual(atlas.plate(for: "aorta")?.owner, "aorta")
@@ -988,9 +989,9 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.DetailStructurePack.read(bundle: bundle))
     try pack.validating(in: atlas, bundle: bundle)
-    XCTAssertEqual(pack.plates.count, 61)
-    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 279)
-    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 52)
+    XCTAssertEqual(pack.plates.count, 88)
+    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 392)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 116)
     let state = GalaxySSIHealthAtlasState()
     for detail in pack.plates {
       let owner = try XCTUnwrap(detail.owner), entry = try XCTUnwrap(atlas.entry(owner))
@@ -1034,6 +1035,31 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     for detail in pack.plates {
       let owner = try XCTUnwrap(detail.owner)
       XCTAssertEqual(atlas.plate(for: owner, viewKey: next.entries[owner]?.artworkView)?.asset, detail.asset)
+    }
+  }
+
+  func testDedicatedArtworkOwnershipAndSternumHandLandmarksPreserveRealNeighbors() throws {
+    let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    XCTAssertEqual(atlas.entries.count, 313)
+    XCTAssertEqual(atlas.entries.filter { $0.kind == .organ }.count, 177)
+    for entry in atlas.entries {
+      XCTAssertEqual(atlas.plate(for: entry.id)?.owner, entry.id)
+    }
+    let courses = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: bundle))
+    for (owner, neighbors, features, storyID) in [
+      ("sternum", ["clavicle"], ["sternum-angle", "sternum-xiphoid"], "THORACIC_FRAME"),
+      ("hand-bones", ["radius", "ulna"], ["hand-bones-carpals", "hand-bones-pisiform"], "BONE_REMODELING")
+    ] {
+      let plate = try XCTUnwrap(atlas.plate(for: owner))
+      XCTAssertEqual(plate.markers.map(\.id), neighbors)
+      XCTAssertTrue(Set(features).isSubset(of: Set(plate.annotations.map(\.id))))
+      for neighbor in neighbors {
+        guard case .anatomy(let id) = plate.labelTarget(neighbor, in: atlas) else {
+          return XCTFail("Landmark must navigate to a real neighboring bone")
+        }
+        XCTAssertEqual(id, neighbor); XCTAssertEqual(atlas.plate(for: id)?.owner, neighbor)
+      }
+      XCTAssertEqual(courses.choices(for: owner).map(\.id), [storyID])
     }
   }
 

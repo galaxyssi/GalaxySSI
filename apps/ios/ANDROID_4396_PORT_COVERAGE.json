@@ -1,0 +1,562 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4396,
+    "mergeCommit": "dbd32a65c73e10d710372c44a7ffa8d1518d1f2c"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "counts": {
+    "android-apk-version-only": 1,
+    "android-device-test-contract-reference-not-executed": 7,
+    "original-kotlin-declaration-extraction": 10,
+    "preserved-vector-with-normalized-quadratics": 27,
+    "exact-bilingual-resource-delta": 18
+  },
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "bee7d595a71c0fca2acdd7dac9af7fae172a737709dde2b53f7659c202a8fd0d",
+      "kind": "android-apk-version-only",
+      "ios": [],
+      "note": "Pinned merge changes Android versionCode 1726 to 1727 and versionName 0.18.165 to 0.18.166. No iOS version or IPA change belongs in this feature port."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/AgentRichContentPinchZoomTest.kt",
+      "sourceSHA256": "ea2df3cf1f84aba29862c63bf0e727fae74c0e4cbf70df5113ecdf75a8417015",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "This change adjusts Android instrumentation's synthetic pinch radius to scaledMinimumScalingSpan/scaledTouchSlop. It does not change production behavior. iOS retains UIKit pinch/pan/button cancellation; no Android test-input thresholds are copied into production and no native gesture acceptance is claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGasExchangeDeviceTest.kt",
+      "sourceSHA256": "417d71be28612174b497506aba9ebb8e4e2768c64e12a71bd45a9fc0d49afee8",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasMusculoskeletalDeviceTest.kt",
+      "sourceSHA256": "3a4f11bb843ebb35ef149b51b27339002748775d629345702e6b0f294e994fc2",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasSystemOverviewDeviceTest.kt",
+      "sourceSHA256": "364b1d0b725c44e681fd539c55a84687cb33b69aca2a919fc6ee9b332889bc45",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasSystemPlateDeviceTest.kt",
+      "sourceSHA256": "098c459cd451f2fd916b117a9c7c35b25280d5b3f54612ee205f916fc021632e",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasTissueContextDeviceTest.kt",
+      "sourceSHA256": "8bffe4669fe9f36df1e74c2b44b973122db9fdc5ce68653f3ce6ded7499ecd37",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthBodyAtlasDeviceTest.kt",
+      "sourceSHA256": "5f6d8ed9ef9dd2a545131f278f14faba04becb4ce225c70e92275f7a4261100b",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAirwayDiaphragmDetailPlates.kt",
+      "sourceSHA256": "750faed6aa926b493d13b149b426320082fe617d4ec202f9ba4046dc3458db15",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCardiacComparisonDetailPlates.kt",
+      "sourceSHA256": "db3bb4720881d77f56689e373509417da43d98e820df98bf237ce110e7b88483",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasDigestiveDuctDetailPlates.kt",
+      "sourceSHA256": "ba9c9a8f14e92a16e7abbdff2fd5f215be6c050fb3d7f4268c840b8fb3134c4e",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMaleDuctRouteDetailPlates.kt",
+      "sourceSHA256": "34bc7aa2386422f41c418035ce0676a7362389637308ae83e302f446c88f61d2",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPelvicSoftTissueDetailPlates.kt",
+      "sourceSHA256": "2b8b6e78fa8487d894ef89692b8639afb184ff7fea612d5ff056e9271f48c16c",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPosteriorMuscleTendonDetailPlates.kt",
+      "sourceSHA256": "c6f4181b933132177bd1285478dfe4ea05a5338f26ae40b9b9bf5bb1fb370e3c",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasRegionalDetailPlates.kt",
+      "sourceSHA256": "b888120975268df70ad1249598d580d24b444c51a2e92fc56b1e81e559ee387a",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasRenalOutletDetailPlates.kt",
+      "sourceSHA256": "19e0bf7153104e0f1349beef371a8db4b0f1ae6a67a1c00add3699186cd093d8",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSternumAndHandDetailPlates.kt",
+      "sourceSHA256": "757e626220a1a09a06a265cb3cf28ca52ccdbf218293fe2811e50309ca3d8954",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasVascularInterfaceDetailPlates.kt",
+      "sourceSHA256": "e3071704c96ca29936b1ab04e55d8c2b17a567eff2be4a02fc7de191effbad5b",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_atria_comparison.xml",
+      "sourceSHA256": "2bb91d0065396099887095faf447ef3ad8ba1139b2fb0a932ccef654fcd5a2de",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyAtriaComparison.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_collecting_ducts_papillary_tree.xml",
+      "sourceSHA256": "36468989d49413af79678eabfc08781485cec276fb32629bcd41b9fb86779d23",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyCollectingDuctsPapillaryTree.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_diaphragm_inferior_surface.xml",
+      "sourceSHA256": "cb550c9f1f021d54c271d6a3a144ec865b288999afbd3931fee565e3f46843c5",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyDiaphragmInferiorSurface.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_distal_tubule_cortical_junction.xml",
+      "sourceSHA256": "8f87e25a891ac5a91f9e610f3c436f3cf40368d6ad7c7d5c453c23fd602ca071",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyDistalTubuleCorticalJunction.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_ejaculatory_ducts_prostatic_cutaway.xml",
+      "sourceSHA256": "8d115ac2e8723be9da774dc861b47b1c5f1ed741712b964f438f0f63eaa1cdb1",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyEjaculatoryDuctsProstaticCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_epididymis_duct_detail.xml",
+      "sourceSHA256": "4f11211ccbbc1ce17d4af80ed6d2756c7d7f5bb0fe295f8f4d33dc7626ec5f68",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyEpididymisDuctDetail.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_gastrocnemius_posterior_attachments.xml",
+      "sourceSHA256": "ba2b74d2b04fa604c2de2a017bffc4f35ead8e815520ed6596eca38ced47249f",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyGastrocnemiusPosteriorAttachments.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_gluteus_maximus_posterior_attachments.xml",
+      "sourceSHA256": "a5a280e8990ea2b123482901a4efed299761f2b19491b5896d3c2b1e1f24a033",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyGluteusMaximusPosteriorAttachments.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_hand_skeleton_palmar.xml",
+      "sourceSHA256": "10d51b81c6c376fa129cf32987923b772b0e66ab82e3581a6119da0bca02ec0c",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyHandSkeletonPalmar.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_heart_valves_comparison.xml",
+      "sourceSHA256": "efb1549238d99d5264f8acfc99222a962812af80671fd1441a17b6cb503dfa1d",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyHeartValvesComparison.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_limb_vein_cutaway.xml",
+      "sourceSHA256": "499b49055aa5582fd1394763a532a7db6f95eee001713011d59784392e7c2c3e",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyLimbVeinCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_major_salivary_pairs.xml",
+      "sourceSHA256": "c7854f14a94c97ec013486994e90c803bfeb516eb3c73575a77ece3f57662df2",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyMajorSalivaryPairs.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_nasal_cavity_lateral_wall.xml",
+      "sourceSHA256": "93d53ebc4df4d603f3dbb3bdeb9071fa52166bc870381b5d59a4bf1889895f12",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyNasalCavityLateralWall.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_pancreatic_main_duct_cutaway.xml",
+      "sourceSHA256": "c2221e3f88bb06042b5104bfdc3323552a16dd1aadaf0fdc9e00f605a036e85a",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyPancreaticMainDuctCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_pharynx_sagittal_regions.xml",
+      "sourceSHA256": "d2c57a04de6e8995ffb1d7447c27949d3fcb8cc83fbd98d9bc9fa60e678de629",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyPharynxSagittalRegions.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_prostate_sagittal_zones.xml",
+      "sourceSHA256": "e4cb04bb0fc96f996397b2eabe31f27ac6128df666d602dc1fe7cd038682103a",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyProstateSagittalZones.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_pulmonary_septal_plexus.xml",
+      "sourceSHA256": "e0c4b2cb8c729331f4a136fb761d954522dece99c60ba3b0aa4a8969d15d11f5",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyPulmonarySeptalPlexus.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_renal_tubules_segment_overview.xml",
+      "sourceSHA256": "42dc63202b038e3d649fd1ac2ebf00c4d9e97f089a0d7258e50a61e6c6c14357",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyRenalTubulesSegmentOverview.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_respiratory_membrane_layers.xml",
+      "sourceSHA256": "7624c65c47e903ffdde06786f4afabf43849763bd4a7816e59fef41f8400c455",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyRespiratoryMembraneLayers.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_seminal_vesicles_posterior_detail.xml",
+      "sourceSHA256": "0c76d68ba7a82a5e7e8f6e279eccf6d4d822ddfd2224fb7be6b452c60ff13418",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomySeminalVesiclesPosteriorDetail.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_sternum_anterior_landmarks.xml",
+      "sourceSHA256": "55115df11bf6283bbacad34e813c619d682aa24ea1cf29a494a8965f202bde65",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomySternumAnteriorLandmarks.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_sublingual_floor_cutaway.xml",
+      "sourceSHA256": "2d8c96168a3c7c0f6f0102786b366dffe1f83a4930f7faca4e7b2fc8ddc565ff",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomySublingualFloorCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_systemic_capillary_bed.xml",
+      "sourceSHA256": "ab9266659d5ba93bf49cc14d48eb37a8d73cece6395f83fb614283db1cdbd8dc",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomySystemicCapillaryBed.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_tendons_fascicle_cross_section.xml",
+      "sourceSHA256": "f652de46ad00ac6f2639f3361a6d41f1e39cd3e311cd19032e02bbfb9a4fcffb",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyTendonsFascicleCrossSection.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_vagina_sagittal_cutaway.xml",
+      "sourceSHA256": "3b66e9f2d498c2e0b91a25f49d50d5fb727cee2ef2ea9dcad5f178094a216ac4",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyVaginaSagittalCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_vas_deferens_route_detail.xml",
+      "sourceSHA256": "c1a85412c149385da5991ea998da0a6362b7633751148e952fb0b387b6a9a22c",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyVasDeferensRouteDetail.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_ventricles_short_axis.xml",
+      "sourceSHA256": "e2718cd02a15d58bb176d19c818ab15fc855fc8ab3096e8fb4bf77142041df2f",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasAnatomyVentriclesShortAxis.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_airway_diaphragm_detail_plates.xml",
+      "sourceSHA256": "677077e91a5839d85ec6185e760a86517c93bea1858ea3b6b896478258a001c3",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_cardiac_comparison.xml",
+      "sourceSHA256": "90cd9438cc22fed78fcf3d4746dd49b247c02121b66210c3656bd75e7907ac08",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_digestive_duct_detail_strings.xml",
+      "sourceSHA256": "5c5125d5fb4933006b2f009420e98c7b04382ce5ba0a9a8af41463e08ade8704",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_male_duct_route_detail.xml",
+      "sourceSHA256": "b0038e70e8f5bfea719a69600a1ae0a2f8c453d4956059547ecc42372babd947",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_posterior_muscle_tendon_detail.xml",
+      "sourceSHA256": "f369557935840e7a7bd5c51fc67123eddb22057e292438876f8995f9cde6036b",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_renal_outlet_detail_plates.xml",
+      "sourceSHA256": "fd840651ed06aa8fd7708e4ee2727e59b8bb8222046aa1785c38a69a95e82c64",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_sternum_hand_details.xml",
+      "sourceSHA256": "6104ff2eeab977c858c7acc3beec986d5f7baa875b5e4ee7df36cdb5651a39d5",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_vascular_interface_detail_plates.xml",
+      "sourceSHA256": "aa997fb1bc7dd9bf3f08e0afc8b1cc46cbc4fb3f36679421e69b7cbea0b276b0",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/strings_health_atlas_pelvic_soft_tissue.xml",
+      "sourceSHA256": "cc17e54acb6b6b90f96556932a6efa77656aa456683edb6dc6d94054160157c8",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_airway_diaphragm_detail_plates.xml",
+      "sourceSHA256": "5fb483877653ac51cd74ae5111ac4eeb1a02ef5df09ea4e2c206e22ae7a2d60e",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_cardiac_comparison.xml",
+      "sourceSHA256": "54cd8d3283b86e9f6ad398f459190c131e63f8b60d7ae4ac1413979cb44d96c8",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_digestive_duct_detail_strings.xml",
+      "sourceSHA256": "2971e26a53cc8688dbd5406aa972b5237a374928c0d12d0edcfc21ab59ace987",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_male_duct_route_detail.xml",
+      "sourceSHA256": "b063f08c4c9f1539bd72428d9a87bf78fac8e97c6e6101aa30b8c7186f770d36",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_posterior_muscle_tendon_detail.xml",
+      "sourceSHA256": "038cab7acc8a5a4b1ea9ba24a4644ebd6b68726f65aeeba31839cb5156d9ceff",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_renal_outlet_detail_plates.xml",
+      "sourceSHA256": "81229c745684f8eabde20a6e7870748812baba2c34a34429804a90dbfeed08c6",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_sternum_hand_details.xml",
+      "sourceSHA256": "56e119aef7eebc186dc35f808d3e85314bb37b843cf716630e95c79b345d5350",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_vascular_interface_detail_plates.xml",
+      "sourceSHA256": "25f9b3cdf6e2fc5ac669d4c7ccdc199a1304f0f459bf670358374ad65dfec249",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/strings_health_atlas_pelvic_soft_tissue.xml",
+      "sourceSHA256": "3e8ce43953194f09f5a291110cae32cca28f0a4956595d908a8d22d600284c1a",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasAnatomy.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasAnatomy.strings"
+      ]
+    }
+  ]
+}

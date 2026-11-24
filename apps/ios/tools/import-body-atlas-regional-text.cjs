@@ -1,8 +1,8 @@
 // Deterministic Android #4385 resource delta; does not execute the app.
 const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process"), xml = require("xml-js");
-const expanded = process.argv.includes("--expanded-4391"), detail = process.argv.includes("--detail-4389"), complete = process.argv.includes("--complete-4388");
-const revision = expanded ? 4391 : detail ? 4389 : complete ? 4388 : 4385, tableName = expanded ? "AtlasExpanded" : detail ? "AtlasDetail" : complete ? "AtlasComplete" : "AtlasRegional";
-const root = path.resolve(__dirname, "../../.."), sha = expanded ? "165809fc9606ac1ff6b0df6eb9bee73286b415ea" : detail ? "9508d49277cf33ab7f85e65722e7c470930fff7e" : complete ? "6581110ec5c048edebf63821dee839b4818fe663" : "a81aa85a1c81e41ff19a032eabea1eddcd2371dc";
+const anatomy = process.argv.includes("--anatomy-4396"), expanded = process.argv.includes("--expanded-4391"), detail = process.argv.includes("--detail-4389"), complete = process.argv.includes("--complete-4388");
+const revision = anatomy ? 4396 : expanded ? 4391 : detail ? 4389 : complete ? 4388 : 4385, tableName = anatomy ? "AtlasAnatomy" : expanded ? "AtlasExpanded" : detail ? "AtlasDetail" : complete ? "AtlasComplete" : "AtlasRegional";
+const root = path.resolve(__dirname, "../../.."), sha = anatomy ? "dbd32a65c73e10d710372c44a7ffa8d1518d1f2c" : expanded ? "165809fc9606ac1ff6b0df6eb9bee73286b415ea" : detail ? "9508d49277cf33ab7f85e65722e7c470930fff7e" : complete ? "6581110ec5c048edebf63821dee839b4818fe663" : "a81aa85a1c81e41ff19a032eabea1eddcd2371dc";
 const checking = process.argv.includes("--check");
 const git = args => cp.execFileSync("git", args, {cwd: root, encoding: "utf8", maxBuffer: 16_000_000});
 const files = git(["diff", "--name-status", sha + "^1", sha, "--", "apps/android/app/src/main/res/values", "apps/android/app/src/main/res/values-zh"])
