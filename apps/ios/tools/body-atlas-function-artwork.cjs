@@ -23,6 +23,25 @@ const batches = {
     frames:[["endocrine_pituitary_section","HealthAtlasFunctionPituitary","art.pdf"],
       ["endocrine_thyroid_section","HealthAtlasFunctionThyroid","art.pdf"]]}
 };
+if (process.argv.includes("--regional-4385")) {
+  const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process");
+  const root = path.resolve(__dirname, "../../..");
+  const inventory = JSON.parse(fs.readFileSync(path.join(root, "apps/ios/ANDROID_4385_SOURCE_INVENTORY.json")));
+  if (inventory.source.androidPR !== 4385 || inventory.source.mergeCommit !== "a81aa85a1c81e41ff19a032eabea1eddcd2371dc") throw Error("Regional artwork source mismatch");
+  const files = inventory.files.filter(f => f.path.includes("/res/drawable/") && f.path.endsWith(".xml"));
+  if (files.length !== 23 || files.some(f => !["A", "M"].includes(f.status))) throw Error("Regional artwork inventory mismatch");
+  let paths = 0, gradients = 0;
+  const frames = files.map(file => {
+    const raw = cp.execFileSync("git", ["show", inventory.source.mergeCommit + ":" + file.path], {cwd: root, encoding: "utf8"});
+    const items = require("./body-atlas-ordered-vector.cjs")(raw, {affine: true, clips: true});
+    paths += items.length; gradients += items.filter(p => p["aapt:attr"]).length;
+    const slug = path.basename(file.path, ".xml").replace(/^health_atlas_/, "");
+    const asset = "HealthAtlasRegional" + slug.split("_").map(part => part[0].toUpperCase() + part.slice(1)).join("");
+    return [slug, asset, "art.pdf"];
+  });
+  batches["--regional-4385"] = {name: "regional", androidPR: 4385, sha: inventory.source.mergeCommit,
+    paths, gradients, frames, groups: true, affineGroups: true, clips: true, normalizeQuadratics: true};
+}
 if (process.argv.includes("--function-structures")) {
   const fs = require("node:fs"), path = require("node:path");
   const pack = JSON.parse(fs.readFileSync(path.join(__dirname,"../GalaxySSI/Assets.xcassets/HealthAtlasFunctionStructures.dataset/content.json")));

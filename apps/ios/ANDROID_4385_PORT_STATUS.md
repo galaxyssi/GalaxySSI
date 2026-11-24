@@ -35,17 +35,31 @@ This is an in-progress implementation, not a completed parity claim or release.
 - Dedicated penile-urinary renderer: three scenes, ten source paths/63 commands,
   mirrored transverse tissue, continuous longitudinal centerline and independent
   proximal/distal arc-length tracer intervals, with a transparent-border overlay.
-- All three new renderers have Xcode source registration but remain unreachable until
+- Dedicated skull-protection renderer: four scenes, sixteen original SVG paths/213
+  commands, progressive sutures, dashed layer locator, diploe clipping and fluid
+  tracers clipped outside the brain and inside the subarachnoid-space schematic.
+- Dedicated vertebral-motion renderer: three scenes, eleven original SVG paths/69
+  commands, rigid upper-vertebra transform, stationary lower vertebra, attached disc
+  edges, clipped nucleus/lamellae and transformed landmark callouts.
+- All five new renderers have Xcode source registration but remain unreachable until
   the regional catalogue and complete renderer coverage are activated together.
+- All 23 new/modified VectorDrawable resources imported into separate regional PDF
+  assets: 298 source paths and 68 native gradients. They do not overwrite frozen
+  #4384 PDFs. Their runtime structure selectors/features are not yet connected.
+- Regional conversion preserves scoped clipping paths and converts SVG Q/T curves
+  into mathematically equivalent cubic PDF paths, retaining relative commands and
+  reflected quadratic controls. Legacy batches keep their existing conversion.
+- Omitted gradient axis coordinates now use Android's zero defaults, verified in
+  [Android GradientColor source](https://android.googlesource.com/platform/frameworks/base/+/4e4cac3031513a2a739d3c55e9e6abf738b88eec/core/java/android/content/res/GradientColor.java).
 
 ## Remaining Before Publication
 
-- Ten courses: vulvar protection, accessory-gland routing, uterocervical
-  continuity, skull protection, vertebral motion, clitoral
+- Eight courses: vulvar protection, accessory-gland routing, uterocervical
+  continuity, clitoral
   sensory path, vestibular-gland secretion, tenocyte tendon matrix, pectoral
   horizontal adduction and latissimus extension/adduction.
-- New/modified structure plates, vector resource revisions and their owner/view
-  selectors, features, links, sources and captions.
+- New/modified structure plate metadata and their owner/view selectors, features,
+  links, sources and captions; connect the imported vector revisions to runtime.
 - Runtime catalogue activation, revision validation and complete renderer routing.
 - Review pineal caching adaptation: Android changed VectorDrawable raster caching;
   current iOS implementation uses a PDF asset and must not gain redundant Android
@@ -64,3 +78,9 @@ checks passed. These checks do not compile or run Swift or Android scenes.
 
 No XCTest, Xcode build, IPA, simulator/device execution, VoiceOver acceptance or
 pixel verification has been performed. Windows cannot supply native iOS acceptance.
+
+Axial source audit additionally passed for the 27 exact path declarations, SVG
+relative/reflected control fixtures, twelve skull callouts and 363 analytic
+vertebral poses. Regional PDF checks passed for all 23 resources, scope-preserving
+clipping, strict rejection of unsupported transformed clips and 363 sampled points
+of quadratic/cubic equivalence. The retained #4384 ligament PDF check still passes.
