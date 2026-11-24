@@ -21,14 +21,24 @@ An eventual PR will use main and disclose the actual inherited diff.
 - Added pelvic-ring load tracing and subcutaneous compression/layer/spread/recovery
   native renderers. The latter retains the source 24 by 20 deformation mesh and
   the existing Metal/software fallback. Both are registered in Xcode but await
-  the expanded catalogue and dispatch integration; they are not yet reachable.
+  activation of the expanded catalogue; dispatch cases are connected, but the
+  default runtime still reads revision 4385 and they are not yet reachable.
 - Imported both original 360 by 280 vector cutaways (23 paths) with corrected
   quadratic curves and two explicit odd-even pelvic holes. Course labels read
   the new bilingual table. Native rendering and pixel parity remain unverified.
 
 ## Remaining
 
-- Inventory all source files; bilingual resource deltas are imported.
+- Extracted all 67 changed source files with hashes into the source inventory.
+  Evaluated the original Kotlin catalogue: 138 courses, 643 chapters, 320 source
+  references, 313 owner routes and 151 related links. Added explicit revision
+  4388 decoding/validation; the default remains 4385 until renderers are ready.
+- Bilingual resource deltas are imported.
+- Source-only catalogue audit passed for all 67 hashes, catalogue counts,
+  graph-resolved routes, entry phases, exact related destinations, reference
+  hosts and bilingual keys. Two new dispatches are present; the other 22 are
+  explicitly not implemented. Two changed Swift files parsed without grammar
+  errors; project structure passed. No Swift type checking or native execution.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
 - Connect pelvic/subcutaneous cutaways to structure feature routing.

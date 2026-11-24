@@ -1,8 +1,9 @@
 // Evaluate the pinned Android catalogue with Kotlin, without compiling Android renderers.
 // Generated stubs supply resource identities/constants; no scene is executed.
 const fs=require("node:fs"),path=require("node:path"),os=require("node:os"),cp=require("node:child_process"),crypto=require("node:crypto");
-const regional=process.argv.includes("--regional"),checking=process.argv.includes("--check");
-const root=path.resolve(__dirname,"../../.."),sha=regional?"a81aa85a1c81e41ff19a032eabea1eddcd2371dc":"ab78711d467c013444883dbaeca23c39a601c875";
+const complete=process.argv.includes("--complete-4388"),regional=complete||process.argv.includes("--regional"),checking=process.argv.includes("--check");
+const revision=complete?4388:regional?4385:4384;
+const root=path.resolve(__dirname,"../../.."),sha=complete?"6581110ec5c048edebf63821dee839b4818fe663":regional?"a81aa85a1c81e41ff19a032eabea1eddcd2371dc":"ab78711d467c013444883dbaeca23c39a601c875";
 const prefix="apps/android/app/src/main/java/com/galaxyssi/chat/";
 const show=file=>cp.execFileSync("git",["show",sha+":"+file],{cwd:root,encoding:"utf8",maxBuffer:16_000_000});
 const source=name=>show(prefix+name+".kt");
@@ -31,6 +32,22 @@ internal data class HealthAtlasPlate(val drawable: Int, val owner: String?, val 
 `);
 }
 // These pure declarations end before their Android View class.
+if(complete){
+  const declarations=["CellLesson","AnteriorPituitaryAssignments","EndocrineCellAssignments",
+    "MastAndTCellAssignments","IntestinalEpithelialAssignments","RenalBladderCellAssignments",
+    "GonadalSupportAssignments","PericyteCoverageAssignment","LangerhansSentinelAssignment",
+    "MuscleSatelliteRenewalAssignment","LoadTransferPlates"];
+  const factoryNames=new Set();
+  for(const name of declarations){
+    const text=source("HealthAtlas"+name);
+    for(const match of text.matchAll(/\b(HealthAtlas\w+StoryView)\b/g))factoryNames.add(match[1]);
+    generated("HealthAtlas"+name,text);
+  }
+  // Type-only Android factory stand-ins: never instantiated by catalogue export.
+  generated("RendererTypes","package com.galaxyssi.chat\nimport android.content.Context\n"+
+    "internal interface HealthAtlasFunctionArt\n"+[...factoryNames].sort().map(name=>
+      "internal class "+name+"(context: Context, story: HealthAtlasFunctionStory) : HealthAtlasFunctionArt").join("\n"));
+}
 for(const [name,marker] of [["Podocyte","internal enum class HealthAtlasPodocyteStage"],
   ["Intercalated","internal enum class HealthAtlasIntercalatedStage"],
   ["PlacentalExchange","internal object HealthAtlasPlacentalExchangeLesson"]]){
@@ -54,13 +71,13 @@ generated("Export",fs.readFileSync(path.join(__dirname,"AtlasFunctionCatalogueEx
 const data=require("./atlas-kotlin-extract.cjs")({files,temporary,mainClass:"com.galaxyssi.chat.ExportKt",cwd:root});
 const graph=JSON.parse(show("apps/android/app/src/main/assets/health/body-atlas.json")),ids=new Set(graph.entries.map(e=>e.id));
 if(data.stories.length<50||data.stories.some(s=>s.chapters.length<3||s.chapters.length>8||s.owners.some(id=>!ids.has(id))))throw Error("Invalid exported story catalogue");
-const pack={schema:1,source:{androidPR:regional?4385:4384,mergeCommit:sha},...data};
+const pack={schema:1,source:{androidPR:revision,mergeCommit:sha},...data};
 function write(file,content){if(checking){if(fs.readFileSync(file,"utf8").replace(/\r\n/g,"\n")!==content)throw Error("Catalogue extraction drift: "+file);}else{fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,content);}}
-const destination=path.join(root,"apps/ios/GalaxySSI/Assets.xcassets/"+(regional?"HealthAtlasRegionalStories":"HealthAtlasFunctionStories")+".dataset");
+const destination=path.join(root,"apps/ios/GalaxySSI/Assets.xcassets/"+(complete?"HealthAtlasCompleteStories":regional?"HealthAtlasRegionalStories":"HealthAtlasFunctionStories")+".dataset");
 write(path.join(destination,"content.json"),JSON.stringify(pack,null,2)+"\n");
 if(regional)write(path.join(destination,"Contents.json"),JSON.stringify({data:[{filename:"content.json",idiom:"universal"}],info:{author:"xcode",version:1}},null,2)+"\n");
 const changed=cp.execFileSync("git",["diff","--name-status","--no-renames",sha+"^1",sha],{cwd:root,encoding:"utf8"}).trim().split(/\r?\n/).map(line=>line.split("\t"));
 const inventory={schema:1,source:pack.source,files:changed.map(([status,file])=>({path:file,status,
   sha256:crypto.createHash("sha256").update(cp.execFileSync("git",["show",(status==="D"?sha+"^1":sha)+":"+file],{cwd:root,maxBuffer:32_000_000})).digest("hex")}))};
-write(path.join(root,"apps/ios/ANDROID_"+(regional?4385:4384)+"_SOURCE_INVENTORY.json"),JSON.stringify(inventory,null,2)+"\n");
+write(path.join(root,"apps/ios/ANDROID_"+revision+"_SOURCE_INVENTORY.json"),JSON.stringify(inventory,null,2)+"\n");
 console.log("Exported "+data.stories.length+" Kotlin-evaluated stories, "+Object.keys(data.routes).length+" owner routes and "+changed.length+" pinned source files. No Android or iOS renderer/test executed.");

@@ -7,7 +7,8 @@ enum GalaxySSIHealthAtlasFunctionRendering {
     "UTEROCERVICAL_CONTINUITY", "PENILE_URINARY_ROUTE", "SCROTAL_HEAT_EXCHANGE", "SKULL_PROTECTION", "VERTEBRAL_MOTION",
     "CLITORAL_SENSORY_PATH", "VESTIBULAR_GLAND_SECRETION", "TENOCYTE_TENDON_MATRIX",
     "PECTORAL_HORIZONTAL_ADDUCTION", "LATISSIMUS_EXTENSION_ADDUCTION"]
-  static let implemented = baseline.union(regional)
+  static let loadTransfer: Set<String> = ["PELVIC_LOAD_TRANSFER", "SUBCUTANEOUS_CUSHION"]
+  static let implemented = baseline.union(regional).union(loadTransfer)
 }
 
 struct GalaxySSIHealthAtlasFunctionArtwork: View {
@@ -16,6 +17,8 @@ struct GalaxySSIHealthAtlasFunctionArtwork: View {
   let language: String
   @ViewBuilder var body: some View {
     switch story.id {
+    case "PELVIC_LOAD_TRANSFER": GalaxySSIHealthAtlasLoadTransferStoryView(story: story, phase: phase, language: language, pelvic: true)
+    case "SUBCUTANEOUS_CUSHION": GalaxySSIHealthAtlasLoadTransferStoryView(story: story, phase: phase, language: language, pelvic: false)
     case "GLUCOSE": GalaxySSIHealthAtlasUptakeView(story: story, phase: phase, language: language)
     case "HEARTBEAT": GalaxySSIHealthAtlasHeartbeatView(story: story, phase: phase, language: language)
     case "BREATHING": GalaxySSIHealthAtlasBreathingView(story: story, phase: phase, language: language)
