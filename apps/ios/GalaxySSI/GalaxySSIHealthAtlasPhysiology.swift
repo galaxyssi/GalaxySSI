@@ -30,7 +30,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case middleEar
     case nerveTransit
     case lymphValve
-    case alveolarDiffusion, cartilageCompression, boneBending
+    case alveolarDiffusion, cartilageCompression, boneBending, calfPump
     case villusArea
     case sweatEvaporation
     case photonCapture
@@ -43,6 +43,10 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     #endif
     var inputs: [Input] {
       switch self {
+      case .calfPump:
+        return [.init(key: "calf_pump_stroke", range: 0...25, initial: 12, unit: "mL"),
+          .init(key: "calf_pump_rate", range: 0...30, initial: 12, unit: "/min"),
+          .init(key: "calf_pump_return", range: 0...100, initial: 0, unit: "%")]
       case .alveolarDiffusion:
         return [.init(key: "diffusion_gradient", range: 0...200, initial: 100, scale: 100, unit: "\u{00d7}"),
           .init(key: "diffusion_area", range: 50...200, initial: 100, scale: 100, unit: "\u{00d7}"),
@@ -116,8 +120,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       #endif
       }
     }
-    var hasMaterialResponse: Bool { [.alveolarDiffusion, .cartilageCompression, .boneBending].contains(self) }
+    var hasMaterialResponse: Bool { [.alveolarDiffusion, .cartilageCompression, .boneBending, .calfPump].contains(self) }
     var axis: Int {
+      if self == .calfPump { return 1 }
       if hasMaterialResponse { return 0 }
       if self == .villusArea { return 0 }
       if self == .lymphValve { return 0 }
@@ -135,6 +140,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .potassium ? 0 : 1
     }
     var unit: String {
+      if self == .calfPump { return "mL/min" }
       if self == .alveolarDiffusion { return "\u{00d7}" }
       if self == .cartilageCompression { return "%" }
       if self == .boneBending { return "MPa" }
@@ -157,6 +163,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .ventilation ? "L/min" : self == .renal ? "mg/min" : "mV"
     }
     var bounds: ClosedRange<Double> {
+      if self == .calfPump { return 0...750 }
       if self == .alveolarDiffusion || self == .cartilageCompression { return 0...8 }
       if self == .boneBending { return 0...26 }
       if self == .villusArea { return 1...14 }
@@ -179,6 +186,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var source: URL {
       switch self {
+      case .calfPump: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/24415543/")!
       case .alveolarDiffusion: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/8210754/")!
       case .cartilageCompression: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/7054208/")!
       case .boneBending: return URL(string: "https://pmc.ncbi.nlm.nih.gov/articles/PMC8933494/")!
@@ -204,6 +212,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       }
     }
     var sources: [URL] {
+      if self == .calfPump { return [source, URL(string: "https://pubmed.ncbi.nlm.nih.gov/8445740/")!] }
       if self == .alveolarDiffusion { return [source, URL(string: "https://pmc.ncbi.nlm.nih.gov/articles/PMC2106384/")!] }
       if self == .cartilageCompression { return [source, URL(string: "https://pubmed.ncbi.nlm.nih.gov/7382457/")!] }
       if self == .photonCapture { return [source, URL(string: "https://pubmed.ncbi.nlm.nih.gov/112243/")!] }
@@ -216,6 +225,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     static func forEntry(_ id: String) -> Self? {
       switch id {
+      case "soleus", "gastrocnemius": return .calfPump
       case "respiratory-membrane", "pulmonary-capillaries", "tissue-alveolar-epithelium",
            "cell-type-i-pneumocyte": return .alveolarDiffusion
       case "cartilage", "tissue-hyaline-cartilage", "cell-chondrocyte": return .cartilageCompression
@@ -267,6 +277,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var result: Double { evaluate(inputs.indices.map(input)) }
   var companionValue: Double {
     switch kind {
+    case .calfPump: return Self.netStroke(ejected: input(0), returnPercent: input(2))
     case .alveolarDiffusion: return input(1) / input(2)
     case .cartilageCompression: return 100 - result
     case .boneBending: return Self.circularSectionMoment(diameter: input(1), innerRatio: input(2))
@@ -340,6 +351,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
+    case .calfPump: return values[1] * Self.netStroke(ejected: values[0], returnPercent: values[2])
     case .alveolarDiffusion: return values[0] * values[1] / values[2]
     // Stress kPa / modulus MPa, converted from strain fraction to percent.
     case .cartilageCompression: return values[0] / (10 * values[1])
@@ -373,6 +385,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   nonisolated static func circularSectionMoment(diameter: Double, innerRatio: Double) -> Double {
     .pi * pow(diameter, 4) * (1 - pow(innerRatio, 4)) / 64
+  }
+  nonisolated static func netStroke(ejected: Double, returnPercent: Double) -> Double {
+    ejected * (100 - returnPercent) / 100
   }
   static func potassiumPotential(outside: Double, inside: Double) -> Double? {
     guard outside.isFinite, inside.isFinite, outside > 0, inside > 0 else { return nil }

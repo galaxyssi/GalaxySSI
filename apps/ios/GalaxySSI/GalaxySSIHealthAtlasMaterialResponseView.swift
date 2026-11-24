@@ -6,11 +6,11 @@ struct GalaxySSIHealthAtlasMaterialResponseView: View {
   @Environment(\.displayScale) private var displayScale
   @State private var measuredWidth: CGFloat = 340
   static func description(_ kind: GalaxySSIHealthAtlasPhysiology.Kind, language: String) -> String {
-    let prefix = kind == .alveolarDiffusion ? "diffusion" : kind == .cartilageCompression ? "compression" : "bone_bending"
+    let prefix = kind == .calfPump ? "calf_pump" : kind == .alveolarDiffusion ? "diffusion" : kind == .cartilageCompression ? "compression" : "bone_bending"
     return GalaxySSIHealthAtlasText.get("health_atlas_" + prefix + "_diagram", language)
   }
   private var identifier: String {
-    model.kind == .alveolarDiffusion ? "atlas-diffusion-layer" :
+    model.kind == .calfPump ? "atlas-calf-pump" : model.kind == .alveolarDiffusion ? "atlas-diffusion-layer" :
       model.kind == .cartilageCompression ? "atlas-cartilage-compression" : "atlas-bone-bending"
   }
   var body: some View {
@@ -23,6 +23,7 @@ struct GalaxySSIHealthAtlasMaterialResponseView: View {
         local.scaleBy(x: scale, y: scale)
         let art = GalaxySSIHealthAtlasMaterialResponseDrawing(context: local, language: language)
         switch model.kind {
+        case .calfPump: art.calfPump(model)
         case .alveolarDiffusion: art.exchange(model)
         case .cartilageCompression: art.cartilage(model)
         case .boneBending: art.bone(model)

@@ -64,7 +64,8 @@ assert(view.includes("size.width / 340, size.height / 156"));assert(view.include
 assert(panel.includes("if model.kind.hasMaterialResponse"));
 const beforeControls=panel.indexOf("!model.kind.hasMaterialResponse { chartAndAxis(model) }"),controls=panel.indexOf("ForEach(Array(model.kind.inputs.enumerated())"),afterControls=panel.indexOf("|| model.kind.hasMaterialResponse { chartAndAxis(model) }");
 assert(beforeControls>0&&beforeControls<controls&&afterControls>controls);
-const keys=[...new Set([...drawing.matchAll(/label\("([^"]+)"/g)].map(m=>"health_atlas_"+m[1]))];
+// This audit remains pinned to the original three #4384 diagrams; #4385 audits calf labels separately.
+const keys=[...new Set([...drawing.matchAll(/label\("((?:diffusion|compression|bone_bending)_[^"]+)"/g)].map(m=>"health_atlas_"+m[1]))];
 assert.equal(keys.length,8);
 for(const language of ["en","zh-Hans"]){
  const strings=fs.readFileSync(path.join(root,"apps/ios/GalaxySSI",language+".lproj/AtlasFunction.strings"),"utf8");

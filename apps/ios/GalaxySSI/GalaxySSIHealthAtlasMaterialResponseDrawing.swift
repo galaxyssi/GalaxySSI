@@ -6,6 +6,29 @@ struct GalaxySSIHealthAtlasMaterialResponseDrawing {
   let language: String
   private static let blue: UInt32 = 0x3A778F, teal: UInt32 = 0x3F7770, rose: UInt32 = 0xB6757F
   private func color(_ value: UInt32) -> Color { GalaxySSIHealthAtlasIllustratedDrawing.color(value) }
+  func calfPump(_ model: GalaxySSIHealthAtlasPhysiology) {
+    let stroke = model.input(0), total = stroke * model.input(1)
+    let returning = total * model.input(2) / 100
+    rectangle(43, 32, 140, 122, 0xE2EDED, radius: 18)
+    rectangle(50, 39, 133, 115, 0xF3F7F5, radius: 14)
+    if stroke > 0 {
+      let top = 115 - 71 * stroke / 25
+      rectangle(53, top, 130, 113, 0x8AC9BA, radius: min((113 - top) * 0.45, 12))
+    }
+    line(39, 44, 39, 111, Self.rose, 4)
+    line(144, 44, 144, 111, Self.rose, 4)
+    line(75, 33, 91, 40, Self.teal, 2.5)
+    line(92, 40, 108, 33, Self.teal, 2.5)
+    line(75, 115, 91, 122, Self.teal, 2.5)
+    line(92, 122, 108, 115, Self.teal, 2.5)
+    line(196, 54, 314, 54, 0xC5DED9, 7)
+    line(196, 111, 314, 111, 0xEEDCCC, 7)
+    if total > 0 { arrow(196, 54, 196 + max(6, 118 * total / 750), 54, Self.teal, 3) }
+    if returning > 0 { arrow(314, 111, 314 - max(6, 118 * returning / 750), 111, 0xA66C44, 3) }
+    label("calf_pump_chamber_label", 91, 145, 132)
+    label("calf_pump_forward_label", 255, 72, 145)
+    label("calf_pump_return_label", 255, 130, 145)
+  }
   func exchange(_ model: GalaxySSIHealthAtlasPhysiology) {
     let halfThickness = 13 * model.input(2), extent = 40 * model.input(1)
     let top = 79 - extent / 2, bottom = 79 + extent / 2
@@ -115,8 +138,9 @@ struct GalaxySSIHealthAtlasMaterialResponseDrawing {
     line(x1, y1, x2, y2, value, width)
     var tip = Path()
     if y1 == y2 {
-      tip.move(to: CGPoint(x: x2 + 2, y: y2))
-      tip.addLine(to: CGPoint(x: x2 - 6, y: y2 - 4)); tip.addLine(to: CGPoint(x: x2 - 6, y: y2 + 4))
+      let direction: Double = x2 >= x1 ? 1 : -1
+      tip.move(to: CGPoint(x: x2 + 2 * direction, y: y2))
+      tip.addLine(to: CGPoint(x: x2 - 6 * direction, y: y2 - 4)); tip.addLine(to: CGPoint(x: x2 - 6 * direction, y: y2 + 4))
     } else {
       tip.move(to: CGPoint(x: x2, y: y2 + 2))
       tip.addLine(to: CGPoint(x: x2 - 4, y: y2 - 6)); tip.addLine(to: CGPoint(x: x2 + 4, y: y2 - 6))

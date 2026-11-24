@@ -9,8 +9,9 @@ extension GalaxySSIHealthAtlasIllustratedDrawing {
     ligamentCallout("ligament_guidance_story_acl",47,104,67,109,plate.display(plate.aclFemur),0x30756C)
     ligamentCallout("ligament_guidance_story_pcl",313,104,293,109,plate.display(plate.pclFemur),0x77587A)
     let emphasis = plate.emphasis(t)
-    let acl: Double? = (1...2).contains(step) || step == 4 ? emphasis : nil
-    let pcl: Double? = step == 1 || (3...4).contains(step) ? emphasis : nil
+    let phase = GalaxySSIHealthAtlasFunctionCatalogue.Story.safePhase(t)
+    let acl: Double? = step == 0 ? phase : (1...2).contains(step) || step == 4 ? emphasis : nil
+    let pcl: Double? = step == 0 ? 1 - phase : step == 1 || (3...4).contains(step) ? emphasis : nil
     ligamentFootprint(plate.aclFemur,0x30756C,acl); ligamentFootprint(plate.aclTibia,0x30756C,acl)
     ligamentFootprint(plate.pclFemur,0x77587A,pcl); ligamentFootprint(plate.pclTibia,0x77587A,pcl)
     if step >= 2 {

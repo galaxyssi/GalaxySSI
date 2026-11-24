@@ -329,7 +329,7 @@ enum GalaxySSIHealthAtlasText {
     let name = LanguagePolicySettings.resolveInterface(language) == LanguagePolicySettings.zhCN ? "zh-Hans" : "en"
     if key == "health_atlas_belongs" {
       let english = localized(key, locale: "en", fallback: localized(key, locale: "en", fallback: key), table: "AtlasFunction")
-      return localized(key, locale: name, fallback: english, table: "AtlasFunction")
+      return regional(key, locale: name, fallback: localized(key, locale: name, fallback: english, table: "AtlasFunction"))
     }
     let organ = try? GalaxySSIHealthAtlas.ArtworkPack.bundled.get()
     let cells = try? GalaxySSIHealthAtlas.CellPack.bundled.get()
@@ -337,7 +337,11 @@ enum GalaxySSIHealthAtlasText {
     let extensionText = systems?.english[key] ?? cells?.english[key] ?? organ?.english[key]
     let english = extensionText ?? localized(key, locale: "en", fallback: localized(key, locale: "en", fallback: key, table: "AtlasFunction"))
     let fallback = localized(key, locale: name, fallback: english, table: "AtlasFunction")
-    return localized(key, locale: name, fallback: fallback, table: extensionText == nil ? "BodyAtlas" : "Localizable")
+    return regional(key, locale: name, fallback: localized(key, locale: name, fallback: fallback, table: extensionText == nil ? "BodyAtlas" : "Localizable"))
+  }
+  private static func regional(_ key: String, locale: String, fallback: String) -> String {
+    let english = localized(key, locale: "en", fallback: fallback, table: "AtlasRegional")
+    return localized(key, locale: locale, fallback: english, table: "AtlasRegional")
   }
   private static func localized(_ key: String, locale: String, fallback: String, table: String = "BodyAtlas") -> String {
     guard let path = Bundle.main.path(forResource: locale, ofType: "lproj"), let bundle = Bundle(path: path) else { return fallback }
