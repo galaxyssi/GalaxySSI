@@ -1,9 +1,10 @@
 // Evaluate original pure production declarations only; no Android UI, tests or Swift compilation.
 const fs = require("node:fs"), path = require("node:path"), os = require("node:os"), cp = require("node:child_process"), crypto = require("node:crypto"), assert = require("node:assert/strict");
-const root = path.resolve(__dirname, "../../.."), sha = "40776e7a67ebfe48c76f98d392849edb9810ac82", check = process.argv.includes("--check");
+const system = process.argv.includes("--system-4399"), revision = system ? 4399 : 4397;
+const root = path.resolve(__dirname, "../../.."), sha = system ? "de05fd51ba151789acd24dc4484d7f84d893aea3" : "40776e7a67ebfe48c76f98d392849edb9810ac82", check = process.argv.includes("--check");
 const directory = "apps/android/app/src/main/java/com/galaxyssi/chat/";
 const git = args => cp.execFileSync("git", args, {cwd: root, maxBuffer: 32_000_000});
-const names = ["CapillaryExchange", "ValveFlux", "GlomerularFiltration", "SkinWaterBarrier", "SalivaryDelivery",
+const names = system ? ["Diaphragm", "CardiacPhaseTime", "VisualAngle", "SerialAbsorption", "HormoneSignal", "ImmuneComposition", "DuctTransit", "OviductCiliaryCycles", "KneeMoment"] : ["CapillaryExchange", "ValveFlux", "GlomerularFiltration", "SkinWaterBarrier", "SalivaryDelivery",
   "TendonElongation", "AirwaySplit", "PeristalticTravel", "CochlearFrequency"];
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "galaxyssi-teaching-models-")), files = [];
 function generated(name, text) {
@@ -39,18 +40,18 @@ fun main() {
   }
   println(json(models))
 }
-`.replace("MODELS", names.map(n => JSON.stringify(n[0].toLowerCase() + n.slice(1)) + " to HealthAtlas" + n + "TeachingModel.spec").join(", ")));
+`.replace("MODELS", names.map(n => JSON.stringify(n === "Diaphragm" ? "diaphragmDisplacement" : n[0].toLowerCase() + n.slice(1)) + " to HealthAtlas" + n + "TeachingModel.spec").join(", ")));
 const models = require("./atlas-kotlin-extract.cjs")({files, temporary, mainClass: "com.galaxyssi.chat.ExportKt", cwd: root});
-assert.equal(models.length, 9); assert.equal(models.flatMap(m => m.inputs).length, 24);
-const owners = models.flatMap(m => m.entryIDs); assert.equal(owners.length, 34); assert.equal(new Set(owners).size, 34);
-const source = {androidPR: 4397, mergeCommit: sha};
+assert.equal(models.length, 9); assert.equal(models.flatMap(m => m.inputs).length, system ? 18 : 24);
+const owners = models.flatMap(m => m.entryIDs); assert.equal(owners.length, system ? 35 : 34); assert.equal(new Set(owners).size, owners.length);
+const source = {androidPR: revision, mergeCommit: sha};
 function write(file, data) {
   const target = path.join(root, "apps/ios", file), text = JSON.stringify(data, null, 2) + "\n";
   if (check) assert.equal(fs.readFileSync(target, "utf8").replace(/\r\n/g, "\n"), text);
   else fs.writeFileSync(target, text);
 }
-write("ANDROID_4397_MODEL_DECLARATIONS.json", {schema: 1, source, models});
+write(`ANDROID_${revision}_MODEL_DECLARATIONS.json`, {schema: 1, source, models});
 const changed = git(["diff", "--name-status", "--no-renames", sha + "^1", sha]).toString().trim().split(/\r?\n/).map(l => l.split("\t"));
-write("ANDROID_4397_SOURCE_INVENTORY.json", {schema: 1, source, files: changed.map(([status, file]) => ({path: file, status,
+write(`ANDROID_${revision}_SOURCE_INVENTORY.json`, {schema: 1, source, files: changed.map(([status, file]) => ({path: file, status,
   sha256: crypto.createHash("sha256").update(git(["show", (status === "D" ? sha + "^1" : sha) + ":" + file])).digest("hex")}))});
-console.log(`${check ? "Verified" : "Exported"} nine original teaching specifications / 24 controls / 34 owners. No native execution or acceptance.`);
+console.log(`${check ? "Verified" : "Exported"} nine original teaching specifications / ${models.flatMap(m => m.inputs).length} controls / ${owners.length} owners. No native execution or acceptance.`);

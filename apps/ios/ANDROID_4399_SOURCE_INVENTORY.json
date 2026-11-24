@@ -1,0 +1,249 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4399,
+    "mergeCommit": "de05fd51ba151789acd24dc4484d7f84d893aea3"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "708d2b31c7d1a661fcc49d5311c3be1ae7480069ba6c1a254610b0b2728cc7c9"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasPhysiologyDeviceTest.kt",
+      "status": "M",
+      "sha256": "d6f66691f92d3f6c60755cf35f28d2d1cba52e5122f41b6f1561992b34a25e98"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCardiacPhaseTimeTeachingModel.kt",
+      "status": "A",
+      "sha256": "5a77b909730da3b33a4cdbc24b597bc278e5d4d22df595cc86e07e56ccbe90a1"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasDiaphragmTeachingModel.kt",
+      "status": "A",
+      "sha256": "b910ab758b23613b4aee37016b88cc3d541c83a36f34f2d15e360a7bf9afb322"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasDuctTransitTeachingModel.kt",
+      "status": "A",
+      "sha256": "6eb7bf4d7ddbfcb8dff91d45ace07d9dc00b3b74e50a837e52e6b4c29fd9cb3e"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasHormoneSignalTeachingModel.kt",
+      "status": "A",
+      "sha256": "f40f9a09dd3c5ac02154dce8d2a2425e90895bf6423b30ae5ea19459b5a28413"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasImmuneCompositionTeachingModel.kt",
+      "status": "A",
+      "sha256": "cf32deb4c5b7c9e3e1a9e518f8997300951317a0bf70cd7dad1c920a7e224988"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasKneeMomentTeachingModel.kt",
+      "status": "A",
+      "sha256": "4705dbd3bf8017495a0136e175e157a97d16338002602af436b422e088c77ed4"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMaterialResponseView.kt",
+      "status": "M",
+      "sha256": "051c4348cbe59733cde424a1fbc9bf994c005fd1703c64764e6d45d96f2a2458"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasOviductCiliaryCyclesTeachingModel.kt",
+      "status": "A",
+      "sha256": "58f2ef4f8e7b3fd60fc0a4db1dc2328c5bc15738cd69d8335a41ceec72b7843a"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiology.kt",
+      "status": "M",
+      "sha256": "e200446234074ab15697693ab95484f14dfd0ee503e9c8b86f51e2eb9ff8dd19"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyChart.kt",
+      "status": "M",
+      "sha256": "571b0208b9afc7faa0f1bf7dd1b937926e555411973b11f0dd7b19cd691e39fc"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyPanel.kt",
+      "status": "M",
+      "sha256": "e01132587fa1760cce60b3f3303fd83183f717aa3c9b43ad67b8852658fd4cbe"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyText.kt",
+      "status": "M",
+      "sha256": "1a84bf99d03f25484138c0ed2207a7aafa20b396ae00fdeb17af3730c14875de"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSerialAbsorptionTeachingModel.kt",
+      "status": "A",
+      "sha256": "65a0aa01b68eeaa2850039ba0d1817020b186548092ce075547865f217a61e9c"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasVisualAngleTeachingModel.kt",
+      "status": "A",
+      "sha256": "f4a7d9da00b2580dac3565ab3675fa329dd49002c9766377425a2c4bbd923e56"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_cardiac_phase_time_teaching_model.xml",
+      "status": "A",
+      "sha256": "719d6653208052b1d4ab748763273349ebb3fe61c4d29ac03e13e09bfab5bb1c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_diaphragm_demo.xml",
+      "status": "A",
+      "sha256": "1901713f22b9880bc9cc5a75c6c0245d3d5f8adc8ba033e05b582301eb78dbf8"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_duct_transit_teaching_model.xml",
+      "status": "A",
+      "sha256": "59a10a0db9013a0009097662d9f06ed54e4a25aa65fb88ab0c2b72dac35310fc"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_hormone_signal.xml",
+      "status": "A",
+      "sha256": "b71900721ebcdc450d8acef718913caad6a2fc8b008a9c17546540680091fa68"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_immune_composition_teaching_model.xml",
+      "status": "A",
+      "sha256": "a0e8e26a517734fc3221069afe45e3fc857351fc8d366e670c659cafff1b72ee"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_knee_moment.xml",
+      "status": "A",
+      "sha256": "bcba702d917c0c8aa75cc3bfc6b531b117d88bb6198d02cd8f3ae5a4de9d488b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_oviduct_ciliary_cycles.xml",
+      "status": "A",
+      "sha256": "4e72efc85a35ba261c5bade2bc32fcc51b947ffcf05c164de513d39fa7dec6e5"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_serial_absorption.xml",
+      "status": "A",
+      "sha256": "c99f74afa965830ed62f47959c3db754e36864c031e1e91fd2eb972961560c0b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_teaching_units.xml",
+      "status": "A",
+      "sha256": "251688d5e7950611f654865e03721818cc87962d03f2606ed974a33e6e7a6da1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_visual_angle.xml",
+      "status": "A",
+      "sha256": "557e1204757274c9e4f073070c848716feb519a86b20866331025fe26eb75af3"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_cardiac_phase_time_teaching_model.xml",
+      "status": "A",
+      "sha256": "02a5d326b33f7652e4e20605074b431ead6b3729f624fe5866ae0a298d64babe"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_diaphragm_demo.xml",
+      "status": "A",
+      "sha256": "cd5549dbeb7bc521401f21fae91faeba448dfbcb554bb3ae56f09a9f528d5e3d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_duct_transit_teaching_model.xml",
+      "status": "A",
+      "sha256": "6de5102d73e5444fcfefb7b0f4425b0cc951cff58bd6d9d058a01698a7be2feb"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_hormone_signal.xml",
+      "status": "A",
+      "sha256": "12c1fa4c532172b3191855f024a5c3481ae966c85b34532f8bd283e9eb20a7b4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_immune_composition_teaching_model.xml",
+      "status": "A",
+      "sha256": "2e26ee9aeee951cfd9d80087a517f5a542c0fbdff803b6373b2eded458ff4844"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_knee_moment.xml",
+      "status": "A",
+      "sha256": "8dec93a5b8f991a7dafd11d9feb59055d62f614eaabf85c97fc476ad4435ee89"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_oviduct_ciliary_cycles.xml",
+      "status": "A",
+      "sha256": "8146bbb7b012ca28513675ce2c40349f8dcb21c0f4b2bcea984d2d9c6fcf5666"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_serial_absorption.xml",
+      "status": "A",
+      "sha256": "909ae0c68754da4d36fa0368a045d31c174943af16c41d8a36f76eb23b28880d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_teaching_units.xml",
+      "status": "A",
+      "sha256": "fb157b3c2224526b45b4121a1ba92b45b829982c1a55bfe8c15117ad7144a956"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_visual_angle.xml",
+      "status": "A",
+      "sha256": "b587eb27abd644d40b1efafc6127e0a79215c31c91cd1a3c69a010f5f4da4bfd"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasCardiacPhaseTimeTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "d7380e1f2d880c6c77a6e78a0e3265a1a453bcb1f7d9fb55113a1235c613ef8d"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasDiaphragmTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "6cd4ce33bc976f9b189814c8334d0bcef2c68d5c1a6b13ea3e8fbccadc95032d"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasDuctTransitTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "4de3a61327dcb536e46e7592ba406ce196bd5e25ec12cd8dd1693336f27341a7"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasHeartTest.kt",
+      "status": "M",
+      "sha256": "49c12854441fd2cdca95e9efe52772f28da9d0bc862a4f800e9c8dacba46eacb"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasHormoneSignalTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "c3076b71050409f9c3a5c1bc72048a143ab3a836c2be27cc00e9e6b4ce229263"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasImmuneCompositionTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "4fba940ce7ebd69d7fe5483a6d8cb3abb571a9406512944d6a0b431ba8e8f0b7"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasKneeMomentTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "1a494cac63529b9a914abb6e1a062dfce302caf0a95c7b80dd4d887a29be78c6"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasOviductCiliaryCyclesTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "59e572b6b151985f6f3823bebf7285b3724ad3ee5d8d6629f5d4b52f0454747f"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasOxygenTest.kt",
+      "status": "M",
+      "sha256": "9ba22c7ad4c3c594cc7675fdfc0d8e5a32cec4d6fb1cbc9d0cc2418102df42c0"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPhysiologyTest.kt",
+      "status": "M",
+      "sha256": "7bd00666cbde917054977f2143346ffe5c154dea4e867fcc0b44e3ed3dc44b85"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasSerialAbsorptionTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "400fcbb5f74154ad669e1e6e2fc2d9ee630c5672c638083191f0c54b0ef9db50"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasVisualAngleTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "983c6a8574fced5e017008b00cf826d0def78ffe6d5d5c6f06e4700c63f631a9"
+    }
+  ]
+}

@@ -6,6 +6,53 @@ struct GalaxySSIHealthAtlasMaterialResponseDrawing {
   let language: String
   private static let blue: UInt32 = 0x3A778F, teal: UInt32 = 0x3F7770, rose: UInt32 = 0xB6757F
   private func color(_ value: UInt32) -> Color { GalaxySSIHealthAtlasIllustratedDrawing.color(value) }
+  func diaphragm(_ model: GalaxySSIHealthAtlasPhysiology) {
+    let halfWidth = 108 * sqrt(model.input(1) / 250)
+    let left = 170 - halfWidth, right = 170 + halfWidth
+    let rest = 88.0, shift = model.input(0) * 1.1
+    let current = rest + shift
+    func dome(_ y: Double) -> Path {
+      var path = Path()
+      path.move(to: CGPoint(x: left, y: y))
+      path.addCurve(to: CGPoint(x: right, y: y),
+        control1: CGPoint(x: left + halfWidth * 0.58, y: y - 29),
+        control2: CGPoint(x: right - halfWidth * 0.58, y: y - 29))
+      return path
+    }
+    var chest = Path()
+    chest.move(to: CGPoint(x: left, y: current))
+    chest.addCurve(to: CGPoint(x: left + 14, y: 29),
+      control1: CGPoint(x: left, y: 77), control2: CGPoint(x: left - 8, y: 37))
+    chest.addCurve(to: CGPoint(x: right - 14, y: 29),
+      control1: CGPoint(x: 139, y: 1), control2: CGPoint(x: 201, y: 1))
+    chest.addCurve(to: CGPoint(x: right, y: current),
+      control1: CGPoint(x: right + 8, y: 37), control2: CGPoint(x: right, y: 77))
+    func closeAlongDome(_ path: inout Path) {
+      path.addCurve(to: CGPoint(x: left, y: current),
+        control1: CGPoint(x: right - halfWidth * 0.58, y: current - 29),
+        control2: CGPoint(x: left + halfWidth * 0.58, y: current - 29))
+      path.closeSubpath()
+    }
+    var chamber = chest
+    closeAlongDome(&chamber)
+    context.fill(chamber, with: .color(color(0xDEEEEF)))
+    if shift > 0 {
+      var gain = dome(rest)
+      gain.addLine(to: CGPoint(x: right, y: current))
+      closeAlongDome(&gain)
+      context.fill(gain, with: .color(color(0xA7D7C9)))
+    }
+    context.stroke(chest, with: .color(color(Self.blue)), lineWidth: 2.5)
+    context.stroke(dome(rest), with: .color(color(Self.blue)), style: StrokeStyle(lineWidth: 2.5, dash: [6, 4]))
+    context.stroke(dome(current), with: .color(color(Self.teal)), lineWidth: 3.5)
+    if shift >= 8 { arrow(170, rest - 21, 170, current - 23, Self.teal, 2) }
+    var legend = Path()
+    legend.move(to: CGPoint(x: 35, y: 143)); legend.addLine(to: CGPoint(x: 57, y: 143))
+    context.stroke(legend, with: .color(color(Self.blue)), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+    line(184, 143, 206, 143, Self.teal, 3)
+    label("diaphragm_demo_resting", 111, 147, 98)
+    label("diaphragm_demo_current", 261, 147, 98)
+  }
   func pelvicSupport(_ model: GalaxySSIHealthAtlasPhysiology) {
     let loadX = 170 + 87 * model.input(1) / 100, load = model.input(0)
     rectangle(61, 70, 279, 84, 0xDDC2A7, radius: 6)

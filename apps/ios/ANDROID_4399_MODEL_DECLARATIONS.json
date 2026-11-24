@@ -1,0 +1,402 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4399,
+    "mergeCommit": "de05fd51ba151789acd24dc4484d7f84d893aea3"
+  },
+  "models": [
+    {
+      "id": "diaphragmDisplacement",
+      "inputs": [
+        {
+          "key": "diaphragm-descent",
+          "minimum": 0,
+          "maximum": 30,
+          "initial": 12,
+          "scale": 1,
+          "label": "health_atlas_diaphragm_demo_descent",
+          "unit": "mm",
+          "digits": 0
+        },
+        {
+          "key": "diaphragm-projected-area",
+          "minimum": 100,
+          "maximum": 250,
+          "initial": 180,
+          "scale": 1,
+          "label": "health_atlas_diaphragm_demo_area",
+          "unit": "cm²",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "mL",
+      "minimum": 0,
+      "maximum": 750,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-3-the-process-of-breathing",
+        "https://pubmed.ncbi.nlm.nih.gov/19521009/"
+      ],
+      "title": "health_atlas_diaphragm_demo_title",
+      "scope": "health_atlas_diaphragm_demo_scope",
+      "formula": "health_atlas_diaphragm_demo_formula",
+      "companionTitle": "health_atlas_diaphragm_demo_per_mm",
+      "entryIDs": [
+        "diaphragm"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "cardiacPhaseTime",
+      "inputs": [
+        {
+          "key": "cardiac-phase-time-rate",
+          "minimum": 50,
+          "maximum": 150,
+          "initial": 75,
+          "scale": 1,
+          "label": "health_atlas_cardiac_phase_time_rate",
+          "unit": "bpm",
+          "digits": 0
+        },
+        {
+          "key": "cardiac-phase-time-filling-percent",
+          "minimum": 30,
+          "maximum": 70,
+          "initial": 50,
+          "scale": 1,
+          "label": "health_atlas_cardiac_phase_time_filling_percent",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "ms",
+      "minimum": 0,
+      "maximum": 1200,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/19-3-cardiac-cycle",
+        "https://pubmed.ncbi.nlm.nih.gov/15217800/"
+      ],
+      "title": "health_atlas_cardiac_phase_time_title",
+      "scope": "health_atlas_cardiac_phase_time_scope",
+      "formula": "health_atlas_cardiac_phase_time_formula",
+      "companionTitle": "health_atlas_cardiac_phase_time_companion",
+      "entryIDs": [
+        "cardio",
+        "heart",
+        "atria",
+        "left-atrium",
+        "right-atrium",
+        "tissue-cardiac-muscle",
+        "cell-cardiomyocyte"
+      ],
+      "digits": 1
+    },
+    {
+      "id": "visualAngle",
+      "inputs": [
+        {
+          "key": "visual-angle-width",
+          "minimum": 1,
+          "maximum": 20,
+          "initial": 10,
+          "scale": 1,
+          "label": "health_atlas_model_visual_angle_width",
+          "unit": "cm",
+          "digits": 0
+        },
+        {
+          "key": "visual-angle-distance",
+          "minimum": 50,
+          "maximum": 150,
+          "initial": 100,
+          "scale": 1,
+          "label": "health_atlas_model_visual_angle_distance",
+          "unit": "cm",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "°",
+      "minimum": 0,
+      "maximum": 25,
+      "sources": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC3878374/",
+        "https://www.nei.nih.gov/eye-health-information/healthy-vision/how-eyes-work"
+      ],
+      "title": "health_atlas_model_visual_angle_title",
+      "scope": "health_atlas_model_visual_angle_scope",
+      "formula": "health_atlas_model_visual_angle_formula",
+      "companionTitle": "health_atlas_model_visual_angle_half",
+      "entryIDs": [
+        "sensory",
+        "retina"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "serialAbsorption",
+      "inputs": [
+        {
+          "key": "serial-absorption-stage-a",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 40,
+          "scale": 1,
+          "label": "health_atlas_serial_absorption_stage_a",
+          "unit": "%",
+          "digits": 0
+        },
+        {
+          "key": "serial-absorption-stage-b",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 50,
+          "scale": 1,
+          "label": "health_atlas_serial_absorption_stage_b",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://www.niddk.nih.gov/health-information/digestive-diseases/digestive-system-how-it-works",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC1413011/"
+      ],
+      "title": "health_atlas_serial_absorption_title",
+      "scope": "health_atlas_serial_absorption_scope",
+      "formula": "health_atlas_serial_absorption_formula",
+      "companionTitle": "health_atlas_serial_absorption_companion",
+      "entryIDs": [
+        "gut",
+        "digestive",
+        "duodenum",
+        "ileum",
+        "cell-enterocyte"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "hormoneSignal",
+      "inputs": [
+        {
+          "key": "hormone-signal-half-life",
+          "minimum": 10,
+          "maximum": 40,
+          "initial": 20,
+          "scale": 10,
+          "label": "health_atlas_hormone_signal_half_life",
+          "unit": "",
+          "digits": 1
+        },
+        {
+          "key": "hormone-signal-elapsed",
+          "minimum": 0,
+          "maximum": 80,
+          "initial": 40,
+          "scale": 10,
+          "label": "health_atlas_hormone_signal_elapsed",
+          "unit": "",
+          "digits": 1
+        }
+      ],
+      "axis": 1,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-2-hormones",
+        "https://pubmed.ncbi.nlm.nih.gov/2823271/"
+      ],
+      "title": "health_atlas_hormone_signal_title",
+      "scope": "health_atlas_hormone_signal_scope",
+      "formula": "health_atlas_hormone_signal_formula",
+      "companionTitle": "health_atlas_hormone_signal_removed",
+      "entryIDs": [
+        "endocrine",
+        "pituitary-gland",
+        "cell-thyrotroph"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "immuneComposition",
+      "inputs": [
+        {
+          "key": "immune-composition-sample-size",
+          "minimum": 1,
+          "maximum": 5,
+          "initial": 2,
+          "scale": 0.01,
+          "label": "health_atlas_immune_composition_sample_size",
+          "unit": "cells",
+          "digits": 0
+        },
+        {
+          "key": "immune-composition-selected-percent",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 25,
+          "scale": 1,
+          "label": "health_atlas_immune_composition_selected_percent",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "cells",
+      "minimum": 0,
+      "maximum": 500,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets"
+      ],
+      "title": "health_atlas_immune_composition_title",
+      "scope": "health_atlas_immune_composition_scope",
+      "formula": "health_atlas_immune_composition_formula",
+      "companionTitle": "health_atlas_immune_composition_companion",
+      "entryIDs": [
+        "immune",
+        "cell-neutrophil",
+        "cell-eosinophil",
+        "cell-basophil",
+        "cell-monocyte",
+        "cell-t-cell",
+        "cell-b-cell",
+        "cell-natural-killer-cell"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "ductTransit",
+      "inputs": [
+        {
+          "key": "duct-transit-length",
+          "minimum": 4,
+          "maximum": 24,
+          "initial": 12,
+          "scale": 1,
+          "label": "health_atlas_duct_transit_length",
+          "unit": "LU",
+          "digits": 0
+        },
+        {
+          "key": "duct-transit-speed",
+          "minimum": 10,
+          "maximum": 50,
+          "initial": 25,
+          "scale": 10,
+          "label": "health_atlas_duct_transit_speed",
+          "unit": "LU/TU",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "TU",
+      "minimum": 0,
+      "maximum": 25,
+      "sources": [
+        "https://www.ncbi.nlm.nih.gov/books/NBK538429/",
+        "https://pubmed.ncbi.nlm.nih.gov/31033221/"
+      ],
+      "title": "health_atlas_duct_transit_title",
+      "scope": "health_atlas_duct_transit_scope",
+      "formula": "health_atlas_duct_transit_formula",
+      "companionTitle": "health_atlas_duct_transit_companion",
+      "entryIDs": [
+        "male",
+        "epididymis",
+        "vas-deferens",
+        "ejaculatory-ducts"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "oviductCiliaryCycles",
+      "inputs": [
+        {
+          "key": "oviduct-ciliary-cycles-rate",
+          "minimum": 4,
+          "maximum": 10,
+          "initial": 5,
+          "scale": 1,
+          "label": "health_atlas_oviduct_ciliary_cycles_rate",
+          "unit": "Hz",
+          "digits": 0
+        },
+        {
+          "key": "oviduct-ciliary-cycles-time",
+          "minimum": 0,
+          "maximum": 20,
+          "initial": 15,
+          "scale": 10,
+          "label": "health_atlas_oviduct_ciliary_cycles_time",
+          "unit": "s",
+          "digits": 1
+        }
+      ],
+      "axis": 1,
+      "unit": "cycles",
+      "minimum": 0,
+      "maximum": 20,
+      "sources": [
+        "https://pubmed.ncbi.nlm.nih.gov/11870107/",
+        "https://www.nature.com/articles/s41467-024-55440-2"
+      ],
+      "title": "health_atlas_oviduct_ciliary_cycles_title",
+      "scope": "health_atlas_oviduct_ciliary_cycles_scope",
+      "formula": "health_atlas_oviduct_ciliary_cycles_formula",
+      "companionTitle": "health_atlas_oviduct_ciliary_cycles_companion",
+      "entryIDs": [
+        "female",
+        "uterine-tubes",
+        "cell-ciliated-oviduct-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "kneeMoment",
+      "inputs": [
+        {
+          "key": "knee-moment-force",
+          "minimum": 0,
+          "maximum": 20,
+          "initial": 10,
+          "scale": 1,
+          "label": "health_atlas_knee_moment_force",
+          "unit": "N",
+          "digits": 0
+        },
+        {
+          "key": "knee-moment-arm",
+          "minimum": 0,
+          "maximum": 6,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_knee_moment_arm",
+          "unit": "cm",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "N·m",
+      "minimum": 0,
+      "maximum": 1.25,
+      "sources": [
+        "https://pubmed.ncbi.nlm.nih.gov/26520912/"
+      ],
+      "title": "health_atlas_knee_moment_title",
+      "scope": "health_atlas_knee_moment_scope",
+      "formula": "health_atlas_knee_moment_formula",
+      "companionTitle": "health_atlas_knee_moment_arm_meters",
+      "entryIDs": [
+        "patella",
+        "quadriceps-femoris"
+      ],
+      "digits": 2
+    }
+  ]
+}

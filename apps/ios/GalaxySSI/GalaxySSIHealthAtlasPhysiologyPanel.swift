@@ -48,7 +48,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
               .accessibilityIdentifier("atlas-physiology-" + spec.key)
               .accessibilityLabel(t(spec.key))
               .accessibilityValue(GalaxySSIHealthAtlasPhysiologyText.inputNumber(model.input(index), key: spec.key, language: language) +
-                (spec.unit.isEmpty ? "" : " " + spec.unit))
+                (spec.unit.isEmpty ? "" : " " + GalaxySSIHealthAtlasPhysiologyText.displayUnit(spec.unit, language: language)))
           }
         }
         if model.kind == .photonCapture || model.kind == .alveolarSurface || model.kind == .villusArea || model.kind.hasMaterialResponse { chartAndAxis(model) }
@@ -70,7 +70,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
     let spec = model.kind.inputs[model.kind.axis]
     return Group {
       chart(model).accessibilityIdentifier("atlas-physiology-curve")
-      Text(spec.unit.isEmpty ? t(spec.key) : String(format: t("model_axis"), t(spec.key), spec.unit))
+      Text(spec.unit.isEmpty ? t(spec.key) : String(format: t("model_axis"), t(spec.key), GalaxySSIHealthAtlasPhysiologyText.displayUnit(spec.unit, language: language)))
         .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
     }
   }
@@ -114,7 +114,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
     let output = { GalaxySSIHealthAtlasPhysiologyText.resultNumber($0, kind: model.kind, language: language) }
     let input = { GalaxySSIHealthAtlasPhysiologyText.inputNumber($0, key: model.kind.inputs[model.kind.axis].key, language: language) }
     return VStack(alignment: .leading, spacing: 8) {
-      Text(model.kind.unit).font(.caption)
+      Text(GalaxySSIHealthAtlasPhysiologyText.displayUnit(model.kind.unit, language: language)).font(.caption)
       HStack(alignment: .top, spacing: 8) {
         VStack(alignment: .trailing) {
           Text(output(high)); Spacer(); Text(output((low + high) / 2)); Spacer(); Text(output(low))

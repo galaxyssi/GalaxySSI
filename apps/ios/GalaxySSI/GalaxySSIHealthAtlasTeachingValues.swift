@@ -21,6 +21,15 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .airwaySplit: result = values[0] * values[2] / (values[1] + values[2])
     case .peristalticTravel: result = values[0] * values[1]
     case .cochlearFrequency: result = 165.4 * (pow(10, 2.1 * values[0]) - 0.88)
+    case .diaphragmDisplacement: result = values[1] * values[0] / 10
+    case .cardiacPhaseTime: result = (60_000 / values[0]) * (values[1] / 100)
+    case .visualAngle: result = 2 * atan(values[0] / (2 * values[1])) * 180 / .pi
+    case .serialAbsorption: result = 100 - (100 - values[0]) * ((100 - values[1]) / 100)
+    case .hormoneSignal: result = 100 * pow(2, -values[1] / values[0])
+    case .immuneComposition: result = values[0] * values[1] / 100
+    case .ductTransit: result = values[0] / values[1]
+    case .oviductCiliaryCycles: result = values[0] * values[1]
+    case .kneeMoment: result = values[0] * (values[1] / 100)
     }
     return result.isFinite ? result : nil
   }
@@ -37,6 +46,15 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .airwaySplit: result = values[0] * values[1] / (values[2] + values[1])
     case .peristalticTravel: result = 100 * (values[0] * values[1]) / 10
     case .cochlearFrequency: result = 100 * (1 - values[0])
+    case .diaphragmDisplacement: result = values[1] / 10
+    case .cardiacPhaseTime: result = 60_000 / values[0]
+    case .visualAngle: result = atan(values[0] / (2 * values[1])) * 180 / .pi
+    case .serialAbsorption: result = (100 - values[0]) * ((100 - values[1]) / 100)
+    case .hormoneSignal: result = 100 - 100 * pow(2, -values[1] / values[0])
+    case .immuneComposition: result = values[0] - values[0] * values[1] / 100
+    case .ductTransit: result = 1 / values[1]
+    case .oviductCiliaryCycles: result = 1000 / values[0]
+    case .kneeMoment: result = values[1] / 100
     }
     return result.isFinite ? result : nil
   }
