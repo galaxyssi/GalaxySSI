@@ -13,7 +13,7 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 
 ## Remaining Integration
 - [x] Import 3127 source-referenced chapter/caption/control/structure/scope strings per language into the dedicated AtlasFunction table; no English fallback in Chinese. Preserve existing BodyAtlas precedence, with new-table fallback for new structure keys.
-- [ ] Complete Function-tab player integration across all source courses. Core player, course selector, controls, source links, phase restoration and lifecycle are wired for fifty-four courses through forty-two dedicated renderers; other courses still await their dedicated renderers.
+- [ ] Complete Function-tab player integration across all source courses. Core player, course selector, controls, source links, phase restoration and lifecycle are wired for fifty-five courses through forty-three dedicated renderers; other courses still await their dedicated renderers.
 - [x] Connect optional persisted Function selections without changing quantitative simulation selections. Keep live animation phase outside published/serialized state; pause/exit commits it, while question snapshots read current live phase. Corrupt Function-only storage does not discard unrelated selections.
 - [ ] Import all new/revised illustration resources and cutaway geometry.
 - [ ] Port additional structure views, canonical/feature routing and related Function destination navigation.
@@ -24,7 +24,7 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 - [ ] Synchronize any newly merged predecessor PRs and update dependency scope before publication.
 
 ## Renderer Parity
-Next renderer: port HealthAtlasFibroblastStoryView, then continue the source-order list. Fifty-four courses are enabled through forty-two dedicated renderers; do not broaden FunctionRendering before the corresponding native renderer is implemented.
+Next renderer: port HealthAtlasArterialStoryView, then continue the source-order list. Fifty-five courses are enabled through forty-three dedicated renderers; do not broaden FunctionRendering before the corresponding native renderer is implemented.
 
 - [x] `HealthAtlasUptakeView` — native 344-unit source geometry, four signal paths, relay thresholds, membrane fusion and glucose transport; source/resource/grammar checks only, native pixels unverified.
 - [x] `HealthAtlasHeartbeatView` — five source stages, seven exact cubic routes, shared valve anchors and 24x24 deformable heart mesh; Metal plus equivalent CoreGraphics triangle fallback, native shader/pixels unverified.
@@ -68,7 +68,7 @@ Next renderer: port HealthAtlasFibroblastStoryView, then continue the source-ord
 - [x] `HealthAtlasSplenicFilterStoryView` — five source stages, exact spleen/deforming macrophage outlines, three tracks, 64-point wall-relative red-cell deformation, retention/capture/recycling timing, clipped tissue and bounded bilingual labels; source/grammar checks only, native pixels unverified.
 - [x] `HealthAtlasThymusStoryView` — five source stages, seven exact anatomy outlines/three travel routes, mirrored locator, clipped cortical/medullary densities, positive/negative selection timing, integer-alpha cell layers, dashed travel and bounded bilingual labels; source/grammar checks only, native pixels unverified.
 - [x] `HealthAtlasBrainstemRhythmStoryView` — five source stages, six exact outlines/five routes, dynamic lung/diaphragm curves, clipped fissures, network topology, sequential motor branching/trails, respiratory gating and bounded bilingual labels; source/grammar checks only, native pixels unverified.
-- [ ] `HealthAtlasFibroblastStoryView`
+- [x] `HealthAtlasFibroblastStoryView` — five source stages, eight exact outlines, eleven scaffold/four paired outgoing/two turnover fibers, control-point interpolation, repair cues, integer-alpha double strokes, source-length trim ordering and bounded bilingual labels; source/grammar checks only, native pixels unverified.
 - [ ] `HealthAtlasArterialStoryView`
 - [ ] `HealthAtlasChondrocyteStoryView`
 - [ ] `HealthAtlasAdrenalMedullaStoryView`
@@ -111,7 +111,7 @@ Next renderer: port HealthAtlasFibroblastStoryView, then continue the source-ord
 ## Verification Limits
 Current foundation checks pass: all 387 source hashes, exported catalogue/route invariants, iOS project/module configuration, two changed Swift grammar branches and whitespace. This proves foundation consistency only, not renderer or UI parity.
 
-Player checkpoint: dedicated source tables contain 3127 exact strings in each language; registry exposes fifty-four courses through forty-two of 81 renderer classes. Paired or grouped courses retain dedicated source renderers, including the three signal and three ocular courses. These source implementations have not run on a device. Generic chapter controls, lifecycle pause, references and separate live/persisted state are connected; no unsupported course is replaced by a generic picture. The enabled-course audit also checks every enabled ID against the pinned 101-course catalogue.
+Player checkpoint: dedicated source tables contain 3127 exact strings in each language; registry exposes fifty-five courses through forty-three of 81 renderer classes. Paired or grouped courses retain dedicated source renderers, including the three signal and three ocular courses. These source implementations have not run on a device. Generic chapter controls, lifecycle pause, references and separate live/persisted state are connected; no unsupported course is replaced by a generic picture. The enabled-course audit also checks every enabled ID against the pinned 101-course catalogue.
 
 Signal trail lengths are cached once per source route. The small geometry helper uses subdivided chord/control-polygon bounds with a shared error budget ([Gravesen, 1997](https://orbit.dtu.dk/en/publications/adaptive-subdivision-and-the-length-and-energy-of-b%C3%A9zier-curves/)); rendering still trims the native Path. Added, unexecuted XCTest source compares straight/quadratic/cubic cases to analytic lengths. This does not prove native Path trimming accuracy, arc orientation, compilation or pixels.
 

@@ -2300,6 +2300,51 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertTrue(Motion.connections.allSatisfy { (0..<5).contains($0) })
   }
 
+  func testFibroblastFiberTemplatesAndArrangementRetainEveryControlPoint() {
+    typealias Motion = GalaxySSIHealthAtlasFibroblastMotion
+    XCTAssertEqual(Motion.scaffold.count, 11); XCTAssertEqual(Motion.outgoing.count, 4)
+    for shapes in Motion.outgoing {
+      XCTAssertEqual(shapes.from.interpolated(to: shapes.to, fraction: 0), shapes.from)
+      XCTAssertEqual(shapes.from.interpolated(to: shapes.to, fraction: 1), shapes.to)
+      let midpoint = shapes.from.interpolated(to: shapes.to, fraction: 0.5)
+      XCTAssertEqual(midpoint.start.x, (shapes.from.start.x + shapes.to.start.x) / 2, accuracy: 1e-12)
+      XCTAssertEqual(midpoint.control1.y, (shapes.from.control1.y + shapes.to.control1.y) / 2, accuracy: 1e-12)
+      XCTAssertEqual(midpoint.control2.x, (shapes.from.control2.x + shapes.to.control2.x) / 2, accuracy: 1e-12)
+      XCTAssertEqual(midpoint.end.y, (shapes.from.end.y + shapes.to.end.y) / 2, accuracy: 1e-12)
+      XCTAssertEqual(midpoint.route.commands.count, 1)
+      XCTAssertEqual(midpoint.route.commands[0].points, [midpoint.control1,midpoint.control2,midpoint.end])
+    }
+    XCTAssertEqual(Motion.olderFiber.start, .init(x: 62, y: 181))
+    XCTAssertEqual(Motion.renewedFiber.end, .init(x: 133, y: 170))
+  }
+
+  func testFibroblastGrowthRepairCueAndTurnoverKeepIndependentWindows() {
+    typealias Motion = GalaxySSIHealthAtlasFibroblastMotion
+    for index in 0...3 {
+      XCTAssertEqual(Motion.growth(step: 2, t: 0, index: index), 0)
+      XCTAssertEqual(Motion.growth(step: 2, t: 1, index: index), 1)
+      XCTAssertEqual(Motion.growth(step: 3, t: 0, index: index), 1)
+    }
+    XCTAssertLessThan(Motion.growth(step: 2, t: 0.3, index: 2), Motion.growth(step: 2, t: 0.3, index: 0))
+    XCTAssertEqual(Motion.arrangement(step: 2, t: 1), 0)
+    XCTAssertEqual(Motion.arrangement(step: 3, t: 0), 0)
+    XCTAssertEqual(Motion.arrangement(step: 3, t: 1), 1)
+    XCTAssertEqual(Motion.turnover(step: 3, t: 1), 0)
+    XCTAssertEqual(Motion.turnover(step: 4, t: 0.06), 0)
+    XCTAssertEqual(Motion.turnover(step: 4, t: 0.92), 1)
+    XCTAssertEqual(Motion.focus(0.75), 1)
+    XCTAssertEqual(Motion.focus(1), 0)
+    XCTAssertNil(Motion.repairCue(.nan, index: 0))
+    for index in 0...1 {
+      XCTAssertNil(Motion.repairCue(0, index: index))
+      XCTAssertNil(Motion.repairCue(1, index: index))
+      for sample in 0...200 {
+        guard let cue = Motion.repairCue(Double(sample) / 200, index: index) else { continue }
+        XCTAssertTrue((7...47).contains(cue.radius)); XCTAssertTrue((0...185).contains(cue.alpha))
+      }
+    }
+  }
+
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
