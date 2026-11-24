@@ -3,7 +3,7 @@ import XCTest
 @testable import GalaxySSI
 
 final class GalaxySSIHealthActivityComparisonTests: XCTestCase {
-  func testAlignedPeriodsPreserveUnknownDaysAndUseOnlyPairedTotals() throws {
+  func testSelectedPeriodPreservesUnknownAndZeroWithoutPreviousValues() throws {
     let calendar = utcCalendar
     let now = try date("2026-03-15", calendar: calendar)
     let first = try date("2026-03-08", calendar: calendar)
@@ -19,13 +19,9 @@ final class GalaxySSIHealthActivityComparisonTests: XCTestCase {
     let result = try GalaxySSIHealthActivityComparison(first: first, last: last, now: now,
       calendar: calendar, rows: rows, kind: .steps)
     XCTAssertEqual(result.coverage, 3)
-    XCTAssertEqual(result.paired.count, 2)
     XCTAssertEqual(result.currentTotal, 1_020)
-    XCTAssertEqual(result.currentPaired, 120)
-    XCTAssertEqual(result.previousPaired, 100)
-    XCTAssertEqual(result.changePercent, 20)
+    XCTAssertEqual(result.pairs.count, 7)
     XCTAssertEqual(result.pairs[1].current, 0)
-    XCTAssertNil(result.pairs[2].previous)
     XCTAssertNil(result.pairs[3].current)
     XCTAssertNoThrow(try GalaxySSIHealthActivityComparison(first: first, last: now, now: now,
       calendar: calendar, rows: [], kind: .steps))
@@ -42,7 +38,7 @@ final class GalaxySSIHealthActivityComparisonTests: XCTestCase {
       now: date("2026-03-10", calendar: calendar), calendar: calendar, rows: [], kind: .steps)
     XCTAssertEqual(result.pairs.count, 3)
     XCTAssertEqual(result.pairs[2].day.timeIntervalSince(result.pairs[1].day), 23 * 3_600)
-    XCTAssertEqual(GalaxySSIHealthActivityComparison.dayKey(result.pairs[2].previousDay, zone: calendar.timeZone), "2026-03-06")
+    XCTAssertEqual(GalaxySSIHealthActivityComparison.dayKey(result.pairs[2].day, zone: calendar.timeZone), "2026-03-09")
     XCTAssertTrue(GalaxySSIHealthActivityComparison.validDay("2024-02-29"))
     XCTAssertFalse(GalaxySSIHealthActivityComparison.validDay("2026-02-29"))
     XCTAssertFalse(GalaxySSIHealthActivityComparison.validDay("2026-13-01"))
@@ -66,7 +62,7 @@ final class GalaxySSIHealthActivityComparisonTests: XCTestCase {
     XCTAssertThrowsError(try GalaxySSIHealthActivityComparison.trailing(days: 367, now: Date(), calendar: utcCalendar))
   }
 
-  func testTodayOverlayPreservesUnknownZeroAndPreviousPeriod() throws {
+  func testTodayOverlayPreservesUnknownZeroAndNeverReadsPreviousPeriod() throws {
     let today = try date("2026-11-20", calendar: utcCalendar)
     let base = try GalaxySSIHealthActivityComparison(first: today, last: today, now: today,
       calendar: utcCalendar, rows: [.init(kind: .steps, day: "2026-11-19", total: 80)], kind: .steps)
@@ -75,12 +71,49 @@ final class GalaxySSIHealthActivityComparisonTests: XCTestCase {
     let zero = try base.withDay(.init(kind: .steps, day: "2026-11-20", total: 0), kind: .steps, zone: utcCalendar.timeZone)
     XCTAssertEqual(zero.coverage, 1)
     XCTAssertEqual(zero.pairs.first?.current, 0)
-    XCTAssertEqual(zero.pairs.first?.previous, 80)
+    XCTAssertEqual(zero.currentTotal, 0)
     let observed = try base.withDay(.init(kind: .steps, day: "2026-11-20", total: 100), kind: .steps, zone: utcCalendar.timeZone)
     XCTAssertEqual(try observed.withDay(.init(kind: .steps, day: "2026-11-20", total: 20), kind: .steps,
       zone: utcCalendar.timeZone).pairs.first?.current, 100)
     XCTAssertEqual(try base.withDay(.init(kind: .steps, day: "2026-11-21", total: 100), kind: .steps, zone: utcCalendar.timeZone), base)
     XCTAssertThrowsError(try base.withDay(.init(kind: .steps, day: "2026-11-20", total: -1), kind: .steps, zone: utcCalendar.timeZone))
+  }
+
+  func testDateTicksIncludeBothEndsWithoutDuplicates() throws {
+    let now = try date("2026-11-25", calendar: utcCalendar)
+    for days in [1, 7, 30, 90, 366] {
+      let range = try GalaxySSIHealthActivityComparison.trailing(days: days, now: now, calendar: utcCalendar)
+      let result = try GalaxySSIHealthActivityComparison(first: range.lowerBound, last: range.upperBound,
+        now: now, calendar: utcCalendar, rows: [], kind: .steps)
+      let ticks = result.dateTickIndices(limit: days <= 7 ? 7 : 5)
+      XCTAssertEqual(ticks.first, 0); XCTAssertEqual(ticks.last, days - 1)
+      XCTAssertEqual(Set(ticks).count, ticks.count)
+      XCTAssertEqual(result.pairs[ticks.first!].day, range.lowerBound)
+      XCTAssertEqual(result.pairs[ticks.last!].day, range.upperBound)
+    }
+  }
+
+  @MainActor
+  func testChartAccessibilitySelectsRecordedDaysIncludingZeroAndSkipsMissing() throws {
+    let now = try date("2026-11-25", calendar: utcCalendar)
+    let range = try GalaxySSIHealthActivityComparison.trailing(days: 7, now: now, calendar: utcCalendar)
+    for kind in GalaxySSIHealthActivityKind.allCases {
+      let result = try GalaxySSIHealthActivityComparison(first: range.lowerBound, last: range.upperBound,
+        now: now, calendar: utcCalendar, rows: [
+          .init(kind: kind, day: "2026-11-19", total: 60_000),
+          .init(kind: kind, day: "2026-11-22", total: 0),
+          .init(kind: kind, day: "2026-11-25", total: 120_000)
+        ], kind: kind)
+      let view = GalaxySSIHealthActivityChartView(frame: CGRect(x: 0, y: 0, width: 320, height: 220))
+      var selected = ""
+      view.configure(result: result, kind: kind, locale: Locale(identifier: "en_US"), zone: utcCalendar.timeZone,
+        language: "en", selectedDay: "", onSelection: { selected = $0 })
+      XCTAssertTrue(view.accessibilityActivate()); XCTAssertEqual(selected, "2026-11-25")
+      view.accessibilityDecrement(); XCTAssertEqual(selected, "2026-11-22")
+      XCTAssertTrue(view.accessibilityLabel?.contains("0") == true)
+      view.accessibilityDecrement(); XCTAssertEqual(selected, "2026-11-19")
+      view.accessibilityIncrement(); XCTAssertEqual(selected, "2026-11-22")
+    }
   }
 
   func testUnobservedStepsStayUnknownButRealZeroAndPausedTotalsRemain() throws {
