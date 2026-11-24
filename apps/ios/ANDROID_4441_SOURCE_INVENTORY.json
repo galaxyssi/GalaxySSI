@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4441,
+    "mergeCommit": "94d3e3a33be621a5ae17c62c7082a6ea912bdfd2"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "b59d2ee6b6b32d80f8a4afa101f4b04eab6c5c0b0986323b4fdfd5d78c7f345c"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGuidedFunctionDeviceTest.kt",
+      "status": "M",
+      "sha256": "0e253cc2b825ade7b1ab76bab95936179932680f1a0c00c63dc5eadc196da53e"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasInsulinStoryView.kt",
+      "status": "M",
+      "sha256": "037d6354dbe0f09493202902e9fd9e1b277228e608631756d56aac339b5d4bec"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasIntestinalAbsorptionStoryView.kt",
+      "status": "M",
+      "sha256": "177c162bdeaf1199817524e929bfc52623e3cb9130d908edbea09e044d728c6e"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMovementStoryView.kt",
+      "status": "M",
+      "sha256": "bf4c88761d3db76f8025a41ac82022c2c47e3dcdcaebb8ddb260298541ed698f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_absorption_story.xml",
+      "status": "M",
+      "sha256": "15a9d139aaaae8e0cf2dba00013f01a7e29b58a971f082b57ea2c499d0c9527c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_insulin_story.xml",
+      "status": "M",
+      "sha256": "21c62318d0a0d65158ab7873b9dfae9b57a7eee7932a390cc1eaf63ca10549d3"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_movement_story.xml",
+      "status": "M",
+      "sha256": "54019403388ec482961556c65f5bfada2919cad18172acbf752a438b08626060"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_absorption_story.xml",
+      "status": "M",
+      "sha256": "185a99b0b593ba5a9451d1849d20af73c8c7ad11cebcf6e4eaa96d804de66388"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_insulin_story.xml",
+      "status": "M",
+      "sha256": "0ede6cbea433c07af0fbee1d015c95abdb61c612f48297aacaedb9d78d524c56"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_movement_story.xml",
+      "status": "M",
+      "sha256": "96680824ee048e4c1a7cf5a869c32106f462b9a2172797beb60f3b9b6008b7dc"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMechanismCloseUpTest.kt",
+      "status": "M",
+      "sha256": "d8689b62626d62cc688cb22dfc3d485e4d4d73e93b78a36d24b7eaf210debdff"
+    }
+  ]
+}

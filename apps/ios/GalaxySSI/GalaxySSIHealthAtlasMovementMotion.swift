@@ -11,6 +11,30 @@ struct GalaxySSIHealthAtlasMovementMotion {
     self.fraction = fraction.isFinite ? min(1, max(0, fraction)) : 0
   }
   static let actinLength = 80.0, myosinLength = 122.0
+  enum CrossBridge: Int, CaseIterable { case bind, pull, detach, reset
+    var title: String { ["motion_bridge_bind", "motion_bridge_pull", "motion_bridge_detach", "motion_bridge_reset"][rawValue] }
+  }
+  static func crossBridge(_ t: Double) -> CrossBridge {
+    let phase = GalaxySSIHealthAtlasFunctionCatalogue.Story.safePhase(t)
+    return CrossBridge(rawValue: min(3, Int(phase * 4))) ?? .bind
+  }
+  struct BridgePose {
+    let stage: CrossBridge
+    let progress: Double
+    var actinOffset: Double { stage == .bind ? 0 : stage == .pull ? 22 * progress : 22 }
+    var tip: CGPoint {
+      switch stage {
+      case .bind: return CGPoint(x: 117, y: 280 - 13 * progress)
+      case .pull: return CGPoint(x: 117 + actinOffset, y: 267)
+      case .detach: return CGPoint(x: 139, y: 267 + 13 * progress)
+      case .reset: return CGPoint(x: 139 - 22 * progress, y: 280)
+      }
+    }
+  }
+  static func bridgePose(_ time: Double) -> BridgePose {
+    let t = GalaxySSIHealthAtlasFunctionCatalogue.Story.safePhase(time), stage = crossBridge(t)
+    return BridgePose(stage: stage, progress: ease(min(1, max(0, t * 4 - Double(stage.rawValue)))))
+  }
   static func ease(_ t: Double) -> Double { t * t * (3 - 2 * t) }
   static func sarcomereHalfWidth(_ t: Double) -> Double { 111 - 33 * ease(t) }
   static func elbowAngle(extending: Bool, fraction: Double) -> Double { 96 * ease(extending ? 1 - fraction : fraction) }

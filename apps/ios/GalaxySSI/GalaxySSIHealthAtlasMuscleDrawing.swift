@@ -50,7 +50,7 @@ extension GalaxySSIHealthAtlasMovementDrawing {
   }
   private func sliding(_ t: Double) {
     let left = 170 - Motion.sarcomereHalfWidth(t), right = 340 - left
-    for y in stride(from: 131, through: 222, by: 34) {
+    for y in stride(from: 104, through: 168, by: 28) {
       let h = Double(y), start = 170 - Motion.myosinLength / 2
       line(left, h, left + Motion.actinLength, h, Self.teal, 4.2)
       line(right, h, right - Motion.actinLength, h, Self.teal, 4.2)
@@ -60,10 +60,11 @@ extension GalaxySSIHealthAtlasMovementDrawing {
         line(x, h + 14, x + (i < 4 ? 1 : -1) * (4 + 2 * sin(t * 18 + Double(i))), h + 5, Self.scarlet, 2.5)
       }
     }
-    for x in [left, right] { line(x, 113, x, 236, Self.edge, 5); line(x, 270, x, 290, Self.edge, 1.3) }
-    line(left, 280, right, 280, Self.edge, 1.3)
-    leader(73, 78, left + 32, 131, "motion_actin", Self.teal)
-    leader(258, 78, 205, 145, "motion_myosin", Self.scarlet); label(170, 312, "motion_sarcomere")
+    for x in [left, right] { line(x, 89, x, 185, Self.edge, 5); line(x, 194, x, 204, Self.edge, 1.3) }
+    line(left, 199, right, 199, Self.edge, 1.3)
+    leader(73, 59, left + 32, 104, "motion_actin", Self.teal)
+    leader(258, 59, 205, 118, "motion_myosin", Self.scarlet); label(170, 220, "motion_sarcomere")
+    crossBridge(t)
   }
   private func elbow(extending: Bool, t: Double) {
     let angle = Motion.elbowAngle(extending: extending, fraction: t), rad = angle * .pi / 180

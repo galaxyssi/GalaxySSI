@@ -1,0 +1,15 @@
+"health_atlas_absorption_story_blood_caption" = "SGLT1 uses the sodium gradient to bring glucose into the cell. GLUT2 lets glucose leave toward capillaries. The sodium–potassium pump keeps the gradient in place.";
+"health_atlas_absorption_story_glucose" = "Glucose";
+"health_atlas_absorption_story_glut2" = "GLUT2";
+"health_atlas_absorption_story_potassium" = "K⁺";
+"health_atlas_absorption_story_pump" = "Na⁺/K⁺ pump";
+"health_atlas_absorption_story_sglt1" = "SGLT1";
+"health_atlas_absorption_story_sodium" = "Na⁺";
+"health_atlas_absorption_story_tissue_side" = "Toward blood capillaries";
+"health_atlas_insulin_art_k_opening" = "K⁺ channels open";
+"health_atlas_insulin_art_voltage" = "Membrane potential";
+"health_atlas_motion_bridge_bind" = "Myosin binds actin";
+"health_atlas_motion_bridge_detach" = "ATP binds: myosin detaches";
+"health_atlas_motion_bridge_pull" = "Power stroke: actin slides";
+"health_atlas_motion_bridge_reset" = "ATP hydrolysis resets the head";
+"health_atlas_motion_slide_caption" = "A myosin head grips actin and pulls it inward. New ATP releases the grip; ATP hydrolysis resets the head. The sarcomere shortens, not the filaments.";

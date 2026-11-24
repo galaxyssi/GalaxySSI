@@ -1,0 +1,154 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4441,
+    "mergeCommit": "94d3e3a33be621a5ae17c62c7082a6ea912bdfd2"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "b59d2ee6b6b32d80f8a4afa101f4b04eab6c5c0b0986323b4fdfd5d78c7f345c",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGuidedFunctionDeviceTest.kt",
+      "sourceSHA256": "0e253cc2b825ade7b1ab76bab95936179932680f1a0c00c63dc5eadc196da53e",
+      "kind": "android-test-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-cellular-closeups-scope.cjs"
+      ],
+      "note": "HealthAtlasGuidedFunctionDeviceTest.kt: reviewed as source reference. Swift fixture sources cover cross-bridge phase/pose/boundaries and fixed lengths, delayed monotonic depolarization and transport routes. Android native frame/caption/moving-region screenshot checks are not executed iOS evidence; no XCTest run."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasInsulinStoryView.kt",
+      "sourceSHA256": "037d6354dbe0f09493202902e9fd9e1b277228e608631756d56aac339b5d4bec",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasInsulinMotion.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasInsulinScenes.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPotassiumTraceDrawing.swift"
+      ],
+      "note": "Native chapter-scoped myosin binding/stroke/ATP detach/reset, SGLT1/GLUT2 and sodium-potassium transport tracks, or KATP/membrane-potential trace as applicable. Preserve original filament lengths, other chapters, lesson catalogue and privacy/numerical state. Illustrative values only; no native visual acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasIntestinalAbsorptionStoryView.kt",
+      "sourceSHA256": "177c162bdeaf1199817524e929bfc52623e3cb9130d908edbea09e044d728c6e",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasAbsorptionMotion.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasAbsorptionDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasGlucoseTransportDrawing.swift"
+      ],
+      "note": "Native chapter-scoped myosin binding/stroke/ATP detach/reset, SGLT1/GLUT2 and sodium-potassium transport tracks, or KATP/membrane-potential trace as applicable. Preserve original filament lengths, other chapters, lesson catalogue and privacy/numerical state. Illustrative values only; no native visual acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMovementStoryView.kt",
+      "sourceSHA256": "bf4c88761d3db76f8025a41ac82022c2c47e3dcdcaebb8ddb260298541ed698f",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMovementMotion.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMuscleDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCrossBridgeDrawing.swift"
+      ],
+      "note": "Native chapter-scoped myosin binding/stroke/ATP detach/reset, SGLT1/GLUT2 and sodium-potassium transport tracks, or KATP/membrane-potential trace as applicable. Preserve original filament lengths, other chapters, lesson catalogue and privacy/numerical state. Illustrative values only; no native visual acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_absorption_story.xml",
+      "sourceSHA256": "15a9d139aaaae8e0cf2dba00013f01a7e29b58a971f082b57ea2c499d0c9527c",
+      "kind": "exact-resource-delta-with-explicit-shared-names",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCellularCloseups.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCellularCloseups.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Eleven original translated English/Chinese pairs plus four explicitly translatable=false names (SGLT1, GLUT2, Na+, K+ rendered with original source glyphs) shared unchanged in both locales; fifteen entries per table. No invented translations or implicit cross-language fallback."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_insulin_story.xml",
+      "sourceSHA256": "21c62318d0a0d65158ab7873b9dfae9b57a7eee7932a390cc1eaf63ca10549d3",
+      "kind": "exact-resource-delta-with-explicit-shared-names",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCellularCloseups.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCellularCloseups.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Eleven original translated English/Chinese pairs plus four explicitly translatable=false names (SGLT1, GLUT2, Na+, K+ rendered with original source glyphs) shared unchanged in both locales; fifteen entries per table. No invented translations or implicit cross-language fallback."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_movement_story.xml",
+      "sourceSHA256": "54019403388ec482961556c65f5bfada2919cad18172acbf752a438b08626060",
+      "kind": "exact-resource-delta-with-explicit-shared-names",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCellularCloseups.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCellularCloseups.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Eleven original translated English/Chinese pairs plus four explicitly translatable=false names (SGLT1, GLUT2, Na+, K+ rendered with original source glyphs) shared unchanged in both locales; fifteen entries per table. No invented translations or implicit cross-language fallback."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_absorption_story.xml",
+      "sourceSHA256": "185a99b0b593ba5a9451d1849d20af73c8c7ad11cebcf6e4eaa96d804de66388",
+      "kind": "exact-resource-delta-with-explicit-shared-names",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCellularCloseups.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCellularCloseups.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Eleven original translated English/Chinese pairs plus four explicitly translatable=false names (SGLT1, GLUT2, Na+, K+ rendered with original source glyphs) shared unchanged in both locales; fifteen entries per table. No invented translations or implicit cross-language fallback."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_insulin_story.xml",
+      "sourceSHA256": "0ede6cbea433c07af0fbee1d015c95abdb61c612f48297aacaedb9d78d524c56",
+      "kind": "exact-resource-delta-with-explicit-shared-names",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCellularCloseups.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCellularCloseups.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Eleven original translated English/Chinese pairs plus four explicitly translatable=false names (SGLT1, GLUT2, Na+, K+ rendered with original source glyphs) shared unchanged in both locales; fifteen entries per table. No invented translations or implicit cross-language fallback."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_movement_story.xml",
+      "sourceSHA256": "96680824ee048e4c1a7cf5a869c32106f462b9a2172797beb60f3b9b6008b7dc",
+      "kind": "exact-resource-delta-with-explicit-shared-names",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCellularCloseups.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCellularCloseups.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Eleven original translated English/Chinese pairs plus four explicitly translatable=false names (SGLT1, GLUT2, Na+, K+ rendered with original source glyphs) shared unchanged in both locales; fifteen entries per table. No invented translations or implicit cross-language fallback."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMechanismCloseUpTest.kt",
+      "sourceSHA256": "d8689b62626d62cc688cb22dfc3d485e4d4d73e93b78a36d24b7eaf210debdff",
+      "kind": "android-test-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-cellular-closeups-scope.cjs"
+      ],
+      "note": "HealthAtlasMechanismCloseUpTest.kt: reviewed as source reference. Swift fixture sources cover cross-bridge phase/pose/boundaries and fixed lengths, delayed monotonic depolarization and transport routes. Android native frame/caption/moving-region screenshot checks are not executed iOS evidence; no XCTest run."
+    }
+  ]
+}
