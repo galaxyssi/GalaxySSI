@@ -27,6 +27,10 @@ struct GalaxySSILocalModelLabView: View {
   @State private var artifactToStart: LocalModelHubArtifact?
   @State private var showingMeteredDownloadConfirmation = false
   @StateObject private var downloads = LocalModelArtifactDownloadCoordinator.shared
+  @SceneStorage("ios.local-model.preflight-expanded") private var preflightExpanded = false
+  @SceneStorage("ios.local-model.acceleration-expanded") private var accelerationExpanded = false
+  @SceneStorage("ios.local-model.permissions-expanded") private var permissionsExpanded = false
+  @SceneStorage("ios.local-model.storage-expanded") private var storageExpanded = false
 
   private let whisperModelManager = VoiceWhisperModelManager()
   private let localModelStorage = LocalModelRuntimeStorage()
@@ -112,10 +116,18 @@ struct GalaxySSILocalModelLabView: View {
             )
           }
           manageSection
-          preflightSection
-          accelerationSection
-          permissionsSection
-          privacyStorageSection
+          DisclosureGroup(t("galaxyssi.local_model.preflight_section", "Runtime Preflight"), isExpanded: $preflightExpanded) {
+            preflightSection
+          }
+          DisclosureGroup(t("galaxyssi.local_model.acceleration_section", "Acceleration Backends"), isExpanded: $accelerationExpanded) {
+            accelerationSection
+          }
+          DisclosureGroup(t("galaxyssi.local_model.section_permissions", "Device Permissions"), isExpanded: $permissionsExpanded) {
+            permissionsSection
+          }
+          DisclosureGroup(t("galaxyssi.local_model.section_privacy_storage", "Privacy & Storage"), isExpanded: $storageExpanded) {
+            privacyStorageSection
+          }
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -338,7 +350,6 @@ struct GalaxySSILocalModelLabView: View {
 
   private var preflightSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      GalaxySSILocalModelLabSectionTitle(title: t("galaxyssi.local_model.preflight_section", "Runtime Preflight"))
       GalaxySSILocalModelLabStatusRow(
         title: t("galaxyssi.local_model.file_estimate", "Estimated Model File"),
         subtitle: selectedProfile.quantizationLabel,
@@ -432,7 +443,6 @@ struct GalaxySSILocalModelLabView: View {
 
   private var accelerationSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      GalaxySSILocalModelLabSectionTitle(title: t("galaxyssi.local_model.acceleration_section", "Acceleration Backends"))
       ForEach(acceleratorSnapshot.capabilities) { capability in
         GalaxySSILocalModelLabStatusRow(
           title: acceleratorTitle(capability.kind),
@@ -447,7 +457,6 @@ struct GalaxySSILocalModelLabView: View {
 
   private var permissionsSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      GalaxySSILocalModelLabSectionTitle(title: t("galaxyssi.local_model.section_permissions", "Device Permissions"))
       GalaxySSILocalModelLabNavigationRow(
         title: t("galaxyssi.local_model.on_device_permissions", "On-device Agent Permissions"),
         subtitle: t("galaxyssi.local_model.on_device_permissions_subtitle", "Review microphone, camera, notifications, and device-side execution"),
@@ -498,7 +507,6 @@ struct GalaxySSILocalModelLabView: View {
 
   private var privacyStorageSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      GalaxySSILocalModelLabSectionTitle(title: t("galaxyssi.local_model.section_privacy_storage", "Privacy & Storage"))
       GalaxySSILocalModelLabStatusRow(
         title: t("galaxyssi.local_model.offline_mode", "Offline Mode"),
         subtitle: t("galaxyssi.local_model.offline_mode_subtitle", "Keep working without network access"),

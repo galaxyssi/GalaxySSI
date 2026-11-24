@@ -212,6 +212,10 @@ struct GalaxySSIVoiceASRProviderView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var refreshGeneration = 0
   @State private var showOnlineASRConsent = false
+  @SceneStorage("ios.asr.online-privacy-expanded") private var onlinePrivacyExpanded = false
+  @SceneStorage("ios.asr.remote-node-expanded") private var remoteNodeExpanded = false
+  @SceneStorage("ios.asr.capabilities-expanded") private var capabilitiesExpanded = false
+  @SceneStorage("ios.asr.runtime-policy-expanded") private var runtimePolicyExpanded = false
 
   private var settings: VoiceSettings { store.voiceSettings.normalized }
   private var selectedModel: VoiceWhisperModelProfile {
@@ -273,18 +277,26 @@ struct GalaxySSIVoiceASRProviderView: View {
           if advancedRecognitionVisible {
             recognitionSection
           }
-          if onlineRealtimeASREnabled {
-            onlinePrivacySection
-          }
-          if remoteWhisperNodeEnabled {
-            remoteNodeSection
-          }
-          deviceCapabilitySection
-          if VoiceFeatureFlags.isWhisperPolicyEngineEnabled() {
-            runtimePolicySection
-          }
           modelSection
           recheckSection
+          if onlineRealtimeASREnabled {
+            DisclosureGroup(t("voice_asr_online_privacy_section", "Online audio privacy"), isExpanded: $onlinePrivacyExpanded) {
+              onlinePrivacySection
+            }
+          }
+          if remoteWhisperNodeEnabled {
+            DisclosureGroup(t("voice_asr_remote_section", "My Desktop accuracy node"), isExpanded: $remoteNodeExpanded) {
+              remoteNodeSection
+            }
+          }
+          DisclosureGroup(t("voice_provider_device_capabilities", "Device capabilities"), isExpanded: $capabilitiesExpanded) {
+            deviceCapabilitySection
+          }
+          if VoiceFeatureFlags.isWhisperPolicyEngineEnabled() {
+            DisclosureGroup(t("voice_asr_runtime_mode_section", "Runtime policy"), isExpanded: $runtimePolicyExpanded) {
+              runtimePolicySection
+            }
+          }
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -350,7 +362,6 @@ struct GalaxySSIVoiceASRProviderView: View {
 
   private var onlinePrivacySection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      GalaxySSISecuritySectionTitle(title: t("voice_asr_online_privacy_section", "Online audio privacy"))
       toggleRow(
         title: t("voice_asr_online_allowed_title", "Online realtime ASR"),
         subtitle: t("voice_asr_online_allowed_subtitle", "When enabled, microphone audio is sent to the selected provider"),
@@ -410,7 +421,6 @@ struct GalaxySSIVoiceASRProviderView: View {
 
   private var remoteNodeSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      GalaxySSISecuritySectionTitle(title: t("voice_asr_remote_section", "My Desktop accuracy node"))
       toggleRow(
         title: t("voice_asr_remote_allowed_title", "Allow remote accuracy review"),
         subtitle: t(
@@ -442,7 +452,6 @@ struct GalaxySSIVoiceASRProviderView: View {
 
   private var deviceCapabilitySection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      GalaxySSISecuritySectionTitle(title: t("voice_provider_device_capabilities", "Device capabilities"))
       ForEach(asrCapabilityIds, id: \.self) { id in
         asrCapabilityRow(capabilities[id])
       }
@@ -451,7 +460,6 @@ struct GalaxySSIVoiceASRProviderView: View {
 
   private var runtimePolicySection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      GalaxySSISecuritySectionTitle(title: t("voice_asr_runtime_mode_section", "Runtime policy"))
       GalaxySSIVoiceProviderMenuRow(
         title: t("voice_asr_runtime_mode_title", "Model selection"),
         subtitle: t(
