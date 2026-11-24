@@ -17,7 +17,7 @@ enum GalaxySSIHealthAtlasFunctionRendering {
   static let muralCells: Set<String> = ["PERICYTE_COVERAGE"]
   static let skinSentinels: Set<String> = ["LANGERHANS_SENTINEL"]
   static let satelliteCells: Set<String> = ["MUSCLE_SATELLITE_RENEWAL"]
-  static let immuneLessons: Set<String> = ["HELPER_T_COORDINATION", "CYTOTOXIC_T_CONTACT", "REGULATORY_T_MODERATION"]
+  static let immuneLessons: Set<String> = ["MAST_CELL_GRANULE_RELEASE", "HELPER_T_COORDINATION", "CYTOTOXIC_T_CONTACT", "REGULATORY_T_MODERATION"]
   static let implemented = baseline.union(regional).union(loadTransfer).union(crypt).union(renalCells).union(isletCells).union(endocrineZones).union(gonadalCells).union(anteriorPituitary).union(muralCells).union(skinSentinels).union(satelliteCells).union(immuneLessons)
 }
 
@@ -27,6 +27,7 @@ struct GalaxySSIHealthAtlasFunctionArtwork: View {
   let language: String
   @ViewBuilder var body: some View {
     switch story.id {
+    case "MAST_CELL_GRANULE_RELEASE": GalaxySSIHealthAtlasMastView(story: story, phase: phase, language: language)
     case "HELPER_T_COORDINATION": GalaxySSIHealthAtlasTCellLessonView(story: story, phase: phase, language: language, kind: .helper)
     case "CYTOTOXIC_T_CONTACT": GalaxySSIHealthAtlasTCellLessonView(story: story, phase: phase, language: language, kind: .cytotoxic)
     case "REGULATORY_T_MODERATION": GalaxySSIHealthAtlasRegulatoryTView(story: story, phase: phase, language: language)

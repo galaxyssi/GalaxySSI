@@ -36,7 +36,7 @@ An eventual PR will use main and disclose the actual inherited diff.
 - Bilingual resource deltas are imported.
 - Source-only catalogue audit passed for all 67 hashes, catalogue counts,
   graph-resolved routes, entry phases, exact related destinations, reference
-  hosts and bilingual keys. Twenty-three new dispatches are present; mast remains
+  hosts and bilingual keys. All 24 new dispatches are present; activation remains
   explicitly not implemented. Two changed Swift files parsed without grammar
   errors; project structure passed. No Swift type checking or native execution.
 - Added dedicated Paneth crypt-barrier renderer and reusable crypt wall geometry:
@@ -142,7 +142,7 @@ An eventual PR will use main and disclose the actual inherited diff.
   No native/UI acceptance.
 - Added shared immune drawing and the regulatory-T renderer/dispatch. Generated
   seven constant immune path groups/44 commands; the parameterized mast gut
-  contour is explicitly excluded and still pending with that renderer. Kept the
+  contour is explicitly excluded from constant extraction and ported below. Kept the
   regulatory activity ribbon as a qualitative thread, stage-continuous phase,
   original damping/entry geometry and distinct responder/regulator palettes.
   Source checks covered four bilingual keys and 19,844 analytic ribbon points;
@@ -155,8 +155,17 @@ An eventual PR will use main and disclose the actual inherited diff.
   fragments, separation and unchanged neighbor. Source checks covered ten
   bilingual keys, 121 anchored-target and 363 fragment samples; four Swift
   files parsed without grammar errors, retained regulatory checks passed and
-  project/catalogue checks passed. Mast renderer and final runtime integration
-  remain; no native compilation, execution or pixel acceptance claimed.
+  project/catalogue checks passed; no native compilation, execution or pixel
+  acceptance claimed.
+- Added the mast-cell four-stage renderer/dispatch: tissue residence, granule
+  storage, release and local dispersal. Ported the parameterized three-villus
+  gut contour separately from constant geometry, all 22 granule positions and
+  six release vectors. Source checks covered ten bilingual keys and 732 analytic
+  nonduplicating inside/outside release samples. Four Swift files passed grammar
+  parsing; project/catalogue checks passed. All 24 added renderers now have
+  explicit native dispatches, but default catalogue activation, new structure
+  feature routing, full source dispositions and publication remain pending.
+  No native compilation, execution or pixel acceptance claimed.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
 - Connect pelvic/subcutaneous cutaways to structure feature routing.

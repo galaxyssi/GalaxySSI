@@ -50,6 +50,7 @@ const old = new Set(previous.stories.map(s => s.id)), added = pack.stories.filte
 assert.equal(added.length, 24);
 const artwork = read("GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift");
 const connected = added.filter(s => artwork.includes('case "' + s.id + '":'));
-assert.deepEqual(connected.map(s => s.id), ["PELVIC_LOAD_TRANSFER", "SUBCUTANEOUS_CUSHION", "SOMATOTROPH_GROWTH_SIGNAL", "LACTOTROPH_MAMMARY_SIGNAL", "CORTICOTROPH_ADRENAL_SIGNAL", "GONADOTROPH_DUAL_SIGNAL", "PANCREATIC_DELTA_MODULATION", "PANCREATIC_PP_SIGNAL", "THYROID_CALCITONIN", "ADRENAL_CORTEX_OUTPUT", "HELPER_T_COORDINATION", "CYTOTOXIC_T_CONTACT", "REGULATORY_T_MODERATION", "PANETH_CRYPT_BARRIER", "ENTEROENDOCRINE_LUMEN_SIGNAL", "INTESTINAL_STEM_RENEWAL", "DISTAL_TUBULAR_EXCHANGE", "UROTHELIAL_BARRIER_GEOMETRY", "LEYDIG_ENDOCRINE", "THECA_COOPERATION", "PERICYTE_COVERAGE", "LANGERHANS_SENTINEL", "MUSCLE_SATELLITE_RENEWAL"]);
-assert.ok(swift.includes("revision: Int = 4385"), "Do not activate incomplete renderer coverage");
-console.log("Verified 67 source hashes; 138 courses / 313 routes / 151 related links / bilingual keys. Twenty-three new dispatches connected; mast renderer and default activation remain. No native execution.");
+assert.deepEqual(connected.map(s => s.id), added.map(s => s.id));
+assert.equal(connected.length, 24);
+assert.ok(swift.includes("revision: Int = 4385"), "Runtime activation still awaits full integration audit");
+console.log("Verified 67 source hashes; 138 courses / 313 routes / 151 related links / bilingual keys. All 24 new dispatches connected; default activation/full integration audit remain. No native execution.");
