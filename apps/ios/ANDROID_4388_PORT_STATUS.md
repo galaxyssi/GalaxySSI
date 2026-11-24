@@ -36,7 +36,7 @@ An eventual PR will use main and disclose the actual inherited diff.
 - Bilingual resource deltas are imported.
 - Source-only catalogue audit passed for all 67 hashes, catalogue counts,
   graph-resolved routes, entry phases, exact related destinations, reference
-  hosts and bilingual keys. Seventeen new dispatches are present; the other seven are
+  hosts and bilingual keys. Eighteen new dispatches are present; the other six are
   explicitly not implemented. Two changed Swift files parsed without grammar
   errors; project structure passed. No Swift type checking or native execution.
 - Added dedicated Paneth crypt-barrier renderer and reusable crypt wall geometry:
@@ -114,8 +114,16 @@ An eventual PR will use main and disclose the actual inherited diff.
   pulses, paired FSH/LH phase/shape offsets, ovarian granulosa/theca targets and
   testis Sertoli/Leydig responses. Zero-span arcs explicitly do not draw. Source
   checks covered 15 bilingual keys and 2,904 analytic visible/hidden markers;
-  five Swift files passed grammar parsing and project checks passed. Seven
-  renderers/default activation remain; no native compilation or UI acceptance.
+  five Swift files passed grammar parsing and project checks passed; no native
+  compilation or UI acceptance.
+- Added the pericyte coverage renderer and dispatch with original lengthwise,
+  cross-section, interface and cooperation scenes. Imported eight paths/50
+  commands, including exact rounded sleeve/window and wrap sampling route.
+  Retained clipped RBC motion, sequential cross-section rotations, mural versus
+  endothelial geometry and all ten source callouts. Source audit covered nine
+  bilingual keys and 484 analytic RBC centers; four Swift files passed grammar
+  parsing, prior geometry generation remained unchanged, and project/catalogue
+  checks passed. Six renderers/default activation remain; no native acceptance.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
 - Connect pelvic/subcutaneous cutaways to structure feature routing.
