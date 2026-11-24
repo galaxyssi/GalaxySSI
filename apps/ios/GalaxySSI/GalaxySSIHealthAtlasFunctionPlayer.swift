@@ -36,7 +36,7 @@ struct GalaxySSIHealthAtlasFunctionPlayer<Artwork: View>: View {
       Slider(value: Binding(get: { position }, set: setPosition), in: 0...1, onEditingChanged: { editing in
         stop(); if !editing { commit() }
       }).accessibilityLabel(text("health_atlas_phase")).accessibilityIdentifier("atlas-function-position")
-      artwork(position).frame(maxHeight: 390)
+      artwork(position).modifier(GalaxySSIHealthAtlasFunctionViewport(storyID: story.id))
       let index = story.chapter(position), chapter = story.chapters[index]
       Text(String(format: text("health_atlas_stage"), Int64(index + 1), Int64(story.chapters.count), text(chapter.title)))
         .font(.headline).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("atlas-function-chapter")

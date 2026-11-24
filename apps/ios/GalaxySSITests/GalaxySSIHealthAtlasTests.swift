@@ -918,6 +918,17 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertFalse(platelet.annotations.contains { $0.id.contains("nucleus") })
   }
 
+  func testFunctionViewportUsesCurrentWindowAndPreservesCellHeightDelegation() {
+    typealias Viewport = GalaxySSIHealthAtlasFunctionViewport
+    XCTAssertEqual(Viewport.limit(windowHeight: 390, cellCourse: false), 144)
+    XCTAssertEqual(Viewport.limit(windowHeight: 568, cellCourse: false), 300)
+    XCTAssertEqual(Viewport.limit(windowHeight: 844, cellCourse: false), 390)
+    XCTAssertEqual(Viewport.limit(windowHeight: 0, cellCourse: false), 390)
+    XCTAssertEqual(Viewport.limit(windowHeight: .nan, cellCourse: false), 390)
+    XCTAssertEqual(Viewport.limit(windowHeight: 390, cellCourse: true), 390)
+    XCTAssertEqual(Viewport.cellCourses.count, 9)
+  }
+
   func testFunctionCataloguePreservesIndependentChoicesAndChapterBoundaries() throws {
     let catalogue = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: Bundle(for: GalaxySSIStore.self)))
     try catalogue.validate(in: completeCatalogue())
