@@ -1,5 +1,7 @@
 // Dedicated #4384 course art, shared by the importer and PDF/source audit.
 const batches = {
+  "--function-ligaments": {name:"ligaments", paths:27, gradients:5,
+    frames:[["ligaments_plate","HealthAtlasFunctionLigaments","art.pdf"]]},
   "--function-pineal": {name:"pineal", paths:32, gradients:5,
     frames:[["pineal_plate","HealthAtlasFunctionPineal","art.pdf"]]},
   "--function-digestion": {name:"digestive", paths:35, gradients:21, frames:
