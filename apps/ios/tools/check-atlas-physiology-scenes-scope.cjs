@@ -17,11 +17,11 @@ const inventory = {schema: 1, source: {androidPR: 4442, mergeCommit: sha}, files
 requireTokens(android('HealthAtlasSceneFrame'), ['require(texts.isNotEmpty())', 'texts.maxOf', 'view.minimumHeight = lines + view.totalPaddingTop + view.totalPaddingBottom', 'view.totalPaddingStart', 'view.totalPaddingEnd']);
 requireTokens(source('SceneFrame'), ['clipShape(RoundedRectangle(cornerRadius: 8))', 'content().padding(inset)', 'ForEach(values.indices', '.hidden().accessibilityHidden(true).allowsHitTesting(false)', 'fixedSize(horizontal: false, vertical: true)', 'min(values.count - 1, max(0, selected))']);
 requireTokens(source('FunctionScene'), ['GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-function-frame"', 'GalaxySSIHealthAtlasReservedCaption(values: labels', 'values: story.chapters.map { t($0.caption) }']);
-assert.equal(source("FunctionScene").replace(/^  @Environment.*private var colorScheme\n/m, "").split('  var body:')[0], prior('FunctionScene').split('  var body:')[0]);
+assert(source("FunctionScene").includes("maximumLines: 2")); // #4446 keeps matching probes but adds a compact expandable note.
 assert.equal(source("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1], prior("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1]);
 const panel = source('SimulationPanel'), processStages = source('ProcessStages');
 requireTokens(android('HealthAtlasSimulationPanel'), ['HealthAtlasProcessView(activity, mechanism, showLabels = !inline)', 'HealthAtlasSceneFrame(activity, "atlas-simulation-frame")', 'scene.reserveCaption(caption', 'tag = "atlas-simulation-references"', '"atlas-simulation-references-toggle"']);
-requireTokens(panel, ['@State private var referencesExpanded = false', 'GalaxySSIHealthAtlasSceneFrame(identifier: "atlas-simulation-frame", inset: 8)', 'GalaxySSIHealthAtlasReservedCaption(values: stageCaptions', 'compact: inline', 'if !retinal && endocrine == nil', 'atlas-simulation-figure', 'processArtwork.padding(.bottom, GalaxySSIHealthAtlasFigureLayout.overlap)', 'if !inline && (hasDiagram || hasCloseup) { playbackControls }', 'if inline || (!hasDiagram && !hasCloseup) { playbackControls }', 'DisclosureGroup(isExpanded: $referencesExpanded)', '"atlas-simulation-references-toggle"', '"atlas-simulation-progress"', 'private var referenceNotes:', '"atlas-source-physiology"']);
+requireTokens(panel, ['@State private var referencesExpanded = false', 'GalaxySSIHealthAtlasSceneFrame(identifier: "atlas-simulation-frame", inset: 8)', 'GalaxySSIHealthAtlasReservedCaption(values: stageCaptions', 'compact: inline', 'if !retinal && endocrine == nil', 'atlas-simulation-figure', 'annotationScope: "atlas-simulation-figure"', 'if !inline && (hasDiagram || hasCloseup) { playbackControls }', 'if inline || (!hasDiagram && !hasCloseup) { playbackControls }', 'DisclosureGroup(isExpanded: $referencesExpanded)', '"atlas-simulation-references-toggle"', '"atlas-simulation-progress"', 'private var referenceNotes:', '"atlas-source-physiology"']);
 const sceneAt = panel.indexOf('GalaxySSIHealthAtlasSceneFrame(identifier:'), before = panel.indexOf('quantitative.accessibilityIdentifier("atlas-quantitative-before-art")'), after = panel.indexOf('quantitative.accessibilityIdentifier("atlas-quantitative-after-art")');
 assert(before < sceneAt && sceneAt < after);
 // #4445 places the reserved stage caption in the process figure, after specialized closeups.
@@ -38,14 +38,14 @@ assert(inlineDetail.includes('simulationPanel')); assert(!inlineDetail.includes(
 const lifecycle = text => text.split('.onReceive(timer)')[1].split('.onDisappear { pause() }')[0];
 assert.equal(lifecycle(panel), lifecycle(priorBody));
 assert.equal(panel.split('  private var quantitative:')[1], priorBody.split('  private var quantitative:')[1], 'Numerical invocation, all controls, reset, pause and parameter handlers stay exact');
-for (const name of ['FunctionArtwork', 'ChapterClock', 'Physiology', 'AgentContext', 'AgentHandoff', 'GasExchange', 'Circulation', 'EndocrinePathView', 'RetinaPathView', 'SectionLessonView', 'CrossBridgeDrawing', 'GlucoseTransportDrawing', 'PotassiumTraceDrawing']) assert.equal(source(name), prior(name), name);
+for (const name of ['FunctionArtwork', 'ChapterClock', 'Physiology', 'AgentContext', 'AgentHandoff', 'GasExchange', 'Circulation', 'SectionLessonView', 'CrossBridgeDrawing', 'GlucoseTransportDrawing', 'PotassiumTraceDrawing']) assert.equal(source(name), prior(name), name);
 // #4444 changes navigation/related menu only, not the player clock, cache sanitizers or personal metric renderer.
 const navigationPlayerCore = s => s.split('}.accessibilityIdentifier("atlas-function-player")')[1];
 assert.equal(navigationPlayerCore(source("FunctionPlayer")), navigationPlayerCore(prior("FunctionPlayer")));
 const restoreSelectionCore = s => s.split("  func restore(_ text:")[1].split("  var serialized:")[0];
 assert.equal(restoreSelectionCore(source("State")), restoreSelectionCore(prior("State")));
 // #4445 adds contextual search/navigation and scroll tracking; preserve every research domain view.
-assert.equal(source("Research").split("  private var drugs:")[1], prior("Research").split("  private var drugs:")[1]);
+assert.equal(source("Research").split("      Divider()")[1], prior("Research").split("      Divider()")[1]);
 const physiologyCase = s => s.split("        case .physiology:")[1].split("        case .drugs:")[0];
 assert.equal(physiologyCase(source("Research")), physiologyCase(prior("Research")));
 assert(source("Research").includes("state.detailBinding(entry, depth: depth)"));

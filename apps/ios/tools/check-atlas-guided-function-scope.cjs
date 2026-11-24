@@ -23,7 +23,7 @@ for (const token of ["chapters: story.chapters.count", "clock.resume(now)", "clo
   ".onDisappear { pause() }", "playback.release(playbackID); commit()"])
   assert(player.includes(token), token);
 for (const token of ['"atlas-function-outline-stage-"', "seek(story.startOf(index))"]) assert(source("FunctionPlaybackMenu").includes(token));
-assert(source("FunctionScene").includes("if showTitle"));
+assert(source("FunctionScene").includes("title: showTitle ?"));
 assert(source("FunctionScene").includes("story.chapters.map { t($0.caption) }"));
 assert(player.includes('onChange(of: scene) { _ in pause() }'));
 assert(player.includes('onChange(of: previewPresented) { if $0 { pause() } }'));

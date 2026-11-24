@@ -36,7 +36,7 @@ struct GalaxySSIHealthAtlasFunctionPlayer<Artwork: View>: View {
           .contentShape(Rectangle()).onTapGesture { if !previewPresented { toggle() } }
           .accessibilityAction(named: Text(GalaxySSIHealthBodyText.string(playing ? "pause" : "play", language: language))) {
             if !previewPresented { toggle() }
-          })
+          }, onExplain: pause)
       Slider(value: Binding(get: { position }, set: setPosition), in: 0...1, onEditingChanged: { editing in
         pause(); if !editing { commit() }
       }).accessibilityLabel(text("health_atlas_phase")).accessibilityIdentifier("atlas-function-position")

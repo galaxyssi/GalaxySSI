@@ -140,14 +140,36 @@ final class GalaxySSIHealthAtlasLessonNavigationTests: XCTestCase {
     XCTAssertFalse(replay.binding(aorta).wrappedValue.layers)
     XCTAssertEqual(replay.lessonNavigation.path.count, 1)
   }
-  func testFigureOverlapAndBottomCalloutsReserveLegendWithoutChangingDefaults() throws {
-    XCTAssertEqual(GalaxySSIHealthAtlasFigureLayout.sharedHeight(art: 100, legend: 80), 28)
-    XCTAssertEqual(GalaxySSIHealthAtlasFigureLayout.sharedHeight(art: 10, legend: 80), 10)
-    XCTAssertEqual(GalaxySSIHealthAtlasFigureLayout.sharedHeight(art: .nan, legend: 80), 0)
+  func testFigureNoteLayoutAndLegacyBottomInsetDefaults() throws {
+    XCTAssertEqual(GalaxySSIHealthAtlasFigureLayout.overlap(legend: 80, overlay: true, side: false), 40)
+    XCTAssertEqual(GalaxySSIHealthAtlasFigureLayout.overlap(legend: 120, overlay: true, side: false), 46)
+    XCTAssertEqual(GalaxySSIHealthAtlasFigureLayout.overlap(legend: .nan, overlay: true, side: false), 0)
     let layout = try XCTUnwrap(GalaxySSIHealthAtlasCalloutLayout.make(width: 320, aspectRatio: 1,
       anchors: [CGPoint(x: 0.8, y: 1)], splitRequested: false, accessibility: false,
       preferredWidths: [80], legendInset: 28, minimumHeight: 266, measureHeight: { _, _ in 80 }))
     XCTAssertLessThanOrEqual(try XCTUnwrap(layout.labelFrames.first).maxY, layout.height - 36)
+  }
+  func testAtlasAnnotationColumnsShortWindowAndMappedLeaderEndpoints() throws {
+    typealias Layout = GalaxySSIHealthAtlasFigureLayout
+    XCTAssertFalse(Layout.columns(width: 579, preferSide: false, overlay: true).side)
+    XCTAssertTrue(Layout.columns(width: 580, preferSide: false, overlay: true).side)
+    XCTAssertFalse(Layout.columns(width: 279, preferSide: true, overlay: false).side)
+    XCTAssertTrue(Layout.columns(width: 280, preferSide: true, overlay: false).side)
+    XCTAssertEqual(Layout.columns(width: 1000, preferSide: false, overlay: true).noteWidth, 328)
+    let short = Layout.columns(width: 390, preferSide: false, overlay: false,
+      maximumHeight: 250, headerHeight: 40, legendHeight: 80)
+    XCTAssertTrue(short.side)
+    XCTAssertEqual(short.noteWidth, 171.6, accuracy: 0.001)
+    XCTAssertEqual(Layout.overlap(legend: 100, overlay: true, side: true), 0)
+    XCTAssertEqual(Layout.overlap(legend: 100, overlay: false, side: false), 0)
+    let subject = try XCTUnwrap(Layout.subject(in: CGRect(x: 20, y: 30, width: 100, height: 200),
+      aspectRatio: 2, focus: CGPoint(x: 0.8, y: 0.2)))
+    XCTAssertEqual(subject.x, 100, accuracy: 0.001)
+    XCTAssertEqual(subject.y, 115, accuracy: 0.001)
+    let points = Layout.leader(note: CGRect(x: 12, y: 12, width: 100, height: 80),
+      art: CGRect(x: 128, y: 12, width: 200, height: 300), side: true, target: CGPoint(x: -10, y: 999))
+    XCTAssertEqual(points.last, CGPoint(x: 128, y: 312))
+    XCTAssertEqual(points.first, CGPoint(x: 112, y: 52))
   }
   func testSearchSurfaceIsolationAndMalformedArchiveRejection() throws {
     let (atlas, _, aorta) = try fixture()
