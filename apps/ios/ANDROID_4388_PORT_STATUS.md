@@ -36,7 +36,7 @@ An eventual PR will use main and disclose the actual inherited diff.
 - Bilingual resource deltas are imported.
 - Source-only catalogue audit passed for all 67 hashes, catalogue counts,
   graph-resolved routes, entry phases, exact related destinations, reference
-  hosts and bilingual keys. Nineteen new dispatches are present; the other five are
+  hosts and bilingual keys. Twenty new dispatches are present; the other four are
   explicitly not implemented. Two changed Swift files parsed without grammar
   errors; project structure passed. No Swift type checking or native execution.
 - Added dedicated Paneth crypt-barrier renderer and reusable crypt wall geometry:
@@ -130,8 +130,16 @@ An eventual PR will use main and disclose the actual inherited diff.
   three portraits, dynamic tips, keratinocyte occlusion order, scaled borders
   and all eleven callouts. Source checks covered nine bilingual keys and 242
   analytic tip samples; four Swift files passed grammar parsing and catalogue/
-  project checks passed. Five renderers/default activation remain; no native
+  project checks passed; no native
   compilation, execution or pixel acceptance claimed.
+- Added the five-stage muscle satellite renewal renderer/dispatch. Preserved
+  resting niche, activation signals, shared-waist division, reserve/myoblast
+  divergence, branched basal lamina and continuous fusion membrane geometry.
+  Fiber textures remain clipped; color interpolation keeps source truncation.
+  Source audit compared all four cell-profile and four division curve formulas,
+  stage/lamina/trace contracts, 12 bilingual keys and 484 analytic cell sizes.
+  Four Swift files passed grammar parsing; project/catalogue checks passed.
+  Four immune renderers/default activation remain; no native/UI acceptance.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
 - Connect pelvic/subcutaneous cutaways to structure feature routing.

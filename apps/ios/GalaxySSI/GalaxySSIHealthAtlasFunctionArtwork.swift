@@ -16,7 +16,8 @@ enum GalaxySSIHealthAtlasFunctionRendering {
   static let anteriorPituitary: Set<String> = ["SOMATOTROPH_GROWTH_SIGNAL", "LACTOTROPH_MAMMARY_SIGNAL", "CORTICOTROPH_ADRENAL_SIGNAL", "GONADOTROPH_DUAL_SIGNAL"]
   static let muralCells: Set<String> = ["PERICYTE_COVERAGE"]
   static let skinSentinels: Set<String> = ["LANGERHANS_SENTINEL"]
-  static let implemented = baseline.union(regional).union(loadTransfer).union(crypt).union(renalCells).union(isletCells).union(endocrineZones).union(gonadalCells).union(anteriorPituitary).union(muralCells).union(skinSentinels)
+  static let satelliteCells: Set<String> = ["MUSCLE_SATELLITE_RENEWAL"]
+  static let implemented = baseline.union(regional).union(loadTransfer).union(crypt).union(renalCells).union(isletCells).union(endocrineZones).union(gonadalCells).union(anteriorPituitary).union(muralCells).union(skinSentinels).union(satelliteCells)
 }
 
 struct GalaxySSIHealthAtlasFunctionArtwork: View {
@@ -25,6 +26,7 @@ struct GalaxySSIHealthAtlasFunctionArtwork: View {
   let language: String
   @ViewBuilder var body: some View {
     switch story.id {
+    case "MUSCLE_SATELLITE_RENEWAL": GalaxySSIHealthAtlasSatelliteView(story: story, phase: phase, language: language)
     case "LANGERHANS_SENTINEL": GalaxySSIHealthAtlasLangerhansView(story: story, phase: phase, language: language)
     case "PERICYTE_COVERAGE": GalaxySSIHealthAtlasPericyteView(story: story, phase: phase, language: language)
     case "GONADOTROPH_DUAL_SIGNAL": GalaxySSIHealthAtlasGonadotrophView(story: story, phase: phase, language: language)

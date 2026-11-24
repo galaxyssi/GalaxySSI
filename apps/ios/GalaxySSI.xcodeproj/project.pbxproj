@@ -541,6 +541,9 @@
     C43850000000000000000005 /* GalaxySSIHealthAtlasAnkleGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000006 /* GalaxySSIHealthAtlasAnkleGeometry.swift */; };
     C43850000000000000000007 /* GalaxySSIHealthAtlasAnkleDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000008 /* GalaxySSIHealthAtlasAnkleDrawing.swift */; };
     C43850000000000000000009 /* GalaxySSIHealthAtlasAnkleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000000A /* GalaxySSIHealthAtlasAnkleView.swift */; };
+    C43880000000000000000057 /* GalaxySSIHealthAtlasSatelliteGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000058 /* GalaxySSIHealthAtlasSatelliteGeometry.swift */; };
+    C43880000000000000000059 /* GalaxySSIHealthAtlasSatelliteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4388000000000000000005A /* GalaxySSIHealthAtlasSatelliteView.swift */; };
+    C4388000000000000000005B /* GalaxySSIHealthAtlasSatelliteDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4388000000000000000005C /* GalaxySSIHealthAtlasSatelliteDrawing.swift */; };
     C43880000000000000000051 /* GalaxySSIHealthAtlasLangerhansGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000052 /* GalaxySSIHealthAtlasLangerhansGeometry.swift */; };
     C43880000000000000000053 /* GalaxySSIHealthAtlasLangerhansView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000054 /* GalaxySSIHealthAtlasLangerhansView.swift */; };
     C43880000000000000000055 /* GalaxySSIHealthAtlasLangerhansDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000056 /* GalaxySSIHealthAtlasLangerhansDrawing.swift */; };
@@ -2608,6 +2611,9 @@
     C43850000000000000000006 /* GalaxySSIHealthAtlasAnkleGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAnkleGeometry.swift; sourceTree = "<group>"; };
     C43850000000000000000008 /* GalaxySSIHealthAtlasAnkleDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAnkleDrawing.swift; sourceTree = "<group>"; };
     C4385000000000000000000A /* GalaxySSIHealthAtlasAnkleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAnkleView.swift; sourceTree = "<group>"; };
+    C43880000000000000000058 /* GalaxySSIHealthAtlasSatelliteGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSatelliteGeometry.swift; sourceTree = "<group>"; };
+    C4388000000000000000005A /* GalaxySSIHealthAtlasSatelliteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSatelliteView.swift; sourceTree = "<group>"; };
+    C4388000000000000000005C /* GalaxySSIHealthAtlasSatelliteDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSatelliteDrawing.swift; sourceTree = "<group>"; };
     C43880000000000000000052 /* GalaxySSIHealthAtlasLangerhansGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLangerhansGeometry.swift; sourceTree = "<group>"; };
     C43880000000000000000054 /* GalaxySSIHealthAtlasLangerhansView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLangerhansView.swift; sourceTree = "<group>"; };
     C43880000000000000000056 /* GalaxySSIHealthAtlasLangerhansDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLangerhansDrawing.swift; sourceTree = "<group>"; };
@@ -4696,6 +4702,9 @@
         C43850000000000000000006 /* GalaxySSIHealthAtlasAnkleGeometry.swift */,
         C43850000000000000000008 /* GalaxySSIHealthAtlasAnkleDrawing.swift */,
         C4385000000000000000000A /* GalaxySSIHealthAtlasAnkleView.swift */,
+        C43880000000000000000058 /* GalaxySSIHealthAtlasSatelliteGeometry.swift */,
+        C4388000000000000000005A /* GalaxySSIHealthAtlasSatelliteView.swift */,
+        C4388000000000000000005C /* GalaxySSIHealthAtlasSatelliteDrawing.swift */,
         C43880000000000000000052 /* GalaxySSIHealthAtlasLangerhansGeometry.swift */,
         C43880000000000000000054 /* GalaxySSIHealthAtlasLangerhansView.swift */,
         C43880000000000000000056 /* GalaxySSIHealthAtlasLangerhansDrawing.swift */,
@@ -6914,6 +6923,9 @@
         C43850000000000000000005 /* GalaxySSIHealthAtlasAnkleGeometry.swift in Sources */,
         C43850000000000000000007 /* GalaxySSIHealthAtlasAnkleDrawing.swift in Sources */,
         C43850000000000000000009 /* GalaxySSIHealthAtlasAnkleView.swift in Sources */,
+        C43880000000000000000057 /* GalaxySSIHealthAtlasSatelliteGeometry.swift in Sources */,
+        C43880000000000000000059 /* GalaxySSIHealthAtlasSatelliteView.swift in Sources */,
+        C4388000000000000000005B /* GalaxySSIHealthAtlasSatelliteDrawing.swift in Sources */,
         C43880000000000000000051 /* GalaxySSIHealthAtlasLangerhansGeometry.swift in Sources */,
         C43880000000000000000053 /* GalaxySSIHealthAtlasLangerhansView.swift in Sources */,
         C43880000000000000000055 /* GalaxySSIHealthAtlasLangerhansDrawing.swift in Sources */,
