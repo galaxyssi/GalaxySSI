@@ -2,7 +2,8 @@
 const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process"), assert = require("node:assert/strict");
 const root = path.resolve(__dirname, "../../.."), sha = "6581110ec5c048edebf63821dee839b4818fe663", check = process.argv.includes("--check");
 const pituitary = process.argv.includes("--pituitary");
-const configurations = process.argv.includes("--pericyte") ? [["PericyteCoverageStoryView", "Pericyte", 8, ["wrapTrace"]]] : pituitary ? [["AnteriorPituitaryArt", "AnteriorPituitary", 2, [], true],
+const configurations = process.argv.includes("--langerhans") ? [["LangerhansSentinelStoryView", "Langerhans", 6, []]] :
+  process.argv.includes("--pericyte") ? [["PericyteCoverageStoryView", "Pericyte", 8, ["wrapTrace"]]] : pituitary ? [["AnteriorPituitaryArt", "AnteriorPituitary", 2, [], true],
   ["SomatotrophStoryView", "Somatotroph", 12, ["capillary", "trunk", "upperBranch", "lowerBranch", "input", "hepaticOut", "muscleGh", "muscleIgf"], true],
   ["LactotrophStoryView", "Lactotroph", 7, ["releaseBlood", "mammaryBlood", "nearAlveolus"], true],
   ["CorticotrophStoryView", "Corticotroph", 11, ["portal", "systemic", "cortexArc", "cortisolBlood"], true],
