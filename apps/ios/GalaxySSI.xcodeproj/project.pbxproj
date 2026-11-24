@@ -301,6 +301,13 @@
     C43840000000000000000275 /* GalaxySSIHealthAtlasAcinarArrivalDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000276 /* GalaxySSIHealthAtlasAcinarArrivalDrawing.swift */; };
     C43840000000000000000277 /* GalaxySSIHealthAtlasAcinarCargoDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000278 /* GalaxySSIHealthAtlasAcinarCargoDrawing.swift */; };
     C43840000000000000000279 /* GalaxySSIHealthAtlasAcinarLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000027A /* GalaxySSIHealthAtlasAcinarLabelsDrawing.swift */; };
+    C4384000000000000000027B /* GalaxySSIHealthAtlasNailMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000027C /* GalaxySSIHealthAtlasNailMotion.swift */; };
+    C4384000000000000000027D /* GalaxySSIHealthAtlasNailGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000027E /* GalaxySSIHealthAtlasNailGeometry.swift */; };
+    C4384000000000000000027F /* GalaxySSIHealthAtlasNailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000280 /* GalaxySSIHealthAtlasNailView.swift */; };
+    C43840000000000000000281 /* GalaxySSIHealthAtlasNailSectionDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000282 /* GalaxySSIHealthAtlasNailSectionDrawing.swift */; };
+    C43840000000000000000283 /* GalaxySSIHealthAtlasNailPlateDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000284 /* GalaxySSIHealthAtlasNailPlateDrawing.swift */; };
+    C43840000000000000000285 /* GalaxySSIHealthAtlasNailCellDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000286 /* GalaxySSIHealthAtlasNailCellDrawing.swift */; };
+    C43840000000000000000287 /* GalaxySSIHealthAtlasNailLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000288 /* GalaxySSIHealthAtlasNailLabelsDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -2075,6 +2082,13 @@
     C43840000000000000000276 /* GalaxySSIHealthAtlasAcinarArrivalDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAcinarArrivalDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000278 /* GalaxySSIHealthAtlasAcinarCargoDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAcinarCargoDrawing.swift; sourceTree = "<group>"; };
     C4384000000000000000027A /* GalaxySSIHealthAtlasAcinarLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAcinarLabelsDrawing.swift; sourceTree = "<group>"; };
+    C4384000000000000000027C /* GalaxySSIHealthAtlasNailMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasNailMotion.swift; sourceTree = "<group>"; };
+    C4384000000000000000027E /* GalaxySSIHealthAtlasNailGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasNailGeometry.swift; sourceTree = "<group>"; };
+    C43840000000000000000280 /* GalaxySSIHealthAtlasNailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasNailView.swift; sourceTree = "<group>"; };
+    C43840000000000000000282 /* GalaxySSIHealthAtlasNailSectionDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasNailSectionDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000284 /* GalaxySSIHealthAtlasNailPlateDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasNailPlateDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000286 /* GalaxySSIHealthAtlasNailCellDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasNailCellDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000288 /* GalaxySSIHealthAtlasNailLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasNailLabelsDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3868,6 +3882,13 @@
         C43840000000000000000276 /* GalaxySSIHealthAtlasAcinarArrivalDrawing.swift */,
         C43840000000000000000278 /* GalaxySSIHealthAtlasAcinarCargoDrawing.swift */,
         C4384000000000000000027A /* GalaxySSIHealthAtlasAcinarLabelsDrawing.swift */,
+        C4384000000000000000027C /* GalaxySSIHealthAtlasNailMotion.swift */,
+        C4384000000000000000027E /* GalaxySSIHealthAtlasNailGeometry.swift */,
+        C43840000000000000000280 /* GalaxySSIHealthAtlasNailView.swift */,
+        C43840000000000000000282 /* GalaxySSIHealthAtlasNailSectionDrawing.swift */,
+        C43840000000000000000284 /* GalaxySSIHealthAtlasNailPlateDrawing.swift */,
+        C43840000000000000000286 /* GalaxySSIHealthAtlasNailCellDrawing.swift */,
+        C43840000000000000000288 /* GalaxySSIHealthAtlasNailLabelsDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5791,6 +5812,13 @@
         C43840000000000000000275 /* GalaxySSIHealthAtlasAcinarArrivalDrawing.swift in Sources */,
         C43840000000000000000277 /* GalaxySSIHealthAtlasAcinarCargoDrawing.swift in Sources */,
         C43840000000000000000279 /* GalaxySSIHealthAtlasAcinarLabelsDrawing.swift in Sources */,
+        C4384000000000000000027B /* GalaxySSIHealthAtlasNailMotion.swift in Sources */,
+        C4384000000000000000027D /* GalaxySSIHealthAtlasNailGeometry.swift in Sources */,
+        C4384000000000000000027F /* GalaxySSIHealthAtlasNailView.swift in Sources */,
+        C43840000000000000000281 /* GalaxySSIHealthAtlasNailSectionDrawing.swift in Sources */,
+        C43840000000000000000283 /* GalaxySSIHealthAtlasNailPlateDrawing.swift in Sources */,
+        C43840000000000000000285 /* GalaxySSIHealthAtlasNailCellDrawing.swift in Sources */,
+        C43840000000000000000287 /* GalaxySSIHealthAtlasNailLabelsDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
