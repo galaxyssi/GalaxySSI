@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 3262,
+    "mergeCommit": "07156a44cd4494b6121a7d0ea255aa16210f905f",
+    "priorIOSPR": 3326,
+    "note": "Existing approval readiness was already ported. This is a narrow native durability follow-up, not a duplicate full transport port."
+  },
+  "verification": "source-contracts-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "f37524efe3beb1c31a0dba147be497fbc7d58b89b01a8a28d27c05b03a4b4c9d",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/AppStore.kt",
+      "sourceSHA256": "119ec3bdb691e1974e18b8b838eaeb5d30be3ffdc7c5c5db67673467071f1bb9",
+      "kind": "native-durability-follow-up",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIStore.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIStoreTests.swift"
+      ],
+      "note": "Prior #3326 already refreshed native approval subscriptions/outbox. Current iOS approval ignored save() failure; now capture contact/request arrays before mutation, return false and restore them if encrypted state save fails, before system notice or callers can enter their success refresh/recovery branch. New fixture sources cover exact state bytes, route remaining disabled, unrelated contact and messages preserved, reopen and successful retry. Not executed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/MqttPeerRoutes.kt",
+      "sourceSHA256": "07779b833c7809f1b4d1d3c98e1f2d7a77c7e0b2eef1381ef34cdcbae1ca6da3",
+      "kind": "already-present-production-parity",
+      "ios": [
+        "apps/ios/GalaxySSI/MqttPeerRoutes.swift",
+        "apps/ios/GalaxySSI/MqttPeerRouteSession.swift",
+        "apps/ios/GalaxySSI/GalaxySSIServices.swift"
+      ],
+      "note": "Existing identity-preserving replace detects disabled-to-enabled binding, changes enabled flag without resetting same-identity handshake, and emits onReady only for ready authenticated peers. Legacy approval refresh and immediate outbox wake already exist. These files are frozen, not reimplemented or claimed as new delta."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/MqttPeerRoutesTest.kt",
+      "sourceSHA256": "b338e9b54cf17da78ef705d4f1eb0a498568c840aee828cbe94fe2c567a89166",
+      "kind": "android-unit-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/MqttPeerRoutesTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIStoreTests.swift"
+      ],
+      "note": "Android warm-handshake approval, repeated refresh, unrelated peer, unauthenticated/disabled-route expectations reviewed. Existing native route fixture sources retained; one native approval-save failure/reopen/retry fixture added but not run. No socket/paired-device/handshake timing acceptance."
+    }
+  ]
+}

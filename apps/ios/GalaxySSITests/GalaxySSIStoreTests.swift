@@ -1110,6 +1110,56 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertEqual(forcedPayload["request_capability_manifest"] as? Bool, true)
   }
 
+  func testContactApprovalRollsBackWhenEncryptedStateCannotBeSaved() throws {
+    let suite = "approval-durability-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = ApprovalFailureSecrets()
+    let store = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    let existing = store.addFriendRequest(makeFriendRequest(galaxySSIId: "existing-peer", name: "Existing"))
+    XCTAssertTrue(store.approveFriendRequest(id: existing.id))
+    var pending = makeFriendRequest(galaxySSIId: "pending-peer", name: "Pending")
+    pending.linkClientRouteId = String(repeating: "r", count: 22)
+    pending.linkSecret = Data(repeating: 7, count: 32).base64URLEncodedString()
+    pending.linkLocalFingerprint = String(repeating: "b", count: 64)
+    let request = store.addFriendRequest(pending)
+    let projection = MqttPeerChatProjection(store: store, localFingerprint: pending.linkLocalFingerprint)
+    XCTAssertFalse(try XCTUnwrap(projection.currentPeers().first).binding.enabled)
+    let requests = store.friendRequests, contacts = store.contacts
+    let messages = store.messagesByContact
+    let encrypted = defaults.data(forKey: GalaxySSIEncryptedStateStore.stateKey)
+    secrets.rejectStateWrites = true
+    XCTAssertFalse(store.approveFriendRequest(id: request.id))
+    XCTAssertEqual(store.friendRequests, requests); XCTAssertEqual(store.contacts, contacts)
+    XCTAssertEqual(store.messagesByContact, messages)
+    XCTAssertEqual(defaults.data(forKey: GalaxySSIEncryptedStateStore.stateKey), encrypted)
+    XCTAssertNil(store.contact(id: request.galaxySSIId))
+    XCTAssertFalse(try XCTUnwrap(projection.currentPeers().first).binding.enabled)
+    XCTAssertTrue(store.contact(id: existing.galaxySSIId)?.isCommunicable == true)
+    secrets.rejectStateWrites = false
+    let reopened = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    XCTAssertEqual(reopened.friendRequests.first { $0.id == request.id }?.status, .pending)
+    XCTAssertNil(reopened.contact(id: request.galaxySSIId))
+    XCTAssertTrue(reopened.approveFriendRequest(id: request.id))
+    let approved = GalaxySSIStore(defaults: defaults, secrets: secrets)
+    XCTAssertEqual(approved.friendRequests.first { $0.id == request.id }?.status, .approved)
+    XCTAssertTrue(approved.contact(id: request.galaxySSIId)?.isCommunicable == true)
+  }
+
+  private final class ApprovalFailureSecrets: GalaxySSISecretStore {
+    var rejectStateWrites = false
+    private var values: [String: String] = [:]
+    func string(account: String) -> String? {
+      if rejectStateWrites && account == "state.encryption.aes256" { return nil }
+      return values[account]
+    }
+    func setString(_ value: String, account: String) throws {
+      if rejectStateWrites && account == "state.encryption.aes256" { throw GalaxySSIError.invalidPayload("Injected state key write failure") }
+      values[account] = value
+    }
+    func delete(account: String) { values.removeValue(forKey: account) }
+  }
+
   func testContactSearchMatchesAndroidNameAndIdFiltering() throws {
     let store = makeStore()
     let request = store.addFriendRequest(makeFriendRequest(galaxySSIId: "friend-alice", name: "Alice"))
