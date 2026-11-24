@@ -26,7 +26,7 @@ const openResearch = state.split("  func openResearch(")[1].split("  func closeR
 assert(openResearch.indexOf("playback.pause()") < openResearch.indexOf("var next = functionSnapshot(entry)"));
 assert(openResearch.indexOf("functionSnapshot(entry)") < openResearch.indexOf("next.researchPresented = true"));
 assert(!openResearch.includes("physiologyInputs =")); assert(!openResearch.includes("simulation ="));
-const restore = s => s.split("  func restore(_ text:")[1];
+const restore = s => s.split("  func restore(_ text:")[1].split("  var serialized:")[0];
 assert.equal(restore(state), restore(prior("State")), "Existing cache decoding bounds and all sanitizers are retained");
 for (const token of ["selection.wrappedValue.researchPresented == true", "state.closeResearch(entry)",
   "state.openResearch(entry, returnScroll: scrollMemory.offset)", "if tab == .function { scrollMemory.restore(0) }",

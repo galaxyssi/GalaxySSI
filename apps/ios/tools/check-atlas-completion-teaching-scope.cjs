@@ -106,7 +106,8 @@ assert.deepEqual(new Set([...oldIDs, ...allOwners]), new Set(graph.entries.map(e
 const detail = source("Detail"), state = source("State");
 assert(detail.includes('Button(t("simulation"))') === false);
 assert(detail.indexOf("numericalModelButton") > detail.indexOf("GalaxySSIHealthAtlasFunctionPanel("));
-assert(detail.indexOf("numericalModelButton") < detail.indexOf("if let story = functionSelection"));
+// #4444 moves related links into the player menu, leaving the model entry after playback.
+assert(!detail.includes("GalaxySSIHealthAtlasFunctionRelatedRow("));
 assert(detail.includes("currentTab == .function && !hasFunctionPlayer"));
 assert(detail.includes("}.id(currentTab)"), "New tabs open at the top without resetting selection state");
 for (const token of ['Label(t("open_quantitative_model"), systemImage: "chart.bar")', '"atlas-open-simulation"', "state.openNumericalModel(entry)"])

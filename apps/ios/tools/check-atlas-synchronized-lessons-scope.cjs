@@ -44,7 +44,7 @@ for (const name of ['Physiology', 'ModelComparison', 'AgentContext', 'AgentHando
 const simulationLifecycle = s => s.split(".onReceive(timer)")[1].split(".onDisappear { pause() }")[0];
 assert.equal(simulationLifecycle(source("SimulationPanel")), simulationLifecycle(prior("SimulationPanel")));
 assert.equal(detail.split('struct GalaxySSIHealthAtlasValues:')[1], prior('Detail').split('struct GalaxySSIHealthAtlasValues:')[1]);
-assert.equal(state.split('  func restore(_ text:')[1], prior('State').split('  func restore(_ text:')[1]);
+assert.equal(state.split('  func restore(_ text:')[1].split('  var serialized:')[0], prior('State').split('  func restore(_ text:')[1].split('  var serialized:')[0]);
 for (const locale of ['en', 'zh-Hans']) assert.equal([...read('apps/ios/GalaxySSI/' + locale + '.lproj/AtlasSynchronizedLessons.strings').matchAll(/^"health_atlas_/gm)].length, 19);
 requireTokens(read('apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift'), ['testSynchronizedLessonOverlayPreservesAllOtherCatalogueFields', 'testSynapticGradedPotentialRetainsInhibitionAndThreshold', 'testStandaloneModelBackReturnsToFunctionAndPreservesInputs']);
 const mappings = {

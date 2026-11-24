@@ -1,15 +1,17 @@
 import SwiftUI
 
 struct GalaxySSIHealthAtlasFunctionPlaybackMenu: View {
-  enum Panel: String, Identifiable { case chapters, evidence; var id: String { rawValue } }
+  enum Panel: String, Identifiable { case chapters, evidence, related; var id: String { rawValue } }
   let story: GalaxySSIHealthAtlasFunctionCatalogue.Story
   let language: String
   let phase: Double
   let seek: (Double) -> Void
   let pause: () -> Void
+  var related: [GalaxySSIHealthAtlasRelatedAction] = []
   @Environment(\.openURL) private var openURL
   @State private var menu = false
   @State private var panel: Panel?
+  @State private var pendingRelated: (() -> Void)?
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasFunctionText.get(key, language) }
   var body: some View {
     Button { pause(); menu = true } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
@@ -18,14 +20,21 @@ struct GalaxySSIHealthAtlasFunctionPlaybackMenu: View {
       .confirmationDialog(t("health_atlas_scene_menu"), isPresented: $menu, titleVisibility: .visible) {
         Button(t("health_atlas_function_outline")) { panel = .chapters }
         Button(t("health_atlas_reset")) { seek(0) }.accessibilityIdentifier("atlas-function-reset")
+        if !related.isEmpty { Button(t("health_atlas_related_lessons")) { panel = .related } }
         Button(t("health_atlas_evidence")) { panel = .evidence }
       }
-      .sheet(item: $panel) { selected in
+      .sheet(item: $panel, onDismiss: {
+        let action = pendingRelated; pendingRelated = nil; action?()
+      }) { selected in
         NavigationView {
           Group {
             switch selected {
             case .chapters: chapters
             case .evidence: evidence
+            case .related:
+              List(related) { action in
+                GalaxySSIHealthAtlasFunctionRelatedRow(action: action) { pendingRelated = action.open; panel = nil }
+              }.navigationTitle(t("health_atlas_related_lessons")).accessibilityIdentifier("atlas-related-lessons")
             }
           }.navigationBarTitleDisplayMode(.inline)
             .toolbar {
