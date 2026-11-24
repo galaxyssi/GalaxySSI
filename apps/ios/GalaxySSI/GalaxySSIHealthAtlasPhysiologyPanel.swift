@@ -22,6 +22,11 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
           GalaxySSIHealthAtlasVillusAreaView(model: model, language: language)
           Text(t("gut_section_area_views")).font(.footnote).foregroundColor(.secondary)
         }
+        if model.kind.hasMaterialResponse {
+          GalaxySSIHealthAtlasMaterialResponseView(model: model, language: language)
+          Text(GalaxySSIHealthAtlasMaterialResponseView.description(model.kind, language: language))
+            .font(.footnote).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
         if let forces = model.elbowForces { GalaxySSIHealthAtlasElbowView(forces: forces, language: language) }
         if let flow = model.vesselFlow { GalaxySSIHealthAtlasVesselFlowView(flow: flow, language: language) }
         if let eye = model.eyeOptics {
@@ -32,7 +37,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
             Label(t("eye_match_plane"), systemImage: "scope").frame(minHeight: 44)
           }.accessibilityIdentifier("atlas-eye-match-plane")
         }
-        if model.kind != .photonCapture && model.kind != .alveolarSurface && model.kind != .villusArea { chartAndAxis(model) }
+        if model.kind != .photonCapture && model.kind != .alveolarSurface && model.kind != .villusArea && !model.kind.hasMaterialResponse { chartAndAxis(model) }
         ForEach(Array(model.kind.inputs.enumerated()), id: \.offset) { index, spec in
           VStack(alignment: .leading, spacing: 4) {
             Text(GalaxySSIHealthAtlasPhysiologyText.input(model, index: index, language: language))
@@ -43,7 +48,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
                 (spec.unit.isEmpty ? "" : " " + spec.unit))
           }
         }
-        if model.kind == .photonCapture || model.kind == .alveolarSurface || model.kind == .villusArea { chartAndAxis(model) }
+        if model.kind == .photonCapture || model.kind == .alveolarSurface || model.kind == .villusArea || model.kind.hasMaterialResponse { chartAndAxis(model) }
         Button { inputs = GalaxySSIHealthAtlasPhysiology(kind: model.kind).inputs } label: {
           Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
         }.accessibilityLabel(t("reset")).help(t("reset"))

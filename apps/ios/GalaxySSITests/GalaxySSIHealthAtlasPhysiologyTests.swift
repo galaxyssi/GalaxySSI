@@ -124,6 +124,44 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     XCTAssertGreaterThan(try XCTUnwrap(model.changing(0, to: 80)).result, model.result)
   }
 
+  func testMaterialResponseModelsPreserveUnitsLimitsAndOwnerRouting() throws {
+    let diffusion = Model(kind: .alveolarDiffusion)
+    XCTAssertEqual(diffusion.inputs, [100, 100, 100])
+    XCTAssertEqual(diffusion.result, 1)
+    XCTAssertEqual(try XCTUnwrap(diffusion.changing(0, to: 0)).result, 0)
+    XCTAssertEqual(try XCTUnwrap(Model(kind: .alveolarDiffusion, inputs: [200, 200, 50])).result, 8)
+    XCTAssertEqual(try XCTUnwrap(Model(kind: .alveolarDiffusion, inputs: [100, 200, 50])).companionValue, 4)
+    let cartilage = Model(kind: .cartilageCompression)
+    XCTAssertEqual(cartilage.result, 2)
+    XCTAssertEqual(cartilage.companionValue, 98)
+    XCTAssertEqual(try XCTUnwrap(Model(kind: .cartilageCompression, inputs: [64, 80])).result, 8)
+    let bone = Model(kind: .boneBending)
+    let inertia = Double.pi * pow(30.0, 4) * (1 - pow(0.6, 4)) / 64
+    XCTAssertEqual(bone.companionValue, inertia, accuracy: 1e-9)
+    XCTAssertEqual(bone.result, 500 * 6 * 30 / inertia, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(bone.changing(0, to: 0)).result, 0)
+    for (kind, owners) in [
+      (Model.Kind.alveolarDiffusion, ["respiratory-membrane", "pulmonary-capillaries", "tissue-alveolar-epithelium", "cell-type-i-pneumocyte"]),
+      (.cartilageCompression, ["cartilage", "tissue-hyaline-cartilage", "cell-chondrocyte"]),
+      (.boneBending, ["limb-bones", "femur", "tibia", "fibula"])
+    ] {
+      XCTAssertEqual(kind.axis, 0)
+      XCTAssertTrue(kind.hasMaterialResponse)
+      for owner in owners {
+        XCTAssertEqual(Model.Kind.forEntry(owner), kind)
+        XCTAssertEqual(Model.restore(owner, inputs: Model(kind: kind).inputs)?.kind, kind)
+      }
+      for language in ["en", "zh-Hans"] {
+        let model = Model(kind: kind)
+        XCTAssertFalse(GalaxySSIHealthAtlasPhysiologyText.context(model, language: language).contains("health_atlas_"))
+        XCTAssertFalse(GalaxySSIHealthAtlasMaterialResponseView.description(kind, language: language).contains("health_atlas_"))
+      }
+    }
+    XCTAssertEqual(Model.Kind.forEntry("lungs"), .ventilation)
+    XCTAssertEqual(Model.Kind.forEntry("cell-type-ii-pneumocyte"), .alveolarSurface)
+    XCTAssertEqual(Model.Kind.forEntry("humerus"), .elbow)
+  }
+
   func testCurvesUseIdenticalEquationsAndRespectBoundsAndMonotonicity() throws {
     for kind in Model.Kind.allCases {
       var models = [Model(kind: kind)]

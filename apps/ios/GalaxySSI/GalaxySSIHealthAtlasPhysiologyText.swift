@@ -2,6 +2,19 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let materialKey = ["model_alveolarDiffusion": "diffusion_title",
+      "model_alveolarDiffusion_scope": "diffusion_scope",
+      "model_alveolarDiffusion_formula": "diffusion_formula",
+      "model_cartilageCompression": "compression_title",
+      "model_cartilageCompression_scope": "compression_scope",
+      "model_cartilageCompression_formula": "compression_formula",
+      "model_boneBending": "bone_bending_title",
+      "model_boneBending_scope": "bone_bending_scope",
+      "model_boneBending_formula": "bone_bending_formula"][key]
+    if let materialKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + materialKey, language) }
+    if ["diffusion_", "compression_", "bone_bending_"].contains(where: { key.hasPrefix($0) }) {
+      return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language)
+    }
     let areaKey = ["model_villusArea": "gut_section_area_title", "model_villusArea_scope": "gut_section_area_scope",
       "model_villusArea_formula": "gut_section_area_formula"][key]
     if let areaKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + areaKey, language) }
@@ -79,6 +92,11 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    let materialCompanion = [GalaxySSIHealthAtlasPhysiology.Kind.alveolarDiffusion: "diffusion_conductance",
+      .cartilageCompression: "compression_remaining", .boneBending: "bone_bending_inertia"][model.kind]
+    if let materialCompanion {
+      return String(format: string(materialCompanion, language: language), number(model.companionValue, language: language))
+    }
     if model.kind == .villusArea {
       return String(format: string("gut_section_area_extra", language: language), number(model.companionValue, language: language))
     }
