@@ -4,6 +4,8 @@ Upstream: https://github.com/galaxyssi/GalaxySSI/pull/4384
 Pinned source: `ab78711d467c013444883dbaeca23c39a601c875`.
 Reviewed main: `bcc2d4c0fc9526d2b047741a3d47f3cece3d9c2b`.
 This is a source-level implementation review, not native UI or build acceptance.
+Submitted: https://github.com/galaxyssi/GalaxySSI/pull/4491 (main base, not draft).
+GitHub reported MERGEABLE with UNSTABLE CI state; this is not CI acceptance.
 
 ## Complete Source Inventory
 

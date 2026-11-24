@@ -36,4 +36,4 @@ assert.equal(pack.entryPhases["renal-medulla"].NEPHRON,0.4);
 const swift=fs.readFileSync(path.join(root,"apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionCatalogue.swift"),"utf8");
 for(const token of ["stories.count == 101","routes.count == 268","== 491","data.count <= 1_000_000",
   "allowed.contains","Story.safePhase","catalogue.initialPhase"])assert(swift.includes(token),token);
-console.log("Android #4384 foundation: 387 pinned source files; 101 Kotlin-evaluated courses, 491 chapters, 226 references, 268 routes and isolated selection/state definitions. Renderer/UI/model parity is unfinished.");
+console.log("Android #4384 foundation: 387 pinned source files; 101 Kotlin-evaluated courses, 491 chapters, 226 references, 268 routes and isolated selection/state definitions. This foundation audit does not verify native renderer/UI/model parity.");

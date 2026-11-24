@@ -1,7 +1,7 @@
 # Android #4384 Port Status
 
 Source: `ab78711d467c013444883dbaeca23c39a601c875`.
-Source implementation is integrated and undergoing final publication review. This is not a native build or device-verified parity claim. See ANDROID_4384_SCOPE_AUDIT.md for the full source scope and verification limits.
+Source implementation is submitted in formal PR https://github.com/galaxyssi/GalaxySSI/pull/4491 (base main, not draft). GitHub reported MERGEABLE when checked; CI was UNSTABLE, not a passed validation gate. This is not a native build or device-verified parity claim. See ANDROID_4384_SCOPE_AUDIT.md for the full source scope and verification limits.
 Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #4385 until this source scope is covered.
 
 ## Completed Foundation
@@ -23,11 +23,11 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 - [x] Port the three new quantitative models (alveolar diffusion, cartilage compression and bone bending): eight source input specs, eleven owner routes, exact unit conversions/companion results, five reference URLs, three native linked diagrams, bilingual labels and controls-before-chart ordering. Existing ventilation is retained; broader scene/layout parity remains covered by the outstanding integration audit. Analytic/source/grammar checks only; Swift models and XCTest not executed.
 - [x] Update Agent public context and fallback question paths with the active Function lesson/chapter, scope and source URLs. Both paths use the same owner-bound catalogue resolution and live question snapshot; unrelated tabs/research/Values cannot include Function context. Added unexecuted XCTest source; source/grammar checks only.
 - [x] Complete every renderer below, preserving chapter-specific geometry and motion rather than generic stand-ins; native compilation/pixels remain unverified.
-- [ ] Static source/resource/grammar/project checks across the completed scope, then review and publish one formal main-based PR.
+- [x] Complete full-scope source/resource/grammar/project review and publish formal main-based PR #4491. The complete 387-source audit, 489-file grammar sweep, 83 source/resource audit entry points, five integration audits and additional original cell-context audit passed. No Swift type checking, Metal build, XCTest, native UI acceptance or CI success is claimed.
 - [x] Fetch and verify latest main at bcc2d4c0fc9526d2b047741a3d47f3cece3d9c2b: already an ancestor (zero behind). Diff is iOS-only and no unmerged predecessor code is required.
 
 ## Renderer Parity
-All 101 courses are enabled through 81 dedicated renderer classes. Structure routing, all changed illustrations, quantitative changes and Agent context are wired. Next: audit the full source scope, synchronize predecessors/main and publish the formal PR. Source coverage is not a native parity acceptance.
+All 101 courses are enabled through 81 dedicated renderer classes. Structure routing, all changed illustrations, quantitative changes and Agent context are wired and submitted in PR #4491. Subsequent Android increments remain separate PRs. Source coverage is not a native parity acceptance.
 
 - [x] `HealthAtlasUptakeView` — native 344-unit source geometry, four signal paths, relay thresholds, membrane fusion and glucose transport; source/resource/grammar checks only, native pixels unverified.
 - [x] `HealthAtlasHeartbeatView` — five source stages, seven exact cubic routes, shared valve anchors and 24x24 deformable heart mesh; Metal plus equivalent CoreGraphics triangle fallback, native shader/pixels unverified.
