@@ -28,7 +28,13 @@ struct GalaxySSIHealthAtlasFunctionCatalogue: Decodable {
   let routes: [String: [String]]
   let entryPhases: [String: [String: Double]]
   static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
-  static func read(bundle: Bundle, revision: Int = 4388) throws -> Self? {
+  static func read(bundle: Bundle, revision: Int = 4439) throws -> Self? {
+    if revision == 4439 {
+      guard let original = try read(bundle: bundle, revision: 4388) else { return nil }
+      let updated = original.synchronizedLessons()
+      try updated.validate()
+      return updated
+    }
     guard [4384, 4385, 4388].contains(revision) else { throw GalaxySSIHealthAtlas.Invalid.catalogue }
     let asset = revision == 4384 ? "HealthAtlasFunctionStories" : revision == 4385 ? "HealthAtlasRegionalStories" : "HealthAtlasCompleteStories"
     guard let data = NSDataAsset(name: asset, bundle: bundle)?.data else { return nil }
@@ -54,7 +60,10 @@ struct GalaxySSIHealthAtlasFunctionCatalogue: Decodable {
     let complete = source.androidPR == 4388 && source.mergeCommit == "6581110ec5c048edebf63821dee839b4818fe663" &&
       stories.count == 138 && stories.reduce(0, { $0 + $1.chapters.count }) == 643 && routes.count == 313 &&
       stories.reduce(0, { $0 + $1.references.count }) == 320
-    guard schema == 1, baseline || regional || complete, ids.count == stories.count,
+    let synchronized = source.androidPR == 4439 && source.mergeCommit == "eef7fd41df84c075cbc0ba046cca6ab6a5b59bf7" &&
+      stories.count == 138 && stories.reduce(0, { $0 + $1.chapters.count }) == 643 && routes.count == 313 &&
+      stories.reduce(0, { $0 + $1.references.count }) == 321
+    guard schema == 1, baseline || regional || complete || synchronized, ids.count == stories.count,
       Set(routes.keys) == owners, Set(entryPhases.keys) == owners,
       stories.allSatisfy({ story in
         !story.id.isEmpty && story.id.count <= 80 && story.id.allSatisfy({ $0.isUppercase || $0 == "_" || $0.isNumber }) &&

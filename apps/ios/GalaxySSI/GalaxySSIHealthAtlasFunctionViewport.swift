@@ -9,8 +9,9 @@ struct GalaxySSIHealthAtlasFunctionViewport: ViewModifier {
     "DENDRITIC_PRESENTATION", "T_CELL_RESPONSE", "NK_SURVEILLANCE", "PLATELET_FORMATION", "MACROPHAGE_CLEARANCE"
   ]
   nonisolated static func limit(windowHeight: CGFloat, cellCourse: Bool) -> CGFloat {
-    guard !cellCourse, windowHeight.isFinite, windowHeight > 0 else { return 390 }
-    return min(390, max(144, windowHeight - 268))
+    if cellCourse { return 390 }
+    guard windowHeight.isFinite, windowHeight > 0 else { return 336 }
+    return min(336, max(144, windowHeight - 410))
   }
   func body(content: Content) -> some View {
     content.frame(maxHeight: Self.limit(windowHeight: windowHeight, cellCourse: Self.cellCourses.contains(storyID)))

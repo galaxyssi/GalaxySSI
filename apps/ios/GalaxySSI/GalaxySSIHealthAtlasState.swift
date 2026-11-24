@@ -5,6 +5,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
   enum Tab: String, CaseIterable, Codable { case structure, function, values, simulation }
   enum Research: String, CaseIterable, Codable { case physiology, drugs, aging }
   enum StructureLayer: String, CaseIterable { case organ, tissue, cell }
+  static let detailTabs: [Tab] = [.structure, .function, .values]
   struct Selection: Codable, Equatable {
     var tab = Tab.structure
     var research = Research.physiology
@@ -51,9 +52,17 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
   }
 
   func openNumericalModel(_ entry: GalaxySSIHealthAtlas.Entry) {
+    playback.pause()
     var next = functionSnapshot(entry)
     if Self.usesInlineModels(entry) { next.tab = .function; next.modelsExpanded = true }
     else { next.tab = .simulation }
+    entries[entry.id] = next
+  }
+  func closeStandaloneModel(_ entry: GalaxySSIHealthAtlas.Entry, destination: Tab = .function) {
+    playback.pause()
+    var next = functionSnapshot(entry)
+    next.tab = Self.detailTabs.contains(destination) ? destination : .function
+    next.researchPresented = false
     entries[entry.id] = next
   }
   static func researchTopics(_ entry: GalaxySSIHealthAtlas.Entry) -> [Research] {

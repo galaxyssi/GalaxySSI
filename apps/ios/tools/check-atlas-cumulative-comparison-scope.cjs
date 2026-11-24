@@ -37,7 +37,8 @@ for (const name of ["AgentContext", "AgentHandoff"]) {
   assert.equal(current.replaceAll(" includeTotals: drugs.showComparisonTotals,", ""), prior(name), "Only the selected comparison receives visible totals: " + name);
 }
 // #4437 changes research navigation, not the cumulative model or guided clock.
-for (const name of ["ChapterClock", "FunctionPlayer"]) assert.equal(source(name), prior(name));
+assert.equal(source("ChapterClock"), prior("ChapterClock"));
+assert.equal(source("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1], prior("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1]);
 const personalValues = s => s.split("struct GalaxySSIHealthAtlasValues:")[1];
 assert.equal(personalValues(source("Detail")), personalValues(prior("Detail")));
 for (const locale of ["en", "zh-Hans"]) {

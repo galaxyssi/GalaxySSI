@@ -23,11 +23,8 @@ struct GalaxySSIHealthAtlasResearch: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 18) {
-        Picker(title, selection: topic) {
-          ForEach(topics, id: \.self) {
-            Text(t($0.rawValue)).tag($0).accessibilityIdentifier("atlas-research-tab-" + $0.rawValue)
-          }
-        }.pickerStyle(.segmented).accessibilityIdentifier("atlas-research-tabs")
+        GalaxySSIHealthAtlasCompactTabs(options: topics, selection: topic,
+          title: { t($0.rawValue) }, key: { $0.rawValue }, identifier: "atlas-research-tab")
         switch topic.wrappedValue {
         case .physiology:
           GalaxySSIHealthAtlasSimulationPanel(atlas: atlas, entry: entry, model: atlas.model(entry), simulation: selection.simulation,

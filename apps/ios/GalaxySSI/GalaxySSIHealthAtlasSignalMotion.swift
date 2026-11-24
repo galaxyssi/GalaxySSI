@@ -13,6 +13,17 @@ struct GalaxySSIHealthAtlasSignalMotion {
   private static func safePhase(_ t: Double) -> Double { t.isFinite ? min(1, max(0, t)) : 0 }
   static func axonTravel(_ t: Double, myelinated: Bool) -> Double { safePhase(t) * (myelinated ? 0.98 : 0.63) }
   static func upstreamDrive(_ t: Double) -> Double { 1 - 0.70 * safePhase(t) }
+  static func gradedInput(_ time: Double) -> Double {
+    let t = safePhase(time)
+    func input(_ at: Double, _ width: Double) -> Double { max(0, 1 - abs(t - at) / width) }
+    return 0.18 + 0.30 * input(0.24, 0.25) - 0.24 * input(0.47, 0.17) +
+      0.24 * input(0.70, 0.25) + 0.35 * input(0.81, 0.27)
+  }
+  static func gateProgress(_ time: Double, openAt: Double, duration: Double) -> Double {
+    guard openAt.isFinite, duration.isFinite, duration > 0 else { return 0 }
+    return min(1, max(0, (safePhase(time) - openAt) / duration))
+  }
+  static let potential = (0...64).map { gradedInput(Double($0) / 64) }
   static func synapticRelease(_ t: Double, index: Int) -> Double {
     guard t.isFinite, (0...4).contains(index) else { return 0 }
     return min(1, max(0, (t - 0.38 - Double(index) * 0.085) / 0.39))

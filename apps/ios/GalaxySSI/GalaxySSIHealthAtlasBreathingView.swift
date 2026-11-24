@@ -19,13 +19,17 @@ struct GalaxySSIHealthAtlasBreathingView: View {
       drawing.fill(Path(roundedRect: CGRect(x: 0, y: 0, width: 344, height: 344), cornerRadius: 8),
         with: .linearGradient(Gradient(colors: [Self.color(0xEAF4F6), Self.color(0xFAF1EE)]),
           startPoint: .zero, endPoint: CGPoint(x: 0, y: 344)))
-      if motion.zoom < 1 {
-        var layer = drawing; layer.opacity = 1 - motion.zoom
-        layer.drawLayer { whole(in: $0, motion: motion) }
-      }
-      if motion.zoom > 0 {
-        var layer = drawing; layer.opacity = motion.zoom
-        layer.drawLayer { detail(in: $0, motion: motion) }
+      if motion.stage == .diffuse {
+        membrane(in: drawing, time: motion.fraction)
+      } else {
+        if motion.zoom < 1 {
+          var layer = drawing; layer.opacity = 1 - motion.zoom
+          layer.drawLayer { whole(in: $0, motion: motion) }
+        }
+        if motion.zoom > 0 {
+          var layer = drawing; layer.opacity = motion.zoom
+          layer.drawLayer { detail(in: $0, motion: motion) }
+        }
       }
     }.aspectRatio(1, contentMode: .fit).clipped()
       .accessibilityElement(children: .ignore)
@@ -94,13 +98,13 @@ struct GalaxySSIHealthAtlasBreathingView: View {
     // This source blood path has nine curves, unlike the four-command structure annotations.
     GalaxySSIHealthAtlasFunctionPath.sample(route, position: position, width: 1254, height: 1254)
   }
-  private func legend(in context: GraphicsContext, center: Double, text: String, color: Color) {
+  func legend(in context: GraphicsContext, center: Double, text: String, color: Color) {
     let width = (text as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: 11.5)]).width
     let x = center - (width + 13) / 2 + 4
     context.fill(Path(ellipseIn: CGRect(x: x - 3.5, y: 320.5, width: 7, height: 7)), with: .color(color))
     label(in: context, text: text, center: center + 6, baseline: 328, size: 11.5)
   }
-  private func label(in context: GraphicsContext, text: String, center: Double, baseline: Double, size: Double) {
+  func label(in context: GraphicsContext, text: String, center: Double, baseline: Double, size: Double) {
     let font = UIFont.systemFont(ofSize: size), width = (text as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: size)]).width
     context.draw(Text(verbatim: text).font(.system(size: size)).foregroundColor(Self.textInk),
       at: CGPoint(x: center - width / 2, y: baseline - font.ascender), anchor: .topLeading)
@@ -115,8 +119,8 @@ struct GalaxySSIHealthAtlasBreathingView: View {
   static let blood = route(115, 103, [183,206,212,261,171,351], [147,415,134,484,126,548], [98,593,79,638,113,701], [155,768,122,812,157,871], [183,931,253,944,293,958], [365,971,390,1037,476,1081], [547,1122,610,1096,678,1053], [750,1012,804,982,866,1026], [945,1093,1059,1072,1160,1172])
   static let oxygen = route(482, 817, [445,866,422,941,411,1003], [395,1064])
   static let carbon = route(625, 819, [642,891,671,967,702,1011], [724,1052])
-  private static func color(_ value: UInt32) -> Color {
+  static func color(_ value: UInt32) -> Color {
     Color(red: Double((value >> 16) & 255) / 255, green: Double((value >> 8) & 255) / 255, blue: Double(value & 255) / 255)
   }
-  private func t(_ key: String) -> String { GalaxySSIHealthAtlasFunctionText.get("health_atlas_breathe_" + key, language) }
+  func t(_ key: String) -> String { GalaxySSIHealthAtlasFunctionText.get("health_atlas_breathe_" + key, language) }
 }
