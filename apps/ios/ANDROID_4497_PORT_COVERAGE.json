@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4497,
+    "headCommit": "6071f168d789cc0657306042b9735a512bd04e64",
+    "incrementalAndroidBase": "d858b91af063b6a77960480d4acf1c1398f8a620",
+    "stateAtReview": "OPEN",
+    "note": "Pinned open follow-up head based on Android #4493; not a merged Android commit."
+  },
+  "verification": "source-and-resource-contracts-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "ad85123f1bf3b74eb7138e0e4d9ed1ff0e5f9141d14cfcafd5545a954d36e0bc",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthComparisonUiDeviceTest.kt",
+      "sourceSHA256": "76a72a12d45542e22428e8a30de799f229829f6681d3e52f8972d1dfb66eb110",
+      "kind": "native-fixture-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthActivityComparisonTests.swift"
+      ],
+      "note": "Reviewed Android clamping/nearest-date, above-point taps, both drag directions, missing/zero, vertical-scroll rejection and clearing sources. iOS model/accessibility fixture sources updated but NOT executed; no native layout/gesture/VoiceOver/pixel/device acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthActivityComparison.kt",
+      "sourceSHA256": "65357b772e52b0ec6673e4bc8302a0dc941c9a97b0c44b896c4106e78bd7c84d",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthActivityComparison.swift"
+      ],
+      "note": "Nearest calendar index clamps finite horizontal fraction and rounds; one-day safe. Missing dates participate without becoming zeros."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthActivityComparisonActivity.kt",
+      "sourceSHA256": "ba03cdad3237e36718fb6857feb9e88b7a0405f931e2bb44d4a1fe3c81b2c81d",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthActivityComparisonView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthActivityChart.swift"
+      ],
+      "note": "Freeze displayed live overlay while touch tracking is active and apply latest state asynchronously after completion/cancellation. Keep selected-range query and existing owner/consent/protected-data/cancellation checks."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthActivityComparisonChart.kt",
+      "sourceSHA256": "cf93c1f5f80c17eea4fee6c2afdd53dd91a7129c5aea5012a344cad73b2becf4",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthActivityChart.swift"
+      ],
+      "note": "Timeline tap anywhere above/below a point selects by X; horizontal directional recognizer scrubs continuously and clamps endpoints. Fail vertical drags for parent scrolling, ignore multitouch, finalize cancellation. Missing-day guide/readout at mid-height without fake dot; date-by-date VoiceOver/keyboard traversal including missing values; blank/outside clear. Native UIKit gestures have not been executed."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_comparison_strings.xml",
+      "sourceSHA256": "beb86a33b102ca4b0dac97dabd4a40cc9fff83397a58f24417710c70f92581f9",
+      "kind": "exact-resource-port",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/HealthActivityScrubbing.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/HealthActivityScrubbing.strings"
+      ],
+      "note": "One exact changed no-record pair per locale. Existing #4493 point-value table unchanged."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_comparison_strings.xml",
+      "sourceSHA256": "670571af94adf0ac665875050ffe3e841a4b65dbee278d8878c13a53b0b428ff",
+      "kind": "exact-resource-port",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/HealthActivityScrubbing.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/HealthActivityScrubbing.strings"
+      ],
+      "note": "One exact changed no-record pair per locale. Existing #4493 point-value table unchanged."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthActivityComparisonTest.kt",
+      "sourceSHA256": "57444b7e1592b57b6a9fb6e4b7f17484e087d580b38f279b8de77bbc08c01caa",
+      "kind": "native-fixture-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthActivityComparisonTests.swift"
+      ],
+      "note": "Reviewed Android clamping/nearest-date, above-point taps, both drag directions, missing/zero, vertical-scroll rejection and clearing sources. iOS model/accessibility fixture sources updated but NOT executed; no native layout/gesture/VoiceOver/pixel/device acceptance claimed."
+    }
+  ]
+}

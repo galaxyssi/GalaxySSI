@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4497,
+    "headCommit": "6071f168d789cc0657306042b9735a512bd04e64",
+    "incrementalAndroidBase": "d858b91af063b6a77960480d4acf1c1398f8a620",
+    "stateAtReview": "OPEN",
+    "note": "Pinned open follow-up head based on Android #4493; not a merged Android commit."
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "ad85123f1bf3b74eb7138e0e4d9ed1ff0e5f9141d14cfcafd5545a954d36e0bc"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthComparisonUiDeviceTest.kt",
+      "status": "M",
+      "sha256": "76a72a12d45542e22428e8a30de799f229829f6681d3e52f8972d1dfb66eb110"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthActivityComparison.kt",
+      "status": "M",
+      "sha256": "65357b772e52b0ec6673e4bc8302a0dc941c9a97b0c44b896c4106e78bd7c84d"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthActivityComparisonActivity.kt",
+      "status": "M",
+      "sha256": "ba03cdad3237e36718fb6857feb9e88b7a0405f931e2bb44d4a1fe3c81b2c81d"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthActivityComparisonChart.kt",
+      "status": "M",
+      "sha256": "cf93c1f5f80c17eea4fee6c2afdd53dd91a7129c5aea5012a344cad73b2becf4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_comparison_strings.xml",
+      "status": "M",
+      "sha256": "beb86a33b102ca4b0dac97dabd4a40cc9fff83397a58f24417710c70f92581f9"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_comparison_strings.xml",
+      "status": "M",
+      "sha256": "670571af94adf0ac665875050ffe3e841a4b65dbee278d8878c13a53b0b428ff"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthActivityComparisonTest.kt",
+      "status": "M",
+      "sha256": "57444b7e1592b57b6a9fb6e4b7f17484e087d580b38f279b8de77bbc08c01caa"
+    }
+  ]
+}
