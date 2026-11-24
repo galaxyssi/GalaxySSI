@@ -18,13 +18,20 @@ An eventual PR will use main and disclose the actual inherited diff.
   Chinese AtlasComplete tables. Existing resource snapshots remain unchanged.
 - Five changed Swift files parsed with zero grammar errors after conditional
   directives were removed; this is not type checking or native execution.
+- Added pelvic-ring load tracing and subcutaneous compression/layer/spread/recovery
+  native renderers. The latter retains the source 24 by 20 deformation mesh and
+  the existing Metal/software fallback. Both are registered in Xcode but await
+  the expanded catalogue and dispatch integration; they are not yet reachable.
+- Imported both original 360 by 280 vector cutaways (23 paths) with corrected
+  quadratic curves and two explicit odd-even pelvic holes. Course labels read
+  the new bilingual table. Native rendering and pixel parity remain unverified.
 
 ## Remaining
 
 - Inventory all source files; bilingual resource deltas are imported.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
-- Import pelvic/subcutaneous cutaways and feature routing.
+- Connect pelvic/subcutaneous cutaways to structure feature routing.
 - Audit the connected numerical model source contracts and diagram geometry.
 - Review original source contracts; submit one formal PR only when integration
   is implemented. No XCTest/native/device acceptance or IPA is claimed.

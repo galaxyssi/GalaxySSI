@@ -129,6 +129,11 @@ const alpha = value => value?.length === 9 ? parseInt(value.slice(1,3),16) / 255
         operators.splice(operators.length - 2, 1, clip(), endPath(), PDFOperator.of(PDFOperatorNames.ShadingFill, [name]));
         page.pushOperators(...operators);
         if (options.borderColor) page.drawSvgPath(a["android:pathData"], {...options, color: undefined});
+      } else if (functionArt?.preserveFillRules && a["android:fillType"] === "evenOdd") {
+        // This opaque source cohort needs PDF's odd-even painting, not nonzero winding.
+        if ((options.opacity ?? 1) !== 1 || (options.borderOpacity ?? 1) !== 1) throw Error("Unsupported translucent odd-even source");
+        const operators = drawSvgPath(a["android:pathData"], options);
+        page.pushOperators(...operators.map(op => ["f", "B", "b"].includes(op.name) ? PDFOperator.of(op.name + "*", op.args) : op));
       } else page.drawSvgPath(a["android:pathData"], options);
       if (item._atlasMirrorX || item._atlasTransform) page.pushOperators(popGraphicsState());
       if (item._atlasClips) page.pushOperators(popGraphicsState());

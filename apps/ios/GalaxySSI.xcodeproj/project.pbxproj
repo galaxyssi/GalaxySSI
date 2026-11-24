@@ -541,6 +541,8 @@
     C43850000000000000000005 /* GalaxySSIHealthAtlasAnkleGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000006 /* GalaxySSIHealthAtlasAnkleGeometry.swift */; };
     C43850000000000000000007 /* GalaxySSIHealthAtlasAnkleDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000008 /* GalaxySSIHealthAtlasAnkleDrawing.swift */; };
     C43850000000000000000009 /* GalaxySSIHealthAtlasAnkleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000000A /* GalaxySSIHealthAtlasAnkleView.swift */; };
+    C43880000000000000000005 /* GalaxySSIHealthAtlasLoadTransferStoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000006 /* GalaxySSIHealthAtlasLoadTransferStoryView.swift */; };
+    C43880000000000000000007 /* GalaxySSIHealthAtlasLoadTransferStoryDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000008 /* GalaxySSIHealthAtlasLoadTransferStoryDrawing.swift */; };
     C438400000000000000003EF /* GalaxySSIHealthAtlasImmuneLinkDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003F0 /* GalaxySSIHealthAtlasImmuneLinkDrawing.swift */; };
     C438400000000000000003F1 /* GalaxySSIHealthAtlasBloodDefenseDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003F2 /* GalaxySSIHealthAtlasBloodDefenseDrawing.swift */; };
     C438400000000000000003F3 /* GalaxySSIHealthAtlasCellFunctionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003F4 /* GalaxySSIHealthAtlasCellFunctionView.swift */; };
@@ -2567,6 +2569,8 @@
     C43850000000000000000006 /* GalaxySSIHealthAtlasAnkleGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAnkleGeometry.swift; sourceTree = "<group>"; };
     C43850000000000000000008 /* GalaxySSIHealthAtlasAnkleDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAnkleDrawing.swift; sourceTree = "<group>"; };
     C4385000000000000000000A /* GalaxySSIHealthAtlasAnkleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAnkleView.swift; sourceTree = "<group>"; };
+    C43880000000000000000006 /* GalaxySSIHealthAtlasLoadTransferStoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLoadTransferStoryView.swift; sourceTree = "<group>"; };
+    C43880000000000000000008 /* GalaxySSIHealthAtlasLoadTransferStoryDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLoadTransferStoryDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000003F0 /* GalaxySSIHealthAtlasImmuneLinkDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasImmuneLinkDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000003F2 /* GalaxySSIHealthAtlasBloodDefenseDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasBloodDefenseDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000003F4 /* GalaxySSIHealthAtlasCellFunctionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCellFunctionView.swift; sourceTree = "<group>"; };
@@ -4614,6 +4618,8 @@
         C43850000000000000000006 /* GalaxySSIHealthAtlasAnkleGeometry.swift */,
         C43850000000000000000008 /* GalaxySSIHealthAtlasAnkleDrawing.swift */,
         C4385000000000000000000A /* GalaxySSIHealthAtlasAnkleView.swift */,
+        C43880000000000000000006 /* GalaxySSIHealthAtlasLoadTransferStoryView.swift */,
+        C43880000000000000000008 /* GalaxySSIHealthAtlasLoadTransferStoryDrawing.swift */,
         C438400000000000000003F0 /* GalaxySSIHealthAtlasImmuneLinkDrawing.swift */,
         C438400000000000000003F2 /* GalaxySSIHealthAtlasBloodDefenseDrawing.swift */,
         C438400000000000000003F4 /* GalaxySSIHealthAtlasCellFunctionView.swift */,
@@ -6791,6 +6797,8 @@
         C43850000000000000000005 /* GalaxySSIHealthAtlasAnkleGeometry.swift in Sources */,
         C43850000000000000000007 /* GalaxySSIHealthAtlasAnkleDrawing.swift in Sources */,
         C43850000000000000000009 /* GalaxySSIHealthAtlasAnkleView.swift in Sources */,
+        C43880000000000000000005 /* GalaxySSIHealthAtlasLoadTransferStoryView.swift in Sources */,
+        C43880000000000000000007 /* GalaxySSIHealthAtlasLoadTransferStoryDrawing.swift in Sources */,
         C438400000000000000003EF /* GalaxySSIHealthAtlasImmuneLinkDrawing.swift in Sources */,
         C438400000000000000003F1 /* GalaxySSIHealthAtlasBloodDefenseDrawing.swift in Sources */,
         C438400000000000000003F3 /* GalaxySSIHealthAtlasCellFunctionView.swift in Sources */,
