@@ -1,0 +1,239 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4397,
+    "mergeCommit": "40776e7a67ebfe48c76f98d392849edb9810ac82"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "28d87e9d73244c5555dce7c1fd31f1de2ae66a5be9e87c1f941c8144e34e2969"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasPhysiologyDeviceTest.kt",
+      "status": "M",
+      "sha256": "c49591e04de875d4ab5bcf480bb859730c9cf738810c7a9844249a747ae074d2"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAirwaySplitTeachingModel.kt",
+      "status": "A",
+      "sha256": "d8b8b23c6f7533d76a0766e885194db158a408243237fbee3fe2a7d87b5f77a3"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCapillaryExchangeTeachingModel.kt",
+      "status": "A",
+      "sha256": "6641016650d458e01d262f1c5dc7364066f30dd65568a1f31efd48062a215aed"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCochlearFrequencyTeachingModel.kt",
+      "status": "A",
+      "sha256": "367f5bff2ede10fe922587da534f134b9b409a6857f482c04bb95d6899115e38"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGlomerularFiltrationTeachingModel.kt",
+      "status": "A",
+      "sha256": "8c9c962c5998e66fe7c358e9c0347acb6020909d6ae4e21a55fcd5b576724fef"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPeristalticTravelTeachingModel.kt",
+      "status": "A",
+      "sha256": "2bb04b58b6693d72a8e59dc9c31446b3f537e358c113a131c579011b5f1a05f1"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiology.kt",
+      "status": "M",
+      "sha256": "d0b80dc55f93d1e22d1f0c4beb51f4e32db260897726ff8945fbba891b1c1a76"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyPanel.kt",
+      "status": "M",
+      "sha256": "6f2c5606c70360f01f750870325d2c00cdc604a6496ece7c6e45c3b249a47ae8"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyText.kt",
+      "status": "M",
+      "sha256": "3ee600de538b05b0f1d1f4aa1fd8f45b099e9582c68403d14023e8248a418a73"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSalivaryDeliveryTeachingModel.kt",
+      "status": "A",
+      "sha256": "500bbb67162b4b475a6b223fd3993b89ae76175890891b7a5cba3ca08c8f659d"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSkinWaterBarrierTeachingModel.kt",
+      "status": "A",
+      "sha256": "e7606ddf1d608ce326373e8594d9ea0d1129470418c89df19f9705161a814e90"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasTeachingModelSpec.kt",
+      "status": "A",
+      "sha256": "5dd72f5fdfb3413dcca41516a63cc44c7a4fc3d01458c13dba779b034d4fad15"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasTendonElongationTeachingModel.kt",
+      "status": "A",
+      "sha256": "80c3b0a8a8cc7116c41b102101398498a10f30cf0b9779bb5c50c372134ed70d"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasValveFluxTeachingModel.kt",
+      "status": "A",
+      "sha256": "337364b85696dc6609c2fe23636a3492bd0608bca1ad151eaab364551084adc6"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_airway_split_teaching_model.xml",
+      "status": "A",
+      "sha256": "98e377fca2b98a77aad209db302470fe96ae3df10a774eaf2c47d0652316d867"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_capillary_exchange_model.xml",
+      "status": "A",
+      "sha256": "efafa2a1958da36c8b3b932ff5a1ee1ca424dfced75f89fb7cd7255a02f4ea3f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_cochlear_frequency.xml",
+      "status": "A",
+      "sha256": "fe1d8eba555a6d5bde29bafa909e365ef1f958ee87b9dc4cd882444dbb36cbee"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_glomerular_filtration.xml",
+      "status": "A",
+      "sha256": "5c28a0c5628daa343cc277a32a8c900fa8d63baf9f13f627f401fdc5dc10cd4d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_peristaltic_travel.xml",
+      "status": "A",
+      "sha256": "a87472a2bd974bc4c0ba3ffcc36ed16706ca51d31732dbd081783a62ea3e80ba"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_salivary_delivery.xml",
+      "status": "A",
+      "sha256": "cfe353ab2311adfa2e4b3c36ea3ebf7aaf2532b2bc7450a958b4d25f12704b29"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_skin_water_barrier.xml",
+      "status": "A",
+      "sha256": "fa3b81fcabc2593ff67a344e150488006e3dcc57e2d2b728aa2dd34bfba43cf0"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_tendon_elongation.xml",
+      "status": "A",
+      "sha256": "623ba48b131fdbf7230df7d47a676c79bcaae93b22da398c189364565793a2d3"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_valve_flux.xml",
+      "status": "A",
+      "sha256": "228dc8436a58972db66c3973c31d0f5f38b479df6ca1935373b7a8d03a3e237f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_airway_split_teaching_model.xml",
+      "status": "A",
+      "sha256": "5bb1c63667c81f2d20dbbcae5718349e8bc208db16bc57ac22e23e9eef5dc45d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_capillary_exchange_model.xml",
+      "status": "A",
+      "sha256": "396eb7b43817a1636fada09a9397d883294c1bde165f386d6fb1f4c96e6569b5"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_cochlear_frequency.xml",
+      "status": "A",
+      "sha256": "619d3809e4d2659f6705618f96bc382cfa884e01242b03c4039f8028cd17d4c6"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_glomerular_filtration.xml",
+      "status": "A",
+      "sha256": "954b79d14364cc94d7e28664b6f4fa4d2f3f1ac9c8beed792f0e6101c55f9c0a"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_peristaltic_travel.xml",
+      "status": "A",
+      "sha256": "b4c5223ff7b5e6824078a391c0845c175f2081ef15d0542ed7876471b27fb552"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_salivary_delivery.xml",
+      "status": "A",
+      "sha256": "3c20a601134d26841f3fb073f6b53c18a1f6068bfd1ff7f4678c8ebfe6a220fe"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_skin_water_barrier.xml",
+      "status": "A",
+      "sha256": "560235cb7ee1f3c9971529d2b361b6dbe196fa82fad88b5789baf151c838d20f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_tendon_elongation.xml",
+      "status": "A",
+      "sha256": "a61b2e3ffa93b87f9639b64916f0838c455128341920b346b38bd34249732c81"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_valve_flux.xml",
+      "status": "A",
+      "sha256": "b76da2f88cb40d4483303be72ee8f62d5a542214139a5baf2027db4bd8ca24c5"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasAirwaySplitTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "d19aa6df15565f8905bea659393e7a1ee0d423a6d04dce852d34f41c1bc59f59"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasCapillaryExchangeTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "890f657dc04910eab97c9e1a5a9d413f111656c716ff81a49adb6b6240e68385"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasCochlearFrequencyTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "b88c3cd1cc8c03ab0c95213be9420241970a8ad9c4023f5d99927ed79fa7454e"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasElbowTest.kt",
+      "status": "M",
+      "sha256": "39271b80ffb4ece0ca6b43e2ae3f201cdc82c82761799876e884456e690e48f5"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasGlomerularFiltrationTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "4caf2081563e302dabb767eb40660a5827ba6ee4047c2f1fad7afbbc3bdc8ad8"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMiddleEarTest.kt",
+      "status": "M",
+      "sha256": "25993b5341e2957b05d5a4fd7b2bc7be59d9877637b482b7369336d0b1400386"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPeristalticTravelTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "554a9aef7604b62c10d17b047a6ebd894b867963b64987560f6fe9226c76ed42"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPhysiologyTest.kt",
+      "status": "M",
+      "sha256": "e017c8a2a22de9b69a39ccdf80c18424549810ec8f7787732c62ca5cd1355ddd"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasRenalTest.kt",
+      "status": "M",
+      "sha256": "cf7f4076f537283c5da07101282c38f131ee6b333a112fc703fd13d9fef67e72"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasSalivaryDeliveryTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "042b8fe3ea33c5432dbe67daa5ef810967bbb55a5093999f4bc3d9286ff47751"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasSkinWaterBarrierTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "c1b260f0d61c0e5b5b0d1dd3a29a606a3bb2a4e52102ce85153a04fcfad84538"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasTendonElongationTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "598df3e22fdf58c61788df852b84e0b64a049f01b3cd58183052049da661caba"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasValveFluxTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "1a3f193f2ce86493938a73ccf4b53ad4444abcf844b00b29c0499d17b27315fa"
+    }
+  ]
+}

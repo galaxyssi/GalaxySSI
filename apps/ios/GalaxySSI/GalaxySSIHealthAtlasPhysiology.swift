@@ -68,6 +68,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case alveolarDiffusion, cartilageCompression, boneBending, calfPump
     case villusArea
     case pelvicSupport, cushionContactPressure
+    case capillaryExchange, valveFlux, glomerularFiltration, skinWaterBarrier, salivaryDelivery
+    case tendonElongation, airwaySplit, peristalticTravel, cochlearFrequency
     case sweatEvaporation
     case photonCapture
     case thyroidFeedback
@@ -77,8 +79,12 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     #if GALAXYSSI_ATLAS_OXYGEN
     case oxygen
     #endif
+    var teaching: GalaxySSIHealthAtlasTeachingModel? { .init(rawValue: rawValue) }
     var inputs: [Input] {
       switch self {
+      case .capillaryExchange, .valveFlux, .glomerularFiltration, .skinWaterBarrier, .salivaryDelivery,
+           .tendonElongation, .airwaySplit, .peristalticTravel, .cochlearFrequency:
+        return teaching!.inputs
       case .pelvicSupport:
         return [.init(key: "pelvis_model_load", range: 0...800, initial: 400, unit: "N"),
           .init(key: "pelvis_model_position", range: -100...100, initial: 0, unit: "%")]
@@ -164,6 +170,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var hasMaterialResponse: Bool { [.alveolarDiffusion, .cartilageCompression, .boneBending, .calfPump, .pelvicSupport, .cushionContactPressure].contains(self) }
     var axis: Int {
+      if let teaching { return teaching.axis }
       if self == .calfPump { return 1 }
       if self == .pelvicSupport || self == .cushionContactPressure { return 1 }
       if hasMaterialResponse { return 0 }
@@ -183,6 +190,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .potassium ? 0 : 1
     }
     var unit: String {
+      if let teaching { return teaching.unit }
       if self == .pelvicSupport { return "N" }
       if self == .cushionContactPressure { return "kPa" }
       if self == .calfPump { return "mL/min" }
@@ -208,6 +216,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .ventilation ? "L/min" : self == .renal ? "mg/min" : "mV"
     }
     var bounds: ClosedRange<Double> {
+      if let teaching { return teaching.bounds }
       if self == .pelvicSupport { return 0...800 }
       if self == .cushionContactPressure { return 0...80 }
       if self == .calfPump { return 0...750 }
@@ -233,6 +242,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var source: URL {
       switch self {
+      case .capillaryExchange, .valveFlux, .glomerularFiltration, .skinWaterBarrier, .salivaryDelivery,
+           .tendonElongation, .airwaySplit, .peristalticTravel, .cochlearFrequency:
+        return teaching!.sources[0]
       case .pelvicSupport: return GalaxySSIHealthAtlasLoadTransfer.stabilitySource
       case .cushionContactPressure: return GalaxySSIHealthAtlasLoadTransfer.pressureSource
       case .calfPump: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/24415543/")!
@@ -261,6 +273,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       }
     }
     var sources: [URL] {
+      if let teaching { return teaching.sources }
       if self == .pelvicSupport { return [source, GalaxySSIHealthAtlasLoadTransfer.pelvicSource] }
       if self == .cushionContactPressure { return [source, GalaxySSIHealthAtlasLoadTransfer.subcutaneousSource] }
       if self == .calfPump { return [source, URL(string: "https://pubmed.ncbi.nlm.nih.gov/8445740/")!] }
@@ -304,7 +317,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       #if GALAXYSSI_ATLAS_OXYGEN
       case "blood", "cell-erythrocyte": return .oxygen
       #endif
-      default: return nil
+      default: return GalaxySSIHealthAtlasTeachingModel.forEntry(id).flatMap { Self(rawValue: $0.rawValue) }
       }
     }
   }
@@ -330,6 +343,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var result: Double { evaluate(inputs.indices.map(input)) }
   var companionValue: Double {
     switch kind {
+    case .capillaryExchange, .valveFlux, .glomerularFiltration, .skinWaterBarrier, .salivaryDelivery,
+         .tendonElongation, .airwaySplit, .peristalticTravel, .cochlearFrequency:
+      return kind.teaching!.companion(inputs.indices.map(input))!
     case .pelvicSupport:
       return GalaxySSIHealthAtlasLoadTransfer.PelvicSupport(loadNewtons: input(0), positionPercent: input(1))!.leftNewtons
     case .cushionContactPressure:
@@ -408,6 +424,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
+    case .capillaryExchange, .valveFlux, .glomerularFiltration, .skinWaterBarrier, .salivaryDelivery,
+         .tendonElongation, .airwaySplit, .peristalticTravel, .cochlearFrequency:
+      return kind.teaching!.evaluate(values)!
     case .pelvicSupport:
       return GalaxySSIHealthAtlasLoadTransfer.PelvicSupport(loadNewtons: values[0], positionPercent: values[1])!.rightNewtons
     case .cushionContactPressure:

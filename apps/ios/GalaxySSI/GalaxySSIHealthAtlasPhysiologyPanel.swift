@@ -65,7 +65,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
   private func chartAndAxis(_ model: GalaxySSIHealthAtlasPhysiology) -> some View {
     let spec = model.kind.inputs[model.kind.axis]
     return Group {
-      chart(model)
+      chart(model).accessibilityIdentifier("atlas-physiology-curve")
       Text(spec.unit.isEmpty ? t(spec.key) : String(format: t("model_axis"), t(spec.key), spec.unit))
         .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
     }
