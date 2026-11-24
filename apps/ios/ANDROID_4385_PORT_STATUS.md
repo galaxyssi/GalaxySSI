@@ -111,7 +111,7 @@ acceptance, a compiled iOS release or a device-verified build.
   114-course/73-view integration audit. XCTest source expectations were updated,
   but XCTest has not been executed.
 
-## Remaining Before Publication
+## Publication Status
 
 - Serial source-contract verification passed for all 93 original changed files.
   `ANDROID_4385_PORT_COVERAGE.json` records every hash, disposition, iOS target,
@@ -119,8 +119,11 @@ acceptance, a compiled iOS release or a device-verified build.
 - Latest fetched main is `bcc2d4c0fc9526d2b047741a3d47f3cece3d9c2b`; it is an
   ancestor of this branch. #4491 remains open and its foundation is still included
   in the main-to-head diff. A `main` base does not make this branch independent.
-- Publish one formal non-draft PR for Android #4385, without claiming native or
-  device acceptance and without generating an IPA.
+- Published formal non-draft PR #4492 for Android #4385:
+  https://github.com/galaxyssi/GalaxySSI/pull/4492
+  Verified base `main`, state `OPEN`, `isDraft: false`, and `MERGEABLE` at code
+  commit `d8427c760cfcf714dfc2332b0cad9cee895c7aae`. `UNSTABLE` check status is
+  not a native/device acceptance claim. No IPA was generated.
 
 ## Verification Boundary
 
