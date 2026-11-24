@@ -7,9 +7,10 @@ struct GalaxySSIHealthAtlasResearch: View {
   @ObservedObject var state: GalaxySSIHealthAtlasState
   let records: GalaxySSIHealthRecords
   let depth: Int
+  @StateObject private var scrollMemory = GalaxySSIHealthAtlasScrollMemory()
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.dismiss) private var dismiss
-  private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.binding(entry) }
+  private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.detailBinding(entry, depth: depth) }
   private var topics: [GalaxySSIHealthAtlasState.Research] { GalaxySSIHealthAtlasState.researchTopics(entry) }
   private var title: String { t(GalaxySSIHealthAtlasState.usesInlineModels(entry) ? "targeted_research" : "research") }
   private var topic: Binding<GalaxySSIHealthAtlasState.Research> {
@@ -42,10 +43,12 @@ struct GalaxySSIHealthAtlasResearch: View {
         }
         Link(t(atlas.model(entry).reference == nil ? "structure_source" : "reference_pubmed"), destination: atlas.model(entry).source)
           .frame(minHeight: 44).accessibilityIdentifier(topic.wrappedValue == .physiology ? "atlas-source-physiology" : "atlas-source-research")
-      }.padding()
+      }.padding().background(GalaxySSIHealthAtlasScrollAnchor(memory: scrollMemory, revision: scrollMemory.revision))
     }
     .navigationTitle(title).navigationBarTitleDisplayMode(.inline).galaxySSIHealthTheme()
     .background(GalaxySSIHealthAtlasRestoredDetailLink(atlas: atlas, entry: entry, state: state, records: records, depth: depth))
+    .modifier(GalaxySSIHealthAtlasSearchNavigation(atlas: atlas, entry: entry, state: state, records: records,
+      depth: depth, surface: .research, memory: scrollMemory))
     .environmentObject(state.playback)
     .safeAreaInset(edge: .bottom) {
       GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: selection.wrappedValue, includesResearch: true,
@@ -56,6 +59,10 @@ struct GalaxySSIHealthAtlasResearch: View {
         .padding(.horizontal)
     }
     .onAppear {
+      let location = GalaxySSIHealthAtlasLessonNavigation.Location(entryID: entry.id, depth: depth)
+      if let offset = state.lessonReturnScroll.removeValue(forKey: location.key) ?? state.lessonNavigation.returns[location.key]?.scroll {
+        scrollMemory.restore(offset)
+      }
       if GalaxySSIHealthAtlasState.usesInlineModels(entry), selection.wrappedValue.research == .physiology {
         state.openNumericalModel(entry); state.closeResearch(entry); dismiss()
       }

@@ -31,7 +31,7 @@ assert.equal(core(source('FunctionPlayer')),core(prior('FunctionPlayer')));
 assert.equal(menu.split('  private var chapters:')[1],prior('FunctionPlaybackMenu').split('  private var chapters:')[1]);
 assert.equal(state.split('  func restore(_ text:')[1].split('  var serialized:')[0],prior('State').split('  func restore(_ text:')[1].split('  var serialized:')[0]);
 assert.equal(detail.split('struct GalaxySSIHealthAtlasValues:')[1],prior('Detail').split('struct GalaxySSIHealthAtlasValues:')[1]);
-for(const name of ['ChapterClock','SimulationPanel','Physiology','AgentContext','AgentHandoff','FunctionCatalogue','FunctionArtwork','FunctionScene','FilmPalette','RodResponse','RodMembraneDrawing'])assert.equal(source(name),prior(name),name);
+for(const name of ['ChapterClock','Physiology','AgentContext','AgentHandoff','FunctionCatalogue','FunctionArtwork','FilmPalette','RodResponse','RodMembraneDrawing'])assert.equal(source(name),prior(name),name);
 for(const locale of ['en','zh-Hans']){const table=read('apps/ios/GalaxySSI/'+locale+'.lproj/AtlasRelatedAnimations.strings');assert.equal([...table.matchAll(/^"health_atlas_/gm)].length,2);assert(table.includes('"health_atlas_related_lesson_label" = "%1$@ · %2$@";'));}
 const tests='apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift';
 check(read(tests),['testSameOrganReturnRestoresOriginButRetainsDestinationProgressAndIgnoresLateWrites','testRestoredOrdinaryAncestorAndCrossEntryRelatedReturnKeepDistinctContexts','testRetappingSelectedDetailTabDoesNotPauseOrMutateState','testNavigationArchiveRejectsUnboundedUnknownAndNoncontiguousPaths','restored.restoreLessonNavigation','child.wrappedValue = destination']);

@@ -108,4 +108,66 @@ final class GalaxySSIHealthAtlasLessonNavigationTests: XCTestCase {
     state.restoreLessonNavigation(String(repeating: "x", count: 128_001), atlas: atlas)
     XCTAssertTrue(state.lessonNavigation.path.isEmpty)
   }
+  func testSearchCancelAndResultBackPreserveOriginVariantScrollAndPhase() throws {
+    let (atlas, catalogue, aorta) = try fixture(), state = GalaxySSIHealthAtlasState()
+    state.recordDetail(aorta, depth: 1)
+    var selection = state.binding(aorta).wrappedValue
+    selection.tab = .function; selection.zoom = 2; selection.layers = false
+    selection.artworkView = atlas.views(for: aorta.id).first?.viewKey
+    selection.functionSelection = .init()
+    selection.functionSelection?.choose("ARTERIAL_PULSE", entryID: aorta.id, catalogue: catalogue)
+    state.binding(aorta).wrappedValue = selection
+    state.recordFunctionPhase(entryID: aorta.id, storyID: "ARTERIAL_PULSE", phase: 0.43, depth: 1)
+    state.beginCatalogueSearch(aorta, depth: 1, scroll: 335)
+    let saved = try XCTUnwrap(state.lessonNavigation.search)
+    XCTAssertEqual(saved.selection.functionSelection?.phases["ARTERIAL_PULSE"], 0.43)
+    let restored = GalaxySSIHealthAtlasState()
+    restored.restoreLessonNavigation(state.lessonNavigationSerialized, atlas: atlas)
+    XCTAssertEqual(restored.lessonNavigation.search, saved)
+    restored.cancelCatalogueSearch()
+    XCTAssertEqual(restored.binding(aorta).wrappedValue.zoom, 2)
+    XCTAssertEqual(restored.lessonReturnScroll[saved.origin.key], 335)
+    XCTAssertTrue(restored.openCatalogueResult(aorta.id, from: saved, atlas: atlas))
+    XCTAssertEqual(restored.detailBinding(aorta, depth: 1).wrappedValue.tab, .function)
+    XCTAssertEqual(restored.detailBinding(aorta, depth: 2).wrappedValue.tab, .structure)
+    let replay = GalaxySSIHealthAtlasState()
+    replay.restoreLessonNavigation(restored.lessonNavigationSerialized, atlas: atlas)
+    XCTAssertEqual(replay.lessonNavigation.path.count, 2)
+    replay.closeRelatedLesson(saved.origin)
+    XCTAssertEqual(replay.binding(aorta).wrappedValue.tab, .function)
+    XCTAssertEqual(replay.binding(aorta).wrappedValue.functionSelection?.phases["ARTERIAL_PULSE"], 0.43)
+    XCTAssertEqual(replay.binding(aorta).wrappedValue.artworkView, selection.artworkView)
+    XCTAssertFalse(replay.binding(aorta).wrappedValue.layers)
+    XCTAssertEqual(replay.lessonNavigation.path.count, 1)
+  }
+  func testFigureOverlapAndBottomCalloutsReserveLegendWithoutChangingDefaults() throws {
+    XCTAssertEqual(GalaxySSIHealthAtlasFigureLayout.sharedHeight(art: 100, legend: 80), 28)
+    XCTAssertEqual(GalaxySSIHealthAtlasFigureLayout.sharedHeight(art: 10, legend: 80), 10)
+    XCTAssertEqual(GalaxySSIHealthAtlasFigureLayout.sharedHeight(art: .nan, legend: 80), 0)
+    let layout = try XCTUnwrap(GalaxySSIHealthAtlasCalloutLayout.make(width: 320, aspectRatio: 1,
+      anchors: [CGPoint(x: 0.8, y: 1)], splitRequested: false, accessibility: false,
+      preferredWidths: [80], legendInset: 28, minimumHeight: 266, measureHeight: { _, _ in 80 }))
+    XCTAssertLessThanOrEqual(try XCTUnwrap(layout.labelFrames.first).maxY, layout.height - 36)
+  }
+  func testSearchSurfaceIsolationAndMalformedArchiveRejection() throws {
+    let (atlas, _, aorta) = try fixture()
+    var selection = GalaxySSIHealthAtlasState.Selection()
+    XCTAssertTrue(GalaxySSIHealthAtlasSearchSurface.detail.contains(selection))
+    XCTAssertFalse(GalaxySSIHealthAtlasSearchSurface.research.contains(selection))
+    selection.tab = .simulation
+    XCTAssertTrue(GalaxySSIHealthAtlasSearchSurface.standalone.contains(selection))
+    XCTAssertFalse(GalaxySSIHealthAtlasSearchSurface.detail.contains(selection))
+    selection.researchPresented = true
+    XCTAssertTrue(GalaxySSIHealthAtlasSearchSurface.research.contains(selection))
+    XCTAssertFalse(GalaxySSIHealthAtlasSearchSurface.standalone.contains(selection))
+    let state = GalaxySSIHealthAtlasState()
+    var archive = GalaxySSIHealthAtlasLessonNavigation()
+    archive.path = [.init(entryID: aorta.id, depth: 1)]
+    archive.search = .init(origin: .init(entryID: "unknown", depth: 1), selection: .init(), scroll: 0)
+    state.restoreLessonNavigation(String(decoding: try JSONEncoder().encode(archive), as: UTF8.self), atlas: atlas)
+    XCTAssertTrue(state.lessonNavigation.path.isEmpty)
+    state.recordDetail(aorta, depth: 32)
+    state.beginCatalogueSearch(aorta, depth: 32, scroll: 0)
+    XCTAssertNil(state.lessonNavigation.search)
+  }
 }

@@ -74,13 +74,12 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
           }
           Text(GalaxySSIHealthAtlasText.get(model.title, language)).font(.callout.weight(.semibold))
           if !inline && (hasDiagram || hasCloseup) { playbackControls }
-          if germline != nil { stageCaption }
           simulationArtwork
-          if !hasDiagram {
-            GalaxySSIHealthAtlasProcessStages(stages: model.stages, phase: simulation.phase, language: language,
-              entryID: entry.id, compact: inline, selected: { pause(); simulation.selectStage($0) })
+          if !retinal && endocrine == nil {
+            GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-simulation-figure", header: { EmptyView() }, artwork: {
+              processArtwork.padding(.bottom, GalaxySSIHealthAtlasFigureLayout.overlap)
+            }, legend: { stageCaption })
           }
-          if germline == nil && !retinal && endocrine == nil { stageCaption }
           if inline || (!hasDiagram && !hasCloseup) { playbackControls }
           Slider(value: Binding(get: { simulation.phase }, set: { value in pause(); simulation.phase = value }), in: 0...1,
             onEditingChanged: { _ in pause() })
@@ -167,6 +166,8 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
       GalaxySSIHealthAtlasValvePanel(atlas: atlas, entryID: entry.id, stage: simulation.stage, language: language, open: openStructure)
     }
     if let germline { GalaxySSIHealthAtlasGermlineView(counts: germline, language: language, showsDetails: false) }
+  }
+  @ViewBuilder private var processArtwork: some View {
     if gasExchange {
       GalaxySSIHealthAtlasGasExchangeView(phase: simulation.phase, language: language, stages: model.stages,
         selected: { pause(); simulation.selectStage($0) }, open: openStructure)
@@ -174,6 +175,10 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
     if GalaxySSIHealthAtlasCirculation.supports(entry.id) {
       GalaxySSIHealthAtlasCirculationView(phase: simulation.phase, flow: cardiac ? simulation.output : nil, language: language,
         stages: model.stages, selected: { pause(); simulation.selectStage($0) }, open: openStructure)
+    }
+    if !hasDiagram {
+      GalaxySSIHealthAtlasProcessStages(stages: model.stages, phase: simulation.phase, language: language,
+        entryID: entry.id, compact: inline, selected: { pause(); simulation.selectStage($0) })
     }
   }
   private func openStructure(_ id: String) { pause(); structure = id }

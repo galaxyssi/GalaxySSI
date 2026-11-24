@@ -12,11 +12,19 @@ struct GalaxySSIHealthAtlasLessonNavigation: Codable, Equatable {
     let scroll: Double
     let targetID: String
     let targetStory: String
+    var structureOnly: Bool?
+  }
+  struct Search: Codable, Equatable, Identifiable {
+    let origin: Location
+    var selection: GalaxySSIHealthAtlasState.Selection
+    let scroll: Double
+    var id: String { origin.key }
   }
   var schema = 1
   var path: [Location] = []
   var returns: [String: Return] = [:]
   var activeSelection: GalaxySSIHealthAtlasState.Selection?
+  var search: Search?
 }
 
 struct GalaxySSIHealthAtlasRelatedAction: Identifiable {
@@ -31,12 +39,16 @@ extension GalaxySSIHealthAtlasState {
   func detailBinding(_ entry: GalaxySSIHealthAtlas.Entry, depth: Int) -> Binding<Selection> {
     let location = LessonLocation(entryID: entry.id, depth: depth)
     return Binding(get: {
-      Self.migrated(self.lessonNavigation.returns[location.key]?.selection ?? self.binding(entry).wrappedValue, entry: entry)
+      let search = self.lessonNavigation.search
+      return Self.migrated(self.lessonNavigation.returns[location.key]?.selection ??
+        (search?.origin == location ? search?.selection : nil) ?? self.binding(entry).wrappedValue, entry: entry)
     }, set: { value in
       // A disappearing child must not overwrite a same-entry origin after Back.
       guard self.lessonNavigation.path.contains(location) else { return }
       if self.lessonNavigation.returns[location.key] != nil {
         self.lessonNavigation.returns[location.key]?.selection = Self.migrated(value, entry: entry)
+      } else if self.lessonNavigation.search?.origin == location {
+        self.lessonNavigation.search?.selection = Self.migrated(value, entry: entry)
       } else { self.binding(entry).wrappedValue = value }
     })
   }
@@ -83,6 +95,7 @@ extension GalaxySSIHealthAtlasState {
     next.tab = saved.selection.tab; next.research = saved.selection.research
     next.researchPresented = saved.selection.researchPresented
     next.researchReturnScroll = saved.selection.researchReturnScroll
+    next.artworkView = saved.selection.artworkView; next.layers = saved.selection.layers; next.zoom = saved.selection.zoom
     var function = next.functionSelection ?? saved.selection.functionSelection ?? .init()
     function.selected = saved.selection.functionSelection?.selected
     if let catalogue = try? GalaxySSIHealthAtlasFunctionCatalogue.bundled.get(),
@@ -110,6 +123,33 @@ extension GalaxySSIHealthAtlasState {
     saved.activeSelection = saved.path.last.flatMap { entries[$0.entryID] }
     return (try? JSONEncoder().encode(saved)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
   }
+  func beginCatalogueSearch(_ entry: GalaxySSIHealthAtlas.Entry, depth: Int, scroll: Double) {
+    let location = LessonLocation(entryID: entry.id, depth: depth)
+    guard (1..<32).contains(depth), lessonNavigation.path.last == location else { return }
+    playback.pause()
+    let snapshot = functionSnapshot(entry, depth: depth)
+    lessonNavigation.search = .init(origin: location, selection: snapshot, scroll: Self.safeScroll(scroll))
+  }
+  func cancelCatalogueSearch() {
+    guard let saved = lessonNavigation.search else { return }
+    entries[saved.origin.entryID] = saved.selection
+    lessonReturnScroll[saved.origin.key] = saved.scroll
+    lessonNavigation.search = nil
+  }
+  @discardableResult
+  func openCatalogueResult(_ targetID: String, from saved: GalaxySSIHealthAtlasLessonNavigation.Search,
+                           atlas: GalaxySSIHealthAtlas) -> Bool {
+    guard lessonNavigation.path.last == saved.origin, saved.origin.depth < 32,
+      let target = atlas.entry(targetID) else { return false }
+    playback.pause()
+    lessonNavigation.returns[saved.origin.key] = .init(origin: saved.origin, selection: saved.selection,
+      scroll: saved.scroll, targetID: target.id, targetStory: "", structureOnly: true)
+    var next = binding(target).wrappedValue
+    next.tab = .structure; next.researchPresented = false
+    binding(target).wrappedValue = next
+    lessonNavigation.path.append(.init(entryID: target.id, depth: saved.origin.depth + 1))
+    return true
+  }
   func restoreLessonNavigation(_ text: String, atlas: GalaxySSIHealthAtlas) {
     clearLessonNavigation()
     guard text.utf8.count <= 128_000, let data = text.data(using: .utf8),
@@ -128,11 +168,16 @@ extension GalaxySSIHealthAtlasState {
     for (key, frame) in saved.returns {
       guard key == frame.origin.key, let index = saved.path.firstIndex(of: frame.origin), index + 1 < saved.path.count,
         saved.path[index + 1].entryID == frame.targetID,
-        catalogue.routes[frame.targetID]?.contains(frame.targetStory) == true else { return }
+        (frame.structureOnly == true ? frame.targetStory.isEmpty : catalogue.routes[frame.targetID]?.contains(frame.targetStory) == true) else { return }
       // Reuse the established entry, model, course and cache sanitizers.
       guard let selection = cleaned(frame.selection, entryID: frame.origin.entryID) else { return }
       saved.returns[key] = .init(origin: frame.origin, selection: selection, scroll: Self.safeScroll(frame.scroll),
-        targetID: frame.targetID, targetStory: frame.targetStory)
+        targetID: frame.targetID, targetStory: frame.targetStory, structureOnly: frame.structureOnly)
+    }
+    if let search = saved.search {
+      guard saved.path.last == search.origin, search.origin.depth < 32,
+        let selection = cleaned(search.selection, entryID: search.origin.entryID) else { return }
+      saved.search = .init(origin: search.origin, selection: selection, scroll: Self.safeScroll(search.scroll))
     }
     if let active = saved.activeSelection, let last = saved.path.last {
       guard let selection = cleaned(active, entryID: last.entryID) else { return }

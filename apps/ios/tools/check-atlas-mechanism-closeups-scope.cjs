@@ -40,7 +40,7 @@ assert.equal(restoreSelectionCore(source("State")), restoreSelectionCore(prior("
 const simulationLifecycle = s => s.split(".onReceive(timer)")[1].split(".onDisappear { pause() }")[0];
 assert.equal(simulationLifecycle(source("SimulationPanel")), simulationLifecycle(prior("SimulationPanel")));
 assert.equal(source("FunctionScene").replace(/^  @Environment.*private var colorScheme\n/m, "").split("  var body:")[0], prior("FunctionScene").split("  var body:")[0]);
-assert(source("FunctionScene").includes("GalaxySSIHealthAtlasSceneFrame"));
+assert(source("FunctionScene").includes("GalaxySSIHealthAtlasFigureFrame")); // #4445 replaces the caption band, not the renderer.
 assert(source("FunctionScene").includes("GalaxySSIHealthAtlasReservedCaption"));
 assert.equal(source("Detail").split("struct GalaxySSIHealthAtlasValues:")[1], prior("Detail").split("struct GalaxySSIHealthAtlasValues:")[1]);
 for (const locale of ['en', 'zh-Hans']) assert.equal([...read('apps/ios/GalaxySSI/' + locale + '.lproj/AtlasMechanismCloseups.strings').matchAll(/^"health_atlas_/gm)].length, 20);

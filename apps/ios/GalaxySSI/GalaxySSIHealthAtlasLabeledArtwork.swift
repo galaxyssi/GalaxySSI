@@ -10,11 +10,14 @@ struct GalaxySSIHealthAtlasLabeledArtwork: View {
   let labels: [String]
   var featureIDs: Set<String> = []
   var splitCallouts: Bool = false
+  var legendInset: CGFloat = 0
+  var minimumHeight: CGFloat = 300
   let onSelect: (String) -> Void
   @State private var height: CGFloat = 360
   var body: some View {
     GalaxySSIAtlasLabeledScroll(asset: asset, aspectRatio: aspectRatio, zoom: $zoom, height: $height,
-      currentID: currentID, spots: spots, labels: labels, featureIDs: featureIDs, splitCallouts: splitCallouts, onSelect: onSelect)
+      currentID: currentID, spots: spots, labels: labels, featureIDs: featureIDs, splitCallouts: splitCallouts,
+      legendInset: legendInset, minimumHeight: minimumHeight, onSelect: onSelect)
       .frame(height: height)
   }
 }
@@ -29,6 +32,8 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
   let labels: [String]
   let featureIDs: Set<String>
   let splitCallouts: Bool
+  let legendInset: CGFloat
+  let minimumHeight: CGFloat
   let onSelect: (String) -> Void
   func makeCoordinator() -> Coordinator { Coordinator(self) }
   func makeUIView(context: Context) -> UIScrollView {
@@ -101,7 +106,7 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
       super.init(frame: frame); addSubview(image); image.contentMode = .scaleAspectFit
       guides.owner = self; guides.isUserInteractionEnabled = false; guides.isOpaque = false
       addSubview(guides)
-      image.isAccessibilityElement = false; backgroundColor = .systemBackground
+      image.isAccessibilityElement = false; backgroundColor = .clear
     }
     required init?(coder: NSCoder) { return nil }
     func configure(_ input: GalaxySSIAtlasLabeledScroll) {
@@ -109,7 +114,7 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
       self.input = input
       let unchanged = previous.map { old in
         old.asset == input.asset && old.aspectRatio == input.aspectRatio && old.currentID == input.currentID &&
-          old.splitCallouts == input.splitCallouts &&
+          old.splitCallouts == input.splitCallouts && old.legendInset == input.legendInset && old.minimumHeight == input.minimumHeight &&
           old.labels == input.labels && old.featureIDs == input.featureIDs && old.spots.map({ $0.0 }) == input.spots.map({ $0.0 }) &&
           old.spots.map({ $0.1 }) == input.spots.map({ $0.1 }) && old.spots.map({ $0.2 }) == input.spots.map({ $0.2 })
       } ?? false
@@ -167,7 +172,8 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
       return GalaxySSIHealthAtlasCalloutLayout.make(width: width, aspectRatio: input.aspectRatio,
         anchors: input.spots.map { CGPoint(x: $0.1, y: $0.2) }, splitRequested: input.splitCallouts,
         accessibility: traitCollection.preferredContentSizeCategory.isAccessibilityCategory,
-        preferredWidths: preferred, measureHeight: { self.labelHeight(self.buttons[$0], width: $1) })
+        preferredWidths: preferred, legendInset: input.legendInset, minimumHeight: input.minimumHeight,
+        measureHeight: { self.labelHeight(self.buttons[$0], width: $1) })
     }
     func requiredHeight(width: CGFloat) -> CGFloat { plan(width: width)?.height ?? 300 }
     override func layoutSubviews() {

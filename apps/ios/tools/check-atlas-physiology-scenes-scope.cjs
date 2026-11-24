@@ -16,15 +16,16 @@ const inventory = {schema: 1, source: {androidPR: 4442, mergeCommit: sha}, files
   sha256: crypto.createHash('sha256').update(git(['show', sha + ':' + file])).digest('hex')}))};
 requireTokens(android('HealthAtlasSceneFrame'), ['require(texts.isNotEmpty())', 'texts.maxOf', 'view.minimumHeight = lines + view.totalPaddingTop + view.totalPaddingBottom', 'view.totalPaddingStart', 'view.totalPaddingEnd']);
 requireTokens(source('SceneFrame'), ['clipShape(RoundedRectangle(cornerRadius: 8))', 'content().padding(inset)', 'ForEach(values.indices', '.hidden().accessibilityHidden(true).allowsHitTesting(false)', 'fixedSize(horizontal: false, vertical: true)', 'min(values.count - 1, max(0, selected))']);
-requireTokens(source('FunctionScene'), ['GalaxySSIHealthAtlasSceneFrame(identifier: "atlas-function-frame", ground:', 'GalaxySSIHealthAtlasReservedCaption(values: labels', 'values: story.chapters.map { t($0.caption) }']);
+requireTokens(source('FunctionScene'), ['GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-function-frame"', 'GalaxySSIHealthAtlasReservedCaption(values: labels', 'values: story.chapters.map { t($0.caption) }']);
 assert.equal(source("FunctionScene").replace(/^  @Environment.*private var colorScheme\n/m, "").split('  var body:')[0], prior('FunctionScene').split('  var body:')[0]);
 assert.equal(source("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1], prior("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1]);
 const panel = source('SimulationPanel'), processStages = source('ProcessStages');
 requireTokens(android('HealthAtlasSimulationPanel'), ['HealthAtlasProcessView(activity, mechanism, showLabels = !inline)', 'HealthAtlasSceneFrame(activity, "atlas-simulation-frame")', 'scene.reserveCaption(caption', 'tag = "atlas-simulation-references"', '"atlas-simulation-references-toggle"']);
-requireTokens(panel, ['@State private var referencesExpanded = false', 'GalaxySSIHealthAtlasSceneFrame(identifier: "atlas-simulation-frame", inset: 8)', 'GalaxySSIHealthAtlasReservedCaption(values: stageCaptions', 'compact: inline', 'if germline != nil { stageCaption }', 'if germline == nil && !retinal && endocrine == nil { stageCaption }', 'if !inline && (hasDiagram || hasCloseup) { playbackControls }', 'if inline || (!hasDiagram && !hasCloseup) { playbackControls }', 'DisclosureGroup(isExpanded: $referencesExpanded)', '"atlas-simulation-references-toggle"', '"atlas-simulation-progress"', 'private var referenceNotes:', '"atlas-source-physiology"']);
+requireTokens(panel, ['@State private var referencesExpanded = false', 'GalaxySSIHealthAtlasSceneFrame(identifier: "atlas-simulation-frame", inset: 8)', 'GalaxySSIHealthAtlasReservedCaption(values: stageCaptions', 'compact: inline', 'if !retinal && endocrine == nil', 'atlas-simulation-figure', 'processArtwork.padding(.bottom, GalaxySSIHealthAtlasFigureLayout.overlap)', 'if !inline && (hasDiagram || hasCloseup) { playbackControls }', 'if inline || (!hasDiagram && !hasCloseup) { playbackControls }', 'DisclosureGroup(isExpanded: $referencesExpanded)', '"atlas-simulation-references-toggle"', '"atlas-simulation-progress"', 'private var referenceNotes:', '"atlas-source-physiology"']);
 const sceneAt = panel.indexOf('GalaxySSIHealthAtlasSceneFrame(identifier:'), before = panel.indexOf('quantitative.accessibilityIdentifier("atlas-quantitative-before-art")'), after = panel.indexOf('quantitative.accessibilityIdentifier("atlas-quantitative-after-art")');
 assert(before < sceneAt && sceneAt < after);
-assert(panel.indexOf('if germline != nil { stageCaption }') < panel.indexOf('          simulationArtwork'));
+// #4445 places the reserved stage caption in the process figure, after specialized closeups.
+assert(panel.indexOf('          simulationArtwork') < panel.indexOf('identifier: "atlas-simulation-figure"'));
 requireTokens(processStages, ['if stages.count == 4', 'if compact', 'HStack(spacing: 0)', 'if !compact', 'minHeight: compact ? 48 : 64', '.accessibilityLabel(label(stage))', '"atlas-process-stage-"', '[0, 1, 3, 2]', 'selected(stage)']);
 // Preserve every renderer, callbacks and numerical inputs; child details move, not disappear.
 const artwork = panel.split('  @ViewBuilder private var simulationArtwork:')[1].split('  private func openStructure')[0];
@@ -43,7 +44,11 @@ const navigationPlayerCore = s => s.split('}.accessibilityIdentifier("atlas-func
 assert.equal(navigationPlayerCore(source("FunctionPlayer")), navigationPlayerCore(prior("FunctionPlayer")));
 const restoreSelectionCore = s => s.split("  func restore(_ text:")[1].split("  var serialized:")[0];
 assert.equal(restoreSelectionCore(source("State")), restoreSelectionCore(prior("State")));
-assert.equal(source("Research").replace(/^    \.background\(GalaxySSIHealthAtlasRestoredDetailLink.*\n/m, ""), prior("Research"));
+// #4445 adds contextual search/navigation and scroll tracking; preserve every research domain view.
+assert.equal(source("Research").split("  private var drugs:")[1], prior("Research").split("  private var drugs:")[1]);
+const physiologyCase = s => s.split("        case .physiology:")[1].split("        case .drugs:")[0];
+assert.equal(physiologyCase(source("Research")), physiologyCase(prior("Research")));
+assert(source("Research").includes("state.detailBinding(entry, depth: depth)"));
 // #4443 adds one immutable reference overlay, not new selection/cache semantics.
 assert.equal(source("FunctionCatalogue").split("struct GalaxySSIHealthAtlasFunctionSelection:")[1], prior("FunctionCatalogue").split("struct GalaxySSIHealthAtlasFunctionSelection:")[1]);
 for (const [name, field] of [['Germline', 'showsDetails'], ['BloodDefenseView', 'showsDetails'], ['ImmuneLink', 'showsDetails'], ['PancreaticPanel', 'showsScope']]) requireTokens(source(name), ['var ' + field + ' = true', 'if ' + field]);

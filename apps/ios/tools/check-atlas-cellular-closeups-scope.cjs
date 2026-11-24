@@ -38,14 +38,18 @@ const navigationPlayerCore = s => s.split('}.accessibilityIdentifier("atlas-func
 assert.equal(navigationPlayerCore(source("FunctionPlayer")), navigationPlayerCore(prior("FunctionPlayer")));
 const restoreSelectionCore = s => s.split("  func restore(_ text:")[1].split("  var serialized:")[0];
 assert.equal(restoreSelectionCore(source("State")), restoreSelectionCore(prior("State")));
-assert.equal(source("Research").replace(/^    \.background\(GalaxySSIHealthAtlasRestoredDetailLink.*\n/m, ""), prior("Research"));
+// #4445 adds scoped search/scroll state while leaving research domain views exact.
+assert.equal(source("Research").split("  private var drugs:")[1], prior("Research").split("  private var drugs:")[1]);
+const physiologyCase = s => s.split("        case .physiology:")[1].split("        case .drugs:")[0];
+assert.equal(physiologyCase(source("Research")), physiologyCase(prior("Research")));
+assert(source("Research").includes("state.detailBinding(entry, depth: depth)"));
 // #4443 adds one immutable reference overlay, not new selection/cache semantics.
 assert.equal(source("FunctionCatalogue").split("struct GalaxySSIHealthAtlasFunctionSelection:")[1], prior("FunctionCatalogue").split("struct GalaxySSIHealthAtlasFunctionSelection:")[1]);
 // #4442 reorganizes scene/layout only; the playback and lifecycle block stays exact.
 const simulationLifecycle = s => s.split(".onReceive(timer)")[1].split(".onDisappear { pause() }")[0];
 assert.equal(simulationLifecycle(source("SimulationPanel")), simulationLifecycle(prior("SimulationPanel")));
 assert.equal(source("FunctionScene").replace(/^  @Environment.*private var colorScheme\n/m, "").split("  var body:")[0], prior("FunctionScene").split("  var body:")[0]);
-assert(source("FunctionScene").includes("GalaxySSIHealthAtlasSceneFrame"));
+assert(source("FunctionScene").includes("GalaxySSIHealthAtlasFigureFrame")); // #4445 replaces the caption band, not the renderer.
 assert(source("FunctionScene").includes("GalaxySSIHealthAtlasReservedCaption"));
 assert.equal(source("Detail").split("struct GalaxySSIHealthAtlasValues:")[1], prior("Detail").split("struct GalaxySSIHealthAtlasValues:")[1]);
 // Four XML-declared scientific names are intentionally locale-independent, not translations.

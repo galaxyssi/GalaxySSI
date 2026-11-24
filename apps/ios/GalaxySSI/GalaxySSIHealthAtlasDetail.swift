@@ -21,7 +21,7 @@ struct GalaxySSIHealthAtlasDetail: View {
   private var location: GalaxySSIHealthAtlasLessonNavigation.Location { .init(entryID: entry.id, depth: depth) }
   private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.detailBinding(entry, depth: depth) }
   private var relatedDestination: Binding<Bool> {
-    Binding(get: { state.lessonNavigation.returns[location.key] != nil }, set: { if !$0 { state.closeRelatedLesson(location) } })
+    Binding(get: { state.lessonNavigation.returns[location.key].map { $0.structureOnly != true } ?? false }, set: { if !$0 { state.closeRelatedLesson(location) } })
   }
   private var research: Binding<Bool> {
     Binding(get: { selection.wrappedValue.tab != .simulation && selection.wrappedValue.researchPresented == true }, set: { open in
@@ -59,7 +59,6 @@ struct GalaxySSIHealthAtlasDetail: View {
             }
             if currentTab == .function && !hasFunctionPlayer {
               GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
-              Text(GalaxySSIHealthAtlasText.get(entry.description, language))
             }
             if currentTab == .structure {
               structure
@@ -81,15 +80,8 @@ struct GalaxySSIHealthAtlasDetail: View {
               Button(researchTitle) { state.openResearch(entry, returnScroll: scrollMemory.offset) }
                 .frame(minHeight: 44).accessibilityIdentifier("atlas-open-research")
             }
-            if currentTab == .structure {
-              Divider()
-              Text(t("art_note")).font(.footnote).foregroundColor(.secondary)
-              if let source = atlas.plate(for: entry.id, viewKey: selection.wrappedValue.artworkView)?.source {
-                Link(t("plate_source"), destination: source).frame(minHeight: 44)
-              }
-            }
           }.padding().background {
-            if selection.wrappedValue.tab == .function {
+            if selection.wrappedValue.tab == .function || selection.wrappedValue.tab == .structure {
               GalaxySSIHealthAtlasScrollAnchor(memory: scrollMemory, revision: scrollMemory.revision)
             }
           }
@@ -97,6 +89,8 @@ struct GalaxySSIHealthAtlasDetail: View {
       }
     }
     .navigationTitle(name).navigationBarTitleDisplayMode(.inline)
+    .modifier(GalaxySSIHealthAtlasSearchNavigation(atlas: atlas, entry: entry, state: state, records: records,
+      depth: depth, surface: .detail, memory: scrollMemory))
     .safeAreaInset(edge: .bottom) {
       if selection.wrappedValue.tab != .values {
         GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: state.functionSnapshot(entry, depth: depth),
@@ -124,7 +118,8 @@ struct GalaxySSIHealthAtlasDetail: View {
     .environmentObject(state.playback)
     .onAppear {
       state.recordDetail(entry, depth: depth)
-      if let offset = state.lessonReturnScroll.removeValue(forKey: location.key) ?? state.lessonNavigation.returns[location.key]?.scroll {
+      if GalaxySSIHealthAtlasSearchSurface.detail.contains(selection.wrappedValue),
+        let offset = state.lessonReturnScroll.removeValue(forKey: location.key) ?? state.lessonNavigation.returns[location.key]?.scroll {
         scrollMemory.restore(offset)
       } else if selection.wrappedValue.tab == .function, let offset = selection.wrappedValue.researchReturnScroll { scrollMemory.restore(offset) }
     }
@@ -183,52 +178,8 @@ struct GalaxySSIHealthAtlasDetail: View {
     Link(t(atlas.model(entry).reference == nil ? "evidence" : "reference_pubmed"), destination: atlas.model(entry).source)
       .frame(minHeight: 44).accessibilityIdentifier("atlas-source-physiology")
   }
-  @ViewBuilder private var structure: some View {
-    if entry.kind == .organ {
-      GalaxySSIHealthAtlasCompactTabs(options: GalaxySSIHealthAtlasState.StructureLayer.allCases,
-        selection: selection.selectedStructureLayer, title: {
-          t($0 == .organ ? "organ_layer" : $0 == .tissue ? "tissues" : "cells")
-        }, key: { $0.rawValue }, identifier: "atlas-structure-layer")
-      switch selection.wrappedValue.selectedStructureLayer {
-      case .organ: anatomy
-      case .tissue:
-        let tissues = atlas.tissues(entry)
-        if tissues.isEmpty { Text(t("no_linked_tissues")).foregroundColor(.secondary) }
-        else { relationships(tissues, title: t("tissues")) }
-      case .cell:
-        let cells = atlas.cells(entry)
-        if cells.isEmpty { Text(t("no_linked_cells")).foregroundColor(.secondary) }
-        else { relationships(cells, title: t("cells")) }
-      }
-    } else { anatomy }
-  }
-  @ViewBuilder private var anatomy: some View {
+  private var structure: some View {
     GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
-    Text(GalaxySSIHealthAtlasText.get(entry.description, language))
-    let cells = entry.kind == .cell || entry.kind == .fragment ? [] : atlas.cells(entry)
-    relationships(atlas.children(entry).filter { item in !cells.contains(where: { $0.id == item.id }) }, title: t("related"))
-    if entry.kind == .system { relationships(atlas.tissues(entry), title: t("tissues")) }
-    relationships(cells, title: t(entry.kind == .tissue ? "tissue_cell_examples" : "cells"))
-    let systems = entry.systems.compactMap(atlas.entry).filter { $0.id != entry.id }
-    if entry.kind == .tissue {
-      relationships(entry.locations.compactMap(atlas.entry), title: t("tissue_locations"))
-      relationships(systems, title: t("belongs"))
-    } else { relationships((atlas.parents(entry) + systems).filter { $0.id != entry.id }, title: t("belongs")) }
-  }
-  @ViewBuilder private func relationships(_ entries: [GalaxySSIHealthAtlas.Entry], title: String) -> some View {
-    let unique = entries.reduce(into: [GalaxySSIHealthAtlas.Entry]()) { result, entry in
-      if !result.contains(where: { $0.id == entry.id }) { result.append(entry) }
-    }
-    if !unique.isEmpty {
-      Text(title).font(.headline)
-      ForEach(unique) { item in
-        if depth < 32 {
-          NavigationLink(destination: GalaxySSIHealthAtlasDetail(atlas: atlas, entry: item, state: state, records: records, depth: depth + 1)) {
-            GalaxySSIHealthAtlasRow(entry: item)
-          }
-        } else { GalaxySSIHealthAtlasRow(entry: item) }
-      }
-    }
   }
   private var name: String { GalaxySSIHealthAtlasText.get(entry.name, language) }
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }

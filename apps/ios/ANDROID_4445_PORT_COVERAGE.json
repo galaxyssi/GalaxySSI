@@ -1,0 +1,317 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4445,
+    "mergeCommit": "9ec28d754459358556c570134171c79b55951982"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "6b054e14eacd40fd19a0a67edd7c006986acaba1d7ea924d929d54ca2075f6f4",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasFunctionStoryDeviceTest.kt",
+      "sourceSHA256": "8ca96c65d4523d431f9ea3a937b1314bf576518d1bab4c52436c22eb87313e86",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-integrated-figures-scope.cjs"
+      ],
+      "note": "HealthAtlasFunctionStoryDeviceTest.kt: reviewed as source reference only, including flat structure navigation, figure containment, function captions, specialized simulations and search navigation. Added Swift fixture sources, not run. No iOS image sweep, device tests, keyboard, gestures or recreation claims."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGasExchangeDeviceTest.kt",
+      "sourceSHA256": "d64357996dc957687b250b117be8282a20af170f50be63b474809d03d8d0ea5a",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-integrated-figures-scope.cjs"
+      ],
+      "note": "HealthAtlasGasExchangeDeviceTest.kt: reviewed as source reference only, including flat structure navigation, figure containment, function captions, specialized simulations and search navigation. Added Swift fixture sources, not run. No iOS image sweep, device tests, keyboard, gestures or recreation claims."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGermlineDeviceTest.kt",
+      "sourceSHA256": "33e720731231402be959be39d3e8f12f089a70582ca0402788088332bfb04c57",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-integrated-figures-scope.cjs"
+      ],
+      "note": "HealthAtlasGermlineDeviceTest.kt: reviewed as source reference only, including flat structure navigation, figure containment, function captions, specialized simulations and search navigation. Added Swift fixture sources, not run. No iOS image sweep, device tests, keyboard, gestures or recreation claims."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGuidedFunctionDeviceTest.kt",
+      "sourceSHA256": "3f63bc287b5b044f10c9990a722e331f5f2deb034b2dc2184a776780751f6fd2",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-integrated-figures-scope.cjs"
+      ],
+      "note": "HealthAtlasGuidedFunctionDeviceTest.kt: reviewed as source reference only, including flat structure navigation, figure containment, function captions, specialized simulations and search navigation. Added Swift fixture sources, not run. No iOS image sweep, device tests, keyboard, gestures or recreation claims."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasHeartDeviceTest.kt",
+      "sourceSHA256": "eeee190fd46b3f92537bba919235fb9f3ff58899458173d1058f2ec4dbd09ec3",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-integrated-figures-scope.cjs"
+      ],
+      "note": "HealthAtlasHeartDeviceTest.kt: reviewed as source reference only, including flat structure navigation, figure containment, function captions, specialized simulations and search navigation. Added Swift fixture sources, not run. No iOS image sweep, device tests, keyboard, gestures or recreation claims."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasModelTestNavigation.kt",
+      "sourceSHA256": "35944cf2232544e60b1693ff2ff138b88c1260da233585164438385fbf809774",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-integrated-figures-scope.cjs"
+      ],
+      "note": "HealthAtlasModelTestNavigation.kt: reviewed as source reference only, including flat structure navigation, figure containment, function captions, specialized simulations and search navigation. Added Swift fixture sources, not run. No iOS image sweep, device tests, keyboard, gestures or recreation claims."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasMusculoskeletalDeviceTest.kt",
+      "sourceSHA256": "6be327852564874a994685148408e7a1f6e718df6c8441c78f6054440768a30f",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-integrated-figures-scope.cjs"
+      ],
+      "note": "HealthAtlasMusculoskeletalDeviceTest.kt: reviewed as source reference only, including flat structure navigation, figure containment, function captions, specialized simulations and search navigation. Added Swift fixture sources, not run. No iOS image sweep, device tests, keyboard, gestures or recreation claims."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasRenalDeviceTest.kt",
+      "sourceSHA256": "83c66ec5c07745f89a8cabb28c3b0acf6cc8b4b2edddd906ec804a7d85c19c33",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-integrated-figures-scope.cjs"
+      ],
+      "note": "HealthAtlasRenalDeviceTest.kt: reviewed as source reference only, including flat structure navigation, figure containment, function captions, specialized simulations and search navigation. Added Swift fixture sources, not run. No iOS image sweep, device tests, keyboard, gestures or recreation claims."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasSystemOverviewDeviceTest.kt",
+      "sourceSHA256": "6db0d730719a60e912c30458fb03221aec1bf77f922b8f5c78d0b12be9c720e5",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-integrated-figures-scope.cjs"
+      ],
+      "note": "HealthAtlasSystemOverviewDeviceTest.kt: reviewed as source reference only, including flat structure navigation, figure containment, function captions, specialized simulations and search navigation. Added Swift fixture sources, not run. No iOS image sweep, device tests, keyboard, gestures or recreation claims."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasTissueDeviceTest.kt",
+      "sourceSHA256": "ed3d7f66309e3b5363a7d7c4ebb98f8133707cb5ffc9c819d0f2c6509c4faa54",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-integrated-figures-scope.cjs"
+      ],
+      "note": "HealthAtlasTissueDeviceTest.kt: reviewed as source reference only, including flat structure navigation, figure containment, function captions, specialized simulations and search navigation. Added Swift fixture sources, not run. No iOS image sweep, device tests, keyboard, gestures or recreation claims."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthBodyAtlasDeviceTest.kt",
+      "sourceSHA256": "0fc0612ac47c254203798cf4e597fe03ae0f51237269777c1dbc0a65daa43cf2",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-integrated-figures-scope.cjs"
+      ],
+      "note": "HealthBodyAtlasDeviceTest.kt: reviewed as source reference only, including flat structure navigation, figure containment, function captions, specialized simulations and search navigation. Added Swift fixture sources, not run. No iOS image sweep, device tests, keyboard, gestures or recreation claims."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAnatomyDialog.kt",
+      "sourceSHA256": "6da29ba37fb883b47f2a62faa5e16c89004b842df171b2c97eea7bf1007e9ff1",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasArtwork.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFigureFrame.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLabeledArtwork.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCalloutLayout.swift"
+      ],
+      "note": "Shared full-width figure/legend with 28-point bounded overlap and 18-point ground fade. Native Text reserves longest chapter/caption. Structure is figure-only; marker-only layer choices, source header icon, conceptual symbol fallback, in-figure descriptions. Fullscreen keeps zoom, labels and feature alerts. Process artwork reserves bottom 28 outside its unmodified drawing/hit regions. Search snapshots/restores origin variant, course/phase/scroll and opens results directly without an intermediate catalogue history frame. Deleted Android SceneFrame is replaced for figures; iOS SceneFrame remains as plain padded simulation container and native caption probes. No native rendering/execution acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCaptionSizes.kt",
+      "sourceSHA256": "073fbda9b2f98f6c5043905abcf0bb0de868fad15853a30d2079b6963c80b417",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSceneFrame.swift"
+      ],
+      "note": "Shared full-width figure/legend with 28-point bounded overlap and 18-point ground fade. Native Text reserves longest chapter/caption. Structure is figure-only; marker-only layer choices, source header icon, conceptual symbol fallback, in-figure descriptions. Fullscreen keeps zoom, labels and feature alerts. Process artwork reserves bottom 28 outside its unmodified drawing/hit regions. Search snapshots/restores origin variant, course/phase/scroll and opens results directly without an intermediate catalogue history frame. Deleted Android SceneFrame is replaced for figures; iOS SceneFrame remains as plain padded simulation container and native caption probes. No native rendering/execution acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCirculationView.kt",
+      "sourceSHA256": "dee8ebe9b59d3bbe469429635951b6561bd14092350cf06cb4a9a2f9cf7ff774",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSimulationPanel.swift"
+      ],
+      "note": "Shared full-width figure/legend with 28-point bounded overlap and 18-point ground fade. Native Text reserves longest chapter/caption. Structure is figure-only; marker-only layer choices, source header icon, conceptual symbol fallback, in-figure descriptions. Fullscreen keeps zoom, labels and feature alerts. Process artwork reserves bottom 28 outside its unmodified drawing/hit regions. Search snapshots/restores origin variant, course/phase/scroll and opens results directly without an intermediate catalogue history frame. Deleted Android SceneFrame is replaced for figures; iOS SceneFrame remains as plain padded simulation container and native caption probes. No native rendering/execution acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFigureFrame.kt",
+      "sourceSHA256": "a9199a62c78a765920c49ad5e5088896720204582b2f2ce5adec92f0aff4bd23",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFigureFrame.swift"
+      ],
+      "note": "Shared full-width figure/legend with 28-point bounded overlap and 18-point ground fade. Native Text reserves longest chapter/caption. Structure is figure-only; marker-only layer choices, source header icon, conceptual symbol fallback, in-figure descriptions. Fullscreen keeps zoom, labels and feature alerts. Process artwork reserves bottom 28 outside its unmodified drawing/hit regions. Search snapshots/restores origin variant, course/phase/scroll and opens results directly without an intermediate catalogue history frame. Deleted Android SceneFrame is replaced for figures; iOS SceneFrame remains as plain padded simulation container and native caption probes. No native rendering/execution acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionPlayer.kt",
+      "sourceSHA256": "7a9ab752c0597350fe1335a5e773028cf2969db810da64b0c9d613fbabc645c4",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionScene.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFigureFrame.swift"
+      ],
+      "note": "Shared full-width figure/legend with 28-point bounded overlap and 18-point ground fade. Native Text reserves longest chapter/caption. Structure is figure-only; marker-only layer choices, source header icon, conceptual symbol fallback, in-figure descriptions. Fullscreen keeps zoom, labels and feature alerts. Process artwork reserves bottom 28 outside its unmodified drawing/hit regions. Search snapshots/restores origin variant, course/phase/scroll and opens results directly without an intermediate catalogue history frame. Deleted Android SceneFrame is replaced for figures; iOS SceneFrame remains as plain padded simulation container and native caption probes. No native rendering/execution acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLabeledImage.kt",
+      "sourceSHA256": "30a18da2663e5e4009f6f3afe80e9d47090a679a7e7e3eff2b23057aaf95fb7b",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLabeledArtwork.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCalloutLayout.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasArtwork.swift"
+      ],
+      "note": "Shared full-width figure/legend with 28-point bounded overlap and 18-point ground fade. Native Text reserves longest chapter/caption. Structure is figure-only; marker-only layer choices, source header icon, conceptual symbol fallback, in-figure descriptions. Fullscreen keeps zoom, labels and feature alerts. Process artwork reserves bottom 28 outside its unmodified drawing/hit regions. Search snapshots/restores origin variant, course/phase/scroll and opens results directly without an intermediate catalogue history frame. Deleted Android SceneFrame is replaced for figures; iOS SceneFrame remains as plain padded simulation container and native caption probes. No native rendering/execution acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasProcessView.kt",
+      "sourceSHA256": "1bf56a4fe8bcc22bf9882965565092f8616618ac03e63f0b26f0f4b87e4de0cb",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSimulationPanel.swift"
+      ],
+      "note": "Shared full-width figure/legend with 28-point bounded overlap and 18-point ground fade. Native Text reserves longest chapter/caption. Structure is figure-only; marker-only layer choices, source header icon, conceptual symbol fallback, in-figure descriptions. Fullscreen keeps zoom, labels and feature alerts. Process artwork reserves bottom 28 outside its unmodified drawing/hit regions. Search snapshots/restores origin variant, course/phase/scroll and opens results directly without an intermediate catalogue history frame. Deleted Android SceneFrame is replaced for figures; iOS SceneFrame remains as plain padded simulation container and native caption probes. No native rendering/execution acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSceneFrame.kt",
+      "sourceSHA256": "504eef54ed22d84715427804133c46a8536f174e33cd41e801a911f622d71cee",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982^1",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSceneFrame.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFigureFrame.swift"
+      ],
+      "note": "Shared full-width figure/legend with 28-point bounded overlap and 18-point ground fade. Native Text reserves longest chapter/caption. Structure is figure-only; marker-only layer choices, source header icon, conceptual symbol fallback, in-figure descriptions. Fullscreen keeps zoom, labels and feature alerts. Process artwork reserves bottom 28 outside its unmodified drawing/hit regions. Search snapshots/restores origin variant, course/phase/scroll and opens results directly without an intermediate catalogue history frame. Deleted Android SceneFrame is replaced for figures; iOS SceneFrame remains as plain padded simulation container and native caption probes. No native rendering/execution acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSimulationPanel.kt",
+      "sourceSHA256": "9678c3d73a3be4d2c5b591ff841703690e780b11d89c31886e6ff6e3eb0ee851",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSimulationPanel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFigureFrame.swift"
+      ],
+      "note": "Shared full-width figure/legend with 28-point bounded overlap and 18-point ground fade. Native Text reserves longest chapter/caption. Structure is figure-only; marker-only layer choices, source header icon, conceptual symbol fallback, in-figure descriptions. Fullscreen keeps zoom, labels and feature alerts. Process artwork reserves bottom 28 outside its unmodified drawing/hit regions. Search snapshots/restores origin variant, course/phase/scroll and opens results directly without an intermediate catalogue history frame. Deleted Android SceneFrame is replaced for figures; iOS SceneFrame remains as plain padded simulation container and native caption probes. No native rendering/execution acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUi.kt",
+      "sourceSHA256": "836a5808ca095360b6745d53c8f07079f0f7c779f2227633524b7860a0ca9975",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasArtwork.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFigureFrame.swift"
+      ],
+      "note": "Shared full-width figure/legend with 28-point bounded overlap and 18-point ground fade. Native Text reserves longest chapter/caption. Structure is figure-only; marker-only layer choices, source header icon, conceptual symbol fallback, in-figure descriptions. Fullscreen keeps zoom, labels and feature alerts. Process artwork reserves bottom 28 outside its unmodified drawing/hit regions. Search snapshots/restores origin variant, course/phase/scroll and opens results directly without an intermediate catalogue history frame. Deleted Android SceneFrame is replaced for figures; iOS SceneFrame remains as plain padded simulation container and native caption probes. No native rendering/execution acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthBodyAtlasActivity.kt",
+      "sourceSHA256": "525bf5333b5c36cc533ad8e4ed972df0dd0a205ab57f9711394e5205bb3f78ef",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetail.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSearch.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSearchNavigation.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasResearch.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasStandaloneModels.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLessonNavigation.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasArtwork.swift"
+      ],
+      "note": "Shared full-width figure/legend with 28-point bounded overlap and 18-point ground fade. Native Text reserves longest chapter/caption. Structure is figure-only; marker-only layer choices, source header icon, conceptual symbol fallback, in-figure descriptions. Fullscreen keeps zoom, labels and feature alerts. Process artwork reserves bottom 28 outside its unmodified drawing/hit regions. Search snapshots/restores origin variant, course/phase/scroll and opens results directly without an intermediate catalogue history frame. Deleted Android SceneFrame is replaced for figures; iOS SceneFrame remains as plain padded simulation container and native caption probes. No native rendering/execution acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-night/health_atlas_scene_colors.xml",
+      "sourceSHA256": "6b14bd016f5ed4b62cfd024e40439950208c440c7d7f281be55a5da49ca816a2",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "exact-ground-theme-resources",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFigureFrame.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFilmPalette.swift"
+      ],
+      "note": "Active figures use only exact day/night ground colors. Previous dark caption/chapter/text colors remain in immutable historical palette fixtures but are no longer applied by FunctionScene."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_strings.xml",
+      "sourceSHA256": "fdc01932d11c54244bd76bf28f98a7b7a58ff4af613e745ff04e01d32fbb21d1",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "exact-translated-resource-pair",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasIntegratedFigures.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasIntegratedFigures.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "One exact English/Chinese concept-symbol disclaimer pair. No guessed translations or cross-language placeholder fallback."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_scene_colors.xml",
+      "sourceSHA256": "6bd7487affaa20732cd86ab8f68899d53037b02f633e4ad0e4dcc41e0a7b02af",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "exact-ground-theme-resources",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFigureFrame.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFilmPalette.swift"
+      ],
+      "note": "Active figures use only exact day/night ground colors. Previous dark caption/chapter/text colors remain in immutable historical palette fixtures but are no longer applied by FunctionScene."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_strings.xml",
+      "sourceSHA256": "521361e6d367c261d88bac3f09134ec9b7a812a60328580a4b332722953de518",
+      "contentRevision": "9ec28d754459358556c570134171c79b55951982",
+      "kind": "exact-translated-resource-pair",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasIntegratedFigures.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasIntegratedFigures.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "One exact English/Chinese concept-symbol disclaimer pair. No guessed translations or cross-language placeholder fallback."
+    }
+  ]
+}

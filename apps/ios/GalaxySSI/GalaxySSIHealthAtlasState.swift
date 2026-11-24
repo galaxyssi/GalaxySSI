@@ -49,6 +49,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
   func functionSnapshot(_ entry: GalaxySSIHealthAtlas.Entry, depth: Int? = nil) -> Selection {
     var value = depth.map { detailBinding(entry, depth: $0).wrappedValue } ?? binding(entry).wrappedValue
     if let depth, lessonNavigation.returns[functionPhaseKey(entry.id, depth: depth)] != nil { return value }
+    if let depth, lessonNavigation.search?.origin == .init(entryID: entry.id, depth: depth) { return value }
     guard let phases = liveFunctionPhases[functionPhaseKey(entry.id, depth: depth)], !phases.isEmpty,
       let catalogue = try? GalaxySSIHealthAtlasFunctionCatalogue.bundled.get() else { return value }
     var function = value.functionSelection ?? .init()
