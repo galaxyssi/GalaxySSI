@@ -152,9 +152,11 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(atlas.views(for: "muscle").compactMap(\.viewKey), ["muscle-anterior", "muscle-posterior"])
     XCTAssertEqual(atlas.views(for: "scapula").map(\.owner), ["scapula", "skeletal"])
     XCTAssertEqual(atlas.views(for: "scapula").last?.viewKey, "skeletal-posterior")
-    XCTAssertEqual(atlas.views(for: "femur").compactMap(\.viewKey), ["skeletal-anterior"])
-    XCTAssertEqual(atlas.views(for: "triceps-brachii").compactMap(\.viewKey), ["muscle-posterior"])
-    XCTAssertEqual(atlas.plate(for: "femur", viewKey: "skeletal-posterior")?.viewKey, "skeletal-anterior")
+    XCTAssertEqual(atlas.views(for: "femur").map(\.owner), ["femur", "skeletal"])
+    XCTAssertEqual(atlas.views(for: "femur").last?.viewKey, "skeletal-anterior")
+    XCTAssertEqual(atlas.views(for: "triceps-brachii").map(\.owner), ["triceps-brachii", "muscle"])
+    XCTAssertEqual(atlas.views(for: "triceps-brachii").last?.viewKey, "muscle-posterior")
+    XCTAssertEqual(atlas.plate(for: "femur", viewKey: "skeletal-posterior")?.owner, "femur")
     XCTAssertEqual(atlas.plate(for: "skeletal", viewKey: "invalid")?.viewKey, "skeletal-anterior")
     XCTAssertFalse(atlas.views(for: "cell-osteocyte").contains { $0.owner == "skeletal" })
     XCTAssertFalse(atlas.plate(for: "skeletal", viewKey: "skeletal-anterior")!.markers.contains { $0.id == "scapula" })
@@ -266,7 +268,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(categories.count, 14)
     for category in categories { XCTAssertNotNil(atlas.plate(for: category.id), category.id) }
     for id in ["spinal-nerves", "ganglia", "peripheral-nerves"] {
-      XCTAssertEqual(atlas.plate(for: id)?.owner, "nervous")
+      XCTAssertEqual(atlas.views(for: id).map(\.owner), [id, "nervous"])
     }
     XCTAssertEqual(atlas.views(for: "spinal-cord").map(\.owner), ["spinal-cord", "nervous"])
     for id in ["veins", "capillaries"] { XCTAssertEqual(atlas.plate(for: id)?.owner, "cardio") }
@@ -274,7 +276,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(atlas.plate(for: "heart", viewKey: "heart-section")?.viewKey, "heart-section")
     XCTAssertEqual(atlas.plate(for: "aorta")?.owner, "aorta")
     XCTAssertEqual(atlas.views(for: "aorta").last?.id, "heart-section")
-    XCTAssertEqual(atlas.plate(for: "mitral-valve")?.id, "heart-valves")
+    XCTAssertEqual(atlas.plate(for: "mitral-valve")?.owner, "mitral-valve")
+    XCTAssertEqual(atlas.views(for: "mitral-valve").last?.id, "heart-valves")
     let cardio = try XCTUnwrap(atlas.entry("cardio"))
     for id in ["aorta", "pulmonary-trunk", "lungs"] { XCTAssertTrue(atlas.children(cardio).contains { $0.id == id }) }
   }
@@ -372,8 +375,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       XCTAssertEqual(entry.mechanism, id)
       XCTAssertEqual(model.id, id); XCTAssertEqual(model.kind, "organ"); XCTAssertEqual(model.stages.count, 4)
       XCTAssertTrue(atlas.views(for: id).contains { $0.id == "ear" })
-      XCTAssertEqual(atlas.plate(for: id)?.owner,
-        ["middle-ear", "cochlea", "vestibular-apparatus"].contains(id) ? id : "ear")
+      XCTAssertEqual(atlas.plate(for: id)?.owner, id)
     }
     let plate = GalaxySSIHealthAtlasMiddleEar.plate
     XCTAssertEqual(plate.markers.count, 5); XCTAssertEqual(plate.entryIDs.count, 6)
@@ -498,7 +500,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     for stage in 0..<4 {
       XCTAssertEqual(Set(Heart.Valve.allCases.filter { $0.openAt(stage) == true }.map(\.id)), expected[stage])
       for valve in Heart.Valve.allCases {
-        XCTAssertEqual(atlas.plate(for: valve.id)?.id, "heart-valves")
+        XCTAssertEqual(atlas.plate(for: valve.id)?.owner, valve.id)
+        XCTAssertEqual(atlas.views(for: valve.id).last?.id, "heart-valves")
         XCTAssertFalse(GalaxySSIHealthAtlasCirculation.supports(valve.id))
       }
     }
@@ -985,9 +988,9 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.DetailStructurePack.read(bundle: bundle))
     try pack.validating(in: atlas, bundle: bundle)
-    XCTAssertEqual(pack.plates.count, 26)
-    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 139)
-    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 3)
+    XCTAssertEqual(pack.plates.count, 61)
+    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 279)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 52)
     let state = GalaxySSIHealthAtlasState()
     for detail in pack.plates {
       let owner = try XCTUnwrap(detail.owner), entry = try XCTUnwrap(atlas.entry(owner))
