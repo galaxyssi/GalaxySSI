@@ -509,5 +509,9 @@
       ],
       "chapter": "17-9-the-endocrine-pancreas"
     }
-  ]
+  ],
+  "artworkSource": {
+    "androidPR": 4384,
+    "mergeCommit": "ab78711d467c013444883dbaeca23c39a601c875"
+  }
 }

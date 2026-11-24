@@ -5,6 +5,11 @@ const { PDFDocument, rgb, LineCapStyle, LineJoinStyle, setLineJoin } = require("
 const xml = require("xml-js"), root = path.resolve(__dirname, "../../..");
 const assets = path.join(root, "apps/ios/GalaxySSI/Assets.xcassets");
 const pack = JSON.parse(fs.readFileSync(path.join(assets, "HealthAtlasGutSections.dataset/content.json")));
+if (pack.functionArtworkSource?.androidPR === 4384) {
+  cp.execFileSync(process.execPath, [path.join(__dirname, "import-body-atlas-function-gut-plates.cjs"), "--check"], {cwd: root, stdio: "inherit"});
+  cp.execFileSync(process.execPath, [path.join(__dirname, "import-body-atlas-sensory-gradients.cjs"), "--function-gut-structures"], {cwd: root, stdio: "inherit"});
+  process.exit(0);
+}
 const color = (hex) => {
   if (!/^#[0-9a-f]{6}$/i.test(hex)) throw Error("Unsupported color " + hex);
   return rgb(...[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255));

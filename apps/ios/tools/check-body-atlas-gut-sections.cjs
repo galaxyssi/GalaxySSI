@@ -6,6 +6,8 @@ const read = name => JSON.parse(fs.readFileSync(path.join(assets, name + '.datas
 const pack = read('HealthAtlasGutSections'), sha = 'eb17db473412f018fe6b67eb364bdbe482210b5b';
 const source = file => execFileSync('git', ['show', sha + ':' + file], {encoding: 'utf8', maxBuffer: 4_000_000});
 assert.equal(pack.schema, 1); assert.equal(pack.source.androidPR, 4353); assert.equal(pack.source.mergeCommit, sha);
+assert.deepEqual(pack.functionArtworkSource, {androidPR: 4384, mergeCommit: 'ab78711d467c013444883dbaeca23c39a601c875'});
+execFileSync(process.execPath, [path.join(__dirname, 'check-body-atlas-sensory-sections.cjs'), '--function-gut-structures'], {stdio: 'inherit'});
 const kotlin = source('apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGutSections.kt');
 const latestSha = 'ab78711d467c013444883dbaeca23c39a601c875';
 execFileSync(process.execPath, [path.join(__dirname, 'check-atlas-function-gut-plates.cjs')], {stdio: 'inherit'});
@@ -102,4 +104,4 @@ for (const [language, directory] of [['en', 'values'], ['zh-Hans', 'values-zh']]
   }
 }
 
-console.log('Alimentary checkpoint: 14 sections / 47 features / 29 links; 12 legacy vector plates plus two #4384 painted replacements, 24 exact motion tracks / 384 localized values; graph 313 entries and 192 mechanisms. Other #4384 artwork revisions still pending.');
+console.log('Alimentary checkpoint: 14 sections / 47 features / 29 links; 12 #4384 shaded vector plates plus two #4384 painted replacements, 24 exact motion tracks / 384 localized values; graph 313 entries and 192 mechanisms. No native rendering executed.');

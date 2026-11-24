@@ -30,6 +30,16 @@ if (process.argv.includes("--function-structures")) {
     frames:pack.plates.filter(p=>p.asset.startsWith("HealthAtlasStructure")).map(p=>[
       path.basename(p.drawable,".xml").replace("health_atlas_",""),p.asset,"art.pdf"])};
 }
+for (const [flag,dataset,paths,gradients] of [
+  ["--function-digestive-structures","HealthAtlasDigestiveCells",104,93],
+  ["--function-gut-structures","HealthAtlasGutSections",87,56]
+]) if (process.argv.includes(flag)) {
+  const fs = require("node:fs"), path = require("node:path");
+  const pack = JSON.parse(fs.readFileSync(path.join(__dirname,"../GalaxySSI/Assets.xcassets",dataset+".dataset/content.json")));
+  batches[flag] = {name:dataset,paths,gradients,groups:true,affineGroups:true,
+    frames:pack.plates.filter(p=>p.drawable.endsWith(".xml")).map(p=>[
+      path.basename(p.drawable,".xml").replace("health_atlas_",""),p.asset,"cell.pdf"])};
+}
 const selected = Object.keys(batches).filter(flag=>process.argv.includes(flag));
 if(selected.length>1)throw Error("Select one Function artwork batch at a time");
 module.exports = selected.length ? batches[selected[0]] : null;
