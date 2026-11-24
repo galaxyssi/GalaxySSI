@@ -1,0 +1,474 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4407,
+    "mergeCommit": "2b0a455e59948d31606010edf3ddba25d01c180f"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "counts": {
+    "android-version-only": 1,
+    "android-test-reference-not-executed": 12,
+    "bounded-phase-teaching-model": 9,
+    "reactive-circadian-and-adipose-diagrams": 1,
+    "additive-model-routing": 1,
+    "vocal-playback-control-placement": 1,
+    "shared-native-seek-with-pause": 1,
+    "synchronized-vocal-folds-and-opening-curve": 1,
+    "exact-bilingual-resource-delta": 18
+  },
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "e33482d7bb8c7b13481eafe180c1e72b0575f37c4f282165566684f2715ebd01",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "Android APK metadata does not change iOS version; no IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasPhysiologyDeviceTest.kt",
+      "sourceSHA256": "9e41651d3cc504c6ceae5cb0480468d3b1aca1887856502865b736cbc7d039c4",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected original contracts. Native XCTest source covers defaults, all new slider pairs, cumulative/wrapped phase, volume/synthetic conservation, ideal opening extrema, seek/resume/reset, invalid inputs and 19-owner independent state. Android/XCTest/device, accessibility gesture and pixel tests were not run."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasTissueDeviceTest.kt",
+      "sourceSHA256": "fcb9338f135ff749bf0f954e5e06463e5d2e19d9df8c3045ba5f3771391eb780",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected original contracts. Native XCTest source covers defaults, all new slider pairs, cumulative/wrapped phase, volume/synthetic conservation, ideal opening extrema, seek/resume/reset, invalid inputs and 19-owner independent state. Android/XCTest/device, accessibility gesture and pixel tests were not run."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAdiposeVolumeShareTeachingModel.kt",
+      "sourceSHA256": "a1d0f38a892491a865bd8a0a9e378d6c8d5a4d490d598896c0bb689e5387d3e0",
+      "kind": "bounded-phase-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/defaults/ranges/scales/units/precision, axes/bounds, sources, assumptions and exact owner IDs are reproduced. Explicit native kernels preserve cumulative versus wrapped phase, cubed radius volume shares and synthetic amount budgets. No patient data or native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCircadianLightWindowTeachingModel.kt",
+      "sourceSHA256": "0f5cdc6e07a2ae0cfe7356b317b6f0bd710bce0258f1009c48919e6d5d3b2007",
+      "kind": "bounded-phase-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/defaults/ranges/scales/units/precision, axes/bounds, sources, assumptions and exact owner IDs are reproduced. Explicit native kernels preserve cumulative versus wrapped phase, cubed radius volume shares and synthetic amount budgets. No patient data or native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGastricPrecursorBalanceTeachingModel.kt",
+      "sourceSHA256": "92e5ffcc2116357a5016afece57bd2266a1146f4846d0a38849e3d8dc82f52e7",
+      "kind": "bounded-phase-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/defaults/ranges/scales/units/precision, axes/bounds, sources, assumptions and exact owner IDs are reproduced. Explicit native kernels preserve cumulative versus wrapped phase, cubed radius volume shares and synthetic amount budgets. No patient data or native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMaterialResponseView.kt",
+      "sourceSHA256": "c6e3767b74b0ae05c66631bd8423fa23b13b1790d59169d4478dae9af44907b1",
+      "kind": "reactive-circadian-and-adipose-diagrams",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseDrawing.swift"
+      ],
+      "note": "Circadian light/dark sectors, twelve ticks and wrapped-phase hand; cell droplet radius and tissue sector use separate cubed-volume budgets. Original dimensions/colors/labels/descriptions retained. No pixel parity claimed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMelaninDistributionTeachingModel.kt",
+      "sourceSHA256": "98c5ce99236b04391e711d79e092b0cabc35c7fd8bea910528b438b8919ff132",
+      "kind": "bounded-phase-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/defaults/ranges/scales/units/precision, axes/bounds, sources, assumptions and exact owner IDs are reproduced. Explicit native kernels preserve cumulative versus wrapped phase, cubed radius volume shares and synthetic amount budgets. No patient data or native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasOlfactorySurfaceRetentionTeachingModel.kt",
+      "sourceSHA256": "9277ecb3504e8a2e0012100ead2bd7a1d217a54ae75b3cb44c885058d4335f35",
+      "kind": "bounded-phase-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/defaults/ranges/scales/units/precision, axes/bounds, sources, assumptions and exact owner IDs are reproduced. Explicit native kernels preserve cumulative versus wrapped phase, cubed radius volume shares and synthetic amount budgets. No patient data or native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasOralMarkerDilutionTeachingModel.kt",
+      "sourceSHA256": "aaba02bae0811191a2d0216d9e07eef599ecf256f81fa9f0a811ca138ecf2a75",
+      "kind": "bounded-phase-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/defaults/ranges/scales/units/precision, axes/bounds, sources, assumptions and exact owner IDs are reproduced. Explicit native kernels preserve cumulative versus wrapped phase, cubed radius volume shares and synthetic amount budgets. No patient data or native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiology.kt",
+      "sourceSHA256": "8006e948cd06975fe7618d0a7fe4c02f11c4bb9d77eccf1b0f463fa5feae290a",
+      "kind": "additive-model-routing",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiology.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift"
+      ],
+      "note": "19 new owners are disjoint from existing literal routes and previous teaching bindings. Generic sliders, curves, sources, localized context, reset and independent per-entry restoration remain wired."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyPanel.kt",
+      "sourceSHA256": "caab6bcf2d85a7e70ce6490acddf7a8793e0fcc513b3de124dc9c433541e38b7",
+      "kind": "vocal-playback-control-placement",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiologyPanel.swift"
+      ],
+      "note": "Vocal playback precedes controls; vocal/circadian/adipose curves follow sliders. Reset tokens and per-entry identity keep progress separate from selected model inputs and old playback choices."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasTeachingPlayback.kt",
+      "sourceSHA256": "60e53e36f58d8e1fa49d584b56c9caa88c663d9e0bf000af0f06f1c36731b455",
+      "kind": "shared-native-seek-with-pause",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingPlayback.swift"
+      ],
+      "note": "Finite seek clamps to [0,1] and pauses. Optional 1000-step position slider uses the same phase as the artwork; touch start pauses and does not auto-resume on release. Bladder/ureter callers retain defaults and existing lifecycle/Reduce Motion handling."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasThymicBranchingTeachingModel.kt",
+      "sourceSHA256": "ddcf3844fb2ad49418cd5bdbaae26d2b99e2b9f8e1b5cb1b250c0b009f5016b6",
+      "kind": "bounded-phase-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/defaults/ranges/scales/units/precision, axes/bounds, sources, assumptions and exact owner IDs are reproduced. Explicit native kernels preserve cumulative versus wrapped phase, cubed radius volume shares and synthetic amount budgets. No patient data or native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasVertebralSeriesTeachingModel.kt",
+      "sourceSHA256": "93d19f7533040c730634722ed8d9792f24d62fa0e694fd978ebca8df241490bc",
+      "kind": "bounded-phase-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/defaults/ranges/scales/units/precision, axes/bounds, sources, assumptions and exact owner IDs are reproduced. Explicit native kernels preserve cumulative versus wrapped phase, cubed radius volume shares and synthetic amount budgets. No patient data or native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasVocalCycleTeachingModel.kt",
+      "sourceSHA256": "5eb658cb1355dfaae235dca26bdde985ecae17264a913f6c23c8a64da1c66b32",
+      "kind": "bounded-phase-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/defaults/ranges/scales/units/precision, axes/bounds, sources, assumptions and exact owner IDs are reproduced. Explicit native kernels preserve cumulative versus wrapped phase, cubed radius volume shares and synthetic amount budgets. No patient data or native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasVocalCycleView.kt",
+      "sourceSHA256": "e3c6fa4543be4d25e3b817b332a4fb2427d6f2400c1835fafd22049aaabf3fcd",
+      "kind": "synchronized-vocal-folds-and-opening-curve",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasVocalCycleView.swift"
+      ],
+      "note": "2.4-second playback plus scrubbing, ideal cosine opening, cubic paired folds, square-root gap, 145 waveform samples, common cursor and localized fitted labels. No audio capture/output, sound waveform or clinical voice estimate. No native runtime/pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_adipose_volume_share_teaching_model.xml",
+      "sourceSHA256": "6cb56b0ebb3797bc6ec8f6490c0674eb3bbf007821cca2d4ef7fd739331bf195",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_circadian_light_window_teaching_model.xml",
+      "sourceSHA256": "535be3cf005527d7eb6d1e9e0d1103b6ce9ef6b689496efcfc3c97ae84104910",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_gastric_precursor_balance_teaching_model.xml",
+      "sourceSHA256": "5961b56086149ea33d398f3f598039641aa4ba7cace84ca4126240fdf5349b13",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_melanin_distribution_teaching_model.xml",
+      "sourceSHA256": "2fdb2d16b3b17408601c5ac3cd7b4fda479904b67a4b5942c3d3b0246183ab08",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_olfactory_surface_retention_teaching_model.xml",
+      "sourceSHA256": "09bd0dbe099720f687bb31a691b20dd8a994856a72c456dfcfbbb9f837003ff7",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_oral_marker_dilution_teaching_model.xml",
+      "sourceSHA256": "0f075a394b1720ee4e5ff09f42a1c65a798db566130af213515355c51f284ff8",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_thymic_branching_teaching_model.xml",
+      "sourceSHA256": "5b69550d5c9bea3a4321747287e6b74ff6f95f1dea6c28991759c3950cab95fd",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_vertebral_series.xml",
+      "sourceSHA256": "1ae52323f3a720ef1ff8642244f9bf39da27d0fa5336b1f028701ae11fe7156e",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_vocal_cycles.xml",
+      "sourceSHA256": "ed40a60c9a2eee920075232e8f72127768bf9d9b3532945d5b3082d8e64fafd7",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_adipose_volume_share_teaching_model.xml",
+      "sourceSHA256": "63142903b29315f4d1dd1522eb8eafa015f63a1de2d57681e16292e88b1d3980",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_circadian_light_window_teaching_model.xml",
+      "sourceSHA256": "f00af689da3f638f75d3ce00d8151e925e3fbc82597bb72e5ac20bd498b8deac",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_gastric_precursor_balance_teaching_model.xml",
+      "sourceSHA256": "a4480a9b52ecb65efeee19cd1bcdb6dbc7ec77c87565e988e8cb6f8aa25b2f8f",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_melanin_distribution_teaching_model.xml",
+      "sourceSHA256": "945fda0668922be2e50a86323c0fdf00b6c73df146230d3678c41b2922356a93",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_olfactory_surface_retention_teaching_model.xml",
+      "sourceSHA256": "c2379dc0ccf8541a6621658d0977a1b284d95b545e1d481f3249cd71dcaa8833",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_oral_marker_dilution_teaching_model.xml",
+      "sourceSHA256": "a1f51dbe68cc5599e1aedcbb308133e4387fa58c419c56a278107a5c73fa5fee",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_thymic_branching_teaching_model.xml",
+      "sourceSHA256": "6ad453e43e53f22073bc11d9141c8f2a6134b6420ba6ba7e7b38199c5bf6b0de",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_vertebral_series.xml",
+      "sourceSHA256": "9c1bfef067f5af200f7ff3ba19128208f2dcd5ac30d46d99e6ba389b1b4eb0a6",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_vocal_cycles.xml",
+      "sourceSHA256": "f63fd2bc5da164a207cbe0fe9fae041e8dbf3c979b81ed321eb5d4f0187b79f4",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasPhaseTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasPhaseTeaching.strings"
+      ],
+      "note": "67 exact structurally extracted English/Chinese resource pairs registered in Xcode with the vocal Swift view. Existing localized cycles unit is reused; synthetic units match source."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasAdiposeVolumeShareTeachingModelTest.kt",
+      "sourceSHA256": "f20843169866c291f6b6509b283b51868078bcec6021b8d70fd8523c119e20dd",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected original contracts. Native XCTest source covers defaults, all new slider pairs, cumulative/wrapped phase, volume/synthetic conservation, ideal opening extrema, seek/resume/reset, invalid inputs and 19-owner independent state. Android/XCTest/device, accessibility gesture and pixel tests were not run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasCircadianLightWindowTeachingModelTest.kt",
+      "sourceSHA256": "448c6269bbc8b421a9be10d425ed217c24a171a99c0e23d096548468381aacbb",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected original contracts. Native XCTest source covers defaults, all new slider pairs, cumulative/wrapped phase, volume/synthetic conservation, ideal opening extrema, seek/resume/reset, invalid inputs and 19-owner independent state. Android/XCTest/device, accessibility gesture and pixel tests were not run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasGastricPrecursorBalanceTeachingModelTest.kt",
+      "sourceSHA256": "09799a43e1bb0a9553d327cffdb953a9f341d4adbc7857f83a2e98f759f3ec8d",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected original contracts. Native XCTest source covers defaults, all new slider pairs, cumulative/wrapped phase, volume/synthetic conservation, ideal opening extrema, seek/resume/reset, invalid inputs and 19-owner independent state. Android/XCTest/device, accessibility gesture and pixel tests were not run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMelaninDistributionTeachingModelTest.kt",
+      "sourceSHA256": "7547cd39205d34ae1a40e96e8b1766f79a31ffa1a2faa77a9bc016516bf9911a",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected original contracts. Native XCTest source covers defaults, all new slider pairs, cumulative/wrapped phase, volume/synthetic conservation, ideal opening extrema, seek/resume/reset, invalid inputs and 19-owner independent state. Android/XCTest/device, accessibility gesture and pixel tests were not run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasOlfactorySurfaceRetentionTeachingModelTest.kt",
+      "sourceSHA256": "ce765c810f8c624b3f7001bd00d6878fc7cf76e32a7d8abad4cf2b611ae08bb1",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected original contracts. Native XCTest source covers defaults, all new slider pairs, cumulative/wrapped phase, volume/synthetic conservation, ideal opening extrema, seek/resume/reset, invalid inputs and 19-owner independent state. Android/XCTest/device, accessibility gesture and pixel tests were not run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasOralMarkerDilutionTeachingModelTest.kt",
+      "sourceSHA256": "24a2020414b90898d5cf9070dbde1c51bf1783fd534dec856585c36433139078",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected original contracts. Native XCTest source covers defaults, all new slider pairs, cumulative/wrapped phase, volume/synthetic conservation, ideal opening extrema, seek/resume/reset, invalid inputs and 19-owner independent state. Android/XCTest/device, accessibility gesture and pixel tests were not run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPhysiologyTest.kt",
+      "sourceSHA256": "c65665e4f7e95fe718289c57cb127f5cb9263fe85f23b37c6aba947726bf7d1f",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected original contracts. Native XCTest source covers defaults, all new slider pairs, cumulative/wrapped phase, volume/synthetic conservation, ideal opening extrema, seek/resume/reset, invalid inputs and 19-owner independent state. Android/XCTest/device, accessibility gesture and pixel tests were not run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasThymicBranchingTeachingModelTest.kt",
+      "sourceSHA256": "478570de731b6534bc3ba85152f89dcf5e4f070c5391cc8cb7f2decc417304af",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected original contracts. Native XCTest source covers defaults, all new slider pairs, cumulative/wrapped phase, volume/synthetic conservation, ideal opening extrema, seek/resume/reset, invalid inputs and 19-owner independent state. Android/XCTest/device, accessibility gesture and pixel tests were not run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasVertebralSeriesTeachingModelTest.kt",
+      "sourceSHA256": "2ddcc3aaf9161c54fce378c2a4b5a8bd7304d38723c78defc473a0eb6b82e242",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected original contracts. Native XCTest source covers defaults, all new slider pairs, cumulative/wrapped phase, volume/synthetic conservation, ideal opening extrema, seek/resume/reset, invalid inputs and 19-owner independent state. Android/XCTest/device, accessibility gesture and pixel tests were not run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasVocalCycleTeachingModelTest.kt",
+      "sourceSHA256": "7edb0b705ed92c9d196bcb26fa7b82be5accd360ee4178d65e8e0008b597e5a5",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected original contracts. Native XCTest source covers defaults, all new slider pairs, cumulative/wrapped phase, volume/synthetic conservation, ideal opening extrema, seek/resume/reset, invalid inputs and 19-owner independent state. Android/XCTest/device, accessibility gesture and pixel tests were not run."
+    }
+  ]
+}

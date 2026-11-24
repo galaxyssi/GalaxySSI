@@ -1,0 +1,385 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4407,
+    "mergeCommit": "2b0a455e59948d31606010edf3ddba25d01c180f"
+  },
+  "models": [
+    {
+      "id": "vocalCycles",
+      "inputs": [
+        {
+          "key": "vocal-cycle-frequency",
+          "minimum": 60,
+          "maximum": 240,
+          "initial": 140,
+          "scale": 1,
+          "label": "health_atlas_vocal_cycles_frequency",
+          "unit": "Hz",
+          "digits": 0
+        },
+        {
+          "key": "vocal-cycle-duration",
+          "minimum": 5,
+          "maximum": 30,
+          "initial": 20,
+          "scale": 1,
+          "label": "health_atlas_vocal_cycles_duration",
+          "unit": "ms",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "cycles",
+      "minimum": 0,
+      "maximum": 7.2,
+      "sources": [
+        "https://www.nidcd.nih.gov/news/multimedia/how-does-human-body-produce-voice-and-speech-text-version"
+      ],
+      "title": "health_atlas_vocal_cycles_title",
+      "scope": "health_atlas_vocal_cycles_scope",
+      "formula": "health_atlas_vocal_cycles_formula",
+      "companionTitle": "health_atlas_vocal_cycles_period",
+      "entryIDs": [
+        "larynx"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "vertebralSeries",
+      "inputs": [
+        {
+          "key": "vertebral-series-pad-count",
+          "minimum": 1,
+          "maximum": 8,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_vertebral_series_pad_count",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "vertebral-series-shortening-per-pad",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 25,
+          "scale": 100,
+          "label": "health_atlas_vertebral_series_shortening_per_pad",
+          "unit": "mm",
+          "digits": 2
+        }
+      ],
+      "axis": 1,
+      "unit": "mm",
+      "minimum": 0,
+      "maximum": 8,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/7-3-the-vertebral-column"
+      ],
+      "title": "health_atlas_vertebral_series_title",
+      "scope": "health_atlas_vertebral_series_scope",
+      "formula": "health_atlas_vertebral_series_formula",
+      "companionTitle": "health_atlas_vertebral_series_remaining_pad_thickness",
+      "entryIDs": [
+        "vertebrae"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "oralMarkerDilution",
+      "inputs": [
+        {
+          "key": "oral-marker-dilution-marker-stream",
+          "minimum": 2,
+          "maximum": 8,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_oral_marker_dilution_marker_stream",
+          "unit": "VU",
+          "digits": 0
+        },
+        {
+          "key": "oral-marker-dilution-added-water",
+          "minimum": 0,
+          "maximum": 12,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_oral_marker_dilution_added_water",
+          "unit": "VU",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "TU/VU",
+      "minimum": 0,
+      "maximum": 4,
+      "sources": [
+        "https://openstax.org/books/biology-2e/pages/36-3-taste-and-smell",
+        "https://www.nidcd.nih.gov/health/taste-disorders"
+      ],
+      "title": "health_atlas_oral_marker_dilution_title",
+      "scope": "health_atlas_oral_marker_dilution_scope",
+      "formula": "health_atlas_oral_marker_dilution_formula",
+      "companionTitle": "health_atlas_oral_marker_dilution_companion",
+      "entryIDs": [
+        "oral-cavity",
+        "tongue",
+        "taste-buds",
+        "cell-taste-receptor-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "olfactorySurfaceRetention",
+      "inputs": [
+        {
+          "key": "olfactory-marker-total",
+          "minimum": 20,
+          "maximum": 100,
+          "initial": 80,
+          "scale": 1,
+          "label": "health_atlas_olfactory_surface_retention_total",
+          "unit": "a.u.",
+          "digits": 0
+        },
+        {
+          "key": "olfactory-mucus-side-share",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 35,
+          "scale": 1,
+          "label": "health_atlas_olfactory_surface_retention_mucus_share",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "a.u.",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC5515430/",
+        "https://www.nidcd.nih.gov/health/smell-disorders"
+      ],
+      "title": "health_atlas_olfactory_surface_retention_title",
+      "scope": "health_atlas_olfactory_surface_retention_scope",
+      "formula": "health_atlas_olfactory_surface_retention_formula",
+      "companionTitle": "health_atlas_olfactory_surface_retention_companion",
+      "entryIDs": [
+        "olfactory-mucosa"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "circadianLightWindow",
+      "inputs": [
+        {
+          "key": "circadian-light-window-period",
+          "minimum": 12,
+          "maximum": 30,
+          "initial": 24,
+          "scale": 1,
+          "label": "health_atlas_circadian_light_window_period",
+          "unit": "h",
+          "digits": 0
+        },
+        {
+          "key": "circadian-light-window-elapsed",
+          "minimum": 0,
+          "maximum": 48,
+          "initial": 30,
+          "scale": 1,
+          "label": "health_atlas_circadian_light_window_elapsed",
+          "unit": "h",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "°",
+      "minimum": 0,
+      "maximum": 1440,
+      "sources": [
+        "https://nigms.nih.gov/education/fact-sheets/Pages/circadian-rhythms",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC2658055/"
+      ],
+      "title": "health_atlas_circadian_light_window_title",
+      "scope": "health_atlas_circadian_light_window_scope",
+      "formula": "health_atlas_circadian_light_window_formula",
+      "companionTitle": "health_atlas_circadian_light_window_companion",
+      "entryIDs": [
+        "hypothalamus",
+        "pineal-gland",
+        "cell-pinealocyte"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "adiposeVolumeShare",
+      "inputs": [
+        {
+          "key": "adipose-volume-share-radius-ratio",
+          "minimum": 40,
+          "maximum": 98,
+          "initial": 90,
+          "scale": 100,
+          "label": "health_atlas_adipose_volume_share_radius_ratio",
+          "unit": "",
+          "digits": 2
+        },
+        {
+          "key": "adipose-volume-share-cell-percent",
+          "minimum": 20,
+          "maximum": 70,
+          "initial": 60,
+          "scale": 1,
+          "label": "health_atlas_adipose_volume_share_cell_percent",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://histologylab.ctl.columbia.edu/lab03/adipose-connective-tissue/",
+        "https://histology.leeds.ac.uk/home/tissue_types/connective/connective_adipocyte/"
+      ],
+      "title": "health_atlas_adipose_volume_share_title",
+      "scope": "health_atlas_adipose_volume_share_scope",
+      "formula": "health_atlas_adipose_volume_share_formula",
+      "companionTitle": "health_atlas_adipose_volume_share_companion",
+      "entryIDs": [
+        "tissue-white-adipose",
+        "cell-adipocyte"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "thymicBranching",
+      "inputs": [
+        {
+          "key": "thymic-branching-starting-tally",
+          "minimum": 1,
+          "maximum": 10,
+          "initial": 4,
+          "scale": 0.05,
+          "label": "health_atlas_thymic_branching_starting_tally",
+          "unit": "tiles",
+          "digits": 0
+        },
+        {
+          "key": "thymic-branching-selected-percent",
+          "minimum": 0,
+          "maximum": 20,
+          "initial": 7,
+          "scale": 0.2,
+          "label": "health_atlas_thymic_branching_selected_percent",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "tiles",
+      "minimum": 0,
+      "maximum": 200,
+      "sources": [
+        "https://www.ncbi.nlm.nih.gov/sites/books/NBK27089/",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC3620359/"
+      ],
+      "title": "health_atlas_thymic_branching_title",
+      "scope": "health_atlas_thymic_branching_scope",
+      "formula": "health_atlas_thymic_branching_formula",
+      "companionTitle": "health_atlas_thymic_branching_companion",
+      "entryIDs": [
+        "thymus",
+        "cell-helper-t-cell",
+        "cell-cytotoxic-t-cell",
+        "cell-regulatory-t-cell"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "gastricPrecursorBalance",
+      "inputs": [
+        {
+          "key": "gastric-precursor-amount",
+          "minimum": 0,
+          "maximum": 20,
+          "initial": 12,
+          "scale": 1,
+          "label": "health_atlas_gastric_precursor_balance_amount",
+          "unit": "MU",
+          "digits": 0
+        },
+        {
+          "key": "gastric-precursor-converted-percent",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 35,
+          "scale": 1,
+          "label": "health_atlas_gastric_precursor_balance_converted_percent",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "MU",
+      "minimum": 0,
+      "maximum": 20,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-4-the-stomach"
+      ],
+      "title": "health_atlas_gastric_precursor_balance_title",
+      "scope": "health_atlas_gastric_precursor_balance_scope",
+      "formula": "health_atlas_gastric_precursor_balance_formula",
+      "companionTitle": "health_atlas_gastric_precursor_balance_companion",
+      "entryIDs": [
+        "cell-gastric-chief-cell",
+        "cell-gastric-parietal-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "melaninDistribution",
+      "inputs": [
+        {
+          "key": "melanin-distribution-packet-units",
+          "minimum": 0,
+          "maximum": 24,
+          "initial": 12,
+          "scale": 1,
+          "label": "health_atlas_melanin_distribution_packet_units",
+          "unit": "PPU",
+          "digits": 0
+        },
+        {
+          "key": "melanin-distribution-recipient-cells",
+          "minimum": 2,
+          "maximum": 8,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_melanin_distribution_recipient_cells",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "PPU/cell",
+      "minimum": 0,
+      "maximum": 12,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin",
+        "https://www.cancer.gov/types/skin/hp/skin-genetics-pdq"
+      ],
+      "title": "health_atlas_melanin_distribution_title",
+      "scope": "health_atlas_melanin_distribution_scope",
+      "formula": "health_atlas_melanin_distribution_formula",
+      "companionTitle": "health_atlas_melanin_distribution_companion",
+      "entryIDs": [
+        "cell-melanocyte"
+      ],
+      "digits": 2
+    }
+  ]
+}

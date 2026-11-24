@@ -58,6 +58,15 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .follicleSurface: result = 4 * .pi * pow(values[0] / 2 + values[1], 2)
     case .jointArticularArc: result = values[1] * (values[0] * .pi / 180)
     case .sweatDuctBalance: result = values[0] - values[0] * (values[1] / 100)
+    case .vocalCycles: result = values[0] * values[1] / 1000
+    case .vertebralSeries: result = values[0] * values[1]
+    case .oralMarkerDilution: result = 8 / (values[0] + values[1])
+    case .olfactorySurfaceRetention: result = values[0] * values[1] / 100
+    case .circadianLightWindow: result = 360 * values[1] / values[0]
+    case .adiposeVolumeShare: result = values[1] * pow(values[0], 3)
+    case .thymicBranching: result = values[0] * values[1] / 100
+    case .gastricPrecursorBalance: result = values[0] * (values[1] / 100)
+    case .melaninDistribution: result = values[0] / values[1]
     }
     return result.isFinite ? result : nil
   }
@@ -110,6 +119,15 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .follicleSurface: result = (4 * .pi / 3) * (pow(values[0] / 2 + values[1], 3) - pow(values[0] / 2, 3))
     case .jointArticularArc: result = values[0] * .pi / 180
     case .sweatDuctBalance: result = values[0] * (values[1] / 100)
+    case .vocalCycles: result = 1000 / values[0]
+    case .vertebralSeries: result = values[0] * (5 - values[1])
+    case .oralMarkerDilution: result = values[0] + values[1]
+    case .olfactorySurfaceRetention: result = values[0] - values[0] * values[1] / 100
+    case .circadianLightWindow: result = (360 * values[1] / values[0]).truncatingRemainder(dividingBy: 360)
+    case .adiposeVolumeShare: result = 100 * pow(values[0], 3)
+    case .thymicBranching: result = values[0] - values[0] * values[1] / 100
+    case .gastricPrecursorBalance: result = values[0] - values[0] * (values[1] / 100)
+    case .melaninDistribution: result = values[0]
     }
     return result.isFinite ? result : nil
   }

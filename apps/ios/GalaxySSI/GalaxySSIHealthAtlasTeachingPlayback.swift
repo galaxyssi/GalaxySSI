@@ -16,6 +16,10 @@ struct GalaxySSIHealthAtlasTeachingPlaybackState: Equatable {
   mutating func pause(at date: Date, duration: Double) {
     offset = phase(at: date, duration: duration); startedAt = nil
   }
+  mutating func seek(_ position: Double) {
+    guard position.isFinite else { return }
+    startedAt = nil; offset = min(1, max(0, position))
+  }
   mutating func showTarget() { startedAt = nil; offset = 1 }
 }
 
@@ -30,6 +34,9 @@ struct GalaxySSIHealthAtlasTeachingPlayback<Artwork: View>: View {
   let diagramIdentifier: String
   let diagramDescription: String
   let heightRatio: CGFloat
+  var maximumHeight: CGFloat = 180
+  var positionLabel: String? = nil
+  var positionIdentifier: String? = nil
   let artwork: (Double) -> Artwork
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.scenePhase) private var scenePhase
@@ -54,18 +61,25 @@ struct GalaxySSIHealthAtlasTeachingPlayback<Artwork: View>: View {
       }
       TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !playback.isPlaying)) { timeline in
         let fraction = playback.phase(at: timeline.date, duration: duration)
-        artwork(fraction).onChange(of: fraction) { value in
+        VStack(spacing: 8) {
+          artwork(fraction).frame(height: min(measuredWidth * heightRatio, maximumHeight))
+            .background(GeometryReader { proxy in
+              Color.clear.preference(key: GalaxySSIHealthAtlasTeachingWidth.self, value: proxy.size.width)
+            })
+            .onPreferenceChange(GalaxySSIHealthAtlasTeachingWidth.self) { width in
+              if width.isFinite, width > 0, width != measuredWidth { measuredWidth = width }
+            }
+            .clipped().accessibilityElement(children: .ignore)
+            .accessibilityIdentifier(diagramIdentifier).accessibilityLabel(diagramDescription)
+          if let positionLabel {
+            Slider(value: Binding(get: { fraction }, set: { playback.seek($0) }), in: 0...1, step: 0.001,
+              onEditingChanged: { editing in if editing { pause() } })
+              .accessibilityLabel(positionLabel).accessibilityIdentifier(positionIdentifier ?? "")
+          }
+        }.onChange(of: fraction) { value in
           if value >= 1, playback.isPlaying { pause(at: timeline.date) }
         }
-      }.frame(height: min(measuredWidth * heightRatio, 180))
-        .background(GeometryReader { proxy in
-          Color.clear.preference(key: GalaxySSIHealthAtlasTeachingWidth.self, value: proxy.size.width)
-        })
-        .onPreferenceChange(GalaxySSIHealthAtlasTeachingWidth.self) { width in
-          if width.isFinite, width > 0, width != measuredWidth { measuredWidth = width }
-        }
-        .clipped().accessibilityElement(children: .ignore)
-        .accessibilityIdentifier(diagramIdentifier).accessibilityLabel(diagramDescription)
+      }
     }.onChange(of: modelKey) { _ in playback.showTarget() }
       .onChange(of: duration) { _ in playback.showTarget() }
       .onChange(of: resetToken) { _ in playback.showTarget() }

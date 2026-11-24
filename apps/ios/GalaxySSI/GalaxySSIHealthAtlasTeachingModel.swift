@@ -12,6 +12,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   case thoracicCrossSection, plateletFragmentCount, boneRemodelingBalance, cutaneousSebum
   case ureterDelivery, cornealRefraction, externalEarResonance, neuralRelayDelays, biliaryFlowTally
   case parathyroidSignalOccupancy, follicleSurface, jointArticularArc, sweatDuctBalance
+  case vocalCycles, vertebralSeries, oralMarkerDilution, olfactorySurfaceRetention, circadianLightWindow
+  case adiposeVolumeShare, thymicBranching, gastricPrecursorBalance, melaninDistribution
 
   struct Control: Sendable {
     let input: GalaxySSIHealthAtlasPhysiology.Input
@@ -26,7 +28,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
          .immuneComposition, .oviductCiliaryCycles, .colonicWaterBalance,
          .endocrineDilution, .retinalConvergence, .muscleShortening,
          .bladderExpansion, .gastricLiquidEmptying, .bileStorage, .cutaneousSebum,
-         .neuralRelayDelays, .sweatDuctBalance: return 1
+         .neuralRelayDelays, .sweatDuctBalance, .vertebralSeries, .oralMarkerDilution,
+         .olfactorySurfaceRetention, .circadianLightWindow, .thymicBranching, .gastricPrecursorBalance: return 1
     default: return 0
     }
   }
@@ -74,6 +77,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .follicleSurface: return "mm\u{00b2}"
     case .jointArticularArc: return "mm"
     case .sweatDuctBalance: return "nmol"
+    case .vocalCycles: return "cycles"
+    case .vertebralSeries: return "mm"
+    case .oralMarkerDilution: return "TU/VU"
+    case .olfactorySurfaceRetention: return "a.u."
+    case .circadianLightWindow: return "\u{00b0}"
+    case .adiposeVolumeShare: return "%"
+    case .thymicBranching: return "tiles"
+    case .gastricPrecursorBalance: return "MU"
+    case .melaninDistribution: return "PPU/cell"
     }
   }
   var bounds: ClosedRange<Double> {
@@ -120,13 +132,21 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .follicleSurface: return 0...850
     case .jointArticularArc: return 0...65
     case .sweatDuctBalance: return 0...160
+    case .vocalCycles: return 0...7.2
+    case .vertebralSeries: return 0...8
+    case .oralMarkerDilution: return 0...4
+    case .olfactorySurfaceRetention, .adiposeVolumeShare: return 0...100
+    case .circadianLightWindow: return 0...1440
+    case .thymicBranching: return 0...200
+    case .gastricPrecursorBalance: return 0...20
+    case .melaninDistribution: return 0...12
     }
   }
   var digits: Int {
     switch self {
     case .glomerularFiltration, .cardiacPhaseTime, .airwayCiliaryClearance, .neuralRelayDelays: return 1
     case .tendonElongation, .muscleShortening: return 3
-    case .immuneComposition, .plateletFragmentCount, .boneRemodelingBalance: return 0
+    case .immuneComposition, .plateletFragmentCount, .boneRemodelingBalance, .thymicBranching: return 0
     default: return 2
     }
   }
@@ -177,6 +197,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .follicleSurface: return "health_atlas_follicle_surface"
     case .jointArticularArc: return "health_atlas_joint_articular_arc"
     case .sweatDuctBalance: return "health_atlas_sweat_duct_balance"
+    case .vocalCycles: return "health_atlas_vocal_cycles"
+    case .vertebralSeries: return "health_atlas_vertebral_series"
+    case .oralMarkerDilution: return "health_atlas_oral_marker_dilution"
+    case .olfactorySurfaceRetention: return "health_atlas_olfactory_surface_retention"
+    case .circadianLightWindow: return "health_atlas_circadian_light_window"
+    case .adiposeVolumeShare: return "health_atlas_adipose_volume_share"
+    case .thymicBranching: return "health_atlas_thymic_branching"
+    case .gastricPrecursorBalance: return "health_atlas_gastric_precursor_balance"
+    case .melaninDistribution: return "health_atlas_melanin_distribution"
     }
   }
   var title: String { resourcePrefix + "_title" }
@@ -204,6 +233,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .externalEarResonance: suffix = "wavelength"
     case .parathyroidSignalOccupancy: suffix = "unoccupied"
     case .follicleSurface: suffix = "shell_volume"
+    case .vocalCycles: suffix = "period"
+    case .vertebralSeries: suffix = "remaining_pad_thickness"
     default: suffix = "companion"
     }
     return resourcePrefix + "_" + suffix
@@ -255,6 +286,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .follicleSurface: return ["ovaries", "cell-granulosa-cell", "cell-theca-cell"]
     case .jointArticularArc: return ["joints", "scapula"]
     case .sweatDuctBalance: return ["cell-sweat-gland-secretory-cell", "dermis"]
+    case .vocalCycles: return ["larynx"]
+    case .vertebralSeries: return ["vertebrae"]
+    case .oralMarkerDilution: return ["oral-cavity", "tongue", "taste-buds", "cell-taste-receptor-cell"]
+    case .olfactorySurfaceRetention: return ["olfactory-mucosa"]
+    case .circadianLightWindow: return ["hypothalamus", "pineal-gland", "cell-pinealocyte"]
+    case .adiposeVolumeShare: return ["tissue-white-adipose", "cell-adipocyte"]
+    case .thymicBranching: return ["thymus", "cell-helper-t-cell", "cell-cytotoxic-t-cell", "cell-regulatory-t-cell"]
+    case .gastricPrecursorBalance: return ["cell-gastric-chief-cell", "cell-gastric-parietal-cell"]
+    case .melaninDistribution: return ["cell-melanocyte"]
     }
   }
   var sources: [URL] {
@@ -310,6 +350,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .follicleSurface: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system", "https://openstax.org/books/prealgebra-2e/pages/c-geometric-formulas"]
     case .jointArticularArc: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/9-6-anatomy-of-selected-synovial-joints", "https://openstax.org/books/precalculus-2e/pages/5-1-angles"]
     case .sweatDuctBalance: values = ["https://pubmed.ncbi.nlm.nih.gov/18653750/", "https://pubmed.ncbi.nlm.nih.gov/7943277/"]
+    case .vocalCycles: values = ["https://www.nidcd.nih.gov/news/multimedia/how-does-human-body-produce-voice-and-speech-text-version"]
+    case .vertebralSeries: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/7-3-the-vertebral-column"]
+    case .oralMarkerDilution: values = ["https://openstax.org/books/biology-2e/pages/36-3-taste-and-smell", "https://www.nidcd.nih.gov/health/taste-disorders"]
+    case .olfactorySurfaceRetention: values = ["https://pmc.ncbi.nlm.nih.gov/articles/PMC5515430/", "https://www.nidcd.nih.gov/health/smell-disorders"]
+    case .circadianLightWindow: values = ["https://nigms.nih.gov/education/fact-sheets/Pages/circadian-rhythms", "https://pmc.ncbi.nlm.nih.gov/articles/PMC2658055/"]
+    case .adiposeVolumeShare: values = ["https://histologylab.ctl.columbia.edu/lab03/adipose-connective-tissue/", "https://histology.leeds.ac.uk/home/tissue_types/connective/connective_adipocyte/"]
+    case .thymicBranching: values = ["https://www.ncbi.nlm.nih.gov/sites/books/NBK27089/", "https://pmc.ncbi.nlm.nih.gov/articles/PMC3620359/"]
+    case .gastricPrecursorBalance: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/23-4-the-stomach"]
+    case .melaninDistribution: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin", "https://www.cancer.gov/types/skin/hp/skin-genetics-pdq"]
     }
     return values.map { URL(string: $0)! }
   }
