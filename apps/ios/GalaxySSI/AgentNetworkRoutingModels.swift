@@ -477,6 +477,9 @@ enum AgentConnectorFallbackAction {
   static let attemptedParameter = "routing_attempted_resource_ids"
   static let attemptedResult = "attempted_resource_ids"
   private static let actionIdParameter = "routing_fallback_action_id"
+  static func isTargetLocked(action: AgentAction?, metadata: [String: String]) -> Bool {
+    action?.parameters["manual_target_locked"] == "true" || metadata["manual_target_locked"] == "true"
+  }
 
   static func hasActiveTrail(_ action: AgentAction) -> Bool {
     action.parameters[actionIdParameter] == action.id &&
@@ -523,6 +526,7 @@ enum AgentConnectorFallbackAction {
     selection: AgentConnectorFallbackSelection,
     target: AgentCallableTarget?
   ) -> AgentAction {
+    guard !isTargetLocked(action: action, metadata: [:]) else { return action }
     var prepared = action
     ["manual_model_id", "agent_model_id", "agent_reasoning_effort", "agent_instance_id"].forEach {
       prepared.parameters.removeValue(forKey: $0)

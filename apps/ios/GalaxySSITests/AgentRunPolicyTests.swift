@@ -178,7 +178,7 @@ extension GalaxySSIStoreTests {
       identity: AgentTaskIdentity(clientRouteId: "route", conversationId: "conversation",
                                   taskId: source.id.uuidString, turnId: "turn"))
     var seed = try XCTUnwrap(AgentCodexReplaySeed(source: source, text: source.content, targetId: original.contactId,
-      executionMode: .planOnly, hasAttachments: false, voiceSessionId: "", lockedToOrigin: true,
+      executionMode: .planOnly, hasAttachments: false, voiceSessionId: "", lockedToOrigin: false,
       invocation: ["model_id": "original-model", "reasoning_effort": "high"], transportContext: "original context"))
     XCTAssertTrue(ledger.track(original, now: 1_000, codexReplay: seed))
     let old = try XCTUnwrap(ledger.record(for: original))
@@ -204,6 +204,73 @@ extension GalaxySSIStoreTests {
     XCTAssertNil(AgentCodexReplaySeed(source: source, text: source.content, targetId: original.contactId,
       executionMode: .autoComplete, hasAttachments: false, voiceSessionId: "", lockedToOrigin: false,
       invocation: nil, transportContext: ""))
+  }
+
+  @MainActor
+  func testManualCodexRecoveryCannotBeQueuedEvenWhenTheCallerStripsItsSeedLock() throws {
+    let name = "manual-codex-\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let journal = DesktopReplyRecoveryTestJournal(), secrets = InMemorySecretStore()
+    let ledger = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    let source = ChatMessage(contactId: "hermes", content: "What is two plus two?", isMine: true,
+      conversationId: "conversation", turnId: "turn")
+    let binding = AgentDesktopReplyBinding(desktopId: "desktop", displayContactId: "hermes", sourceId: source.id,
+      contactId: "selected-codex", agentId: "codex", identity: AgentTaskIdentity(clientRouteId: "route",
+        conversationId: "conversation", taskId: source.id.uuidString, turnId: "turn"))
+    func seed(_ locked: Bool) throws -> AgentCodexReplaySeed {
+      try XCTUnwrap(AgentCodexReplaySeed(source: source, text: source.content, targetId: binding.contactId,
+        executionMode: .planOnly, hasAttachments: false, voiceSessionId: "", lockedToOrigin: locked,
+        invocation: ["model_id": "chosen-model", "reasoning_effort": "high"], transportContext: "original context"))
+    }
+    XCTAssertTrue(ledger.track(binding, now: 1_000, codexReplay: try seed(true)))
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    let old = try XCTUnwrap(reopened.record(for: binding))
+    XCTAssertTrue(old.isManualTargetLocked)
+    var next = binding; let attempt = UUID(); next.identity.taskId = attempt.uuidString; next.attemptSourceId = attempt
+    for locked in [true, false] {
+      XCTAssertFalse(reopened.scheduleCodexReplay(from: old, to: next, replay: try seed(locked), now: 181_000))
+      XCTAssertEqual(reopened.pending, [old])
+    }
+    var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as? [String: Any])
+    legacy.removeValue(forKey: "manualTargetLocked")
+    let restoredLegacy = try JSONDecoder().decode(AgentDesktopReplyRecoveryRecord.self,
+      from: JSONSerialization.data(withJSONObject: legacy))
+    XCTAssertTrue(restoredLegacy.isManualTargetLocked)
+    XCTAssertEqual(restoredLegacy.codexReplay?.invocation?["model_id"], "chosen-model")
+  }
+
+  @MainActor
+  func testManualNonCodexLockPersistsAndDoesNotChangeTerminalWirePayloads() throws {
+    let name = "manual-desktop-\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let journal = DesktopReplyRecoveryTestJournal(), secrets = InMemorySecretStore()
+    let ledger = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    let source = UUID()
+    let binding = AgentDesktopReplyBinding(desktopId: "desktop", displayContactId: "hermes", sourceId: source,
+      contactId: "selected-claude", agentId: "claude", identity: AgentTaskIdentity(clientRouteId: "route",
+        conversationId: "conversation", taskId: source.uuidString, turnId: "turn"))
+    XCTAssertTrue(ledger.track(binding, now: 1_000, manualTargetLocked: true))
+    let reopened = AgentDesktopReplyRecovery(defaults: defaults, secrets: secrets, journal: journal)
+    let record = try XCTUnwrap(reopened.record(for: binding))
+    XCTAssertTrue(record.isManualTargetLocked); XCTAssertNil(record.codexReplay)
+    var payload: [String: Any] = binding.fields
+    payload["task_status"] = "timed_out"; payload["error"] = "Original remote timeout"
+    let original = try JSONSerialization.data(withJSONObject: payload, options: .sortedKeys)
+    for language in ["en", "zh-Hans"] {
+      XCTAssertEqual(AgentManualModelRecoveryPolicy.terminalMessage(record: record, payload: payload, language: language),
+        AgentManualModelRecoveryPolicy.timeoutMessage(language: language))
+    }
+    XCTAssertNotEqual(AgentManualModelRecoveryPolicy.timeoutMessage(language: "zh-Hans"), AgentManualModelRecoveryPolicy.englishMessage)
+    XCTAssertEqual(try JSONSerialization.data(withJSONObject: payload, options: .sortedKeys), original)
+    for status in ["completed", "cancelled", "running", "failed"] {
+      var other = payload; other["task_status"] = status
+      XCTAssertNil(AgentManualModelRecoveryPolicy.terminalMessage(record: record, payload: other, language: "en"))
+    }
+    var foreign = payload; foreign["turn_id"] = "other-turn"
+    XCTAssertNil(AgentManualModelRecoveryPolicy.terminalMessage(record: record, payload: foreign, language: "en"))
+    var automatic = record; automatic.manualTargetLocked = false
+    XCTAssertFalse(automatic.isManualTargetLocked)
+    XCTAssertNil(AgentManualModelRecoveryPolicy.terminalMessage(record: automatic, payload: payload, language: "en"))
   }
 
   @MainActor

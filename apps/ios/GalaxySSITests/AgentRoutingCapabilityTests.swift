@@ -1422,6 +1422,23 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(AgentConnectorFailureScope.permitsFallback(transportFailure, candidateDomain: "cloud-b"))
   }
 
+  func testManualModelLockCannotBeClearedByFallbackMetadataOrActionPreparation() {
+    var action = AgentAction(id: "manual", kind: .callConnector, target: "Codex", risk: .low,
+      status: .proposed, description: "Run", parameters: ["manual_target_locked": "true",
+        "connector_id": "selected", "manual_model_id": "chosen-model", "agent_reasoning_effort": "high"], requiresConfirmation: false)
+    XCTAssertTrue(AgentConnectorFallbackAction.isTargetLocked(action: action, metadata: ["manual_target_locked": "false"]))
+    let fallback = AgentConnectorFallbackSelection(resourceId: "other", remainingResourceIds: [],
+      deferredRetryIds: [], retriedResourceIds: [], attemptedResourceIds: ["selected"])
+    let prepared = AgentConnectorFallbackAction.prepare(action: action, selection: fallback, target: nil)
+    XCTAssertEqual(prepared, action)
+    XCTAssertEqual(prepared.parameters["manual_model_id"], "chosen-model")
+    action.parameters["manual_target_locked"] = "false"
+    XCTAssertTrue(AgentConnectorFallbackAction.isTargetLocked(action: action, metadata: ["manual_target_locked": "true"]))
+    XCTAssertFalse(AgentConnectorFallbackAction.isTargetLocked(action: action, metadata: [:]))
+    XCTAssertFalse(AgentConnectorFallbackAction.isTargetLocked(action: nil, metadata: [:]))
+    XCTAssertEqual(AgentConnectorFallbackAction.prepare(action: action, selection: fallback, target: nil).parameters["connector_id"], "other")
+  }
+
   func testFallbackActionTrailBelongsOnlyToItsOwningAction() {
     var stale = AgentAction(
       id: "new-action",
