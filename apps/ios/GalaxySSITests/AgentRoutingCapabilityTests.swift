@@ -1340,6 +1340,28 @@ extension GalaxySSIStoreTests {
     }
   }
 
+  func testStableAutoDisplayedPrimarySkipsAlternateRankingButKeepsCapabilityGate() throws {
+    let codex = routeTarget("codex", kind: .agent)
+    let specialist = AgentCallableTarget(id: "cloud:knowledge", title: "Knowledge", kind: .model,
+      status: .available, capabilities: [.chat, .reasoning, .knowledgeSearch])
+    let selected = try XCTUnwrap(AgentConnectorRouteSelector.select(targets: [codex, specialist],
+      decision: nil, preferredTargetId: codex.id, goal: "Explain PDF retrieval",
+      preserveHealthyPrimary: true))
+    XCTAssertEqual(selected.target.id, codex.id)
+    XCTAssertTrue(selected.decision?.fallbacks.isEmpty == true)
+    XCTAssertEqual(selected.decision?.catalog.map(\.targetId), [codex.id])
+    let declared = try XCTUnwrap(AgentQualityRoutingService.baselineDecision(goal: "Read a document",
+      targets: [codex, specialist], primaryTargetId: codex.id,
+      requirements: AgentTaskRequirements(capabilities: [.knowledgeSearch], capabilitySource: .declared)))
+    XCTAssertEqual(AgentConnectorRouteSelector.select(targets: [codex, specialist], decision: declared,
+      preferredTargetId: codex.id, preserveHealthyPrimary: true)?.target.id, specialist.id)
+    XCTAssertEqual(AgentStableAutoRoutePolicy.displayedTarget(targets: [codex, specialist],
+      rememberedId: specialist.id)?.id, specialist.id)
+    XCTAssertFalse(AgentStableAutoRoutePolicy.acceptsUpdate(state: nil, turnId: "turn"))
+    XCTAssertFalse(AgentStableAutoRoutePolicy.acceptsUpdate(state: .init(targetId: codex.id,
+      turnId: "new", turnStartedAt: 1), turnId: "old"))
+  }
+
   func testUnavailableAdmittedTargetDoesNotFallBackToExcludedHealthyTarget() {
     var codex = routeTarget("codex", kind: .agent)
     codex.status = .needsSetup

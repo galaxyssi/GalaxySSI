@@ -698,7 +698,8 @@ enum AgentConnectorRouteSelector {
     targets: [AgentCallableTarget],
     decision: AgentRoutingDecision?,
     preferredTargetId: String = "",
-    goal: String = ""
+    goal: String = "",
+    preserveHealthyPrimary: Bool = false
   ) -> AgentConnectorRouteSelection? {
     let routingGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
     if let decision, decision.primary == nil, decision.fallbacks.isEmpty { return nil }
@@ -721,6 +722,13 @@ enum AgentConnectorRouteSelector {
     }
     let preferredTarget = preferredTargetId.isEmpty ? nil : eligibleById[preferredTargetId]
     let baselineTarget = preferredTarget ?? defaultTarget(eligible)
+    if preserveHealthyPrimary, decision == nil,
+       let preferredTarget, preferredTarget.status == .available {
+      let primaryDecision = routingGoal.isBlank ? nil : AgentQualityRoutingService.baselineDecision(
+        goal: routingGoal, targets: [preferredTarget], primaryTargetId: preferredTarget.id,
+        requirements: requirements)
+      return AgentConnectorRouteSelection(target: preferredTarget, decision: primaryDecision)
+    }
     var routingDecision = decision
     if routingDecision == nil, !routingGoal.isBlank {
       routingDecision = AgentQualityRoutingService.baselineDecision(

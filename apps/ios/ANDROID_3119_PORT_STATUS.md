@@ -12,11 +12,21 @@ When no decision is provided, existing capability/default/recovery behavior stay
 
 Native regression fixture source covers excluded preferred/catalog targets, an unavailable admitted primary, admitted recovering versus excluded healthy targets, and tool-only decisions. Existing admitted-preference and phone-tool-with-connector-fallback fixtures remain unchanged. Neither old nor new native fixtures are executed on Windows.
 
+## Scoped Auto Identity And Primary Dispatch
+
+Add optional backward-compatible target/turn state to the existing encrypted native conversation payload. No separate plaintext preference store or display-label-to-ID inference. Preserve conversation timestamps and the unpromoted draft state. Only cache/publish after the database write succeeds. Session removal and encrypted persistence retain their normal ownership boundaries.
+
+Begin binds a Hermes user turn to its exact conversation. Older replay turns cannot replace a newer turn. Dispatch updates require the bound turn and automatic selection; manual updates, missing scopes, archived/merged sessions and unavailable sentinel IDs are rejected. This metadata does not grant provider or transport authorization.
+
+The primary local/cloud/Agent dispatch chain captures one automatic target ID rather than re-ranking independently in each branch. Before the selected branch proceeds, commit its exact ID for the current turn or fail. A healthy eligible remembered primary returns without alternate quality ranking; unavailable or capability-ineligible primaries follow the existing selector. Header reads the same exact target identity and no longer invents Codex or adopts a stale live/session display label. Manual presentation and configuration remain unchanged.
+
+New native fixture sources cover encrypted reopen, conversation isolation, stale turn/replay rejection, manual protection, legacy decoding, exact Auto header identity and healthy-primary selection. These sources are not executed. Source guards do not establish persistence fault behavior or actual routing acceptance.
+
 ## Still Incomplete
 
-This is NOT completion of Android #3119. Main service selector entry points still pass nil decisions; their existing behavior is not changed by this non-nil admission boundary. The header currently derives Auto from display/live/session labels and can default to Codex; it is not yet backed by the Android exact conversation target/turn store. Healthy-primary short-circuit scoring, exact header-to-dispatch identity, stale-turn update rejection, fresh fallback ranking on immediate/asynchronous failure, deferred timeout discovery, parallel parameter preservation and attachment conversation scope still require dedicated current-code comparison and integration. Do not infer their completion from the source inventory or these fixtures.
+This is NOT completion of Android #3119. Main service selection still starts without a full scored privacy/budget/capacity decision; this change must not be described as adding that missing policy engine. Fresh fallback ranking on immediate/asynchronous failure, deferred timeout discovery, parallel parameter preservation, scheduled/resumed provider dispatch identity, attachment conversation scope and live failover header updates still require dedicated current-code comparison and integration. Older callbacks can still change legacy display labels; they cannot update the new exact Auto binding without its turn. Do not infer broader recovery completion from the source inventory or these fixtures.
 
-All 17 Android changed files are pinned with explicit dispositions. Native services, header, selection, planning and quality-ranking implementations are frozen to the predecessor for this increment. It contains no UI, identity preference, transport, credential, version, Android, Desktop or IPA changes.
+All 17 Android changed files are pinned with explicit dispositions. Manual selection, planning factory and quality-ranking implementations remain exact; only the primary Auto path/header and encrypted session metadata are extended. No transport, credential, version, Android, Desktop or IPA changes.
 
 ## Verification Limits
 

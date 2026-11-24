@@ -63,7 +63,16 @@ for (const file of [
       // #3119 adds only this admission boundary; its own scope check verifies it.
       assert(fs.existsSync(path.join(__dirname, 'check-stable-auto-admission-scope.cjs')));
       source = source.replace('    let admittedTargetIds = decision.map { Set($0.orderedTargetIds) }\n', '')
-        .replace('      (admittedTargetIds?.contains($0.id) ?? true) &&\n', '');
+        .replace('      (admittedTargetIds?.contains($0.id) ?? true) &&\n', '')
+        .replace('    goal: String = "",\n    preserveHealthyPrimary: Bool = false', '    goal: String = ""')
+        .replace(`    if preserveHealthyPrimary, decision == nil,
+       let preferredTarget, preferredTarget.status == .available {
+      let primaryDecision = routingGoal.isBlank ? nil : AgentQualityRoutingService.baselineDecision(
+        goal: routingGoal, targets: [preferredTarget], primaryTargetId: preferredTarget.id,
+        requirements: requirements)
+      return AgentConnectorRouteSelection(target: preferredTarget, decision: primaryDecision)
+    }
+`, '');
     }
     assert.equal(source, git('show', `${base}:${target}`));
   }

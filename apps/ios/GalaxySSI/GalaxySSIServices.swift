@@ -2863,6 +2863,10 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func beginPendingAgentReply(for message: ChatMessage) {
+    if message.contactId == "hermes" {
+      _ = store.beginAgentAutoRouteTurn(for: message, targets: AgentCallableTargetCatalog.build(
+        contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) }))
+    }
     pendingAgentReplyTurnIds.insert(AgentReplyWaitingIndicatorPolicy.turnKey(for: message))
     if pendingAgentReplyTurnIds.count > 256,
        let oldest = pendingAgentReplyTurnIds.first {
@@ -6058,11 +6062,22 @@ final class MessageCoordinator: ObservableObject {
         finishPendingAgentReply(for: outgoing)
         return true
       }
+      if contact.id == "hermes",
+         AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic,
+         !AgentStableAutoRoutePolicy.acceptsUpdate(
+           state: store.agentSession(id: outgoing.conversationId)?.stableAutoRoute,
+           turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)) {
+        throw AgentModelLoopRecoveryError(code: "auto_route_turn_not_committed")
+      }
+      let automaticTargetId = automaticRouteSelection(for: contact,
+        conversationId: outgoing.conversationId, goal: requestText)?.target.id ?? ""
       if let localProfile = selectedLocalModel(
         for: contact,
         conversationId: outgoing.conversationId,
-        goal: requestText
+        goal: requestText,
+        automaticTargetId: automaticTargetId
       ) {
+        try recordAutomaticDispatch(targetId: "local-llm", outgoing: outgoing)
         updateAgentExecutionTarget(
           conversationId: outgoing.conversationId,
           runtimeTarget: localProfile.displayName
@@ -6109,8 +6124,10 @@ final class MessageCoordinator: ObservableObject {
       if let selectedCloudContact = selectedCloudModelContact(
         for: contact,
         conversationId: outgoing.conversationId,
-        goal: requestText
+        goal: requestText,
+        automaticTargetId: automaticTargetId
       ) {
+        try recordAutomaticDispatch(targetId: selectedCloudContact.id, outgoing: outgoing)
         let cloudContact = CloudModelRequestRoutingPolicy.resolve(
           contact: selectedCloudContact,
           requestedModelId: selectedCloudContact.selectedCloudModelId,
@@ -6170,8 +6187,10 @@ final class MessageCoordinator: ObservableObject {
       if let agentContact = selectedAgentContact(
         for: contact,
         conversationId: outgoing.conversationId,
-        goal: requestText
+        goal: requestText,
+        automaticTargetId: automaticTargetId
       ) {
+        try recordAutomaticDispatch(targetId: agentContact.id, outgoing: outgoing)
         if !readOnlyAnalysis, !compositeDesktopStatus, effectiveAttachments.isEmpty, agentContact.connectorAgentId == "codex" {
           let snapshot = try capturePairedPhonePlannerSnapshot(contact: agentContact, outgoing: outgoing)
           try await receivePhoneOwnedProviderReply(
@@ -6555,6 +6574,23 @@ final class MessageCoordinator: ObservableObject {
     return AgentManualTargetUnavailableError(targetName: targetName)
   }
 
+  func displayedAutoRouteTarget(conversationId: String) -> AgentCallableTarget? {
+    guard let session = store.agentSession(id: conversationId) else { return nil }
+    let targets = AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) })
+    return AgentStableAutoRoutePolicy.displayedTarget(targets: targets,
+      rememberedId: session.stableAutoRoute?.targetId ?? "")
+  }
+
+  private func recordAutomaticDispatch(targetId: String, outgoing: ChatMessage) throws {
+    guard outgoing.contactId == "hermes",
+          AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic else { return }
+    guard store.recordAgentAutoRouteDispatch(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString), targetId: targetId) else {
+      throw AgentModelLoopRecoveryError(code: "auto_route_dispatch_not_committed")
+    }
+  }
+
   private func automaticRouteSelection(
     for contact: GalaxySSIContact,
     conversationId: String,
@@ -6567,24 +6603,28 @@ final class MessageCoordinator: ObservableObject {
       contacts: store.visibleContacts,
       apiKey: { store.apiKey(for: $0) }
     )
-    return AgentConnectorRouteSelector.select(targets: targets, decision: nil, goal: goal)
+    let displayed = AgentStableAutoRoutePolicy.displayedTarget(targets: targets,
+      rememberedId: store.agentSession(id: conversationId)?.stableAutoRoute?.targetId ?? "")
+    return AgentConnectorRouteSelector.select(targets: targets, decision: nil,
+      preferredTargetId: displayed?.id ?? "", goal: goal, preserveHealthyPrimary: true)
   }
 
   private func selectedLocalModel(
     for contact: GalaxySSIContact,
     conversationId: String,
-    goal: String
+    goal: String,
+    automaticTargetId: String? = nil
   ) -> LocalModelRuntimeProfile? {
     let selection = AgentModelSelectionSettings.selection(for: conversationId)
     guard contact.id == "hermes" else {
       return nil
     }
     let manualSelection = selection.mode == .manual && selection.targetId == "local-llm"
-    let legacySelection = !AgentModelSelectionSettings.hasStoredSelection(for: conversationId) &&
+    let legacySelection = automaticTargetId == nil && !AgentModelSelectionSettings.hasStoredSelection(for: conversationId) &&
       store.modelPlannerSettings.enabled &&
       store.modelPlannerSettings.cloudContactId == "local-llm"
     let automaticSelection = selection.mode == .automatic &&
-      automaticRouteSelection(for: contact, conversationId: conversationId, goal: goal)?.target.id == "local-llm"
+      (automaticTargetId ?? automaticRouteSelection(for: contact, conversationId: conversationId, goal: goal)?.target.id) == "local-llm"
     guard manualSelection || legacySelection || automaticSelection else { return nil }
     let profile = selection.mode == .manual
       ? LocalModelRuntimeCatalog.find(selection.modelId)
@@ -6597,12 +6637,13 @@ final class MessageCoordinator: ObservableObject {
   private func selectedCloudModelContact(
     for contact: GalaxySSIContact,
     conversationId: String,
-    goal: String
+    goal: String,
+    automaticTargetId: String? = nil
   ) -> GalaxySSIContact? {
     let selection = AgentModelSelectionSettings.selection(for: conversationId)
     let targetId = selection.mode == .manual
       ? selection.targetId
-      : automaticRouteSelection(for: contact, conversationId: conversationId, goal: goal)?.target.id ?? ""
+      : automaticTargetId ?? automaticRouteSelection(for: contact, conversationId: conversationId, goal: goal)?.target.id ?? ""
     guard contact.id == "hermes",
           !targetId.isEmpty,
           targetId != "local-llm",
@@ -6635,12 +6676,13 @@ final class MessageCoordinator: ObservableObject {
   private func selectedAgentContact(
     for contact: GalaxySSIContact,
     conversationId: String,
-    goal: String
+    goal: String,
+    automaticTargetId: String? = nil
   ) -> GalaxySSIContact? {
     let selection = AgentModelSelectionSettings.selection(for: conversationId)
     let targetId = selection.mode == .manual
       ? selection.targetId
-      : automaticRouteSelection(for: contact, conversationId: conversationId, goal: goal)?.target.id ?? ""
+      : automaticTargetId ?? automaticRouteSelection(for: contact, conversationId: conversationId, goal: goal)?.target.id ?? ""
     guard contact.id == "hermes",
           !targetId.isEmpty,
           let selected = store.contact(id: targetId),

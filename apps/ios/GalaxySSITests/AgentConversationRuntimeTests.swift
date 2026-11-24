@@ -2,6 +2,60 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testStableAutoRoutePersistsExactConversationAndRejectsOldTurnsAndManualUpdates() throws {
+    let store = makeStore()
+    let first = store.createAgentSession(title: "First auto route")
+    let second = store.createAgentSession(title: "Second auto route")
+    let codex = AgentCallableTarget(id: "desktop:one:codex", title: "Codex", kind: .agent,
+      status: .available, capabilities: [.chat, .reasoning])
+    let cloud = AgentCallableTarget(id: "cloud:deepseek", title: "DeepSeek", kind: .model,
+      status: .available, capabilities: [.chat, .reasoning])
+    let old = ChatMessage(contactId: "hermes", content: "First", isMine: true,
+      createdAt: Date(timeIntervalSince1970: 1), conversationId: first.id, turnId: "first-turn")
+    XCTAssertTrue(store.beginAgentAutoRouteTurn(for: old, targets: [codex, cloud]))
+    XCTAssertTrue(store.recordAgentAutoRouteDispatch(conversationId: first.id, turnId: old.turnId, targetId: cloud.id))
+    let next = ChatMessage(contactId: "hermes", content: "Next", isMine: true,
+      createdAt: Date(timeIntervalSince1970: 2), conversationId: first.id, turnId: "next-turn")
+    XCTAssertTrue(store.beginAgentAutoRouteTurn(for: next, targets: [codex, cloud]))
+    XCTAssertFalse(store.beginAgentAutoRouteTurn(for: old, targets: [codex, cloud]))
+    XCTAssertFalse(store.recordAgentAutoRouteDispatch(conversationId: first.id, turnId: old.turnId, targetId: codex.id))
+    XCTAssertFalse(store.recordAgentAutoRouteDispatch(conversationId: second.id, turnId: next.turnId, targetId: codex.id))
+    XCTAssertEqual(store.agentSession(id: first.id)?.stableAutoRoute?.targetId, cloud.id)
+    XCTAssertEqual(store.agentSession(id: first.id)?.stableAutoRoute?.turnId, next.turnId)
+    XCTAssertNil(store.agentSession(id: second.id)?.stableAutoRoute)
+    let restored = GalaxySSIStore(defaults: store.defaults, secrets: store.secrets)
+    XCTAssertEqual(restored.agentSession(id: first.id)?.stableAutoRoute, store.agentSession(id: first.id)?.stableAutoRoute)
+    AgentModelSelectionSettings.selectManual(for: first.id, targetId: codex.id,
+      modelId: "", displayName: "Locked", defaults: store.defaults)
+    XCTAssertFalse(store.recordAgentAutoRouteDispatch(conversationId: first.id, turnId: next.turnId, targetId: codex.id))
+    XCTAssertEqual(store.agentSession(id: first.id)?.stableAutoRoute?.targetId, cloud.id)
+    XCTAssertEqual(store.agentSession(id: first.id)?.updatedAt, first.updatedAt)
+  }
+
+  func testAutoHeaderUsesExactTargetNotOldSessionOrLiveDisplayLabels() throws {
+    let store = makeStore()
+    let contact = try XCTUnwrap(store.contact(id: "hermes"))
+    var session = store.createAgentSession(title: "Auto header")
+    session.selectedModelOrAgent = "Old route label"
+    let target = AgentCallableTarget(id: "cloud:deepseek", title: "DeepSeek", kind: .model,
+      status: .available, capabilities: [.chat, .reasoning])
+    let header = GalaxySSIAgentHomeHeaderPresentation.make(session: session, contact: contact,
+      selection: AgentModelSelection(), liveExecutionTargetLabel: "Stale label", contacts: [],
+      automaticTarget: target, language: "en")
+    XCTAssertEqual(header.modelStatusLabel, "Auto \u{00b7} DeepSeek")
+    let empty = GalaxySSIAgentHomeHeaderPresentation.make(session: session, contact: contact,
+      selection: AgentModelSelection(), liveExecutionTargetLabel: "Stale label", contacts: [], language: "en")
+    XCTAssertEqual(empty.modelStatusLabel, "Auto")
+    let manual = GalaxySSIAgentHomeHeaderPresentation.make(session: session, contact: contact,
+      selection: AgentModelSelection(mode: .manual, targetId: "locked", displayName: "Locked"),
+      liveExecutionTargetLabel: "Stale label", contacts: [], automaticTarget: target, language: "en")
+    XCTAssertEqual(manual.modelStatusLabel, "Locked")
+    var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(session)) as? [String: Any])
+    legacy.removeValue(forKey: "stable_auto_route")
+    XCTAssertNil(try JSONDecoder().decode(AgentConversation.self,
+      from: JSONSerialization.data(withJSONObject: legacy)).stableAutoRoute)
+  }
+
   func testDeliveredFinalReconcilesOnlyStaleActiveWorkspaceStates() {
     let reply = AgentTranscriptEntry(id: "reply", role: .assistant, text: "", timestampMillis: 100,
       dedupeKey: "assistant-final:turn:t", conversationId: "c", turnId: "t", taskId: "executor")

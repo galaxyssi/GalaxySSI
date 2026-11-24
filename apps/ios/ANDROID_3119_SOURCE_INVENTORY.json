@@ -2,7 +2,7 @@
   "androidPR": 3119,
   "androidCommit": "e7c6af6ef3eed21c7fb697b4458d1cf742833dc4",
   "incrementalBase": "ddcb2a69acd02ea12d20fb469e779d4d87b85a4f",
-  "scope": "Decision-candidate admission only; not a full stable Auto routing port",
+  "scope": "Decision admission, encrypted per-conversation target/turn, primary header/dispatch identity and healthy-primary short circuit; remaining recovery/parallel scope incomplete",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -32,17 +32,17 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentResourceRouter.kt",
       "sha256": "d95d5d072eb0637ee20e0a883559918979bf0be48daf4dfb9021fbbcfb37663f",
-      "disposition": "Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment"
+      "disposition": "Healthy eligible displayed primary short-circuits quality/alternative ranking in native selector; existing capability admission retained, no new full capacity/privacy/budget router claimed"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentStableAutoRoute.kt",
       "sha256": "3e8d08646bf0b88cc5a4c809f7f799f3946ecee0385c3591ec00949dfeca92dc",
-      "disposition": "Candidate-list admission boundary adapted in native selector; remembered exact conversation target, beginTurn and stale-turn storage remain unported"
+      "disposition": "Candidate admission, exact target ID, begin-turn and stale update guards adapted using encrypted native session payload, not a new plaintext preference store"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentExecution.kt",
       "sha256": "d3782bd49ab9a079bdcbba426044d24894c86b71dbfe8b7fb9eec0e9ccf80082",
-      "disposition": "Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment"
+      "disposition": "Native header uses the same exact target identity as dispatch, not stale display labels or a fabricated Codex fallback"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentPage.kt",
@@ -62,7 +62,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentExecution.kt",
       "sha256": "a85baed4f3c1dfba36d3a70c8e783b29f561483ed692989b049e7fd35cb6f363",
-      "disposition": "Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment"
+      "disposition": "Main native local/cloud/Agent branch chain shares one captured automatic target and persists admitted dispatch; Android parallel/recovery loop specifics still incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentRuntimeTiming.kt",

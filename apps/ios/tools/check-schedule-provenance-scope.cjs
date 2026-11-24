@@ -29,7 +29,14 @@ for(const name of ['GalaxySSIConversationHubView','GalaxySSINavigationContentPre
 }
 const router=source('AgentWorkflowRunScheduleCommandRouter');check(router,['if AgentConversationScheduleProvenance.requiresReview(task) { return AgentConversationScheduleProvenance.text(language: language) }']);
 assert.equal(router.split('  static func runID(')[1],prior('AgentWorkflowRunScheduleCommandRouter').split('  static func runID(')[1],'Existing run identity/revision and unrelated workflow scheduling unchanged');
-for(const name of ['GalaxySSIHealthCareAgentScope','GalaxySSIHealthCareAgentPanel','GalaxySSIHealthCareView','GalaxySSIHealthRecords','GalaxySSIStoreSessions'])assert.equal(source(name),prior(name),name+' unchanged');
+for(const name of ['GalaxySSIHealthCareAgentScope','GalaxySSIHealthCareAgentPanel','GalaxySSIHealthCareView','GalaxySSIHealthRecords'])assert.equal(source(name),prior(name),name+' unchanged');
+let sessions=source('GalaxySSIStoreSessions');
+if(sessions.includes('  func beginAgentAutoRouteTurn(')){
+ const start=sessions.indexOf('  @discardableResult\n  func beginAgentAutoRouteTurn('),end=sessions.indexOf('  @discardableResult\n  func updateAgentSessionSummary(');
+ assert(start>=0&&end>start,'#3119 additive Auto metadata methods');
+ sessions=sessions.slice(0,start)+sessions.slice(end);
+}
+assert.equal(sessions,prior('GalaxySSIStoreSessions'),'Only #3119 additive Auto metadata methods; encrypted DB and existing session kernels exact');
 const tests='apps/ios/GalaxySSITests/GalaxySSIStoreTests.swift';check(read(tests),['testLegacyScheduleMigrationIsIdempotentAndPreservesEveryMessage','testLegacyReceiptDiscoveryPagesBeyondRecentMessagesAndMatchesCurrentTask','testScheduleReplyBlocksSurviveReopenWithoutHidingOrRewritingHistory','testScheduleOriginIsBackwardCompatibleAndUnknownOriginsRequireReview']);
 const coverage={schema:1,source:inventory.source,verification:'source-and-resource-contracts-not-native-execution',files:inventory.files.map(file=>{
  const name=path.basename(file.path);let kind,ios=[],note;

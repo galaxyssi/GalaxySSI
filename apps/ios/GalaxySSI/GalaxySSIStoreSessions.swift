@@ -789,6 +789,52 @@ extension GalaxySSIStore {
   }
 
   @discardableResult
+  func beginAgentAutoRouteTurn(for message: ChatMessage, targets: [AgentCallableTarget]) -> Bool {
+    guard message.contactId == "hermes", message.isMine, !message.isSystem,
+          !message.conversationId.isBlank,
+          AgentModelSelectionSettings.selection(for: message.conversationId, defaults: defaults).mode == .automatic,
+          var session = agentSession(id: message.conversationId), session.status == .active,
+          session.mergedIntoConversationId.isBlank else { return false }
+    let turnId = message.turnId.ifBlank(message.id.uuidString)
+    let startedAt = Int64(message.createdAt.timeIntervalSince1970 * 1_000)
+    if let current = session.stableAutoRoute {
+      if current.turnId == turnId { return true }
+      guard startedAt > current.turnStartedAt else { return false }
+    }
+    let target = AgentStableAutoRoutePolicy.displayedTarget(targets: targets,
+      rememberedId: session.stableAutoRoute?.targetId ?? "")
+    session.stableAutoRoute = AgentStableAutoRouteState(targetId: target?.id ?? "",
+      turnId: turnId, turnStartedAt: startedAt)
+    return persistAgentAutoRoute(session)
+  }
+
+  @discardableResult
+  func recordAgentAutoRouteDispatch(conversationId: String, turnId: String, targetId: String) -> Bool {
+    guard !conversationId.isBlank, !targetId.isBlank,
+          targetId != AgentPlanFactory.unavailableReasoningConnectorId,
+          AgentModelSelectionSettings.selection(for: conversationId, defaults: defaults).mode == .automatic,
+          var session = agentSession(id: conversationId), session.status == .active,
+          session.mergedIntoConversationId.isBlank,
+          AgentStableAutoRoutePolicy.acceptsUpdate(state: session.stableAutoRoute, turnId: turnId) else { return false }
+    if session.stableAutoRoute?.targetId == targetId { return true }
+    session.stableAutoRoute?.targetId = targetId
+    return persistAgentAutoRoute(session)
+  }
+
+  private func persistAgentAutoRoute(_ session: AgentConversation) -> Bool {
+    let persisted: Bool
+    if agentConversationDatabase.read(session.id) == nil,
+       agentConversationDatabase.readDraft(session.id) != nil {
+      persisted = agentConversationDatabase.saveDraft(session)
+    } else {
+      persisted = agentConversationDatabase.upsert(session)
+    }
+    guard persisted else { return false }
+    cacheAgentConversation(session)
+    return true
+  }
+
+  @discardableResult
   func updateAgentSessionSummary(id conversationId: String, summary: String) -> Bool {
     mutateAgentConversation(id: conversationId) { $0.summary = summary.trimmingCharacters(in: .whitespacesAndNewlines) }
   }

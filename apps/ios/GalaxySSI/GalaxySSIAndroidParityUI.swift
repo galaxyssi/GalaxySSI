@@ -869,6 +869,7 @@ struct AgentHomeView: View {
       selection: modelSelection,
       liveExecutionTargetLabel: liveExecutionTargetLabel,
       contacts: store.contacts,
+      automaticTarget: coordinator.displayedAutoRouteTarget(conversationId: store.activeAgentConversationId),
       language: interfaceLanguage
     )
   }
