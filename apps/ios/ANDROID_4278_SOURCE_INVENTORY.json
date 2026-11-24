@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4278,
+    "mergeCommit": "239692d36820daf678c74226ae7be67c622fc1e8"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "43d22549dccba207650dad31073d24698f4ac641d5ef01d4a87c63f625b8262d"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthCareAgentSurfaceUiDeviceTest.kt",
+      "status": "M",
+      "sha256": "7c4334a5902dd08634f54c4ba8e83ed7d41f3460c3791d9e925f0a21242d27df"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthCareIndependentAgentDeviceTest.kt",
+      "status": "M",
+      "sha256": "38159e1e6980c05a770e2eca4f1a784b4e7d07bbaf85f95681a0eb2a5e534c50"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthCareUiDeviceTest.kt",
+      "status": "M",
+      "sha256": "e6b9d1e5368b4dfed17d356dc64f16421311c881a3d65f4e395c5092d5046f4c"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthCareAgentPanel.kt",
+      "status": "A",
+      "sha256": "a461aacdcf84bfe762cf8993367567bdc6cf9204a4ab8fb022658e09c1dadadd"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthCareAgentSurface.kt",
+      "status": "M",
+      "sha256": "7553c6a312ef9f87a6f9292aeea96c2e8498c668ede32b3b382941c2b3ed43e6"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/strings_health_agent.xml",
+      "status": "M",
+      "sha256": "decba54d7577d529c2c2291e9ac2caaebc26dce8882e1d9f2485a16fc341cf91"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/strings_health_agent.xml",
+      "status": "M",
+      "sha256": "bedb77282f484a16f611d2e7dc91f416b9b3a671681b38e4fb1d634ecaed5e8a"
+    },
+    {
+      "path": "docs/architecture/android-health-lifecycle.md",
+      "status": "M",
+      "sha256": "84755ed4f441ed514a2218c5a86854a3657c135e09e7d6ea99719f957e599de0"
+    }
+  ],
+  "references": [
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthCareComparisonPresentation.kt",
+      "sha256": "e364dd07df674c567b18829ab078bfc7dc6acdb225d43285e444c963e4f8683e",
+      "reason": "Unchanged comparison summary or priority label used by the fixed header; not an extra changed PR file."
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/strings_health_care.xml",
+      "sha256": "aee07d4014ec40da4bf3923a4cda4c20ad4369e3452ff67e4f5c51c90a4e448a",
+      "reason": "Unchanged comparison summary or priority label used by the fixed header; not an extra changed PR file."
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/strings_health_priority.xml",
+      "sha256": "500fc099e58370076aed55725792ab9781997e31465a30db29f6b5f326a25ea3",
+      "reason": "Unchanged comparison summary or priority label used by the fixed header; not an extra changed PR file."
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/strings_health_care.xml",
+      "sha256": "ebfaffabdd8a4d7ae9eaba6015bfe47187a7d350c915be88f97d2a396f7552f5",
+      "reason": "Unchanged comparison summary or priority label used by the fixed header; not an extra changed PR file."
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/strings_health_priority.xml",
+      "sha256": "bd2da1b1e5f0033295fe7d564476acbe9623c1933a9bf0fc95f64a22a83f24f6",
+      "reason": "Unchanged comparison summary or priority label used by the fixed header; not an extra changed PR file."
+    }
+  ]
+}

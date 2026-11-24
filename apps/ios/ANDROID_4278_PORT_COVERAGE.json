@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4278,
+    "mergeCommit": "239692d36820daf678c74226ae7be67c622fc1e8"
+  },
+  "verification": "source-and-resource-contracts-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "43d22549dccba207650dad31073d24698f4ac641d5ef01d4a87c63f625b8262d",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthCareAgentSurfaceUiDeviceTest.kt",
+      "sourceSHA256": "7c4334a5902dd08634f54c4ba8e83ed7d41f3460c3791d9e925f0a21242d27df",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthOverviewCareTests.swift"
+      ],
+      "note": "Reviewed fixed-toggle after scrolling, full unellipsized reason text, transcript space, phone/tablet bounds, same-concern refresh, background reset and priority/action-panel fixture changes. iOS pure layout-budget fixture sources added but NOT executed. Android device evidence is not iOS acceptance."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthCareIndependentAgentDeviceTest.kt",
+      "sourceSHA256": "38159e1e6980c05a770e2eca4f1a784b4e7d07bbaf85f95681a0eb2a5e534c50",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthOverviewCareTests.swift"
+      ],
+      "note": "Reviewed fixed-toggle after scrolling, full unellipsized reason text, transcript space, phone/tablet bounds, same-concern refresh, background reset and priority/action-panel fixture changes. iOS pure layout-budget fixture sources added but NOT executed. Android device evidence is not iOS acceptance."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthCareUiDeviceTest.kt",
+      "sourceSHA256": "e6b9d1e5368b4dfed17d356dc64f16421311c881a3d65f4e395c5092d5046f4c",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthOverviewCareTests.swift"
+      ],
+      "note": "Reviewed fixed-toggle after scrolling, full unellipsized reason text, transcript space, phone/tablet bounds, same-concern refresh, background reset and priority/action-panel fixture changes. iOS pure layout-budget fixture sources added but NOT executed. Android device evidence is not iOS acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthCareAgentPanel.kt",
+      "sourceSHA256": "a461aacdcf84bfe762cf8993367567bdc6cf9204a4ab8fb022658e09c1dadadd",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthCareAgentPanel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIAndroidParityUI.swift"
+      ],
+      "note": "Fixed header with concern/stage, current or kind-specific comparison summary and compact priority label; header/chevron toggles independently of body. Initially collapsed, expanded total capped at 300 points/40% output viewport; subtract measured fixed header and bound independently scrollable full body. VoiceOver full summary and localized toggle labels. No native layout/scroll/pixel proof."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthCareAgentSurface.kt",
+      "sourceSHA256": "7553c6a312ef9f87a6f9292aeea96c2e8498c668ede32b3b382941c2b3ed43e6",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthCareAgentPanel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthCareView.swift"
+      ],
+      "note": "All reason signals and next step/discussion/maintenance content inside expanded body without line truncation; full priority notice in body and compact priority retained in header. Specific-concern detail route preserves existing plans/follow-up/research controls. Same-concern refresh does not reset expansion or recreate the expanded ScrollView; background/conversation changes clear. Existing private binding/permission/stale-load gates unchanged."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/strings_health_agent.xml",
+      "sourceSHA256": "decba54d7577d529c2c2291e9ac2caaebc26dce8882e1d9f2485a16fc341cf91",
+      "kind": "exact-resource-port",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/HealthAssessmentPanel.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/HealthAssessmentPanel.strings"
+      ],
+      "note": "Three exact changed labels per locale (expand/collapse/details) plus four unchanged comparison/priority references in a dedicated table; not seven new source delta pairs."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/strings_health_agent.xml",
+      "sourceSHA256": "bedb77282f484a16f611d2e7dc91f416b9b3a671681b38e4fb1d634ecaed5e8a",
+      "kind": "exact-resource-port",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/HealthAssessmentPanel.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/HealthAssessmentPanel.strings"
+      ],
+      "note": "Three exact changed labels per locale (expand/collapse/details) plus four unchanged comparison/priority references in a dedicated table; not seven new source delta pairs."
+    },
+    {
+      "source": "docs/architecture/android-health-lifecycle.md",
+      "sourceSHA256": "84755ed4f441ed514a2218c5a86854a3657c135e09e7d6ea99719f957e599de0",
+      "kind": "architecture-source-reference",
+      "ios": [],
+      "note": "Collapsed/fixed-header/scroll-bound/clear-on-leave contract documented in the native port status; no Android documentation changed."
+    }
+  ]
+}

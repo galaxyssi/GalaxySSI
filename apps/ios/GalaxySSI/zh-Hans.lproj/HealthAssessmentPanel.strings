@@ -1,0 +1,7 @@
+"health_agent_collapse" = "收起健康评估";
+"health_agent_expand" = "展开健康评估";
+"health_agent_open_record" = "查看健康详情";
+"health_care_bp_title" = "优先核对这次血压读数";
+"health_care_comparison_correction" = "记录修订：%1$@ → %2$@";
+"health_care_comparison_history" = "历史资料变化：%1$@ → %2$@";
+"health_care_comparison_values" = "前次 %1$@ → 本次 %2$@";
