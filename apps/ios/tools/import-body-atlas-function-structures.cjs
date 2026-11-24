@@ -44,13 +44,6 @@ const resourcePaths=cp.execFileSync("git",["ls-tree","-r","--name-only",sha,"app
 const graph=JSON.parse(show("apps/android/app/src/main/assets/health/body-atlas.json")),ids=new Set(graph.entries.map(e=>e.id));
 const aliases={health_atlas_erector_spinae_plate:"HealthAtlasFunctionErector",health_atlas_placenta_plate:"HealthAtlasFunctionPlacenta",
  health_atlas_ligaments_plate:"HealthAtlasFunctionLigaments",health_atlas_pineal_plate:"HealthAtlasFunctionPineal"};
-if(regional){
- const inventory=JSON.parse(fs.readFileSync(path.join(root,"apps/ios/ANDROID_4385_SOURCE_INVENTORY.json")));
- for(const file of inventory.files.filter(f=>f.path.includes("/res/drawable/")&&f.path.endsWith(".xml"))){
-  const name=path.basename(file.path,".xml");
-  aliases[name]="HealthAtlasRegional"+name.replace(/^health_atlas_/,"").split("_").map(s=>s[0].toUpperCase()+s.slice(1)).join("");
- }
-}
 const plates=exported.map(value=>{
  const {drawableName,...plate}=value;
  const matching=resourcePaths.filter(p=>/\/drawable(?:-[^/]+)?\//.test(p)&&path.basename(p,path.extname(p))===drawableName&&/\.(xml|png)$/.test(p));
@@ -61,7 +54,8 @@ const plates=exported.map(value=>{
  assert(width>0&&height>0);
  assert(ids.has(plate.owner),plate.owner);
  for(const marker of plate.markers)assert(ids.has(marker.id),marker.id);
- const asset=aliases[drawableName]??"HealthAtlasStructure"+drawableName.replace(/^health_atlas_/,"").split("_").map(s=>s[0].toUpperCase()+s.slice(1)).join("");
+ const suffix=drawableName.replace(/^health_atlas_/,"").split("_").map(s=>s[0].toUpperCase()+s.slice(1)).join("");
+ const asset=regional?"HealthAtlasRegional"+suffix:aliases[drawableName]??"HealthAtlasStructure"+suffix;
  return {...plate,...(regional?{id:plate.viewKey??plate.owner}:{}),asset,entryIDs:[plate.owner,...plate.markers.map(m=>m.id)],aspectRatio:width/height,drawable};
 });
 if(!regional)assert.equal(new Set(plates.map(p=>p.owner)).size,plates.length);
@@ -72,8 +66,7 @@ function write(p,text){if(check)assert.equal(fs.readFileSync(p,"utf8"),text,p);e
 write(path.join(destination,"content.json"),JSON.stringify(pack,null,2)+"\n");
 write(path.join(destination,"Contents.json"),JSON.stringify({data:[{filename:"content.json",idiom:"universal"}],info:{author:"xcode",version:1}},null,2)+"\n");
 for(const plate of plates){
- if(regional){assert(fs.existsSync(path.join(assets,plate.asset+".imageset/Contents.json")),plate.asset);continue;}
- if(aliases[path.basename(plate.drawable,".xml")])continue;
+ if(!regional&&aliases[path.basename(plate.drawable,".xml")])continue;
  write(path.join(assets,plate.asset+".imageset/Contents.json"),JSON.stringify({images:[{filename:"art.pdf",idiom:"universal"}],info:{author:"xcode",version:1},properties:{"preserves-vector-representation":true}},null,2)+"\n");
 }
 console.log((check?"Verified":"Exported")+" "+plates.length+" Kotlin-evaluated structure plates / "+plates.reduce((n,p)=>n+p.features.length,0)+" features / "+plates.reduce((n,p)=>n+p.markers.length,0)+" links. Native resources still require import/validation.");

@@ -296,7 +296,7 @@
           "explanation": "health_atlas_rectus_flexion_story_plate_pubis_detail"
         }
       ],
-      "asset": "HealthAtlasStructureMuscleRectusAbdominis",
+      "asset": "HealthAtlasRegionalMuscleRectusAbdominis",
       "entryIDs": [
         "rectus-abdominis"
       ],
@@ -359,7 +359,7 @@
           "explanation": "health_atlas_oblique_rotation_story_plate_linea_detail"
         }
       ],
-      "asset": "HealthAtlasStructureMuscleAbdominalObliques",
+      "asset": "HealthAtlasRegionalMuscleAbdominalObliques",
       "entryIDs": [
         "oblique-abdominal-muscles"
       ],
@@ -422,7 +422,7 @@
           "explanation": "health_atlas_erector_spinae_plate_origin_detail"
         }
       ],
-      "asset": "HealthAtlasFunctionErector",
+      "asset": "HealthAtlasRegionalErectorSpinaePlate",
       "entryIDs": [
         "erector-spinae"
       ],
@@ -485,7 +485,7 @@
           "explanation": "health_atlas_appendix_plate_muscularis_externa_detail"
         }
       ],
-      "asset": "HealthAtlasStructureAppendixPlate",
+      "asset": "HealthAtlasRegionalAppendixPlate",
       "entryIDs": [
         "appendix"
       ],
@@ -548,7 +548,7 @@
           "explanation": "health_atlas_autonomic_outflows_terminal_detail"
         }
       ],
-      "asset": "HealthAtlasStructureAutonomicOutflows",
+      "asset": "HealthAtlasRegionalAutonomicOutflows",
       "entryIDs": [
         "autonomic-nerves"
       ],
@@ -608,7 +608,7 @@
           "explanation": "health_atlas_ligaments_plate_pcl_tibia_detail"
         }
       ],
-      "asset": "HealthAtlasFunctionLigaments",
+      "asset": "HealthAtlasRegionalLigamentsPlate",
       "entryIDs": [
         "ligaments",
         "tibia"
@@ -672,7 +672,7 @@
           "explanation": "health_atlas_placenta_plate_spiral_artery_detail"
         }
       ],
-      "asset": "HealthAtlasFunctionPlacenta",
+      "asset": "HealthAtlasRegionalPlacentaPlate",
       "entryIDs": [
         "placenta"
       ],
@@ -723,7 +723,7 @@
           "explanation": "health_atlas_hair_shaft_medulla_detail"
         }
       ],
-      "asset": "HealthAtlasStructureHairShaftSection",
+      "asset": "HealthAtlasRegionalHairShaftSection",
       "entryIDs": [
         "hair",
         "hair-follicles"
@@ -772,7 +772,7 @@
       "selectorLabel": "health_atlas_limb_bones_overview_view",
       "splitCallouts": true,
       "features": [],
-      "asset": "HealthAtlasStructureLimbBonesOverview",
+      "asset": "HealthAtlasRegionalLimbBonesOverview",
       "entryIDs": [
         "limb-bones",
         "humerus",
@@ -868,7 +868,7 @@
           "explanation": "health_atlas_cranial_attach_tongue_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCranialNerveMap",
+      "asset": "HealthAtlasRegionalCranialNerveMap",
       "entryIDs": [
         "cranial-nerves"
       ],
@@ -928,7 +928,7 @@
           "explanation": "health_atlas_radius_section_styloid_detail"
         }
       ],
-      "asset": "HealthAtlasStructureRadiusSection",
+      "asset": "HealthAtlasRegionalRadiusSection",
       "entryIDs": [
         "radius",
         "ulna"
@@ -989,7 +989,7 @@
           "explanation": "health_atlas_olfactory_mucosa_gland_detail"
         }
       ],
-      "asset": "HealthAtlasStructureOlfactoryMucosaSection",
+      "asset": "HealthAtlasRegionalOlfactoryMucosaSection",
       "entryIDs": [
         "olfactory-mucosa",
         "cell-olfactory-receptor-neuron"
@@ -1050,7 +1050,7 @@
           "explanation": "health_atlas_shoulder_plate_tuberosity_detail"
         }
       ],
-      "asset": "HealthAtlasStructureMuscleDeltoid",
+      "asset": "HealthAtlasRegionalMuscleDeltoid",
       "entryIDs": [
         "deltoid",
         "scapula"
@@ -1114,7 +1114,7 @@
           "explanation": "health_atlas_shoulder_plate_inferior_angle_detail"
         }
       ],
-      "asset": "HealthAtlasStructureMuscleTrapezius",
+      "asset": "HealthAtlasRegionalMuscleTrapezius",
       "entryIDs": [
         "trapezius"
       ],
@@ -1377,7 +1377,7 @@
           "explanation": "health_atlas_cartilage_overview_plate_bone_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCartilageOverviewPlate",
+      "asset": "HealthAtlasRegionalCartilageOverviewPlate",
       "entryIDs": [
         "cartilage",
         "tissue-hyaline-cartilage",
@@ -1448,7 +1448,7 @@
           "explanation": "health_atlas_synovial_joint_plate_attachment_detail"
         }
       ],
-      "asset": "HealthAtlasStructureSynovialJointPlate",
+      "asset": "HealthAtlasRegionalSynovialJointPlate",
       "entryIDs": [
         "joints",
         "tissue-hyaline-cartilage"
@@ -1512,7 +1512,7 @@
           "explanation": "health_atlas_pineal_plate_superior_colliculus_detail"
         }
       ],
-      "asset": "HealthAtlasFunctionPineal",
+      "asset": "HealthAtlasRegionalPinealPlate",
       "entryIDs": [
         "pineal-gland"
       ],
@@ -1575,7 +1575,7 @@
           "explanation": "health_atlas_biliary_tract_plate_major_papilla_detail"
         }
       ],
-      "asset": "HealthAtlasStructureBiliaryTractPlate",
+      "asset": "HealthAtlasRegionalBiliaryTractPlate",
       "entryIDs": [
         "biliary-tract"
       ],
@@ -1608,7 +1608,7 @@
       "selectorLabel": "health_atlas_vessel_comparison_caption",
       "splitCallouts": true,
       "features": [],
-      "asset": "HealthAtlasStructureVesselComparisonPlate",
+      "asset": "HealthAtlasRegionalVesselComparisonPlate",
       "entryIDs": [
         "blood-vessels",
         "arteries",
@@ -1665,7 +1665,7 @@
           "explanation": "health_atlas_artery_layers_lumen_detail"
         }
       ],
-      "asset": "HealthAtlasStructureArteryLayersPlate",
+      "asset": "HealthAtlasRegionalArteryLayersPlate",
       "entryIDs": [
         "arteries"
       ],
@@ -1708,7 +1708,7 @@
           "explanation": "health_atlas_whole_blood_plasma_detail"
         }
       ],
-      "asset": "HealthAtlasStructureWholeBloodPlate",
+      "asset": "HealthAtlasRegionalWholeBloodPlate",
       "entryIDs": [
         "blood",
         "cell-erythrocyte",
@@ -1771,7 +1771,7 @@
           "explanation": "health_atlas_hypothalamus_plate_infundibulum_detail"
         }
       ],
-      "asset": "HealthAtlasStructureHypothalamusPlate",
+      "asset": "HealthAtlasRegionalHypothalamusPlate",
       "entryIDs": [
         "hypothalamus",
         "pituitary-gland"
@@ -1835,7 +1835,7 @@
           "explanation": "health_atlas_bronchioles_plate_smooth_muscle_detail"
         }
       ],
-      "asset": "HealthAtlasStructureBronchiolesPlate",
+      "asset": "HealthAtlasRegionalBronchiolesPlate",
       "entryIDs": [
         "bronchioles"
       ],
@@ -1904,7 +1904,7 @@
           "explanation": "health_atlas_taste_buds_plate_afferent_detail"
         }
       ],
-      "asset": "HealthAtlasStructureTasteBudsPlate",
+      "asset": "HealthAtlasRegionalTasteBudsPlate",
       "entryIDs": [
         "taste-buds",
         "cell-taste-receptor-cell"
@@ -1968,7 +1968,7 @@
           "explanation": "health_atlas_sinus_plate_inferior_conchae_detail"
         }
       ],
-      "asset": "HealthAtlasStructureSinusPlate",
+      "asset": "HealthAtlasRegionalSinusPlate",
       "entryIDs": [
         "paranasal-sinuses"
       ],
@@ -2019,7 +2019,7 @@
           "explanation": "health_atlas_pleura_section_parietal_detail"
         }
       ],
-      "asset": "HealthAtlasStructurePleuraSection",
+      "asset": "HealthAtlasRegionalPleuraSection",
       "entryIDs": [
         "pleura",
         "lungs"
@@ -2056,7 +2056,7 @@
           "explanation": "health_atlas_context_mast_resident_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellMast",
+      "asset": "HealthAtlasRegionalCellMast",
       "entryIDs": [
         "cell-mast-cell"
       ],
@@ -2092,7 +2092,7 @@
           "explanation": "health_atlas_context_hsc_niche_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellHematopoietic",
+      "asset": "HealthAtlasRegionalCellHematopoietic",
       "entryIDs": [
         "cell-hematopoietic-stem-cell"
       ],
@@ -2128,7 +2128,7 @@
           "explanation": "health_atlas_context_helper_coordination_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellHelperT",
+      "asset": "HealthAtlasRegionalCellHelperT",
       "entryIDs": [
         "cell-helper-t-cell"
       ],
@@ -2164,7 +2164,7 @@
           "explanation": "health_atlas_context_cytotoxic_granules_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellCytotoxicT",
+      "asset": "HealthAtlasRegionalCellCytotoxicT",
       "entryIDs": [
         "cell-cytotoxic-t-cell"
       ],
@@ -2200,7 +2200,7 @@
           "explanation": "health_atlas_context_regulatory_neighbor_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellRegulatoryT",
+      "asset": "HealthAtlasRegionalCellRegulatoryT",
       "entryIDs": [
         "cell-regulatory-t-cell"
       ],
@@ -2236,7 +2236,7 @@
           "explanation": "health_atlas_context_pericyte_wrap_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellPericyte",
+      "asset": "HealthAtlasRegionalCellPericyte",
       "entryIDs": [
         "cell-pericyte"
       ],
@@ -2272,7 +2272,7 @@
           "explanation": "health_atlas_context_lymph_lumen_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellLymphaticEndothelium",
+      "asset": "HealthAtlasRegionalCellLymphaticEndothelium",
       "entryIDs": [
         "cell-lymphatic-endothelial-cell"
       ],
@@ -2308,7 +2308,7 @@
           "explanation": "health_atlas_context_sertoli_junction_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellSertoli",
+      "asset": "HealthAtlasRegionalCellSertoli",
       "entryIDs": [
         "cell-sertoli-cell"
       ],
@@ -2344,7 +2344,7 @@
           "explanation": "health_atlas_context_spermatogonia_lamina_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellSpermatogonium",
+      "asset": "HealthAtlasRegionalCellSpermatogonium",
       "entryIDs": [
         "cell-spermatogonium"
       ],
@@ -2380,7 +2380,7 @@
           "explanation": "health_atlas_context_spermatocyte_bivalent_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellSpermatocyte",
+      "asset": "HealthAtlasRegionalCellSpermatocyte",
       "entryIDs": [
         "cell-spermatocyte"
       ],
@@ -2416,7 +2416,7 @@
           "explanation": "health_atlas_context_oviduct_fold_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellOviductCiliated",
+      "asset": "HealthAtlasRegionalCellOviductCiliated",
       "entryIDs": [
         "cell-ciliated-oviduct-cell"
       ],
@@ -2452,7 +2452,7 @@
           "explanation": "health_atlas_context_endometrium_gland_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellEndometrialEpithelium",
+      "asset": "HealthAtlasRegionalCellEndometrialEpithelium",
       "entryIDs": [
         "cell-endometrial-epithelial-cell"
       ],
@@ -2488,7 +2488,7 @@
           "explanation": "health_atlas_context_stroma_matrix_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellEndometrialStroma",
+      "asset": "HealthAtlasRegionalCellEndometrialStroma",
       "entryIDs": [
         "cell-endometrial-stromal-cell"
       ],
@@ -2524,7 +2524,7 @@
           "explanation": "health_atlas_context_mammary_myo_context_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellMammaryLuminal",
+      "asset": "HealthAtlasRegionalCellMammaryLuminal",
       "entryIDs": [
         "cell-mammary-luminal-cell"
       ],
@@ -2560,7 +2560,7 @@
           "explanation": "health_atlas_context_trophoblast_villus_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellTrophoblast",
+      "asset": "HealthAtlasRegionalCellTrophoblast",
       "entryIDs": [
         "cell-trophoblast"
       ],
@@ -2596,7 +2596,7 @@
           "explanation": "health_atlas_context_langerhans_body_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellLangerhans",
+      "asset": "HealthAtlasRegionalCellLangerhans",
       "entryIDs": [
         "cell-langerhans-cell"
       ],
@@ -2632,7 +2632,7 @@
           "explanation": "health_atlas_context_sebocyte_duct_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellSebocyte",
+      "asset": "HealthAtlasRegionalCellSebocyte",
       "entryIDs": [
         "cell-sebocyte"
       ],
@@ -2668,7 +2668,7 @@
           "explanation": "health_atlas_context_eccrine_lumen_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellSweatSecretory",
+      "asset": "HealthAtlasRegionalCellSweatSecretory",
       "entryIDs": [
         "cell-sweat-gland-secretory-cell"
       ],
@@ -2704,7 +2704,7 @@
           "explanation": "health_atlas_context_hair_papilla_neighbor_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellHairMatrix",
+      "asset": "HealthAtlasRegionalCellHairMatrix",
       "entryIDs": [
         "cell-hair-matrix-cell"
       ],
@@ -2740,7 +2740,7 @@
           "explanation": "health_atlas_context_muscle_satellite_fiber_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellMuscleSatellite",
+      "asset": "HealthAtlasRegionalCellMuscleSatellite",
       "entryIDs": [
         "cell-muscle-satellite-cell"
       ],
@@ -2776,7 +2776,7 @@
           "explanation": "health_atlas_context_tenocyte_collagen_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellTenocyte",
+      "asset": "HealthAtlasRegionalCellTenocyte",
       "entryIDs": [
         "cell-tenocyte"
       ],
@@ -2818,7 +2818,7 @@
           "explanation": "health_atlas_context_sweat_pore_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellSweatGlandSection",
+      "asset": "HealthAtlasRegionalCellSweatGlandSection",
       "entryIDs": [
         "sweat-glands",
         "cell-sweat-gland-secretory-cell"
@@ -2861,7 +2861,7 @@
           "explanation": "health_atlas_context_hair_section_papilla_detail"
         }
       ],
-      "asset": "HealthAtlasStructureCellHairFollicleSection",
+      "asset": "HealthAtlasRegionalCellHairFollicleSection",
       "entryIDs": [
         "hair-follicles",
         "cell-hair-matrix-cell"
@@ -2925,7 +2925,7 @@
           "explanation": "health_atlas_context_nail_edge_detail"
         }
       ],
-      "asset": "HealthAtlasStructureNailSection",
+      "asset": "HealthAtlasRegionalNailSection",
       "entryIDs": [
         "nails"
       ],
@@ -2972,7 +2972,7 @@
           "explanation": "health_atlas_context_sebaceous_lobules_detail"
         }
       ],
-      "asset": "HealthAtlasStructureSebaceousSection",
+      "asset": "HealthAtlasRegionalSebaceousSection",
       "entryIDs": [
         "sebaceous-glands",
         "hair-follicles",

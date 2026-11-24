@@ -54,7 +54,7 @@ for(const token of [
  "let length: Double", "GalaxySSIHealthAtlasCurveLength.route(route", "min(0.94, 0.63+8/track.length)",
  "for i in 0...110", "Double(i)/110", "p.addLine(to: CGPoint(x: 326, y: 269))",
  "p.addLine(to: CGPoint(x: 34, y: 269))", "for y in stride(from: 151.0, through: 241, by: 30)",
- "CGRect(x: 12, y: 45, width: 336, height: 248)", 'Image("HealthAtlasFunctionPineal")',
+ "CGRect(x: 12, y: 45, width: 336, height: 248)", 'Image("HealthAtlasRegionalPinealPlate")',
  "width: 360, height: 280", "startAngle: .degrees(168), endAngle: .degrees(300), clockwise: false",
  "CGAffineTransform(a: 7.5, b: 0, c: 0, d: 8, tx: 89.5, ty: 154)",
  "0xF0F1F9 : 0xF8FBFC", "0xE7F1F3 : 0xE7F1F1",

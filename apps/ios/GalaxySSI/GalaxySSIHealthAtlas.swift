@@ -64,6 +64,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try LymphPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try GutPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try FunctionStructurePack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
+    if let pack = try RegionalStructurePack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     return result
   }
 
@@ -257,10 +258,15 @@ struct GalaxySSIHealthAtlas: Decodable {
     if id == "heart" { return [GalaxySSIHealthAtlasHeartSection.exterior, GalaxySSIHealthAtlasHeartSection.section] }
     if let id, let plate = GalaxySSIHealthAtlasHeartSection.plate(for: id) { return [plate] }
     if GalaxySSIHealthAtlasMiddleEar.ids.contains(id ?? "") { return [GalaxySSIHealthAtlasMiddleEar.plate] }
+    if id == "cell-tenocyte" {
+      let views = RegionalStructurePack.views(for: id)
+      if !views.isEmpty { return views }
+    }
     if let pack = try? MusculoskeletalPack.bundled.get() {
       let views = pack.plates.filter { $0.entryIDs.contains(id ?? "") }
       if !views.isEmpty {
-        return FunctionStructurePack.plate(for: id).map { [$0] + views } ?? views
+        let detail = RegionalStructurePack.plate(for: id) ?? FunctionStructurePack.plate(for: id)
+        return detail.map { [$0] + views } ?? views
       }
     }
     return defaultPlate(for: id).map { [$0] } ?? []
@@ -271,13 +277,14 @@ struct GalaxySSIHealthAtlas: Decodable {
       (source.host == "openstax.org" || source == GalaxySSIHealthAtlasEyeOptics.anatomySource ||
         source == GalaxySSIHealthAtlasMiddleEar.anatomySource || DigestivePack.paperSources.contains(source) ||
         SensoryPack.externalSources.contains(source) || TissueContextPack.paperSources.contains(source) ||
-        FunctionStructurePack.sources.contains(source))
+        RegionalStructurePack.sources.contains(source))
   }
   func plate(for id: String?, viewKey: String? = nil) -> Plate? {
     let available = views(for: id)
     return available.first(where: { $0.viewKey == viewKey }) ?? available.first
   }
   private func defaultPlate(for id: String?) -> Plate? {
+    if let plate = RegionalStructurePack.plate(for: id) { return plate }
     if let plate = FunctionStructurePack.plate(for: id) { return plate }
     if let pack = try? GutPack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if let pack = try? LymphPack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }

@@ -3,7 +3,7 @@ import SwiftUI
 extension GalaxySSIHealthAtlasIllustratedDrawing {
   func ligamentScene(_ step: Int, _ t: Double) {
     let plate = GalaxySSIHealthAtlasLigamentPlate.self
-    context.draw(Image("HealthAtlasFunctionLigaments"),in:CGRect(x:0,y:plate.top,width:plate.width,height:plate.height))
+    context.draw(Image("HealthAtlasRegionalLigamentsPlate"),in:CGRect(x:0,y:plate.top,width:plate.width,height:plate.height))
     ligamentCallout("ligament_guidance_story_femur",55,55,86,60,CGPoint(x:143,y:54),0x886E59)
     ligamentCallout("ligament_guidance_story_tibia",306,212,281,217,plate.display(plate.tibia),0x886E59)
     ligamentCallout("ligament_guidance_story_acl",47,104,67,109,plate.display(plate.aclFemur),0x30756C)

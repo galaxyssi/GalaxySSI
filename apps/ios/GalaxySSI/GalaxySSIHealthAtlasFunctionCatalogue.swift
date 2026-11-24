@@ -28,10 +28,13 @@ struct GalaxySSIHealthAtlasFunctionCatalogue: Decodable {
   let routes: [String: [String]]
   let entryPhases: [String: [String: Double]]
   static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
-  static func read(bundle: Bundle) throws -> Self? {
-    guard let data = NSDataAsset(name: "HealthAtlasFunctionStories", bundle: bundle)?.data else { return nil }
+  static func read(bundle: Bundle, revision: Int = 4385) throws -> Self? {
+    guard revision == 4384 || revision == 4385 else { throw GalaxySSIHealthAtlas.Invalid.catalogue }
+    let asset = revision == 4384 ? "HealthAtlasFunctionStories" : "HealthAtlasRegionalStories"
+    guard let data = NSDataAsset(name: asset, bundle: bundle)?.data else { return nil }
     guard data.count <= 1_000_000 else { throw GalaxySSIHealthAtlas.Invalid.catalogue }
     let value = try JSONDecoder().decode(Self.self, from: data)
+    guard value.source.androidPR == revision else { throw GalaxySSIHealthAtlas.Invalid.catalogue }
     try value.validate()
     return value
   }
@@ -42,9 +45,14 @@ struct GalaxySSIHealthAtlasFunctionCatalogue: Decodable {
     let ids = Set(stories.map(\.id))
     let owners = Set(stories.flatMap(\.owners))
     func key(_ value: String) -> Bool { value.hasPrefix("health_atlas_") && value.count <= 128 && !value.contains(where: \.isWhitespace) }
-    guard schema == 1, source.androidPR == 4384, source.mergeCommit == "ab78711d467c013444883dbaeca23c39a601c875",
-      stories.count == 101, ids.count == stories.count, stories.reduce(0, { $0 + $1.chapters.count }) == 491,
-      routes.count == 268, Set(routes.keys) == owners, Set(entryPhases.keys) == owners,
+    let baseline = source.androidPR == 4384 && source.mergeCommit == "ab78711d467c013444883dbaeca23c39a601c875" &&
+      stories.count == 101 && stories.reduce(0, { $0 + $1.chapters.count }) == 491 && routes.count == 268 &&
+      stories.reduce(0, { $0 + $1.references.count }) == 226
+    let regional = source.androidPR == 4385 && source.mergeCommit == "a81aa85a1c81e41ff19a032eabea1eddcd2371dc" &&
+      stories.count == 114 && stories.reduce(0, { $0 + $1.chapters.count }) == 544 && routes.count == 289 &&
+      stories.reduce(0, { $0 + $1.references.count }) == 261
+    guard schema == 1, baseline || regional, ids.count == stories.count,
+      Set(routes.keys) == owners, Set(entryPhases.keys) == owners,
       stories.allSatisfy({ story in
         !story.id.isEmpty && story.id.count <= 80 && story.id.allSatisfy({ $0.isUppercase || $0 == "_" || $0.isNumber }) &&
           !story.owners.isEmpty && Set(story.owners).count == story.owners.count &&
@@ -69,7 +77,8 @@ struct GalaxySSIHealthAtlasFunctionCatalogue: Decodable {
     let hosts: Set<String> = ["pubmed.ncbi.nlm.nih.gov", "pmc.ncbi.nlm.nih.gov", "openstax.org", "www.nhlbi.nih.gov",
       "www.niddk.nih.gov", "www.nidcd.nih.gov", "www.nei.nih.gov", "www.ncbi.nlm.nih.gov", "doi.org", "www.nature.com",
       "www.jci.org", "link.springer.com", "pure.amsterdamumc.nl", "journals.plos.org", "www.jstage.jst.go.jp",
-      "nba.uth.tmc.edu", "temple.manifoldapp.org", "hdl.handle.net", "histology.leeds.ac.uk", "tales.nmc.unibas.ch"]
+      "nba.uth.tmc.edu", "temple.manifoldapp.org", "hdl.handle.net", "histology.leeds.ac.uk", "tales.nmc.unibas.ch",
+      "training.seer.cancer.gov", "www.medcell.org", "sti.bmj.com", "rad.washington.edu"]
     return url.scheme == "https" && url.host.map(hosts.contains) == true && url.user == nil && url.password == nil && url.port == nil
   }
 }

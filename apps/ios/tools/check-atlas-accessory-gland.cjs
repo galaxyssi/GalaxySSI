@@ -49,4 +49,4 @@ let samples = 0;
 for (const delay of [0, 0.17]) for (let tick = 0; tick <= 120; tick++) { const t = tick / 120, p = Math.min(1, Math.max(0, (t - 0.04 - delay) / (0.84 - delay))), progress = p * p * (3 - 2 * p); assert(progress >= 0 && progress <= 1); if (t <= 0.04 + delay) assert.equal(progress, 0); samples++; }
 const pbx = fs.readFileSync(path.join(root, "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"), "utf8");
 for (const file of ["Routes", "Labels", "Drawing", "View"]) assert.equal(pbx.split("path = GalaxySSIHealthAtlasAccessoryGland" + file + ".swift;").length - 1, 1);
-console.log("Android #4385 accessory glands: six original bilateral route controls, " + callouts + " source-evaluated stage callouts, five routing/highlight contracts and " + samples + " analytic delay samples. Runtime activation pending; no native execution.");
+console.log("Android #4385 accessory glands: six original bilateral route controls, " + callouts + " source-evaluated stage callouts, five routing/highlight contracts and " + samples + " analytic delay samples. Runtime source dispatch audited separately; no native execution.");

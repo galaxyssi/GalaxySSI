@@ -39,4 +39,4 @@ for (const [id, chapters, native] of [["SKULL_PROTECTION", 4, "Skull"], ["VERTEB
 }
 const pbx = fs.readFileSync(path.join(root, "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"), "utf8");
 for (const name of ["SkullGeometry", "SkullDrawing", "SkullView", "VertebralGeometry", "VertebralMotion", "VertebralDrawing", "VertebralView"]) assert.equal(pbx.split("path = GalaxySSIHealthAtlas" + name + ".swift;").length - 1, 1);
-console.log("Android #4385 axial courses: exact 27-path regeneration, SVG relative/reflection fixtures, 12 skull callouts, clipped fluid tracers and " + poses + " analytic moving-disc poses. Runtime catalogue activation pending; no native execution.");
+console.log("Android #4385 axial courses: exact 27-path regeneration, SVG relative/reflection fixtures, 12 skull callouts, clipped fluid tracers and " + poses + " analytic moving-disc poses. Runtime source dispatch audited separately; no native execution.");

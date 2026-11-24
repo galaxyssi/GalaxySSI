@@ -37,4 +37,4 @@ for (let tick = 0; tick <= 120; tick++) {
 }
 const pbx = fs.readFileSync(path.join(root, "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"), "utf8");
 for (const name of ["LocatorGeometry", "WallGeometry", "CanalGeometry", "VaginalGeometry", "Motion", "Drawing", "LocatorDrawing", "DetailDrawing", "VaginalDrawing", "View"]) assert.equal(pbx.split("path = GalaxySSIHealthAtlasUterocervical" + name + ".swift;").length - 1, 1);
-console.log("Android #4385 uterocervical: 29 Kotlin-evaluated static paths/216 commands, original dynamic lining controls, nine callouts, fixed locator/openings and " + poses + " analytic motion samples. Runtime activation pending; no native execution.");
+console.log("Android #4385 uterocervical: 29 Kotlin-evaluated static paths/216 commands, original dynamic lining controls, nine callouts, fixed locator/openings and " + poses + " analytic motion samples. Runtime source dispatch audited separately; no native execution.");

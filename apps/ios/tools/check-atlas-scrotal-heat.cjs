@@ -31,4 +31,4 @@ const story = JSON.parse(fs.readFileSync(path.join(root, "apps/ios/GalaxySSI/Ass
 assert.equal(story.chapters.length, 3); assert.deepEqual(story.owners, ["scrotum"]);
 const pbx = fs.readFileSync(path.join(root, "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"), "utf8");
 for (const file of ["Geometry", "Drawing", "View"]) assert.equal(pbx.split("path = GalaxySSIHealthAtlasScrotalHeat" + file + ".swift;").length - 1, 1);
-console.log("Android #4385 scrotal heat: eleven exact paths / " + count + " commands, original tracer controls/directions, mirrored sections, three chapter contracts and project registration. Runtime activation awaits remaining courses; no native execution.");
+console.log("Android #4385 scrotal heat: eleven exact paths / " + count + " commands, original tracer controls/directions, mirrored sections, three chapter contracts and project registration. Runtime source dispatch audited separately; no native execution.");

@@ -1,6 +1,7 @@
 # Android #4385 iOS Port Status
 
-This is an in-progress implementation, not a completed parity claim or release.
+Source implementation and runtime wiring are present. This is not native parity
+acceptance, a compiled iOS release or a device-verified build.
 
 ## Source And Dependency
 
@@ -25,8 +26,9 @@ This is an in-progress implementation, not a completed parity claim or release.
   arrowheads preserve the original positive-direction diagrams.
 - Ligament-guidance first chapter now crossfades ACL/PCL footprint focus.
 - Regional catalogue snapshot evaluated from original Kotlin declarations:
-  114 courses, 544 chapters, 261 references and 289 owner routes. It is not yet
-  activated by the runtime loader, to avoid exposing unfinished course renderers.
+  114 courses, 544 chapters, 261 references and 289 owner routes. The runtime now
+  selects this pinned revision by default; the #4384 snapshot remains available
+  only through an explicit archived revision read.
 - Dedicated ankle-mortise renderer: five scenes, nine source paths/80 commands,
   smooth easing, talar rotation and exaggerated syndesmosis displacement.
 - Dedicated scrotal-heat renderer: three scenes, eleven source paths/58 commands,
@@ -67,34 +69,58 @@ This is an in-progress implementation, not a completed parity claim or release.
   regional sections. Original pure Kotlin declarations produce 29 static paths/216
   commands, including loop textures, relative quadratics and four continuous trace
   DTOs. Native moving folds retain original controls and fixed canal/opening edges.
-- All thirteen new renderers have Xcode source registration but remain unreachable until
-  the regional catalogue and complete renderer coverage are activated together.
+- All thirteen new renderers have Xcode source registration and explicit dispatch
+  in the active 114-course registry. Catalogue and renderer coverage are enabled
+  together, preserving all 101 baseline registrations.
 - All 23 new/modified VectorDrawable resources imported into separate regional PDF
   assets: 298 source paths and 68 native gradients. They do not overwrite frozen
-  #4384 PDFs. Their runtime structure selectors/features are not yet connected.
+  #4384 PDFs. Regional selectors/features now reference the revised assets.
+- All 73 current structure views now use regional PDF copies, including 51
+  previously unchanged source vectors: 1,015 paths and 171 gradients. This removes
+  inherited non-equivalent quadratic encodings from the active structure views.
+  Erector, ligament, pineal and placental course drawing also use these corrected
+  copies; the old PDFs remain only for frozen snapshot checks/fallback data.
 - Regional conversion preserves scoped clipping paths and converts SVG Q/T curves
   into mathematically equivalent cubic PDF paths, retaining relative commands and
-  reflected quadratic controls. Legacy batches keep their existing conversion.
+  reflected quadratic controls. Pinned MIT-licensed svgpath 2.6.0 resolves shorthand
+  controls before PDF encoding, including the skull's consecutive-T chain. Vendor
+  provenance/license and official registry archive-integrity evidence are retained.
 - Omitted gradient axis coordinates now use Android's zero defaults, verified in
   [Android GradientColor source](https://android.googlesource.com/platform/frameworks/base/+/4e4cac3031513a2a739d3c55e9e6abf738b88eec/core/java/android/content/res/GradientColor.java).
 - Regional structure metadata extracted from the original pure Kotlin declarations:
   73 unique views for 72 owners, 252 annotations and 36 links. This preserves the
   two independent tenocyte views, the taste-pore coordinate correction, new view
   keys/selectors and revised microglia/ependymal/rib artwork references. The snapshot
-  is not yet loaded by the runtime; 22 views point to regional PDF resources.
+  is loaded and validated by the runtime; all 73 views point to regional PDFs.
+
+## Runtime Integration
+
+- Default #4385 revision validates all course/chapter/reference/route counts and
+  source commit. The reader rejects a mismatched requested revision.
+- Every current course has explicit native dispatch; all 289 owner routes and
+  124 related destinations are present in the evaluated catalogue.
+- Regional structure views take precedence over frozen detail plates without
+  removing musculoskeletal context views. Tenocyte gets two distinct selectors,
+  with the original cellular context first and tendon-longitudinal view second.
+- Reference guards include the four added source hosts. Structure source URLs
+  remain restricted to the exact previous and regional source sets.
+- Pineal retains the existing preserved-vector PDF/Image drawing path rather than
+  importing Android's VectorDrawable-specific bitmap cache workaround. Device
+  zoom/rewind behavior has not been accepted or measured.
+- Archived checks explicitly audit frozen cohorts; current runtime has its own
+  114-course/73-view integration audit. XCTest source expectations were updated,
+  but XCTest has not been executed.
 
 ## Remaining Before Publication
 
-- All thirteen new course renderers are implemented. Activate their catalogue and
-  renderer registry only after completing the runtime integration below.
-- New/modified structure plate metadata and their owner/view selectors, features,
-  links, sources and captions are extracted; connect the snapshot and imported
-  vector revisions to runtime, including the two-view tenocyte selector behavior.
-- Runtime catalogue activation, revision validation and complete renderer routing.
-- Review pineal caching adaptation: Android changed VectorDrawable raster caching;
-  current iOS implementation uses a PDF asset and must not gain redundant Android
-  bitmap behavior without platform-specific justification.
-- Full per-file source coverage audit and formal non-draft `main` PR.
+- Serial source-contract verification passed for all 93 original changed files.
+  `ANDROID_4385_PORT_COVERAGE.json` records every hash, disposition, iOS target,
+  source check and platform-specific verification limitation.
+- Latest fetched main is `bcc2d4c0fc9526d2b047741a3d47f3cece3d9c2b`; it is an
+  ancestor of this branch. #4491 remains open and its foundation is still included
+  in the main-to-head diff. A `main` base does not make this branch independent.
+- Publish one formal non-draft PR for Android #4385, without claiming native or
+  device acceptance and without generating an IPA.
 
 ## Verification Boundary
 
@@ -118,12 +144,20 @@ of quadratic/cubic equivalence. The retained #4384 ligament PDF check still pass
 Regional structure metadata checks passed for all 73 views: graph identities,
 annotation/link coordinates, both language tables, unique view keys, PDF resource
 availability, revised artwork aliases and the two-view tenocyte snapshot. This
-does not prove runtime routing or selection behavior, which remains pending.
+does not prove executed runtime routing or selection behavior. Separate source
+integration checks now cover the active runtime branches, not native execution.
 
-The historical #4384 PDFs remain unchanged. Their retained-batch checks compare
-encoded operations and do not prove SVG Q/T semantic equivalence. A follow-up
-resource audit must revisit their quadratics using the new exact conversion;
-passing those older checks is not proof that this separate issue is resolved.
+Historical #4384 PDFs remain unchanged. Their retained-batch checks compare
+encoded operations and do not prove SVG Q/T semantic equivalence. Active regional
+structure views and the four PDF-backed structure course scenes use corrected
+copies instead. Other unchanged #4384 PDF course cohorts still need a separate
+quadratic audit; passing their old encoded-operation checks is not proof that this
+broader inherited issue is resolved.
+
+The completed source run verifies the corrected 73-view PDF cohort against 1,015
+source paths and 171 gradients, plus all 23 changed source vector assets. The
+consecutive-T fixture reproduces the skull source chain with independent expected
+controls, and the vendored parser archive matches official npm SHA-512 metadata.
 
 Clitoral/vestibular source checks passed for all 16 paths/72 commands, nine
 continuous trace control sets, nineteen bilingual labels and nineteen source

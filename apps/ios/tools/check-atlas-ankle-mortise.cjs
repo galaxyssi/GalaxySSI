@@ -27,4 +27,4 @@ assert.equal(story.chapters.length, 5); assert.equal(story.durationMs, 20000);
 assert.deepEqual(catalogue.routes.tibia, ["KNEE_ARTICULATION", "ANKLE_MORTISE"]);
 const pbx = fs.readFileSync(path.join(root, "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"), "utf8");
 for (const file of ["Geometry", "Drawing", "View"]) assert.equal(pbx.split("path = GalaxySSIHealthAtlasAnkle" + file + ".swift;").length - 1, 1);
-console.log("Android #4385 ankle: nine exact paths / " + count + " commands, five scene mappings, easing/rotation/highlight/callout source contracts and project registration. Runtime catalogue activation awaits remaining regional courses; no native execution.");
+console.log("Android #4385 ankle: nine exact paths / " + count + " commands, five scene mappings, easing/rotation/highlight/callout source contracts and project registration. Runtime source dispatch audited separately; no native execution.");

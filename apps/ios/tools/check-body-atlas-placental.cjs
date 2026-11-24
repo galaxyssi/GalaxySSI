@@ -78,7 +78,7 @@ for(const [swift,kotlin]of[
  ["placentalTransporter(138.8,179)","transporter(c, 138.8f, 179f)"],["placentalTransporter(146.2,179)","transporter(c, 146.2f, 179f)"]
 ]){assert(norm(all).includes(norm(swift)),swift);assert(norm(source).includes(norm(kotlin)),kotlin);}
 for(const token of[
- 'Image("HealthAtlasFunctionPlacenta")','CGRect(x:20,y:53,width:320,height:249)',
+ 'Image("HealthAtlasRegionalPlacentaPlate")','CGRect(x:20,y:53,width:320,height:249)',
  "210.2-r,y:202.4-r","12+6*GalaxySSIHealthAtlasPlacentalMotion.emphasis(t)",
  "stroke(ring,0xFDF4DA,3.4); stroke(ring,0x3E7582,1.4)",
  "gradient(g.field,92,263,0xF8E6DF,0xE9BFC0)","gradient(g.surface,92,257,0xD9A2A2,0xB77987)",

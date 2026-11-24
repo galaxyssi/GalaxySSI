@@ -36,4 +36,4 @@ const catalogue = JSON.parse(fs.readFileSync(path.join(app, "Assets.xcassets/Hea
 assert.equal(catalogue.stories.find(s => s.id === "TENOCYTE_TENDON_MATRIX").chapters.length, 4);
 const pbx = fs.readFileSync(path.join(root, "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"), "utf8");
 for (const file of ["Geometry", "Drawing", "View"]) assert.equal(pbx.split("path = GalaxySSIHealthAtlasTenocyteTendon" + file + ".swift;").length - 1, 1);
-console.log("Android #4385 tenocyte: exact parameterized fiber/cell curves, four deformation stages, marker vertices, rest profile, bilingual keys and " + poses + " analytic poses. Runtime activation pending; no native execution.");
+console.log("Android #4385 tenocyte: exact parameterized fiber/cell curves, four deformation stages, marker vertices, rest profile, bilingual keys and " + poses + " analytic poses. Runtime source dispatch audited separately; no native execution.");

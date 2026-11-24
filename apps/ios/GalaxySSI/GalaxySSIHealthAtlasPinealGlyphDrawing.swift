@@ -3,7 +3,7 @@ import SwiftUI
 extension GalaxySSIHealthAtlasIllustratedDrawing {
   func pinealBrain(_ x: Double, _ y: Double, _ size: Double) {
     var c = context; c.translateBy(x: x, y: y); c.scaleBy(x: size, y: size)
-    c.draw(Image("HealthAtlasFunctionPineal"), in: CGRect(x: 0, y: 0, width: 360, height: 280))
+    c.draw(Image("HealthAtlasRegionalPinealPlate"), in: CGRect(x: 0, y: 0, width: 360, height: 280))
   }
   func pinealSun(_ x: Double, _ y: Double, _ r: Double) {
     disc(x, y, r, 0xF0D499, border: 0xA6783D)

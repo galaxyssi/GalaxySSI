@@ -39,6 +39,6 @@ assert.equal(tenocyte[1].asset, "HealthAtlasRegionalTenocyteTendonMatrixLongitud
 const pore = pack.plates.find(p => p.owner === "taste-buds").features.find(f => f.marker.id === "taste-pore").marker;
 assert(Math.abs(pore.x - 183 / 360) < 1e-7 && Math.abs(pore.y - 70 / 280) < 1e-7);
 for (const [owner, asset] of [["cell-microglia", "MicrogliaPlate"], ["cell-ependymal-cell", "EpendymalPlate"], ["ribs", "RibsAttachmentsPlate"]]) assert.equal(pack.plates.find(p => p.owner === owner).asset, "HealthAtlasRegional" + asset);
-assert.equal(pack.plates.filter(p => p.asset.startsWith("HealthAtlasRegional")).length, 22);
+assert.equal(pack.plates.filter(p => p.asset.startsWith("HealthAtlasRegional")).length, 73);
 if (process.argv.includes("--reextract")) cp.execFileSync(process.execPath, [path.join(__dirname, "import-body-atlas-function-structures.cjs"), "--regional", "--check"], {cwd: root, stdio: "inherit"});
-console.log("Android #4385 structures: 73 unique view identities / 72 owners / 252 annotations / 36 links, bilingual keys, resource availability, revised plates, taste-pore correction and two tenocyte views. Runtime integration pending; no native execution.");
+console.log("Android #4385 structures: 73 unique view identities / 72 owners / 252 annotations / 36 links, bilingual keys, resource availability, revised plates, taste-pore correction and two tenocyte views. Runtime source dispatch audited separately; no native execution.");

@@ -37,10 +37,26 @@ if (process.argv.includes("--regional-4385")) {
     paths += items.length; gradients += items.filter(p => p["aapt:attr"]).length;
     const slug = path.basename(file.path, ".xml").replace(/^health_atlas_/, "");
     const asset = "HealthAtlasRegional" + slug.split("_").map(part => part[0].toUpperCase() + part.slice(1)).join("");
-    return [slug, asset, "art.pdf"];
+    return [slug, asset, "art.pdf", 0];
   });
   batches["--regional-4385"] = {name: "regional", androidPR: 4385, sha: inventory.source.mergeCommit,
     paths, gradients, frames, groups: true, affineGroups: true, clips: true, normalizeQuadratics: true};
+}
+if (process.argv.includes("--regional-structures-4385")) {
+  const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process");
+  const root = path.resolve(__dirname, "../../..");
+  const pack = JSON.parse(fs.readFileSync(path.join(root, "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasRegionalStructures.dataset/content.json")));
+  if (pack.source.androidPR !== 4385 || pack.source.mergeCommit !== "a81aa85a1c81e41ff19a032eabea1eddcd2371dc" || pack.plates.length !== 73) throw Error("Regional structure artwork source mismatch");
+  let paths = 0, gradients = 0;
+  const frames = pack.plates.map(plate => {
+    const raw = cp.execFileSync("git", ["show", pack.source.mergeCommit + ":" + plate.drawable], {cwd: root, encoding: "utf8"});
+    const items = require("./body-atlas-ordered-vector.cjs")(raw, {affine: true, clips: true});
+    paths += items.length; gradients += items.filter(p => p["aapt:attr"]).length;
+    return [path.basename(plate.drawable, ".xml").replace(/^health_atlas_/, ""), plate.asset, "art.pdf", 0];
+  });
+  if (new Set(frames.map(f => f[1])).size !== 73) throw Error("Regional structure asset collision");
+  batches["--regional-structures-4385"] = {name: "complete regional structures", androidPR: 4385,
+    sha: pack.source.mergeCommit, paths, gradients, frames, groups: true, affineGroups: true, clips: true, normalizeQuadratics: true};
 }
 if (process.argv.includes("--function-structures")) {
   const fs = require("node:fs"), path = require("node:path");

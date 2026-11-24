@@ -46,4 +46,4 @@ for (const [start, end] of [[0, 0.56], [0.32, 0.95], [0, 0.67], [0.28, 0.96], [0
 }
 const pbx = fs.readFileSync(path.join(root, "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"), "utf8");
 for (const file of ["Geometry", "Features", "Drawing", "View"]) assert.equal(pbx.split("path = GalaxySSIHealthAtlasVulvar" + file + ".swift;").length - 1, 1);
-console.log("Android #4385 vulvar protection: ten exact paths/50 commands, nine traces, " + annotations + " original feature anchors, eight source callouts and " + samples + " analytic reveal samples. Five scene contracts/resources; runtime activation pending, no native execution.");
+console.log("Android #4385 vulvar protection: ten exact paths/50 commands, nine traces, " + annotations + " original feature anchors, eight source callouts and " + samples + " analytic reveal samples. Five scene contracts/resources; Runtime source dispatch audited separately; no native execution.");

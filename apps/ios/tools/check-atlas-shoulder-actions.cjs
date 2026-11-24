@@ -56,4 +56,4 @@ for (let step = 0; step < 5; step++) for (let tick = 0; tick <= 120; tick++) {
 }
 const pbx = fs.readFileSync(path.join(root, "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"), "utf8");
 for (const file of ["ShoulderActionMotion", "PectoralGeometry", "PectoralDrawing", "PectoralFanDrawing", "PectoralView", "LatissimusGeometry", "LatissimusDrawing", "LatissimusBackDrawing", "LatissimusSheetDrawing", "LatissimusView"]) assert.equal(pbx.split("path = GalaxySSIHealthAtlas" + file + ".swift;").length - 1, 1);
-console.log("Android #4385 shoulders: " + paths + " exact outlines/" + commands + " static commands, original fan/sheet/back controls, " + labels + " bilingual labels and " + samples + " analytic two-course poses/phase continuity. Runtime activation pending; no native execution.");
+console.log("Android #4385 shoulders: " + paths + " exact outlines/" + commands + " static commands, original fan/sheet/back controls, " + labels + " bilingual labels and " + samples + " analytic two-course poses/phase continuity. Runtime source dispatch audited separately; no native execution.");

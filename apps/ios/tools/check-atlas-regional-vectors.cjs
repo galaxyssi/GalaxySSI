@@ -2,10 +2,21 @@
 const assert = require("node:assert/strict"), cp = require("node:child_process"), path = require("node:path"), fs = require("node:fs");
 const {svgPathToOperators} = require("pdf-lib/cjs/api/svgPath.js");
 const normalize = require("./body-atlas-quadratic-path.cjs"), ordered = require("./body-atlas-ordered-vector.cjs");
+const normalizedSVG = require("./body-atlas-svg-path.cjs");
 const root = path.resolve(__dirname, "../../..");
 const ops = data => svgPathToOperators(data).map(op => [op.name, ...op.args.map(n => n.asNumber())]);
 assert.deepEqual(ops(normalize("M0 0 Q30 30 60 0 T120 0")), [["m", 0, 0], ["c", 20, 20, 40, 20, 60, 0], ["c", 80, -20, 100, -20, 120, 0]]);
 assert.deepEqual(ops(normalize("M10 20 q30 60 90 0 Z m5 5 l10 0")), [["m", 10, 20], ["c", 30, 60, 60, 60, 100, 20], ["h"], ["m", 15, 25], ["l", 25, 25]]);
+const skullChain = "M42 128 Q56 110 74 110 T105 97 T136 93 T168 84 T200 88 T233 91 T275 110 T319 123";
+assert.deepEqual(ops(normalizedSVG(skullChain)), [["m", 42, 128], ["v", 56, 110, 74, 110],
+  ["v", 92, 110, 105, 97], ["v", 118, 84, 136, 93], ["v", 154, 102, 168, 84],
+  ["v", 182, 66, 200, 88], ["v", 218, 110, 233, 91], ["v", 248, 72, 275, 110], ["v", 302, 148, 319, 123]]);
+assert(ops(normalize(skullChain)).every(op => ["m", "c"].includes(op[0])));
+assert.throws(() => normalizedSVG("M0 0 Qbad"), /Invalid atlas SVG path/);
+assert.equal(require("./vendor/svgpath-2.6.0/package.json").version, "2.6.0");
+const vendorHashes = require("./vendor/SVGPATH_SHA256.json"), crypto = require("node:crypto");
+assert.equal(Object.keys(vendorHashes).length, 11);
+for (const [file, digest] of Object.entries(vendorHashes)) assert.equal(crypto.createHash("sha256").update(fs.readFileSync(path.join(__dirname, "vendor/svgpath-2.6.0", file))).digest("hex"), digest, "Original vendor bytes: " + file);
 let samples = 0;
 for (const [start, control, end] of [[[0, 0], [30, 30], [60, 0]], [[32, 119], [180, 37], [328, 119]], [[88, 149], [76, 165], [96, 170]]]) {
   const data = "M" + start.join(" ") + " Q" + [...control, ...end].join(" ");
@@ -34,4 +45,8 @@ for (const [, asset] of batch.frames) {
   assert(fs.statSync(path.join(dir, "art.pdf")).size > 0);
 }
 cp.execFileSync(process.execPath, [path.join(__dirname, "check-body-atlas-sensory-sections.cjs"), "--regional-4385"], {cwd: root, stdio: "inherit"});
-console.log("Regional vectors: 23 source assets, nested clip scope/rejection, relative/reflected quadratic fixtures and " + samples + " exact-equivalence samples. No native rendering acceptance.");
+const pack = JSON.parse(fs.readFileSync(path.join(root, "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasRegionalStructures.dataset/content.json")));
+assert.equal(pack.plates.length, 73); assert.equal(new Set(pack.plates.map(p => p.asset)).size, 73);
+assert(pack.plates.every(p => p.asset.startsWith("HealthAtlasRegional")));
+cp.execFileSync(process.execPath, [path.join(__dirname, "check-body-atlas-sensory-sections.cjs"), "--regional-structures-4385"], {cwd: root, stdio: "inherit"});
+console.log("Regional vectors: 23 changed source assets plus all 73 current structure PDFs, nested clip scope, consecutive-T source fixture and " + samples + " quadratic/cubic equivalence samples. No native rendering acceptance.");

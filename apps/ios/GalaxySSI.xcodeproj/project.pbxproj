@@ -486,6 +486,7 @@
     C438400000000000000003FB /* GalaxySSIHealthAtlasFunctionRelatedRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003FC /* GalaxySSIHealthAtlasFunctionRelatedRow.swift */; };
     C438400000000000000003FD /* GalaxySSIHealthAtlasFunctionViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003FE /* GalaxySSIHealthAtlasFunctionViewport.swift */; };
     C438400000000000000003FF /* GalaxySSIHealthAtlasFunctionStructures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000400 /* GalaxySSIHealthAtlasFunctionStructures.swift */; };
+    C43850000000000000000071 /* GalaxySSIHealthAtlasRegionalStructures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000072 /* GalaxySSIHealthAtlasRegionalStructures.swift */; };
     C4385000000000000000005D /* GalaxySSIHealthAtlasUterocervicalLocatorGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000005E /* GalaxySSIHealthAtlasUterocervicalLocatorGeometry.swift */; };
     C4385000000000000000005F /* GalaxySSIHealthAtlasUterocervicalWallGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000060 /* GalaxySSIHealthAtlasUterocervicalWallGeometry.swift */; };
     C43850000000000000000061 /* GalaxySSIHealthAtlasUterocervicalCanalGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000062 /* GalaxySSIHealthAtlasUterocervicalCanalGeometry.swift */; };
@@ -2510,6 +2511,7 @@
     C438400000000000000003FC /* GalaxySSIHealthAtlasFunctionRelatedRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionRelatedRow.swift; sourceTree = "<group>"; };
     C438400000000000000003FE /* GalaxySSIHealthAtlasFunctionViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionViewport.swift; sourceTree = "<group>"; };
     C43840000000000000000400 /* GalaxySSIHealthAtlasFunctionStructures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionStructures.swift; sourceTree = "<group>"; };
+    C43850000000000000000072 /* GalaxySSIHealthAtlasRegionalStructures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasRegionalStructures.swift; sourceTree = "<group>"; };
     C4385000000000000000005E /* GalaxySSIHealthAtlasUterocervicalLocatorGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUterocervicalLocatorGeometry.swift; sourceTree = "<group>"; };
     C43850000000000000000060 /* GalaxySSIHealthAtlasUterocervicalWallGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUterocervicalWallGeometry.swift; sourceTree = "<group>"; };
     C43850000000000000000062 /* GalaxySSIHealthAtlasUterocervicalCanalGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUterocervicalCanalGeometry.swift; sourceTree = "<group>"; };
@@ -4554,6 +4556,7 @@
         C438400000000000000003FC /* GalaxySSIHealthAtlasFunctionRelatedRow.swift */,
         C438400000000000000003FE /* GalaxySSIHealthAtlasFunctionViewport.swift */,
         C43840000000000000000400 /* GalaxySSIHealthAtlasFunctionStructures.swift */,
+        C43850000000000000000072 /* GalaxySSIHealthAtlasRegionalStructures.swift */,
         C4385000000000000000005E /* GalaxySSIHealthAtlasUterocervicalLocatorGeometry.swift */,
         C43850000000000000000060 /* GalaxySSIHealthAtlasUterocervicalWallGeometry.swift */,
         C43850000000000000000062 /* GalaxySSIHealthAtlasUterocervicalCanalGeometry.swift */,
@@ -6728,6 +6731,7 @@
         C438400000000000000003FB /* GalaxySSIHealthAtlasFunctionRelatedRow.swift in Sources */,
         C438400000000000000003FD /* GalaxySSIHealthAtlasFunctionViewport.swift in Sources */,
         C438400000000000000003FF /* GalaxySSIHealthAtlasFunctionStructures.swift in Sources */,
+        C43850000000000000000071 /* GalaxySSIHealthAtlasRegionalStructures.swift in Sources */,
         C4385000000000000000005D /* GalaxySSIHealthAtlasUterocervicalLocatorGeometry.swift in Sources */,
         C4385000000000000000005F /* GalaxySSIHealthAtlasUterocervicalWallGeometry.swift in Sources */,
         C43850000000000000000061 /* GalaxySSIHealthAtlasUterocervicalCanalGeometry.swift in Sources */,

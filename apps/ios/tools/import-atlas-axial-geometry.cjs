@@ -11,7 +11,7 @@ for (const [android, native, expected] of [["SkullProtection", "Skull", 16], ["V
   let commands = 0;
   for (const [, name, data] of declarations) {
     text += "  static let " + name + " = Path { p in\n";
-    for (const op of svgPathToOperators(data)) {
+    for (const op of svgPathToOperators(require("./body-atlas-svg-path.cjs")(data))) {
       const a = op.args.map(n => n.asNumber());
       if (!a.every(Number.isFinite)) throw Error("Nonfinite path coordinates");
       const point = i => "CGPoint(x: " + a[i] + ", y: " + a[i + 1] + ")";
