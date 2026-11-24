@@ -387,6 +387,14 @@
     C4384000000000000000032F /* GalaxySSIHealthAtlasThoracicLungDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000330 /* GalaxySSIHealthAtlasThoracicLungDrawing.swift */; };
     C43840000000000000000331 /* GalaxySSIHealthAtlasThoracicSceneDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000332 /* GalaxySSIHealthAtlasThoracicSceneDrawing.swift */; };
     C43840000000000000000333 /* GalaxySSIHealthAtlasThoracicView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000334 /* GalaxySSIHealthAtlasThoracicView.swift */; };
+    C43840000000000000000335 /* GalaxySSIHealthAtlasMicrogliaGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000336 /* GalaxySSIHealthAtlasMicrogliaGeometry.swift */; };
+    C43840000000000000000337 /* GalaxySSIHealthAtlasMicrogliaArbor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000338 /* GalaxySSIHealthAtlasMicrogliaArbor.swift */; };
+    C43840000000000000000339 /* GalaxySSIHealthAtlasMicrogliaMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000033A /* GalaxySSIHealthAtlasMicrogliaMotion.swift */; };
+    C4384000000000000000033B /* GalaxySSIHealthAtlasMicrogliaBackgroundDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000033C /* GalaxySSIHealthAtlasMicrogliaBackgroundDrawing.swift */; };
+    C4384000000000000000033D /* GalaxySSIHealthAtlasMicrogliaCellDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000033E /* GalaxySSIHealthAtlasMicrogliaCellDrawing.swift */; };
+    C4384000000000000000033F /* GalaxySSIHealthAtlasMicrogliaDigestDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000340 /* GalaxySSIHealthAtlasMicrogliaDigestDrawing.swift */; };
+    C43840000000000000000341 /* GalaxySSIHealthAtlasMicrogliaLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000342 /* GalaxySSIHealthAtlasMicrogliaLabelsDrawing.swift */; };
+    C43840000000000000000343 /* GalaxySSIHealthAtlasMicrogliaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000344 /* GalaxySSIHealthAtlasMicrogliaView.swift */; };
     C438400000000000000002FF /* GalaxySSIHealthAtlasCholangiocyteMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */; };
     C43840000000000000000301 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */; };
     C43840000000000000000303 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */; };
@@ -2254,6 +2262,14 @@
     C43840000000000000000330 /* GalaxySSIHealthAtlasThoracicLungDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasThoracicLungDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000332 /* GalaxySSIHealthAtlasThoracicSceneDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasThoracicSceneDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000334 /* GalaxySSIHealthAtlasThoracicView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasThoracicView.swift; sourceTree = "<group>"; };
+    C43840000000000000000336 /* GalaxySSIHealthAtlasMicrogliaGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMicrogliaGeometry.swift; sourceTree = "<group>"; };
+    C43840000000000000000338 /* GalaxySSIHealthAtlasMicrogliaArbor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMicrogliaArbor.swift; sourceTree = "<group>"; };
+    C4384000000000000000033A /* GalaxySSIHealthAtlasMicrogliaMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMicrogliaMotion.swift; sourceTree = "<group>"; };
+    C4384000000000000000033C /* GalaxySSIHealthAtlasMicrogliaBackgroundDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMicrogliaBackgroundDrawing.swift; sourceTree = "<group>"; };
+    C4384000000000000000033E /* GalaxySSIHealthAtlasMicrogliaCellDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMicrogliaCellDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000340 /* GalaxySSIHealthAtlasMicrogliaDigestDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMicrogliaDigestDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000342 /* GalaxySSIHealthAtlasMicrogliaLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMicrogliaLabelsDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000344 /* GalaxySSIHealthAtlasMicrogliaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMicrogliaView.swift; sourceTree = "<group>"; };
     C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift; sourceTree = "<group>"; };
@@ -4140,6 +4156,14 @@
         C43840000000000000000330 /* GalaxySSIHealthAtlasThoracicLungDrawing.swift */,
         C43840000000000000000332 /* GalaxySSIHealthAtlasThoracicSceneDrawing.swift */,
         C43840000000000000000334 /* GalaxySSIHealthAtlasThoracicView.swift */,
+        C43840000000000000000336 /* GalaxySSIHealthAtlasMicrogliaGeometry.swift */,
+        C43840000000000000000338 /* GalaxySSIHealthAtlasMicrogliaArbor.swift */,
+        C4384000000000000000033A /* GalaxySSIHealthAtlasMicrogliaMotion.swift */,
+        C4384000000000000000033C /* GalaxySSIHealthAtlasMicrogliaBackgroundDrawing.swift */,
+        C4384000000000000000033E /* GalaxySSIHealthAtlasMicrogliaCellDrawing.swift */,
+        C43840000000000000000340 /* GalaxySSIHealthAtlasMicrogliaDigestDrawing.swift */,
+        C43840000000000000000342 /* GalaxySSIHealthAtlasMicrogliaLabelsDrawing.swift */,
+        C43840000000000000000344 /* GalaxySSIHealthAtlasMicrogliaView.swift */,
         C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */,
         C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */,
         C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */,
@@ -6156,6 +6180,14 @@
         C4384000000000000000032F /* GalaxySSIHealthAtlasThoracicLungDrawing.swift in Sources */,
         C43840000000000000000331 /* GalaxySSIHealthAtlasThoracicSceneDrawing.swift in Sources */,
         C43840000000000000000333 /* GalaxySSIHealthAtlasThoracicView.swift in Sources */,
+        C43840000000000000000335 /* GalaxySSIHealthAtlasMicrogliaGeometry.swift in Sources */,
+        C43840000000000000000337 /* GalaxySSIHealthAtlasMicrogliaArbor.swift in Sources */,
+        C43840000000000000000339 /* GalaxySSIHealthAtlasMicrogliaMotion.swift in Sources */,
+        C4384000000000000000033B /* GalaxySSIHealthAtlasMicrogliaBackgroundDrawing.swift in Sources */,
+        C4384000000000000000033D /* GalaxySSIHealthAtlasMicrogliaCellDrawing.swift in Sources */,
+        C4384000000000000000033F /* GalaxySSIHealthAtlasMicrogliaDigestDrawing.swift in Sources */,
+        C43840000000000000000341 /* GalaxySSIHealthAtlasMicrogliaLabelsDrawing.swift in Sources */,
+        C43840000000000000000343 /* GalaxySSIHealthAtlasMicrogliaView.swift in Sources */,
         C438400000000000000002FF /* GalaxySSIHealthAtlasCholangiocyteMotion.swift in Sources */,
         C43840000000000000000301 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift in Sources */,
         C43840000000000000000303 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift in Sources */,
