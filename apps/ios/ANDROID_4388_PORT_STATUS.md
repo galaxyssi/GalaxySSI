@@ -36,7 +36,7 @@ An eventual PR will use main and disclose the actual inherited diff.
 - Bilingual resource deltas are imported.
 - Source-only catalogue audit passed for all 67 hashes, catalogue counts,
   graph-resolved routes, entry phases, exact related destinations, reference
-  hosts and bilingual keys. Fourteen new dispatches are present; the other 10 are
+  hosts and bilingual keys. Fifteen new dispatches are present; the other nine are
   explicitly not implemented. Two changed Swift files parsed without grammar
   errors; project structure passed. No Swift type checking or native execution.
 - Added dedicated Paneth crypt-barrier renderer and reusable crypt wall geometry:
@@ -91,8 +91,16 @@ An eventual PR will use main and disclose the actual inherited diff.
   delayed release/response, angular IGF symbols, and hidden out-of-range markers.
   Source checks covered eight bilingual keys and 1,452 analytic visible/hidden
   marker samples. Six Swift files passed grammar parsing; source/catalogue and
-  project checks passed. Lactotroph/corticotroph/gonadotroph renderers are still
-  pending. Ten renderers/default activation remain; no native acceptance.
+  project checks passed. No native acceptance.
+- Added the four-stage lactotroph renderer and dispatch. Extended the restricted
+  geometry importer for multiple disconnected subpaths and explicit clockwise
+  circles; imported seven paths/27 commands. Retained dopamine disinhibition,
+  delayed PRL transport/binding, 16 epithelial directions and clipped luminal
+  secretion/pool. Source checks covered five disconnected ducts, three sampling
+  routes, eight bilingual keys and 274 analytic droplets; prior somatotroph
+  checks still pass. Four Swift files passed grammar parsing; project/catalogue
+  checks passed. Corticotroph/gonadotroph remain pending. Nine renderers/default
+  activation remain; no native compilation, execution or pixel acceptance.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
 - Connect pelvic/subcutaneous cutaways to structure feature routing.

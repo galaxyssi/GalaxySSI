@@ -3,7 +3,8 @@ const fs = require("node:fs"), path = require("node:path"), cp = require("node:c
 const root = path.resolve(__dirname, "../../.."), sha = "6581110ec5c048edebf63821dee839b4818fe663", check = process.argv.includes("--check");
 const pituitary = process.argv.includes("--pituitary");
 const configurations = pituitary ? [["AnteriorPituitaryArt", "AnteriorPituitary", 2, [], true],
-  ["SomatotrophStoryView", "Somatotroph", 12, ["capillary", "trunk", "upperBranch", "lowerBranch", "input", "hepaticOut", "muscleGh", "muscleIgf"], true]] :
+  ["SomatotrophStoryView", "Somatotroph", 12, ["capillary", "trunk", "upperBranch", "lowerBranch", "input", "hepaticOut", "muscleGh", "muscleIgf"], true],
+  ["LactotrophStoryView", "Lactotroph", 7, ["releaseBlood", "mammaryBlood", "nearAlveolus"], true]] :
   [["ThyroidCalcitoninStoryView", "Calcitonin", 6, ["capillary"]], ["AdrenalCortexStoryView", "AdrenalCortex", 2, ["section", "sinusoid"]]];
 for (const [sourceName, nativeName, count, routeNames, helperCubics] of configurations) {
   const source = cp.execFileSync("git", ["show", sha + ":apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlas" + sourceName + ".kt"], {cwd: root, encoding: "utf8"});
@@ -16,15 +17,21 @@ for (const [sourceName, nativeName, count, routeNames, helperCubics] of configur
   let text = "import SwiftUI\n\n// Generated from pinned Android #4388 constant curve declarations.\nenum GalaxySSIHealthAtlas" + nativeName + "Geometry {\n", commands = 0;
   const arity = {moveTo: 2, lineTo: 2, quadTo: 4, cubicTo: 6, close: 0};
   for (const [, name, body] of declarations) {
-    const calls = [...body.matchAll(/(moveTo|lineTo|quadTo|cubicTo|close)\(([^)]*)\)/g)];
-    assert.equal(body.replace(/(moveTo|lineTo|quadTo|cubicTo|close)\([^)]*\)/g, "").trim(), "", name);
+    const calls = [...body.matchAll(/(moveTo|lineTo|quadTo|cubicTo|close|addCircle)\(([^)]*)\)/g)];
+    assert.equal(body.replace(/(moveTo|lineTo|quadTo|cubicTo|close|addCircle)\([^)]*\)/g, "").trim(), "", name);
     let start, end, route = [];
     text += "  static let " + name + " = Path { p in\n";
     for (const [, op, args] of calls) {
       const tokens = args.trim() ? args.split(",").map(s => s.trim()) : [];
+      if (op === "addCircle") {
+        assert.equal(tokens.length, 4); assert.equal(tokens[3], "Path.Direction.CW");
+        assert.ok(tokens.slice(0, 3).every(s => /^-?(?:\d+(?:\.\d*)?|\.\d+)f$/.test(s))); assert.ok(!routeNames.includes(name));
+        const [x, y, r] = tokens.slice(0, 3).map(s => Number(s.slice(0, -1))); assert.ok(r > 0);
+        text += "    p.addEllipse(in: CGRect(x: " + (x-r) + ", y: " + (y-r) + ", width: " + (2*r) + ", height: " + (2*r) + "))\n"; commands++; continue;
+      }
       assert.equal(tokens.length, arity[op]); assert.ok(tokens.every(s => /^-?(?:\d+(?:\.\d*)?|\.\d+)f$/.test(s)), name);
       const a = tokens.map(s => Number(s.slice(0, -1))), point = i => ".init(x: " + a[i] + ", y: " + a[i + 1] + ")";
-      if (op === "moveTo") { assert.equal(start, undefined); start = a; end = a; }
+      if (op === "moveTo") { if (routeNames.includes(name)) assert.equal(start, undefined); start = a; end = a; }
       else if (op !== "close") { assert.ok(start); end = a.slice(-2); route.push(".init(kind: ." + ({lineTo: "line", quadTo: "quad", cubicTo: "cubic"}[op]) + ", points: [" + a.filter((_, i) => i % 2 === 0).map((_, i) => point(i * 2)).join(", ") + "])"); }
       else if (routeNames.includes(name)) assert.deepEqual(end, start, "Closed sampling route needs explicit closing segment");
       const line = op === "moveTo" ? "p.move(to: " + point(0) + ")" : op === "lineTo" ? "p.addLine(to: " + point(0) + ")" :
