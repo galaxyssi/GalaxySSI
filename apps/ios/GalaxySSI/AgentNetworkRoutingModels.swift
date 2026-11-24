@@ -702,8 +702,10 @@ enum AgentConnectorRouteSelector {
   ) -> AgentConnectorRouteSelection? {
     let routingGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
     if let decision, decision.primary == nil, decision.fallbacks.isEmpty { return nil }
+    let admittedTargetIds = decision.map { Set($0.orderedTargetIds) }
     let requirements = decision?.requirements ?? AgentTaskRequirementAnalyzer.analyze(routingGoal)
     let reasoningTargets = targets.filter {
+      (admittedTargetIds?.contains($0.id) ?? true) &&
       hasReasoningCapability($0) && AgentCapabilityRoutingPolicy.missingRequired(
         requirements, available: Set($0.capabilities)
       ).isEmpty

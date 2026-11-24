@@ -1325,6 +1325,58 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(AgentConnectorRouteSelector.isDeliverable(recovering))
   }
 
+  func testConnectorPreferenceCannotResurrectCatalogOnlyTarget() throws {
+    let codex = routeTarget("codex", kind: .agent)
+    let cloud = routeTarget("cloud-model:deepseek", kind: .model)
+    let codexResource = routingResource(targetId: codex.id, type: .remoteAgent, location: .trustedDesktop)
+    let cloudResource = routingResource(targetId: cloud.id, type: .cloudModel, location: .cloud)
+    let decision = routingDecision(primary: resourceCandidate(cloudResource, score: 800),
+      fallbacks: [], catalog: [codexResource, cloudResource])
+    for goal in ["", "Explain this document"] {
+      let selected = try XCTUnwrap(AgentConnectorRouteSelector.select(targets: [codex, cloud],
+        decision: decision, preferredTargetId: codex.id, goal: goal))
+      XCTAssertEqual(selected.target.id, cloud.id)
+      XCTAssertEqual(selected.decision?.orderedTargetIds, [cloud.id])
+    }
+  }
+
+  func testUnavailableAdmittedTargetDoesNotFallBackToExcludedHealthyTarget() {
+    var codex = routeTarget("codex", kind: .agent)
+    codex.status = .needsSetup
+    let cloud = routeTarget("cloud-model:deepseek", kind: .model)
+    let codexResource = routingResource(targetId: codex.id, type: .remoteAgent, location: .trustedDesktop)
+    let cloudResource = routingResource(targetId: cloud.id, type: .cloudModel, location: .cloud)
+    let decision = routingDecision(primary: resourceCandidate(codexResource, score: 800),
+      fallbacks: [], catalog: [codexResource, cloudResource])
+    XCTAssertNil(AgentConnectorRouteSelector.select(targets: [codex, cloud], decision: decision))
+    XCTAssertNil(AgentConnectorRouteSelector.select(targets: [codex, cloud], decision: decision,
+      preferredTargetId: cloud.id, goal: "Explain this document"))
+  }
+
+  func testAdmittedRecoveringTargetIsNotHiddenByExcludedAvailableTarget() throws {
+    var codex = routeTarget("codex", kind: .agent)
+    codex.status = .disconnected
+    let cloud = routeTarget("cloud-model:deepseek", kind: .model)
+    let codexResource = routingResource(targetId: codex.id, type: .remoteAgent, location: .trustedDesktop)
+    let cloudResource = routingResource(targetId: cloud.id, type: .cloudModel, location: .cloud)
+    let decision = routingDecision(primary: resourceCandidate(codexResource, score: 800),
+      fallbacks: [], catalog: [codexResource, cloudResource])
+    let selected = try XCTUnwrap(AgentConnectorRouteSelector.select(targets: [codex, cloud], decision: decision))
+    XCTAssertEqual(selected.target.id, codex.id)
+    XCTAssertEqual(selected.decision?.orderedTargetIds, [codex.id])
+  }
+
+  func testToolOnlyDecisionDoesNotFabricateReasoningCandidateFromCatalog() {
+    let codex = routeTarget("codex", kind: .agent)
+    let phoneWeb = routingResource(targetId: "web.search", type: .localTool, location: .phone)
+    let codexResource = routingResource(targetId: codex.id, type: .remoteAgent, location: .trustedDesktop)
+    let decision = routingDecision(primary: resourceCandidate(phoneWeb, score: 900),
+      fallbacks: [], catalog: [phoneWeb, codexResource])
+    XCTAssertNil(AgentConnectorRouteSelector.select(targets: [codex], decision: decision))
+    XCTAssertNil(AgentConnectorRouteSelector.select(targets: [codex], decision: decision,
+      preferredTargetId: codex.id))
+  }
+
   func testAgentConnectorRouteSelectorRejectsSetupAndDeviceOnlyTargets() {
     var unavailable = routeTarget("codex", kind: .agent)
     unavailable.status = .needsSetup

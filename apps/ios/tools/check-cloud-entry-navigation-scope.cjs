@@ -58,7 +58,14 @@ for (const file of [
   const target = `apps/ios/GalaxySSI/${file}`;
   // Some storage operations live in the monolithic Store on older revisions.
   if (fs.existsSync(path.join(root, target))) {
-    assert.equal(fs.readFileSync(path.join(root, target), 'utf8'), git('show', `${base}:${target}`));
+    let source = fs.readFileSync(path.join(root, target), 'utf8');
+    if (file === 'AgentNetworkRoutingModels.swift' && source.includes('    let admittedTargetIds = decision.map { Set($0.orderedTargetIds) }\n')) {
+      // #3119 adds only this admission boundary; its own scope check verifies it.
+      assert(fs.existsSync(path.join(__dirname, 'check-stable-auto-admission-scope.cjs')));
+      source = source.replace('    let admittedTargetIds = decision.map { Set($0.orderedTargetIds) }\n', '')
+        .replace('      (admittedTargetIds?.contains($0.id) ?? true) &&\n', '');
+    }
+    assert.equal(source, git('show', `${base}:${target}`));
   }
 }
 const files = git('diff', '--name-only', `${android}^1`, android).trim().split('\n')
