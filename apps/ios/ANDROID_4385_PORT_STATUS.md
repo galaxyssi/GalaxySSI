@@ -32,13 +32,16 @@ This is an in-progress implementation, not a completed parity claim or release.
 - Dedicated scrotal-heat renderer: three scenes, eleven source paths/58 commands,
   mirrored compartments, open superior tunica attachment, vessel gradients,
   counter-directed arc-length tracers and separate heat-transfer arrows.
-- Both new renderers have Xcode source registration but remain unreachable until
+- Dedicated penile-urinary renderer: three scenes, ten source paths/63 commands,
+  mirrored transverse tissue, continuous longitudinal centerline and independent
+  proximal/distal arc-length tracer intervals, with a transparent-border overlay.
+- All three new renderers have Xcode source registration but remain unreachable until
   the regional catalogue and complete renderer coverage are activated together.
 
 ## Remaining Before Publication
 
-- Eleven courses: vulvar protection, accessory-gland routing, uterocervical
-  continuity, penile urinary route, skull protection, vertebral motion, clitoral
+- Ten courses: vulvar protection, accessory-gland routing, uterocervical
+  continuity, skull protection, vertebral motion, clitoral
   sensory path, vestibular-gland secretion, tenocyte tendon matrix, pectoral
   horizontal adduction and latissimus extension/adduction.
 - New/modified structure plates, vector resource revisions and their owner/view
@@ -53,7 +56,8 @@ This is an in-progress implementation, not a completed parity claim or release.
 
 Source-only checks passed for the calf-pump source/formula/axis/diagram, 81,406
 analytic integer-grid combinations, ankle paths/scene contracts, scrotal paths and
-tracer controls, bilingual delta regeneration, preserved #4384 catalogue extraction
+tracer controls, penile paths and proximal/distal tracer controls, bilingual delta
+regeneration, preserved #4384 catalogue extraction
 and material-response contracts. Swift grammar parsing passed on the edited files
 in both preprocessor branches. Project structure and eight module-setting subset
 checks passed. These checks do not compile or run Swift or Android scenes.

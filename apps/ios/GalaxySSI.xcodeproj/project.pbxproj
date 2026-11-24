@@ -486,6 +486,9 @@
     C438400000000000000003FB /* GalaxySSIHealthAtlasFunctionRelatedRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003FC /* GalaxySSIHealthAtlasFunctionRelatedRow.swift */; };
     C438400000000000000003FD /* GalaxySSIHealthAtlasFunctionViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003FE /* GalaxySSIHealthAtlasFunctionViewport.swift */; };
     C438400000000000000003FF /* GalaxySSIHealthAtlasFunctionStructures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000400 /* GalaxySSIHealthAtlasFunctionStructures.swift */; };
+    C43850000000000000000011 /* GalaxySSIHealthAtlasPenileUrinaryGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000012 /* GalaxySSIHealthAtlasPenileUrinaryGeometry.swift */; };
+    C43850000000000000000013 /* GalaxySSIHealthAtlasPenileUrinaryDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000014 /* GalaxySSIHealthAtlasPenileUrinaryDrawing.swift */; };
+    C43850000000000000000015 /* GalaxySSIHealthAtlasPenileUrinaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000016 /* GalaxySSIHealthAtlasPenileUrinaryView.swift */; };
     C4385000000000000000000B /* GalaxySSIHealthAtlasScrotalHeatGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000000C /* GalaxySSIHealthAtlasScrotalHeatGeometry.swift */; };
     C4385000000000000000000D /* GalaxySSIHealthAtlasScrotalHeatDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000000E /* GalaxySSIHealthAtlasScrotalHeatDrawing.swift */; };
     C4385000000000000000000F /* GalaxySSIHealthAtlasScrotalHeatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000010 /* GalaxySSIHealthAtlasScrotalHeatView.swift */; };
@@ -2462,6 +2465,9 @@
     C438400000000000000003FC /* GalaxySSIHealthAtlasFunctionRelatedRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionRelatedRow.swift; sourceTree = "<group>"; };
     C438400000000000000003FE /* GalaxySSIHealthAtlasFunctionViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionViewport.swift; sourceTree = "<group>"; };
     C43840000000000000000400 /* GalaxySSIHealthAtlasFunctionStructures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionStructures.swift; sourceTree = "<group>"; };
+    C43850000000000000000012 /* GalaxySSIHealthAtlasPenileUrinaryGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPenileUrinaryGeometry.swift; sourceTree = "<group>"; };
+    C43850000000000000000014 /* GalaxySSIHealthAtlasPenileUrinaryDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPenileUrinaryDrawing.swift; sourceTree = "<group>"; };
+    C43850000000000000000016 /* GalaxySSIHealthAtlasPenileUrinaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPenileUrinaryView.swift; sourceTree = "<group>"; };
     C4385000000000000000000C /* GalaxySSIHealthAtlasScrotalHeatGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasScrotalHeatGeometry.swift; sourceTree = "<group>"; };
     C4385000000000000000000E /* GalaxySSIHealthAtlasScrotalHeatDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasScrotalHeatDrawing.swift; sourceTree = "<group>"; };
     C43850000000000000000010 /* GalaxySSIHealthAtlasScrotalHeatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasScrotalHeatView.swift; sourceTree = "<group>"; };
@@ -4458,6 +4464,9 @@
         C438400000000000000003FC /* GalaxySSIHealthAtlasFunctionRelatedRow.swift */,
         C438400000000000000003FE /* GalaxySSIHealthAtlasFunctionViewport.swift */,
         C43840000000000000000400 /* GalaxySSIHealthAtlasFunctionStructures.swift */,
+        C43850000000000000000012 /* GalaxySSIHealthAtlasPenileUrinaryGeometry.swift */,
+        C43850000000000000000014 /* GalaxySSIHealthAtlasPenileUrinaryDrawing.swift */,
+        C43850000000000000000016 /* GalaxySSIHealthAtlasPenileUrinaryView.swift */,
         C4385000000000000000000C /* GalaxySSIHealthAtlasScrotalHeatGeometry.swift */,
         C4385000000000000000000E /* GalaxySSIHealthAtlasScrotalHeatDrawing.swift */,
         C43850000000000000000010 /* GalaxySSIHealthAtlasScrotalHeatView.swift */,
@@ -6584,6 +6593,9 @@
         C438400000000000000003FB /* GalaxySSIHealthAtlasFunctionRelatedRow.swift in Sources */,
         C438400000000000000003FD /* GalaxySSIHealthAtlasFunctionViewport.swift in Sources */,
         C438400000000000000003FF /* GalaxySSIHealthAtlasFunctionStructures.swift in Sources */,
+        C43850000000000000000011 /* GalaxySSIHealthAtlasPenileUrinaryGeometry.swift in Sources */,
+        C43850000000000000000013 /* GalaxySSIHealthAtlasPenileUrinaryDrawing.swift in Sources */,
+        C43850000000000000000015 /* GalaxySSIHealthAtlasPenileUrinaryView.swift in Sources */,
         C4385000000000000000000B /* GalaxySSIHealthAtlasScrotalHeatGeometry.swift in Sources */,
         C4385000000000000000000D /* GalaxySSIHealthAtlasScrotalHeatDrawing.swift in Sources */,
         C4385000000000000000000F /* GalaxySSIHealthAtlasScrotalHeatView.swift in Sources */,
