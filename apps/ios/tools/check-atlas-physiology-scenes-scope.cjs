@@ -17,7 +17,7 @@ const inventory = {schema: 1, source: {androidPR: 4442, mergeCommit: sha}, files
 requireTokens(android('HealthAtlasSceneFrame'), ['require(texts.isNotEmpty())', 'texts.maxOf', 'view.minimumHeight = lines + view.totalPaddingTop + view.totalPaddingBottom', 'view.totalPaddingStart', 'view.totalPaddingEnd']);
 requireTokens(source('SceneFrame'), ['clipShape(RoundedRectangle(cornerRadius: 8))', 'content().padding(inset)', 'ForEach(values.indices', '.hidden().accessibilityHidden(true).allowsHitTesting(false)', 'fixedSize(horizontal: false, vertical: true)', 'min(values.count - 1, max(0, selected))']);
 requireTokens(source('FunctionScene'), ['GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-function-frame"', 'GalaxySSIHealthAtlasReservedCaption(values: labels', 'values: story.chapters.map { t($0.caption) }']);
-assert(source("FunctionScene").includes("maximumLines: 2")); // #4446 keeps matching probes but adds a compact expandable note.
+assert(source("FunctionScene").includes("maximumLines: 4")); // #4447 keeps matching probes with a four-line expandable side note.
 assert.equal(source("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1], prior("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1]);
 const panel = source('SimulationPanel'), processStages = source('ProcessStages');
 requireTokens(android('HealthAtlasSimulationPanel'), ['HealthAtlasProcessView(activity, mechanism, showLabels = !inline)', 'HealthAtlasSceneFrame(activity, "atlas-simulation-frame")', 'scene.reserveCaption(caption', 'tag = "atlas-simulation-references"', '"atlas-simulation-references-toggle"']);

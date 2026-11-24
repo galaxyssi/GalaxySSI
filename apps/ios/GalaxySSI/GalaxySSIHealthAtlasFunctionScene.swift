@@ -19,7 +19,7 @@ struct GalaxySSIHealthAtlasFunctionScene<Artwork: View>: View {
   }
   var body: some View {
     GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-function-frame", legendIdentifier: "atlas-function-subtitles",
-      overlayNote: true, header: { EmptyView() }, artwork: { artwork }, legend: {
+      function: true, header: { EmptyView() }, artwork: { artwork }, legend: {
       Button {
         let index = story.chapter(phase), chapter = labels[index], caption = t(story.chapters[index].caption)
         onExplain()
@@ -30,7 +30,7 @@ struct GalaxySSIHealthAtlasFunctionScene<Artwork: View>: View {
           GalaxySSIHealthAtlasReservedCaption(values: labels, selected: story.chapter(phase), identifier: "atlas-function-chapter")
             .font(.system(size: chapterSize, weight: .semibold)).foregroundColor(GalaxySSIHealthTheme.accent)
           GalaxySSIHealthAtlasReservedCaption(values: story.chapters.map { t($0.caption) }, selected: story.chapter(phase),
-            identifier: "atlas-function-caption", maximumLines: 2)
+            identifier: "atlas-function-caption", maximumLines: 4)
             .font(.system(size: captionSize)).foregroundColor(.primary)
         }.contentShape(Rectangle())
       }.buttonStyle(.plain).accessibilityIdentifier("atlas-function-explanation")

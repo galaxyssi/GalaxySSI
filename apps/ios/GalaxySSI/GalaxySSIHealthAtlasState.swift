@@ -34,6 +34,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
   @Published var previewPresented = false
   @Published var wholeFocus = "heart"
   @Published var lessonNavigation = GalaxySSIHealthAtlasLessonNavigation()
+  @Published var structureSteps = GalaxySSIHealthAtlasStructureSteps()
   @Published var restoredDetailChildren: [String: GalaxySSIHealthAtlasLessonNavigation.Location] = [:]
   var lessonReturnScroll: [String: Double] = [:]
   let playback = GalaxySSIHealthAtlasPlayback()
@@ -164,6 +165,7 @@ struct GalaxySSIHealthAtlasView: View {
   @StateObject private var state = GalaxySSIHealthAtlasState()
   @SceneStorage("galaxyssi.health.atlas.public-selection.v1") private var saved = "{}"
   @SceneStorage("galaxyssi.health.atlas.lesson-navigation.v1") private var savedNavigation = ""
+  @SceneStorage("galaxyssi.health.atlas.artwork-steps.v1") private var savedSteps = "{}"
   @SceneStorage("galaxyssi.health.atlas.whole-focus.v1") private var savedWholeFocus = "heart"
   @State private var atlas: GalaxySSIHealthAtlas?
   @SceneStorage("galaxyssi.health.atlas.query.v1") private var query = ""
@@ -254,6 +256,7 @@ struct GalaxySSIHealthAtlasView: View {
     .onAppear { if atlas == nil { load() } else if quickTarget == nil { state.clearLessonNavigation() } }
     .onChange(of: state.serialized) { saved = $0 }
     .onChange(of: state.lessonNavigationSerialized) { savedNavigation = $0 }
+    .onChange(of: state.structureSteps.serialized) { savedSteps = $0 }
     .onChange(of: state.wholeFocus) { savedWholeFocus = $0 }
     .onChange(of: kind) { _ in system = ""; limit = 24 }
     .onChange(of: system) { _ in limit = 24 }
@@ -273,6 +276,7 @@ struct GalaxySSIHealthAtlasView: View {
       query = String(query.prefix(100))
       state.restore(saved, atlas: content)
       state.restoreLessonNavigation(savedNavigation, atlas: content)
+      state.structureSteps = .restore(savedSteps, atlas: content)
       quickTarget = state.lessonNavigation.path.first?.entryID
       state.wholeFocus = content.entry(savedWholeFocus)?.id ?? "heart"
       atlas = content

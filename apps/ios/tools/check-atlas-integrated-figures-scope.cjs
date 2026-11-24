@@ -16,7 +16,8 @@ const inventory={schema:1,source:{androidPR:4445,mergeCommit:sha},files:changed.
 check(android('HealthAtlasFigureFrame'),['LEGEND_OVERLAP_DP = 28','atlas-figure-legend']);
 const frame=source('FigureFrame'),scene=source('FunctionScene'),art=source('Artwork'),detail=source('Detail'),panel=source('SimulationPanel'),nav=source('LessonNavigation');
 // #4446 replaces the former 28-point fading footer with connected responsive notes.
-check(frame,['width >= 580', 'preferSide && width >= 280', 'min(46, legend / 2)', '.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 9)', 'overlayPreferenceValue', 'clipShape(RoundedRectangle(cornerRadius: 8))']);
+// #4447 uses uniform side notes instead of the earlier fading/overlaid legend.
+check(frame,['width < 320','compact ? 8 : 12','compact ? 8 : 16','min(width * 0.40, 328)','.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 9)','overlayPreferenceValue','clipShape(RoundedRectangle(cornerRadius: 8))']);
 check(scene,['GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-function-frame"','legendIdentifier: "atlas-function-subtitles"','GalaxySSIHealthAtlasReservedCaption(values: labels','story.chapters.map { t($0.caption) }','GalaxySSIHealthTheme.accent','.foregroundColor(.primary)']);
 assert(!scene.includes('colors.caption'));
 check(source('SceneFrame'),['ForEach(values.indices','.hidden().accessibilityHidden(true).allowsHitTesting(false)','.lineLimit(maximumLines).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)']);

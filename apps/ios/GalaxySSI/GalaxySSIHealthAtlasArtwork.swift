@@ -14,8 +14,6 @@ struct GalaxySSIHealthAtlasArtwork: View {
   @ScaledMetric(relativeTo: .caption) private var noteSize: CGFloat = 11
   @State private var subjectPoint: CGPoint?
   @State private var fullscreenSubject: CGPoint?
-  @State private var sideNote = false
-  @State private var fullscreenSide = false
   @State private var layers = true
   @State private var zoom: Double = 1
   @State private var fullscreen = false
@@ -29,8 +27,8 @@ struct GalaxySSIHealthAtlasArtwork: View {
   }
   private var artworkView: Binding<String> {
     Binding(get: { plate?.viewKey ?? "" }, set: { key in
-      guard let entry, atlas.views(for: entry.id).contains(where: { $0.viewKey == key }) else { return }
-      state.binding(entry).wrappedValue.artworkView = key
+      guard let entry, let view = atlas.views(for: entry.id).first(where: { ($0.viewKey ?? "") == key }) else { return }
+      state.binding(entry).wrappedValue.artworkView = view.viewKey
       zoom = 1
     })
   }
@@ -46,10 +44,20 @@ struct GalaxySSIHealthAtlasArtwork: View {
     }
   }
   private var art: String? { plate?.asset }
+  private var landmarks: [GalaxySSIHealthAtlasLandmarks.Landmark] {
+    plate.map { GalaxySSIHealthAtlasLandmarks.list($0, atlas: atlas) } ?? []
+  }
+  private var structureStep: Binding<Int> {
+    let owner = entry?.id ?? "", view = plate?.viewKey ?? "", count = landmarks.count
+    return Binding(get: { state.structureSteps.position(owner: owner, view: view, count: count) },
+      set: { state.structureSteps.select($0, owner: owner, view: view, count: count) })
+  }
+  private var highlighted: GalaxySSIHealthAtlasLandmarks.Landmark? {
+    let index = structureStep.wrappedValue - 1
+    return landmarks.indices.contains(index) ? landmarks[index] : nil
+  }
   private var spots: [(String, Double, Double)] {
-    let markers = plate?.markers.map { ($0.id, $0.x, $0.y) } ?? []
-    let features = plate?.annotations.map { ($0.id, $0.marker.x, $0.marker.y) } ?? []
-    return features.isEmpty ? markers : (markers + features).sorted { $0.2 < $1.2 }
+    landmarks.map { ($0.id, Double($0.point.x), Double($0.point.y)) }
   }
   private var featureIDs: Set<String> { Set(plate?.annotations.map(\.id) ?? []) }
   private var labels: [String] {
@@ -75,28 +83,32 @@ struct GalaxySSIHealthAtlasArtwork: View {
     let name = entry.map { GalaxySSIHealthAtlasText.get($0.name, language) } ?? t("whole")
     return name + " \u{00b7} " + caption
   }
-  private func focus(side: Bool) -> CGPoint {
+  private func focus(full: Bool) -> CGPoint {
+    if full { return .init(x: 0.36, y: 0.48) }
+    if let highlighted { return highlighted.point }
     if let marker = plate?.markers.first(where: { $0.id == entry?.id }) { return .init(x: marker.x, y: marker.y) }
     if plate?.owner == "cell-pancreatic-beta-cell" { return .init(x: 0.82, y: 0.44) }
-    return .init(x: side ? 0.36 : 0.54, y: side ? 0.48 : 0.22)
+    return .init(x: 0.36, y: 0.48)
   }
-  private var overlayNote: Bool {
-    plate?.hasLabels == true && entry != nil && plate?.splitCallouts != true &&
-      (plate?.annotations.isEmpty ?? true) && (plate?.markers.count ?? 0) <= 3
+  @ViewBuilder private var structureLegend: some View {
+    if plate?.hasLabels == true, !landmarks.isEmpty {
+      GalaxySSIHealthAtlasStructureLegend(overviewTitle: entry == nil ? fullscreenCaption : caption,
+        overviewDescription: entry.map { GalaxySSIHealthAtlasText.get($0.description, language) } ?? t("body_overview"),
+        landmarks: landmarks, position: structureStep, language: language)
+    } else { legend(title: entry == nil ? fullscreenCaption : caption, explanation: entry?.description, note: "illustration") }
   }
   var body: some View {
     Group {
       if let art {
         VStack(alignment: .leading, spacing: 8) {
           viewPicker
-          GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-structure-figure", overlayNote: overlayNote,
-            preferSideNote: plate?.hasLabels != true, subjectPoint: subjectPoint, onSideChanged: { sideNote = $0 },
+          GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-structure-figure", subjectPoint: subjectPoint,
             header: { controls }, artwork: {
             canvas(art)
-          }, legend: { legend(title: entry == nil ? fullscreenCaption : caption, explanation: entry?.description, note: "illustration") })
+          }, legend: { structureLegend })
         }
       } else if let entry {
-        GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-concept-figure", preferSideNote: true,
+        GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-concept-figure",
           subjectAspectRatio: 1, header: { EmptyView() }, artwork: {
           Image(systemName: conceptSymbol).font(.system(size: 64)).foregroundColor(GalaxySSIHealthTheme.accent)
             .atlasAnnotationSubject("atlas-concept-figure")
@@ -108,11 +120,10 @@ struct GalaxySSIHealthAtlasArtwork: View {
       .fullScreenCover(isPresented: $fullscreen) {
         NavigationView {
           VStack(alignment: .leading, spacing: 8) {
-            GeometryReader { viewport in
+            GeometryReader { _ in
             ScrollView {
               if let art {
-                GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-fullscreen-figure", maximumHeight: viewport.size.height,
-                  subjectPoint: fullscreenSubject, onSideChanged: { fullscreenSide = $0 }, header: { EmptyView() }, artwork: {
+                GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-fullscreen-figure", subjectPoint: fullscreenSubject, header: { EmptyView() }, artwork: {
                   canvas(art, full: true).accessibilityIdentifier("atlas-fullscreen-image")
                 }, legend: { legend(title: fullscreenCaption, explanation: nil, note: "illustration") })
               }
@@ -216,14 +227,15 @@ struct GalaxySSIHealthAtlasArtwork: View {
     if shown, !spots.isEmpty {
       return AnyView(GalaxySSIHealthAtlasLabeledArtwork(asset: art, aspectRatio: plate?.aspectRatio ?? 1, zoom: scale,
         currentID: entry?.id, spots: spots, labels: labels, featureIDs: featureIDs, splitCallouts: plate?.splitCallouts ?? false,
-        minimumHeight: entry == nil ? 366 : 266, subjectFocus: focus(side: full ? fullscreenSide : sideNote),
-        onSubject: { if full { fullscreenSubject = $0 } else { subjectPoint = $0 } }, onSelect: choose)
+        minimumHeight: entry == nil ? 366 : 266, subjectFocus: focus(full: full),
+        onSubject: { if full { fullscreenSubject = $0 } else { subjectPoint = $0 } },
+        numbered: !full, highlightedID: full ? nil : highlighted?.id, language: language, onSelect: choose)
         .anchorPreference(key: GalaxySSIHealthAtlasFigureAnchors.self, value: .bounds) {
           [(full ? "atlas-fullscreen-figure" : "atlas-structure-figure") + ".viewport": $0]
         })
     }
     return AnyView(GalaxySSIHealthAtlasZoomCanvas(asset: art, zoom: scale, currentID: entry?.id, spots: shown ? spots : [],
-      labels: labels, onSelect: choose, subjectFocus: focus(side: full ? fullscreenSide : sideNote),
+      labels: labels, onSelect: choose, subjectFocus: focus(full: full),
       onSubject: { if full { fullscreenSubject = $0 } else { subjectPoint = $0 } })
       .anchorPreference(key: GalaxySSIHealthAtlasFigureAnchors.self, value: .bounds) {
         [(full ? "atlas-fullscreen-figure" : "atlas-structure-figure") + ".viewport": $0]

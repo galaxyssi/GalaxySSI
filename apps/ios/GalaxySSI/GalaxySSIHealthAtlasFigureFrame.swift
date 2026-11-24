@@ -2,25 +2,17 @@ import SwiftUI
 
 enum GalaxySSIHealthAtlasFigureLayout {
   struct Columns: Equatable {
-    let side: Bool
     let noteWidth: CGFloat
     let artWidth: CGFloat
+    let edge: CGFloat
+    let gutter: CGFloat
   }
-  static func columns(width: CGFloat, preferSide: Bool, overlay: Bool, maximumHeight: CGFloat? = nil,
-                      headerHeight: CGFloat = 0, legendHeight: CGFloat = 0) -> Columns {
+  static func columns(width: CGFloat) -> Columns {
     let width = width.isFinite ? max(1, width) : 1
-    var side = width >= 580 || (preferSide && width >= 280)
-    var fraction: CGFloat = side ? 0.40 : (overlay ? 0.72 : 0.83)
-    if let maximumHeight, maximumHeight.isFinite, !side,
-      maximumHeight - headerHeight - legendHeight < 160 {
-      side = true; fraction = 0.44
-    }
-    let noteWidth = side ? min(width * fraction, 328) : max(1, min(width * fraction, width - 24))
-    return .init(side: side, noteWidth: noteWidth, artWidth: max(1, side ? width - noteWidth - 40 : width - 24))
-  }
-  static func overlap(legend: CGFloat, overlay: Bool, side: Bool) -> CGFloat {
-    guard overlay, !side, legend.isFinite else { return 0 }
-    return max(0, min(46, legend / 2))
+    let compact = width < 320
+    let edge: CGFloat = compact ? 8 : 12, gutter: CGFloat = compact ? 8 : 16
+    let noteWidth = min(width * 0.40, 328)
+    return .init(noteWidth: noteWidth, artWidth: max(1, width - noteWidth - edge * 2 - gutter), edge: edge, gutter: gutter)
   }
   static func subject(in rect: CGRect, aspectRatio: Double, focus: CGPoint) -> CGPoint? {
     guard aspectRatio.isFinite, aspectRatio > 0, rect.width > 0, rect.height > 0,
@@ -28,18 +20,13 @@ enum GalaxySSIHealthAtlasFigureLayout {
     let width = min(rect.width, rect.height * CGFloat(aspectRatio)), height = width / CGFloat(aspectRatio)
     return CGPoint(x: rect.midX - width / 2 + width * focus.x, y: rect.midY - height / 2 + height * focus.y)
   }
-  static func leader(note: CGRect, art: CGRect, side: Bool, target: CGPoint?) -> [CGPoint] {
+  static func leader(note: CGRect, art: CGRect, gutter: CGFloat, function: Bool, target: CGPoint?) -> [CGPoint] {
     guard art.width > 0, art.height > 0, note.width > 0, note.height > 0 else { return [] }
-    let fallback = CGPoint(x: art.minX + art.width * (side ? 0.20 : 0.70),
-      y: side ? art.minY + art.height * 0.42 : max(note.maxY + 16, art.minY + art.height * 0.08))
+    let fallback = CGPoint(x: art.minX + art.width * (function ? 0.50 : 0.20), y: art.minY + art.height * 0.42)
     let point = target.flatMap { $0.x.isFinite && $0.y.isFinite ? $0 : nil } ?? fallback
     let end = CGPoint(x: min(art.maxX, max(art.minX, point.x)), y: min(art.maxY, max(art.minY, point.y)))
-    if side {
-      let stem = note.maxX + 8
-      return [CGPoint(x: note.maxX, y: note.midY), CGPoint(x: stem, y: note.midY), CGPoint(x: stem, y: end.y), end]
-    }
-    let x = note.minX + note.width * 0.78, stem = note.maxY + 8
-    return [CGPoint(x: x, y: note.maxY), CGPoint(x: x, y: stem), CGPoint(x: end.x, y: stem), end]
+    let stem = note.maxX + gutter / 2
+    return [CGPoint(x: note.maxX, y: note.midY), CGPoint(x: stem, y: note.midY), CGPoint(x: stem, y: end.y), end]
   }
 }
 
@@ -72,47 +59,29 @@ struct GalaxySSIHealthAtlasFigureFrame<Header: View, Artwork: View, Legend: View
   let header: Header
   let artwork: Artwork
   let legend: Legend
-  let overlayNote: Bool
-  let preferSideNote: Bool
-  let maximumHeight: CGFloat?
+  let function: Bool
   let subjectPoint: CGPoint?
   let subjectAspectRatio: Double?
   let subjectFocus: CGPoint?
-  let onSideChanged: (Bool) -> Void
   @Environment(\.colorScheme) private var colorScheme
   @State private var width: CGFloat = 320
-  @State private var legendHeight: CGFloat = 0
-  @State private var headerHeight: CGFloat = 0
-  init(identifier: String, legendIdentifier: String = "atlas-figure-legend", overlayNote: Bool = false,
-       preferSideNote: Bool = false, maximumHeight: CGFloat? = nil, subjectPoint: CGPoint? = nil,
-       subjectAspectRatio: Double? = nil, subjectFocus: CGPoint? = nil, onSideChanged: @escaping (Bool) -> Void = { _ in },
+  init(identifier: String, legendIdentifier: String = "atlas-figure-legend", function: Bool = false, subjectPoint: CGPoint? = nil,
+       subjectAspectRatio: Double? = nil, subjectFocus: CGPoint? = nil,
        @ViewBuilder header: () -> Header,
        @ViewBuilder artwork: () -> Artwork, @ViewBuilder legend: () -> Legend) {
     self.identifier = identifier; self.legendIdentifier = legendIdentifier
-    self.overlayNote = overlayNote; self.preferSideNote = preferSideNote; self.maximumHeight = maximumHeight
+    self.function = function
     self.subjectPoint = subjectPoint; self.subjectAspectRatio = subjectAspectRatio; self.subjectFocus = subjectFocus
-    self.onSideChanged = onSideChanged
     self.header = header(); self.artwork = artwork(); self.legend = legend()
   }
   var body: some View {
-    let columns = GalaxySSIHealthAtlasFigureLayout.columns(width: width, preferSide: preferSideNote, overlay: overlayNote,
-      maximumHeight: maximumHeight, headerHeight: headerHeight, legendHeight: legendHeight)
+    let columns = GalaxySSIHealthAtlasFigureLayout.columns(width: width)
     VStack(spacing: 0) {
-      header.background(measure("header"))
-      Group {
-        if columns.side {
-          HStack(alignment: .center, spacing: 16) {
-            note.frame(width: columns.noteWidth).zIndex(1)
-            drawing.frame(width: columns.artWidth)
-          }
-        } else {
-          VStack(alignment: .leading, spacing: 0) {
-            note.frame(width: columns.noteWidth).zIndex(1)
-            drawing.frame(width: columns.artWidth)
-              .padding(.top, 16 - GalaxySSIHealthAtlasFigureLayout.overlap(legend: legendHeight, overlay: overlayNote, side: false))
-          }
-        }
-      }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+      header
+      HStack(alignment: .center, spacing: columns.gutter) {
+        note.frame(width: columns.noteWidth)
+        drawing.frame(width: columns.artWidth)
+      }.padding(columns.edge).frame(maxWidth: .infinity, alignment: .leading)
     }
     .frame(maxWidth: .infinity)
     .background(GalaxySSIHealthAtlasFilmPalette.color(GalaxySSIHealthAtlasFilmPalette.values(dark: colorScheme == .dark).ground))
@@ -122,23 +91,19 @@ struct GalaxySSIHealthAtlasFigureFrame<Header: View, Artwork: View, Legend: View
           let art = geometry[artAnchor], note = geometry[noteAnchor]
           let node = anchors[identifier + ".target"].map { geometry[$0] }
           let image = anchors[identifier + ".subject"].map { geometry[$0] }
-          let normalized = subjectFocus ?? CGPoint(x: columns.side ? 0.36 : 0.54, y: columns.side ? 0.48 : 0.22)
+          let normalized = subjectFocus ?? CGPoint(x: 0.36, y: 0.48)
           let imagePoint = image.flatMap { rect in subjectAspectRatio.flatMap { GalaxySSIHealthAtlasFigureLayout.subject(in: rect, aspectRatio: $0, focus: normalized) } }
           let viewport = anchors[identifier + ".viewport"].map { geometry[$0] } ?? art
           let native = subjectPoint.map { CGPoint(x: viewport.minX + $0.x, y: viewport.minY + $0.y) }
-          let target = node.map { CGPoint(x: $0.midX, y: $0.minY) } ?? native ?? imagePoint
-          leader(GalaxySSIHealthAtlasFigureLayout.leader(note: note, art: art, side: columns.side, target: target))
+          let target = node.map { CGPoint(x: $0.minX, y: $0.midY) } ?? native ?? imagePoint
+          leader(GalaxySSIHealthAtlasFigureLayout.leader(note: note, art: art, gutter: columns.gutter, function: function, target: target))
         }
       }.accessibilityHidden(true).allowsHitTesting(false)
     }
     .clipShape(RoundedRectangle(cornerRadius: 8)).accessibilityIdentifier(identifier)
     .background(measure("frame"))
-    .onAppear { onSideChanged(columns.side) }
-    .onChange(of: columns.side) { onSideChanged($0) }
     .onPreferenceChange(GalaxySSIAtlasFigureSizes.self) { values in
       if let size = values[identifier + ".frame"], size.width.isFinite, size.width > 0, width != size.width { width = size.width }
-      if let size = values[identifier + ".legend"], size.height.isFinite, legendHeight != size.height { legendHeight = size.height }
-      if let size = values[identifier + ".header"], size.height.isFinite, headerHeight != size.height { headerHeight = size.height }
     }
   }
   private var drawing: some View {

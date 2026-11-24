@@ -31,7 +31,7 @@ struct GalaxySSIHealthAtlasEndocrinePathView: View {
             }
           }
         }
-        GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-endocrine-figure", preferSideNote: true,
+        GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-endocrine-figure",
           subjectAspectRatio: art?.aspectRatio, header: { EmptyView() }, artwork: {
             if let art {
               Image(art.asset).resizable().scaledToFit().frame(minHeight: 84, maxHeight: 110)
