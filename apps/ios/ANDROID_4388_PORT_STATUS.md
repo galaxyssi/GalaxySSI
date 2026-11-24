@@ -36,7 +36,7 @@ An eventual PR will use main and disclose the actual inherited diff.
 - Bilingual resource deltas are imported.
 - Source-only catalogue audit passed for all 67 hashes, catalogue counts,
   graph-resolved routes, entry phases, exact related destinations, reference
-  hosts and bilingual keys. Sixteen new dispatches are present; the other eight are
+  hosts and bilingual keys. Seventeen new dispatches are present; the other seven are
   explicitly not implemented. Two changed Swift files parsed without grammar
   errors; project structure passed. No Swift type checking or native execution.
 - Added dedicated Paneth crypt-barrier renderer and reusable crypt wall geometry:
@@ -107,8 +107,15 @@ An eventual PR will use main and disclose the actual inherited diff.
   four sampling routes. Source checks covered the appended quadratic, clipped
   trace, 11 bilingual keys and 215 analytic injections; retained somatotroph and
   lactotroph checks pass. Five Swift files passed grammar parsing and project
-  structure passed. Gonadotroph remains pending. Eight renderers/default
-  activation remain; no native acceptance.
+  structure passed; no native acceptance.
+- Added the four-stage gonadotroph renderer and dispatch, completing source
+  implementations for the four new anterior-pituitary courses. Generated ten
+  original paths/27 commands, including eight sampling routes. Preserved GnRH
+  pulses, paired FSH/LH phase/shape offsets, ovarian granulosa/theca targets and
+  testis Sertoli/Leydig responses. Zero-span arcs explicitly do not draw. Source
+  checks covered 15 bilingual keys and 2,904 analytic visible/hidden markers;
+  five Swift files passed grammar parsing and project checks passed. Seven
+  renderers/default activation remain; no native compilation or UI acceptance.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
 - Connect pelvic/subcutaneous cutaways to structure feature routing.

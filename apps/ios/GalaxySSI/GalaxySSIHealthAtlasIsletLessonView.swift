@@ -30,6 +30,7 @@ extension GalaxySSIHealthAtlasIllustratedDrawing {
   }
   func endocrineVessel(_ path: Path, _ width: Double) { stroke(path, 0xA26070, width + 3); stroke(path, 0xEAB4B6, width) }
   func endocrineArc(_ x: Double, _ y: Double, _ rx: Double, _ ry: Double, _ start: Double, _ sweep: Double, _ tint: UInt32, _ width: Double) {
+    guard sweep.isFinite, sweep != 0, rx > 0, ry > 0 else { return }
     var path = Path(); path.addArc(center: .zero, radius: 1, startAngle: .degrees(start), endAngle: .degrees(start + sweep), clockwise: false)
     stroke(path.applying(CGAffineTransform(a: rx, b: 0, c: 0, d: ry, tx: x, ty: y)), tint, width)
   }

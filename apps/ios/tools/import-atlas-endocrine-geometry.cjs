@@ -5,7 +5,8 @@ const pituitary = process.argv.includes("--pituitary");
 const configurations = pituitary ? [["AnteriorPituitaryArt", "AnteriorPituitary", 2, [], true],
   ["SomatotrophStoryView", "Somatotroph", 12, ["capillary", "trunk", "upperBranch", "lowerBranch", "input", "hepaticOut", "muscleGh", "muscleIgf"], true],
   ["LactotrophStoryView", "Lactotroph", 7, ["releaseBlood", "mammaryBlood", "nearAlveolus"], true],
-  ["CorticotrophStoryView", "Corticotroph", 11, ["portal", "systemic", "cortexArc", "cortisolBlood"], true]] :
+  ["CorticotrophStoryView", "Corticotroph", 11, ["portal", "systemic", "cortexArc", "cortisolBlood"], true],
+  ["GonadotrophStoryView", "Gonadotroph", 10, ["input", "trunk", "ovarianBranch", "testisBranch", "ovarianFsh", "ovarianLh", "testisFsh", "testisLh"], true]] :
   [["ThyroidCalcitoninStoryView", "Calcitonin", 6, ["capillary"]], ["AdrenalCortexStoryView", "AdrenalCortex", 2, ["section", "sinusoid"]]];
 for (const [sourceName, nativeName, count, routeNames, helperCubics] of configurations) {
   const source = cp.execFileSync("git", ["show", sha + ":apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlas" + sourceName + ".kt"], {cwd: root, encoding: "utf8"});
