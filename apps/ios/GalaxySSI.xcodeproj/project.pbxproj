@@ -282,6 +282,15 @@
     C4384000000000000000024F /* GalaxySSIHealthAtlasGastricChiefDigestDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000250 /* GalaxySSIHealthAtlasGastricChiefDigestDrawing.swift */; };
     C43840000000000000000251 /* GalaxySSIHealthAtlasGastricChiefMoleculeDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000252 /* GalaxySSIHealthAtlasGastricChiefMoleculeDrawing.swift */; };
     C43840000000000000000253 /* GalaxySSIHealthAtlasGastricChiefLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000254 /* GalaxySSIHealthAtlasGastricChiefLabelsDrawing.swift */; };
+    C43840000000000000000255 /* GalaxySSIHealthAtlasTonsilMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000256 /* GalaxySSIHealthAtlasTonsilMotion.swift */; };
+    C43840000000000000000257 /* GalaxySSIHealthAtlasTonsilGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000258 /* GalaxySSIHealthAtlasTonsilGeometry.swift */; };
+    C43840000000000000000259 /* GalaxySSIHealthAtlasTonsilRoutes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000025A /* GalaxySSIHealthAtlasTonsilRoutes.swift */; };
+    C4384000000000000000025B /* GalaxySSIHealthAtlasTonsilView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000025C /* GalaxySSIHealthAtlasTonsilView.swift */; };
+    C4384000000000000000025D /* GalaxySSIHealthAtlasTonsilLocatorDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000025E /* GalaxySSIHealthAtlasTonsilLocatorDrawing.swift */; };
+    C4384000000000000000025F /* GalaxySSIHealthAtlasTonsilSectionDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000260 /* GalaxySSIHealthAtlasTonsilSectionDrawing.swift */; };
+    C43840000000000000000261 /* GalaxySSIHealthAtlasTonsilCellularDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000262 /* GalaxySSIHealthAtlasTonsilCellularDrawing.swift */; };
+    C43840000000000000000263 /* GalaxySSIHealthAtlasTonsilTissueDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000264 /* GalaxySSIHealthAtlasTonsilTissueDrawing.swift */; };
+    C43840000000000000000265 /* GalaxySSIHealthAtlasTonsilLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000266 /* GalaxySSIHealthAtlasTonsilLabelsDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -2037,6 +2046,15 @@
     C43840000000000000000250 /* GalaxySSIHealthAtlasGastricChiefDigestDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricChiefDigestDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000252 /* GalaxySSIHealthAtlasGastricChiefMoleculeDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricChiefMoleculeDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000254 /* GalaxySSIHealthAtlasGastricChiefLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricChiefLabelsDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000256 /* GalaxySSIHealthAtlasTonsilMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTonsilMotion.swift; sourceTree = "<group>"; };
+    C43840000000000000000258 /* GalaxySSIHealthAtlasTonsilGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTonsilGeometry.swift; sourceTree = "<group>"; };
+    C4384000000000000000025A /* GalaxySSIHealthAtlasTonsilRoutes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTonsilRoutes.swift; sourceTree = "<group>"; };
+    C4384000000000000000025C /* GalaxySSIHealthAtlasTonsilView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTonsilView.swift; sourceTree = "<group>"; };
+    C4384000000000000000025E /* GalaxySSIHealthAtlasTonsilLocatorDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTonsilLocatorDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000260 /* GalaxySSIHealthAtlasTonsilSectionDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTonsilSectionDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000262 /* GalaxySSIHealthAtlasTonsilCellularDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTonsilCellularDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000264 /* GalaxySSIHealthAtlasTonsilTissueDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTonsilTissueDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000266 /* GalaxySSIHealthAtlasTonsilLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasTonsilLabelsDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3811,6 +3829,15 @@
         C43840000000000000000250 /* GalaxySSIHealthAtlasGastricChiefDigestDrawing.swift */,
         C43840000000000000000252 /* GalaxySSIHealthAtlasGastricChiefMoleculeDrawing.swift */,
         C43840000000000000000254 /* GalaxySSIHealthAtlasGastricChiefLabelsDrawing.swift */,
+        C43840000000000000000256 /* GalaxySSIHealthAtlasTonsilMotion.swift */,
+        C43840000000000000000258 /* GalaxySSIHealthAtlasTonsilGeometry.swift */,
+        C4384000000000000000025A /* GalaxySSIHealthAtlasTonsilRoutes.swift */,
+        C4384000000000000000025C /* GalaxySSIHealthAtlasTonsilView.swift */,
+        C4384000000000000000025E /* GalaxySSIHealthAtlasTonsilLocatorDrawing.swift */,
+        C43840000000000000000260 /* GalaxySSIHealthAtlasTonsilSectionDrawing.swift */,
+        C43840000000000000000262 /* GalaxySSIHealthAtlasTonsilCellularDrawing.swift */,
+        C43840000000000000000264 /* GalaxySSIHealthAtlasTonsilTissueDrawing.swift */,
+        C43840000000000000000266 /* GalaxySSIHealthAtlasTonsilLabelsDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5715,6 +5742,15 @@
         C4384000000000000000024F /* GalaxySSIHealthAtlasGastricChiefDigestDrawing.swift in Sources */,
         C43840000000000000000251 /* GalaxySSIHealthAtlasGastricChiefMoleculeDrawing.swift in Sources */,
         C43840000000000000000253 /* GalaxySSIHealthAtlasGastricChiefLabelsDrawing.swift in Sources */,
+        C43840000000000000000255 /* GalaxySSIHealthAtlasTonsilMotion.swift in Sources */,
+        C43840000000000000000257 /* GalaxySSIHealthAtlasTonsilGeometry.swift in Sources */,
+        C43840000000000000000259 /* GalaxySSIHealthAtlasTonsilRoutes.swift in Sources */,
+        C4384000000000000000025B /* GalaxySSIHealthAtlasTonsilView.swift in Sources */,
+        C4384000000000000000025D /* GalaxySSIHealthAtlasTonsilLocatorDrawing.swift in Sources */,
+        C4384000000000000000025F /* GalaxySSIHealthAtlasTonsilSectionDrawing.swift in Sources */,
+        C43840000000000000000261 /* GalaxySSIHealthAtlasTonsilCellularDrawing.swift in Sources */,
+        C43840000000000000000263 /* GalaxySSIHealthAtlasTonsilTissueDrawing.swift in Sources */,
+        C43840000000000000000265 /* GalaxySSIHealthAtlasTonsilLabelsDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
