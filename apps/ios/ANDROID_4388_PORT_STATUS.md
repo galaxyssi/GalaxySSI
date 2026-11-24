@@ -36,7 +36,7 @@ An eventual PR will use main and disclose the actual inherited diff.
 - Bilingual resource deltas are imported.
 - Source-only catalogue audit passed for all 67 hashes, catalogue counts,
   graph-resolved routes, entry phases, exact related destinations, reference
-  hosts and bilingual keys. Twenty new dispatches are present; the other four are
+  hosts and bilingual keys. Twenty-one new dispatches are present; the other three are
   explicitly not implemented. Two changed Swift files parsed without grammar
   errors; project structure passed. No Swift type checking or native execution.
 - Added dedicated Paneth crypt-barrier renderer and reusable crypt wall geometry:
@@ -139,7 +139,16 @@ An eventual PR will use main and disclose the actual inherited diff.
   Source audit compared all four cell-profile and four division curve formulas,
   stage/lamina/trace contracts, 12 bilingual keys and 484 analytic cell sizes.
   Four Swift files passed grammar parsing; project/catalogue checks passed.
-  Four immune renderers/default activation remain; no native/UI acceptance.
+  No native/UI acceptance.
+- Added shared immune drawing and the regulatory-T renderer/dispatch. Generated
+  seven constant immune path groups/44 commands; the parameterized mast gut
+  contour is explicitly excluded and still pending with that renderer. Kept the
+  regulatory activity ribbon as a qualitative thread, stage-continuous phase,
+  original damping/entry geometry and distinct responder/regulator palettes.
+  Source checks covered four bilingual keys and 19,844 analytic ribbon points;
+  five Swift files passed grammar parsing and project/catalogue checks passed.
+  Helper-T, cytotoxic-T and mast renderers/default activation remain. No native
+  compilation, execution or pixel acceptance claimed.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
 - Connect pelvic/subcutaneous cutaways to structure feature routing.

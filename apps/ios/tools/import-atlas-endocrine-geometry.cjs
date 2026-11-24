@@ -2,16 +2,23 @@
 const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process"), assert = require("node:assert/strict");
 const root = path.resolve(__dirname, "../../.."), sha = "6581110ec5c048edebf63821dee839b4818fe663", check = process.argv.includes("--check");
 const pituitary = process.argv.includes("--pituitary");
-const configurations = process.argv.includes("--langerhans") ? [["LangerhansSentinelStoryView", "Langerhans", 6, []]] :
+const configurations = process.argv.includes("--immune") ? [["MastAndTCellArt", "Immune", 7, ["upperPath", "lowerPath"], false, {expectedTotal: 8, exclude: ["gutTop"]}]] :
+  process.argv.includes("--langerhans") ? [["LangerhansSentinelStoryView", "Langerhans", 6, []]] :
   process.argv.includes("--pericyte") ? [["PericyteCoverageStoryView", "Pericyte", 8, ["wrapTrace"]]] : pituitary ? [["AnteriorPituitaryArt", "AnteriorPituitary", 2, [], true],
   ["SomatotrophStoryView", "Somatotroph", 12, ["capillary", "trunk", "upperBranch", "lowerBranch", "input", "hepaticOut", "muscleGh", "muscleIgf"], true],
   ["LactotrophStoryView", "Lactotroph", 7, ["releaseBlood", "mammaryBlood", "nearAlveolus"], true],
   ["CorticotrophStoryView", "Corticotroph", 11, ["portal", "systemic", "cortexArc", "cortisolBlood"], true],
   ["GonadotrophStoryView", "Gonadotroph", 10, ["input", "trunk", "ovarianBranch", "testisBranch", "ovarianFsh", "ovarianLh", "testisFsh", "testisLh"], true]] :
   [["ThyroidCalcitoninStoryView", "Calcitonin", 6, ["capillary"]], ["AdrenalCortexStoryView", "AdrenalCortex", 2, ["section", "sinusoid"]]];
-for (const [sourceName, nativeName, count, routeNames, helperCubics] of configurations) {
+for (const [sourceName, nativeName, count, routeNames, helperCubics, selection] of configurations) {
   const source = cp.execFileSync("git", ["show", sha + ":apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlas" + sourceName + ".kt"], {cwd: root, encoding: "utf8"});
-  const declarations = [...source.matchAll(/private val (\w+) = (?:curve|Path\(\)\.apply|track\(Path\(\)\.apply) \{([^}]+)\}/g)];
+  let declarations = [...source.matchAll(/private val (\w+) = (?:curve|Path\(\)\.apply|track\(Path\(\)\.apply) \{([^}]+)\}/g)];
+  if (selection) {
+    assert.equal(declarations.length, selection.expectedTotal);
+    for (const name of selection.exclude) assert.equal(declarations.filter(d => d[1] === name).length, 1);
+    // The excluded gutTop requires a separate parameterized port, not constant extraction.
+    declarations = declarations.filter(d => !selection.exclude.includes(d[1]));
+  }
   if (helperCubics) for (const [, name, args, tail] of source.matchAll(/private val (\w+) = cubic\(([^)]+)\)(\.apply \{[^}]+\})?/g)) {
     const tokens = args.split(",").map(s => s.trim()); assert.equal(tokens.length, 8);
     declarations.push(["", name, "moveTo(" + tokens.slice(0, 2).join(",") + ")\ncubicTo(" + tokens.slice(2).join(",") + ")" + (tail ? tail.slice(".apply {".length, -1) : "")]);
@@ -21,7 +28,7 @@ for (const [sourceName, nativeName, count, routeNames, helperCubics] of configur
   const arity = {moveTo: 2, lineTo: 2, quadTo: 4, cubicTo: 6, close: 0};
   for (const [, name, body] of declarations) {
     const calls = [...body.matchAll(/(moveTo|lineTo|quadTo|cubicTo|close|addCircle|addRoundRect)\(([^)]*)\)/g)];
-    assert.equal(body.replace(/(moveTo|lineTo|quadTo|cubicTo|close|addCircle|addRoundRect)\([^)]*\)/g, "").trim(), "", name);
+    assert.equal(body.replace(/(moveTo|lineTo|quadTo|cubicTo|close|addCircle|addRoundRect)\([^)]*\)/g, "").replace(/[\s;]/g, ""), "", name);
     let start, end, route = [];
     text += "  static let " + name + " = Path { p in\n";
     for (const [, op, args] of calls) {
