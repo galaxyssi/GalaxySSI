@@ -2497,6 +2497,49 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(try XCTUnwrap(Geometry.recoveryCurveRoute.commands.last?.points.last), .init(x: 313, y: 280))
   }
 
+  func testGastricAcidSourceRampsKeepIndependentWindows() {
+    typealias Motion = GalaxySSIHealthAtlasGastricAcidMotion
+    let ramps: [((Double) -> Double, Double, Double)] = [
+      (Motion.locate,0.04,0.82), (Motion.histamine,0.02,0.43), (Motion.recruit,0.26,0.92),
+      (Motion.exchange,0.10,0.86), (Motion.chloride,0.04,0.64), (Motion.lumen,0.18,0.98), (Motion.feedback,0.06,0.70)
+    ]
+    for (ramp, start, end) in ramps {
+      XCTAssertEqual(ramp(start), 0); XCTAssertEqual(ramp(end), 1)
+      XCTAssertEqual(ramp((start + end) / 2), 0.5, accuracy: 1e-12)
+      XCTAssertEqual(ramp(.nan), 0)
+      var last = 0.0
+      for sample in 0...200 {
+        let value = ramp(Double(sample) / 200)
+        XCTAssertGreaterThanOrEqual(value, last); XCTAssertTrue((0...1).contains(value))
+        last = value
+      }
+    }
+    XCTAssertEqual(Motion.histamine(0.43), 1)
+    XCTAssertLessThan(Motion.recruit(0.43), 1)
+    XCTAssertEqual(Motion.output(0.32), 1)
+    XCTAssertEqual(Motion.output(0.93), 0.26, accuracy: 1e-12)
+    XCTAssertEqual(Motion.output(1), 0.26, accuracy: 1e-12)
+  }
+
+  func testGastricAcidLumenParticlesKeepWindowAndRouteEndpoints() throws {
+    typealias Motion = GalaxySSIHealthAtlasGastricAcidMotion
+    typealias Geometry = GalaxySSIHealthAtlasGastricAcidGeometry
+    for index in 0...3 { XCTAssertNil(Motion.flow(0, index: index)) }
+    XCTAssertNil(Motion.flow(1, index: 0)); XCTAssertNil(Motion.flow(1, index: 1))
+    XCTAssertEqual(try XCTUnwrap(Motion.flow(1, index: 2)), 0.86, accuracy: 1e-12)
+    XCTAssertEqual(try XCTUnwrap(Motion.flow(1, index: 3)), 0.71, accuracy: 1e-12)
+    for sample in 0...200 {
+      for index in 0...3 {
+        guard let fraction = Motion.flow(Double(sample) / 200, index: index) else { continue }
+        XCTAssertGreaterThan(fraction, 0.01); XCTAssertLessThan(fraction, 0.98)
+      }
+    }
+    XCTAssertEqual(Geometry.locatorTrack.start, .init(x: 109, y: 151))
+    XCTAssertEqual(try XCTUnwrap(Geometry.locatorTrack.commands.last?.points.last), .init(x: 269, y: 179))
+    XCTAssertEqual(Geometry.secretionTrack.start, .init(x: 219, y: 166))
+    XCTAssertEqual(try XCTUnwrap(Geometry.secretionTrack.commands.last?.points.last), .init(x: 306, y: 91))
+  }
+
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion

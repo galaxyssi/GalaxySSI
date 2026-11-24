@@ -207,6 +207,13 @@
     C438400000000000000001B9 /* GalaxySSIHealthAtlasAdrenalLocatorDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001BA /* GalaxySSIHealthAtlasAdrenalLocatorDrawing.swift */; };
     C438400000000000000001BB /* GalaxySSIHealthAtlasAdrenalSignalReleaseDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001BC /* GalaxySSIHealthAtlasAdrenalSignalReleaseDrawing.swift */; };
     C438400000000000000001BD /* GalaxySSIHealthAtlasAdrenalCirculationDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001BE /* GalaxySSIHealthAtlasAdrenalCirculationDrawing.swift */; };
+    C438400000000000000001BF /* GalaxySSIHealthAtlasGastricAcidMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001C0 /* GalaxySSIHealthAtlasGastricAcidMotion.swift */; };
+    C438400000000000000001C1 /* GalaxySSIHealthAtlasGastricAcidGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001C2 /* GalaxySSIHealthAtlasGastricAcidGeometry.swift */; };
+    C438400000000000000001C3 /* GalaxySSIHealthAtlasGastricAcidView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001C4 /* GalaxySSIHealthAtlasGastricAcidView.swift */; };
+    C438400000000000000001C5 /* GalaxySSIHealthAtlasGastricAcidPlateDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001C6 /* GalaxySSIHealthAtlasGastricAcidPlateDrawing.swift */; };
+    C438400000000000000001C7 /* GalaxySSIHealthAtlasGastricAcidLocatorDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001C8 /* GalaxySSIHealthAtlasGastricAcidLocatorDrawing.swift */; };
+    C438400000000000000001C9 /* GalaxySSIHealthAtlasGastricAcidTransportDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001CA /* GalaxySSIHealthAtlasGastricAcidTransportDrawing.swift */; };
+    C438400000000000000001CB /* GalaxySSIHealthAtlasGastricAcidFeedbackDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001CC /* GalaxySSIHealthAtlasGastricAcidFeedbackDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1887,6 +1894,13 @@
     C438400000000000000001BA /* GalaxySSIHealthAtlasAdrenalLocatorDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAdrenalLocatorDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000001BC /* GalaxySSIHealthAtlasAdrenalSignalReleaseDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAdrenalSignalReleaseDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000001BE /* GalaxySSIHealthAtlasAdrenalCirculationDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAdrenalCirculationDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001C0 /* GalaxySSIHealthAtlasGastricAcidMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricAcidMotion.swift; sourceTree = "<group>"; };
+    C438400000000000000001C2 /* GalaxySSIHealthAtlasGastricAcidGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricAcidGeometry.swift; sourceTree = "<group>"; };
+    C438400000000000000001C4 /* GalaxySSIHealthAtlasGastricAcidView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricAcidView.swift; sourceTree = "<group>"; };
+    C438400000000000000001C6 /* GalaxySSIHealthAtlasGastricAcidPlateDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricAcidPlateDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001C8 /* GalaxySSIHealthAtlasGastricAcidLocatorDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricAcidLocatorDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001CA /* GalaxySSIHealthAtlasGastricAcidTransportDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricAcidTransportDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001CC /* GalaxySSIHealthAtlasGastricAcidFeedbackDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricAcidFeedbackDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3586,6 +3600,13 @@
         C438400000000000000001BA /* GalaxySSIHealthAtlasAdrenalLocatorDrawing.swift */,
         C438400000000000000001BC /* GalaxySSIHealthAtlasAdrenalSignalReleaseDrawing.swift */,
         C438400000000000000001BE /* GalaxySSIHealthAtlasAdrenalCirculationDrawing.swift */,
+        C438400000000000000001C0 /* GalaxySSIHealthAtlasGastricAcidMotion.swift */,
+        C438400000000000000001C2 /* GalaxySSIHealthAtlasGastricAcidGeometry.swift */,
+        C438400000000000000001C4 /* GalaxySSIHealthAtlasGastricAcidView.swift */,
+        C438400000000000000001C6 /* GalaxySSIHealthAtlasGastricAcidPlateDrawing.swift */,
+        C438400000000000000001C8 /* GalaxySSIHealthAtlasGastricAcidLocatorDrawing.swift */,
+        C438400000000000000001CA /* GalaxySSIHealthAtlasGastricAcidTransportDrawing.swift */,
+        C438400000000000000001CC /* GalaxySSIHealthAtlasGastricAcidFeedbackDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5415,6 +5436,13 @@
         C438400000000000000001B9 /* GalaxySSIHealthAtlasAdrenalLocatorDrawing.swift in Sources */,
         C438400000000000000001BB /* GalaxySSIHealthAtlasAdrenalSignalReleaseDrawing.swift in Sources */,
         C438400000000000000001BD /* GalaxySSIHealthAtlasAdrenalCirculationDrawing.swift in Sources */,
+        C438400000000000000001BF /* GalaxySSIHealthAtlasGastricAcidMotion.swift in Sources */,
+        C438400000000000000001C1 /* GalaxySSIHealthAtlasGastricAcidGeometry.swift in Sources */,
+        C438400000000000000001C3 /* GalaxySSIHealthAtlasGastricAcidView.swift in Sources */,
+        C438400000000000000001C5 /* GalaxySSIHealthAtlasGastricAcidPlateDrawing.swift in Sources */,
+        C438400000000000000001C7 /* GalaxySSIHealthAtlasGastricAcidLocatorDrawing.swift in Sources */,
+        C438400000000000000001C9 /* GalaxySSIHealthAtlasGastricAcidTransportDrawing.swift in Sources */,
+        C438400000000000000001CB /* GalaxySSIHealthAtlasGastricAcidFeedbackDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
