@@ -936,9 +936,9 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(baseline.plates.count, 54)
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.RegionalStructurePack.read(bundle: bundle))
     try pack.validating(in: atlas, bundle: bundle)
-    XCTAssertEqual(pack.plates.count, 73)
-    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 252)
-    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 36)
+    XCTAssertEqual(pack.plates.count, 75)
+    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 259)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 41)
     for language in ["en", "zh-Hans"] {
       XCTAssertEqual(GalaxySSIHealthAtlasText.get("health_atlas_belongs", language),
         GalaxySSIHealthAtlasFunctionText.get("health_atlas_belongs", language))
@@ -979,9 +979,9 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   func testFunctionCataloguePreservesIndependentChoicesAndChapterBoundaries() throws {
     let catalogue = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: Bundle(for: GalaxySSIStore.self)))
     try catalogue.validate(in: completeCatalogue())
-    XCTAssertEqual(catalogue.source.androidPR, 4385)
-    XCTAssertEqual(catalogue.stories.count, 114); XCTAssertEqual(catalogue.routes.count, 289)
-    XCTAssertEqual(catalogue.stories.reduce(0) { $0 + $1.chapters.count }, 544)
+    XCTAssertEqual(catalogue.source.androidPR, 4388)
+    XCTAssertEqual(catalogue.stories.count, 138); XCTAssertEqual(catalogue.routes.count, 313)
+    XCTAssertEqual(catalogue.stories.reduce(0) { $0 + $1.chapters.count }, 643)
     XCTAssertEqual(GalaxySSIHealthAtlasFunctionRendering.implemented, Set(catalogue.stories.map(\.id)))
     XCTAssertEqual(catalogue.choices(for: "tibia").map(\.id), ["KNEE_ARTICULATION", "ANKLE_MORTISE"])
     XCTAssertEqual(catalogue.choices(for: "clitoris").map(\.id), ["CLITORAL_SENSORY_PATH"])

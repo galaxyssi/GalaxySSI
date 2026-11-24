@@ -28,7 +28,7 @@ struct GalaxySSIHealthAtlasFunctionCatalogue: Decodable {
   let routes: [String: [String]]
   let entryPhases: [String: [String: Double]]
   static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
-  static func read(bundle: Bundle, revision: Int = 4385) throws -> Self? {
+  static func read(bundle: Bundle, revision: Int = 4388) throws -> Self? {
     guard [4384, 4385, 4388].contains(revision) else { throw GalaxySSIHealthAtlas.Invalid.catalogue }
     let asset = revision == 4384 ? "HealthAtlasFunctionStories" : revision == 4385 ? "HealthAtlasRegionalStories" : "HealthAtlasCompleteStories"
     guard let data = NSDataAsset(name: asset, bundle: bundle)?.data else { return nil }

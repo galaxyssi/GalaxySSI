@@ -1,8 +1,8 @@
 // Evaluate original #4384 pure structure declarations with resource identities and Plate DTO stubs.
 // No Android scene, Swift code, XCTest or native app is compiled/executed.
 const fs=require("node:fs"),path=require("node:path"),os=require("node:os"),cp=require("node:child_process"),assert=require("node:assert/strict"),xml=require("xml-js");
-const regional=process.argv.includes("--regional");
-const root=path.resolve(__dirname,"../../.."),sha=regional?"a81aa85a1c81e41ff19a032eabea1eddcd2371dc":"ab78711d467c013444883dbaeca23c39a601c875",check=process.argv.includes("--check");
+const complete=process.argv.includes("--complete-4388"),regional=complete||process.argv.includes("--regional");
+const root=path.resolve(__dirname,"../../.."),sha=complete?"6581110ec5c048edebf63821dee839b4818fe663":regional?"a81aa85a1c81e41ff19a032eabea1eddcd2371dc":"ab78711d467c013444883dbaeca23c39a601c875",check=process.argv.includes("--check");
 const directory="apps/android/app/src/main/java/com/galaxyssi/chat/";
 const show=p=>cp.execFileSync("git",["show",sha+":"+p],{cwd:root,maxBuffer:32_000_000});
 const temporary=fs.mkdtempSync(path.join(os.tmpdir(),"galaxyssi-function-structures-")),files=[];
@@ -21,6 +21,7 @@ if(regional){
  generated("Context","package android.content\nclass Context");
  generated("FunctionStory","package com.galaxyssi.chat\ninternal enum class HealthAtlasFunctionStory { SPERM_TRANSPORT }");
 }
+if(complete)generated("HealthAtlasLoadTransferPlates",show(directory+"HealthAtlasLoadTransferPlates.kt").toString());
 generated("Plate",`package com.galaxyssi.chat
 internal data class HealthAtlasMarker(val id: String, val x: Float, val y: Float)
 internal data class HealthAtlasFeature(val marker: HealthAtlasMarker, val title: Int, val explanation: Int)
@@ -55,13 +56,14 @@ const plates=exported.map(value=>{
  assert(ids.has(plate.owner),plate.owner);
  for(const marker of plate.markers)assert(ids.has(marker.id),marker.id);
  const suffix=drawableName.replace(/^health_atlas_/,"").split("_").map(s=>s[0].toUpperCase()+s.slice(1)).join("");
- const asset=regional?"HealthAtlasRegional"+suffix:aliases[drawableName]??"HealthAtlasStructure"+suffix;
+ const loadTransfer=complete&&["health_atlas_pelvic_ring","health_atlas_subcutaneous_section"].includes(drawableName);
+ const asset=loadTransfer?"HealthAtlasComplete"+suffix:regional?"HealthAtlasRegional"+suffix:aliases[drawableName]??"HealthAtlasStructure"+suffix;
  return {...plate,...(regional?{id:plate.viewKey??plate.owner}:{}),asset,entryIDs:[plate.owner,...plate.markers.map(m=>m.id)],aspectRatio:width/height,drawable};
 });
 if(!regional)assert.equal(new Set(plates.map(p=>p.owner)).size,plates.length);
 assert.equal(new Set(plates.map(p=>p.id)).size,plates.length);
-const pack={schema:1,source:{androidPR:regional?4385:4384,mergeCommit:sha},plates};
-const assets=path.join(root,"apps/ios/GalaxySSI/Assets.xcassets"),destination=path.join(assets,(regional?"HealthAtlasRegionalStructures":"HealthAtlasFunctionStructures")+".dataset");
+const pack={schema:1,source:{androidPR:complete?4388:regional?4385:4384,mergeCommit:sha},plates};
+const assets=path.join(root,"apps/ios/GalaxySSI/Assets.xcassets"),destination=path.join(assets,(complete?"HealthAtlasCompleteStructures":regional?"HealthAtlasRegionalStructures":"HealthAtlasFunctionStructures")+".dataset");
 function write(p,text){if(check)assert.equal(fs.readFileSync(p,"utf8"),text,p);else{fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,text);}}
 write(path.join(destination,"content.json"),JSON.stringify(pack,null,2)+"\n");
 write(path.join(destination,"Contents.json"),JSON.stringify({data:[{filename:"content.json",idiom:"universal"}],info:{author:"xcode",version:1}},null,2)+"\n");
