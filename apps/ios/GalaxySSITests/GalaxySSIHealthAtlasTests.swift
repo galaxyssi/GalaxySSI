@@ -1037,6 +1037,40 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testSkinLayerCutawaysKeepTheirCanonicalLinksAndIndependentFunctionSelections() throws {
+    let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    let courses = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: bundle))
+    let skin = try XCTUnwrap(atlas.plate(for: "skin-organ"))
+    XCTAssertEqual(skin.markers.map(\.id), ["epidermis", "dermis", "subcutaneous-tissue"])
+    XCTAssertEqual(skin.annotations.map(\.id),
+      ["skin-layers-follicle", "skin-layers-sweat-duct", "skin-layers-vessels"])
+    let state = GalaxySSIHealthAtlasState()
+    for (owner, storyID, phase) in [("epidermis", "EPIDERMAL_BARRIER", 0.6), ("dermis", "FIBROBLAST_MATRIX", 0.3)] {
+      let entry = try XCTUnwrap(atlas.entry(owner)), views = atlas.views(for: owner)
+      guard case .anatomy(let target) = skin.labelTarget(owner, in: atlas) else {
+        return XCTFail("Skin layer label must navigate to its canonical entry")
+      }
+      XCTAssertEqual(target, owner)
+      XCTAssertEqual(views.first?.owner, owner)
+      XCTAssertGreaterThanOrEqual(views.count, 2)
+      XCTAssertTrue(courses.choices(for: owner).contains { $0.id == storyID })
+      var function = GalaxySSIHealthAtlasFunctionSelection()
+      function.choose(storyID, entryID: owner, catalogue: courses)
+      function.save(phase, storyID: storyID, entryID: owner, catalogue: courses)
+      state.binding(entry).wrappedValue.functionSelection = function
+      state.binding(entry).wrappedValue.artworkView = views[1].viewKey
+      XCTAssertEqual(state.binding(entry).wrappedValue.functionSelection, function)
+      state.binding(entry).wrappedValue.artworkView = views[0].viewKey
+      XCTAssertEqual(state.binding(entry).wrappedValue.functionSelection, function)
+    }
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.entries["epidermis"]?.functionSelection?.selected, "EPIDERMAL_BARRIER")
+    XCTAssertEqual(restored.entries["epidermis"]?.functionSelection?.phases["EPIDERMAL_BARRIER"], 0.6)
+    XCTAssertEqual(restored.entries["dermis"]?.functionSelection?.selected, "FIBROBLAST_MATRIX")
+    XCTAssertEqual(restored.entries["dermis"]?.functionSelection?.phases["FIBROBLAST_MATRIX"], 0.3)
+    XCTAssertEqual(atlas.plate(for: "cell-keratinocyte")?.owner, "cell-keratinocyte")
+  }
+
   func testFunctionCataloguePreservesIndependentChoicesAndChapterBoundaries() throws {
     let catalogue = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: Bundle(for: GalaxySSIStore.self)))
     try catalogue.validate(in: completeCatalogue())
