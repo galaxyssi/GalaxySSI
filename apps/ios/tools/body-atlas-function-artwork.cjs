@@ -1,5 +1,7 @@
 // Dedicated #4384 course art, shared by the importer and PDF/source audit.
 const batches = {
+  "--function-pineal": {name:"pineal", paths:32, gradients:5,
+    frames:[["pineal_plate","HealthAtlasFunctionPineal","art.pdf"]]},
   "--function-digestion": {name:"digestive", paths:35, gradients:21, frames:
     ["mouth","esophagus","stomach","duodenum","large","rectum"].map(slug =>
       ["gut_"+slug,"HealthAtlasFunctionGut"+slug[0].toUpperCase()+slug.slice(1),"art.pdf"])},
