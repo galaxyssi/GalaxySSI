@@ -1,7 +1,7 @@
 // Static pinned-resource/PDF/source audit. No native Swift or UI execution.
 const fs = require("node:fs"), path = require("node:path"), assert = require("node:assert/strict");
 const {execFileSync} = require("node:child_process"), xml = require("xml-js");
-const {PDFDocument, PDFName, PDFDict, PDFArray, decodePDFRawStream, drawSvgPath, rgb} = require("pdf-lib");
+const {PDFDocument, PDFName, PDFDict, PDFArray, PDFNumber, decodePDFRawStream, drawSvgPath, rgb} = require("pdf-lib");
 const root = path.resolve(__dirname, "../GalaxySSI"), assets = path.join(root, "Assets.xcassets");
 const retinal = process.argv.includes("--retinal-cells");
 const systems = process.argv.includes("--system-overviews");
@@ -36,7 +36,7 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
     const vector = xml.xml2js(raw, {compact: true}).vector;
     if (vector.group) {
       assert(functionArt?.groups,"Unexpected grouped source");
-      vector.path=require("./body-atlas-ordered-vector.cjs")(raw);
+      vector.path=require("./body-atlas-ordered-vector.cjs")(raw, {affine: !!functionArt.affineGroups});
     }
     const dir = path.join(assets, asset + ".imageset"), metadata = JSON.parse(fs.readFileSync(path.join(dir, "Contents.json")));
     assert(metadata.properties["preserves-vector-representation"]); assert(metadata.images.some(i => i.filename === filename));
@@ -57,7 +57,7 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
       const geometry = drawSvgPath(item._attributes["android:pathData"], {x:0,y:box.height,color:rgb(0,0,0)})
         .map(op=>op.toString()).filter(op=>/(?:^|\s)(?:m|l|c|v|y|h)$/.test(op)).join("\n");
       assert(geometry.length > 0 && contents.includes(geometry), "Missing original geometry " + slug);
-      if (functionArt.groups) {
+      if (functionArt.groups && !functionArt.affineGroups) {
         const at=contents.indexOf(geometry,orderedCursor);
         assert(at>=orderedCursor,"Source path order "+slug);
         let mirror=false; const stack=[];
@@ -69,9 +69,42 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
         assert.equal(mirror,!!item._atlasMirrorX,"Source group reflection "+slug);
         orderedCursor=at+geometry.length;
       }
+      if (functionArt.affineGroups) {
+        const at=contents.indexOf(geometry,orderedCursor);
+        assert(at>=orderedCursor,"Source affine path order "+slug);
+        const transform=require("./body-atlas-vector-transform.cjs");
+        let state={matrix:transform.identity,fill:1,stroke:1,fillRGB:null,strokeRGB:null};const stack=[];
+        const ext=resources.lookupMaybe(PDFName.of("ExtGState"),PDFDict);
+        for(const line of contents.slice(0,at).trim().split(/\r?\n/)){
+          if(line==="q")stack.push({...state});
+          else if(line==="Q"){assert(stack.length);state=stack.pop();}
+          else if(line.endsWith(" cm")){
+            const numbers=line.slice(0,-3).trim().split(/\s+/).map(Number);
+            assert(numbers.length===6&&numbers.every(Number.isFinite));state.matrix=transform.multiply(state.matrix,numbers);
+          } else if(line.endsWith(" rg"))state.fillRGB=line.slice(0,-3).trim().split(/\s+/).map(Number);
+          else if(line.endsWith(" RG"))state.strokeRGB=line.slice(0,-3).trim().split(/\s+/).map(Number);
+          else if(line.endsWith(" gs")){
+            const dictionary=ext.lookup(PDFName.of(line.slice(1,-3).trim()),PDFDict);
+            const fill=dictionary.lookupMaybe(PDFName.of("ca"),PDFNumber),stroke=dictionary.lookupMaybe(PDFName.of("CA"),PDFNumber);
+            if(fill)state.fill=fill.asNumber();if(stroke)state.stroke=stroke.asNumber();
+          }
+        }
+        const expected=transform.multiply(transform.pdf(item._atlasTransform||transform.identity,box.height),[1,0,0,-1,0,box.height]);
+        expected.forEach((number,i)=>assert(Math.abs(state.matrix[i]-number)<1e-8,"Source affine matrix "+slug));
+        const a=item._attributes,alpha=colour=>colour?.length===9?parseInt(colour.slice(1,3),16)/255:1;
+        if(a["android:fillColor"])assert(Math.abs(state.fill-alpha(a["android:fillColor"])*Number(a["android:fillAlpha"]??1))<1e-9,"Source fill opacity "+slug);
+        if(a["android:strokeColor"])assert(Math.abs(state.stroke-alpha(a["android:strokeColor"])*Number(a["android:strokeAlpha"]??1))<1e-9,"Source stroke opacity "+slug);
+        for(const [attribute,key] of [["android:fillColor","fillRGB"],["android:strokeColor","strokeRGB"]]){
+          if(!a[attribute]||item["aapt:attr"])continue;
+          const hex=a[attribute].slice(-6),rgb=[0,2,4].map(i=>parseInt(hex.slice(i,i+2),16)/255);
+          assert(state[key]?.length===3,"Missing source RGB "+slug);
+          rgb.forEach((component,i)=>assert(Math.abs(state[key][i]-component)<1e-9,"Source RGB "+slug));
+        }
+        orderedCursor=at+geometry.length;
+      }
     }
     if (functionArt?.groups) {
-      assert.equal((contents.match(/-1 0 0 1 360 0 cm/g)||[]).length,vector.path.filter(p=>p._atlasMirrorX).length);
+      if (!functionArt.affineGroups) assert.equal((contents.match(/-1 0 0 1 360 0 cm/g)||[]).length,vector.path.filter(p=>p._atlasMirrorX).length);
       let depth=0;
       for(const line of contents.trim().split(/\r?\n/)){if(line==="q")depth++;if(line==="Q")depth--;assert(depth>=0);}
       assert.equal(depth,0,"Balanced PDF drawing groups");

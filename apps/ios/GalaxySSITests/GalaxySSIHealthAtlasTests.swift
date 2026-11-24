@@ -929,6 +929,46 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Viewport.cellCourses.count, 9)
   }
 
+  func testFunctionStructurePlatesKeepCanonicalOwnersAndSeparateContextViews() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self), atlas = try completeCatalogue()
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.FunctionStructurePack.read(bundle: bundle))
+    try pack.validating(in: atlas, bundle: bundle)
+    XCTAssertEqual(pack.plates.count, 54)
+    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 177)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 27)
+    for language in ["en", "zh-Hans"] {
+      XCTAssertEqual(GalaxySSIHealthAtlasText.get("health_atlas_belongs", language),
+        GalaxySSIHealthAtlasFunctionText.get("health_atlas_belongs", language))
+    }
+    for plate in pack.plates {
+      let owner = try XCTUnwrap(plate.owner)
+      XCTAssertEqual(atlas.plate(for: owner)?.asset, plate.asset)
+      XCTAssertEqual(atlas.views(for: owner).first?.id, owner)
+      for feature in plate.annotations {
+        guard case .feature(let resolved) = plate.labelTarget(feature.id, in: atlas) else {
+          return XCTFail("Expected local structure explanation")
+        }
+        XCTAssertEqual(resolved.id, feature.id)
+      }
+      for marker in plate.markers {
+        guard case .anatomy(let id) = plate.labelTarget(marker.id, in: atlas) else {
+          return XCTFail("Expected canonical anatomy destination")
+        }
+        XCTAssertEqual(id, marker.id)
+      }
+    }
+    for id in ["ribs", "cartilage", "joints", "deltoid", "rectus-abdominis"] {
+      let context = try XCTUnwrap(GalaxySSIHealthAtlas.MusculoskeletalPack.read(bundle: bundle))
+        .plates.filter { $0.entryIDs.contains(id) }
+      XCTAssertEqual(atlas.views(for: id).map(\.asset),
+        [try XCTUnwrap(pack.plates.first { $0.owner == id }).asset] + context.map(\.asset))
+    }
+    XCTAssertNil(GalaxySSIHealthAtlas.FunctionStructurePack.plate(for: "ulna"))
+    XCTAssertNil(GalaxySSIHealthAtlas.FunctionStructurePack.plate(for: nil))
+    XCTAssertNotEqual(atlas.plate(for: "radius")?.asset, atlas.plate(for: "ulna")?.asset)
+    XCTAssertNotEqual(atlas.plate(for: "appendix")?.asset, GalaxySSIHealthAtlasSectionLesson.forEntry("appendix")?.plate.asset)
+  }
+
   func testFunctionCataloguePreservesIndependentChoicesAndChapterBoundaries() throws {
     let catalogue = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: Bundle(for: GalaxySSIStore.self)))
     try catalogue.validate(in: completeCatalogue())
@@ -2999,7 +3039,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Array(atlas.entries.dropFirst(ganglionIndex + 1).prefix(2).map(\.id)), GalaxySSIHealthAtlas.SensoryPack.relayIDs)
     for plate in pack.plates {
       let owner = try XCTUnwrap(plate.owner)
-      XCTAssertEqual(atlas.plate(for: owner)?.asset, plate.asset)
+      XCTAssertEqual(atlas.plate(for: owner)?.asset,
+        GalaxySSIHealthAtlas.FunctionStructurePack.plate(for: owner)?.asset ?? plate.asset)
       XCTAssertTrue(GalaxySSIHealthAtlas.trustedPlateSource(plate.source))
       for feature in plate.annotations {
         XCTAssertNil(atlas.entry(feature.id))
@@ -3063,7 +3104,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       XCTAssertNotNil(UIImage(named: picture.asset, in: bundle, compatibleWith: nil))
     }
     for plate in pack.plates {
-      XCTAssertEqual(atlas.plate(for: plate.owner)?.asset, plate.asset)
+      XCTAssertEqual(atlas.plate(for: plate.owner)?.asset,
+        GalaxySSIHealthAtlas.FunctionStructurePack.plate(for: plate.owner)?.asset ?? plate.asset)
       for feature in plate.annotations {
         XCTAssertNil(atlas.entry(feature.id))
         guard case .feature = plate.labelTarget(feature.id, in: atlas) else { return XCTFail("Expected local explanation") }
@@ -3154,7 +3196,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       XCTAssertEqual(lesson.plate.aspectRatio, painted == nil ? 360.0 / 280 : 1)
       if let painted { XCTAssertEqual(lesson.plate.asset, painted) }
       XCTAssertEqual(entry.related, lesson.plate.markers.map(\.id))
-      XCTAssertEqual(atlas.plate(for: id)?.asset, lesson.plate.asset)
+      XCTAssertEqual(atlas.plate(for: id)?.asset,
+        GalaxySSIHealthAtlas.FunctionStructurePack.plate(for: id)?.asset ?? lesson.plate.asset)
       for feature in lesson.plate.annotations {
         XCTAssertNil(atlas.entry(feature.id))
         guard case .feature = lesson.plate.labelTarget(feature.id, in: atlas) else { return XCTFail("Expected feature") }
@@ -3188,7 +3231,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthAtlasSectionLesson.forEntry("cell-enterocyte"))
   }
 
-  func testEditorialArtworkRetainsResolutionTransparencyAndAllOneHundredNineteenHotspots() throws {
+  func testEditorialArtworkRetainsResolutionTransparencyAndAllOneHundredTwentyOneHotspots() throws {
     let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
     let frames: [(String?, Int, Int)] = [(nil, 1024, 1536), ("heart", 1086, 1448),
       ("lungs", 1254, 1254), ("liver", 1254, 1254), ("kidneys", 1254, 1254),
@@ -3202,7 +3245,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       ("cell-eosinophil", 1254, 1254), ("cell-basophil", 1254, 1254),
       ("cell-monocyte", 1254, 1254), ("cell-dendritic-cell", 1254, 1254), ("cell-plasma-cell", 1254, 1254),
       ("cell-t-cell", 1254, 1254), ("cell-b-cell", 1254, 1254), ("cell-natural-killer-cell", 1254, 1254),
-      ("cell-megakaryocyte", 1254, 1254), ("fragment-platelet", 1254, 1254)]
+      ("cell-megakaryocyte", 1254, 1254), ("fragment-platelet", 1254, 1254), ("teeth", 1254, 1254), ("jejunum", 1254, 1254)]
     let samples: [String: [CGPoint]] = [
       "pancreas": [CGPoint(x: 0.90, y: 0.72), CGPoint(x: 0.62, y: 0.30)],
       "urinary": [CGPoint(x: 0.50, y: 0.50), CGPoint(x: 0.66, y: 0.53)],
@@ -3233,7 +3276,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       let plate = try XCTUnwrap(atlas.plate(for: owner, viewKey: key))
       plates.append((plate, key == "skeletal-posterior" ? 887 : 1024, key == "skeletal-posterior" ? 1774 : 1536))
     }
-    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 43)
+    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 45)
     var count = 0
     for (plate, width, height) in plates {
       let image = try XCTUnwrap(UIImage(named: plate.asset, in: bundle, compatibleWith: nil)?.cgImage)
@@ -3306,7 +3349,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(try alpha(image, Int(sample[1].x * CGFloat(width)), Int(sample[1].y * CGFloat(height))), 200)
       }
     }
-    XCTAssertEqual(count, 119)
+    XCTAssertEqual(count, 121)
     XCTAssertTrue(try XCTUnwrap(atlas.plate(for: nil)).markers.contains { $0.id == "lungs" })
   }
 

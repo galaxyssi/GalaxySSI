@@ -23,6 +23,13 @@ const batches = {
     frames:[["endocrine_pituitary_section","HealthAtlasFunctionPituitary","art.pdf"],
       ["endocrine_thyroid_section","HealthAtlasFunctionThyroid","art.pdf"]]}
 };
+if (process.argv.includes("--function-structures")) {
+  const fs = require("node:fs"), path = require("node:path");
+  const pack = JSON.parse(fs.readFileSync(path.join(__dirname,"../GalaxySSI/Assets.xcassets/HealthAtlasFunctionStructures.dataset/content.json")));
+  batches["--function-structures"] = {name:"structure catalogue",paths:685,gradients:96,groups:true,affineGroups:true,
+    frames:pack.plates.filter(p=>p.asset.startsWith("HealthAtlasStructure")).map(p=>[
+      path.basename(p.drawable,".xml").replace("health_atlas_",""),p.asset,"art.pdf"])};
+}
 const selected = Object.keys(batches).filter(flag=>process.argv.includes(flag));
 if(selected.length>1)throw Error("Select one Function artwork batch at a time");
 module.exports = selected.length ? batches[selected[0]] : null;

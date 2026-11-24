@@ -34,22 +34,7 @@ const keys=[...new Set(files.flatMap(file=>[...fs.readFileSync(file,"utf8").matc
 const resources=JSON.stringify(keys).replace(/^\[/,"arrayOf(").replace(/\]$/,")");
 generated("R","package com.galaxyssi.chat\ninternal object ResourceNames { val keys="+resources+" }\ninternal object R { object string {\n"+keys.map((k,i)=>"const val "+k+" = "+(i+1)).join("\n")+"\n}}");
 generated("Export",fs.readFileSync(path.join(__dirname,"AtlasFunctionCatalogueExport.kt"),"utf8"));
-function jars(directory){
-  if(!fs.existsSync(directory))return [];
-  return fs.readdirSync(directory,{withFileTypes:true}).flatMap(e=>e.isDirectory()?jars(path.join(directory,e.name)):e.name.endsWith(".jar")?[path.join(directory,e.name)]:[]);
-}
-const cache=path.join(os.homedir(),".gradle/caches/modules-2/files-2.1");
-const one=relative=>{const found=jars(path.join(cache,relative));if(found.length!==1)throw Error("Set up pinned Kotlin extraction dependency "+relative);return found[0];};
-const stdlib=one("org.jetbrains.kotlin/kotlin-stdlib/2.0.21");
-const compiler=[one("org.jetbrains.kotlin/kotlin-compiler-embeddable/2.0.21"),stdlib,
-  one("org.jetbrains.kotlin/kotlin-script-runtime/2.0.21"),one("org.jetbrains.kotlin/kotlin-reflect/2.0.21"),
-  one("org.jetbrains.kotlin/kotlin-daemon-embeddable/2.0.21"),one("org.jetbrains.intellij.deps/trove4j/1.0.20200330"),
-  one("org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm/1.9.0"),one("org.jetbrains/annotations/23.0.0")].join(path.delimiter);
-const output=path.join(temporary,"classes");
-try {
-  cp.execFileSync("java",["-cp",compiler,"org.jetbrains.kotlin.cli.jvm.K2JVMCompiler","-no-stdlib","-no-reflect","-classpath",stdlib,"-d",output,...files],{cwd:root,stdio:["ignore","pipe","pipe"],maxBuffer:8_000_000});
-} catch(error){process.stderr.write(error.stderr||"");throw error;}
-const data=JSON.parse(cp.execFileSync("java",["-cp",output+path.delimiter+stdlib,"com.galaxyssi.chat.ExportKt"],{cwd:root,encoding:"utf8",maxBuffer:8_000_000}));
+const data=require("./atlas-kotlin-extract.cjs")({files,temporary,mainClass:"com.galaxyssi.chat.ExportKt",cwd:root});
 const graph=JSON.parse(show("apps/android/app/src/main/assets/health/body-atlas.json")),ids=new Set(graph.entries.map(e=>e.id));
 if(data.stories.length<50||data.stories.some(s=>s.chapters.length<3||s.chapters.length>8||s.owners.some(id=>!ids.has(id))))throw Error("Invalid exported story catalogue");
 const pack={schema:1,source:{androidPR:4384,mergeCommit:sha},...data};
