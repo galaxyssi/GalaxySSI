@@ -31,6 +31,7 @@ enum GalaxySSIHealthCareDiscussion {
   struct Thread: Codable, Identifiable, Equatable {
     var id = UUID()
     let concernID: UUID
+    var agentConversationID: String?
     var turns: [Turn] = []
     var archivedAt: Date?
   }

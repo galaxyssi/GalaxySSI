@@ -632,6 +632,18 @@ struct GalaxySSIHealthRecords {
     return thread
   }
 
+  func bindLocalCareAgentDiscussion(id: UUID, metric: GalaxySSIHealthMetric, threadID: UUID,
+                                   expectedConversationID: String?, conversationID: String) throws {
+    var archive = try load()
+    _ = try currentDiscussionConcern(id: id, metric: metric, archive: archive, now: Date())
+    guard !conversationID.isEmpty, conversationID.utf8.count <= 256, !conversationID.contains(where: \.isWhitespace),
+          var thread = archive.localCareDiscussions?[id.uuidString], thread.id == threadID,
+          thread.concernID == id, thread.archivedAt == nil, thread.agentConversationID == expectedConversationID else { throw Failure.stale }
+    thread.agentConversationID = conversationID
+    archive.localCareDiscussions?[id.uuidString] = thread
+    try persist(archive)
+  }
+
   func overviewDiscussionConcern(reading: GalaxySSIHealthReading, now: Date = Date()) throws -> UUID? {
     let archive = try load()
     guard archive.derivesOverview == true, archive.profileAnalysisPermission != nil,

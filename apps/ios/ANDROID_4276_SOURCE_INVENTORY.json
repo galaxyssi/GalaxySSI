@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4276,
+    "mergeCommit": "ff3e2d0c4cd9c003dfa1ae33d06c3ae21ed0ceff"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "7414b1953b112757945ed0da4efc56f145f9542e80fa55cb1b0ed64b99b3952c"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthCareAgentSurfaceUiDeviceTest.kt",
+      "status": "M",
+      "sha256": "806e79b79d7bd877fe5ddd9b85b38de9067fb6a009790331ff1ab356f7f838bb"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthCareFollowUpDeviceTest.kt",
+      "status": "M",
+      "sha256": "663028d3960dcdd7a7ece91d97587aa641c75539b8be0b35810e003ea653b55b"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthCareFollowUpUiDeviceTest.kt",
+      "status": "M",
+      "sha256": "e0eba1b129019b1f663c03e217653e5dd9d80c216a668c4380fdf2e101fc4a1e"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthCareIndependentAgentDeviceTest.kt",
+      "status": "A",
+      "sha256": "b6511b91ba82e615d291cf1015112a7713858f902a72844618826952b235f950"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthCarePlanDeviceTest.kt",
+      "status": "M",
+      "sha256": "0708c42d9a57f5b1375b0af3000786d57bdd2dc80b78369ef7ef8e2d80e417a5"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthCarePlanUiDeviceTest.kt",
+      "status": "M",
+      "sha256": "d825cb747476b952e15509731f1b7bd9db95509a6d38667917e714f1fd13d294"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthCareUiDeviceTest.kt",
+      "status": "M",
+      "sha256": "e108824fc1ea54fd995d3b4babb81b26e1ef59acd6d6851d8ab434e5ea0bc4ef"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthCareActivity.kt",
+      "status": "M",
+      "sha256": "9e778e7145d8a4bac37d347bb188ec40b86c49928aa145663ecbf3ada752808a"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthCareAgentScope.kt",
+      "status": "A",
+      "sha256": "703e95bbb8fdf82072e1aa6954f0243eef574d59911b9b0fdb2a5c2893ba93e6"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthCareAgentSurface.kt",
+      "status": "M",
+      "sha256": "c3d9527092f92bca5c2b1a036fca617ffefe2d705b6da7952b5621f66b7e33be"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthCareDiscussion.kt",
+      "status": "M",
+      "sha256": "6ce99f96ef50189cff64a7398163eb91548c0ae0ef6d8033d4b2f3b58b18673b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/strings_health_discussion.xml",
+      "status": "M",
+      "sha256": "72e21d1f16a124f9f102ba09d77dd78a3ee2a1162a21fc009bc3f168d45e3493"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/strings_health_discussion.xml",
+      "status": "M",
+      "sha256": "f9cd5b0c2b91fd941a65ff50c89d048e1b5e5cf32c3827f79e60a908fdd7e43f"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthCareAgentScopeTest.kt",
+      "status": "A",
+      "sha256": "17c65a010a720039548c0af339d65d44047b011095f69454c50710921122bf88"
+    },
+    {
+      "path": "docs/architecture/android-health-lifecycle.md",
+      "status": "M",
+      "sha256": "e61b2d04f1da99de794a2356d0782aa22b885c9fab989c743680582ad949e23d"
+    }
+  ]
+}

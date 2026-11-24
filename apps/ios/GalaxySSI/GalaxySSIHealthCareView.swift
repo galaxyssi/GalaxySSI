@@ -107,12 +107,13 @@ struct GalaxySSIHealthCareEntry: View {
   @State private var priorityConcernID: UUID?
   @State private var discussion: GalaxySSIHealthCare.AgentDiscussionTarget?
   @State private var displayedPermission: UUID?
+  @State private var displayedConversationID: String?
   @State private var expanded = false
   @State private var revision = UUID()
 
   var body: some View {
     Group {
-      if canRead, let concern = concerns.first {
+      if canRead, displayedConversationID == conversationID, let concern = concerns.first {
         VStack(alignment: .leading, spacing: 6) {
           if let priority, let priorityConcernID {
             NavigationLink {
@@ -162,8 +163,8 @@ struct GalaxySSIHealthCareEntry: View {
       if phase != .active { clear() }
       revision = UUID()
     }
-    .onChange(of: store.profile.identityFingerprint) { _ in clear() }
-    .onChange(of: store.activeAgentConversationId) { _ in clear() }
+    .onChange(of: store.profile.identityFingerprint) { _ in clear(); revision = UUID() }
+    .onChange(of: store.activeAgentConversationId) { _ in clear(); revision = UUID() }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
       clear()
       revision = UUID()
@@ -173,7 +174,9 @@ struct GalaxySSIHealthCareEntry: View {
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       guard $0.object as? String == records.owner else { return }
-      guard canRead, let archive = try? records.load(), archive.localCareAllowed == true else { clear(); return }
+      guard canRead, let session = store.agentSession(id: conversationID), let archive = try? records.load(),
+        let current = GalaxySSIHealthCareAgentScope.concern(session, in: archive) else { clear(); return }
+      concerns = [current]
       if let discussion, !discussion.matches(archive) { self.discussion = nil }
       setPriority(archive)
       revision = UUID()
@@ -188,16 +191,25 @@ struct GalaxySSIHealthCareEntry: View {
     }
     .task(id: revision) {
       guard canRead else { clear(); return }
+      let capturedConversation = conversationID
+      let capturedRevision = revision
       do {
         try await Task.sleep(nanoseconds: 220_000_000)
-        guard canRead else { clear(); return }
+        guard !Task.isCancelled, revision == capturedRevision, conversationID == capturedConversation, canRead else { return }
         try records.reconcileLocalCare()
         let archive = try records.load()
-        let current = GalaxySSIHealthCare.agentConcerns(in: archive)
+        guard !Task.isCancelled, revision == capturedRevision, canRead, conversationID == capturedConversation,
+          let session = store.agentSession(id: capturedConversation),
+          let concern = GalaxySSIHealthCareAgentScope.concern(session, in: archive) else {
+            if !Task.isCancelled, revision == capturedRevision { clear() }
+            return
+          }
+        let current = [concern]
         try Task.checkCancellation()
         if current.first?.id != concerns.first?.id { expanded = false }
         displayedPermission = GalaxySSIHealthCare.AgentDiscussionTarget.permission(in: archive)
         concerns = current
+        displayedConversationID = capturedConversation
         setPriority(archive)
       } catch { if !Task.isCancelled { clear() } }
     }
@@ -208,11 +220,12 @@ struct GalaxySSIHealthCareEntry: View {
           store.profile.identityFingerprint == records.owner, store.activeAgentConversationId == conversationID,
           let session = store.agentSession(id: conversationID), session.status == .active,
           session.collaborationRoster == nil else { return false }
-    return !session.privateMode && !session.trackingPaused
+    return GalaxySSIHealthCareAgentScope.concernID(session) != nil
   }
 
   private func openDiscussion(_ concern: GalaxySSIHealthCare.Concern) {
-    guard canRead, let archive = try? records.load() else { return }
+    guard canRead, let archive = try? records.load(), let session = store.agentSession(id: conversationID),
+      GalaxySSIHealthCareAgentScope.concern(session, in: archive)?.id == concern.id else { return }
     let target = GalaxySSIHealthCare.AgentDiscussionTarget(concern, permission: displayedPermission)
     guard target.matches(archive) else { return }
     discussion = target
@@ -220,6 +233,7 @@ struct GalaxySSIHealthCareEntry: View {
 
   private func setPriority(_ archive: GalaxySSIHealthRecords.Archive) {
     if let current = GalaxySSIHealthRecords.currentCareBloodPressureWarning(archive),
+       current.concern.id == concerns.first?.id,
        archive.localCare?.acknowledgedBloodPressure != current.warning.record,
        ![.paused, .closed].contains(current.concern.stage) {
       priority = current.warning
@@ -230,7 +244,7 @@ struct GalaxySSIHealthCareEntry: View {
   }
 
   private func clear() {
-    concerns = []; expanded = false; priority = nil; priorityConcernID = nil; discussion = nil; displayedPermission = nil
+    concerns = []; expanded = false; priority = nil; priorityConcernID = nil; discussion = nil; displayedPermission = nil; displayedConversationID = nil
   }
 
   private var details: some View {
@@ -318,6 +332,9 @@ struct GalaxySSIHealthCareDetail: View {
   var body: some View {
     List {
       if canRead, let concern {
+        if concern.stage != .paused, concern.stage != .closed, concern.assessment.record != nil {
+          GalaxySSIHealthCareAgentOpenButton(records: records, concern: concern.id, metric: metric)
+        }
         if let bloodPressureWarning {
           Section {
             GalaxySSIHealthCarePriorityNotice(warning: bloodPressureWarning)
