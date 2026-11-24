@@ -32,7 +32,12 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
   let paths = 0, gradients = gradientOffset, gradientCount = 0;
   for (const [slug, asset, filename, firstGradient] of frames) {
     if (firstGradient !== undefined) gradients = firstGradient;
-    const vector = xml.xml2js(source("apps/android/app/src/main/res/drawable/health_atlas_" + slug + ".xml"), {compact: true}).vector;
+    const raw = source("apps/android/app/src/main/res/drawable/health_atlas_" + slug + ".xml");
+    const vector = xml.xml2js(raw, {compact: true}).vector;
+    if (vector.group) {
+      assert(functionArt?.groups,"Unexpected grouped source");
+      vector.path=require("./body-atlas-ordered-vector.cjs")(raw);
+    }
     const dir = path.join(assets, asset + ".imageset"), metadata = JSON.parse(fs.readFileSync(path.join(dir, "Contents.json")));
     assert(metadata.properties["preserves-vector-representation"]); assert(metadata.images.some(i => i.filename === filename));
     const pdf = await PDFDocument.load(fs.readFileSync(path.join(dir, filename)));
@@ -47,10 +52,29 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
     assert(!images || images.keys().length === 0, "Gradient/path PDF must not be rasterized");
     const contents = page.node.Contents().asArray().map(ref =>
       Buffer.from(decodePDFRawStream(pdf.context.lookup(ref)).decode()).toString()).join("\n");
+    let orderedCursor=0;
     if (functionArt) for (const item of vector.path) {
       const geometry = drawSvgPath(item._attributes["android:pathData"], {x:0,y:box.height,color:rgb(0,0,0)})
         .map(op=>op.toString()).filter(op=>/(?:^|\s)(?:m|l|c|v|y|h)$/.test(op)).join("\n");
       assert(geometry.length > 0 && contents.includes(geometry), "Missing original geometry " + slug);
+      if (functionArt.groups) {
+        const at=contents.indexOf(geometry,orderedCursor);
+        assert(at>=orderedCursor,"Source path order "+slug);
+        let mirror=false; const stack=[];
+        for (const line of contents.slice(0,at).trim().split(/\r?\n/)) {
+          if (line==="q") stack.push(mirror);
+          if (line==="Q") { assert(stack.length); mirror=stack.pop(); }
+          if (line==="-1 0 0 1 360 0 cm") mirror=!mirror;
+        }
+        assert.equal(mirror,!!item._atlasMirrorX,"Source group reflection "+slug);
+        orderedCursor=at+geometry.length;
+      }
+    }
+    if (functionArt?.groups) {
+      assert.equal((contents.match(/-1 0 0 1 360 0 cm/g)||[]).length,vector.path.filter(p=>p._atlasMirrorX).length);
+      let depth=0;
+      for(const line of contents.trim().split(/\r?\n/)){if(line==="q")depth++;if(line==="Q")depth--;assert(depth>=0);}
+      assert.equal(depth,0,"Balanced PDF drawing groups");
     }
     const strokeGradients = expected.filter(p => p["aapt:attr"]._attributes.name === "android:strokeColor");
     assert.equal((contents.match(/\/AtlasGradient\d+ sh/g) || []).length, expected.length - strokeGradients.length);

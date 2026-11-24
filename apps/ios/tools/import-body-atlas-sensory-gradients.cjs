@@ -1,7 +1,7 @@
 // Preserve the pinned Android paths and gradients as PDF vector/shading operations.
 const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process"), xml = require("xml-js");
 const {PDFDocument, PDFName, PDFDict, PDFOperator, PDFOperatorNames, drawSvgPath, clip, endPath,
-  rgb, setLineJoin, LineJoinStyle, LineCapStyle} = require("pdf-lib");
+  rgb, setLineJoin, LineJoinStyle, LineCapStyle, pushGraphicsState, popGraphicsState, concatTransformationMatrix} = require("pdf-lib");
 const root = path.resolve(__dirname, "../../.."), assets = path.join(root, "apps/ios/GalaxySSI/Assets.xcassets");
 const retinal = process.argv.includes("--retinal-cells");
 const systems = process.argv.includes("--system-overviews");
@@ -36,9 +36,14 @@ function components(value) {
   let paths = 0, gradients = gradientOffset, gradientCount = 0;
   for (const [slug, asset, filename, firstGradient] of frames) {
     if (firstGradient !== undefined) gradients = firstGradient;
-    const vector = xml.xml2js(cp.execFileSync("git", ["show", sha + ":apps/android/app/src/main/res/drawable/health_atlas_" + slug + ".xml"],
-      {cwd: root, encoding: "utf8"}), {compact: true}).vector;
-    if (vector.group || !Array.isArray(vector.path)) throw Error("Unsupported vector structure");
+    const raw = cp.execFileSync("git", ["show", sha + ":apps/android/app/src/main/res/drawable/health_atlas_" + slug + ".xml"],
+      {cwd: root, encoding: "utf8"});
+    const vector = xml.xml2js(raw, {compact: true}).vector;
+    if (vector.group) {
+      if (!functionArt?.groups) throw Error("Unsupported vector groups");
+      vector.path = require("./body-atlas-ordered-vector.cjs")(raw);
+    }
+    if (!Array.isArray(vector.path)) throw Error("Unsupported vector structure");
     const pdf = await PDFDocument.create(), height = Number(vector._attributes["android:viewportHeight"]);
     pdf.setTitle("GalaxySSI " + slug + " - Android #" + revision + " vector paths and gradients");
     pdf.setCreationDate(new Date("2026-11-24T00:00:00Z")); pdf.setModificationDate(new Date("2026-11-24T00:00:00Z"));
@@ -47,6 +52,7 @@ function components(value) {
     const resources = page.node.Resources(), shadings = pdf.context.obj({});
     resources.set(PDFName.of("Shading"), shadings);
     for (const item of vector.path) {
+      if (item._atlasMirrorX) page.pushOperators(pushGraphicsState(),concatTransformationMatrix(-1,0,0,1,360,0));
       const a = item._attributes, nested = item["aapt:attr"];
       const options = {x: 0, y: height};
       if (a["android:fillColor"]) options.color = rgb(...components(a["android:fillColor"]));
@@ -99,7 +105,9 @@ function components(value) {
           const colour = operators.findIndex(op => op.toString().endsWith(" RG"));
           if (colour < 0) throw Error("Missing stroke colour operator");
           operators.splice(colour,1,PDFOperator.of("CS",[PDFName.of("Pattern")]),PDFOperator.of("SCN",[name]));
-          page.pushOperators(...operators); paths++; continue;
+          page.pushOperators(...operators);
+          if (item._atlasMirrorX) page.pushOperators(popGraphicsState());
+          paths++; continue;
         }
         // pdf-lib parses the original SVG path; replace painting with clipping plus PDF shading.
         const operators = drawSvgPath(a["android:pathData"], {x: 0, y: height, color: rgb(0, 0, 0)});
@@ -108,6 +116,7 @@ function components(value) {
         page.pushOperators(...operators);
         if (options.borderColor) page.drawSvgPath(a["android:pathData"], {...options, color: undefined});
       } else page.drawSvgPath(a["android:pathData"], options);
+      if (item._atlasMirrorX) page.pushOperators(popGraphicsState());
       paths++;
     }
     const directory = path.join(assets, asset + ".imageset");

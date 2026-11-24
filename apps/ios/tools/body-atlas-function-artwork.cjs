@@ -1,5 +1,7 @@
 // Dedicated #4384 course art, shared by the importer and PDF/source audit.
 const batches = {
+  "--function-erector": {name:"erector", paths:19, gradients:8, groups:true,
+    frames:[["erector_spinae_plate","HealthAtlasFunctionErector","art.pdf"]]},
   "--function-placenta": {name:"placenta", paths:19, gradients:5,
     frames:[["placenta_plate","HealthAtlasFunctionPlacenta","art.pdf"]]},
   "--function-ligaments": {name:"ligaments", paths:27, gradients:5,
