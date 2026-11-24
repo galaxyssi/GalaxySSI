@@ -12,6 +12,28 @@ const read = name => fs.readFileSync(path.join(root, 'apps/ios/GalaxySSI', name)
 const nodes = read('GalaxySSIAgentsModelsNodesView.swift');
 const details = read('GalaxySSIContactDetailView.swift');
 const routing = read('GalaxySSIResourceRoutingView.swift');
+const center = read('GalaxySSIControlCenterView.swift');
+const hub = center.slice(center.indexOf('private struct GalaxySSIAndroidModelHubView:'),
+  center.indexOf('private struct GalaxySSIAndroidAdvancedHubView:'));
+assert(hub.indexOf('section(t("my_agent_add"') < hub.indexOf('section(t("my_agent_installed"'));
+assert(hub.includes('ForEach(installedTargets)'));
+assert(hub.includes('ContactDetailView(contactId: contact.id)'));
+assert(hub.includes('activeLocalProfiles: []'));
+assert(hub.includes('!contact.deleted'));
+assert(hub.includes('assetImageName: installedAssetName(contact)'));
+assert(hub.includes('contact.deliveryMode == .cloudAPI'));
+assert(!hub.includes('GalaxySSIRoutingPolicyView'));
+assert(!hub.includes('GalaxySSIAgentsModelsNodesView()'));
+assert(hub.includes('GalaxySSILocalModelLabView()'));
+const overview = center.slice(center.indexOf('private var overviewCard:'), center.indexOf('private var commonSection:'));
+assert(overview.includes('VStack(alignment: .center, spacing: 5)'));
+assert(overview.includes('.multilineTextAlignment(.center)'));
+assert(overview.includes('Text("GalaxySSI")'));
+assert(overview.includes('GalaxySSIProfileIdentityView()'));
+assert(overview.includes('showingQRCode = true'));
+const menu = read('GalaxySSIAndroidMenuComponents.swift');
+assert(menu.includes('.renderingMode(.original)'));
+assert(menu.includes('.foregroundColor(tint)'));
 const body = nodes.slice(nodes.indexOf('var body:'), nodes.indexOf('private var addResourcesSection:'));
 assert(body.indexOf('addResourcesSection') < body.indexOf('GalaxySSISecurityHeroView'));
 assert(body.indexOf('addResourcesSection') < body.indexOf('desktopSection'));
@@ -29,6 +51,8 @@ assert(!routing.includes('CloudModelProviderDetailView(contactId: contact.id)'))
 for (const file of [
   'GalaxySSIStore.swift', 'GalaxySSIStoreCloudModelOperations.swift',
   'GalaxySSIContactAvatarView.swift', 'GalaxySSICloudModelOnboardingView.swift',
+  'GalaxySSIAndroidMenuComponents.swift', 'AgentIdentityPresentation.swift',
+  'AgentNetworkRoutingModels.swift',
 ]) {
   const target = `apps/ios/GalaxySSI/${file}`;
   // Some storage operations live in the monolithic Store on older revisions.
@@ -41,15 +65,17 @@ const files = git('diff', '--name-only', `${android}^1`, android).trim().split('
 assert.equal(files.length, 11);
 const inventory = {
   androidPR: 3169, androidCommit: android, incrementalBase: base,
-  scope: 'cloud entry ordering and contact-first navigation only; not full settings visual parity',
+  scope: 'model hub installed targets, cloud entry ordering, contact-first navigation, centered profile and home icon tones; no native visual acceptance',
   files: files.map(file => ({
     path: file,
     sha256: crypto.createHash('sha256').update(git('show', `${android}:${file}`)).digest('hex'),
     disposition: file.endsWith('build.gradle.kts') ? 'Android version excluded'
       : file.includes('/androidTest/') ? 'Android native fixtures inspected; not executed or claimed on iOS'
       : /MyAgentPages|RuntimePolicy|HistoryAndContacts/.test(file)
-        ? 'Cloud entry ordering/navigation adapted; unrelated code retained'
-        : 'Settings hero, icon palette and legacy subpage visual parity deferred; not claimed',
+        ? 'Installed targets, cloud entry ordering/navigation and provider brand precedence adapted; unrelated code retained'
+        : /ControlCenterUi|MainActivityControlCenter/.test(file)
+          ? 'Centered profile brand/subtitle and retained profile/QR actions; native menu renderer already preserves supplied tones and original image colors'
+          : 'Home semantic icon tones aligned; native shared renderers retain explicit colors; full legacy-subpage icon inventory remains unverified',
   })),
 };
 const report = path.join(root, 'apps/ios/ANDROID_3169_CLOUD_ENTRY_SOURCE_INVENTORY.json');

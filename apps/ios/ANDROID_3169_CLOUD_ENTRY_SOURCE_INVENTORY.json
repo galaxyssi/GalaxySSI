@@ -2,7 +2,7 @@
   "androidPR": 3169,
   "androidCommit": "ee66cb9623c40613aefc07fd54bb71924efb8940",
   "incrementalBase": "2970b645a07d310a246d5e80e27c5a76a88157bc",
-  "scope": "cloud entry ordering and contact-first navigation only; not full settings visual parity",
+  "scope": "model hub installed targets, cloud entry ordering, contact-first navigation, centered profile and home icon tones; no native visual acceptance",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -22,42 +22,42 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/ControlCenterIconTone.kt",
       "sha256": "1140ed1dd05251b611e899262259d439c7d6a4db23776f64d6eb1a7f1b4ed448",
-      "disposition": "Settings hero, icon palette and legacy subpage visual parity deferred; not claimed"
+      "disposition": "Home semantic icon tones aligned; native shared renderers retain explicit colors; full legacy-subpage icon inventory remains unverified"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/ControlCenterUi.kt",
       "sha256": "e2ed6b4bd9e90499971b33da417b5458cfa36644475f9bdf6e7e6bb1e1bc4eab",
-      "disposition": "Settings hero, icon palette and legacy subpage visual parity deferred; not claimed"
+      "disposition": "Centered profile brand/subtitle and retained profile/QR actions; native menu renderer already preserves supplied tones and original image colors"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentStateViews.kt",
       "sha256": "3efba14ab762ec41acd020e97cb96ae7d2c1949bb382db93471a6b47f8dbf658",
-      "disposition": "Settings hero, icon palette and legacy subpage visual parity deferred; not claimed"
+      "disposition": "Home semantic icon tones aligned; native shared renderers retain explicit colors; full legacy-subpage icon inventory remains unverified"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityControlCenter.kt",
       "sha256": "92abca58fb88271e81949b6d3a3ff06e86b7718adb2288c4f0e1694395eff611",
-      "disposition": "Settings hero, icon palette and legacy subpage visual parity deferred; not claimed"
+      "disposition": "Centered profile brand/subtitle and retained profile/QR actions; native menu renderer already preserves supplied tones and original image colors"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityHistoryAndContacts.kt",
       "sha256": "6cdc7e31c891f375ba43b61dc9a37934c94b493adbe606e02d103f62b4ebbca6",
-      "disposition": "Cloud entry ordering/navigation adapted; unrelated code retained"
+      "disposition": "Installed targets, cloud entry ordering/navigation and provider brand precedence adapted; unrelated code retained"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityMyAgentPages.kt",
       "sha256": "28984e0d0456986473d973db83ad65e75abef671323d7f2081946eea9f7caa32",
-      "disposition": "Cloud entry ordering/navigation adapted; unrelated code retained"
+      "disposition": "Installed targets, cloud entry ordering/navigation and provider brand precedence adapted; unrelated code retained"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityPrivacyPolicy.kt",
       "sha256": "6c978d149564f5ae7b313565baa194272c88bd49a0af772cb50f22e1a4aff53b",
-      "disposition": "Settings hero, icon palette and legacy subpage visual parity deferred; not claimed"
+      "disposition": "Home semantic icon tones aligned; native shared renderers retain explicit colors; full legacy-subpage icon inventory remains unverified"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityRuntimePolicy.kt",
       "sha256": "f65900bc961ddf8bc12278965398d74f40113862b86e2a33606e3975dccecaef",
-      "disposition": "Cloud entry ordering/navigation adapted; unrelated code retained"
+      "disposition": "Installed targets, cloud entry ordering/navigation and provider brand precedence adapted; unrelated code retained"
     }
   ]
 }

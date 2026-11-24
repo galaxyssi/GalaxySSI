@@ -64,17 +64,26 @@ struct GalaxySSIControlCenterView: View {
       NavigationLink(destination: GalaxySSIProfileIdentityView()) {
         HStack(alignment: .center, spacing: 14) {
           GalaxySSILogoView(size: 64, cornerRadius: 11)
-          VStack(alignment: .leading, spacing: 5) {
+          VStack(alignment: .center, spacing: 5) {
             Text("GalaxySSI")
               .font(.system(size: 21, weight: .bold))
               .foregroundColor(.galaxySSITextPrimary)
               .lineLimit(1)
               .minimumScaleFactor(0.72)
+              .overlay(alignment: .trailing) {
+                Image(systemName: "chevron.right")
+                  .font(.system(size: 12, weight: .semibold))
+                  .foregroundColor(.galaxySSITextSecondary)
+                  .offset(x: 14)
+                  .accessibilityHidden(true)
+              }
             Text(t("my_agent_personal_subtitle", "Super agent"))
               .font(.system(size: 14))
               .foregroundColor(.galaxySSITextSecondary)
-              .lineLimit(1)
+              .lineLimit(2)
+              .multilineTextAlignment(.center)
           }
+          .padding(.trailing, 14)
         }
       }
       .buttonStyle(.plain)
@@ -118,7 +127,7 @@ struct GalaxySSIControlCenterView: View {
         homeRow(
           title: t("my_agent_voice", "Voice interaction"),
           systemImage: "mic",
-          tint: .blue,
+          tint: .galaxySSIAccent,
           destination: GalaxySSIVoiceControlCenterView()
         )
         homeRow(
@@ -130,7 +139,7 @@ struct GalaxySSIControlCenterView: View {
         homeRow(
           title: t("my_agent_memory", "Memory & knowledge"),
           systemImage: "brain.head.profile",
-          tint: .galaxySSIAccent,
+          tint: .purple,
           destination: GalaxySSIMemoryControlCenterView()
         )
         homeRow(
@@ -142,7 +151,7 @@ struct GalaxySSIControlCenterView: View {
         homeRow(
           title: t("my_agent_skills", "Skills & tools"),
           systemImage: "shippingbox",
-          tint: .purple,
+          tint: .orange,
           destination: GalaxySSICapabilityLibraryView()
         )
       }
@@ -162,7 +171,7 @@ struct GalaxySSIControlCenterView: View {
         homeRow(
           title: t("my_agent_general", "General"),
           systemImage: "gearshape",
-          tint: .gray,
+          tint: .blue,
           destination: GalaxySSIGeneralControlCenterView()
         )
         homeRow(
@@ -746,6 +755,18 @@ struct GalaxySSIControlCenterView: View {
 
 private struct GalaxySSIAndroidModelHubView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+  @EnvironmentObject private var store: GalaxySSIStore
+
+  private var installedTargets: [AgentCallableTarget] {
+    AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) },
+      activeLocalProfiles: []
+    ).reduce(into: [AgentCallableTarget]()) { result, target in
+      guard !result.contains(where: { $0.id == target.id }) else { return }
+      result.append(target)
+    }
+  }
 
   var body: some View {
     GalaxySSIAndroidHubPage(title: t("my_agent_models", "Models & Agents")) {
@@ -769,15 +790,20 @@ private struct GalaxySSIAndroidModelHubView: View {
         }
       }
       section(t("my_agent_installed", "Added")) {
-        GalaxySSIAndroidGroupedMenuLink(
-          title: t("cc_nodes_title", "Agents, Models & Nodes"),
-          subtitle: "",
-          systemImage: "point.3.connected.trianglepath.dotted",
-          tint: .galaxySSIAccent
-        ) {
-          GalaxySSIAgentsModelsNodesView()
+        ForEach(installedTargets) { target in
+          if let contact = store.contact(id: target.id), !contact.deleted {
+            GalaxySSIAndroidGroupedMenuLink(
+              title: target.title,
+              subtitle: "",
+              systemImage: contact.deliveryMode == .cloudAPI ? "cloud" : "cpu",
+              assetImageName: installedAssetName(contact),
+              tint: .blue
+            ) {
+              ContactDetailView(contactId: contact.id)
+            }
+            GalaxySSIAndroidMenuDivider()
+          }
         }
-        GalaxySSIAndroidMenuDivider()
         GalaxySSIAndroidGroupedMenuLink(
           title: t("my_agent_downloaded_models", "Local models"),
           subtitle: "",
@@ -788,6 +814,17 @@ private struct GalaxySSIAndroidModelHubView: View {
         }
       }
     }
+  }
+
+  private func installedAssetName(_ contact: GalaxySSIContact) -> String? {
+    if contact.deliveryMode == .cloudAPI {
+      return GalaxySSIAgentAvatarAssetCatalog.cloudProviderAssetName(for: [
+        contact.cloudProvider, contact.id, contact.selectedCloudModel?.provider ?? ""
+      ])
+    }
+    return GalaxySSIAgentAvatarAssetCatalog.assetName(for: [
+      contact.id, contact.name, contact.displayName
+    ])
   }
 
   private func section<Content: View>(
