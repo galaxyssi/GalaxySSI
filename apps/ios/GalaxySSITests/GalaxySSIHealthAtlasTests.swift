@@ -2589,6 +2589,54 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion.bloodX(flow: 1.15, index: 0), 8 + 344 * (1.15 * 0.55), accuracy: 1e-10)
   }
 
+  func testCoronaryIntegratedTimeAndCompressionRemainContinuous() {
+    typealias Motion = GalaxySSIHealthAtlasCoronaryMotion
+    XCTAssertEqual(Motion.wallTime(step: 1, t: 1), Motion.wallTime(step: 2, t: 0))
+    XCTAssertEqual(Motion.wallTime(step: 2, t: 1), 1.68, accuracy: 1e-12)
+    XCTAssertEqual(Motion.wallTime(step: 2, t: 1), Motion.wallTime(step: 3, t: 0), accuracy: 1e-12)
+    XCTAssertEqual(Motion.wallTime(step: 3, t: 1), 2.36, accuracy: 1e-12)
+    XCTAssertEqual(Motion.squeeze(step: 2, t: 1), Motion.squeeze(step: 3, t: 0))
+    XCTAssertEqual(Motion.crowding(1), 0.43, accuracy: 1e-12)
+    XCTAssertEqual(Motion.leftFlow(1), 0.42, accuracy: 1e-12)
+    let epsilon = 1e-5
+    func speed(_ step: Int, _ t: Double) -> Double {
+      (Motion.wallTime(step: step, t: t + epsilon) - Motion.wallTime(step: step, t: t - epsilon)) / (2 * epsilon)
+    }
+    XCTAssertEqual(speed(2, 0.25), 0.9, accuracy: 1e-8)
+    XCTAssertEqual(speed(3, 0.25), 0.46, accuracy: 1e-8)
+  }
+
+  func testCoronaryStreamsWrapNegativeTimeAndFadeBeforeSpanMapping() throws {
+    typealias Motion = GalaxySSIHealthAtlasCoronaryMotion
+    let returning = try XCTUnwrap(Motion.stream(time: -0.15, speed: 1.38, index: 0, count: 3, strength: 1, span: 1, length: 100))
+    XCTAssertEqual(returning.position, 0.793, accuracy: 1e-12)
+    XCTAssertEqual(returning.size, 5.8); XCTAssertEqual(returning.alpha, 255)
+    let short = try XCTUnwrap(Motion.stream(time: 0.95, speed: 1, index: 0, count: 1, strength: 0.45, span: 0.55, length: 10))
+    XCTAssertEqual(short.position, 0.5225, accuracy: 1e-12)
+    XCTAssertEqual(short.size, 1.9, accuracy: 1e-12); XCTAssertEqual(short.alpha, 45)
+    XCTAssertNil(Motion.stream(time: .nan, speed: 1, index: 0, count: 1, strength: 1, span: 1, length: 100))
+    XCTAssertNil(Motion.stream(time: .greatestFiniteMagnitude, speed: 2, index: 0, count: 1, strength: 1, span: 1, length: 100))
+  }
+
+  func testCoronarySourceTracksHaveCachedLengthsAndBranchAnchors() throws {
+    typealias Routes = GalaxySSIHealthAtlasCoronaryRoutes
+    let tracks = [Routes.rightCoronary,Routes.rightBranch,Routes.leftMain,Routes.descending,Routes.circumflex,Routes.diagonal,
+      Routes.anteriorVein,Routes.cardiacVein,Routes.tributary,Routes.coronarySinus,Routes.arteriole,Routes.venule] + Routes.ostialFlows + Routes.capillaries
+    XCTAssertEqual(tracks.count, 17)
+    for track in tracks {
+      XCTAssertGreaterThan(try XCTUnwrap(track.length), 0)
+      XCTAssertFalse(track.path.isEmpty)
+      XCTAssertTrue(track.route.commands.allSatisfy { $0.fits(width: 360, height: 360) })
+    }
+    let bifurcation = try XCTUnwrap(Routes.leftMain.route.commands.last?.points.last)
+    XCTAssertEqual(bifurcation, Routes.descending.route.start); XCTAssertEqual(bifurcation, Routes.circumflex.route.start)
+    XCTAssertEqual(try XCTUnwrap(Routes.cardiacVein.route.commands.last?.points.last), Routes.coronarySinus.route.start)
+    for track in Routes.capillaries {
+      XCTAssertEqual(track.route.start, .init(x: 121, y: 290))
+      XCTAssertEqual(try XCTUnwrap(track.route.commands.last?.points.last), .init(x: 248, y: 290))
+    }
+  }
+
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion

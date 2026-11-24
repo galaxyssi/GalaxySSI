@@ -221,6 +221,14 @@
     C438400000000000000001D5 /* GalaxySSIHealthAtlasMarrowCellDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001D6 /* GalaxySSIHealthAtlasMarrowCellDrawing.swift */; };
     C438400000000000000001D7 /* GalaxySSIHealthAtlasMarrowRenewalDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001D8 /* GalaxySSIHealthAtlasMarrowRenewalDrawing.swift */; };
     C438400000000000000001D9 /* GalaxySSIHealthAtlasMarrowLineageDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001DA /* GalaxySSIHealthAtlasMarrowLineageDrawing.swift */; };
+    C438400000000000000001DB /* GalaxySSIHealthAtlasCoronaryMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001DC /* GalaxySSIHealthAtlasCoronaryMotion.swift */; };
+    C438400000000000000001DD /* GalaxySSIHealthAtlasCoronaryGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001DE /* GalaxySSIHealthAtlasCoronaryGeometry.swift */; };
+    C438400000000000000001DF /* GalaxySSIHealthAtlasCoronaryRoutes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001E0 /* GalaxySSIHealthAtlasCoronaryRoutes.swift */; };
+    C438400000000000000001E1 /* GalaxySSIHealthAtlasCoronaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001E2 /* GalaxySSIHealthAtlasCoronaryView.swift */; };
+    C438400000000000000001E3 /* GalaxySSIHealthAtlasCoronaryStreamDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001E4 /* GalaxySSIHealthAtlasCoronaryStreamDrawing.swift */; };
+    C438400000000000000001E5 /* GalaxySSIHealthAtlasCoronaryHeartDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001E6 /* GalaxySSIHealthAtlasCoronaryHeartDrawing.swift */; };
+    C438400000000000000001E7 /* GalaxySSIHealthAtlasCoronaryWallDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001E8 /* GalaxySSIHealthAtlasCoronaryWallDrawing.swift */; };
+    C438400000000000000001E9 /* GalaxySSIHealthAtlasCoronaryRootReturnDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001EA /* GalaxySSIHealthAtlasCoronaryRootReturnDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1915,6 +1923,14 @@
     C438400000000000000001D6 /* GalaxySSIHealthAtlasMarrowCellDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMarrowCellDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000001D8 /* GalaxySSIHealthAtlasMarrowRenewalDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMarrowRenewalDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000001DA /* GalaxySSIHealthAtlasMarrowLineageDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMarrowLineageDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001DC /* GalaxySSIHealthAtlasCoronaryMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoronaryMotion.swift; sourceTree = "<group>"; };
+    C438400000000000000001DE /* GalaxySSIHealthAtlasCoronaryGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoronaryGeometry.swift; sourceTree = "<group>"; };
+    C438400000000000000001E0 /* GalaxySSIHealthAtlasCoronaryRoutes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoronaryRoutes.swift; sourceTree = "<group>"; };
+    C438400000000000000001E2 /* GalaxySSIHealthAtlasCoronaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoronaryView.swift; sourceTree = "<group>"; };
+    C438400000000000000001E4 /* GalaxySSIHealthAtlasCoronaryStreamDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoronaryStreamDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001E6 /* GalaxySSIHealthAtlasCoronaryHeartDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoronaryHeartDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001E8 /* GalaxySSIHealthAtlasCoronaryWallDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoronaryWallDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001EA /* GalaxySSIHealthAtlasCoronaryRootReturnDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoronaryRootReturnDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3628,6 +3644,14 @@
         C438400000000000000001D6 /* GalaxySSIHealthAtlasMarrowCellDrawing.swift */,
         C438400000000000000001D8 /* GalaxySSIHealthAtlasMarrowRenewalDrawing.swift */,
         C438400000000000000001DA /* GalaxySSIHealthAtlasMarrowLineageDrawing.swift */,
+        C438400000000000000001DC /* GalaxySSIHealthAtlasCoronaryMotion.swift */,
+        C438400000000000000001DE /* GalaxySSIHealthAtlasCoronaryGeometry.swift */,
+        C438400000000000000001E0 /* GalaxySSIHealthAtlasCoronaryRoutes.swift */,
+        C438400000000000000001E2 /* GalaxySSIHealthAtlasCoronaryView.swift */,
+        C438400000000000000001E4 /* GalaxySSIHealthAtlasCoronaryStreamDrawing.swift */,
+        C438400000000000000001E6 /* GalaxySSIHealthAtlasCoronaryHeartDrawing.swift */,
+        C438400000000000000001E8 /* GalaxySSIHealthAtlasCoronaryWallDrawing.swift */,
+        C438400000000000000001EA /* GalaxySSIHealthAtlasCoronaryRootReturnDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5471,6 +5495,14 @@
         C438400000000000000001D5 /* GalaxySSIHealthAtlasMarrowCellDrawing.swift in Sources */,
         C438400000000000000001D7 /* GalaxySSIHealthAtlasMarrowRenewalDrawing.swift in Sources */,
         C438400000000000000001D9 /* GalaxySSIHealthAtlasMarrowLineageDrawing.swift in Sources */,
+        C438400000000000000001DB /* GalaxySSIHealthAtlasCoronaryMotion.swift in Sources */,
+        C438400000000000000001DD /* GalaxySSIHealthAtlasCoronaryGeometry.swift in Sources */,
+        C438400000000000000001DF /* GalaxySSIHealthAtlasCoronaryRoutes.swift in Sources */,
+        C438400000000000000001E1 /* GalaxySSIHealthAtlasCoronaryView.swift in Sources */,
+        C438400000000000000001E3 /* GalaxySSIHealthAtlasCoronaryStreamDrawing.swift in Sources */,
+        C438400000000000000001E5 /* GalaxySSIHealthAtlasCoronaryHeartDrawing.swift in Sources */,
+        C438400000000000000001E7 /* GalaxySSIHealthAtlasCoronaryWallDrawing.swift in Sources */,
+        C438400000000000000001E9 /* GalaxySSIHealthAtlasCoronaryRootReturnDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
