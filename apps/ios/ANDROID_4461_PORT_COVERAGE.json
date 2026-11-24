@@ -1,0 +1,136 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4461,
+    "mergeCommit": "c0be10a58c873cea52d3f60caf071cf36ec0a4af"
+  },
+  "verification": "source-contracts-and-synthetic-dom-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "2508a3b80319c1010637619e49758704eed2088cf099fbfd0555187740429aa8",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/WechatArticleBrowserDeviceTest.kt",
+      "sourceSHA256": "c2cc5b17a81db12c9eda1b8ce3c606f7e2585f0088bd0933b9ec8c694732a42b",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/AgentIOSWeChatArticleExportTests.swift",
+        "apps/ios/tools/check-wechat-partial-pdf-dom.cjs"
+      ],
+      "note": "WechatArticleBrowserDeviceTest.kt: source-reference review of dynamic/broken/lazy image readiness, body-unavailable failures, verification and explicit continue, text/missing-image order, trailing paragraph, valid image rendering and image-only refusal. Synthetic DOM fixtures execute the production JS outside WebKit. Swift lease/PDF fixture sources were added but NOT run; no CoreText/PDFKit glyph/image/pixel, actual network deadline, WebKit, background or device acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/WechatArticlePdfDeviceTest.kt",
+      "sourceSHA256": "dfe45f81a4ab637f287b2a92d4cba0a25a4a9354e6b82b8e1b08cba2a76de7ba",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/AgentIOSWeChatArticleExportTests.swift",
+        "apps/ios/tools/check-wechat-partial-pdf-dom.cjs"
+      ],
+      "note": "WechatArticlePdfDeviceTest.kt: source-reference review of dynamic/broken/lazy image readiness, body-unavailable failures, verification and explicit continue, text/missing-image order, trailing paragraph, valid image rendering and image-only refusal. Synthetic DOM fixtures execute the production JS outside WebKit. Swift lease/PDF fixture sources were added but NOT run; no CoreText/PDFKit glyph/image/pixel, actual network deadline, WebKit, background or device acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticleBrowser.kt",
+      "sourceSHA256": "102ff2949ad3b6bb21c2b99529e3919ed8188d73eac6972214fa52aad2b488f2",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIWeChatBrowserSession.swift",
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticleDOM.swift",
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticleExportPolicy.swift",
+        "apps/ios/GalaxySSI/GalaxySSIWebPagePreviewView.swift"
+      ],
+      "note": "Interactive DOM body/title readiness and three equal signatures without image-completion gating; generation/signature-rechecked isolated snapshot; manual verification, explicit retry, bounded deadlines and correlated callbacks. Live browser exports never refetch their HTML. Direct HTTP challenge detection hands off to the visible ephemeral browser. One retained export lease across direct/browser/verification/render paths; cancellation and typed failures. Per-image 4s/8MiB, 35s/48MiB total, 128 distinct cached assets and duplicate preservation; fresh monotonic invocation per asset. Ordered CoreText/image PDF, in-place missing marks and accurate counts/footer, reject image-only/no-decoded-content results. Stream to private temp, validate page/file bounds and publish protected final file only after success. Preserve original shared network/privacy/security kernels. iOS uses foreground UI and Files storage, not Android accessibility clipboard control, background foreground-service notifications or MediaStore. No native execution claim."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticleDocument.kt",
+      "sourceSHA256": "5cdf4aed3abdd10938358fe3b32e10649e0bcf412f4535cc97335b3bba31ad3e",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticleDOM.swift",
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticleExportPolicy.swift",
+        "apps/ios/GalaxySSI/PublicScienceDOM.swift"
+      ],
+      "note": "Interactive DOM body/title readiness and three equal signatures without image-completion gating; generation/signature-rechecked isolated snapshot; manual verification, explicit retry, bounded deadlines and correlated callbacks. Live browser exports never refetch their HTML. Direct HTTP challenge detection hands off to the visible ephemeral browser. One retained export lease across direct/browser/verification/render paths; cancellation and typed failures. Per-image 4s/8MiB, 35s/48MiB total, 128 distinct cached assets and duplicate preservation; fresh monotonic invocation per asset. Ordered CoreText/image PDF, in-place missing marks and accurate counts/footer, reject image-only/no-decoded-content results. Stream to private temp, validate page/file bounds and publish protected final file only after success. Preserve original shared network/privacy/security kernels. iOS uses foreground UI and Files storage, not Android accessibility clipboard control, background foreground-service notifications or MediaStore. No native execution claim."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticleExporter.kt",
+      "sourceSHA256": "1c1c5da1ef4c6b353959b9d291ff0ff384dedb197072108b3a4951eb465b50af",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticlePDF.swift",
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticleImages.swift",
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticleRenderer.swift",
+        "apps/ios/GalaxySSI/AgentIOSURLSessionWebMediaProvider.swift",
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticleDOM.swift"
+      ],
+      "note": "Interactive DOM body/title readiness and three equal signatures without image-completion gating; generation/signature-rechecked isolated snapshot; manual verification, explicit retry, bounded deadlines and correlated callbacks. Live browser exports never refetch their HTML. Direct HTTP challenge detection hands off to the visible ephemeral browser. One retained export lease across direct/browser/verification/render paths; cancellation and typed failures. Per-image 4s/8MiB, 35s/48MiB total, 128 distinct cached assets and duplicate preservation; fresh monotonic invocation per asset. Ordered CoreText/image PDF, in-place missing marks and accurate counts/footer, reject image-only/no-decoded-content results. Stream to private temp, validate page/file bounds and publish protected final file only after success. Preserve original shared network/privacy/security kernels. iOS uses foreground UI and Files storage, not Android accessibility clipboard control, background foreground-service notifications or MediaStore. No native execution claim."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticleLinkController.kt",
+      "sourceSHA256": "0d47129556a9c9ea373c7e9d9ad71434db27c0db32d945ae5cbec155779ffb44",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticleExportPolicy.swift",
+        "apps/ios/GalaxySSI/GalaxySSIScreenPagePDFImport.swift",
+        "apps/ios/GalaxySSI/GalaxySSIWeChatBrowserSession.swift"
+      ],
+      "note": "Interactive DOM body/title readiness and three equal signatures without image-completion gating; generation/signature-rechecked isolated snapshot; manual verification, explicit retry, bounded deadlines and correlated callbacks. Live browser exports never refetch their HTML. Direct HTTP challenge detection hands off to the visible ephemeral browser. One retained export lease across direct/browser/verification/render paths; cancellation and typed failures. Per-image 4s/8MiB, 35s/48MiB total, 128 distinct cached assets and duplicate preservation; fresh monotonic invocation per asset. Ordered CoreText/image PDF, in-place missing marks and accurate counts/footer, reject image-only/no-decoded-content results. Stream to private temp, validate page/file bounds and publish protected final file only after success. Preserve original shared network/privacy/security kernels. iOS uses foreground UI and Files storage, not Android accessibility clipboard control, background foreground-service notifications or MediaStore. No native execution claim."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticlePdf.kt",
+      "sourceSHA256": "99423cd9b20e73be557c90c68665ce64d540570ff6719ff0596573005492e894",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticleRenderer.swift",
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticleImages.swift",
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticleExportPolicy.swift",
+        "apps/ios/GalaxySSI/AgentIOSScreenPagePDFCapture.swift"
+      ],
+      "note": "Interactive DOM body/title readiness and three equal signatures without image-completion gating; generation/signature-rechecked isolated snapshot; manual verification, explicit retry, bounded deadlines and correlated callbacks. Live browser exports never refetch their HTML. Direct HTTP challenge detection hands off to the visible ephemeral browser. One retained export lease across direct/browser/verification/render paths; cancellation and typed failures. Per-image 4s/8MiB, 35s/48MiB total, 128 distinct cached assets and duplicate preservation; fresh monotonic invocation per asset. Ordered CoreText/image PDF, in-place missing marks and accurate counts/footer, reject image-only/no-decoded-content results. Stream to private temp, validate page/file bounds and publish protected final file only after success. Preserve original shared network/privacy/security kernels. iOS uses foreground UI and Files storage, not Android accessibility clipboard control, background foreground-service notifications or MediaStore. No native execution claim."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticleSaveService.kt",
+      "sourceSHA256": "e67e5f61ded85c272982d388dd5dc2740cc9206192768435848252860c887b14",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIWeChatBrowserSession.swift",
+        "apps/ios/GalaxySSI/GalaxySSIScreenPagePDFImport.swift",
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticleExportPolicy.swift",
+        "apps/ios/GalaxySSI/AgentIOSWeChatArticlePDF.swift"
+      ],
+      "note": "Interactive DOM body/title readiness and three equal signatures without image-completion gating; generation/signature-rechecked isolated snapshot; manual verification, explicit retry, bounded deadlines and correlated callbacks. Live browser exports never refetch their HTML. Direct HTTP challenge detection hands off to the visible ephemeral browser. One retained export lease across direct/browser/verification/render paths; cancellation and typed failures. Per-image 4s/8MiB, 35s/48MiB total, 128 distinct cached assets and duplicate preservation; fresh monotonic invocation per asset. Ordered CoreText/image PDF, in-place missing marks and accurate counts/footer, reject image-only/no-decoded-content results. Stream to private temp, validate page/file bounds and publish protected final file only after success. Preserve original shared network/privacy/security kernels. iOS uses foreground UI and Files storage, not Android accessibility clipboard control, background foreground-service notifications or MediaStore. No native execution claim."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh-rCN/strings_wechat_article.xml",
+      "sourceSHA256": "8598f4a4631a502d6deeb9d3de0f63405c4154ab20b5d4ef14a3c919b70a2fe1",
+      "kind": "exact-source-labels-with-native-platform-adaptations",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/WeChatArticleExport.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/WeChatArticleExport.strings",
+        "apps/ios/GalaxySSI/en.lproj/WeChatArticleExportNative.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/WeChatArticleExportNative.strings",
+        "apps/ios/tools/import-wechat-partial-pdf-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Eight exact Android delta pairs plus four unchanged reference labels; twelve source entries per locale, not twelve new delta pairs. Five separate iOS adaptations cover Files path/full/partial results, foreground duplicate-export status, generic load failure and archive footer. Do not show Android notification/Download paths as an iOS capability."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/strings_wechat_article.xml",
+      "sourceSHA256": "8b25991e2ba9729c6193e3b30b3da6b39a562f53a1cfe771510dcba83c0e0f5b",
+      "kind": "exact-source-labels-with-native-platform-adaptations",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/WeChatArticleExport.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/WeChatArticleExport.strings",
+        "apps/ios/GalaxySSI/en.lproj/WeChatArticleExportNative.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/WeChatArticleExportNative.strings",
+        "apps/ios/tools/import-wechat-partial-pdf-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Eight exact Android delta pairs plus four unchanged reference labels; twelve source entries per locale, not twelve new delta pairs. Five separate iOS adaptations cover Files path/full/partial results, foreground duplicate-export status, generic load failure and archive footer. Do not show Android notification/Download paths as an iOS capability."
+    }
+  ]
+}

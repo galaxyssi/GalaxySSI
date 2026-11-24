@@ -1,0 +1,12 @@
+"wechat_article_already_saving" = "A WeChat article is already being saved. Check the saving notification to finish or cancel it.";
+"wechat_article_body_unavailable" = "The article body did not finish loading. No PDF was saved.";
+"wechat_article_continue" = "Continue saving";
+"wechat_article_load_failed" = "The background browser could not load the article. No PDF was saved.";
+"wechat_article_missing_image" = "[Image unavailable]";
+"wechat_article_pdf_failed" = "The article was loaded, but the PDF could not be created or saved.";
+"wechat_article_saved_partial" = "Saved %1$lld pages to Download/GalaxySSI/GongZhongHao. Missing images: %3$lld, marked in the PDF.\n%2$@";
+"wechat_article_static" = "Static article PDF: text and images follow the original order. Interactive audio and video are not included; use the source link to view them.";
+"wechat_article_too_large" = "The article is too large to save as one PDF.";
+"wechat_article_verification" = "WeChat requires verification before returning the article. Complete it yourself, then continue saving. The verification page has not been saved.";
+"wechat_article_verification_expired" = "WeChat verification timed out. Open the article again to retry.";
+"wechat_article_verify_continue_hint" = "Complete the verification on mp.weixin.qq.com below. When the article is visible, tap Continue saving.";

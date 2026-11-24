@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4461,
+    "mergeCommit": "c0be10a58c873cea52d3f60caf071cf36ec0a4af"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "2508a3b80319c1010637619e49758704eed2088cf099fbfd0555187740429aa8"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/WechatArticleBrowserDeviceTest.kt",
+      "status": "M",
+      "sha256": "c2cc5b17a81db12c9eda1b8ce3c606f7e2585f0088bd0933b9ec8c694732a42b"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/WechatArticlePdfDeviceTest.kt",
+      "status": "M",
+      "sha256": "dfe45f81a4ab637f287b2a92d4cba0a25a4a9354e6b82b8e1b08cba2a76de7ba"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticleBrowser.kt",
+      "status": "M",
+      "sha256": "102ff2949ad3b6bb21c2b99529e3919ed8188d73eac6972214fa52aad2b488f2"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticleDocument.kt",
+      "status": "M",
+      "sha256": "5cdf4aed3abdd10938358fe3b32e10649e0bcf412f4535cc97335b3bba31ad3e"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticleExporter.kt",
+      "status": "M",
+      "sha256": "1c1c5da1ef4c6b353959b9d291ff0ff384dedb197072108b3a4951eb465b50af"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticleLinkController.kt",
+      "status": "M",
+      "sha256": "0d47129556a9c9ea373c7e9d9ad71434db27c0db32d945ae5cbec155779ffb44"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticlePdf.kt",
+      "status": "M",
+      "sha256": "99423cd9b20e73be557c90c68665ce64d540570ff6719ff0596573005492e894"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/WechatArticleSaveService.kt",
+      "status": "M",
+      "sha256": "e67e5f61ded85c272982d388dd5dc2740cc9206192768435848252860c887b14"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh-rCN/strings_wechat_article.xml",
+      "status": "M",
+      "sha256": "8598f4a4631a502d6deeb9d3de0f63405c4154ab20b5d4ef14a3c919b70a2fe1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/strings_wechat_article.xml",
+      "status": "M",
+      "sha256": "8b25991e2ba9729c6193e3b30b3da6b39a562f53a1cfe771510dcba83c0e0f5b"
+    }
+  ],
+  "references": [
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebOriginalDocument.kt",
+      "sha256": "0924643146075cdf6ac25148f892f42c9eaabf354715eabcef2aa4b61c2e9afe",
+      "reason": "Unchanged archive dependency: 128 unique assets and allowed inline image types; not an additional changed PR file."
+    }
+  ]
+}

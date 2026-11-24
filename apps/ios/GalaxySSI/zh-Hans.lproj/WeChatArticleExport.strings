@@ -1,0 +1,12 @@
+"wechat_article_already_saving" = "已有一篇公众号文章正在保存。可在保存通知中查看进度、继续验证或取消。";
+"wechat_article_body_unavailable" = "未能完整加载文章正文，未保存 PDF。";
+"wechat_article_continue" = "继续保存";
+"wechat_article_load_failed" = "后台浏览器无法加载这篇文章，未保存 PDF。";
+"wechat_article_missing_image" = "[图片未能保存]";
+"wechat_article_pdf_failed" = "文章已加载，但生成或写入 PDF 失败。";
+"wechat_article_saved_partial" = "已保存 %1$lld 页到 Download/GalaxySSI/GongZhongHao，有 %3$lld 张图片未保存，已在 PDF 中标注。\n%2$@";
+"wechat_article_static" = "文章静态 PDF：按原文顺序保留文字和图片；不包含音视频交互，请通过来源链接查看。";
+"wechat_article_too_large" = "文章太大，无法保存为一份 PDF。";
+"wechat_article_verification" = "微信要求验证后才能读取文章。请自行完成验证，再继续保存；验证页面不会保存成 PDF。";
+"wechat_article_verification_expired" = "等待微信验证超时，请重新打开文章后重试。";
+"wechat_article_verify_continue_hint" = "请在下方 mp.weixin.qq.com 页面自行完成验证；看到文章后，点击“继续保存”。";

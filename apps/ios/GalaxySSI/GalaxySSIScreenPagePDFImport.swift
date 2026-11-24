@@ -16,6 +16,7 @@ struct GalaxySSIScreenPagePDFImporter: View {
 }
 
 struct GalaxySSIScreenAnalysisLinkPicker: View {
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var scene
   @State private var value = ""
@@ -27,6 +28,7 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
   var weChatOnly: Bool
   var onAdd: (String) -> Void
   @State private var weChatBrowserPresented = false
+  @State private var weChatAutoSave = false
 
   private var link: String? {
     guard pasteFailure == nil else { return nil }
@@ -65,7 +67,7 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
           .accessibilityIdentifier("ios.screen-assistant.link-input")
         if let link, GalaxySSIWeChatBrowserSession.articleURL(link) != nil {
           Button {
-            weChatBrowserPresented = true
+            weChatAutoSave = false; weChatBrowserPresented = true
           } label: {
             Label(t("galaxyssi.screen_page.wechat_browser", "WeChat Article Browser"), systemImage: "safari")
           }
@@ -127,7 +129,7 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
     .navigationViewStyle(.stack)
     .sheet(isPresented: $weChatBrowserPresented) {
       if let link, let article = GalaxySSIWeChatBrowserSession.articleURL(link) {
-        GalaxySSIWeChatArticleBrowser(url: article, t: t)
+        GalaxySSIWeChatArticleBrowser(url: article, t: t, autoSave: weChatAutoSave)
       }
     }
     .onAppear { visible = true }
@@ -150,26 +152,20 @@ struct GalaxySSIScreenAnalysisLinkPicker: View {
     guard visible, scene == .active, pdfTask == nil, let link,
           AgentIOSWeChatArticlePDF.articleURL(link) == url else { return }
     pdfStatus = ""
-    let missingImage = t("galaxyssi.screen_page.wechat_pdf_image", "[Image unavailable]")
-    let worker = Task.detached(priority: .userInitiated) {
-      try AgentIOSWeChatArticlePDF.save(url: url, missingImage: missingImage)
-    }
+    let messages = AgentIOSWeChatArticleMessages(language: language)
     pdfTask = Task { @MainActor in
       defer { pdfTask = nil }
       do {
-        let (file, missing) = try await withTaskCancellationHandler(operation: { try await worker.value },
-          onCancel: { worker.cancel() })
-        guard !Task.isCancelled else { return }
-        pdfStatus = String(format: t("galaxyssi.screen_page.wechat_pdf_saved",
-          "Saved in Files: GalaxySSI / Downloads / GongZhongHao / %@"), file.lastPathComponent)
-        if missing > 0 {
-          pdfStatus += "\n" + String(format: t("galaxyssi.screen_page.wechat_pdf_missing",
-            "%d images could not be saved."), missing)
-        }
+        let result = try await AgentIOSWeChatArticlePDF.save(url: url, messages: messages)
+        guard !Task.isCancelled else { try? FileManager.default.removeItem(at: result.url); return }
+        pdfStatus = messages.saved(result)
       } catch {
         guard !Task.isCancelled else { return }
-        pdfStatus = t("galaxyssi.screen_page.wechat_pdf_failed",
-          "Could not save this article. Open it in WeChat and check whether verification is required.")
+        pdfStatus = messages.text(((error as? AgentIOSWeChatArticleFailure) ?? .pdfFailed).key)
+        if (error as? AgentIOSWeChatArticleFailure) == .verificationRequired ||
+            (error as? AgentIOSWeChatArticleFailure) == .bodyUnavailable {
+          weChatAutoSave = true; weChatBrowserPresented = true
+        }
       }
     }
   }
