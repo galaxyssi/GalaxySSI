@@ -2394,6 +2394,58 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion.branches.count, 3)
   }
 
+  func testChondrocyteHydrationCompressionAndMappedAnchorsStayCoupled() {
+    typealias Motion = GalaxySSIHealthAtlasChondrocyteMotion
+    XCTAssertEqual(Motion(step: 2, fraction: 1).hydration, 0.18)
+    XCTAssertEqual(Motion(step: 3, fraction: 0).hydration, 0.18)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).hydration, 1)
+    let compressed = Motion(step: 4, fraction: 0.36), recovered = Motion(step: 4, fraction: 0.96)
+    XCTAssertEqual(compressed.squeeze, 1); XCTAssertEqual(compressed.scaleY, 0.81)
+    XCTAssertEqual(compressed.hydration, 1); XCTAssertEqual(compressed.washAlpha, 48)
+    XCTAssertEqual(recovered.squeeze, 0); XCTAssertEqual(recovered.scaleY, 1)
+    XCTAssertEqual(Motion.mappedY(177, scale: compressed.scaleY), 177)
+    for y in [108.0,148,158,201,215] {
+      XCTAssertEqual(Motion.mappedY(y, scale: compressed.scaleY) - 177, (y - 177) * 0.81, accuracy: 1e-10)
+      XCTAssertEqual(Motion.mappedY(y, scale: recovered.scaleY), y, accuracy: 1e-10)
+    }
+    XCTAssertEqual(Motion(step: 4, fraction: 0.15).compressionAlpha, 215)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.65).compressionAlpha, 0)
+    for side in [-1.0,1] {
+      let initial = Motion(step: 3, fraction: 0).water(index: 0, side: side)
+      let hydrated = Motion(step: 3, fraction: 1).water(index: 0, side: side)
+      XCTAssertEqual(initial.alpha, 60); XCTAssertEqual(hydrated.alpha, 192)
+      XCTAssertEqual(initial.x - hydrated.x, side * 40, accuracy: 1e-10)
+      XCTAssertEqual(compressed.water(index: 0, side: side).x, initial.x)
+      XCTAssertEqual(recovered.water(index: 0, side: side).x, hydrated.x)
+      XCTAssertEqual(hydrated.length, 12)
+    }
+  }
+
+  func testChondrocyteSourceTransportsJoinFibersAndEndAtDeposits() throws {
+    typealias Geometry = GalaxySSIHealthAtlasChondrocyteGeometry
+    typealias Motion = GalaxySSIHealthAtlasChondrocyteMotion
+    XCTAssertEqual(Geometry.fibrils.count, 19); XCTAssertEqual(Geometry.neighbors.count, 4)
+    XCTAssertEqual(Geometry.focusContours.count, 4); XCTAssertEqual(Geometry.deposits.count, 3)
+    for index in 0...1 {
+      let end = try XCTUnwrap(Geometry.collagenRoutes[index].commands[0].points.last)
+      XCTAssertEqual(end, Geometry.collagenJoins[index].start)
+      XCTAssertEqual(Motion.collagenRide(0, index: index), 0)
+      XCTAssertEqual(Motion.collagenRide(1, index: index), 1)
+      XCTAssertEqual(Motion.collagenGrowth(0, index: index), 0)
+      XCTAssertEqual(Motion.collagenGrowth(1, index: index), 1)
+    }
+    for (index, deposit) in Geometry.deposits.enumerated() {
+      let end = try XCTUnwrap(deposit.route.commands[0].points.last)
+      XCTAssertEqual(end, .init(x: deposit.x, y: deposit.y))
+      XCTAssertEqual(Motion.deposit(0, index: index), 0)
+      XCTAssertEqual(Motion.deposit(1, index: index), 1)
+    }
+    for index in 0...3 {
+      XCTAssertEqual(Motion.zoneHead(0, index: index), 0)
+      XCTAssertEqual(Motion.zoneHead(1, index: index), 1.34)
+    }
+  }
+
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion

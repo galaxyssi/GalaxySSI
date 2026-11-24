@@ -193,6 +193,13 @@
     C4384000000000000000019D /* GalaxySSIHealthAtlasArterialView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000019E /* GalaxySSIHealthAtlasArterialView.swift */; };
     C4384000000000000000019F /* GalaxySSIHealthAtlasArterialLocatorDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001A0 /* GalaxySSIHealthAtlasArterialLocatorDrawing.swift */; };
     C438400000000000000001A1 /* GalaxySSIHealthAtlasArterialTubeDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001A2 /* GalaxySSIHealthAtlasArterialTubeDrawing.swift */; };
+    C438400000000000000001A3 /* GalaxySSIHealthAtlasChondrocyteMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001A4 /* GalaxySSIHealthAtlasChondrocyteMotion.swift */; };
+    C438400000000000000001A5 /* GalaxySSIHealthAtlasChondrocyteGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001A6 /* GalaxySSIHealthAtlasChondrocyteGeometry.swift */; };
+    C438400000000000000001A7 /* GalaxySSIHealthAtlasChondrocyteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001A8 /* GalaxySSIHealthAtlasChondrocyteView.swift */; };
+    C438400000000000000001A9 /* GalaxySSIHealthAtlasChondrocyteMatrixDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001AA /* GalaxySSIHealthAtlasChondrocyteMatrixDrawing.swift */; };
+    C438400000000000000001AB /* GalaxySSIHealthAtlasChondrocyteMarkersDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001AC /* GalaxySSIHealthAtlasChondrocyteMarkersDrawing.swift */; };
+    C438400000000000000001AD /* GalaxySSIHealthAtlasChondrocyteSecretionDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001AE /* GalaxySSIHealthAtlasChondrocyteSecretionDrawing.swift */; };
+    C438400000000000000001AF /* GalaxySSIHealthAtlasChondrocyteLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001B0 /* GalaxySSIHealthAtlasChondrocyteLabelsDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1859,6 +1866,13 @@
     C4384000000000000000019E /* GalaxySSIHealthAtlasArterialView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasArterialView.swift; sourceTree = "<group>"; };
     C438400000000000000001A0 /* GalaxySSIHealthAtlasArterialLocatorDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasArterialLocatorDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000001A2 /* GalaxySSIHealthAtlasArterialTubeDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasArterialTubeDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001A4 /* GalaxySSIHealthAtlasChondrocyteMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasChondrocyteMotion.swift; sourceTree = "<group>"; };
+    C438400000000000000001A6 /* GalaxySSIHealthAtlasChondrocyteGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasChondrocyteGeometry.swift; sourceTree = "<group>"; };
+    C438400000000000000001A8 /* GalaxySSIHealthAtlasChondrocyteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasChondrocyteView.swift; sourceTree = "<group>"; };
+    C438400000000000000001AA /* GalaxySSIHealthAtlasChondrocyteMatrixDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasChondrocyteMatrixDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001AC /* GalaxySSIHealthAtlasChondrocyteMarkersDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasChondrocyteMarkersDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001AE /* GalaxySSIHealthAtlasChondrocyteSecretionDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasChondrocyteSecretionDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001B0 /* GalaxySSIHealthAtlasChondrocyteLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasChondrocyteLabelsDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3544,6 +3558,13 @@
         C4384000000000000000019E /* GalaxySSIHealthAtlasArterialView.swift */,
         C438400000000000000001A0 /* GalaxySSIHealthAtlasArterialLocatorDrawing.swift */,
         C438400000000000000001A2 /* GalaxySSIHealthAtlasArterialTubeDrawing.swift */,
+        C438400000000000000001A4 /* GalaxySSIHealthAtlasChondrocyteMotion.swift */,
+        C438400000000000000001A6 /* GalaxySSIHealthAtlasChondrocyteGeometry.swift */,
+        C438400000000000000001A8 /* GalaxySSIHealthAtlasChondrocyteView.swift */,
+        C438400000000000000001AA /* GalaxySSIHealthAtlasChondrocyteMatrixDrawing.swift */,
+        C438400000000000000001AC /* GalaxySSIHealthAtlasChondrocyteMarkersDrawing.swift */,
+        C438400000000000000001AE /* GalaxySSIHealthAtlasChondrocyteSecretionDrawing.swift */,
+        C438400000000000000001B0 /* GalaxySSIHealthAtlasChondrocyteLabelsDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5359,6 +5380,13 @@
         C4384000000000000000019D /* GalaxySSIHealthAtlasArterialView.swift in Sources */,
         C4384000000000000000019F /* GalaxySSIHealthAtlasArterialLocatorDrawing.swift in Sources */,
         C438400000000000000001A1 /* GalaxySSIHealthAtlasArterialTubeDrawing.swift in Sources */,
+        C438400000000000000001A3 /* GalaxySSIHealthAtlasChondrocyteMotion.swift in Sources */,
+        C438400000000000000001A5 /* GalaxySSIHealthAtlasChondrocyteGeometry.swift in Sources */,
+        C438400000000000000001A7 /* GalaxySSIHealthAtlasChondrocyteView.swift in Sources */,
+        C438400000000000000001A9 /* GalaxySSIHealthAtlasChondrocyteMatrixDrawing.swift in Sources */,
+        C438400000000000000001AB /* GalaxySSIHealthAtlasChondrocyteMarkersDrawing.swift in Sources */,
+        C438400000000000000001AD /* GalaxySSIHealthAtlasChondrocyteSecretionDrawing.swift in Sources */,
+        C438400000000000000001AF /* GalaxySSIHealthAtlasChondrocyteLabelsDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
