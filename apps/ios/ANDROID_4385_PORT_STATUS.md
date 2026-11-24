@@ -41,7 +41,17 @@ This is an in-progress implementation, not a completed parity claim or release.
 - Dedicated vertebral-motion renderer: three scenes, eleven original SVG paths/69
   commands, rigid upper-vertebra transform, stationary lower vertebra, attached disc
   edges, clipped nucleus/lamellae and transformed landmark callouts.
-- All five new renderers have Xcode source registration but remain unreachable until
+- Dedicated clitoral-sensory renderer: four scenes with nine source paths/46
+  commands, sequential anatomical focus, mirrored dorsal nerve context and
+  direction-preserving afferent tracers through endings, dorsal and sacral routes.
+- Dedicated vestibular-gland renderer: four scenes with seven source paths/26
+  commands, radial secretory cells with an open duct neck, three acinar branches,
+  length-weighted shared-duct transport and independent paired outlet tracers.
+- Dedicated tenocyte-tendon-matrix renderer: four stages with original parameterized
+  fiber/cell curves, clipped matrix, fiber-vertex tracking marks, independent
+  secondary cells and dashed resting-profile comparison. Poses are unitless art,
+  not measurements of tissue/cell strain.
+- All eight new renderers have Xcode source registration but remain unreachable until
   the regional catalogue and complete renderer coverage are activated together.
 - All 23 new/modified VectorDrawable resources imported into separate regional PDF
   assets: 298 source paths and 68 native gradients. They do not overwrite frozen
@@ -59,9 +69,8 @@ This is an in-progress implementation, not a completed parity claim or release.
 
 ## Remaining Before Publication
 
-- Eight courses: vulvar protection, accessory-gland routing, uterocervical
-  continuity, clitoral
-  sensory path, vestibular-gland secretion, tenocyte tendon matrix, pectoral
+- Five courses: vulvar protection, accessory-gland routing, uterocervical
+  continuity, pectoral
   horizontal adduction and latissimus extension/adduction.
 - New/modified structure plate metadata and their owner/view selectors, features,
   links, sources and captions are extracted; connect the snapshot and imported
@@ -100,3 +109,9 @@ The historical #4384 PDFs remain unchanged. Their retained-batch checks compare
 encoded operations and do not prove SVG Q/T semantic equivalence. A follow-up
 resource audit must revisit their quadratics using the new exact conversion;
 passing those older checks is not proof that this separate issue is resolved.
+
+Clitoral/vestibular source checks passed for all 16 paths/72 commands, nine
+continuous trace control sets, nineteen bilingual labels and nineteen source
+callouts. Tenocyte checks passed for parameterized fiber/cell curve controls,
+deformation stage continuity, tracking-mark vertices, the resting profile and 484
+analytic poses. These are source checks, not execution of the native renderers.
