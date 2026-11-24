@@ -8,6 +8,82 @@ extension GalaxySSIHealthAtlasTeachingModel {
         label: resourcePrefix + "_" + label, digits: digits)
     }
     switch self {
+    case .accessoryGlandEntry:
+      return [control("accessory-gland-entry-vesicle-markers", "vesicles", 0...4, 3, "", digits: 0),
+        control("accessory-gland-entry-prostate-markers", "prostate", 0...4, 2, "", digits: 0),
+        control("accessory-gland-entry-bulbourethral-markers", "bulbourethral", 0...4, 1, "", digits: 0)]
+    case .aiiAmacrineRelay:
+      return [control("aii-amacrine-relay-input", "input", -10...10, 4, "u", digits: 0)]
+    case .astrocyteRecycling:
+      return [control("astrocyte-recycling-uptake", "uptake", 0...100, 60, "%", digits: 0),
+        control("astrocyte-recycling-return", "return", 0...100, 50, "%", digits: 0)]
+    case .cecalPouchMixing:
+      return [control("cecal-pouch-mixing-rounds", "rounds", 0...6, 3, "", digits: 0),
+        control("cecal-pouch-mixing-marker-amount", "marker_amount", 0...16, 12, "u", digits: 0)]
+    case .clitoralRouteTrace:
+      return [control("clitoral-route-trace-links", "links", 0...4, 1, "", digits: 0)]
+    case .clubCellDome:
+      return [control("club-cell-dome-rise", "rise", 5...30, 15, "u", scale: 10, digits: 1),
+        control("club-cell-dome-body-height", "body_height", 30...60, 40, "u", scale: 10, digits: 1)]
+    case .dendriticCellOutline:
+      return [control("dendritic-cell-outline-tabs", "tabs", 0...4, 3, "", digits: 0)]
+    case .enteroendocrinePolarity:
+      return [control("enteroendocrine-polarity-basal-offset", "basal_offset", 5...25, 15, "u", scale: 10, digits: 1),
+        control("enteroendocrine-polarity-cell-height", "cell_height", 60...120, 80, "u", scale: 10, digits: 1)]
+    case .intestinalStemRenewal:
+      return [control("intestinal-stem-renewal-steps", "steps", 0...6, 2, "", digits: 0),
+        control("intestinal-stem-renewal-base-icons", "base_icons", 1...4, 3, "", digits: 0)]
+    case .langerhansDendriteReach:
+      return [control("langerhans-dendrite-reach-left", "left", 0...8, 6, "", digits: 0),
+        control("langerhans-dendrite-reach-right", "right", 0...8, 5, "", digits: 0)]
+    case .macrophageClearanceTally:
+      return [control("macrophage-clearance-tally-outside", "outside", 0...12, 8, "", digits: 0),
+        control("macrophage-clearance-tally-spaces", "spaces", 0...8, 5, "", digits: 0)]
+    case .mastCellGranuleTally:
+      return [control("mast-cell-granule-tally-released", "released", 0...20, 6, "", digits: 0)]
+    case .microgliaSurveillance:
+      return [control("microglia-surveillance-width", "width", 0...6, 4, "", digits: 0),
+        control("microglia-surveillance-offset", "offset", 0...6, 2, "", digits: 0)]
+    case .muscleSatelliteFusionTally:
+      return [control("muscle-satellite-fusion-tally-fused", "fused", 0...8, 3, "", digits: 0),
+        control("muscle-satellite-fusion-tally-starting", "starting", 1...12, 6, "", digits: 0)]
+    case .nailPlateAdvance:
+      return [control("nail-plate-advance-steps", "steps", 0...12, 4, "", digits: 0),
+        control("nail-plate-advance-addition", "addition", 0...15, 8, "u", scale: 10, digits: 1)]
+    case .pancreaticAcinarApicalBand:
+      return [control("pancreatic-acinar-apical-band-depth", "depth", 0...30, 20, "u", scale: 10, digits: 1)]
+    case .panethLuminalRelease:
+      return [control("paneth-luminal-release-selected", "selected", 0...10, 4, "", digits: 0),
+        control("paneth-luminal-release-starting", "starting", 1...10, 7, "", digits: 0)]
+    case .penilePathTrace:
+      return [control("penile-path-trace-position", "position", 0...100, 40, "%", digits: 0)]
+    case .plasmaCellSecretionTally:
+      return [control("plasma-cell-secretion-tally-cells", "cells", 0...8, 4, "", digits: 0)]
+    case .satelliteGlialSheathGap:
+      return [control("satellite-glial-sheath-gap-radius", "radius", 40...80, 60, "u", scale: 10, digits: 1),
+        control("satellite-glial-sheath-gap-width", "width", 0...5, 3, "u", scale: 10, digits: 1)]
+    case .scrotalHeatTally:
+      return [control("scrotal-heat-tally-surplus", "surplus", 0...20, 12, "hu", digits: 0),
+        control("scrotal-heat-tally-share", "share", 0...100, 40, "%", digits: 0)]
+    case .skullVaultLayers:
+      return [control("skull-vault-layers-diploe", "diploe", 10...50, 25, "u", scale: 10, digits: 1),
+        control("skull-vault-layers-fluid", "fluid", 5...25, 15, "u", scale: 10, digits: 1)]
+    case .splenicSlitSorting:
+      return [control("splenic-slit-sorting-width", "width", 0...16, 6, "u", scale: 2, digits: 1)]
+    case .thyroidCCellReleaseGrid:
+      return [control("thyroid-c-cell-release-grid-moved", "moved", 0...5, 2, "", digits: 0),
+        control("thyroid-c-cell-release-grid-rows", "rows", 1...4, 3, "", digits: 0)]
+    case .thyroidFollicularFaces:
+      return [control("thyroid-follicular-faces-wedges", "wedges", 8...16, 12, "", digits: 0),
+        control("thyroid-follicular-faces-radius", "radius", 20...60, 40, "u", scale: 10, digits: 1)]
+    case .urethralOpeningArea:
+      return [control("urethral-opening-area-width", "width", 20...80, 60, "u", scale: 10, digits: 1),
+        control("urethral-opening-area-height-percent", "height_percent", 0...100, 50, "%", digits: 0)]
+    case .vaginalRugaSpan:
+      return [control("vaginal-ruga-span-height", "height", 0...40, 30, "u", scale: 10, digits: 1)]
+    case .vestibularGlandVolume:
+      return [control("vestibular-gland-volume-a", "a", 0...60, 20, "vu", scale: 10, digits: 1),
+        control("vestibular-gland-volume-b", "b", 0...60, 30, "vu", scale: 10, digits: 1)]
     case .capillaryExchange:
       return [control("capillary-exchange-ps", "ps", 0...40, 20, "mL/min"),
         control("capillary-exchange-flow", "flow", 5...80, 20, "mL/min")]

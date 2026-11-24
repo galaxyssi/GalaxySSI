@@ -44,6 +44,12 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     return value
   }
 
+  func openNumericalModel(_ entry: GalaxySSIHealthAtlas.Entry) {
+    var next = functionSnapshot(entry)
+    next.tab = .simulation
+    entries[entry.id] = next
+  }
+
   func binding(_ entry: GalaxySSIHealthAtlas.Entry) -> Binding<Selection> {
     Binding(get: { self.entries[entry.id] ?? Selection(simulation: .initial(entry.id)) },
       set: { self.entries[entry.id] = $0 })

@@ -1,0 +1,1232 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4414,
+    "mergeCommit": "7dd7f35525ed800b74a3439bf708b1793316de42"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "counts": {
+    "android-version-only": 1,
+    "android-test-reference-not-executed": 30,
+    "bounded-completion-teaching-model": 28,
+    "complete-additive-model-routing": 1,
+    "numerical-entry-and-metrics-navigation": 1,
+    "exact-bilingual-resource-delta": 58
+  },
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "38543884b9a57ec2191941c1f790eab1bed04ae0d0147bfd6665ac1424652e2d",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasPhysiologyDeviceTest.kt",
+      "sourceSHA256": "69ee65a490b3c47c9a8d1f75dff21f3f38c63a595e382613f43642746693fe4f",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAccessoryGlandEntryTeachingModel.kt",
+      "sourceSHA256": "6e5137b0c8111e4420cef514116649903fe5545fe141d035b80dadba07ba09c3",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAiiAmacrineRelayTeachingModel.kt",
+      "sourceSHA256": "6abd5829b1690e7b4433e3b76ea22abca9ff812a73c2408479279c074ed41324",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAstrocyteRecyclingTeachingModel.kt",
+      "sourceSHA256": "06a69092d48635d56c10f7aae9adc24f817125d9ba541de122d3410e82019657",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCecalPouchMixingTeachingModel.kt",
+      "sourceSHA256": "1a104cb2f76c78139eea97e870c04527f29a339e84f4a39aab28d689e4843d32",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasClitoralRouteTraceTeachingModel.kt",
+      "sourceSHA256": "d750369b834d0e0c4a1996594ad6d4c17148c11579a7873adf65f9cdb9b28d53",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasClubCellDomeTeachingModel.kt",
+      "sourceSHA256": "5c4c7105848d7bade41ef1c04d84215593c2990c0d65fc80ca572b41f28a83c6",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasDendriticCellOutlineTeachingModel.kt",
+      "sourceSHA256": "cd9ece2054802f4c54117000a2ab78ccc39c29a8f8153aeee24786900118824f",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasEnteroendocrinePolarityTeachingModel.kt",
+      "sourceSHA256": "d0e442593f793011921c6f70d7d85f10a4d7b37f26953d1463570f3b6299e170",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasIntestinalStemRenewalTeachingModel.kt",
+      "sourceSHA256": "a9c80f721efba2ade645cb0747a108b24cf1691a20abeb0f67e1c58f9b912d63",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLangerhansDendriteReachTeachingModel.kt",
+      "sourceSHA256": "1522e96f93447b85c1c091b051a61c60e713e9f364dec8a7a3915b2421c80e83",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMacrophageClearanceTallyTeachingModel.kt",
+      "sourceSHA256": "858d5f4a2adee46533f3562c57cc990a9872737ee7d6240ab266c0cd01028944",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMastCellGranuleTallyTeachingModel.kt",
+      "sourceSHA256": "4f09c9b4840f857f90c06d6be584e40f4c8ec6677d3b6cae690b14f07e53aa51",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMicrogliaSurveillanceTeachingModel.kt",
+      "sourceSHA256": "bf801f736977c2cf3eb87963a4209433ede8a5035745b0d1a9a1ffca3d4ef98e",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMuscleSatelliteFusionTallyTeachingModel.kt",
+      "sourceSHA256": "615eca3c0707499e4449c283cfbd3ba54a4bd69c224754460daa0ce1b8afbb56",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasNailPlateAdvanceTeachingModel.kt",
+      "sourceSHA256": "a33e7c9cc2ed8095e69821337b1fb487aae3ca2168234a4cf01065ef3a98fcce",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPancreaticAcinarApicalBandTeachingModel.kt",
+      "sourceSHA256": "4d94fab393cc6abab6b03e47ce1cd17db5d7d0ca36144583464ccfd18c154960",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPanethLuminalReleaseTeachingModel.kt",
+      "sourceSHA256": "bc6e25deef4710f4a2ac28304d6f2c1d3d2991191c660c2244f6e623423ee22e",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPenilePathTraceTeachingModel.kt",
+      "sourceSHA256": "3e281ee88dbe42c7f415a623e5ba996fa9e4c4b5bd726af05fc88d4609a95edb",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiology.kt",
+      "sourceSHA256": "26a21fa27c91cbd78e20b94a808b7bbbbedfca9b464441b1e762c5fe102ca397",
+      "kind": "complete-additive-model-routing",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiology.swift"
+      ],
+      "note": "30 new owners preserve original 67 literal clauses and 216 previous teaching bindings. Source partition reaches 313 catalogue IDs; conditional oxygen exclusion leaves 311. Not runtime coverage certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPlasmaCellSecretionTallyTeachingModel.kt",
+      "sourceSHA256": "035314c6dd5275e03f35b02ee82df3c0bb8cb0a877ca4a85532fbe0fde8cb499",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSatelliteGlialSheathGapTeachingModel.kt",
+      "sourceSHA256": "f7501b9c4b4e4d16f53159590296092c24851bc2b92f7abe6cf6812bef61b95b",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasScrotalHeatTallyTeachingModel.kt",
+      "sourceSHA256": "eadbe2af89a7d491db033e85061924ee06f6e6233fe30de5373ca55a85dad28c",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSkullVaultLayersTeachingModel.kt",
+      "sourceSHA256": "d4dcbba1a09593aa3d63390a64bdb3e1de990582e7787907642a16b78c016f5d",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSplenicSlitSortingTeachingModel.kt",
+      "sourceSHA256": "224afbfdad35fa700b841221dd519d699bea9b232e56f45a9a2641699b703337",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasThyroidCCellReleaseGridTeachingModel.kt",
+      "sourceSHA256": "a642cc89359522458842f5f87f0f22bc44d3fbfcb99347326664a6b79e75590f",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasThyroidFollicularFacesTeachingModel.kt",
+      "sourceSHA256": "712959ab1b296cb00d75e7a7e866becddb8039dcd4aa16c080e849781492fff7",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUrethralOpeningAreaTeachingModel.kt",
+      "sourceSHA256": "e4180e912f7ef2a14b737e063ccbbff3d78f6d6e1edad7288ed6550380390f94",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasVaginalRugaSpanTeachingModel.kt",
+      "sourceSHA256": "6796b389b7a343bd880a0abf4503171c7e571a0a72f703fc0e3a26537a1faa7d",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasVestibularGlandVolumeTeachingModel.kt",
+      "sourceSHA256": "fd9c38865f7e80342edf2bbccfbc58314ef981cfcea17e0f6b5bfa2d8fda9d3b",
+      "kind": "bounded-completion-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Exact original control metadata, sources, bindings, formulas and companions. Whole nonnegative diagram counts round at half steps; geometric/ratio/path calculations remain continuous. No personal measurements."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthBodyAtlasActivity.kt",
+      "sourceSHA256": "8f1bca80b4524c8064a22317b00232874c4d181d18424100d8dc59f881e644dc",
+      "kind": "numerical-entry-and-metrics-navigation",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetail.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift"
+      ],
+      "note": "Numerical model action follows playback, before related prose. Snapshot live function phase, preserve selected sliders and existing restore. My metrics localized independently of synthetic models."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_accessory_gland_entry_teaching_model.xml",
+      "sourceSHA256": "05a0b29f5482a8f428c7f5a7f1294621c6ea07b54da330dfb91a267be521dcec",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_aii_amacrine_relay_teaching_model.xml",
+      "sourceSHA256": "29fbffc1e548a3b4c930e8e355c0543b32442ac92642fc6c98f76b151b0bf0b1",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_astrocyte_recycling_teaching_model.xml",
+      "sourceSHA256": "c780476a7141ac36bc5c535f77454c8b3e6dbad073df3ca15467d76d1bcc9874",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_cecal_pouch_mixing_teaching_model.xml",
+      "sourceSHA256": "0a45ff3bac4be6d53ab0572bdb142c614a498c03093e207be0152d4568c5fb83",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_clitoral_route_trace_teaching_model.xml",
+      "sourceSHA256": "84612d98d5c0c0d01a26e10b366bedd0eb79bf2631023b9030dc651a382bad10",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_club_cell_dome_teaching_model.xml",
+      "sourceSHA256": "10fe8fed97be9e5b6c6a71e5d54e1b89ecb8e90fe43ac3b8611ee87efa56290b",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_dendritic_cell_outline_teaching_model.xml",
+      "sourceSHA256": "dda114ded3c25732d6b8897ef6a327e70e53abcea032b0e6d58f269c5f8b69c5",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_enteroendocrine_polarity_teaching_model.xml",
+      "sourceSHA256": "a669fe155b069079caf751613e9da544e2f05fb714a67ba93e39ce5f7482b243",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_intestinal_stem_renewal_teaching_model.xml",
+      "sourceSHA256": "9220d8a8601fcbc61e6b1d07986c73d7b7b968aaa40cf07e225d99a1817062bd",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_langerhans_dendrite_reach_teaching_model.xml",
+      "sourceSHA256": "7452efdfbbb1c0ce376907f95d6bc0015d2d0e591cdd706b3fffa31b9b1bd1c3",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_macrophage_clearance_tally_teaching_model.xml",
+      "sourceSHA256": "6af518c42ef13befa8463a7d339695fc132aa6d5b4e80bbed152b37a015e4ae8",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_mast_cell_granule_tally_teaching_model.xml",
+      "sourceSHA256": "acaa625dccfd68376626671b97b4468006313f5b7cacb7672126e1241ea3b1a8",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_microglia_surveillance_teaching_model.xml",
+      "sourceSHA256": "ff7c914730682a7f6b4e49dbd152876e74613db8ba0387a9e6112a536c082ae8",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_muscle_satellite_fusion_tally_teaching_model.xml",
+      "sourceSHA256": "42af7ec16c394750c1243d5a8d08aa0c4114a61fb2cefc1ef592f8460dd913a5",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_nail_plate_advance_teaching_model.xml",
+      "sourceSHA256": "9ffab9766f6c52e4d5145402f43db37ff2c627e53a328f94b7e903111d18369c",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_pancreatic_acinar_apical_band_teaching_model.xml",
+      "sourceSHA256": "755a2a0dbbef556118da0577bf3debeb8a4b5e88a64273a0a832799ffcaaf1bf",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_paneth_luminal_release_teaching_model.xml",
+      "sourceSHA256": "81e0afe4cc8bf47fbfd1f3212fdc66fdb5d699d15c3ee37aee72e0a1aaa89d45",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_penile_path_trace_teaching_model.xml",
+      "sourceSHA256": "0d7616e4ef954fb925b08f5d2b12a33f2c674d6bd91655c24519bcf128c897ee",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_plasma_cell_secretion_tally_teaching_model.xml",
+      "sourceSHA256": "5034cc332b5729527efec6192a2025345ac317a19147a78e5f83d8bf55330a0b",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_satellite_glial_sheath_gap_teaching_model.xml",
+      "sourceSHA256": "64ea4127f2a33a5a1c37ec23c7c8bd2871567b7fcac4949fa8ac0cf086768708",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_scrotal_heat_tally_teaching_model.xml",
+      "sourceSHA256": "734e45bef3558bcf731c135730de3443772198d374cac5dc3ae6a2f5e92c9c28",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_skull_vault_layers_teaching_model.xml",
+      "sourceSHA256": "f2bccab99b94f00dc238832b91c2d490ff60c89f788433483fa9616642596efa",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_splenic_slit_sorting_teaching_model.xml",
+      "sourceSHA256": "1395dcd68bca174eb50f78164b3ec268c8fa6c24982f75b0f28c9a6665e6fc30",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_strings.xml",
+      "sourceSHA256": "ce506c32be1bf05fb546aa6f087525250ecc36cde3331fd02d62a93d3ca070b6",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_thyroid_c_cell_release_grid_teaching_model.xml",
+      "sourceSHA256": "99026d6f19bf3b1d1649efebc89fd4c4a055803585396c458710e33cd9e09a32",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_thyroid_follicular_faces_teaching_model.xml",
+      "sourceSHA256": "67310061306f5b1bc8a736c547d02d931df4e2f8c88c20744b6eb2a80303be91",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_urethral_opening_area_teaching_model.xml",
+      "sourceSHA256": "e42dd3c6e07874f503026b832936bf64ab79d799620f0b5f5c86ba26185abfe0",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_vaginal_ruga_span_teaching_model.xml",
+      "sourceSHA256": "9a7010df6b806e85a0114ae1d913bd23f6b9f1ae492ea7ec4a990c842d8763f4",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_vestibular_gland_volume_teaching_model.xml",
+      "sourceSHA256": "9a29cfc51f2c95d46ee86f931ecb4e005e48b9450e1f7e4066900f1a1358dd2d",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_accessory_gland_entry_teaching_model.xml",
+      "sourceSHA256": "f219d4a57c1e9a415ffe232fa37d33be80fd34c5fc4be0a1c12f4f9682c72c39",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_aii_amacrine_relay_teaching_model.xml",
+      "sourceSHA256": "d22c8734920992b635ff29bb8d99636d636e583eb02371c910e49473e2f5a9a5",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_astrocyte_recycling_teaching_model.xml",
+      "sourceSHA256": "446c663b5d1aa1e4abba20e7f551608c4a5f90aaf99d991d9e6e3e762c262bdb",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_cecal_pouch_mixing_teaching_model.xml",
+      "sourceSHA256": "25ab23adc85053d1940049ef83b2b4a55e613d08efddf688af3b4e06eff432fc",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_clitoral_route_trace_teaching_model.xml",
+      "sourceSHA256": "32e5b306684b1515c9173f4430ddac88b3b82f7c2f20a9e618f30a92200c13c7",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_club_cell_dome_teaching_model.xml",
+      "sourceSHA256": "176f8651675442fa8b9e902ca793b8cc4e334d493e50b4cb7cc0f274956c0804",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_dendritic_cell_outline_teaching_model.xml",
+      "sourceSHA256": "c5e12da876ecb1fd0ef9615243a8de08e79d8430e571c19e80ee28bcb8799e3f",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_enteroendocrine_polarity_teaching_model.xml",
+      "sourceSHA256": "04b1b6f3ff3711495868dac258456f3b0c6b840afa851c75321c975e3652363c",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_intestinal_stem_renewal_teaching_model.xml",
+      "sourceSHA256": "7da71b840406b6686dd88743ef089b1aa8595cee2713cb96dfe7e91bf18fcd07",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_langerhans_dendrite_reach_teaching_model.xml",
+      "sourceSHA256": "b25669953e4cf8b0f541316c0444f44cd72068f397f29179a8bdde32205bfc0f",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_macrophage_clearance_tally_teaching_model.xml",
+      "sourceSHA256": "9ed5e2aa09cd3f637150ec3923c6885acd185da16da983711718164bb8bf4986",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_mast_cell_granule_tally_teaching_model.xml",
+      "sourceSHA256": "84d7eadab7b0b8d959779ad191ae378b4fe93430ec4c1a5d5dc8c478d893fb7f",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_microglia_surveillance_teaching_model.xml",
+      "sourceSHA256": "d090e62241f08f38f0fde3b11f0810fca891ffd32355c4d167f1e619ffc0a226",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_muscle_satellite_fusion_tally_teaching_model.xml",
+      "sourceSHA256": "99ad651d85767e9dd7c47f28fa3d216fb05bafb39e3cc28bf2c65bab39f330b8",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_nail_plate_advance_teaching_model.xml",
+      "sourceSHA256": "20b4e0b1cdb913a5700be3b79153087f7ce77c4922783cfb0d042c017d9a6ba2",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_pancreatic_acinar_apical_band_teaching_model.xml",
+      "sourceSHA256": "d104ac529d6eb52ccb6bf1f762d197e78b282c6f817192e92a91e233ad77f1a4",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_paneth_luminal_release_teaching_model.xml",
+      "sourceSHA256": "78e7bdb61aca8f8d82628a433f692a407dc0296e412c0c505157624a307eecee",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_penile_path_trace_teaching_model.xml",
+      "sourceSHA256": "c6f00b614dadee94c8d47c1c59f4461f13248d360ae1519f8a608fd848c08e03",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_plasma_cell_secretion_tally_teaching_model.xml",
+      "sourceSHA256": "56ce876720d54adfa89a3d91ac4f47aafc2f94bb6b50792e233b54d3b90b01ec",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_satellite_glial_sheath_gap_teaching_model.xml",
+      "sourceSHA256": "d1d54257f802e89887e536f35cca87663f039f43efd4980251c36bbdf64aabb2",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_scrotal_heat_tally_teaching_model.xml",
+      "sourceSHA256": "a563c26d636ca19191c423ceb16cfe96794c3b6ea82ef947fcf42f3293c2cdc8",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_skull_vault_layers_teaching_model.xml",
+      "sourceSHA256": "794251479ab9fdfd1074e5672a91cc2439352f5bd80741a15947ee2dfac822f9",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_splenic_slit_sorting_teaching_model.xml",
+      "sourceSHA256": "320912ad820433cc8e86d19f198a27c518b625e92729b1b5c657de708a5b463c",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_strings.xml",
+      "sourceSHA256": "2c96dedcb7b3fcd6394fd33dc39f5ec45932b4ad983a6f31630a83f72ee063cc",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_thyroid_c_cell_release_grid_teaching_model.xml",
+      "sourceSHA256": "671756b528b4363a718f86485b661df337205e275e9eac54a2a4284ee8ef39f7",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_thyroid_follicular_faces_teaching_model.xml",
+      "sourceSHA256": "b0c1fc8ce799f3a1bb3e3727ae58942a9c06625c1b24e629ccaaa9e863256eb9",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_urethral_opening_area_teaching_model.xml",
+      "sourceSHA256": "15099cd38283003a64829ca0a5b9f0fa7fc0846d899370a8ad8298cf13351720",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_vaginal_ruga_span_teaching_model.xml",
+      "sourceSHA256": "2b5593bd433614e73be7d2c909333058809f27cf5b266de3b403c1a6001701c1",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_vestibular_gland_volume_teaching_model.xml",
+      "sourceSHA256": "5f5b93432269a2069549ad02388468c81155090367f035402bf6eb608a345cbf",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasCompletionTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasCompletionTeaching.strings"
+      ],
+      "note": "162 structurally extracted and Xcode-registered English/Chinese pairs, including My metrics and Numerical model. Preserve synthetic scope and original units."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasAccessoryGlandEntryTeachingModelTest.kt",
+      "sourceSHA256": "cc2d6df7787a9038e68a78fd4389fbff6c20da1df945932a46afe8d0c1bb9ebb",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasAiiAmacrineRelayTeachingModelTest.kt",
+      "sourceSHA256": "32c7ab43757de39f79147c3d944f1776ab00b7a7fbac58162d4eee07f213bfcf",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasAstrocyteRecyclingTeachingModelTest.kt",
+      "sourceSHA256": "38b2652ce3c62598f6b6e6a6621108a3185440abe5d7e8184785f051a5ece0a8",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasCecalPouchMixingTeachingModelTest.kt",
+      "sourceSHA256": "b133da16b8519408af935ecebd9f923bd949a3d3bec6c318ada3c3ce7c7564ea",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasClitoralRouteTraceTeachingModelTest.kt",
+      "sourceSHA256": "8da56d02d97ec7601f302bf6735ef260cc611f3cd0958349ea91acc8835b471e",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasClubCellDomeTeachingModelTest.kt",
+      "sourceSHA256": "a157e0a27fd57d993c7e8e48e8406de07e41c72b54e608a61de815d35b2895e7",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasDendriticCellOutlineTeachingModelTest.kt",
+      "sourceSHA256": "2cfd4aa28552ad4ff0d90335fce50f7881eb0efbedbdddaa53a882e60ad74c59",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasEnteroendocrinePolarityTeachingModelTest.kt",
+      "sourceSHA256": "f2cfa3dd13da9def289f8ad6c0deeccb0ba49a64c004bb40a981442fc4995140",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasIntestinalStemRenewalTeachingModelTest.kt",
+      "sourceSHA256": "a3a066d48a861e1aaf275089a9efe871a272a2c45edaa998a51c075d01136a72",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasLangerhansDendriteReachTeachingModelTest.kt",
+      "sourceSHA256": "ff8664b7f9e193abeca0832fa5903e3c83378c2c19d90a5e9f30e3bed975ef1a",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMacrophageClearanceTallyTeachingModelTest.kt",
+      "sourceSHA256": "6c494e1079f64874f80d99b06a60dbc1fbf3334afb8aa6fe64aaf4fbec3024c3",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMastCellGranuleTallyTeachingModelTest.kt",
+      "sourceSHA256": "300963240ac8ef8fb978bea7568940f8c5d256a41ba363786c2dfd0f50af3027",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMicrogliaSurveillanceTeachingModelTest.kt",
+      "sourceSHA256": "33644e4d8d55a344df9b2bd10fca067e8f563055be0b4d9735ba843f79915e75",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMuscleSatelliteFusionTallyTeachingModelTest.kt",
+      "sourceSHA256": "ae2e103dcd76d337bc6eae622ff1ea02043607034af15c462a538b879e5aa23a",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasNailPlateAdvanceTeachingModelTest.kt",
+      "sourceSHA256": "cc3a7e63d652f163bdd4992207cd016b88a912d87a63f84ce7232200fc897437",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPancreaticAcinarApicalBandTeachingModelTest.kt",
+      "sourceSHA256": "5f36bc85cdfe7e4e048e270187631cfb9f951cc144a783e4173a569f8c18dde9",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPanethLuminalReleaseTeachingModelTest.kt",
+      "sourceSHA256": "1bf193648b0f1822ad3a7561ad7672b95c5c271184c57c1c856f0473b4db808c",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPenilePathTraceTeachingModelTest.kt",
+      "sourceSHA256": "b9221831ba3789faaec431f32a8abec9bf428f493e0b3ba377308181afcf04e8",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPhysiologyTest.kt",
+      "sourceSHA256": "35dd7e74687108f11b1beb6385fc4f8cc01d2af8d927c510438eab8ec52d1898",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPlasmaCellSecretionTallyTeachingModelTest.kt",
+      "sourceSHA256": "58ac1560671ed04f3a0041ff92022a4c8dd17e402e507e3db623c14ea8b0c786",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasSatelliteGlialSheathGapTeachingModelTest.kt",
+      "sourceSHA256": "fd4646169901d00881850538ac5627e08cc818e26629acb1073cd096af575956",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasScrotalHeatTallyTeachingModelTest.kt",
+      "sourceSHA256": "511f5c47bfa78efad14f5d0494bad8f333509a62cd821339bbdb60a58e48f5f2",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasSkullVaultLayersTeachingModelTest.kt",
+      "sourceSHA256": "bdbb2e64687134792a2e95004646cfb237abf0eea29d7d3e15f51abb83f3d9df",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasSplenicSlitSortingTeachingModelTest.kt",
+      "sourceSHA256": "7e5b8db3978f7b523c72c4ae902f851bfc0a4b7e0bec0026fae165e3867e7191",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasThyroidCCellReleaseGridTeachingModelTest.kt",
+      "sourceSHA256": "bd1e53c4a5e27f496796c5367109d860cde4102112788b564e1de39361e90120",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasThyroidFollicularFacesTeachingModelTest.kt",
+      "sourceSHA256": "d8d2b457f3fd48187107588d9670925305fb95cddc1e64e713e063e0957515bd",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasUrethralOpeningAreaTeachingModelTest.kt",
+      "sourceSHA256": "a8c8ffd35e7399ddb78eeca790f11c5818c0716055694efdf746edd940e23318",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasVaginalRugaSpanTeachingModelTest.kt",
+      "sourceSHA256": "81830d7d0000e3501ac1d3585a620461fdc7082e6c57d7f1d14e0001b42e8156",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasVestibularGlandVolumeTeachingModelTest.kt",
+      "sourceSHA256": "0ccadc9ca8263bd49b8be9e2954a61397b2ae1e2bb9d0e7152048a4afb3d8be1",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures updated for 28 defaults, counts, integer half steps, slit thresholds, continuous geometry, sign/companions and 30-owner tab/restore contracts. Neither Android nor XCTest executed; no native UI or pixel acceptance."
+    }
+  ]
+}

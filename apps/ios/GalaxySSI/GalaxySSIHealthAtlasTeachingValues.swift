@@ -85,6 +85,38 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .capillarySupportSurface: result = (2 * .pi * values[0]) * values[1]
     case .marrowRenewal: result = values[0].rounded() - values[1].rounded()
     case .ependymalBeatPhase: result = values[0] * values[1]
+    case .accessoryGlandEntry: result = values[0].rounded() + values[1].rounded()
+    case .aiiAmacrineRelay: result = values[0]
+    case .astrocyteRecycling: result = values[0] * values[1] / 100
+    case .cecalPouchMixing: result = values[1] / 2 * (1 - pow(0.5, values[0].rounded()))
+    case .clitoralRouteTrace: result = 100 * values[0].rounded() / 4
+    case .clubCellDome:
+      let cap = .pi * values[0]
+      result = 100 * cap / (cap + 4 * values[1])
+    case .dendriticCellOutline: result = 12 + 2 * values[0].rounded()
+    case .enteroendocrinePolarity: result = 100 * values[0] / values[1]
+    case .intestinalStemRenewal: result = min(12, values[0].rounded() * values[1].rounded())
+    case .langerhansDendriteReach: result = min(10, values[0].rounded() + values[1].rounded())
+    case .macrophageClearanceTally: result = min(values[0].rounded(), values[1].rounded())
+    case .mastCellGranuleTally: result = 100 * values[0].rounded() / 20
+    case .microgliaSurveillance: result = 2 * values[0].rounded() - max(0, values[0].rounded() - values[1].rounded())
+    case .muscleSatelliteFusionTally: result = values[1].rounded() + values[0].rounded()
+    case .nailPlateAdvance: result = values[0] * values[1]
+    case .pancreaticAcinarApicalBand:
+      let area = values[0] * (2 + (2 + 4 * values[0] / 6)) / 2
+      result = 100 * area / 24
+    case .panethLuminalRelease: result = min(values[0].rounded(), values[1].rounded())
+    case .penilePathTrace: result = 10 * values[0] / 100
+    case .plasmaCellSecretionTally: result = values[0].rounded() * 3
+    case .satelliteGlialSheathGap: result = .pi * values[1] * (2 * values[0] + values[1])
+    case .scrotalHeatTally: result = values[0] * (values[1] / 100)
+    case .skullVaultLayers: result = 1 + values[0] + 1 + values[1]
+    case .splenicSlitSorting: result = Double([1, 2, 2, 3, 3, 3, 4, 4, 5, 6, 7, 8].filter { Double($0) <= values[0] }.count)
+    case .thyroidCCellReleaseGrid: result = values[1].rounded() * values[0].rounded()
+    case .thyroidFollicularFaces: result = 2 * .pi * values[1] / values[0].rounded()
+    case .urethralOpeningArea: result = .pi * (values[0] / 2) * (values[0] * (values[1] / 100) / 2)
+    case .vaginalRugaSpan: result = 2 * sqrt(25 - values[0] * values[0])
+    case .vestibularGlandVolume: result = values[0] + values[1]
     }
     return result.isFinite ? result : nil
   }
@@ -164,6 +196,34 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .capillarySupportSurface: result = 2 * .pi * values[0]
     case .marrowRenewal: result = 12 + (values[0].rounded() - values[1].rounded())
     case .ependymalBeatPhase: result = (values[0] * values[1]).truncatingRemainder(dividingBy: 1)
+    case .accessoryGlandEntry: result = values[2].rounded()
+    case .aiiAmacrineRelay: result = 0 - values[0]
+    case .astrocyteRecycling: result = 100 - values[0]
+    case .cecalPouchMixing: result = values[1] - values[1] / 2 * (1 - pow(0.5, values[0].rounded()))
+    case .clitoralRouteTrace: result = 4 - values[0].rounded()
+    case .clubCellDome: result = .pi * values[0]
+    case .dendriticCellOutline: result = 9 + values[0].rounded()
+    case .enteroendocrinePolarity: result = values[1] - values[0]
+    case .intestinalStemRenewal: result = 12 - min(12, values[0].rounded() * values[1].rounded())
+    case .langerhansDendriteReach: result = max(0, values[0].rounded() + values[1].rounded() - 10)
+    case .macrophageClearanceTally: result = values[0].rounded() - min(values[0].rounded(), values[1].rounded())
+    case .mastCellGranuleTally: result = 20 - values[0].rounded()
+    case .microgliaSurveillance: result = max(0, values[0].rounded() - values[1].rounded())
+    case .muscleSatelliteFusionTally: result = 8 - values[0].rounded()
+    case .nailPlateAdvance: result = 4 + values[0] * values[1]
+    case .pancreaticAcinarApicalBand: result = values[0] * (2 + (2 + 4 * values[0] / 6)) / 2
+    case .panethLuminalRelease: result = values[1].rounded() - min(values[0].rounded(), values[1].rounded())
+    case .penilePathTrace: result = 10 - 10 * values[0] / 100
+    case .plasmaCellSecretionTally: result = 3
+    case .satelliteGlialSheathGap: result = values[0] + values[1]
+    case .scrotalHeatTally: result = values[0] - values[0] * (values[1] / 100)
+    case .skullVaultLayers: result = 1 + values[0] + 1
+    case .splenicSlitSorting: result = 12 - Double([1, 2, 2, 3, 3, 3, 4, 4, 5, 6, 7, 8].filter { Double($0) <= values[0] }.count)
+    case .thyroidCCellReleaseGrid: result = values[1].rounded() * (5 - values[0].rounded())
+    case .thyroidFollicularFaces: result = 2 * .pi * (values[1] + 2) / values[0].rounded()
+    case .urethralOpeningArea: result = values[0] * (values[1] / 100)
+    case .vaginalRugaSpan: result = 10 - 2 * sqrt(25 - values[0] * values[0])
+    case .vestibularGlandVolume: result = abs(values[0] - values[1])
     }
     return result.isFinite ? result : nil
   }

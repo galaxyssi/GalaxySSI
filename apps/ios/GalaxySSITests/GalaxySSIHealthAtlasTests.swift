@@ -1114,7 +1114,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       GalaxySSIHealthAtlasPhysiology.Kind.forEntry(entry.id).map { (entry.id, $0) }
     }
     let oxygenEnabled = GalaxySSIHealthAtlasPhysiology.Kind.allCases.contains { $0.rawValue == "oxygen" }
-    XCTAssertEqual(mapped.count, oxygenEnabled ? 283 : 281)
+    XCTAssertEqual(mapped.count, oxygenEnabled ? 313 : 311)
     XCTAssertEqual(Set(mapped.map(\.1)), Set(GalaxySSIHealthAtlasPhysiology.Kind.allCases))
     for teaching in GalaxySSIHealthAtlasTeachingModel.allCases {
       XCTAssertEqual(Set(mapped.filter { $0.1.teaching == teaching }.map(\.0)), teaching.entryIDs)
@@ -3938,6 +3938,37 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertFalse(route.fits(width: 280, height: .nan)); XCTAssertFalse(route.fits(width: 280, height: 0))
     for id in GalaxySSIHealthAtlas.LymphPack.owners + GalaxySSIHealthAtlas.GutPack.owners {
       XCTAssertEqual(try XCTUnwrap(Lesson.forEntry(id)).artHeight, 280)
+    }
+  }
+
+  func testNumericalModelEntryKeepsLiveFunctionPhaseAndTeachingControls() throws {
+    let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
+    let catalogue = try GalaxySSIHealthAtlasFunctionCatalogue.bundled.get()
+    let ids = ["seminal-vesicles", "prostate", "bulbourethral-glands", "cell-retinal-aii-amacrine-cell",
+      "cell-astrocyte", "cecum", "clitoris", "cell-club-cell", "cell-dendritic-cell", "cell-enteroendocrine-cell",
+      "cell-intestinal-stem-cell", "cell-langerhans-cell", "cell-macrophage", "cell-mast-cell", "cell-microglia",
+      "cell-muscle-satellite-cell", "nails", "cell-pancreatic-acinar-cell", "cell-paneth-cell", "penis",
+      "cell-plasma-cell", "cell-satellite-glial-cell", "scrotum", "skull", "spleen", "cell-thyroid-parafollicular-cell",
+      "cell-thyroid-follicular-cell", "urethra", "vagina", "greater-vestibular-glands"]
+    for id in ids {
+      let entry = try XCTUnwrap(atlas.entry(id)), story = try XCTUnwrap(catalogue.choices(for: id).first)
+      let kind = try XCTUnwrap(GalaxySSIHealthAtlasPhysiology.Kind.forEntry(id))
+      let inputs = kind.inputs.map(\.range.upperBound)
+      state.binding(entry).wrappedValue.tab = .function
+      state.binding(entry).wrappedValue.physiologyInputs = inputs
+      state.binding(entry).wrappedValue.layers = false
+      state.recordFunctionPhase(entryID: id, storyID: story.id, phase: 0.375)
+      state.openNumericalModel(entry)
+      let selected = state.binding(entry).wrappedValue
+      XCTAssertEqual(selected.tab, .simulation); XCTAssertEqual(selected.physiologyInputs, inputs)
+      XCTAssertFalse(selected.layers)
+      XCTAssertEqual(selected.functionSelection?.phase(entryID: id, storyID: story.id, catalogue: catalogue), 0.375)
+      state.binding(entry).wrappedValue.tab = .function
+    }
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    for id in ids {
+      let entry = try XCTUnwrap(atlas.entry(id))
+      XCTAssertEqual(restored.binding(entry).wrappedValue, state.binding(entry).wrappedValue)
     }
   }
 
