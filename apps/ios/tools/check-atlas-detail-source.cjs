@@ -113,7 +113,7 @@ function checkGradient(pdf, item, index) {
   }
   assert.equal(paths, anatomy ? 1772 : expanded ? 1152 : 408); assert.equal(gradients, anatomy ? 21 : 0);
   const atlas = read("GalaxySSIHealthAtlas.swift"), artwork = read("GalaxySSIHealthAtlasArtwork.swift");
-  for (const token of ["let context = contextViews(for: id)", "DetailStructurePack.plate(for: id)", "return [detail] + context.map",
+  for (const token of ["let context = contextViews(for: id)", "DetailStructurePack.plate(for: id)", "views = [detail] + context.map",
     '"anatomy-locator-"', '"health_atlas_locator_view"', 'table: "AtlasDetail"', "DetailStructurePack.sources.contains(source)"])
     assert(atlas.includes(token), token);
   for (const token of [".fullScreenCover(isPresented: $fullscreen)", "fullscreenLayers.toggle()", "fullscreenZoom = 1; fullscreenReset += 1",

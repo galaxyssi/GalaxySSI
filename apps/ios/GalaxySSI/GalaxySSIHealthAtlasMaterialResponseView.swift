@@ -6,6 +6,9 @@ struct GalaxySSIHealthAtlasMaterialResponseView: View {
   @Environment(\.displayScale) private var displayScale
   @State private var measuredWidth: CGFloat = 340
   static func description(_ kind: GalaxySSIHealthAtlasPhysiology.Kind, language: String) -> String {
+    if kind == .cornealRefraction {
+      return GalaxySSIHealthAtlasText.get("health_atlas_model_corneal_refraction_diagram", language)
+    }
     if kind == .airwayCiliaryClearance {
       return GalaxySSIHealthAtlasText.get("health_atlas_airway_ciliary_clearance_diagram", language)
     }
@@ -22,6 +25,7 @@ struct GalaxySSIHealthAtlasMaterialResponseView: View {
     return GalaxySSIHealthAtlasText.get("health_atlas_" + prefix + "_diagram", language)
   }
   private var identifier: String {
+    if model.kind == .cornealRefraction { return "atlas-corneal-rays" }
     if model.kind == .airwayCiliaryClearance { return "atlas-airway-cilia-track" }
     if model.kind == .arterialContinuity { return "atlas-arterial-continuity" }
     if model.kind == .diaphragmDisplacement { return "atlas-diaphragm-displacement" }
@@ -40,6 +44,7 @@ struct GalaxySSIHealthAtlasMaterialResponseView: View {
         local.scaleBy(x: scale, y: scale)
         let art = GalaxySSIHealthAtlasMaterialResponseDrawing(context: local, language: language)
         switch model.kind {
+        case .cornealRefraction: art.refraction(model)
         case .airwayCiliaryClearance: art.ciliaTrack(model)
         case .arterialContinuity: art.arterialContinuity(model)
         case .diaphragmDisplacement: art.diaphragm(model)

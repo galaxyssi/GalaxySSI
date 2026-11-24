@@ -1,7 +1,7 @@
 // Declaration/source wiring checks only. Does not execute or type-check Swift or native UI.
 const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process"), crypto = require("node:crypto"), assert = require("node:assert/strict");
-const regional = process.argv.includes("--regional-4402"), organ = process.argv.includes("--organ-4401"), system = process.argv.includes("--system-4399"), revision = regional ? 4402 : organ ? 4401 : system ? 4399 : 4397;
-const root = path.resolve(__dirname, "../../.."), sha = regional ? "0d0112b055947c3747c7910b255aa299587dfd75" : organ ? "e228e379f307fcd6c1eb93b289126e9c473ddf7e" : system ? "de05fd51ba151789acd24dc4484d7f84d893aea3" : "40776e7a67ebfe48c76f98d392849edb9810ac82";
+const transport = process.argv.includes("--transport-4405"), regional = process.argv.includes("--regional-4402"), organ = process.argv.includes("--organ-4401"), system = process.argv.includes("--system-4399"), revision = transport ? 4405 : regional ? 4402 : organ ? 4401 : system ? 4399 : 4397;
+const root = path.resolve(__dirname, "../../.."), sha = transport ? "82d853f1d3d9c7e3455e732771f876a911fd0ce7" : regional ? "0d0112b055947c3747c7910b255aa299587dfd75" : organ ? "e228e379f307fcd6c1eb93b289126e9c473ddf7e" : system ? "de05fd51ba151789acd24dc4484d7f84d893aea3" : "40776e7a67ebfe48c76f98d392849edb9810ac82";
 const read = name => fs.readFileSync(path.join(root, "apps/ios", name), "utf8");
 const source = name => read("GalaxySSI/GalaxySSIHealthAtlas" + name + ".swift");
 const git = args => cp.execFileSync("git", args, {cwd: root, maxBuffer: 32_000_000});
@@ -13,8 +13,8 @@ for (const [i, [status, file]] of changed.entries()) assert.deepEqual(inventory.
   sha256: crypto.createHash("sha256").update(git(["show", sha + ":" + file])).digest("hex")});
 assert.equal(declarations.models.length, 9);
 const controls = declarations.models.flatMap(m => m.inputs), owners = declarations.models.flatMap(m => m.entryIDs);
-assert.equal(controls.length, regional || organ || system ? 18 : 24); assert.equal(new Set(controls.map(c => c.key)).size, controls.length);
-assert.equal(owners.length, regional ? 19 : organ ? 42 : system ? 35 : 34); assert.equal(new Set(owners).size, owners.length);
+assert.equal(controls.length, transport || regional || organ || system ? 18 : 24); assert.equal(new Set(controls.map(c => c.key)).size, controls.length);
+assert.equal(owners.length, transport ? 24 : regional ? 19 : organ ? 42 : system ? 35 : 34); assert.equal(new Set(owners).size, owners.length);
 const graph = JSON.parse(git(["show", sha + ":apps/android/app/src/main/assets/health/body-atlas.json"]));
 const graphIDs = new Set(graph.entries.map(e => e.id)); for (const id of owners) assert(graphIDs.has(id), id);
 const metadata = source("TeachingModel"), inputSource = source("TeachingControls"), values = source("TeachingValues"), physiology = source("Physiology");
@@ -55,7 +55,17 @@ for (const model of declarations.models) {
     assert(normalize(segment).includes(normalize(expected)), expected);
   }
 }
-const formulas = regional ? {
+const formulas = transport ? {
+  ureterDelivery: ["values[0].rounded() * values[1]", "(6 - values[0].rounded()) * values[1]"],
+  cornealRefraction: ["asin(sin(values[0] * .pi / 180) / values[1]) * 180 / .pi", "values[0] - asin(sin(values[0] * .pi / 180) / values[1]) * 180 / .pi"],
+  externalEarResonance: ["values[1] / (4 * (values[0] / 100))", "4 * values[0]"],
+  neuralRelayDelays: ["values[0] * values[1]", "(values[0] - 1) * values[1]"],
+  biliaryFlowTally: ["values[0] * values[1]", "values[0] * values[1] * 4"],
+  parathyroidSignalOccupancy: ["100 * (values[0] / (values[0] + values[1]))", "100 - 100 * (values[0] / (values[0] + values[1]))"],
+  follicleSurface: ["4 * .pi * pow(values[0] / 2 + values[1], 2)", "(4 * .pi / 3) * (pow(values[0] / 2 + values[1], 3) - pow(values[0] / 2, 3))"],
+  jointArticularArc: ["values[1] * (values[0] * .pi / 180)", "values[0] * .pi / 180"],
+  sweatDuctBalance: ["values[0] - values[0] * (values[1] / 100)", "values[0] * (values[1] / 100)"]
+} : regional ? {
   bladderExpansion: ["100 * (pow(1 + values[1] / values[0], 2.0 / 3.0) - 1)", "4 * .pi * pow(cbrt(3 * (values[0] + values[1]) / (4 * .pi)), 2)"],
   vestibularTilt: ["atan2(values[0], values[1]) * 180 / .pi", "hypot(values[0], values[1])"],
   airwayCiliaryClearance: ["values[0] * values[1]", "100 * (values[0] * values[1]) / 60"],
@@ -106,9 +116,15 @@ if (organ) for (const suffix of ["diagram", "section", "speed"]) resourceKeys.ad
 if (regional) for (const suffix of ["bladder_expansion_caption", "bladder_expansion_description", "bladder_expansion_before",
   "bladder_expansion_current", "bladder_expansion_play", "bladder_expansion_pause", "airway_ciliary_clearance_diagram",
   "airway_ciliary_clearance_track"]) resourceKeys.add("health_atlas_" + suffix);
-assert.equal(resourceKeys.size, regional ? 62 : organ ? 57 : 60);
+if (transport) {
+  for (const suffix of ["caption", "counter", "diagram", "play", "pause", "pelvis", "tube", "bladder"])
+    resourceKeys.add("health_atlas_ureter_delivery_" + suffix);
+  for (const suffix of ["diagram", "incident_ray", "refracted_ray", "surface"])
+    resourceKeys.add("health_atlas_model_corneal_refraction_" + suffix);
+}
+assert.equal(resourceKeys.size, transport ? 66 : regional ? 62 : organ ? 57 : 60);
 for (const locale of ["en", "zh-Hans"]) {
-  const table = new Map([...read("GalaxySSI/" + locale + ".lproj/" + (regional ? "AtlasRegionalTeaching" : organ ? "AtlasOrganTeaching" : system ? "AtlasSystemTeaching" : "AtlasTeaching") + ".strings").matchAll(/^"([^"]+)" = (".*");$/gm)].map(m => [m[1], JSON.parse(m[2])]));
+  const table = new Map([...read("GalaxySSI/" + locale + ".lproj/" + (transport ? "AtlasTransportTeaching" : regional ? "AtlasRegionalTeaching" : organ ? "AtlasOrganTeaching" : system ? "AtlasSystemTeaching" : "AtlasTeaching") + ".strings").matchAll(/^"([^"]+)" = (".*");$/gm)].map(m => [m[1], JSON.parse(m[2])]));
   assert.deepEqual(new Set(table.keys()), resourceKeys); for (const value of table.values()) assert(value);
 }
 for (const token of ["-100 * expm1(-values[0] / values[1])", "100 * exp(-values[0] / values[1])", "max(0, values[0] - values[1] - values[2]) * values[3]",
@@ -164,12 +180,39 @@ if (regional) {
   for (const token of ["model.companionValue / 100", "for i in 0..<9", "for branch in 0..<4", "addQuadCurve",
     "0xD3E8E3", "0xA4D4CB", "0xBC803F", 'label("airway_ciliary_clearance_track", 170, 145, 300)'])
     assert(source("MaterialResponseDrawing").includes(token));
-  for (const token of ["TimelineView(.animation", "date.timeIntervalSince(startedAt) / 1.8", "if offset >= 1 { offset = 0 }",
-    'onChange(of: model)', 'onChange(of: resetToken)', 'onChange(of: reduceMotion)', 'onChange(of: scenePhase)',
-    'onDisappear { pause() }', '"atlas-bladder-filling-play"', '"atlas-bladder-filling-diagram"',
+  const sharedPlayer = fs.existsSync(path.join(root, "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingPlayback.swift"));
+  const player = sharedPlayer ? source("TeachingPlayback") : source("BladderFillingView");
+  for (const token of ["TimelineView(.animation", "if offset >= 1 { offset = 0 }", 'onChange(of: resetToken)',
+    'onChange(of: reduceMotion)', 'onChange(of: scenePhase)', 'onDisappear { pause() }']) assert(player.includes(token));
+  assert(player.includes(sharedPlayer ? 'date.timeIntervalSince($0) / duration' : 'date.timeIntervalSince(startedAt) / 1.8'));
+  assert(player.includes(sharedPlayer ? 'onChange(of: modelKey)' : 'onChange(of: model)'));
+  if (sharedPlayer) assert(source("BladderFillingView").includes('duration: model.input(1) > 0 ? 1.8 : 0'));
+  for (const token of ['"atlas-bladder-filling-play"', '"atlas-bladder-filling-diagram"',
     "cbrt(volume / 450)", "61 * relativeRadius", "102 - 92 * relativeRadius", "0xFFE8B3", "0xD5A26C"])
     assert(source("BladderFillingView").includes(token));
   assert(source("PhysiologyPanel").includes('resetToken: resetToken).id(entryID)'));
   assert(source("").includes('table: "AtlasRegionalTeaching"'));
+}
+if (transport) {
+  for (const revision of [4397, 4399, 4401, 4402]) {
+    const archived = JSON.parse(read(`ANDROID_${revision}_MODEL_DECLARATIONS.json`)).models;
+    assert(owners.every(id => !archived.some(m => m.entryIDs.includes(id))));
+  }
+  for (const token of ['case .cornealRefraction: art.refraction(model)', '"atlas-corneal-rays"',
+    '"health_atlas_model_corneal_refraction_diagram"']) assert(source("MaterialResponseView").includes(token));
+  for (const token of ["sin(incident)", "cos(refracted)", "dash: [4, 4]", "baseX - 3.5 * dy", "radius: 25",
+    'label("model_corneal_refraction_surface", 253, 65, 128)']) assert(source("MaterialResponseDrawing").includes(token));
+  for (const token of ['duration: 1.1 * Double(model.inputs[0])', 'modelKey: model.inputs, resetToken: resetToken',
+    '"atlas-ureter-transport-play"', '"atlas-ureter-transport-diagram"', 'sqrt(packetVolume / 3)',
+    'frame.inTransit.map { $0 - 0.075 }', 'for index in 0...52', '82 - 27 * sin(.pi * at)',
+    '10 - 7 * exp(-fromWave * fromWave)', 'for i in 0..<6', 'position - Double(whole)'])
+    assert(source("UreterTransportView").includes(token));
+  const player = source("TeachingPlayback");
+  for (const token of ['TimelineView(.animation', 'duration.isFinite && duration > 0', 'onChange(of: modelKey)',
+    'onChange(of: resetToken)', 'onChange(of: scenePhase)', 'onChange(of: reduceMotion)', 'onDisappear { pause() }']) assert(player.includes(token));
+  assert(source("BladderFillingView").includes('GalaxySSIHealthAtlasTeachingPlayback('));
+  assert(source("PhysiologyPanel").includes('GalaxySSIHealthAtlasUreterTransportView(model: model, language: language, resetToken: resetToken).id(entryID)'));
+  for (const token of ['"gut-section-" + id', 'section.selectorLabel = section.viewLabel',
+    '!views.contains(where: { $0.asset == section.asset })', 'return views + [section]', 'table: "AtlasTransportTeaching"']) assert(source("").includes(token));
 }
 console.log(`Android #${revision} source: ${changed.length} hashes, nine declarations / ${controls.length} controls / ${owners.length} new owners / ${resourceKeys.size} bilingual keys; existing 67 route clauses unchanged. Not Swift execution or native acceptance.`);

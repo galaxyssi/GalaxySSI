@@ -122,6 +122,33 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .cutaneousSebum:
       return [control("cutaneous-sebum-mass", "mass", 20...80, 40, "\u{00b5}g", digits: 0),
         control("cutaneous-sebum-area", "area", 4...16, 8, "cm\u{00b2}", digits: 0)]
+    case .ureterDelivery:
+      return [control("ureter-delivery-pushes", "pushes", 0...6, 3, "", digits: 0),
+        control("ureter-delivery-volume", "per_push", 5...30, 20, "mL", scale: 10, digits: 1)]
+    case .cornealRefraction:
+      return [control("corneal-refraction-incident-angle", "incident_angle", 0...80, 40, "\u{00b0}", digits: 0),
+        control("corneal-refraction-medium-index", "medium_index", 130...145, 134, "", scale: 100)]
+    case .externalEarResonance:
+      return [control("external-ear-resonance-length", "length", 10...50, 20, "cm", digits: 0),
+        control("external-ear-resonance-speed", "speed", 330...360, 343, "m/s", digits: 0)]
+    case .neuralRelayDelays:
+      return [control("neural-relay-count", "count", 1...8, 3, "", digits: 0),
+        control("neural-relay-delay", "per_relay", 5...25, 15, "ms", scale: 10, digits: 1)]
+    case .biliaryFlowTally:
+      return [control("biliary-flow-tally-per-channel", "per_channel", 0...24, 10, "VU/min", scale: 4),
+        control("biliary-flow-tally-channel-count", "channel_count", 1...8, 4, "", digits: 0)]
+    case .parathyroidSignalOccupancy:
+      return [control("parathyroid-occupancy-signal", "signal", 0...120, 20, "", scale: 10, digits: 1),
+        control("parathyroid-occupancy-half-point", "half_point", 5...60, 20, "", scale: 10, digits: 1)]
+    case .follicleSurface:
+      return [control("follicle-surface-cavity-diameter", "cavity_diameter", 4...14, 8, "mm", digits: 0),
+        control("follicle-surface-shell-thickness", "shell_thickness", 2...10, 5, "mm", scale: 10, digits: 1)]
+    case .jointArticularArc:
+      return [control("joint-articular-arc-angle", "angle", 0...90, 45, "\u{00b0}", digits: 0),
+        control("joint-articular-arc-radius", "radius", 10...40, 25, "mm", digits: 0)]
+    case .sweatDuctBalance:
+      return [control("sweat-duct-coil-sodium", "coil_sodium", 120...160, 140, "nmol", digits: 0),
+        control("sweat-duct-net-reabsorbed", "net_reabsorbed", 0...90, 75, "%", digits: 0)]
     }
   }
 }

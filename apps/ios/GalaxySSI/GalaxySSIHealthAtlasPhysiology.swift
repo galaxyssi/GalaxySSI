@@ -76,6 +76,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case boneSection, retinalConvergence, muscleShortening, keratinGrowth
     case bladderExpansion, vestibularTilt, airwayCiliaryClearance, gastricLiquidEmptying, bileStorage
     case thoracicCrossSection, plateletFragmentCount, boneRemodelingBalance, cutaneousSebum
+    case ureterDelivery, cornealRefraction, externalEarResonance, neuralRelayDelays, biliaryFlowTally
+    case parathyroidSignalOccupancy, follicleSurface, jointArticularArc, sweatDuctBalance
     case sweatEvaporation
     case photonCapture
     case thyroidFeedback
@@ -95,7 +97,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
            .arterialContinuity, .glialCapacitance, .colonicWaterBalance, .lymphParticleTransport, .endocrineDilution,
            .boneSection, .retinalConvergence, .muscleShortening, .keratinGrowth,
            .bladderExpansion, .vestibularTilt, .airwayCiliaryClearance, .gastricLiquidEmptying, .bileStorage,
-           .thoracicCrossSection, .plateletFragmentCount, .boneRemodelingBalance, .cutaneousSebum:
+           .thoracicCrossSection, .plateletFragmentCount, .boneRemodelingBalance, .cutaneousSebum,
+           .ureterDelivery, .cornealRefraction, .externalEarResonance, .neuralRelayDelays, .biliaryFlowTally,
+           .parathyroidSignalOccupancy, .follicleSurface, .jointArticularArc, .sweatDuctBalance:
         return teaching!.inputs
       case .pelvicSupport:
         return [.init(key: "pelvis_model_load", range: 0...800, initial: 400, unit: "N"),
@@ -180,7 +184,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       #endif
       }
     }
-    var hasMaterialResponse: Bool { [.alveolarDiffusion, .cartilageCompression, .boneBending, .calfPump, .pelvicSupport, .cushionContactPressure, .diaphragmDisplacement, .arterialContinuity, .airwayCiliaryClearance].contains(self) }
+    var hasMaterialResponse: Bool { [.alveolarDiffusion, .cartilageCompression, .boneBending, .calfPump, .pelvicSupport, .cushionContactPressure, .diaphragmDisplacement, .arterialContinuity, .airwayCiliaryClearance, .cornealRefraction].contains(self) }
     var axis: Int {
       if let teaching { return teaching.axis }
       if self == .calfPump { return 1 }
@@ -261,7 +265,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
            .arterialContinuity, .glialCapacitance, .colonicWaterBalance, .lymphParticleTransport, .endocrineDilution,
            .boneSection, .retinalConvergence, .muscleShortening, .keratinGrowth,
            .bladderExpansion, .vestibularTilt, .airwayCiliaryClearance, .gastricLiquidEmptying, .bileStorage,
-           .thoracicCrossSection, .plateletFragmentCount, .boneRemodelingBalance, .cutaneousSebum:
+           .thoracicCrossSection, .plateletFragmentCount, .boneRemodelingBalance, .cutaneousSebum,
+           .ureterDelivery, .cornealRefraction, .externalEarResonance, .neuralRelayDelays, .biliaryFlowTally,
+           .parathyroidSignalOccupancy, .follicleSurface, .jointArticularArc, .sweatDuctBalance:
         return teaching!.sources[0]
       case .pelvicSupport: return GalaxySSIHealthAtlasLoadTransfer.stabilitySource
       case .cushionContactPressure: return GalaxySSIHealthAtlasLoadTransfer.pressureSource
@@ -368,7 +374,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
          .arterialContinuity, .glialCapacitance, .colonicWaterBalance, .lymphParticleTransport, .endocrineDilution,
          .boneSection, .retinalConvergence, .muscleShortening, .keratinGrowth,
          .bladderExpansion, .vestibularTilt, .airwayCiliaryClearance, .gastricLiquidEmptying, .bileStorage,
-         .thoracicCrossSection, .plateletFragmentCount, .boneRemodelingBalance, .cutaneousSebum:
+         .thoracicCrossSection, .plateletFragmentCount, .boneRemodelingBalance, .cutaneousSebum,
+         .ureterDelivery, .cornealRefraction, .externalEarResonance, .neuralRelayDelays, .biliaryFlowTally,
+         .parathyroidSignalOccupancy, .follicleSurface, .jointArticularArc, .sweatDuctBalance:
       return kind.teaching!.companion(inputs.indices.map(input))!
     case .pelvicSupport:
       return GalaxySSIHealthAtlasLoadTransfer.PelvicSupport(loadNewtons: input(0), positionPercent: input(1))!.leftNewtons
@@ -455,7 +463,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
          .arterialContinuity, .glialCapacitance, .colonicWaterBalance, .lymphParticleTransport, .endocrineDilution,
          .boneSection, .retinalConvergence, .muscleShortening, .keratinGrowth,
          .bladderExpansion, .vestibularTilt, .airwayCiliaryClearance, .gastricLiquidEmptying, .bileStorage,
-         .thoracicCrossSection, .plateletFragmentCount, .boneRemodelingBalance, .cutaneousSebum:
+         .thoracicCrossSection, .plateletFragmentCount, .boneRemodelingBalance, .cutaneousSebum,
+         .ureterDelivery, .cornealRefraction, .externalEarResonance, .neuralRelayDelays, .biliaryFlowTally,
+         .parathyroidSignalOccupancy, .follicleSurface, .jointArticularArc, .sweatDuctBalance:
       return kind.teaching!.evaluate(values)!
     case .pelvicSupport:
       return GalaxySSIHealthAtlasLoadTransfer.PelvicSupport(loadNewtons: values[0], positionPercent: values[1])!.rightNewtons

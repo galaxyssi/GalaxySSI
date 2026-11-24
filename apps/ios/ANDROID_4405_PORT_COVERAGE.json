@@ -1,0 +1,525 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4405,
+    "mergeCommit": "82d853f1d3d9c7e3455e732771f876a911fd0ce7"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "counts": {
+    "android-version-only": 1,
+    "android-test-reference-not-executed": 14,
+    "bounded-transport-teaching-model": 9,
+    "bladder-shared-playback-migration": 1,
+    "reactive-corneal-rays": 1,
+    "additive-model-routing": 1,
+    "curve-selector-already-native": 1,
+    "ureter-playback-and-control-placement": 1,
+    "gut-section-selector-preservation": 1,
+    "shared-native-play-pause-resume-replay": 1,
+    "ureter-contraction-versus-fluid-playback": 1,
+    "exact-bilingual-resource-delta": 18
+  },
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "abd7fb6808f661a2bc6581b64eb571af5a930df68bb2b95b9119ec9605afd3f9",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "Platform-specific APK metadata does not alter the iOS version. No IPA generated."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGutSectionsDeviceTest.kt",
+      "sourceSHA256": "776d4f4425ed720a72636115fff9f9e72f714ca645d7553d9ab9f567741f4c18",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasPhysiologyDeviceTest.kt",
+      "sourceSHA256": "4a83fe213f4d738b9aa288181e66dda79f23f7766f17fad96b73d7d88069d56e",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasTissueDeviceTest.kt",
+      "sourceSHA256": "1b056356e9611a90939efb819ef70c670476793aa377b3f232ea6cf4cfa6121a",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasBiliaryFlowTallyTeachingModel.kt",
+      "sourceSHA256": "f6a4c517112a895fef2cfde6ea8f26c49a34e780cb5ed1c58a3099d97baf42af",
+      "kind": "bounded-transport-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owners are reproduced. Native formulas preserve whole positive push rounding, Snell refraction, hollow-shell volume, synthetic occupancy and mass/volume accounting. Not native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasBladderFillingView.kt",
+      "sourceSHA256": "4e5e7ccca494e22495c69d802dddc2357ffcd426f595cfd31e4cf26068c2eb8f",
+      "kind": "bladder-shared-playback-migration",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasBladderFillingView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingPlayback.swift"
+      ],
+      "note": "Existing bladder drawing remains intact; linear 1.8-second duration, zero-added-volume disable, selected inputs and localized labels are retained through the shared player."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCornealRefractionTeachingModel.kt",
+      "sourceSHA256": "e5eaa008ff588e3f7f05b7109cb5cc4679193aaca1ecf3572ac195d97c5e2ed0",
+      "kind": "bounded-transport-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owners are reproduced. Native formulas preserve whole positive push rounding, Snell refraction, hollow-shell volume, synthetic occupancy and mass/volume accounting. Not native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasExternalEarResonanceTeachingModel.kt",
+      "sourceSHA256": "ff39086af04dfcf39cc738da4408e93956911bebd64c02cd17d9ad2db58e7a43",
+      "kind": "bounded-transport-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owners are reproduced. Native formulas preserve whole positive push rounding, Snell refraction, hollow-shell volume, synthetic occupancy and mass/volume accounting. Not native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFollicleSurfaceTeachingModel.kt",
+      "sourceSHA256": "7ddc256597848f4179a7b5d14739686dfb73d35935d2daec48d43dc48831505b",
+      "kind": "bounded-transport-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owners are reproduced. Native formulas preserve whole positive push rounding, Snell refraction, hollow-shell volume, synthetic occupancy and mass/volume accounting. Not native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasJointArticularArcTeachingModel.kt",
+      "sourceSHA256": "1b477d891f24188ba656ada220f22bc44ef9d79860e6acca2f12decd894ca131",
+      "kind": "bounded-transport-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owners are reproduced. Native formulas preserve whole positive push rounding, Snell refraction, hollow-shell volume, synthetic occupancy and mass/volume accounting. Not native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMaterialResponseView.kt",
+      "sourceSHA256": "95b48a318cb1aa59365423e2d31907379682e7a8de762ea9c683f2dff8dbc793",
+      "kind": "reactive-corneal-rays",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseDrawing.swift"
+      ],
+      "note": "Original surface/normal, incident/refracted vectors with directional arrowheads, angle arcs, original colors/coordinates, localized legends and accessible description. No native pixels or gesture acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasNeuralRelayDelaysTeachingModel.kt",
+      "sourceSHA256": "199f08150881ae296c01ef21bc696a5070991129a8d26a1e247b3534e364bfc6",
+      "kind": "bounded-transport-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owners are reproduced. Native formulas preserve whole positive push rounding, Snell refraction, hollow-shell volume, synthetic occupancy and mass/volume accounting. Not native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasParathyroidSignalOccupancyTeachingModel.kt",
+      "sourceSHA256": "f4ac0e4f2945fe9636622e5104a2738bf3c979fa79688e18bb93f0a261c8e6fd",
+      "kind": "bounded-transport-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owners are reproduced. Native formulas preserve whole positive push rounding, Snell refraction, hollow-shell volume, synthetic occupancy and mass/volume accounting. Not native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiology.kt",
+      "sourceSHA256": "73177929faa36c2dfb87eacf131d2be025056d8f5c9e127d0f309eb72d9ec1b4",
+      "kind": "additive-model-routing",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiology.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift"
+      ],
+      "note": "24 new owners disjoint from previous teaching bindings and existing literal routes. Generic curve/source/context/reset/restoration remains entry-local. No personal health record access."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyChart.kt",
+      "sourceSHA256": "51c32329c54ec881eff1188341c00fb069bf3cf56694ac07f2442290e9a3e8cd",
+      "kind": "curve-selector-already-native",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiologyPanel.swift"
+      ],
+      "note": "Android removes the stale chart selector and centralizes the curve tag. Native chart already uses atlas-physiology-curve; no duplicate chart implementation is introduced."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyPanel.kt",
+      "sourceSHA256": "c413ed530cc628741dab8783b3f51c0a25e8294aebfcfc579745a15ac75ec9a4",
+      "kind": "ureter-playback-and-control-placement",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiologyPanel.swift"
+      ],
+      "note": "Ureter playback precedes controls; ureter and corneal charts follow sliders. Per-entry view identity and reset token isolate playback and reset even unchanged input values."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPlates.kt",
+      "sourceSHA256": "642b0d6a483b798ad348b01b997ced8e55c4e90e71fe79afdb2854554893346f",
+      "kind": "gut-section-selector-preservation",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift"
+      ],
+      "note": "Append original gut section beside context/detail plates unless its asset already exists; stable gut-section owner key and original selector label, while preserving detail-first ordering and all old context views."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSweatDuctBalanceTeachingModel.kt",
+      "sourceSHA256": "5b091d5a1cbe3c0db11d52720db12df3b0372b9901cb3b4ed547144e15e6e6c2",
+      "kind": "bounded-transport-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owners are reproduced. Native formulas preserve whole positive push rounding, Snell refraction, hollow-shell volume, synthetic occupancy and mass/volume accounting. Not native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasTeachingPlayback.kt",
+      "sourceSHA256": "4c27a29855de6dac9023d2b2faa9b56a236d655fc91efbc6101c64b76a2ef137",
+      "kind": "shared-native-play-pause-resume-replay",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingPlayback.swift"
+      ],
+      "note": "Shared finite-duration phase state, final-target reset, pause/resume/replay, zero-duration/Reduce Motion disable, lifecycle pause and play/pause accessibility. State is independent of model inputs. XCTest state contracts added but not run."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUreterDeliveryTeachingModel.kt",
+      "sourceSHA256": "a11acc682c10dfa89638fb5fe147d830d1e16709ab5dddbbd41ad213ec3ae293",
+      "kind": "bounded-transport-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original controls/ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owners are reproduced. Native formulas preserve whole positive push rounding, Snell refraction, hollow-shell volume, synthetic occupancy and mass/volume accounting. Not native numerical certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUreterTransportView.kt",
+      "sourceSHA256": "9669ac4376b5857793dfdbc8632914d0d298caaf3d7a4a9cf0e1f15c518b702b",
+      "kind": "ureter-contraction-versus-fluid-playback",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasUreterTransportView.swift"
+      ],
+      "note": "1.1 seconds per selected push; floor-based arrivals plus partial in-transit packet, wave offset behind packet, 106-point tube outline, volume-scaled packet and six arrival markers. Original endpoints, geometry, colors and localized counter/description. No native runtime acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_biliary_flow_tally_teaching_model.xml",
+      "sourceSHA256": "1cf3acf96350e84f09ebf739e7c72fa0f9a1377aa9184bb6782cb0fb97b99afc",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_corneal_refraction_teaching_model.xml",
+      "sourceSHA256": "a0f3ab459bbb7b40db8a537ca01d984157bb8747f8fa988b6a42292ca69531d3",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_external_ear_resonance.xml",
+      "sourceSHA256": "d4b7719b5d93a374d65acae359a5f38c161c5da2ec191440b499ff12cb111804",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_follicle_surface.xml",
+      "sourceSHA256": "d4b4b31cd6c507910290383a57493b5d6e596475627ede7986d2a207fd1fe3c1",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_joint_articular_arc.xml",
+      "sourceSHA256": "8c27d728b8b955608359f57e934c34ac1be8cd064e6046b6dd04c07068eb935e",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_neural_relay_delays_teaching_model.xml",
+      "sourceSHA256": "e76ac7f5443e80ba54b6eb0ee0751887e25870ce7be1f8c14f75eee3739cf661",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_parathyroid_signal_occupancy_teaching_model.xml",
+      "sourceSHA256": "83133b5aa51c1d3b1f0156e3d1ea64e88dab6c6664fa9886abd3505d87669448",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_sweat_duct_balance_teaching_model.xml",
+      "sourceSHA256": "c3fe53cec875e91a77a95b7032c984215f2350608b22d6bede57514613834aca",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_ureter_delivery.xml",
+      "sourceSHA256": "13cdcd48d5f1af5e34bd1fdb7c08d4fe2e27d7981b23919ccea997c54ece13bf",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_biliary_flow_tally_teaching_model.xml",
+      "sourceSHA256": "cb0a6afd960e0b5a837cc95c4707d538b5e344b77aadb4855634d8438735c949",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_corneal_refraction_teaching_model.xml",
+      "sourceSHA256": "1604e3b1398285e0de7670a9c417d3f13668b2ebe1ebb95abb8bb3b5254fd9ab",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_external_ear_resonance.xml",
+      "sourceSHA256": "723f83c320125d89a147dbf339d1d5f7f4db19bc823711cc738bac23aa60e11d",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_follicle_surface.xml",
+      "sourceSHA256": "913985cebfda7abb1fc491a6c355dfd030bba3a17582b218857196fe7e857a48",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_joint_articular_arc.xml",
+      "sourceSHA256": "d6fb39f56e2c9211fd0ffc7afc57f4cf95074320b93bef74d8190faff035a61b",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_neural_relay_delays_teaching_model.xml",
+      "sourceSHA256": "355077e69a5c167478320947be29997f5be30e4d3a3797b690376791316a6810",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_parathyroid_signal_occupancy_teaching_model.xml",
+      "sourceSHA256": "5ce9a2865740ab4075837dfc2a0c2abc517601016935c3f7961d0334b86d4170",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_sweat_duct_balance_teaching_model.xml",
+      "sourceSHA256": "bdc7f16fea4409d4e4c3c51879dc9ae67f416f5f68950d0ffbb518fe131e0c0f",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_ureter_delivery.xml",
+      "sourceSHA256": "317f3c83cf60a0a4a34187a15993f1b28b709edc1185672be2e2caecd5f74a71",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasTransportTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasTransportTeaching.strings"
+      ],
+      "note": "66 structurally extracted English/Chinese pairs, registered in Xcode with both new native view files. Original assumptions/disclaimers and symbols retained."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasBiliaryFlowTallyTeachingModelTest.kt",
+      "sourceSHA256": "62ee3ec6eca80d0feeb2d63096a42f77653b03ecc9a2bf9f673dda40bff2958d",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasCornealRefractionTeachingModelTest.kt",
+      "sourceSHA256": "5dc37092128d020a61e7cf97859ba0e3b859c31dd0c6dd1eed824cc52d0d6507",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasExternalEarResonanceTeachingModelTest.kt",
+      "sourceSHA256": "66fa6bcc94c2576d3c71d3b72267a277c94addef024c0f712bad3d97cb4765ce",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasFollicleSurfaceTeachingModelTest.kt",
+      "sourceSHA256": "d5eee2c5626f7966b52384aaffe59e2b306d562f69a0fa3968d254404c094827",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasJointArticularArcTeachingModelTest.kt",
+      "sourceSHA256": "b719da826022809b690af3e0eb15b6fcf0e2130f160ebc6aa2473db9c0c86753",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasNerveTransitTest.kt",
+      "sourceSHA256": "76f019c488f57e7ade8e31344f45d3bc5683f41245e83de0c9cccf4ea737deb0",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasNeuralRelayDelaysTeachingModelTest.kt",
+      "sourceSHA256": "8775b6d77fdcb3f9b93455c4021b24c5ef1be89d4e133a1b42da055797eb8484",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasParathyroidSignalOccupancyTeachingModelTest.kt",
+      "sourceSHA256": "ea953c5703b7e0205c66d219ac067b3992bbcb938d4e78cb301b67d9fe49157a",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPhysiologyTest.kt",
+      "sourceSHA256": "1b1afd6e9f6a31c3b0ea6c553807405f6f11bdbeb65ac0e0fb66ba4d3679c349",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasSweatDuctBalanceTeachingModelTest.kt",
+      "sourceSHA256": "ec1209e2d6e07d5f62a1e340688ac3d20b08e99ca06abb58f58e713b8258fa44",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasUreterDeliveryTeachingModelTest.kt",
+      "sourceSHA256": "33e5035ee12b6a71efde2c444960792575dfd632ca3d5d9b1cfbc2847ae37b54",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; added XCTest source for defaults, all new slider pairs, rounding/conservation, source owner changes, deterministic playback phases/arrivals, 24-owner independent restoration and all 14 gut section selection/restoration paths. No Android, XCTest, emulator/device, zoom/gesture or pixel acceptance was run."
+    }
+  ]
+}

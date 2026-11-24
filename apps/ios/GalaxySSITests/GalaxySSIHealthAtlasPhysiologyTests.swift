@@ -181,7 +181,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
           if let previous {
             if [Model.Kind.renal, .eye, .cushionContactPressure, .airwaySplit, .visualAngle, .hormoneSignal,
                 .arterialContinuity, .glialCapacitance, .colonicWaterBalance, .endocrineDilution,
-                .gastricLiquidEmptying, .boneRemodelingBalance, .cutaneousSebum].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
+                .gastricLiquidEmptying, .boneRemodelingBalance, .cutaneousSebum,
+                .externalEarResonance, .sweatDuctBalance].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
             else { XCTAssertGreaterThanOrEqual(point.y, previous - 1e-9) }
           }
           previous = point.y
@@ -223,7 +224,7 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "small-intestine", "jejunum"]
     XCTAssertEqual(ids.count, 50)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
-    for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis"] {
+    for id in ["renal-cortex"] {
       XCTAssertNil(Model.Kind.forEntry(id))
     }
     XCTAssertEqual(Model.Kind.forEntry("cell-type-i-pneumocyte"), .alveolarDiffusion)
@@ -248,11 +249,15 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       (.vestibularTilt, 16.699244234, 1.044030651), (.airwayCiliaryClearance, 18, 30),
       (.gastricLiquidEmptying, 40.96, 59.04), (.bileStorage, 1, 6),
       (.thoracicCrossSection, 135 * .pi, 0.6), (.plateletFragmentCount, 12, 3),
-      (.boneRemodelingBalance, 0, 100), (.cutaneousSebum, 5, 40)
+      (.boneRemodelingBalance, 0, 100), (.cutaneousSebum, 5, 40),
+      (.ureterDelivery, 6, 6), (.cornealRefraction, 28.665304049, 11.334695951),
+      (.externalEarResonance, 428.75, 80), (.neuralRelayDelays, 4.5, 3), (.biliaryFlowTally, 10, 40),
+      (.parathyroidSignalOccupancy, 50, 50), (.follicleSurface, 81 * .pi, 217 * .pi / 6),
+      (.jointArticularArc, 19.634954085, 0.785398163), (.sweatDuctBalance, 35, 105)
     ]
-    XCTAssertEqual(Teaching.allCases.count, 36)
-    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 78)
-    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 130)
+    XCTAssertEqual(Teaching.allCases.count, 45)
+    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 96)
+    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 154)
     for (teaching, expected, companion) in fixtures {
       let kind = try XCTUnwrap(Model.Kind(rawValue: teaching.rawValue)), model = Model(kind: kind)
       XCTAssertEqual(model.result, expected, accuracy: 1e-6)
@@ -486,6 +491,97 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     XCTAssertTrue(Model.Kind.airwayCiliaryClearance.hasMaterialResponse)
   }
 
+  func testTransportTeachingPairsKeepOpticsGeometryAndVolumeAccounting() throws {
+    typealias Teaching = GalaxySSIHealthAtlasTeachingModel
+    let kinds: [Teaching] = [.ureterDelivery, .cornealRefraction, .externalEarResonance, .neuralRelayDelays,
+      .biliaryFlowTally, .parathyroidSignalOccupancy, .follicleSurface, .jointArticularArc, .sweatDuctBalance]
+    for teaching in kinds {
+      let controls = teaching.inputs
+      for first in controls[0].range {
+        for second in controls[1].range {
+          let values = [Double(first) / controls[0].scale, Double(second) / controls[1].scale]
+          let output = try XCTUnwrap(teaching.evaluate(values)), other = try XCTUnwrap(teaching.companion(values))
+          XCTAssertTrue(teaching.bounds.contains(output))
+          switch teaching {
+          case .ureterDelivery: XCTAssertEqual(output + other, 6 * values[1], accuracy: 1e-9)
+          case .cornealRefraction:
+            XCTAssertEqual(sin(values[0] * .pi / 180), values[1] * sin(output * .pi / 180), accuracy: 1e-9)
+            XCTAssertEqual(output + other, values[0], accuracy: 1e-9)
+          case .externalEarResonance: XCTAssertEqual(output * (other / 100), values[1], accuracy: 1e-9)
+          case .neuralRelayDelays: XCTAssertEqual(output - other, values[1], accuracy: 1e-9)
+          case .biliaryFlowTally: XCTAssertEqual(other, output * 4, accuracy: 1e-9)
+          case .parathyroidSignalOccupancy: XCTAssertEqual(output + other, 100, accuracy: 1e-9)
+          case .follicleSurface:
+            let outer = values[0] / 2 + values[1]
+            XCTAssertEqual(output, 4 * .pi * outer * outer, accuracy: 1e-9)
+            XCTAssertGreaterThan(other, 0)
+          case .jointArticularArc: XCTAssertEqual(output, values[1] * other, accuracy: 1e-9)
+          case .sweatDuctBalance: XCTAssertEqual(output + other, values[0], accuracy: 1e-9)
+          default: XCTFail("Unexpected transport teaching model")
+          }
+        }
+      }
+    }
+    XCTAssertEqual(try XCTUnwrap(Teaching.biliaryFlowTally.evaluate([2.625, 4])), 10.5)
+    XCTAssertEqual(try XCTUnwrap(Teaching.follicleSurface.evaluate([14, 1])), 256 * .pi, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Teaching.follicleSurface.companion([14, 1])), 676 * .pi / 3, accuracy: 1e-9)
+    for (count, expected) in [(2.49, 4.0), (2.5, 6.0), (2.51, 6.0)] {
+      XCTAssertEqual(try XCTUnwrap(Teaching.ureterDelivery.evaluate([count, 2])), expected)
+    }
+    XCTAssertEqual(Model.Kind.forEntry("renal-pelvis"), .ureterDelivery)
+    XCTAssertEqual(Model.Kind.forEntry("cell-hepatocyte"), .biliaryFlowTally)
+    XCTAssertEqual(Model.Kind.forEntry("liver"), .biliaryFlowTally)
+    XCTAssertEqual(Model.Kind.forEntry("kidneys"), .renal)
+    XCTAssertEqual(Model.Kind.forEntry("bladder"), .bladderExpansion)
+    XCTAssertTrue(Model.Kind.cornealRefraction.hasMaterialResponse)
+  }
+
+  func testSharedTeachingPlaybackPausesResumesReplaysAndResetsWithoutChangingInputs() throws {
+    typealias Playback = GalaxySSIHealthAtlasTeachingPlaybackState
+    let start = Date(timeIntervalSince1970: 0), model = Model(kind: .bladderExpansion)
+    let selected = model.inputs
+    var playback = Playback()
+    XCTAssertEqual(playback.phase(at: start, duration: 1.8), 1)
+    playback.start(at: start, duration: 1.8, allowed: true)
+    XCTAssertTrue(playback.isPlaying)
+    playback.pause(at: start.addingTimeInterval(0.45), duration: 1.8)
+    XCTAssertFalse(playback.isPlaying); XCTAssertEqual(playback.offset, 0.25, accuracy: 1e-9)
+    XCTAssertEqual(playback.phase(at: start.addingTimeInterval(2), duration: 1.8), 0.25, accuracy: 1e-9)
+    playback.start(at: start.addingTimeInterval(2), duration: 1.8, allowed: true)
+    XCTAssertEqual(playback.phase(at: start.addingTimeInterval(2.45), duration: 1.8), 0.5, accuracy: 1e-9)
+    playback.pause(at: start.addingTimeInterval(4), duration: 1.8)
+    XCTAssertEqual(playback.offset, 1)
+    playback.start(at: start.addingTimeInterval(5), duration: 1.8, allowed: true)
+    XCTAssertEqual(playback.phase(at: start.addingTimeInterval(5), duration: 1.8), 0)
+    playback.showTarget(); XCTAssertEqual(playback.offset, 1); XCTAssertFalse(playback.isPlaying)
+    for duration in [0, -1, Double.nan, .infinity] {
+      playback.start(at: start, duration: duration, allowed: true); XCTAssertFalse(playback.isPlaying)
+    }
+    playback.start(at: start, duration: 1.8, allowed: false); XCTAssertFalse(playback.isPlaying)
+    XCTAssertEqual(model.inputs, selected)
+  }
+
+  func testUreterFramesCommitOnlyCompletedTrips() throws {
+    typealias Frame = GalaxySSIHealthAtlasUreterFrame
+    XCTAssertEqual(try XCTUnwrap(Frame(selected: 0, phase: 0.5)).arrived, 0)
+    XCTAssertNil(try XCTUnwrap(Frame(selected: 0, phase: 0.5)).inTransit)
+    XCTAssertEqual(try XCTUnwrap(Frame(selected: 4, phase: 0)).arrived, 0)
+    XCTAssertEqual(try XCTUnwrap(Frame(selected: 4, phase: 0.125)).inTransit, 0.5)
+    XCTAssertEqual(try XCTUnwrap(Frame(selected: 4, phase: 0.25)).arrived, 1)
+    XCTAssertEqual(try XCTUnwrap(Frame(selected: 4, phase: 0.25)).inTransit, 0)
+    XCTAssertEqual(try XCTUnwrap(Frame(selected: 4, phase: 1)).arrived, 4)
+    XCTAssertNil(try XCTUnwrap(Frame(selected: 4, phase: 1)).inTransit)
+    for selected in 0...6 {
+      for step in 0...120 {
+        let phase = Double(step) / 120, frame = try XCTUnwrap(Frame(selected: selected, phase: phase))
+        XCTAssertEqual(frame.arrived, Int(floor(Double(selected) * phase)))
+        if let transit = frame.inTransit { XCTAssertTrue((0..<1).contains(transit)) }
+      }
+    }
+    for phase in [-0.1, 1.1, Double.nan, .infinity] { XCTAssertNil(Frame(selected: 4, phase: phase)) }
+    XCTAssertNil(Frame(selected: -1, phase: 0)); XCTAssertNil(Frame(selected: 7, phase: 1))
+  }
+
   func testElbowFixturesBalanceForcesAndMomentsWithStrictUnitConversion() throws {
     let forces = try XCTUnwrap(GalaxySSIHealthAtlasElbow.forces(loadKg: 4, loadArmCm: 38, muscleArmMm: 40))
     XCTAssertEqual(forces.muscle, 470.4, accuracy: 1e-9)
@@ -581,7 +677,7 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       XCTAssertNil(Model.restore(id, inputs: [35, 0, 160]))
       XCTAssertNil(Model.restore(id, inputs: [35, 20]))
     }
-    XCTAssertNil(Model.Kind.forEntry("external-ear"))
+    XCTAssertEqual(Model.Kind.forEntry("external-ear"), .externalEarResonance)
     XCTAssertEqual(Model.Kind.forEntry("vestibular-apparatus"), .vestibularTilt)
     for id in ["inner-ear", "cochlea", "cell-inner-ear-hair-cell"] {
       XCTAssertEqual(Model.Kind.forEntry(id), .cochlearFrequency)
@@ -727,7 +823,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       XCTAssertNil(Model.restore(id, inputs: [75, 121]))
     }
     XCTAssertEqual(Model.Kind.forEntry("spinal-cord"), .potassium)
-    XCTAssertNil(Model.Kind.forEntry("ganglia")); XCTAssertNil(Model.Kind.forEntry("ovaries"))
+    XCTAssertEqual(Model.Kind.forEntry("ganglia"), .neuralRelayDelays)
+    XCTAssertEqual(Model.Kind.forEntry("ovaries"), .follicleSurface)
     for distance in [10, 60, 150] {
       for speed in [1, 50, 120] {
         let value = try XCTUnwrap(Model(kind: .nerveTransit, inputs: [distance, speed]))
