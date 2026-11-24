@@ -4,14 +4,15 @@ const root = path.resolve(__dirname, "../../.."), sha = "6581110ec5c048edebf6382
 const pituitary = process.argv.includes("--pituitary");
 const configurations = pituitary ? [["AnteriorPituitaryArt", "AnteriorPituitary", 2, [], true],
   ["SomatotrophStoryView", "Somatotroph", 12, ["capillary", "trunk", "upperBranch", "lowerBranch", "input", "hepaticOut", "muscleGh", "muscleIgf"], true],
-  ["LactotrophStoryView", "Lactotroph", 7, ["releaseBlood", "mammaryBlood", "nearAlveolus"], true]] :
+  ["LactotrophStoryView", "Lactotroph", 7, ["releaseBlood", "mammaryBlood", "nearAlveolus"], true],
+  ["CorticotrophStoryView", "Corticotroph", 11, ["portal", "systemic", "cortexArc", "cortisolBlood"], true]] :
   [["ThyroidCalcitoninStoryView", "Calcitonin", 6, ["capillary"]], ["AdrenalCortexStoryView", "AdrenalCortex", 2, ["section", "sinusoid"]]];
 for (const [sourceName, nativeName, count, routeNames, helperCubics] of configurations) {
   const source = cp.execFileSync("git", ["show", sha + ":apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlas" + sourceName + ".kt"], {cwd: root, encoding: "utf8"});
   const declarations = [...source.matchAll(/private val (\w+) = (?:curve|Path\(\)\.apply) \{([^}]+)\}/g)];
-  if (helperCubics) for (const [, name, args] of source.matchAll(/private val (\w+) = cubic\(([^)]+)\)/g)) {
+  if (helperCubics) for (const [, name, args, tail] of source.matchAll(/private val (\w+) = cubic\(([^)]+)\)(\.apply \{[^}]+\})?/g)) {
     const tokens = args.split(",").map(s => s.trim()); assert.equal(tokens.length, 8);
-    declarations.push(["", name, "moveTo(" + tokens.slice(0, 2).join(",") + ")\ncubicTo(" + tokens.slice(2).join(",") + ")"]);
+    declarations.push(["", name, "moveTo(" + tokens.slice(0, 2).join(",") + ")\ncubicTo(" + tokens.slice(2).join(",") + ")" + (tail ? tail.slice(".apply {".length, -1) : "")]);
   }
   assert.equal(declarations.length, count);
   let text = "import SwiftUI\n\n// Generated from pinned Android #4388 constant curve declarations.\nenum GalaxySSIHealthAtlas" + nativeName + "Geometry {\n", commands = 0;

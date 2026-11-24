@@ -30,4 +30,11 @@ extension GalaxySSIHealthAtlasIllustratedDrawing {
     copy(local).stroke(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r)), tint, width)
   }
   static func pituitarySmooth(_ t: Double) -> Double { let p = min(1, max(0, t)); return p * p * (3 - 2 * p) }
+  func pituitaryTrace(_ route: GalaxySSIHealthAtlasSectionLesson.Route, _ start: Double, _ end: Double, _ tint: UInt32, _ width: Double) {
+    guard start.isFinite, end.isFinite else { return }
+    let lower = min(1, max(0, start)), upper = min(1, max(0, end))
+    guard upper > lower else { return }
+    let path = GalaxySSIHealthAtlasSectionLessonView.path(route, width: 360, height: 360)
+    stroke(path.trimmedPath(from: lower, to: upper), tint, width)
+  }
 }

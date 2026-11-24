@@ -541,6 +541,9 @@
     C43850000000000000000005 /* GalaxySSIHealthAtlasAnkleGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000006 /* GalaxySSIHealthAtlasAnkleGeometry.swift */; };
     C43850000000000000000007 /* GalaxySSIHealthAtlasAnkleDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000008 /* GalaxySSIHealthAtlasAnkleDrawing.swift */; };
     C43850000000000000000009 /* GalaxySSIHealthAtlasAnkleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000000A /* GalaxySSIHealthAtlasAnkleView.swift */; };
+    C4388000000000000000003F /* GalaxySSIHealthAtlasCorticotrophGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000040 /* GalaxySSIHealthAtlasCorticotrophGeometry.swift */; };
+    C43880000000000000000041 /* GalaxySSIHealthAtlasCorticotrophView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000042 /* GalaxySSIHealthAtlasCorticotrophView.swift */; };
+    C43880000000000000000043 /* GalaxySSIHealthAtlasCorticotrophDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000044 /* GalaxySSIHealthAtlasCorticotrophDrawing.swift */; };
     C43880000000000000000039 /* GalaxySSIHealthAtlasLactotrophGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4388000000000000000003A /* GalaxySSIHealthAtlasLactotrophGeometry.swift */; };
     C4388000000000000000003B /* GalaxySSIHealthAtlasLactotrophView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4388000000000000000003C /* GalaxySSIHealthAtlasLactotrophView.swift */; };
     C4388000000000000000003D /* GalaxySSIHealthAtlasLactotrophDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4388000000000000000003E /* GalaxySSIHealthAtlasLactotrophDrawing.swift */; };
@@ -2596,6 +2599,9 @@
     C43850000000000000000006 /* GalaxySSIHealthAtlasAnkleGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAnkleGeometry.swift; sourceTree = "<group>"; };
     C43850000000000000000008 /* GalaxySSIHealthAtlasAnkleDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAnkleDrawing.swift; sourceTree = "<group>"; };
     C4385000000000000000000A /* GalaxySSIHealthAtlasAnkleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAnkleView.swift; sourceTree = "<group>"; };
+    C43880000000000000000040 /* GalaxySSIHealthAtlasCorticotrophGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCorticotrophGeometry.swift; sourceTree = "<group>"; };
+    C43880000000000000000042 /* GalaxySSIHealthAtlasCorticotrophView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCorticotrophView.swift; sourceTree = "<group>"; };
+    C43880000000000000000044 /* GalaxySSIHealthAtlasCorticotrophDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCorticotrophDrawing.swift; sourceTree = "<group>"; };
     C4388000000000000000003A /* GalaxySSIHealthAtlasLactotrophGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLactotrophGeometry.swift; sourceTree = "<group>"; };
     C4388000000000000000003C /* GalaxySSIHealthAtlasLactotrophView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLactotrophView.swift; sourceTree = "<group>"; };
     C4388000000000000000003E /* GalaxySSIHealthAtlasLactotrophDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLactotrophDrawing.swift; sourceTree = "<group>"; };
@@ -4672,6 +4678,9 @@
         C43850000000000000000006 /* GalaxySSIHealthAtlasAnkleGeometry.swift */,
         C43850000000000000000008 /* GalaxySSIHealthAtlasAnkleDrawing.swift */,
         C4385000000000000000000A /* GalaxySSIHealthAtlasAnkleView.swift */,
+        C43880000000000000000040 /* GalaxySSIHealthAtlasCorticotrophGeometry.swift */,
+        C43880000000000000000042 /* GalaxySSIHealthAtlasCorticotrophView.swift */,
+        C43880000000000000000044 /* GalaxySSIHealthAtlasCorticotrophDrawing.swift */,
         C4388000000000000000003A /* GalaxySSIHealthAtlasLactotrophGeometry.swift */,
         C4388000000000000000003C /* GalaxySSIHealthAtlasLactotrophView.swift */,
         C4388000000000000000003E /* GalaxySSIHealthAtlasLactotrophDrawing.swift */,
@@ -6878,6 +6887,9 @@
         C43850000000000000000005 /* GalaxySSIHealthAtlasAnkleGeometry.swift in Sources */,
         C43850000000000000000007 /* GalaxySSIHealthAtlasAnkleDrawing.swift in Sources */,
         C43850000000000000000009 /* GalaxySSIHealthAtlasAnkleView.swift in Sources */,
+        C4388000000000000000003F /* GalaxySSIHealthAtlasCorticotrophGeometry.swift in Sources */,
+        C43880000000000000000041 /* GalaxySSIHealthAtlasCorticotrophView.swift in Sources */,
+        C43880000000000000000043 /* GalaxySSIHealthAtlasCorticotrophDrawing.swift in Sources */,
         C43880000000000000000039 /* GalaxySSIHealthAtlasLactotrophGeometry.swift in Sources */,
         C4388000000000000000003B /* GalaxySSIHealthAtlasLactotrophView.swift in Sources */,
         C4388000000000000000003D /* GalaxySSIHealthAtlasLactotrophDrawing.swift in Sources */,
