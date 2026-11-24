@@ -395,6 +395,15 @@
     C4384000000000000000033F /* GalaxySSIHealthAtlasMicrogliaDigestDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000340 /* GalaxySSIHealthAtlasMicrogliaDigestDrawing.swift */; };
     C43840000000000000000341 /* GalaxySSIHealthAtlasMicrogliaLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000342 /* GalaxySSIHealthAtlasMicrogliaLabelsDrawing.swift */; };
     C43840000000000000000343 /* GalaxySSIHealthAtlasMicrogliaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000344 /* GalaxySSIHealthAtlasMicrogliaView.swift */; };
+    C43840000000000000000345 /* GalaxySSIHealthAtlasEpendymalGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000346 /* GalaxySSIHealthAtlasEpendymalGeometry.swift */; };
+    C43840000000000000000347 /* GalaxySSIHealthAtlasEpendymalRoutes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000348 /* GalaxySSIHealthAtlasEpendymalRoutes.swift */; };
+    C43840000000000000000349 /* GalaxySSIHealthAtlasEpendymalMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000034A /* GalaxySSIHealthAtlasEpendymalMotion.swift */; };
+    C4384000000000000000034B /* GalaxySSIHealthAtlasEpendymalTissueDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000034C /* GalaxySSIHealthAtlasEpendymalTissueDrawing.swift */; };
+    C4384000000000000000034D /* GalaxySSIHealthAtlasEpendymalWallDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000034E /* GalaxySSIHealthAtlasEpendymalWallDrawing.swift */; };
+    C4384000000000000000034F /* GalaxySSIHealthAtlasEpendymalCiliaDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000350 /* GalaxySSIHealthAtlasEpendymalCiliaDrawing.swift */; };
+    C43840000000000000000351 /* GalaxySSIHealthAtlasEpendymalFlowDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000352 /* GalaxySSIHealthAtlasEpendymalFlowDrawing.swift */; };
+    C43840000000000000000353 /* GalaxySSIHealthAtlasEpendymalLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000354 /* GalaxySSIHealthAtlasEpendymalLabelsDrawing.swift */; };
+    C43840000000000000000355 /* GalaxySSIHealthAtlasEpendymalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000356 /* GalaxySSIHealthAtlasEpendymalView.swift */; };
     C438400000000000000002FF /* GalaxySSIHealthAtlasCholangiocyteMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */; };
     C43840000000000000000301 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */; };
     C43840000000000000000303 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */; };
@@ -2270,6 +2279,15 @@
     C43840000000000000000340 /* GalaxySSIHealthAtlasMicrogliaDigestDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMicrogliaDigestDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000342 /* GalaxySSIHealthAtlasMicrogliaLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMicrogliaLabelsDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000344 /* GalaxySSIHealthAtlasMicrogliaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMicrogliaView.swift; sourceTree = "<group>"; };
+    C43840000000000000000346 /* GalaxySSIHealthAtlasEpendymalGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEpendymalGeometry.swift; sourceTree = "<group>"; };
+    C43840000000000000000348 /* GalaxySSIHealthAtlasEpendymalRoutes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEpendymalRoutes.swift; sourceTree = "<group>"; };
+    C4384000000000000000034A /* GalaxySSIHealthAtlasEpendymalMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEpendymalMotion.swift; sourceTree = "<group>"; };
+    C4384000000000000000034C /* GalaxySSIHealthAtlasEpendymalTissueDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEpendymalTissueDrawing.swift; sourceTree = "<group>"; };
+    C4384000000000000000034E /* GalaxySSIHealthAtlasEpendymalWallDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEpendymalWallDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000350 /* GalaxySSIHealthAtlasEpendymalCiliaDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEpendymalCiliaDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000352 /* GalaxySSIHealthAtlasEpendymalFlowDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEpendymalFlowDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000354 /* GalaxySSIHealthAtlasEpendymalLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEpendymalLabelsDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000356 /* GalaxySSIHealthAtlasEpendymalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEpendymalView.swift; sourceTree = "<group>"; };
     C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift; sourceTree = "<group>"; };
@@ -4164,6 +4182,15 @@
         C43840000000000000000340 /* GalaxySSIHealthAtlasMicrogliaDigestDrawing.swift */,
         C43840000000000000000342 /* GalaxySSIHealthAtlasMicrogliaLabelsDrawing.swift */,
         C43840000000000000000344 /* GalaxySSIHealthAtlasMicrogliaView.swift */,
+        C43840000000000000000346 /* GalaxySSIHealthAtlasEpendymalGeometry.swift */,
+        C43840000000000000000348 /* GalaxySSIHealthAtlasEpendymalRoutes.swift */,
+        C4384000000000000000034A /* GalaxySSIHealthAtlasEpendymalMotion.swift */,
+        C4384000000000000000034C /* GalaxySSIHealthAtlasEpendymalTissueDrawing.swift */,
+        C4384000000000000000034E /* GalaxySSIHealthAtlasEpendymalWallDrawing.swift */,
+        C43840000000000000000350 /* GalaxySSIHealthAtlasEpendymalCiliaDrawing.swift */,
+        C43840000000000000000352 /* GalaxySSIHealthAtlasEpendymalFlowDrawing.swift */,
+        C43840000000000000000354 /* GalaxySSIHealthAtlasEpendymalLabelsDrawing.swift */,
+        C43840000000000000000356 /* GalaxySSIHealthAtlasEpendymalView.swift */,
         C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */,
         C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */,
         C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */,
@@ -6188,6 +6215,15 @@
         C4384000000000000000033F /* GalaxySSIHealthAtlasMicrogliaDigestDrawing.swift in Sources */,
         C43840000000000000000341 /* GalaxySSIHealthAtlasMicrogliaLabelsDrawing.swift in Sources */,
         C43840000000000000000343 /* GalaxySSIHealthAtlasMicrogliaView.swift in Sources */,
+        C43840000000000000000345 /* GalaxySSIHealthAtlasEpendymalGeometry.swift in Sources */,
+        C43840000000000000000347 /* GalaxySSIHealthAtlasEpendymalRoutes.swift in Sources */,
+        C43840000000000000000349 /* GalaxySSIHealthAtlasEpendymalMotion.swift in Sources */,
+        C4384000000000000000034B /* GalaxySSIHealthAtlasEpendymalTissueDrawing.swift in Sources */,
+        C4384000000000000000034D /* GalaxySSIHealthAtlasEpendymalWallDrawing.swift in Sources */,
+        C4384000000000000000034F /* GalaxySSIHealthAtlasEpendymalCiliaDrawing.swift in Sources */,
+        C43840000000000000000351 /* GalaxySSIHealthAtlasEpendymalFlowDrawing.swift in Sources */,
+        C43840000000000000000353 /* GalaxySSIHealthAtlasEpendymalLabelsDrawing.swift in Sources */,
+        C43840000000000000000355 /* GalaxySSIHealthAtlasEpendymalView.swift in Sources */,
         C438400000000000000002FF /* GalaxySSIHealthAtlasCholangiocyteMotion.swift in Sources */,
         C43840000000000000000301 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift in Sources */,
         C43840000000000000000303 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift in Sources */,
