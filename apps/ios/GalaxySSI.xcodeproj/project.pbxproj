@@ -337,6 +337,14 @@
     C438400000000000000002BD /* GalaxySSIHealthAtlasMesangialSectionDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000002BE /* GalaxySSIHealthAtlasMesangialSectionDrawing.swift */; };
     C438400000000000000002BF /* GalaxySSIHealthAtlasMesangialCellDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000002C0 /* GalaxySSIHealthAtlasMesangialCellDrawing.swift */; };
     C438400000000000000002C1 /* GalaxySSIHealthAtlasMesangialLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000002C2 /* GalaxySSIHealthAtlasMesangialLabelsDrawing.swift */; };
+    C438400000000000000002C3 /* GalaxySSIHealthAtlasIntercalatedMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000002C4 /* GalaxySSIHealthAtlasIntercalatedMotion.swift */; };
+    C438400000000000000002C5 /* GalaxySSIHealthAtlasIntercalatedGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000002C6 /* GalaxySSIHealthAtlasIntercalatedGeometry.swift */; };
+    C438400000000000000002C7 /* GalaxySSIHealthAtlasIntercalatedRoutes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000002C8 /* GalaxySSIHealthAtlasIntercalatedRoutes.swift */; };
+    C438400000000000000002C9 /* GalaxySSIHealthAtlasIntercalatedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000002CA /* GalaxySSIHealthAtlasIntercalatedView.swift */; };
+    C438400000000000000002CB /* GalaxySSIHealthAtlasIntercalatedDuctDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000002CC /* GalaxySSIHealthAtlasIntercalatedDuctDrawing.swift */; };
+    C438400000000000000002CD /* GalaxySSIHealthAtlasIntercalatedTransportDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000002CE /* GalaxySSIHealthAtlasIntercalatedTransportDrawing.swift */; };
+    C438400000000000000002CF /* GalaxySSIHealthAtlasIntercalatedGlyphDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000002D0 /* GalaxySSIHealthAtlasIntercalatedGlyphDrawing.swift */; };
+    C438400000000000000002D1 /* GalaxySSIHealthAtlasIntercalatedLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000002D2 /* GalaxySSIHealthAtlasIntercalatedLabelsDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -2147,6 +2155,14 @@
     C438400000000000000002BE /* GalaxySSIHealthAtlasMesangialSectionDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMesangialSectionDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000002C0 /* GalaxySSIHealthAtlasMesangialCellDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMesangialCellDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000002C2 /* GalaxySSIHealthAtlasMesangialLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasMesangialLabelsDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000002C4 /* GalaxySSIHealthAtlasIntercalatedMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasIntercalatedMotion.swift; sourceTree = "<group>"; };
+    C438400000000000000002C6 /* GalaxySSIHealthAtlasIntercalatedGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasIntercalatedGeometry.swift; sourceTree = "<group>"; };
+    C438400000000000000002C8 /* GalaxySSIHealthAtlasIntercalatedRoutes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasIntercalatedRoutes.swift; sourceTree = "<group>"; };
+    C438400000000000000002CA /* GalaxySSIHealthAtlasIntercalatedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasIntercalatedView.swift; sourceTree = "<group>"; };
+    C438400000000000000002CC /* GalaxySSIHealthAtlasIntercalatedDuctDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasIntercalatedDuctDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000002CE /* GalaxySSIHealthAtlasIntercalatedTransportDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasIntercalatedTransportDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000002D0 /* GalaxySSIHealthAtlasIntercalatedGlyphDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasIntercalatedGlyphDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000002D2 /* GalaxySSIHealthAtlasIntercalatedLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasIntercalatedLabelsDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3976,6 +3992,14 @@
         C438400000000000000002BE /* GalaxySSIHealthAtlasMesangialSectionDrawing.swift */,
         C438400000000000000002C0 /* GalaxySSIHealthAtlasMesangialCellDrawing.swift */,
         C438400000000000000002C2 /* GalaxySSIHealthAtlasMesangialLabelsDrawing.swift */,
+        C438400000000000000002C4 /* GalaxySSIHealthAtlasIntercalatedMotion.swift */,
+        C438400000000000000002C6 /* GalaxySSIHealthAtlasIntercalatedGeometry.swift */,
+        C438400000000000000002C8 /* GalaxySSIHealthAtlasIntercalatedRoutes.swift */,
+        C438400000000000000002CA /* GalaxySSIHealthAtlasIntercalatedView.swift */,
+        C438400000000000000002CC /* GalaxySSIHealthAtlasIntercalatedDuctDrawing.swift */,
+        C438400000000000000002CE /* GalaxySSIHealthAtlasIntercalatedTransportDrawing.swift */,
+        C438400000000000000002D0 /* GalaxySSIHealthAtlasIntercalatedGlyphDrawing.swift */,
+        C438400000000000000002D2 /* GalaxySSIHealthAtlasIntercalatedLabelsDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5935,6 +5959,14 @@
         C438400000000000000002BD /* GalaxySSIHealthAtlasMesangialSectionDrawing.swift in Sources */,
         C438400000000000000002BF /* GalaxySSIHealthAtlasMesangialCellDrawing.swift in Sources */,
         C438400000000000000002C1 /* GalaxySSIHealthAtlasMesangialLabelsDrawing.swift in Sources */,
+        C438400000000000000002C3 /* GalaxySSIHealthAtlasIntercalatedMotion.swift in Sources */,
+        C438400000000000000002C5 /* GalaxySSIHealthAtlasIntercalatedGeometry.swift in Sources */,
+        C438400000000000000002C7 /* GalaxySSIHealthAtlasIntercalatedRoutes.swift in Sources */,
+        C438400000000000000002C9 /* GalaxySSIHealthAtlasIntercalatedView.swift in Sources */,
+        C438400000000000000002CB /* GalaxySSIHealthAtlasIntercalatedDuctDrawing.swift in Sources */,
+        C438400000000000000002CD /* GalaxySSIHealthAtlasIntercalatedTransportDrawing.swift in Sources */,
+        C438400000000000000002CF /* GalaxySSIHealthAtlasIntercalatedGlyphDrawing.swift in Sources */,
+        C438400000000000000002D1 /* GalaxySSIHealthAtlasIntercalatedLabelsDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
