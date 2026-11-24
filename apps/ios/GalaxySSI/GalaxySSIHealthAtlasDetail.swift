@@ -15,6 +15,13 @@ struct GalaxySSIHealthAtlasDetail: View {
   private var hasFunctionPlayer: Bool {
     functionCatalogue?.choices(for: entry.id).contains { GalaxySSIHealthAtlasFunctionRendering.implemented.contains($0.id) } == true
   }
+  private var showFunctionStructurePreview: Bool {
+    guard hasFunctionPlayer, let catalogue = functionCatalogue else { return false }
+    let alternate = entry.kind == .system && atlas.views(for: entry.id).count > 1
+    let plate = atlas.plate(for: entry.id)
+    let labels = plate.map { !$0.markers.isEmpty || !$0.annotations.isEmpty } ?? false
+    return alternate || (labels && catalogue.choices(for: entry.id).contains { $0.showStructurePreview })
+  }
   private var functionSelection: Binding<GalaxySSIHealthAtlasFunctionSelection> {
     Binding(get: { selection.wrappedValue.functionSelection ?? .init() }, set: { selection.wrappedValue.functionSelection = $0 })
   }
@@ -32,6 +39,14 @@ struct GalaxySSIHealthAtlasDetail: View {
               GalaxySSIHealthAtlasFunctionPanel(catalogue: catalogue, entryID: entry.id, language: language,
                 previewPresented: state.previewPresented, selection: functionSelection,
                 onPhase: { state.recordFunctionPhase(entryID: entry.id, storyID: $0, phase: $1) })
+              if let story = functionSelection.wrappedValue.current(entryID: entry.id, catalogue: catalogue) {
+                ForEach(Array(story.related.enumerated()), id: \.offset) { _, related in
+                  if let target = atlas.entry(related.entryID), let lesson = catalogue.story(related.storyID) {
+                    GalaxySSIHealthAtlasFunctionRelatedRow(atlas: atlas, catalogue: catalogue, target: target, story: lesson,
+                      state: state, records: records, depth: depth, language: language)
+                  }
+                }
+              }
             }
             if selection.wrappedValue.tab != .structure && !(selection.wrappedValue.tab == .function && hasFunctionPlayer) &&
               (selection.wrappedValue.tab != .simulation ||
@@ -53,6 +68,9 @@ struct GalaxySSIHealthAtlasDetail: View {
                 Text("\(index + 1). " + GalaxySSIHealthAtlasText.get(key, language))
               }
               Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
+              if showFunctionStructurePreview {
+                GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
+              }
               Button(t("simulation")) { selection.wrappedValue.tab = .simulation }
             } else {
               GalaxySSIHealthAtlasSimulationPanel(atlas: atlas, entry: entry, model: atlas.model(entry), simulation: selection.simulation,
