@@ -1,6 +1,6 @@
 // Source/data/PDF inspection only; no Swift type checking, native gestures or pixels.
 const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process"), crypto = require("node:crypto"), assert = require("node:assert/strict");
-const {PDFDocument} = require("pdf-lib"), xml = require("xml-js");
+const {PDFDocument, PDFRawStream, decodePDFRawStream, drawSvgPath, rgb} = require("pdf-lib"), xml = require("xml-js");
 const root = path.resolve(__dirname, "../../.."), app = path.join(root, "apps/ios/GalaxySSI");
 const read = name => fs.readFileSync(path.join(app, name), "utf8");
 const inventory = require("../ANDROID_4389_SOURCE_INVENTORY.json"), sha = "9508d49277cf33ab7f85e65722e7c470930fff7e";
@@ -40,6 +40,12 @@ assert.equal(tables[0].size, 331); assert.deepEqual([...tables[0].keys()], [...t
     assert(metadata.properties["preserves-vector-representation"]);
     const pdf = await PDFDocument.load(fs.readFileSync(path.join(folder, "art.pdf")));
     assert.equal(pdf.getPageCount(), 1); assert.deepEqual(pdf.getPages()[0].getSize(), {width: 360, height: 280});
+    const expected = vector.path.flatMap(item => drawSvgPath(require("./body-atlas-quadratic-path.cjs")(item._attributes["android:pathData"]), {x: 0, y: 280, color: rgb(0, 0, 0)})
+      .filter(op => ["m", "l", "c", "h"].includes(op.name)).map(op => op.toString()));
+    const operators = pdf.context.enumerateIndirectObjects().filter(([, obj]) => obj instanceof PDFRawStream)
+      .flatMap(([, obj]) => Buffer.from(decodePDFRawStream(obj).decode()).toString().split(/\r?\n/))
+      .filter(line => /(?:^| )(?:m|l|c|h)$/.test(line));
+    assert.deepEqual(operators, expected, "PDF path mismatch: " + plate.asset);
     assert.equal(plate.aspectRatio, 360 / 280);
   }
   assert.equal(paths, 408);
@@ -50,5 +56,10 @@ assert.equal(tables[0].size, 331); assert.deepEqual([...tables[0].keys()], [...t
   for (const token of [".fullScreenCover(isPresented: $fullscreen)", "fullscreenLayers.toggle()", "fullscreenZoom = 1; fullscreenReset += 1",
     "canvas(art, full: true)", '"atlas-fullscreen-labels"', '"atlas-fullscreen-reset"', "depth < 32", "case .feature(let feature)"])
     assert(artwork.includes(token), token);
+  for (const file of ["GalaxySSIHealthAtlasArtwork.swift", "GalaxySSIHealthAtlasLabeledArtwork.swift"]) {
+    const source = read(file);
+    assert(source.includes("override func touchesShouldCancel(in view: UIView) -> Bool"));
+    assert(source.includes("view is UIButton || super.touchesShouldCancel(in: view)"));
+  }
   console.log(`Android #4389: ${changed.length} source hashes, 26 views / 139 features / 3 links / 408 vector paths / 331 bilingual pairs. Native fullscreen/navigation/gesture/pixel acceptance remains outstanding.`);
 })().catch(error => {console.error(error); process.exitCode = 1;});

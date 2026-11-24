@@ -1,0 +1,57 @@
+// Exhaustive source dispositions only. No device, XCTest or Swift compilation.
+const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process"), assert = require("node:assert/strict");
+const root = path.resolve(__dirname, "../../.."), inventory = require("../ANDROID_4389_SOURCE_INVENTORY.json");
+const app = name => "apps/ios/GalaxySSI/" + name, swift = name => app("GalaxySSIHealthAtlas" + name + ".swift");
+const dataset = app("Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json");
+const pack = JSON.parse(fs.readFileSync(path.join(root, dataset)));
+const explicit = new Map();
+function map(names, kind, ios, note) {
+  for (const name of names) { assert(!explicit.has(name)); explicit.set(name, {kind, ios, ...(note ? {note} : {})}); }
+}
+map(["HealthAtlasCardiacOutflowPlates", "HealthAtlasGallbladderAndSalivaryPlates", "HealthAtlasHearingBalancePlates",
+  "HealthAtlasKidneyRegionalPlates", "HealthAtlasLongBoneAndShoulderPlates", "HealthAtlasNeuralRegionalPlates",
+  "HealthAtlasOpticsDetailPlates", "HealthAtlasRegionalDetailPlates", "HealthAtlasUpperAirwayBifurcationsPlates",
+  "HealthAtlasUrinaryOutflowPlates"], "original-kotlin-declaration-extraction", [dataset, swift("DetailStructures")]);
+map(["AgentRichContentView"], "platform-native-tap-versus-drag-cancellation", [swift("Artwork"), swift("LabeledArtwork")],
+  "The Android change is scoped to GalaxySSIPinchZoomViewport, not other transcript content. iOS uses UIScrollView zoom targets containing UIButtons, with touchesShouldCancel allowing a label drag to become a pan. No custom double-tap recognizer is installed over label actions; native pinch, pan and click acceptance remains unverified.");
+map(["HealthAtlasAnatomyDialog"], "fullscreen-anatomy-controls-and-local-selection", [swift("Artwork")],
+  "Full screen presentation, title/caption, independent zoom/labels, hide/show, scale/offset reset and local feature alerts. Canonical anatomy selection dismisses the presentation. Existing scroll/callout layout permits large text; no device or pixel acceptance performed.");
+map(["HealthAtlasLabeledImage"], "label-visibility-and-measured-callout-rails", [swift("Artwork"), swift("LabeledArtwork"), swift("CalloutLayout")],
+  "Unlabeled mode removes callout rails/guides; controls stay outside the image/labels. Existing measured rails and dynamic type are retained, without Android's inline control-space inset.");
+map(["HealthAtlasPlates"], "detail-first-views-with-preserved-locator-identities", [swift(""), swift("DetailStructures"), dataset]);
+map(["HealthAtlasUi", "HealthBodyAtlasActivity"], "selected-plate-fullscreen-and-navigation-wiring", [swift("Artwork"), swift("Detail"), swift("State")]);
+const coverage = [], counts = {};
+for (const file of inventory.files) {
+  let item;
+  if (file.path.includes("/src/main/java/")) {
+    item = explicit.get(path.basename(file.path, ".kt")); assert(item, file.path);
+  } else if (file.path.includes("/res/drawable/")) {
+    const plate = pack.plates.find(p => p.drawable === file.path); assert(plate, file.path);
+    item = {kind: "preserved-vector-with-normalized-quadratics", ios: [app("Assets.xcassets/" + plate.asset + ".imageset/art.pdf")]};
+  } else if (/\/res\/values(?:-zh)?\//.test(file.path)) {
+    item = {kind: "exact-bilingual-resource-delta", ios: [app("en.lproj/AtlasDetail.strings"), app("zh-Hans.lproj/AtlasDetail.strings")]};
+  } else if (file.path.includes("/src/androidTest/")) {
+    item = {kind: "android-device-test-contract-reference-not-executed", ios: ["apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift", "apps/ios/tools/check-atlas-detail-source.cjs"],
+      note: "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."};
+  } else {
+    assert.equal(file.path, "apps/android/app/build.gradle.kts");
+    item = {kind: "android-apk-version-only", ios: [], note: "Pinned merge changes Android versionCode 1724 to 1725 and versionName 0.18.163 to 0.18.164. No iOS version or IPA change belongs in this feature port."};
+  }
+  for (const target of item.ios) assert(fs.existsSync(path.join(root, target)), target);
+  counts[item.kind] = (counts[item.kind] || 0) + 1;
+  coverage.push({source: file.path, sourceSHA256: file.sha256, ...item});
+}
+assert.equal(coverage.length, 72); assert.equal(explicit.size, 16);
+assert.equal(counts["preserved-vector-with-normalized-quadratics"], 26);
+assert.equal(counts["exact-bilingual-resource-delta"], 20);
+assert.equal(counts["android-device-test-contract-reference-not-executed"], 9);
+const report = {schema: 1, source: inventory.source, verification: "source-contracts-only-not-native-execution", counts, files: coverage};
+const output = JSON.stringify(report, null, 2) + "\n", target = path.join(root, "apps/ios/ANDROID_4389_PORT_COVERAGE.json");
+if (process.argv.includes("--write")) fs.writeFileSync(target, output);
+else assert.equal(fs.readFileSync(target, "utf8").replace(/\r\n/g, "\n"), output);
+if (process.argv.includes("--checks")) for (const [file, ...args] of [
+  ["check-atlas-detail-source.cjs"], ["import-body-atlas-function-structures.cjs", "--detail-4389", "--check"],
+  ["import-body-atlas-regional-text.cjs", "--detail-4389", "--check"]]) {
+  cp.execFileSync(process.execPath, [path.join(__dirname, file), ...args], {cwd: root, stdio: "inherit"});
+}
+console.log("Android #4389: all 72 source files explicitly mapped; no native acceptance claimed.");

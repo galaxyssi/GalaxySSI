@@ -64,6 +64,10 @@ struct GalaxySSIHealthAtlasArtwork: View {
     guard let plate else { return t("illustration") }
     return atlas.caption(plate, selected: entry, language: language)
   }
+  private var fullscreenCaption: String {
+    let name = entry.map { GalaxySSIHealthAtlasText.get($0.name, language) } ?? t("whole")
+    return name + " \u{00b7} " + caption
+  }
   var body: some View {
     if let art, entry.map({ state.binding($0).wrappedValue.tab != .simulation || !GalaxySSIHealthAtlasGasExchange.supports($0.id) }) ?? true {
       VStack(alignment: .leading, spacing: 8) {
@@ -96,7 +100,7 @@ struct GalaxySSIHealthAtlasArtwork: View {
       .fullScreenCover(isPresented: $fullscreen) {
         NavigationView {
           VStack(alignment: .leading, spacing: 8) {
-            Text(caption).font(.subheadline).fixedSize(horizontal: false, vertical: true).padding(.horizontal)
+            Text(fullscreenCaption).font(.subheadline).fixedSize(horizontal: false, vertical: true).padding(.horizontal)
             ScrollView {
               canvas(art, full: true).padding(.horizontal)
                 .accessibilityIdentifier("atlas-fullscreen-image")
@@ -117,7 +121,7 @@ struct GalaxySSIHealthAtlasArtwork: View {
                 .accessibilityIdentifier("atlas-fullscreen-reset")
             }.padding(.horizontal)
           }
-            .navigationTitle(t("illustration")).navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(bodyText("title")).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) {
               Button { fullscreen = false } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
                 .accessibilityLabel(GalaxySSILocalization.string("galaxyssi.close", fallback: "Close", language: language))
@@ -252,5 +256,8 @@ private struct GalaxySSIHealthAtlasZoomCanvas: UIViewRepresentable {
   private final class LayoutScrollView: UIScrollView {
     var onLayout: ((UIScrollView) -> Void)?
     override func layoutSubviews() { super.layoutSubviews(); onLayout?(self) }
+    override func touchesShouldCancel(in view: UIView) -> Bool {
+      view is UIButton || super.touchesShouldCancel(in: view)
+    }
   }
 }

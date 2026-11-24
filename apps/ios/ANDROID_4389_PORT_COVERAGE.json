@@ -1,0 +1,657 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4389,
+    "mergeCommit": "9508d49277cf33ab7f85e65722e7c470930fff7e"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "counts": {
+    "android-apk-version-only": 1,
+    "android-device-test-contract-reference-not-executed": 9,
+    "platform-native-tap-versus-drag-cancellation": 1,
+    "fullscreen-anatomy-controls-and-local-selection": 1,
+    "original-kotlin-declaration-extraction": 10,
+    "label-visibility-and-measured-callout-rails": 1,
+    "detail-first-views-with-preserved-locator-identities": 1,
+    "selected-plate-fullscreen-and-navigation-wiring": 2,
+    "preserved-vector-with-normalized-quadratics": 26,
+    "exact-bilingual-resource-delta": 20
+  },
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "bdc7373746053bf0a40595cbeb6f99a10668f3361abece6e98c94138985afefc",
+      "kind": "android-apk-version-only",
+      "ios": [],
+      "note": "Pinned merge changes Android versionCode 1724 to 1725 and versionName 0.18.163 to 0.18.164. No iOS version or IPA change belongs in this feature port."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/AgentRichContentPinchZoomTest.kt",
+      "sourceSHA256": "3e32d499fcc3cfe70e96cdc66ee7e90d3737c583661405da14713d19d10e5596",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasEyeOpticsDeviceTest.kt",
+      "sourceSHA256": "3cf075649d74a93965270f814aa3198a792c5f2066659a5732ffcea609b38fed",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasHeartDeviceTest.kt",
+      "sourceSHA256": "a4f38008365e3d5fe94ff6b4fd8c519c2fb5e9ed6be85b67075543080d877687",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasMiddleEarDeviceTest.kt",
+      "sourceSHA256": "4b3ffe230ff0f94f5f9420df3232b33b1c60a8023382b12c138eedc072d819f6",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasMusculoskeletalDeviceTest.kt",
+      "sourceSHA256": "2fa8b1774a11d151b7ade6cdb57ef2dfc89aa933f90a7cdc1e20c3843458e903",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasSystemOverviewDeviceTest.kt",
+      "sourceSHA256": "97b8bd1cad8318c7b19842be0b82f216621c7013ca6f832d4feefb313839ab84",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasSystemPlateDeviceTest.kt",
+      "sourceSHA256": "9ec25e31db8508bfd06c172ecddd2c1bce3c88e5f75c4fd238e3e271bd8b68f6",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasTissueContextDeviceTest.kt",
+      "sourceSHA256": "3e794c033b6647a9b767ae3a23bd86f91d1addc2bbbcb8939f5b4101ad7aa1c6",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthBodyAtlasDeviceTest.kt",
+      "sourceSHA256": "daeac8b1ad3fa77a57b4fc5ae58169dc16814c409957895f672c73f69e78feb4",
+      "kind": "android-device-test-contract-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-detail-source.cjs"
+      ],
+      "note": "Source expectations cover new default cutaways, retained selectable locators, features/links and restoration. Android gesture, alpha/pixel, screenshot, recreation and live accessibility assertions are not certified by source inspection. No Android device test or XCTest run performed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentRichContentView.kt",
+      "sourceSHA256": "67e67348a4609c2bf6d217d351397d685e46140be28db7aeaf8e60d08cd17732",
+      "kind": "platform-native-tap-versus-drag-cancellation",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasArtwork.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLabeledArtwork.swift"
+      ],
+      "note": "The Android change is scoped to GalaxySSIPinchZoomViewport, not other transcript content. iOS uses UIScrollView zoom targets containing UIButtons, with touchesShouldCancel allowing a label drag to become a pan. No custom double-tap recognizer is installed over label actions; native pinch, pan and click acceptance remains unverified."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAnatomyDialog.kt",
+      "sourceSHA256": "5817e161e52390b6bf23f755ab15808a026fae94001a5c1b208243778a08d38a",
+      "kind": "fullscreen-anatomy-controls-and-local-selection",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasArtwork.swift"
+      ],
+      "note": "Full screen presentation, title/caption, independent zoom/labels, hide/show, scale/offset reset and local feature alerts. Canonical anatomy selection dismisses the presentation. Existing scroll/callout layout permits large text; no device or pixel acceptance performed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCardiacOutflowPlates.kt",
+      "sourceSHA256": "f1e056fd667c9d3eb080d8243e88c279fb7e3ed77ddbbe96ec16c23fd638ec7e",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGallbladderAndSalivaryPlates.kt",
+      "sourceSHA256": "1ebf3a075cdfbde61f04ef61119f7a39befaa2d85fa8db910e7aaddfda91a251",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasHearingBalancePlates.kt",
+      "sourceSHA256": "17f8758cc09fbdf98250f13fbf2e89a1328ff91b856edff6febaefe621ca1df4",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasKidneyRegionalPlates.kt",
+      "sourceSHA256": "b8d5cc06bba8647261525eed48c38b2722b108969925f57ba4fa9eefd270c064",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLabeledImage.kt",
+      "sourceSHA256": "be65adb657d7a1502c61c03a3d20daa91174a13f0635fcb30facbb3db315ad36",
+      "kind": "label-visibility-and-measured-callout-rails",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasArtwork.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLabeledArtwork.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCalloutLayout.swift"
+      ],
+      "note": "Unlabeled mode removes callout rails/guides; controls stay outside the image/labels. Existing measured rails and dynamic type are retained, without Android's inline control-space inset."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLongBoneAndShoulderPlates.kt",
+      "sourceSHA256": "f3d6fde4aabf305b1fb8085cc33c70dde9550d10e46413cdb4cc060d5f0b3023",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasNeuralRegionalPlates.kt",
+      "sourceSHA256": "46711a7c1e5cbe3d7990cdb7a797005ded16c3cc2379fba24d5818bf4b296760",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasOpticsDetailPlates.kt",
+      "sourceSHA256": "7b795bad9b258d242748515bcf6c127390008b3c6517f2e3da68db0332a77ac0",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPlates.kt",
+      "sourceSHA256": "856525dabf5313ed9bb8d536bac15ba90a8a6a7c18c13595d5ad80994f7c0b28",
+      "kind": "detail-first-views-with-preserved-locator-identities",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift",
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasRegionalDetailPlates.kt",
+      "sourceSHA256": "37844132fb96e91283a36d2326ae5986b9ff58237f0722ee3a74836c90d6d575",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUi.kt",
+      "sourceSHA256": "2fb93aeb60c0b086620c41d4d82ac0113c6dc31df1f37c35a08f3c5f6c5de5b9",
+      "kind": "selected-plate-fullscreen-and-navigation-wiring",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasArtwork.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetail.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUpperAirwayBifurcationsPlates.kt",
+      "sourceSHA256": "3d197a706e8b2548ec04c849109eb478c60ff94b85f0e4b1dd0d7abff68d9e2c",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUrinaryOutflowPlates.kt",
+      "sourceSHA256": "e7dbc5d276c1f3bb329816de1d72a928e6ff09a90a607e8a36c1205f612ea5cd",
+      "kind": "original-kotlin-declaration-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetailStructures.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthBodyAtlasActivity.kt",
+      "sourceSHA256": "c68bf1a9a52123f49b6d00c8e6a2d2a083cc86305544ccdc41d892e0fdd38563",
+      "kind": "selected-plate-fullscreen-and-navigation-wiring",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasArtwork.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetail.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_aortic_root_arch.xml",
+      "sourceSHA256": "2007303d2214f85f48e6d43ab284c722c02d8368a5993163645e167e03c1cd0b",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailAorticRootArch.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_brainstem_midline_section.xml",
+      "sourceSHA256": "c645c316554fe14f53b8aa767929eda49f721e9815b4e98e75fdad239d232c30",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailBrainstemMidlineSection.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_cerebellum_vermis_section.xml",
+      "sourceSHA256": "64a16a54f8eaacb6193c9fd9330fe86790c0c3b62361c600a9776f526c4069eb",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailCerebellumVermisSection.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_cochlea_scala_cross_section.xml",
+      "sourceSHA256": "dfd16ec24e01f02b52fd7d7286805a6f23770fe6c12dbff172723be594040a99",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailCochleaScalaCrossSection.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_corneal_lamellae.xml",
+      "sourceSHA256": "fa3407719c44b655ad0a1206dc1978152cfa4241532ec941e5c7897aeed6031a",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailCornealLamellae.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_coronary_epicardial_routes.xml",
+      "sourceSHA256": "4e58b3f74eb8c3a3d9e80578b78a95004e55d1e0330f4a0d91df36e1dc81c58b",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailCoronaryEpicardialRoutes.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_gallbladder_cutaway.xml",
+      "sourceSHA256": "55203fddc0a7b9a1295bd4a1db93cd72d0d4d038dff0bb6b9e014c7656ebc0c9",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailGallbladderCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_humerus_anterior_landmarks.xml",
+      "sourceSHA256": "2297411940b53d4a3d0af33c474fabefc46911afccb33a39fea5855f6f089d22",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailHumerusAnteriorLandmarks.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_larynx_inlet_cutaway.xml",
+      "sourceSHA256": "c5029b50b6c22f7ca9e109f6dc366ee0489ee660e73e32d65ce76bfc528af178",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailLarynxInletCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_lens_fibers.xml",
+      "sourceSHA256": "bbe2d1d086c2914a955f5bab520c2202c9cf3953913973a4aff67a35afb987d6",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailLensFibers.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_main_bronchi_cutaway.xml",
+      "sourceSHA256": "a736c350f28235dd754085f9148a305643701b64aa41e9837fa8b8b884721578",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailMainBronchiCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_middle_ear_ossicular_cutaway.xml",
+      "sourceSHA256": "e2df2f2076125ef2ff7be838a54caffd6bbc7695ca215cd58c7e3b53939061cb",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailMiddleEarOssicularCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_parotid_cutaway.xml",
+      "sourceSHA256": "88ad56bbb1a91b0b9d26b2130247f7cdae2af7c5e1b04cbc2775cfb0cd342703",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailParotidCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_pulmonary_trunk_bifurcation.xml",
+      "sourceSHA256": "41544de36fee09772b11ddac9c7abb03f291c75a44e44dff102b390598513136",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailPulmonaryTrunkBifurcation.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_renal_cortex_cutaway.xml",
+      "sourceSHA256": "06adf58229701467dfd8e709fc31a51520c6801f1de369ee648551ddd68fcc7f",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailRenalCortexCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_renal_medulla_cutaway.xml",
+      "sourceSHA256": "c410b5eaf392a43247b91cf7586f2d63a0979e54b996e47d3dad7c98ba23a82d",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailRenalMedullaCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_renal_pelvis_cutaway.xml",
+      "sourceSHA256": "3208ed7caacc5c6583b10d57bc4921f5798e0f0b0915ffc68ca2f35b94567607",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailRenalPelvisCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_scapula_posterior_landmarks.xml",
+      "sourceSHA256": "80d8448194873e400b8e51df2448c2b88b389ba6fc4fd8717193fdf1d3fccf3d",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailScapulaPosteriorLandmarks.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_spinal_cord_transverse_section.xml",
+      "sourceSHA256": "71a2dfb9f28c48c8a8b4aa7361b798b16ad547c8d9e2494d9cbccb4675ea8b87",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailSpinalCordTransverseSection.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_submandibular_cutaway.xml",
+      "sourceSHA256": "7bfda04eb3790ffa6065b3e100385fcf4b56e06bc25f5ffa713069183e8149c6",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailSubmandibularCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_tibia_anterior_landmarks.xml",
+      "sourceSHA256": "ee99cda53b9004ba8a4dfb7f251f2ebed92c2406b3cac76b81e3078bbaf20326",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailTibiaAnteriorLandmarks.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_trachea_ring_cutaway.xml",
+      "sourceSHA256": "14968743b42966d05717ce25829fe36ae34f519bd0bdd65e183cb20adca33cae",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailTracheaRingCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_urinary_outflow_bladder.xml",
+      "sourceSHA256": "fa114cab2d528231a318a01574b6484c25c1b5c97e8e7e211f0bbd491708373e",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailUrinaryOutflowBladder.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_urinary_outflow_ureter.xml",
+      "sourceSHA256": "b7cb852733b0f05a25b97b47e3b43cfa1ab68c37d59d2be564077a1c304b6bde",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailUrinaryOutflowUreter.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_urinary_outflow_urethra.xml",
+      "sourceSHA256": "958f41102ac33497f1872043a4b3e530202d88f2f73369bf0ed864cc756eed70",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailUrinaryOutflowUrethra.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_vestibular_labyrinth_cutaway.xml",
+      "sourceSHA256": "c0df878ccb697610ca03f448b30b6a0364c40a93d46ae135b724fbc84f78c2aa",
+      "kind": "preserved-vector-with-normalized-quadratics",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailVestibularLabyrinthCutaway.imageset/art.pdf"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_anatomy_viewer.xml",
+      "sourceSHA256": "24700112f3461c7b0d99e3f7c03893c0f681cd8786369aa162328aa274c0f881",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_cardiac_outflow_plates.xml",
+      "sourceSHA256": "f0ed36f1786a3799c00583c318fe17ee5464dbfd202267dc5291bdc6329995fd",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_gallbladder_and_salivary_plates.xml",
+      "sourceSHA256": "d40db7f80be1dbee7e0f8dc2f2cbe031d897e5bc31ff0482d2fcf7b9c6620dc9",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_hearing_balance_cutaways.xml",
+      "sourceSHA256": "bd9bb80ef96a6e841fd349c85c4598d7d2a3d98899974beb05dcb66868322095",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_kidney_regional_plates.xml",
+      "sourceSHA256": "97890a6b57e85675c64fa7dc0989118fe80002e8af4b3dba213d09ba4c299499",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_long_bone_and_shoulder_plates.xml",
+      "sourceSHA256": "c7ca5ac790a9b00497e6c64165947041ed76253d6ece327907763975ac87fab3",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_neural_regional_plates.xml",
+      "sourceSHA256": "e6a4a1ca2858abac1a2ea1be55c4b4a6f9f5edfb983e47a6f9037709f527f87b",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_optics_structure_details.xml",
+      "sourceSHA256": "9133268e009a4048ba4c09ad497e2724e60b39f530496c4b16feb6039804f33a",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_upper_airway_bifurcations_plates.xml",
+      "sourceSHA256": "5e878b77a7b23896a107619e8591714c3220760a636c47b7e69aebf5ccaf20a3",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_urinary_outflow.xml",
+      "sourceSHA256": "da5c6676ff19025bb3eddd03fb79d691282cc2f5c5b1fb7705fad3391579dd36",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_anatomy_viewer.xml",
+      "sourceSHA256": "a23dac5f54f26eec73454a4b563c4f22e0c8e5806b2668b324e25569fed04b5e",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_cardiac_outflow_plates.xml",
+      "sourceSHA256": "c43219718a4d6b54adb1f51a49c71905ea948c8c1f34b2cd8f000e26a1f89703",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_gallbladder_and_salivary_plates.xml",
+      "sourceSHA256": "d184a8a36fb3d67d852c33e3ec8bc57f88087eab8914caff59b167770538f3fb",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_hearing_balance_cutaways.xml",
+      "sourceSHA256": "6d4bc924ccc4d9870c754c338fe0c32551117580cb7910658ff67aef1caedc32",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_kidney_regional_plates.xml",
+      "sourceSHA256": "e414acafee55181afcc0ac325f1cb0fc8888bf327f158b95a5a97b9ead2e3b11",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_long_bone_and_shoulder_plates.xml",
+      "sourceSHA256": "a6e6e0794facaedf82212decd09d26de0ac57291bfc1d68492eb1ec1bc741705",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_neural_regional_plates.xml",
+      "sourceSHA256": "d23388438eb6c20b23df8fc14f54f7ff2bbf06e1f4bedc19b97f1fa815f07299",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_optics_structure_details.xml",
+      "sourceSHA256": "79943a9d03499fe56742ee969e3b9a228f4234eb66635dbdb16072e47395536a",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_upper_airway_bifurcations_plates.xml",
+      "sourceSHA256": "1c730f919bd8e76e7e998fbbe9dc7f5879556773e321ac7b6885866e2b856821",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_urinary_outflow.xml",
+      "sourceSHA256": "5516bb70dca7490a309103af543f0fc1c350f57fc6a28ce2b3c20ea0889c19b5",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasDetail.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasDetail.strings"
+      ]
+    }
+  ]
+}
