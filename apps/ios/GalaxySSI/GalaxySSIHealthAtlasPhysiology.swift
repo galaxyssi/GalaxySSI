@@ -1,5 +1,40 @@
 import Foundation
 
+/// Android #4388 synthetic load examples, never patient measurements or predictions.
+enum GalaxySSIHealthAtlasLoadTransfer {
+  static let pelvicSource = URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-3-the-pelvic-girdle-and-pelvis")!
+  static let subcutaneousSource = URL(string: "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin")!
+  static let stabilitySource = URL(string: "https://openstax.org/books/college-physics-2e/pages/9-3-stability")!
+  static let pressureSource = URL(string: "https://openstax.org/books/college-physics-2e/pages/11-3-pressure")!
+
+  struct PelvicSupport: Equatable, Sendable {
+    let loadNewtons: Double
+    let positionPercent: Double
+    init?(loadNewtons: Double, positionPercent: Double) {
+      guard loadNewtons.isFinite, (0...800).contains(loadNewtons),
+        positionPercent.isFinite, (-100...100).contains(positionPercent) else { return nil }
+      self.loadNewtons = loadNewtons; self.positionPercent = positionPercent
+    }
+    var rightNewtons: Double { loadNewtons * (100 + positionPercent) / 200 }
+    var leftNewtons: Double { loadNewtons * (100 - positionPercent) / 200 }
+    static let initial = Self(loadNewtons: 400, positionPercent: 0)!
+  }
+
+  struct CushionContact: Equatable, Sendable {
+    let loadNewtons: Double
+    let areaSquareCentimetres: Double
+    init?(loadNewtons: Double, areaSquareCentimetres: Double) {
+      guard loadNewtons.isFinite, (0...80).contains(loadNewtons),
+        areaSquareCentimetres.isFinite, (10...90).contains(areaSquareCentimetres) else { return nil }
+      self.loadNewtons = loadNewtons; self.areaSquareCentimetres = areaSquareCentimetres
+    }
+    // One N/cm^2 equals ten kPa; the reference keeps the example area at 40 cm^2.
+    var pressureKilopascals: Double { 10 * loadNewtons / areaSquareCentimetres }
+    var referenceKilopascals: Double { 10 * loadNewtons / 40 }
+    static let initial = Self(loadNewtons: 40, areaSquareCentimetres: 40)!
+  }
+}
+
 /// Steady-state solute transfers only, not urine volume or a patient clearance estimate.
 struct GalaxySSIHealthAtlasRenalAmounts: Equatable, Sendable {
   let filtered: Double
