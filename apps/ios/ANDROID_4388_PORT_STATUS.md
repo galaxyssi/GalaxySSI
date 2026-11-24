@@ -36,9 +36,15 @@ An eventual PR will use main and disclose the actual inherited diff.
 - Bilingual resource deltas are imported.
 - Source-only catalogue audit passed for all 67 hashes, catalogue counts,
   graph-resolved routes, entry phases, exact related destinations, reference
-  hosts and bilingual keys. Two new dispatches are present; the other 22 are
+  hosts and bilingual keys. Three new dispatches are present; the other 21 are
   explicitly not implemented. Two changed Swift files parsed without grammar
   errors; project structure passed. No Swift type checking or native execution.
+- Added dedicated Paneth crypt-barrier renderer and reusable crypt wall geometry:
+  seven original apical cubics, 29 arc-length cell slots, basement/lamina paths,
+  original cell outlines, four granular release/spread stages and leader labels.
+  Its dedicated dispatch is connected, but default catalogue activation is still
+  pending. Three added/edited Swift files passed grammar parsing and the project
+  structure check passed. 21 new renderers remain; no native acceptance claimed.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
 - Connect pelvic/subcutaneous cutaways to structure feature routing.
