@@ -16,8 +16,8 @@ const inventory = {schema: 1, source: {androidPR: 4442, mergeCommit: sha}, files
   sha256: crypto.createHash('sha256').update(git(['show', sha + ':' + file])).digest('hex')}))};
 requireTokens(android('HealthAtlasSceneFrame'), ['require(texts.isNotEmpty())', 'texts.maxOf', 'view.minimumHeight = lines + view.totalPaddingTop + view.totalPaddingBottom', 'view.totalPaddingStart', 'view.totalPaddingEnd']);
 requireTokens(source('SceneFrame'), ['clipShape(RoundedRectangle(cornerRadius: 8))', 'content().padding(inset)', 'ForEach(values.indices', '.hidden().accessibilityHidden(true).allowsHitTesting(false)', 'fixedSize(horizontal: false, vertical: true)', 'min(values.count - 1, max(0, selected))']);
-requireTokens(source('FunctionScene'), ['GalaxySSIHealthAtlasSceneFrame(identifier: "atlas-function-frame")', 'GalaxySSIHealthAtlasReservedCaption(values: labels', 'values: story.chapters.map { t($0.caption) }']);
-assert.equal(source('FunctionScene').split('  var body:')[0], prior('FunctionScene').split('  var body:')[0]);
+requireTokens(source('FunctionScene'), ['GalaxySSIHealthAtlasSceneFrame(identifier: "atlas-function-frame", ground:', 'GalaxySSIHealthAtlasReservedCaption(values: labels', 'values: story.chapters.map { t($0.caption) }']);
+assert.equal(source("FunctionScene").replace(/^  @Environment.*private var colorScheme\n/m, "").split('  var body:')[0], prior('FunctionScene').split('  var body:')[0]);
 assert.equal(source('FunctionPlayer'), prior('FunctionPlayer'));
 const panel = source('SimulationPanel'), processStages = source('ProcessStages');
 requireTokens(android('HealthAtlasSimulationPanel'), ['HealthAtlasProcessView(activity, mechanism, showLabels = !inline)', 'HealthAtlasSceneFrame(activity, "atlas-simulation-frame")', 'scene.reserveCaption(caption', 'tag = "atlas-simulation-references"', '"atlas-simulation-references-toggle"']);
@@ -37,7 +37,9 @@ assert(inlineDetail.includes('simulationPanel')); assert(!inlineDetail.includes(
 const lifecycle = text => text.split('.onReceive(timer)')[1].split('.onDisappear { pause() }')[0];
 assert.equal(lifecycle(panel), lifecycle(priorBody));
 assert.equal(panel.split('  private var quantitative:')[1], priorBody.split('  private var quantitative:')[1], 'Numerical invocation, all controls, reset, pause and parameter handlers stay exact');
-for (const name of ['State', 'FunctionCatalogue', 'FunctionArtwork', 'FunctionText', 'ChapterClock', 'Physiology', 'AgentContext', 'AgentHandoff', 'Research', 'GasExchange', 'Circulation', 'EndocrinePathView', 'RetinaPathView', 'SectionLessonView', 'CrossBridgeDrawing', 'GlucoseTransportDrawing', 'PotassiumTraceDrawing']) assert.equal(source(name), prior(name), name);
+for (const name of ['State', 'FunctionArtwork', 'ChapterClock', 'Physiology', 'AgentContext', 'AgentHandoff', 'Research', 'GasExchange', 'Circulation', 'EndocrinePathView', 'RetinaPathView', 'SectionLessonView', 'CrossBridgeDrawing', 'GlucoseTransportDrawing', 'PotassiumTraceDrawing']) assert.equal(source(name), prior(name), name);
+// #4443 adds one immutable reference overlay, not new selection/cache semantics.
+assert.equal(source("FunctionCatalogue").split("struct GalaxySSIHealthAtlasFunctionSelection:")[1], prior("FunctionCatalogue").split("struct GalaxySSIHealthAtlasFunctionSelection:")[1]);
 for (const [name, field] of [['Germline', 'showsDetails'], ['BloodDefenseView', 'showsDetails'], ['ImmuneLink', 'showsDetails'], ['PancreaticPanel', 'showsScope']]) requireTokens(source(name), ['var ' + field + ' = true', 'if ' + field]);
 requireTokens(source('SimulationPlate'), ['GalaxySSIHealthAtlasLabeledArtwork', '.sheet(isPresented:', 'preview(true)', 'preview(false)', 'Slider(value: $zoom, in: 1...4)']);
 // Pinned Android entry IDs and the native immutable route pack agree for all 313 entries.

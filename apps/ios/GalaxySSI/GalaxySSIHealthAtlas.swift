@@ -411,7 +411,9 @@ enum GalaxySSIHealthAtlasText {
     let closeupEnglish = localized(key, locale: "en", fallback: scenes, table: "AtlasMechanismCloseups")
     let closeups = localized(key, locale: locale, fallback: closeupEnglish, table: "AtlasMechanismCloseups")
     let cellularEnglish = localized(key, locale: "en", fallback: closeups, table: "AtlasCellularCloseups")
-    return localized(key, locale: locale, fallback: cellularEnglish, table: "AtlasCellularCloseups")
+    let cellular = localized(key, locale: locale, fallback: cellularEnglish, table: "AtlasCellularCloseups")
+    let filmEnglish = localized(key, locale: "en", fallback: cellular, table: "AtlasFilmCaptions")
+    return localized(key, locale: locale, fallback: filmEnglish, table: "AtlasFilmCaptions")
   }
   private static func localized(_ key: String, locale: String, fallback: String, table: String = "BodyAtlas") -> String {
     guard let path = Bundle.main.path(forResource: locale, ofType: "lproj"), let bundle = Bundle(path: path) else { return fallback }

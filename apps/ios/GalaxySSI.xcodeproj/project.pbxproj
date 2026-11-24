@@ -7,6 +7,11 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    C44430000000000000000001 /* AtlasFilmCaptions.strings in Resources */ = {isa = PBXBuildFile; fileRef = C44430000000000000000002 /* AtlasFilmCaptions.strings */; };
+    C44430000000000000000005 /* GalaxySSIHealthAtlasFilmPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44430000000000000000006 /* GalaxySSIHealthAtlasFilmPalette.swift */; };
+    C44430000000000000000007 /* GalaxySSIHealthAtlasRodResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44430000000000000000008 /* GalaxySSIHealthAtlasRodResponse.swift */; };
+    C44430000000000000000009 /* GalaxySSIHealthAtlasRodMembraneDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4443000000000000000000A /* GalaxySSIHealthAtlasRodMembraneDrawing.swift */; };
+    C4443000000000000000000B /* GalaxySSIHealthAtlasRodCatalogue.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4443000000000000000000C /* GalaxySSIHealthAtlasRodCatalogue.swift */; };
     C44420000000000000000001 /* GalaxySSIHealthAtlasSceneFrame.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44420000000000000000002 /* GalaxySSIHealthAtlasSceneFrame.swift */; };
     C44420000000000000000003 /* GalaxySSIHealthAtlasProcessStages.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44420000000000000000004 /* GalaxySSIHealthAtlasProcessStages.swift */; };
     C44420000000000000000005 /* GalaxySSIHealthAtlasSimulationPlate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44420000000000000000006 /* GalaxySSIHealthAtlasSimulationPlate.swift */; };
@@ -2149,6 +2154,12 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    C44430000000000000000003 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/AtlasFilmCaptions.strings; sourceTree = "<group>"; };
+    C44430000000000000000004 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AtlasFilmCaptions.strings"; sourceTree = "<group>"; };
+    C44430000000000000000006 /* GalaxySSIHealthAtlasFilmPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFilmPalette.swift; sourceTree = "<group>"; };
+    C44430000000000000000008 /* GalaxySSIHealthAtlasRodResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasRodResponse.swift; sourceTree = "<group>"; };
+    C4443000000000000000000A /* GalaxySSIHealthAtlasRodMembraneDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasRodMembraneDrawing.swift; sourceTree = "<group>"; };
+    C4443000000000000000000C /* GalaxySSIHealthAtlasRodCatalogue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasRodCatalogue.swift; sourceTree = "<group>"; };
     C44420000000000000000002 /* GalaxySSIHealthAtlasSceneFrame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSceneFrame.swift; sourceTree = "<group>"; };
     C44420000000000000000004 /* GalaxySSIHealthAtlasProcessStages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasProcessStages.swift; sourceTree = "<group>"; };
     C44420000000000000000006 /* GalaxySSIHealthAtlasSimulationPlate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSimulationPlate.swift; sourceTree = "<group>"; };
@@ -4888,6 +4899,10 @@
         C44400000000000000000006 /* GalaxySSIHealthAtlasBeatPressure.swift */,
         C44410000000000000000006 /* GalaxySSIHealthAtlasCrossBridgeDrawing.swift */,
         C44420000000000000000002 /* GalaxySSIHealthAtlasSceneFrame.swift */,
+        C44430000000000000000006 /* GalaxySSIHealthAtlasFilmPalette.swift */,
+        C44430000000000000000008 /* GalaxySSIHealthAtlasRodResponse.swift */,
+        C4443000000000000000000A /* GalaxySSIHealthAtlasRodMembraneDrawing.swift */,
+        C4443000000000000000000C /* GalaxySSIHealthAtlasRodCatalogue.swift */,
         C44420000000000000000004 /* GalaxySSIHealthAtlasProcessStages.swift */,
         C44420000000000000000006 /* GalaxySSIHealthAtlasSimulationPlate.swift */,
         C44410000000000000000008 /* GalaxySSIHealthAtlasPotassiumTraceDrawing.swift */,
@@ -5031,6 +5046,7 @@
         C44390000000000000000002 /* AtlasSynchronizedLessons.strings */,
         C44400000000000000000002 /* AtlasMechanismCloseups.strings */,
         C44410000000000000000002 /* AtlasCellularCloseups.strings */,
+        C44430000000000000000002 /* AtlasFilmCaptions.strings */,
         C44180000000000000000002 /* AtlasRelatedReadings.strings */,
         C44170000000000000000002 /* AtlasWholeActions.strings */,
         C44140000000000000000002 /* AtlasCompletionTeaching.strings */,
@@ -6495,6 +6511,7 @@
 /* End PBXGroup section */
 
 /* Begin PBXVariantGroup section */
+    C44430000000000000000002 /* AtlasFilmCaptions.strings */ = {isa = PBXVariantGroup; children = (C44430000000000000000003 /* en */, C44430000000000000000004 /* zh-Hans */, ); name = AtlasFilmCaptions.strings; sourceTree = "<group>"; };
     C44410000000000000000002 /* AtlasCellularCloseups.strings */ = {isa = PBXVariantGroup; children = (C44410000000000000000003 /* en */, C44410000000000000000004 /* zh-Hans */, ); name = AtlasCellularCloseups.strings; sourceTree = "<group>"; };
     C44400000000000000000002 /* AtlasMechanismCloseups.strings */ = {isa = PBXVariantGroup; children = (C44400000000000000000003 /* en */, C44400000000000000000004 /* zh-Hans */, ); name = AtlasMechanismCloseups.strings; sourceTree = "<group>"; };
     C44390000000000000000002 /* AtlasSynchronizedLessons.strings */ = {isa = PBXVariantGroup; children = (C44390000000000000000003 /* en */, C44390000000000000000004 /* zh-Hans */, ); name = AtlasSynchronizedLessons.strings; sourceTree = "<group>"; };
@@ -6615,7 +6632,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (C44410000000000000000001 /* AtlasCellularCloseups.strings in Resources */, C44400000000000000000001 /* AtlasMechanismCloseups.strings in Resources */, C44390000000000000000001 /* AtlasSynchronizedLessons.strings in Resources */, C44380000000000000000001 /* AgentManualModelRecovery.strings in Resources */, C44370000000000000000001 /* AtlasResearchNavigation.strings in Resources */, C44360000000000000000001 /* AtlasCumulativeComparison.strings in Resources */, C44350000000000000000001 /* AtlasGuidedFunction.strings in Resources */, C44340000000000000000001 /* AtlasModelComparison.strings in Resources */, C44180000000000000000001 /* AtlasRelatedReadings.strings in Resources */, C44170000000000000000001 /* AtlasWholeActions.strings in Resources */, C44140000000000000000001 /* AtlasCompletionTeaching.strings in Resources */, C44120000000000000000001 /* AtlasPleuralTeaching.strings in Resources */, C44100000000000000000001 /* AtlasExchangeTeaching.strings in Resources */, C44070000000000000000001 /* AtlasPhaseTeaching.strings in Resources */, C44050000000000000000001 /* AtlasTransportTeaching.strings in Resources */, C44020000000000000000001 /* AtlasRegionalTeaching.strings in Resources */, C44010000000000000000001 /* AtlasOrganTeaching.strings in Resources */, C43990000000000000000001 /* AtlasSystemTeaching.strings in Resources */, C43970000000000000000007 /* AtlasTeaching.strings in Resources */, C43960000000000000000001 /* AtlasAnatomy.strings in Resources */, C43910000000000000000001 /* AtlasExpanded.strings in Resources */, C43890000000000000000001 /* AtlasDetail.strings in Resources */, C43880000000000000000001 /* AtlasComplete.strings in Resources */, C43850000000000000000001 /* AtlasRegional.strings in Resources */, C43840000000000000000010 /* AtlasFunction.strings in Resources */, 40A8F2E0933DD60C3E202D5C /* body-atlas in Resources */, 7E9C74C29FE3236437B57ACB /* BodyAtlas.strings in Resources */, E36400000000000000000003 /* vad in Resources */, A10000000000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F35620000000000000000001 /* browser-session-engine.cjs in Resources */, F35620000000000000000002 /* browser-runtime-readiness.cjs in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, C43040000000000000000061 /* InfoPlist.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */, E3699C000000000000000003 /* research-quality.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (C44430000000000000000001 /* AtlasFilmCaptions.strings in Resources */, C44410000000000000000001 /* AtlasCellularCloseups.strings in Resources */, C44400000000000000000001 /* AtlasMechanismCloseups.strings in Resources */, C44390000000000000000001 /* AtlasSynchronizedLessons.strings in Resources */, C44380000000000000000001 /* AgentManualModelRecovery.strings in Resources */, C44370000000000000000001 /* AtlasResearchNavigation.strings in Resources */, C44360000000000000000001 /* AtlasCumulativeComparison.strings in Resources */, C44350000000000000000001 /* AtlasGuidedFunction.strings in Resources */, C44340000000000000000001 /* AtlasModelComparison.strings in Resources */, C44180000000000000000001 /* AtlasRelatedReadings.strings in Resources */, C44170000000000000000001 /* AtlasWholeActions.strings in Resources */, C44140000000000000000001 /* AtlasCompletionTeaching.strings in Resources */, C44120000000000000000001 /* AtlasPleuralTeaching.strings in Resources */, C44100000000000000000001 /* AtlasExchangeTeaching.strings in Resources */, C44070000000000000000001 /* AtlasPhaseTeaching.strings in Resources */, C44050000000000000000001 /* AtlasTransportTeaching.strings in Resources */, C44020000000000000000001 /* AtlasRegionalTeaching.strings in Resources */, C44010000000000000000001 /* AtlasOrganTeaching.strings in Resources */, C43990000000000000000001 /* AtlasSystemTeaching.strings in Resources */, C43970000000000000000007 /* AtlasTeaching.strings in Resources */, C43960000000000000000001 /* AtlasAnatomy.strings in Resources */, C43910000000000000000001 /* AtlasExpanded.strings in Resources */, C43890000000000000000001 /* AtlasDetail.strings in Resources */, C43880000000000000000001 /* AtlasComplete.strings in Resources */, C43850000000000000000001 /* AtlasRegional.strings in Resources */, C43840000000000000000010 /* AtlasFunction.strings in Resources */, 40A8F2E0933DD60C3E202D5C /* body-atlas in Resources */, 7E9C74C29FE3236437B57ACB /* BodyAtlas.strings in Resources */, E36400000000000000000003 /* vad in Resources */, A10000000000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F35620000000000000000001 /* browser-session-engine.cjs in Resources */, F35620000000000000000002 /* browser-runtime-readiness.cjs in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, C43040000000000000000061 /* InfoPlist.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */, E3699C000000000000000003 /* research-quality.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (E3699C000000000000000005 /* quality-cases.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
@@ -7203,6 +7220,10 @@
         C44400000000000000000005 /* GalaxySSIHealthAtlasBeatPressure.swift in Sources */,
         C44410000000000000000005 /* GalaxySSIHealthAtlasCrossBridgeDrawing.swift in Sources */,
         C44420000000000000000001 /* GalaxySSIHealthAtlasSceneFrame.swift in Sources */,
+        C44430000000000000000005 /* GalaxySSIHealthAtlasFilmPalette.swift in Sources */,
+        C44430000000000000000007 /* GalaxySSIHealthAtlasRodResponse.swift in Sources */,
+        C44430000000000000000009 /* GalaxySSIHealthAtlasRodMembraneDrawing.swift in Sources */,
+        C4443000000000000000000B /* GalaxySSIHealthAtlasRodCatalogue.swift in Sources */,
         C44420000000000000000003 /* GalaxySSIHealthAtlasProcessStages.swift in Sources */,
         C44420000000000000000005 /* GalaxySSIHealthAtlasSimulationPlate.swift in Sources */,
         C44410000000000000000007 /* GalaxySSIHealthAtlasPotassiumTraceDrawing.swift in Sources */,

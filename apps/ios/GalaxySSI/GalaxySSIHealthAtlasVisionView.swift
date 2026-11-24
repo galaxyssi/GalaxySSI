@@ -6,7 +6,7 @@ struct GalaxySSIHealthAtlasVisionView: View {
   let phase: Double
   let language: String
   private typealias Motion = GalaxySSIHealthAtlasVisionMotion
-  private static let gold = color(0xA5651B), neural = color(0x137568), rod = color(0x675393), cone = color(0xA84759), textInk = color(0x23434C)
+  static let gold = color(0xA5651B), neural = color(0x137568), rod = color(0x675393), cone = color(0xA84759), textInk = color(0x23434C)
   private static let spectral: [UInt32] = [0x565CBB, 0x118575, 0xBF5661]
   var body: some View {
     let motion = Motion(courseID: story.id, chapter: story.chapter(phase), fraction: story.fraction(phase))
@@ -57,18 +57,7 @@ struct GalaxySSIHealthAtlasVisionView: View {
     key(in: context, center: 251, y: 301, key: "light", color: Self.gold)
   }
   private func capture(in context: GraphicsContext, motion: Motion) {
-    picture(in: context, asset: "HealthAtlasSensoryRod", l: 70, t: 26, r: 260, b: 311)
-    let t = motion.fraction, y = 18 + motion.incident * 34
-    if t < 0.51 { dot(in: context, x: 163, y: y, radius: 3.5, color: Self.gold) }
-    if t >= 0.46 {
-      context.stroke(circle(x: 164, y: 61, radius: 9 + sin(t * 8) * 2), with: .color(Self.gold), lineWidth: 2)
-    }
-    for i in 0..<motion.captureCount {
-      let move = Motion.loop(t * 2.4 + Double(i) / Double(motion.captureCount))
-      dot(in: context, x: Double(154 + (i % 3) * 10), y: 309 + move * 17, radius: 2.6, color: Self.neural)
-    }
-    leader(in: context, x: 174, y: 78, lx: 256, ly: 70, key: "outer", color: Self.gold)
-    label(in: context, x: 249, y: 301, key: t < 0.46 ? "dark_release" : "light_release", size: 11)
+    rodCapture(in: context, time: motion.fraction, count: motion.captureCount)
   }
   private func relay(in context: GraphicsContext, motion: Motion) {
     picture(in: context, asset: "HealthAtlasSensoryRetinaSection", l: 5, t: 16, r: 339, b: 278)
@@ -130,7 +119,7 @@ struct GalaxySSIHealthAtlasVisionView: View {
       dot(in: context, x: x + dx, y: 260 + travel * 15, radius: 4 - Double(abs(i - 2)) * 0.25, color: color)
     }
   }
-  private func picture(in context: GraphicsContext, asset: String, l: Double, t: Double, r: Double, b: Double) {
+  func picture(in context: GraphicsContext, asset: String, l: Double, t: Double, r: Double, b: Double) {
     context.draw(context.resolve(Image(asset)), in: CGRect(x: l, y: t, width: r - l, height: b - t))
   }
   private func pulse(in context: GraphicsContext, route: Motion.Route, position: Double, color: Color, radius: Double) {
@@ -153,7 +142,7 @@ struct GalaxySSIHealthAtlasVisionView: View {
     context.draw(Text(verbatim: text).font(.system(size: 11.5)).foregroundColor(Self.textInk),
       at: CGPoint(x: x + 14, y: y - font.ascender), anchor: .topLeading)
   }
-  private func label(in context: GraphicsContext, x: Double, y: Double, key: String, size: Double) {
+  func label(in context: GraphicsContext, x: Double, y: Double, key: String, size: Double) {
     let text = t(key), font = UIFont.systemFont(ofSize: size)
     let width = (text as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: size)]).width
     context.draw(Text(verbatim: text).font(.system(size: size)).foregroundColor(Self.textInk),
@@ -163,13 +152,13 @@ struct GalaxySSIHealthAtlasVisionView: View {
     context.stroke(path, with: .color(.white), style: StrokeStyle(lineWidth: outer, lineCap: .round, lineJoin: .round))
     context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: inner, lineCap: .round, lineJoin: .round))
   }
-  private func circle(x: Double, y: Double, radius: Double) -> Path {
+  func circle(x: Double, y: Double, radius: Double) -> Path {
     Path(ellipseIn: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2))
   }
-  private func dot(in context: GraphicsContext, x: Double, y: Double, radius: Double, color: Color) {
+  func dot(in context: GraphicsContext, x: Double, y: Double, radius: Double, color: Color) {
     context.fill(circle(x: x, y: y, radius: radius), with: .color(color))
   }
-  private static func color(_ value: UInt32) -> Color {
+  static func color(_ value: UInt32) -> Color {
     Color(red: Double((value >> 16) & 255) / 255, green: Double((value >> 8) & 255) / 255, blue: Double(value & 255) / 255)
   }
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasFunctionText.get("health_atlas_vision_story_" + key, language) }

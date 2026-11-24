@@ -1,0 +1,10 @@
+"health_atlas_vision_story_capture_caption" = "In a rod, light activates rhodopsin and starts a chain that lowers cGMP. Ion channels close, the cell gets more negative inside, and it releases less glutamate.";
+"health_atlas_vision_story_cgmp" = "cGMP";
+"health_atlas_vision_story_cng_closed" = "Ion channel closed";
+"health_atlas_vision_story_cng_open" = "Ion channel open";
+"health_atlas_vision_story_cng_source" = "Experiment: cGMP-gated channels in rods";
+"health_atlas_vision_story_dark_current" = "Na⁺ / Ca²⁺";
+"health_atlas_vision_story_hyperpolarized" = "More negative inside";
+"health_atlas_vision_story_lit" = "After light arrives";
+"health_atlas_vision_story_resting" = "Dark membrane potential";
+"health_atlas_vision_story_unlit" = "In the dark";

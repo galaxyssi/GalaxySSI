@@ -32,11 +32,13 @@ assert(absorption.indexOf('if step == 2 {') < absorption.indexOf('absorptionInse
 requireTokens(absorption, ['absorptionFlow(AbsorptionMotion.bloodRoute, t)\n      glucoseTransport(t)\n      return', 'if step == 4 {']);
 assert.equal(absorption.split('  private func absorptionVillus(')[1], prior('AbsorptionDrawing').split('  private func absorptionVillus(')[1]);
 requireTokens(source('GlucoseTransportDrawing'), ['Motion.glucoseTrack', 'Motion.sodiumTrack', 'arrow(251, 245, 251, 260', 'arrow(307, 241, 307, 252', 'arrow(323, 251, 323, 206', 't + Double(index) * 0.5', 'absorption_story_sglt1', 'absorption_story_glut2', 'absorption_story_pump']);
-for (const name of ['FunctionCatalogue', 'CloseupCatalogue', 'FunctionPlayer', 'ChapterClock', 'State', 'Research', 'AgentContext', 'AgentHandoff', 'Physiology', 'BeatPressure', 'PressureDrawing', 'TipLinkDrawing', 'RenalCloseupDrawing', 'BoneDrawing', 'IllustratedDrawing']) assert.equal(source(name), prior(name), name);
+for (const name of ['CloseupCatalogue', 'FunctionPlayer', 'ChapterClock', 'State', 'Research', 'AgentContext', 'AgentHandoff', 'Physiology', 'BeatPressure', 'PressureDrawing', 'TipLinkDrawing', 'RenalCloseupDrawing', 'BoneDrawing', 'IllustratedDrawing']) assert.equal(source(name), prior(name), name);
+// #4443 adds one immutable reference overlay, not new selection/cache semantics.
+assert.equal(source("FunctionCatalogue").split("struct GalaxySSIHealthAtlasFunctionSelection:")[1], prior("FunctionCatalogue").split("struct GalaxySSIHealthAtlasFunctionSelection:")[1]);
 // #4442 reorganizes scene/layout only; the playback and lifecycle block stays exact.
 const simulationLifecycle = s => s.split(".onReceive(timer)")[1].split(".onDisappear { pause() }")[0];
 assert.equal(simulationLifecycle(source("SimulationPanel")), simulationLifecycle(prior("SimulationPanel")));
-assert.equal(source("FunctionScene").split("  var body:")[0], prior("FunctionScene").split("  var body:")[0]);
+assert.equal(source("FunctionScene").replace(/^  @Environment.*private var colorScheme\n/m, "").split("  var body:")[0], prior("FunctionScene").split("  var body:")[0]);
 assert(source("FunctionScene").includes("GalaxySSIHealthAtlasSceneFrame"));
 assert(source("FunctionScene").includes("GalaxySSIHealthAtlasReservedCaption"));
 assert.equal(source("Detail").replace("          simulationPanel\n", "          simulationPanel\n          mechanismSource\n"), prior("Detail"));
