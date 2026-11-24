@@ -272,6 +272,16 @@
     C4384000000000000000023B /* GalaxySSIHealthAtlasAutonomicFiberDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000023C /* GalaxySSIHealthAtlasAutonomicFiberDrawing.swift */; };
     C4384000000000000000023D /* GalaxySSIHealthAtlasAutonomicStagesDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000023E /* GalaxySSIHealthAtlasAutonomicStagesDrawing.swift */; };
     C4384000000000000000023F /* GalaxySSIHealthAtlasAutonomicLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000240 /* GalaxySSIHealthAtlasAutonomicLabelsDrawing.swift */; };
+    C43840000000000000000241 /* GalaxySSIHealthAtlasGastricChiefMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000242 /* GalaxySSIHealthAtlasGastricChiefMotion.swift */; };
+    C43840000000000000000243 /* GalaxySSIHealthAtlasGastricChiefGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000244 /* GalaxySSIHealthAtlasGastricChiefGeometry.swift */; };
+    C43840000000000000000245 /* GalaxySSIHealthAtlasGastricChiefRoutes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000246 /* GalaxySSIHealthAtlasGastricChiefRoutes.swift */; };
+    C43840000000000000000247 /* GalaxySSIHealthAtlasGastricChiefView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000248 /* GalaxySSIHealthAtlasGastricChiefView.swift */; };
+    C43840000000000000000249 /* GalaxySSIHealthAtlasGastricChiefLocatorDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000024A /* GalaxySSIHealthAtlasGastricChiefLocatorDrawing.swift */; };
+    C4384000000000000000024B /* GalaxySSIHealthAtlasGastricChiefCloseUpDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000024C /* GalaxySSIHealthAtlasGastricChiefCloseUpDrawing.swift */; };
+    C4384000000000000000024D /* GalaxySSIHealthAtlasGastricChiefActivationDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000024E /* GalaxySSIHealthAtlasGastricChiefActivationDrawing.swift */; };
+    C4384000000000000000024F /* GalaxySSIHealthAtlasGastricChiefDigestDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000250 /* GalaxySSIHealthAtlasGastricChiefDigestDrawing.swift */; };
+    C43840000000000000000251 /* GalaxySSIHealthAtlasGastricChiefMoleculeDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000252 /* GalaxySSIHealthAtlasGastricChiefMoleculeDrawing.swift */; };
+    C43840000000000000000253 /* GalaxySSIHealthAtlasGastricChiefLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000254 /* GalaxySSIHealthAtlasGastricChiefLabelsDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -2017,6 +2027,16 @@
     C4384000000000000000023C /* GalaxySSIHealthAtlasAutonomicFiberDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAutonomicFiberDrawing.swift; sourceTree = "<group>"; };
     C4384000000000000000023E /* GalaxySSIHealthAtlasAutonomicStagesDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAutonomicStagesDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000240 /* GalaxySSIHealthAtlasAutonomicLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAutonomicLabelsDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000242 /* GalaxySSIHealthAtlasGastricChiefMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricChiefMotion.swift; sourceTree = "<group>"; };
+    C43840000000000000000244 /* GalaxySSIHealthAtlasGastricChiefGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricChiefGeometry.swift; sourceTree = "<group>"; };
+    C43840000000000000000246 /* GalaxySSIHealthAtlasGastricChiefRoutes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricChiefRoutes.swift; sourceTree = "<group>"; };
+    C43840000000000000000248 /* GalaxySSIHealthAtlasGastricChiefView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricChiefView.swift; sourceTree = "<group>"; };
+    C4384000000000000000024A /* GalaxySSIHealthAtlasGastricChiefLocatorDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricChiefLocatorDrawing.swift; sourceTree = "<group>"; };
+    C4384000000000000000024C /* GalaxySSIHealthAtlasGastricChiefCloseUpDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricChiefCloseUpDrawing.swift; sourceTree = "<group>"; };
+    C4384000000000000000024E /* GalaxySSIHealthAtlasGastricChiefActivationDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricChiefActivationDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000250 /* GalaxySSIHealthAtlasGastricChiefDigestDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricChiefDigestDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000252 /* GalaxySSIHealthAtlasGastricChiefMoleculeDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricChiefMoleculeDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000254 /* GalaxySSIHealthAtlasGastricChiefLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGastricChiefLabelsDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3781,6 +3801,16 @@
         C4384000000000000000023C /* GalaxySSIHealthAtlasAutonomicFiberDrawing.swift */,
         C4384000000000000000023E /* GalaxySSIHealthAtlasAutonomicStagesDrawing.swift */,
         C43840000000000000000240 /* GalaxySSIHealthAtlasAutonomicLabelsDrawing.swift */,
+        C43840000000000000000242 /* GalaxySSIHealthAtlasGastricChiefMotion.swift */,
+        C43840000000000000000244 /* GalaxySSIHealthAtlasGastricChiefGeometry.swift */,
+        C43840000000000000000246 /* GalaxySSIHealthAtlasGastricChiefRoutes.swift */,
+        C43840000000000000000248 /* GalaxySSIHealthAtlasGastricChiefView.swift */,
+        C4384000000000000000024A /* GalaxySSIHealthAtlasGastricChiefLocatorDrawing.swift */,
+        C4384000000000000000024C /* GalaxySSIHealthAtlasGastricChiefCloseUpDrawing.swift */,
+        C4384000000000000000024E /* GalaxySSIHealthAtlasGastricChiefActivationDrawing.swift */,
+        C43840000000000000000250 /* GalaxySSIHealthAtlasGastricChiefDigestDrawing.swift */,
+        C43840000000000000000252 /* GalaxySSIHealthAtlasGastricChiefMoleculeDrawing.swift */,
+        C43840000000000000000254 /* GalaxySSIHealthAtlasGastricChiefLabelsDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5675,6 +5705,16 @@
         C4384000000000000000023B /* GalaxySSIHealthAtlasAutonomicFiberDrawing.swift in Sources */,
         C4384000000000000000023D /* GalaxySSIHealthAtlasAutonomicStagesDrawing.swift in Sources */,
         C4384000000000000000023F /* GalaxySSIHealthAtlasAutonomicLabelsDrawing.swift in Sources */,
+        C43840000000000000000241 /* GalaxySSIHealthAtlasGastricChiefMotion.swift in Sources */,
+        C43840000000000000000243 /* GalaxySSIHealthAtlasGastricChiefGeometry.swift in Sources */,
+        C43840000000000000000245 /* GalaxySSIHealthAtlasGastricChiefRoutes.swift in Sources */,
+        C43840000000000000000247 /* GalaxySSIHealthAtlasGastricChiefView.swift in Sources */,
+        C43840000000000000000249 /* GalaxySSIHealthAtlasGastricChiefLocatorDrawing.swift in Sources */,
+        C4384000000000000000024B /* GalaxySSIHealthAtlasGastricChiefCloseUpDrawing.swift in Sources */,
+        C4384000000000000000024D /* GalaxySSIHealthAtlasGastricChiefActivationDrawing.swift in Sources */,
+        C4384000000000000000024F /* GalaxySSIHealthAtlasGastricChiefDigestDrawing.swift in Sources */,
+        C43840000000000000000251 /* GalaxySSIHealthAtlasGastricChiefMoleculeDrawing.swift in Sources */,
+        C43840000000000000000253 /* GalaxySSIHealthAtlasGastricChiefLabelsDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
