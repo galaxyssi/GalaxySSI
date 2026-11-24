@@ -404,6 +404,14 @@
     C43840000000000000000351 /* GalaxySSIHealthAtlasEpendymalFlowDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000352 /* GalaxySSIHealthAtlasEpendymalFlowDrawing.swift */; };
     C43840000000000000000353 /* GalaxySSIHealthAtlasEpendymalLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000354 /* GalaxySSIHealthAtlasEpendymalLabelsDrawing.swift */; };
     C43840000000000000000355 /* GalaxySSIHealthAtlasEpendymalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000356 /* GalaxySSIHealthAtlasEpendymalView.swift */; };
+    C43840000000000000000357 /* GalaxySSIHealthAtlasDeltoidGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000358 /* GalaxySSIHealthAtlasDeltoidGeometry.swift */; };
+    C43840000000000000000359 /* GalaxySSIHealthAtlasDeltoidMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000035A /* GalaxySSIHealthAtlasDeltoidMotion.swift */; };
+    C4384000000000000000035B /* GalaxySSIHealthAtlasDeltoidPose.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000035C /* GalaxySSIHealthAtlasDeltoidPose.swift */; };
+    C4384000000000000000035D /* GalaxySSIHealthAtlasDeltoidAnatomyDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000035E /* GalaxySSIHealthAtlasDeltoidAnatomyDrawing.swift */; };
+    C4384000000000000000035F /* GalaxySSIHealthAtlasDeltoidBandDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000360 /* GalaxySSIHealthAtlasDeltoidBandDrawing.swift */; };
+    C43840000000000000000361 /* GalaxySSIHealthAtlasDeltoidSweepDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000362 /* GalaxySSIHealthAtlasDeltoidSweepDrawing.swift */; };
+    C43840000000000000000363 /* GalaxySSIHealthAtlasDeltoidLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000364 /* GalaxySSIHealthAtlasDeltoidLabelsDrawing.swift */; };
+    C43840000000000000000365 /* GalaxySSIHealthAtlasDeltoidView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000366 /* GalaxySSIHealthAtlasDeltoidView.swift */; };
     C438400000000000000002FF /* GalaxySSIHealthAtlasCholangiocyteMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */; };
     C43840000000000000000301 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */; };
     C43840000000000000000303 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */; };
@@ -2288,6 +2296,14 @@
     C43840000000000000000352 /* GalaxySSIHealthAtlasEpendymalFlowDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEpendymalFlowDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000354 /* GalaxySSIHealthAtlasEpendymalLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEpendymalLabelsDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000356 /* GalaxySSIHealthAtlasEpendymalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEpendymalView.swift; sourceTree = "<group>"; };
+    C43840000000000000000358 /* GalaxySSIHealthAtlasDeltoidGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDeltoidGeometry.swift; sourceTree = "<group>"; };
+    C4384000000000000000035A /* GalaxySSIHealthAtlasDeltoidMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDeltoidMotion.swift; sourceTree = "<group>"; };
+    C4384000000000000000035C /* GalaxySSIHealthAtlasDeltoidPose.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDeltoidPose.swift; sourceTree = "<group>"; };
+    C4384000000000000000035E /* GalaxySSIHealthAtlasDeltoidAnatomyDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDeltoidAnatomyDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000360 /* GalaxySSIHealthAtlasDeltoidBandDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDeltoidBandDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000362 /* GalaxySSIHealthAtlasDeltoidSweepDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDeltoidSweepDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000364 /* GalaxySSIHealthAtlasDeltoidLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDeltoidLabelsDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000366 /* GalaxySSIHealthAtlasDeltoidView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDeltoidView.swift; sourceTree = "<group>"; };
     C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift; sourceTree = "<group>"; };
@@ -4191,6 +4207,14 @@
         C43840000000000000000352 /* GalaxySSIHealthAtlasEpendymalFlowDrawing.swift */,
         C43840000000000000000354 /* GalaxySSIHealthAtlasEpendymalLabelsDrawing.swift */,
         C43840000000000000000356 /* GalaxySSIHealthAtlasEpendymalView.swift */,
+        C43840000000000000000358 /* GalaxySSIHealthAtlasDeltoidGeometry.swift */,
+        C4384000000000000000035A /* GalaxySSIHealthAtlasDeltoidMotion.swift */,
+        C4384000000000000000035C /* GalaxySSIHealthAtlasDeltoidPose.swift */,
+        C4384000000000000000035E /* GalaxySSIHealthAtlasDeltoidAnatomyDrawing.swift */,
+        C43840000000000000000360 /* GalaxySSIHealthAtlasDeltoidBandDrawing.swift */,
+        C43840000000000000000362 /* GalaxySSIHealthAtlasDeltoidSweepDrawing.swift */,
+        C43840000000000000000364 /* GalaxySSIHealthAtlasDeltoidLabelsDrawing.swift */,
+        C43840000000000000000366 /* GalaxySSIHealthAtlasDeltoidView.swift */,
         C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */,
         C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */,
         C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */,
@@ -6224,6 +6248,14 @@
         C43840000000000000000351 /* GalaxySSIHealthAtlasEpendymalFlowDrawing.swift in Sources */,
         C43840000000000000000353 /* GalaxySSIHealthAtlasEpendymalLabelsDrawing.swift in Sources */,
         C43840000000000000000355 /* GalaxySSIHealthAtlasEpendymalView.swift in Sources */,
+        C43840000000000000000357 /* GalaxySSIHealthAtlasDeltoidGeometry.swift in Sources */,
+        C43840000000000000000359 /* GalaxySSIHealthAtlasDeltoidMotion.swift in Sources */,
+        C4384000000000000000035B /* GalaxySSIHealthAtlasDeltoidPose.swift in Sources */,
+        C4384000000000000000035D /* GalaxySSIHealthAtlasDeltoidAnatomyDrawing.swift in Sources */,
+        C4384000000000000000035F /* GalaxySSIHealthAtlasDeltoidBandDrawing.swift in Sources */,
+        C43840000000000000000361 /* GalaxySSIHealthAtlasDeltoidSweepDrawing.swift in Sources */,
+        C43840000000000000000363 /* GalaxySSIHealthAtlasDeltoidLabelsDrawing.swift in Sources */,
+        C43840000000000000000365 /* GalaxySSIHealthAtlasDeltoidView.swift in Sources */,
         C438400000000000000002FF /* GalaxySSIHealthAtlasCholangiocyteMotion.swift in Sources */,
         C43840000000000000000301 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift in Sources */,
         C43840000000000000000303 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift in Sources */,
