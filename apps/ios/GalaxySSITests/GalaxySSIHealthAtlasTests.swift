@@ -2345,6 +2345,55 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testArterialWaveAndFlowHaveDifferentStageMotions() throws {
+    typealias Motion = GalaxySSIHealthAtlasArterialMotion
+    XCTAssertNil(Motion.front(step: 0, t: 0.5)); XCTAssertNil(Motion.flowTravel(step: 0, t: 0.5))
+    XCTAssertEqual(Motion.expansion(step: 0, t: 1, location: 0.24), 0)
+    XCTAssertEqual(Motion.expansion(step: 1, t: 1, location: 0.24), 0.88)
+    XCTAssertEqual(try XCTUnwrap(Motion.front(step: 2, t: 0)), 0.06)
+    XCTAssertEqual(try XCTUnwrap(Motion.front(step: 2, t: 1)), 0.94, accuracy: 1e-12)
+    XCTAssertEqual(Motion.expansion(step: 3, t: 0, location: 0.24), 0.8)
+    XCTAssertEqual(Motion.expansion(step: 3, t: 1, location: 0.24), 0)
+    XCTAssertEqual(Motion.expansion(step: 4, t: 0.5, location: 0.24), 0.82, accuracy: 1e-12)
+    XCTAssertEqual(try XCTUnwrap(Motion.flowTravel(step: 3, t: 1)), 0.31, accuracy: 1e-12)
+    XCTAssertEqual(try XCTUnwrap(Motion.flowTravel(step: 4, t: 1)), 0.57)
+    for sample in 0...200 {
+      let t = Double(sample) / 200, front = try XCTUnwrap(Motion.front(step: 2, t: t))
+      XCTAssertEqual(Motion.expansion(step: 2, t: t, location: front), 0.89, accuracy: 1e-12)
+      XCTAssertEqual(Motion.expansion(step: 2, t: t, location: front < 0.5 ? 1 : 0), 0.22, accuracy: 1e-12)
+    }
+    XCTAssertEqual(Motion.expansion(step: 1, t: .nan, location: 0.24), 0)
+  }
+
+  func testArterialLayerSamplingSymmetryAndFlowBounds() {
+    typealias Motion = GalaxySSIHealthAtlasArterialMotion
+    for step in 0...4 {
+      for t in [0.0,0.25,0.5,0.75,1] {
+        for offset in [0.0,3,11,16] {
+          let layer = Motion.layer(step: step, t: t, offset: offset)
+          XCTAssertEqual(layer.count, 50)
+          XCTAssertEqual(layer[0].x, 28); XCTAssertEqual(layer[24].x, 332)
+          XCTAssertEqual(layer[25].x, 332); XCTAssertEqual(layer[49].x, 28)
+          for index in 0...24 {
+            XCTAssertEqual(layer[index].x, layer[49 - index].x)
+            XCTAssertEqual(layer[index].y + layer[49 - index].y, 506, accuracy: 1e-10)
+          }
+        }
+        XCTAssertEqual(Motion.lamella(step: step, t: t, offset: 6, side: -1).count, 25)
+        if let distance = Motion.flowTravel(step: step, t: t) {
+          for index in 0...3 {
+            let point = Motion.flow(distance: distance, index: index)
+            XCTAssertGreaterThanOrEqual(point.x, Motion.xAt(0.05) - 1e-10)
+            XCTAssertLessThanOrEqual(point.x, Motion.xAt(0.95) + 1e-10)
+            XCTAssertEqual(point.y, index % 2 == 0 ? 248 : 259)
+          }
+        }
+      }
+    }
+    XCTAssertEqual(Motion.layerLines, [0,6,9,16])
+    XCTAssertEqual(Motion.branches.count, 3)
+  }
+
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
