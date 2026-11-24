@@ -486,6 +486,26 @@
     C438400000000000000003FB /* GalaxySSIHealthAtlasFunctionRelatedRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003FC /* GalaxySSIHealthAtlasFunctionRelatedRow.swift */; };
     C438400000000000000003FD /* GalaxySSIHealthAtlasFunctionViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003FE /* GalaxySSIHealthAtlasFunctionViewport.swift */; };
     C438400000000000000003FF /* GalaxySSIHealthAtlasFunctionStructures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000400 /* GalaxySSIHealthAtlasFunctionStructures.swift */; };
+    C4385000000000000000005D /* GalaxySSIHealthAtlasUterocervicalLocatorGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000005E /* GalaxySSIHealthAtlasUterocervicalLocatorGeometry.swift */; };
+    C4385000000000000000005F /* GalaxySSIHealthAtlasUterocervicalWallGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000060 /* GalaxySSIHealthAtlasUterocervicalWallGeometry.swift */; };
+    C43850000000000000000061 /* GalaxySSIHealthAtlasUterocervicalCanalGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000062 /* GalaxySSIHealthAtlasUterocervicalCanalGeometry.swift */; };
+    C43850000000000000000063 /* GalaxySSIHealthAtlasUterocervicalVaginalGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000064 /* GalaxySSIHealthAtlasUterocervicalVaginalGeometry.swift */; };
+    C43850000000000000000065 /* GalaxySSIHealthAtlasUterocervicalMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000066 /* GalaxySSIHealthAtlasUterocervicalMotion.swift */; };
+    C43850000000000000000067 /* GalaxySSIHealthAtlasUterocervicalDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000068 /* GalaxySSIHealthAtlasUterocervicalDrawing.swift */; };
+    C43850000000000000000069 /* GalaxySSIHealthAtlasUterocervicalLocatorDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000006A /* GalaxySSIHealthAtlasUterocervicalLocatorDrawing.swift */; };
+    C4385000000000000000006B /* GalaxySSIHealthAtlasUterocervicalDetailDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000006C /* GalaxySSIHealthAtlasUterocervicalDetailDrawing.swift */; };
+    C4385000000000000000006D /* GalaxySSIHealthAtlasUterocervicalVaginalDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000006E /* GalaxySSIHealthAtlasUterocervicalVaginalDrawing.swift */; };
+    C4385000000000000000006F /* GalaxySSIHealthAtlasUterocervicalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000070 /* GalaxySSIHealthAtlasUterocervicalView.swift */; };
+    C43850000000000000000049 /* GalaxySSIHealthAtlasShoulderActionMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000004A /* GalaxySSIHealthAtlasShoulderActionMotion.swift */; };
+    C4385000000000000000004B /* GalaxySSIHealthAtlasPectoralGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000004C /* GalaxySSIHealthAtlasPectoralGeometry.swift */; };
+    C4385000000000000000004D /* GalaxySSIHealthAtlasPectoralDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000004E /* GalaxySSIHealthAtlasPectoralDrawing.swift */; };
+    C4385000000000000000004F /* GalaxySSIHealthAtlasPectoralFanDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000050 /* GalaxySSIHealthAtlasPectoralFanDrawing.swift */; };
+    C43850000000000000000051 /* GalaxySSIHealthAtlasPectoralView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000052 /* GalaxySSIHealthAtlasPectoralView.swift */; };
+    C43850000000000000000053 /* GalaxySSIHealthAtlasLatissimusGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000054 /* GalaxySSIHealthAtlasLatissimusGeometry.swift */; };
+    C43850000000000000000055 /* GalaxySSIHealthAtlasLatissimusDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000056 /* GalaxySSIHealthAtlasLatissimusDrawing.swift */; };
+    C43850000000000000000057 /* GalaxySSIHealthAtlasLatissimusBackDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000058 /* GalaxySSIHealthAtlasLatissimusBackDrawing.swift */; };
+    C43850000000000000000059 /* GalaxySSIHealthAtlasLatissimusSheetDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000005A /* GalaxySSIHealthAtlasLatissimusSheetDrawing.swift */; };
+    C4385000000000000000005B /* GalaxySSIHealthAtlasLatissimusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000005C /* GalaxySSIHealthAtlasLatissimusView.swift */; };
     C43850000000000000000039 /* GalaxySSIHealthAtlasAccessoryGlandRoutes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000003A /* GalaxySSIHealthAtlasAccessoryGlandRoutes.swift */; };
     C4385000000000000000003B /* GalaxySSIHealthAtlasAccessoryGlandLabels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000003C /* GalaxySSIHealthAtlasAccessoryGlandLabels.swift */; };
     C4385000000000000000003D /* GalaxySSIHealthAtlasAccessoryGlandDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000003E /* GalaxySSIHealthAtlasAccessoryGlandDrawing.swift */; };
@@ -2490,6 +2510,26 @@
     C438400000000000000003FC /* GalaxySSIHealthAtlasFunctionRelatedRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionRelatedRow.swift; sourceTree = "<group>"; };
     C438400000000000000003FE /* GalaxySSIHealthAtlasFunctionViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionViewport.swift; sourceTree = "<group>"; };
     C43840000000000000000400 /* GalaxySSIHealthAtlasFunctionStructures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionStructures.swift; sourceTree = "<group>"; };
+    C4385000000000000000005E /* GalaxySSIHealthAtlasUterocervicalLocatorGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUterocervicalLocatorGeometry.swift; sourceTree = "<group>"; };
+    C43850000000000000000060 /* GalaxySSIHealthAtlasUterocervicalWallGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUterocervicalWallGeometry.swift; sourceTree = "<group>"; };
+    C43850000000000000000062 /* GalaxySSIHealthAtlasUterocervicalCanalGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUterocervicalCanalGeometry.swift; sourceTree = "<group>"; };
+    C43850000000000000000064 /* GalaxySSIHealthAtlasUterocervicalVaginalGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUterocervicalVaginalGeometry.swift; sourceTree = "<group>"; };
+    C43850000000000000000066 /* GalaxySSIHealthAtlasUterocervicalMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUterocervicalMotion.swift; sourceTree = "<group>"; };
+    C43850000000000000000068 /* GalaxySSIHealthAtlasUterocervicalDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUterocervicalDrawing.swift; sourceTree = "<group>"; };
+    C4385000000000000000006A /* GalaxySSIHealthAtlasUterocervicalLocatorDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUterocervicalLocatorDrawing.swift; sourceTree = "<group>"; };
+    C4385000000000000000006C /* GalaxySSIHealthAtlasUterocervicalDetailDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUterocervicalDetailDrawing.swift; sourceTree = "<group>"; };
+    C4385000000000000000006E /* GalaxySSIHealthAtlasUterocervicalVaginalDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUterocervicalVaginalDrawing.swift; sourceTree = "<group>"; };
+    C43850000000000000000070 /* GalaxySSIHealthAtlasUterocervicalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUterocervicalView.swift; sourceTree = "<group>"; };
+    C4385000000000000000004A /* GalaxySSIHealthAtlasShoulderActionMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasShoulderActionMotion.swift; sourceTree = "<group>"; };
+    C4385000000000000000004C /* GalaxySSIHealthAtlasPectoralGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPectoralGeometry.swift; sourceTree = "<group>"; };
+    C4385000000000000000004E /* GalaxySSIHealthAtlasPectoralDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPectoralDrawing.swift; sourceTree = "<group>"; };
+    C43850000000000000000050 /* GalaxySSIHealthAtlasPectoralFanDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPectoralFanDrawing.swift; sourceTree = "<group>"; };
+    C43850000000000000000052 /* GalaxySSIHealthAtlasPectoralView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPectoralView.swift; sourceTree = "<group>"; };
+    C43850000000000000000054 /* GalaxySSIHealthAtlasLatissimusGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLatissimusGeometry.swift; sourceTree = "<group>"; };
+    C43850000000000000000056 /* GalaxySSIHealthAtlasLatissimusDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLatissimusDrawing.swift; sourceTree = "<group>"; };
+    C43850000000000000000058 /* GalaxySSIHealthAtlasLatissimusBackDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLatissimusBackDrawing.swift; sourceTree = "<group>"; };
+    C4385000000000000000005A /* GalaxySSIHealthAtlasLatissimusSheetDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLatissimusSheetDrawing.swift; sourceTree = "<group>"; };
+    C4385000000000000000005C /* GalaxySSIHealthAtlasLatissimusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasLatissimusView.swift; sourceTree = "<group>"; };
     C4385000000000000000003A /* GalaxySSIHealthAtlasAccessoryGlandRoutes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAccessoryGlandRoutes.swift; sourceTree = "<group>"; };
     C4385000000000000000003C /* GalaxySSIHealthAtlasAccessoryGlandLabels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAccessoryGlandLabels.swift; sourceTree = "<group>"; };
     C4385000000000000000003E /* GalaxySSIHealthAtlasAccessoryGlandDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAccessoryGlandDrawing.swift; sourceTree = "<group>"; };
@@ -4514,6 +4554,26 @@
         C438400000000000000003FC /* GalaxySSIHealthAtlasFunctionRelatedRow.swift */,
         C438400000000000000003FE /* GalaxySSIHealthAtlasFunctionViewport.swift */,
         C43840000000000000000400 /* GalaxySSIHealthAtlasFunctionStructures.swift */,
+        C4385000000000000000005E /* GalaxySSIHealthAtlasUterocervicalLocatorGeometry.swift */,
+        C43850000000000000000060 /* GalaxySSIHealthAtlasUterocervicalWallGeometry.swift */,
+        C43850000000000000000062 /* GalaxySSIHealthAtlasUterocervicalCanalGeometry.swift */,
+        C43850000000000000000064 /* GalaxySSIHealthAtlasUterocervicalVaginalGeometry.swift */,
+        C43850000000000000000066 /* GalaxySSIHealthAtlasUterocervicalMotion.swift */,
+        C43850000000000000000068 /* GalaxySSIHealthAtlasUterocervicalDrawing.swift */,
+        C4385000000000000000006A /* GalaxySSIHealthAtlasUterocervicalLocatorDrawing.swift */,
+        C4385000000000000000006C /* GalaxySSIHealthAtlasUterocervicalDetailDrawing.swift */,
+        C4385000000000000000006E /* GalaxySSIHealthAtlasUterocervicalVaginalDrawing.swift */,
+        C43850000000000000000070 /* GalaxySSIHealthAtlasUterocervicalView.swift */,
+        C4385000000000000000004A /* GalaxySSIHealthAtlasShoulderActionMotion.swift */,
+        C4385000000000000000004C /* GalaxySSIHealthAtlasPectoralGeometry.swift */,
+        C4385000000000000000004E /* GalaxySSIHealthAtlasPectoralDrawing.swift */,
+        C43850000000000000000050 /* GalaxySSIHealthAtlasPectoralFanDrawing.swift */,
+        C43850000000000000000052 /* GalaxySSIHealthAtlasPectoralView.swift */,
+        C43850000000000000000054 /* GalaxySSIHealthAtlasLatissimusGeometry.swift */,
+        C43850000000000000000056 /* GalaxySSIHealthAtlasLatissimusDrawing.swift */,
+        C43850000000000000000058 /* GalaxySSIHealthAtlasLatissimusBackDrawing.swift */,
+        C4385000000000000000005A /* GalaxySSIHealthAtlasLatissimusSheetDrawing.swift */,
+        C4385000000000000000005C /* GalaxySSIHealthAtlasLatissimusView.swift */,
         C4385000000000000000003A /* GalaxySSIHealthAtlasAccessoryGlandRoutes.swift */,
         C4385000000000000000003C /* GalaxySSIHealthAtlasAccessoryGlandLabels.swift */,
         C4385000000000000000003E /* GalaxySSIHealthAtlasAccessoryGlandDrawing.swift */,
@@ -6668,6 +6728,26 @@
         C438400000000000000003FB /* GalaxySSIHealthAtlasFunctionRelatedRow.swift in Sources */,
         C438400000000000000003FD /* GalaxySSIHealthAtlasFunctionViewport.swift in Sources */,
         C438400000000000000003FF /* GalaxySSIHealthAtlasFunctionStructures.swift in Sources */,
+        C4385000000000000000005D /* GalaxySSIHealthAtlasUterocervicalLocatorGeometry.swift in Sources */,
+        C4385000000000000000005F /* GalaxySSIHealthAtlasUterocervicalWallGeometry.swift in Sources */,
+        C43850000000000000000061 /* GalaxySSIHealthAtlasUterocervicalCanalGeometry.swift in Sources */,
+        C43850000000000000000063 /* GalaxySSIHealthAtlasUterocervicalVaginalGeometry.swift in Sources */,
+        C43850000000000000000065 /* GalaxySSIHealthAtlasUterocervicalMotion.swift in Sources */,
+        C43850000000000000000067 /* GalaxySSIHealthAtlasUterocervicalDrawing.swift in Sources */,
+        C43850000000000000000069 /* GalaxySSIHealthAtlasUterocervicalLocatorDrawing.swift in Sources */,
+        C4385000000000000000006B /* GalaxySSIHealthAtlasUterocervicalDetailDrawing.swift in Sources */,
+        C4385000000000000000006D /* GalaxySSIHealthAtlasUterocervicalVaginalDrawing.swift in Sources */,
+        C4385000000000000000006F /* GalaxySSIHealthAtlasUterocervicalView.swift in Sources */,
+        C43850000000000000000049 /* GalaxySSIHealthAtlasShoulderActionMotion.swift in Sources */,
+        C4385000000000000000004B /* GalaxySSIHealthAtlasPectoralGeometry.swift in Sources */,
+        C4385000000000000000004D /* GalaxySSIHealthAtlasPectoralDrawing.swift in Sources */,
+        C4385000000000000000004F /* GalaxySSIHealthAtlasPectoralFanDrawing.swift in Sources */,
+        C43850000000000000000051 /* GalaxySSIHealthAtlasPectoralView.swift in Sources */,
+        C43850000000000000000053 /* GalaxySSIHealthAtlasLatissimusGeometry.swift in Sources */,
+        C43850000000000000000055 /* GalaxySSIHealthAtlasLatissimusDrawing.swift in Sources */,
+        C43850000000000000000057 /* GalaxySSIHealthAtlasLatissimusBackDrawing.swift in Sources */,
+        C43850000000000000000059 /* GalaxySSIHealthAtlasLatissimusSheetDrawing.swift in Sources */,
+        C4385000000000000000005B /* GalaxySSIHealthAtlasLatissimusView.swift in Sources */,
         C43850000000000000000039 /* GalaxySSIHealthAtlasAccessoryGlandRoutes.swift in Sources */,
         C4385000000000000000003B /* GalaxySSIHealthAtlasAccessoryGlandLabels.swift in Sources */,
         C4385000000000000000003D /* GalaxySSIHealthAtlasAccessoryGlandDrawing.swift in Sources */,

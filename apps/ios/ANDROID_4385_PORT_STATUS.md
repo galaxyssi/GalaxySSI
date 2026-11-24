@@ -57,7 +57,17 @@ This is an in-progress implementation, not a completed parity claim or release.
 - Dedicated vulvar-protection renderer: five scenes, ten original contours/50
   commands, nine emphasis tracks, ten source feature anchors, paired traces and
   fixed asymmetric comparison profiles. Only reading emphasis moves.
-- All ten new renderers have Xcode source registration but remain unreachable until
+- Dedicated pectoral-action renderer: five scenes, five original outlines,
+  parameterized clavicular/sternocostal fans, humeral insertion, overhead rotation,
+  progressive/return sweep arcs and chapter-specific attachment callouts.
+- Dedicated latissimus-action renderer: five scenes, six original outlines,
+  source sagittal-then-frontal projection, projected arm/attachment, parameterized
+  muscle sheet, dashed hidden tendon, twenty-segment guides and return directions.
+- Dedicated uterocervical renderer: three scenes with a fixed locator and enlarged
+  regional sections. Original pure Kotlin declarations produce 29 static paths/216
+  commands, including loop textures, relative quadratics and four continuous trace
+  DTOs. Native moving folds retain original controls and fixed canal/opening edges.
+- All thirteen new renderers have Xcode source registration but remain unreachable until
   the regional catalogue and complete renderer coverage are activated together.
 - All 23 new/modified VectorDrawable resources imported into separate regional PDF
   assets: 298 source paths and 68 native gradients. They do not overwrite frozen
@@ -75,8 +85,8 @@ This is an in-progress implementation, not a completed parity claim or release.
 
 ## Remaining Before Publication
 
-- Three courses: uterocervical continuity, pectoral
-  horizontal adduction and latissimus extension/adduction.
+- All thirteen new course renderers are implemented. Activate their catalogue and
+  renderer registry only after completing the runtime integration below.
 - New/modified structure plate metadata and their owner/view selectors, features,
   links, sources and captions are extracted; connect the snapshot and imported
   vector revisions to runtime, including the two-view tenocyte selector behavior.
@@ -126,3 +136,10 @@ colors, eighteen evaluated Callout/copy declarations, five stage mappings and 24
 analytic delayed-progress samples. Vulvar source checks passed for ten contours/50
 commands, nine trace control sets, ten feature anchors matching Kotlin-extracted
 metadata, eight callouts and 968 analytic reveal samples. No native acceptance.
+
+Shoulder source checks passed for eleven outlines/84 commands, all original
+parameterized fan/sheet/back curve controls, eleven bilingual labels, five-stage
+models and 605 analytic pose/continuity samples. Uterocervical checks re-evaluated
+29 original static paths/216 commands and verified moving-lining controls, nine
+callouts, fixed locator/openings and 121 analytic emphasis/fold samples. These
+checks do not execute Swift, Canvas, device rendering or native compilation.
