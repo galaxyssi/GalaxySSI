@@ -11,21 +11,31 @@ class HealthActivityComparisonTest {
     private fun compare(vararg rows: HealthActivityDay) = HealthActivityComparison.build(first, first.plusDays(6), rows.toList(), steps)
     @Test fun missingDaysAreNotFabricatedZeros() {
         val result = compare(day(1, 200))
-        assertNull(result.current[0]); assertEquals(200L, result.current[1]); assertTrue(result.paired.isEmpty())
+        assertEquals(listOf(null, 200L, null, null, null, null, null), result.current)
     }
     @Test fun explicitZeroIsPreserved() {
         val result = compare(day(0, 0), day(-7, 50))
-        assertEquals(listOf(0), result.paired); assertEquals(0L, result.currentPaired); assertEquals(-100.0, result.changePercent!!, 0.001)
+        assertEquals(0L, result.current.first())
     }
-    @Test fun onlyMatchingOffsetsContributeToChange() {
-        val result = compare(day(0, 200), day(1, 10_000), day(-7, 100), day(-5, 50_000))
-        assertEquals(200L, result.currentPaired); assertEquals(100L, result.previousPaired); assertEquals(100.0, result.changePercent!!, 0.001)
+    @Test fun outOfRangeActivityDoesNotAffectPlottedValues() {
+        val result = compare(day(-8, 80_000), day(-1, 50_000), day(0, 200), day(4, 40), day(7, 10_000))
+        assertEquals(listOf(200L, null, null, null, 40L, null, null), result.current)
     }
-    @Test fun zeroBaselineDoesNotProduceInfinity() { assertNull(compare(day(0, 1), day(-7, 0)).changePercent) }
     @Test fun activityKindsAreNeverMixed() { assertNull(compare(day(0, 90_000, HealthActivityKind.CYCLING)).current[0]) }
-    @Test fun equalLengthPreviousPeriodDoesNotOverlapCurrent() {
-        val result = compare(day(-1, 60), day(0, 100))
-        assertEquals(60L, result.previous[6]); assertEquals(100L, result.current[0]); assertEquals(7, result.current.size)
+    @Test fun chartDateTicksIncludeBothEndpointsWithoutDuplicates() {
+        val oneDay = HealthActivityComparison.build(first, first, emptyList(), steps)
+        assertEquals(listOf(0), oneDay.dateTickIndices(7))
+        val week = compare()
+        assertEquals((0..6).toList(), week.dateTickIndices(7))
+        assertEquals(listOf(0, 3, 6), week.dateTickIndices(3))
+        listOf(30, 90, 366).forEach { days ->
+            val last = first.plusDays(days.toLong() - 1)
+            val period = HealthActivityComparison.build(first, last, emptyList(), steps)
+            val ticks = period.dateTickIndices(5)
+            assertEquals(5, ticks.distinct().size)
+            assertEquals(first, period.dayAt(ticks.first()))
+            assertEquals(last, period.dayAt(ticks.last()))
+        }
     }
     @Test fun leapDayAndYearBoundaryUseCalendarDates() {
         val from = LocalDate.of(2024, 2, 28)
@@ -54,11 +64,11 @@ class HealthActivityComparisonTest {
         assertFalse(HealthActivityComparison.validDates(first.minusDays(366), first, first))
         assertFalse(HealthActivityComparison.validDates(first, first.minusDays(1), first))
     }
-    @Test fun liveTotalUpdatesOnlyItsCurrentDayWithoutChangingPreviousPeriod() {
-        val before = compare(day(0, 100), day(-7, 80))
-        val after = before.withDay(first, 130)
-        assertEquals(130L, after.current.first()); assertEquals(100L, before.current.first())
-        assertEquals(before.previous, after.previous)
+    @Test fun liveTotalUpdatesTodayWithoutChangingEarlierDays() {
+        val before = compare(day(0, 100), day(6, 80))
+        val after = before.withDay(first.plusDays(6), 130)
+        assertEquals(listOf(100L, null, null, null, null, null, 130L), after.current)
+        assertEquals(80L, before.current.last())
     }
     @Test fun staleLiveTotalCannotDecreaseArchivedSteps() {
         assertEquals(100L, compare(day(0, 100)).withDay(first, 20).current.first())

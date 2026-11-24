@@ -6,11 +6,15 @@ import java.time.temporal.ChronoUnit
 internal enum class HealthActivityKind { STEPS, CYCLING }
 internal data class HealthActivityDay(val kind: HealthActivityKind, val day: LocalDate, val total: Long)
 internal data class HealthActivityComparison(val first: LocalDate, val last: LocalDate,
-    val current: List<Long?>, val previous: List<Long?>) {
-    val paired get() = current.indices.filter { current[it] != null && previous[it] != null }
-    val currentPaired get() = paired.sumOf { requireNotNull(current[it]) }
-    val previousPaired get() = paired.sumOf { requireNotNull(previous[it]) }
-    val changePercent get() = previousPaired.takeIf { it > 0 }?.let { (currentPaired - it) * 100.0 / it }
+    val current: List<Long?>) {
+    fun dayAt(index: Int): LocalDate = first.plusDays(index.toLong())
+
+    fun dateTickIndices(limit: Int): List<Int> {
+        val count = limit.coerceIn(2, 7).coerceAtMost(current.size)
+        if (count <= 1) return current.indices.toList()
+        return List(count) { it * current.lastIndex / (count - 1) }
+    }
+
     fun withDay(day: LocalDate, total: Long?): HealthActivityComparison {
         if (total == null || day !in first..last) return this
         require(total >= 0)
@@ -28,8 +32,7 @@ internal data class HealthActivityComparison(val first: LocalDate, val last: Loc
             val size = (ChronoUnit.DAYS.between(first, last) + 1).toInt()
             require(size in 1..366)
             val totals = rows.filter { it.kind == kind }.associate { it.day to it.total }
-            return HealthActivityComparison(first, last, (0 until size).map { totals[first.plusDays(it.toLong())] },
-                (0 until size).map { totals[first.minusDays(size.toLong()).plusDays(it.toLong())] })
+            return HealthActivityComparison(first, last, List(size) { totals[first.plusDays(it.toLong())] })
         }
     }
 }

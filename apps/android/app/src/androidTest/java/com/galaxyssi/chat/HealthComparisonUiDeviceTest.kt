@@ -3,9 +3,13 @@ package com.galaxyssi.chat
 import android.app.Activity
 import android.app.KeyguardManager
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.TextView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
@@ -120,6 +124,116 @@ class HealthComparisonUiDeviceTest {
                 screen.onActivity { activity -> assertEquals("\u2014", (views(activity.window.decorView)
                     .single { it.tag == "health-activity-total" } as TextView).text.toString()) }
             }
+        }
+    }
+    @Test fun chartTapsShowOneRecordedDayAndBlankTapsClearTheSelection() = fixture { names ->
+        val today = LocalDate.now()
+        HealthActivityHistoryStore(context, names.activity).use { store ->
+            listOf(1_600L, 2_430L, 5_300L, 3_100L, 950L, 8_150L, 4_200L).forEachIndexed { index, steps ->
+                store.save(HealthActivityKind.STEPS, today.minusDays(6L - index), steps)
+            }
+            listOf(0L to 99L, 3L to 0L, 5L to 45L, 6L to 60L, 7L to 300L, 8L to 200L)
+                .forEach { (daysAgo, minutes) ->
+                    store.save(HealthActivityKind.CYCLING, today.minusDays(daysAgo), minutes * 60_000)
+                }
+        }
+        ActivityScenario.launch<HealthActivityComparisonActivity>(Intent(context, HealthActivityComparisonActivity::class.java)
+            .putHealthNavigationFixture(names)).use { screen ->
+            await(screen, "health-activity-chart")
+            screen.onActivity { activity ->
+                val chart = views(activity.window.decorView).single { it.tag == "health-activity-chart" }
+                assertTrue(chart.performClick())
+                assertTrue(chart.performAccessibilityAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD, null))
+                assertTrue(chart.contentDescription.toString()
+                    .endsWith(healthActivityAmount(activity, HealthActivityKind.STEPS, 8_150L)))
+            }
+            capturePointPreview("health-steps-point-fixture.png")
+            screen.onActivity { activity ->
+                views(activity.window.decorView).filterIsInstance<TextView>()
+                    .single { it.text.toString() == activity.getString(R.string.health_cycling_today) }.performClick()
+            }
+            await(screen, "health-activity-chart")
+            instrumentation.waitForIdleSync()
+            screen.onActivity { activity ->
+                val chart = views(activity.window.decorView).single { it.tag == "health-activity-chart" }
+                val bitmap = Bitmap.createBitmap(chart.width, chart.height, Bitmap.Config.ARGB_8888)
+                try {
+                    chart.draw(Canvas(bitmap))
+                    val green = activity.getColor(R.color.health_overview_green)
+                    var blueCount = 0
+                    var highestPoint = bitmap.height
+                    val columns = bitmap.width.let { width ->
+                        val pixels = IntArray(width * bitmap.height)
+                        bitmap.getPixels(pixels, 0, width, 0, 0, width, bitmap.height)
+                        BooleanArray(width).apply {
+                            pixels.forEachIndexed { index, color ->
+                                if (color == green) {
+                                    this[index % width] = true
+                                    highestPoint = minOf(highestPoint, index / width)
+                                }
+                                if (color == HealthTrendChart.BLUE) blueCount++
+                            }
+                        }
+                    }
+                    val from = columns.indexOfFirst { it }
+                    val to = columns.indexOfLast { it }
+                    assertTrue("Expected data at both ends of the selected week", from >= 0 && to - from > chart.width / 2)
+                    assertEquals("A previous-period line must not be drawn", 0, blueCount)
+                    assertTrue("The selected range must determine the vertical scale", highestPoint < chart.height / 4)
+                    assertFalse("An unrecorded date must not be plotted", columns[from + (to - from) / 3])
+                    assertTrue("A recorded zero remains visible", columns[from + (to - from) / 2])
+
+                    fun tapPoint(x: Int) {
+                        val y = (0 until bitmap.height).first { bitmap.getPixel(x, it) == green }
+                        tapAt(x.toFloat(), y.toFloat(), chart::dispatchTouchEvent)
+                    }
+                    val zeroX = (from + to) / 2
+                    tapPoint(zeroX)
+                    val zero = healthActivityAmount(activity, HealthActivityKind.CYCLING, 0)
+                    assertTrue(chart.contentDescription.toString().endsWith(zero))
+                    tapPoint(from + (activity.resources.displayMetrics.density * 2).toInt())
+                    val sixty = healthActivityAmount(activity, HealthActivityKind.CYCLING, 3_600_000)
+                    assertTrue(chart.contentDescription.toString().endsWith(sixty))
+                    val guideX = from + (activity.resources.displayMetrics.density * 2.5f).toInt()
+                    val guideY = bitmap.height / 4
+                    val guideColumns = (guideX - 4).coerceAtLeast(0)..(guideX + 4).coerceAtMost(bitmap.width - 1)
+                    val beforeGuide = guideColumns.map { bitmap.getPixel(it, guideY) }
+                    bitmap.eraseColor(0)
+                    chart.draw(Canvas(bitmap))
+                    assertNotEquals("The selection must draw a vertical guide", beforeGuide,
+                        guideColumns.map { bitmap.getPixel(it, guideY) })
+                } finally { bitmap.recycle() }
+            }
+            capturePointPreview("health-cycling-point-fixture.png")
+            screen.onActivity { activity ->
+                val chart = views(activity.window.decorView).single { it.tag == "health-activity-chart" }
+                tapAt(chart.width / 2f, 0f, chart::dispatchTouchEvent)
+                assertEquals(activity.getString(R.string.health_trend_chart_data), chart.contentDescription)
+                chart.performClick()
+                val position = IntArray(2)
+                chart.getLocationOnScreen(position)
+                tapAt(position[0] + chart.width / 2f, position[1] + chart.height + 18f, activity::dispatchTouchEvent)
+                assertEquals(activity.getString(R.string.health_trend_chart_data), chart.contentDescription)
+            }
+        }
+    }
+    private fun tapAt(x: Float, y: Float, dispatch: (MotionEvent) -> Boolean) {
+        val time = SystemClock.uptimeMillis()
+        listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEach { action ->
+            val event = MotionEvent.obtain(time, time, action, x, y, 0)
+            try { dispatch(event) } finally { event.recycle() }
+        }
+    }
+    private fun capturePointPreview(name: String) {
+        if (InstrumentationRegistry.getArguments().getString("preview") != "true") return
+        instrumentation.waitForIdleSync()
+        SystemClock.sleep(250)
+        instrumentation.uiAutomation.takeScreenshot()?.let { screenshot ->
+            try {
+                File(context.getExternalFilesDir(null), name).outputStream().use {
+                    screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)
+                }
+            } finally { screenshot.recycle() }
         }
     }
     private fun assertCompactActivityLayout(activity: Activity, all: List<View>) {
