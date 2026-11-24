@@ -2255,6 +2255,51 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(try XCTUnwrap(Motion.leave.commands.last?.points.last), .init(x: 296, y: 291))
   }
 
+  func testBrainstemRespiratoryTimingKeepsExpirationAndNextBurstSeparate() {
+    typealias Motion = GalaxySSIHealthAtlasBrainstemMotion
+    XCTAssertEqual(Motion(step: 3, fraction: 0).expansion, 0)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).expansion, Motion(step: 4, fraction: 0).expansion)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.79).expansion, 0)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.8).burst, 0)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.905).burst, 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 1, fraction: 0.25).burst, 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 1, fraction: 0.5).burst, 0, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 2, fraction: 0.13).burst, 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 2, fraction: 0.27).burst, 0)
+    XCTAssertEqual(Motion.diaphragmCenter(0), 276); XCTAssertEqual(Motion.diaphragmCenter(1), 286)
+    XCTAssertEqual(Motion(step: 3, fraction: .nan).expansion, 0)
+    for step in 0...4 {
+      for sample in 0...200 {
+        let frame = Motion(step: step, fraction: Double(sample) / 200)
+        XCTAssertTrue((0...1).contains(frame.expansion))
+        XCTAssertTrue((0...1).contains(frame.burst))
+      }
+    }
+  }
+
+  func testBrainstemMotorBranchesAndAirflowUseSourceRoutes() throws {
+    typealias Motion = GalaxySSIHealthAtlasBrainstemMotion
+    XCTAssertNotNil(Motion.motor(0.1).descending); XCTAssertNil(Motion.motor(0.1).branch)
+    XCTAssertNil(Motion.motor(0.5).descending); XCTAssertNotNil(Motion.motor(0.5).branch)
+    XCTAssertEqual(try XCTUnwrap(Motion.motor(0.91).branch), 1, accuracy: 1e-12)
+    let junction = try XCTUnwrap(Motion.descending.commands.last?.points.last)
+    XCTAssertEqual(junction, Motion.leftNerve.start); XCTAssertEqual(junction, Motion.rightNerve.start)
+    XCTAssertEqual(Motion.airRoute.start, .init(x: 112, y: 95))
+    XCTAssertEqual(try XCTUnwrap(Motion.airRoute.commands.last?.points.last), .init(x: 175, y: 191))
+    for inward in [true, false] {
+      XCTAssertNil(Motion.airflow(0, index: 0, inward: inward))
+      for sample in 0...200 {
+        for index in 0...2 {
+          guard let flow = Motion.airflow(Double(sample) / 200, index: index, inward: inward) else { continue }
+          XCTAssertTrue((0...1).contains(flow.tail)); XCTAssertTrue((0...1).contains(flow.head))
+          if inward { XCTAssertLessThan(flow.tail, flow.head) } else { XCTAssertGreaterThan(flow.tail, flow.head) }
+        }
+      }
+    }
+    XCTAssertEqual(Motion.network.count, 10); XCTAssertEqual(Motion.connections.count, 14)
+    XCTAssertTrue(Motion.connections.allSatisfy { (0..<5).contains($0) })
+  }
+
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
