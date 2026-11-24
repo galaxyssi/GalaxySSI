@@ -1,9 +1,17 @@
 // Restricted constant-path grammar; fails closed instead of evaluating arbitrary Kotlin.
 const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process"), assert = require("node:assert/strict");
 const root = path.resolve(__dirname, "../../.."), sha = "6581110ec5c048edebf63821dee839b4818fe663", check = process.argv.includes("--check");
-for (const [sourceName, nativeName, count, routeNames] of [["ThyroidCalcitonin", "Calcitonin", 6, ["capillary"]], ["AdrenalCortex", "AdrenalCortex", 2, ["section", "sinusoid"]]]) {
-  const source = cp.execFileSync("git", ["show", sha + ":apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlas" + sourceName + "StoryView.kt"], {cwd: root, encoding: "utf8"});
-  const declarations = [...source.matchAll(/private val (\w+) = curve \{([^}]+)\}/g)];
+const pituitary = process.argv.includes("--pituitary");
+const configurations = pituitary ? [["AnteriorPituitaryArt", "AnteriorPituitary", 2, [], true],
+  ["SomatotrophStoryView", "Somatotroph", 12, ["capillary", "trunk", "upperBranch", "lowerBranch", "input", "hepaticOut", "muscleGh", "muscleIgf"], true]] :
+  [["ThyroidCalcitoninStoryView", "Calcitonin", 6, ["capillary"]], ["AdrenalCortexStoryView", "AdrenalCortex", 2, ["section", "sinusoid"]]];
+for (const [sourceName, nativeName, count, routeNames, helperCubics] of configurations) {
+  const source = cp.execFileSync("git", ["show", sha + ":apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlas" + sourceName + ".kt"], {cwd: root, encoding: "utf8"});
+  const declarations = [...source.matchAll(/private val (\w+) = (?:curve|Path\(\)\.apply) \{([^}]+)\}/g)];
+  if (helperCubics) for (const [, name, args] of source.matchAll(/private val (\w+) = cubic\(([^)]+)\)/g)) {
+    const tokens = args.split(",").map(s => s.trim()); assert.equal(tokens.length, 8);
+    declarations.push(["", name, "moveTo(" + tokens.slice(0, 2).join(",") + ")\ncubicTo(" + tokens.slice(2).join(",") + ")"]);
+  }
   assert.equal(declarations.length, count);
   let text = "import SwiftUI\n\n// Generated from pinned Android #4388 constant curve declarations.\nenum GalaxySSIHealthAtlas" + nativeName + "Geometry {\n", commands = 0;
   const arity = {moveTo: 2, lineTo: 2, quadTo: 4, cubicTo: 6, close: 0};

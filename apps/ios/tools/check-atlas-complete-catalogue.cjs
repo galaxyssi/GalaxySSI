@@ -50,6 +50,6 @@ const old = new Set(previous.stories.map(s => s.id)), added = pack.stories.filte
 assert.equal(added.length, 24);
 const artwork = read("GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift");
 const connected = added.filter(s => artwork.includes('case "' + s.id + '":'));
-assert.deepEqual(connected.map(s => s.id), ["PELVIC_LOAD_TRANSFER", "SUBCUTANEOUS_CUSHION", "PANCREATIC_DELTA_MODULATION", "PANCREATIC_PP_SIGNAL", "THYROID_CALCITONIN", "ADRENAL_CORTEX_OUTPUT", "PANETH_CRYPT_BARRIER", "ENTEROENDOCRINE_LUMEN_SIGNAL", "INTESTINAL_STEM_RENEWAL", "DISTAL_TUBULAR_EXCHANGE", "UROTHELIAL_BARRIER_GEOMETRY", "LEYDIG_ENDOCRINE", "THECA_COOPERATION"]);
+assert.deepEqual(connected.map(s => s.id), ["PELVIC_LOAD_TRANSFER", "SUBCUTANEOUS_CUSHION", "SOMATOTROPH_GROWTH_SIGNAL", "PANCREATIC_DELTA_MODULATION", "PANCREATIC_PP_SIGNAL", "THYROID_CALCITONIN", "ADRENAL_CORTEX_OUTPUT", "PANETH_CRYPT_BARRIER", "ENTEROENDOCRINE_LUMEN_SIGNAL", "INTESTINAL_STEM_RENEWAL", "DISTAL_TUBULAR_EXCHANGE", "UROTHELIAL_BARRIER_GEOMETRY", "LEYDIG_ENDOCRINE", "THECA_COOPERATION"]);
 assert.ok(swift.includes("revision: Int = 4385"), "Do not activate incomplete renderer coverage");
-console.log("Verified 67 source hashes; 138 courses / 313 routes / 151 related links / bilingual keys. Thirteen new dispatches connected; 11 renderers and default activation remain. No native execution.");
+console.log("Verified 67 source hashes; 138 courses / 313 routes / 151 related links / bilingual keys. Fourteen new dispatches connected; 10 renderers and default activation remain. No native execution.");
