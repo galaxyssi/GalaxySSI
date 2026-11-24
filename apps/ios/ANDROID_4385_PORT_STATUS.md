@@ -51,7 +51,13 @@ This is an in-progress implementation, not a completed parity claim or release.
   fiber/cell curves, clipped matrix, fiber-vertex tracking marks, independent
   secondary cells and dashed resting-profile comparison. Poses are unitless art,
   not measurements of tissue/cell strain.
-- All eight new renderers have Xcode source registration but remain unreachable until
+- Dedicated accessory-gland routing renderer: five scenes, six original bilateral
+  duct routes, source stage colors, eighteen stage-specific callouts with original
+  copy overrides and independently delayed prostate branches.
+- Dedicated vulvar-protection renderer: five scenes, ten original contours/50
+  commands, nine emphasis tracks, ten source feature anchors, paired traces and
+  fixed asymmetric comparison profiles. Only reading emphasis moves.
+- All ten new renderers have Xcode source registration but remain unreachable until
   the regional catalogue and complete renderer coverage are activated together.
 - All 23 new/modified VectorDrawable resources imported into separate regional PDF
   assets: 298 source paths and 68 native gradients. They do not overwrite frozen
@@ -69,8 +75,7 @@ This is an in-progress implementation, not a completed parity claim or release.
 
 ## Remaining Before Publication
 
-- Five courses: vulvar protection, accessory-gland routing, uterocervical
-  continuity, pectoral
+- Three courses: uterocervical continuity, pectoral
   horizontal adduction and latissimus extension/adduction.
 - New/modified structure plate metadata and their owner/view selectors, features,
   links, sources and captions are extracted; connect the snapshot and imported
@@ -115,3 +120,9 @@ continuous trace control sets, nineteen bilingual labels and nineteen source
 callouts. Tenocyte checks passed for parameterized fiber/cell curve controls,
 deformation stage continuity, tracking-mark vertices, the resting profile and 484
 analytic poses. These are source checks, not execution of the native renderers.
+
+Accessory-gland source checks passed for all six bilateral route controls, route
+colors, eighteen evaluated Callout/copy declarations, five stage mappings and 242
+analytic delayed-progress samples. Vulvar source checks passed for ten contours/50
+commands, nine trace control sets, ten feature anchors matching Kotlin-extracted
+metadata, eight callouts and 968 analytic reveal samples. No native acceptance.
