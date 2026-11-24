@@ -168,11 +168,7 @@ struct GalaxySSIResourceRoutingView: View {
         tint: tint,
         badge: badge
       ) {
-        if contact.deliveryMode == .cloudAPI {
-          CloudModelProviderDetailView(contactId: contact.id)
-        } else {
-          ContactDetailView(contactId: contact.id)
-        }
+        ContactDetailView(contactId: contact.id)
       }
     } else {
       GalaxySSISecurityStatusRow(

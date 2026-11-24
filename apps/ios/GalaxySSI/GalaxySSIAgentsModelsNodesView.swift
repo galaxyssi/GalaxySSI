@@ -40,6 +40,7 @@ struct GalaxySSIAgentsModelsNodesView: View {
       )
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
+          addResourcesSection
           GalaxySSISecurityHeroView(
             title: String(
               format: t("cc_nodes_ready_title", "%d intelligence resources available"),
@@ -66,6 +67,29 @@ struct GalaxySSIAgentsModelsNodesView: View {
     .navigationBarHidden(true)
     .onAppear {
       localModelReady = LocalModelInferenceRuntime.shared.ready()
+    }
+  }
+
+  private var addResourcesSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      GalaxySSISecurityNavigationRow(
+        title: t("cc_add_cloud_provider_title", "Add Cloud Provider"),
+        subtitle: t("cc_add_cloud_provider_subtitle", "Configure a phone-direct API resource"),
+        systemImage: "plus",
+        tint: .blue,
+        badge: ""
+      ) {
+        CloudModelProviderSelectionView()
+      }
+      GalaxySSISecurityNavigationRow(
+        title: t("galaxyssi.add_contact.scan_title", "Scan to Add Contact"),
+        subtitle: "",
+        systemImage: "qrcode.viewfinder",
+        tint: .galaxySSIAccent,
+        badge: ""
+      ) {
+        AddContactView(autoOpenScanner: true)
+      }
     }
   }
 
@@ -147,38 +171,17 @@ struct GalaxySSIAgentsModelsNodesView: View {
   private var cloudAPISection: some View {
     VStack(alignment: .leading, spacing: 8) {
       GalaxySSISecuritySectionTitle(title: t("cc_section_cloud_apis", "Cloud APIs"))
-      if cloudContacts.isEmpty {
+      ForEach(cloudContacts) { contact in
+        let status = cloudConnectorStatus(contact)
         GalaxySSISecurityNavigationRow(
-          title: t("cc_add_cloud_provider_title", "Add Cloud Provider"),
-          subtitle: t("cc_add_cloud_provider_subtitle", "Configure a phone-direct API resource"),
+          title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
+          subtitle: cloudSubtitle(contact),
           systemImage: "cloud.fill",
-          tint: .purple,
-          badge: "+"
+          assetImage: cloudAssetName(contact),
+          tint: cloudStatusTint(status),
+          badge: cloudStatusLabel(status)
         ) {
-          CloudModelProviderSelectionView()
-        }
-      } else {
-        ForEach(cloudContacts) { contact in
-          let status = cloudConnectorStatus(contact)
-          GalaxySSISecurityNavigationRow(
-            title: contact.displayName.ifBlank(contact.name).ifBlank(contact.id),
-            subtitle: cloudSubtitle(contact),
-            systemImage: "cloud.fill",
-            assetImage: cloudAssetName(contact),
-            tint: cloudStatusTint(status),
-            badge: cloudStatusLabel(status)
-          ) {
-            CloudModelProviderDetailView(contactId: contact.id)
-          }
-        }
-        GalaxySSISecurityNavigationRow(
-          title: t("cc_add_cloud_provider_title", "Add Cloud Provider"),
-          subtitle: t("cc_add_cloud_provider_subtitle", "Configure a phone-direct API resource"),
-          systemImage: "plus",
-          tint: .purple,
-          badge: "+"
-        ) {
-          CloudModelProviderSelectionView()
+          ContactDetailView(contactId: contact.id)
         }
       }
     }
