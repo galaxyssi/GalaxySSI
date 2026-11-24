@@ -1,7 +1,7 @@
 # Android #4384 Port Status
 
 Source: `ab78711d467c013444883dbaeca23c39a601c875`.
-This is an in-progress implementation, not a completed parity claim or a ready PR.
+Source implementation is integrated and undergoing final publication review. This is not a native build or device-verified parity claim. See ANDROID_4384_SCOPE_AUDIT.md for the full source scope and verification limits.
 Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #4385 until this source scope is covered.
 
 ## Completed Foundation
@@ -13,18 +13,18 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 
 ## Remaining Integration
 - [x] Import 3127 source-referenced chapter/caption/control/structure/scope strings per language into the dedicated AtlasFunction table; no English fallback in Chinese. Preserve existing BodyAtlas precedence, with new-table fallback for new structure keys.
-- [ ] Complete Function-tab player integration across all source courses. Core player, course selector, controls, source links, phase restoration and lifecycle are wired for all 101 courses through 81 dedicated renderers. Remaining integration and native validation below are still outstanding.
+- [x] Complete source integration across all 101 courses through 81 dedicated renderers: player, selectors, controls, source links, phase restoration, lifecycle, structure previews and related destinations are wired. Native compilation and UI validation remain unverified, not prerequisites silently marked passed.
 - [x] Connect optional persisted Function selections without changing quantitative simulation selections. Keep live animation phase outside published/serialized state; pause/exit commits it, while question snapshots read current live phase. Corrupt Function-only storage does not discard unrelated selections.
 - [x] Import all changed drawable resources: 59 added/modified SVGs plus the two deleted SVG identities now using source PNGs. Dedicated source/PDF cohorts cover 82 plates, 999 original paths and 276 gradients including retained structure plates. All remaining 14 digestive-cell and 12 alimentary vector revisions are imported; legacy import/audit commands preserve the new shaded art rather than downgrading it. Source/resource checks only; native pixels unverified.
-- [x] Replace teeth/jejunum structure art with the original two 1254-square RGBA PNGs, eight calibrated feature anchors and two links; reuse the Function jejunum asset and set square 360-unit section bounds. Other structure/artwork revisions remain pending. Byte/source/grammar checks only; added assertions in existing XCTest source are unexecuted.
+- [x] Replace teeth/jejunum structure art with the original two 1254-square RGBA PNGs, eight calibrated feature anchors and two links; reuse the Function jejunum asset and set square 360-unit section bounds. Byte/source/grammar checks only; added assertions in existing XCTest source are unexecuted.
 - [x] Port the additional structure catalogue and canonical/feature routing: 54 original Kotlin-evaluated plates, 177 local features and 27 canonical links; 50 new PDFs plus four reused original Function plates preserve 782 paths/119 gradients, affine groups, RGB and independent fill/stroke alpha. Local plates precede retained musculoskeletal context views and old cell/appendix defaults; exact source URL allowlist and selector fallback are wired. Source/resource/grammar checks only; native UI unverified.
-- [x] Wire all 111 related Function destinations to explicit course/tab selection before navigation, preserving stored target phases. Restore source-gated labeled structure previews and alternate system views. New structure plates/canonical feature routing still remain under the preceding item; native navigation not executed.
+- [x] Wire all 111 related Function destinations to explicit course/tab selection before navigation, preserving stored target phases. Restore source-gated labeled structure previews and alternate system views. Native navigation not executed.
 - [x] Apply source compact Function art height (current window height minus 268, clamped to 144...390), updating after layout/rotation without a global-screen assumption. Nine CellFunction courses retain their delegated 235/240-height behavior. Source/grammar checks only; added XCTest source is unexecuted and native window/layout parity is unverified.
 - [x] Port the three new quantitative models (alveolar diffusion, cartilage compression and bone bending): eight source input specs, eleven owner routes, exact unit conversions/companion results, five reference URLs, three native linked diagrams, bilingual labels and controls-before-chart ordering. Existing ventilation is retained; broader scene/layout parity remains covered by the outstanding integration audit. Analytic/source/grammar checks only; Swift models and XCTest not executed.
 - [x] Update Agent public context and fallback question paths with the active Function lesson/chapter, scope and source URLs. Both paths use the same owner-bound catalogue resolution and live question snapshot; unrelated tabs/research/Values cannot include Function context. Added unexecuted XCTest source; source/grammar checks only.
 - [x] Complete every renderer below, preserving chapter-specific geometry and motion rather than generic stand-ins; native compilation/pixels remain unverified.
 - [ ] Static source/resource/grammar/project checks across the completed scope, then review and publish one formal main-based PR.
-- [ ] Synchronize any newly merged predecessor PRs and update dependency scope before publication.
+- [x] Fetch and verify latest main at bcc2d4c0fc9526d2b047741a3d47f3cece3d9c2b: already an ancestor (zero behind). Diff is iOS-only and no unmerged predecessor code is required.
 
 ## Renderer Parity
 All 101 courses are enabled through 81 dedicated renderer classes. Structure routing, all changed illustrations, quantitative changes and Agent context are wired. Next: audit the full source scope, synchronize predecessors/main and publish the formal PR. Source coverage is not a native parity acceptance.

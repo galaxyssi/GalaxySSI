@@ -129,7 +129,7 @@ struct GalaxySSIHealthAtlasMaterialResponseDrawing {
     let font = UIFont.systemFont(ofSize: 13)
     let natural = (value as NSString).size(withAttributes: [.font: font]).width
     let fitted = UIFont.systemFont(ofSize: 13 * min(1, available / max(1, natural)))
-    context.draw(Text(verbatim: value).font(Font(fitted)).foregroundColor(.primary),
+    context.draw(Text(verbatim: value).font(.system(size: fitted.pointSize)).foregroundColor(.primary),
       at: CGPoint(x: x, y: baseline - fitted.ascender), anchor: .top)
   }
 }
