@@ -36,7 +36,7 @@ An eventual PR will use main and disclose the actual inherited diff.
 - Bilingual resource deltas are imported.
 - Source-only catalogue audit passed for all 67 hashes, catalogue counts,
   graph-resolved routes, entry phases, exact related destinations, reference
-  hosts and bilingual keys. Seven new dispatches are present; the other 17 are
+  hosts and bilingual keys. Nine new dispatches are present; the other 15 are
   explicitly not implemented. Two changed Swift files parsed without grammar
   errors; project structure passed. No Swift type checking or native execution.
 - Added dedicated Paneth crypt-barrier renderer and reusable crypt wall geometry:
@@ -59,8 +59,16 @@ An eventual PR will use main and disclose the actual inherited diff.
   share the original 49 contour samples and keep stage-continuous stretch,
   junction highlighting and lumen-side tracers. Source-only audit compared four
   shell quadratics, 23,716 analytic vertices and 847 tracer positions. Four Swift
-  files passed grammar parsing; catalogue/project checks passed. 17 renderers
-  and default catalogue activation remain; no native/pixel acceptance claimed.
+  files passed grammar parsing; catalogue/project checks passed. No native/pixel
+  acceptance claimed.
+- Added pancreatic delta and PP cell native renderers with separate dispatches.
+  Delta retains islet placement, local spread, damped neighboring output and
+  qualitative waveform comparison. PP retains uncinate location, clipped meal
+  particles, bloodstream diamonds and digestive/exocrine context. Source audit
+  compared 17 cubics, nine quadratics, bilingual callouts and 6,897 analytic
+  waveform samples. Four Swift files passed grammar parsing; source catalogue
+  and project checks passed. 15 renderers/default activation remain; no native
+  compilation, execution or pixel acceptance claimed.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
 - Connect pelvic/subcutaneous cutaways to structure feature routing.
