@@ -1,0 +1,229 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4410,
+    "mergeCommit": "e8ddebdcc70942880fcfeaacee57474c2d711b32"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "6c57606fcbd2201916f620ba1e1cd0e220f53f41dfd4bd6e3249e64f757387dc"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasPhysiologyDeviceTest.kt",
+      "status": "M",
+      "sha256": "75ebc8a4f7adcb6494a2d787c750eea9191f36d1a367509fe9f732efc2b66535"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasTissueDeviceTest.kt",
+      "status": "M",
+      "sha256": "878101a074fedae19a7ec8db3e1281052d0bbb0a5e35083a6f10ae63ff505474"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMammaryDuctDeliveryTeachingModel.kt",
+      "status": "A",
+      "sha256": "a6540e1eb32e7c0cceaa975e82d867f2f67a7df5abcdf798923d5d9b19c87499"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMaterialResponseView.kt",
+      "status": "M",
+      "sha256": "14adbed69e586f576dfef752f964a69267ced7b444a9f9b95f49f5f32e5f383d"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMerkelContactTeachingModel.kt",
+      "status": "A",
+      "sha256": "bb8d2a639470b0388594c7a143d381aaab70f49c0814f75481c18a5bff934475"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMucosalSamplingTeachingModel.kt",
+      "status": "A",
+      "sha256": "efa3059445d68f80f549705e2d357366bc799e3a81f0e33596c0b71b092e2736"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMucusFilmThicknessTeachingModel.kt",
+      "status": "A",
+      "sha256": "ee95e6a62c5e89c95bb40255a8c78226887415fa36998aef90f062c39f49009e"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiology.kt",
+      "status": "M",
+      "sha256": "03e7ad7089c45eb5cb89848feff9d0da5b0cb02affb87300cf6adeb5d2ccb073"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyPanel.kt",
+      "status": "M",
+      "sha256": "e827292f44681c083e76638106b65c0163d1f5433a4454f7a432b2ca17aa4ba3"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPlacentalMarkerTeachingModel.kt",
+      "status": "A",
+      "sha256": "634ac30f1821678f63e163af11c7f95f3c4c58ce2f5d09973870770e33cb7cac"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPlacentalMarkerView.kt",
+      "status": "A",
+      "sha256": "7f2c65a3d3cdafd8bb9f393b51ddc87634fd9c989160c3185a0bc440795ee656"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasRectalReservoirTeachingModel.kt",
+      "status": "A",
+      "sha256": "72840ec81e8430e7b1c0ec7312033e170a0a6c7a8a155c189f4a8ec087f5d165"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasRenalTubuleRetentionTeachingModel.kt",
+      "status": "A",
+      "sha256": "4eaff4f9b5e9261148b2b64d62214ce10109022ceb46e042c66c3851dd4262ac"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasStromalMatrixTeachingModel.kt",
+      "status": "A",
+      "sha256": "81b5852b9333c7d1a06ffa0fedaadf4664d557c59250ba719c8a9b791b6e57bd"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasToothEnamelSectionTeachingModel.kt",
+      "status": "A",
+      "sha256": "49866b95882889c09ea50a212ebb2134611f3004bae6b85aec91614f850d1c3a"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_mammary_duct_delivery_teaching_model.xml",
+      "status": "A",
+      "sha256": "132ae163a36e95f9888b34533e950ab4a049bd150ad29ece7113efdfccbe5f56"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_merkel_contact_teaching_model.xml",
+      "status": "A",
+      "sha256": "38b66bd8d3b0938d34a991f66ee1facc08d683afe30ae1679d271f6be647fbd4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_mucosal_sampling_teaching_model.xml",
+      "status": "A",
+      "sha256": "46cdf580f4433b3bfecc2c445ccf22d8e3d0009d3b131c70e6d055ccc093dee2"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_mucus_film_thickness_teaching_model.xml",
+      "status": "A",
+      "sha256": "e8cc638fc1874c49d8ed1d21d58ef082cd5a39a1a9eee6e731da1a2c05e3c116"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_placental_marker.xml",
+      "status": "A",
+      "sha256": "fe013b1436ddaa469eddd1fafd9ffa33e1b976f545d4ea828a512e640bc91edc"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_rectal_reservoir_teaching_model.xml",
+      "status": "A",
+      "sha256": "46801c8a5962c63e4673dfb0adaa3f3b21a4e743dc524b16035e32b6dc2919b7"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_renal_tubule_retention_teaching_model.xml",
+      "status": "A",
+      "sha256": "a088c362f4865daf8ad80e0cb5c8a0cf9712973b049d978b9322b42a26226d78"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_stromal_matrix_teaching_model.xml",
+      "status": "A",
+      "sha256": "6e68cb84aa253586f9735e8f8320674184edf07457494a1dc02fa46cf842d8b9"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_tooth_enamel_section_teaching_model.xml",
+      "status": "A",
+      "sha256": "7b283501f2e17fa1cc5f46adffe2989f515925f38347282949d8aaf0826a2853"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_mammary_duct_delivery_teaching_model.xml",
+      "status": "A",
+      "sha256": "1c12f8cfc42aee4f03c9ddb4b9a71a3776cd6577281d39d390f8d3ec342738c7"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_merkel_contact_teaching_model.xml",
+      "status": "A",
+      "sha256": "c0e2def7d833fd462037bb7259f233c72ff999b2f760eeed66080868de1b37a4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_mucosal_sampling_teaching_model.xml",
+      "status": "A",
+      "sha256": "fccb160dee358b6b9684cbfa628f24a47d434a06c5217886dde507d4f4852b4e"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_mucus_film_thickness_teaching_model.xml",
+      "status": "A",
+      "sha256": "d6ea4a7f03fed922617c306b515387f9e587fa9382bd4357b75c7762441c259f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_placental_marker.xml",
+      "status": "A",
+      "sha256": "9782eda12704047277e4ffd19b3104d883bb9b6a112612f5e0bbb1c8a3bff552"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_rectal_reservoir_teaching_model.xml",
+      "status": "A",
+      "sha256": "028cdfa99ba0afa4e9513e68abaf500da25be4533df53b32efa1a01fd52c0b9a"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_renal_tubule_retention_teaching_model.xml",
+      "status": "A",
+      "sha256": "043ee4d156b9751276b6567210e87a57dc2a7f421017f6534b0261ac3c7a3eaa"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_stromal_matrix_teaching_model.xml",
+      "status": "A",
+      "sha256": "f778746d61bc455325b4f21b3c157eeb230cd6dd6044cd6e965d87ad8b6b4ba1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_tooth_enamel_section_teaching_model.xml",
+      "status": "A",
+      "sha256": "ad4f208cf3902c158c7edde862f7e72aa380ded747c809ca3348f158faafaafb"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMammaryDuctDeliveryTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "9537291b7c60db42880bc412535291613722b04703bb8927c82fc040c14253b0"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMerkelContactTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "bc2727d5b16a00ff490cd2e653ea233dedd37e204f34353f735765c3c8a2a035"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMucosalSamplingTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "b95eca46eb0608db53ae8b690fa28346d05f62828a6ec34e7398a4b07f1241f0"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMucusFilmThicknessTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "5c52983f0f31f490cd8c5c431a327c61718e743f73cabc920af14e161eb19411"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPhysiologyTest.kt",
+      "status": "M",
+      "sha256": "0818e23c73201759bb3f27df05a247a8d554af997eaea6384b2f97fe48f50f3b"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPlacentalMarkerTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "20714ef89392549ac896a2c4cfffa31c639ad7cbec4b047433fc288ba5ec28c8"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasRectalReservoirTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "62d2f724e13b19bec58ffb6e48f3720c31b6c342ca75bad44c1e46843524c209"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasRenalTubuleRetentionTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "47fefd79e514c0d1ad33246a4fd94636e132271cde29ced5db37553ee2387212"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasStromalMatrixTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "f939bbd35af52d71aba4ba29335b2de5b627549d853abbdc3e9adfe5a19837c0"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasToothEnamelSectionTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "9a05c16237627e34c709dce95d69b879595a712b563101ba83a87a339f73e87e"
+    }
+  ]
+}

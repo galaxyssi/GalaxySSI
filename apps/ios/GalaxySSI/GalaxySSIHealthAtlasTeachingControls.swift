@@ -176,6 +176,33 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .melaninDistribution:
       return [control("melanin-distribution-packet-units", "packet_units", 0...24, 12, "PPU", digits: 0),
         control("melanin-distribution-recipient-cells", "recipient_cells", 2...8, 4, "", digits: 0)]
+    case .placentalMarker:
+      return [control("placental-marker-amount", "amount", 40...120, 80, "a.u.", digits: 0),
+        control("placental-marker-equilibration", "equilibration", 0...100, 50, "%", digits: 0)]
+    case .renalTubuleRetention:
+      return [control("renal-tubule-retention-segment-a", "segment_a", 0...80, 40, "%", digits: 0),
+        control("renal-tubule-retention-segment-b", "segment_b", 0...80, 25, "%", digits: 0)]
+    case .merkelContact:
+      return [control("merkel-contact-force", "force", 10...80, 40, "mN", digits: 0),
+        control("merkel-contact-radius", "radius", 10...40, 20, "mm", scale: 10, digits: 1)]
+    case .toothEnamelSection:
+      return [control("tooth-enamel-section-thickness", "thickness", 5...20, 10, "mm", scale: 10, digits: 1),
+        control("tooth-enamel-section-radius", "radius", 30...60, 40, "mm", scale: 10, digits: 1)]
+    case .mucosalSampling:
+      return [control("mucosal-sampling-selected-tiles", "selected_tiles", 1...12, 3, "", digits: 0),
+        control("mucosal-sampling-unselected-tiles", "unselected_tiles", 1...12, 9, "", digits: 0)]
+    case .mammaryDuctDelivery:
+      return [control("mammary-duct-secreted-volume", "secreted_volume", 4...12, 8, "VU", digits: 0),
+        control("mammary-duct-displaced-share", "displaced_share", 0...100, 60, "%", digits: 0)]
+    case .rectalReservoir:
+      return [control("rectal-reservoir-initial-volume", "initial_volume", 20...200, 120, "mL", digits: 0),
+        control("rectal-reservoir-release-share", "release_share", 0...100, 40, "%", digits: 0)]
+    case .stromalMatrix:
+      return [control("stromal-matrix-added-mass", "added_mass", 0...20, 6, "MU", digits: 0),
+        control("stromal-matrix-initial-mass", "initial_mass", 0...40, 12, "MU", digits: 0)]
+    case .mucusFilmThickness:
+      return [control("mucus-film-volume", "volume", 4...24, 12, "u\u{00b3}", digits: 0),
+        control("mucus-film-area", "area", 2...12, 6, "u\u{00b2}", digits: 0)]
     }
   }
 }

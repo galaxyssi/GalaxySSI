@@ -6,6 +6,37 @@ struct GalaxySSIHealthAtlasMaterialResponseDrawing {
   let language: String
   private static let blue: UInt32 = 0x3A778F, teal: UInt32 = 0x3F7770, rose: UInt32 = 0xB6757F
   private func color(_ value: UInt32) -> Color { GalaxySSIHealthAtlasIllustratedDrawing.color(value) }
+  func enamelSection(_ model: GalaxySSIHealthAtlasPhysiology) {
+    let x = 94.0, y = 70.0, exterior = 9.5 * model.input(1)
+    let interior = exterior - 9.5 * model.input(0)
+    let enamel: UInt32 = 0xD1E7DF, remainder: UInt32 = 0xDCA989
+    oval(x - exterior - 1.5, y - exterior - 1.5, x + exterior + 1.5, y + exterior + 1.5, 0x698E89)
+    oval(x - exterior, y - exterior, x + exterior, y + exterior, enamel)
+    oval(x - interior, y - interior, x + interior, y + interior, remainder)
+    let from = x + interior, to = x + exterior
+    line(from, y, to, y, 0x325751, 1.7)
+    line(from, y - 4, from, y + 4, 0x325751, 1.7)
+    line(to, y - 4, to, y + 4, 0x325751, 1.7)
+    rectangle(178, 46, 195, 57, enamel, radius: 3)
+    rectangle(178, 82, 195, 93, remainder, radius: 3)
+    label("tooth_enamel_section_enamel", 261, 56, 116)
+    label("tooth_enamel_section_inside", 261, 92, 116)
+    label("tooth_enamel_section_crown", x, 148, 155)
+  }
+  func tubuleMarker(_ model: GalaxySSIHealthAtlasPhysiology) {
+    guard let amounts = GalaxySSIHealthAtlasTubuleRetentionAmounts(segmentA: model.input(0), segmentB: model.input(1)) else { return }
+    arrow(86, 78, 136, 78, Self.teal, 1.9); arrow(204, 78, 254, 78, Self.teal, 1.9)
+    for (index, node) in [("start", amounts.starting), ("after_a", amounts.afterA), ("after_b", amounts.remaining)].enumerated() {
+      let x = 52 + Double(index) * 118, r = 29.0
+      oval(x - r, 78 - r, x + r, 78 + r, 0xC9DFDF)
+      let marker = r * sqrt(node.1 / amounts.starting)
+      oval(x - marker, 78 - marker, x + marker, 78 + marker, 0x659D9D)
+      let value = GalaxySSIHealthAtlasPhysiologyText.number(node.1, digits: 1, language: language)
+      context.draw(Text(verbatim: value).font(.system(size: 13)).foregroundColor(.primary),
+        at: CGPoint(x: x, y: 128 - UIFont.systemFont(ofSize: 13).ascender), anchor: .top)
+      label("renal_tubule_retention_" + node.0, x, 147, 102)
+    }
+  }
   func circadianDial(_ model: GalaxySSIHealthAtlasPhysiology) {
     let cx = 97.0, cy = 75.0, r = 53.0
     let light: UInt32 = 0xEFD19B, dark: UInt32 = 0x91B6BC

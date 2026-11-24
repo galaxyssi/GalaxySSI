@@ -67,6 +67,15 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .thymicBranching: result = values[0] * values[1] / 100
     case .gastricPrecursorBalance: result = values[0] * (values[1] / 100)
     case .melaninDistribution: result = values[0] / values[1]
+    case .placentalMarker: result = values[0] * (values[1] / 200)
+    case .renalTubuleRetention: result = GalaxySSIHealthAtlasTubuleRetentionAmounts(segmentA: values[0], segmentB: values[1])!.remaining
+    case .merkelContact: result = values[0] / (.pi * values[1] * values[1])
+    case .toothEnamelSection: result = 100 * (1 - pow((values[1] - values[0]) / values[1], 2))
+    case .mucosalSampling: result = 100 * values[0] / (values[0] + values[1])
+    case .mammaryDuctDelivery: result = values[0] * (values[1] / 100)
+    case .rectalReservoir: result = values[0] * (values[1] / 100)
+    case .stromalMatrix: result = (values[1] + values[0]) / 2
+    case .mucusFilmThickness: result = values[0] / values[1]
     }
     return result.isFinite ? result : nil
   }
@@ -128,6 +137,15 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .thymicBranching: result = values[0] - values[0] * values[1] / 100
     case .gastricPrecursorBalance: result = values[0] - values[0] * (values[1] / 100)
     case .melaninDistribution: result = values[0]
+    case .placentalMarker: result = values[0] - values[0] * (values[1] / 200)
+    case .renalTubuleRetention: result = GalaxySSIHealthAtlasTubuleRetentionAmounts(segmentA: values[0], segmentB: values[1])!.totalReclaimed
+    case .merkelContact: result = .pi * values[1] * values[1]
+    case .toothEnamelSection: result = .pi * pow(values[1] - values[0], 2)
+    case .mucosalSampling: result = 100 * values[1] / (values[0] + values[1])
+    case .mammaryDuctDelivery: result = values[0] - values[0] * (values[1] / 100)
+    case .rectalReservoir: result = values[0] - values[0] * (values[1] / 100)
+    case .stromalMatrix: result = values[1] / 2
+    case .mucusFilmThickness: result = values[0]
     }
     return result.isFinite ? result : nil
   }

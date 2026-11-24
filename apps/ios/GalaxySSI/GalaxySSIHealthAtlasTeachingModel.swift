@@ -14,6 +14,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   case parathyroidSignalOccupancy, follicleSurface, jointArticularArc, sweatDuctBalance
   case vocalCycles, vertebralSeries, oralMarkerDilution, olfactorySurfaceRetention, circadianLightWindow
   case adiposeVolumeShare, thymicBranching, gastricPrecursorBalance, melaninDistribution
+  case placentalMarker, renalTubuleRetention, merkelContact, toothEnamelSection, mucosalSampling
+  case mammaryDuctDelivery, rectalReservoir, stromalMatrix, mucusFilmThickness
 
   struct Control: Sendable {
     let input: GalaxySSIHealthAtlasPhysiology.Input
@@ -29,7 +31,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
          .endocrineDilution, .retinalConvergence, .muscleShortening,
          .bladderExpansion, .gastricLiquidEmptying, .bileStorage, .cutaneousSebum,
          .neuralRelayDelays, .sweatDuctBalance, .vertebralSeries, .oralMarkerDilution,
-         .olfactorySurfaceRetention, .circadianLightWindow, .thymicBranching, .gastricPrecursorBalance: return 1
+         .olfactorySurfaceRetention, .circadianLightWindow, .thymicBranching, .gastricPrecursorBalance,
+         .placentalMarker, .renalTubuleRetention, .mammaryDuctDelivery, .rectalReservoir, .mucusFilmThickness: return 1
     default: return 0
     }
   }
@@ -86,6 +89,13 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .thymicBranching: return "tiles"
     case .gastricPrecursorBalance: return "MU"
     case .melaninDistribution: return "PPU/cell"
+    case .placentalMarker, .renalTubuleRetention: return "a.u."
+    case .merkelContact: return "kPa"
+    case .toothEnamelSection, .mucosalSampling: return "%"
+    case .mammaryDuctDelivery: return "VU"
+    case .rectalReservoir: return "mL"
+    case .stromalMatrix: return "MU/AU"
+    case .mucusFilmThickness: return "u"
     }
   }
   var bounds: ClosedRange<Double> {
@@ -140,6 +150,12 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .thymicBranching: return 0...200
     case .gastricPrecursorBalance: return 0...20
     case .melaninDistribution: return 0...12
+    case .placentalMarker: return 0...60
+    case .renalTubuleRetention, .toothEnamelSection, .mucosalSampling: return 0...100
+    case .merkelContact: return 0...(80 / .pi)
+    case .mammaryDuctDelivery, .mucusFilmThickness: return 0...12
+    case .rectalReservoir: return 0...200
+    case .stromalMatrix: return 0...30
     }
   }
   var digits: Int {
@@ -206,6 +222,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .thymicBranching: return "health_atlas_thymic_branching"
     case .gastricPrecursorBalance: return "health_atlas_gastric_precursor_balance"
     case .melaninDistribution: return "health_atlas_melanin_distribution"
+    case .placentalMarker: return "health_atlas_placental_marker"
+    case .renalTubuleRetention: return "health_atlas_renal_tubule_retention"
+    case .merkelContact: return "health_atlas_merkel_contact"
+    case .toothEnamelSection: return "health_atlas_tooth_enamel_section"
+    case .mucosalSampling: return "health_atlas_mucosal_sampling"
+    case .mammaryDuctDelivery: return "health_atlas_mammary_duct_delivery"
+    case .rectalReservoir: return "health_atlas_rectal_reservoir"
+    case .stromalMatrix: return "health_atlas_stromal_matrix"
+    case .mucusFilmThickness: return "health_atlas_mucus_film_thickness"
     }
   }
   var title: String { resourcePrefix + "_title" }
@@ -235,6 +260,7 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .follicleSurface: suffix = "shell_volume"
     case .vocalCycles: suffix = "period"
     case .vertebralSeries: suffix = "remaining_pad_thickness"
+    case .placentalMarker: suffix = "remaining"
     default: suffix = "companion"
     }
     return resourcePrefix + "_" + suffix
@@ -295,6 +321,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .thymicBranching: return ["thymus", "cell-helper-t-cell", "cell-cytotoxic-t-cell", "cell-regulatory-t-cell"]
     case .gastricPrecursorBalance: return ["cell-gastric-chief-cell", "cell-gastric-parietal-cell"]
     case .melaninDistribution: return ["cell-melanocyte"]
+    case .placentalMarker: return ["placenta", "cell-trophoblast"]
+    case .renalTubuleRetention: return ["tissue-renal-tubular-epithelium", "renal-cortex", "renal-medulla"]
+    case .merkelContact: return ["cell-merkel-cell"]
+    case .toothEnamelSection: return ["teeth"]
+    case .mucosalSampling: return ["tonsils", "adenoids", "appendix", "gut-associated-lymphoid-tissue"]
+    case .mammaryDuctDelivery: return ["mammary-glands", "cell-mammary-luminal-cell", "cell-myoepithelial-cell"]
+    case .rectalReservoir: return ["rectum", "anal-canal"]
+    case .stromalMatrix: return ["cell-fibroblast", "cell-endometrial-stromal-cell", "endometrium"]
+    case .mucusFilmThickness: return ["cell-goblet-cell", "pharynx", "tissue-intestinal-epithelium"]
     }
   }
   var sources: [URL] {
@@ -359,6 +394,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .thymicBranching: values = ["https://www.ncbi.nlm.nih.gov/sites/books/NBK27089/", "https://pmc.ncbi.nlm.nih.gov/articles/PMC3620359/"]
     case .gastricPrecursorBalance: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/23-4-the-stomach"]
     case .melaninDistribution: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin", "https://www.cancer.gov/types/skin/hp/skin-genetics-pdq"]
+    case .placentalMarker: values = ["https://www.ncbi.nlm.nih.gov/books/NBK53254/", "https://pmc.ncbi.nlm.nih.gov/articles/PMC7613408/"]
+    case .renalTubuleRetention: values = ["https://www.niddk.nih.gov/health-information/kidney-disease/kidneys-how-they-work", "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption"]
+    case .merkelContact: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin", "https://pubmed.ncbi.nlm.nih.gov/24717432/"]
+    case .toothEnamelSection: values = ["https://www.nidcr.nih.gov/sites/default/files/2021-04/Open-Wide-and-Trek-Inside.pdf", "https://webpath.med.utah.edu/HISTHTML/NORMAL/NORM194.html"]
+    case .mucosalSampling: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems", "https://histology.leeds.ac.uk/home/lymphoid/prim_sec_lymp_tiss/"]
+    case .mammaryDuctDelivery: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/28-6-lactation", "https://pmc.ncbi.nlm.nih.gov/articles/PMC3098485/"]
+    case .rectalReservoir: values = ["https://www.niddk.nih.gov/health-information/digestive-diseases/digestive-system-how-it-works", "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines"]
+    case .stromalMatrix: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/4-3-connective-tissue-supports-and-protects", "https://pmc.ncbi.nlm.nih.gov/articles/PMC8224746/"]
+    case .mucusFilmThickness: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system", "https://histology.leeds.ac.uk/home/digestive/small_intestine/"]
     }
     return values.map { URL(string: $0)! }
   }
