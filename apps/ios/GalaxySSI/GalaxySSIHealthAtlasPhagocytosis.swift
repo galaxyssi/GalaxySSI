@@ -32,38 +32,41 @@ struct GalaxySSIHealthAtlasPhagocytosis: View {
         let scale = min(size.width / 360, size.height / 200)
         drawing.translateBy(x: (size.width - 360 * scale) / 2, y: (size.height - 200 * scale) / 2)
         drawing.scaleBy(x: scale, y: scale)
-        drawing.draw(Image("HealthAtlasImmuneMacrophage"), in: CGRect(x: 17, y: -22, width: 244, height: 244))
-        switch frame.stage {
-        case 0:
-          target(in: drawing, x: frame.particleX, y: 98)
-          var arrow = Path()
-          arrow.move(to: CGPoint(x: 276, y: 119)); arrow.addLine(to: CGPoint(x: 215, y: 119))
-          arrow.addLine(to: CGPoint(x: 222, y: 114)); arrow.move(to: CGPoint(x: 215, y: 119))
-          arrow.addLine(to: CGPoint(x: 222, y: 124))
-          drawing.stroke(arrow, with: .color(Self.particle), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-        case 1:
-          drawing.stroke(circle(frame.particleX, 98, frame.compartmentRadius),
-            with: .color(Self.compartment.opacity(frame.compartmentOpacity)), lineWidth: 2.5)
-          target(in: drawing, x: frame.particleX, y: 98)
-        case 2:
-          drawing.stroke(circle(156, 98, 23), with: .color(Self.compartment), lineWidth: 2.5)
-          for (index, point) in [(146.0, 94.0), (156.0, 105.0), (166.0, 96.0)].enumerated() {
-            drawing.fill(circle(point.0, point.1, frame.fragmentRadii[index]), with: .color(Self.particle))
-          }
-        default:
-          drawing.stroke(circle(156, 98, 10), with: .color(Self.compartment), lineWidth: 2.5)
-          drawing.fill(circle(156, 98, 2.5), with: .color(Self.particle))
-          for bounds in [CGRect(x: 220 + frame.signalDrift, y: 75, width: 40, height: 46),
-            CGRect(x: 218 + frame.signalDrift, y: 64, width: 58, height: 68)] {
-            var arc = Path()
-            arc.addArc(center: .zero, radius: 1, startAngle: .degrees(-38), endAngle: .degrees(38), clockwise: false)
-            let transform = CGAffineTransform(a: bounds.width / 2, b: 0, c: 0, d: bounds.height / 2, tx: bounds.midX, ty: bounds.midY)
-            drawing.stroke(arc.applying(transform), with: .color(Self.signal), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-          }
-        }
+        drawScene(in: drawing, frame: frame)
       }.aspectRatio(360.0 / 200, contentMode: .fit).frame(maxHeight: 235)
         .clipped()
         .accessibilityElement(children: .ignore).accessibilityLabel(label).accessibilityIdentifier("atlas-phagocytosis-diagram")
+    }
+  }
+  func drawScene(in drawing: GraphicsContext, frame: Frame) {
+    drawing.draw(Image("HealthAtlasImmuneMacrophage"), in: CGRect(x: 17, y: -22, width: 244, height: 244))
+    switch frame.stage {
+    case 0:
+      target(in: drawing, x: frame.particleX, y: 98)
+      var arrow = Path()
+      arrow.move(to: CGPoint(x: 276, y: 119)); arrow.addLine(to: CGPoint(x: 215, y: 119))
+      arrow.addLine(to: CGPoint(x: 222, y: 114)); arrow.move(to: CGPoint(x: 215, y: 119))
+      arrow.addLine(to: CGPoint(x: 222, y: 124))
+      drawing.stroke(arrow, with: .color(Self.particle), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+    case 1:
+      drawing.stroke(circle(frame.particleX, 98, frame.compartmentRadius),
+        with: .color(Self.compartment.opacity(frame.compartmentOpacity)), lineWidth: 2.5)
+      target(in: drawing, x: frame.particleX, y: 98)
+    case 2:
+      drawing.stroke(circle(156, 98, 23), with: .color(Self.compartment), lineWidth: 2.5)
+      for (index, point) in [(146.0, 94.0), (156.0, 105.0), (166.0, 96.0)].enumerated() {
+        drawing.fill(circle(point.0, point.1, frame.fragmentRadii[index]), with: .color(Self.particle))
+      }
+    default:
+      drawing.stroke(circle(156, 98, 10), with: .color(Self.compartment), lineWidth: 2.5)
+      drawing.fill(circle(156, 98, 2.5), with: .color(Self.particle))
+      for bounds in [CGRect(x: 220 + frame.signalDrift, y: 75, width: 40, height: 46),
+        CGRect(x: 218 + frame.signalDrift, y: 64, width: 58, height: 68)] {
+        var arc = Path()
+        arc.addArc(center: .zero, radius: 1, startAngle: .degrees(-38), endAngle: .degrees(38), clockwise: false)
+        let transform = CGAffineTransform(a: bounds.width / 2, b: 0, c: 0, d: bounds.height / 2, tx: bounds.midX, ty: bounds.midY)
+        drawing.stroke(arc.applying(transform), with: .color(Self.signal), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+      }
     }
   }
   private func target(in context: GraphicsContext, x: Double, y: Double) {

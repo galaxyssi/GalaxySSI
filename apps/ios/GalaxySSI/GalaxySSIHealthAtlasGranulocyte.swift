@@ -53,12 +53,15 @@ struct GalaxySSIHealthAtlasGranulocyteView: View {
   var body: some View {
     if let frame = GalaxySSIHealthAtlasGranulocyte.Frame(lesson, phase: phase) {
       GalaxySSIHealthAtlasCellScene(frame: frame.scene, stages: stages, language: language, identifier: "atlas-granulocyte-diagram") { drawing in
-        switch lesson {
-        case .neutrophil: neutrophil(in: drawing, frame: frame)
-        case .eosinophil: eosinophil(in: drawing, frame: frame)
-        case .basophil: basophil(in: drawing, frame: frame)
-        }
+        drawScene(in: drawing, frame: frame)
       }
+    }
+  }
+  func drawScene(in drawing: GraphicsContext, frame: GalaxySSIHealthAtlasGranulocyte.Frame) {
+    switch lesson {
+    case .neutrophil: neutrophil(in: drawing, frame: frame)
+    case .eosinophil: eosinophil(in: drawing, frame: frame)
+    case .basophil: basophil(in: drawing, frame: frame)
     }
   }
   private func cell(in context: GraphicsContext, frame: GalaxySSIHealthAtlasGranulocyte.Frame) {

@@ -13,18 +13,18 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 
 ## Remaining Integration
 - [x] Import 3127 source-referenced chapter/caption/control/structure/scope strings per language into the dedicated AtlasFunction table; no English fallback in Chinese. Preserve existing BodyAtlas precedence, with new-table fallback for new structure keys.
-- [ ] Complete Function-tab player integration across all source courses. Core player, course selector, controls, source links, phase restoration and lifecycle are wired for ninety-two courses through eighty dedicated renderers; other courses still await their dedicated renderers.
+- [ ] Complete Function-tab player integration across all source courses. Core player, course selector, controls, source links, phase restoration and lifecycle are wired for all 101 courses through 81 dedicated renderers. Remaining integration and native validation below are still outstanding.
 - [x] Connect optional persisted Function selections without changing quantitative simulation selections. Keep live animation phase outside published/serialized state; pause/exit commits it, while question snapshots read current live phase. Corrupt Function-only storage does not discard unrelated selections.
 - [ ] Import all new/revised illustration resources and cutaway geometry.
 - [ ] Port additional structure views, canonical/feature routing and related Function destination navigation.
 - [ ] Port ventilation, diffusion and skeletal model changes and their parameter/result UI.
 - [ ] Update Agent public context and fallback question paths with the active Function lesson/chapter.
-- [ ] Complete every renderer below, preserving chapter-specific geometry and motion rather than generic stand-ins.
+- [x] Complete every renderer below, preserving chapter-specific geometry and motion rather than generic stand-ins; native compilation/pixels remain unverified.
 - [ ] Static source/resource/grammar/project checks across the completed scope, then review and publish one formal main-based PR.
 - [ ] Synchronize any newly merged predecessor PRs and update dependency scope before publication.
 
 ## Renderer Parity
-Next renderer: port HealthAtlasCellFunctionArt, then continue the source-order list. Ninety-two courses are enabled through eighty dedicated renderers; do not broaden FunctionRendering before the corresponding native renderer is implemented.
+All 101 courses are enabled through 81 dedicated renderer classes. Next: complete structure resources/routing, quantitative model changes, Agent context and source-scope audit. Renderer source coverage is not a native parity acceptance.
 
 - [x] `HealthAtlasUptakeView` — native 344-unit source geometry, four signal paths, relay thresholds, membrane fusion and glucose transport; source/resource/grammar checks only, native pixels unverified.
 - [x] `HealthAtlasHeartbeatView` — five source stages, seven exact cubic routes, shared valve anchors and 24x24 deformable heart mesh; Metal plus equivalent CoreGraphics triangle fallback, native shader/pixels unverified.
@@ -106,12 +106,12 @@ Next renderer: port HealthAtlasCellFunctionArt, then continue the source-order l
 - [x] `HealthAtlasErectorSupportStoryView` — four source stages, original ordered 19-path/eight-gradient posterior plate with mirrored columns, two fixed pelvic outlines/dynamic trunk, thirty-three-point spine and paired bands, thirteen tangent-tilted vertebrae, identical supported/loaded neutral geometry, integer-alpha emphasis and ten bilingual placements; source/formula/grammar checks only, native pixels unverified.
 - [x] `HealthAtlasGlutealExtensionStoryView` — four source stages, five exact fixed outlines/seven attached anchor pairs, independent pelvic/femoral rotations, dynamic muscle/six clipped fascicles/tendon, signed sweep and tracked keys, side-by-side hip-motion versus fixed-hip lumbar comparison, integer-alpha attachment emphasis and thirteen bilingual placements; source/formula/grammar checks only, native pixels unverified.
 - [x] `HealthAtlasGutLymphoidStoryView` — five source stages, two original plates/26 paths/eight gradients, eight expanded outlines/five ordered tracks, cached dome/epithelial markers, clipped independent zooms, M-cell uptake/dendritic contact and delayed antigen display, indexed IgA transit/secreted glyphs, seventeen bilingual placements/fourteen leaders; source/formula/grammar checks only, native sampling/pixels unverified.
-- [ ] `HealthAtlasCellFunctionArt`
+- [x] `HealthAtlasCellFunctionArt` — nine four-stage, 16-second courses reuse the existing dedicated phagocytosis, granulocyte, immune-link and blood-defense drawing paths; source 360x200 fitting, 0.56 width-proportional capped panel height, solid rounded panel, phase boundaries and original painted cells retained without duplicating structure descriptions/related rows. Source/grammar checks only; native pixels unverified.
 
 ## Verification Limits
 Current foundation checks pass: all 387 source hashes, exported catalogue/route invariants, iOS project/module configuration, two changed Swift grammar branches and whitespace. This proves foundation consistency only, not renderer or UI parity.
 
-Player checkpoint: dedicated source tables contain 3127 exact strings in each language; registry exposes ninety-two courses through eighty of 81 renderer classes. Paired or grouped courses retain dedicated source renderers, including the three signal and three ocular courses. These source implementations have not run on a device. Generic chapter controls, lifecycle pause, references and separate live/persisted state are connected; no unsupported course is replaced by a generic picture. The enabled-course audit also checks every enabled ID against the pinned 101-course catalogue.
+Player checkpoint: dedicated source tables contain 3127 exact strings in each language; registry exposes all 101 courses through all 81 renderer classes. Paired or grouped courses retain dedicated source renderers, including the three signal and three ocular courses. These source implementations have not run on a device. Generic chapter controls, lifecycle pause, references and separate live/persisted state are connected; no unsupported course is replaced by a generic picture. The enabled-course audit also checks every enabled ID against the pinned 101-course catalogue.
 
 Signal trail lengths are cached once per source route. The small geometry helper uses subdivided chord/control-polygon bounds with a shared error budget ([Gravesen, 1997](https://orbit.dtu.dk/en/publications/adaptive-subdivision-and-the-length-and-energy-of-b%C3%A9zier-curves/)); rendering still trims the native Path. Added, unexecuted XCTest source compares straight/quadratic/cubic cases to analytic lengths. This does not prove native Path trimming accuracy, arc orientation, compilation or pixels.
 

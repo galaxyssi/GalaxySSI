@@ -44,7 +44,7 @@ const local=file=>fs.readFileSync(path.join(root,"apps/ios/GalaxySSI",file),"utf
     }
     for(const key of keys)assert.equal(map.get(key),strings.find(s=>s._attributes.name===key)._text);
   }
-  const swift=local("GalaxySSIHealthAtlasImmuneLink.swift"),scene=local("GalaxySSIHealthAtlasCellScene.swift");
+  const swift=local("GalaxySSIHealthAtlasImmuneLink.swift")+local("GalaxySSIHealthAtlasImmuneLinkDrawing.swift"),scene=local("GalaxySSIHealthAtlasCellScene.swift");
   const android=show(sha,"apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasImmuneLinkView.kt").toString();
   const pairs=[["64 + 85 * ease","64f + 85f * t"],["149 + 94 * ease","149f + 94f * t"],["55 + 89 * ease","55f + 89f * t"],
     ["1 - 1.1 * ease * (1 - ease)","1f - 1.1f * t * (1f - t)"],["254 - 20 * ease","254f - 20f * t"],
