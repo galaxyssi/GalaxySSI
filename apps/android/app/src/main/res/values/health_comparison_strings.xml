@@ -6,6 +6,7 @@
     <string name="health_activity_coverage">%1$d / %2$d days recorded</string>
     <string name="health_activity_average">Daily average on recorded days: %1$s</string>
     <string name="health_activity_point_value">%1$s · %2$s</string>
+    <string name="health_activity_day_unrecorded">No record</string>
     <string name="health_activity_no_pairs">No matching recorded days to compare</string>
     <string name="health_activity_paired">%1$d matched days · current %2$s · previous %3$s · change %4$s</string>
     <string name="health_activity_current">Current period</string>

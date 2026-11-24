@@ -22,6 +22,17 @@ class HealthActivityComparisonTest {
         assertEquals(listOf(200L, null, null, null, 40L, null, null), result.current)
     }
     @Test fun activityKindsAreNeverMixed() { assertNull(compare(day(0, 90_000, HealthActivityKind.CYCLING)).current[0]) }
+    @Test fun horizontalPositionSelectsTheNearestCalendarDayIncludingGaps() {
+        val week = compare(day(0, 60), day(3, 0))
+        assertEquals(0, week.nearestDayIndex(-0.1f))
+        assertEquals(2, week.nearestDayIndex(0.34f))
+        assertNull(week.current[week.nearestDayIndex(0.34f)])
+        assertEquals(3, week.nearestDayIndex(0.47f))
+        assertEquals(4, week.nearestDayIndex(0.66f))
+        assertEquals(6, week.nearestDayIndex(1.1f))
+        val oneDay = HealthActivityComparison.build(first, first, emptyList(), steps)
+        assertEquals(0, oneDay.nearestDayIndex(0.9f))
+    }
     @Test fun chartDateTicksIncludeBothEndpointsWithoutDuplicates() {
         val oneDay = HealthActivityComparison.build(first, first, emptyList(), steps)
         assertEquals(listOf(0), oneDay.dateTickIndices(7))

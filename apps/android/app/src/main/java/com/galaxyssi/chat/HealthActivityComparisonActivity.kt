@@ -130,6 +130,7 @@ internal class HealthActivityComparisonActivity : HealthHistoryPage() {
     }
     private fun renderLive() {
         var result = loaded ?: return
+        if (content.findViewWithTag<HealthActivityComparisonChart>("health-activity-chart")?.trackingTouch == true) return
         val today = LocalDate.now()
         val live = if (names.fixture != null) null else when (kind) {
             HealthActivityKind.STEPS -> healthActivityStepDay(HealthPhoneStepUpdates.readings.value?.ledger, today)
@@ -159,7 +160,7 @@ internal class HealthActivityComparisonActivity : HealthHistoryPage() {
         totals.takeIf { it.isNotEmpty() }?.let { totals ->
             ui.add(content, ui.text(getString(R.string.health_activity_average, amount(totals.sum() / totals.size)), 13f, muted = true), 4)
         }
-        ui.add(content, HealthActivityComparisonChart(this, result, kind, selectedDay) { selectedDay = it }.apply {
+        ui.add(content, HealthActivityComparisonChart(this, result, kind, selectedDay, ::renderLive) { selectedDay = it }.apply {
             tag = "health-activity-chart"
         }, 16)
     }
