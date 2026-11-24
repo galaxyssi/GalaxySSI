@@ -213,6 +213,108 @@ final class GalaxySSIStoreTests: XCTestCase {
     XCTAssertTrue(store.persistExhaustedPeerDelivery(failure))
     XCTAssertNil(store.persistedMessage(id: source.id, contactId: "peer"))
   }
+  func testLegacyScheduleMigrationIsIdempotentAndPreservesEveryMessage() throws {
+    let store = makeStore(), owner = store.createAgentSession(title: "Legacy fixture")
+    let task = try store.saveConversationSchedule(conversationId: owner.id, id: nil, prompt: "Check weather",
+      trigger: .init(kind: .interval, intervalSeconds: 60), frequency: "every minute", nowMillis: 1_000_000)
+    XCTAssertEqual(store.claimDueAutomationTasks(nowMillis: 1_000_000), 1)
+    let run = try XCTUnwrap(store.queuedAutomationRuns().first)
+    _ = store.appendOutgoing("Synthetic question", to: "hermes", turnId: run.runId,
+      messageId: try XCTUnwrap(UUID(uuidString: run.runId)), conversationOverride: owner.id,
+      sourceTrace: AgentConversationSchedule.occurrenceStage)
+    _ = store.appendIncoming("Original label\n\nFull original answer", from: "hermes",
+      remoteMessageId: "scheduled-result:" + run.runId, conversationId: owner.id, turnId: run.runId,
+      richOutputJson: "[{\"type\":\"text\",\"text\":\"Synthetic retained metadata\"}]")
+    var legacy = task; legacy.action.scheduleOrigin = ""
+    store.proactiveTasks = [legacy]
+    let before = store.chatHistoryDatabase.messages(conversationId: owner.id)
+    let unread = store.agentReplyUnreadCount(conversationId: owner.id)
+    XCTAssertTrue(store.reconcileConversationScheduleProvenance())
+    let paused = try XCTUnwrap(store.automationTask(id: task.taskId))
+    XCTAssertFalse(paused.enabled); XCTAssertEqual(paused.nextRunAtMillis, 0)
+    XCTAssertEqual(paused.action.scheduleOrigin, AgentConversationScheduleProvenance.review)
+    XCTAssertEqual(store.proactiveRuns.first?.status, .cancelled)
+    XCTAssertEqual(store.chatHistoryDatabase.messages(conversationId: owner.id), before)
+    XCTAssertEqual(store.agentReplyUnreadCount(conversationId: owner.id), unread)
+    XCTAssertEqual(store.scheduleListPreview(try XCTUnwrap(before.last)).content, "Full original answer")
+    for _ in 0..<3 {
+      XCTAssertTrue(store.reconcileConversationScheduleProvenance())
+      XCTAssertEqual(store.automationTask(id: task.taskId), paused)
+    }
+    XCTAssertThrowsError(try store.triggerAutomationTaskNow(id: task.taskId))
+    XCTAssertThrowsError(try store.setConversationScheduleEnabled(id: task.taskId, conversationId: owner.id, enabled: true))
+    XCTAssertNil(store.beginAutomationRun(id: run.runId))
+    _ = store.appendIncoming("Late answer", from: "hermes", remoteMessageId: "late", conversationId: owner.id, turnId: run.runId)
+    XCTAssertEqual(store.chatHistoryDatabase.messages(conversationId: owner.id), before)
+    let reviewed = try store.saveConversationSchedule(conversationId: owner.id, id: task.taskId,
+      prompt: task.action.prompt, trigger: task.trigger, frequency: task.action.scheduleText)
+    XCTAssertTrue(reviewed.enabled); XCTAssertEqual(reviewed.action.scheduleOrigin, "editor")
+    XCTAssertFalse(store.admitsScheduledReply(conversation: owner.id, turn: run.runId))
+    XCTAssertFalse(store.admitsScheduledReply(conversation: owner.id, turn: run.runId.lowercased()))
+  }
+
+  func testLegacyReceiptDiscoveryPagesBeyondRecentMessagesAndMatchesCurrentTask() throws {
+    let store = makeStore(), owner = store.createAgentSession(title: "Receipt fixture")
+    let task = try store.saveConversationSchedule(conversationId: owner.id, id: nil, prompt: "Check weather",
+      trigger: .init(kind: .interval, intervalSeconds: 60), frequency: "every minute")
+    let receipt = store.appendIncoming(task.name + "\n" + task.action.scheduleText + "\nEnabled", from: "hermes",
+      remoteMessageId: "schedule-tool:" + task.taskId + ":1", traceStage: AgentConversationSchedule.receiptStage,
+      detail: task.taskId, conversationId: owner.id, turnId: "receipt-turn")
+    for index in 0..<120 { _ = store.appendOutgoing("Fixture message \(index)", to: "hermes", conversationOverride: owner.id) }
+    var legacy = task; legacy.action.scheduleOrigin = ""; store.proactiveTasks = [legacy]
+    XCTAssertTrue(store.reconcileConversationScheduleProvenance())
+    let migrated = try XCTUnwrap(store.automationTask(id: task.taskId))
+    XCTAssertEqual(migrated.action.scheduleOrigin, "model_tool"); XCTAssertTrue(migrated.enabled)
+    XCTAssertEqual(migrated.revision, task.revision); XCTAssertEqual(migrated.nextRunAtMillis, task.nextRunAtMillis)
+    var rejected = receipt; rejected.remoteMessageId = "schedule-command:question"
+    XCTAssertNil(AgentConversationScheduleProvenance.receiptOrigin(rejected, task: task))
+    rejected = receipt; rejected.conversationId = "foreign"
+    XCTAssertNil(AgentConversationScheduleProvenance.receiptOrigin(rejected, task: task))
+    rejected = receipt; rejected.content = "Different task\n" + task.action.scheduleText
+    XCTAssertNil(AgentConversationScheduleProvenance.receiptOrigin(rejected, task: task))
+    rejected = receipt; rejected.content = task.name + "\nDifferent time"
+    XCTAssertNil(AgentConversationScheduleProvenance.receiptOrigin(rejected, task: task))
+  }
+
+  func testScheduleReplyBlocksSurviveReopenWithoutHidingOrRewritingHistory() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let url = root.appendingPathComponent("history.sqlite"), secrets = InMemorySecretStore()
+    let db = GalaxySSIChatHistoryDatabase(fileURL: url, secrets: secrets)
+    let original = ChatMessage(contactId: "hermes", content: "Preserved answer", isMine: false,
+      deliveryStatus: .delivered, conversationId: "fixture", turnId: "old-run", remoteMessageId: "original",
+      richOutputJson: "retained-fixture-metadata")
+    XCTAssertTrue(db.upsert(original))
+    XCTAssertTrue(db.blockScheduleReplies(conversation: "fixture", turns: ["old-run"]))
+    XCTAssertEqual(db.messages(conversationId: "fixture"), [original])
+    var late = original; late.id = UUID(); late.content = "Late result"
+    XCTAssertFalse(db.upsert(late)); XCTAssertThrowsError(try db.persistTransportIncoming(late))
+    late.id = original.id
+    XCTAssertFalse(db.upsert(late))
+    var read = original; read.deliveryStatus = .read
+    XCTAssertTrue(db.upsert(read))
+    let reopened = GalaxySSIChatHistoryDatabase(fileURL: url, secrets: secrets)
+    XCTAssertEqual(reopened.messages(conversationId: "fixture"), [read])
+    XCTAssertTrue(reopened.isScheduleReplyBlocked(conversation: "fixture", turn: "old-run"))
+    XCTAssertFalse(reopened.isScheduleReplyBlocked(conversation: "other", turn: "old-run"))
+    XCTAssertFalse(reopened.blockScheduleReplies(conversation: "fixture", turns: ["rollback", ""]))
+    XCTAssertFalse(reopened.isScheduleReplyBlocked(conversation: "fixture", turn: "rollback"))
+  }
+
+  func testScheduleOriginIsBackwardCompatibleAndUnknownOriginsRequireReview() throws {
+    let store = makeStore(), owner = store.createAgentSession(title: "Decode fixture")
+    var task = try store.saveConversationSchedule(conversationId: owner.id, id: nil, prompt: "Check weather",
+      trigger: .init(kind: .interval, intervalSeconds: 60), frequency: "every minute")
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(task.action)) as? [String: Any])
+    object.removeValue(forKey: "schedule_origin")
+    task.action = try JSONDecoder().decode(AgentProactiveAction.self, from: JSONSerialization.data(withJSONObject: object))
+    XCTAssertEqual(task.action.scheduleOrigin, ""); XCTAssertTrue(AgentConversationScheduleProvenance.requiresReview(task))
+    task.action.scheduleOrigin = "unknown-source"
+    XCTAssertTrue(AgentConversationScheduleProvenance.requiresReview(task))
+    task.action.scheduleOrigin = "model_tool"
+    XCTAssertFalse(AgentConversationScheduleProvenance.requiresReview(task))
+  }
+
   func testConversationScheduleClaimsOnceAndFencesOldRevisions() throws {
     let store = makeStore()
     let owner = store.createAgentSession(title: "Owner")

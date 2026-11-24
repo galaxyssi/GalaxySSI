@@ -1304,7 +1304,7 @@ final class GalaxySSIStore: ObservableObject {
       remoteMessageId: remoteMessageId,
       richOutputJson: richOutputJson
     )
-    guard chatHistoryDatabase.admitsAgentTurn(message) else { return message }
+    guard chatHistoryDatabase.admitsAgentTurn(message), admitsScheduledReply(conversation: resolvedConversationId, turn: turnId) else { return message }
     messagesByContact[contactId, default: []].append(message)
     recordAgentConversationActivity(conversationId: resolvedConversationId, contactId: contactId, content: content, at: createdAt)
     save()
@@ -1326,6 +1326,7 @@ final class GalaxySSIStore: ObservableObject {
     message.conversationId = conversationId.ifBlank(message.conversationId.ifBlank(
       chatHistoryDatabase.originalAgentTurnConversation(turnId) ?? activeConversationId(for: contactId)))
     message.turnId = turnId
+    guard admitsScheduledReply(conversation: message.conversationId, turn: turnId) else { throw GalaxySSIChatHistoryError.locallyDeleted }
     message.richOutputJson = richOutputJson
     message.deliveryStatus = .delivered
     message.deliveryTrace.append(DeliveryTraceEvent(stage: tracePrefix + "_received"))

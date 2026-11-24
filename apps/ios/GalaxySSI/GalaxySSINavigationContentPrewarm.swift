@@ -24,7 +24,7 @@ enum GalaxySSINavigationContentPrewarm {
     let activeConversationID = store.activeAgentConversationId
     let agentItems = conversations.map { conversation in
       let latest = store.latestAgentSessionMessage(conversation.id)
-      let preview = latest.map { ContactConversationSummary(lastMessage: $0, unreadCount: 0).previewText } ?? ""
+      let preview = latest.map { ContactConversationSummary(lastMessage: store.scheduleListPreview($0), unreadCount: 0).previewText } ?? ""
       return GalaxySSIConversationHubItem(
         id: conversation.id,
         kind: .agent,
@@ -128,6 +128,6 @@ enum GalaxySSINavigationContentPrewarm {
     ).map { target in
       "\(target.id):\(target.kind.rawValue):\(target.capabilities.map(\.rawValue).sorted().joined(separator: ","))"
     }.joined(separator: "|")
-    return "\(store.activeAgentConversationId)|\(conversations)|\(contacts)|\(localProfiles)|\(cloudModels)|\(callableTargets)|\(GalaxySSISettingsSummaryCache.key(for: store))"
+    return "\(store.schedulePreviewCacheKey)|\(store.activeAgentConversationId)|\(conversations)|\(contacts)|\(localProfiles)|\(cloudModels)|\(callableTargets)|\(GalaxySSISettingsSummaryCache.key(for: store))"
   }
 }

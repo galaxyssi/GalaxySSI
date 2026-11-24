@@ -42,6 +42,10 @@ struct GalaxySSIConversationSchedulesView: View {
                   draft = Draft(id: task.taskId, prompt: task.action.prompt, frequency: task.action.scheduleText)
                 } label: { Label(t("galaxyssi.schedule.edit", "Edit"), systemImage: "pencil") }
                 Button {
+                  if AgentConversationScheduleProvenance.requiresReview(task) {
+                    draft = Draft(id: task.taskId, prompt: task.action.prompt, frequency: task.action.scheduleText)
+                    return
+                  }
                   do {
                     guard try coordinator.setConversationScheduleEnabled(task, enabled: !task.enabled) else {
                       self.error = t("galaxyssi.schedule.save_failed", "The schedule could not be updated.")
@@ -61,7 +65,7 @@ struct GalaxySSIConversationSchedulesView: View {
               }
               .accessibilityLabel(t("galaxyssi.schedule.options", "Schedule options"))
             }
-            if task.enabled && task.nextRunAtMillis > 0 {
+            if task.enabled && AgentConversationScheduleProvenance.verified(task) && task.nextRunAtMillis > 0 {
               Text(GalaxySSIAutomationLabels.time(task.nextRunAtMillis, language: language))
                 .font(.caption).foregroundColor(.secondary)
             }
@@ -88,6 +92,7 @@ struct GalaxySSIConversationSchedulesView: View {
       .listStyle(.insetGrouped)
     }
     .navigationBarHidden(true)
+    .task { _ = coordinator.reconcileLegacyConversationSchedules() }
     .sheet(item: $draft) { item in
       GalaxySSIConversationScheduleEditor(prompt: item.prompt, frequency: item.frequency) { prompt, frequency in
         guard let task = store.automationTask(id: item.id), task.action.isConversationSchedule else {
