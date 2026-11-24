@@ -68,6 +68,33 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .kneeMoment:
       return [control("knee-moment-force", "force", 0...20, 10, "N", digits: 0),
         control("knee-moment-arm", "arm", 0...6, 4, "cm", digits: 0)]
+    case .arterialContinuity:
+      return [control("arterial-lumen-diameter", "diameter", 10...40, 24, "mm", digits: 0),
+        control("arterial-volume-flow", "flow", 0...150, 70, "mL/s", digits: 0)]
+    case .glialCapacitance:
+      return [control("glial-capacitance-thickness", "thickness", 10...40, 20, "\u{00d7}", scale: 20),
+        control("glial-capacitance-area", "area", 10...40, 20, "\u{00d7}", scale: 20)]
+    case .colonicWaterBalance:
+      return [control("colonic-water-starting-volume", "starting_volume", 100...1000, 500, "mL", digits: 0),
+        control("colonic-water-net-absorbed", "net_absorbed", 0...100, 80, "%", digits: 0)]
+    case .lymphParticleTransport:
+      return [control("lymph-particle-transport-flow", "flow", 0...20, 8, "mL/min", scale: 4),
+        control("lymph-particle-transport-concentration", "concentration", 0...24, 12, "\u{00b5}g/mL", scale: 4)]
+    case .endocrineDilution:
+      return [control("endocrine-dilution-tracer-amount", "amount", 1...12, 6, "TU", digits: 0),
+        control("endocrine-dilution-final-volume", "volume", 2...12, 4, "VU", digits: 0)]
+    case .boneSection:
+      return [control("bone-section-force", "force", 0...120, 60, "N", digits: 0),
+        control("bone-section-wall-thickness", "wall_thickness", 10...30, 20, "mm", scale: 10, digits: 1)]
+    case .retinalConvergence:
+      return [control("retinal-convergence-samples", "samples", 1...16, 8, "", digits: 0),
+        control("retinal-convergence-lit-percent", "lit_percent", 0...100, 25, "%", digits: 0)]
+    case .muscleShortening:
+      return [control("muscle-shortening-count", "count", 200...2000, 1000, "", digits: 0),
+        control("muscle-shortening-per-sarcomere", "per_sarcomere", 0...50, 25, "\u{00b5}m", scale: 100)]
+    case .keratinGrowth:
+      return [control("keratin-growth-time", "time", 0...20, 8, "d", digits: 0),
+        control("keratin-growth-rate", "rate", 2...8, 5, "mm/d", scale: 10, digits: 1)]
     }
   }
 }

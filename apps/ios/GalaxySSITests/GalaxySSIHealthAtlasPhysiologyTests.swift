@@ -179,7 +179,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
           XCTAssertTrue(point.y.isFinite)
           XCTAssertTrue(kind.bounds.contains(point.y))
           if let previous {
-            if [Model.Kind.renal, .eye, .cushionContactPressure, .airwaySplit, .visualAngle, .hormoneSignal].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
+            if [Model.Kind.renal, .eye, .cushionContactPressure, .airwaySplit, .visualAngle, .hormoneSignal,
+                .arterialContinuity, .glialCapacitance, .colonicWaterBalance, .endocrineDilution].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
             else { XCTAssertGreaterThanOrEqual(point.y, previous - 1e-9) }
           }
           previous = point.y
@@ -237,11 +238,15 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       (.cochlearFrequency, 1710.2665234, 50), (.diaphragmDisplacement, 216, 18),
       (.cardiacPhaseTime, 400, 800), (.visualAngle, 5.724810452, 2.862405226),
       (.serialAbsorption, 70, 30), (.hormoneSignal, 25, 75), (.immuneComposition, 50, 150),
-      (.ductTransit, 4.8, 0.4), (.oviductCiliaryCycles, 7.5, 200), (.kneeMoment, 0.4, 0.04)
+      (.ductTransit, 4.8, 0.4), (.oviductCiliaryCycles, 7.5, 200), (.kneeMoment, 0.4, 0.04),
+      (.arterialContinuity, 70 / (.pi * 1.44), .pi * 1.44), (.glialCapacitance, 1, 1),
+      (.colonicWaterBalance, 100, 400), (.lymphParticleTransport, 6, 30), (.endocrineDilution, 1.5, 6),
+      (.boneSection, 60 / (16 * .pi), 16 * .pi), (.retinalConvergence, 2, 6),
+      (.muscleShortening, 0.25, 2.25), (.keratinGrowth, 4, 2)
     ]
-    XCTAssertEqual(Teaching.allCases.count, 18)
-    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 42)
-    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 69)
+    XCTAssertEqual(Teaching.allCases.count, 27)
+    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 60)
+    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 111)
     for (teaching, expected, companion) in fixtures {
       let kind = try XCTUnwrap(Model.Kind(rawValue: teaching.rawValue)), model = Model(kind: kind)
       XCTAssertEqual(model.result, expected, accuracy: 1e-6)
@@ -376,6 +381,57 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     XCTAssertTrue(Model.Kind.diaphragmDisplacement.hasMaterialResponse)
   }
 
+  func testOrganTeachingPairsPreserveConservationAndSyntheticDimensions() throws {
+    typealias Teaching = GalaxySSIHealthAtlasTeachingModel
+    let kinds: [Teaching] = [.arterialContinuity, .glialCapacitance, .colonicWaterBalance,
+      .lymphParticleTransport, .endocrineDilution, .boneSection, .retinalConvergence, .muscleShortening, .keratinGrowth]
+    for teaching in kinds {
+      let controls = teaching.inputs
+      for first in controls[0].range {
+        for second in controls[1].range {
+          let values = [Double(first) / controls[0].scale, Double(second) / controls[1].scale]
+          let output = try XCTUnwrap(teaching.evaluate(values)), other = try XCTUnwrap(teaching.companion(values))
+          XCTAssertTrue(teaching.bounds.contains(output))
+          switch teaching {
+          case .arterialContinuity:
+            XCTAssertEqual(output * other, values[1], accuracy: 1e-9)
+            XCTAssertEqual(other, .pi * pow(values[0] / 20, 2), accuracy: 1e-9)
+          case .glialCapacitance:
+            XCTAssertEqual(output, values[1] * other, accuracy: 1e-9)
+            XCTAssertEqual(other, log1p(0.5) / log1p(values[0] * 0.5), accuracy: 1e-9)
+          case .colonicWaterBalance: XCTAssertEqual(output + other, values[0], accuracy: 1e-9)
+          case .lymphParticleTransport: XCTAssertEqual(other, output * 5, accuracy: 1e-9)
+          case .endocrineDilution:
+            XCTAssertEqual(output * values[1], other, accuracy: 1e-9)
+            XCTAssertEqual(other, values[0])
+          case .boneSection:
+            XCTAssertEqual(output * other, values[0], accuracy: 1e-9)
+            XCTAssertEqual(other, .pi * (25 - pow(5 - values[1], 2)), accuracy: 1e-9)
+          case .retinalConvergence: XCTAssertEqual(output + other, values[0], accuracy: 1e-9)
+          case .muscleShortening:
+            XCTAssertEqual(output + other, values[0] * 2.5 / 1000, accuracy: 1e-9)
+            XCTAssertGreaterThan(other, 0)
+          case .keratinGrowth: XCTAssertEqual(output * other, values[0], accuracy: 1e-9)
+          default: XCTFail("Unexpected organ teaching model")
+          }
+        }
+      }
+    }
+    XCTAssertEqual(try XCTUnwrap(Teaching.retinalConvergence.evaluate([8, 25.5])), 2.04, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Teaching.muscleShortening.evaluate([750, 0.32])), 0.24, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Teaching.muscleShortening.companion([750, 0.32])), 1.635, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Teaching.lymphParticleTransport.evaluate([5, 6])), 30)
+    XCTAssertEqual(try XCTUnwrap(Teaching.lymphParticleTransport.companion([5, 6])), 150)
+    XCTAssertEqual(Model.Kind.forEntry("arteries"), .vessel)
+    XCTAssertEqual(Model.Kind.forEntry("aorta"), .arterialContinuity)
+    XCTAssertTrue(Model.Kind.arterialContinuity.hasMaterialResponse)
+    XCTAssertEqual(Model(kind: .arterialContinuity, inputs: [20, 0])?.result, 0)
+    for language in ["en", "zh-Hans"] {
+      XCTAssertEqual(GalaxySSIHealthAtlasMaterialResponseView.description(.arterialContinuity, language: language),
+        GalaxySSIHealthAtlasText.get("health_atlas_arterial_continuity_diagram", language))
+    }
+  }
+
   func testElbowFixturesBalanceForcesAndMomentsWithStrictUnitConversion() throws {
     let forces = try XCTUnwrap(GalaxySSIHealthAtlasElbow.forces(loadKg: 4, loadArmCm: 38, muscleArmMm: 40))
     XCTAssertEqual(forces.muscle, 470.4, accuracy: 1e-9)
@@ -405,7 +461,7 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthAtlasElbow.forces(loadKg: 4, loadArmCm: 19, muscleArmMm: 40))
     XCTAssertNil(GalaxySSIHealthAtlasElbow.forces(loadKg: 4, loadArmCm: 38, muscleArmMm: 61))
     XCTAssertNil(Model.restore("biceps-brachii", inputs: [40, 38, 0]))
-    XCTAssertNil(Model.Kind.forEntry("triceps-brachii"))
+    XCTAssertEqual(Model.Kind.forEntry("triceps-brachii"), .muscleShortening)
     XCTAssertNil(Model.Kind.forEntry("cell-skeletal-muscle-fiber"))
   }
 
@@ -846,7 +902,7 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     XCTAssertNil(Model(kind: .lymphValve, inputs: [20, 0]))
     XCTAssertEqual(Model.Kind.forEntry("lymphatic-vessels"), .lymphValve)
     for id in ["thoracic-duct", "lymph-nodes", "cell-lymphatic-endothelial-cell"] {
-      XCTAssertNil(Model.Kind.forEntry(id))
+      XCTAssertEqual(Model.Kind.forEntry(id), .lymphParticleTransport)
     }
     XCTAssertEqual(Model.restore("lymphatic-vessels", inputs: [-20, 40]), reverse)
     XCTAssertNil(Model.restore("thoracic-duct", inputs: [-20, 40]))
