@@ -50,6 +50,6 @@ const old = new Set(previous.stories.map(s => s.id)), added = pack.stories.filte
 assert.equal(added.length, 24);
 const artwork = read("GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift");
 const connected = added.filter(s => artwork.includes('case "' + s.id + '":'));
-assert.deepEqual(connected.map(s => s.id), ["PELVIC_LOAD_TRANSFER", "SUBCUTANEOUS_CUSHION", "PANETH_CRYPT_BARRIER"]);
+assert.deepEqual(connected.map(s => s.id), ["PELVIC_LOAD_TRANSFER", "SUBCUTANEOUS_CUSHION", "PANETH_CRYPT_BARRIER", "ENTEROENDOCRINE_LUMEN_SIGNAL", "INTESTINAL_STEM_RENEWAL"]);
 assert.ok(swift.includes("revision: Int = 4385"), "Do not activate incomplete renderer coverage");
-console.log("Verified 67 source hashes; 138 courses / 313 routes / 151 related links / bilingual keys. Three new dispatches connected; 21 renderers and default activation remain. No native execution.");
+console.log("Verified 67 source hashes; 138 courses / 313 routes / 151 related links / bilingual keys. Five new dispatches connected; 19 renderers and default activation remain. No native execution.");

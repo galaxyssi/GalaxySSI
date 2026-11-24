@@ -36,7 +36,7 @@ An eventual PR will use main and disclose the actual inherited diff.
 - Bilingual resource deltas are imported.
 - Source-only catalogue audit passed for all 67 hashes, catalogue counts,
   graph-resolved routes, entry phases, exact related destinations, reference
-  hosts and bilingual keys. Three new dispatches are present; the other 21 are
+  hosts and bilingual keys. Five new dispatches are present; the other 19 are
   explicitly not implemented. Two changed Swift files parsed without grammar
   errors; project structure passed. No Swift type checking or native execution.
 - Added dedicated Paneth crypt-barrier renderer and reusable crypt wall geometry:
@@ -44,7 +44,15 @@ An eventual PR will use main and disclose the actual inherited diff.
   original cell outlines, four granular release/spread stages and leader labels.
   Its dedicated dispatch is connected, but default catalogue activation is still
   pending. Three added/edited Swift files passed grammar parsing and the project
-  structure check passed. 21 new renderers remain; no native acceptance claimed.
+  structure check passed. No native acceptance claimed.
+- Added dedicated enteroendocrine lumen-to-blood and intestinal stem renewal
+  renderers using the same crypt wall. Preserved local basal delivery/capillary
+  tracks, luminal sensing, vesicle stages, retained niche and Paneth neighbor,
+  delayed daughter cohorts, arc-length wall migration and mature brush border.
+  Both have dispatch cases and exact source art identifiers. Source-only audit
+  compared three cubics/five cell quadratics and 363 analytic migration/blood
+  samples. Four Swift files passed grammar parsing; project and catalogue source
+  checks passed. 19 renderers and default catalogue activation remain.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
 - Connect pelvic/subcutaneous cutaways to structure feature routing.

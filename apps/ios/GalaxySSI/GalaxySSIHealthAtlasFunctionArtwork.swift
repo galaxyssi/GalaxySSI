@@ -8,7 +8,7 @@ enum GalaxySSIHealthAtlasFunctionRendering {
     "CLITORAL_SENSORY_PATH", "VESTIBULAR_GLAND_SECRETION", "TENOCYTE_TENDON_MATRIX",
     "PECTORAL_HORIZONTAL_ADDUCTION", "LATISSIMUS_EXTENSION_ADDUCTION"]
   static let loadTransfer: Set<String> = ["PELVIC_LOAD_TRANSFER", "SUBCUTANEOUS_CUSHION"]
-  static let crypt: Set<String> = ["PANETH_CRYPT_BARRIER"]
+  static let crypt: Set<String> = ["PANETH_CRYPT_BARRIER", "ENTEROENDOCRINE_LUMEN_SIGNAL", "INTESTINAL_STEM_RENEWAL"]
   static let implemented = baseline.union(regional).union(loadTransfer).union(crypt)
 }
 
@@ -18,6 +18,8 @@ struct GalaxySSIHealthAtlasFunctionArtwork: View {
   let language: String
   @ViewBuilder var body: some View {
     switch story.id {
+    case "ENTEROENDOCRINE_LUMEN_SIGNAL": GalaxySSIHealthAtlasCryptLessonView(story: story, phase: phase, language: language, kind: .endocrine)
+    case "INTESTINAL_STEM_RENEWAL": GalaxySSIHealthAtlasCryptLessonView(story: story, phase: phase, language: language, kind: .stem)
     case "PANETH_CRYPT_BARRIER": GalaxySSIHealthAtlasPanethBarrierView(story: story, phase: phase, language: language)
     case "PELVIC_LOAD_TRANSFER": GalaxySSIHealthAtlasLoadTransferStoryView(story: story, phase: phase, language: language, pelvic: true)
     case "SUBCUTANEOUS_CUSHION": GalaxySSIHealthAtlasLoadTransferStoryView(story: story, phase: phase, language: language, pelvic: false)
