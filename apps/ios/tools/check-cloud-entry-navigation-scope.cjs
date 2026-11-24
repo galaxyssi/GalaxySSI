@@ -19,6 +19,7 @@ assert(hub.indexOf('section(t("my_agent_add"') < hub.indexOf('section(t("my_agen
 assert(hub.includes('ForEach(installedTargets)'));
 assert(hub.includes('ContactDetailView(contactId: contact.id)'));
 assert(hub.includes('activeLocalProfiles: []'));
+assert(hub.includes('.filter { $0.kind == .agent || $0.kind == .model }'));
 assert(hub.includes('!contact.deleted'));
 assert(hub.includes('assetImageName: installedAssetName(contact)'));
 assert(hub.includes('contact.deliveryMode == .cloudAPI'));

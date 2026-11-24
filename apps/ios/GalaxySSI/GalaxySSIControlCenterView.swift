@@ -762,7 +762,8 @@ private struct GalaxySSIAndroidModelHubView: View {
       contacts: store.visibleContacts,
       apiKey: { store.apiKey(for: $0) },
       activeLocalProfiles: []
-    ).reduce(into: [AgentCallableTarget]()) { result, target in
+    ).filter { $0.kind == .agent || $0.kind == .model }
+      .reduce(into: [AgentCallableTarget]()) { result, target in
       guard !result.contains(where: { $0.id == target.id }) else { return }
       result.append(target)
     }
