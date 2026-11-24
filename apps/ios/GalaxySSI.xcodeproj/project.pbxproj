@@ -470,6 +470,16 @@
     C438400000000000000003D5 /* GalaxySSIHealthAtlasGlutealSceneDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003D6 /* GalaxySSIHealthAtlasGlutealSceneDrawing.swift */; };
     C438400000000000000003D7 /* GalaxySSIHealthAtlasGlutealLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003D8 /* GalaxySSIHealthAtlasGlutealLabelsDrawing.swift */; };
     C438400000000000000003D9 /* GalaxySSIHealthAtlasGlutealView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003DA /* GalaxySSIHealthAtlasGlutealView.swift */; };
+    C438400000000000000003DB /* GalaxySSIHealthAtlasGutLymphoidGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003DC /* GalaxySSIHealthAtlasGutLymphoidGeometry.swift */; };
+    C438400000000000000003DD /* GalaxySSIHealthAtlasGutLymphoidRoutes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003DE /* GalaxySSIHealthAtlasGutLymphoidRoutes.swift */; };
+    C438400000000000000003DF /* GalaxySSIHealthAtlasGutLymphoidMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003E0 /* GalaxySSIHealthAtlasGutLymphoidMotion.swift */; };
+    C438400000000000000003E1 /* GalaxySSIHealthAtlasGutLymphoidCellDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003E2 /* GalaxySSIHealthAtlasGutLymphoidCellDrawing.swift */; };
+    C438400000000000000003E3 /* GalaxySSIHealthAtlasGutLymphoidLocatorDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003E4 /* GalaxySSIHealthAtlasGutLymphoidLocatorDrawing.swift */; };
+    C438400000000000000003E5 /* GalaxySSIHealthAtlasGutLymphoidSamplingDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003E6 /* GalaxySSIHealthAtlasGutLymphoidSamplingDrawing.swift */; };
+    C438400000000000000003E7 /* GalaxySSIHealthAtlasGutLymphoidRecognitionDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003E8 /* GalaxySSIHealthAtlasGutLymphoidRecognitionDrawing.swift */; };
+    C438400000000000000003E9 /* GalaxySSIHealthAtlasGutLymphoidDefenseDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003EA /* GalaxySSIHealthAtlasGutLymphoidDefenseDrawing.swift */; };
+    C438400000000000000003EB /* GalaxySSIHealthAtlasGutLymphoidView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003EC /* GalaxySSIHealthAtlasGutLymphoidView.swift */; };
+    C438400000000000000003ED /* GalaxySSIHealthAtlasGutLymphoidLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003EE /* GalaxySSIHealthAtlasGutLymphoidLabelsDrawing.swift */; };
     C438400000000000000002FF /* GalaxySSIHealthAtlasCholangiocyteMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */; };
     C43840000000000000000301 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */; };
     C43840000000000000000303 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */; };
@@ -2420,6 +2430,16 @@
     C438400000000000000003D6 /* GalaxySSIHealthAtlasGlutealSceneDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGlutealSceneDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000003D8 /* GalaxySSIHealthAtlasGlutealLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGlutealLabelsDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000003DA /* GalaxySSIHealthAtlasGlutealView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGlutealView.swift; sourceTree = "<group>"; };
+    C438400000000000000003DC /* GalaxySSIHealthAtlasGutLymphoidGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGutLymphoidGeometry.swift; sourceTree = "<group>"; };
+    C438400000000000000003DE /* GalaxySSIHealthAtlasGutLymphoidRoutes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGutLymphoidRoutes.swift; sourceTree = "<group>"; };
+    C438400000000000000003E0 /* GalaxySSIHealthAtlasGutLymphoidMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGutLymphoidMotion.swift; sourceTree = "<group>"; };
+    C438400000000000000003E2 /* GalaxySSIHealthAtlasGutLymphoidCellDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGutLymphoidCellDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000003E4 /* GalaxySSIHealthAtlasGutLymphoidLocatorDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGutLymphoidLocatorDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000003E6 /* GalaxySSIHealthAtlasGutLymphoidSamplingDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGutLymphoidSamplingDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000003E8 /* GalaxySSIHealthAtlasGutLymphoidRecognitionDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGutLymphoidRecognitionDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000003EA /* GalaxySSIHealthAtlasGutLymphoidDefenseDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGutLymphoidDefenseDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000003EC /* GalaxySSIHealthAtlasGutLymphoidView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGutLymphoidView.swift; sourceTree = "<group>"; };
+    C438400000000000000003EE /* GalaxySSIHealthAtlasGutLymphoidLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGutLymphoidLabelsDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift; sourceTree = "<group>"; };
@@ -4389,6 +4409,16 @@
         C438400000000000000003D6 /* GalaxySSIHealthAtlasGlutealSceneDrawing.swift */,
         C438400000000000000003D8 /* GalaxySSIHealthAtlasGlutealLabelsDrawing.swift */,
         C438400000000000000003DA /* GalaxySSIHealthAtlasGlutealView.swift */,
+        C438400000000000000003DC /* GalaxySSIHealthAtlasGutLymphoidGeometry.swift */,
+        C438400000000000000003DE /* GalaxySSIHealthAtlasGutLymphoidRoutes.swift */,
+        C438400000000000000003E0 /* GalaxySSIHealthAtlasGutLymphoidMotion.swift */,
+        C438400000000000000003E2 /* GalaxySSIHealthAtlasGutLymphoidCellDrawing.swift */,
+        C438400000000000000003E4 /* GalaxySSIHealthAtlasGutLymphoidLocatorDrawing.swift */,
+        C438400000000000000003E6 /* GalaxySSIHealthAtlasGutLymphoidSamplingDrawing.swift */,
+        C438400000000000000003E8 /* GalaxySSIHealthAtlasGutLymphoidRecognitionDrawing.swift */,
+        C438400000000000000003EA /* GalaxySSIHealthAtlasGutLymphoidDefenseDrawing.swift */,
+        C438400000000000000003EC /* GalaxySSIHealthAtlasGutLymphoidView.swift */,
+        C438400000000000000003EE /* GalaxySSIHealthAtlasGutLymphoidLabelsDrawing.swift */,
         C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */,
         C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */,
         C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */,
@@ -6488,6 +6518,16 @@
         C438400000000000000003D5 /* GalaxySSIHealthAtlasGlutealSceneDrawing.swift in Sources */,
         C438400000000000000003D7 /* GalaxySSIHealthAtlasGlutealLabelsDrawing.swift in Sources */,
         C438400000000000000003D9 /* GalaxySSIHealthAtlasGlutealView.swift in Sources */,
+        C438400000000000000003DB /* GalaxySSIHealthAtlasGutLymphoidGeometry.swift in Sources */,
+        C438400000000000000003DD /* GalaxySSIHealthAtlasGutLymphoidRoutes.swift in Sources */,
+        C438400000000000000003DF /* GalaxySSIHealthAtlasGutLymphoidMotion.swift in Sources */,
+        C438400000000000000003E1 /* GalaxySSIHealthAtlasGutLymphoidCellDrawing.swift in Sources */,
+        C438400000000000000003E3 /* GalaxySSIHealthAtlasGutLymphoidLocatorDrawing.swift in Sources */,
+        C438400000000000000003E5 /* GalaxySSIHealthAtlasGutLymphoidSamplingDrawing.swift in Sources */,
+        C438400000000000000003E7 /* GalaxySSIHealthAtlasGutLymphoidRecognitionDrawing.swift in Sources */,
+        C438400000000000000003E9 /* GalaxySSIHealthAtlasGutLymphoidDefenseDrawing.swift in Sources */,
+        C438400000000000000003EB /* GalaxySSIHealthAtlasGutLymphoidView.swift in Sources */,
+        C438400000000000000003ED /* GalaxySSIHealthAtlasGutLymphoidLabelsDrawing.swift in Sources */,
         C438400000000000000002FF /* GalaxySSIHealthAtlasCholangiocyteMotion.swift in Sources */,
         C43840000000000000000301 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift in Sources */,
         C43840000000000000000303 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift in Sources */,
