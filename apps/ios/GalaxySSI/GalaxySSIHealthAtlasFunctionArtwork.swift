@@ -11,7 +11,8 @@ enum GalaxySSIHealthAtlasFunctionRendering {
   static let crypt: Set<String> = ["PANETH_CRYPT_BARRIER", "ENTEROENDOCRINE_LUMEN_SIGNAL", "INTESTINAL_STEM_RENEWAL"]
   static let renalCells: Set<String> = ["DISTAL_TUBULAR_EXCHANGE", "UROTHELIAL_BARRIER_GEOMETRY"]
   static let isletCells: Set<String> = ["PANCREATIC_DELTA_MODULATION", "PANCREATIC_PP_SIGNAL"]
-  static let implemented = baseline.union(regional).union(loadTransfer).union(crypt).union(renalCells).union(isletCells)
+  static let endocrineZones: Set<String> = ["THYROID_CALCITONIN", "ADRENAL_CORTEX_OUTPUT"]
+  static let implemented = baseline.union(regional).union(loadTransfer).union(crypt).union(renalCells).union(isletCells).union(endocrineZones)
 }
 
 struct GalaxySSIHealthAtlasFunctionArtwork: View {
@@ -20,6 +21,8 @@ struct GalaxySSIHealthAtlasFunctionArtwork: View {
   let language: String
   @ViewBuilder var body: some View {
     switch story.id {
+    case "THYROID_CALCITONIN": GalaxySSIHealthAtlasEndocrineZoneView(story: story, phase: phase, language: language, kind: .calcitonin)
+    case "ADRENAL_CORTEX_OUTPUT": GalaxySSIHealthAtlasEndocrineZoneView(story: story, phase: phase, language: language, kind: .cortex)
     case "PANCREATIC_DELTA_MODULATION": GalaxySSIHealthAtlasIsletLessonView(story: story, phase: phase, language: language, kind: .delta)
     case "PANCREATIC_PP_SIGNAL": GalaxySSIHealthAtlasIsletLessonView(story: story, phase: phase, language: language, kind: .pp)
     case "DISTAL_TUBULAR_EXCHANGE": GalaxySSIHealthAtlasRenalCellLessonView(story: story, phase: phase, language: language, kind: .distal)

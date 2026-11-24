@@ -541,6 +541,11 @@
     C43850000000000000000005 /* GalaxySSIHealthAtlasAnkleGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000006 /* GalaxySSIHealthAtlasAnkleGeometry.swift */; };
     C43850000000000000000007 /* GalaxySSIHealthAtlasAnkleDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43850000000000000000008 /* GalaxySSIHealthAtlasAnkleDrawing.swift */; };
     C43850000000000000000009 /* GalaxySSIHealthAtlasAnkleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4385000000000000000000A /* GalaxySSIHealthAtlasAnkleView.swift */; };
+    C4388000000000000000001F /* GalaxySSIHealthAtlasEndocrineZoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000020 /* GalaxySSIHealthAtlasEndocrineZoneView.swift */; };
+    C43880000000000000000021 /* GalaxySSIHealthAtlasCalcitoninDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000022 /* GalaxySSIHealthAtlasCalcitoninDrawing.swift */; };
+    C43880000000000000000023 /* GalaxySSIHealthAtlasAdrenalCortexDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000024 /* GalaxySSIHealthAtlasAdrenalCortexDrawing.swift */; };
+    C43880000000000000000025 /* GalaxySSIHealthAtlasCalcitoninGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000026 /* GalaxySSIHealthAtlasCalcitoninGeometry.swift */; };
+    C43880000000000000000027 /* GalaxySSIHealthAtlasAdrenalCortexGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000028 /* GalaxySSIHealthAtlasAdrenalCortexGeometry.swift */; };
     C43880000000000000000019 /* GalaxySSIHealthAtlasIsletLessonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4388000000000000000001A /* GalaxySSIHealthAtlasIsletLessonView.swift */; };
     C4388000000000000000001B /* GalaxySSIHealthAtlasDeltaSignalDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4388000000000000000001C /* GalaxySSIHealthAtlasDeltaSignalDrawing.swift */; };
     C4388000000000000000001D /* GalaxySSIHealthAtlasPPSignalDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4388000000000000000001E /* GalaxySSIHealthAtlasPPSignalDrawing.swift */; };
@@ -2580,6 +2585,11 @@
     C43850000000000000000006 /* GalaxySSIHealthAtlasAnkleGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAnkleGeometry.swift; sourceTree = "<group>"; };
     C43850000000000000000008 /* GalaxySSIHealthAtlasAnkleDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAnkleDrawing.swift; sourceTree = "<group>"; };
     C4385000000000000000000A /* GalaxySSIHealthAtlasAnkleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAnkleView.swift; sourceTree = "<group>"; };
+    C43880000000000000000020 /* GalaxySSIHealthAtlasEndocrineZoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEndocrineZoneView.swift; sourceTree = "<group>"; };
+    C43880000000000000000022 /* GalaxySSIHealthAtlasCalcitoninDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCalcitoninDrawing.swift; sourceTree = "<group>"; };
+    C43880000000000000000024 /* GalaxySSIHealthAtlasAdrenalCortexDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAdrenalCortexDrawing.swift; sourceTree = "<group>"; };
+    C43880000000000000000026 /* GalaxySSIHealthAtlasCalcitoninGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCalcitoninGeometry.swift; sourceTree = "<group>"; };
+    C43880000000000000000028 /* GalaxySSIHealthAtlasAdrenalCortexGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAdrenalCortexGeometry.swift; sourceTree = "<group>"; };
     C4388000000000000000001A /* GalaxySSIHealthAtlasIsletLessonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasIsletLessonView.swift; sourceTree = "<group>"; };
     C4388000000000000000001C /* GalaxySSIHealthAtlasDeltaSignalDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasDeltaSignalDrawing.swift; sourceTree = "<group>"; };
     C4388000000000000000001E /* GalaxySSIHealthAtlasPPSignalDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPPSignalDrawing.swift; sourceTree = "<group>"; };
@@ -4640,6 +4650,11 @@
         C43850000000000000000006 /* GalaxySSIHealthAtlasAnkleGeometry.swift */,
         C43850000000000000000008 /* GalaxySSIHealthAtlasAnkleDrawing.swift */,
         C4385000000000000000000A /* GalaxySSIHealthAtlasAnkleView.swift */,
+        C43880000000000000000020 /* GalaxySSIHealthAtlasEndocrineZoneView.swift */,
+        C43880000000000000000022 /* GalaxySSIHealthAtlasCalcitoninDrawing.swift */,
+        C43880000000000000000024 /* GalaxySSIHealthAtlasAdrenalCortexDrawing.swift */,
+        C43880000000000000000026 /* GalaxySSIHealthAtlasCalcitoninGeometry.swift */,
+        C43880000000000000000028 /* GalaxySSIHealthAtlasAdrenalCortexGeometry.swift */,
         C4388000000000000000001A /* GalaxySSIHealthAtlasIsletLessonView.swift */,
         C4388000000000000000001C /* GalaxySSIHealthAtlasDeltaSignalDrawing.swift */,
         C4388000000000000000001E /* GalaxySSIHealthAtlasPPSignalDrawing.swift */,
@@ -6830,6 +6845,11 @@
         C43850000000000000000005 /* GalaxySSIHealthAtlasAnkleGeometry.swift in Sources */,
         C43850000000000000000007 /* GalaxySSIHealthAtlasAnkleDrawing.swift in Sources */,
         C43850000000000000000009 /* GalaxySSIHealthAtlasAnkleView.swift in Sources */,
+        C4388000000000000000001F /* GalaxySSIHealthAtlasEndocrineZoneView.swift in Sources */,
+        C43880000000000000000021 /* GalaxySSIHealthAtlasCalcitoninDrawing.swift in Sources */,
+        C43880000000000000000023 /* GalaxySSIHealthAtlasAdrenalCortexDrawing.swift in Sources */,
+        C43880000000000000000025 /* GalaxySSIHealthAtlasCalcitoninGeometry.swift in Sources */,
+        C43880000000000000000027 /* GalaxySSIHealthAtlasAdrenalCortexGeometry.swift in Sources */,
         C43880000000000000000019 /* GalaxySSIHealthAtlasIsletLessonView.swift in Sources */,
         C4388000000000000000001B /* GalaxySSIHealthAtlasDeltaSignalDrawing.swift in Sources */,
         C4388000000000000000001D /* GalaxySSIHealthAtlasPPSignalDrawing.swift in Sources */,

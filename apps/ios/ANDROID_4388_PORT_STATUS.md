@@ -36,7 +36,7 @@ An eventual PR will use main and disclose the actual inherited diff.
 - Bilingual resource deltas are imported.
 - Source-only catalogue audit passed for all 67 hashes, catalogue counts,
   graph-resolved routes, entry phases, exact related destinations, reference
-  hosts and bilingual keys. Nine new dispatches are present; the other 15 are
+  hosts and bilingual keys. Eleven new dispatches are present; the other 13 are
   explicitly not implemented. Two changed Swift files parsed without grammar
   errors; project structure passed. No Swift type checking or native execution.
 - Added dedicated Paneth crypt-barrier renderer and reusable crypt wall geometry:
@@ -67,8 +67,16 @@ An eventual PR will use main and disclose the actual inherited diff.
   particles, bloodstream diamonds and digestive/exocrine context. Source audit
   compared 17 cubics, nine quadratics, bilingual callouts and 6,897 analytic
   waveform samples. Four Swift files passed grammar parsing; source catalogue
-  and project checks passed. 15 renderers/default activation remain; no native
+  and project checks passed. No native
   compilation, execution or pixel acceptance claimed.
+- Added dedicated thyroid calcitonin and adrenal cortex renderers/dispatches.
+  A restricted constant-path importer preserves eight original shapes/49 path
+  commands and sampling routes; unsupported Kotlin expressions fail closed.
+  Retained follicle/release/resorption/context stages and five cortex stages,
+  exact layer depths/colors, distinct textures/output glyphs and sinusoid tracks.
+  Source checks verified generation, 25 bilingual labels and 363 analytic drain
+  positions. Six Swift files parsed without grammar errors; project/catalogue
+  checks passed. 13 renderers/default activation remain; no native acceptance.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
 - Connect pelvic/subcutaneous cutaways to structure feature routing.
