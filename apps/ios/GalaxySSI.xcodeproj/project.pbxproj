@@ -229,6 +229,13 @@
     C438400000000000000001E5 /* GalaxySSIHealthAtlasCoronaryHeartDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001E6 /* GalaxySSIHealthAtlasCoronaryHeartDrawing.swift */; };
     C438400000000000000001E7 /* GalaxySSIHealthAtlasCoronaryWallDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001E8 /* GalaxySSIHealthAtlasCoronaryWallDrawing.swift */; };
     C438400000000000000001E9 /* GalaxySSIHealthAtlasCoronaryRootReturnDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001EA /* GalaxySSIHealthAtlasCoronaryRootReturnDrawing.swift */; };
+    C438400000000000000001EB /* GalaxySSIHealthAtlasPodocyteMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001EC /* GalaxySSIHealthAtlasPodocyteMotion.swift */; };
+    C438400000000000000001ED /* GalaxySSIHealthAtlasPodocyteGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001EE /* GalaxySSIHealthAtlasPodocyteGeometry.swift */; };
+    C438400000000000000001EF /* GalaxySSIHealthAtlasPodocyteStoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001F0 /* GalaxySSIHealthAtlasPodocyteStoryView.swift */; };
+    C438400000000000000001F1 /* GalaxySSIHealthAtlasPodocyteWallDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001F2 /* GalaxySSIHealthAtlasPodocyteWallDrawing.swift */; };
+    C438400000000000000001F3 /* GalaxySSIHealthAtlasPodocyteFocusDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001F4 /* GalaxySSIHealthAtlasPodocyteFocusDrawing.swift */; };
+    C438400000000000000001F5 /* GalaxySSIHealthAtlasPodocyteParticlesDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001F6 /* GalaxySSIHealthAtlasPodocyteParticlesDrawing.swift */; };
+    C438400000000000000001F7 /* GalaxySSIHealthAtlasPodocyteLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001F8 /* GalaxySSIHealthAtlasPodocyteLabelsDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1931,6 +1938,13 @@
     C438400000000000000001E6 /* GalaxySSIHealthAtlasCoronaryHeartDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoronaryHeartDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000001E8 /* GalaxySSIHealthAtlasCoronaryWallDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoronaryWallDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000001EA /* GalaxySSIHealthAtlasCoronaryRootReturnDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCoronaryRootReturnDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001EC /* GalaxySSIHealthAtlasPodocyteMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPodocyteMotion.swift; sourceTree = "<group>"; };
+    C438400000000000000001EE /* GalaxySSIHealthAtlasPodocyteGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPodocyteGeometry.swift; sourceTree = "<group>"; };
+    C438400000000000000001F0 /* GalaxySSIHealthAtlasPodocyteStoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPodocyteStoryView.swift; sourceTree = "<group>"; };
+    C438400000000000000001F2 /* GalaxySSIHealthAtlasPodocyteWallDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPodocyteWallDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001F4 /* GalaxySSIHealthAtlasPodocyteFocusDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPodocyteFocusDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001F6 /* GalaxySSIHealthAtlasPodocyteParticlesDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPodocyteParticlesDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001F8 /* GalaxySSIHealthAtlasPodocyteLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPodocyteLabelsDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3652,6 +3666,13 @@
         C438400000000000000001E6 /* GalaxySSIHealthAtlasCoronaryHeartDrawing.swift */,
         C438400000000000000001E8 /* GalaxySSIHealthAtlasCoronaryWallDrawing.swift */,
         C438400000000000000001EA /* GalaxySSIHealthAtlasCoronaryRootReturnDrawing.swift */,
+        C438400000000000000001EC /* GalaxySSIHealthAtlasPodocyteMotion.swift */,
+        C438400000000000000001EE /* GalaxySSIHealthAtlasPodocyteGeometry.swift */,
+        C438400000000000000001F0 /* GalaxySSIHealthAtlasPodocyteStoryView.swift */,
+        C438400000000000000001F2 /* GalaxySSIHealthAtlasPodocyteWallDrawing.swift */,
+        C438400000000000000001F4 /* GalaxySSIHealthAtlasPodocyteFocusDrawing.swift */,
+        C438400000000000000001F6 /* GalaxySSIHealthAtlasPodocyteParticlesDrawing.swift */,
+        C438400000000000000001F8 /* GalaxySSIHealthAtlasPodocyteLabelsDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5503,6 +5524,13 @@
         C438400000000000000001E5 /* GalaxySSIHealthAtlasCoronaryHeartDrawing.swift in Sources */,
         C438400000000000000001E7 /* GalaxySSIHealthAtlasCoronaryWallDrawing.swift in Sources */,
         C438400000000000000001E9 /* GalaxySSIHealthAtlasCoronaryRootReturnDrawing.swift in Sources */,
+        C438400000000000000001EB /* GalaxySSIHealthAtlasPodocyteMotion.swift in Sources */,
+        C438400000000000000001ED /* GalaxySSIHealthAtlasPodocyteGeometry.swift in Sources */,
+        C438400000000000000001EF /* GalaxySSIHealthAtlasPodocyteStoryView.swift in Sources */,
+        C438400000000000000001F1 /* GalaxySSIHealthAtlasPodocyteWallDrawing.swift in Sources */,
+        C438400000000000000001F3 /* GalaxySSIHealthAtlasPodocyteFocusDrawing.swift in Sources */,
+        C438400000000000000001F5 /* GalaxySSIHealthAtlasPodocyteParticlesDrawing.swift in Sources */,
+        C438400000000000000001F7 /* GalaxySSIHealthAtlasPodocyteLabelsDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
