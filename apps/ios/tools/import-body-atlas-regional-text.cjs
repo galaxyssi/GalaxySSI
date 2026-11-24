@@ -4,9 +4,10 @@ const pleural = process.argv.includes("--pleural-4412"), exchange = process.argv
 const revision = pleural ? 4412 : exchange ? 4410 : phase ? 4407 : transport ? 4405 : regional ? 4402 : organ ? 4401 : system ? 4399 : teaching ? 4397 : anatomy ? 4396 : expanded ? 4391 : detail ? 4389 : complete ? 4388 : 4385, tableName = pleural ? "AtlasPleuralTeaching" : exchange ? "AtlasExchangeTeaching" : phase ? "AtlasPhaseTeaching" : transport ? "AtlasTransportTeaching" : regional ? "AtlasRegionalTeaching" : organ ? "AtlasOrganTeaching" : system ? "AtlasSystemTeaching" : teaching ? "AtlasTeaching" : anatomy ? "AtlasAnatomy" : expanded ? "AtlasExpanded" : detail ? "AtlasDetail" : complete ? "AtlasComplete" : "AtlasRegional";
 const root = path.resolve(__dirname, "../../.."), sha = pleural ? "c704a171da9336535ab659d65e6c6af0a4ebd9ba" : exchange ? "e8ddebdcc70942880fcfeaacee57474c2d711b32" : phase ? "2b0a455e59948d31606010edf3ddba25d01c180f" : transport ? "82d853f1d3d9c7e3455e732771f876a911fd0ce7" : regional ? "0d0112b055947c3747c7910b255aa299587dfd75" : organ ? "e228e379f307fcd6c1eb93b289126e9c473ddf7e" : system ? "de05fd51ba151789acd24dc4484d7f84d893aea3" : teaching ? "40776e7a67ebfe48c76f98d392849edb9810ac82" : anatomy ? "dbd32a65c73e10d710372c44a7ffa8d1518d1f2c" : expanded ? "165809fc9606ac1ff6b0df6eb9bee73286b415ea" : detail ? "9508d49277cf33ab7f85e65722e7c470930fff7e" : complete ? "6581110ec5c048edebf63821dee839b4818fe663" : "a81aa85a1c81e41ff19a032eabea1eddcd2371dc";
 const completion = process.argv.includes("--completion-4414");
-const sourceSHA = completion ? "7dd7f35525ed800b74a3439bf708b1793316de42" : sha;
-const sourceRevision = completion ? 4414 : revision;
-const sourceTable = completion ? "AtlasCompletionTeaching" : tableName;
+const wholeActions = process.argv.includes("--whole-actions-4417");
+const sourceSHA = wholeActions ? "071062afe8059506c9958906f708780d80437f55" : completion ? "7dd7f35525ed800b74a3439bf708b1793316de42" : sha;
+const sourceRevision = wholeActions ? 4417 : completion ? 4414 : revision;
+const sourceTable = wholeActions ? "AtlasWholeActions" : completion ? "AtlasCompletionTeaching" : tableName;
 const checking = process.argv.includes("--check");
 const git = args => cp.execFileSync("git", args, {cwd: root, encoding: "utf8", maxBuffer: 16_000_000});
 const files = git(["diff", "--name-status", sourceSHA + "^1", sourceSHA, "--", "apps/android/app/src/main/res/values", "apps/android/app/src/main/res/values-zh"])
