@@ -1,0 +1,388 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4402,
+    "mergeCommit": "0d0112b055947c3747c7910b255aa299587dfd75"
+  },
+  "models": [
+    {
+      "id": "bladderExpansion",
+      "inputs": [
+        {
+          "key": "bladder-starting-volume",
+          "minimum": 50,
+          "maximum": 150,
+          "initial": 100,
+          "scale": 1,
+          "label": "health_atlas_bladder_expansion_initial",
+          "unit": "mL",
+          "digits": 0
+        },
+        {
+          "key": "bladder-added-volume",
+          "minimum": 0,
+          "maximum": 300,
+          "initial": 100,
+          "scale": 1,
+          "label": "health_atlas_bladder_expansion_added",
+          "unit": "mL",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 270,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-2-gross-anatomy-of-urine-transport",
+        "https://openstax.org/books/prealgebra-2e/pages/c-geometric-formulas"
+      ],
+      "title": "health_atlas_bladder_expansion_title",
+      "scope": "health_atlas_bladder_expansion_scope",
+      "formula": "health_atlas_bladder_expansion_formula",
+      "companionTitle": "health_atlas_bladder_expansion_area",
+      "entryIDs": [
+        "bladder",
+        "cell-urothelial-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "vestibularTilt",
+      "inputs": [
+        {
+          "key": "vestibular-tilt-lateral",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 30,
+          "scale": 100,
+          "label": "health_atlas_vestibular_tilt_lateral",
+          "unit": "g",
+          "digits": 2
+        },
+        {
+          "key": "vestibular-tilt-downward",
+          "minimum": 50,
+          "maximum": 150,
+          "initial": 100,
+          "scale": 100,
+          "label": "health_atlas_vestibular_tilt_downward",
+          "unit": "g",
+          "digits": 2
+        }
+      ],
+      "axis": 0,
+      "unit": "°",
+      "minimum": 0,
+      "maximum": 65,
+      "sources": [
+        "https://www.nature.com/articles/19303",
+        "https://www.ncbi.nlm.nih.gov/books/NBK10792/"
+      ],
+      "title": "health_atlas_vestibular_tilt_title",
+      "scope": "health_atlas_vestibular_tilt_scope",
+      "formula": "health_atlas_vestibular_tilt_formula",
+      "companionTitle": "health_atlas_vestibular_tilt_magnitude",
+      "entryIDs": [
+        "vestibular-apparatus"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "airwayCiliaryClearance",
+      "inputs": [
+        {
+          "key": "airway-ciliary-clearance-cycles",
+          "minimum": 0,
+          "maximum": 24,
+          "initial": 12,
+          "scale": 1,
+          "label": "health_atlas_airway_ciliary_clearance_cycles",
+          "unit": "cycles",
+          "digits": 0
+        },
+        {
+          "key": "airway-ciliary-clearance-advance",
+          "minimum": 0,
+          "maximum": 25,
+          "initial": 15,
+          "scale": 10,
+          "label": "health_atlas_airway_ciliary_clearance_advance",
+          "unit": "u/cycle",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "u",
+      "minimum": 0,
+      "maximum": 60,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system",
+        "https://iowaprotocols.medicine.uiowa.edu/protocols/endoscopic-sinus-surgery"
+      ],
+      "title": "health_atlas_airway_ciliary_clearance_title",
+      "scope": "health_atlas_airway_ciliary_clearance_scope",
+      "formula": "health_atlas_airway_ciliary_clearance_formula",
+      "companionTitle": "health_atlas_airway_ciliary_clearance_progress",
+      "entryIDs": [
+        "nose",
+        "nasal-cavity",
+        "paranasal-sinuses",
+        "tissue-respiratory-epithelium",
+        "cell-ciliated-airway-cell"
+      ],
+      "digits": 1
+    },
+    {
+      "id": "gastricLiquidEmptying",
+      "inputs": [
+        {
+          "key": "gastric-liquid-removal",
+          "minimum": 5,
+          "maximum": 40,
+          "initial": 20,
+          "scale": 1,
+          "label": "health_atlas_gastric_liquid_emptying_removal",
+          "unit": "%",
+          "digits": 0
+        },
+        {
+          "key": "gastric-liquid-intervals",
+          "minimum": 0,
+          "maximum": 10,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_gastric_liquid_emptying_intervals",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-4-the-stomach",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC1159224/"
+      ],
+      "title": "health_atlas_gastric_liquid_emptying_title",
+      "scope": "health_atlas_gastric_liquid_emptying_scope",
+      "formula": "health_atlas_gastric_liquid_emptying_formula",
+      "companionTitle": "health_atlas_gastric_liquid_emptying_companion",
+      "entryIDs": [
+        "stomach"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "bileStorage",
+      "inputs": [
+        {
+          "key": "bile-storage-marker-amount",
+          "minimum": 1,
+          "maximum": 12,
+          "initial": 6,
+          "scale": 1,
+          "label": "health_atlas_bile_storage_marker_amount",
+          "unit": "TU",
+          "digits": 0
+        },
+        {
+          "key": "bile-storage-water-removed",
+          "minimum": 0,
+          "maximum": 8,
+          "initial": 6,
+          "scale": 1,
+          "label": "health_atlas_bile_storage_water_removed",
+          "unit": "VU",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "TU/VU",
+      "minimum": 0,
+      "maximum": 3,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder",
+        "https://www.niddk.nih.gov/health-information/digestive-diseases/digestive-system-how-it-works"
+      ],
+      "title": "health_atlas_bile_storage_title",
+      "scope": "health_atlas_bile_storage_scope",
+      "formula": "health_atlas_bile_storage_formula",
+      "companionTitle": "health_atlas_bile_storage_companion",
+      "entryIDs": [
+        "gallbladder"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "thoracicCrossSection",
+      "inputs": [
+        {
+          "key": "thoracic-cross-section-front-to-back",
+          "minimum": 12,
+          "maximum": 24,
+          "initial": 18,
+          "scale": 1,
+          "label": "health_atlas_thoracic_cross_section_front_to_back",
+          "unit": "cm",
+          "digits": 0
+        },
+        {
+          "key": "thoracic-cross-section-side-to-side",
+          "minimum": 24,
+          "maximum": 36,
+          "initial": 30,
+          "scale": 1,
+          "label": "health_atlas_thoracic_cross_section_side_to_side",
+          "unit": "cm",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "cm²",
+      "minimum": 200,
+      "maximum": 700,
+      "sources": [
+        "https://sta.uwi.edu/fms/MDSC1001/Thorax_Thoracic_wall.pdf",
+        "https://openstax.org/books/calculus-volume-3/pages/6-4-greens-theorem"
+      ],
+      "title": "health_atlas_thoracic_cross_section_title",
+      "scope": "health_atlas_thoracic_cross_section_scope",
+      "formula": "health_atlas_thoracic_cross_section_formula",
+      "companionTitle": "health_atlas_thoracic_cross_section_companion",
+      "entryIDs": [
+        "ribs",
+        "sternum"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "plateletFragmentCount",
+      "inputs": [
+        {
+          "key": "platelet-fragment-count-icons",
+          "minimum": 0,
+          "maximum": 8,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_platelet_fragment_count_icons",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "platelet-fragment-count-tiles-per-icon",
+          "minimum": 0,
+          "maximum": 6,
+          "initial": 3,
+          "scale": 1,
+          "label": "health_atlas_platelet_fragment_count_tiles_per_icon",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "",
+      "minimum": 0,
+      "maximum": 48,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets",
+        "https://training.seer.cancer.gov/hematopoietic1/intro-to-blood.html"
+      ],
+      "title": "health_atlas_platelet_fragment_count_title",
+      "scope": "health_atlas_platelet_fragment_count_scope",
+      "formula": "health_atlas_platelet_fragment_count_formula",
+      "companionTitle": "health_atlas_platelet_fragment_count_companion",
+      "entryIDs": [
+        "fragment-platelet",
+        "cell-megakaryocyte"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "boneRemodelingBalance",
+      "inputs": [
+        {
+          "key": "bone-remodeling-resorbed",
+          "minimum": 0,
+          "maximum": 20,
+          "initial": 10,
+          "scale": 1,
+          "label": "health_atlas_bone_remodeling_balance_resorbed",
+          "unit": "a.u.",
+          "digits": 0
+        },
+        {
+          "key": "bone-remodeling-formed",
+          "minimum": 0,
+          "maximum": 20,
+          "initial": 10,
+          "scale": 1,
+          "label": "health_atlas_bone_remodeling_balance_formed",
+          "unit": "a.u.",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "a.u.",
+      "minimum": -20,
+      "maximum": 20,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/6-3-bone-structure",
+        "https://www.ncbi.nlm.nih.gov/sites/books/NBK279149/"
+      ],
+      "title": "health_atlas_bone_remodeling_balance_title",
+      "scope": "health_atlas_bone_remodeling_balance_scope",
+      "formula": "health_atlas_bone_remodeling_balance_formula",
+      "companionTitle": "health_atlas_bone_remodeling_balance_companion",
+      "entryIDs": [
+        "cell-osteoblast",
+        "cell-osteoclast",
+        "cell-osteocyte"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "cutaneousSebum",
+      "inputs": [
+        {
+          "key": "cutaneous-sebum-mass",
+          "minimum": 20,
+          "maximum": 80,
+          "initial": 40,
+          "scale": 1,
+          "label": "health_atlas_cutaneous_sebum_mass",
+          "unit": "µg",
+          "digits": 0
+        },
+        {
+          "key": "cutaneous-sebum-area",
+          "minimum": 4,
+          "maximum": 16,
+          "initial": 8,
+          "scale": 1,
+          "label": "health_atlas_cutaneous_sebum_area",
+          "unit": "cm²",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "µg/cm²",
+      "minimum": 0,
+      "maximum": 20,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin",
+        "https://histologyguide.com/EM-view/EM-373-sebaceous-gland/12-photo-1.html"
+      ],
+      "title": "health_atlas_cutaneous_sebum_title",
+      "scope": "health_atlas_cutaneous_sebum_scope",
+      "formula": "health_atlas_cutaneous_sebum_formula",
+      "companionTitle": "health_atlas_cutaneous_sebum_companion",
+      "entryIDs": [
+        "sebaceous-glands",
+        "cell-sebocyte"
+      ],
+      "digits": 2
+    }
+  ]
+}

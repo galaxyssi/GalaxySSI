@@ -5,6 +5,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
   @Binding var inputs: [Int]?
   let language: String
   var legacyVentilation: [Double]? = nil
+  @State private var resetToken = 0
   private var model: GalaxySSIHealthAtlasPhysiology? {
     GalaxySSIHealthAtlasPhysiology.resolved(entryID, inputs: inputs, legacyVentilation: legacyVentilation)
   }
@@ -20,6 +21,9 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
         if let amounts = model.renalAmounts { renalBalance(amounts) }
         if let ear = model.middleEar { GalaxySSIHealthAtlasMiddleEarView(model: ear, language: language) }
         if model.kind == .alveolarSurface { GalaxySSIHealthAtlasAlveolarSurfaceView(model: model, language: language) }
+        if model.kind == .bladderExpansion {
+          GalaxySSIHealthAtlasBladderFillingView(model: model, language: language, resetToken: resetToken).id(entryID)
+        }
         if model.kind == .villusArea {
           GalaxySSIHealthAtlasVillusAreaView(model: model, language: language)
           Text(t("gut_section_area_views")).font(.footnote).foregroundColor(.secondary)
@@ -39,7 +43,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
             Label(t("eye_match_plane"), systemImage: "scope").frame(minHeight: 44)
           }.accessibilityIdentifier("atlas-eye-match-plane")
         }
-        if model.kind != .photonCapture && model.kind != .alveolarSurface && model.kind != .villusArea && !model.kind.hasMaterialResponse { chartAndAxis(model) }
+        if model.kind != .photonCapture && model.kind != .alveolarSurface && model.kind != .villusArea && model.kind != .bladderExpansion && !model.kind.hasMaterialResponse { chartAndAxis(model) }
         ForEach(Array(model.kind.inputs.enumerated()), id: \.offset) { index, spec in
           VStack(alignment: .leading, spacing: 4) {
             Text(GalaxySSIHealthAtlasPhysiologyText.input(model, index: index, language: language))
@@ -51,8 +55,8 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
                 (spec.unit.isEmpty ? "" : " " + GalaxySSIHealthAtlasPhysiologyText.displayUnit(spec.unit, language: language)))
           }
         }
-        if model.kind == .photonCapture || model.kind == .alveolarSurface || model.kind == .villusArea || model.kind.hasMaterialResponse { chartAndAxis(model) }
-        Button { inputs = GalaxySSIHealthAtlasPhysiology(kind: model.kind).inputs } label: {
+        if model.kind == .photonCapture || model.kind == .alveolarSurface || model.kind == .villusArea || model.kind == .bladderExpansion || model.kind.hasMaterialResponse { chartAndAxis(model) }
+        Button { inputs = GalaxySSIHealthAtlasPhysiology(kind: model.kind).inputs; resetToken += 1 } label: {
           Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
         }.accessibilityLabel(t("reset")).help(t("reset"))
           .accessibilityIdentifier("atlas-physiology-reset")

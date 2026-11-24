@@ -180,7 +180,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
           XCTAssertTrue(kind.bounds.contains(point.y))
           if let previous {
             if [Model.Kind.renal, .eye, .cushionContactPressure, .airwaySplit, .visualAngle, .hormoneSignal,
-                .arterialContinuity, .glialCapacitance, .colonicWaterBalance, .endocrineDilution].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
+                .arterialContinuity, .glialCapacitance, .colonicWaterBalance, .endocrineDilution,
+                .gastricLiquidEmptying, .boneRemodelingBalance, .cutaneousSebum].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
             else { XCTAssertGreaterThanOrEqual(point.y, previous - 1e-9) }
           }
           previous = point.y
@@ -242,11 +243,16 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       (.arterialContinuity, 70 / (.pi * 1.44), .pi * 1.44), (.glialCapacitance, 1, 1),
       (.colonicWaterBalance, 100, 400), (.lymphParticleTransport, 6, 30), (.endocrineDilution, 1.5, 6),
       (.boneSection, 60 / (16 * .pi), 16 * .pi), (.retinalConvergence, 2, 6),
-      (.muscleShortening, 0.25, 2.25), (.keratinGrowth, 4, 2)
+      (.muscleShortening, 0.25, 2.25), (.keratinGrowth, 4, 2),
+      (.bladderExpansion, 58.74010519681994, 4 * .pi * pow(cbrt(600 / (4 * .pi)), 2)),
+      (.vestibularTilt, 16.699244234, 1.044030651), (.airwayCiliaryClearance, 18, 30),
+      (.gastricLiquidEmptying, 40.96, 59.04), (.bileStorage, 1, 6),
+      (.thoracicCrossSection, 135 * .pi, 0.6), (.plateletFragmentCount, 12, 3),
+      (.boneRemodelingBalance, 0, 100), (.cutaneousSebum, 5, 40)
     ]
-    XCTAssertEqual(Teaching.allCases.count, 27)
-    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 60)
-    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 111)
+    XCTAssertEqual(Teaching.allCases.count, 36)
+    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 78)
+    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 130)
     for (teaching, expected, companion) in fixtures {
       let kind = try XCTUnwrap(Model.Kind(rawValue: teaching.rawValue)), model = Model(kind: kind)
       XCTAssertEqual(model.result, expected, accuracy: 1e-6)
@@ -432,6 +438,54 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     }
   }
 
+  func testRegionalTeachingPairsRetainSignedChangeAndWholeFragmentSteps() throws {
+    typealias Teaching = GalaxySSIHealthAtlasTeachingModel
+    let kinds: [Teaching] = [.bladderExpansion, .vestibularTilt, .airwayCiliaryClearance,
+      .gastricLiquidEmptying, .bileStorage, .thoracicCrossSection, .plateletFragmentCount,
+      .boneRemodelingBalance, .cutaneousSebum]
+    for teaching in kinds {
+      let controls = teaching.inputs
+      for first in controls[0].range {
+        for second in controls[1].range {
+          let values = [Double(first) / controls[0].scale, Double(second) / controls[1].scale]
+          let output = try XCTUnwrap(teaching.evaluate(values)), other = try XCTUnwrap(teaching.companion(values))
+          XCTAssertTrue(teaching.bounds.contains(output))
+          switch teaching {
+          case .bladderExpansion:
+            let startArea = 4 * Double.pi * pow(cbrt(3 * values[0] / (4 * Double.pi)), 2)
+            XCTAssertEqual(output, 100 * (other / startArea - 1), accuracy: 1e-9)
+          case .vestibularTilt:
+            XCTAssertEqual(other * other, values[0] * values[0] + values[1] * values[1], accuracy: 1e-9)
+          case .airwayCiliaryClearance: XCTAssertEqual(other, 100 * output / 60, accuracy: 1e-9)
+          case .gastricLiquidEmptying: XCTAssertEqual(output + other, 100, accuracy: 1e-9)
+          case .bileStorage: XCTAssertEqual(output * (12 - values[1]), other, accuracy: 1e-9)
+          case .thoracicCrossSection:
+            XCTAssertEqual(output, .pi * values[0] * values[1] / 4, accuracy: 1e-9)
+            XCTAssertEqual(other * values[1], values[0], accuracy: 1e-9)
+          case .plateletFragmentCount:
+            XCTAssertEqual(output, output.rounded())
+            XCTAssertEqual(output, values[0] * other)
+          case .boneRemodelingBalance:
+            XCTAssertEqual(output + values[0], values[1])
+            XCTAssertEqual(other - 100, output)
+          case .cutaneousSebum: XCTAssertEqual(output * values[1], other, accuracy: 1e-9)
+          default: XCTFail("Unexpected regional teaching model")
+          }
+        }
+      }
+    }
+    for (icons, result) in [(2.49, 6.0), (2.5, 9.0), (2.51, 9.0)] {
+      XCTAssertEqual(try XCTUnwrap(Teaching.plateletFragmentCount.evaluate([icons, 3])), result)
+    }
+    XCTAssertEqual(try XCTUnwrap(Teaching.gastricLiquidEmptying.evaluate([36, 0.5])), 80, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Teaching.boneRemodelingBalance.evaluate([10.5, 10])), -0.5)
+    XCTAssertEqual(try XCTUnwrap(Teaching.boneRemodelingBalance.evaluate([9.5, 10])), 0.5)
+    XCTAssertEqual(try XCTUnwrap(Teaching.airwayCiliaryClearance.evaluate([6.2, 1.5])), 9.3, accuracy: 1e-9)
+    XCTAssertEqual(Model.Kind.forEntry("kidneys"), .renal)
+    XCTAssertEqual(Model(kind: .bladderExpansion, inputs: [100, 0])?.result, 0)
+    XCTAssertTrue(Model.Kind.airwayCiliaryClearance.hasMaterialResponse)
+  }
+
   func testElbowFixturesBalanceForcesAndMomentsWithStrictUnitConversion() throws {
     let forces = try XCTUnwrap(GalaxySSIHealthAtlasElbow.forces(loadKg: 4, loadArmCm: 38, muscleArmMm: 40))
     XCTAssertEqual(forces.muscle, 470.4, accuracy: 1e-9)
@@ -527,9 +581,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       XCTAssertNil(Model.restore(id, inputs: [35, 0, 160]))
       XCTAssertNil(Model.restore(id, inputs: [35, 20]))
     }
-    for id in ["external-ear", "vestibular-apparatus"] {
-      XCTAssertNil(Model.Kind.forEntry(id))
-    }
+    XCTAssertNil(Model.Kind.forEntry("external-ear"))
+    XCTAssertEqual(Model.Kind.forEntry("vestibular-apparatus"), .vestibularTilt)
     for id in ["inner-ear", "cochlea", "cell-inner-ear-hair-cell"] {
       XCTAssertEqual(Model.Kind.forEntry(id), .cochlearFrequency)
       XCTAssertNil(Model.restore(id, inputs: [35, 20, 160]))
