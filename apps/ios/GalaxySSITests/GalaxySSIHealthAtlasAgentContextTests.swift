@@ -17,6 +17,37 @@ final class GalaxySSIHealthAtlasAgentContextTests: XCTestCase {
      "elimination_assumptions": "Single-compartment teaching assumptions",
      "elimination_summary": "Half-life %1$lld h; after %2$lld h: %3$@%%"] [key] ?? key
   }
+  func testFunctionContextKeepsCurrentCourseChapterAndOwnerAcrossScreens() throws {
+    let catalogue = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: Bundle(for: GalaxySSIStore.self)))
+    var selection = GalaxySSIHealthAtlasFunctionSelection()
+    selection.choose("INSULIN_SECRETION", entryID: "pancreas", catalogue: catalogue)
+    selection.save(0.7, storyID: "INSULIN_SECRETION", entryID: "pancreas", catalogue: catalogue)
+    let function = try XCTUnwrap(GalaxySSIHealthAtlasFunctionContext(entryID: "pancreas", selection: selection, catalogue: catalogue))
+    let story = try XCTUnwrap(catalogue.story("INSULIN_SECRETION"))
+    for language in ["en", "zh-Hans"] {
+      let lines = function.lines(for: "pancreas", language: language)
+      XCTAssertEqual(lines[0], GalaxySSIHealthAtlasFunctionText.get(story.title, language))
+      XCTAssertEqual(lines[2], GalaxySSIHealthAtlasFunctionText.get(story.chapters[3].caption, language))
+      XCTAssertEqual(Array(lines.dropFirst(4)), story.references.map { $0.url.absoluteString })
+      XCTAssertTrue(function.lines(for: "heart", language: language).isEmpty)
+      for screen in Context.Screen.allCases {
+        let prompt = Context.prompt(anatomy: anatomy("pancreas"), screen: screen, function: function,
+          language: language, locale: locale, text: text)
+        if screen == .values { XCTAssertNil(prompt); continue }
+        XCTAssertEqual(try XCTUnwrap(prompt).contains(lines[2]), screen == .function)
+        let foreign = try XCTUnwrap(Context.prompt(anatomy: anatomy("heart"), screen: screen,
+          function: function, language: language, locale: locale, text: text))
+        XCTAssertFalse(foreign.contains(lines[2]))
+      }
+    }
+    XCTAssertNil(GalaxySSIHealthAtlasFunctionContext(entryID: "unknown", selection: selection, catalogue: catalogue))
+    XCTAssertNil(GalaxySSIHealthAtlasFunctionContext(entryID: "pancreas", selection: selection, catalogue: nil))
+    let initial = try XCTUnwrap(GalaxySSIHealthAtlasFunctionContext(entryID: "aorta", selection: nil, catalogue: catalogue))
+    let heartbeat = try XCTUnwrap(catalogue.story("HEARTBEAT"))
+    XCTAssertEqual(initial.lines(for: "aorta", language: "en")[2],
+      GalaxySSIHealthAtlasFunctionText.get(heartbeat.chapters[3].caption, "en"))
+  }
+
   func testPortraitSensoryContextNamesOnlyTheMatchingCurrentFeatureOnTeachingScreens() throws {
     for id in ["cell-inner-ear-hair-cell", "cell-rod-photoreceptor", "cell-cone-photoreceptor"] {
       for stage in 0..<4 {

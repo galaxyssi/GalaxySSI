@@ -18,7 +18,7 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 - [ ] Import all new/revised illustration resources and cutaway geometry.
 - [ ] Port additional structure views, canonical/feature routing and related Function destination navigation.
 - [ ] Port ventilation, diffusion and skeletal model changes and their parameter/result UI.
-- [ ] Update Agent public context and fallback question paths with the active Function lesson/chapter.
+- [x] Update Agent public context and fallback question paths with the active Function lesson/chapter, scope and source URLs. Both paths use the same owner-bound catalogue resolution and live question snapshot; unrelated tabs/research/Values cannot include Function context. Added unexecuted XCTest source; source/grammar checks only.
 - [x] Complete every renderer below, preserving chapter-specific geometry and motion rather than generic stand-ins; native compilation/pixels remain unverified.
 - [ ] Static source/resource/grammar/project checks across the completed scope, then review and publish one formal main-based PR.
 - [ ] Synchronize any newly merged predecessor PRs and update dependency scope before publication.

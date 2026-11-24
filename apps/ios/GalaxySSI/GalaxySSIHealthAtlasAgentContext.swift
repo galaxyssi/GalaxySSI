@@ -58,7 +58,8 @@ enum GalaxySSIHealthAtlasAgentContext {
 
   static func prompt(anatomy: Anatomy?, screen: Screen, simulation: Simulation? = nil, quantitative: Quantitative? = nil,
                      elimination: Elimination? = nil, illustration: Illustration? = nil, drugs: GalaxySSIHealthAtlasDrugState? = nil,
-                     aging: GalaxySSIHealthAtlasAgingSelection? = nil, language: String = "en",
+                     aging: GalaxySSIHealthAtlasAgingSelection? = nil, function: GalaxySSIHealthAtlasFunctionContext? = nil,
+                     language: String = "en",
                      locale: Locale, text t: (String) -> String) -> String? {
     guard screen != .values else { return nil }
     guard let anatomy else { return t("ask_whole_context") }
@@ -74,6 +75,7 @@ enum GalaxySSIHealthAtlasAgentContext {
       if let source = illustration.source { lines.append(source.absoluteString) }
       if let features = illustration.featureContext { lines.append(features) }
     }
+    if screen == .function, let function { lines += function.lines(for: anatomy.id, language: language) }
     if screen.includesPhysiology {
       if let simulation, simulation.entryID == anatomy.id {
         lines.append(t("teaching_note"))

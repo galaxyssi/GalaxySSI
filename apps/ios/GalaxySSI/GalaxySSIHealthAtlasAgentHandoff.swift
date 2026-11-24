@@ -33,6 +33,11 @@ enum GalaxySSIHealthAtlasQuestion {
                     selection: GalaxySSIHealthAtlasState.Selection, research: Bool, language: String) -> String {
     guard research || selection.tab != .values else { return "" }
     func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
+    let function: GalaxySSIHealthAtlasFunctionContext?
+    if !research, selection.tab == .function, let entry {
+      function = .init(entryID: entry.id, selection: selection.functionSelection,
+        catalogue: try? GalaxySSIHealthAtlasFunctionCatalogue.bundled.get())
+    } else { function = nil }
     #if GALAXYSSI_ATLAS_AGENT_CONTEXT
     let screen: GalaxySSIHealthAtlasAgentContext.Screen
     if research {
@@ -71,7 +76,7 @@ enum GalaxySSIHealthAtlasQuestion {
     return GalaxySSIHealthAtlasAgentContext.prompt(anatomy: anatomy, screen: screen, simulation: simulation,
       quantitative: quantitative, elimination: elimination, illustration: illustration,
       drugs: GalaxySSIHealthAtlasDrugState.restore(selection.drugInputs),
-      aging: selection.aging, language: language,
+      aging: selection.aging, function: function, language: language,
       locale: GalaxySSILocalization.interfaceLocale(language: language), text: t) ?? ""
     #else
     guard let entry else { return t("ask_whole_context") }
@@ -84,6 +89,7 @@ enum GalaxySSIHealthAtlasQuestion {
       if let source = plate.source { prompt += "\n" + source.absoluteString }
       if let features = plate.featureContext(language: language) { prompt += "\n" + features }
     }
+    if let function { prompt += "\n" + function.lines(for: entry.id, language: language).joined(separator: "\n") }
     #if GALAXYSSI_ATLAS_PHYSIOLOGY
     let physiology = ((!research && selection.tab == .simulation) || (research && selection.research == .physiology))
       ? GalaxySSIHealthAtlasPhysiology.resolved(entry.id, inputs: selection.physiologyInputs,
