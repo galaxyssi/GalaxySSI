@@ -1513,6 +1513,72 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(AgentConnectorFallbackAction.prepare(action: action, selection: fallback, target: nil).parameters["connector_id"], "other")
   }
 
+  func testFreshAutoFallbackIgnoresOldOrderAndPreservesAttemptAndScopeIdentity() throws {
+    let original = routeTarget("codex", kind: .agent)
+    let old = routeTarget("old-cloud", kind: .model)
+    let fresh = routeTarget("fresh-cloud", kind: .model)
+    let action = AgentAction(id: "auto-failure", kind: .callConnector, target: "Codex", risk: .low,
+      status: .proposed, description: "Run", parameters: ["connector_id": original.id,
+        "auto_reroute_on_failure": "true", "routing_fallback_ids": old.id,
+        "_galaxyssi_conversation_id": "conversation-a", "_galaxyssi_turn_id": "turn-a",
+        "manual_model_id": "stale-model", "agent_reasoning_effort": "high"], requiresConfirmation: false)
+    let failure = AgentConnectorFallbackAction.mergingRoutingMetadata(
+      AgentActionResult(actionId: action.id, success: false, message: "Failed",
+        metadata: ["resource_id": original.id, "non_retriable": "true"]), action: action)
+    let selected = try XCTUnwrap(AgentConnectorFallbackAction.freshFallback(action: action, failure: failure,
+      currentResourceIds: [original.id, fresh.id, old.id], targets: [original, old, fresh]))
+    XCTAssertEqual(selected.parameters["connector_id"], fresh.id)
+    XCTAssertEqual(selected.parameters["_galaxyssi_conversation_id"], "conversation-a")
+    XCTAssertEqual(selected.parameters["_galaxyssi_turn_id"], "turn-a")
+    XCTAssertNil(selected.parameters["manual_model_id"])
+    XCTAssertNil(selected.parameters["agent_reasoning_effort"])
+    XCTAssertTrue(AgentConnectorFallbackAction.hasActiveTrail(selected))
+    XCTAssertNotEqual(AgentConnectorFallbackAction.effectAttemptKey(selected), action.id)
+    let nextFailure = AgentConnectorFallbackAction.mergingRoutingMetadata(
+      AgentActionResult(actionId: action.id, success: false, message: "Failed again",
+        metadata: ["resource_id": fresh.id, "non_retriable": "true"]), action: selected)
+    let next = try XCTUnwrap(AgentConnectorFallbackAction.freshFallback(action: selected, failure: nextFailure,
+      currentResourceIds: [original.id, fresh.id, old.id], targets: [original, old, fresh]))
+    XCTAssertEqual(next.parameters["connector_id"], old.id)
+    XCTAssertNotEqual(AgentConnectorFallbackAction.effectAttemptKey(next), AgentConnectorFallbackAction.effectAttemptKey(selected))
+  }
+
+  func testFreshAutoFallbackRejectsUnknownAwaitingManualAndUnobservedRemoteOutcomes() {
+    let original = routeTarget("codex", kind: .agent), other = routeTarget("other", kind: .model)
+    var action = AgentAction(id: "guarded", kind: .callConnector, target: "Codex", risk: .low,
+      status: .proposed, description: "Run", parameters: ["connector_id": original.id,
+        "auto_reroute_on_failure": "true"], requiresConfirmation: false)
+    for extra in [["error_code": "effect_outcome_unknown"], ["error_code": "idempotency_key_conflict"],
+                  ["awaiting_response": "true"], ["plan_node_outcome_unknown": "true"],
+                  ["manual_target_locked": "true"],
+                  ["timeout_stage": "NOT_ACCEPTED", "resource_location": "desktop", "remote_task_status": "running"]] {
+      var metadata = extra
+      metadata["resource_id"] = original.id
+      let result = AgentActionResult(actionId: action.id, success: false, message: "Uncertain", metadata: metadata)
+      XCTAssertNil(AgentConnectorFallbackAction.freshFallback(action: action, failure: result,
+        currentResourceIds: [other.id], targets: [original, other]))
+    }
+    let result = AgentActionResult(actionId: action.id, success: false, message: "Failed",
+      metadata: ["resource_id": original.id, "auto_reroute_on_failure": "true"])
+    action.parameters["auto_reroute_on_failure"] = "false"
+    XCTAssertEqual(AgentConnectorFallbackAction.mergingRoutingMetadata(result, action: action)
+      .metadata["auto_reroute_on_failure"], "false")
+    XCTAssertNil(AgentConnectorFallbackAction.freshFallback(action: action, failure: result,
+      currentResourceIds: [other.id], targets: [original, other]))
+  }
+
+  func testFreshAutoFallbackCannotReviveExcludedDeferredTarget() {
+    let original = routeTarget("codex", kind: .agent), excluded = routeTarget("excluded", kind: .model)
+    let action = AgentAction(id: "excluded-deferred", kind: .callConnector, target: "Codex", risk: .low,
+      status: .proposed, description: "Run", parameters: ["connector_id": original.id,
+        "auto_reroute_on_failure": "true"], requiresConfirmation: false)
+    let failure = AgentActionResult(actionId: action.id, success: false, message: "Failed", metadata: [
+      "resource_id": original.id, "remaining_fallback_ids": excluded.id, "deferred_retry_ids": excluded.id,
+      "non_retriable": "true"])
+    XCTAssertNil(AgentConnectorFallbackAction.freshFallback(action: action, failure: failure,
+      currentResourceIds: [], targets: [original, excluded]))
+  }
+
   func testFallbackActionTrailBelongsOnlyToItsOwningAction() {
     var stale = AgentAction(
       id: "new-action",

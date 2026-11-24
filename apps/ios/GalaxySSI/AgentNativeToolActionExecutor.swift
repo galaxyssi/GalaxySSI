@@ -32,13 +32,14 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
   }
 
   func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
-    AgentLatencyTelemetry.runtime.measure(
+    let result = AgentLatencyTelemetry.runtime.measure(
       taskId: Self.runtimeTimingTaskId(action),
       phase: .actionDispatch,
       outcome: Self.runtimeOutcome
     ) {
       executeUntraced(action: action, screen: screen)
     }
+    return AgentConnectorFallbackAction.mergingRoutingMetadata(result, action: action)
   }
 
   private func executeUntraced(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {

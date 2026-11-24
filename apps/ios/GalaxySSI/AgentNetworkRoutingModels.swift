@@ -553,12 +553,72 @@ enum AgentConnectorFallbackAction {
       .union(AgentConnectorFallbackTrail.parse(metadata["retried_resource_ids"] ?? ""))
   }
 
+  static func mergingRoutingMetadata(_ result: AgentActionResult, action: AgentAction) -> AgentActionResult {
+    guard action.kind == .callConnector else { return result }
+    var merged = result
+    merged.metadata.merge(resultMetadata(action)) { current, _ in current }
+    if isTargetLocked(action: action, metadata: result.metadata) {
+      merged.metadata["manual_target_locked"] = "true"
+      merged.metadata["auto_reroute_on_failure"] = "false"
+    }
+    if action.parameters["auto_reroute_on_failure"] == "false" {
+      merged.metadata["auto_reroute_on_failure"] = "false"
+    }
+    return merged
+  }
+
+  static func freshFallback(action: AgentAction, failure: AgentActionResult,
+                            currentResourceIds: [String], targets: [AgentCallableTarget]) -> AgentAction? {
+    guard action.kind == .callConnector, !failure.success, failure.actionId == action.id,
+          !isTargetLocked(action: action, metadata: failure.metadata),
+          action.parameters["auto_reroute_on_failure"] != "false",
+          action.parameters["auto_reroute_on_failure"] == "true" || failure.metadata["auto_reroute_on_failure"] == "true",
+          (action.parameters[agentTeamSpecParameter] ?? "").isBlank,
+          failure.metadata["awaiting_response"] != "true",
+          !["effect_outcome_unknown", "idempotency_key_conflict"].contains(failure.metadata["error_code"] ?? ""),
+          failure.metadata["plan_node_outcome_unknown"] != "true",
+          failure.metadata["outcome_unknown"] != "true" else { return nil }
+    let failed = (failure.metadata["resource_id"] ?? "").ifBlank(action.parameters["connector_id"] ?? "")
+    guard !failed.isBlank else { return nil }
+    if !(failure.metadata["timeout_stage"] ?? "").isBlank,
+       AgentConnectorHandoffRecovery.requiresRemoteObservation(metadata: failure.metadata, hasDesktopBinding: false),
+       !["failed", "timed_out", "cancelled"].contains((failure.metadata["remote_task_status"] ?? "").lowercased()) {
+      return nil
+    }
+    let allowed = Set(currentResourceIds)
+    let tried = attempted(failure.metadata).union(hasActiveTrail(action)
+      ? AgentConnectorFallbackTrail.parse(action.parameters[attemptedParameter] ?? "") : [])
+      .union([action.parameters["connector_id"] ?? ""])
+    let permits: (String) -> Bool = { id in
+      guard let target = targets.first(where: { $0.id == id }) else { return false }
+      let domain = (failure.metadata["failure_domain"] ?? "")
+        .ifBlank(targets.first { $0.id == failed }?.failureDomain ?? "")
+      return AgentConnectorRouteSelector.isDeliverable(target) &&
+        AgentConnectorFailureScope.permitsFallback(failure.metadata, candidateDomain: target.failureDomain) &&
+        ((failure.metadata["timeout_stage"] ?? "").isBlank || domain.isBlank || target.failureDomain != domain)
+    }
+    let candidates = AgentConnectorFallbackTrail.mergeAvailable(rememberedResourceIds: [],
+      currentResourceIds: currentResourceIds, failedResourceId: failed, attemptedResourceIds: tried).filter(permits)
+    let deferred = AgentConnectorFallbackTrail.parse(failure.metadata["deferred_retry_ids"] ?? "")
+      .filter { allowed.contains($0) && permits($0) }
+    guard let selected = AgentConnectorFallbackTrail.selectNext(failedResourceId: failed,
+      remainingResourceIds: candidates, deferredRetryIds: deferred,
+      retriedResourceIds: Set(AgentConnectorFallbackTrail.parse(failure.metadata["retried_resource_ids"] ?? "")),
+      retryFailedResource: allowed.contains(failed) && permits(failed) && failure.metadata["non_retriable"] != "true",
+      attemptedResourceIds: tried),
+      let target = targets.first(where: { $0.id == selected.resourceId }),
+      AgentConnectorRouteSelector.isDeliverable(target) else { return nil }
+    return prepare(action: action, selection: selected, target: target)
+  }
+
   static func resultMetadata(_ action: AgentAction) -> [String: String] {
     [
       attemptedResult: action.parameters[attemptedParameter] ?? "",
       "remaining_fallback_ids": action.parameters["routing_fallback_ids"] ?? "",
       "deferred_retry_ids": action.parameters["routing_deferred_retry_ids"] ?? "",
       "retried_resource_ids": action.parameters["routing_retried_resource_ids"] ?? "",
+      "auto_reroute_on_failure": String(action.parameters["auto_reroute_on_failure"] == "true" &&
+        action.parameters["manual_target_locked"] != "true"),
       "manual_target_locked": action.parameters["manual_target_locked"] ?? ""
     ]
   }

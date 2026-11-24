@@ -26,7 +26,12 @@ const shortCircuit = `    if preserveHealthyPrimary, decision == nil,
     }
 `;
 assert(source.includes(shortCircuit));
-assert.equal(source.replace(insertion, '').replace(predicate, '').replace(shortCircuit, '')
+const recoveryStart = source.indexOf('  static func mergingRoutingMetadata(');
+const recoveryEnd = source.indexOf('  static func resultMetadata(', recoveryStart);
+assert(recoveryStart > 0 && recoveryEnd > recoveryStart);
+const autoMetadata = '      "auto_reroute_on_failure": String(action.parameters["auto_reroute_on_failure"] == "true" &&\n        action.parameters["manual_target_locked"] != "true"),\n';
+const normalizedRecovery = (source.slice(0, recoveryStart) + source.slice(recoveryEnd)).replace(autoMetadata, '');
+assert.equal(normalizedRecovery.replace(insertion, '').replace(predicate, '').replace(shortCircuit, '')
   .replace('    goal: String = "",\n    preserveHealthyPrimary: Bool = false', '    goal: String = ""'), git('show', `${base}:${native}`));
 assert(source.includes('let preferredTarget = preferredTargetId.isEmpty ? nil : eligibleById[preferredTargetId]'));
 assert(source.includes('let routedTarget = calibratedCandidates.compactMap { eligibleById[$0.resource.targetId] }.first'));
@@ -39,6 +44,9 @@ for (const name of [
   'testAgentConnectorRouteSelectorHonorsExplicitConnectorPreference',
   'testAgentConnectorRouteSelectorSelectsCodexWhenPhoneToolIsTopScoredResource',
   'testAgentConnectorRouteSelectorRecoversReasoningTargetDuringHeartbeat',
+  'testFreshAutoFallbackIgnoresOldOrderAndPreservesAttemptAndScopeIdentity',
+  'testFreshAutoFallbackRejectsUnknownAwaitingManualAndUnobservedRemoteOutcomes',
+  'testFreshAutoFallbackCannotReviveExcludedDeferredTarget',
 ]) assert(tests.includes(`func ${name}(`), name);
 for (const file of [
   'AgentQualityRouting.swift', 'AgentPlanRunModels.swift',
@@ -55,6 +63,22 @@ assert.equal((services.match(/try recordAutomaticDispatch\(targetId:/g) || []).l
 assert(services.includes('code: "auto_route_turn_not_committed"'));
 assert(services.includes('code: "auto_route_dispatch_not_committed"'));
 assert(services.includes('rememberedId: session.stableAutoRoute?.targetId ?? ""'));
+assert(services.includes('return AgentConnectorFallbackAction.freshFallback(action: action, failure: failedResult,'));
+assert(services.includes('recordAutomaticConnectorTarget(fallbackAction, outgoing: outgoing)'));
+assert(services.includes('recordAutomaticConnectorTarget(executionAction, result: result, outgoing: outgoing)'));
+assert(services.includes('connectorId: executionAction.parameters["connector_id"] ?? ""'));
+assert(source.includes('rememberedResourceIds: [],'));
+assert(source.includes('allowed.contains($0) && permits($0)'));
+assert(source.includes('failure.actionId == action.id'));
+assert(source.includes('failure.metadata["plan_node_outcome_unknown"] != "true"'));
+assert(source.includes('AgentConnectorHandoffRecovery.requiresRemoteObservation(metadata: failure.metadata'));
+for (const file of ['AgentNativeToolActionExecutor.swift', 'AgentControlPlaneActionExecutorModels.swift']) {
+  assert(read('apps/ios/GalaxySSI/' + file).includes('AgentConnectorFallbackAction.mergingRoutingMetadata('));
+}
+for (const file of ['AgentActionEffectExecutor.swift', 'AgentConnectorTimeoutResolver.swift']) {
+  const target = 'apps/ios/GalaxySSI/' + file;
+  assert.equal(read(target), git('show', `${base}:${target}`), file + ' effect/timeout kernel unchanged');
+}
 const sessions = read('apps/ios/GalaxySSI/GalaxySSIStoreSessions.swift');
 const persistence = sessions.slice(sessions.indexOf('  private func persistAgentAutoRoute('), sessions.indexOf('  func updateAgentSessionSummary('));
 assert(persistence.indexOf('guard persisted else { return false }') < persistence.indexOf('cacheAgentConversation(session)'));
@@ -84,10 +108,13 @@ const disposition = file => {
   if (file.endsWith('MainActivityAgentExecution.kt')) return 'Native header uses the same exact target identity as dispatch, not stale display labels or a fabricated Codex fallback';
   if (file.endsWith('AgentResourceRouter.kt')) return 'Healthy eligible displayed primary short-circuits quality/alternative ranking in native selector; existing capability admission retained, no new full capacity/privacy/budget router claimed';
   if (file.endsWith('MobileNativeAgentExecution.kt')) return 'Main native local/cloud/Agent branch chain shares one captured automatic target and persists admitted dispatch; Android parallel/recovery loop specifics still incomplete';
+  if (file.endsWith('AgentConnectorFallbackAction.kt')) return 'Auto-reroute metadata propagated through actual native/control-plane executor results; manual/explicit false flags dominate; synchronous fallback uses current admitted ranking and owned attempt trail';
+  if (file.endsWith('AgentConnectorHandoffRecovery.kt')) return 'Native synchronous fallback refuses unobserved remote timeout outcomes; actual pre-timeout observer/deferred asynchronous discovery remains incomplete';
+  if (file.endsWith('MobileNativeAgentRuntimeTiming.kt')) return 'Native synchronous connector execution records exact selected/fallback/result target for the current conversation turn; full async/parallel/resume timing path still incomplete';
   return 'Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment';
 };
 const inventory = { androidPR: 3119, androidCommit: android, incrementalBase: base,
-  scope: 'Decision admission, encrypted per-conversation target/turn, primary header/dispatch identity and healthy-primary short circuit; remaining recovery/parallel scope incomplete',
+  scope: 'Decision admission, encrypted Auto target/turn, primary identity, healthy-primary shortcut and synchronous fresh fallback; asynchronous observation/parallel/resume parity incomplete',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', `${android}:${file}`)).digest('hex'), disposition: disposition(file) })) };
 const report = path.join(root, 'apps/ios/ANDROID_3119_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(report, JSON.stringify(inventory, null, 2) + '\n');

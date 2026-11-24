@@ -2,7 +2,7 @@
   "androidPR": 3119,
   "androidCommit": "e7c6af6ef3eed21c7fb697b4458d1cf742833dc4",
   "incrementalBase": "ddcb2a69acd02ea12d20fb469e779d4d87b85a4f",
-  "scope": "Decision admission, encrypted per-conversation target/turn, primary header/dispatch identity and healthy-primary short circuit; remaining recovery/parallel scope incomplete",
+  "scope": "Decision admission, encrypted Auto target/turn, primary identity, healthy-primary shortcut and synchronous fresh fallback; asynchronous observation/parallel/resume parity incomplete",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -17,12 +17,12 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentConnectorFallbackAction.kt",
       "sha256": "ed6579dba4317a1625aa8eccda3d471f133623d6141d2d9c4d9544b47e1b95f1",
-      "disposition": "Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment"
+      "disposition": "Auto-reroute metadata propagated through actual native/control-plane executor results; manual/explicit false flags dominate; synchronous fallback uses current admitted ranking and owned attempt trail"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentConnectorHandoffRecovery.kt",
       "sha256": "c1fb7bfbbf7f6fbf45bfc4404ddae4f1be6f075227e808637ec8b575e62121de",
-      "disposition": "Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment"
+      "disposition": "Native synchronous fallback refuses unobserved remote timeout outcomes; actual pre-timeout observer/deferred asynchronous discovery remains incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentModelSelectionSettings.kt",
@@ -67,7 +67,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentRuntimeTiming.kt",
       "sha256": "50e4ea7c8e68bffad75b785714e1358f52253d75d404cb489d263d6fb4a28497",
-      "disposition": "Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment"
+      "disposition": "Native synchronous connector execution records exact selected/fallback/result target for the current conversation turn; full async/parallel/resume timing path still incomplete"
     },
     {
       "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentConnectorFallbackActionTest.kt",

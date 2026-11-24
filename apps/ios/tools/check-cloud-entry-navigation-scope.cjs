@@ -62,6 +62,13 @@ for (const file of [
     if (file === 'AgentNetworkRoutingModels.swift' && source.includes('    let admittedTargetIds = decision.map { Set($0.orderedTargetIds) }\n')) {
       // #3119 adds only this admission boundary; its own scope check verifies it.
       assert(fs.existsSync(path.join(__dirname, 'check-stable-auto-admission-scope.cjs')));
+      const start = source.indexOf('  static func mergingRoutingMetadata(');
+      const end = source.indexOf('  static func resultMetadata(', start);
+      if (start >= 0) {
+        assert(end > start);
+        source = source.slice(0, start) + source.slice(end);
+        source = source.replace('      "auto_reroute_on_failure": String(action.parameters["auto_reroute_on_failure"] == "true" &&\n        action.parameters["manual_target_locked"] != "true"),\n', '');
+      }
       source = source.replace('    let admittedTargetIds = decision.map { Set($0.orderedTargetIds) }\n', '')
         .replace('      (admittedTargetIds?.contains($0.id) ?? true) &&\n', '')
         .replace('    goal: String = "",\n    preserveHealthyPrimary: Bool = false', '    goal: String = ""')

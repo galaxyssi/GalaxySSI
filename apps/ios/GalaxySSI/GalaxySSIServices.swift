@@ -14214,6 +14214,7 @@ final class MessageCoordinator: ObservableObject {
     let history = supervisorHistory(task: task, outgoing: outgoing)
     let boundAction = AgentSupervisorRecoveryPolicy.restoreBinding(action, history: history)
     var executionAction = scopedLocalNativeExecutionAction(boundAction, outgoing: outgoing, task: task)
+    recordAutomaticConnectorTarget(executionAction, outgoing: outgoing)
     var result = runtime.actionExecutor.execute(
       action: executionAction,
       screen: screen
@@ -14238,15 +14239,17 @@ final class MessageCoordinator: ObservableObject {
         status: .sent
       )
       executionAction = fallbackAction
+      recordAutomaticConnectorTarget(fallbackAction, outgoing: outgoing)
       result = runtime.actionExecutor.execute(action: fallbackAction, screen: screen)
     }
     if action.kind == .callConnector {
+      recordAutomaticConnectorTarget(executionAction, result: result, outgoing: outgoing)
       updateAgentExecutionTarget(
         conversationId: outgoing.conversationId,
-        connectorId: action.parameters["connector_id"] ?? "",
+        connectorId: executionAction.parameters["connector_id"] ?? "",
         contactId: result.metadata["contact_id"] ?? "",
         runtimeTarget: result.metadata["target"] ?? "",
-        fallbackTarget: action.target
+        fallbackTarget: executionAction.target
       )
     }
     finishLocalNativeAction(action: action, executionAction: executionAction, result: result,
@@ -14257,7 +14260,14 @@ final class MessageCoordinator: ObservableObject {
   private func scopedLocalNativeExecutionAction(
     _ action: AgentAction, outgoing: ChatMessage, task: AgentTaskRecord
   ) -> AgentAction {
-    var scoped = action
+    var scoped = AgentConnectorFallbackAction.forDispatch(action)
+    if scoped.kind == .callConnector,
+       scoped.parameters["manual_target_locked"] != "true",
+       scoped.parameters["auto_reroute_on_failure"] != "false",
+       (scoped.parameters[agentTeamSpecParameter] ?? "").isBlank,
+       AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic {
+      scoped.parameters["auto_reroute_on_failure"] = "true"
+    }
     scoped.parameters["_galaxyssi_task_id"] = task.taskId
     scoped.parameters["_galaxyssi_session_id"] = task.sessionId
     scoped.parameters["_galaxyssi_conversation_id"] = outgoing.conversationId
@@ -14267,6 +14277,17 @@ final class MessageCoordinator: ObservableObject {
     scoped.parameters["_galaxyssi_workspace_id"] = AgentWorkspaceScope.id(
       conversationId: outgoing.conversationId, sessionId: task.sessionId)
     return scoped
+  }
+
+  private func recordAutomaticConnectorTarget(_ action: AgentAction, result: AgentActionResult? = nil,
+                                            outgoing: ChatMessage) {
+    guard outgoing.contactId == "hermes", action.kind == .callConnector,
+          !AgentConnectorFallbackAction.isTargetLocked(action: action, metadata: result?.metadata ?? [:]),
+          (action.parameters[agentTeamSpecParameter] ?? "").isBlank else { return }
+    let selected = action.parameters["connector_id"] ?? ""
+    let actual = result?.success == true ? (result?.metadata["resource_id"] ?? "").ifBlank(selected) : selected
+    _ = store.recordAgentAutoRouteDispatch(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString), targetId: actual)
   }
 
   private func finishLocalNativeAction(
@@ -14843,10 +14864,6 @@ final class MessageCoordinator: ObservableObject {
   ) -> AgentAction? {
     guard !AgentConnectorFallbackAction.isTargetLocked(action: action, metadata: failedResult.metadata) else { return nil }
 
-    let failedResourceId = (failedResult.metadata["resource_id"] ?? "")
-      .ifBlank(action.parameters["connector_id"] ?? "")
-      .ifBlank(action.target)
-      .trimmingCharacters(in: .whitespacesAndNewlines)
     let targets = AgentCallableTargetCatalog.build(
       contacts: store.visibleContacts,
       apiKey: { store.apiKey(for: $0) }
@@ -14858,49 +14875,8 @@ final class MessageCoordinator: ObservableObject {
     )
     let currentResourceIds = currentRoute?.decision?.orderedTargetIds ??
       currentRoute.map { [$0.target.id] } ?? []
-    let rememberedResourceIds = AgentConnectorFallbackTrail.parse(
-      (failedResult.metadata["remaining_fallback_ids"] ?? "")
-        .ifBlank(action.parameters["routing_fallback_ids"] ?? "")
-    )
-    let failedDomain = (failedResult.metadata["failure_domain"] ?? "")
-      .ifBlank(targets.first { $0.id == failedResourceId }?.failureDomain ?? "")
-    let timeoutFailure = !(failedResult.metadata["timeout_stage"] ?? "").isBlank
-    let candidates = AgentConnectorFallbackTrail.mergeAvailable(
-      rememberedResourceIds: rememberedResourceIds,
-      currentResourceIds: currentResourceIds,
-      failedResourceId: failedResourceId
-    ).filter { candidateId in
-      guard timeoutFailure, !failedDomain.isBlank else { return true }
-      return targets.first { $0.id == candidateId }?.failureDomain != failedDomain
-    }
-    guard let selection = AgentConnectorFallbackTrail.selectNext(
-      failedResourceId: failedResourceId,
-      remainingResourceIds: candidates,
-      deferredRetryIds: AgentConnectorFallbackTrail.parse(
-        (failedResult.metadata["deferred_retry_ids"] ?? "")
-          .ifBlank(action.parameters["routing_deferred_retry_ids"] ?? "")
-      ),
-      retriedResourceIds: Set(AgentConnectorFallbackTrail.parse(
-        (failedResult.metadata["retried_resource_ids"] ?? "")
-          .ifBlank(action.parameters["routing_retried_resource_ids"] ?? "")
-      )),
-      retryFailedResource: (failedResult.metadata["non_retriable"] ?? "") != "true"
-    ) else {
-      return nil
-    }
-
-    var retryAction = action
-    retryAction.parameters["connector_id"] = selection.resourceId
-    retryAction.parameters["routing_fallback_ids"] = AgentConnectorFallbackTrail.encode(
-      selection.remainingResourceIds
-    )
-    retryAction.parameters["routing_deferred_retry_ids"] = AgentConnectorFallbackTrail.encode(
-      selection.deferredRetryIds
-    )
-    retryAction.parameters["routing_retried_resource_ids"] = AgentConnectorFallbackTrail.encode(
-      selection.retriedResourceIds.sorted()
-    )
-    return retryAction
+    return AgentConnectorFallbackAction.freshFallback(action: action, failure: failedResult,
+      currentResourceIds: currentResourceIds, targets: targets)
   }
 
   private func markLocalNativeActionBlocked(

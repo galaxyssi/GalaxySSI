@@ -947,7 +947,8 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
         (type: .agentConnected, sequence: 3, payload: [:])
       ]
     )
-    var result = delegate.execute(action: item.action, screen: item.screen)
+    var result = AgentConnectorFallbackAction.mergingRoutingMetadata(
+      delegate.execute(action: item.action, screen: item.screen), action: item.action)
     if AgentConnectorFallbackAction.isTargetLocked(action: item.action, metadata: result.metadata) {
       result.metadata["manual_target_locked"] = "true"
     }

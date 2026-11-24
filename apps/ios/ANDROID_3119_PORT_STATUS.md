@@ -22,9 +22,17 @@ The primary local/cloud/Agent dispatch chain captures one automatic target ID ra
 
 New native fixture sources cover encrypted reopen, conversation isolation, stale turn/replay rejection, manual protection, legacy decoding, exact Auto header identity and healthy-primary selection. These sources are not executed. Source guards do not establish persistence fault behavior or actual routing acceptance.
 
+## Synchronous Connector Fallback
+
+The actual native/control-plane executor result paths now carry the owned fallback trail and Auto-reroute metadata; manual locks and explicit false flags dominate. On synchronous known failure, recompute the current route order, ignore the remembered candidate order, retain attempted/retried/deferred history, and prepare the next action through the existing owned-trail helper. Preserve exact task/conversation/turn scope and target-specific effect-attempt identities. Do not reset the durable effect journal or action ID.
+
+Reject mismatched action results, waiting responses, unknown effect/node outcomes, conflicts, manual/team routes and unobserved remote timeout outcomes. Removed/excluded deferred candidates cannot be resurrected. Existing failure-domain limits apply to fresh/deferred/retry candidates. Before/after synchronous connector dispatch, record the actual action/result target into the current encrypted Auto binding; old turns cannot overwrite it. Legacy display labels use the executed fallback action rather than the original failed action.
+
+New regression fixture sources cover fresh ordering, no resurrection/repeated targets, scope/model-field handling, target-specific attempt identity and locked/uncertain outcomes. They are not executed. The timeout resolver and durable effect executor kernels are unchanged; this is not a new active remote-observation implementation.
+
 ## Still Incomplete
 
-This is NOT completion of Android #3119. Main service selection still starts without a full scored privacy/budget/capacity decision; this change must not be described as adding that missing policy engine. Fresh fallback ranking on immediate/asynchronous failure, deferred timeout discovery, parallel parameter preservation, scheduled/resumed provider dispatch identity, attachment conversation scope and live failover header updates still require dedicated current-code comparison and integration. Older callbacks can still change legacy display labels; they cannot update the new exact Auto binding without its turn. Do not infer broader recovery completion from the source inventory or these fixtures.
+This is NOT completion of Android #3119. Main service selection still starts without a full scored privacy/budget/capacity decision; this change must not be described as adding that missing policy engine. Asynchronous failure recovery, active pre-timeout observation/deferred discovery, parallel parameter preservation, scheduled/resumed provider dispatch identity, attachment conversation scope and asynchronous failover header updates still require dedicated current-code comparison and integration. Older callbacks can still change legacy display labels; they cannot update the new exact Auto binding without its turn. Do not infer broader recovery completion from the source inventory or these fixtures.
 
 All 17 Android changed files are pinned with explicit dispositions. Manual selection, planning factory and quality-ranking implementations remain exact; only the primary Auto path/header and encrypted session metadata are extended. No transport, credential, version, Android, Desktop or IPA changes.
 
