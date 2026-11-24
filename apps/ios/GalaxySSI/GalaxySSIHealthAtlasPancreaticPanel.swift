@@ -6,6 +6,7 @@ struct GalaxySSIHealthAtlasPancreaticPanel: View {
   let stage: Int
   let language: String
   let open: (String) -> Void
+  var showsScope = true
   var body: some View {
     if (0..<4).contains(stage) {
       if entryID == "pancreas" {
@@ -25,7 +26,7 @@ struct GalaxySSIHealthAtlasPancreaticPanel: View {
             }.buttonStyle(.plain).accessibilityIdentifier("atlas-pancreatic-route-" + route.id)
               .accessibilityAddTraits(route.active(stage: stage) == true ? .isSelected : [])
           }
-          Text(t("digestive_routes_scope")).font(.footnote).foregroundColor(.secondary)
+          if showsScope { Text(t("digestive_routes_scope")).font(.footnote).foregroundColor(.secondary) }
         }.accessibilityIdentifier("atlas-pancreatic-routes")
       } else if entryID == "pancreatic-islets", let id = GalaxySSIHealthAtlasPancreatic.isletCell(stage: stage),
          let cell = atlas.entry(id), let islets = atlas.entry(entryID) {
@@ -42,7 +43,7 @@ struct GalaxySSIHealthAtlasPancreaticPanel: View {
               Image(systemName: "chevron.right").font(.caption).foregroundColor(.secondary).accessibilityHidden(true)
             }.padding(8).overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.3))).contentShape(Rectangle())
           }.buttonStyle(.plain).accessibilityIdentifier("atlas-islet-selected-cell")
-          Text(t("digestive_islets_scope")).font(.footnote).foregroundColor(.secondary)
+          if showsScope { Text(t("digestive_islets_scope")).font(.footnote).foregroundColor(.secondary) }
         }.accessibilityIdentifier("atlas-islet-stages")
       }
     }

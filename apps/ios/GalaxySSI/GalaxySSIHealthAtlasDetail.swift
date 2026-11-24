@@ -134,7 +134,6 @@ struct GalaxySSIHealthAtlasDetail: View {
       })) {
         VStack(alignment: .leading, spacing: 16) {
           simulationPanel
-          mechanismSource
         }.accessibilityIdentifier("atlas-inline-models")
       } label: { Text(t("inline_models")).frame(minHeight: 44) }
         .accessibilityIdentifier("atlas-open-simulation")

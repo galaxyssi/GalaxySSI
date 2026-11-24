@@ -32,7 +32,14 @@ assert(absorption.indexOf('if step == 2 {') < absorption.indexOf('absorptionInse
 requireTokens(absorption, ['absorptionFlow(AbsorptionMotion.bloodRoute, t)\n      glucoseTransport(t)\n      return', 'if step == 4 {']);
 assert.equal(absorption.split('  private func absorptionVillus(')[1], prior('AbsorptionDrawing').split('  private func absorptionVillus(')[1]);
 requireTokens(source('GlucoseTransportDrawing'), ['Motion.glucoseTrack', 'Motion.sodiumTrack', 'arrow(251, 245, 251, 260', 'arrow(307, 241, 307, 252', 'arrow(323, 251, 323, 206', 't + Double(index) * 0.5', 'absorption_story_sglt1', 'absorption_story_glut2', 'absorption_story_pump']);
-for (const name of ['FunctionCatalogue', 'CloseupCatalogue', 'FunctionPlayer', 'FunctionScene', 'ChapterClock', 'State', 'Detail', 'Research', 'AgentContext', 'AgentHandoff', 'Physiology', 'SimulationPanel', 'BeatPressure', 'PressureDrawing', 'TipLinkDrawing', 'RenalCloseupDrawing', 'BoneDrawing', 'IllustratedDrawing']) assert.equal(source(name), prior(name), name);
+for (const name of ['FunctionCatalogue', 'CloseupCatalogue', 'FunctionPlayer', 'ChapterClock', 'State', 'Research', 'AgentContext', 'AgentHandoff', 'Physiology', 'BeatPressure', 'PressureDrawing', 'TipLinkDrawing', 'RenalCloseupDrawing', 'BoneDrawing', 'IllustratedDrawing']) assert.equal(source(name), prior(name), name);
+// #4442 reorganizes scene/layout only; the playback and lifecycle block stays exact.
+const simulationLifecycle = s => s.split(".onReceive(timer)")[1].split(".onDisappear { pause() }")[0];
+assert.equal(simulationLifecycle(source("SimulationPanel")), simulationLifecycle(prior("SimulationPanel")));
+assert.equal(source("FunctionScene").split("  var body:")[0], prior("FunctionScene").split("  var body:")[0]);
+assert(source("FunctionScene").includes("GalaxySSIHealthAtlasSceneFrame"));
+assert(source("FunctionScene").includes("GalaxySSIHealthAtlasReservedCaption"));
+assert.equal(source("Detail").replace("          simulationPanel\n", "          simulationPanel\n          mechanismSource\n"), prior("Detail"));
 // Four XML-declared scientific names are intentionally locale-independent, not translations.
 const originalXML = xml.xml2js(git(['show', sha + ':apps/android/app/src/main/res/values/health_atlas_absorption_story.xml']).toString(), {compact: false});
 const declarations = originalXML.elements.find(e => e.name === 'resources').elements.filter(e => e.name === 'string' && e.attributes.translatable === 'false');

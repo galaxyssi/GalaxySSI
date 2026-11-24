@@ -15,6 +15,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   @State private var inlineClock: GalaxySSIHealthAtlasChapterClock?
   private var playbackID: String { "simulation|" + entry.id }
   @State private var structure: String?
+  @State private var referencesExpanded = false
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -43,150 +44,52 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
     #endif
   }
 
+  private var hasDiagram: Bool { GalaxySSIHealthAtlasCirculation.supports(entry.id) || gasExchange || endocrine != nil || retinal }
+  private var hasCloseup: Bool {
+    section != nil || sweat || germline != nil || GalaxySSIHealthAtlasPancreatic.supports(entry.id) ||
+      GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id) || entry.id == GalaxySSIHealthAtlasFiltrationStage.owner ||
+      entry.id == GalaxySSIHealthAtlasSarcomere.owner || entry.id == GalaxySSIHealthAtlasPhagocytosis.owner ||
+      GalaxySSIHealthAtlasGranulocyte(rawValue: entry.id) != nil || GalaxySSIHealthAtlasImmuneLink(rawValue: entry.id) != nil ||
+      GalaxySSIHealthAtlasBloodDefense(rawValue: entry.id) != nil
+  }
+  private var stageCaptions: [String] {
+    model.stages.enumerated().map {
+      String(format: t("stage"), Int64($0.offset + 1), Int64(model.stages.count), GalaxySSIHealthAtlasText.get($0.element, language))
+    }
+  }
+  private var stageCaption: some View {
+    GalaxySSIHealthAtlasReservedCaption(values: stageCaptions, selected: simulation.stage, identifier: "atlas-simulation-stage")
+      .font(.subheadline.weight(.semibold))
+  }
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
-      if !quantitativeAfterArt {
-        quantitative.accessibilityIdentifier("atlas-quantitative-before-art")
-      }
+      if !quantitativeAfterArt { quantitative.accessibilityIdentifier("atlas-quantitative-before-art") }
       #endif
-      Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(model.title, language))).font(.headline)
-      if let section {
-        playbackControls
-        GalaxySSIHealthAtlasSectionLessonView(lesson: section, phase: simulation.phase, stages: model.stages, language: language)
-        ForEach(section.notes, id: \.self) { key in
-          Text(GalaxySSIHealthAtlasText.get(key, language)).font(.footnote).foregroundColor(.secondary)
+      GalaxySSIHealthAtlasSceneFrame(identifier: "atlas-simulation-frame", inset: 8) {
+        VStack(alignment: .leading, spacing: 8) {
+          if !hasDiagram && !hasCloseup, let plate = atlas.plate(for: entry.id) {
+            GalaxySSIHealthAtlasSimulationPlate(plate: plate, name: GalaxySSIHealthAtlasText.get(entry.name, language),
+              language: language, preview: { if $0 { pause() }; previewPresented = $0 })
+          }
+          Text(GalaxySSIHealthAtlasText.get(model.title, language)).font(.callout.weight(.semibold))
+          if !inline && (hasDiagram || hasCloseup) { playbackControls }
+          if germline != nil { stageCaption }
+          simulationArtwork
+          if !hasDiagram {
+            GalaxySSIHealthAtlasProcessStages(stages: model.stages, phase: simulation.phase, language: language,
+              entryID: entry.id, compact: inline, selected: { pause(); simulation.selectStage($0) })
+          }
+          if germline == nil && !retinal && endocrine == nil { stageCaption }
+          if inline || (!hasDiagram && !hasCloseup) { playbackControls }
+          Slider(value: Binding(get: { simulation.phase }, set: { value in pause(); simulation.phase = value }), in: 0...1,
+            onEditingChanged: { _ in pause() })
+            .accessibilityLabel(t("phase")).accessibilityIdentifier("atlas-simulation-progress")
         }
       }
-      if sweat {
-        playbackControls
-        GalaxySSIHealthAtlasSweatView(phase: simulation.phase, stages: model.stages, language: language)
-        Text(t("context_sweat_scope")).font(.footnote).foregroundColor(.secondary)
-      }
-      if entry.id == "hair-follicles" { Text(t("context_hair_scope")).font(.footnote).foregroundColor(.secondary) }
-      if retinal {
-        if section == nil { playbackControls }
-        GalaxySSIHealthAtlasRetinaPathView(atlas: atlas, model: model, stage: simulation.stage, language: language,
-          select: { pause(); simulation.selectStage($0) }, open: { pause(); structure = $0 })
-      }
-      if let endocrine {
-        playbackControls
-        GalaxySSIHealthAtlasEndocrinePathView(atlas: atlas, entry: entry, path: endocrine, stage: simulation.stage,
-          language: language, select: { pause(); simulation.selectStage($0) },
-          open: { pause(); structure = $0 })
-      }
-      if GalaxySSIHealthAtlasPancreatic.supports(entry.id) {
-        playbackControls
-        GalaxySSIHealthAtlasPancreaticPanel(atlas: atlas, entryID: entry.id, stage: simulation.stage, language: language,
-          open: { pause(); structure = $0 })
-      }
-      if entry.id == GalaxySSIHealthAtlasFiltrationStage.owner {
-        playbackControls
-        GalaxySSIHealthAtlasPodocyteView(stage: simulation.stage, stages: model.stages, language: language)
-        Text(t("podocyte_scope")).font(.footnote).foregroundColor(.secondary)
-      }
-      if entry.id == GalaxySSIHealthAtlasSarcomere.owner {
-        playbackControls
-        GalaxySSIHealthAtlasSarcomerePanel(stage: simulation.stage, stages: model.stages, language: language)
-      }
-      if entry.id == GalaxySSIHealthAtlasPhagocytosis.owner {
-        playbackControls
-        GalaxySSIHealthAtlasPhagocytosis(phase: simulation.phase, stages: model.stages, language: language)
-        Text(t("phagocytosis_scope")).font(.footnote).foregroundColor(.secondary)
-      }
-      if let lesson = GalaxySSIHealthAtlasGranulocyte(rawValue: entry.id) {
-        playbackControls
-        GalaxySSIHealthAtlasGranulocyteView(lesson: lesson, phase: simulation.phase, stages: model.stages, language: language)
-        Text(t(lesson.scopeKey)).font(.footnote).foregroundColor(.secondary)
-      }
-      if let lesson = GalaxySSIHealthAtlasImmuneLink(rawValue: entry.id) {
-        playbackControls
-        GalaxySSIHealthAtlasImmuneLinkView(atlas: atlas, lesson: lesson, phase: simulation.phase, stages: model.stages, language: language,
-          open: { pause(); structure = $0 })
-      }
-      if let lesson = GalaxySSIHealthAtlasBloodDefense(rawValue: entry.id) {
-        playbackControls
-        GalaxySSIHealthAtlasBloodDefenseView(atlas: atlas, lesson: lesson, phase: simulation.phase, stages: model.stages, language: language,
-          open: { pause(); structure = $0 })
-      }
-      if GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id) {
-        playbackControls
-        GalaxySSIHealthAtlasValvePanel(atlas: atlas, entryID: entry.id, stage: simulation.stage, language: language,
-          open: { pause(); structure = $0 })
-      }
-      if let germline {
-        playbackControls
-        Text(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4),
-          GalaxySSIHealthAtlasText.get(model.stages[simulation.stage], language)))
-        GalaxySSIHealthAtlasGermlineView(counts: germline, language: language)
-      }
-      if gasExchange {
-        GalaxySSIHealthAtlasGasExchangeView(phase: simulation.phase, language: language, stages: model.stages,
-          selected: { pause(); simulation.selectStage($0) },
-          open: { pause(); structure = $0 })
-        Text(t("gas_scope")).font(.footnote).foregroundColor(.secondary)
-        Link(t("gas_reference"), destination: GalaxySSIHealthAtlasGasExchange.source)
-      }
-      Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
-      if hasPhysiology, let note = GalaxySSIHealthAtlasPhysiologyText.processNote(language: language) {
-        Text(note).font(.footnote).foregroundColor(.secondary)
-      }
+      if quantitativeAfterArt { quantitative.accessibilityIdentifier("atlas-quantitative-after-art") }
       #endif
-      if GalaxySSIHealthAtlasCirculation.supports(entry.id) {
-        playbackControls
-        GalaxySSIHealthAtlasCirculationView(phase: simulation.phase, flow: cardiac ? simulation.output : nil,
-          language: language, stages: model.stages,
-          selected: { pause(); simulation.selectStage($0) },
-          open: { pause(); structure = $0 })
-        Text(t("circuit_scope")).font(.footnote).foregroundColor(.secondary)
-        Link(t("circuit_reference"), destination: GalaxySSIHealthAtlasCirculation.source)
-      } else if endocrine == nil, !retinal {
-      LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-        ForEach(gasExchange ? [] : [0, 1, 3, 2], id: \.self) { stage in
-          Button { pause(); simulation.selectStage(stage) } label: {
-            VStack(spacing: 8) {
-              Text("\(stage + 1)").font(.headline).frame(width: 32, height: 32)
-                .background(stage <= simulation.stage ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.08)).clipShape(Circle())
-              Text(GalaxySSIHealthAtlasText.get(model.stages[stage], language)).font(.caption)
-                .fixedSize(horizontal: false, vertical: true)
-            }.frame(maxWidth: .infinity, minHeight: 44).padding(8)
-          }.accessibilityLabel(String(format: t("stage"), Int64(stage + 1), Int64(4),
-            GalaxySSIHealthAtlasText.get(model.stages[stage], language)))
-            .accessibilityAddTraits(stage == simulation.stage ? .isSelected : [])
-            .accessibilitySortPriority(Double(4 - stage))
-            .accessibilityIdentifier("health-atlas-stage-" + entry.id + "-" + String(stage))
-        }
-      }
-      }
-      ProgressView(value: simulation.phase).accessibilityLabel(t("phase"))
-      if germline == nil {
-      Text(String(format: t("stage"), Int64(simulation.stage + 1), Int64(4),
-        GalaxySSIHealthAtlasText.get(model.stages[simulation.stage], language)))
-      }
-      Slider(value: Binding(get: { simulation.phase }, set: { value in pause(); simulation.phase = value }), in: 0...1,
-        onEditingChanged: { _ in pause() })
-        .accessibilityLabel(t("phase"))
-      if !GalaxySSIHealthAtlasCirculation.supports(entry.id), !GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id),
-         germline == nil, entry.id != GalaxySSIHealthAtlasPhagocytosis.owner, GalaxySSIHealthAtlasGranulocyte(rawValue: entry.id) == nil,
-         GalaxySSIHealthAtlasImmuneLink(rawValue: entry.id) == nil, GalaxySSIHealthAtlasBloodDefense(rawValue: entry.id) == nil,
-         entry.id != GalaxySSIHealthAtlasSarcomere.owner, entry.id != GalaxySSIHealthAtlasFiltrationStage.owner,
-         !GalaxySSIHealthAtlasPancreatic.supports(entry.id), endocrine == nil, !retinal, !sweat, section == nil { playbackControls }
-      if reduceMotion { Text(bodyText("motion_disabled")).font(.caption) }
-      if !inline {
-        Text(t("speed") + " · " + String(format: "%.1f×", simulation.speed))
-        Slider(value: $simulation.speed, in: 0.5...2, step: 0.5).accessibilityLabel(t("speed"))
-      }
-      if retinal { Link(t("sensory_retinal_paper"), destination: GalaxySSIHealthAtlasRetinaPath.source) }
-      if entry.id == "pancreas" {
-        Link(t("digestive_routes_reference"), destination: GalaxySSIHealthAtlasPancreatic.source)
-      }
-      #if GALAXYSSI_ATLAS_PHYSIOLOGY
-      if quantitativeAfterArt {
-        quantitative.accessibilityIdentifier("atlas-quantitative-after-art")
-      }
-      #endif
-      Text(t("teaching_note")).font(.footnote).foregroundColor(.secondary)
       if cardiac || (lung && !hasPhysiology) {
         Text(t("parameters")).font(.headline)
         parameter(cardiac ? "heart_rate" : "rate", value: $simulation.first, range: cardiac ? 40...160 : 6...30,
@@ -194,8 +97,16 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         parameter(cardiac ? "stroke_volume" : "tidal", value: $simulation.second,
           range: cardiac ? 30...120 : 200...900, unit: "mL")
         Text(t(cardiac ? "cardiac_output" : "ventilation") + ": " + String(format: "%.2f L/min", simulation.output)).font(.headline)
-        Text(t(cardiac ? "cardiac_formula" : "ventilation_formula")).font(.footnote)
-      } else if !hasPhysiology, germline == nil { Text(t("qualitative_note")).font(.footnote) }
+      }
+      if !inline {
+        Text(t("speed") + " · " + String(format: "%.1f×", simulation.speed))
+        Slider(value: $simulation.speed, in: 0.5...2, step: 0.5).accessibilityLabel(t("speed"))
+      }
+      if inline {
+        DisclosureGroup(isExpanded: $referencesExpanded) { referenceNotes } label: {
+          Text(t("evidence")).frame(minHeight: 44)
+        }.accessibilityIdentifier("atlas-simulation-references-toggle")
+      } else { referenceNotes }
     }
     .background(NavigationLink(isActive: Binding(get: { structure != nil }, set: { if !$0 { structure = nil } })) {
       if let structure { destination(structure) }
@@ -222,6 +133,98 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
     .onChange(of: reduceMotion) { _ in pause() }
     .onChange(of: previewPresented) { _ in pause() }
     .onDisappear { pause() }
+  }
+  @ViewBuilder private var simulationArtwork: some View {
+    if let section { GalaxySSIHealthAtlasSectionLessonView(lesson: section, phase: simulation.phase, stages: model.stages, language: language) }
+    if sweat { GalaxySSIHealthAtlasSweatView(phase: simulation.phase, stages: model.stages, language: language) }
+    if retinal {
+      GalaxySSIHealthAtlasRetinaPathView(atlas: atlas, model: model, stage: simulation.stage, language: language,
+        select: { pause(); simulation.selectStage($0) }, open: openStructure)
+    }
+    if let endocrine {
+      GalaxySSIHealthAtlasEndocrinePathView(atlas: atlas, entry: entry, path: endocrine, stage: simulation.stage, language: language,
+        select: { pause(); simulation.selectStage($0) }, open: openStructure)
+    }
+    if GalaxySSIHealthAtlasPancreatic.supports(entry.id) {
+      GalaxySSIHealthAtlasPancreaticPanel(atlas: atlas, entryID: entry.id, stage: simulation.stage, language: language,
+        open: openStructure, showsScope: false)
+    }
+    if entry.id == GalaxySSIHealthAtlasFiltrationStage.owner { GalaxySSIHealthAtlasPodocyteView(stage: simulation.stage, stages: model.stages, language: language) }
+    if entry.id == GalaxySSIHealthAtlasSarcomere.owner { GalaxySSIHealthAtlasSarcomerePanel(stage: simulation.stage, stages: model.stages, language: language) }
+    if entry.id == GalaxySSIHealthAtlasPhagocytosis.owner { GalaxySSIHealthAtlasPhagocytosis(phase: simulation.phase, stages: model.stages, language: language) }
+    if let lesson = GalaxySSIHealthAtlasGranulocyte(rawValue: entry.id) {
+      GalaxySSIHealthAtlasGranulocyteView(lesson: lesson, phase: simulation.phase, stages: model.stages, language: language)
+    }
+    if let lesson = GalaxySSIHealthAtlasImmuneLink(rawValue: entry.id) {
+      GalaxySSIHealthAtlasImmuneLinkView(atlas: atlas, lesson: lesson, phase: simulation.phase, stages: model.stages,
+        language: language, open: openStructure, showsDetails: false)
+    }
+    if let lesson = GalaxySSIHealthAtlasBloodDefense(rawValue: entry.id) {
+      GalaxySSIHealthAtlasBloodDefenseView(atlas: atlas, lesson: lesson, phase: simulation.phase, stages: model.stages,
+        language: language, open: openStructure, showsDetails: false)
+    }
+    if GalaxySSIHealthAtlasHeartSection.Valve.supports(entry.id) {
+      GalaxySSIHealthAtlasValvePanel(atlas: atlas, entryID: entry.id, stage: simulation.stage, language: language, open: openStructure)
+    }
+    if let germline { GalaxySSIHealthAtlasGermlineView(counts: germline, language: language, showsDetails: false) }
+    if gasExchange {
+      GalaxySSIHealthAtlasGasExchangeView(phase: simulation.phase, language: language, stages: model.stages,
+        selected: { pause(); simulation.selectStage($0) }, open: openStructure)
+    }
+    if GalaxySSIHealthAtlasCirculation.supports(entry.id) {
+      GalaxySSIHealthAtlasCirculationView(phase: simulation.phase, flow: cardiac ? simulation.output : nil, language: language,
+        stages: model.stages, selected: { pause(); simulation.selectStage($0) }, open: openStructure)
+    }
+  }
+  private func openStructure(_ id: String) { pause(); structure = id }
+  private var referenceNotes: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      if let section {
+        ForEach(section.notes, id: \.self) { key in Text(GalaxySSIHealthAtlasText.get(key, language)).font(.footnote).foregroundColor(.secondary) }
+      }
+      if sweat { Text(t("context_sweat_scope")) }
+      if entry.id == "hair-follicles" { Text(t("context_hair_scope")) }
+      if entry.id == GalaxySSIHealthAtlasFiltrationStage.owner { Text(t("podocyte_scope")) }
+      if entry.id == GalaxySSIHealthAtlasPhagocytosis.owner { Text(t("phagocytosis_scope")) }
+      if let lesson = GalaxySSIHealthAtlasGranulocyte(rawValue: entry.id) { Text(t(lesson.scopeKey)) }
+      if let lesson = GalaxySSIHealthAtlasImmuneLink(rawValue: entry.id) {
+        Text(t(lesson.scopeKey))
+        GalaxySSIHealthAtlasCellSceneRelatedRow(atlas: atlas, entryID: lesson.relatedID, language: language, open: openStructure)
+      }
+      if let lesson = GalaxySSIHealthAtlasBloodDefense(rawValue: entry.id) {
+        Text(t(lesson.scopeKey))
+        if let id = lesson.relatedID { GalaxySSIHealthAtlasCellSceneRelatedRow(atlas: atlas, entryID: id, language: language, open: openStructure) }
+      }
+      if gasExchange {
+        Text(t("gas_scope")); Link(t("gas_reference"), destination: GalaxySSIHealthAtlasGasExchange.source).frame(minHeight: 44)
+      }
+      if GalaxySSIHealthAtlasCirculation.supports(entry.id) {
+        Text(t("circuit_scope")); Link(t("circuit_reference"), destination: GalaxySSIHealthAtlasCirculation.source).frame(minHeight: 44)
+      }
+      if retinal { Link(t("sensory_retinal_paper"), destination: GalaxySSIHealthAtlasRetinaPath.source).frame(minHeight: 44) }
+      if entry.id == "pancreas" {
+        Text(t("digestive_routes_scope"))
+        Link(t("digestive_routes_reference"), destination: GalaxySSIHealthAtlasPancreatic.source).frame(minHeight: 44)
+      }
+      if entry.id == "pancreatic-islets" { Text(t("digestive_islets_scope")) }
+      if germline != nil {
+        Text(t("germline_timing"))
+        Text(t("germline_scope")).accessibilityIdentifier("atlas-germline-scope")
+        Link(t("germline_source"), destination: GalaxySSIHealthAtlasGermline.source).frame(minHeight: 44)
+      }
+      Text(t("process_note"))
+      #if GALAXYSSI_ATLAS_PHYSIOLOGY
+      if hasPhysiology, let note = GalaxySSIHealthAtlasPhysiologyText.processNote(language: language) { Text(note) }
+      #endif
+      Text(t("teaching_note"))
+      if cardiac || (lung && !hasPhysiology) { Text(t(cardiac ? "cardiac_formula" : "ventilation_formula")) }
+      else if !hasPhysiology, germline == nil { Text(t("qualitative_note")) }
+      if reduceMotion { Text(bodyText("motion_disabled")) }
+      if inline {
+        Link(t(model.reference == nil ? "reference_openstax" : "reference_pubmed"), destination: model.source)
+          .frame(minHeight: 44).accessibilityIdentifier("atlas-source-physiology")
+      }
+    }.font(.footnote).foregroundColor(.secondary).accessibilityIdentifier("atlas-simulation-references")
   }
   #if GALAXYSSI_ATLAS_PHYSIOLOGY
   private var quantitative: some View {

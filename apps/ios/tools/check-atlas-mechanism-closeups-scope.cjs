@@ -29,7 +29,14 @@ requireTokens(source('NephronView'), ['motion.stage == .filter || motion.stage =
 requireTokens(source('RenalCloseupDrawing'), ['121, 245, 321, 251, 0xDFBB89', '137 + 109 * time', 'health_atlas_nephron_barrier_endothelium', 'health_atlas_nephron_barrier_slits', '121, y, 74, y, Ink.crosses.rawValue', '223, y, 269, y, Ink.salt.rawValue', 'time * 1.27', 'health_atlas_nephron_loop_gradient']);
 requireTokens(source('CloseupCatalogue'), ['https://doi.org/10.1073/pnas.2318270121', 'https://pmc.ncbi.nlm.nih.gov/articles/PMC4010685/', 'references.insert(reference, at: min(1, references.count))', 'routes: routes, entryPhases: entryPhases']);
 requireTokens(source('FunctionCatalogue'), ['revision: Int = 4440', 'original.mechanismCloseups()', '== 323']);
-for (const name of ['BeatMotion', 'NephronMotion', 'FunctionPlayer', 'FunctionScene', 'FunctionPlaybackMenu', 'ChapterClock', 'SimulationPanel', 'Physiology', 'AgentContext', 'AgentHandoff', 'Detail', 'State']) assert.equal(source(name), prior(name), name);
+for (const name of ['BeatMotion', 'NephronMotion', 'FunctionPlayer', 'FunctionPlaybackMenu', 'ChapterClock', 'Physiology', 'AgentContext', 'AgentHandoff', 'State']) assert.equal(source(name), prior(name), name);
+// #4442 reorganizes scene/layout only; the playback and lifecycle block stays exact.
+const simulationLifecycle = s => s.split(".onReceive(timer)")[1].split(".onDisappear { pause() }")[0];
+assert.equal(simulationLifecycle(source("SimulationPanel")), simulationLifecycle(prior("SimulationPanel")));
+assert.equal(source("FunctionScene").split("  var body:")[0], prior("FunctionScene").split("  var body:")[0]);
+assert(source("FunctionScene").includes("GalaxySSIHealthAtlasSceneFrame"));
+assert(source("FunctionScene").includes("GalaxySSIHealthAtlasReservedCaption"));
+assert.equal(source("Detail").replace("          simulationPanel\n", "          simulationPanel\n          mechanismSource\n"), prior("Detail"));
 for (const locale of ['en', 'zh-Hans']) assert.equal([...read('apps/ios/GalaxySSI/' + locale + '.lproj/AtlasMechanismCloseups.strings').matchAll(/^"health_atlas_/gm)].length, 20);
 requireTokens(source('FunctionText'), ['table: "AtlasMechanismCloseups"']);
 requireTokens(source(''), ['table: "AtlasMechanismCloseups"']);

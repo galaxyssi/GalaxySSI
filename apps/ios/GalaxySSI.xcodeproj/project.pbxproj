@@ -7,6 +7,9 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    C44420000000000000000001 /* GalaxySSIHealthAtlasSceneFrame.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44420000000000000000002 /* GalaxySSIHealthAtlasSceneFrame.swift */; };
+    C44420000000000000000003 /* GalaxySSIHealthAtlasProcessStages.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44420000000000000000004 /* GalaxySSIHealthAtlasProcessStages.swift */; };
+    C44420000000000000000005 /* GalaxySSIHealthAtlasSimulationPlate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44420000000000000000006 /* GalaxySSIHealthAtlasSimulationPlate.swift */; };
     C44410000000000000000001 /* AtlasCellularCloseups.strings in Resources */ = {isa = PBXBuildFile; fileRef = C44410000000000000000002 /* AtlasCellularCloseups.strings */; };
     C44410000000000000000005 /* GalaxySSIHealthAtlasCrossBridgeDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44410000000000000000006 /* GalaxySSIHealthAtlasCrossBridgeDrawing.swift */; };
     C44410000000000000000007 /* GalaxySSIHealthAtlasPotassiumTraceDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44410000000000000000008 /* GalaxySSIHealthAtlasPotassiumTraceDrawing.swift */; };
@@ -2146,6 +2149,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    C44420000000000000000002 /* GalaxySSIHealthAtlasSceneFrame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSceneFrame.swift; sourceTree = "<group>"; };
+    C44420000000000000000004 /* GalaxySSIHealthAtlasProcessStages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasProcessStages.swift; sourceTree = "<group>"; };
+    C44420000000000000000006 /* GalaxySSIHealthAtlasSimulationPlate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSimulationPlate.swift; sourceTree = "<group>"; };
     C44410000000000000000003 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/AtlasCellularCloseups.strings; sourceTree = "<group>"; };
     C44410000000000000000004 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AtlasCellularCloseups.strings"; sourceTree = "<group>"; };
     C44410000000000000000006 /* GalaxySSIHealthAtlasCrossBridgeDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCrossBridgeDrawing.swift; sourceTree = "<group>"; };
@@ -4881,6 +4887,9 @@
         C44390000000000000000006 /* GalaxySSIHealthAtlasSynapticChannelsDrawing.swift */,
         C44400000000000000000006 /* GalaxySSIHealthAtlasBeatPressure.swift */,
         C44410000000000000000006 /* GalaxySSIHealthAtlasCrossBridgeDrawing.swift */,
+        C44420000000000000000002 /* GalaxySSIHealthAtlasSceneFrame.swift */,
+        C44420000000000000000004 /* GalaxySSIHealthAtlasProcessStages.swift */,
+        C44420000000000000000006 /* GalaxySSIHealthAtlasSimulationPlate.swift */,
         C44410000000000000000008 /* GalaxySSIHealthAtlasPotassiumTraceDrawing.swift */,
         C4441000000000000000000A /* GalaxySSIHealthAtlasGlucoseTransportDrawing.swift */,
         C44400000000000000000008 /* GalaxySSIHealthAtlasPressureDrawing.swift */,
@@ -7193,6 +7202,9 @@
         C44390000000000000000005 /* GalaxySSIHealthAtlasSynapticChannelsDrawing.swift in Sources */,
         C44400000000000000000005 /* GalaxySSIHealthAtlasBeatPressure.swift in Sources */,
         C44410000000000000000005 /* GalaxySSIHealthAtlasCrossBridgeDrawing.swift in Sources */,
+        C44420000000000000000001 /* GalaxySSIHealthAtlasSceneFrame.swift in Sources */,
+        C44420000000000000000003 /* GalaxySSIHealthAtlasProcessStages.swift in Sources */,
+        C44420000000000000000005 /* GalaxySSIHealthAtlasSimulationPlate.swift in Sources */,
         C44410000000000000000007 /* GalaxySSIHealthAtlasPotassiumTraceDrawing.swift in Sources */,
         C44410000000000000000009 /* GalaxySSIHealthAtlasGlucoseTransportDrawing.swift in Sources */,
         C44400000000000000000007 /* GalaxySSIHealthAtlasPressureDrawing.swift in Sources */,

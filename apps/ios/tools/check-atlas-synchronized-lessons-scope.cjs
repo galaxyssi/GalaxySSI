@@ -15,7 +15,7 @@ const inventory = {schema: 1, source: {androidPR: 4439, mergeCommit: sha}, files
 const requireTokens = (text, tokens) => { for (const token of tokens) assert(text.includes(token), token); };
 const android = name => git(['show', sha + ':apps/android/app/src/main/java/com/galaxyssi/chat/' + name + '.kt']).toString();
 requireTokens(android('HealthAtlasFunctionPlayer'), ['StaticLayout.Builder.obtain', 'chapterLabel.minimumHeight', 'caption.minimumHeight', 'pause()', 'PopupMenu', 'atlas-function-subtitles', 'setSingleChoiceItems']);
-requireTokens(source('FunctionScene'), ['"atlas-function-frame"', '"atlas-function-subtitles"', 'ForEach(values.indices', '.hidden().accessibilityHidden(true).allowsHitTesting(false)', 'fixedSize(horizontal: false, vertical: true)', '@ScaledMetric', 'story.chapters.map { t($0.caption) }']);
+requireTokens(source('FunctionScene') + source('SceneFrame'), ['"atlas-function-frame"', '"atlas-function-subtitles"', 'ForEach(values.indices', '.hidden().accessibilityHidden(true).allowsHitTesting(false)', 'fixedSize(horizontal: false, vertical: true)', '@ScaledMetric', 'story.chapters.map { t($0.caption) }']);
 const player = source('FunctionPlayer'), menu = source('FunctionPlaybackMenu'), detail = source('Detail'), state = source('State');
 assert(player.indexOf('GalaxySSIHealthAtlasFunctionScene') < player.indexOf('Slider(value:'));
 assert(player.indexOf('Slider(value:') < player.indexOf('control("backward.step"'));
@@ -39,7 +39,10 @@ requireTokens(source('SynapseDrawing'), ['gradedPotential(t)', 'membraneRelay(t)
 requireTokens(source('BreathingView'), ['motion.stage == .diffuse', 'membrane(in: drawing']);
 requireTokens(source('RespiratoryMembraneDrawing'), ['band(144, 159, 0xDFA98F)', 'band(160, 165, 0xECD8BA)', 'band(166, 180, 0xA9C5C0)', '34 + 275 * time', 'time * 1.6 + Double(particle) / 3']);
 // Numerical-model calculations, patient-metric privacy and cache sanitization are not rewritten.
-for (const name of ['SimulationPanel', 'Physiology', 'ModelComparison', 'AgentContext', 'AgentHandoff', 'MyelinDrawing', 'ThyroidDrawing']) assert.equal(source(name), prior(name), name);
+for (const name of ['Physiology', 'ModelComparison', 'AgentContext', 'AgentHandoff', 'MyelinDrawing', 'ThyroidDrawing']) assert.equal(source(name), prior(name), name);
+// #4442 reorganizes scene/layout only; the playback and lifecycle block stays exact.
+const simulationLifecycle = s => s.split(".onReceive(timer)")[1].split(".onDisappear { pause() }")[0];
+assert.equal(simulationLifecycle(source("SimulationPanel")), simulationLifecycle(prior("SimulationPanel")));
 assert.equal(detail.split('struct GalaxySSIHealthAtlasValues:')[1], prior('Detail').split('struct GalaxySSIHealthAtlasValues:')[1]);
 assert.equal(state.split('  func restore(_ text:')[1], prior('State').split('  func restore(_ text:')[1]);
 for (const locale of ['en', 'zh-Hans']) assert.equal([...read('apps/ios/GalaxySSI/' + locale + '.lproj/AtlasSynchronizedLessons.strings').matchAll(/^"health_atlas_/gm)].length, 19);

@@ -53,6 +53,7 @@ enum GalaxySSIHealthAtlasGermline {
 struct GalaxySSIHealthAtlasGermlineView: View {
   let counts: GalaxySSIHealthAtlasGermline.Counts
   let language: String
+  var showsDetails = true
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_germline_" + key, language) }
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -83,9 +84,11 @@ struct GalaxySSIHealthAtlasGermlineView: View {
         }
       }.frame(height: 150).accessibilityHidden(true)
       Text(t("symbols")).font(.footnote).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
-      Text(t("timing")).font(.footnote).fixedSize(horizontal: false, vertical: true)
-      Text(t("scope")).font(.footnote).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
-      Link(t("source"), destination: GalaxySSIHealthAtlasGermline.source).frame(minHeight: 44)
+      if showsDetails {
+        Text(t("timing")).font(.footnote).fixedSize(horizontal: false, vertical: true)
+        Text(t("scope")).font(.footnote).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+        Link(t("source"), destination: GalaxySSIHealthAtlasGermline.source).frame(minHeight: 44)
+      }
     }.accessibilityIdentifier("atlas-germline")
   }
 }
