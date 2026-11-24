@@ -76,6 +76,15 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .rectalReservoir: result = values[0] * (values[1] / 100)
     case .stromalMatrix: result = (values[1] + values[0]) / 2
     case .mucusFilmThickness: result = values[0] / values[1]
+    case .pleuralSlide: result = values[0] / values[1]
+    case .retinalLightAttenuation: result = 100 * exp(-values[0] * values[1])
+    case .gametePathDistance: result = (16 - values[1]) - values[0]
+    case .testisTubuleSection: result = 100 * (1 - pow((values[0] - values[1]) / values[0], 2))
+    case .uterineLiningArea: result = (2 * .pi * values[0]) * values[1]
+    case .vulvarFoldOverlap: result = 100 * min(1, max(0, (values[1] * cos(values[0] * .pi / 180) - 0.25) / 0.5))
+    case .capillarySupportSurface: result = (2 * .pi * values[0]) * values[1]
+    case .marrowRenewal: result = values[0].rounded() - values[1].rounded()
+    case .ependymalBeatPhase: result = values[0] * values[1]
     }
     return result.isFinite ? result : nil
   }
@@ -146,6 +155,15 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .rectalReservoir: result = values[0] - values[0] * (values[1] / 100)
     case .stromalMatrix: result = values[1] / 2
     case .mucusFilmThickness: result = values[0]
+    case .pleuralSlide: result = 0.01 * (values[0] / values[1])
+    case .retinalLightAttenuation: result = 100 - 100 * exp(-values[0] * values[1])
+    case .gametePathDistance: result = 16
+    case .testisTubuleSection: result = .pi * pow(values[0] - values[1], 2)
+    case .uterineLiningArea: result = 2 * .pi * values[0]
+    case .vulvarFoldOverlap: result = 100 * (values[1] * cos(values[0] * .pi / 180))
+    case .capillarySupportSurface: result = 2 * .pi * values[0]
+    case .marrowRenewal: result = 12 + (values[0].rounded() - values[1].rounded())
+    case .ependymalBeatPhase: result = (values[0] * values[1]).truncatingRemainder(dividingBy: 1)
     }
     return result.isFinite ? result : nil
   }

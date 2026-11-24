@@ -183,7 +183,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
                 .arterialContinuity, .glialCapacitance, .colonicWaterBalance, .endocrineDilution,
                 .gastricLiquidEmptying, .boneRemodelingBalance, .cutaneousSebum,
                 .externalEarResonance, .sweatDuctBalance, .oralMarkerDilution,
-                .renalTubuleRetention, .mucusFilmThickness].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
+                .renalTubuleRetention, .mucusFilmThickness, .gametePathDistance,
+                .vulvarFoldOverlap, .retinalLightAttenuation].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
             else { XCTAssertGreaterThanOrEqual(point.y, previous - 1e-9) }
           }
           previous = point.y
@@ -258,11 +259,15 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       (.thymicBranching, 28, 52), (.gastricPrecursorBalance, 4.2, 7.8), (.melaninDistribution, 3, 12),
       (.placentalMarker, 20, 60), (.renalTubuleRetention, 45, 55), (.merkelContact, 10 / .pi, 4 * .pi),
       (.toothEnamelSection, 43.75, 9 * .pi), (.mucosalSampling, 25, 75), (.mammaryDuctDelivery, 4.8, 3.2),
-      (.rectalReservoir, 48, 72), (.stromalMatrix, 9, 6), (.mucusFilmThickness, 2, 12)
+      (.rectalReservoir, 48, 72), (.stromalMatrix, 9, 6), (.mucusFilmThickness, 2, 12),
+      (.pleuralSlide, 10, 0.1), (.retinalLightAttenuation, 36.7879441171, 63.2120558829),
+      (.gametePathDistance, 10, 16), (.testisTubuleSection, 100.0 * 20 / 36, 16 * .pi),
+      (.uterineLiningArea, 16 * .pi, 4 * .pi), (.vulvarFoldOverlap, 25, 37.5),
+      (.capillarySupportSurface, 240 * .pi, 8 * .pi), (.marrowRenewal, 2, 14), (.ependymalBeatPhase, 1.5625, 0.5625)
     ]
-    XCTAssertEqual(Teaching.allCases.count, 63)
-    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 132)
-    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 195)
+    XCTAssertEqual(Teaching.allCases.count, 72)
+    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 150)
+    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 216)
     for (teaching, expected, companion) in fixtures {
       let kind = try XCTUnwrap(Model.Kind(rawValue: teaching.rawValue)), model = Model(kind: kind)
       XCTAssertEqual(model.result, expected, accuracy: 1e-6)
@@ -733,6 +738,88 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     for bad in [-0.1, 1.1, Double.nan, .infinity] { XCTAssertNil(Amounts(total: 80, finalTransfer: 20, phase: bad)) }
     for bad in [0, 121, Double.nan, .infinity] { XCTAssertNil(Amounts(total: bad, finalTransfer: 0, phase: 0.5)) }
     XCTAssertEqual(Model(kind: .placentalMarker, inputs: [80, 0])?.result, 0)
+  }
+
+  func testPleuralTeachingPairsKeepGeometryAttenuationAndDiscreteTallyMeaning() throws {
+    typealias Teaching = GalaxySSIHealthAtlasTeachingModel
+    let kinds: [Teaching] = [.pleuralSlide, .retinalLightAttenuation, .gametePathDistance, .testisTubuleSection,
+      .uterineLiningArea, .vulvarFoldOverlap, .capillarySupportSurface, .marrowRenewal, .ependymalBeatPhase]
+    for teaching in kinds {
+      let controls = teaching.inputs
+      for first in controls[0].range {
+        for second in controls[1].range {
+          let values = [Double(first) / controls[0].scale, Double(second) / controls[1].scale]
+          let output = try XCTUnwrap(teaching.evaluate(values)), other = try XCTUnwrap(teaching.companion(values))
+          XCTAssertTrue(teaching.bounds.contains(output))
+          switch teaching {
+          case .pleuralSlide:
+            XCTAssertEqual(output * values[1], values[0], accuracy: 1e-9)
+            XCTAssertEqual(other, 0.01 * output, accuracy: 1e-9)
+          case .retinalLightAttenuation: XCTAssertEqual(output + other, 100, accuracy: 1e-9)
+          case .gametePathDistance:
+            XCTAssertEqual(output + values[0] + values[1], 16); XCTAssertEqual(other, 16)
+            XCTAssertGreaterThanOrEqual(output, 2)
+          case .testisTubuleSection:
+            let area = Double.pi * values[0] * values[0]
+            XCTAssertEqual(other + area * output / 100, area, accuracy: 1e-9)
+          case .uterineLiningArea, .capillarySupportSurface:
+            XCTAssertEqual(output, other * values[1], accuracy: 1e-9)
+          case .vulvarFoldOverlap:
+            XCTAssertEqual(output, min(100, max(0, 2 * (other - 25))), accuracy: 1e-9)
+          case .marrowRenewal:
+            XCTAssertEqual(output, output.rounded()); XCTAssertEqual(other, 12 + output)
+          case .ependymalBeatPhase:
+            XCTAssertEqual(other, output.truncatingRemainder(dividingBy: 1))
+            XCTAssertTrue((0..<1).contains(other))
+          default: XCTFail("Unexpected pleural teaching model")
+          }
+        }
+      }
+    }
+    XCTAssertEqual(try XCTUnwrap(Teaching.gametePathDistance.evaluate([4.5, 2])), 9.5)
+    XCTAssertEqual(try XCTUnwrap(Teaching.marrowRenewal.evaluate([4.49, 3])), 1)
+    XCTAssertEqual(try XCTUnwrap(Teaching.marrowRenewal.evaluate([4.5, 3])), 2)
+    XCTAssertEqual(try XCTUnwrap(Teaching.marrowRenewal.evaluate([0, 12])), -12)
+    XCTAssertEqual(try XCTUnwrap(Teaching.marrowRenewal.companion([12, 0])), 24)
+    XCTAssertEqual(try XCTUnwrap(Teaching.retinalLightAttenuation.evaluate([1, 4])), 1.8315638889, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Teaching.retinalLightAttenuation.evaluate([0.5, 0])), 100)
+    for rate in [0.5, 1.0, 1.25, 2.0] {
+      XCTAssertEqual(try XCTUnwrap(Teaching.ependymalBeatPhase.evaluate([rate, 0])), 0)
+    }
+    for (offset, unwrapped, wrapped) in [(0.75, 0.75, 0.75), (1.0, 1.0, 0.0), (1.25, 1.25, 0.25)] {
+      XCTAssertEqual(try XCTUnwrap(Teaching.ependymalBeatPhase.evaluate([1, offset])), unwrapped)
+      XCTAssertEqual(try XCTUnwrap(Teaching.ependymalBeatPhase.companion([1, offset])), wrapped)
+    }
+    XCTAssertEqual(Model.Kind.forEntry("cell-mesangial-cell"), .capillarySupportSurface)
+    XCTAssertEqual(Model.Kind.forEntry("lungs"), .ventilation)
+  }
+
+  func testPleuralTracersUseLinearRelativeVelocityAndPauseWithoutChangingInputs() throws {
+    typealias Slide = GalaxySSIHealthAtlasPleuralSlide
+    XCTAssertEqual(try XCTUnwrap(Slide.relativeVelocity(surfaceSpeed: 18, fractionFromReference: 0)), 0)
+    XCTAssertEqual(try XCTUnwrap(Slide.relativeVelocity(surfaceSpeed: 18, fractionFromReference: 0.5)), 9)
+    XCTAssertEqual(try XCTUnwrap(Slide.relativeVelocity(surfaceSpeed: 18, fractionFromReference: 1)), 18)
+    for speed in 0...24 {
+      for row in 0...5 {
+        let fraction = Double(row) / 5
+        XCTAssertEqual(try XCTUnwrap(Slide.offset(surfaceSpeed: Double(speed), fractionFromReference: fraction, phase: 0)), 0)
+        XCTAssertEqual(try XCTUnwrap(Slide.offset(surfaceSpeed: Double(speed), fractionFromReference: fraction, phase: 1)),
+          Double(speed) * fraction * 5, accuracy: 1e-9)
+      }
+    }
+    for invalid in [-1, 25, Double.nan, .infinity] { XCTAssertNil(Slide.relativeVelocity(surfaceSpeed: invalid, fractionFromReference: 0.5)) }
+    for invalid in [-0.1, 1.1, Double.nan, .infinity] {
+      XCTAssertNil(Slide.relativeVelocity(surfaceSpeed: 18, fractionFromReference: invalid))
+      XCTAssertNil(Slide.offset(surfaceSpeed: 18, fractionFromReference: 0.5, phase: invalid))
+    }
+    let model = Model(kind: .pleuralSlide), selected = model.inputs, date = Date(timeIntervalSince1970: 0)
+    var playback = GalaxySSIHealthAtlasTeachingPlaybackState()
+    playback.start(at: date, duration: 2.3, allowed: true)
+    playback.pause(at: date.addingTimeInterval(1.15), duration: 2.3)
+    XCTAssertEqual(playback.offset, 0.5, accuracy: 1e-9); XCTAssertFalse(playback.isPlaying)
+    XCTAssertEqual(model.inputs, selected)
+    XCTAssertEqual(Model(kind: .pleuralSlide, inputs: [0, 8])?.result, 0)
+    XCTAssertEqual(try XCTUnwrap(model.changing(1, to: 16)).result, 5)
   }
 
   func testElbowFixturesBalanceForcesAndMomentsWithStrictUnitConversion() throws {

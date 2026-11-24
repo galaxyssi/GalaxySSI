@@ -1,0 +1,229 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4412,
+    "mergeCommit": "c704a171da9336535ab659d65e6c6af0a4ebd9ba"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "4fca56d950c3deff572effcfc53491bd2c72f30535632348964ac4b33159e979"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasPhysiologyDeviceTest.kt",
+      "status": "M",
+      "sha256": "586e56d7e6d1e8b0777df3c8945c8fbc362151c504f1b24bea8b02826f448547"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCapillarySupportSurfaceTeachingModel.kt",
+      "status": "A",
+      "sha256": "71b3396841d96bf32980c11ba689d08ced7a2520c85c6a6d201b8a746395ee0e"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasEpendymalBeatPhaseTeachingModel.kt",
+      "status": "A",
+      "sha256": "5de006c7ae48d44aca6dc8b69e7b3903d3983722da4ddb3189d8570d7feb854e"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGametePathDistanceTeachingModel.kt",
+      "status": "A",
+      "sha256": "c1e5516d52db64d433de6e51038f937fd3c66bfe731c5f20ae997d8e269fa27f"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMarrowRenewalTeachingModel.kt",
+      "status": "A",
+      "sha256": "6c97fcfd5307abb4249f9ddc655960dec54ced44d4bbd1abeb4d3d6bfeccd32d"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMaterialResponseView.kt",
+      "status": "M",
+      "sha256": "422ded78ee8817a45d9ca076a99eea42241c84e9805fa62798e896a62389d636"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiology.kt",
+      "status": "M",
+      "sha256": "942c0cabdcd71ff4f7a2589460c23a55bf084ffa7ba801f700d75b340f5b889a"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyPanel.kt",
+      "status": "M",
+      "sha256": "6747c52076b7c65e966a8c265fd27144ab48b2ed23db594ad3d69c5c715078c2"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPleuralSlideTeachingModel.kt",
+      "status": "A",
+      "sha256": "8a88843509a4afb76e7889ce5c7a4532258646c6e8a1b9032ff8cd3da6e2d871"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPleuralSlideView.kt",
+      "status": "A",
+      "sha256": "9d76222e0e12aa36eae55058a2159d99a04d317f06381582bfd701d2937316cb"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasRetinalLightAttenuationTeachingModel.kt",
+      "status": "A",
+      "sha256": "032e813e6c3de9a2aa51a358e489dc51c7e699b511e30ac53c558d6801df58a3"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasTestisTubuleSectionTeachingModel.kt",
+      "status": "A",
+      "sha256": "6dad4ae9860cfe64cb974667a8cb38d31af9bdee66c0dbc60cb26bf29fef99e9"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUterineLiningAreaTeachingModel.kt",
+      "status": "A",
+      "sha256": "8162f768eacb0613384441f7d14fde577f3b03bba64a403998db89b6b72b7b3b"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasVulvarFoldOverlapTeachingModel.kt",
+      "status": "A",
+      "sha256": "adb860ffc3bc0d7aacb1fc29648103f9633eab6009cedd6a01ff9437ab9bebc0"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_capillary_support_surface_teaching_model.xml",
+      "status": "A",
+      "sha256": "4ba5752182c67c35ea9c8d710073265de76c18f652aea838e9d8c4d173ed4f6e"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_ependymal_beat_phase_teaching_model.xml",
+      "status": "A",
+      "sha256": "de91eecd28205992ff272d7dbc2ad074b25708aa7138b5729c09004f9998ce1c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_gamete_path_distance.xml",
+      "status": "A",
+      "sha256": "d0545a0102d5c7392a2be61307626d77e5b7b7adab0fb84ade18b3841d7c80d9"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_marrow_renewal_teaching_model.xml",
+      "status": "A",
+      "sha256": "fe88efa6f74dcf1ce2b9a5b792ac7e9693ec9b55098dc852c8512e35ccad1dc7"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_pleural_slide.xml",
+      "status": "A",
+      "sha256": "abc44b373561d70f004ddabdd27609d272e626cba6c1bc4031faa252863aa653"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_retinal_light_attenuation_teaching_model.xml",
+      "status": "A",
+      "sha256": "c740fe6479430625b35f5282e10bea327640bb1e72532909123566133b1ffe52"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_testis_tubule_section_teaching_model.xml",
+      "status": "A",
+      "sha256": "4c5aba08c3ec37845102f591538e25384081392045fdf1ad17c57f5fa57018fa"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_uterine_lining_area_teaching_model.xml",
+      "status": "A",
+      "sha256": "58033cefb682c720e02fb23007ddf341c14e4c6282ce0ec29932f78d5b3ce9dd"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_vulvar_fold_overlap_teaching_model.xml",
+      "status": "A",
+      "sha256": "904e1c5d22cf283aff2b29ff77359e4476302a3ee34b2fdbeffdba90f9e87c78"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_capillary_support_surface_teaching_model.xml",
+      "status": "A",
+      "sha256": "9698883a862042bbeffb01e41f949669fd0378ca7387c58a2ea952d667e0a3ba"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_ependymal_beat_phase_teaching_model.xml",
+      "status": "A",
+      "sha256": "46187eff8c983cbfe4defc54a65f17c64f946acff5cae4797fce094ccfc0dbae"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_gamete_path_distance.xml",
+      "status": "A",
+      "sha256": "3c8d50da9ea848a6dda59dadc48f1d87f1a22652f7093ffc0d0cdbc534eddda4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_marrow_renewal_teaching_model.xml",
+      "status": "A",
+      "sha256": "90374bb4942fbe0ec8972fd918d1f3ef0f1b39a896ad783aa5bb7327efe39308"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_pleural_slide.xml",
+      "status": "A",
+      "sha256": "629ec3391074d95cb88e3b99299aa262c670198c7467c7e9b816c3c13d55f1e1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_retinal_light_attenuation_teaching_model.xml",
+      "status": "A",
+      "sha256": "ef56a67bd56d2808ddd9e345461bcd57fd09887e6d72aee73134ee80b087d0cb"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_testis_tubule_section_teaching_model.xml",
+      "status": "A",
+      "sha256": "9f36c4f3c2c4d6dd4ee915183e55c6b27b956dff3e7b4277671b014ec9a1b2c3"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_uterine_lining_area_teaching_model.xml",
+      "status": "A",
+      "sha256": "fb346a19ece261e11a21bd8d8b17db6e4a68851b2b85ca1312dc472abe5498c9"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_vulvar_fold_overlap_teaching_model.xml",
+      "status": "A",
+      "sha256": "0f7e34d176d70dbd1a94a357daf8a53a7d11040ab111bc32777753dcbcf11fcb"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasCapillarySupportSurfaceTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "32d35d3e1b69661e6dabf45bbd21db4dc31ab0cc1a063d32b034825bd8a5a4be"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasEpendymalBeatPhaseTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "670ed1c23cf07da29bdbf38d052987a6b5d30ff46eb651375195b3427bed0556"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasGametePathDistanceTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "c0b512bc01ddaa62638ef16c1090ee27c4bd57e0ef928e867fda439f0551ed48"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMarrowRenewalTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "279c4508e9e2a3c2a4df167773af5ecefb16b6885d991c68a70a99f65665e5ba"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPhysiologyTest.kt",
+      "status": "M",
+      "sha256": "9c2ccc86ea1ba2fbdc4a1ccc3ec96fe817d24d3c4846fe1788566e83d562f40f"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPleuralSlideTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "a36b56a077f2b8f0ee9c97ea8cf88a91a81f2bc721b9874eb8da87f6eedd291c"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasRenalTest.kt",
+      "status": "M",
+      "sha256": "8ce96812dfc773032fe9190d6233b08c956caf43cdcc8079d0188a05afc0ad37"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasRetinalLightAttenuationTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "f1927ef160a19017580a85c708cae5f96256a5f42e16077258d9918663908b6c"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasTestisTubuleSectionTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "8b2a6ac9f98326ae5f63070acc714a7fc5545647e9baf848bf2fd627a49898c3"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasUterineLiningAreaTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "bb557ffc11c661abd1f57f5a5f5e026040b98da3b180311d66b6383a000f8cd6"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasVulvarFoldOverlapTeachingModelTest.kt",
+      "status": "A",
+      "sha256": "f81dea94f94aad0ccad29bdb3e55543641a367788b49928b6fb2883c550bf3a5"
+    }
+  ]
+}

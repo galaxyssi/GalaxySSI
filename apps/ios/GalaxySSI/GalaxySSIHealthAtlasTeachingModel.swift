@@ -16,6 +16,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   case adiposeVolumeShare, thymicBranching, gastricPrecursorBalance, melaninDistribution
   case placentalMarker, renalTubuleRetention, merkelContact, toothEnamelSection, mucosalSampling
   case mammaryDuctDelivery, rectalReservoir, stromalMatrix, mucusFilmThickness
+  case pleuralSlide, retinalLightAttenuation, gametePathDistance, testisTubuleSection, uterineLiningArea
+  case vulvarFoldOverlap, capillarySupportSurface, marrowRenewal, ependymalBeatPhase
 
   struct Control: Sendable {
     let input: GalaxySSIHealthAtlasPhysiology.Input
@@ -32,7 +34,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
          .bladderExpansion, .gastricLiquidEmptying, .bileStorage, .cutaneousSebum,
          .neuralRelayDelays, .sweatDuctBalance, .vertebralSeries, .oralMarkerDilution,
          .olfactorySurfaceRetention, .circadianLightWindow, .thymicBranching, .gastricPrecursorBalance,
-         .placentalMarker, .renalTubuleRetention, .mammaryDuctDelivery, .rectalReservoir, .mucusFilmThickness: return 1
+         .placentalMarker, .renalTubuleRetention, .mammaryDuctDelivery, .rectalReservoir, .mucusFilmThickness,
+         .retinalLightAttenuation, .testisTubuleSection, .ependymalBeatPhase: return 1
     default: return 0
     }
   }
@@ -96,6 +99,14 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .rectalReservoir: return "mL"
     case .stromalMatrix: return "MU/AU"
     case .mucusFilmThickness: return "u"
+    case .pleuralSlide: return "s\u{207b}\u{00b9}"
+    case .retinalLightAttenuation: return "a.u."
+    case .gametePathDistance: return "PU"
+    case .testisTubuleSection, .vulvarFoldOverlap: return "%"
+    case .uterineLiningArea: return "LU\u{00b2}"
+    case .capillarySupportSurface: return "\u{00b5}m\u{00b2}"
+    case .marrowRenewal: return ""
+    case .ependymalBeatPhase: return "cycles"
     }
   }
   var bounds: ClosedRange<Double> {
@@ -156,13 +167,21 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .mammaryDuctDelivery, .mucusFilmThickness: return 0...12
     case .rectalReservoir: return 0...200
     case .stromalMatrix: return 0...30
+    case .pleuralSlide: return 0...120
+    case .retinalLightAttenuation, .testisTubuleSection, .vulvarFoldOverlap: return 0...100
+    case .gametePathDistance: return 2...16
+    case .uterineLiningArea: return 0...210
+    case .capillarySupportSurface: return 0...(2 * .pi * 8 * 60)
+    case .marrowRenewal: return -12...12
+    case .ependymalBeatPhase: return 0...4
     }
   }
   var digits: Int {
     switch self {
     case .glomerularFiltration, .cardiacPhaseTime, .airwayCiliaryClearance, .neuralRelayDelays: return 1
     case .tendonElongation, .muscleShortening: return 3
-    case .immuneComposition, .plateletFragmentCount, .boneRemodelingBalance, .thymicBranching: return 0
+    case .immuneComposition, .plateletFragmentCount, .boneRemodelingBalance, .thymicBranching,
+         .gametePathDistance, .marrowRenewal: return 0
     default: return 2
     }
   }
@@ -231,6 +250,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .rectalReservoir: return "health_atlas_rectal_reservoir"
     case .stromalMatrix: return "health_atlas_stromal_matrix"
     case .mucusFilmThickness: return "health_atlas_mucus_film_thickness"
+    case .pleuralSlide: return "health_atlas_pleural_slide"
+    case .retinalLightAttenuation: return "health_atlas_retinal_light_attenuation"
+    case .gametePathDistance: return "health_atlas_gamete_path_distance"
+    case .testisTubuleSection: return "health_atlas_testis_tubule_section"
+    case .uterineLiningArea: return "health_atlas_uterine_lining_area"
+    case .vulvarFoldOverlap: return "health_atlas_vulvar_fold_overlap"
+    case .capillarySupportSurface: return "health_atlas_capillary_support_surface"
+    case .marrowRenewal: return "health_atlas_marrow_renewal"
+    case .ependymalBeatPhase: return "health_atlas_ependymal_beat_phase"
     }
   }
   var title: String { resourcePrefix + "_title" }
@@ -261,6 +289,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .vocalCycles: suffix = "period"
     case .vertebralSeries: suffix = "remaining_pad_thickness"
     case .placentalMarker: suffix = "remaining"
+    case .pleuralSlide: suffix = "stress"
+    case .ependymalBeatPhase: suffix = "wrapped"
     default: suffix = "companion"
     }
     return resourcePrefix + "_" + suffix
@@ -330,6 +360,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .rectalReservoir: return ["rectum", "anal-canal"]
     case .stromalMatrix: return ["cell-fibroblast", "cell-endometrial-stromal-cell", "endometrium"]
     case .mucusFilmThickness: return ["cell-goblet-cell", "pharynx", "tissue-intestinal-epithelium"]
+    case .pleuralSlide: return ["pleura"]
+    case .retinalLightAttenuation: return ["cell-cone-photoreceptor", "cell-retinal-pigment-epithelial-cell"]
+    case .gametePathDistance: return ["cell-spermatozoon", "cell-oocyte-or-ovum"]
+    case .testisTubuleSection: return ["testes", "cell-sertoli-cell", "cell-leydig-cell", "cell-spermatogonium", "cell-spermatocyte"]
+    case .uterineLiningArea: return ["uterus", "cervix", "cell-endometrial-epithelial-cell"]
+    case .vulvarFoldOverlap: return ["vulva", "labia-majora", "labia-minora"]
+    case .capillarySupportSurface: return ["cell-pericyte", "cell-mesangial-cell"]
+    case .marrowRenewal: return ["bone-marrow", "cell-hematopoietic-stem-cell"]
+    case .ependymalBeatPhase: return ["cell-ependymal-cell"]
     }
   }
   var sources: [URL] {
@@ -403,6 +442,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .rectalReservoir: values = ["https://www.niddk.nih.gov/health-information/digestive-diseases/digestive-system-how-it-works", "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines"]
     case .stromalMatrix: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/4-3-connective-tissue-supports-and-protects", "https://pmc.ncbi.nlm.nih.gov/articles/PMC8224746/"]
     case .mucusFilmThickness: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system", "https://histology.leeds.ac.uk/home/digestive/small_intestine/"]
+    case .pleuralSlide: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/22-2-the-lungs", "https://openstax.org/books/university-physics-volume-1/pages/14-7-viscosity-and-turbulence"]
+    case .retinalLightAttenuation: values = ["https://www.webvision.pitt.edu/book/part-i-foundations/how-the-retina-works/", "https://goldbook.iupac.org/terms/view/B00626/pdf"]
+    case .gametePathDistance: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system", "https://openstax.org/books/university-physics-volume-1/pages/3-1-position-displacement-and-average-velocity"]
+    case .testisTubuleSection: values = ["https://www.histologyguide.com/slideview/MH-178a-testis/19-slide-1.html", "https://ocw.mit.edu/courses/18-01-single-variable-calculus-fall-2005/c08b62b60d20c5151c369bc284280c54_lecture_19.pdf"]
+    case .uterineLiningArea: values = ["https://histology.oit.duke.edu/NormalBody/FemaleRepro/FemaleRepro.html", "https://openstax.org/books/prealgebra/pages/9-6-solve-geometry-applications-volume-and-surface-area"]
+    case .vulvarFoldOverlap: values = ["https://openstax.org/books/biology/pages/43-3-human-reproductive-anatomy-and-gametogenesis", "https://openstax.org/books/university-physics-volume-1/pages/2-2-coordinate-systems-and-components-of-a-vector"]
+    case .capillarySupportSurface: values = ["https://pubmed.ncbi.nlm.nih.gov/29298435/", "https://pubmed.ncbi.nlm.nih.gov/12682087/"]
+    case .marrowRenewal: values = ["https://www.cancer.gov/publications/dictionaries/cancer-terms/def/hematopoietic-stem-cell", "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-2-production-of-the-formed-elements"]
+    case .ependymalBeatPhase: values = ["https://nba.uth.tmc.edu/neuroscience/m/s1/chapter08.html", "https://pubmed.ncbi.nlm.nih.gov/27387952/"]
     }
     return values.map { URL(string: $0)! }
   }
