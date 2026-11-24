@@ -75,7 +75,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
   }
   func restore(_ text: String, atlas: GalaxySSIHealthAtlas) {
     guard text.utf8.count <= 256_000, let data = text.data(using: .utf8),
-      let decoded = try? JSONDecoder().decode([String: Selection].self, from: data), decoded.count <= 300 else { return }
+      let decoded = try? JSONDecoder().decode([String: Selection].self, from: data), decoded.count <= max(300, atlas.entries.count) else { return }
     entries = decoded.filter { atlas.entry($0.key) != nil }.mapValues { $0 }
     liveFunctionPhases = [:]
     let functionCatalogue: GalaxySSIHealthAtlasFunctionCatalogue?

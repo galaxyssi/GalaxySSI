@@ -4010,6 +4010,37 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testResearchMechanismFirstPolicyRetainsStandaloneOrderingAndEntryState() throws {
+    let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
+    for entry in atlas.entries {
+      let binding = state.binding(entry)
+      binding.wrappedValue.simulation.phase = 0.25
+      binding.wrappedValue.simulation.speed = 1.5
+      binding.wrappedValue.research = .physiology
+      if let kind = GalaxySSIHealthAtlasPhysiology.Kind.forEntry(entry.id) {
+        binding.wrappedValue.physiologyInputs = kind.inputs.map(\.initial)
+      }
+      let saved = binding.wrappedValue
+      let normal = GalaxySSIHealthAtlasSimulationPanel(atlas: atlas, entry: entry, model: atlas.model(entry),
+        simulation: binding.simulation, physiologyInputs: binding.physiologyInputs, previewPresented: .constant(false),
+        destination: { _ in AnyView(EmptyView()) })
+      var research = normal; research.mechanismFirst = true
+      let expectedAfter = GalaxySSIHealthAtlasGasExchange.supports(entry.id) || entry.id == "pancreas" ||
+        GalaxySSIHealthAtlasEndocrinePath.forEntry(entry.id) != nil || entry.id == GalaxySSIHealthAtlasSweat.owner ||
+        (GalaxySSIHealthAtlasSectionLesson.forEntry(entry.id) != nil && entry.kind != .cell)
+      XCTAssertEqual(normal.quantitativeAfterArt, expectedAfter, entry.id)
+      XCTAssertTrue(research.quantitativeAfterArt, entry.id)
+      XCTAssertEqual(binding.wrappedValue, saved, entry.id)
+    }
+    let heart = try XCTUnwrap(atlas.entry("heart")), lungs = try XCTUnwrap(atlas.entry("lungs"))
+    let before = state.binding(heart).wrappedValue
+    state.binding(lungs).wrappedValue.simulation.phase = 0.75
+    XCTAssertEqual(state.binding(heart).wrappedValue, before)
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.binding(heart).wrappedValue, before)
+    XCTAssertEqual(restored.binding(lungs).wrappedValue.simulation.phase, 0.75)
+  }
+
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
     let handoff = GalaxySSIHealthAtlasAgentHandoff()
     let token = try XCTUnwrap(handoff.prepare(owner: "a", conversation: "c", prompt: "Public teaching", now: 10))
