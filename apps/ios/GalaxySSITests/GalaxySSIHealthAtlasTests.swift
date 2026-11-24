@@ -2540,6 +2540,55 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(try XCTUnwrap(Geometry.secretionTrack.commands.last?.points.last), .init(x: 306, y: 91))
   }
 
+  func testMarrowRenewalAndMaturationKeepDistinctMorphologyWindows() {
+    typealias Motion = GalaxySSIHealthAtlasMarrowMotion
+    let initial = Motion.renewal(0), separated = Motion.renewal(1)
+    XCTAssertTrue(initial.shared); XCTAssertEqual(initial.distance, 0)
+    XCTAssertEqual(initial.radius, 34); XCTAssertEqual(initial.right, 108)
+    XCTAssertFalse(separated.shared); XCTAssertEqual(separated.distance, 132)
+    XCTAssertEqual(separated.radius, 28); XCTAssertEqual(separated.right, 240)
+    XCTAssertTrue(Motion.Renewal(separation: 17.0 / 36 - 1e-8).shared)
+    XCTAssertFalse(Motion.Renewal(separation: 17.0 / 36 + 1e-8).shared)
+    for sample in 0...200 {
+      let frame = Motion.renewal(Double(sample) / 200)
+      XCTAssertGreaterThanOrEqual(frame.neck, 2)
+      XCTAssertLessThanOrEqual(frame.bend, frame.radius * 0.55 + 1e-10)
+    }
+    let before = Motion.maturation(0), after = Motion.maturation(1)
+    XCTAssertEqual(before.radius, 24); XCTAssertEqual(before.nucleusRadius, 12)
+    XCTAssertEqual(before.nucleusX, 176); XCTAssertEqual(before.nucleusY, 169)
+    XCTAssertEqual(after.x, 173); XCTAssertEqual(after.radius, 20)
+    XCTAssertEqual(after.nucleusX, 205); XCTAssertEqual(after.nucleusY, 182)
+    XCTAssertEqual(after.nucleusRadius, 7); XCTAssertEqual(after.extrude, 1)
+    XCTAssertEqual(Motion.maturation(0.44).radius, 20)
+    XCTAssertLessThan(Motion.maturation(0.44).extrude, 1)
+  }
+
+  func testMarrowLumenAndDelayedReleaseKeepSourceBoundaries() {
+    typealias Motion = GalaxySSIHealthAtlasMarrowMotion
+    XCTAssertEqual(Motion.lumenPoints.count, 164)
+    XCTAssertEqual(Motion.lumenPoints[0].x, 18); XCTAssertEqual(Motion.lumenPoints[81].x, 342)
+    XCTAssertEqual(Motion.lumenPoints[82].x, 342); XCTAssertEqual(Motion.lumenPoints[163].x, 18)
+    for index in 0...81 {
+      let upper = Motion.lumenPoints[index], lower = Motion.lumenPoints[163 - index]
+      XCTAssertEqual(upper.x, lower.x)
+      XCTAssertEqual(lower.y - upper.y, 52, accuracy: 1e-10)
+      XCTAssertEqual(upper.y + lower.y, 2 * Motion.vesselY(upper.x), accuracy: 1e-10)
+    }
+    let initial = Motion.release(0, fromX: 156, fromY: 165, entryX: 179, endX: 330)
+    let crossing = Motion.release(0.345, fromX: 156, fromY: 165, entryX: 179, endX: 330)
+    let released = Motion.release(1, fromX: 156, fromY: 165, entryX: 179, endX: 330)
+    XCTAssertEqual(initial.x, 156); XCTAssertEqual(initial.y, 165)
+    XCTAssertEqual(crossing.scaleX, 0.72, accuracy: 1e-12)
+    XCTAssertEqual(crossing.scaleY, 1.16, accuracy: 1e-12)
+    XCTAssertEqual(released.x, 330); XCTAssertEqual(released.y, Motion.vesselY(330) - 4, accuracy: 1e-10)
+    XCTAssertEqual(released.scaleX, 1); XCTAssertEqual(released.scaleY, 1)
+    let delayed = Motion.release(-0.28 / 0.72, fromX: 137, fromY: 175, entryX: 157, endX: 265)
+    XCTAssertEqual(delayed.x, 137); XCTAssertEqual(delayed.y, 175)
+    XCTAssertEqual(GalaxySSIHealthAtlasMarrowGeometry.marrowCells.count, 28)
+    XCTAssertEqual(Motion.bloodX(flow: 1.15, index: 0), 8 + 344 * (1.15 * 0.55), accuracy: 1e-10)
+  }
+
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
