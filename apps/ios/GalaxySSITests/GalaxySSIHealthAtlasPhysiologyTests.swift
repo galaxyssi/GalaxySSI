@@ -179,7 +179,7 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
           XCTAssertTrue(point.y.isFinite)
           XCTAssertTrue(kind.bounds.contains(point.y))
           if let previous {
-            if kind == .renal || kind == .eye { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
+            if [Model.Kind.renal, .eye, .cushionContactPressure, .airwaySplit].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
             else { XCTAssertGreaterThanOrEqual(point.y, previous - 1e-9) }
           }
           previous = point.y
@@ -221,9 +221,85 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "small-intestine", "jejunum"]
     XCTAssertEqual(ids.count, 50)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
-    for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "cell-type-i-pneumocyte", "cell-podocyte", "heart"] {
+    for id in ["liver", "cell-hepatocyte", "renal-cortex", "renal-pelvis", "heart"] {
       XCTAssertNil(Model.Kind.forEntry(id))
     }
+    XCTAssertEqual(Model.Kind.forEntry("cell-type-i-pneumocyte"), .alveolarDiffusion)
+    XCTAssertEqual(Model.Kind.forEntry("cell-podocyte"), .glomerularFiltration)
+  }
+
+  func testTeachingModelsUseSourceDefaultsScaledUnitsAndLocalBindings() throws {
+    typealias Teaching = GalaxySSIHealthAtlasTeachingModel
+    let fixtures: [(Teaching, Double, Double)] = [
+      (.capillaryExchange, 63.2120558829, 36.7879441171), (.valveFlux, 125, 12.5),
+      (.glomerularFiltration, 30, 12), (.skinWaterBarrier, 1, 1), (.salivaryDelivery, 8, 40),
+      (.tendonElongation, 0.1, 0.2), (.airwaySplit, 0.2, 0.1), (.peristalticTravel, 5, 50),
+      (.cochlearFrequency, 1710.2665234, 50)
+    ]
+    XCTAssertEqual(Teaching.allCases.count, 9)
+    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 24)
+    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 34)
+    for (teaching, expected, companion) in fixtures {
+      let kind = try XCTUnwrap(Model.Kind(rawValue: teaching.rawValue)), model = Model(kind: kind)
+      XCTAssertEqual(model.result, expected, accuracy: 1e-6)
+      XCTAssertEqual(model.companionValue, companion, accuracy: 1e-6)
+      XCTAssertEqual(kind.axis, teaching.axis); XCTAssertEqual(kind.unit, teaching.unit)
+      XCTAssertEqual(kind.bounds, teaching.bounds); XCTAssertEqual(kind.sources, teaching.sources)
+      let scaled = model.inputs.indices.map(model.input)
+      XCTAssertEqual(try XCTUnwrap(teaching.evaluate(scaled)), model.result)
+      XCTAssertEqual(try XCTUnwrap(teaching.companion(scaled)), model.companionValue)
+      XCTAssertNil(teaching.evaluate([])); XCTAssertNil(teaching.companion([]))
+      for invalid in [Double.nan, .infinity, -.infinity] {
+        var values = scaled; values[0] = invalid
+        XCTAssertNil(teaching.evaluate(values)); XCTAssertNil(teaching.companion(values))
+      }
+      for id in teaching.entryIDs {
+        XCTAssertEqual(Model.Kind.forEntry(id), kind)
+        XCTAssertEqual(Model.restore(id, inputs: model.inputs), model)
+      }
+      for locale in ["en", "zh-Hans"] {
+        let context = GalaxySSIHealthAtlasPhysiologyText.context(model, language: locale)
+        XCTAssertFalse(context.contains("health_atlas_"))
+        XCTAssertTrue(context.contains(GalaxySSIHealthAtlasText.get(teaching.scope, locale)))
+        XCTAssertTrue(context.contains(GalaxySSIHealthAtlasText.get(teaching.formula, locale)))
+        for source in teaching.sources { XCTAssertTrue(context.contains(source.absoluteString)) }
+        for index in model.inputs.indices {
+          XCTAssertTrue(context.contains(GalaxySSIHealthAtlasPhysiologyText.input(model, index: index, language: locale)))
+        }
+      }
+    }
+    XCTAssertEqual(Model(kind: .tendonElongation).input(3), 750)
+    XCTAssertEqual(Model(kind: .valveFlux).input(0), 2.5)
+    XCTAssertEqual(Model(kind: .airwaySplit).input(0), 0.3)
+    XCTAssertNil(Model.restore("inner-ear", inputs: [35, 20, 160]))
+    XCTAssertEqual(Model.restore("inner-ear", inputs: [50])?.kind, .cochlearFrequency)
+    XCTAssertNil(Model.restore("tendons", inputs: [40, 38]))
+  }
+
+  func testTeachingModelBoundaryFixturesPreservePressureAndFlowMeaning() throws {
+    typealias Teaching = GalaxySSIHealthAtlasTeachingModel
+    for (inputs, pressure, flow) in [([40.0, 13, 28, 2.5], -1.0, 0.0),
+      ([41.0, 13, 28, 2.5], 0.0, 0.0), ([41.5, 13, 28, 2.5], 0.5, 1.25)] {
+      XCTAssertEqual(try XCTUnwrap(Teaching.glomerularFiltration.evaluate(inputs)), flow)
+      XCTAssertEqual(try XCTUnwrap(Teaching.glomerularFiltration.companion(inputs)), pressure)
+    }
+    XCTAssertEqual(try XCTUnwrap(Teaching.tendonElongation.evaluate([9, 70, 4.5, 800])), 0.175, accuracy: 1e-12)
+    XCTAssertEqual(try XCTUnwrap(Teaching.tendonElongation.companion([9, 70, 4.5, 800])), 0.25, accuracy: 1e-12)
+    XCTAssertEqual(try XCTUnwrap(Teaching.salivaryDelivery.evaluate([3.125, 4, 1])), 8.125)
+    for x in [0.0, 0.25, 0.5, 1.0] {
+      XCTAssertEqual(try XCTUnwrap(Teaching.cochlearFrequency.companion([x])), 100 * (1 - x))
+    }
+    for values in [[0.5, 1.0, 4.0], [0.5, 4.0, 1.0], [0.5, 2.0, 2.0]] {
+      let selected = try XCTUnwrap(Teaching.airwaySplit.evaluate(values))
+      let other = try XCTUnwrap(Teaching.airwaySplit.companion(values))
+      XCTAssertEqual(selected + other, values[0], accuracy: 1e-12)
+      XCTAssertEqual(selected * values[1], other * values[2], accuracy: 1e-12)
+    }
+    let capillary = Model(kind: .capillaryExchange)
+    XCTAssertEqual(try XCTUnwrap(capillary.changing(0, to: 0)).companionValue, 100)
+    XCTAssertNil(Model(kind: .capillaryExchange, inputs: [20, 0]))
+    XCTAssertEqual(Model.Kind.forEntry("pulmonary-capillaries"), .alveolarDiffusion)
+    XCTAssertEqual(Model.Kind.forEntry("veins"), .vessel)
   }
 
   func testElbowFixturesBalanceForcesAndMomentsWithStrictUnitConversion() throws {
@@ -321,8 +397,13 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       XCTAssertNil(Model.restore(id, inputs: [35, 0, 160]))
       XCTAssertNil(Model.restore(id, inputs: [35, 20]))
     }
-    for id in ["external-ear", "inner-ear", "cochlea", "vestibular-apparatus", "cell-inner-ear-hair-cell"] {
+    for id in ["external-ear", "vestibular-apparatus"] {
       XCTAssertNil(Model.Kind.forEntry(id))
+    }
+    for id in ["inner-ear", "cochlea", "cell-inner-ear-hair-cell"] {
+      XCTAssertEqual(Model.Kind.forEntry(id), .cochlearFrequency)
+      XCTAssertNil(Model.restore(id, inputs: [35, 20, 160]))
+      XCTAssertEqual(Model.restore(id, inputs: [50])?.inputs, [50])
     }
     for language in ["en", "zh-Hans"] {
       let model = Model(kind: .middleEar)

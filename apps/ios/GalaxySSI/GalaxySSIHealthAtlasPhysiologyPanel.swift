@@ -14,7 +14,9 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
         Text(t("model_" + model.kind.rawValue)).font(.headline)
         Text(t("model_synthetic")).font(.footnote).foregroundColor(.secondary)
         Text(GalaxySSIHealthAtlasPhysiologyText.result(model, language: language)).font(.title3).fixedSize(horizontal: false, vertical: true)
+          .accessibilityIdentifier("atlas-physiology-output")
         Text(GalaxySSIHealthAtlasPhysiologyText.companion(model, language: language)).font(.subheadline).foregroundColor(.secondary)
+          .accessibilityIdentifier("atlas-physiology-companion")
         if let amounts = model.renalAmounts { renalBalance(amounts) }
         if let ear = model.middleEar { GalaxySSIHealthAtlasMiddleEarView(model: ear, language: language) }
         if model.kind == .alveolarSurface { GalaxySSIHealthAtlasAlveolarSurfaceView(model: model, language: language) }
@@ -43,6 +45,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
             Text(GalaxySSIHealthAtlasPhysiologyText.input(model, index: index, language: language))
               .fixedSize(horizontal: false, vertical: true)
             Slider(value: binding(index, model: model), in: Double(spec.range.lowerBound)...Double(spec.range.upperBound), step: 1)
+              .accessibilityIdentifier("atlas-physiology-" + spec.key)
               .accessibilityLabel(t(spec.key))
               .accessibilityValue(GalaxySSIHealthAtlasPhysiologyText.inputNumber(model.input(index), key: spec.key, language: language) +
                 (spec.unit.isEmpty ? "" : " " + spec.unit))
@@ -52,6 +55,7 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
         Button { inputs = GalaxySSIHealthAtlasPhysiology(kind: model.kind).inputs } label: {
           Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
         }.accessibilityLabel(t("reset")).help(t("reset"))
+          .accessibilityIdentifier("atlas-physiology-reset")
         Text(t("model_" + model.kind.rawValue + "_formula")).font(.footnote)
         Text(t("model_" + model.kind.rawValue + "_scope")).font(.footnote).foregroundColor(.secondary)
         ForEach(Array(model.kind.sources.enumerated()), id: \.offset) { index, source in

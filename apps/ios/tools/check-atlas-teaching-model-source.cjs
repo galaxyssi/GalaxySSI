@@ -19,15 +19,32 @@ const graphIDs = new Set(graph.entries.map(e => e.id)); for (const id of owners)
 const metadata = source("TeachingModel"), inputSource = source("TeachingControls"), values = source("TeachingValues"), physiology = source("Physiology");
 const normalize = s => s.replace(/\s+/g, "");
 const swiftString = s => JSON.stringify(s).replace(/[^\x00-\x7f]/g, c => "\\u{" + c.charCodeAt(0).toString(16).padStart(4, "0") + "}");
+const property = (name, next) => metadata.split("var " + name + ":")[1]?.split("var " + next + ":")[0];
+const caseBody = (text, id) => text.split("case ." + id + ":")[1]?.split(/\n\s*(?:case |default:)/)[0];
+const unitBody = property("unit", "bounds"), boundsBody = property("bounds", "digits");
+const prefixBody = property("resourcePrefix", "title"), companionBody = property("companionTitle", "entryIDs");
+const ownersBody = property("entryIDs", "sources"), sourcesBody = property("sources", "unused").split("static func forEntry")[0];
+const axisBody = property("axis", "unit");
+assert.deepEqual(new Set([...axisBody.match(/case ([^:]+): return 1/)[1].matchAll(/\.(\w+)/g)].map(m => m[1])),
+  new Set(declarations.models.filter(m => m.axis === 1).map(m => m.id)));
+assert(axisBody.includes("default: return 0"));
 const resourceKeys = new Set();
 for (const model of declarations.models) {
   const prefix = model.title.replace(/_title$/, "");
-  assert(metadata.includes(JSON.stringify(prefix))); assert(physiology.includes(model.id));
-  for (const url of model.sources) assert(metadata.includes(JSON.stringify(url)), url);
-  for (const id of model.entryIDs) assert(metadata.includes(JSON.stringify(id)), id);
+  assert(normalize(caseBody(prefixBody, model.id)).startsWith("return" + JSON.stringify(prefix)));
+  assert(physiology.includes(model.id));
+  const companionSuffix = caseBody(companionBody, model.id)?.match(/suffix = "([^"]+)"/)?.[1] ?? "companion";
+  assert.equal(model.companionTitle, prefix + "_" + companionSuffix);
+  assert(normalize(caseBody(unitBody, model.id)).startsWith("return" + swiftString(model.unit)));
+  assert(normalize(caseBody(boundsBody, model.id)).replace(/_/g, "").startsWith("return" + model.minimum + "..." + model.maximum));
+  assert.deepEqual(new Set([...caseBody(ownersBody, model.id).matchAll(/"([^"]+)"/g)].map(m => m[1])), new Set(model.entryIDs));
+  assert.deepEqual([...caseBody(sourcesBody, model.id).matchAll(/"(https:[^"]+)"/g)].map(m => m[1]), model.sources);
+  assert.equal(model.scope, prefix + "_scope"); assert.equal(model.formula, prefix + "_formula");
+  assert.equal(model.digits, model.id === "glomerularFiltration" ? 1 : model.id === "tendonElongation" ? 3 : 2);
   for (const key of [model.title, model.scope, model.formula, model.companionTitle]) resourceKeys.add(key);
   const segment = inputSource.split("case ." + model.id + ":")[1]?.split(/\n\s*case /)[0]; assert(segment, model.id);
   for (const control of model.inputs) {
+    assert(!/[?\ufffd]/.test(control.unit), "Corrupted unit encoding: " + control.key);
     assert(control.label.startsWith(prefix + "_")); resourceKeys.add(control.label);
     const label = control.label.slice(prefix.length + 1);
     const expected = "control(" + [swiftString(control.key), swiftString(label), control.minimum + "..." + control.maximum,
@@ -35,6 +52,21 @@ for (const model of declarations.models) {
       ...(control.digits === 2 ? [] : ["digits: " + control.digits])].join(", ") + ")";
     assert(normalize(segment).includes(normalize(expected)), expected);
   }
+}
+const formulas = {
+  capillaryExchange: ["-100 * expm1(-values[0] / values[1])", "100 * exp(-values[0] / values[1])"],
+  valveFlux: ["values[0] * values[1]", "(values[0] * values[1]) * 0.1"],
+  glomerularFiltration: ["max(0, values[0] - values[1] - values[2]) * values[3]", "values[0] - values[1] - values[2]"],
+  skinWaterBarrier: ["values[0] * values[1] / values[2]", "values[0] / values[2]"],
+  salivaryDelivery: ["values.reduce(0, +)", "values.reduce(0, +) * 5"],
+  tendonElongation: ["values[1] * (values[0] / (values[3] * values[2]))", "100 * (values[0] / (values[3] * values[2]))"],
+  airwaySplit: ["values[0] * values[2] / (values[1] + values[2])", "values[0] * values[1] / (values[2] + values[1])"],
+  peristalticTravel: ["values[0] * values[1]", "100 * (values[0] * values[1]) / 10"],
+  cochlearFrequency: ["165.4 * (pow(10, 2.1 * values[0]) - 0.88)", "100 * (1 - values[0])"]
+};
+for (const [id, pair] of Object.entries(formulas)) for (const [index, expression] of pair.entries()) {
+  const method = index === 0 ? values.split("func evaluate")[1].split("func companion")[0] : values.split("func companion")[1];
+  assert(normalize(method).includes(normalize("case ." + id + ": result = " + expression)), id);
 }
 assert.equal(resourceKeys.size, 60);
 for (const locale of ["en", "zh-Hans"]) {
@@ -54,4 +86,9 @@ for (const token of ["teaching!.inputs", "teaching!.sources[0]", "kind.teaching!
   "default: return GalaxySSIHealthAtlasTeachingModel.forEntry(id)"]) assert(physiology.includes(token), token);
 assert(source("PhysiologyText").includes("GalaxySSIHealthAtlasTeachingModel.resource(key)"));
 assert(source("PhysiologyPanel").includes('"atlas-physiology-curve"'));
+for (const token of ['"atlas-physiology-output"', '"atlas-physiology-companion"', '"atlas-physiology-reset"', '"atlas-physiology-" + spec.key'])
+  assert(source("PhysiologyPanel").includes(token));
+const state = source("State");
+assert(state.includes("entries[entry.id]")); assert(state.includes("Physiology.restore(id, inputs: entries[id]?.physiologyInputs)"));
+assert(source("PhysiologyText").includes("kind.teaching?.digits ?? 2"));
 console.log(`Android #4397 source: ${changed.length} hashes, nine declarations / 24 controls / 34 new owners / 60 bilingual keys; existing 67 route clauses unchanged. Not Swift execution or native acceptance.`);
