@@ -3149,6 +3149,10 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     for (index, id) in GalaxySSIHealthAtlas.GutPack.owners.enumerated() {
       let entry = try XCTUnwrap(atlas.entry(id)), lesson = try XCTUnwrap(GalaxySSIHealthAtlasSectionLesson.forEntry(id))
       XCTAssertEqual(entry.mechanism, id); XCTAssertEqual(atlas.model(entry).kind, "alimentary-organ")
+      let painted = GalaxySSIHealthAtlas.GutPack.paintedAssets[id]
+      XCTAssertEqual(lesson.artHeight, painted == nil ? 280 : 360)
+      XCTAssertEqual(lesson.plate.aspectRatio, painted == nil ? 360.0 / 280 : 1)
+      if let painted { XCTAssertEqual(lesson.plate.asset, painted) }
       XCTAssertEqual(entry.related, lesson.plate.markers.map(\.id))
       XCTAssertEqual(atlas.plate(for: id)?.asset, lesson.plate.asset)
       for feature in lesson.plate.annotations {

@@ -52,7 +52,8 @@ struct GalaxySSIHealthAtlasSectionLesson {
     if let sensory = GalaxySSIHealthAtlasSensorySections.forEntry(id) { return sensory }
     if let pack = try? GalaxySSIHealthAtlas.GutPack.bundled.get(),
       let plate = pack.plates.first(where: { $0.owner == id }), let stages = pack.stageFeatures[id] {
-      return Self(plate: plate, stageFeatures: stages, routes: pack.routes[id] ?? [], notes: pack.notes[id] ?? [])
+      return Self(plate: plate, stageFeatures: stages, routes: pack.routes[id] ?? [], notes: pack.notes[id] ?? [],
+        artHeight: GalaxySSIHealthAtlas.GutPack.paintedAssets[id] == nil ? 280 : 360)
     }
     guard let pack = try? GalaxySSIHealthAtlas.LymphPack.bundled.get(),
       let plate = pack.plates.first(where: { $0.owner == id }), let stages = pack.stageFeatures[id] else { return nil }

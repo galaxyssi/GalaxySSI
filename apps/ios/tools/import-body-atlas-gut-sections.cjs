@@ -10,8 +10,10 @@ const color = (hex) => {
   return rgb(...[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255));
 };
 (async () => {
+  cp.execFileSync(process.execPath, [path.join(__dirname, "import-body-atlas-function-gut-plates.cjs"), "--check"], {cwd: root, stdio: "inherit"});
   let count = 0;
   for (const plate of pack.plates) {
+    if (plate.drawable.endsWith(".png")) continue;
     const vector = xml.xml2js(cp.execFileSync("git", ["show", pack.source.mergeCommit + ":" + plate.drawable],
       { cwd: root, encoding: "utf8" }), { compact: true }).vector;
     if (vector.group || !Array.isArray(vector.path)) throw Error("Unsupported vector structure " + plate.id);
@@ -32,5 +34,5 @@ const color = (hex) => {
     }
     fs.writeFileSync(path.join(assets, plate.asset + ".imageset/cell.pdf"), await pdf.save()); count += vector.path.length;
   }
-  console.log("Imported 14 alimentary diagrams / " + count + " original paths.");
+  console.log("Imported 12 legacy vector alimentary diagrams (two square PNGs verified separately) / " + count + " original paths.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

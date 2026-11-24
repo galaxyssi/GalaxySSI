@@ -11,6 +11,7 @@ extension GalaxySSIHealthAtlas {
     let routes: [String: [GalaxySSIHealthAtlasSectionLesson.Route]]
     let notes: [String: [String]]
     static let owners = ["oral-cavity","teeth","esophagus","stomach","small-intestine","duodenum","jejunum","ileum","large-intestine","cecum","appendix","colon","rectum","anal-canal"]
+    static let paintedAssets = ["teeth": "HealthAtlasFunctionGutTooth", "jejunum": "HealthAtlasFunctionGutJejunum"]
     static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
     static func read(bundle: Bundle) throws -> Self? {
       guard let data = NSDataAsset(name: "HealthAtlasGutSections", bundle: bundle)?.data else { return nil }
@@ -41,9 +42,11 @@ extension GalaxySSIHealthAtlas {
         plates.allSatisfy({ plate in
           guard let owner = plate.owner, plate.id == owner, let entry = atlas.entry(owner), let steps = stageFeatures[owner], let scope = notes[owner],
             steps.count == 4, steps.allSatisfy(plate.annotations.indices.contains),
-            plate.entryIDs == [owner] + plate.markers.map(\.id), plate.aspectRatio == 360.0 / 280,
+            plate.entryIDs == [owner] + plate.markers.map(\.id),
+            plate.aspectRatio == (Self.paintedAssets[owner] == nil ? 360.0 / 280 : 1),
             plate.source == atlas.model(entry).source,
-            plate.asset.hasPrefix("HealthAtlasGut"), UIImage(named: plate.asset, in: bundle, compatibleWith: nil) != nil,
+            (Self.paintedAssets[owner].map { plate.asset == $0 } ?? plate.asset.hasPrefix("HealthAtlasGut")),
+            UIImage(named: plate.asset, in: bundle, compatibleWith: nil) != nil,
             plate.viewLabel.hasPrefix("health_atlas_gut_section_"), (3...4).contains(plate.annotations.count),
             scope.first == "health_atlas_gut_section_" + (moving.contains(owner) ? "motion_scope" : "regional_scope"),
             (1...2).contains(scope.count),
