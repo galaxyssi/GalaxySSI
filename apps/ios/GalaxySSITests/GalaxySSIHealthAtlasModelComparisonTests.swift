@@ -44,21 +44,78 @@ final class GalaxySSIHealthAtlasModelComparisonTests: XCTestCase {
     XCTAssertNil(Model(quarterHours: -1)); XCTAssertNil(Model(quarterHours: 193))
     XCTAssertNil(Model(quarterHours: Int.max)); XCTAssertNotNil(Model.standard.at(0.125))
   }
+  func testCumulativeValuesMatchThePinnedAugmentedMatrixFixtures() throws {
+    let total = Model.standard.centralAmountHours()
+    XCTAssertEqual(total.two, 219.6577427940722, accuracy: 1e-10)
+    XCTAssertEqual(total.one, 329.6799539643607, accuracy: 1e-10)
+    XCTAssertEqual(total.gap, -110.0222111702885, accuracy: 1e-10)
+    XCTAssertEqual(try XCTUnwrap(Model(scenario: .faster)).centralAmountHours().two, 148.0005412446694, accuracy: 1e-10)
+    XCTAssertEqual(try XCTUnwrap(Model(quarterHours: 0)).centralAmountHours(), .init(one: 0, two: 0))
+    for scenario in Model.Scenario.allCases {
+      var previous = Model.CentralAmountHours(one: 0, two: 0)
+      for quarter in 0...192 {
+        let current = try XCTUnwrap(Model(scenario: scenario, quarterHours: quarter)).centralAmountHours()
+        XCTAssertGreaterThanOrEqual(current.one, previous.one)
+        XCTAssertGreaterThanOrEqual(current.two, previous.two)
+        if scenario == .control { XCTAssertEqual(current.gap, 0) }
+        previous = current
+      }
+    }
+  }
+  func testCumulativeDisclosureRestoresAndLegacySelectionsDefaultToClosed() throws {
+    typealias State = GalaxySSIHealthAtlasDrugState
+    var old = try XCTUnwrap(State.restore([2, 30, 15, 10, 16, 2, 23]))
+    XCTAssertFalse(old.showComparisonTotals)
+    XCTAssertFalse(try XCTUnwrap(State.restore([1, 63, 20, 10, 41])).showComparisonTotals)
+    old.showComparisonTotals = true
+    XCTAssertEqual(State.restore(old.encoded), old)
+    XCTAssertEqual(old.encoded, [2, 30, 15, 10, 16, 2, 23, 1])
+    for flag in [-1, 2, Int.max] {
+      var invalid = old.encoded; invalid[7] = flag
+      XCTAssertNil(State.restore(invalid))
+    }
+  }
+  @MainActor func testCumulativeContextIsIncludedOnlyForTheExpandedSelectedComparison() throws {
+    let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
+    let state = GalaxySSIHealthAtlasState(), heart = try XCTUnwrap(atlas.entry("heart"))
+    var drugs = GalaxySSIHealthAtlasDrugState(mode: .comparison,
+      comparison: try XCTUnwrap(Model(scenario: .faster, quarterHours: 37)), showComparisonTotals: true)
+    state.binding(heart).wrappedValue.research = .drugs
+    state.binding(heart).wrappedValue.drugInputs = drugs.encoded
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(GalaxySSIHealthAtlasDrugState.restore(restored.binding(heart).wrappedValue.drugInputs), drugs)
+    for language in ["en", "zh-Hans"] {
+      func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
+      let locale = GalaxySSILocalization.interfaceLocale(language: language)
+      let total = GalaxySSIHealthAtlasComparisonText.totals(drugs.comparison, locale: locale, text: t)
+      var selection = restored.binding(heart).wrappedValue
+      let expanded = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: heart, selection: selection, research: true, language: language)
+      XCTAssertTrue(expanded.contains(total)); XCTAssertTrue(expanded.contains(t("compare_total_basis")))
+      drugs.showComparisonTotals = false; selection.drugInputs = drugs.encoded
+      let collapsed = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: heart, selection: selection, research: true, language: language)
+      XCTAssertFalse(collapsed.contains(total)); XCTAssertFalse(collapsed.contains(t("compare_total_basis")))
+      for mode in [GalaxySSIHealthAtlasDrugState.Mode.single, .two] {
+        var other = drugs; other.mode = mode; other.showComparisonTotals = true; selection.drugInputs = other.encoded
+        XCTAssertFalse(GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: heart, selection: selection, research: true, language: language).contains(t("compare_total_basis")))
+      }
+      drugs.showComparisonTotals = true
+    }
+  }
   func testLegacyAndExtendedStateRemainIndependentAndRejectMalformedInputs() throws {
     typealias State = GalaxySSIHealthAtlasDrugState
     let distribution = try XCTUnwrap(GalaxySSIHealthAtlasDistribution(outward: 63, returning: 20, elimination: 10, quarterHours: 41))
     let comparison = try XCTUnwrap(Model(scenario: .faster, quarterHours: 23))
     var state = State(mode: .comparison, distribution: distribution, comparison: comparison)
-    XCTAssertEqual(state.encoded, [2, 63, 20, 10, 41, 2, 23]); XCTAssertEqual(State.restore(state.encoded), state)
+    XCTAssertEqual(state.encoded, [2, 63, 20, 10, 41, 2, 23, 0]); XCTAssertEqual(State.restore(state.encoded), state)
     let legacy = try XCTUnwrap(State.restore([1, 63, 20, 10, 41]))
     XCTAssertEqual(legacy.mode, .two); XCTAssertEqual(legacy.distribution, distribution); XCTAssertEqual(legacy.comparison, .standard)
-    XCTAssertEqual(legacy.encoded, [1, 63, 20, 10, 41, 1, 16])
+    XCTAssertEqual(legacy.encoded, [1, 63, 20, 10, 41, 1, 16, 0])
     state.mode = .two; XCTAssertEqual(state.comparison, comparison)
     state.mode = .single; XCTAssertEqual(state.distribution, distribution)
     state.comparison = .standard; XCTAssertEqual(state.distribution, distribution); XCTAssertEqual(state.mode, .single)
     for invalid in [nil, [], [2, 63, 20, 10, 41], [3, 63, 20, 10, 41, 2, 23], [2, 63, 20, 10, 41, 3, 23],
       [2, 63, 20, 10, 41, -1, 23], [2, 63, 20, 10, 41, 2, 193], [2, 301, 20, 10, 41, 2, 23],
-      [2, 63, 20, 10, 41, 2, 23, 0]] as [[Int]?] { XCTAssertNil(State.restore(invalid)) }
+      [2, 63, 20, 10, 41, 2, 23, 2], [2, 63, 20, 10, 41, 2, 23, 0, 0]] as [[Int]?] { XCTAssertNil(State.restore(invalid)) }
   }
   @MainActor
   func testComparisonCacheAndQuestionContextStayEntryAndModeScopedInBothLanguages() throws {

@@ -42,14 +42,19 @@ for (const token of ["var inline = false", "chapters: model.stages.count", "if !
 assert(!panel.includes("playing = false; simulation.selectStage"));
 assert(!panel.includes("playing = false; structure ="));
 // Preserve all existing model/rendering bodies and original story catalogue/art assets.
-for (const name of ["FunctionCatalogue", "FunctionArtwork", "Physiology", "Distribution", "ModelComparison"]) {
+for (const name of ["FunctionCatalogue", "FunctionArtwork", "Physiology"]) {
   assert.equal(source(name), git(["show", base + ":" + swift(name)]).toString(), name + " changed unexpectedly");
 }
+const previous = name => git(["show", base + ":" + swift(name)]).toString();
+assert.equal(source("Distribution").split("struct GalaxySSIHealthAtlasDrugState")[0], previous("Distribution").split("struct GalaxySSIHealthAtlasDrugState")[0]);
+const pointKernel = s => s.split("  func at(_ hours: Double)")[1].split("enum GalaxySSIHealthAtlasComparisonText")[0];
+assert.equal(pointKernel(source("ModelComparison")), pointKernel(previous("ModelComparison")));
+const withoutTotals = s => s.replaceAll(" includeTotals: drugs.showComparisonTotals,", "");
 const originalContext = git(["show", base + ":" + swift("AgentContext")]).toString();
-assert.equal(source("AgentContext").replace("                     inlineModels: Bool = false,\n", "")
+assert.equal(withoutTotals(source("AgentContext")).replace("                     inlineModels: Bool = false,\n", "")
   .replace("screen.includesPhysiology || (screen == .function && inlineModels)", "screen.includesPhysiology"), originalContext);
 const originalHandoff = git(["show", base + ":" + swift("AgentHandoff")]).toString();
-assert.equal(source("AgentHandoff")
+assert.equal(withoutTotals(source("AgentHandoff"))
   .replace('    let inlineModels = !research && selection.tab == .function && selection.modelsExpanded == true &&\n      (entry?.kind == .system || entry?.kind == .organ)\n', "")
   .replace("screen.includesPhysiology || inlineModels", "screen.includesPhysiology")
   .replace("function: function, inlineModels: inlineModels,", "function: function,")

@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4436,
+    "mergeCommit": "de63c7dd3c883b8724da0f4366d6e078c1882a75"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "44c64127a6ede35b7a3685c7bf91c39b30e100b872c4c9188f2f3b77ea4f662c"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasDistributionDeviceTest.kt",
+      "status": "M",
+      "sha256": "bde0e348c020b6d5df497b68e733bd6f8fd1bc9cb412dac16b9c28a309458d2d"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAgentContext.kt",
+      "status": "M",
+      "sha256": "3257f1c8dacff11b0b0d3cf553cb9f18631bafa525a42ee5af8656174a1a5d95"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasComparisonPanel.kt",
+      "status": "M",
+      "sha256": "6380552323e813681198b58566d88c447852f116cc7ce74413741dd8fa2704ef"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasDistribution.kt",
+      "status": "M",
+      "sha256": "e9feb5b1fae6d3f3f909b0bc1d9de1243f7ab94a3e50e8f86da74d341f30be5c"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasModelComparison.kt",
+      "status": "M",
+      "sha256": "0d8d53e1b031a95f1451098c30441ca5d716cf228d6d005b6bf4b363ee32537f"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasResearchPanel.kt",
+      "status": "M",
+      "sha256": "90636615a751bef83d504a9ec802ce698458cd8c5473d3134bd039b3f0f23c7b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_comparison.xml",
+      "status": "M",
+      "sha256": "924588c431561b58dc17860d3b97aff8a5c181c2484e39984ddee62e51e37ed7"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_comparison.xml",
+      "status": "M",
+      "sha256": "c0b27ee9c3e7755ab2c78426f7447c45ad63130978e7ab15bdcf66614650a6db"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasModelComparisonTest.kt",
+      "status": "M",
+      "sha256": "80cf404df203f5f70bd61803e8de8feca2bf4689def05823daf08e43271969b3"
+    },
+    {
+      "path": "docs/architecture/android-body-atlas.md",
+      "status": "M",
+      "sha256": "b47b83be933d2ba541412609b46250e6b53164416642487d9f020a126cd841ec"
+    }
+  ]
+}

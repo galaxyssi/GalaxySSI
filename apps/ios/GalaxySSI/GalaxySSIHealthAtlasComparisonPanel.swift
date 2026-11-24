@@ -23,6 +23,7 @@ struct GalaxySSIHealthAtlasModelTabs: View {
 
 struct GalaxySSIHealthAtlasComparisonPanel: View {
   @Binding var model: GalaxySSIHealthAtlasModelComparison
+  @Binding var showTotals: Bool
   let language: String
   @ScaledMetric(relativeTo: .caption) private var axisFontSize: CGFloat = 12
   @Environment(\.colorScheme) private var colorScheme
@@ -63,6 +64,15 @@ struct GalaxySSIHealthAtlasComparisonPanel: View {
         .font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("atlas-comparison-result")
       Text(GalaxySSIHealthAtlasComparisonText.range(model.point, locale: locale, text: t)).font(.footnote)
         .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("atlas-comparison-range")
+      DisclosureGroup(isExpanded: $showTotals) {
+        VStack(alignment: .leading, spacing: 6) {
+          Text(GalaxySSIHealthAtlasComparisonText.totals(model, locale: locale, text: t))
+            .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("atlas-comparison-totals-value")
+          Text(t("compare_total_basis")).font(.footnote).foregroundColor(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }.accessibilityIdentifier("atlas-comparison-totals")
+      } label: { Text(t("compare_total_title")).frame(minHeight: 44) }
+        .accessibilityIdentifier("atlas-comparison-totals-toggle")
       Text(t("compare_evidence")).font(.headline).padding(.top, 8)
       Text(t("compare_limit")).font(.footnote).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
         .accessibilityIdentifier("atlas-comparison-evidence")

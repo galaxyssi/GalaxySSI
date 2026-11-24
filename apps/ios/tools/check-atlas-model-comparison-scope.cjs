@@ -26,9 +26,9 @@ assert(!model.includes("abs(")); assert(!model.includes("GalaxySSIHealthRecords"
 const beforeDistribution = git(["show", base + ":" + swift("Distribution")]).toString();
 assert.equal(distribution.split("struct GalaxySSIHealthAtlasDrugState")[0], beforeDistribution.split("struct GalaxySSIHealthAtlasDrugState")[0], "Two-compartment numerical kernel is unchanged");
 for (const token of ['case single, two, comparison', 'var comparison = GalaxySSIHealthAtlasModelComparison.standard',
-  'distribution.quarterHours, comparison.scenario.rawValue, comparison.quarterHours', 'values.count == 5 || values.count == 7',
-  'values.count == 7 || mode != .comparison', 'Scenario(rawValue: values[5])', 'quarterHours: values[6]',
-  'else { comparison = .standard }', 'Self(mode: mode, distribution: distribution, comparison: comparison)']) assert(distribution.includes(token));
+  'distribution.quarterHours, comparison.scenario.rawValue, comparison.quarterHours', 'values.count == 5 || (7...8).contains(values.count)',
+  'values.count >= 7 || mode != .comparison', 'Scenario(rawValue: values[5])', 'quarterHours: values[6]',
+  'else { comparison = .standard }', 'Self(mode: mode, distribution: distribution, comparison: comparison, showComparisonTotals: totals == 1)']) assert(distribution.includes(token));
 for (const token of ['"atlas-drug-model"', 't("drug_single"), t("drug_two"), t("compare_title")', 'drugState.wrappedValue.mode == .comparison',
   'GalaxySSIHealthAtlasComparisonPanel(model: drugState.comparison', 'else if drugState.wrappedValue.mode == .two',
   'GalaxySSIHealthAtlasDistributionPanel(model: drugState.distribution', 'selection.elimination.halfLife', 'selection.elimination.elapsed']) assert(research.includes(token));
@@ -66,7 +66,7 @@ const pbx = read("apps/ios/GalaxySSI.xcodeproj/project.pbxproj");
 for (const token of ["GalaxySSIHealthAtlasModelComparison.swift in Sources", "GalaxySSIHealthAtlasComparisonPanel.swift in Sources", "GalaxySSIHealthAtlasModelComparisonTests.swift in Sources", "AtlasModelComparison.strings in Resources"]) assert(pbx.includes(token));
 const tests = read("apps/ios/GalaxySSITests/GalaxySSIHealthAtlasModelComparisonTests.swift");
 for (const token of ["31.31146654418996", "23.34020536954366", "-35.72053805937397", "0...192", "model.samples[quarter]", "point.two.values.reduce(0, +)",
-  "[2, 63, 20, 10, 41, 2, 23]", "State.restore([1, 63, 20, 10, 41])", 'for language in ["en", "zh-Hans"]',
+  "[2, 63, 20, 10, 41, 2, 23, 0]", "State.restore([1, 63, 20, 10, 41])", 'for language in ["en", "zh-Hans"]',
   'prompt.contains(publicContext)', 'XCTAssertFalse(prompt.contains(t("elimination_assumptions")))', 'restored.restore(state.serialized, atlas: atlas)']) assert(tests.includes(token));
 const paths = {
   HealthAtlasModelComparison: [swift("ModelComparison")], HealthAtlasComparisonPanel: [swift("ComparisonPanel"), swift("ModelComparison")],
