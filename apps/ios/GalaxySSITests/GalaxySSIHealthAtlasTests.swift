@@ -2175,6 +2175,49 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion.bufferRoutes.count, 3)
   }
 
+  func testSplenicPassingCellFollowsSlitRatherThanUniformScaling() {
+    typealias Motion = GalaxySSIHealthAtlasSplenicMotion
+    XCTAssertEqual(Motion.pinch(207), 1)
+    XCTAssertEqual(Motion.pinch(166), 0)
+    XCTAssertEqual(Motion.pinch(248), 0)
+    XCTAssertEqual(Motion.centerHeight(207), 1.9, accuracy: 1e-12)
+    XCTAssertEqual(Motion.centerHeight(128), 5.5, accuracy: 1e-12)
+    for sample in 0...200 {
+      let x = 166 + 82 * Double(sample) / 200, points = Motion.passingPoints(x)
+      XCTAssertEqual(points.count, 64)
+      for point in points {
+        XCTAssertTrue(point.x.isFinite && point.y.isFinite)
+        XCTAssertLessThanOrEqual(abs(point.x), 33 + 1e-10)
+        XCTAssertLessThanOrEqual(abs(point.y), 13 + 1e-10)
+        if (Motion.wallLeft...Motion.wallRight).contains(x + point.x) {
+          XCTAssertLessThanOrEqual(abs(point.y), 5 + 1e-10)
+        }
+      }
+    }
+    XCTAssertLessThan(Motion.retainedX + 22 * 0.96, Motion.wallLeft)
+  }
+
+  func testSplenicCaptureAndIronRecoveryMatchStageBoundaries() {
+    typealias Motion = GalaxySSIHealthAtlasSplenicMotion
+    let start = Motion.capture(0), end = Motion.capture(1)
+    XCTAssertEqual(start.x, Motion.retainedX)
+    XCTAssertEqual(start.y, Motion.slitY)
+    XCTAssertEqual(start.scale, 0.96)
+    XCTAssertEqual(start.extensionAmount, 0)
+    XCTAssertEqual(end.x, 109)
+    XCTAssertEqual(end.y, 259)
+    XCTAssertEqual(end.scale, 0.85, accuracy: 1e-12)
+    XCTAssertEqual(end.extensionAmount, 0, accuracy: 1e-12)
+    XCTAssertEqual(end.sweep, 360, accuracy: 1e-12)
+    XCTAssertGreaterThan(Motion.capture(0.5).extensionAmount, 0.9)
+    for index in 0...2 {
+      XCTAssertEqual(Motion.reuse(0, index: index).size, 0)
+      XCTAssertEqual(Motion.reuse(1, index: index).size, 1)
+      XCTAssertEqual(Motion.reuse(1, index: index).fraction, 1 - 0.1 * Double(index), accuracy: 1e-12)
+    }
+    XCTAssertEqual(Motion.wallSegments, [139,164,172,203,217,264,278,313])
+  }
+
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
