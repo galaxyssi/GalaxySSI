@@ -36,7 +36,7 @@ An eventual PR will use main and disclose the actual inherited diff.
 - Bilingual resource deltas are imported.
 - Source-only catalogue audit passed for all 67 hashes, catalogue counts,
   graph-resolved routes, entry phases, exact related destinations, reference
-  hosts and bilingual keys. Eleven new dispatches are present; the other 13 are
+  hosts and bilingual keys. Thirteen new dispatches are present; the other 11 are
   explicitly not implemented. Two changed Swift files parsed without grammar
   errors; project structure passed. No Swift type checking or native execution.
 - Added dedicated Paneth crypt-barrier renderer and reusable crypt wall geometry:
@@ -76,7 +76,15 @@ An eventual PR will use main and disclose the actual inherited diff.
   exact layer depths/colors, distinct textures/output glyphs and sinusoid tracks.
   Source checks verified generation, 25 bilingual labels and 363 analytic drain
   positions. Six Swift files parsed without grammar errors; project/catalogue
-  checks passed. 13 renderers/default activation remain; no native acceptance.
+  checks passed; no native acceptance.
+- Added Leydig endocrine and theca cooperation native renderers and dispatches.
+  Retained seminiferous geometry, LH input diamond, distinct local/blood output,
+  source production fades, vascular arc plus quadratic route, two follicular
+  cell rings, basal handoff and granulosa conversion symbols. Source checks
+  compared nine cubics, a local quadratic, arc controls, 17 bilingual labels and
+  121 analytic handoff/fade samples. Four Swift files passed grammar parsing;
+  project/catalogue checks passed. 11 renderers/default activation remain;
+  no native compilation, execution or pixel acceptance claimed.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
 - Connect pelvic/subcutaneous cutaways to structure feature routing.
