@@ -1166,6 +1166,12 @@
 "galaxyssi.health.assistant.profile_other" = "其他";
 "galaxyssi.health.assistant.profile_missing" = "未记录";
 "galaxyssi.health.privacy.profile_analysis_history" = "本机档案使用记录";
+"galaxyssi.health.privacy.atlas_history" = "人体图谱访问记录";
+"galaxyssi.health.privacy.atlas_overview" = "关联指标";
+"galaxyssi.health.privacy.atlas_trend" = "所选指标趋势";
+"galaxyssi.health.privacy.access_blocked" = "已阻止";
+"galaxyssi.health.privacy.access_started" = "已开始";
+"galaxyssi.health.privacy.access_complete" = "已完成";
 "galaxyssi.health.privacy.profile_background_count" = "所选健康背景：%lld 项";
 "galaxyssi.health.assistant.background_title" = "已保存的健康背景";
 "galaxyssi.health.assistant.background_selected" = "仅显示已选";

@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4418,
+    "mergeCommit": "115d6adeb661fd4357fea57517ca92d02ffe1f51"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "683df876a1aa9266d3bd904781bf4cfb9c53b51429dde8900efe6571f528661b"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasAgentDeviceTest.kt",
+      "status": "M",
+      "sha256": "d7b410ac77c119fdf83c0471a200873a81073a11132111cccd08f6555fb8af24"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthBodyAtlasDeviceTest.kt",
+      "status": "M",
+      "sha256": "4fc1510139b055c63732477b01c7811f210d446a39d199691560d3c06d1bb059"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMeasurements.kt",
+      "status": "M",
+      "sha256": "ffbff10c71131ad4d1651f4d6fbdc4a184face67c433eb111601045393bf5010"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_strings.xml",
+      "status": "M",
+      "sha256": "b12a41c3d1f9b29b4c2e660eb2dbcda42b987f88850b07451157aaa831b34f25"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_strings.xml",
+      "status": "M",
+      "sha256": "f825d7d2233d00f8fb181519249f77b2273d5545f7549af21078ea510f031ac6"
+    }
+  ]
+}

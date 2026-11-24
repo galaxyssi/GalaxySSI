@@ -207,6 +207,7 @@ struct GalaxySSIHealthRecords {
     var weeklyReportAllowed: Bool?
     var weeklyExportRequests: [GalaxySSIWeeklyHealthReport.ExportRequest]?
     var privacyEvents: [PrivacyEvent]?
+    var atlasReadAudit: [GalaxySSIHealthAtlasReadings.Audit]?
     var tableBatches: [GalaxySSIHealthTableImport.Batch]?
     var tableEvidence: [GalaxySSIHealthTableImport.Evidence]?
     var healthOnlinePermission: UUID?
@@ -393,6 +394,8 @@ struct GalaxySSIHealthRecords {
     }
     return archive
   }
+
+  func persistAtlasReadAudit(_ archive: Archive) throws { try persist(archive, notify: false) }
 
   func dataFilesReader() throws -> GalaxySSIHealthDataFiles.Reader {
     let url = try file

@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4418,
+    "mergeCommit": "115d6adeb661fd4357fea57517ca92d02ffe1f51"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "683df876a1aa9266d3bd904781bf4cfb9c53b51429dde8900efe6571f528661b",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasAgentDeviceTest.kt",
+      "sourceSHA256": "d7b410ac77c119fdf83c0471a200873a81073a11132111cccd08f6555fb8af24",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasReadingsTests.swift"
+      ],
+      "note": "Source fixtures for concurrent mapped latest values, older reading outside month but inside year, empty metric isolation, future/deleted/invalid exclusion, provenance, numeric/qualitative display, encrypted audit reopen and denied/unrelated reads. Source fixtures and wiring retain Agent identity gating. No Android/XCTest/device/screenshot execution."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthBodyAtlasDeviceTest.kt",
+      "sourceSHA256": "4fc1510139b055c63732477b01c7811f210d446a39d199691560d3c06d1bb059",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasReadingsTests.swift"
+      ],
+      "note": "Source fixtures for concurrent mapped latest values, older reading outside month but inside year, empty metric isolation, future/deleted/invalid exclusion, provenance, numeric/qualitative display, encrypted audit reopen and denied/unrelated reads. Source fixtures and wiring retain Agent identity gating. No Android/XCTest/device/screenshot execution."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMeasurements.kt",
+      "sourceSHA256": "ffbff10c71131ad4d1651f4d6fbdc4a184face67c433eb111601045393bf5010",
+      "kind": "related-readings-and-scoped-encrypted-access",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasReadings.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasRelatedReadings.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetail.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthTrendView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthRecords.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthCenterView.swift"
+      ],
+      "note": "Replace picker with mapped latest confirmed values/date/source. Latest list is independent of selected period; chart/Agent use selected metric/window only. Permission-gated projection logs bounded overview and single-metric trend scopes in encrypted archive before returning values; expose audit history. Clear decrypted display state on denial, invalidation, background and protected-data loss. No teaching-value fallback. Native access/scroll behavior unverified."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_strings.xml",
+      "sourceSHA256": "b12a41c3d1f9b29b4c2e660eb2dbcda42b987f88850b07451157aaa831b34f25",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasRelatedReadings.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasRelatedReadings.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/Localizable.strings"
+      ],
+      "note": "Four exact original English/Chinese pairs, plus six iOS-native privacy audit labels using existing English fallback/Chinese resource conventions. All registered in Xcode."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_strings.xml",
+      "sourceSHA256": "f825d7d2233d00f8fb181519249f77b2273d5545f7549af21078ea510f031ac6",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasRelatedReadings.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasRelatedReadings.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/Localizable.strings"
+      ],
+      "note": "Four exact original English/Chinese pairs, plus six iOS-native privacy audit labels using existing English fallback/Chinese resource conventions. All registered in Xcode."
+    }
+  ]
+}

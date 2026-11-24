@@ -188,11 +188,6 @@ struct GalaxySSIHealthAtlasValues: View {
     if let first = metrics.first {
       VStack(spacing: 8) {
         Text(t("records_note")).font(.footnote).foregroundColor(.secondary).padding(.horizontal)
-        Picker(t("measurements"), selection: Binding(get: { selection.metric ?? first }, set: { selection.metric = $0 })) {
-          ForEach(metrics) { metric in
-            Text(metric.title(language: language)).tag(metric)
-          }
-        }.padding(.horizontal)
         trend(first)
       }.privacySensitive()
     } else {
@@ -207,11 +202,13 @@ struct GalaxySSIHealthAtlasValues: View {
   @ViewBuilder private func trend(_ first: GalaxySSIHealthMetric) -> some View {
     #if GALAXYSSI_ATLAS_AGENT_CONTEXT
     GalaxySSIHealthTrendView(records: records, fixedMetric: selection.metric ?? first,
-      atlasWindow: $selection.window, revealAtlasTrend: revealTrend).id(selection.metric ?? first).environment(\.galaxySSIAtlasPinnedAnalysis, true)
+      atlasWindow: $selection.window, revealAtlasTrend: revealTrend,
+      atlasEntryID: entry.id, atlasMetricSelection: $selection.metric).id(selection.metric ?? first).environment(\.galaxySSIAtlasPinnedAnalysis, true)
       .environment(\.galaxySSIAtlasAnalysisSelection, entry.id + ":" + (selection.metric ?? first).rawValue + ":" + selection.window.rawValue)
     #else
     GalaxySSIHealthTrendView(records: records, fixedMetric: selection.metric ?? first,
-      atlasWindow: $selection.window, revealAtlasTrend: revealTrend).id(selection.metric ?? first)
+      atlasWindow: $selection.window, revealAtlasTrend: revealTrend,
+      atlasEntryID: entry.id, atlasMetricSelection: $selection.metric).id(selection.metric ?? first)
     #endif
   }
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
