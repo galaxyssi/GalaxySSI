@@ -264,6 +264,14 @@
     C4384000000000000000022B /* GalaxySSIHealthAtlasSensorimotorArmDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000022C /* GalaxySSIHealthAtlasSensorimotorArmDrawing.swift */; };
     C4384000000000000000022D /* GalaxySSIHealthAtlasSensorimotorSignalDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000022E /* GalaxySSIHealthAtlasSensorimotorSignalDrawing.swift */; };
     C4384000000000000000022F /* GalaxySSIHealthAtlasSensorimotorLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000230 /* GalaxySSIHealthAtlasSensorimotorLabelsDrawing.swift */; };
+    C43840000000000000000231 /* GalaxySSIHealthAtlasAutonomicMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000232 /* GalaxySSIHealthAtlasAutonomicMotion.swift */; };
+    C43840000000000000000233 /* GalaxySSIHealthAtlasAutonomicGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000234 /* GalaxySSIHealthAtlasAutonomicGeometry.swift */; };
+    C43840000000000000000235 /* GalaxySSIHealthAtlasAutonomicRoutes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000236 /* GalaxySSIHealthAtlasAutonomicRoutes.swift */; };
+    C43840000000000000000237 /* GalaxySSIHealthAtlasAutonomicView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000238 /* GalaxySSIHealthAtlasAutonomicView.swift */; };
+    C43840000000000000000239 /* GalaxySSIHealthAtlasAutonomicAnatomyDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000023A /* GalaxySSIHealthAtlasAutonomicAnatomyDrawing.swift */; };
+    C4384000000000000000023B /* GalaxySSIHealthAtlasAutonomicFiberDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000023C /* GalaxySSIHealthAtlasAutonomicFiberDrawing.swift */; };
+    C4384000000000000000023D /* GalaxySSIHealthAtlasAutonomicStagesDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000023E /* GalaxySSIHealthAtlasAutonomicStagesDrawing.swift */; };
+    C4384000000000000000023F /* GalaxySSIHealthAtlasAutonomicLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000240 /* GalaxySSIHealthAtlasAutonomicLabelsDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -2001,6 +2009,14 @@
     C4384000000000000000022C /* GalaxySSIHealthAtlasSensorimotorArmDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSensorimotorArmDrawing.swift; sourceTree = "<group>"; };
     C4384000000000000000022E /* GalaxySSIHealthAtlasSensorimotorSignalDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSensorimotorSignalDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000230 /* GalaxySSIHealthAtlasSensorimotorLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSensorimotorLabelsDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000232 /* GalaxySSIHealthAtlasAutonomicMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAutonomicMotion.swift; sourceTree = "<group>"; };
+    C43840000000000000000234 /* GalaxySSIHealthAtlasAutonomicGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAutonomicGeometry.swift; sourceTree = "<group>"; };
+    C43840000000000000000236 /* GalaxySSIHealthAtlasAutonomicRoutes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAutonomicRoutes.swift; sourceTree = "<group>"; };
+    C43840000000000000000238 /* GalaxySSIHealthAtlasAutonomicView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAutonomicView.swift; sourceTree = "<group>"; };
+    C4384000000000000000023A /* GalaxySSIHealthAtlasAutonomicAnatomyDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAutonomicAnatomyDrawing.swift; sourceTree = "<group>"; };
+    C4384000000000000000023C /* GalaxySSIHealthAtlasAutonomicFiberDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAutonomicFiberDrawing.swift; sourceTree = "<group>"; };
+    C4384000000000000000023E /* GalaxySSIHealthAtlasAutonomicStagesDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAutonomicStagesDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000240 /* GalaxySSIHealthAtlasAutonomicLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasAutonomicLabelsDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3757,6 +3773,14 @@
         C4384000000000000000022C /* GalaxySSIHealthAtlasSensorimotorArmDrawing.swift */,
         C4384000000000000000022E /* GalaxySSIHealthAtlasSensorimotorSignalDrawing.swift */,
         C43840000000000000000230 /* GalaxySSIHealthAtlasSensorimotorLabelsDrawing.swift */,
+        C43840000000000000000232 /* GalaxySSIHealthAtlasAutonomicMotion.swift */,
+        C43840000000000000000234 /* GalaxySSIHealthAtlasAutonomicGeometry.swift */,
+        C43840000000000000000236 /* GalaxySSIHealthAtlasAutonomicRoutes.swift */,
+        C43840000000000000000238 /* GalaxySSIHealthAtlasAutonomicView.swift */,
+        C4384000000000000000023A /* GalaxySSIHealthAtlasAutonomicAnatomyDrawing.swift */,
+        C4384000000000000000023C /* GalaxySSIHealthAtlasAutonomicFiberDrawing.swift */,
+        C4384000000000000000023E /* GalaxySSIHealthAtlasAutonomicStagesDrawing.swift */,
+        C43840000000000000000240 /* GalaxySSIHealthAtlasAutonomicLabelsDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5643,6 +5667,14 @@
         C4384000000000000000022B /* GalaxySSIHealthAtlasSensorimotorArmDrawing.swift in Sources */,
         C4384000000000000000022D /* GalaxySSIHealthAtlasSensorimotorSignalDrawing.swift in Sources */,
         C4384000000000000000022F /* GalaxySSIHealthAtlasSensorimotorLabelsDrawing.swift in Sources */,
+        C43840000000000000000231 /* GalaxySSIHealthAtlasAutonomicMotion.swift in Sources */,
+        C43840000000000000000233 /* GalaxySSIHealthAtlasAutonomicGeometry.swift in Sources */,
+        C43840000000000000000235 /* GalaxySSIHealthAtlasAutonomicRoutes.swift in Sources */,
+        C43840000000000000000237 /* GalaxySSIHealthAtlasAutonomicView.swift in Sources */,
+        C43840000000000000000239 /* GalaxySSIHealthAtlasAutonomicAnatomyDrawing.swift in Sources */,
+        C4384000000000000000023B /* GalaxySSIHealthAtlasAutonomicFiberDrawing.swift in Sources */,
+        C4384000000000000000023D /* GalaxySSIHealthAtlasAutonomicStagesDrawing.swift in Sources */,
+        C4384000000000000000023F /* GalaxySSIHealthAtlasAutonomicLabelsDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
