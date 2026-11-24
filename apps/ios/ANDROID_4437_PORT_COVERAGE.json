@@ -1,0 +1,204 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4437,
+    "mergeCommit": "dbbd6554d7cd632c6eb99f705e5a4b38ff42a3cb"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "0216a97ffe64fe34d2cc455fcb4e865da8ee3a8c09af334ef85cd692ef30405c",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasAgingDeviceTest.kt",
+      "sourceSHA256": "2c601afb11593ef53e751edccf678f33edf387eec959b13563fb2e85287e1a2a",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-research-navigation-scope.cjs"
+      ],
+      "note": "HealthAtlasAgingDeviceTest.kt: navigation/source-order/retained-model/research-return assertions audited as source references. Added full-catalogue topic and active-location migration fixtures, entry-scoped return/phase/input preservation and bounded scroll memory. No Android/XCTest/device tests, tap timing, native view identity, pixels, gesture or VoiceOver acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasCirculationDeviceTest.kt",
+      "sourceSHA256": "08a63ff161d3ca564ffdc1eb892c0e9065e951d7ebf028a48dffef1614179c7a",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-research-navigation-scope.cjs"
+      ],
+      "note": "HealthAtlasCirculationDeviceTest.kt: navigation/source-order/retained-model/research-return assertions audited as source references. Added full-catalogue topic and active-location migration fixtures, entry-scoped return/phase/input preservation and bounded scroll memory. No Android/XCTest/device tests, tap timing, native view identity, pixels, gesture or VoiceOver acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasDistributionDeviceTest.kt",
+      "sourceSHA256": "77a237bda50a8cd05020e80ff568a8de1f1c33272224ac1de13559efbf0f038a",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-research-navigation-scope.cjs"
+      ],
+      "note": "HealthAtlasDistributionDeviceTest.kt: navigation/source-order/retained-model/research-return assertions audited as source references. Added full-catalogue topic and active-location migration fixtures, entry-scoped return/phase/input preservation and bounded scroll memory. No Android/XCTest/device tests, tap timing, native view identity, pixels, gesture or VoiceOver acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasEyeOpticsDeviceTest.kt",
+      "sourceSHA256": "ba7ba63936e6fadfe3a35fa4925d983e4d26c7c0e31bf5c8d766bedfb4853a4c",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-research-navigation-scope.cjs"
+      ],
+      "note": "HealthAtlasEyeOpticsDeviceTest.kt: navigation/source-order/retained-model/research-return assertions audited as source references. Added full-catalogue topic and active-location migration fixtures, entry-scoped return/phase/input preservation and bounded scroll memory. No Android/XCTest/device tests, tap timing, native view identity, pixels, gesture or VoiceOver acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGasExchangeDeviceTest.kt",
+      "sourceSHA256": "f56799191e45c908210d674d27d5fb9a7872b99f0ea40608e48de8b0299eaaa1",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-research-navigation-scope.cjs"
+      ],
+      "note": "HealthAtlasGasExchangeDeviceTest.kt: navigation/source-order/retained-model/research-return assertions audited as source references. Added full-catalogue topic and active-location migration fixtures, entry-scoped return/phase/input preservation and bounded scroll memory. No Android/XCTest/device tests, tap timing, native view identity, pixels, gesture or VoiceOver acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGuidedFunctionDeviceTest.kt",
+      "sourceSHA256": "32b25aa747b6299be3a183555bc95c222e42b6a7ec8895128f8560ef466719d9",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-research-navigation-scope.cjs"
+      ],
+      "note": "HealthAtlasGuidedFunctionDeviceTest.kt: navigation/source-order/retained-model/research-return assertions audited as source references. Added full-catalogue topic and active-location migration fixtures, entry-scoped return/phase/input preservation and bounded scroll memory. No Android/XCTest/device tests, tap timing, native view identity, pixels, gesture or VoiceOver acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGutSectionsDeviceTest.kt",
+      "sourceSHA256": "9d6c9359febe4ae6d8321d2756da97114988fef0540750e7a573384f9d56f1b7",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-research-navigation-scope.cjs"
+      ],
+      "note": "HealthAtlasGutSectionsDeviceTest.kt: navigation/source-order/retained-model/research-return assertions audited as source references. Added full-catalogue topic and active-location migration fixtures, entry-scoped return/phase/input preservation and bounded scroll memory. No Android/XCTest/device tests, tap timing, native view identity, pixels, gesture or VoiceOver acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasLymphOrgansDeviceTest.kt",
+      "sourceSHA256": "ff20cf3e183a49c5a1bb98301df9b6057b065a31248489afa08d0a535ca2e9b8",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-research-navigation-scope.cjs"
+      ],
+      "note": "HealthAtlasLymphOrgansDeviceTest.kt: navigation/source-order/retained-model/research-return assertions audited as source references. Added full-catalogue topic and active-location migration fixtures, entry-scoped return/phase/input preservation and bounded scroll memory. No Android/XCTest/device tests, tap timing, native view identity, pixels, gesture or VoiceOver acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasMiddleEarDeviceTest.kt",
+      "sourceSHA256": "6c7abdce0031ebd2fb173f054cd6d6d7e52f974d44b9e272ef4c7a2da84a6d67",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-research-navigation-scope.cjs"
+      ],
+      "note": "HealthAtlasMiddleEarDeviceTest.kt: navigation/source-order/retained-model/research-return assertions audited as source references. Added full-catalogue topic and active-location migration fixtures, entry-scoped return/phase/input preservation and bounded scroll memory. No Android/XCTest/device tests, tap timing, native view identity, pixels, gesture or VoiceOver acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasPhysiologyDeviceTest.kt",
+      "sourceSHA256": "92ede7576aeada47d6fb6e237c153bbe44749af895ae0c311c7707273792a229",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-research-navigation-scope.cjs"
+      ],
+      "note": "HealthAtlasPhysiologyDeviceTest.kt: navigation/source-order/retained-model/research-return assertions audited as source references. Added full-catalogue topic and active-location migration fixtures, entry-scoped return/phase/input preservation and bounded scroll memory. No Android/XCTest/device tests, tap timing, native view identity, pixels, gesture or VoiceOver acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasRenalDeviceTest.kt",
+      "sourceSHA256": "8d1648b0d6f1994b2ae32b73894b19a078666bd7e26392e7540828ade82598d8",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-research-navigation-scope.cjs"
+      ],
+      "note": "HealthAtlasRenalDeviceTest.kt: navigation/source-order/retained-model/research-return assertions audited as source references. Added full-catalogue topic and active-location migration fixtures, entry-scoped return/phase/input preservation and bounded scroll memory. No Android/XCTest/device tests, tap timing, native view identity, pixels, gesture or VoiceOver acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasVesselFlowDeviceTest.kt",
+      "sourceSHA256": "5510d3a32a42777539c9815d0fcc6da81755fe65110b4776777cb251b02ae2f3",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-research-navigation-scope.cjs"
+      ],
+      "note": "HealthAtlasVesselFlowDeviceTest.kt: navigation/source-order/retained-model/research-return assertions audited as source references. Added full-catalogue topic and active-location migration fixtures, entry-scoped return/phase/input preservation and bounded scroll memory. No Android/XCTest/device tests, tap timing, native view identity, pixels, gesture or VoiceOver acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthBodyAtlasDeviceTest.kt",
+      "sourceSHA256": "5b6d56310ce71f9aef15061690873d9e7eac0527785497155e2ca665eeef2357",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-research-navigation-scope.cjs"
+      ],
+      "note": "HealthBodyAtlasDeviceTest.kt: navigation/source-order/retained-model/research-return assertions audited as source references. Added full-catalogue topic and active-location migration fixtures, entry-scoped return/phase/input preservation and bounded scroll memory. No Android/XCTest/device tests, tap timing, native view identity, pixels, gesture or VoiceOver acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUi.kt",
+      "sourceSHA256": "22ac49de01e5715a79c92c0f230ffe22bf667dd2d01534cfb3d4a9557f3e5134",
+      "kind": "semantic-research-tab-identity",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasResearch.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift"
+      ],
+      "note": "Filtered topics carry semantic raw-value picker tags and atlas-research-tab-drugs/aging/physiology accessibility identities rather than positional indices."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthBodyAtlasActivity.kt",
+      "sourceSHA256": "817291d7f88952b150a27e20a3462aa4962b79897ba9bda95b0628f230fd3544",
+      "kind": "native-single-physiology-location-and-navigation",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetail.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasResearch.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasScrollAnchor.swift"
+      ],
+      "note": "System/organ inline models opt into mechanism-first and retain their evidence link. Research opens Drugs then Aging only; microscopy retains all three topics. Persist explicit open state and bounded return offset, migrate active old physiological destinations into expanded Function, synchronously pause/snapshot before navigation and restore Function pixels via the containing iOS 15 scroll view after layout. Existing iOS caches stored topic preference but not active research location: do not reinterpret ordinary default preferences as active locations. Native pixel restoration has not been executed."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_strings.xml",
+      "sourceSHA256": "6fe501e96657147d4d2e71b1a2c4935ce680a26abbe3a5a022057a6ddd3501b8",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasResearchNavigation.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasResearchNavigation.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "One exact English/Chinese targeted-research label pair from original XML, registered in Xcode and native locale chain."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_strings.xml",
+      "sourceSHA256": "7aedd8f8e4e909f6fa7778392e5579de3247f5fc1924349eacf1745167412c18",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasResearchNavigation.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasResearchNavigation.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "One exact English/Chinese targeted-research label pair from original XML, registered in Xcode and native locale chain."
+    },
+    {
+      "source": "docs/architecture/android-body-atlas.md",
+      "sourceSHA256": "4d3816fafe29ce5a6e6a91420598c11692e3a1a94b76be7d73509faa6030b9c8",
+      "kind": "architecture-reference",
+      "ios": [
+        "apps/ios/ANDROID_4437_PORT_STATUS.md"
+      ],
+      "note": "Document native navigation/state and source-only verification separately from Android's execution evidence."
+    }
+  ]
+}

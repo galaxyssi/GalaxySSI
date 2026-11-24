@@ -8,7 +8,7 @@ struct GalaxySSIHealthAtlasDetail: View {
   let records: GalaxySSIHealthRecords
   let depth: Int
   @Environment(\.galaxySSIInterfaceLanguage) private var language
-  @State private var research = false
+  @StateObject private var scrollMemory = GalaxySSIHealthAtlasScrollMemory()
   @State private var principleExpanded = false
   private var usesInlineModels: Bool { GalaxySSIHealthAtlasState.usesInlineModels(entry) }
   private var tabs: [GalaxySSIHealthAtlasState.Tab] {
@@ -16,6 +16,12 @@ struct GalaxySSIHealthAtlasDetail: View {
   }
 
   private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.binding(entry) }
+  private var research: Binding<Bool> {
+    Binding(get: { selection.wrappedValue.researchPresented == true }, set: { open in
+      if !open { state.closeResearch(entry) }
+    })
+  }
+  private var researchTitle: String { t(usesInlineModels ? "targeted_research" : "research") }
   private var functionCatalogue: GalaxySSIHealthAtlasFunctionCatalogue? { try? GalaxySSIHealthAtlasFunctionCatalogue.bundled.get() }
   private var hasFunctionPlayer: Bool {
     functionCatalogue?.choices(for: entry.id).contains { GalaxySSIHealthAtlasFunctionRendering.implemented.contains($0.id) } == true
@@ -37,6 +43,7 @@ struct GalaxySSIHealthAtlasDetail: View {
       }.pickerStyle(.segmented).padding()
         .onChange(of: selection.wrappedValue.tab) { tab in
           if tab != .values { selection.wrappedValue.revealTrend = false }
+          if tab == .function { scrollMemory.restore(0) }
         }
       if selection.wrappedValue.tab == .values {
         GalaxySSIHealthAtlasValues(entry: entry, records: records, selection: selection)
@@ -90,15 +97,22 @@ struct GalaxySSIHealthAtlasDetail: View {
             } else {
               simulationPanel
             }
-            Button(t("research")) { research = true }
+            if selection.wrappedValue.tab == .function || selection.wrappedValue.tab == .simulation {
+              Button(researchTitle) { state.openResearch(entry, returnScroll: scrollMemory.offset) }
+                .frame(minHeight: 44).accessibilityIdentifier("atlas-open-research")
+            }
             Divider()
-            Link(t(atlas.model(entry).reference == nil ? "evidence" : "reference_pubmed"), destination: atlas.model(entry).source)
+            if !usesInlineModels || selection.wrappedValue.tab != .function { mechanismSource }
             Text(t("art_note")).font(.footnote).foregroundColor(.secondary)
             if selection.wrappedValue.tab == .structure || selection.wrappedValue.tab == .function,
                let source = atlas.plate(for: entry.id, viewKey: selection.wrappedValue.artworkView)?.source {
               Link(t("plate_source"), destination: source).frame(minHeight: 44)
             }
-          }.padding()
+          }.padding().background {
+            if selection.wrappedValue.tab == .function {
+              GalaxySSIHealthAtlasScrollAnchor(memory: scrollMemory, revision: scrollMemory.revision)
+            }
+          }
         }.id(selection.wrappedValue.tab)
       }
     }
@@ -113,11 +127,17 @@ struct GalaxySSIHealthAtlasDetail: View {
           .padding(.horizontal)
       }
     }
-    .background(NavigationLink(isActive: $research) {
+    .background(NavigationLink(isActive: research) {
       GalaxySSIHealthAtlasResearch(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
     } label: { EmptyView() }.hidden())
     .galaxySSIHealthTheme()
     .environmentObject(state.playback)
+    .onAppear {
+      if selection.wrappedValue.tab == .function, let offset = selection.wrappedValue.researchReturnScroll { scrollMemory.restore(offset) }
+    }
+    .onChange(of: selection.wrappedValue.researchPresented) { open in
+      if open != true, selection.wrappedValue.tab == .function, let offset = selection.wrappedValue.researchReturnScroll { scrollMemory.restore(offset) }
+    }
   }
   @ViewBuilder private var numericalModelButton: some View {
     if usesInlineModels {
@@ -126,7 +146,10 @@ struct GalaxySSIHealthAtlasDetail: View {
         state.playback.claim("models-disclosure|" + entry.id)
         selection.wrappedValue.modelsExpanded = expanded
       })) {
-        simulationPanel.accessibilityIdentifier("atlas-inline-models")
+        VStack(alignment: .leading, spacing: 16) {
+          simulationPanel
+          mechanismSource
+        }.accessibilityIdentifier("atlas-inline-models")
       } label: { Text(t("inline_models")).frame(minHeight: 44) }
         .accessibilityIdentifier("atlas-open-simulation")
     } else {
@@ -149,7 +172,11 @@ struct GalaxySSIHealthAtlasDetail: View {
           return AnyView(GalaxySSIHealthAtlasDetail(atlas: atlas, entry: target, state: state, records: records, depth: depth + 1))
         }
         return AnyView(EmptyView())
-      }, inline: usesInlineModels)
+      }, mechanismFirst: usesInlineModels, inline: usesInlineModels)
+  }
+  private var mechanismSource: some View {
+    Link(t(atlas.model(entry).reference == nil ? "evidence" : "reference_pubmed"), destination: atlas.model(entry).source)
+      .frame(minHeight: 44).accessibilityIdentifier("atlas-source-physiology")
   }
   @ViewBuilder private var structure: some View {
     if entry.kind == .organ {

@@ -41,9 +41,10 @@ const afterAt = panel.indexOf('quantitative.accessibilityIdentifier("atlas-quant
 assert(beforeAt < mechanismAt && mechanismAt < afterAt);
 assert(research.includes("}, mechanismFirst: true)"));
 const expectedResearch = prior("Research").replace("            })\n        case .drugs:", "            }, mechanismFirst: true)\n        case .drugs:");
-assert.equal(research.split("        case .drugs:")[0], expectedResearch.split("        case .drugs:")[0]);
+const physiologyCase = s => s.split("        case .physiology:")[1].split("        case .drugs:")[0];
+assert.equal(physiologyCase(research), physiologyCase(expectedResearch));
 assert.equal(research.split("  private var aging:")[1], expectedResearch.split("  private var aging:")[1]);
-assert(!source("Detail").includes("mechanismFirst:"));
+assert(source("Detail").includes("mechanismFirst: usesInlineModels, inline: usesInlineModels"));
 const restoreBlock = s => s.split("  func restore(_ text:")[1].split("  var serialized:")[0];
 assert.equal(restoreBlock(state).replace('      if let entry = atlas.entry(id), let saved = entries[id] { entries[id] = Self.migrated(saved, entry: entry) }\n', ""),
   restoreBlock(prior("State")).replace("decoded.count <= 300", "decoded.count <= max(300, atlas.entries.count)"));
