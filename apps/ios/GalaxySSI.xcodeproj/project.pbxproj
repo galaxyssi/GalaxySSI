@@ -250,6 +250,12 @@
     C4384000000000000000020F /* GalaxySSIHealthAtlasCranialEyeDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000210 /* GalaxySSIHealthAtlasCranialEyeDrawing.swift */; };
     C43840000000000000000211 /* GalaxySSIHealthAtlasCranialNeuralDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000212 /* GalaxySSIHealthAtlasCranialNeuralDrawing.swift */; };
     C43840000000000000000213 /* GalaxySSIHealthAtlasCranialLightLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000214 /* GalaxySSIHealthAtlasCranialLightLabelsDrawing.swift */; };
+    C43840000000000000000215 /* GalaxySSIHealthAtlasSebaceousGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000216 /* GalaxySSIHealthAtlasSebaceousGeometry.swift */; };
+    C43840000000000000000217 /* GalaxySSIHealthAtlasSebaceousMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000218 /* GalaxySSIHealthAtlasSebaceousMotion.swift */; };
+    C43840000000000000000219 /* GalaxySSIHealthAtlasSebaceousView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000021A /* GalaxySSIHealthAtlasSebaceousView.swift */; };
+    C4384000000000000000021B /* GalaxySSIHealthAtlasSebaceousSkinDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000021C /* GalaxySSIHealthAtlasSebaceousSkinDrawing.swift */; };
+    C4384000000000000000021D /* GalaxySSIHealthAtlasSebaceousLobuleDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000021E /* GalaxySSIHealthAtlasSebaceousLobuleDrawing.swift */; };
+    C4384000000000000000021F /* GalaxySSIHealthAtlasSebaceousCellDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000220 /* GalaxySSIHealthAtlasSebaceousCellDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1973,6 +1979,12 @@
     C43840000000000000000210 /* GalaxySSIHealthAtlasCranialEyeDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCranialEyeDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000212 /* GalaxySSIHealthAtlasCranialNeuralDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCranialNeuralDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000214 /* GalaxySSIHealthAtlasCranialLightLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCranialLightLabelsDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000216 /* GalaxySSIHealthAtlasSebaceousGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSebaceousGeometry.swift; sourceTree = "<group>"; };
+    C43840000000000000000218 /* GalaxySSIHealthAtlasSebaceousMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSebaceousMotion.swift; sourceTree = "<group>"; };
+    C4384000000000000000021A /* GalaxySSIHealthAtlasSebaceousView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSebaceousView.swift; sourceTree = "<group>"; };
+    C4384000000000000000021C /* GalaxySSIHealthAtlasSebaceousSkinDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSebaceousSkinDrawing.swift; sourceTree = "<group>"; };
+    C4384000000000000000021E /* GalaxySSIHealthAtlasSebaceousLobuleDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSebaceousLobuleDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000220 /* GalaxySSIHealthAtlasSebaceousCellDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSebaceousCellDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3715,6 +3727,12 @@
         C43840000000000000000210 /* GalaxySSIHealthAtlasCranialEyeDrawing.swift */,
         C43840000000000000000212 /* GalaxySSIHealthAtlasCranialNeuralDrawing.swift */,
         C43840000000000000000214 /* GalaxySSIHealthAtlasCranialLightLabelsDrawing.swift */,
+        C43840000000000000000216 /* GalaxySSIHealthAtlasSebaceousGeometry.swift */,
+        C43840000000000000000218 /* GalaxySSIHealthAtlasSebaceousMotion.swift */,
+        C4384000000000000000021A /* GalaxySSIHealthAtlasSebaceousView.swift */,
+        C4384000000000000000021C /* GalaxySSIHealthAtlasSebaceousSkinDrawing.swift */,
+        C4384000000000000000021E /* GalaxySSIHealthAtlasSebaceousLobuleDrawing.swift */,
+        C43840000000000000000220 /* GalaxySSIHealthAtlasSebaceousCellDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5587,6 +5605,12 @@
         C4384000000000000000020F /* GalaxySSIHealthAtlasCranialEyeDrawing.swift in Sources */,
         C43840000000000000000211 /* GalaxySSIHealthAtlasCranialNeuralDrawing.swift in Sources */,
         C43840000000000000000213 /* GalaxySSIHealthAtlasCranialLightLabelsDrawing.swift in Sources */,
+        C43840000000000000000215 /* GalaxySSIHealthAtlasSebaceousGeometry.swift in Sources */,
+        C43840000000000000000217 /* GalaxySSIHealthAtlasSebaceousMotion.swift in Sources */,
+        C43840000000000000000219 /* GalaxySSIHealthAtlasSebaceousView.swift in Sources */,
+        C4384000000000000000021B /* GalaxySSIHealthAtlasSebaceousSkinDrawing.swift in Sources */,
+        C4384000000000000000021D /* GalaxySSIHealthAtlasSebaceousLobuleDrawing.swift in Sources */,
+        C4384000000000000000021F /* GalaxySSIHealthAtlasSebaceousCellDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
