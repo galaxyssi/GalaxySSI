@@ -2,6 +2,20 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testMessageSubmissionScopeRejectsOtherConversationOwnerAndBlankIdentity() {
+    let scope = AgentMessageSubmissionScope(owner: "owner-a", conversationId: "conversation-a")
+    XCTAssertTrue(scope.matches(owner: "owner-a", conversationId: "conversation-a"))
+    XCTAssertNotEqual(scope.requestId,
+      AgentMessageSubmissionScope(owner: "owner-a", conversationId: "conversation-a").requestId)
+    XCTAssertFalse(scope.matches(owner: "owner-a", conversationId: "conversation-b"))
+    XCTAssertFalse(scope.matches(owner: "owner-b", conversationId: "conversation-a"))
+    XCTAssertFalse(scope.matches(owner: "owner-a", conversationId: "conversation-a-extra"))
+    XCTAssertFalse(AgentMessageSubmissionScope(owner: "", conversationId: "conversation-a")
+      .matches(owner: "", conversationId: "conversation-a"))
+    XCTAssertFalse(AgentMessageSubmissionScope(owner: "owner-a", conversationId: " ")
+      .matches(owner: "owner-a", conversationId: " "))
+  }
+
   func testStableAutoRoutePersistsExactConversationAndRejectsOldTurnsAndManualUpdates() throws {
     let store = makeStore()
     let first = store.createAgentSession(title: "First auto route")

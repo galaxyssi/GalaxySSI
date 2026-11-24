@@ -151,6 +151,7 @@ struct AgentHomeView: View {
   @State var screenAssistantRunID: UUID?
   @State var screenAssistantOwnedTurns: [ChatMessage] = []
   @State var screenAssistantSubmissions: [UUID: Task<Void, Never>] = [:]
+  @State var composerSubmissionID: UUID?
   @State var screenAssistantStopping = false
   @State var screenAssistantVoiceCancellationRequest = 0
   @State var agentVoiceCaptureDictationOnly = false

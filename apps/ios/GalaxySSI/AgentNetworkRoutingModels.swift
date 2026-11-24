@@ -473,6 +473,38 @@ enum AgentConnectorFailureScope {
   }
 }
 
+enum AgentAutomaticConnectorRoutePolicy {
+  static func refresh(_ action: AgentAction, selection: AgentConnectorRouteSelection?) -> AgentAction {
+    guard action.kind == .callConnector, action.parameters["manual_target_locked"] != "true",
+          action.parameters["auto_reroute_on_failure"] != "false",
+          (action.parameters[agentTeamSpecParameter] ?? "").isBlank,
+          !AgentConnectorFallbackAction.hasActiveTrail(action) else { return action }
+    var routed = action
+    guard let selection else {
+      routed.parameters["connector_id"] = AgentPlanFactory.unavailableReasoningConnectorId
+      routed.parameters["routing_fallback_ids"] = ""
+      return routed
+    }
+    let selected = selection.target
+    if action.parameters["connector_id"] != selected.id {
+      for key in ["manual_model_id", "agent_model_id", "agent_reasoning_effort", "agent_instance_id"] {
+        routed.parameters.removeValue(forKey: key)
+      }
+    }
+    routed.target = selected.title
+    routed.parameters["connector_id"] = selected.id
+    routed.parameters["connector_kind"] = selected.kind.rawValue.lowercased()
+    routed.parameters["connector_adapter_type"] = selected.adapterType
+    routed.parameters["connector_failure_domain"] = selected.failureDomain
+    routed.parameters["auto_reroute_on_failure"] = "true"
+    routed.parameters["routing_fallback_ids"] = AgentConnectorFallbackTrail.encode(
+      (selection.decision?.orderedTargetIds ?? []).filter { $0 != selected.id })
+    routed.parameters["routing_score"] = selection.decision?.primary.map { String($0.score) } ?? ""
+    routed.parameters["routing_reasons"] = selection.decision?.primary?.reasons.joined(separator: "|") ?? ""
+    return routed
+  }
+}
+
 enum AgentConnectorFallbackAction {
   static let attemptedParameter = "routing_attempted_resource_ids"
   static let attemptedResult = "attempted_resource_ids"

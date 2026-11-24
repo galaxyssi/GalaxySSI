@@ -13507,7 +13507,8 @@ final class MessageCoordinator: ObservableObject {
     store.upsertAgentTask(task)
     localRecordedRunStore.recordNativeExecution(task: task, outgoing: outgoing, status: .running)
     let executionActions = actions.map { action in
-      preparedLocalNativeAction(action, outgoing: outgoing, task: task)
+      let routed = refreshAutomaticConnectorAction(action, outgoing: outgoing, goal: task.goal)
+      return preparedLocalNativeAction(routed, outgoing: outgoing, task: task)
     }
     let nodeKeys = actions.map { action in
       AgentPlanNodeKey.make(
@@ -13604,6 +13605,9 @@ final class MessageCoordinator: ObservableObject {
       let action = actions[index]
       let executionAction = executionActions[index]
       let result = results[index]
+      if result.success || result.metadata["awaiting_response"] == "true" {
+        recordAutomaticConnectorTarget(executionAction, result: result, outgoing: outgoing)
+      }
       rememberUnverifiedEffect(result, action: action, outgoing: outgoing, task: &task)
       AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
       let stepReply = localizedNativeToolReply(result).ifBlank(result.message)
@@ -13777,20 +13781,7 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: AgentTaskRecord
   ) -> AgentAction {
-    var executionAction = action
-    executionAction.parameters["_galaxyssi_task_id"] = task.taskId
-    executionAction.parameters["_galaxyssi_session_id"] = task.sessionId
-    executionAction.parameters["_galaxyssi_conversation_id"] = outgoing.conversationId
-    executionAction.parameters["_galaxyssi_turn_id"] = outgoing.turnId.ifBlank(outgoing.id.uuidString)
-    executionAction.parameters["_galaxyssi_contact_id"] = outgoing.contactId
-    executionAction.parameters["response_language"] = LanguagePolicySettings.resolve(
-      store.languagePolicy.responseLanguage
-    )
-    executionAction.parameters["_galaxyssi_workspace_id"] = AgentWorkspaceScope.id(
-      conversationId: outgoing.conversationId,
-      sessionId: task.sessionId
-    )
-    return executionAction
+    scopedLocalNativeExecutionAction(action, outgoing: outgoing, task: task)
   }
 
   private func recordLocalNativeBatchSummary(_ results: [String]) -> String {
@@ -14213,7 +14204,8 @@ final class MessageCoordinator: ObservableObject {
 
     let history = supervisorHistory(task: task, outgoing: outgoing)
     let boundAction = AgentSupervisorRecoveryPolicy.restoreBinding(action, history: history)
-    var executionAction = scopedLocalNativeExecutionAction(boundAction, outgoing: outgoing, task: task)
+    let routed = refreshAutomaticConnectorAction(boundAction, outgoing: outgoing, goal: task.goal)
+    var executionAction = scopedLocalNativeExecutionAction(routed, outgoing: outgoing, task: task)
     recordAutomaticConnectorTarget(executionAction, outgoing: outgoing)
     var result = runtime.actionExecutor.execute(
       action: executionAction,
@@ -14255,6 +14247,19 @@ final class MessageCoordinator: ObservableObject {
     finishLocalNativeAction(action: action, executionAction: executionAction, result: result,
                             outgoing: outgoing, rollbackAction: rollbackAction, task: &task)
     return true
+  }
+
+  private func refreshAutomaticConnectorAction(_ action: AgentAction, outgoing: ChatMessage, goal: String) -> AgentAction {
+    guard action.kind == .callConnector, action.parameters["manual_target_locked"] != "true",
+          action.parameters["auto_reroute_on_failure"] != "false",
+          (action.parameters[agentTeamSpecParameter] ?? "").isBlank,
+          !AgentConnectorFallbackAction.hasActiveTrail(action),
+          AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic else { return action }
+    let targets = AgentCallableTargetCatalog.build(contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) })
+    let selection = AgentConnectorRouteSelector.select(targets: targets, decision: nil,
+      preferredTargetId: action.parameters["connector_id"] ?? "", goal: goal, preserveHealthyPrimary: true)
+    return AgentAutomaticConnectorRoutePolicy.refresh(action, selection: selection)
   }
 
   private func scopedLocalNativeExecutionAction(

@@ -1579,6 +1579,38 @@ extension GalaxySSIStoreTests {
       currentResourceIds: [], targets: [original, excluded]))
   }
 
+  func testAutomaticRouteRefreshKeepsRoutedParametersWhenContextIsAppended() {
+    let original = AgentAction(id: "parallel-auto", kind: .callConnector, target: "Old", risk: .low,
+      status: .proposed, description: "Run", parameters: ["connector_id": "old",
+        "custom_parameter": "keep", "prompt": "Original goal", "agent_model_id": "old-model",
+        "_galaxyssi_conversation_id": "conversation-a", "_galaxyssi_turn_id": "turn-a"], requiresConfirmation: false)
+    let target = routeTarget("fresh", kind: .agent)
+    let routed = AgentAutomaticConnectorRoutePolicy.refresh(original,
+      selection: AgentConnectorRouteSelection(target: target, decision: nil))
+    var prepared = routed
+    prepared.parameters["_galaxyssi_task_id"] = "task-a"
+    XCTAssertEqual(prepared.parameters["connector_id"], target.id)
+    XCTAssertEqual(prepared.target, target.title)
+    XCTAssertEqual(prepared.parameters["custom_parameter"], "keep")
+    XCTAssertEqual(prepared.parameters["prompt"], "Original goal")
+    XCTAssertEqual(prepared.parameters["_galaxyssi_conversation_id"], "conversation-a")
+    XCTAssertEqual(prepared.parameters["_galaxyssi_turn_id"], "turn-a")
+    XCTAssertEqual(prepared.parameters["auto_reroute_on_failure"], "true")
+    XCTAssertNil(prepared.parameters["agent_model_id"])
+    XCTAssertEqual(prepared.id, original.id)
+    XCTAssertEqual(AgentAutomaticConnectorRoutePolicy.refresh(original, selection: nil)
+      .parameters["connector_id"], AgentPlanFactory.unavailableReasoningConnectorId)
+    var locked = original
+    locked.parameters["manual_target_locked"] = "true"
+    XCTAssertEqual(AgentAutomaticConnectorRoutePolicy.refresh(locked, selection: nil), locked)
+    locked = original
+    locked.parameters[agentTeamSpecParameter] = "group-owned"
+    XCTAssertEqual(AgentAutomaticConnectorRoutePolicy.refresh(locked, selection: nil), locked)
+    locked = original
+    locked.parameters["auto_reroute_on_failure"] = "false"
+    XCTAssertEqual(AgentAutomaticConnectorRoutePolicy.refresh(locked, selection: nil), locked)
+  }
+
   func testFallbackActionTrailBelongsOnlyToItsOwningAction() {
     var stale = AgentAction(
       id: "new-action",

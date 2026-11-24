@@ -2,7 +2,7 @@
   "androidPR": 3119,
   "androidCommit": "e7c6af6ef3eed21c7fb697b4458d1cf742833dc4",
   "incrementalBase": "ddcb2a69acd02ea12d20fb469e779d4d87b85a4f",
-  "scope": "Decision admission, encrypted Auto target/turn, primary identity, healthy-primary shortcut and synchronous fresh fallback; asynchronous observation/parallel/resume parity incomplete",
+  "scope": "Admission, encrypted Auto identity, primary/synchronous/parallel route preparation and outgoing attachment/UI scope; asynchronous observation/recovery/resume parity incomplete",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -47,7 +47,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentPage.kt",
       "sha256": "b55d6d444c7a944c7aa16bb001a1ab53c1216d2de6d65e74fc634a75ee13984c",
-      "disposition": "Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment"
+      "disposition": "Composer captures owner/contact/conversation, requires that conversation at send, and rejects stale UI restoration; attachment staging/routing uses outgoing identity; no live navigation acceptance"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileAgentPlanning.kt",
@@ -62,7 +62,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentExecution.kt",
       "sha256": "a85baed4f3c1dfba36d3a70c8e783b29f561483ed692989b049e7fd35cb6f363",
-      "disposition": "Main native local/cloud/Agent branch chain shares one captured automatic target and persists admitted dispatch; Android parallel/recovery loop specifics still incomplete"
+      "disposition": "Primary branch snapshot and parallel/synchronous pre-dispatch route refresh preserve updated action parameters and exact outgoing context; asynchronous recovery specifics still incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentRuntimeTiming.kt",
