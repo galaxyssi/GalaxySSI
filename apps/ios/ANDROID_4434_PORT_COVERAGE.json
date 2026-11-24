@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4434,
+    "mergeCommit": "3327febe8406fb5ee5cf30dc0734ef6c4e2cbdcc"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "cf544baddd3add4e7b60af4ae960cf3b7e66b715251069faafca80e9700e8ea7",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump, Android/Desktop edits or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasDistributionDeviceTest.kt",
+      "sourceSHA256": "b4dd8977d36549ef01a6c8c9a69c1e5c5c77afffb621727a0930612b567ae9ff",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasModelComparisonTests.swift"
+      ],
+      "note": "Native test SOURCE covers pinned four-hour fixture, all scenario/time profiles, no-exchange reduction, conservation/common envelope, malformed and legacy state, independent reset/restoration and bilingual selected-only Agent context. Android/XCTest/render/gesture/pixel/VoiceOver tests are not run."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAgentContext.kt",
+      "sourceSHA256": "777811e0dc3a944654e56eb38345449b86157d7dabe32cea25a44a82e5e928aa",
+      "kind": "native-synthetic-comparison-integration",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasAgentContext.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasAgentHandoff.swift"
+      ],
+      "note": "Freeze paired rates and shared initial amount/elimination, preserve signed central difference and three-preset envelope, render 193 quarter-hour samples with original axes/colors/dashes/alpha/marker and text, independently restore legacy five/new seven inputs, and include only the selected public model in both Agent context branches. Reuse unchanged two-compartment kernel; do not claim native numerical or experimental validation."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasComparisonPanel.kt",
+      "sourceSHA256": "3eee930735787d6ce210bf927378d9653849e0965b1f90e97d0b577e0f7d23ac",
+      "kind": "native-synthetic-comparison-integration",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasComparisonPanel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasModelComparison.swift"
+      ],
+      "note": "Freeze paired rates and shared initial amount/elimination, preserve signed central difference and three-preset envelope, render 193 quarter-hour samples with original axes/colors/dashes/alpha/marker and text, independently restore legacy five/new seven inputs, and include only the selected public model in both Agent context branches. Reuse unchanged two-compartment kernel; do not claim native numerical or experimental validation."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasDistribution.kt",
+      "sourceSHA256": "2102a3b72b4b95ba5b166c14398e367229ef2b6e19c60f99bf0ff65d081d5229",
+      "kind": "native-synthetic-comparison-integration",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDistribution.swift"
+      ],
+      "note": "Freeze paired rates and shared initial amount/elimination, preserve signed central difference and three-preset envelope, render 193 quarter-hour samples with original axes/colors/dashes/alpha/marker and text, independently restore legacy five/new seven inputs, and include only the selected public model in both Agent context branches. Reuse unchanged two-compartment kernel; do not claim native numerical or experimental validation."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasModelComparison.kt",
+      "sourceSHA256": "83f3347044e8abe9960af06917ad29320be642c105ea5dfd865e4e6385bc3772",
+      "kind": "native-synthetic-comparison-integration",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasModelComparison.swift"
+      ],
+      "note": "Freeze paired rates and shared initial amount/elimination, preserve signed central difference and three-preset envelope, render 193 quarter-hour samples with original axes/colors/dashes/alpha/marker and text, independently restore legacy five/new seven inputs, and include only the selected public model in both Agent context branches. Reuse unchanged two-compartment kernel; do not claim native numerical or experimental validation."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasResearchPanel.kt",
+      "sourceSHA256": "90aa5601a863385adc447b42f20d838985fa66d23bdf333b744692b94656e23c",
+      "kind": "native-synthetic-comparison-integration",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasResearch.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasComparisonPanel.swift"
+      ],
+      "note": "Freeze paired rates and shared initial amount/elimination, preserve signed central difference and three-preset envelope, render 193 quarter-hour samples with original axes/colors/dashes/alpha/marker and text, independently restore legacy five/new seven inputs, and include only the selected public model in both Agent context branches. Reuse unchanged two-compartment kernel; do not claim native numerical or experimental validation."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_comparison.xml",
+      "sourceSHA256": "b2aa5646d86b37814c5463c8f4a11904f6ffabe956f12b470a0a7671b78f02dd",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasModelComparison.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasModelComparison.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift"
+      ],
+      "note": "Eleven exact English/Chinese pairs, including explicit synthetic/evidence/non-confidence-interval limits and equation/validation links, registered in Xcode."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_comparison.xml",
+      "sourceSHA256": "474f197749830fbc31036832923e5b7759d0c61e94b95e22253d7bbec0a4efd7",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasModelComparison.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasModelComparison.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift"
+      ],
+      "note": "Eleven exact English/Chinese pairs, including explicit synthetic/evidence/non-confidence-interval limits and equation/validation links, registered in Xcode."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasModelComparisonTest.kt",
+      "sourceSHA256": "361b141fc63e09ae729a1fac8a1e16361ac6025781ca7ee27e2514ce0646d8bd",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasModelComparisonTests.swift"
+      ],
+      "note": "Native test SOURCE covers pinned four-hour fixture, all scenario/time profiles, no-exchange reduction, conservation/common envelope, malformed and legacy state, independent reset/restoration and bilingual selected-only Agent context. Android/XCTest/render/gesture/pixel/VoiceOver tests are not run."
+    },
+    {
+      "source": "docs/architecture/android-body-atlas.md",
+      "sourceSHA256": "2298d5571200732c9970caefce5b83c0e81ca27c474091ad30c0808f990f21a4",
+      "kind": "ios-port-scope-and-evidence-documentation",
+      "ios": [
+        "apps/ios/ANDROID_4434_PORT_STATUS.md"
+      ],
+      "note": "Document normalized central amount, three fixed joint scenarios, visible assumptions, distinction between numerical and experimental validation, no patient prediction and remaining native acceptance gaps. Android architecture document is not edited."
+    }
+  ]
+}

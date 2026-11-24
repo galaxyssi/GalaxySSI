@@ -6,9 +6,10 @@ const root = path.resolve(__dirname, "../../.."), sha = pleural ? "c704a171da933
 const completion = process.argv.includes("--completion-4414");
 const wholeActions = process.argv.includes("--whole-actions-4417");
 const readings = process.argv.includes("--related-readings-4418");
-const sourceSHA = readings ? "115d6adeb661fd4357fea57517ca92d02ffe1f51" : wholeActions ? "071062afe8059506c9958906f708780d80437f55" : completion ? "7dd7f35525ed800b74a3439bf708b1793316de42" : sha;
-const sourceRevision = readings ? 4418 : wholeActions ? 4417 : completion ? 4414 : revision;
-const sourceTable = readings ? "AtlasRelatedReadings" : wholeActions ? "AtlasWholeActions" : completion ? "AtlasCompletionTeaching" : tableName;
+const comparison = process.argv.includes("--model-comparison-4434");
+const sourceSHA = comparison ? "3327febe8406fb5ee5cf30dc0734ef6c4e2cbdcc" : readings ? "115d6adeb661fd4357fea57517ca92d02ffe1f51" : wholeActions ? "071062afe8059506c9958906f708780d80437f55" : completion ? "7dd7f35525ed800b74a3439bf708b1793316de42" : sha;
+const sourceRevision = comparison ? 4434 : readings ? 4418 : wholeActions ? 4417 : completion ? 4414 : revision;
+const sourceTable = comparison ? "AtlasModelComparison" : readings ? "AtlasRelatedReadings" : wholeActions ? "AtlasWholeActions" : completion ? "AtlasCompletionTeaching" : tableName;
 const checking = process.argv.includes("--check");
 const git = args => cp.execFileSync("git", args, {cwd: root, encoding: "utf8", maxBuffer: 16_000_000});
 const files = git(["diff", "--name-status", sourceSHA + "^1", sourceSHA, "--", "apps/android/app/src/main/res/values", "apps/android/app/src/main/res/values-zh"])
