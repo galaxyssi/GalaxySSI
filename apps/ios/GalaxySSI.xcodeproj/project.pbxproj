@@ -171,6 +171,12 @@
     C43840000000000000000171 /* GalaxySSIHealthAtlasSplenicAnatomyDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000172 /* GalaxySSIHealthAtlasSplenicAnatomyDrawing.swift */; };
     C43840000000000000000173 /* GalaxySSIHealthAtlasSplenicCellDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000174 /* GalaxySSIHealthAtlasSplenicCellDrawing.swift */; };
     C43840000000000000000175 /* GalaxySSIHealthAtlasSplenicDynamicsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000176 /* GalaxySSIHealthAtlasSplenicDynamicsDrawing.swift */; };
+    C43840000000000000000177 /* GalaxySSIHealthAtlasThymusMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000178 /* GalaxySSIHealthAtlasThymusMotion.swift */; };
+    C43840000000000000000179 /* GalaxySSIHealthAtlasThymusShapes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000017A /* GalaxySSIHealthAtlasThymusShapes.swift */; };
+    C4384000000000000000017B /* GalaxySSIHealthAtlasThymusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000017C /* GalaxySSIHealthAtlasThymusView.swift */; };
+    C4384000000000000000017D /* GalaxySSIHealthAtlasThymusAnatomyDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4384000000000000000017E /* GalaxySSIHealthAtlasThymusAnatomyDrawing.swift */; };
+    C4384000000000000000017F /* GalaxySSIHealthAtlasThymusCellDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000180 /* GalaxySSIHealthAtlasThymusCellDrawing.swift */; };
+    C43840000000000000000181 /* GalaxySSIHealthAtlasThymusDynamicsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000182 /* GalaxySSIHealthAtlasThymusDynamicsDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1815,6 +1821,12 @@
     C43840000000000000000172 /* GalaxySSIHealthAtlasSplenicAnatomyDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSplenicAnatomyDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000174 /* GalaxySSIHealthAtlasSplenicCellDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSplenicCellDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000176 /* GalaxySSIHealthAtlasSplenicDynamicsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSplenicDynamicsDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000178 /* GalaxySSIHealthAtlasThymusMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasThymusMotion.swift; sourceTree = "<group>"; };
+    C4384000000000000000017A /* GalaxySSIHealthAtlasThymusShapes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasThymusShapes.swift; sourceTree = "<group>"; };
+    C4384000000000000000017C /* GalaxySSIHealthAtlasThymusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasThymusView.swift; sourceTree = "<group>"; };
+    C4384000000000000000017E /* GalaxySSIHealthAtlasThymusAnatomyDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasThymusAnatomyDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000180 /* GalaxySSIHealthAtlasThymusCellDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasThymusCellDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000182 /* GalaxySSIHealthAtlasThymusDynamicsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasThymusDynamicsDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3478,6 +3490,12 @@
         C43840000000000000000172 /* GalaxySSIHealthAtlasSplenicAnatomyDrawing.swift */,
         C43840000000000000000174 /* GalaxySSIHealthAtlasSplenicCellDrawing.swift */,
         C43840000000000000000176 /* GalaxySSIHealthAtlasSplenicDynamicsDrawing.swift */,
+        C43840000000000000000178 /* GalaxySSIHealthAtlasThymusMotion.swift */,
+        C4384000000000000000017A /* GalaxySSIHealthAtlasThymusShapes.swift */,
+        C4384000000000000000017C /* GalaxySSIHealthAtlasThymusView.swift */,
+        C4384000000000000000017E /* GalaxySSIHealthAtlasThymusAnatomyDrawing.swift */,
+        C43840000000000000000180 /* GalaxySSIHealthAtlasThymusCellDrawing.swift */,
+        C43840000000000000000182 /* GalaxySSIHealthAtlasThymusDynamicsDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5271,6 +5289,12 @@
         C43840000000000000000171 /* GalaxySSIHealthAtlasSplenicAnatomyDrawing.swift in Sources */,
         C43840000000000000000173 /* GalaxySSIHealthAtlasSplenicCellDrawing.swift in Sources */,
         C43840000000000000000175 /* GalaxySSIHealthAtlasSplenicDynamicsDrawing.swift in Sources */,
+        C43840000000000000000177 /* GalaxySSIHealthAtlasThymusMotion.swift in Sources */,
+        C43840000000000000000179 /* GalaxySSIHealthAtlasThymusShapes.swift in Sources */,
+        C4384000000000000000017B /* GalaxySSIHealthAtlasThymusView.swift in Sources */,
+        C4384000000000000000017D /* GalaxySSIHealthAtlasThymusAnatomyDrawing.swift in Sources */,
+        C4384000000000000000017F /* GalaxySSIHealthAtlasThymusCellDrawing.swift in Sources */,
+        C43840000000000000000181 /* GalaxySSIHealthAtlasThymusDynamicsDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,

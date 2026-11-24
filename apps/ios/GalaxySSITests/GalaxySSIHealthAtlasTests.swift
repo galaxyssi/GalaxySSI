@@ -2218,6 +2218,43 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion.wallSegments, [139,164,172,203,217,264,278,313])
   }
 
+  func testThymusPositiveSelectionKeepsContactSignalAndColorTimingSeparate() {
+    typealias Motion = GalaxySSIHealthAtlasThymusMotion
+    let start = Motion.positive(0), contact = Motion.positive(0.55)
+    XCTAssertEqual(start.x, 119); XCTAssertEqual(start.y, 126)
+    XCTAssertEqual(start.signal, 0); XCTAssertFalse(start.selected)
+    XCTAssertEqual(contact.x, 146); XCTAssertEqual(contact.y, 117)
+    XCTAssertGreaterThan(contact.signal, 0); XCTAssertFalse(contact.selected)
+    XCTAssertEqual(Motion.positive(0.47).signal, 0)
+    XCTAssertFalse(Motion.positive(0.719).selected)
+    XCTAssertTrue(Motion.positive(0.72).selected)
+    XCTAssertEqual(Motion.positive(0.8).signal, 1)
+    XCTAssertEqual(Motion.travel(0), 0.025)
+    XCTAssertEqual(Motion.travel(1), 0.925, accuracy: 1e-12)
+  }
+
+  func testThymusNegativeSelectionFadesOnlyReactiveCellAndKeepsRouteAnchors() throws {
+    typealias Motion = GalaxySSIHealthAtlasThymusMotion
+    let contact = Motion.negative(0.46), removed = Motion.negative(0.89)
+    XCTAssertEqual(contact.x, 194); XCTAssertEqual(contact.y, 192)
+    XCTAssertEqual(contact.removal, 0); XCTAssertEqual(contact.alpha, 255)
+    XCTAssertEqual(contact.radius, 8.5)
+    XCTAssertEqual(removed.removal, 1); XCTAssertEqual(removed.alpha, 0)
+    XCTAssertEqual(removed.debrisAlpha, 0); XCTAssertEqual(removed.radius, 5.5)
+    for sample in 0...200 {
+      let frame = Motion.negative(Double(sample) / 200)
+      XCTAssertTrue((0...255).contains(frame.alpha))
+      XCTAssertTrue((0...185).contains(frame.debrisAlpha))
+      XCTAssertTrue((5.5...8.5).contains(frame.radius))
+    }
+    XCTAssertEqual(Motion.enter.start, .init(x: 68, y: 285))
+    XCTAssertEqual(try XCTUnwrap(Motion.enter.commands.last?.points.last), .init(x: 119, y: 167))
+    XCTAssertEqual(Motion.migrate.start, .init(x: 141, y: 121))
+    XCTAssertEqual(try XCTUnwrap(Motion.migrate.commands.last?.points.last), .init(x: 200, y: 186))
+    XCTAssertEqual(Motion.leave.start, .init(x: 196, y: 218))
+    XCTAssertEqual(try XCTUnwrap(Motion.leave.commands.last?.points.last), .init(x: 296, y: 291))
+  }
+
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
