@@ -462,6 +462,14 @@
     C438400000000000000003C5 /* GalaxySSIHealthAtlasErectorBandDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003C6 /* GalaxySSIHealthAtlasErectorBandDrawing.swift */; };
     C438400000000000000003C7 /* GalaxySSIHealthAtlasErectorLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003C8 /* GalaxySSIHealthAtlasErectorLabelsDrawing.swift */; };
     C438400000000000000003C9 /* GalaxySSIHealthAtlasErectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003CA /* GalaxySSIHealthAtlasErectorView.swift */; };
+    C438400000000000000003CB /* GalaxySSIHealthAtlasGlutealGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003CC /* GalaxySSIHealthAtlasGlutealGeometry.swift */; };
+    C438400000000000000003CD /* GalaxySSIHealthAtlasGlutealPose.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003CE /* GalaxySSIHealthAtlasGlutealPose.swift */; };
+    C438400000000000000003CF /* GalaxySSIHealthAtlasGlutealAnatomyDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003D0 /* GalaxySSIHealthAtlasGlutealAnatomyDrawing.swift */; };
+    C438400000000000000003D1 /* GalaxySSIHealthAtlasGlutealMuscleDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003D2 /* GalaxySSIHealthAtlasGlutealMuscleDrawing.swift */; };
+    C438400000000000000003D3 /* GalaxySSIHealthAtlasGlutealDirectionDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003D4 /* GalaxySSIHealthAtlasGlutealDirectionDrawing.swift */; };
+    C438400000000000000003D5 /* GalaxySSIHealthAtlasGlutealSceneDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003D6 /* GalaxySSIHealthAtlasGlutealSceneDrawing.swift */; };
+    C438400000000000000003D7 /* GalaxySSIHealthAtlasGlutealLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003D8 /* GalaxySSIHealthAtlasGlutealLabelsDrawing.swift */; };
+    C438400000000000000003D9 /* GalaxySSIHealthAtlasGlutealView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000003DA /* GalaxySSIHealthAtlasGlutealView.swift */; };
     C438400000000000000002FF /* GalaxySSIHealthAtlasCholangiocyteMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */; };
     C43840000000000000000301 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */; };
     C43840000000000000000303 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */; };
@@ -2404,6 +2412,14 @@
     C438400000000000000003C6 /* GalaxySSIHealthAtlasErectorBandDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasErectorBandDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000003C8 /* GalaxySSIHealthAtlasErectorLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasErectorLabelsDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000003CA /* GalaxySSIHealthAtlasErectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasErectorView.swift; sourceTree = "<group>"; };
+    C438400000000000000003CC /* GalaxySSIHealthAtlasGlutealGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGlutealGeometry.swift; sourceTree = "<group>"; };
+    C438400000000000000003CE /* GalaxySSIHealthAtlasGlutealPose.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGlutealPose.swift; sourceTree = "<group>"; };
+    C438400000000000000003D0 /* GalaxySSIHealthAtlasGlutealAnatomyDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGlutealAnatomyDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000003D2 /* GalaxySSIHealthAtlasGlutealMuscleDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGlutealMuscleDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000003D4 /* GalaxySSIHealthAtlasGlutealDirectionDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGlutealDirectionDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000003D6 /* GalaxySSIHealthAtlasGlutealSceneDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGlutealSceneDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000003D8 /* GalaxySSIHealthAtlasGlutealLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGlutealLabelsDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000003DA /* GalaxySSIHealthAtlasGlutealView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasGlutealView.swift; sourceTree = "<group>"; };
     C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift; sourceTree = "<group>"; };
@@ -4365,6 +4381,14 @@
         C438400000000000000003C6 /* GalaxySSIHealthAtlasErectorBandDrawing.swift */,
         C438400000000000000003C8 /* GalaxySSIHealthAtlasErectorLabelsDrawing.swift */,
         C438400000000000000003CA /* GalaxySSIHealthAtlasErectorView.swift */,
+        C438400000000000000003CC /* GalaxySSIHealthAtlasGlutealGeometry.swift */,
+        C438400000000000000003CE /* GalaxySSIHealthAtlasGlutealPose.swift */,
+        C438400000000000000003D0 /* GalaxySSIHealthAtlasGlutealAnatomyDrawing.swift */,
+        C438400000000000000003D2 /* GalaxySSIHealthAtlasGlutealMuscleDrawing.swift */,
+        C438400000000000000003D4 /* GalaxySSIHealthAtlasGlutealDirectionDrawing.swift */,
+        C438400000000000000003D6 /* GalaxySSIHealthAtlasGlutealSceneDrawing.swift */,
+        C438400000000000000003D8 /* GalaxySSIHealthAtlasGlutealLabelsDrawing.swift */,
+        C438400000000000000003DA /* GalaxySSIHealthAtlasGlutealView.swift */,
         C43840000000000000000300 /* GalaxySSIHealthAtlasCholangiocyteMotion.swift */,
         C43840000000000000000302 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift */,
         C43840000000000000000304 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift */,
@@ -6456,6 +6480,14 @@
         C438400000000000000003C5 /* GalaxySSIHealthAtlasErectorBandDrawing.swift in Sources */,
         C438400000000000000003C7 /* GalaxySSIHealthAtlasErectorLabelsDrawing.swift in Sources */,
         C438400000000000000003C9 /* GalaxySSIHealthAtlasErectorView.swift in Sources */,
+        C438400000000000000003CB /* GalaxySSIHealthAtlasGlutealGeometry.swift in Sources */,
+        C438400000000000000003CD /* GalaxySSIHealthAtlasGlutealPose.swift in Sources */,
+        C438400000000000000003CF /* GalaxySSIHealthAtlasGlutealAnatomyDrawing.swift in Sources */,
+        C438400000000000000003D1 /* GalaxySSIHealthAtlasGlutealMuscleDrawing.swift in Sources */,
+        C438400000000000000003D3 /* GalaxySSIHealthAtlasGlutealDirectionDrawing.swift in Sources */,
+        C438400000000000000003D5 /* GalaxySSIHealthAtlasGlutealSceneDrawing.swift in Sources */,
+        C438400000000000000003D7 /* GalaxySSIHealthAtlasGlutealLabelsDrawing.swift in Sources */,
+        C438400000000000000003D9 /* GalaxySSIHealthAtlasGlutealView.swift in Sources */,
         C438400000000000000002FF /* GalaxySSIHealthAtlasCholangiocyteMotion.swift in Sources */,
         C43840000000000000000301 /* GalaxySSIHealthAtlasCholangiocyteGlyphDrawing.swift in Sources */,
         C43840000000000000000303 /* GalaxySSIHealthAtlasCholangiocyteWallDrawing.swift in Sources */,

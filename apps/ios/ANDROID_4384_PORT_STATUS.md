@@ -13,7 +13,7 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 
 ## Remaining Integration
 - [x] Import 3127 source-referenced chapter/caption/control/structure/scope strings per language into the dedicated AtlasFunction table; no English fallback in Chinese. Preserve existing BodyAtlas precedence, with new-table fallback for new structure keys.
-- [ ] Complete Function-tab player integration across all source courses. Core player, course selector, controls, source links, phase restoration and lifecycle are wired for ninety courses through seventy-eight dedicated renderers; other courses still await their dedicated renderers.
+- [ ] Complete Function-tab player integration across all source courses. Core player, course selector, controls, source links, phase restoration and lifecycle are wired for ninety-one courses through seventy-nine dedicated renderers; other courses still await their dedicated renderers.
 - [x] Connect optional persisted Function selections without changing quantitative simulation selections. Keep live animation phase outside published/serialized state; pause/exit commits it, while question snapshots read current live phase. Corrupt Function-only storage does not discard unrelated selections.
 - [ ] Import all new/revised illustration resources and cutaway geometry.
 - [ ] Port additional structure views, canonical/feature routing and related Function destination navigation.
@@ -24,7 +24,7 @@ Keep one final iOS PR for the whole Android #4384 increment. Do not move on to #
 - [ ] Synchronize any newly merged predecessor PRs and update dependency scope before publication.
 
 ## Renderer Parity
-Next renderer: port HealthAtlasGlutealExtensionStoryView, then continue the source-order list. Ninety courses are enabled through seventy-eight dedicated renderers; do not broaden FunctionRendering before the corresponding native renderer is implemented.
+Next renderer: port HealthAtlasGutLymphoidStoryView, then continue the source-order list. Ninety-one courses are enabled through seventy-nine dedicated renderers; do not broaden FunctionRendering before the corresponding native renderer is implemented.
 
 - [x] `HealthAtlasUptakeView` — native 344-unit source geometry, four signal paths, relay thresholds, membrane fusion and glucose transport; source/resource/grammar checks only, native pixels unverified.
 - [x] `HealthAtlasHeartbeatView` — five source stages, seven exact cubic routes, shared valve anchors and 24x24 deformable heart mesh; Metal plus equivalent CoreGraphics triangle fallback, native shader/pixels unverified.
@@ -104,14 +104,14 @@ Next renderer: port HealthAtlasGlutealExtensionStoryView, then continue the sour
 - [x] `HealthAtlasRectusFlexionStoryView` — five source stages, eleven exact fixed outlines/nine deflected sources with twenty-six contours, source pose/effort arrays and lumbar-centerline mapping, cached native arc-length samples preserving closed/open contours, stationary pubic/pelvic region, integer-alpha belly tone and five mapped bilingual leaders; source/formula/grammar checks only, native sampling/pixels unverified.
 - [x] `HealthAtlasObliqueRotationStoryView` — five source stages, four exact fixed outlines with even-odd pelvic opening/mirrored ribs, source turn sequence and superior-view handedness, four live band contours/twelve strands with contrasting internal/external effort, integer-alpha overlays, fixed pelvis/rotating thorax and tangent direction arc with eight bilingual placements; source/formula/grammar checks only, native pixels unverified.
 - [x] `HealthAtlasErectorSupportStoryView` — four source stages, original ordered 19-path/eight-gradient posterior plate with mirrored columns, two fixed pelvic outlines/dynamic trunk, thirty-three-point spine and paired bands, thirteen tangent-tilted vertebrae, identical supported/loaded neutral geometry, integer-alpha emphasis and ten bilingual placements; source/formula/grammar checks only, native pixels unverified.
-- [ ] `HealthAtlasGlutealExtensionStoryView`
+- [x] `HealthAtlasGlutealExtensionStoryView` — four source stages, five exact fixed outlines/seven attached anchor pairs, independent pelvic/femoral rotations, dynamic muscle/six clipped fascicles/tendon, signed sweep and tracked keys, side-by-side hip-motion versus fixed-hip lumbar comparison, integer-alpha attachment emphasis and thirteen bilingual placements; source/formula/grammar checks only, native pixels unverified.
 - [ ] `HealthAtlasGutLymphoidStoryView`
 - [ ] `HealthAtlasCellFunctionArt`
 
 ## Verification Limits
 Current foundation checks pass: all 387 source hashes, exported catalogue/route invariants, iOS project/module configuration, two changed Swift grammar branches and whitespace. This proves foundation consistency only, not renderer or UI parity.
 
-Player checkpoint: dedicated source tables contain 3127 exact strings in each language; registry exposes ninety courses through seventy-eight of 81 renderer classes. Paired or grouped courses retain dedicated source renderers, including the three signal and three ocular courses. These source implementations have not run on a device. Generic chapter controls, lifecycle pause, references and separate live/persisted state are connected; no unsupported course is replaced by a generic picture. The enabled-course audit also checks every enabled ID against the pinned 101-course catalogue.
+Player checkpoint: dedicated source tables contain 3127 exact strings in each language; registry exposes ninety-one courses through seventy-nine of 81 renderer classes. Paired or grouped courses retain dedicated source renderers, including the three signal and three ocular courses. These source implementations have not run on a device. Generic chapter controls, lifecycle pause, references and separate live/persisted state are connected; no unsupported course is replaced by a generic picture. The enabled-course audit also checks every enabled ID against the pinned 101-course catalogue.
 
 Signal trail lengths are cached once per source route. The small geometry helper uses subdivided chord/control-polygon bounds with a shared error budget ([Gravesen, 1997](https://orbit.dtu.dk/en/publications/adaptive-subdivision-and-the-length-and-energy-of-b%C3%A9zier-curves/)); rendering still trims the native Path. Added, unexecuted XCTest source compares straight/quadratic/cubic cases to analytic lengths. This does not prove native Path trimming accuracy, arc orientation, compilation or pixels.
 
