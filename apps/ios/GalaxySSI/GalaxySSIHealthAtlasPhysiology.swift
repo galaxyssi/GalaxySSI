@@ -67,6 +67,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case lymphValve
     case alveolarDiffusion, cartilageCompression, boneBending, calfPump
     case villusArea
+    case pelvicSupport, cushionContactPressure
     case sweatEvaporation
     case photonCapture
     case thyroidFeedback
@@ -78,6 +79,12 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     #endif
     var inputs: [Input] {
       switch self {
+      case .pelvicSupport:
+        return [.init(key: "pelvis_model_load", range: 0...800, initial: 400, unit: "N"),
+          .init(key: "pelvis_model_position", range: -100...100, initial: 0, unit: "%")]
+      case .cushionContactPressure:
+        return [.init(key: "cushion_model_load", range: 0...80, initial: 40, unit: "N"),
+          .init(key: "cushion_model_area", range: 10...90, initial: 40, unit: "cm\u{00b2}")]
       case .calfPump:
         return [.init(key: "calf_pump_stroke", range: 0...25, initial: 12, unit: "mL"),
           .init(key: "calf_pump_rate", range: 0...30, initial: 12, unit: "/min"),
@@ -155,9 +162,10 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       #endif
       }
     }
-    var hasMaterialResponse: Bool { [.alveolarDiffusion, .cartilageCompression, .boneBending, .calfPump].contains(self) }
+    var hasMaterialResponse: Bool { [.alveolarDiffusion, .cartilageCompression, .boneBending, .calfPump, .pelvicSupport, .cushionContactPressure].contains(self) }
     var axis: Int {
       if self == .calfPump { return 1 }
+      if self == .pelvicSupport || self == .cushionContactPressure { return 1 }
       if hasMaterialResponse { return 0 }
       if self == .villusArea { return 0 }
       if self == .lymphValve { return 0 }
@@ -175,6 +183,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .potassium ? 0 : 1
     }
     var unit: String {
+      if self == .pelvicSupport { return "N" }
+      if self == .cushionContactPressure { return "kPa" }
       if self == .calfPump { return "mL/min" }
       if self == .alveolarDiffusion { return "\u{00d7}" }
       if self == .cartilageCompression { return "%" }
@@ -198,6 +208,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .ventilation ? "L/min" : self == .renal ? "mg/min" : "mV"
     }
     var bounds: ClosedRange<Double> {
+      if self == .pelvicSupport { return 0...800 }
+      if self == .cushionContactPressure { return 0...80 }
       if self == .calfPump { return 0...750 }
       if self == .alveolarDiffusion || self == .cartilageCompression { return 0...8 }
       if self == .boneBending { return 0...26 }
@@ -221,6 +233,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var source: URL {
       switch self {
+      case .pelvicSupport: return GalaxySSIHealthAtlasLoadTransfer.stabilitySource
+      case .cushionContactPressure: return GalaxySSIHealthAtlasLoadTransfer.pressureSource
       case .calfPump: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/24415543/")!
       case .alveolarDiffusion: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/8210754/")!
       case .cartilageCompression: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/7054208/")!
@@ -247,6 +261,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       }
     }
     var sources: [URL] {
+      if self == .pelvicSupport { return [source, GalaxySSIHealthAtlasLoadTransfer.pelvicSource] }
+      if self == .cushionContactPressure { return [source, GalaxySSIHealthAtlasLoadTransfer.subcutaneousSource] }
       if self == .calfPump { return [source, URL(string: "https://pubmed.ncbi.nlm.nih.gov/8445740/")!] }
       if self == .alveolarDiffusion { return [source, URL(string: "https://pmc.ncbi.nlm.nih.gov/articles/PMC2106384/")!] }
       if self == .cartilageCompression { return [source, URL(string: "https://pubmed.ncbi.nlm.nih.gov/7382457/")!] }
@@ -260,6 +276,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     static func forEntry(_ id: String) -> Self? {
       switch id {
+      case "pelvis": return .pelvicSupport
+      case "subcutaneous-tissue": return .cushionContactPressure
       case "soleus", "gastrocnemius": return .calfPump
       case "respiratory-membrane", "pulmonary-capillaries", "tissue-alveolar-epithelium",
            "cell-type-i-pneumocyte": return .alveolarDiffusion
@@ -312,6 +330,10 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var result: Double { evaluate(inputs.indices.map(input)) }
   var companionValue: Double {
     switch kind {
+    case .pelvicSupport:
+      return GalaxySSIHealthAtlasLoadTransfer.PelvicSupport(loadNewtons: input(0), positionPercent: input(1))!.leftNewtons
+    case .cushionContactPressure:
+      return GalaxySSIHealthAtlasLoadTransfer.CushionContact(loadNewtons: input(0), areaSquareCentimetres: input(1))!.referenceKilopascals
     case .calfPump: return Self.netStroke(ejected: input(0), returnPercent: input(2))
     case .alveolarDiffusion: return input(1) / input(2)
     case .cartilageCompression: return 100 - result
@@ -386,6 +408,10 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
+    case .pelvicSupport:
+      return GalaxySSIHealthAtlasLoadTransfer.PelvicSupport(loadNewtons: values[0], positionPercent: values[1])!.rightNewtons
+    case .cushionContactPressure:
+      return GalaxySSIHealthAtlasLoadTransfer.CushionContact(loadNewtons: values[0], areaSquareCentimetres: values[1])!.pressureKilopascals
     case .calfPump: return values[1] * Self.netStroke(ejected: values[0], returnPercent: values[2])
     case .alveolarDiffusion: return values[0] * values[1] / values[2]
     // Stress kPa / modulus MPa, converted from strain fraction to percent.

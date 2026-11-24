@@ -6,11 +6,16 @@ struct GalaxySSIHealthAtlasMaterialResponseView: View {
   @Environment(\.displayScale) private var displayScale
   @State private var measuredWidth: CGFloat = 340
   static func description(_ kind: GalaxySSIHealthAtlasPhysiology.Kind, language: String) -> String {
+    if kind == .pelvicSupport || kind == .cushionContactPressure {
+      return GalaxySSIHealthAtlasText.get(kind == .pelvicSupport ? "health_atlas_pelvis_model_diagram" : "health_atlas_cushion_model_diagram", language)
+    }
     let prefix = kind == .calfPump ? "calf_pump" : kind == .alveolarDiffusion ? "diffusion" : kind == .cartilageCompression ? "compression" : "bone_bending"
     return GalaxySSIHealthAtlasText.get("health_atlas_" + prefix + "_diagram", language)
   }
   private var identifier: String {
-    model.kind == .calfPump ? "atlas-calf-pump" : model.kind == .alveolarDiffusion ? "atlas-diffusion-layer" :
+    if model.kind == .pelvicSupport { return "atlas-pelvic-support" }
+    if model.kind == .cushionContactPressure { return "atlas-cushion-contact" }
+    return model.kind == .calfPump ? "atlas-calf-pump" : model.kind == .alveolarDiffusion ? "atlas-diffusion-layer" :
       model.kind == .cartilageCompression ? "atlas-cartilage-compression" : "atlas-bone-bending"
   }
   var body: some View {
@@ -23,6 +28,8 @@ struct GalaxySSIHealthAtlasMaterialResponseView: View {
         local.scaleBy(x: scale, y: scale)
         let art = GalaxySSIHealthAtlasMaterialResponseDrawing(context: local, language: language)
         switch model.kind {
+        case .pelvicSupport: art.pelvicSupport(model)
+        case .cushionContactPressure: art.cushionContact(model)
         case .calfPump: art.calfPump(model)
         case .alveolarDiffusion: art.exchange(model)
         case .cartilageCompression: art.cartilage(model)

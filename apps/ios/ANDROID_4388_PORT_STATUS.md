@@ -11,16 +11,21 @@ An eventual PR will use main and disclose the actual inherited diff.
 - Added bounded synthetic pelvic support and cushion contact calculation types,
   source URLs and source default values inside the existing physiology module.
 - No user record, network, measurement, diagnosis or treatment dependency.
-- This is numerical groundwork, not dispatched UI or complete model integration.
+- Connected both models to entry routing, independent persisted input arrays,
+  chart axes/bounds/units, companion results, source links, reset and context text.
+- Added source-matched load-transfer diagrams and upward/downward arrow heads.
+- Imported all 539 exact resource deltas per locale into registered English and
+  Chinese AtlasComplete tables. Existing resource snapshots remain unchanged.
+- Five changed Swift files parsed with zero grammar errors after conditional
+  directives were removed; this is not type checking or native execution.
 
 ## Remaining
 
-- Inventory all source files and exact bilingual resource deltas.
+- Inventory all source files; bilingual resource deltas are imported.
 - Port all 24 dedicated playback courses, their assignment and artwork helpers.
 - Connect 138-course catalogue coverage and related lesson destinations.
 - Import pelvic/subcutaneous cutaways and feature routing.
-- Connect both numerical models to independent controls, chart axes, companion
-  results, teaching limitations and load-transfer diagrams.
+- Audit the connected numerical model source contracts and diagram geometry.
 - Review original source contracts; submit one formal PR only when integration
   is implemented. No XCTest/native/device acceptance or IPA is claimed.
 - Inherited non-regional #4384 PDF quadratic correction remains separate work.
