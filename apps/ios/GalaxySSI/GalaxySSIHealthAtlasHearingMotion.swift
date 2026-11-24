@@ -19,6 +19,10 @@ struct GalaxySSIHealthAtlasHearingMotion {
     let envelope = min(1, max(0, 1 - abs(position - center) / 0.42))
     return envelope * oscillation(progress, delay: position * 2.8)
   }
+  static func relativeChannelOpening(_ towardTallest: Double) -> Double {
+    let t = towardTallest.isFinite ? towardTallest : 0
+    return 0.19 + 0.76 * min(1, max(0, t)) + 0.16 * min(0, max(-1, t))
+  }
   static func influence(_ value: Double, center: Double, radius: Double) -> Double {
     guard value.isFinite, center.isFinite, radius.isFinite, radius > 0 else { return 0 }
     return min(1, max(0, 1 - abs(value - center) / radius))
@@ -37,8 +41,8 @@ struct GalaxySSIHealthAtlasHearingMotion {
         return CGPoint(x: 16 + 312 * x + motion * (5.5 * drum + 4 * chain), y: 58 + 208 * y)
       }
       let taper = min(1, max(0, (0.29 - y) / 0.14))
-      let shift = 12 * motion * taper * Self.influence(x, center: 0.46, radius: 0.34)
-      return CGPoint(x: 45 + 222 * x + shift, y: 333 * y)
+      let shift = 8 * motion * taper * Self.influence(x, center: 0.46, radius: 0.34)
+      return CGPoint(x: 12 + 145 * x + shift, y: 27 + 240 * y)
     }}
   }
   var soundDistances: [Double] { (0..<6).map { loop(fraction * 1.7 + Double($0) / 6) } }

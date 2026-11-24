@@ -18,7 +18,12 @@ struct GalaxySSIHealthAtlasNephronView: View {
       drawing.fill(Path(roundedRect: CGRect(x: 0, y: 0, width: 344, height: 344), cornerRadius: 8),
         with: .linearGradient(Gradient(colors: [Self.color(0xECF5F6), Self.color(0xFAF1E4)]),
           startPoint: .zero, endPoint: CGPoint(x: 0, y: 344)))
-      var art = drawing; art.translateBy(x: 55, y: 17); art.scaleBy(x: 0.20, y: 0.20)
+      var art = drawing
+      if motion.stage == .filter || motion.stage == .loop {
+        art.translateBy(x: 96, y: 2); art.scaleBy(x: 0.13, y: 0.13)
+      } else {
+        art.translateBy(x: 55, y: 17); art.scaleBy(x: 0.20, y: 0.20)
+      }
       art.draw(art.resolve(Image("HealthAtlasNephron")), in: CGRect(x: 0, y: 0, width: 1173, height: 1341))
       if let route = motion.vessel {
         art.stroke(GalaxySSIHealthAtlasSectionLessonView.path(route, width: 1173, height: 1341),
@@ -30,17 +35,13 @@ struct GalaxySSIHealthAtlasNephronView: View {
       }
       switch motion.stage {
       case .filter:
-        label(in: drawing, key: "glomerulus", center: 84, baseline: 122)
-        legend(in: drawing, key: "blood", center: 78, ink: .blood)
-        legend(in: drawing, key: "filtrate", center: 231, ink: .crosses)
+        filtrationBarrier(in: drawing, time: motion.fraction)
       case .proximal:
         label(in: drawing, key: "capillary", center: 95, baseline: 150)
         legend(in: drawing, key: "filtrate", center: 84, ink: .fluid)
         legend(in: drawing, key: "reabsorb", center: 249, ink: .crosses)
       case .loop:
-        label(in: drawing, key: "water", center: 113, baseline: 168, color: Self.color(Motion.Ink.crosses.rawValue))
-        label(in: drawing, key: "salt", center: 217, baseline: 194, color: Self.color(Motion.Ink.salt.rawValue))
-        legend(in: drawing, key: "filtrate", center: 172, ink: .fluid)
+        loopCutaway(in: drawing, time: motion.fraction)
       case .distal:
         label(in: drawing, key: "capillary", center: 246, baseline: 29)
         legend(in: drawing, key: "filtrate", center: 84, ink: .fluid)
@@ -66,7 +67,7 @@ struct GalaxySSIHealthAtlasNephronView: View {
       context.stroke(glyph, with: .color(color), style: StrokeStyle(lineWidth: 7.5, lineCap: .round, lineJoin: .round))
     }
   }
-  private func label(in context: GraphicsContext, key: String, center: Double, baseline: Double, color: Color? = nil) {
+  func label(in context: GraphicsContext, key: String, center: Double, baseline: Double, color: Color? = nil) {
     let text = t(key), font = UIFont.systemFont(ofSize: 11.5)
     let width = (text as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: 11.5)]).width
     context.draw(Text(verbatim: text).font(.system(size: 11.5)).foregroundColor(color ?? Self.labelInk),
@@ -78,8 +79,10 @@ struct GalaxySSIHealthAtlasNephronView: View {
     context.fill(Path(ellipseIn: CGRect(x: x - 3.5, y: 318.5, width: 7, height: 7)), with: .color(Self.color(ink.rawValue)))
     label(in: context, key: key, center: center + 6, baseline: 326)
   }
-  private static func color(_ value: UInt32) -> Color {
+  static func color(_ value: UInt32) -> Color {
     Color(red: Double((value >> 16) & 255) / 255, green: Double((value >> 8) & 255) / 255, blue: Double(value & 255) / 255)
   }
-  private func t(_ key: String) -> String { GalaxySSIHealthAtlasFunctionText.get("health_atlas_nephron_story_" + key, language) }
+  private func t(_ key: String) -> String {
+    GalaxySSIHealthAtlasFunctionText.get(key.hasPrefix("health_atlas_") ? key : "health_atlas_nephron_story_" + key, language)
+  }
 }

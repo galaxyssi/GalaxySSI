@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4440,
+    "mergeCommit": "5fecc676dac71a5ef7128f6ec5893e69660b5746"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "fe0bc4bccfd70e72ee90c54c1b1b1037b579107188add261d2a18d0654eb7151"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGuidedFunctionDeviceTest.kt",
+      "status": "M",
+      "sha256": "e2fdb049b16290830f17e16fd5f3710f892c6f38f71b4838bc52b061306287fa"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasBeatStage.kt",
+      "status": "M",
+      "sha256": "5dc6f47d13a03d2ba32f11b3ae5c7ed7ca8ace335f274ac71e87fe7473c3a48b"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionStory.kt",
+      "status": "M",
+      "sha256": "70961e63cceaa94380885567c715e1fb8dd950e2b7cc12831e80600f3092d94b"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasHearingStoryView.kt",
+      "status": "M",
+      "sha256": "f0794491c92cd71c0a25d6cd6538061f4bb23d0f87a7beb5fd98f60203e00876"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasHeartbeatView.kt",
+      "status": "M",
+      "sha256": "e6e5cbd889ec57e03d54a349aa8d2b77c5ee22bc28a8f189d08e225b82e691ce"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasNephronStoryView.kt",
+      "status": "M",
+      "sha256": "51358326f2f8bcc00e074caaf79b9e7b9d4b54fa63bef3301ba06c7e254510ed"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSoundStage.kt",
+      "status": "M",
+      "sha256": "d06924a94c6ae6f87312b2339e757996496a3154ffd7518259612e93cc16e913"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_heartbeat.xml",
+      "status": "M",
+      "sha256": "6c3e3efc0ba0cdf8afb84b319e02869e32d0bc430ae8943c11eeb0a24aedc35d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_nephron_story.xml",
+      "status": "M",
+      "sha256": "ab2a57a42998fab1f65b31079bf43082e3b6d78287a53f3fc5844aef230e8b9e"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_sound_story.xml",
+      "status": "M",
+      "sha256": "d9be584eb5179c19c308ad003379888216cc3151b21651bad96993b7c0a86b43"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_heartbeat.xml",
+      "status": "M",
+      "sha256": "fa803b15359ad0654de60e53ff25439f475d42b5e9a3e7b2401ac959006ad211"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_nephron_story.xml",
+      "status": "M",
+      "sha256": "1c3526f5b8bfd8127830994b0c524aa5b7c193d735bda2665c8edb2b3cd0f192"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_sound_story.xml",
+      "status": "M",
+      "sha256": "65772262d7b4f1d7b563a1369fd755661803b92b83f4c5c2a2f15d38aff09781"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMechanismCloseUpTest.kt",
+      "status": "A",
+      "sha256": "f880ace0ce9c1708c7437c6fb5806453ac44acf1986f738a275909a3c7f8debb"
+    }
+  ]
+}
