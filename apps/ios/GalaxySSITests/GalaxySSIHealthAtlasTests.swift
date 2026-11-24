@@ -2446,6 +2446,57 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testAdrenalPoreAndReleaseKeepSourceTemporalOrder() {
+    typealias Motion = GalaxySSIHealthAtlasAdrenalMotion
+    XCTAssertTrue(Motion.locator(0).outer); XCTAssertEqual(Motion.locator(0).end, 0)
+    XCTAssertFalse(Motion.locator(0.47).outer); XCTAssertEqual(Motion.locator(0.47).end, 0)
+    XCTAssertEqual(Motion.locator(1).end, 1)
+    XCTAssertEqual(Motion.approach(0.46), 1); XCTAssertEqual(Motion.pore(0.46), 0)
+    XCTAssertEqual(Motion.pore(0.58), 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion.pore(.nan), 0)
+    for index in 0...5 {
+      let before = Motion.released(0.46, index: index), after = Motion.released(1, index: index)
+      XCTAssertEqual(before.y, 206); XCTAssertEqual(before.alpha, 1)
+      XCTAssertEqual(after.x, 184 + (Double(index) - 2.5) * 6.3, accuracy: 1e-10)
+      XCTAssertEqual(after.y, 261 + 5 * Double(index % 3), accuracy: 1e-10)
+      XCTAssertEqual(after.alpha, 0.58, accuracy: 1e-12)
+    }
+    XCTAssertEqual(Motion.alpha(0), 0); XCTAssertEqual(Motion.alpha(1), 255)
+    XCTAssertEqual(Motion.alpha(0.58), 147)
+  }
+
+  func testAdrenalNeuralAndCirculatingParticlesKeepWindowsAndBackgroundLevel() throws {
+    typealias Motion = GalaxySSIHealthAtlasAdrenalMotion
+    typealias Geometry = GalaxySSIHealthAtlasAdrenalGeometry
+    XCTAssertEqual(try XCTUnwrap(Motion.pulse(0, index: 0)), 0)
+    XCTAssertNil(Motion.pulse(0, index: 1))
+    XCTAssertEqual(try XCTUnwrap(Motion.pulse(0.68, index: 0)), 1)
+    XCTAssertNil(Motion.crossing(0.53, index: 0))
+    XCTAssertEqual(try XCTUnwrap(Motion.crossing(0.54, index: 0)), 0)
+    XCTAssertNotNil(Motion.circulation(0, index: 0)); XCTAssertNil(Motion.circulation(0, index: 2))
+    XCTAssertNil(Motion.circulation(1, index: 0))
+    for index in 0...9 {
+      let resting = Motion.resting(1, index: index)
+      XCTAssertEqual(resting.alpha, index < 2 ? 1 : 0)
+    }
+    for sample in 0...200 {
+      let t = Double(sample) / 200
+      for index in 0...7 {
+        if let particle = Motion.circulation(t, index: index) {
+          XCTAssertTrue((0...1).contains(particle.phase)); XCTAssertTrue((0...1).contains(particle.alpha))
+        }
+      }
+      for index in 0...4 {
+        let blood = Motion.blood(phase: 0.74 * t, index: index)
+        XCTAssertTrue((0..<1).contains(blood.phase)); XCTAssertTrue((0...1).contains(blood.alpha))
+      }
+    }
+    XCTAssertEqual(try XCTUnwrap(Geometry.cortexRoute.commands.last?.points.last), Geometry.cortexRoute.start)
+    XCTAssertEqual(try XCTUnwrap(Geometry.medullaRoute.commands.last?.points.last), Geometry.medullaRoute.start)
+    XCTAssertEqual(try XCTUnwrap(Geometry.entryTrackRoute.commands.last?.points.last), .init(x: 327, y: 211))
+    XCTAssertEqual(try XCTUnwrap(Geometry.recoveryCurveRoute.commands.last?.points.last), .init(x: 313, y: 280))
+  }
+
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion
