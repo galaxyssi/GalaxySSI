@@ -583,7 +583,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     first.binding(heart).wrappedValue.simulation.phase = 0.5
     let restored = GalaxySSIHealthAtlasState()
     restored.restore(first.serialized, atlas: atlas)
-    XCTAssertEqual(restored.binding(heart).wrappedValue.tab, .simulation)
+    XCTAssertEqual(restored.binding(heart).wrappedValue.tab, .function)
+    XCTAssertEqual(restored.binding(heart).wrappedValue.modelsExpanded, true)
     XCTAssertEqual(restored.binding(heart).wrappedValue.simulation.phase, 0.5)
     XCTAssertFalse(first.serialized.contains("measuredAt"))
     restored.restore(String(repeating: "x", count: 256_001), atlas: atlas)
@@ -1385,12 +1386,12 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     recovered.restore(try XCTUnwrap(String(data: damaged, encoding: .utf8)), atlas: atlas)
     XCTAssertEqual(recovered.binding(entry).wrappedValue.simulation, value.simulation)
     XCTAssertTrue(recovered.binding(entry).wrappedValue.functionSelection?.phases.isEmpty == true)
-    typealias Player = GalaxySSIHealthAtlasFunctionPlayer<EmptyView>
-    XCTAssertEqual(Player.advance(0.4, elapsed: 0.1, durationMs: 15_000), 0.4 + 0.1 / 15, accuracy: 0.000001)
-    XCTAssertEqual(Player.advance(0.4, elapsed: 2, durationMs: 15_000), 0.4 + 2.0 / 15, accuracy: 0.000001)
-    XCTAssertEqual(Player.advance(0.99, elapsed: 30, durationMs: 15_000), 1)
-    XCTAssertEqual(Player.advance(0.4, elapsed: -1, durationMs: 15_000), 0.4)
-    XCTAssertEqual(Player.advance(0.4, elapsed: .nan, durationMs: 15_000), 0.4)
+    var clock = GalaxySSIHealthAtlasChapterClock(chapters: 3, phase: 0.4)
+    clock.resume(1_000)
+    XCTAssertEqual(clock.sample(1_100), 0.4 + 0.1 / 15, accuracy: 0.000001)
+    XCTAssertEqual(clock.sample(3_000), 0.4 + 2.0 / 15, accuracy: 0.000001)
+    XCTAssertEqual(clock.sample(31_000), 1)
+    XCTAssertFalse(clock.playing)
   }
 
   func testUptakeFusionTracksSourceGeometryAndIndependentRelayStages() throws {
@@ -3960,7 +3961,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       state.recordFunctionPhase(entryID: id, storyID: story.id, phase: 0.375)
       state.openNumericalModel(entry)
       let selected = state.binding(entry).wrappedValue
-      XCTAssertEqual(selected.tab, .simulation); XCTAssertEqual(selected.physiologyInputs, inputs)
+      XCTAssertEqual(selected.tab, GalaxySSIHealthAtlasState.usesInlineModels(entry) ? .function : .simulation)
+      XCTAssertEqual(selected.physiologyInputs, inputs)
       XCTAssertFalse(selected.layers)
       XCTAssertEqual(selected.functionSelection?.phase(entryID: id, storyID: story.id, catalogue: catalogue), 0.375)
       state.binding(entry).wrappedValue.tab = .function
@@ -4039,6 +4041,64 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
     XCTAssertEqual(restored.binding(heart).wrappedValue, before)
     XCTAssertEqual(restored.binding(lungs).wrappedValue.simulation.phase, 0.75)
+  }
+
+  func testGuidedFunctionMigratesLegacySimulationAndPreservesEveryEntrySelection() throws {
+    let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
+    for entry in atlas.entries {
+      var legacy = state.binding(entry).wrappedValue
+      legacy.tab = .simulation; legacy.simulation.phase = 0.625; legacy.simulation.speed = 1.5
+      legacy.functionSelection = .init()
+      if let kind = GalaxySSIHealthAtlasPhysiology.Kind.forEntry(entry.id) { legacy.physiologyInputs = kind.inputs.map(\.initial) }
+      state.entries[entry.id] = legacy
+    }
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    for entry in atlas.entries {
+      let value = restored.binding(entry).wrappedValue
+      XCTAssertEqual(value.tab, GalaxySSIHealthAtlasState.usesInlineModels(entry) ? .function : .simulation, entry.id)
+      XCTAssertEqual(value.modelsExpanded, GalaxySSIHealthAtlasState.usesInlineModels(entry) ? true : nil, entry.id)
+      XCTAssertEqual(value.simulation.phase, 0.625); XCTAssertEqual(value.simulation.speed, 1.5)
+      XCTAssertEqual(value.physiologyInputs, state.entries[entry.id]?.physiologyInputs)
+      restored.binding(entry).wrappedValue.modelsExpanded = false
+    }
+    let collapsed = GalaxySSIHealthAtlasState(); collapsed.restore(restored.serialized, atlas: atlas)
+    for entry in atlas.entries { XCTAssertEqual(collapsed.binding(entry).wrappedValue.modelsExpanded, false) }
+    let catalogue = try GalaxySSIHealthAtlasFunctionCatalogue.bundled.get()
+    for entry in atlas.entries where GalaxySSIHealthAtlasState.usesInlineModels(entry) {
+      XCTAssertFalse(catalogue.choices(for: entry.id).isEmpty, entry.id)
+      for story in catalogue.choices(for: entry.id) {
+        XCTAssertGreaterThanOrEqual(story.chapters.count, 3, story.id)
+        for language in ["en", "zh-Hans"] {
+          for chapter in story.chapters {
+            XCTAssertNotEqual(GalaxySSIHealthAtlasFunctionText.get(chapter.title, language), chapter.title)
+            XCTAssertGreaterThan(GalaxySSIHealthAtlasFunctionText.get(chapter.caption, language).count, 8)
+          }
+          for key in ["health_atlas_function_outline", "health_atlas_inline_models"] {
+            XCTAssertNotEqual(GalaxySSIHealthAtlasFunctionText.get(key, language), key)
+          }
+        }
+      }
+    }
+  }
+
+  func testInlineModelPromptIncludesOnlyVisibleTeachingInputsAlongsideTheLesson() throws {
+    let atlas = try completeCatalogue(), heart = try XCTUnwrap(atlas.entry("heart"))
+    let kind = try XCTUnwrap(GalaxySSIHealthAtlasPhysiology.Kind.forEntry(heart.id))
+    var selection = GalaxySSIHealthAtlasState.Selection()
+    selection.tab = .function; selection.modelsExpanded = true
+    selection.physiologyInputs = kind.inputs.map(\.initial)
+    let model = try XCTUnwrap(GalaxySSIHealthAtlasPhysiology.resolved(heart.id, inputs: selection.physiologyInputs))
+    for language in ["en", "zh-Hans"] {
+      let context = GalaxySSIHealthAtlasPhysiologyText.context(model, language: language)
+      let expanded = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: heart, selection: selection, research: false, language: language)
+      XCTAssertTrue(expanded.contains(context)); XCTAssertFalse(expanded.contains("measuredAt"))
+      var hidden = selection; hidden.modelsExpanded = false
+      XCTAssertFalse(GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: heart, selection: hidden, research: false, language: language).contains(context))
+      hidden = selection; hidden.tab = .structure
+      XCTAssertFalse(GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: heart, selection: hidden, research: false, language: language).contains(context))
+      hidden.tab = .values
+      XCTAssertTrue(GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: heart, selection: hidden, research: false, language: language).isEmpty)
+    }
   }
 
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {

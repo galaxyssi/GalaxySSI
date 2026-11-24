@@ -23,8 +23,9 @@ for(const route of ["route(87, 40, 119, 14, 151, 21, 169, 45)","route(171, 98, 1
   "route(123, 124, 132, 126, 138, 133, 138, 165)","route(293, 179, 293, 203, 228, 186, 228, 214)"])assert(view.includes(route));
 for(const token of ["path.trimmedPath","atlas-function-uptake-art","receptor(in: drawing","transporter(in: drawing","motion.flatten == 0","context.draw(Text(verbatim: text)"])assert(view.includes(token),token);
 const player=local("GalaxySSIHealthAtlasFunctionPlayer"),panel=local("GalaxySSIHealthAtlasFunctionPanel"),state=local("GalaxySSIHealthAtlasState");
-for(const token of ["ProcessInfo.processInfo.systemUptime","durationMs: story.durationMs","scene == .active","!reduceMotion","!previewPresented",
-  ".onDisappear { pause() }","if reduceMotion { skip(1); return }","phase = position","onPhase(position)"])assert(player.includes(token),token);
+// #4435 supersedes variable-duration/reduced-motion skip behavior with a shared chapter clock.
+for(const token of ["GalaxySSIHealthAtlasChapterClock.now","chapters: story.chapters.count","scene == .active","!reduceMotion","!previewPresented",
+  ".onDisappear { pause() }","story.startOf(story.chapter(position))","clock.resume(now)","clock.pause(now)","phase = position","onPhase(position)"])assert(player.includes(token),token);
 for(const token of ["choices.count > 3","picker.pickerStyle(.menu)","picker.pickerStyle(.segmented)",'.id(entryID + "|" + story.id)',"selection.save"])assert(panel.includes(token),token);
 assert(state.includes("private var liveFunctionPhases"));assert(!state.includes("@Published var liveFunctionPhases"));
 assert(state.includes("functionSelection?.sanitize"));assert(state.includes("functionSnapshot"));

@@ -10,7 +10,7 @@ assert(context.includes("if screen == .function, let function { lines += functio
 assert(context.indexOf("guard screen != .values")<context.indexOf("function.lines"));
 assert(handoff.includes("if !research, selection.tab == .function, let entry"));
 assert(handoff.includes("selection: selection.functionSelection"));
-assert(handoff.includes("aging: selection.aging, function: function, language: language"));
+assert(handoff.includes("aging: selection.aging, function: function, inlineModels: inlineModels, language: language"));
 assert(handoff.includes('if let function { prompt += "\\n" + function.lines(for: entry.id, language: language).joined(separator: "\\n") }'));
 assert(handoff.indexOf("let function: GalaxySSIHealthAtlasFunctionContext?")<handoff.indexOf("#if GALAXYSSI_ATLAS_AGENT_CONTEXT"));
 assert(handoff.includes("selection: selectionSnapshot?() ?? selection"));

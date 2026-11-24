@@ -114,7 +114,9 @@ for (const token of ['Label(t("open_quantitative_model"), systemImage: "chart.ba
 for (const token of ["var next = functionSnapshot(entry)", "next.tab = .simulation", "entries[entry.id] = next", "function.save(phase, storyID: storyID", "Physiology.restore(id, inputs: entries[id]?.physiologyInputs)"])
   assert(state.includes(token));
 assert(source("FunctionPlayer").includes(".onDisappear { pause() }"));
-assert(source("FunctionPlayer").includes("private func pause() { stop(); commit() }"));
+assert(source("FunctionPlayer").includes("private func pause() { pause(at: GalaxySSIHealthAtlasChapterClock.now) }"));
+assert(source("FunctionPlayer").includes("clock.pause(now); publish(clock.sample(now))"));
+assert(source("FunctionPlayer").includes("playback.release(playbackID); commit()"));
 assert(source("").includes('table: "AtlasCompletionTeaching"'));
 assert(read("GalaxySSI.xcodeproj/project.pbxproj").includes("C44140000000000000000001 /* AtlasCompletionTeaching.strings in Resources */"));
 const targets = ["TeachingModel", "TeachingControls", "TeachingValues"].map(n => "apps/ios/GalaxySSI/GalaxySSIHealthAtlas" + n + ".swift");

@@ -21,6 +21,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     var structureLayer: String?
     var functionSelection: GalaxySSIHealthAtlasFunctionSelection?
     var revealTrend: Bool?
+    var modelsExpanded: Bool?
     var selectedStructureLayer: StructureLayer {
       get { StructureLayer(rawValue: structureLayer ?? "") ?? .organ }
       set { structureLayer = newValue.rawValue }
@@ -29,6 +30,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
   @Published var entries: [String: Selection] = [:]
   @Published var previewPresented = false
   @Published var wholeFocus = "heart"
+  let playback = GalaxySSIHealthAtlasPlayback()
   private var liveFunctionPhases: [String: [String: Double]] = [:]
 
   func recordFunctionPhase(entryID: String, storyID: String, phase: Double) {
@@ -48,7 +50,8 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
 
   func openNumericalModel(_ entry: GalaxySSIHealthAtlas.Entry) {
     var next = functionSnapshot(entry)
-    next.tab = .simulation
+    if Self.usesInlineModels(entry) { next.tab = .function; next.modelsExpanded = true }
+    else { next.tab = .simulation }
     entries[entry.id] = next
   }
 
@@ -70,8 +73,14 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
   }
 
   func binding(_ entry: GalaxySSIHealthAtlas.Entry) -> Binding<Selection> {
-    Binding(get: { self.entries[entry.id] ?? Selection(simulation: .initial(entry.id)) },
-      set: { self.entries[entry.id] = $0 })
+    Binding(get: { Self.migrated(self.entries[entry.id] ?? Selection(simulation: .initial(entry.id)), entry: entry) },
+      set: { self.entries[entry.id] = Self.migrated($0, entry: entry) })
+  }
+  static func usesInlineModels(_ entry: GalaxySSIHealthAtlas.Entry) -> Bool { entry.kind == .system || entry.kind == .organ }
+  static func migrated(_ selection: Selection, entry: GalaxySSIHealthAtlas.Entry) -> Selection {
+    var next = selection
+    if usesInlineModels(entry), next.tab == .simulation { next.tab = .function; next.modelsExpanded = true }
+    return next
   }
   func restore(_ text: String, atlas: GalaxySSIHealthAtlas) {
     guard text.utf8.count <= 256_000, let data = text.data(using: .utf8),
@@ -83,6 +92,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
       functionCatalogue = try? GalaxySSIHealthAtlasFunctionCatalogue.bundled.get()
     } else { functionCatalogue = nil }
     for id in Array(entries.keys) {
+      if let entry = atlas.entry(id), let saved = entries[id] { entries[id] = Self.migrated(saved, entry: entry) }
       if let functionCatalogue { entries[id]?.functionSelection?.sanitize(entryID: id, catalogue: functionCatalogue) }
       else { entries[id]?.functionSelection = nil }
       if atlas.entry(id)?.kind != .organ || StructureLayer(rawValue: entries[id]?.structureLayer ?? "") == nil {
