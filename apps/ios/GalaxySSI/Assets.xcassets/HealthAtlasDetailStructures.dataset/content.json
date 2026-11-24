@@ -1,0 +1,1749 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4389,
+    "mergeCommit": "9508d49277cf33ab7f85e65722e7c470930fff7e"
+  },
+  "plates": [
+    {
+      "id": "corneal-layers",
+      "owner": "cornea",
+      "viewLabel": "health_atlas_optics_cornea_detail",
+      "markers": [],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9317547/",
+      "viewKey": "corneal-layers",
+      "selectorLabel": "health_atlas_optics_cornea_detail",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "optics-cornea-tear",
+            "x": 0.49444442987442017,
+            "y": 0.22857142984867096
+          },
+          "title": "health_atlas_optics_cornea_tear",
+          "explanation": "health_atlas_optics_cornea_tear_detail"
+        },
+        {
+          "marker": {
+            "id": "optics-cornea-epithelium",
+            "x": 0.23055554926395416,
+            "y": 0.3321428596973419
+          },
+          "title": "health_atlas_optics_cornea_epithelium",
+          "explanation": "health_atlas_optics_cornea_epithelium_detail"
+        },
+        {
+          "marker": {
+            "id": "optics-cornea-bowman",
+            "x": 0.6777777671813965,
+            "y": 0.3392857015132904
+          },
+          "title": "health_atlas_optics_cornea_bowman",
+          "explanation": "health_atlas_optics_cornea_bowman_detail"
+        },
+        {
+          "marker": {
+            "id": "optics-cornea-stroma",
+            "x": 0.41111111640930176,
+            "y": 0.4464285671710968
+          },
+          "title": "health_atlas_optics_cornea_stroma",
+          "explanation": "health_atlas_optics_cornea_stroma_detail"
+        },
+        {
+          "marker": {
+            "id": "optics-cornea-descemet",
+            "x": 0.6083333492279053,
+            "y": 0.6035714149475098
+          },
+          "title": "health_atlas_optics_cornea_descemet",
+          "explanation": "health_atlas_optics_cornea_descemet_detail"
+        },
+        {
+          "marker": {
+            "id": "optics-cornea-endothelium",
+            "x": 0.2805555462837219,
+            "y": 0.6607142686843872
+          },
+          "title": "health_atlas_optics_cornea_endothelium",
+          "explanation": "health_atlas_optics_cornea_endothelium_detail"
+        },
+        {
+          "marker": {
+            "id": "optics-cornea-aqueous",
+            "x": 0.7472222447395325,
+            "y": 0.7928571701049805
+          },
+          "title": "health_atlas_optics_cornea_aqueous",
+          "explanation": "health_atlas_optics_cornea_aqueous_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailCornealLamellae",
+      "entryIDs": [
+        "cornea"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_corneal_lamellae.xml"
+    },
+    {
+      "id": "lens-fibers-and-zonules",
+      "owner": "lens",
+      "viewLabel": "health_atlas_optics_lens_detail",
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/8641842/",
+      "viewKey": "lens-fibers-and-zonules",
+      "selectorLabel": "health_atlas_optics_lens_detail",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "optics-lens-capsule",
+            "x": 0.7472222447395325,
+            "y": 0.5035714507102966
+          },
+          "title": "health_atlas_optics_lens_capsule",
+          "explanation": "health_atlas_optics_lens_capsule_detail"
+        },
+        {
+          "marker": {
+            "id": "optics-lens-epithelium",
+            "x": 0.32499998807907104,
+            "y": 0.5
+          },
+          "title": "health_atlas_optics_lens_epithelium",
+          "explanation": "health_atlas_optics_lens_epithelium_detail"
+        },
+        {
+          "marker": {
+            "id": "optics-lens-cortex",
+            "x": 0.6555555462837219,
+            "y": 0.5928571224212646
+          },
+          "title": "health_atlas_optics_lens_cortex",
+          "explanation": "health_atlas_optics_lens_cortex_detail"
+        },
+        {
+          "marker": {
+            "id": "optics-lens-nucleus",
+            "x": 0.5166666507720947,
+            "y": 0.5071428418159485
+          },
+          "title": "health_atlas_optics_lens_nucleus",
+          "explanation": "health_atlas_optics_lens_nucleus_detail"
+        },
+        {
+          "marker": {
+            "id": "optics-lens-zonules",
+            "x": 0.4055555462837219,
+            "y": 0.18214285373687744
+          },
+          "title": "health_atlas_optics_lens_zonules",
+          "explanation": "health_atlas_optics_lens_zonules_detail"
+        },
+        {
+          "marker": {
+            "id": "optics-lens-ciliary",
+            "x": 0.25,
+            "y": 0.16428571939468384
+          },
+          "title": "health_atlas_optics_lens_ciliary",
+          "explanation": "health_atlas_optics_lens_ciliary_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailLensFibers",
+      "entryIDs": [
+        "lens"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_lens_fibers.xml"
+    },
+    {
+      "id": "renal-cortex-cutaway",
+      "owner": "renal-cortex",
+      "viewLabel": "health_atlas_renal_cortex_cutaway_view",
+      "markers": [
+        {
+          "id": "renal-medulla",
+          "x": 0.32777777314186096,
+          "y": 0.8071428537368774
+        }
+      ],
+      "source": "https://histologylab.ctl.columbia.edu/lab12/kidney/",
+      "viewKey": "renal-cortex-cutaway",
+      "selectorLabel": "health_atlas_renal_cortex_cutaway_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "renal-cortex-capsule",
+            "x": 0.2777777910232544,
+            "y": 0.17499999701976776
+          },
+          "title": "health_atlas_renal_cortex_capsule",
+          "explanation": "health_atlas_renal_cortex_capsule_detail"
+        },
+        {
+          "marker": {
+            "id": "renal-cortex-corpuscle",
+            "x": 0.31111112236976624,
+            "y": 0.38928571343421936
+          },
+          "title": "health_atlas_renal_cortex_corpuscle",
+          "explanation": "health_atlas_renal_cortex_corpuscle_detail"
+        },
+        {
+          "marker": {
+            "id": "renal-cortex-ray",
+            "x": 0.5611110925674438,
+            "y": 0.3928571343421936
+          },
+          "title": "health_atlas_renal_cortex_ray",
+          "explanation": "health_atlas_renal_cortex_ray_detail"
+        },
+        {
+          "marker": {
+            "id": "renal-cortex-labyrinth",
+            "x": 0.7055555582046509,
+            "y": 0.6071428656578064
+          },
+          "title": "health_atlas_renal_cortex_labyrinth",
+          "explanation": "health_atlas_renal_cortex_labyrinth_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailRenalCortexCutaway",
+      "entryIDs": [
+        "renal-cortex",
+        "renal-medulla"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_renal_cortex_cutaway.xml"
+    },
+    {
+      "id": "renal-medulla-cutaway",
+      "owner": "renal-medulla",
+      "viewLabel": "health_atlas_renal_medulla_cutaway_view",
+      "markers": [
+        {
+          "id": "renal-cortex",
+          "x": 0.6722221970558167,
+          "y": 0.18214285373687744
+        }
+      ],
+      "source": "https://histologylab.ctl.columbia.edu/lab12/kidney/",
+      "viewKey": "renal-medulla-cutaway",
+      "selectorLabel": "health_atlas_renal_medulla_cutaway_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "renal-medulla-pyramid-base",
+            "x": 0.3333333432674408,
+            "y": 0.2678571343421936
+          },
+          "title": "health_atlas_renal_medulla_pyramid_base",
+          "explanation": "health_atlas_renal_medulla_pyramid_base_detail"
+        },
+        {
+          "marker": {
+            "id": "renal-medulla-column",
+            "x": 0.21944443881511688,
+            "y": 0.4464285671710968
+          },
+          "title": "health_atlas_renal_medulla_column",
+          "explanation": "health_atlas_renal_medulla_column_detail"
+        },
+        {
+          "marker": {
+            "id": "renal-medulla-ducts",
+            "x": 0.6083333492279053,
+            "y": 0.4642857015132904
+          },
+          "title": "health_atlas_renal_medulla_ducts",
+          "explanation": "health_atlas_renal_medulla_ducts_detail"
+        },
+        {
+          "marker": {
+            "id": "renal-medulla-papilla",
+            "x": 0.5222222208976746,
+            "y": 0.7285714149475098
+          },
+          "title": "health_atlas_renal_medulla_papilla",
+          "explanation": "health_atlas_renal_medulla_papilla_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailRenalMedullaCutaway",
+      "entryIDs": [
+        "renal-medulla",
+        "renal-cortex"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_renal_medulla_cutaway.xml"
+    },
+    {
+      "id": "renal-pelvis-cutaway",
+      "owner": "renal-pelvis",
+      "viewLabel": "health_atlas_renal_pelvis_cutaway_view",
+      "markers": [
+        {
+          "id": "ureters",
+          "x": 0.730555534362793,
+          "y": 0.8464285731315613
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-3-gross-anatomy-of-the-kidney",
+      "viewKey": "renal-pelvis-cutaway",
+      "selectorLabel": "health_atlas_renal_pelvis_cutaway_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "renal-pelvis-minor-calyx",
+            "x": 0.32499998807907104,
+            "y": 0.22857142984867096
+          },
+          "title": "health_atlas_renal_pelvis_minor_calyx",
+          "explanation": "health_atlas_renal_pelvis_minor_calyx_detail"
+        },
+        {
+          "marker": {
+            "id": "renal-pelvis-major-calyx",
+            "x": 0.4555555582046509,
+            "y": 0.37142857909202576
+          },
+          "title": "health_atlas_renal_pelvis_major_calyx",
+          "explanation": "health_atlas_renal_pelvis_major_calyx_detail"
+        },
+        {
+          "marker": {
+            "id": "renal-pelvis-funnel",
+            "x": 0.6138888597488403,
+            "y": 0.550000011920929
+          },
+          "title": "health_atlas_renal_pelvis_funnel",
+          "explanation": "health_atlas_renal_pelvis_funnel_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailRenalPelvisCutaway",
+      "entryIDs": [
+        "renal-pelvis",
+        "ureters"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_renal_pelvis_cutaway.xml"
+    },
+    {
+      "id": "gallbladder-biliary-cutaway",
+      "owner": "gallbladder",
+      "viewLabel": "health_atlas_gallbladder_cutaway_caption",
+      "markers": [],
+      "source": "https://anatomy.ttuhscep.edu/gastrointestinal_system/duodenum_tables.html",
+      "viewKey": "gallbladder-biliary-cutaway",
+      "selectorLabel": "health_atlas_gallbladder_cutaway_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "gallbladder-fundus",
+            "x": 0.23888888955116272,
+            "y": 0.7392857074737549
+          },
+          "title": "health_atlas_gallbladder_cutaway_fundus",
+          "explanation": "health_atlas_gallbladder_cutaway_fundus_detail"
+        },
+        {
+          "marker": {
+            "id": "gallbladder-body",
+            "x": 0.32777777314186096,
+            "y": 0.5392857193946838
+          },
+          "title": "health_atlas_gallbladder_cutaway_body",
+          "explanation": "health_atlas_gallbladder_cutaway_body_detail"
+        },
+        {
+          "marker": {
+            "id": "gallbladder-neck",
+            "x": 0.4472222328186035,
+            "y": 0.40714284777641296
+          },
+          "title": "health_atlas_gallbladder_cutaway_neck",
+          "explanation": "health_atlas_gallbladder_cutaway_neck_detail"
+        },
+        {
+          "marker": {
+            "id": "gallbladder-cystic-duct",
+            "x": 0.5249999761581421,
+            "y": 0.3928571343421936
+          },
+          "title": "health_atlas_gallbladder_cutaway_cystic",
+          "explanation": "health_atlas_gallbladder_cutaway_cystic_detail"
+        },
+        {
+          "marker": {
+            "id": "gallbladder-common-bile-duct",
+            "x": 0.6166666746139526,
+            "y": 0.625
+          },
+          "title": "health_atlas_gallbladder_cutaway_common",
+          "explanation": "health_atlas_gallbladder_cutaway_common_detail"
+        },
+        {
+          "marker": {
+            "id": "gallbladder-duodenal-papilla",
+            "x": 0.7805555462837219,
+            "y": 0.7392857074737549
+          },
+          "title": "health_atlas_gallbladder_cutaway_papilla",
+          "explanation": "health_atlas_gallbladder_cutaway_papilla_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailGallbladderCutaway",
+      "entryIDs": [
+        "gallbladder"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gallbladder_cutaway.xml"
+    },
+    {
+      "id": "parotid-duct-cutaway",
+      "owner": "parotid-glands",
+      "viewLabel": "health_atlas_parotid_cutaway_caption",
+      "markers": [],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4048853/",
+      "viewKey": "parotid-duct-cutaway",
+      "selectorLabel": "health_atlas_parotid_cutaway_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "parotid-gland-bed",
+            "x": 0.3055555522441864,
+            "y": 0.38928571343421936
+          },
+          "title": "health_atlas_parotid_cutaway_gland",
+          "explanation": "health_atlas_parotid_cutaway_gland_detail"
+        },
+        {
+          "marker": {
+            "id": "parotid-stensen-duct",
+            "x": 0.46666666865348816,
+            "y": 0.4285714328289032
+          },
+          "title": "health_atlas_parotid_cutaway_duct",
+          "explanation": "health_atlas_parotid_cutaway_duct_detail"
+        },
+        {
+          "marker": {
+            "id": "parotid-buccinator-turn",
+            "x": 0.6166666746139526,
+            "y": 0.4392857253551483
+          },
+          "title": "health_atlas_parotid_cutaway_turn",
+          "explanation": "health_atlas_parotid_cutaway_turn_detail"
+        },
+        {
+          "marker": {
+            "id": "parotid-duct-papilla",
+            "x": 0.6944444179534912,
+            "y": 0.5428571701049805
+          },
+          "title": "health_atlas_parotid_cutaway_papilla",
+          "explanation": "health_atlas_parotid_cutaway_papilla_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailParotidCutaway",
+      "entryIDs": [
+        "parotid-glands"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_parotid_cutaway.xml"
+    },
+    {
+      "id": "submandibular-duct-cutaway",
+      "owner": "submandibular-glands",
+      "viewLabel": "health_atlas_submandibular_cutaway_caption",
+      "markers": [],
+      "source": "https://www.ncbi.nlm.nih.gov/sites/books/NBK538325/",
+      "viewKey": "submandibular-duct-cutaway",
+      "selectorLabel": "health_atlas_submandibular_cutaway_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "submandibular-superficial-part",
+            "x": 0.2777777910232544,
+            "y": 0.7607142925262451
+          },
+          "title": "health_atlas_submandibular_cutaway_superficial",
+          "explanation": "health_atlas_submandibular_cutaway_superficial_detail"
+        },
+        {
+          "marker": {
+            "id": "submandibular-deep-part",
+            "x": 0.3916666805744171,
+            "y": 0.6035714149475098
+          },
+          "title": "health_atlas_submandibular_cutaway_deep",
+          "explanation": "health_atlas_submandibular_cutaway_deep_detail"
+        },
+        {
+          "marker": {
+            "id": "submandibular-mylohyoid",
+            "x": 0.4333333373069763,
+            "y": 0.7214285731315613
+          },
+          "title": "health_atlas_submandibular_cutaway_mylohyoid",
+          "explanation": "health_atlas_submandibular_cutaway_mylohyoid_detail"
+        },
+        {
+          "marker": {
+            "id": "submandibular-wharton-duct",
+            "x": 0.5694444179534912,
+            "y": 0.6321428418159485
+          },
+          "title": "health_atlas_submandibular_cutaway_duct",
+          "explanation": "health_atlas_submandibular_cutaway_duct_detail"
+        },
+        {
+          "marker": {
+            "id": "submandibular-sublingual-neighbor",
+            "x": 0.6472222208976746,
+            "y": 0.5571428537368774
+          },
+          "title": "health_atlas_submandibular_cutaway_neighbor",
+          "explanation": "health_atlas_submandibular_cutaway_neighbor_detail"
+        },
+        {
+          "marker": {
+            "id": "submandibular-sublingual-caruncle",
+            "x": 0.800000011920929,
+            "y": 0.5214285850524902
+          },
+          "title": "health_atlas_submandibular_cutaway_caruncle",
+          "explanation": "health_atlas_submandibular_cutaway_caruncle_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailSubmandibularCutaway",
+      "entryIDs": [
+        "submandibular-glands"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_submandibular_cutaway.xml"
+    },
+    {
+      "id": "ureter-course-wall-cutaway",
+      "owner": "ureters",
+      "viewLabel": "health_atlas_outflow_ureter_view",
+      "markers": [],
+      "source": "https://histology.leeds.ac.uk/home/urinary/ureter/",
+      "viewKey": "ureter-course-wall-cutaway",
+      "selectorLabel": "health_atlas_outflow_ureter_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "ureter-pelvis-junction",
+            "x": 0.3222222328186035,
+            "y": 0.23571428656578064
+          },
+          "title": "health_atlas_outflow_ureter_pelvis_junction",
+          "explanation": "health_atlas_outflow_ureter_pelvis_junction_detail"
+        },
+        {
+          "marker": {
+            "id": "ureter-iliac-crossing",
+            "x": 0.31111112236976624,
+            "y": 0.5249999761581421
+          },
+          "title": "health_atlas_outflow_ureter_iliac_crossing",
+          "explanation": "health_atlas_outflow_ureter_iliac_crossing_detail"
+        },
+        {
+          "marker": {
+            "id": "ureter-intramural-segment",
+            "x": 0.3583333194255829,
+            "y": 0.800000011920929
+          },
+          "title": "health_atlas_outflow_ureter_intramural",
+          "explanation": "health_atlas_outflow_ureter_intramural_detail"
+        },
+        {
+          "marker": {
+            "id": "ureter-section-urothelium",
+            "x": 0.6722221970558167,
+            "y": 0.4178571403026581
+          },
+          "title": "health_atlas_outflow_ureter_urothelium",
+          "explanation": "health_atlas_outflow_ureter_urothelium_detail"
+        },
+        {
+          "marker": {
+            "id": "ureter-section-lumen",
+            "x": 0.7111111283302307,
+            "y": 0.5321428775787354
+          },
+          "title": "health_atlas_outflow_ureter_lumen",
+          "explanation": "health_atlas_outflow_ureter_lumen_detail"
+        },
+        {
+          "marker": {
+            "id": "ureter-section-muscle",
+            "x": 0.8305555582046509,
+            "y": 0.6571428775787354
+          },
+          "title": "health_atlas_outflow_ureter_muscle",
+          "explanation": "health_atlas_outflow_ureter_muscle_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailUrinaryOutflowUreter",
+      "entryIDs": [
+        "ureters"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_urinary_outflow_ureter.xml"
+    },
+    {
+      "id": "bladder-wall-trigone-cutaway",
+      "owner": "bladder",
+      "viewLabel": "health_atlas_outflow_bladder_view",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-2-gross-anatomy-of-urine-transport",
+      "viewKey": "bladder-wall-trigone-cutaway",
+      "selectorLabel": "health_atlas_outflow_bladder_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "bladder-section-urothelium",
+            "x": 0.2916666567325592,
+            "y": 0.2785714268684387
+          },
+          "title": "health_atlas_outflow_bladder_urothelium",
+          "explanation": "health_atlas_outflow_bladder_urothelium_detail"
+        },
+        {
+          "marker": {
+            "id": "bladder-mucosal-folds",
+            "x": 0.38055557012557983,
+            "y": 0.4035714268684387
+          },
+          "title": "health_atlas_outflow_bladder_folds",
+          "explanation": "health_atlas_outflow_bladder_folds_detail"
+        },
+        {
+          "marker": {
+            "id": "bladder-ureteric-orifice",
+            "x": 0.35277777910232544,
+            "y": 0.6214285492897034
+          },
+          "title": "health_atlas_outflow_bladder_ureteric_orifice",
+          "explanation": "health_atlas_outflow_bladder_ureteric_orifice_detail"
+        },
+        {
+          "marker": {
+            "id": "bladder-section-detrusor",
+            "x": 0.7361111044883728,
+            "y": 0.3285714387893677
+          },
+          "title": "health_atlas_outflow_bladder_detrusor",
+          "explanation": "health_atlas_outflow_bladder_detrusor_detail"
+        },
+        {
+          "marker": {
+            "id": "bladder-trigone-floor",
+            "x": 0.5444444417953491,
+            "y": 0.7071428298950195
+          },
+          "title": "health_atlas_outflow_bladder_trigone",
+          "explanation": "health_atlas_outflow_bladder_trigone_detail"
+        },
+        {
+          "marker": {
+            "id": "bladder-internal-urethral-orifice",
+            "x": 0.5055555701255798,
+            "y": 0.7928571701049805
+          },
+          "title": "health_atlas_outflow_bladder_outlet",
+          "explanation": "health_atlas_outflow_bladder_outlet_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailUrinaryOutflowBladder",
+      "entryIDs": [
+        "bladder"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_urinary_outflow_bladder.xml"
+    },
+    {
+      "id": "female-urethral-channel-cutaway",
+      "owner": "urethra",
+      "viewLabel": "health_atlas_outflow_urethra_view",
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/14672484/",
+      "viewKey": "female-urethral-channel-cutaway",
+      "selectorLabel": "health_atlas_outflow_urethra_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "female-urethral-internal-orifice",
+            "x": 0.4611110985279083,
+            "y": 0.2607142925262451
+          },
+          "title": "health_atlas_outflow_urethra_internal",
+          "explanation": "health_atlas_outflow_urethra_internal_detail"
+        },
+        {
+          "marker": {
+            "id": "female-urethral-lumen",
+            "x": 0.4194444417953491,
+            "y": 0.5178571343421936
+          },
+          "title": "health_atlas_outflow_urethra_lumen",
+          "explanation": "health_atlas_outflow_urethra_lumen_detail"
+        },
+        {
+          "marker": {
+            "id": "female-urethral-external-orifice",
+            "x": 0.375,
+            "y": 0.8107143044471741
+          },
+          "title": "health_atlas_outflow_urethra_external",
+          "explanation": "health_atlas_outflow_urethra_external_detail"
+        },
+        {
+          "marker": {
+            "id": "female-urethral-external-sphincter",
+            "x": 0.519444465637207,
+            "y": 0.47857141494750977
+          },
+          "title": "health_atlas_outflow_urethra_sphincter",
+          "explanation": "health_atlas_outflow_urethra_sphincter_detail"
+        },
+        {
+          "marker": {
+            "id": "female-urethral-vaginal-wall-relation",
+            "x": 0.5805555582046509,
+            "y": 0.6142857074737549
+          },
+          "title": "health_atlas_outflow_urethra_vaginal_wall",
+          "explanation": "health_atlas_outflow_urethra_vaginal_wall_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailUrinaryOutflowUrethra",
+      "entryIDs": [
+        "urethra"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_urinary_outflow_urethra.xml"
+    },
+    {
+      "id": "aortic-root-arch-cutaway",
+      "owner": "aorta",
+      "viewLabel": "health_atlas_aortic_root_arch_view",
+      "markers": [],
+      "source": "https://www.ncbi.nlm.nih.gov/books/NBK538140/",
+      "viewKey": "aortic-root-arch-cutaway",
+      "selectorLabel": "health_atlas_aortic_root_arch_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "aortic-root-valve",
+            "x": 0.4000000059604645,
+            "y": 0.8428571224212646
+          },
+          "title": "health_atlas_aortic_root_valve",
+          "explanation": "health_atlas_aortic_root_valve_detail"
+        },
+        {
+          "marker": {
+            "id": "aortic-root-sinus",
+            "x": 0.4722222089767456,
+            "y": 0.7285714149475098
+          },
+          "title": "health_atlas_aortic_root_sinus",
+          "explanation": "health_atlas_aortic_root_sinus_detail"
+        },
+        {
+          "marker": {
+            "id": "aortic-ascending-segment",
+            "x": 0.4027777910232544,
+            "y": 0.47857141494750977
+          },
+          "title": "health_atlas_aortic_ascending",
+          "explanation": "health_atlas_aortic_ascending_detail"
+        },
+        {
+          "marker": {
+            "id": "aortic-arch-curve",
+            "x": 0.574999988079071,
+            "y": 0.32499998807907104
+          },
+          "title": "health_atlas_aortic_arch",
+          "explanation": "health_atlas_aortic_arch_detail"
+        },
+        {
+          "marker": {
+            "id": "aortic-arch-brachiocephalic",
+            "x": 0.3333333432674408,
+            "y": 0.19285714626312256
+          },
+          "title": "health_atlas_aortic_brachiocephalic",
+          "explanation": "health_atlas_aortic_brachiocephalic_detail"
+        },
+        {
+          "marker": {
+            "id": "aortic-arch-left-carotid",
+            "x": 0.5388888716697693,
+            "y": 0.125
+          },
+          "title": "health_atlas_aortic_left_carotid",
+          "explanation": "health_atlas_aortic_left_carotid_detail"
+        },
+        {
+          "marker": {
+            "id": "aortic-arch-left-subclavian",
+            "x": 0.7055555582046509,
+            "y": 0.19285714626312256
+          },
+          "title": "health_atlas_aortic_left_subclavian",
+          "explanation": "health_atlas_aortic_left_subclavian_detail"
+        },
+        {
+          "marker": {
+            "id": "aortic-descending-segment",
+            "x": 0.7027778029441833,
+            "y": 0.6535714268684387
+          },
+          "title": "health_atlas_aortic_descending",
+          "explanation": "health_atlas_aortic_descending_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailAorticRootArch",
+      "entryIDs": [
+        "aorta"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_aortic_root_arch.xml"
+    },
+    {
+      "id": "pulmonary-trunk-bifurcation-cutaway",
+      "owner": "pulmonary-trunk",
+      "viewLabel": "health_atlas_pulmonary_bifurcation_view",
+      "markers": [],
+      "source": "https://www.ncbi.nlm.nih.gov/books/NBK534812/",
+      "viewKey": "pulmonary-trunk-bifurcation-cutaway",
+      "selectorLabel": "health_atlas_pulmonary_bifurcation_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "pulmonary-trunk-valve",
+            "x": 0.43888887763023376,
+            "y": 0.8071428537368774
+          },
+          "title": "health_atlas_pulmonary_trunk_valve",
+          "explanation": "health_atlas_pulmonary_trunk_valve_detail"
+        },
+        {
+          "marker": {
+            "id": "pulmonary-main-trunk",
+            "x": 0.5111111402511597,
+            "y": 0.6178571581840515
+          },
+          "title": "health_atlas_pulmonary_main_trunk",
+          "explanation": "health_atlas_pulmonary_main_trunk_detail"
+        },
+        {
+          "marker": {
+            "id": "pulmonary-trunk-branch-point",
+            "x": 0.5444444417953491,
+            "y": 0.39642858505249023
+          },
+          "title": "health_atlas_pulmonary_branch_point",
+          "explanation": "health_atlas_pulmonary_branch_point_detail"
+        },
+        {
+          "marker": {
+            "id": "pulmonary-right-arterial-branch",
+            "x": 0.23055554926395416,
+            "y": 0.36071428656578064
+          },
+          "title": "health_atlas_pulmonary_right_branch",
+          "explanation": "health_atlas_pulmonary_right_branch_detail"
+        },
+        {
+          "marker": {
+            "id": "pulmonary-left-arterial-branch",
+            "x": 0.769444465637207,
+            "y": 0.4464285671710968
+          },
+          "title": "health_atlas_pulmonary_left_branch",
+          "explanation": "health_atlas_pulmonary_left_branch_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailPulmonaryTrunkBifurcation",
+      "entryIDs": [
+        "pulmonary-trunk"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_pulmonary_trunk_bifurcation.xml"
+    },
+    {
+      "id": "coronary-epicardial-routes",
+      "owner": "coronary-vessels",
+      "viewLabel": "health_atlas_coronary_routes_view",
+      "markers": [],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC287879/",
+      "viewKey": "coronary-epicardial-routes",
+      "selectorLabel": "health_atlas_coronary_routes_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "coronary-right-av-groove",
+            "x": 0.2944444417953491,
+            "y": 0.4892857074737549
+          },
+          "title": "health_atlas_coronary_right_route",
+          "explanation": "health_atlas_coronary_right_route_detail"
+        },
+        {
+          "marker": {
+            "id": "coronary-right-marginal-route",
+            "x": 0.33888888359069824,
+            "y": 0.6785714030265808
+          },
+          "title": "health_atlas_coronary_right_marginal",
+          "explanation": "health_atlas_coronary_right_marginal_detail"
+        },
+        {
+          "marker": {
+            "id": "coronary-left-main-stem",
+            "x": 0.6000000238418579,
+            "y": 0.36071428656578064
+          },
+          "title": "health_atlas_coronary_left_main",
+          "explanation": "health_atlas_coronary_left_main_detail"
+        },
+        {
+          "marker": {
+            "id": "coronary-anterior-interventricular-route",
+            "x": 0.6194444298744202,
+            "y": 0.6357142925262451
+          },
+          "title": "health_atlas_coronary_lad",
+          "explanation": "health_atlas_coronary_lad_detail"
+        },
+        {
+          "marker": {
+            "id": "coronary-left-av-groove",
+            "x": 0.7472222447395325,
+            "y": 0.46071428060531616
+          },
+          "title": "health_atlas_coronary_circumflex",
+          "explanation": "health_atlas_coronary_circumflex_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailCoronaryEpicardialRoutes",
+      "entryIDs": [
+        "coronary-vessels"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_coronary_epicardial_routes.xml"
+    },
+    {
+      "id": "larynx-inlet-cutaway",
+      "owner": "larynx",
+      "viewLabel": "health_atlas_larynx_inlet_plate_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system",
+      "viewKey": "larynx-inlet-cutaway",
+      "selectorLabel": "health_atlas_larynx_inlet_plate_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "larynx-inlet-epiglottis",
+            "x": 0.42222222685813904,
+            "y": 0.22857142984867096
+          },
+          "title": "health_atlas_larynx_inlet_plate_epiglottis",
+          "explanation": "health_atlas_larynx_inlet_plate_epiglottis_detail"
+        },
+        {
+          "marker": {
+            "id": "larynx-inlet-vestibular-folds",
+            "x": 0.6305555701255798,
+            "y": 0.4642857015132904
+          },
+          "title": "health_atlas_larynx_inlet_plate_vestibular_folds",
+          "explanation": "health_atlas_larynx_inlet_plate_vestibular_folds_detail"
+        },
+        {
+          "marker": {
+            "id": "larynx-inlet-vocal-folds",
+            "x": 0.4027777910232544,
+            "y": 0.5464285612106323
+          },
+          "title": "health_atlas_larynx_inlet_plate_vocal_folds",
+          "explanation": "health_atlas_larynx_inlet_plate_vocal_folds_detail"
+        },
+        {
+          "marker": {
+            "id": "larynx-inlet-glottic-opening",
+            "x": 0.5305555462837219,
+            "y": 0.6214285492897034
+          },
+          "title": "health_atlas_larynx_inlet_plate_glottic_opening",
+          "explanation": "health_atlas_larynx_inlet_plate_glottic_opening_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailLarynxInletCutaway",
+      "entryIDs": [
+        "larynx"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_larynx_inlet_cutaway.xml"
+    },
+    {
+      "id": "trachea-ring-cutaway",
+      "owner": "trachea",
+      "viewLabel": "health_atlas_trachea_ring_plate_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system",
+      "viewKey": "trachea-ring-cutaway",
+      "selectorLabel": "health_atlas_trachea_ring_plate_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "trachea-ring-posterior-wall",
+            "x": 0.5361111164093018,
+            "y": 0.17499999701976776
+          },
+          "title": "health_atlas_trachea_ring_plate_posterior_wall",
+          "explanation": "health_atlas_trachea_ring_plate_posterior_wall_detail"
+        },
+        {
+          "marker": {
+            "id": "trachea-ring-lumen",
+            "x": 0.45277777314186096,
+            "y": 0.3035714328289032
+          },
+          "title": "health_atlas_trachea_ring_plate_lumen",
+          "explanation": "health_atlas_trachea_ring_plate_lumen_detail"
+        },
+        {
+          "marker": {
+            "id": "trachea-ring-cartilage",
+            "x": 0.31111112236976624,
+            "y": 0.31785714626312256
+          },
+          "title": "health_atlas_trachea_ring_plate_cartilage",
+          "explanation": "health_atlas_trachea_ring_plate_cartilage_detail"
+        },
+        {
+          "marker": {
+            "id": "trachea-ring-lining",
+            "x": 0.605555534362793,
+            "y": 0.6214285492897034
+          },
+          "title": "health_atlas_trachea_ring_plate_lining",
+          "explanation": "health_atlas_trachea_ring_plate_lining_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailTracheaRingCutaway",
+      "entryIDs": [
+        "trachea"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_trachea_ring_cutaway.xml"
+    },
+    {
+      "id": "main-bronchi-cutaway",
+      "owner": "bronchi",
+      "viewLabel": "health_atlas_main_bronchi_plate_caption",
+      "markers": [],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4404098/",
+      "viewKey": "main-bronchi-cutaway",
+      "selectorLabel": "health_atlas_main_bronchi_plate_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "main-bronchi-distal-trachea",
+            "x": 0.4749999940395355,
+            "y": 0.23928570747375488
+          },
+          "title": "health_atlas_main_bronchi_plate_distal_trachea",
+          "explanation": "health_atlas_main_bronchi_plate_distal_trachea_detail"
+        },
+        {
+          "marker": {
+            "id": "main-bronchi-carina",
+            "x": 0.5138888955116272,
+            "y": 0.4821428656578064
+          },
+          "title": "health_atlas_main_bronchi_plate_carina",
+          "explanation": "health_atlas_main_bronchi_plate_carina_detail"
+        },
+        {
+          "marker": {
+            "id": "main-bronchi-right",
+            "x": 0.4000000059604645,
+            "y": 0.625
+          },
+          "title": "health_atlas_main_bronchi_plate_right",
+          "explanation": "health_atlas_main_bronchi_plate_right_detail"
+        },
+        {
+          "marker": {
+            "id": "main-bronchi-left",
+            "x": 0.7027778029441833,
+            "y": 0.5821428298950195
+          },
+          "title": "health_atlas_main_bronchi_plate_left",
+          "explanation": "health_atlas_main_bronchi_plate_left_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailMainBronchiCutaway",
+      "entryIDs": [
+        "bronchi"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_main_bronchi_cutaway.xml"
+    },
+    {
+      "id": "middle-ear-ossicular-cutaway",
+      "owner": "middle-ear",
+      "viewLabel": "health_atlas_hb_middle_ear_caption",
+      "markers": [],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4718166/",
+      "viewKey": "middle-ear-ossicular-cutaway",
+      "selectorLabel": "health_atlas_hb_middle_ear_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "middle-ear-tympanic-membrane",
+            "x": 0.2638888955116272,
+            "y": 0.5964285731315613
+          },
+          "title": "health_atlas_hb_eardrum",
+          "explanation": "health_atlas_hb_eardrum_detail"
+        },
+        {
+          "marker": {
+            "id": "middle-ear-malleus",
+            "x": 0.36666667461395264,
+            "y": 0.28928571939468384
+          },
+          "title": "health_atlas_hb_malleus",
+          "explanation": "health_atlas_hb_malleus_detail"
+        },
+        {
+          "marker": {
+            "id": "middle-ear-incus",
+            "x": 0.4833333194255829,
+            "y": 0.2928571403026581
+          },
+          "title": "health_atlas_hb_incus",
+          "explanation": "health_atlas_hb_incus_detail"
+        },
+        {
+          "marker": {
+            "id": "middle-ear-stapes",
+            "x": 0.6166666746139526,
+            "y": 0.4892857074737549
+          },
+          "title": "health_atlas_hb_stapes",
+          "explanation": "health_atlas_hb_stapes_detail"
+        },
+        {
+          "marker": {
+            "id": "middle-ear-oval-window",
+            "x": 0.7138888835906982,
+            "y": 0.46071428060531616
+          },
+          "title": "health_atlas_hb_oval_window",
+          "explanation": "health_atlas_hb_oval_window_detail"
+        },
+        {
+          "marker": {
+            "id": "middle-ear-round-window",
+            "x": 0.7333333492279053,
+            "y": 0.6857143044471741
+          },
+          "title": "health_atlas_hb_round_window",
+          "explanation": "health_atlas_hb_round_window_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailMiddleEarOssicularCutaway",
+      "entryIDs": [
+        "middle-ear"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_middle_ear_ossicular_cutaway.xml"
+    },
+    {
+      "id": "cochlea-scala-cross-section",
+      "owner": "cochlea",
+      "viewLabel": "health_atlas_hb_cochlea_caption",
+      "markers": [],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6753699/",
+      "viewKey": "cochlea-scala-cross-section",
+      "selectorLabel": "health_atlas_hb_cochlea_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "cochlea-scala-vestibuli",
+            "x": 0.43611112236976624,
+            "y": 0.32499998807907104
+          },
+          "title": "health_atlas_hb_scala_vestibuli",
+          "explanation": "health_atlas_hb_scala_vestibuli_detail"
+        },
+        {
+          "marker": {
+            "id": "cochlea-reissners-membrane",
+            "x": 0.574999988079071,
+            "y": 0.4107142984867096
+          },
+          "title": "health_atlas_hb_reissners",
+          "explanation": "health_atlas_hb_reissners_detail"
+        },
+        {
+          "marker": {
+            "id": "cochlea-cochlear-duct",
+            "x": 0.6916666626930237,
+            "y": 0.4714285731315613
+          },
+          "title": "health_atlas_hb_cochlear_duct",
+          "explanation": "health_atlas_hb_cochlear_duct_detail"
+        },
+        {
+          "marker": {
+            "id": "cochlea-organ-of-corti",
+            "x": 0.45277777314186096,
+            "y": 0.5857142806053162
+          },
+          "title": "health_atlas_hb_corti",
+          "explanation": "health_atlas_hb_corti_detail"
+        },
+        {
+          "marker": {
+            "id": "cochlea-basilar-membrane",
+            "x": 0.6277777552604675,
+            "y": 0.6285714507102966
+          },
+          "title": "health_atlas_hb_basilar",
+          "explanation": "health_atlas_hb_basilar_detail"
+        },
+        {
+          "marker": {
+            "id": "cochlea-scala-tympani",
+            "x": 0.44999998807907104,
+            "y": 0.7428571581840515
+          },
+          "title": "health_atlas_hb_scala_tympani",
+          "explanation": "health_atlas_hb_scala_tympani_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailCochleaScalaCrossSection",
+      "entryIDs": [
+        "cochlea"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cochlea_scala_cross_section.xml"
+    },
+    {
+      "id": "vestibular-labyrinth-cutaway",
+      "owner": "vestibular-apparatus",
+      "viewLabel": "health_atlas_hb_vestibular_caption",
+      "markers": [],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10039035/",
+      "viewKey": "vestibular-labyrinth-cutaway",
+      "selectorLabel": "health_atlas_hb_vestibular_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "vestibular-anterior-canal",
+            "x": 0.33888888359069824,
+            "y": 0.15714286267757416
+          },
+          "title": "health_atlas_hb_anterior_canal",
+          "explanation": "health_atlas_hb_anterior_canal_detail"
+        },
+        {
+          "marker": {
+            "id": "vestibular-posterior-canal",
+            "x": 0.7166666388511658,
+            "y": 0.25357142090797424
+          },
+          "title": "health_atlas_hb_posterior_canal",
+          "explanation": "health_atlas_hb_posterior_canal_detail"
+        },
+        {
+          "marker": {
+            "id": "vestibular-lateral-canal",
+            "x": 0.23333333432674408,
+            "y": 0.4571428596973419
+          },
+          "title": "health_atlas_hb_lateral_canal",
+          "explanation": "health_atlas_hb_lateral_canal_detail"
+        },
+        {
+          "marker": {
+            "id": "vestibular-posterior-ampulla",
+            "x": 0.6722221970558167,
+            "y": 0.6821428537368774
+          },
+          "title": "health_atlas_hb_ampulla",
+          "explanation": "health_atlas_hb_ampulla_detail"
+        },
+        {
+          "marker": {
+            "id": "vestibular-utricle",
+            "x": 0.4305555522441864,
+            "y": 0.6785714030265808
+          },
+          "title": "health_atlas_hb_utricle",
+          "explanation": "health_atlas_hb_utricle_detail"
+        },
+        {
+          "marker": {
+            "id": "vestibular-saccule",
+            "x": 0.5694444179534912,
+            "y": 0.7964285612106323
+          },
+          "title": "health_atlas_hb_saccule",
+          "explanation": "health_atlas_hb_saccule_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailVestibularLabyrinthCutaway",
+      "entryIDs": [
+        "vestibular-apparatus"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_vestibular_labyrinth_cutaway.xml"
+    },
+    {
+      "id": "brainstem-midline-section",
+      "owner": "brainstem",
+      "viewLabel": "health_atlas_brainstem_section_view",
+      "markers": [],
+      "source": "https://brain.oit.duke.edu/lab03/lab03.html",
+      "viewKey": "brainstem-midline-section",
+      "selectorLabel": "health_atlas_brainstem_section_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "brainstem-section-midbrain",
+            "x": 0.44999998807907104,
+            "y": 0.1964285671710968
+          },
+          "title": "health_atlas_brainstem_section_midbrain",
+          "explanation": "health_atlas_brainstem_section_midbrain_detail"
+        },
+        {
+          "marker": {
+            "id": "brainstem-section-aqueduct",
+            "x": 0.5305555462837219,
+            "y": 0.2607142925262451
+          },
+          "title": "health_atlas_brainstem_section_aqueduct",
+          "explanation": "health_atlas_brainstem_section_aqueduct_detail"
+        },
+        {
+          "marker": {
+            "id": "brainstem-section-pons",
+            "x": 0.3361110985279083,
+            "y": 0.4535714387893677
+          },
+          "title": "health_atlas_brainstem_section_pons",
+          "explanation": "health_atlas_brainstem_section_pons_detail"
+        },
+        {
+          "marker": {
+            "id": "brainstem-section-fourth-ventricle",
+            "x": 0.5916666388511658,
+            "y": 0.47857141494750977
+          },
+          "title": "health_atlas_brainstem_section_fourth_ventricle",
+          "explanation": "health_atlas_brainstem_section_fourth_ventricle_detail"
+        },
+        {
+          "marker": {
+            "id": "brainstem-section-medulla",
+            "x": 0.42500001192092896,
+            "y": 0.7035714387893677
+          },
+          "title": "health_atlas_brainstem_section_medulla",
+          "explanation": "health_atlas_brainstem_section_medulla_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailBrainstemMidlineSection",
+      "entryIDs": [
+        "brainstem"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_brainstem_midline_section.xml"
+    },
+    {
+      "id": "cerebellum-vermis-section",
+      "owner": "cerebellum",
+      "viewLabel": "health_atlas_cerebellum_section_view",
+      "markers": [],
+      "source": "https://nba.uth.tmc.edu/neuroscience/s3/chapter05.html",
+      "viewKey": "cerebellum-vermis-section",
+      "selectorLabel": "health_atlas_cerebellum_section_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "cerebellum-section-anterior-lobe",
+            "x": 0.29722222685813904,
+            "y": 0.2964285612106323
+          },
+          "title": "health_atlas_cerebellum_section_anterior_lobe",
+          "explanation": "health_atlas_cerebellum_section_anterior_lobe_detail"
+        },
+        {
+          "marker": {
+            "id": "cerebellum-section-primary-fissure",
+            "x": 0.47777777910232544,
+            "y": 0.2571428716182709
+          },
+          "title": "health_atlas_cerebellum_section_primary_fissure",
+          "explanation": "health_atlas_cerebellum_section_primary_fissure_detail"
+        },
+        {
+          "marker": {
+            "id": "cerebellum-section-posterior-lobe",
+            "x": 0.6499999761581421,
+            "y": 0.3499999940395355
+          },
+          "title": "health_atlas_cerebellum_section_posterior_lobe",
+          "explanation": "health_atlas_cerebellum_section_posterior_lobe_detail"
+        },
+        {
+          "marker": {
+            "id": "cerebellum-section-arbor-vitae",
+            "x": 0.4277777671813965,
+            "y": 0.4714285731315613
+          },
+          "title": "health_atlas_cerebellum_section_arbor_vitae",
+          "explanation": "health_atlas_cerebellum_section_arbor_vitae_detail"
+        },
+        {
+          "marker": {
+            "id": "cerebellum-section-folia",
+            "x": 0.8027777671813965,
+            "y": 0.6142857074737549
+          },
+          "title": "health_atlas_cerebellum_section_folia",
+          "explanation": "health_atlas_cerebellum_section_folia_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailCerebellumVermisSection",
+      "entryIDs": [
+        "cerebellum"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cerebellum_vermis_section.xml"
+    },
+    {
+      "id": "spinal-cord-transverse-section",
+      "owner": "spinal-cord",
+      "viewLabel": "health_atlas_spinal_cord_section_view",
+      "markers": [],
+      "source": "https://cumming.ucalgary.ca/sites/default/files/teams/122/education/neurosurgery/spine3-sl-anatomy-of-the-spinal-cord.pdf",
+      "viewKey": "spinal-cord-transverse-section",
+      "selectorLabel": "health_atlas_spinal_cord_section_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "spinal-cord-section-posterior-sulcus",
+            "x": 0.4972222149372101,
+            "y": 0.23928570747375488
+          },
+          "title": "health_atlas_spinal_cord_section_posterior_sulcus",
+          "explanation": "health_atlas_spinal_cord_section_posterior_sulcus_detail"
+        },
+        {
+          "marker": {
+            "id": "spinal-cord-section-dorsal-horn",
+            "x": 0.3722222149372101,
+            "y": 0.38928571343421936
+          },
+          "title": "health_atlas_spinal_cord_section_dorsal_horn",
+          "explanation": "health_atlas_spinal_cord_section_dorsal_horn_detail"
+        },
+        {
+          "marker": {
+            "id": "spinal-cord-section-central-canal",
+            "x": 0.5,
+            "y": 0.48571428656578064
+          },
+          "title": "health_atlas_spinal_cord_section_central_canal",
+          "explanation": "health_atlas_spinal_cord_section_central_canal_detail"
+        },
+        {
+          "marker": {
+            "id": "spinal-cord-section-white-matter",
+            "x": 0.730555534362793,
+            "y": 0.5107142925262451
+          },
+          "title": "health_atlas_spinal_cord_section_white_matter",
+          "explanation": "health_atlas_spinal_cord_section_white_matter_detail"
+        },
+        {
+          "marker": {
+            "id": "spinal-cord-section-ventral-horn",
+            "x": 0.36944442987442017,
+            "y": 0.6214285492897034
+          },
+          "title": "health_atlas_spinal_cord_section_ventral_horn",
+          "explanation": "health_atlas_spinal_cord_section_ventral_horn_detail"
+        },
+        {
+          "marker": {
+            "id": "spinal-cord-section-anterior-fissure",
+            "x": 0.5138888955116272,
+            "y": 0.7071428298950195
+          },
+          "title": "health_atlas_spinal_cord_section_anterior_fissure",
+          "explanation": "health_atlas_spinal_cord_section_anterior_fissure_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailSpinalCordTransverseSection",
+      "entryIDs": [
+        "spinal-cord"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_spinal_cord_transverse_section.xml"
+    },
+    {
+      "id": "scapula-posterior-landmarks",
+      "owner": "scapula",
+      "viewLabel": "health_atlas_scapula_landmarks_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-1-the-pectoral-girdle",
+      "viewKey": "scapula-posterior-landmarks",
+      "selectorLabel": "health_atlas_scapula_landmarks_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "scapula-acromion",
+            "x": 0.6944444179534912,
+            "y": 0.13571429252624512
+          },
+          "title": "health_atlas_scapula_landmarks_acromion",
+          "explanation": "health_atlas_scapula_landmarks_acromion_detail"
+        },
+        {
+          "marker": {
+            "id": "scapula-supraspinous-fossa",
+            "x": 0.3777777850627899,
+            "y": 0.2571428716182709
+          },
+          "title": "health_atlas_scapula_landmarks_supraspinous",
+          "explanation": "health_atlas_scapula_landmarks_supraspinous_detail"
+        },
+        {
+          "marker": {
+            "id": "scapula-spine",
+            "x": 0.43611112236976624,
+            "y": 0.35357141494750977
+          },
+          "title": "health_atlas_scapula_landmarks_spine",
+          "explanation": "health_atlas_scapula_landmarks_spine_detail"
+        },
+        {
+          "marker": {
+            "id": "scapula-glenoid",
+            "x": 0.6972222328186035,
+            "y": 0.41428571939468384
+          },
+          "title": "health_atlas_scapula_landmarks_glenoid",
+          "explanation": "health_atlas_scapula_landmarks_glenoid_detail"
+        },
+        {
+          "marker": {
+            "id": "scapula-infraspinous-fossa",
+            "x": 0.5138888955116272,
+            "y": 0.5178571343421936
+          },
+          "title": "health_atlas_scapula_landmarks_infraspinous",
+          "explanation": "health_atlas_scapula_landmarks_infraspinous_detail"
+        },
+        {
+          "marker": {
+            "id": "scapula-inferior-angle",
+            "x": 0.42222222685813904,
+            "y": 0.8678571581840515
+          },
+          "title": "health_atlas_scapula_landmarks_inferior_angle",
+          "explanation": "health_atlas_scapula_landmarks_inferior_angle_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailScapulaPosteriorLandmarks",
+      "entryIDs": [
+        "scapula"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_scapula_posterior_landmarks.xml"
+    },
+    {
+      "id": "humerus-anterior-landmarks",
+      "owner": "humerus",
+      "viewLabel": "health_atlas_humerus_landmarks_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-2-bones-of-the-upper-limb",
+      "viewKey": "humerus-anterior-landmarks",
+      "selectorLabel": "health_atlas_humerus_landmarks_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "humerus-head",
+            "x": 0.5444444417953491,
+            "y": 0.15714286267757416
+          },
+          "title": "health_atlas_humerus_landmarks_head",
+          "explanation": "health_atlas_humerus_landmarks_head_detail"
+        },
+        {
+          "marker": {
+            "id": "humerus-greater-tubercle",
+            "x": 0.41111111640930176,
+            "y": 0.1785714328289032
+          },
+          "title": "health_atlas_humerus_landmarks_greater_tubercle",
+          "explanation": "health_atlas_humerus_landmarks_greater_tubercle_detail"
+        },
+        {
+          "marker": {
+            "id": "humerus-deltoid-tuberosity",
+            "x": 0.4333333373069763,
+            "y": 0.4892857074737549
+          },
+          "title": "health_atlas_humerus_landmarks_deltoid",
+          "explanation": "health_atlas_humerus_landmarks_deltoid_detail"
+        },
+        {
+          "marker": {
+            "id": "humerus-shaft",
+            "x": 0.5027777552604675,
+            "y": 0.6142857074737549
+          },
+          "title": "health_atlas_humerus_landmarks_shaft",
+          "explanation": "health_atlas_humerus_landmarks_shaft_detail"
+        },
+        {
+          "marker": {
+            "id": "humerus-capitulum",
+            "x": 0.43611112236976624,
+            "y": 0.8607142567634583
+          },
+          "title": "health_atlas_humerus_landmarks_capitulum",
+          "explanation": "health_atlas_humerus_landmarks_capitulum_detail"
+        },
+        {
+          "marker": {
+            "id": "humerus-trochlea",
+            "x": 0.5277777910232544,
+            "y": 0.875
+          },
+          "title": "health_atlas_humerus_landmarks_trochlea",
+          "explanation": "health_atlas_humerus_landmarks_trochlea_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailHumerusAnteriorLandmarks",
+      "entryIDs": [
+        "humerus"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_humerus_anterior_landmarks.xml"
+    },
+    {
+      "id": "tibia-anterior-landmarks",
+      "owner": "tibia",
+      "viewLabel": "health_atlas_tibia_landmarks_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-4-bones-of-the-lower-limb",
+      "viewKey": "tibia-anterior-landmarks",
+      "selectorLabel": "health_atlas_tibia_landmarks_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "tibia-lateral-condyle",
+            "x": 0.42500001192092896,
+            "y": 0.15357142686843872
+          },
+          "title": "health_atlas_tibia_landmarks_lateral_condyle",
+          "explanation": "health_atlas_tibia_landmarks_lateral_condyle_detail"
+        },
+        {
+          "marker": {
+            "id": "tibia-medial-condyle",
+            "x": 0.5916666388511658,
+            "y": 0.15357142686843872
+          },
+          "title": "health_atlas_tibia_landmarks_medial_condyle",
+          "explanation": "health_atlas_tibia_landmarks_medial_condyle_detail"
+        },
+        {
+          "marker": {
+            "id": "tibia-tuberosity",
+            "x": 0.5138888955116272,
+            "y": 0.3285714387893677
+          },
+          "title": "health_atlas_tibia_landmarks_tuberosity",
+          "explanation": "health_atlas_tibia_landmarks_tuberosity_detail"
+        },
+        {
+          "marker": {
+            "id": "tibia-anterior-border",
+            "x": 0.4833333194255829,
+            "y": 0.5785714387893677
+          },
+          "title": "health_atlas_tibia_landmarks_anterior_border",
+          "explanation": "health_atlas_tibia_landmarks_anterior_border_detail"
+        },
+        {
+          "marker": {
+            "id": "tibia-fibular-notch",
+            "x": 0.4333333373069763,
+            "y": 0.8464285731315613
+          },
+          "title": "health_atlas_tibia_landmarks_fibular_notch",
+          "explanation": "health_atlas_tibia_landmarks_fibular_notch_detail"
+        },
+        {
+          "marker": {
+            "id": "tibia-medial-malleolus",
+            "x": 0.5777778029441833,
+            "y": 0.9178571701049805
+          },
+          "title": "health_atlas_tibia_landmarks_malleolus",
+          "explanation": "health_atlas_tibia_landmarks_malleolus_detail"
+        }
+      ],
+      "asset": "HealthAtlasDetailTibiaAnteriorLandmarks",
+      "entryIDs": [
+        "tibia"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tibia_anterior_landmarks.xml"
+    }
+  ]
+}
