@@ -2693,6 +2693,58 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion.filtrate(0, index: 0).q, 0.16)
   }
 
+  func testEndometriumFunctionalSurfaceErodesWithoutRemovingBasalStroma() throws {
+    typealias Motion = GalaxySSIHealthAtlasEndometriumMotion
+    let regrowth = Motion.Frame(step: 1, fraction: 0), proliferated = Motion.Frame(step: 1, fraction: 1)
+    let secretory = Motion.Frame(step: 2, fraction: 1), shedding = Motion.Frame(step: 3, fraction: 0)
+    let repaired = Motion.Frame(step: 4, fraction: 1)
+    XCTAssertEqual(regrowth.top, 244); XCTAssertEqual(proliferated.top, 161)
+    XCTAssertEqual(secretory.top, 149); XCTAssertEqual(secretory.secretory, 1)
+    XCTAssertEqual(shedding.top, 149); XCTAssertEqual(try XCTUnwrap(shedding.erosion), 0)
+    XCTAssertEqual(repaired.top, 244); XCTAssertNil(repaired.erosion)
+    for index in 0...40 {
+      let x = 106 + 148 * Double(index) / 40
+      let intact = Motion.surface(x, top: secretory.top, erosion: nil)
+      XCTAssertEqual(Motion.surface(x, top: shedding.top, erosion: 0), intact, accuracy: 1e-10)
+      XCTAssertEqual(Motion.surface(x, top: shedding.top, erosion: 1), 244, accuracy: 1e-10)
+      XCTAssertGreaterThanOrEqual(Motion.surface(x, top: shedding.top, erosion: 0.5), intact - 1e-10)
+      XCTAssertLessThanOrEqual(Motion.surface(x, top: shedding.top, erosion: 0.5), 244)
+    }
+    let basal = (0...40).compactMap { Motion.stroma(repaired, index: $0) }
+    XCTAssertEqual(basal.count, 14)
+    XCTAssertTrue(basal.allSatisfy { $0.inBase && (248...276).contains($0.y) && $0.rx == 3.2 && $0.ry == 1.1 })
+  }
+
+  func testEndometriumGlandsKeepTheirBasalEndsAndSecretionWindows() throws {
+    typealias Motion = GalaxySSIHealthAtlasEndometriumMotion
+    typealias Geometry = GalaxySSIHealthAtlasEndometriumGeometry
+    let frame = Motion.Frame(step: 2, fraction: 1)
+    for (index, x) in Motion.glandSites.enumerated() {
+      let top = Motion.surface(x, top: frame.top, erosion: nil)
+      let gland = Geometry.channel(x: x, top: top, bend: frame.secretory, index: index)
+      XCTAssertEqual(gland.commands.count, 4)
+      XCTAssertEqual(gland.start, .init(x: x, y: top - 4))
+      XCTAssertEqual(try XCTUnwrap(gland.commands.last?.points.last), .init(x: x + 2, y: 272))
+      XCTAssertTrue(gland.commands.allSatisfy { $0.fits(width: 360, height: 360) })
+      XCTAssertEqual(Geometry.channel(x: x, top: 244, bend: 0, index: index).commands.count, 1)
+      XCTAssertEqual(Motion.repairRadius(0, index: index), 3)
+      XCTAssertEqual(Motion.repairRadius(1, index: index), 27)
+      for particle in 0...2 {
+        XCTAssertNil(Motion.secretion(0, gland: index, particle: particle))
+        let final = try XCTUnwrap(Motion.secretion(1, gland: index, particle: particle))
+        XCTAssertEqual(final.fraction, 0, accuracy: 1e-12); XCTAssertEqual(final.radius, 2.4)
+      }
+    }
+    for index in 0...3 {
+      XCTAssertNil(Motion.fragment(0, index: index)); XCTAssertNil(Motion.fragment(1, index: index))
+      for sample in 0...200 {
+        guard let fragment = Motion.fragment(Double(sample) / 200, index: index) else { continue }
+        XCTAssertTrue((0...215).contains(fragment.alpha))
+        XCTAssertTrue((122...200).contains(fragment.x)); XCTAssertTrue((131...174).contains(fragment.y))
+      }
+    }
+  }
+
   func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
     typealias Stage = GalaxySSIHealthAtlasBeatStage
     typealias Motion = GalaxySSIHealthAtlasBeatMotion

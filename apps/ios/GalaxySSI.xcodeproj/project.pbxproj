@@ -236,6 +236,13 @@
     C438400000000000000001F3 /* GalaxySSIHealthAtlasPodocyteFocusDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001F4 /* GalaxySSIHealthAtlasPodocyteFocusDrawing.swift */; };
     C438400000000000000001F5 /* GalaxySSIHealthAtlasPodocyteParticlesDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001F6 /* GalaxySSIHealthAtlasPodocyteParticlesDrawing.swift */; };
     C438400000000000000001F7 /* GalaxySSIHealthAtlasPodocyteLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001F8 /* GalaxySSIHealthAtlasPodocyteLabelsDrawing.swift */; };
+    C438400000000000000001F9 /* GalaxySSIHealthAtlasEndometriumMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001FA /* GalaxySSIHealthAtlasEndometriumMotion.swift */; };
+    C438400000000000000001FB /* GalaxySSIHealthAtlasEndometriumGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001FC /* GalaxySSIHealthAtlasEndometriumGeometry.swift */; };
+    C438400000000000000001FD /* GalaxySSIHealthAtlasEndometriumView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C438400000000000000001FE /* GalaxySSIHealthAtlasEndometriumView.swift */; };
+    C438400000000000000001FF /* GalaxySSIHealthAtlasEndometriumSectionDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000200 /* GalaxySSIHealthAtlasEndometriumSectionDrawing.swift */; };
+    C43840000000000000000201 /* GalaxySSIHealthAtlasEndometriumGlandDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000202 /* GalaxySSIHealthAtlasEndometriumGlandDrawing.swift */; };
+    C43840000000000000000203 /* GalaxySSIHealthAtlasEndometriumRepairDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000204 /* GalaxySSIHealthAtlasEndometriumRepairDrawing.swift */; };
+    C43840000000000000000205 /* GalaxySSIHealthAtlasEndometriumLabelsDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000206 /* GalaxySSIHealthAtlasEndometriumLabelsDrawing.swift */; };
     C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */; };
     C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */; };
     C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */; };
@@ -1945,6 +1952,13 @@
     C438400000000000000001F4 /* GalaxySSIHealthAtlasPodocyteFocusDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPodocyteFocusDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000001F6 /* GalaxySSIHealthAtlasPodocyteParticlesDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPodocyteParticlesDrawing.swift; sourceTree = "<group>"; };
     C438400000000000000001F8 /* GalaxySSIHealthAtlasPodocyteLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPodocyteLabelsDrawing.swift; sourceTree = "<group>"; };
+    C438400000000000000001FA /* GalaxySSIHealthAtlasEndometriumMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEndometriumMotion.swift; sourceTree = "<group>"; };
+    C438400000000000000001FC /* GalaxySSIHealthAtlasEndometriumGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEndometriumGeometry.swift; sourceTree = "<group>"; };
+    C438400000000000000001FE /* GalaxySSIHealthAtlasEndometriumView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEndometriumView.swift; sourceTree = "<group>"; };
+    C43840000000000000000200 /* GalaxySSIHealthAtlasEndometriumSectionDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEndometriumSectionDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000202 /* GalaxySSIHealthAtlasEndometriumGlandDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEndometriumGlandDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000204 /* GalaxySSIHealthAtlasEndometriumRepairDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEndometriumRepairDrawing.swift; sourceTree = "<group>"; };
+    C43840000000000000000206 /* GalaxySSIHealthAtlasEndometriumLabelsDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasEndometriumLabelsDrawing.swift; sourceTree = "<group>"; };
     C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasFunctionText.swift; sourceTree = "<group>"; };
     C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeMotion.swift; sourceTree = "<group>"; };
     C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasUptakeView.swift; sourceTree = "<group>"; };
@@ -3673,6 +3687,13 @@
         C438400000000000000001F4 /* GalaxySSIHealthAtlasPodocyteFocusDrawing.swift */,
         C438400000000000000001F6 /* GalaxySSIHealthAtlasPodocyteParticlesDrawing.swift */,
         C438400000000000000001F8 /* GalaxySSIHealthAtlasPodocyteLabelsDrawing.swift */,
+        C438400000000000000001FA /* GalaxySSIHealthAtlasEndometriumMotion.swift */,
+        C438400000000000000001FC /* GalaxySSIHealthAtlasEndometriumGeometry.swift */,
+        C438400000000000000001FE /* GalaxySSIHealthAtlasEndometriumView.swift */,
+        C43840000000000000000200 /* GalaxySSIHealthAtlasEndometriumSectionDrawing.swift */,
+        C43840000000000000000202 /* GalaxySSIHealthAtlasEndometriumGlandDrawing.swift */,
+        C43840000000000000000204 /* GalaxySSIHealthAtlasEndometriumRepairDrawing.swift */,
+        C43840000000000000000206 /* GalaxySSIHealthAtlasEndometriumLabelsDrawing.swift */,
         C43840000000000000000022 /* GalaxySSIHealthAtlasFunctionText.swift */,
         C43840000000000000000024 /* GalaxySSIHealthAtlasUptakeMotion.swift */,
         C43840000000000000000026 /* GalaxySSIHealthAtlasUptakeView.swift */,
@@ -5531,6 +5552,13 @@
         C438400000000000000001F3 /* GalaxySSIHealthAtlasPodocyteFocusDrawing.swift in Sources */,
         C438400000000000000001F5 /* GalaxySSIHealthAtlasPodocyteParticlesDrawing.swift in Sources */,
         C438400000000000000001F7 /* GalaxySSIHealthAtlasPodocyteLabelsDrawing.swift in Sources */,
+        C438400000000000000001F9 /* GalaxySSIHealthAtlasEndometriumMotion.swift in Sources */,
+        C438400000000000000001FB /* GalaxySSIHealthAtlasEndometriumGeometry.swift in Sources */,
+        C438400000000000000001FD /* GalaxySSIHealthAtlasEndometriumView.swift in Sources */,
+        C438400000000000000001FF /* GalaxySSIHealthAtlasEndometriumSectionDrawing.swift in Sources */,
+        C43840000000000000000201 /* GalaxySSIHealthAtlasEndometriumGlandDrawing.swift in Sources */,
+        C43840000000000000000203 /* GalaxySSIHealthAtlasEndometriumRepairDrawing.swift in Sources */,
+        C43840000000000000000205 /* GalaxySSIHealthAtlasEndometriumLabelsDrawing.swift in Sources */,
         C43840000000000000000021 /* GalaxySSIHealthAtlasFunctionText.swift in Sources */,
         C43840000000000000000023 /* GalaxySSIHealthAtlasUptakeMotion.swift in Sources */,
         C43840000000000000000025 /* GalaxySSIHealthAtlasUptakeView.swift in Sources */,
