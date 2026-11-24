@@ -1,13 +1,25 @@
 // Evaluate original #4384 pure structure declarations with resource identities and Plate DTO stubs.
 // No Android scene, Swift code, XCTest or native app is compiled/executed.
 const fs=require("node:fs"),path=require("node:path"),os=require("node:os"),cp=require("node:child_process"),assert=require("node:assert/strict"),xml=require("xml-js");
-const root=path.resolve(__dirname,"../../.."),sha="ab78711d467c013444883dbaeca23c39a601c875",check=process.argv.includes("--check");
+const regional=process.argv.includes("--regional");
+const root=path.resolve(__dirname,"../../.."),sha=regional?"a81aa85a1c81e41ff19a032eabea1eddcd2371dc":"ab78711d467c013444883dbaeca23c39a601c875",check=process.argv.includes("--check");
 const directory="apps/android/app/src/main/java/com/galaxyssi/chat/";
 const show=p=>cp.execFileSync("git",["show",sha+":"+p],{cwd:root,maxBuffer:32_000_000});
 const temporary=fs.mkdtempSync(path.join(os.tmpdir(),"galaxyssi-function-structures-")),files=[];
 function generated(name,text){const file=path.join(temporary,name+".kt");fs.writeFileSync(file,text);files.push(file);}
 for(const name of ["TissueContextPlates","AutonomicNervesPlate","LigamentsPlate","PlacentaPlate","CartilageOverviewPlate","SynovialJointPlate"]){
  generated("HealthAtlas"+name,show(directory+"HealthAtlas"+name+".kt").toString());
+}
+if(regional){
+ for(const name of ["AccessoryGlandRoutingAssignment","AxialProtectionAssignment","ClitoralVestibularAssignments",
+  "PenileUrinaryAssignment","ScrotalHeatAssignment","ShoulderActionAssignments","ShoulderActionPlates",
+  "TenocyteTendonMatrixAssignment","TenocyteTendonMatrixPlate","UterocervicalAssignment","UterocervicalPlates",
+  "VulvarProtectionAssignment","VulvarProtectionPlates"]){
+  const source=show(directory+"HealthAtlas"+name+".kt").toString();
+  generated("HealthAtlas"+name,source.replace(/^    fun createArt\(context: Context, story: HealthAtlasFunctionStory\) = HealthAtlas(?:ClitoralSensory|VestibularGland)StoryView\(context, story\)\r?\n/gm,""));
+ }
+ generated("Context","package android.content\nclass Context");
+ generated("FunctionStory","package com.galaxyssi.chat\ninternal enum class HealthAtlasFunctionStory { SPERM_TRANSPORT }");
 }
 generated("Plate",`package com.galaxyssi.chat
 internal data class HealthAtlasMarker(val id: String, val x: Float, val y: Float)
@@ -23,13 +35,22 @@ generated("R","package com.galaxyssi.chat\ninternal object ResourceNames { val k
  "internal object DrawableNames { val keys="+array(drawables)+" }\ninternal object R { object string {\n"+
  strings.map((name,i)=>"const val "+name+" = "+(i+1)).join("\n")+"\n}\nobject drawable {\n"+
  drawables.map((name,i)=>"const val "+name+" = "+(i+1)).join("\n")+"\n}}\n");
-generated("StructureExport",fs.readFileSync(path.join(__dirname,"AtlasFunctionStructuresExport.kt"),"utf8"));
+let exporter=fs.readFileSync(path.join(__dirname,"AtlasFunctionStructuresExport.kt"),"utf8");
+if(regional)exporter=exporter.replace("HealthAtlasTissueContextPlates.all.map", "(HealthAtlasTissueContextPlates.all + HealthAtlasTenocyteTendonMatrixPlate.plate).map");
+generated("StructureExport",exporter);
 const exported=require("./atlas-kotlin-extract.cjs")({files,temporary,mainClass:"com.galaxyssi.chat.StructureExportKt",cwd:root});
 assert(exported.length>40&&exported.length<80);
 const resourcePaths=cp.execFileSync("git",["ls-tree","-r","--name-only",sha,"apps/android/app/src/main/res"],{cwd:root,encoding:"utf8"}).trim().split(/\r?\n/);
 const graph=JSON.parse(show("apps/android/app/src/main/assets/health/body-atlas.json")),ids=new Set(graph.entries.map(e=>e.id));
 const aliases={health_atlas_erector_spinae_plate:"HealthAtlasFunctionErector",health_atlas_placenta_plate:"HealthAtlasFunctionPlacenta",
  health_atlas_ligaments_plate:"HealthAtlasFunctionLigaments",health_atlas_pineal_plate:"HealthAtlasFunctionPineal"};
+if(regional){
+ const inventory=JSON.parse(fs.readFileSync(path.join(root,"apps/ios/ANDROID_4385_SOURCE_INVENTORY.json")));
+ for(const file of inventory.files.filter(f=>f.path.includes("/res/drawable/")&&f.path.endsWith(".xml"))){
+  const name=path.basename(file.path,".xml");
+  aliases[name]="HealthAtlasRegional"+name.replace(/^health_atlas_/,"").split("_").map(s=>s[0].toUpperCase()+s.slice(1)).join("");
+ }
+}
 const plates=exported.map(value=>{
  const {drawableName,...plate}=value;
  const matching=resourcePaths.filter(p=>/\/drawable(?:-[^/]+)?\//.test(p)&&path.basename(p,path.extname(p))===drawableName&&/\.(xml|png)$/.test(p));
@@ -41,15 +62,17 @@ const plates=exported.map(value=>{
  assert(ids.has(plate.owner),plate.owner);
  for(const marker of plate.markers)assert(ids.has(marker.id),marker.id);
  const asset=aliases[drawableName]??"HealthAtlasStructure"+drawableName.replace(/^health_atlas_/,"").split("_").map(s=>s[0].toUpperCase()+s.slice(1)).join("");
- return {...plate,asset,entryIDs:[plate.owner,...plate.markers.map(m=>m.id)],aspectRatio:width/height,drawable};
+ return {...plate,...(regional?{id:plate.viewKey??plate.owner}:{}),asset,entryIDs:[plate.owner,...plate.markers.map(m=>m.id)],aspectRatio:width/height,drawable};
 });
-assert.equal(new Set(plates.map(p=>p.owner)).size,plates.length);
-const pack={schema:1,source:{androidPR:4384,mergeCommit:sha},plates};
-const assets=path.join(root,"apps/ios/GalaxySSI/Assets.xcassets"),destination=path.join(assets,"HealthAtlasFunctionStructures.dataset");
+if(!regional)assert.equal(new Set(plates.map(p=>p.owner)).size,plates.length);
+assert.equal(new Set(plates.map(p=>p.id)).size,plates.length);
+const pack={schema:1,source:{androidPR:regional?4385:4384,mergeCommit:sha},plates};
+const assets=path.join(root,"apps/ios/GalaxySSI/Assets.xcassets"),destination=path.join(assets,(regional?"HealthAtlasRegionalStructures":"HealthAtlasFunctionStructures")+".dataset");
 function write(p,text){if(check)assert.equal(fs.readFileSync(p,"utf8"),text,p);else{fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,text);}}
 write(path.join(destination,"content.json"),JSON.stringify(pack,null,2)+"\n");
 write(path.join(destination,"Contents.json"),JSON.stringify({data:[{filename:"content.json",idiom:"universal"}],info:{author:"xcode",version:1}},null,2)+"\n");
 for(const plate of plates){
+ if(regional){assert(fs.existsSync(path.join(assets,plate.asset+".imageset/Contents.json")),plate.asset);continue;}
  if(aliases[path.basename(plate.drawable,".xml")])continue;
  write(path.join(assets,plate.asset+".imageset/Contents.json"),JSON.stringify({images:[{filename:"art.pdf",idiom:"universal"}],info:{author:"xcode",version:1},properties:{"preserves-vector-representation":true}},null,2)+"\n");
 }

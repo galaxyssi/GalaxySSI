@@ -51,6 +51,11 @@ This is an in-progress implementation, not a completed parity claim or release.
   reflected quadratic controls. Legacy batches keep their existing conversion.
 - Omitted gradient axis coordinates now use Android's zero defaults, verified in
   [Android GradientColor source](https://android.googlesource.com/platform/frameworks/base/+/4e4cac3031513a2a739d3c55e9e6abf738b88eec/core/java/android/content/res/GradientColor.java).
+- Regional structure metadata extracted from the original pure Kotlin declarations:
+  73 unique views for 72 owners, 252 annotations and 36 links. This preserves the
+  two independent tenocyte views, the taste-pore coordinate correction, new view
+  keys/selectors and revised microglia/ependymal/rib artwork references. The snapshot
+  is not yet loaded by the runtime; 22 views point to regional PDF resources.
 
 ## Remaining Before Publication
 
@@ -59,7 +64,8 @@ This is an in-progress implementation, not a completed parity claim or release.
   sensory path, vestibular-gland secretion, tenocyte tendon matrix, pectoral
   horizontal adduction and latissimus extension/adduction.
 - New/modified structure plate metadata and their owner/view selectors, features,
-  links, sources and captions; connect the imported vector revisions to runtime.
+  links, sources and captions are extracted; connect the snapshot and imported
+  vector revisions to runtime, including the two-view tenocyte selector behavior.
 - Runtime catalogue activation, revision validation and complete renderer routing.
 - Review pineal caching adaptation: Android changed VectorDrawable raster caching;
   current iOS implementation uses a PDF asset and must not gain redundant Android
@@ -84,3 +90,13 @@ relative/reflected control fixtures, twelve skull callouts and 363 analytic
 vertebral poses. Regional PDF checks passed for all 23 resources, scope-preserving
 clipping, strict rejection of unsupported transformed clips and 363 sampled points
 of quadratic/cubic equivalence. The retained #4384 ligament PDF check still passes.
+
+Regional structure metadata checks passed for all 73 views: graph identities,
+annotation/link coordinates, both language tables, unique view keys, PDF resource
+availability, revised artwork aliases and the two-view tenocyte snapshot. This
+does not prove runtime routing or selection behavior, which remains pending.
+
+The historical #4384 PDFs remain unchanged. Their retained-batch checks compare
+encoded operations and do not prove SVG Q/T semantic equivalence. A follow-up
+resource audit must revisit their quadratics using the new exact conversion;
+passing those older checks is not proof that this separate issue is resolved.
