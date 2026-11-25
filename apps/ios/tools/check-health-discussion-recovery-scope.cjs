@@ -47,6 +47,14 @@ exactChanges('GalaxySSIHealthVisitJournalRead.swift', [
   ['destination: .cloud(model: model, endpoint: endpoint, credential: credential)',
     'destination: .cloud(model: model, endpoint: endpoint, credential: Data(credential))']
 ]);
+exactChanges('FileAgentWorkspaceStore.swift', [
+  ['private let writeFile: (Data, URL) throws -> Void',
+    'private let writeFile: (Data, URL) throws -> Void\n  private let readFile: (URL) throws -> Data'],
+  ['    writeFile: @escaping (Data, URL) throws -> Void',
+    '    readFile: @escaping (URL) throws -> Data = { try Data(contentsOf: $0) },\n    writeFile: @escaping (Data, URL) throws -> Void'],
+  ['self.writeFile = writeFile', 'self.writeFile = writeFile\n    self.readFile = readFile'],
+  ['do { data = try Data(contentsOf: fileURL) }', 'do { data = try readFile(fileURL) }']
+]);
 for (const name of ['GalaxySSIHealthScopedReadTransport.swift', 'GalaxySSIHealthAnalysis.swift',
   'GalaxySSIHealthFollowUp.swift', 'GalaxySSIServices.swift', 'AgentTaskSupervisor.swift']) {
   assert.equal(read(prefix + name), old(prefix + name), `${name}: no transport/planner/supervisor substitute`);
@@ -67,7 +75,29 @@ const view = read(prefix + 'GalaxySSIHealthCareDiscussionView.swift');
 assert.match(view, /beginLocalCareDiscussionTurn\(review, persistExecution: true\)/);
 assert.match(view, /dispatchLocalCareDiscussionTurn\(review\)[\s\S]*?responseBytes\(request/);
 assert.match(view, /retainLocalCareDiscussionResponse\(review, response: bytes\)[\s\S]*?applySavedLocalCareDiscussionReply\(review\)/);
-assert.match(view, /execution\.state == \.received, currentRoute\(execution\.approval\) != nil/);
+const runtime = read(prefix + 'GalaxySSIHealthCareTaskRuntime.swift');
+assert.match(view, /runtime\.submit\(review\)/);
+assert.match(view, /runtime\.restore\(review, mayApply: \{ active\?\.id == review\.id && currentRoute\(review\) != nil \}\)/);
+assert.match(runtime, /current\.state == \.received, mayApply\(\)/);
+assert.match(runtime, /execution\.agentConversationID == thread\.agentConversationID/);
+assert.match(runtime, /execution\.approval == approval/);
+assert.match(runtime, /supervisor\.submit\(workspace: workspace, priority: \.foreground\)/);
+assert.match(runtime, /supervisor\.resume\(workspaceId: id, priority: \.foreground\)/);
+assert.match(runtime, /if let active = handles\[id\] \{ await active\.join\(\) \}/);
+assert.match(runtime, /persisted\.cancellationRequested \|\| persisted\.status == \.cancelled/);
+assert.match(runtime, /execution\(approval\)\.state == \.applied/);
+assert.doesNotMatch(runtime, /URLSession|URLRequest|responseBytes|apiKey|memoryObserver:|\.question|\.payload|\.providerPayload/);
+assert.match(view, /taskHandle\?\.task\.cancel\(\)/);
+assert.match(view, /runtime\.cancel\(review\)/);
+assert.match(view, /if !admitted[\s\S]*?health_discussion_task_not_admitted/);
+assert.match(view, /await handle\.join\(\)[\s\S]*?AgentDataDisclosureLedger\.update/);
+const taskStore = read(prefix + 'GalaxySSIHealthCareTaskStore.swift');
+assert.match(taskStore, /AES\.GCM\.open\([\s\S]*?key\(create: false\), authenticating: aad/);
+assert.match(taskStore, /AES\.GCM\.seal\(data,[\s\S]*?authenticating: aad/);
+assert.match(taskStore, /\[\.atomic, \.completeFileProtection\]/);
+assert.match(taskStore, /isExcludedFromBackup = true/);
+assert.match(taskStore, /galaxyssi\.health\.discussion\.tasks\.v1:/);
+assert.match(taskStore, /health-discussion-tasks/);
 assert.match(view, /blockedDestinationIds\(\)\.contains\(contact\.id\)/);
 assert.match(view, /private func cancelRequest\(\)[\s\S]*?interruptLocalCareDiscussionExecution/);
 const records = read(prefix + 'GalaxySSIHealthRecords.swift');
@@ -75,4 +105,6 @@ assert.equal((records.match(/execution\?\.state = \.applied/g) || []).length, 4)
 assert.match(records, /allowTerminalExecution \|\| \(execution\.state != \.interrupted && execution\.state != \.applied\)/);
 const fixtures = read('apps/ios/GalaxySSITests/GalaxySSIHealthCareDiscussionRecoveryTests.swift');
 assert.equal((fixtures.match(/func test/g) || []).length, 6);
+const taskFixtures = read('apps/ios/GalaxySSITests/GalaxySSIHealthCareTaskRuntimeTests.swift');
+assert.equal((taskFixtures.match(/func test/g) || []).length, 9);
 console.log('Health discussion recovery source scope passed (not native execution or typechecking).');

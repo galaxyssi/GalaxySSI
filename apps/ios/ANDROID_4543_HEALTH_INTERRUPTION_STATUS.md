@@ -26,11 +26,11 @@ This is a partial port, not completion of Android #4543.
 
 ## Still required
 
-- Approved Health discussion submission through the standard durable Agent task,
-  including a persisted exact grant and provider/model snapshot.
+- Full model-driven Health Agent submission, with the persisted exact grant and
+  provider/model snapshot driving initial planning and the native action loop.
 - Grant-scoped initial and continuation planning, no global memory/screen or
   collaboration disclosure, and original conversation/turn reply restoration.
-- Standard Agent task recovery and native end-to-end acceptance.
+- Full model-driven Agent task recovery and native end-to-end acceptance.
 - Broader malformed/other control envelopes and oversized response receipt handling.
   Existing response parser and size limits still reject these rather than retaining
   an HTTP receipt; they are not silently retried by this change.
@@ -70,8 +70,8 @@ opaque cursor round trips, receipt conflicts, cancellation, scope/binding change
 expiry/revocation/size limits, and recovered control-content quarantine. These
 fixture sources have not been executed on Windows.
 
-This is still **not** the standard durable Agent task integration requested by
-Android #4543. Full scoped planner/run recovery, streaming/intermediate tool-round
+The final-receipt layer alone is **not** the full Agent task integration requested
+by Android #4543. Full scoped planner/run recovery, streaming/intermediate tool-round
 checkpoints and restoration after approval expiry remain outstanding. No request
 is automatically replayed or granted a longer disclosure lifetime by this work.
 
@@ -80,3 +80,51 @@ Source checks: `node apps/ios/tools/check-health-discussion-recovery-scope.cjs`,
 checker also protects the unchanged HTTP/scoped-read transport, coordinator and
 standard task supervisor, and limits shared history/question changes to Codable
 conformance and preserving the existing question cursor token during decoding.
+
+## Standard task supervisor integration follow-up
+
+Explicit cloud discussion submission and local final-receipt restoration now enter
+the existing `AgentTaskSupervisor` foreground read/reasoning lane. The runtime
+uses the supervisor's normal queue, execution handle, heartbeat, cancellation,
+pause/block, resume and completion transitions. It does not fork those reducers.
+Completion requires the original encrypted Health turn to have committed its
+`applied` marker; a quarantined control response or an uncertain dispatch is
+blocked rather than reported as success. A committed reply with interrupted task
+bookkeeping can reconcile its task status without applying the reply again.
+
+The task workspace uses an owner-authenticated AES-GCM file separate from both
+the Health archive and ordinary task workspaces. It has complete file protection
+and its production directory is excluded from OS backup. The shared file store
+only gains an optional read hook (matching its existing write hook); defaults,
+revision checks, per-file locks, bounded serialization and publication semantics
+remain unchanged. Wrong-owner or missing-key reads cannot overwrite an existing
+file with a fresh empty workspace. No private question, response, API key or
+approval payload is copied into workspace goals, results or event messages, and
+the supervisor receives no global memory observer.
+
+A shared live runtime per owner/storage path prevents two views from starting
+the same executor. Recovery waits for a previous execution handle to finish
+before resuming. Navigation interrupts the child task without inventing a durable
+user cancellation. Explicit cancellation is also recorded in the private task
+workspace, so a cancellation surviving a failed/interrupted Health status write
+still fences local final-receipt application on reopening. Legacy final receipts
+without a workspace migrate through a local-only supervised task, never an
+initial request replay.
+
+Task admission failures settle the disclosure ticket as failed. Ticket finalization
+also runs after the execution handle joins when cancellation occurred before the
+queued operation started, rather than depending on the network block's defer.
+
+Nine further native fixture source methods cover real supervisor submission,
+single-executor admission, interrupted dispatch, legacy receipt migration,
+durable cancellation, post-commit bookkeeping recovery, quarantined controls,
+cross-owner authenticated encryption and missing-key preservation. They have
+not been run on Windows. Grammar, project structure and source-scope checks are
+not a substitute for native compilation or runtime/device acceptance.
+
+Still outstanding for Android #4543: the full model-driven Agent action loop,
+grant-scoped initial and continuation planning, intermediate tool/stream
+checkpoints and original Agent transcript task projection. This private task
+integration does not claim those are complete, does not automatically execute
+received ActionPlan JSON, and does not extend or renew the approved disclosure
+lifetime.

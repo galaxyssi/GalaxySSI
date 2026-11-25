@@ -21,6 +21,8 @@ struct GalaxySSIHealthCareDiscussionView: View {
   @State private var approval: GalaxySSIHealthCareDiscussion.Approval?
   @State private var active: GalaxySSIHealthCareDiscussion.Approval?
   @State private var task: Task<Void, Never>?
+  @State private var taskHandle: AgentTaskHandle?
+  @State private var taskRuntime: GalaxySSIHealthCareTaskRuntime?
   @State private var failed = false
   @State private var proposesPlan = false
   @State private var allowsHistory = false
@@ -229,31 +231,19 @@ struct GalaxySSIHealthCareDiscussionView: View {
     guard canRead else { clearSensitive(); return }
     do {
       if open { _ = try records.openLocalCareDiscussion(id: concernID, metric: metric) }
-      var archive = try records.load()
+      let archive = try records.load()
       guard archive.localCareAllowed == true, let concern = archive.localCare?.current[metric.rawValue],
             concern.id == concernID, concern.stage != .paused, concern.stage != .closed,
             concern.assessment.record != nil else { throw GalaxySSIHealthRecords.Failure.permission }
-      var next = archive.localCareDiscussions?[concernID.uuidString]
-      if open, active == nil, task == nil, let execution = next?.turns.last?.execution,
-         execution.state == .prepared || execution.state == .dispatched || execution.state == .received {
-        do {
-          if execution.state == .received, currentRoute(execution.approval) != nil {
-            try records.applySavedLocalCareDiscussionReply(execution.approval)
-          } else {
-            try records.interruptLocalCareDiscussionExecution(execution.approval)
-          }
-        } catch {
-          try? records.interruptLocalCareDiscussionExecution(execution.approval)
-          failed = true
-        }
-        archive = try records.load()
-        next = archive.localCareDiscussions?[concernID.uuidString]
-      }
+      let next = archive.localCareDiscussions?[concernID.uuidString]
       if thread != nil, thread?.id != next?.id {
         clearRequest(); question = ""; allowsHistory = false; includesQuestions = false; asksQuestions = false
         allowsAnswerDraft = false; includesFeedbackHistory = false; limit = 20
       }
       thread = next
+      if open, active == nil, task == nil, let execution = next?.turns.last?.execution {
+        restoreExecution(execution)
+      }
       archived = (archive.archivedCareDiscussions ?? [:]).values.filter { $0.concernID == concernID }
         .sorted { ($0.archivedAt ?? .distantPast, $0.id.uuidString) > ($1.archivedAt ?? .distantPast, $1.id.uuidString) }
       allowed = archive.healthOnlinePermission != nil
@@ -332,6 +322,14 @@ struct GalaxySSIHealthCareDiscussionView: View {
           "Explicit health concern discussion with scoped measurement history",
         textSummary: .init(characters: sentPayload.count, kinds: [.messageText, .systemInstructions, .toolOutput]))
       guard ticket.allowed else { failed = true; return }
+      var admitted = false
+      defer {
+        if !admitted {
+          AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: .failed,
+            failureReason: "health_discussion_task_not_admitted")
+          try? records.interruptLocalCareDiscussionExecution(review)
+        }
+      }
       do {
         try records.beginLocalCareDiscussionTurn(review, persistExecution: true)
       } catch {
@@ -347,15 +345,13 @@ struct GalaxySSIHealthCareDiscussionView: View {
       asksQuestions = false
       allowsAnswerDraft = false
       failed = false
-      task = Task {
-        var status: AgentDisclosureStatus = .failed
-        defer {
-          AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: status,
-            failureReason: status == .failed ? "health_discussion_not_completed" : "")
-          if active?.id == review.id { active = nil; task = nil }
-        }
+      let runtime = GalaxySSIHealthCareTaskRuntime.shared(records: records)
+      taskRuntime = runtime
+      var status: AgentDisclosureStatus = .failed
+      let handle = try runtime.submit(review) { context in
         do {
-          guard active?.id == review.id, !Task.isCancelled, currentRoute(review) != nil else { return }
+          try context.ensureActive()
+          guard active?.id == review.id, currentRoute(review) != nil else { throw CancellationError() }
           try records.dispatchLocalCareDiscussionTurn(review)
           var bytes = try await GalaxySSIHealthSummaryTransport.responseBytes(request, limit: 65_536)
           status = .sent
@@ -366,29 +362,63 @@ struct GalaxySSIHealthCareDiscussionView: View {
               })
           }
           try records.retainLocalCareDiscussionResponse(review, response: bytes)
-          guard active?.id == review.id, !Task.isCancelled, currentRoute(review) != nil else { return }
+          try context.ensureActive()
+          guard active?.id == review.id, currentRoute(review) != nil else { throw CancellationError() }
           active = nil
-          defer { task = nil }
           try records.applySavedLocalCareDiscussionReply(review)
         } catch {
           if !Task.isCancelled {
             try? records.interruptLocalCareDiscussionExecution(review)
             failed = true
           }
+          throw error
         }
       }
-    } catch { failed = true }
+      admitted = true
+      taskHandle = handle
+      task = Task {
+        await handle.join()
+        AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: status,
+          failureReason: status == .failed ? "health_discussion_not_completed" : "")
+        if taskHandle === handle { active = nil; taskHandle = nil; task = nil; refresh(open: false) }
+      }
+    } catch { active = nil; failed = true }
+  }
+
+  private func restoreExecution(_ execution: GalaxySSIHealthCareDiscussionRecovery.Execution) {
+    let runtime = GalaxySSIHealthCareTaskRuntime.shared(records: records)
+    let persisted = runtime.persistedWorkspace(execution.approval)
+    if execution.state == .applied && persisted?.status == .completed { return }
+    if execution.state == .interrupted && (persisted?.status == .blocked || persisted?.status == .cancelled) { return }
+    taskRuntime = runtime
+    let review = execution.approval
+    active = review
+    task = Task {
+      defer {
+        if active?.id == review.id { active = nil; task = nil; refresh(open: false) }
+      }
+      do {
+        try await runtime.restore(review, mayApply: { active?.id == review.id && currentRoute(review) != nil })
+      } catch { if !Task.isCancelled { failed = true } }
+    }
   }
 
   private func cancelRequest() {
-    if let active {
-      do { try records.interruptLocalCareDiscussionExecution(active) }
+    let handle = taskHandle
+    let review = active
+    if let review {
+      do { try records.interruptLocalCareDiscussionExecution(review) }
       catch { failed = true }
     }
+    if let review, let runtime = taskRuntime {
+      if !runtime.cancel(review) { failed = true }
+    } else if let handle, !handle.cancel(reason: "private_discussion_user_cancelled") { failed = true }
     clearRequest()
   }
 
   private func clearRequest() {
+    // Interrupt the executor without inventing a user cancellation on navigation.
+    taskHandle?.task.cancel(); taskHandle = nil
     task?.cancel(); task = nil; active = nil; approval = nil
     readingTask?.cancel(); readingTask = nil; readingID = nil
   }
