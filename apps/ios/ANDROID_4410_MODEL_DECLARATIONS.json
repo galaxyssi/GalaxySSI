@@ -1,0 +1,391 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4410,
+    "mergeCommit": "e8ddebdcc70942880fcfeaacee57474c2d711b32"
+  },
+  "models": [
+    {
+      "id": "placentalMarker",
+      "inputs": [
+        {
+          "key": "placental-marker-amount",
+          "minimum": 40,
+          "maximum": 120,
+          "initial": 80,
+          "scale": 1,
+          "label": "health_atlas_placental_marker_amount",
+          "unit": "a.u.",
+          "digits": 0
+        },
+        {
+          "key": "placental-marker-equilibration",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 50,
+          "scale": 1,
+          "label": "health_atlas_placental_marker_equilibration",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "a.u.",
+      "minimum": 0,
+      "maximum": 60,
+      "sources": [
+        "https://www.ncbi.nlm.nih.gov/books/NBK53254/",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC7613408/"
+      ],
+      "title": "health_atlas_placental_marker_title",
+      "scope": "health_atlas_placental_marker_scope",
+      "formula": "health_atlas_placental_marker_formula",
+      "companionTitle": "health_atlas_placental_marker_remaining",
+      "entryIDs": [
+        "placenta",
+        "cell-trophoblast"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "renalTubuleRetention",
+      "inputs": [
+        {
+          "key": "renal-tubule-retention-segment-a",
+          "minimum": 0,
+          "maximum": 80,
+          "initial": 40,
+          "scale": 1,
+          "label": "health_atlas_renal_tubule_retention_segment_a",
+          "unit": "%",
+          "digits": 0
+        },
+        {
+          "key": "renal-tubule-retention-segment-b",
+          "minimum": 0,
+          "maximum": 80,
+          "initial": 25,
+          "scale": 1,
+          "label": "health_atlas_renal_tubule_retention_segment_b",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "a.u.",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://www.niddk.nih.gov/health-information/kidney-disease/kidneys-how-they-work",
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/25-6-tubular-reabsorption"
+      ],
+      "title": "health_atlas_renal_tubule_retention_title",
+      "scope": "health_atlas_renal_tubule_retention_scope",
+      "formula": "health_atlas_renal_tubule_retention_formula",
+      "companionTitle": "health_atlas_renal_tubule_retention_companion",
+      "entryIDs": [
+        "tissue-renal-tubular-epithelium",
+        "renal-cortex",
+        "renal-medulla"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "merkelContact",
+      "inputs": [
+        {
+          "key": "merkel-contact-force",
+          "minimum": 10,
+          "maximum": 80,
+          "initial": 40,
+          "scale": 1,
+          "label": "health_atlas_merkel_contact_force",
+          "unit": "mN",
+          "digits": 0
+        },
+        {
+          "key": "merkel-contact-radius",
+          "minimum": 10,
+          "maximum": 40,
+          "initial": 20,
+          "scale": 10,
+          "label": "health_atlas_merkel_contact_radius",
+          "unit": "mm",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "kPa",
+      "minimum": 0,
+      "maximum": 25.464790894703256,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin",
+        "https://pubmed.ncbi.nlm.nih.gov/24717432/"
+      ],
+      "title": "health_atlas_merkel_contact_title",
+      "scope": "health_atlas_merkel_contact_scope",
+      "formula": "health_atlas_merkel_contact_formula",
+      "companionTitle": "health_atlas_merkel_contact_companion",
+      "entryIDs": [
+        "cell-merkel-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "toothEnamelSection",
+      "inputs": [
+        {
+          "key": "tooth-enamel-section-thickness",
+          "minimum": 5,
+          "maximum": 20,
+          "initial": 10,
+          "scale": 10,
+          "label": "health_atlas_tooth_enamel_section_thickness",
+          "unit": "mm",
+          "digits": 1
+        },
+        {
+          "key": "tooth-enamel-section-radius",
+          "minimum": 30,
+          "maximum": 60,
+          "initial": 40,
+          "scale": 10,
+          "label": "health_atlas_tooth_enamel_section_radius",
+          "unit": "mm",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://www.nidcr.nih.gov/sites/default/files/2021-04/Open-Wide-and-Trek-Inside.pdf",
+        "https://webpath.med.utah.edu/HISTHTML/NORMAL/NORM194.html"
+      ],
+      "title": "health_atlas_tooth_enamel_section_title",
+      "scope": "health_atlas_tooth_enamel_section_scope",
+      "formula": "health_atlas_tooth_enamel_section_formula",
+      "companionTitle": "health_atlas_tooth_enamel_section_companion",
+      "entryIDs": [
+        "teeth"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "mucosalSampling",
+      "inputs": [
+        {
+          "key": "mucosal-sampling-selected-tiles",
+          "minimum": 1,
+          "maximum": 12,
+          "initial": 3,
+          "scale": 1,
+          "label": "health_atlas_mucosal_sampling_selected_tiles",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "mucosal-sampling-unselected-tiles",
+          "minimum": 1,
+          "maximum": 12,
+          "initial": 9,
+          "scale": 1,
+          "label": "health_atlas_mucosal_sampling_unselected_tiles",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems",
+        "https://histology.leeds.ac.uk/home/lymphoid/prim_sec_lymp_tiss/"
+      ],
+      "title": "health_atlas_mucosal_sampling_title",
+      "scope": "health_atlas_mucosal_sampling_scope",
+      "formula": "health_atlas_mucosal_sampling_formula",
+      "companionTitle": "health_atlas_mucosal_sampling_companion",
+      "entryIDs": [
+        "tonsils",
+        "adenoids",
+        "appendix",
+        "gut-associated-lymphoid-tissue"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "mammaryDuctDelivery",
+      "inputs": [
+        {
+          "key": "mammary-duct-secreted-volume",
+          "minimum": 4,
+          "maximum": 12,
+          "initial": 8,
+          "scale": 1,
+          "label": "health_atlas_mammary_duct_delivery_secreted_volume",
+          "unit": "VU",
+          "digits": 0
+        },
+        {
+          "key": "mammary-duct-displaced-share",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 60,
+          "scale": 1,
+          "label": "health_atlas_mammary_duct_delivery_displaced_share",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "VU",
+      "minimum": 0,
+      "maximum": 12,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/28-6-lactation",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC3098485/"
+      ],
+      "title": "health_atlas_mammary_duct_delivery_title",
+      "scope": "health_atlas_mammary_duct_delivery_scope",
+      "formula": "health_atlas_mammary_duct_delivery_formula",
+      "companionTitle": "health_atlas_mammary_duct_delivery_companion",
+      "entryIDs": [
+        "mammary-glands",
+        "cell-mammary-luminal-cell",
+        "cell-myoepithelial-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "rectalReservoir",
+      "inputs": [
+        {
+          "key": "rectal-reservoir-initial-volume",
+          "minimum": 20,
+          "maximum": 200,
+          "initial": 120,
+          "scale": 1,
+          "label": "health_atlas_rectal_reservoir_initial_volume",
+          "unit": "mL",
+          "digits": 0
+        },
+        {
+          "key": "rectal-reservoir-release-share",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 40,
+          "scale": 1,
+          "label": "health_atlas_rectal_reservoir_release_share",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "mL",
+      "minimum": 0,
+      "maximum": 200,
+      "sources": [
+        "https://www.niddk.nih.gov/health-information/digestive-diseases/digestive-system-how-it-works",
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines"
+      ],
+      "title": "health_atlas_rectal_reservoir_title",
+      "scope": "health_atlas_rectal_reservoir_scope",
+      "formula": "health_atlas_rectal_reservoir_formula",
+      "companionTitle": "health_atlas_rectal_reservoir_companion",
+      "entryIDs": [
+        "rectum",
+        "anal-canal"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "stromalMatrix",
+      "inputs": [
+        {
+          "key": "stromal-matrix-added-mass",
+          "minimum": 0,
+          "maximum": 20,
+          "initial": 6,
+          "scale": 1,
+          "label": "health_atlas_stromal_matrix_added_mass",
+          "unit": "MU",
+          "digits": 0
+        },
+        {
+          "key": "stromal-matrix-initial-mass",
+          "minimum": 0,
+          "maximum": 40,
+          "initial": 12,
+          "scale": 1,
+          "label": "health_atlas_stromal_matrix_initial_mass",
+          "unit": "MU",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "MU/AU",
+      "minimum": 0,
+      "maximum": 30,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/4-3-connective-tissue-supports-and-protects",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC8224746/"
+      ],
+      "title": "health_atlas_stromal_matrix_title",
+      "scope": "health_atlas_stromal_matrix_scope",
+      "formula": "health_atlas_stromal_matrix_formula",
+      "companionTitle": "health_atlas_stromal_matrix_companion",
+      "entryIDs": [
+        "cell-fibroblast",
+        "cell-endometrial-stromal-cell",
+        "endometrium"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "mucusFilmThickness",
+      "inputs": [
+        {
+          "key": "mucus-film-volume",
+          "minimum": 4,
+          "maximum": 24,
+          "initial": 12,
+          "scale": 1,
+          "label": "health_atlas_mucus_film_thickness_volume",
+          "unit": "u³",
+          "digits": 0
+        },
+        {
+          "key": "mucus-film-area",
+          "minimum": 2,
+          "maximum": 12,
+          "initial": 6,
+          "scale": 1,
+          "label": "health_atlas_mucus_film_thickness_area",
+          "unit": "u²",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "u",
+      "minimum": 0,
+      "maximum": 12,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system",
+        "https://histology.leeds.ac.uk/home/digestive/small_intestine/"
+      ],
+      "title": "health_atlas_mucus_film_thickness_title",
+      "scope": "health_atlas_mucus_film_thickness_scope",
+      "formula": "health_atlas_mucus_film_thickness_formula",
+      "companionTitle": "health_atlas_mucus_film_thickness_companion",
+      "entryIDs": [
+        "cell-goblet-cell",
+        "pharynx",
+        "tissue-intestinal-epithelium"
+      ],
+      "digits": 2
+    }
+  ]
+}

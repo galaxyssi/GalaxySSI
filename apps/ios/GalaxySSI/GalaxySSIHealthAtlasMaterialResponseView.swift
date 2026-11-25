@@ -6,6 +6,10 @@ struct GalaxySSIHealthAtlasMaterialResponseView: View {
   @Environment(\.displayScale) private var displayScale
   @State private var measuredWidth: CGFloat = 340
   static func description(_ kind: GalaxySSIHealthAtlasPhysiology.Kind, language: String) -> String {
+    if kind == .toothEnamelSection || kind == .renalTubuleRetention {
+      return GalaxySSIHealthAtlasText.get(kind == .toothEnamelSection ?
+        "health_atlas_tooth_enamel_section_diagram" : "health_atlas_renal_tubule_retention_diagram", language)
+    }
     if kind == .circadianLightWindow || kind == .adiposeVolumeShare {
       return GalaxySSIHealthAtlasText.get(kind == .circadianLightWindow ?
         "health_atlas_circadian_light_window_diagram" : "health_atlas_adipose_volume_share_diagram", language)
@@ -29,6 +33,8 @@ struct GalaxySSIHealthAtlasMaterialResponseView: View {
     return GalaxySSIHealthAtlasText.get("health_atlas_" + prefix + "_diagram", language)
   }
   private var identifier: String {
+    if model.kind == .toothEnamelSection { return "atlas-tooth-enamel-section" }
+    if model.kind == .renalTubuleRetention { return "atlas-renal-tubule-retention" }
     if model.kind == .circadianLightWindow { return "atlas-circadian-dial" }
     if model.kind == .adiposeVolumeShare { return "atlas-adipose-volume-share" }
     if model.kind == .cornealRefraction { return "atlas-corneal-rays" }
@@ -50,6 +56,8 @@ struct GalaxySSIHealthAtlasMaterialResponseView: View {
         local.scaleBy(x: scale, y: scale)
         let art = GalaxySSIHealthAtlasMaterialResponseDrawing(context: local, language: language)
         switch model.kind {
+        case .toothEnamelSection: art.enamelSection(model)
+        case .renalTubuleRetention: art.tubuleMarker(model)
         case .circadianLightWindow: art.circadianDial(model)
         case .adiposeVolumeShare: art.adiposeShare(model)
         case .cornealRefraction: art.refraction(model)

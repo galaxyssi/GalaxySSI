@@ -182,7 +182,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
             if [Model.Kind.renal, .eye, .cushionContactPressure, .airwaySplit, .visualAngle, .hormoneSignal,
                 .arterialContinuity, .glialCapacitance, .colonicWaterBalance, .endocrineDilution,
                 .gastricLiquidEmptying, .boneRemodelingBalance, .cutaneousSebum,
-                .externalEarResonance, .sweatDuctBalance, .oralMarkerDilution].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
+                .externalEarResonance, .sweatDuctBalance, .oralMarkerDilution,
+                .renalTubuleRetention, .mucusFilmThickness].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
             else { XCTAssertGreaterThanOrEqual(point.y, previous - 1e-9) }
           }
           previous = point.y
@@ -224,9 +225,7 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       "small-intestine", "jejunum"]
     XCTAssertEqual(ids.count, 50)
     for id in ids { XCTAssertNotNil(Model.Kind.forEntry(id)) }
-    for id in ["renal-cortex"] {
-      XCTAssertNil(Model.Kind.forEntry(id))
-    }
+    XCTAssertEqual(Model.Kind.forEntry("renal-cortex"), .renalTubuleRetention)
     XCTAssertEqual(Model.Kind.forEntry("cell-type-i-pneumocyte"), .alveolarDiffusion)
     XCTAssertEqual(Model.Kind.forEntry("cell-podocyte"), .glomerularFiltration)
   }
@@ -256,11 +255,14 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       (.jointArticularArc, 19.634954085, 0.785398163), (.sweatDuctBalance, 35, 105),
       (.vocalCycles, 2.8, 1000.0 / 140), (.vertebralSeries, 1, 19), (.oralMarkerDilution, 1, 8),
       (.olfactorySurfaceRetention, 28, 52), (.circadianLightWindow, 450, 90), (.adiposeVolumeShare, 43.74, 72.9),
-      (.thymicBranching, 28, 52), (.gastricPrecursorBalance, 4.2, 7.8), (.melaninDistribution, 3, 12)
+      (.thymicBranching, 28, 52), (.gastricPrecursorBalance, 4.2, 7.8), (.melaninDistribution, 3, 12),
+      (.placentalMarker, 20, 60), (.renalTubuleRetention, 45, 55), (.merkelContact, 10 / .pi, 4 * .pi),
+      (.toothEnamelSection, 43.75, 9 * .pi), (.mucosalSampling, 25, 75), (.mammaryDuctDelivery, 4.8, 3.2),
+      (.rectalReservoir, 48, 72), (.stromalMatrix, 9, 6), (.mucusFilmThickness, 2, 12)
     ]
-    XCTAssertEqual(Teaching.allCases.count, 54)
-    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 114)
-    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 173)
+    XCTAssertEqual(Teaching.allCases.count, 63)
+    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 132)
+    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 195)
     for (teaching, expected, companion) in fixtures {
       let kind = try XCTUnwrap(Model.Kind(rawValue: teaching.rawValue)), model = Model(kind: kind)
       XCTAssertEqual(model.result, expected, accuracy: 1e-6)
@@ -652,6 +654,85 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     playback.seek(0.5); playback.seek(.nan); XCTAssertEqual(playback.offset, 0.5)
     playback.showTarget(); XCTAssertEqual(playback.offset, 1)
     XCTAssertEqual(model.inputs, selected)
+  }
+
+  func testExchangeTeachingPairsPreserveAmountsAndSurfaceDimensions() throws {
+    typealias Teaching = GalaxySSIHealthAtlasTeachingModel
+    let kinds: [Teaching] = [.placentalMarker, .renalTubuleRetention, .merkelContact, .toothEnamelSection,
+      .mucosalSampling, .mammaryDuctDelivery, .rectalReservoir, .stromalMatrix, .mucusFilmThickness]
+    for teaching in kinds {
+      let controls = teaching.inputs
+      for first in controls[0].range {
+        for second in controls[1].range {
+          let values = [Double(first) / controls[0].scale, Double(second) / controls[1].scale]
+          let output = try XCTUnwrap(teaching.evaluate(values)), other = try XCTUnwrap(teaching.companion(values))
+          XCTAssertTrue(teaching.bounds.contains(output))
+          switch teaching {
+          case .placentalMarker, .mammaryDuctDelivery, .rectalReservoir:
+            XCTAssertEqual(output + other, values[0], accuracy: 1e-9)
+            if teaching == .placentalMarker { XCTAssertLessThanOrEqual(output, other) }
+          case .renalTubuleRetention: XCTAssertEqual(output + other, 100, accuracy: 1e-9)
+          case .merkelContact: XCTAssertEqual(output * other, values[0], accuracy: 1e-9)
+          case .toothEnamelSection:
+            let area = Double.pi * values[1] * values[1]
+            XCTAssertEqual(other + area * output / 100, area, accuracy: 1e-9)
+          case .mucosalSampling: XCTAssertEqual(output + other, 100, accuracy: 1e-9)
+          case .stromalMatrix: XCTAssertEqual(output - other, values[0] / 2, accuracy: 1e-9)
+          case .mucusFilmThickness: XCTAssertEqual(output * values[1], other, accuracy: 1e-9)
+          default: XCTFail("Unexpected exchange teaching model")
+          }
+        }
+      }
+    }
+    XCTAssertEqual(try XCTUnwrap(Teaching.mucosalSampling.evaluate([3.5, 9])), 28)
+    XCTAssertEqual(try XCTUnwrap(Teaching.merkelContact.evaluate([40.5, 2.3])), 40.5 / (.pi * 2.3 * 2.3), accuracy: 1e-12)
+    XCTAssertEqual(Teaching.merkelContact.bounds.upperBound, 80 / .pi)
+    XCTAssertEqual(Model.Kind.forEntry("cell-merkel-cell"), .merkelContact)
+    XCTAssertEqual(Model.Kind.forEntry("kidneys"), .renal)
+    XCTAssertEqual(Model.Kind.forEntry("capillaries"), .capillaryExchange)
+  }
+
+  func testSerialTubuleAmountsUseOnlyWhatEachPreviousSegmentLeaves() throws {
+    typealias Amounts = GalaxySSIHealthAtlasTubuleRetentionAmounts
+    let defaults = try XCTUnwrap(Amounts(segmentA: 40, segmentB: 25))
+    XCTAssertEqual(defaults.starting, 100); XCTAssertEqual(defaults.afterA, 60)
+    XCTAssertEqual(defaults.remaining, 45); XCTAssertEqual(defaults.reclaimedInA, 40)
+    XCTAssertEqual(defaults.reclaimedInB, 15); XCTAssertEqual(defaults.totalReclaimed, 55)
+    for a in [0.0, 40, 40.5, 80] {
+      for b in [0.0, 25, 25.5, 80] {
+        let amounts = try XCTUnwrap(Amounts(segmentA: a, segmentB: b))
+        XCTAssertEqual(amounts.starting, amounts.reclaimedInA + amounts.reclaimedInB + amounts.remaining, accuracy: 1e-9)
+        XCTAssertEqual(amounts.reclaimedInB, amounts.afterA * b / 100, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(GalaxySSIHealthAtlasTeachingModel.renalTubuleRetention.evaluate([a, b])), amounts.remaining)
+      }
+    }
+    for invalid in [-1, 81, Double.nan, .infinity] {
+      XCTAssertNil(Amounts(segmentA: invalid, segmentB: 25)); XCTAssertNil(Amounts(segmentA: 40, segmentB: invalid))
+    }
+  }
+
+  func testPlacentalPlaybackConservesMarkerWithoutMixingItsTwoSides() throws {
+    typealias Amounts = GalaxySSIHealthAtlasPlacentalAmounts
+    for (phase, maternal, fetal) in [(0.0, 80.0, 0.0), (0.5, 70.0, 10.0), (1.0, 60.0, 20.0)] {
+      let amounts = try XCTUnwrap(Amounts(total: 80, finalTransfer: 20, phase: phase))
+      XCTAssertEqual(amounts.maternal, maternal); XCTAssertEqual(amounts.fetal, fetal)
+    }
+    for total in stride(from: 40.0, through: 120, by: 10) {
+      for percent in stride(from: 0.0, through: 100, by: 10) {
+        let transfer = try XCTUnwrap(GalaxySSIHealthAtlasTeachingModel.placentalMarker.evaluate([total, percent]))
+        for step in 0...100 {
+          let amounts = try XCTUnwrap(Amounts(total: total, finalTransfer: transfer, phase: Double(step) / 100))
+          XCTAssertEqual(amounts.maternal + amounts.fetal, total, accuracy: 1e-9)
+          XCTAssertGreaterThanOrEqual(amounts.fetal, 0); XCTAssertLessThanOrEqual(amounts.fetal, transfer)
+          XCTAssertGreaterThanOrEqual(amounts.maternal, amounts.fetal)
+        }
+      }
+    }
+    XCTAssertEqual(try XCTUnwrap(Amounts(total: 80, finalTransfer: 0, phase: 0.5)).maternal, 80)
+    for bad in [-1, 41, Double.nan, .infinity] { XCTAssertNil(Amounts(total: 80, finalTransfer: bad, phase: 0.5)) }
+    for bad in [-0.1, 1.1, Double.nan, .infinity] { XCTAssertNil(Amounts(total: 80, finalTransfer: 20, phase: bad)) }
+    for bad in [0, 121, Double.nan, .infinity] { XCTAssertNil(Amounts(total: bad, finalTransfer: 0, phase: 0.5)) }
+    XCTAssertEqual(Model(kind: .placentalMarker, inputs: [80, 0])?.result, 0)
   }
 
   func testElbowFixturesBalanceForcesAndMomentsWithStrictUnitConversion() throws {
