@@ -18,7 +18,7 @@ struct AgentIOSLearnedWebSource: Codable, Equatable {
 
   var isSearchEligible: Bool {
     let broad = ["general", "knowledge"].contains(vertical)
-    return isValid && status == "verified" && vertical != "image" &&
+    return isValid && !AgentIOSWebSourceLearningPolicy.isBuiltInHost(host) && status == "verified" && vertical != "image" &&
       observations >= (broad ? 4 : 3) && queryFingerprints.count >= (broad ? 3 : 2)
   }
 
@@ -62,9 +62,13 @@ enum AgentIOSWebSourceLearningPolicy {
     var queryFingerprint: String
   }
   private static let builtInHosts = Set(
-    ["bing.com", "baidu.com", "duckduckgo.com", "sogou.com"] +
-      AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources.flatMap(\.allowedHosts)
+    ["bing.com", "baidu.com", "duckduckgo.com", "sogou.com", "search.brave.com"] +
+      AgentIOSWebIntelligenceSourceCatalog.indexedSources.flatMap(\.allowedHosts)
   )
+
+  static func isBuiltInHost(_ host: String) -> Bool {
+    builtInHosts.contains { host == $0 || host.hasSuffix("." + $0) }
+  }
 
   static func observations(query: String, categories: [String], results: [AgentMcpJSONObject]) -> [Observation] {
     let fingerprint = String(hash(String(query.prefix(4096)).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()).prefix(24))
@@ -75,7 +79,7 @@ enum AgentIOSWebSourceLearningPolicy {
         ["https", "http"].contains(url.scheme?.lowercased() ?? ""), url.user == nil, url.password == nil,
         var host = url.host?.lowercased() else { return nil }
       if host.hasPrefix("www.") { host.removeFirst(4) }
-      guard validHost(host), !builtInHosts.contains(where: { host == $0 || host.hasSuffix("." + $0) }) else { return nil }
+      guard validHost(host), !isBuiltInHost(host) else { return nil }
       let parsedVertical = AgentIOSWebIntelligenceVertical(rawValue: result.string("vertical")) ?? .general
       let vertical = parsedVertical == .local ? "general" : parsedVertical.rawValue
       let id = sourceID(host: host, vertical: vertical)

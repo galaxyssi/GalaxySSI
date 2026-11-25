@@ -45,8 +45,8 @@ enum AgentIOSWebSearchProfile: String {
 
 enum AgentIOSWebSearchEnginePolicy {
   static var supported: Set<String> {
-    Set(["bing", "baidu", "duckduckgo", "sogou_image", "brave_image", "duckduckgo_image"] +
-      AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources.map(\.id))
+    AgentIOSWebIntelligenceSourceCatalog.baseSearchEngineIDs.union(
+      AgentIOSWebIntelligenceSourceCatalog.indexedSources.map(\.id))
   }
   static func canResolve(_ engines: [String]) -> Bool {
     engines.allSatisfy { supported.contains($0) || isLearnedID($0) }

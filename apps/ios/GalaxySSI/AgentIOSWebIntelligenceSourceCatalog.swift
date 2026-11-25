@@ -67,8 +67,6 @@ struct AgentIOSWebIntelligenceSourceSummary: Equatable {
   var baseSearchEngineCount: Int
   var indexedSourceCount: Int
   var domainCategoryCount: Int
-  var wigoloAdapterCount: Int
-  var wigoloSupportedCount: Int
   var learningStats: AgentIOSWebIntelligenceSourceLearningStats
 }
 
@@ -80,6 +78,8 @@ struct AgentIOSWebIntelligenceSourceSpec: Equatable {
   var authority: Double
   var categoryTags: Set<String> = []
   var indexEngine = "bing"
+  var scope: String? = nil
+  var languages: Set<String> = ["*"]
 }
 
 struct AgentIOSWebIntelligenceSourceSelection: Equatable {
@@ -90,7 +90,7 @@ struct AgentIOSWebIntelligenceSourceSelection: Equatable {
 
 enum AgentIOSWebIntelligenceQueryRouting {
   static func select(
-    query _: String,
+    query: String,
     requestedVerticals: Set<AgentIOSWebIntelligenceVertical>,
     requestedEngineIds: Set<String>,
     requestedCategories: Set<String> = [],
@@ -98,7 +98,7 @@ enum AgentIOSWebIntelligenceQueryRouting {
   ) -> AgentIOSWebIntelligenceSourceSelection {
     let learned = learnedSources.filter(\.isSearchEligible).sorted { $0.sourceID < $1.sourceID }
       .enumerated().compactMap { $0.element.searchSpec(index: $0.offset + AgentIOSWebIntelligenceSourceCatalog.sourceCount) }
-    let catalog = AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources + learned
+    let catalog = AgentIOSWebIntelligenceSourceCatalog.indexedSources + learned
     let categories = Set(requestedCategories.compactMap(AgentIOSWebResearchPlanCodec.normalizedCategory))
     let explicit = catalog.filter {
       requestedEngineIds.contains($0.id)
@@ -109,11 +109,31 @@ enum AgentIOSWebIntelligenceQueryRouting {
           !categories.isDisjoint(with: $0.categoryTags)
       }
       : explicit
-    let selected = candidates.indices.sorted { left, right in
-      let leftAuthority = candidates[left].authority
-      let rightAuthority = candidates[right].authority
-      return leftAuthority == rightAuthority ? left < right : leftAuthority > rightAuthority
+    let language = queryLanguage(query)
+    func score(_ source: AgentIOSWebIntelligenceSourceSpec) -> Double {
+      let languageMatch = source.languages.contains(language) ? 2.0 : (source.languages.contains("*") ? 0.8 : -1.5)
+      return (requestedVerticals.contains(source.vertical) ? 2.5 : 0) +
+        (!categories.isDisjoint(with: source.categoryTags) ? 2.0 : 0) + languageMatch + source.authority * 0.5
+    }
+    let ranked = candidates.indices.sorted { left, right in
+      let leftScore = score(candidates[left]), rightScore = score(candidates[right])
+      return leftScore == rightScore ? left < right : leftScore > rightScore
     }.map { candidates[$0] }
+    var selected: [AgentIOSWebIntelligenceSourceSpec] = []
+    var seen = Set<String>()
+    if requestedEngineIds.isEmpty {
+      for category in categories.sorted() {
+        if let source = ranked.first(where: { $0.categoryTags.contains(category) }), seen.insert(source.id).inserted {
+          selected.append(source)
+        }
+      }
+      for vertical in requestedVerticals.sorted(by: { $0.rawValue < $1.rawValue }) {
+        if let source = ranked.first(where: { $0.vertical == vertical }), seen.insert(source.id).inserted {
+          selected.append(source)
+        }
+      }
+    }
+    for source in ranked where seen.insert(source.id).inserted { selected.append(source) }
     return AgentIOSWebIntelligenceSourceSelection(
       selected: selected,
       inferredVerticals: [],
@@ -122,39 +142,26 @@ enum AgentIOSWebIntelligenceQueryRouting {
         : "broad_unscoped"
     )
   }
+
+  static func queryLanguage(_ query: String) -> String {
+    let scalars = query.unicodeScalars.map(\.value)
+    if scalars.contains(where: { (0x3400...0x9fff).contains($0) }) { return "zh" }
+    if scalars.contains(where: { (0x3040...0x30ff).contains($0) }) { return "ja" }
+    if scalars.contains(where: { (0xac00...0xd7af).contains($0) }) { return "ko" }
+    return "en"
+  }
 }
 
 enum AgentIOSWebIntelligenceSourceCatalog {
-  static let baseSearchEngineCount = 40
-  static let indexedSourceCount = 247
-  static let sourceCount = baseSearchEngineCount + indexedSourceCount
-  static let wigoloAdapterCount = 18
-  static let wigoloSupportedCount = 18
-  static let officialDocumentationSources: [AgentIOSWebIntelligenceSourceSpec] = [
-    AgentIOSWebIntelligenceSourceSpec(
-      id: "microsoft_learn", title: "Microsoft Learn", vertical: .docs,
-      allowedHosts: ["learn.microsoft.com"], authority: 0.95
-    ),
-    AgentIOSWebIntelligenceSourceSpec(
-      id: "android_developers", title: "Android Developers", vertical: .docs,
-      allowedHosts: ["developer.android.com"], authority: 0.95
-    ),
-    AgentIOSWebIntelligenceSourceSpec(
-      id: "apple_developer", title: "Apple Developer", vertical: .docs,
-      allowedHosts: ["developer.apple.com"], authority: 0.95
-    ),
-    AgentIOSWebIntelligenceSourceSpec(
-      id: "python_docs", title: "Python Documentation", vertical: .docs,
-      allowedHosts: ["docs.python.org"], authority: 0.95
-    ),
-    AgentIOSWebIntelligenceSourceSpec(
-      id: "rust_docs", title: "Rust Documentation", vertical: .docs,
-      allowedHosts: ["doc.rust-lang.org"], authority: 0.95
-    )
-  ]
+  static let baseSearchEngineIDs: Set<String> = ["bing", "baidu", "duckduckgo", "sogou_image", "brave_image", "duckduckgo_image"]
+  static let indexedSources = AgentIOSIndexedWebSourceCatalog.sources
+  static var baseSearchEngineCount: Int { baseSearchEngineIDs.count }
+  static var indexedSourceCount: Int { indexedSources.count }
+  static var sourceCount: Int { baseSearchEngineCount + indexedSourceCount }
+  static var officialDocumentationSources: [AgentIOSWebIntelligenceSourceSpec] { indexedSources.filter { $0.vertical == .docs } }
 
   static var domainCategoryCount: Int {
-    AgentIOSWebIntelligenceVertical.allCases.filter { $0 != .local }.count
+    Set(indexedSources.map(\.vertical)).union([.general, .regional, .image]).count
   }
 
   static func summary(
@@ -165,8 +172,6 @@ enum AgentIOSWebIntelligenceSourceCatalog {
       baseSearchEngineCount: baseSearchEngineCount,
       indexedSourceCount: indexedSourceCount,
       domainCategoryCount: domainCategoryCount,
-      wigoloAdapterCount: wigoloAdapterCount,
-      wigoloSupportedCount: wigoloSupportedCount,
       learningStats: learningStats
     )
   }

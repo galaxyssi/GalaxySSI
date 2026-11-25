@@ -489,7 +489,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
               results = try imageSearchResults(endpoint: endpoint, resource: resource, query: query, invocation: searchInvocation)
             } else {
               results = try parseSearchResults(html, baseURL: resource.finalURL,
-                maxResults: maxResults, allowedHosts: endpoint.allowedHosts)
+                maxResults: maxResults, allowedHosts: endpoint.allowedHosts, siteScope: endpoint.siteScope)
             }
             accumulator.append(
               AgentIOSWebSearchAttempt(
@@ -1284,7 +1284,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         scheme: "https",
         host: source.indexEngine == "duckduckgo" ? "html.duckduckgo.com" : "www.bing.com",
         path: source.indexEngine == "duckduckgo" ? "/html/" : "/search",
-        queryItems: [URLQueryItem(name: "q", value: "site:\(host) \(query)")] +
+        queryItems: [URLQueryItem(name: "q", value: "site:\(source.scope ?? host) \(query)")] +
           (source.indexEngine == "duckduckgo" ? [] : [URLQueryItem(name: "count", value: String(maxResults))])
       )
       guard let url = components.url else {
@@ -1293,7 +1293,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       return AgentIOSWebSearchEndpoint(
         provider: source.id,
         url: try validatedPublicHTTPSURL(url.absoluteString),
-        allowedHosts: source.allowedHosts
+        allowedHosts: source.allowedHosts,
+        siteScope: source.scope
       )
     }
     endpoints += try orderedProviders.map { provider in
@@ -1388,14 +1389,15 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     _ html: String,
     baseURL: String,
     maxResults: Int,
-    allowedHosts: [String] = []
+    allowedHosts: [String] = [],
+    siteScope: String? = nil
   ) throws -> [AgentIOSWebSearchResult] {
     Array(try AgentIOSPublicSearchParser.parse(html, baseURL: baseURL, limit: 100).filter { result in
-      allowedHosts.isEmpty || allowedHosts.contains { allowedHost in
+      (allowedHosts.isEmpty || allowedHosts.contains { allowedHost in
         guard let host = URL(string: result.url)?.host?.lowercased() else { return false }
         let allowed = allowedHost.lowercased()
         return host == allowed || host.hasSuffix(".\(allowed)")
-      }
+      }) && AgentIOSIndexedWebSourceCatalog.allowsResult(result.url, scope: siteScope)
     }.prefix(maxResults))
   }
 
@@ -2093,6 +2095,7 @@ private struct AgentIOSWebSearchEndpoint {
   var url: URL
   var allowedHosts: [String] = []
   var imageSearch = false
+  var siteScope: String? = nil
 }
 
 private struct AgentIOSWebSearchAttempt {

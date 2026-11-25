@@ -1,0 +1,2722 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": "reuters_news",
+      "title": "Reuters",
+      "vertical": "news",
+      "host": "reuters.com",
+      "scope": "reuters.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "ap_news",
+      "title": "AP News",
+      "vertical": "news",
+      "host": "apnews.com",
+      "scope": "apnews.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "bbc_news",
+      "title": "BBC News",
+      "vertical": "news",
+      "host": "bbc.com",
+      "scope": "bbc.com/news",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "xinhua_news",
+      "title": "Xinhua",
+      "vertical": "news",
+      "host": "news.cn",
+      "scope": "news.cn",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "cna_news",
+      "title": "Channel News Asia",
+      "vertical": "news",
+      "host": "channelnewsasia.com",
+      "scope": "channelnewsasia.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "britannica",
+      "title": "Britannica",
+      "vertical": "knowledge",
+      "host": "britannica.com",
+      "scope": "britannica.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "wikidata",
+      "title": "Wikidata",
+      "vertical": "knowledge",
+      "host": "wikidata.org",
+      "scope": "wikidata.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "stanford_encyclopedia",
+      "title": "Stanford Encyclopedia of Philosophy",
+      "vertical": "knowledge",
+      "host": "plato.stanford.edu",
+      "scope": "plato.stanford.edu",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "baidu_baike",
+      "title": "Baidu Baike",
+      "vertical": "knowledge",
+      "host": "baike.baidu.com",
+      "scope": "baike.baidu.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.75
+    },
+    {
+      "id": "medium",
+      "title": "Medium",
+      "vertical": "publishing",
+      "host": "medium.com",
+      "scope": "medium.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "substack",
+      "title": "Substack",
+      "vertical": "publishing",
+      "host": "substack.com",
+      "scope": "substack.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "jianshu",
+      "title": "Jianshu",
+      "vertical": "publishing",
+      "host": "jianshu.com",
+      "scope": "jianshu.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "toutiao",
+      "title": "Toutiao",
+      "vertical": "publishing",
+      "host": "toutiao.com",
+      "scope": "toutiao.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "wordpress",
+      "title": "WordPress.com",
+      "vertical": "publishing",
+      "host": "wordpress.com",
+      "scope": "wordpress.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "codeberg",
+      "title": "Codeberg",
+      "vertical": "code",
+      "host": "codeberg.org",
+      "scope": "codeberg.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "gitee",
+      "title": "Gitee",
+      "vertical": "code",
+      "host": "gitee.com",
+      "scope": "gitee.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "sourceforge",
+      "title": "SourceForge",
+      "vertical": "code",
+      "host": "sourceforge.net",
+      "scope": "sourceforge.net",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.75
+    },
+    {
+      "id": "microsoft_learn",
+      "title": "Microsoft Learn",
+      "vertical": "docs",
+      "host": "learn.microsoft.com",
+      "scope": "learn.microsoft.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "android_developers",
+      "title": "Android Developers",
+      "vertical": "docs",
+      "host": "developer.android.com",
+      "scope": "developer.android.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "apple_developer",
+      "title": "Apple Developer",
+      "vertical": "docs",
+      "host": "developer.apple.com",
+      "scope": "developer.apple.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "python_docs",
+      "title": "Python Documentation",
+      "vertical": "docs",
+      "host": "docs.python.org",
+      "scope": "docs.python.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "rust_docs",
+      "title": "Rust Documentation",
+      "vertical": "docs",
+      "host": "doc.rust-lang.org",
+      "scope": "doc.rust-lang.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "maven_central",
+      "title": "Maven Central",
+      "vertical": "packages",
+      "host": "central.sonatype.com",
+      "scope": "central.sonatype.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "nuget",
+      "title": "NuGet",
+      "vertical": "packages",
+      "host": "nuget.org",
+      "scope": "nuget.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "go_packages",
+      "title": "Go Packages",
+      "vertical": "packages",
+      "host": "pkg.go.dev",
+      "scope": "pkg.go.dev",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "packagist",
+      "title": "Packagist",
+      "vertical": "packages",
+      "host": "packagist.org",
+      "scope": "packagist.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "rubygems",
+      "title": "RubyGems",
+      "vertical": "packages",
+      "host": "rubygems.org",
+      "scope": "rubygems.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "quora",
+      "title": "Quora",
+      "vertical": "qa",
+      "host": "quora.com",
+      "scope": "quora.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "stackexchange",
+      "title": "Stack Exchange",
+      "vertical": "qa",
+      "host": "stackexchange.com",
+      "scope": "stackexchange.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "superuser",
+      "title": "Super User",
+      "vertical": "qa",
+      "host": "superuser.com",
+      "scope": "superuser.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "serverfault",
+      "title": "Server Fault",
+      "vertical": "qa",
+      "host": "serverfault.com",
+      "scope": "serverfault.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "askubuntu",
+      "title": "Ask Ubuntu",
+      "vertical": "qa",
+      "host": "askubuntu.com",
+      "scope": "askubuntu.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "product_hunt",
+      "title": "Product Hunt",
+      "vertical": "community",
+      "host": "producthunt.com",
+      "scope": "producthunt.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "slashdot",
+      "title": "Slashdot",
+      "vertical": "community",
+      "host": "slashdot.org",
+      "scope": "slashdot.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "dev_community",
+      "title": "DEV Community",
+      "vertical": "community",
+      "host": "dev.to",
+      "scope": "dev.to",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "hashnode",
+      "title": "Hashnode",
+      "vertical": "community",
+      "host": "hashnode.com",
+      "scope": "hashnode.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "bluesky",
+      "title": "Bluesky",
+      "vertical": "social",
+      "host": "bsky.app",
+      "scope": "bsky.app",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "threads",
+      "title": "Threads",
+      "vertical": "social",
+      "host": "threads.net",
+      "scope": "threads.net",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "weibo",
+      "title": "Weibo",
+      "vertical": "social",
+      "host": "weibo.com",
+      "scope": "weibo.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "douban",
+      "title": "Douban",
+      "vertical": "social",
+      "host": "douban.com",
+      "scope": "douban.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "core_academic",
+      "title": "CORE",
+      "vertical": "academic",
+      "host": "core.ac.uk",
+      "scope": "core.ac.uk",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "doaj",
+      "title": "Directory of Open Access Journals",
+      "vertical": "academic",
+      "host": "doaj.org",
+      "scope": "doaj.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "ssrn",
+      "title": "SSRN",
+      "vertical": "academic",
+      "host": "ssrn.com",
+      "scope": "ssrn.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "biorxiv",
+      "title": "bioRxiv",
+      "vertical": "academic",
+      "host": "biorxiv.org",
+      "scope": "biorxiv.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "medrxiv",
+      "title": "medRxiv",
+      "vertical": "academic",
+      "host": "medrxiv.org",
+      "scope": "medrxiv.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "openalex",
+      "title": "OpenAlex",
+      "vertical": "research_index",
+      "host": "openalex.org",
+      "scope": "openalex.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "datacite",
+      "title": "DataCite",
+      "vertical": "research_index",
+      "host": "datacite.org",
+      "scope": "datacite.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "orcid",
+      "title": "ORCID",
+      "vertical": "research_index",
+      "host": "orcid.org",
+      "scope": "orcid.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "researchgate",
+      "title": "ResearchGate",
+      "vertical": "research_index",
+      "host": "researchgate.net",
+      "scope": "researchgate.net",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.75
+    },
+    {
+      "id": "base_search",
+      "title": "BASE",
+      "vertical": "research_index",
+      "host": "base-search.net",
+      "scope": "base-search.net",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "nih",
+      "title": "NIH",
+      "vertical": "medical",
+      "host": "nih.gov",
+      "scope": "nih.gov",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "cochrane",
+      "title": "Cochrane",
+      "vertical": "medical",
+      "host": "cochrane.org",
+      "scope": "cochrane.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "clinical_trials",
+      "title": "ClinicalTrials.gov",
+      "vertical": "medical",
+      "host": "clinicaltrials.gov",
+      "scope": "clinicaltrials.gov",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "nejm",
+      "title": "New England Journal of Medicine",
+      "vertical": "medical",
+      "host": "nejm.org",
+      "scope": "nejm.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "bmj",
+      "title": "BMJ",
+      "vertical": "medical",
+      "host": "bmj.com",
+      "scope": "bmj.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "jama",
+      "title": "JAMA Network",
+      "vertical": "medical",
+      "host": "jamanetwork.com",
+      "scope": "jamanetwork.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "who_healthcare",
+      "title": "World Health Organization",
+      "vertical": "healthcare",
+      "host": "who.int",
+      "scope": "who.int",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "cdc_healthcare",
+      "title": "CDC",
+      "vertical": "healthcare",
+      "host": "cdc.gov",
+      "scope": "cdc.gov",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "nhs",
+      "title": "NHS",
+      "vertical": "healthcare",
+      "host": "nhs.uk",
+      "scope": "nhs.uk",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "mayo_clinic",
+      "title": "Mayo Clinic",
+      "vertical": "healthcare",
+      "host": "mayoclinic.org",
+      "scope": "mayoclinic.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "cleveland_clinic",
+      "title": "Cleveland Clinic",
+      "vertical": "healthcare",
+      "host": "clevelandclinic.org",
+      "scope": "clevelandclinic.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "medlineplus",
+      "title": "MedlinePlus",
+      "vertical": "healthcare",
+      "host": "medlineplus.gov",
+      "scope": "medlineplus.gov",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "ncbi",
+      "title": "NCBI",
+      "vertical": "biology",
+      "host": "ncbi.nlm.nih.gov",
+      "scope": "ncbi.nlm.nih.gov",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "uniprot",
+      "title": "UniProt",
+      "vertical": "biology",
+      "host": "uniprot.org",
+      "scope": "uniprot.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "ensembl",
+      "title": "Ensembl",
+      "vertical": "biology",
+      "host": "ensembl.org",
+      "scope": "ensembl.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "protein_data_bank",
+      "title": "RCSB Protein Data Bank",
+      "vertical": "biology",
+      "host": "rcsb.org",
+      "scope": "rcsb.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "kegg",
+      "title": "KEGG",
+      "vertical": "biology",
+      "host": "kegg.jp",
+      "scope": "kegg.jp",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "nature_biology",
+      "title": "Nature Biology",
+      "vertical": "biology",
+      "host": "nature.com",
+      "scope": "nature.com/subjects/biological-sciences",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "ars_technica",
+      "title": "Ars Technica",
+      "vertical": "technology",
+      "host": "arstechnica.com",
+      "scope": "arstechnica.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "techcrunch",
+      "title": "TechCrunch",
+      "vertical": "technology",
+      "host": "techcrunch.com",
+      "scope": "techcrunch.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "the_verge",
+      "title": "The Verge",
+      "vertical": "technology",
+      "host": "theverge.com",
+      "scope": "theverge.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "wired",
+      "title": "WIRED",
+      "vertical": "technology",
+      "host": "wired.com",
+      "scope": "wired.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "zdnet",
+      "title": "ZDNET",
+      "vertical": "technology",
+      "host": "zdnet.com",
+      "scope": "zdnet.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "thirty_six_kr",
+      "title": "36Kr",
+      "vertical": "technology",
+      "host": "36kr.com",
+      "scope": "36kr.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "openai_agents_sdk",
+      "title": "OpenAI Agents SDK",
+      "vertical": "agents",
+      "host": "openai.github.io",
+      "scope": "openai.github.io/openai-agents-python",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "anthropic_agents",
+      "title": "Anthropic Agent Guidance",
+      "vertical": "agents",
+      "host": "anthropic.com",
+      "scope": "anthropic.com/research/building-effective-agents",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "langchain_agents",
+      "title": "LangChain Agents",
+      "vertical": "agents",
+      "host": "docs.langchain.com",
+      "scope": "docs.langchain.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "autogen_agents",
+      "title": "Microsoft AutoGen",
+      "vertical": "agents",
+      "host": "microsoft.github.io",
+      "scope": "microsoft.github.io/autogen",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "crewai_agents",
+      "title": "CrewAI",
+      "vertical": "agents",
+      "host": "docs.crewai.com",
+      "scope": "docs.crewai.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "google_adk",
+      "title": "Google Agent Development Kit",
+      "vertical": "agents",
+      "host": "google.github.io",
+      "scope": "google.github.io/adk-docs",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "intel_ark",
+      "title": "Intel ARK",
+      "vertical": "hardware",
+      "host": "intel.com",
+      "scope": "intel.com/content/www/us/en/ark",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "amd_products",
+      "title": "AMD Products",
+      "vertical": "hardware",
+      "host": "amd.com",
+      "scope": "amd.com/en/products",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "nvidia_products",
+      "title": "NVIDIA Products",
+      "vertical": "hardware",
+      "host": "nvidia.com",
+      "scope": "nvidia.com/en-us/products",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "qualcomm_products",
+      "title": "Qualcomm Products",
+      "vertical": "hardware",
+      "host": "qualcomm.com",
+      "scope": "qualcomm.com/products",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "arm_developer",
+      "title": "Arm Developer",
+      "vertical": "hardware",
+      "host": "developer.arm.com",
+      "scope": "developer.arm.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "toms_hardware",
+      "title": "Tom's Hardware",
+      "vertical": "hardware",
+      "host": "tomshardware.com",
+      "scope": "tomshardware.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "wikimedia_commons",
+      "title": "Wikimedia Commons",
+      "vertical": "image",
+      "host": "commons.wikimedia.org",
+      "scope": "commons.wikimedia.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "unsplash",
+      "title": "Unsplash",
+      "vertical": "image",
+      "host": "unsplash.com",
+      "scope": "unsplash.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "pexels",
+      "title": "Pexels",
+      "vertical": "image",
+      "host": "pexels.com",
+      "scope": "pexels.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "pixabay",
+      "title": "Pixabay",
+      "vertical": "image",
+      "host": "pixabay.com",
+      "scope": "pixabay.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "openverse",
+      "title": "Openverse",
+      "vertical": "image",
+      "host": "openverse.org",
+      "scope": "openverse.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "youtube",
+      "title": "YouTube",
+      "vertical": "video",
+      "host": "youtube.com",
+      "scope": "youtube.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "vimeo",
+      "title": "Vimeo",
+      "vertical": "video",
+      "host": "vimeo.com",
+      "scope": "vimeo.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "bilibili",
+      "title": "Bilibili",
+      "vertical": "video",
+      "host": "bilibili.com",
+      "scope": "bilibili.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "dailymotion",
+      "title": "Dailymotion",
+      "vertical": "video",
+      "host": "dailymotion.com",
+      "scope": "dailymotion.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "archive_video",
+      "title": "Internet Archive Video",
+      "vertical": "video",
+      "host": "archive.org",
+      "scope": "archive.org/details/movies",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "ted_video",
+      "title": "TED",
+      "vertical": "video",
+      "host": "ted.com",
+      "scope": "ted.com/talks",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "tripadvisor",
+      "title": "Tripadvisor",
+      "vertical": "travel",
+      "host": "tripadvisor.com",
+      "scope": "tripadvisor.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "booking",
+      "title": "Booking.com",
+      "vertical": "travel",
+      "host": "booking.com",
+      "scope": "booking.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "skyscanner",
+      "title": "Skyscanner",
+      "vertical": "travel",
+      "host": "skyscanner.com",
+      "scope": "skyscanner.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "trip_com",
+      "title": "Trip.com",
+      "vertical": "travel",
+      "host": "trip.com",
+      "scope": "trip.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "lonely_planet",
+      "title": "Lonely Planet",
+      "vertical": "travel",
+      "host": "lonelyplanet.com",
+      "scope": "lonelyplanet.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "klook",
+      "title": "Klook",
+      "vertical": "travel",
+      "host": "klook.com",
+      "scope": "klook.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "wikihow",
+      "title": "wikiHow",
+      "vertical": "lifestyle",
+      "host": "wikihow.com",
+      "scope": "wikihow.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "lifehacker",
+      "title": "Lifehacker",
+      "vertical": "lifestyle",
+      "host": "lifehacker.com",
+      "scope": "lifehacker.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "the_spruce",
+      "title": "The Spruce",
+      "vertical": "lifestyle",
+      "host": "thespruce.com",
+      "scope": "thespruce.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "good_housekeeping",
+      "title": "Good Housekeeping",
+      "vertical": "lifestyle",
+      "host": "goodhousekeeping.com",
+      "scope": "goodhousekeeping.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "martha_stewart",
+      "title": "Martha Stewart",
+      "vertical": "lifestyle",
+      "host": "marthastewart.com",
+      "scope": "marthastewart.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "better_homes",
+      "title": "Better Homes & Gardens",
+      "vertical": "lifestyle",
+      "host": "bhg.com",
+      "scope": "bhg.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "steam",
+      "title": "Steam",
+      "vertical": "games",
+      "host": "store.steampowered.com",
+      "scope": "store.steampowered.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "ign",
+      "title": "IGN",
+      "vertical": "games",
+      "host": "ign.com",
+      "scope": "ign.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "gamespot",
+      "title": "GameSpot",
+      "vertical": "games",
+      "host": "gamespot.com",
+      "scope": "gamespot.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "metacritic_games",
+      "title": "Metacritic Games",
+      "vertical": "games",
+      "host": "metacritic.com",
+      "scope": "metacritic.com/game",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "pcgamingwiki",
+      "title": "PCGamingWiki",
+      "vertical": "games",
+      "host": "pcgamingwiki.com",
+      "scope": "pcgamingwiki.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "taptap",
+      "title": "TapTap",
+      "vertical": "games",
+      "host": "taptap.cn",
+      "scope": "taptap.cn",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "amazon",
+      "title": "Amazon",
+      "vertical": "shopping",
+      "host": "amazon.com",
+      "scope": "amazon.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "jd",
+      "title": "JD.com",
+      "vertical": "shopping",
+      "host": "jd.com",
+      "scope": "jd.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "taobao",
+      "title": "Taobao",
+      "vertical": "shopping",
+      "host": "taobao.com",
+      "scope": "taobao.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "tmall",
+      "title": "Tmall",
+      "vertical": "shopping",
+      "host": "tmall.com",
+      "scope": "tmall.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "ebay",
+      "title": "eBay",
+      "vertical": "shopping",
+      "host": "ebay.com",
+      "scope": "ebay.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "aliexpress",
+      "title": "AliExpress",
+      "vertical": "shopping",
+      "host": "aliexpress.com",
+      "scope": "aliexpress.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "yahoo_finance",
+      "title": "Yahoo Finance",
+      "vertical": "finance",
+      "host": "finance.yahoo.com",
+      "scope": "finance.yahoo.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "investing",
+      "title": "Investing.com",
+      "vertical": "finance",
+      "host": "investing.com",
+      "scope": "investing.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "marketwatch",
+      "title": "MarketWatch",
+      "vertical": "finance",
+      "host": "marketwatch.com",
+      "scope": "marketwatch.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "tradingview",
+      "title": "TradingView",
+      "vertical": "finance",
+      "host": "tradingview.com",
+      "scope": "tradingview.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "eastmoney",
+      "title": "Eastmoney",
+      "vertical": "finance",
+      "host": "eastmoney.com",
+      "scope": "eastmoney.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "sina_finance",
+      "title": "Sina Finance",
+      "vertical": "finance",
+      "host": "finance.sina.com.cn",
+      "scope": "finance.sina.com.cn",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "bloomberg",
+      "title": "Bloomberg",
+      "vertical": "business",
+      "host": "bloomberg.com",
+      "scope": "bloomberg.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "financial_times",
+      "title": "Financial Times",
+      "vertical": "business",
+      "host": "ft.com",
+      "scope": "ft.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "forbes",
+      "title": "Forbes",
+      "vertical": "business",
+      "host": "forbes.com",
+      "scope": "forbes.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "fortune",
+      "title": "Fortune",
+      "vertical": "business",
+      "host": "fortune.com",
+      "scope": "fortune.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "cnbc",
+      "title": "CNBC",
+      "vertical": "business",
+      "host": "cnbc.com",
+      "scope": "cnbc.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "caixin",
+      "title": "Caixin",
+      "vertical": "business",
+      "host": "caixin.com",
+      "scope": "caixin.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "espn",
+      "title": "ESPN",
+      "vertical": "sports",
+      "host": "espn.com",
+      "scope": "espn.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "cbs_sports",
+      "title": "CBS Sports",
+      "vertical": "sports",
+      "host": "cbssports.com",
+      "scope": "cbssports.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "sky_sports",
+      "title": "Sky Sports",
+      "vertical": "sports",
+      "host": "skysports.com",
+      "scope": "skysports.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "the_athletic",
+      "title": "The Athletic",
+      "vertical": "sports",
+      "host": "nytimes.com",
+      "scope": "nytimes.com/athletic",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "hupu",
+      "title": "Hupu",
+      "vertical": "sports",
+      "host": "hupu.com",
+      "scope": "hupu.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "sina_sports",
+      "title": "Sina Sports",
+      "vertical": "sports",
+      "host": "sports.sina.com.cn",
+      "scope": "sports.sina.com.cn",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "weather_com",
+      "title": "The Weather Channel",
+      "vertical": "weather",
+      "host": "weather.com",
+      "scope": "weather.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "accuweather",
+      "title": "AccuWeather",
+      "vertical": "weather",
+      "host": "accuweather.com",
+      "scope": "accuweather.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "meteoblue",
+      "title": "Meteoblue",
+      "vertical": "weather",
+      "host": "meteoblue.com",
+      "scope": "meteoblue.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "windy",
+      "title": "Windy",
+      "vertical": "weather",
+      "host": "windy.com",
+      "scope": "windy.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "noaa_weather",
+      "title": "NOAA Weather",
+      "vertical": "weather",
+      "host": "weather.gov",
+      "scope": "weather.gov",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "china_weather",
+      "title": "China Weather",
+      "vertical": "weather",
+      "host": "weather.com.cn",
+      "scope": "weather.com.cn",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "openstreetmap",
+      "title": "OpenStreetMap",
+      "vertical": "maps_local",
+      "host": "openstreetmap.org",
+      "scope": "openstreetmap.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "google_maps",
+      "title": "Google Maps",
+      "vertical": "maps_local",
+      "host": "maps.google.com",
+      "scope": "maps.google.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "bing_maps",
+      "title": "Bing Maps",
+      "vertical": "maps_local",
+      "host": "bing.com",
+      "scope": "bing.com/maps",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "amap",
+      "title": "Amap",
+      "vertical": "maps_local",
+      "host": "amap.com",
+      "scope": "amap.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "baidu_maps",
+      "title": "Baidu Maps",
+      "vertical": "maps_local",
+      "host": "map.baidu.com",
+      "scope": "map.baidu.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "mapquest",
+      "title": "MapQuest",
+      "vertical": "maps_local",
+      "host": "mapquest.com",
+      "scope": "mapquest.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "allrecipes",
+      "title": "Allrecipes",
+      "vertical": "food",
+      "host": "allrecipes.com",
+      "scope": "allrecipes.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "serious_eats",
+      "title": "Serious Eats",
+      "vertical": "food",
+      "host": "seriouseats.com",
+      "scope": "seriouseats.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "epicurious",
+      "title": "Epicurious",
+      "vertical": "food",
+      "host": "epicurious.com",
+      "scope": "epicurious.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "food_network",
+      "title": "Food Network",
+      "vertical": "food",
+      "host": "foodnetwork.com",
+      "scope": "foodnetwork.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "dianping",
+      "title": "Dianping",
+      "vertical": "food",
+      "host": "dianping.com",
+      "scope": "dianping.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "xiachufang",
+      "title": "Xiachufang",
+      "vertical": "food",
+      "host": "xiachufang.com",
+      "scope": "xiachufang.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "khan_academy",
+      "title": "Khan Academy",
+      "vertical": "education",
+      "host": "khanacademy.org",
+      "scope": "khanacademy.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "coursera",
+      "title": "Coursera",
+      "vertical": "education",
+      "host": "coursera.org",
+      "scope": "coursera.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "edx",
+      "title": "edX",
+      "vertical": "education",
+      "host": "edx.org",
+      "scope": "edx.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "mit_ocw",
+      "title": "MIT OpenCourseWare",
+      "vertical": "education",
+      "host": "ocw.mit.edu",
+      "scope": "ocw.mit.edu",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "openstax",
+      "title": "OpenStax",
+      "vertical": "education",
+      "host": "openstax.org",
+      "scope": "openstax.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "xuetangx",
+      "title": "XuetangX",
+      "vertical": "education",
+      "host": "xuetangx.com",
+      "scope": "xuetangx.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "linkedin_jobs",
+      "title": "LinkedIn Jobs",
+      "vertical": "jobs",
+      "host": "linkedin.com",
+      "scope": "linkedin.com/jobs",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "indeed",
+      "title": "Indeed",
+      "vertical": "jobs",
+      "host": "indeed.com",
+      "scope": "indeed.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "glassdoor",
+      "title": "Glassdoor",
+      "vertical": "jobs",
+      "host": "glassdoor.com",
+      "scope": "glassdoor.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "ziprecruiter",
+      "title": "ZipRecruiter",
+      "vertical": "jobs",
+      "host": "ziprecruiter.com",
+      "scope": "ziprecruiter.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "boss_zhipin",
+      "title": "BOSS Zhipin",
+      "vertical": "jobs",
+      "host": "zhipin.com",
+      "scope": "zhipin.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "lagou",
+      "title": "Lagou",
+      "vertical": "jobs",
+      "host": "lagou.com",
+      "scope": "lagou.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "china_government",
+      "title": "China Government",
+      "vertical": "government",
+      "host": "gov.cn",
+      "scope": "gov.cn",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "usa_government",
+      "title": "USA.gov",
+      "vertical": "government",
+      "host": "usa.gov",
+      "scope": "usa.gov",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "uk_government",
+      "title": "GOV.UK",
+      "vertical": "government",
+      "host": "gov.uk",
+      "scope": "gov.uk",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "europa",
+      "title": "European Union",
+      "vertical": "government",
+      "host": "europa.eu",
+      "scope": "europa.eu",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "united_nations",
+      "title": "United Nations",
+      "vertical": "government",
+      "host": "un.org",
+      "scope": "un.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "oecd",
+      "title": "OECD",
+      "vertical": "government",
+      "host": "oecd.org",
+      "scope": "oecd.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "cornell_law",
+      "title": "Cornell Legal Information Institute",
+      "vertical": "legal",
+      "host": "law.cornell.edu",
+      "scope": "law.cornell.edu",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "courtlistener",
+      "title": "CourtListener",
+      "vertical": "legal",
+      "host": "courtlistener.com",
+      "scope": "courtlistener.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "justia",
+      "title": "Justia",
+      "vertical": "legal",
+      "host": "justia.com",
+      "scope": "justia.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "eur_lex",
+      "title": "EUR-Lex",
+      "vertical": "legal",
+      "host": "eur-lex.europa.eu",
+      "scope": "eur-lex.europa.eu",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "china_laws",
+      "title": "China National Laws Database",
+      "vertical": "legal",
+      "host": "flk.npc.gov.cn",
+      "scope": "flk.npc.gov.cn",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "china_judgments",
+      "title": "China Judgments Online",
+      "vertical": "legal",
+      "host": "wenshu.court.gov.cn",
+      "scope": "wenshu.court.gov.cn",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "google_patents",
+      "title": "Google Patents",
+      "vertical": "patents",
+      "host": "patents.google.com",
+      "scope": "patents.google.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "wipo_patents",
+      "title": "WIPO Patentscope",
+      "vertical": "patents",
+      "host": "patentscope.wipo.int",
+      "scope": "patentscope.wipo.int",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "uspto_patents",
+      "title": "USPTO Patent Search",
+      "vertical": "patents",
+      "host": "ppubs.uspto.gov",
+      "scope": "ppubs.uspto.gov",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "espacenet",
+      "title": "Espacenet",
+      "vertical": "patents",
+      "host": "worldwide.espacenet.com",
+      "scope": "worldwide.espacenet.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "lens_patents",
+      "title": "The Lens",
+      "vertical": "patents",
+      "host": "lens.org",
+      "scope": "lens.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "cnipa_patents",
+      "title": "CNIPA",
+      "vertical": "patents",
+      "host": "cnipa.gov.cn",
+      "scope": "cnipa.gov.cn",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "google_books",
+      "title": "Google Books",
+      "vertical": "books",
+      "host": "books.google.com",
+      "scope": "books.google.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "open_library",
+      "title": "Open Library",
+      "vertical": "books",
+      "host": "openlibrary.org",
+      "scope": "openlibrary.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "project_gutenberg",
+      "title": "Project Gutenberg",
+      "vertical": "books",
+      "host": "gutenberg.org",
+      "scope": "gutenberg.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "worldcat",
+      "title": "WorldCat",
+      "vertical": "books",
+      "host": "worldcat.org",
+      "scope": "worldcat.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "archive_books",
+      "title": "Internet Archive Books",
+      "vertical": "books",
+      "host": "archive.org",
+      "scope": "archive.org/details/texts",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    },
+    {
+      "id": "douban_books",
+      "title": "Douban Books",
+      "vertical": "books",
+      "host": "book.douban.com",
+      "scope": "book.douban.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "spotify",
+      "title": "Spotify",
+      "vertical": "audio",
+      "host": "open.spotify.com",
+      "scope": "open.spotify.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "apple_music",
+      "title": "Apple Music",
+      "vertical": "audio",
+      "host": "music.apple.com",
+      "scope": "music.apple.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "soundcloud",
+      "title": "SoundCloud",
+      "vertical": "audio",
+      "host": "soundcloud.com",
+      "scope": "soundcloud.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "bandcamp",
+      "title": "Bandcamp",
+      "vertical": "audio",
+      "host": "bandcamp.com",
+      "scope": "bandcamp.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "podcast_index",
+      "title": "Podcast Index",
+      "vertical": "audio",
+      "host": "podcastindex.org",
+      "scope": "podcastindex.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "netease_music",
+      "title": "NetEase Cloud Music",
+      "vertical": "audio",
+      "host": "music.163.com",
+      "scope": "music.163.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "imdb",
+      "title": "IMDb",
+      "vertical": "entertainment",
+      "host": "imdb.com",
+      "scope": "imdb.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "tmdb",
+      "title": "The Movie Database",
+      "vertical": "entertainment",
+      "host": "themoviedb.org",
+      "scope": "themoviedb.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "rotten_tomatoes",
+      "title": "Rotten Tomatoes",
+      "vertical": "entertainment",
+      "host": "rottentomatoes.com",
+      "scope": "rottentomatoes.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "letterboxd",
+      "title": "Letterboxd",
+      "vertical": "entertainment",
+      "host": "letterboxd.com",
+      "scope": "letterboxd.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "douban_movies",
+      "title": "Douban Movies",
+      "vertical": "entertainment",
+      "host": "movie.douban.com",
+      "scope": "movie.douban.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "mtime",
+      "title": "Mtime",
+      "vertical": "entertainment",
+      "host": "mtime.com",
+      "scope": "mtime.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "nvd",
+      "title": "NVD",
+      "vertical": "cybersecurity",
+      "host": "nvd.nist.gov",
+      "scope": "nvd.nist.gov",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "cve",
+      "title": "CVE",
+      "vertical": "cybersecurity",
+      "host": "cve.org",
+      "scope": "cve.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "mitre_attack",
+      "title": "MITRE ATT&CK",
+      "vertical": "cybersecurity",
+      "host": "attack.mitre.org",
+      "scope": "attack.mitre.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "cisa",
+      "title": "CISA",
+      "vertical": "cybersecurity",
+      "host": "cisa.gov",
+      "scope": "cisa.gov",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.95
+    },
+    {
+      "id": "exploit_db",
+      "title": "Exploit Database",
+      "vertical": "cybersecurity",
+      "host": "exploit-db.com",
+      "scope": "exploit-db.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "snyk_vulnerability",
+      "title": "Snyk Vulnerability Database",
+      "vertical": "cybersecurity",
+      "host": "security.snyk.io",
+      "scope": "security.snyk.io",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.8
+    },
+    {
+      "id": "huggingface_models",
+      "title": "Hugging Face Models",
+      "vertical": "ai_models",
+      "host": "huggingface.co",
+      "scope": "huggingface.co/models",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "modelscope_models",
+      "title": "ModelScope Models",
+      "vertical": "ai_models",
+      "host": "modelscope.cn",
+      "scope": "modelscope.cn/models",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "ollama_library",
+      "title": "Ollama Library",
+      "vertical": "ai_models",
+      "host": "ollama.com",
+      "scope": "ollama.com/library",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "openai_models",
+      "title": "OpenAI Models",
+      "vertical": "ai_models",
+      "host": "platform.openai.com",
+      "scope": "platform.openai.com/docs/models",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "anthropic_models",
+      "title": "Anthropic Models",
+      "vertical": "ai_models",
+      "host": "docs.anthropic.com",
+      "scope": "docs.anthropic.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "google_ai_models",
+      "title": "Google AI Models",
+      "vertical": "ai_models",
+      "host": "ai.google.dev",
+      "scope": "ai.google.dev",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "kaggle_datasets",
+      "title": "Kaggle Datasets",
+      "vertical": "datasets",
+      "host": "kaggle.com",
+      "scope": "kaggle.com/datasets",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "huggingface_datasets",
+      "title": "Hugging Face Datasets",
+      "vertical": "datasets",
+      "host": "huggingface.co",
+      "scope": "huggingface.co/datasets",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "google_dataset_search",
+      "title": "Google Dataset Search",
+      "vertical": "datasets",
+      "host": "datasetsearch.research.google.com",
+      "scope": "datasetsearch.research.google.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "data_gov",
+      "title": "Data.gov",
+      "vertical": "datasets",
+      "host": "data.gov",
+      "scope": "data.gov",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "zenodo",
+      "title": "Zenodo",
+      "vertical": "datasets",
+      "host": "zenodo.org",
+      "scope": "zenodo.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "uci_datasets",
+      "title": "UCI Machine Learning Repository",
+      "vertical": "datasets",
+      "host": "archive.ics.uci.edu",
+      "scope": "archive.ics.uci.edu",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "edmunds",
+      "title": "Edmunds",
+      "vertical": "automotive",
+      "host": "edmunds.com",
+      "scope": "edmunds.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "kbb",
+      "title": "Kelley Blue Book",
+      "vertical": "automotive",
+      "host": "kbb.com",
+      "scope": "kbb.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "car_and_driver",
+      "title": "Car and Driver",
+      "vertical": "automotive",
+      "host": "caranddriver.com",
+      "scope": "caranddriver.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "motortrend",
+      "title": "MotorTrend",
+      "vertical": "automotive",
+      "host": "motortrend.com",
+      "scope": "motortrend.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "autohome",
+      "title": "Autohome",
+      "vertical": "automotive",
+      "host": "autohome.com.cn",
+      "scope": "autohome.com.cn",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "dongchedi",
+      "title": "Dongchedi",
+      "vertical": "automotive",
+      "host": "dongchedi.com",
+      "scope": "dongchedi.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "zillow",
+      "title": "Zillow",
+      "vertical": "real_estate",
+      "host": "zillow.com",
+      "scope": "zillow.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "realtor",
+      "title": "Realtor.com",
+      "vertical": "real_estate",
+      "host": "realtor.com",
+      "scope": "realtor.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "redfin",
+      "title": "Redfin",
+      "vertical": "real_estate",
+      "host": "redfin.com",
+      "scope": "redfin.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "rightmove",
+      "title": "Rightmove",
+      "vertical": "real_estate",
+      "host": "rightmove.co.uk",
+      "scope": "rightmove.co.uk",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "fang",
+      "title": "Fang.com",
+      "vertical": "real_estate",
+      "host": "fang.com",
+      "scope": "fang.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "lianjia",
+      "title": "Lianjia",
+      "vertical": "real_estate",
+      "host": "lianjia.com",
+      "scope": "lianjia.com",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "eventbrite",
+      "title": "Eventbrite",
+      "vertical": "events",
+      "host": "eventbrite.com",
+      "scope": "eventbrite.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "meetup",
+      "title": "Meetup",
+      "vertical": "events",
+      "host": "meetup.com",
+      "scope": "meetup.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "ten_times",
+      "title": "10times",
+      "vertical": "events",
+      "host": "10times.com",
+      "scope": "10times.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "ticketmaster",
+      "title": "Ticketmaster",
+      "vertical": "events",
+      "host": "ticketmaster.com",
+      "scope": "ticketmaster.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "damai",
+      "title": "Damai",
+      "vertical": "events",
+      "host": "damai.cn",
+      "scope": "damai.cn",
+      "languages": [
+        "zh"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "live_nation",
+      "title": "Live Nation",
+      "vertical": "events",
+      "host": "livenation.com",
+      "scope": "livenation.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "home_assistant",
+      "title": "Home Assistant",
+      "vertical": "smart_home",
+      "host": "home-assistant.io",
+      "scope": "home-assistant.io",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "matter",
+      "title": "Matter",
+      "vertical": "smart_home",
+      "host": "csa-iot.org",
+      "scope": "csa-iot.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.9
+    },
+    {
+      "id": "smartthings",
+      "title": "SmartThings",
+      "vertical": "smart_home",
+      "host": "smartthings.com",
+      "scope": "smartthings.com",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "apple_home",
+      "title": "Apple Home",
+      "vertical": "smart_home",
+      "host": "support.apple.com",
+      "scope": "support.apple.com/home",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "google_nest",
+      "title": "Google Nest",
+      "vertical": "smart_home",
+      "host": "support.google.com",
+      "scope": "support.google.com/googlenest",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.7
+    },
+    {
+      "id": "openhab",
+      "title": "openHAB",
+      "vertical": "smart_home",
+      "host": "openhab.org",
+      "scope": "openhab.org",
+      "languages": [
+        "*"
+      ],
+      "authority": 0.85
+    }
+  ]
+}
