@@ -194,8 +194,12 @@ object AgentContactNavigationPolicy {
 }
 
 object AgentModelSelectionSettings {
-    // New sessions start in Auto; manual choices belong to their existing conversation.
-    fun defaultSelection(context: Context): AgentModelSelection = AgentModelSelection()
+    fun defaultSelection(context: Context): AgentModelSelection {
+        val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        return readSelection(preferences, ::defaultKey)
+            .takeIf { it.mode == AgentModelSelectionMode.MANUAL && it.targetId.isNotBlank() }
+            ?: AgentModelSelection()
+    }
 
     fun selection(context: Context, conversationId: String): AgentModelSelection {
         val scope = normalizedConversationId(conversationId)
@@ -204,11 +208,11 @@ object AgentModelSelectionSettings {
         return readSelection(preferences) { field -> key(scope, field) }
     }
 
-    fun inheritDefault(context: Context, conversationId: String) {
+    internal fun initializeConversation(context: Context, conversationId: String, useRememberedSelection: Boolean) {
         val scope = requireConversationId(conversationId)
         val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-        val inherited = defaultSelection(context)
-        writeSelection(preferences.edit(), { field -> key(scope, field) }, inherited).apply()
+        val initial = if (useRememberedSelection) defaultSelection(context) else AgentModelSelection()
+        writeSelection(preferences.edit(), { field -> key(scope, field) }, initial).apply()
     }
 
     private fun readSelection(

@@ -1367,7 +1367,7 @@
     <string name="agent_model_selection_selected">已选择</string>
     <string name="agent_model_selection_model">模型</string>
     <string name="agent_model_selection_reasoning_effort">推理强度</string>
-    <string name="agent_model_selection_current_session">仅应用于当前会话</string>
+    <string name="agent_model_selection_new_session_default">新会话默认设置</string>
     <string name="agent_model_selection_effort_auto">自动</string>
     <string name="agent_model_selection_effort_low">低</string>
     <string name="agent_model_selection_effort_medium">中</string>
