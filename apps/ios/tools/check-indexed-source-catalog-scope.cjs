@@ -29,7 +29,7 @@ function replaceOnce(value, before, after) {
   return value.replace(before, after);
 }
 const providerFile = app + 'AgentIOSURLSessionWebMediaProvider.swift';
-let provider = read(providerFile);
+let provider = require('./check-json-search-adapters-scope.cjs').retainedJSONProvider(read(providerFile));
 for (const [before, after] of [
   ['maxResults: maxResults, allowedHosts: endpoint.allowedHosts, siteScope: endpoint.siteScope)',
     'maxResults: maxResults, allowedHosts: endpoint.allowedHosts)'],

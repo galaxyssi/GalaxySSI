@@ -62,7 +62,10 @@ enum AgentIOSWebSourceLearningPolicy {
     var queryFingerprint: String
   }
   private static let builtInHosts = Set(
-    ["bing.com", "baidu.com", "duckduckgo.com", "sogou.com", "search.brave.com"] +
+    ["bing.com", "baidu.com", "duckduckgo.com", "sogou.com", "search.brave.com",
+     "marginalia-search.com", "wikipedia.org", "github.com", "gitlab.com", "stackexchange.com", "stackoverflow.com",
+     "hn.algolia.com", "news.ycombinator.com", "lobste.rs", "reddit.com", "crossref.org", "semanticscholar.org",
+     "eutils.ncbi.nlm.nih.gov", "pubmed.ncbi.nlm.nih.gov", "crates.io", "npmjs.org", "npmjs.com", "developer.mozilla.org"] +
       AgentIOSWebIntelligenceSourceCatalog.indexedSources.flatMap(\.allowedHosts)
   )
 

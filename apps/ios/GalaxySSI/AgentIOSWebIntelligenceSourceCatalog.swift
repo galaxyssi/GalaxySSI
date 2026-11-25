@@ -98,7 +98,7 @@ enum AgentIOSWebIntelligenceQueryRouting {
   ) -> AgentIOSWebIntelligenceSourceSelection {
     let learned = learnedSources.filter(\.isSearchEligible).sorted { $0.sourceID < $1.sourceID }
       .enumerated().compactMap { $0.element.searchSpec(index: $0.offset + AgentIOSWebIntelligenceSourceCatalog.sourceCount) }
-    let catalog = AgentIOSWebIntelligenceSourceCatalog.indexedSources + learned
+    let catalog = AgentIOSJSONWebSearchAdapter.entries.map(\.spec) + AgentIOSWebIntelligenceSourceCatalog.indexedSources + learned
     let categories = Set(requestedCategories.compactMap(AgentIOSWebResearchPlanCodec.normalizedCategory))
     let explicit = catalog.filter {
       requestedEngineIds.contains($0.id)
@@ -153,7 +153,8 @@ enum AgentIOSWebIntelligenceQueryRouting {
 }
 
 enum AgentIOSWebIntelligenceSourceCatalog {
-  static let baseSearchEngineIDs: Set<String> = ["bing", "baidu", "duckduckgo", "sogou_image", "brave_image", "duckduckgo_image"]
+  static let baseSearchEngineIDs: Set<String> = Set(["bing", "baidu", "duckduckgo", "sogou_image", "brave_image", "duckduckgo_image"])
+    .union(AgentIOSJSONWebSearchAdapter.entries.map(\.id))
   static let indexedSources = AgentIOSIndexedWebSourceCatalog.sources
   static var baseSearchEngineCount: Int { baseSearchEngineIDs.count }
   static var indexedSourceCount: Int { indexedSources.count }

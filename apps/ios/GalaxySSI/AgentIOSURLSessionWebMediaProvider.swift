@@ -487,6 +487,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
             let results: [AgentIOSWebSearchResult]
             if endpoint.imageSearch {
               results = try imageSearchResults(endpoint: endpoint, resource: resource, query: query, invocation: searchInvocation)
+            } else if let parser = endpoint.jsonParser {
+              results = try AgentIOSJSONWebSearchAdapter.parse(resource.body, source: parser, limit: maxResults)
             } else {
               results = try parseSearchResults(html, baseURL: resource.finalURL,
                 maxResults: maxResults, allowedHosts: endpoint.allowedHosts, siteScope: endpoint.siteScope)
@@ -1277,6 +1279,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       ? ["baidu", "bing", "duckduckgo"]
       : ["bing", "baidu", "duckduckgo"]
     var endpoints = try routing.selected.map { source -> AgentIOSWebSearchEndpoint in
+      if let api = AgentIOSJSONWebSearchAdapter.entry(source.id) {
+        let url = try AgentIOSJSONWebSearchAdapter.requestURL(api, query: query, limit: maxResults)
+        return AgentIOSWebSearchEndpoint(provider: source.id,
+          url: try validatedPublicHTTPSURL(url.absoluteString), jsonParser: source.id)
+      }
       guard let host = source.allowedHosts.first else {
         throw AgentIOSURLSessionWebError.invalidSearchQuery
       }
@@ -2096,6 +2103,7 @@ private struct AgentIOSWebSearchEndpoint {
   var allowedHosts: [String] = []
   var imageSearch = false
   var siteScope: String? = nil
+  var jsonParser: String? = nil
 }
 
 private struct AgentIOSWebSearchAttempt {

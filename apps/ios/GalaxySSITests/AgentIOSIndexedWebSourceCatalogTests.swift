@@ -7,8 +7,8 @@ final class AgentIOSIndexedWebSourceCatalogTests: XCTestCase {
     let sources = AgentIOSWebIntelligenceSourceCatalog.indexedSources
     XCTAssertEqual(sources.count, 247)
     XCTAssertEqual(Set(sources.map(\.id)).count, 247)
-    XCTAssertEqual(AgentIOSWebIntelligenceSourceCatalog.baseSearchEngineCount, 6)
-    XCTAssertEqual(AgentIOSWebIntelligenceSourceCatalog.sourceCount, 253)
+    XCTAssertEqual(AgentIOSWebIntelligenceSourceCatalog.baseSearchEngineCount, 22)
+    XCTAssertEqual(AgentIOSWebIntelligenceSourceCatalog.sourceCount, 269)
     XCTAssertEqual(AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources.count, 5)
     let agent = try XCTUnwrap(sources.first { $0.id == "openai_agents_sdk" })
     XCTAssertEqual(agent.scope, "openai.github.io/openai-agents-python")
