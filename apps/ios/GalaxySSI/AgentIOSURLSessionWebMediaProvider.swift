@@ -283,6 +283,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   var ocrProcessor: AgentIOSWebMediaOCRProcessing
   var dynamicRenderer: AgentIOSDynamicWebRendering
   var nowMillis: () -> Int64
+  var monotonicNowNanoseconds: () -> UInt64
   var sourceHealthStore: AgentIOSWebIntelligenceCacheStore?
 
   init(
@@ -295,7 +296,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     sourceHealthStore: AgentIOSWebIntelligenceCacheStore? = .shared,
     nowMillis: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
-    }
+    },
+    monotonicNowNanoseconds: @escaping () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }
   ) {
     self.transport = transport
     self.implementationId = implementationId
@@ -305,6 +307,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     self.dynamicRenderer = dynamicRenderer
     self.sourceHealthStore = sourceHealthStore
     self.nowMillis = nowMillis
+    self.monotonicNowNanoseconds = monotonicNowNanoseconds
   }
 
   func availability(operation: AgentIOSWebMediaOperation) -> AgentNativeToolAvailability {
@@ -924,6 +927,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let url = try validatedPublicHTTPSURL(urlString(input))
       let timeoutMillis = try boundedTimeout(input, invocation: invocation)
       let maxBodyBytes = method == .head ? 0 : try boundedMaxBytes(input)
+      let resolutionStarted = monotonicNowNanoseconds()
       let resolution = try resolvedResource(
         operation: operation,
         requestedURL: url,
@@ -932,6 +936,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         timeoutMillis: timeoutMillis,
         invocation: invocation
       )
+      let resolutionEnded = monotonicNowNanoseconds()
+      let resolutionMillis = resolutionEnded >= resolutionStarted ? Int64((resolutionEnded - resolutionStarted) / 1_000_000) : 0
       let resource = resolution.resource
       var output = commonOutput(resource)
       switch operation {
@@ -949,6 +955,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           output["text"] = .string(boundedText(decodedText(resource).text, maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes))
         }
       case .webOpen, .browserRender:
+        output["duration_millis"] = .int(resolutionMillis)
         let mediaType = resource.contentType.split(separator: ";").first?
           .trimmingCharacters(in: .whitespaces).lowercased()
         if !resolution.dynamicRendered, (200..<300).contains(resource.statusCode),
@@ -1013,6 +1020,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       }
       var resultMetadata = metadata(operation: operation, method: method)
       if operation == .webOpen || operation == .browserRender {
+        resultMetadata["duration_millis"] = .int(resolutionMillis)
         resultMetadata["javascript"] = .bool(resolution.dynamicRendered)
         resultMetadata["script_execution"] = .bool(resolution.dynamicRendered)
         resultMetadata["render_mode"] = .string(

@@ -52,7 +52,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentDynamicWebArticleFetcher.kt",
       "sha256": "39a4b3da5155ac992f27f8a1ec5c6aedc95b770adb1ed1f0ad45773f950cdbe3",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Adapted the changed failure-path duration behavior: native webOpen/browserRender output and metadata measure total monotonic static-plus-fallback resolution, including caught renderer failure. Preserve static retrieval timestamp, separate successful render duration and existing fallback/cancellation gates. Native fixture sources added, NOT executed; not full fetcher/runtime parity"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentIsolatedWebRenderService.kt",
@@ -162,7 +162,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudWebToolLoopProgress.kt",
       "sha256": "e58511acccdb57d6b692a3a38e98d04ba86014694fcf6bf920b861f884900c50",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Existing native cross-read timeout/renderer-unavailable result reuse and three-stalled-retrieval-batch finalization retained. Evidence identity now includes canonical source URL, content hash, evidence level and canonically hashed image array, plus existing reading-window identity. Actual common model loop consumes it without changing collaboration progress/recall or configured limits. Native fixtures NOT executed; not full runtime acceptance"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/GalaxySSIApplication.kt",

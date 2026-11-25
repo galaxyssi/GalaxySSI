@@ -125,6 +125,51 @@ final class AgentIOSDynamicWebRendererTests: XCTestCase {
     XCTAssertTrue((result.output["text"]?.stringValue ?? "").contains("Recovered dynamically"))
   }
 
+  func testFailedDynamicFallbackDurationIncludesBothAttemptsWithoutChangingStaticTimestamp() throws {
+    var tick: UInt64 = 100_000_000
+    let transport = StubTransport { request in
+      tick += 50_000_000
+      return self.response(url: request.url, body: self.html("<div id='__next'></div><script src='/bundle.js'></script>"))
+    }
+    let renderer = StubRenderer(result: .failure(.navigationFailed("unavailable")), onRender: { tick += 200_000_000 })
+    let result = try invokeOpen(transport: transport, renderer: renderer, monotonicNow: { tick })
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["duration_millis"], .int(250))
+    XCTAssertEqual(result.metadata["duration_millis"], .int(250))
+    XCTAssertEqual(result.output["retrieved_at_epoch_ms"], .int(1_000))
+    XCTAssertNil(result.output["dynamic_render_duration_millis"])
+    XCTAssertEqual(result.output["render_mode"], .string("bounded_http"))
+  }
+
+  func testSuccessfulFallbackKeepsRendererDurationSeparateFromTotalDuration() throws {
+    var tick: UInt64 = 100_000_000
+    let transport = StubTransport { request in
+      tick += 10_000_000
+      return self.response(url: request.url, body: self.html("<div id='app'></div><script src='/bundle.js'></script>"))
+    }
+    let renderer = StubRenderer(result: .success(rendered("<p>Rendered body</p>")), onRender: { tick += 25_000_000 })
+    let result = try invokeOpen(transport: transport, renderer: renderer, monotonicNow: { tick })
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["duration_millis"], .int(35))
+    XCTAssertEqual(result.output["dynamic_render_duration_millis"], .int(20))
+    XCTAssertEqual(result.metadata["duration_millis"], .int(35))
+  }
+
+  func testUnavailableRendererPreservesStaticDurationAndSkipsRendering() throws {
+    var tick: UInt64 = 100_000_000
+    let transport = StubTransport { request in
+      tick += 15_000_000
+      return self.response(url: request.url, body: self.html("<div id='root'></div><script src='/bundle.js'></script>"))
+    }
+    let renderer = StubRenderer(result: .failure(.unavailable))
+    renderer.isAvailable = false
+    let result = try invokeOpen(transport: transport, renderer: renderer, monotonicNow: { tick })
+    XCTAssertEqual(result.output["duration_millis"], .int(15))
+    XCTAssertEqual(renderer.calls, 0)
+    XCTAssertEqual(result.metadata["dynamic_fallback_attempted"], .bool(false))
+    XCTAssertEqual(result.output["dynamic_fallback_error"], .string("renderer_unavailable"))
+  }
+
   func testRenderURLPolicyRequiresPublicHTTPSAndSameOriginNavigation() {
     XCTAssertTrue(AgentIOSWebRenderURLPolicy.allows("https://example.com/article"))
     XCTAssertFalse(AgentIOSWebRenderURLPolicy.allows("http://example.com/article"))
@@ -158,12 +203,14 @@ final class AgentIOSDynamicWebRendererTests: XCTestCase {
 
   private func invokeOpen(
     transport: AgentIOSURLSessionWebTransporting,
-    renderer: AgentIOSDynamicWebRendering
+    renderer: AgentIOSDynamicWebRendering,
+    monotonicNow: @escaping () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }
   ) throws -> AgentNativeToolResult {
     let provider = AgentIOSURLSessionWebMediaToolProvider(
       transport: transport,
       dynamicRenderer: renderer,
-      nowMillis: { 1_000 }
+      nowMillis: { 1_000 },
+      monotonicNowNanoseconds: monotonicNow
     )
     let registry = try AgentNativeToolRegistry().registerExecutables(
       AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: provider)
@@ -219,9 +266,11 @@ private final class StubRenderer: AgentIOSDynamicWebRendering {
   var isAvailable = true
   private(set) var calls = 0
   private let renderResult: Result<AgentIOSDynamicWebRenderedPage, AgentIOSDynamicWebRenderError>
+  private let onRender: () -> Void
 
-  init(result: Result<AgentIOSDynamicWebRenderedPage, AgentIOSDynamicWebRenderError>) {
+  init(result: Result<AgentIOSDynamicWebRenderedPage, AgentIOSDynamicWebRenderError>, onRender: @escaping () -> Void = {}) {
     renderResult = result
+    self.onRender = onRender
   }
 
   func render(
@@ -233,6 +282,7 @@ private final class StubRenderer: AgentIOSDynamicWebRendering {
   ) throws -> AgentIOSDynamicWebRenderedPage {
     calls += 1
     try checkpoint()
+    onRender()
     return try renderResult.get()
   }
 }
