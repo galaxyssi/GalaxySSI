@@ -318,3 +318,48 @@ explicit cloud Health turns. Migration/recovery of older ordinary connector rece
 records, full general Agent planning beyond reviewed cloud requests, generic
 private model journaling/streaming, automatic research migration and native/device
 acceptance remain outstanding. The full Android PR and backlog are not complete.
+
+## Retained legacy receipt presentation follow-up
+
+Already-saved ordinary main-chat Health control receipts can now show a localized
+interruption notice and a fixed original receipt duration rather than disappearing
+entirely from the output. This is a read-only projection, not a new task, reply,
+result, execution claim or migration that consumes a connector outbox. The saved
+question and raw receipt remain byte-for-byte unchanged and are never resent.
+
+The currently bound private/tracking-paused Health conversation must still match
+its encrypted concern/thread. Candidate source and final receipt must both be
+present and unchanged in a strict newest-500 database window for that exact Agent
+conversation. Source UUID, source turn, original conversation, main-Agent contact,
+nonmerged provenance, ordinary request kind, final delivery state, bounded control
+shape and sane timestamps must match. A source omitted by the window is not
+assumed to have been checked. Any query/decryption/metadata failure rejects the
+entire window, rather than interpreting skipped corrupt rows as absent answers.
+
+The complete newer window also rejects a candidate with a normal final answer.
+Any existing local task/workspace, committed turn, remote/voice runtime context or
+modern encrypted Health turn excludes this legacy classification. Stream rows
+need a persisted final-receipt trace; partial/interim/milestone/failed rows are not
+terminal evidence. Markers keep only stable IDs and receipt times, no question,
+raw control text, rich payload or tool arguments. One marker is shown per original
+turn, with the same private row clearing and scroll ownership as modern rows.
+
+The ordinary transcript's existing control filter is extended only for a valid
+private Health topic to withhold bare ActionPlan `actions` shapes too. Non-Health
+rendering, response buses, waiting-state reducers, task/workspace transitions and
+connector recovery/consumption are unchanged. The database gains only a bounded
+throwing read; there is no schema change or history rewrite.
+
+Ten new native fixture source methods cover stable identity/duration and unchanged
+inputs, invalid privacy/topic/source/provenance, partial and final streams, existing
+recovery contexts and normal answers, byte/time limits, rich-only controls, strict
+encrypted database reopen, later-answer visibility and window overflow. These
+sources have not been executed. The legacy scope checker protects complete shared
+files outside the declared read/presentation hooks; it does not prove native build,
+rendered UI, device or network acceptance.
+
+Still outstanding: raw connector outbox receipts not yet saved as a verifiable
+ordinary final message, alternate/non-UUID legacy source identities, receipts whose
+original question falls outside the bounded window, and full general planning,
+private model journaling/streaming, automatic research and native acceptance. Such
+records are retained; this presentation layer neither discards nor replays them.

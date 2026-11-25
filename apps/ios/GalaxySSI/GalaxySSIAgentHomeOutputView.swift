@@ -232,7 +232,9 @@ extension AgentHomeView {
           if let session = activeAgentSession, GalaxySSIHealthCareAgentScope.concernID(session) != nil {
             GalaxySSIHealthCareAgentTranscriptView(
               records: .init(owner: store.profile.identityFingerprint, secrets: store.secrets),
-              conversation: session.id, visible: homeVisible)
+              conversation: session.id, visible: homeVisible, legacyMessages: transcriptMessages,
+              legacyRuntimeTurns: Set(activeAgentTasks.map(\.taskId))
+                .union(scopedHealthRemoteTurns).union(scopedHealthVoiceTurns).union(scopedHealthCommittedTurns))
               .id([store.profile.identityFingerprint, session.id])
           }
         }
@@ -241,6 +243,20 @@ extension AgentHomeView {
       _ = agentReplySpeechRuntime.stopPlaybackIfActive()
       AgentCompletedReplyPlayback.shared.stop()
     })
+  }
+
+  private var scopedHealthRemoteTurns: Set<String> {
+    Set(coordinator.remoteAgentTaskStatuses.values.filter { $0.conversationId == store.activeAgentConversationId }
+      .flatMap { [$0.turnId, $0.taskId] })
+  }
+
+  private var scopedHealthVoiceTurns: Set<String> {
+    Set(voiceAgentRunRecovery.activeSnapshots.filter { $0.conversationId == store.activeAgentConversationId }
+      .flatMap { [$0.turnId, $0.taskId] })
+  }
+
+  private var scopedHealthCommittedTurns: Set<String> {
+    committedTurnProgress.conversationID == store.activeAgentConversationId ? Set(committedTurnProgress.turns.keys) : []
   }
 
   private func playCompletedAgentReply(_ message: ChatMessage, _ paragraph: AgentReplyParagraphSpeechSelection?) -> Bool {

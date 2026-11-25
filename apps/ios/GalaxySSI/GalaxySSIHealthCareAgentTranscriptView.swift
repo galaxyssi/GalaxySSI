@@ -24,6 +24,9 @@ struct GalaxySSIHealthCareAgentTranscriptView: View {
   let records: GalaxySSIHealthRecords
   let conversation: String
   let visible: Bool
+  let legacyMessages: [ChatMessage]
+  let legacyRuntimeTurns: Set<String>
+  @State private var legacyMarkers: [GalaxySSIHealthCareLegacyReplyPresentation.Marker] = []
   @State private var rows: [GalaxySSIHealthCareAgentTranscriptProjection.Row] = []
   @State private var target: GalaxySSIHealthCare.AgentDiscussionTarget?
   @State private var displayedOwner = ""
@@ -41,6 +44,17 @@ struct GalaxySSIHealthCareAgentTranscriptView: View {
   var body: some View {
     Group {
       if canRead, displayedOwner == records.owner, displayedConversation == conversation {
+        ForEach(legacyMarkers) { marker in
+          VStack(alignment: .leading, spacing: 8) {
+            Text(String(format: t("processed_seconds", "Worked for %d s"), marker.seconds))
+              .font(.footnote).foregroundColor(.galaxySSITextSecondary).monospacedDigit()
+            Divider()
+            Text(t("interrupted_control", "This reply contains unexecuted Agent instructions. The question and reply were retained privately. Nothing was executed or resent."))
+              .foregroundColor(.galaxySSITextSecondary)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+          .accessibilityIdentifier("health-agent-legacy-interrupted-" + marker.id.uuidString)
+        }
         if rows.count > limit {
           Button(t("more", "Show earlier messages")) { limit += 24 }
         }
@@ -74,7 +88,7 @@ struct GalaxySSIHealthCareAgentTranscriptView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
           .accessibilityIdentifier("health-agent-turn-" + row.id.uuidString)
         }
-        if !rows.isEmpty {
+        if !rows.isEmpty || !legacyMarkers.isEmpty {
           Button { refresh(); reviewPresented = target != nil } label: {
             Label(t("title", "Private Health Discussion"), systemImage: "bubble.left.and.bubble.right")
               .frame(minHeight: 44)
@@ -83,13 +97,16 @@ struct GalaxySSIHealthCareAgentTranscriptView: View {
       }
     }
     .preference(key: GalaxySSIHealthCareTranscriptRevisionKey.self,
-      value: .init(conversation: canRead ? conversation : "", revision: revision, hasRows: !rows.isEmpty && canRead))
+      value: .init(conversation: canRead ? conversation : "", revision: revision,
+        hasRows: canRead && (!rows.isEmpty || !legacyMarkers.isEmpty)))
     .onAppear(perform: refresh)
     .onChange(of: visible) { if $0 { refresh() } else { clear() } }
     .onChange(of: scene) { if $0 == .active { refresh() } else { clear() } }
     .onChange(of: store.activeAgentConversationId) { _ in clear() }
     .onChange(of: store.profile.identityFingerprint) { _ in clear() }
     .onChange(of: store.canReadAgentTranscript) { if $0 { refresh() } else { clear() } }
+    .onChange(of: legacyMessages) { _ in refresh() }
+    .onChange(of: legacyRuntimeTurns) { _ in refresh() }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       if $0.object as? String == records.owner { refresh() }
     }
@@ -140,7 +157,10 @@ struct GalaxySSIHealthCareAgentTranscriptView: View {
     let runtime = GalaxySSIHealthCareTaskRuntime.shared(records: records)
     let nextRows = GalaxySSIHealthCareAgentTranscriptProjection.rows(thread, owner: records.owner, conversation: conversation,
       workspaces: runtime.persistedWorkspaces(), isExecuting: { runtime.isExecuting($0) })
-    if rows != nextRows { rows = nextRows; revision &+= 1 }
+    let nextLegacy = legacyRows(session: session, domainTurns: Set(thread.turns.map(\.id)))
+    if rows != nextRows || legacyMarkers != nextLegacy {
+      rows = nextRows; legacyMarkers = nextLegacy; revision &+= 1
+    }
     displayedOwner = records.owner
     displayedConversation = conversation
     let next = GalaxySSIHealthCare.AgentDiscussionTarget(concern,
@@ -150,8 +170,31 @@ struct GalaxySSIHealthCareAgentTranscriptView: View {
   }
 
   private func clear() {
-    rows = []; target = nil; displayedOwner = ""; displayedConversation = ""; limit = 24; reviewPresented = false
+    rows = []; legacyMarkers = []; target = nil; displayedOwner = ""; displayedConversation = ""; limit = 24; reviewPresented = false
     revision &+= 1
+  }
+  private func legacyRows(session: AgentConversation, domainTurns: Set<UUID>) -> [GalaxySSIHealthCareLegacyReplyPresentation.Marker] {
+    guard legacyMessages.contains(where: GalaxySSIHealthCareLegacyReplyPresentation.isControl),
+          let verified = try? store.chatHistoryDatabase.verifiedHealthLegacyWindow(conversationId: session.id) else { return [] }
+    var seen = Set<UUID>()
+    return legacyMessages.sorted { $0.createdAt < $1.createdAt }.compactMap { receipt in
+      guard GalaxySSIHealthCareLegacyReplyPresentation.isControl(receipt),
+            let sourceID = UUID(uuidString: receipt.turnId),
+            !seen.contains(sourceID),
+            verified.contains(receipt),
+            let original = verified.first(where: { $0.id == sourceID && $0.isMine && !$0.isSystem }),
+            store.agentTask(id: receipt.turnId) == nil,
+            store.agentWorkspaceStore.find(receipt.turnId) == nil else { return nil }
+      let hasAnswer = verified.contains {
+        $0.conversationId == session.id && $0.turnId == receipt.turnId && !$0.isMine && !$0.isSystem &&
+          [.delivered, .read].contains($0.deliveryStatus) && !GalaxySSIHealthCareLegacyReplyPresentation.isControl($0)
+      }
+      guard let marker = GalaxySSIHealthCareLegacyReplyPresentation.marker(receipt: receipt, original: original,
+        conversation: session, hasRecovery: legacyRuntimeTurns.contains(receipt.turnId),
+        domainTurns: domainTurns, hasAnswer: hasAnswer) else { return nil }
+      seen.insert(marker.turn)
+      return marker
+    }
   }
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.discussion." + key, fallback: fallback, language: language)

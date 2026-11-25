@@ -360,8 +360,11 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   private var visibleMessages: [ChatMessage] {
     let runs = Dictionary(store.proactiveRuns.map { ($0.runId, $0) }, uniquingKeysWith: { first, _ in first })
     let visibility = store.scheduledReplyVisibility()
+    let privateHealth = store.agentSession(id: store.activeAgentConversationId)
+      .map { GalaxySSIHealthCareAgentScope.concernID($0) != nil } == true
     return messages.compactMap { message in
       guard !CloudSupervisedResearch.isTranscriptControlReply(message),
+            !(privateHealth && GalaxySSIHealthCareLegacyReplyPresentation.isControl(message)),
             !visibility.hides(message),
             !message.deliveryTrace.contains(where: { $0.stage == AgentConversationSchedule.occurrenceStage })
       else { return nil }

@@ -15,7 +15,9 @@ function exactChanges(name, changes) {
     assert.equal(expected.split(before).length - 1, 1, name + ': unique declared hook');
     expected = expected.replace(before, after);
   }
-  assert.equal(read(name), expected, name + ': unchanged outside declared hooks');
+  const current = name === 'GalaxySSIAgentHomeOutputView.swift'
+    ? require('./check-health-legacy-reply-scope.cjs').retainedLegacyHost(read(name)) : read(name);
+  assert.equal(current, expected, name + ': unchanged outside declared hooks');
 }
 exactChanges('GalaxySSIHealthRecords.swift', [[
   '      thread.turns[index].execution?.state = .interrupted\n',
@@ -78,7 +80,9 @@ exactChanges('GalaxySSIAgentTranscriptScrollView.swift', [
 ]);
 for (const name of ['AgentTaskSupervisor.swift', 'AgentModelToolLoop.swift', 'GalaxySSIAgentTranscriptMessagesView.swift',
   'GalaxySSIAgentHomeState.swift', 'GalaxySSIAgentHomeTranscriptView.swift', 'GalaxySSIServices.swift']) {
-  assert.equal(read(name), old(name), name + ': no ordinary messages, task reducer or routing changes');
+  const current = name === 'GalaxySSIAgentTranscriptMessagesView.swift'
+    ? require('./check-health-legacy-reply-scope.cjs').retainedLegacyMessages(read(name)) : read(name);
+  assert.equal(current, old(name), name + ': no changes outside declared private Health reply filtering');
 }
 const projection = read('GalaxySSIHealthCareAgentTranscriptProjection.swift');
 for (const invariant of ['thread.agentConversationID == conversation', 'execution.agentConversationID == conversation',
@@ -101,7 +105,7 @@ for (const invariant of ['scene == .active', 'UIApplication.shared.isProtectedDa
 }
 assert.match(view, /visible && scene == \.active/);
 assert.match(view, /onChange\(of: visible\) \{ if \$0 \{ refresh\(\) \} else \{ clear\(\) \} \}/);
-assert.doesNotMatch(view, /ChatMessage|appendMessage|persist\(|URLSession|responseBytes|\.send\(|providerPayload|\.response\b|UserDefaults|SceneStorage/);
+assert.doesNotMatch(view, /appendMessage|persist\(|URLSession|responseBytes|\.send\(|providerPayload|\.response\b|UserDefaults|SceneStorage/);
 const recovery = read('GalaxySSIHealthCareDiscussionRecovery.swift');
 assert.match(recovery, /var stoppedAt: Date\?/);
 assert.match(recovery, /if execution\.stoppedAt == nil \{ execution\.stoppedAt = now \}/);
