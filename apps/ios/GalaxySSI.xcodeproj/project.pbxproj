@@ -653,6 +653,7 @@
     C43880000000000000000001 /* AtlasComplete.strings in Resources */ = {isa = PBXBuildFile; fileRef = C43880000000000000000002 /* AtlasComplete.strings */; };
     C43890000000000000000001 /* AtlasDetail.strings in Resources */ = {isa = PBXBuildFile; fileRef = C43890000000000000000002 /* AtlasDetail.strings */; };
     C43910000000000000000001 /* AtlasExpanded.strings in Resources */ = {isa = PBXBuildFile; fileRef = C43910000000000000000002 /* AtlasExpanded.strings */; };
+    C43960000000000000000001 /* AtlasAnatomy.strings in Resources */ = {isa = PBXBuildFile; fileRef = C43960000000000000000002 /* AtlasAnatomy.strings */; };
     C43210000000000000000011 /* GalaxySSIConversationRenamePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43210000000000000000012 /* GalaxySSIConversationRenamePolicy.swift */; };
     C43210000000000000000021 /* GalaxySSIConversationRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43210000000000000000022 /* GalaxySSIConversationRenameView.swift */; };
     C43210000000000000000031 /* GalaxySSIConversationRenameTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43210000000000000000032 /* GalaxySSIConversationRenameTests.swift */; };
@@ -2737,10 +2738,12 @@
     C43880000000000000000003 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/AtlasComplete.strings"; sourceTree = "<group>"; };
     C43890000000000000000003 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/AtlasDetail.strings"; sourceTree = "<group>"; };
     C43910000000000000000003 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/AtlasExpanded.strings"; sourceTree = "<group>"; };
+    C43960000000000000000003 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/AtlasAnatomy.strings"; sourceTree = "<group>"; };
     C43850000000000000000004 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AtlasRegional.strings"; sourceTree = "<group>"; };
     C43880000000000000000004 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AtlasComplete.strings"; sourceTree = "<group>"; };
     C43890000000000000000004 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AtlasDetail.strings"; sourceTree = "<group>"; };
     C43910000000000000000004 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AtlasExpanded.strings"; sourceTree = "<group>"; };
+    C43960000000000000000004 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AtlasAnatomy.strings"; sourceTree = "<group>"; };
     B8A1B2B5E765E6F693FE6E5D /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/BodyAtlas.strings"; sourceTree = "<group>"; };
     C43210000000000000000012 /* GalaxySSIConversationRenamePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationRenamePolicy.swift; sourceTree = "<group>"; };
     C43210000000000000000022 /* GalaxySSIConversationRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationRenameView.swift; sourceTree = "<group>"; };
@@ -4841,6 +4844,7 @@
         C43880000000000000000002 /* AtlasComplete.strings */,
         C43890000000000000000002 /* AtlasDetail.strings */,
         C43910000000000000000002 /* AtlasExpanded.strings */,
+        C43960000000000000000002 /* AtlasAnatomy.strings */,
         F22666000000000000000001 /* AgentInteractiveProgress.swift */,
         F22666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift */,
         F22680000000000000000001 /* AgentDirectVisionPolicy.swift */,
@@ -6304,6 +6308,7 @@
     C43880000000000000000002 /* AtlasComplete.strings */ = {isa = PBXVariantGroup; children = (C43880000000000000000003 /* en */, C43880000000000000000004 /* zh-Hans */,); name = AtlasComplete.strings; sourceTree = "<group>"; };
     C43890000000000000000002 /* AtlasDetail.strings */ = {isa = PBXVariantGroup; children = (C43890000000000000000003 /* en */, C43890000000000000000004 /* zh-Hans */,); name = AtlasDetail.strings; sourceTree = "<group>"; };
     C43910000000000000000002 /* AtlasExpanded.strings */ = {isa = PBXVariantGroup; children = (C43910000000000000000003 /* en */, C43910000000000000000004 /* zh-Hans */,); name = AtlasExpanded.strings; sourceTree = "<group>"; };
+    C43960000000000000000002 /* AtlasAnatomy.strings */ = {isa = PBXVariantGroup; children = (C43960000000000000000003 /* en */, C43960000000000000000004 /* zh-Hans */,); name = AtlasAnatomy.strings; sourceTree = "<group>"; };
     C43040000000000000000062 /* InfoPlist.strings */ = {isa = PBXVariantGroup; children = (C43040000000000000000064 /* zh-Hans */,); name = InfoPlist.strings; sourceTree = "<group>"; };
     A41000000000000000000890 /* Localizable.strings */ = {
       isa = PBXVariantGroup;
@@ -6398,7 +6403,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (C43910000000000000000001 /* AtlasExpanded.strings in Resources */, C43890000000000000000001 /* AtlasDetail.strings in Resources */, C43880000000000000000001 /* AtlasComplete.strings in Resources */, C43850000000000000000001 /* AtlasRegional.strings in Resources */, C43840000000000000000010 /* AtlasFunction.strings in Resources */, 40A8F2E0933DD60C3E202D5C /* body-atlas in Resources */, 7E9C74C29FE3236437B57ACB /* BodyAtlas.strings in Resources */, E36400000000000000000003 /* vad in Resources */, A10000000000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F35620000000000000000001 /* browser-session-engine.cjs in Resources */, F35620000000000000000002 /* browser-runtime-readiness.cjs in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, C43040000000000000000061 /* InfoPlist.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */, E3699C000000000000000003 /* research-quality.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (C43960000000000000000001 /* AtlasAnatomy.strings in Resources */, C43910000000000000000001 /* AtlasExpanded.strings in Resources */, C43890000000000000000001 /* AtlasDetail.strings in Resources */, C43880000000000000000001 /* AtlasComplete.strings in Resources */, C43850000000000000000001 /* AtlasRegional.strings in Resources */, C43840000000000000000010 /* AtlasFunction.strings in Resources */, 40A8F2E0933DD60C3E202D5C /* body-atlas in Resources */, 7E9C74C29FE3236437B57ACB /* BodyAtlas.strings in Resources */, E36400000000000000000003 /* vad in Resources */, A10000000000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F35620000000000000000001 /* browser-session-engine.cjs in Resources */, F35620000000000000000002 /* browser-runtime-readiness.cjs in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, C43040000000000000000061 /* InfoPlist.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */, E3699C000000000000000003 /* research-quality.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (E3699C000000000000000005 /* quality-cases.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 

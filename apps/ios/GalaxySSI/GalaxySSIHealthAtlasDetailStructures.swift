@@ -9,7 +9,26 @@ extension GalaxySSIHealthAtlas {
     static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
     static let owners = ["cornea","lens","renal-cortex","renal-medulla","renal-pelvis","gallbladder","parotid-glands","submandibular-glands","ureters","bladder","urethra","aorta","pulmonary-trunk","coronary-vessels","larynx","trachea","bronchi","middle-ear","cochlea","vestibular-apparatus","brainstem","cerebellum","spinal-cord","scapula","humerus","tibia"]
     static let expandedOwners = owners + ["skin-organ","epidermis","dermis","right-atrium","left-atrium","right-ventricle","left-ventricle","tricuspid-valve","mitral-valve","pulmonary-valve","aortic-valve","external-ear","inner-ear","nose","tongue","glomerulus","bowmans-capsule","proximal-tubule","nephron-loop","cerebrum","peripheral-nerves","spinal-nerves","ganglia","ovaries","testes","uterine-tubes","endometrium","biceps-brachii","triceps-brachii","quadriceps-femoris","hamstrings","femur","patella","foot-bones","ulna"]
+    static let anatomyOwners = expandedOwners + ["sternum","hand-bones","atria","ventricles","heart-valves","veins","capillaries","respiratory-membrane","pulmonary-capillaries","renal-tubules","distal-tubule","collecting-ducts","epididymis","vas-deferens","seminal-vesicles","ejaculatory-ducts","nasal-cavity","pharynx","diaphragm","salivary-glands","sublingual-glands","pancreatic-duct","gluteus-maximus","gastrocnemius","tendons","prostate","vagina"]
     static let sources = Set([
+      "https://openstax.org/books/anatomy-and-physiology-2e/pages/7-4-the-thoracic-cage",
+      "https://pmc.ncbi.nlm.nih.gov/articles/PMC1571338/",
+      "https://pmc.ncbi.nlm.nih.gov/articles/PMC1860731/",
+      "https://openstax.org/books/anatomy-and-physiology-2e/pages/20-1-structure-and-function-of-blood-vessels",
+      "https://columbia.edu/itc/hs/medical/sbpm_histology_old/lab/lab10_micrograph.html",
+      "https://pmc.ncbi.nlm.nih.gov/articles/PMC8397636/",
+      "https://pmc.ncbi.nlm.nih.gov/articles/PMC5810970/",
+      "https://medicine.uams.edu/neuroscience/education/medical-school-courses/human-structure-module/anatomy-tables/viscera-tables/visceral-structures-of-the-pelvis-and-perineum/",
+      "https://histology.siu.edu/erg/semves.htm",
+      "https://pubmed.ncbi.nlm.nih.gov/31894887/",
+      "https://www.ncbi.nlm.nih.gov/books/NBK544232/",
+      "https://www.ncbi.nlm.nih.gov/books/NBK519558/",
+      "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-3-the-mouth-pharynx-and-esophagus",
+      "https://iowaprotocols.medicine.uiowa.edu/protocols/salivary-gland-terminology-anatomy-salivation-dry-mouth-drooling",
+      "https://mapkmc.manipal.edu/specimen/anat310/",
+      "https://pmc.ncbi.nlm.nih.gov/articles/PMC8154658/",
+      "https://training.seer.cancer.gov/prostate/anatomy/",
+      "https://pmc.ncbi.nlm.nih.gov/articles/PMC3312145/",
       "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin",
       "https://histology.leeds.ac.uk/home/skin/epidermis_layers/",
       "https://openstax.org/books/anatomy-and-physiology-2e/pages/19-1-heart-anatomy",
@@ -61,9 +80,10 @@ extension GalaxySSIHealthAtlas {
       "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-2-bones-of-the-upper-limb",
       "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-4-bones-of-the-lower-limb"
     ].compactMap { URL(string: $0) })
-    static func read(bundle: Bundle, revision: Int = 4391) throws -> Self? {
-      guard [4389, 4391].contains(revision) else { throw Invalid.catalogue }
-      let asset = revision == 4389 ? "HealthAtlasDetailStructures" : "HealthAtlasExpandedDetailStructures"
+    static func read(bundle: Bundle, revision: Int = 4396) throws -> Self? {
+      guard [4389, 4391, 4396].contains(revision) else { throw Invalid.catalogue }
+      let asset = revision == 4389 ? "HealthAtlasDetailStructures" :
+        revision == 4391 ? "HealthAtlasExpandedDetailStructures" : "HealthAtlasAnatomyStructures"
       guard let data = NSDataAsset(name: asset, bundle: bundle)?.data else { return nil }
       guard data.count <= 256_000 else { throw Invalid.catalogue }
       let value = try JSONDecoder().decode(Self.self, from: data)
@@ -77,18 +97,20 @@ extension GalaxySSIHealthAtlas {
     func validating(in atlas: GalaxySSIHealthAtlas, bundle: Bundle) throws {
       let detail = source.androidPR == 4389 && source.mergeCommit == "9508d49277cf33ab7f85e65722e7c470930fff7e"
       let expanded = source.androidPR == 4391 && source.mergeCommit == "165809fc9606ac1ff6b0df6eb9bee73286b415ea"
-      let owners = expanded ? Self.expandedOwners : Self.owners
-      guard schema == 1, detail || expanded,
+      let anatomy = source.androidPR == 4396 && source.mergeCommit == "dbd32a65c73e10d710372c44a7ffa8d1518d1f2c"
+      let owners = anatomy ? Self.anatomyOwners : expanded ? Self.expandedOwners : Self.owners
+      guard schema == 1, detail || expanded || anatomy,
         plates.count == owners.count, plates.compactMap(\.owner) == owners,
         Set(plates.map(\.id)).count == owners.count,
-        plates.flatMap(\.annotations).count == (expanded ? 279 : 139),
-        plates.flatMap(\.markers).count == (expanded ? 52 : 3),
+        plates.flatMap(\.annotations).count == (anatomy ? 392 : expanded ? 279 : 139),
+        plates.flatMap(\.markers).count == (anatomy ? 116 : expanded ? 52 : 3),
         plates.allSatisfy({ plate in
           guard let owner = plate.owner, atlas.entry(owner) != nil, plate.id == plate.viewKey,
             plate.entryIDs == [owner] + plate.markers.map(\.id), plate.aspectRatio == 360.0 / 280,
             let source = plate.source, Self.sources.contains(source),
             (Self.owners.contains(owner) ? plate.asset.hasPrefix("HealthAtlasDetail") :
-              expanded && plate.asset.hasPrefix("HealthAtlasExpanded")),
+              Self.expandedOwners.contains(owner) ? (expanded || anatomy) && plate.asset.hasPrefix("HealthAtlasExpanded") :
+                anatomy && plate.asset.hasPrefix("HealthAtlasAnatomy")),
             UIImage(named: plate.asset, in: bundle, compatibleWith: nil) != nil,
             Set(plate.markers.map(\.id) + plate.annotations.map(\.id)).count == plate.markers.count + plate.annotations.count
           else { return false }
