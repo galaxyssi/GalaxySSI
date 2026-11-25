@@ -16,7 +16,7 @@ assert(budget.includes(identity));
 assert.equal(budget.replace(identity, '      var identity = canonical + "\\n" + hash'), old(swift('CloudResearchRuntimeBudget')),
   'Only evidence identity changes; configured limits, reading-window identity, retrieval gate, stop/finalization/recovery/deadline behavior retained');
 const provider = read(swift('AgentIOSURLSessionWebMediaProvider'));
-let retained = provider;
+let retained = require('./check-image-search-fusion-scope.cjs').retainedProvider(provider);
 for (const [before, after] of [
   ['  var monotonicNowNanoseconds: () -> UInt64\n', ''],
   ['    },\n    monotonicNowNanoseconds: @escaping () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }', '    }'],

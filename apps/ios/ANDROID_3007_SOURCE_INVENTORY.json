@@ -102,7 +102,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligence.kt",
       "sha256": "79850c00031c66c4eacd42e53920509884e0996ba1a5760a96c702d3c19e2215",
-      "disposition": "Partial: query-aware completion, supported profiles and native circuit health. Qualified verified non-image learned records produce bounded-authority host-scoped Bing/DuckDuckGo index adapters; explicit IDs or model-selected topics/categories activate them, with no free-text topic guessing. Candidate/disabled/underqualified/unsupported-image records cannot authorize routing. Full catalog/ranker and native acceptance incomplete"
+      "disposition": "Partial: query-aware completion, supported profiles and native circuit health. Qualified verified non-image learned records produce bounded-authority host-scoped Bing/DuckDuckGo index adapters; explicit IDs or model-selected topics/categories activate them, with no free-text topic guessing. Candidate/disabled/underqualified/unsupported-image records cannot authorize routing. Full catalog/ranker and native acceptance incomplete Native image-only fusion now uses reference logistic weights, image title overlap/specificity and source-page diversity before final truncation over the supported Sogou candidate pool. Other image adapters, complete catalog/text ranker and native numeric/semantic/UI acceptance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt",

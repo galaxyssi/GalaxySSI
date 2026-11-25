@@ -62,7 +62,7 @@ enum AgentIOSWebSearchCompletionPolicy {
       uniqueDomains.count >= requiredDomains
   }
 
-  private static func tokens(_ value: String) -> Set<String> {
+  static func tokens(_ value: String) -> Set<String> {
     let normalized = value.precomposedStringWithCompatibilityMapping.lowercased()
     func matches(_ expression: NSRegularExpression?) -> [String] {
       guard let regex = expression else { return [] }
