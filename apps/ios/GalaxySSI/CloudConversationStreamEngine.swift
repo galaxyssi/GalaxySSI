@@ -375,6 +375,13 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var observedUsage: ModelUsage?
         var reportedModel: String?
         func receiveProviderRound() async throws {
+          let roundMillis = research.modelRoundMillis(finalizing: finalRound)
+          guard roundMillis > 0 else {
+            roundFailure = ModelStreamFailed(requestId: requestId,
+              error: ModelStreamError(code: "WEB_DEADLINE", message: "The shared research deadline was reached",
+                retryable: true, partialResponse: emittedText))
+            return
+          }
           let audit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
             request: roundRequest, route: useCompleteJSON ? .compatibility : .streaming, contact: contact, store: store,
             lane: coordinationScope == nil ? nil : .hostLivePlanning)
@@ -391,8 +398,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           setActiveRound(roundId, for: requestId)
 
           do {
+            let transportMillis = min(roundMillis, research.modelRoundMillis(finalizing: finalRound))
+            guard transportMillis > 0 else { throw URLError(.timedOut) }
             for try await event in CloudResearchRoundDeadline.stream(streamClient.stream(roundRequest),
-              millis: research.limits.modelMillis) {
+              millis: transportMillis) {
               try Task.checkCancellation()
               switch event {
               case .connected(let value):
@@ -465,12 +474,24 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             throw CancellationError()
           } catch {
             try Task.checkCancellation()
-            roundFailure = ModelStreamFailed(requestId: requestId, error: Self.streamError(from: error, partialResponse: emittedText))
+            if !finalRound, research.remainingActiveMillis == 0, (error as? URLError)?.code == .timedOut {
+              roundFailure = ModelStreamFailed(requestId: requestId,
+                error: ModelStreamError(code: "WEB_DEADLINE", message: "The shared research deadline was reached",
+                  retryable: true, partialResponse: emittedText))
+            } else {
+              roundFailure = ModelStreamFailed(requestId: requestId, error: Self.streamError(from: error, partialResponse: emittedText))
+            }
           }
           try Task.checkCancellation()
         }
         try await withCloudCoordination(scope: coordinationScope, contact: contact, store: store,
           profileID: coordinationProfile) { try await receiveProviderRound() }
+
+        if !finalRound, !emittedText, roundFailure?.error.code == "WEB_DEADLINE" {
+          progress.requestFinalization()
+          prepared.appendResearchGuidance(research.guidance(stopped: "active_time_limit"))
+          continue
+        }
 
         if legacySender == nil, !useCompleteJSON, !emittedText, roundFailure?.error.code == "STREAM_UNSUPPORTED" {
           publishPreview("", at: elapsedMillis())
@@ -845,6 +866,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           context: CloudConversationToolExecutionContext(
             requestId: requestId,
             researchToolTimeoutMillis: research.limits.toolMillis,
+            researchDeadlineEpochMillis: AgentControlPlaneClock.nowMillis() + research.remainingActiveMillis,
             conversationId: conversationId,
             turnId: turnId,
             images: images,
@@ -854,9 +876,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           onObservation: { call, output in
             await recovery?.record(call: call, output: output, store: store)
           },
+          remainingResearchMillis: { research.remainingActiveMillis },
           milestoneRead: milestoneRead, collaborationRecall: recall,
           collaborationPublish: publish
         )
+        try Task.checkCancellation()
         if let scope = collaborationEvidence {
           for index in outcomes.indices {
             let outcome = outcomes[index]
@@ -1186,6 +1210,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     _ calls: [AssembledToolCall],
     context: CloudConversationToolExecutionContext,
     onObservation: ((AssembledToolCall, String) async -> Void)? = nil,
+    remainingResearchMillis: (() -> Int64)? = nil,
     milestoneRead: GoalWorkHandler? = nil,
     collaborationRecall: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil,
     collaborationPublish: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil
@@ -1201,6 +1226,16 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           group.addTask { [toolExecutor] in
             let started = AgentControlPlaneClock.nowMillis()
             do {
+              try Task.checkCancellation()
+              var executionContext = context
+              if CloudResearchRuntimeBudget.isRetrievalTool(call.name), let remaining = remainingResearchMillis?() {
+                guard remaining > 0 else {
+                  return ToolExecutionOutcome(index: start + offset, call: call,
+                    output: CloudResearchRuntimeBudget.stoppedToolResult(call.name), errorMessage: nil,
+                    startedAtMillis: started, finishedAtMillis: AgentControlPlaneClock.nowMillis())
+                }
+                executionContext.researchToolTimeoutMillis = min(context.researchToolTimeoutMillis, remaining)
+              }
               let output: String
               if call.name == AgentGoalWorkMilestoneRead.toolID, let milestoneRead {
                 let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
@@ -1215,7 +1250,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 output = AgentMcpJSONCodec.stringify(receipt ?? ["success": .bool(false), "status": .string("unavailable")])
               } else {
                 guard milestoneRead == nil else { throw AgentTeamHistoryDatabase.Failure.stale }
-                output = try toolExecutor.executeTool(call: call, context: context)
+                output = try toolExecutor.executeTool(call: call, context: executionContext)
               }
               return ToolExecutionOutcome(
                 index: start + offset,

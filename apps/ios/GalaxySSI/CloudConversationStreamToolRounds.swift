@@ -9,6 +9,7 @@ protocol CloudConversationToolExecuting {
 struct CloudConversationToolExecutionContext: Equatable {
   var requestId: String
   var researchToolTimeoutMillis = CloudResearchRuntimeBudget.Limits().toolMillis
+  var researchDeadlineEpochMillis: Int64? = nil
   var conversationId: String
   var turnId: String
   var images: [CloudImagePayload] = []
@@ -408,15 +409,22 @@ struct CloudWebGroundingToolExecutor: CloudConversationToolExecuting {
 
   func executeTool(call: AssembledToolCall, context: CloudConversationToolExecutionContext) throws -> String {
     let arguments = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
+    let started = nowMillis()
+    let end = started.addingReportingOverflow(max(0, context.researchToolTimeoutMillis))
+    let deadline = min(context.researchDeadlineEpochMillis ?? Int64.max,
+      end.overflow ? Int64.max : end.partialValue)
+    if CloudResearchRuntimeBudget.isRetrievalTool(call.name), deadline <= started {
+      return CloudResearchRuntimeBudget.stoppedToolResult(call.name)
+    }
     let invocationContext = AgentNativeToolInvocationContext(
       invocationId: "\(context.requestId)-tool-\(call.index)",
       sessionId: context.conversationId,
       conversationId: context.conversationId,
       turnId: context.turnId,
       callerId: "galaxyssi.ios_cloud_stream",
-      requestedAtEpochMillis: nowMillis(),
+      requestedAtEpochMillis: started,
       deadlineEpochMillis: CloudResearchRuntimeBudget.isRetrievalTool(call.name)
-        ? AgentControlPlaneClock.nowMillis() + context.researchToolTimeoutMillis : nil,
+        ? deadline : nil,
       idempotencyKey: "\(context.requestId):\(call.callId)",
       grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
       grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent],

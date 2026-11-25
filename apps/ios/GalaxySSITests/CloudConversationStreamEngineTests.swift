@@ -2,6 +2,55 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudConversationStreamEngineTests: XCTestCase {
+  func testConfiguredResearchBudgetCapsActiveRoundsButRetainsFinalSynthesisLimit() {
+    var clock: Int64 = 1
+    let budget = CloudResearchRuntimeBudget(limits: .init(activeMillis: 1000, toolMillis: 500, modelMillis: 800),
+      clock: { clock })
+    XCTAssertEqual(budget.remainingActiveMillis, 1000)
+    XCTAssertEqual(budget.modelRoundMillis(finalizing: false), 800)
+    clock = 751
+    XCTAssertEqual(budget.remainingActiveMillis, 250)
+    XCTAssertEqual(budget.modelRoundMillis(finalizing: false), 250)
+    clock = 1001
+    XCTAssertEqual(budget.stopReason, "active_time_limit")
+    XCTAssertEqual(budget.modelRoundMillis(finalizing: false), 0)
+    XCTAssertEqual(budget.modelRoundMillis(finalizing: true), 800)
+    XCTAssertEqual(budget.limits.toolMillis, 500)
+    XCTAssertEqual(budget.limits.activeMillis, 1000)
+  }
+
+  func testCloudRetrievalUsesSharedHardDeadlineAndDoesNotInvokeExpiredProvider() throws {
+    final class Provider: AgentIOSWebIntelligenceToolProviding {
+      var implementationId = "fixture.shared-round-budget"
+      var engineCatalogSize = 1
+      var rankerId = "fixture"
+      var invocations: [AgentNativeToolInvocation] = []
+      func availability(operation: AgentIOSWebIntelligenceOperation) -> AgentNativeToolAvailability { .available }
+      func invoke(operation: AgentIOSWebIntelligenceOperation, input: AgentMcpJSONObject,
+                  invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+        invocations.append(invocation)
+        return .success(output: ["results": .array([])])
+      }
+    }
+    let provider = Provider()
+    let now = AgentControlPlaneClock.nowMillis()
+    let executor = CloudWebGroundingToolExecutor(provider: provider, nowMillis: { now })
+    let call = AssembledToolCall(callId: "search", index: 0, name: "web_search", argumentsJson: #"{"query":"evidence"}"#)
+    let context = CloudConversationToolExecutionContext(requestId: "budget-round", researchToolTimeoutMillis: 10_000,
+      researchDeadlineEpochMillis: now + 5000, conversationId: "conversation", turnId: "turn")
+    _ = try executor.executeTool(call: call, context: context)
+    let invoked = try XCTUnwrap(provider.invocations.first)
+    XCTAssertEqual(invoked.deadlineEpochMillis, now + 5000)
+    XCTAssertEqual(invoked.context.conversationId, "conversation")
+    XCTAssertEqual(invoked.context.turnId, "turn")
+    var expired = context
+    expired.researchDeadlineEpochMillis = now
+    let stopped = try CloudModelStreamJSON.mcpObject(from: executor.executeTool(call: call, context: expired))
+    XCTAssertEqual(provider.invocations.count, 1)
+    XCTAssertEqual(stopped["error_code"], .string("web_execution_stopped"))
+    XCTAssertEqual(stopped["retryable"], .bool(false))
+  }
+
   @MainActor
   func testWorkInputPublisherReceivesDataBeforeProducerCompletionAndExposesNoOtherTools() async throws {
     typealias Inputs = AgentCollaborationWorkInputBindings

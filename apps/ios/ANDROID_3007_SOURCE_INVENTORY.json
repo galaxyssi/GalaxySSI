@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/Sogou image evidence, renderer cooldown/bounded preflight/cleanup, monotonic research query/page budget, full-plan engine validation and truthful partial coverage. Other image engines/relevance, maintenance/index atomicity, full model-round budgets and native/performance acceptance incomplete.",
+  "scope": "Public web/Sogou image evidence, renderer lifecycle, research query/page deadline and configured cloud round/tool remaining-time caps with bounded finalization. Other image engines/relevance, maintenance/index atomicity, timing spans and native transport/performance acceptance incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -97,7 +97,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebExecutionBudget.kt",
       "sha256": "966c859abfbfea1be4b0f9104b8bb630d0515cb55e7874c3a0e3f1e6955759a5",
-      "disposition": "Monotonic research budget and nonextendable child invocations connected to actual search/page calls. Full model-round/tool-lane watchdog and immediate cancellation of already-running transport remain incomplete; no runtime acceptance"
+      "disposition": "Monotonic research query/page budget plus existing configured cloud active budget now clamp actual provider rounds and queued retrieval invocations. Current limits preserved; no immediate synchronous-transport interruption or native acceptance claim"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligence.kt",
@@ -147,12 +147,12 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudModelStreaming.kt",
       "sha256": "48336b28d74adeea19ccfae927048043d1f39cdb9c9bea10fb45a6fb671b094b",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Partial: actual streaming/compatibility model rounds and queued web tools consume remaining configured active time; terminal budget failures enter bounded finalization only before emitted answer text. Existing evidence/recovery/permissions retained. Missing timing spans and broader parity remain"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudToolBatchExecutor.kt",
       "sha256": "3c3dd96fb68f0f566004de585be8685d7e800805867af32ac1ba6042bdcd5164",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Native ordered parallel dispatcher rechecks remaining active time at task start, emits non-retryable skipped output, caps per-tool hard deadline and propagates parent cancellation after batch. Live parallel transport cancellation/progress acceptance not verified"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudWebGrounding.kt",

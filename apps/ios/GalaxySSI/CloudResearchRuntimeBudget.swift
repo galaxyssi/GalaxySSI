@@ -79,13 +79,29 @@ final class CloudResearchRuntimeBudget {
   var stopReason: String? {
     if toolCalls >= limits.tools { return "tool_limit" }
     if modelRounds >= limits.rounds { return "round_limit" }
-    if clock() - started >= limits.activeMillis { return "active_time_limit" }
+    if remainingActiveMillis == 0 { return "active_time_limit" }
     if evidenceCharacters >= limits.evidenceCharacters { return "evidence_limit" }
     if stalledBatches >= 3 { return "no_new_evidence" }
     return nil
   }
 
   func beginRound() { modelRounds += 1 }
+
+  var remainingActiveMillis: Int64 {
+    let elapsed = clock().subtractingReportingOverflow(started)
+    guard !elapsed.overflow, elapsed.partialValue >= 0 else { return 0 }
+    return max(0, limits.activeMillis - min(limits.activeMillis, elapsed.partialValue))
+  }
+
+  func modelRoundMillis(finalizing: Bool) -> Int64 {
+    finalizing ? limits.modelMillis : min(limits.modelMillis, remainingActiveMillis)
+  }
+
+  static func stoppedToolResult(_ name: String) -> String {
+    AgentMcpJSONCodec.stringify(["status": .string("failed"), "tool": .string(String(name.prefix(80))),
+      "error_code": .string("web_execution_stopped"), "retryable": .bool(false),
+      "next_action": .string("Stop web calls and answer using existing evidence. State missing evidence honestly.")])
+  }
 
   func reserveTools(_ count: Int) -> Bool {
     guard stopReason == nil, count >= 0, count <= limits.tools - toolCalls else { return false }
@@ -154,7 +170,7 @@ final class CloudResearchRuntimeBudget {
   }
 
   func guidance(stopped reason: String? = nil) -> String {
-    let state = "Research state: \(sources.count) distinct source URLs and \(toolCalls) executed tool calls. "
+    let state = "Research state: \(sources.count) distinct source URLs and \(toolCalls) admitted tool calls. "
     if let reason {
       return state + "Retrieval stopped (\(reason)). Do not call tools. Synthesize a concise answer supported by the existing passages, " +
         "and state material unresolved questions. Do not imply complete coverage or independent verification."

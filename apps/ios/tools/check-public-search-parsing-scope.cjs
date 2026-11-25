@@ -63,9 +63,46 @@ const section = (source, start, end) => source.slice(source.indexOf(start), sour
 assert.equal(section(provider, '  private func requestResource(', '  private func failure(_ error:'),
   section(oldProvider, '  private func requestResource(', '  private func failure(_ error:'),
   'HTTP bounds, redirect/public-host policy, resource extraction and browser transport stay unchanged');
-for (const name of ['CloudConversationStreamEngine', 'CloudWebGrounding', 'GalaxySSIServices']) {
+for (const name of ['CloudWebGrounding', 'GalaxySSIServices']) {
   assert.equal(read(swift(name)), git('show', base + ':' + swift(name)), name + ' unchanged in this increment');
 }
+const stream = read(swift('CloudConversationStreamEngine'));
+const oldStream = git('show', base + ':' + swift('CloudConversationStreamEngine'));
+const runtimeBudget = read(swift('CloudResearchRuntimeBudget'));
+const oldRuntimeBudget = git('show', base + ':' + swift('CloudResearchRuntimeBudget'));
+assert.equal(section(runtimeBudget, 'struct CloudResearchConfiguration:', '  let limits: Limits'),
+  section(oldRuntimeBudget, 'struct CloudResearchConfiguration:', '  let limits: Limits'),
+  'Retain current configurable research limits; do not restore historical fixed 60/180-second budgets');
+assert.equal(runtimeBudget.slice(runtimeBudget.indexOf('enum CloudResearchRoundDeadline {')),
+  oldRuntimeBudget.slice(oldRuntimeBudget.indexOf('enum CloudResearchRoundDeadline {')),
+  'Existing round transport cancellation helper unchanged; no new hard transport-interruption claim');
+for (const token of ['remainingActiveMillis == 0', 'finalizing ? limits.modelMillis : min(limits.modelMillis, remainingActiveMillis)',
+  '"error_code": .string("web_execution_stopped")', '"retryable": .bool(false)', 'admitted tool calls.']) assert(runtimeBudget.includes(token));
+for (const token of ['let transportMillis = min(roundMillis, research.modelRoundMillis(finalizing: finalRound))',
+  'guard transportMillis > 0 else { throw URLError(.timedOut) }', 'millis: transportMillis)',
+  'if !finalRound, !emittedText, roundFailure?.error.code == "WEB_DEADLINE"',
+  'researchDeadlineEpochMillis: AgentControlPlaneClock.nowMillis() + research.remainingActiveMillis',
+  'remainingResearchMillis: { research.remainingActiveMillis }', 'let remaining = remainingResearchMillis?()',
+  'output: CloudResearchRuntimeBudget.stoppedToolResult(call.name)',
+  'executionContext.researchToolTimeoutMillis = min(context.researchToolTimeoutMillis, remaining)',
+  'toolExecutor.executeTool(call: call, context: executionContext)']) assert(stream.includes(token), token);
+assert.equal(section(stream, '  private func withCloudCoordination(', '  private func executeToolCalls('),
+  section(oldStream, '  private func withCloudCoordination(', '  private func executeToolCalls('),
+  'Collaboration coordination, admission and scoped recall kernels retained');
+const rounds = read(swift('CloudConversationStreamToolRounds'));
+const oldRounds = git('show', base + ':' + swift('CloudConversationStreamToolRounds'));
+assert.equal(section(rounds, 'enum CloudImageAnnotationSession {', 'struct CloudWebGroundingToolExecutor:'),
+  section(oldRounds, 'enum CloudImageAnnotationSession {', 'struct CloudWebGroundingToolExecutor:'),
+  'Image annotation and tool progress logic unchanged');
+assert.equal(rounds.slice(rounds.indexOf('struct CloudModelStreamMutableConversation {')),
+  oldRounds.slice(oldRounds.indexOf('struct CloudModelStreamMutableConversation {')),
+  'Tool visibility, finalization and scoped collaboration schemas unchanged');
+for (const token of ['var researchDeadlineEpochMillis: Int64? = nil', 'min(context.researchDeadlineEpochMillis ?? Int64.max,',
+  'deadline <= started', 'return CloudResearchRuntimeBudget.stoppedToolResult(call.name)',
+  '? deadline : nil']) assert(rounds.includes(token));
+const roundTests = read('apps/ios/GalaxySSITests/CloudConversationStreamEngineTests.swift');
+for (const name of ['testConfiguredResearchBudgetCapsActiveRoundsButRetainsFinalSynthesisLimit',
+  'testCloudRetrievalUsesSharedHardDeadlineAndDoesNotInvokeExpiredProvider']) assert(roundTests.includes('func ' + name + '('));
 const renderer = read(swift('AgentIOSDynamicWebRenderer'));
 const oldRenderer = git('show', base + ':' + swift('AgentIOSDynamicWebRenderer'));
 assert.equal(section(renderer, 'enum AgentIOSDynamicWebFallbackPolicy {', '#if canImport(WebKit) && canImport(UIKit)\nfinal class'),
@@ -113,7 +150,9 @@ const disposition = file => {
   if (file.endsWith('/AgentPublicImageSearchTest.kt')) return 'Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance';
   if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Native research shares a monotonic deadline across query and page-read children, validates all engine IDs before searching, marks skipped queries/partial status and preserves evidence. Profile defaults applied; explicit limits retained. Ranking/cache/maintenance parity incomplete';
   if (file.endsWith('/AgentWebIntelligence.kt')) return 'Partial: native profile defaults and currently supported engine selection/validation adapted. General coordinator, relevance/ranker, all adapters and full acceptance remain incomplete';
-  if (file.endsWith('/AgentWebExecutionBudget.kt')) return 'Monotonic research budget and nonextendable child invocations connected to actual search/page calls. Full model-round/tool-lane watchdog and immediate cancellation of already-running transport remain incomplete; no runtime acceptance';
+  if (file.endsWith('/AgentWebExecutionBudget.kt')) return 'Monotonic research query/page budget plus existing configured cloud active budget now clamp actual provider rounds and queued retrieval invocations. Current limits preserved; no immediate synchronous-transport interruption or native acceptance claim';
+  if (file.endsWith('/CloudModelStreaming.kt')) return 'Partial: actual streaming/compatibility model rounds and queued web tools consume remaining configured active time; terminal budget failures enter bounded finalization only before emitted answer text. Existing evidence/recovery/permissions retained. Missing timing spans and broader parity remain';
+  if (file.endsWith('/CloudToolBatchExecutor.kt')) return 'Native ordered parallel dispatcher rechecks remaining active time at task start, emits non-retryable skipped output, caps per-tool hard deadline and propagates parent cancellation after batch. Live parallel transport cancellation/progress acceptance not verified';
   if (file.endsWith('/AgentWebRendererHealth.kt')) return 'Native shared monotonic 30-second process/startup-failure cooldown; caller/page failures excluded. Pure native fixture sources added, NOT executed';
   if (file.endsWith('/AgentIsolatedWebViewRenderer.kt')) return 'iOS adaptation: process cooldown, 5-second bounded main-queue startup and one deadline across DNS/capacity/render; unconditional cancellation/one-shot completion and no late cancelled start. Not Android Binder implementation or WK fault acceptance';
   if (file.endsWith('/AgentIsolatedWebRenderService.kt')) return 'Native serialized off-main DNS preflight bounds caller wait and cancels queued work. Existing nonpersistent WK store/process-pool/same-origin and auth policies retained. OS getaddrinfo already running is not forcibly interrupted; no device recovery guarantee';
@@ -122,7 +161,7 @@ const disposition = file => {
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,
-  scope: 'Public web/Sogou image evidence, renderer cooldown/bounded preflight/cleanup, monotonic research query/page budget, full-plan engine validation and truthful partial coverage. Other image engines/relevance, maintenance/index atomicity, full model-round budgets and native/performance acceptance incomplete.',
+  scope: 'Public web/Sogou image evidence, renderer lifecycle, research query/page deadline and configured cloud round/tool remaining-time caps with bounded finalization. Other image engines/relevance, maintenance/index atomicity, timing spans and native transport/performance acceptance incomplete.',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', android + ':' + file)).digest('hex'), disposition: disposition(file) })) };
 const output = path.join(root, 'apps/ios/ANDROID_3007_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(output, JSON.stringify(inventory, null, 2) + '\n');
