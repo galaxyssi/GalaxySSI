@@ -2,6 +2,165 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testSourceLearningRequiresRepeatedDiverseQueriesAndSafeDistinctHosts() throws {
+    let policy = AgentIOSWebSourceLearningPolicy.self
+    let results: [AgentMcpJSONObject] = [
+      ["url": .string("https://www.source.example/a")], ["url": .string("https://source.example/b")],
+      ["url": .string("https://learn.microsoft.com/a")], ["url": .string("https://127.0.0.1/a")],
+      ["url": .string("https://private.local/a")], ["url": .string("https://user@other.example/a")],
+      ["url": .string("https://-invalid.example/a")]]
+    var source: AgentIOSLearnedWebSource?
+    for query in ["first query", "first query", "second query", "third query"] {
+      let observations = policy.observations(query: query,
+        categories: ["research", "BAD TAG", "ai-models", "!!!", "\u{7814}\u{7A76}"], results: results)
+      XCTAssertEqual(observations.count, 1)
+      source = policy.evolve(source, observation: try XCTUnwrap(observations.first), now: 1000)
+    }
+    let verified = try XCTUnwrap(source)
+    XCTAssertTrue(verified.isValid)
+    XCTAssertEqual(verified.status, "verified")
+    XCTAssertEqual(verified.observations, 4)
+    XCTAssertEqual(verified.queryFingerprints.count, 3)
+    XCTAssertTrue(verified.categoryTags.contains("bad tag"))
+    XCTAssertTrue(verified.categoryTags.contains("ai-models"))
+    XCTAssertTrue(verified.categoryTags.contains("\u{7814}\u{7A76}"))
+    XCTAssertFalse(verified.categoryTags.contains("!!!"))
+    XCTAssertNil(verified.publicValue()["query_fingerprints"])
+    var disabled = verified
+    disabled.status = "disabled"
+    let imageObservation = try XCTUnwrap(policy.observations(query: "image", categories: [],
+      results: [["url": .string("https://images.example/a"), "vertical": .string("image")]]).first)
+    var image: AgentIOSLearnedWebSource?
+    for query in ["a", "a", "b"] {
+      var observation = imageObservation
+      observation.queryFingerprint = policy.observations(query: query, categories: [], results: [results[0]])[0].queryFingerprint
+      image = policy.evolve(image, observation: observation, now: 2000)
+    }
+    XCTAssertEqual(image?.status, "verified")
+    let observation = try XCTUnwrap(policy.observations(query: "fourth", categories: [], results: [results[0]]).first)
+    XCTAssertEqual(policy.evolve(disabled, observation: observation, now: 3000).status, "disabled")
+  }
+
+  func testSourceMaintenanceQueueIsBoundedWithoutCallerThreadFallback() {
+    let operations = OperationQueue()
+    operations.isSuspended = true
+    let queue = AgentIOSWebMaintenanceQueue(queue: operations)
+    defer { operations.cancelAllOperations(); operations.isSuspended = false }
+    for _ in 0..<17 { XCTAssertTrue(queue.submit {} ) }
+    XCTAssertFalse(queue.submit { XCTFail("Rejected work must not run") })
+    XCTAssertEqual(operations.operationCount, 17)
+    XCTAssertEqual(operations.maxConcurrentOperationCount, 1)
+  }
+
+  func testFullCacheClearInvalidatesQueuedLearningAcrossInstancesButExpiredClearDoesNot() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("learning-clear-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let secrets = InMemorySecretStore()
+    let operations = OperationQueue()
+    operations.isSuspended = true
+    defer { operations.cancelAllOperations(); operations.isSuspended = false }
+    let first = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets,
+      learningQueue: AgentIOSWebMaintenanceQueue(queue: operations))
+    let second = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets)
+    let results: [AgentMcpJSONObject] = [["url": .string("https://source.example/article")]]
+    XCTAssertEqual(first.learnSourceCandidates(query: "first", categories: [], results: results)["status"], .string("queued"))
+    XCTAssertEqual(second.clear(expiredOnly: false)["committed"], .bool(true))
+    operations.isSuspended = false
+    operations.waitUntilAllOperationsAreFinished()
+    XCTAssertTrue(try XCTUnwrap(first.learnedSources()).isEmpty)
+    operations.isSuspended = true
+    _ = first.learnSourceCandidates(query: "second", categories: [], results: results)
+    XCTAssertEqual(second.clear(expiredOnly: true)["committed"], .bool(true))
+    operations.isSuspended = false
+    operations.waitUntilAllOperationsAreFinished()
+    XCTAssertEqual(first.learnedSources()?.count, 1)
+    XCTAssertEqual(first.stats()["last_learning_status"], .string("saved"))
+    XCTAssertEqual(second.clear(expiredOnly: false)["learned_sources_removed"], .int(1))
+    XCTAssertTrue(try XCTUnwrap(first.learnedSources()).isEmpty)
+  }
+
+  func testLearningUsesEncryptedSnapshotAndLegacyDocumentsRemainReadable() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("learning-encrypted-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let secrets = InMemorySecretStore()
+    let operations = OperationQueue()
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets,
+      learningQueue: AgentIOSWebMaintenanceQueue(queue: operations))
+    XCTAssertTrue(cache.putDocuments([cacheDocumentFixture("legacy")]))
+    XCTAssertTrue(try XCTUnwrap(cache.learnedSources()).isEmpty)
+    _ = cache.learnSourceCandidates(query: "private original query", categories: ["research"],
+      results: [["url": .string("https://new-source.example/article")]])
+    operations.waitUntilAllOperationsAreFinished()
+    let serialized = try String(contentsOf: url, encoding: .utf8)
+    XCTAssertFalse(serialized.contains("new-source.example"))
+    XCTAssertFalse(serialized.contains("private original query"))
+    let reopened = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets)
+    XCTAssertEqual(reopened.learnedSources()?.first?.host, "new-source.example")
+    XCTAssertNotNil(reopened.document(url: "https://cache.test/legacy", allowStale: true))
+    XCTAssertEqual(AgentIOSWebIntelligenceLearningStore(cacheStore: reopened).stats().candidateSourceCount, 1)
+  }
+
+  func testFailedOrCancelledLearningDoesNotPublishOrReplaceEvidence() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("learning-failed-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let operations = OperationQueue()
+    var reject = false
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(),
+      learningQueue: AgentIOSWebMaintenanceQueue(queue: operations), writeFile: { data, url in
+        if reject { throw CocoaError(.fileWriteOutOfSpace) }
+        try data.write(to: url, options: .atomic)
+      })
+    XCTAssertTrue(cache.putDocuments([cacheDocumentFixture("evidence")]))
+    let original = try Data(contentsOf: url)
+    reject = true
+    let results: [AgentMcpJSONObject] = [["url": .string("https://source.example/article")]]
+    _ = cache.learnSourceCandidates(query: "first", categories: [], results: results)
+    operations.waitUntilAllOperationsAreFinished()
+    XCTAssertEqual(cache.stats()["last_learning_status"], .string("failed_write"))
+    XCTAssertTrue(try XCTUnwrap(cache.learnedSources()).isEmpty)
+    XCTAssertEqual(try Data(contentsOf: url), original)
+    reject = false
+    _ = cache.learnSourceCandidates(query: "cancelled", categories: [], results: results, isCancelled: { true })
+    operations.waitUntilAllOperationsAreFinished()
+    XCTAssertEqual(try Data(contentsOf: url), original)
+  }
+
+  func testActualSearchQueuesLearningOnlyWithCacheScopeAndCacheToolListsIt() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("learning-tool-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let operations = OperationQueue()
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(),
+      learningQueue: AgentIOSWebMaintenanceQueue(queue: operations))
+    let provider = AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: BudgetWebMediaFixture(), cacheStore: cache)
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider))
+    var context = AgentNativeToolInvocationContext(invocationId: "learning-no-scope",
+      grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
+      grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent])
+    let skipped = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search, input: ["query": .string("Galaxy research")],
+      context: context, hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(skipped.isSuccess)
+    XCTAssertEqual(skipped.output["learning"]?.objectValue?["status"], .string("skipped_cache_scope_required"))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    context.grantedPermissions.insert(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission)
+    context.grantedConsents.insert(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent)
+    for (index, query) in ["Galaxy first", "Galaxy second", "Galaxy third", "Galaxy first"].enumerated() {
+      context.invocationId = "learning-\(index)"
+      let result = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search, input: ["query": .string(query)],
+        context: context, hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+      XCTAssertTrue(result.isSuccess)
+      XCTAssertEqual(result.output["learning"]?.objectValue?["status"], .string("queued"))
+    }
+    operations.waitUntilAllOperationsAreFinished()
+    context.invocationId = "learning-list"
+    let listed = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.cache,
+      input: ["action": .string("learned_sources"), "status": .string("verified")], context: context,
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(listed.isSuccess)
+    XCTAssertEqual(listed.output["metadata"]?.objectValue?["learned_sources"]?.arrayValue?.count, 1)
+    XCTAssertEqual(listed.output["cache"]?.objectValue?["verified_learned_source_count"], .int(1))
+  }
+
   func testCorruptWebCacheCannotBeOverwrittenOrReportedAsCleared() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("cache-corrupt-\(UUID()).json")
     defer { try? FileManager.default.removeItem(at: url) }

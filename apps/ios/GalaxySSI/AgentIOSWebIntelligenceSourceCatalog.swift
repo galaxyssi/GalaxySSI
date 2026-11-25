@@ -55,6 +55,7 @@ enum AgentIOSWebIntelligenceVertical: String, CaseIterable, Identifiable, Hashab
 struct AgentIOSWebIntelligenceSourceLearningStats: Equatable {
   var learnedSourceCount: Int
   var verifiedLearnedSourceCount: Int
+  var available = true
 
   var candidateSourceCount: Int {
     max(0, learnedSourceCount - verifiedLearnedSourceCount)
@@ -163,18 +164,19 @@ enum AgentIOSWebIntelligenceSourceCatalog {
 }
 
 final class AgentIOSWebIntelligenceLearningStore {
-  private static let learnedSourceCountKey = "galaxyssi.web_intelligence.learned_source_count"
-  private static let verifiedLearnedSourceCountKey = "galaxyssi.web_intelligence.verified_learned_source_count"
-  private let defaults: UserDefaults
+  private let cacheStore: AgentIOSWebIntelligenceCacheStore
 
-  init(defaults: UserDefaults = .standard) {
-    self.defaults = defaults
+  init(cacheStore: AgentIOSWebIntelligenceCacheStore = .shared) {
+    self.cacheStore = cacheStore
   }
 
   func stats() -> AgentIOSWebIntelligenceSourceLearningStats {
-    AgentIOSWebIntelligenceSourceLearningStats(
-      learnedSourceCount: max(0, defaults.integer(forKey: Self.learnedSourceCountKey)),
-      verifiedLearnedSourceCount: max(0, defaults.integer(forKey: Self.verifiedLearnedSourceCountKey))
+    guard let sources = cacheStore.learnedSources() else {
+      return AgentIOSWebIntelligenceSourceLearningStats(learnedSourceCount: 0, verifiedLearnedSourceCount: 0, available: false)
+    }
+    return AgentIOSWebIntelligenceSourceLearningStats(
+      learnedSourceCount: sources.count,
+      verifiedLearnedSourceCount: sources.filter { $0.status == "verified" }.count
     )
   }
 }

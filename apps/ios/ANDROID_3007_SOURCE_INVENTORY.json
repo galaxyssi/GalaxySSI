@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/Sogou image search, source-owned media citations, query-aware completion and cooperative cancellation; renderer/research/cloud time caps; atomic encrypted cache batches; same-path workspace revision/commit serialization and strict persisted snapshot reads. Other image engines/relevance, deferred source maintenance, health/workspace indexed-storage performance, timing spans and native acceptance incomplete.",
+  "scope": "Public web/Sogou image search, media citations, query-aware completion, renderer/research/cloud caps, atomic cache batches and workspace snapshot commits; actual scope-gated deferred source learning with encrypted records, generation invalidation, cache listing and live UI counts. Learned routing/full built-in catalog exclusion, source-health/indexed-storage performance, other image adapters/relevance, timing spans and native acceptance incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -107,12 +107,12 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt",
       "sha256": "10d4c9051f85abb1bfab341ed7101dcbd24bd59b8fa82f9c4236d2660ce69347",
-      "disposition": "Partial: shared research deadline, validated engine IDs and truthful partial evidence. Encrypted cache batches use one atomic snapshot replacement; corrupt/missing-key reads preserve ciphertext and failed watch/clear writes report failure. Same-path process-local serialization; deferred source learning, health indexing and indexed-storage performance remain incomplete"
+      "disposition": "Partial: shared research deadline, truthful partial evidence, atomic cache batches and failure-safe persistence. Actual scoped search queues bounded source observations into the same encrypted snapshot; cache listing and UI stats read saved records. Full clear invalidates queued generations. Source-health indexing, learned routing, full built-in catalog exclusion and indexed-storage performance incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMaintenanceQueue.kt",
       "sha256": "411b67da4945f5fc7e5ff06e52a0d13d75fb5f66c4646748da496b41e8847a50",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Native one-worker utility queue, at most 17 outstanding optional learning tasks and no caller-thread fallback. Per-cache standardized-path generation/lock invalidates queued pre-clear work; no durable page/tool evidence is queued. Fault/concurrency/device acceptance not run"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMediaNativeTools.kt",

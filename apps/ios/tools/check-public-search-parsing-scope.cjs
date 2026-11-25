@@ -35,12 +35,13 @@ const oldCacheStore = git('show', base + ':' + swift('AgentIOSWebIntelligenceCac
 assert.equal(cacheStore.slice(0, cacheStore.indexOf('final class AgentIOSWebIntelligenceCacheStore')),
   oldCacheStore.slice(0, oldCacheStore.indexOf('final class AgentIOSWebIntelligenceCacheStore')),
   'Persisted document/watch schemas unchanged');
-assert.equal(cacheStore.slice(cacheStore.indexOf('  private struct Snapshot:'), cacheStore.indexOf('  static let maxDocuments')),
+assert.equal(cacheStore.slice(cacheStore.indexOf('  private struct Snapshot:'), cacheStore.indexOf('  static let maxDocuments'))
+  .replace('    var learnedSources: [AgentIOSLearnedWebSource]? = nil\n', ''),
   oldCacheStore.slice(oldCacheStore.indexOf('  private struct Snapshot:'), oldCacheStore.indexOf('  static let maxDocuments')),
-  'Encrypted envelope and snapshot v1 schemas unchanged');
+  'Encrypted envelope/document/watch v1 schema retained, with one optional legacy-decodable learned-source field');
 assert.equal(cacheStore.slice(cacheStore.indexOf('  private func canonicalURL(')),
   oldCacheStore.slice(oldCacheStore.indexOf('  private func canonicalURL(')), 'Cache URL policy unchanged');
-for (const token of ['lock = Self.gate(for: fileURL)', 'url.standardizedFileURL.path',
+for (const token of ['let sharedState = Self.state(for: fileURL)', 'lock = sharedState.lock', 'url.standardizedFileURL.path',
   'Self.keyLock.lock()', 'func putDocuments(', 'guard var snapshot = readUnlocked() else { return false }',
   'encryptionKey(createIfMissing: false)', 'error.code == .fileReadNoSuchFile',
   'envelope.version == 1', 'snapshot.version == 1', 'AES.GCM.open', 'AES.GCM.seal',
@@ -57,6 +58,41 @@ for (const name of ['testCorruptWebCacheCannotBeOverwrittenOrReportedAsCleared',
   'testWebCacheBatchCommitsOnceAndFailedReplacementPreservesSnapshot',
   'testWebCacheInstancesSerializeOneSnapshotReadModifyWrite',
   'testWebWatchAndClearToolsDoNotClaimFailedPersistenceSucceeded']) assert(cacheTests.includes('func ' + name + '('));
+const learning = read(swift('AgentIOSWebSourceLearning'));
+for (const token of ['results.prefix(20)', 'static let maximumSources = 512', 'queries.count >= (broad ? 3 : 2)',
+  'count >= (broad ? 4 : 3)', 'previous?.status == "disabled"', 'sorted(by: >).prefix(16)',
+  'queue.maxConcurrentOperationCount = 1', 'queue.operationCount < 17', 'queue.addOperation(task)',
+  'repeated_discovery_not_content_or_permission_verification', 'builtInHosts.contains(where:',
+  'compactMap(AgentIOSWebResearchPlanCodec.normalizedCategory)',
+  'AgentIOSWebResearchPlanCodec.normalizedCategory(tag) == tag']) assert(learning.includes(token), token);
+for (const token of ['let generation = state.generation', 'state.generation = UUID()',
+  'guard state.generation == generation, !isCancelled()', 'self.applyLearning(observations, generation: generation',
+  'state.lastLearningStatus = committed ? "saved" : "failed_write"',
+  '(snapshot.learnedSources ?? []).allSatisfy(\\.isValid)', '"learned_sources_removed"',
+  'snapshot.learnedSources = []']) assert(cacheStore.includes(token), token);
+for (const token of ['invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission)',
+  'invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent)',
+  '"skipped_cache_scope_required"', 'isCancelled: { invocation.isCancellationRequested }',
+  'response.output["learning"] = .object(learning)', 'case "learned_sources":',
+  'cacheMetadata = cacheStore.stats().merging(cleared)']) assert(intelligence.includes(token), token);
+const learningCatalog = read(swift('AgentIOSWebIntelligenceSourceCatalog'));
+assert(learningCatalog.includes('cacheStore.learnedSources()'));
+assert(!learningCatalog.includes('defaults.integer(forKey: Self.learnedSourceCountKey)'));
+const learningView = read(swift('GalaxySSIWebIntelligenceSourcesView'));
+assert(learningView.includes('summary(learningStats: learningStats)'));
+assert(learningView.includes('publisher(for: .galaxySSIWebLearningDidChange).receive(on: DispatchQueue.main)'));
+assert(learningView.includes('summary.learningStats.available ? String('));
+const nativeCatalog = read(swift('AgentIOSWebIntelligenceNativeTools'));
+const oldNativeCatalog = git('show', base + ':' + swift('AgentIOSWebIntelligenceNativeTools'));
+assert.equal(nativeCatalog.replace(', "learned_sources"]),', ']),')
+  .replace('        "status": stringSchema(enumValues: ["candidate", "verified", "disabled"]),\n', ''), oldNativeCatalog,
+  'Only cache listing schema extended; existing permissions/consents, operation schemas and capabilities retained');
+for (const name of ['testSourceLearningRequiresRepeatedDiverseQueriesAndSafeDistinctHosts',
+  'testSourceMaintenanceQueueIsBoundedWithoutCallerThreadFallback',
+  'testFullCacheClearInvalidatesQueuedLearningAcrossInstancesButExpiredClearDoesNot',
+  'testLearningUsesEncryptedSnapshotAndLegacyDocumentsRemainReadable',
+  'testFailedOrCancelledLearningDoesNotPublishOrReplaceEvidence',
+  'testActualSearchQueuesLearningOnlyWithCacheScopeAndCacheToolListsIt']) assert(cacheTests.includes('func ' + name + '('));
 for (const token of ['let useCache = (input["use_cache"]?.boolValue ?? false) && !imageSearch && requestedEngines.isEmpty',
   'item.result["lead_image_url"]?.stringValue ?? item.result["url"]?.stringValue',
   'result["images"] = .array(images)', 'evidence["images"] = .array(images)',
@@ -236,6 +272,7 @@ for (const name of ['testRendererHealthUsesSharedCooldownWithoutExtendingRejecte
 const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
 for (const token of ['AgentIOSPublicSearchParser.swift in Sources', 'SwiftSoup in Frameworks',
   'AgentIOSWebExecutionBudget.swift in Sources',
+  'AgentIOSWebSourceLearning.swift in Sources',
   'productName = SwiftSoup;', 'repositoryURL = "https://github.com/scinfu/SwiftSoup";', 'version = 2.6.0;']) assert(project.includes(token));
 const pins = JSON.parse(read('apps/ios/GalaxySSI.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved'));
 const pin = pins.pins.find(p => p.identity === 'swiftsoup');
@@ -257,7 +294,8 @@ const disposition = file => {
   if (file.endsWith('/AgentPublicWebSearchParserTest.kt')) return 'Three native fixture sources added, NOT executed; not complete Android test coverage';
   if (file.endsWith('/AgentPublicImageSearchParser.kt')) return 'Sogou inert script JSON parser connected to actual image-only endpoint and model evidence. Preserve source, original/thumbnail, dimensions and image identity; other image adapters/relevance/native acceptance incomplete';
   if (file.endsWith('/AgentPublicImageSearchTest.kt')) return 'Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance';
-  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: shared research deadline, validated engine IDs and truthful partial evidence. Encrypted cache batches use one atomic snapshot replacement; corrupt/missing-key reads preserve ciphertext and failed watch/clear writes report failure. Same-path process-local serialization; deferred source learning, health indexing and indexed-storage performance remain incomplete';
+  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: shared research deadline, truthful partial evidence, atomic cache batches and failure-safe persistence. Actual scoped search queues bounded source observations into the same encrypted snapshot; cache listing and UI stats read saved records. Full clear invalidates queued generations. Source-health indexing, learned routing, full built-in catalog exclusion and indexed-storage performance incomplete';
+  if (file.endsWith('/AgentWebMaintenanceQueue.kt')) return 'Native one-worker utility queue, at most 17 outstanding optional learning tasks and no caller-thread fallback. Per-cache standardized-path generation/lock invalidates queued pre-clear work; no durable page/tool evidence is queued. Fault/concurrency/device acceptance not run';
   if (file.endsWith('/AgentWorkspaceStore.kt')) return 'iOS retains one whole-file snapshot for records and derived recovery membership, now serializing same-path instances across revision check/atomic commit and rejecting unreadable/partial/unsupported snapshots before writes. Post-commit notification only; failed commit leaves prior bytes and derived recovery unchanged. Native fault/concurrency acceptance and indexed-storage/performance parity not verified; no encryption migration';
   if (file.endsWith('/AgentWebEvidencePack.kt')) return 'Native pack retains up to four validated media URLs per canonical source across retrieved bodies/discovery results, dimensions and thumbnail/original references; discovered URL metadata is explicitly not visual verification';
   if (file.endsWith('/AgentWebEvidenceVerification.kt')) return 'Only structurally valid source items authorize image destinations, only for typed Markdown images including wrapped images. Ordinary citation URLs remain restricted; original manifest/ID/hash gates and Markdown text/rendering retained. No runtime acceptance';
@@ -273,9 +311,9 @@ const disposition = file => {
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,
-  scope: 'Public web/Sogou image search, source-owned media citations, query-aware completion and cooperative cancellation; renderer/research/cloud time caps; atomic encrypted cache batches; same-path workspace revision/commit serialization and strict persisted snapshot reads. Other image engines/relevance, deferred source maintenance, health/workspace indexed-storage performance, timing spans and native acceptance incomplete.',
+  scope: 'Public web/Sogou image search, media citations, query-aware completion, renderer/research/cloud caps, atomic cache batches and workspace snapshot commits; actual scope-gated deferred source learning with encrypted records, generation invalidation, cache listing and live UI counts. Learned routing/full built-in catalog exclusion, source-health/indexed-storage performance, other image adapters/relevance, timing spans and native acceptance incomplete.',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', android + ':' + file)).digest('hex'), disposition: disposition(file) })) };
 const output = path.join(root, 'apps/ios/ANDROID_3007_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(output, JSON.stringify(inventory, null, 2) + '\n');
 else assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), inventory);
-console.log('Android #3007: public web/Sogou image parsing and actual evidence wiring contracts. Partial port; source checks only, no native or network acceptance.');
+console.log('Android #3007: public web/image evidence, scoped deferred source learning and cache/workspace persistence contracts. Partial port; source checks only, no native or network acceptance.');

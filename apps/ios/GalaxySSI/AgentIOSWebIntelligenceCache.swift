@@ -63,6 +63,7 @@ final class AgentIOSWebIntelligenceCacheStore {
     var version = 1
     var documents: [AgentIOSWebIntelligenceCacheDocument] = []
     var watches: [AgentIOSWebIntelligenceCacheWatch] = []
+    var learnedSources: [AgentIOSLearnedWebSource]? = nil
   }
 
   private struct EncryptedEnvelope: Codable {
@@ -83,18 +84,25 @@ final class AgentIOSWebIntelligenceCacheStore {
   private let nowMillis: () -> Int64
   private let lock: NSLock
   private let writeFile: (Data, URL) throws -> Void
+  private let learningQueue: AgentIOSWebMaintenanceQueue
+  private let state: State
+  private final class State {
+    let lock = NSLock()
+    var generation = UUID()
+    var lastLearningStatus = "idle"
+  }
   private static let gatesLock = NSLock()
-  private static var fileGates: [String: NSLock] = [:]
+  private static var fileStates: [String: State] = [:]
   private static let keyLock = NSLock()
 
-  private static func gate(for url: URL) -> NSLock {
+  private static func state(for url: URL) -> State {
     gatesLock.lock()
     defer { gatesLock.unlock() }
     let path = url.standardizedFileURL.path
-    if let gate = fileGates[path] { return gate }
-    let gate = NSLock()
-    fileGates[path] = gate
-    return gate
+    if let state = fileStates[path] { return state }
+    let state = State()
+    fileStates[path] = state
+    return state
   }
 
   init(
@@ -102,6 +110,7 @@ final class AgentIOSWebIntelligenceCacheStore {
     secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
     fileManager: FileManager = .default,
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
+    learningQueue: AgentIOSWebMaintenanceQueue = .shared,
     writeFile: @escaping (Data, URL) throws -> Void = {
       try $0.write(to: $1, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
@@ -111,7 +120,10 @@ final class AgentIOSWebIntelligenceCacheStore {
     self.fileManager = fileManager
     self.nowMillis = nowMillis
     self.writeFile = writeFile
-    lock = Self.gate(for: fileURL)
+    self.learningQueue = learningQueue
+    let sharedState = Self.state(for: fileURL)
+    state = sharedState
+    lock = sharedState.lock
   }
 
   static func defaultFileURL(fileManager: FileManager = .default) -> URL {
@@ -231,6 +243,9 @@ final class AgentIOSWebIntelligenceCacheStore {
     let now = nowMillis()
     return [
       "available": .bool(true),
+      "learned_source_count": .int(Int64(snapshot.learnedSources?.count ?? 0)),
+      "verified_learned_source_count": .int(Int64(snapshot.learnedSources?.filter { $0.status == "verified" }.count ?? 0)),
+      "last_learning_status": .string(state.lastLearningStatus),
       "cache_version": .int(Int64(snapshot.version)),
       "entry_count": .int(Int64(snapshot.documents.count)),
       "content_chars": .int(snapshot.documents.reduce(0) { $0 + Int64($1.content.count) }),
@@ -242,17 +257,78 @@ final class AgentIOSWebIntelligenceCacheStore {
 
   func clear(expiredOnly: Bool) -> AgentMcpJSONObject {
     var removed = 0
+    var learnedRemoved = 0
     let now = nowMillis()
-    let committed = mutate { snapshot in
+    lock.lock()
+    let committed: Bool
+    if var snapshot = readUnlocked() {
       let before = snapshot.documents.count
       if expiredOnly {
         snapshot.documents.removeAll { $0.expiresAtMillis < now }
       } else {
         snapshot.documents.removeAll()
+        state.generation = UUID()
+        learnedRemoved = snapshot.learnedSources?.count ?? 0
+        snapshot.learnedSources = []
       }
       removed = before - snapshot.documents.count
+      committed = writeUnlocked(snapshot)
+      if !expiredOnly { state.lastLearningStatus = committed ? "cleared" : "failed_write" }
+    } else {
+      committed = false
     }
-    return ["documents_removed": .int(Int64(committed ? removed : 0)), "committed": .bool(committed)]
+    lock.unlock()
+    if committed && !expiredOnly {
+      NotificationCenter.default.post(name: .galaxySSIWebLearningDidChange, object: self)
+    }
+    return ["documents_removed": .int(Int64(committed ? removed : 0)), "committed": .bool(committed),
+      "learned_sources_removed": .int(Int64(committed ? learnedRemoved : 0))]
+  }
+
+  func learnedSources() -> [AgentIOSLearnedWebSource]? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let snapshot = readUnlocked() else { return nil }
+    return (snapshot.learnedSources ?? []).sorted {
+      if ($0.status == "verified") != ($1.status == "verified") { return $0.status == "verified" }
+      if $0.confidence != $1.confidence { return $0.confidence > $1.confidence }
+      if $0.lastSeenAtMillis != $1.lastSeenAtMillis { return $0.lastSeenAtMillis > $1.lastSeenAtMillis }
+      return $0.sourceID < $1.sourceID
+    }
+  }
+
+  func learnSourceCandidates(query: String, categories: [String], results: [AgentMcpJSONObject],
+                             isCancelled: @escaping () -> Bool = { false }) -> AgentMcpJSONObject {
+    let observations = AgentIOSWebSourceLearningPolicy.observations(query: query, categories: categories, results: results)
+    guard !observations.isEmpty else { return ["status": .string("skipped_no_candidates")] }
+    lock.lock()
+    let generation = state.generation
+    lock.unlock()
+    let accepted = learningQueue.submit {
+      if !isCancelled(), self.applyLearning(observations, generation: generation, isCancelled: isCancelled) {
+        NotificationCenter.default.post(name: .galaxySSIWebLearningDidChange, object: self)
+      }
+    }
+    return ["status": .string(accepted ? "queued" : "skipped_queue_full")]
+  }
+
+  private func applyLearning(_ observations: [AgentIOSWebSourceLearningPolicy.Observation], generation: UUID,
+                             isCancelled: () -> Bool) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    guard state.generation == generation, !isCancelled() else { return false }
+    guard var snapshot = readUnlocked() else { state.lastLearningStatus = "failed_read"; return false }
+    var sources = Dictionary(uniqueKeysWithValues: (snapshot.learnedSources ?? []).map { ($0.sourceID, $0) })
+    for observation in observations {
+      sources[observation.sourceID] = AgentIOSWebSourceLearningPolicy.evolve(sources[observation.sourceID],
+        observation: observation, now: nowMillis())
+    }
+    snapshot.learnedSources = Array(sources.values.sorted {
+      $0.lastSeenAtMillis == $1.lastSeenAtMillis ? $0.sourceID < $1.sourceID : $0.lastSeenAtMillis > $1.lastSeenAtMillis
+    }.prefix(AgentIOSWebSourceLearningPolicy.maximumSources))
+    let committed = writeUnlocked(snapshot)
+    state.lastLearningStatus = committed ? "saved" : "failed_write"
+    return committed
   }
 
   @discardableResult
@@ -320,7 +396,10 @@ final class AgentIOSWebIntelligenceCacheStore {
           let nonce = try? AES.GCM.Nonce(data: nonceData),
           let sealed = try? AES.GCM.SealedBox(nonce: nonce, ciphertext: ciphertext, tag: tag),
           let plaintext = try? AES.GCM.open(sealed, using: key),
-          let snapshot = try? JSONDecoder().decode(Snapshot.self, from: plaintext), snapshot.version == 1 else {
+          let snapshot = try? JSONDecoder().decode(Snapshot.self, from: plaintext), snapshot.version == 1,
+          (snapshot.learnedSources?.count ?? 0) <= AgentIOSWebSourceLearningPolicy.maximumSources,
+          (snapshot.learnedSources ?? []).allSatisfy(\.isValid),
+          Set((snapshot.learnedSources ?? []).map(\.sourceID)).count == (snapshot.learnedSources?.count ?? 0) else {
       return nil
     }
     return snapshot

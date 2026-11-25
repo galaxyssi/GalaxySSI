@@ -114,6 +114,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     let action = string(input, "action", limit: 32).ifBlank("status")
     var documents: [AgentMcpJSONObject] = []
     var results: [AgentMcpJSONObject] = []
+    var actionMetadata: AgentMcpJSONObject = [:]
     var cacheMetadata = cacheStore.stats()
     guard cacheMetadata["available"] != .bool(false) else {
       return failure("cache_unavailable", "The encrypted cache could not be read. Existing data was not replaced.", retryable: true)
@@ -139,7 +140,16 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       guard cleared["committed"] == .bool(true) else {
         return failure("cache_persistence_failed", "The cache change could not be saved.", retryable: true)
       }
-      cacheMetadata.merge(cleared) { _, next in next }
+      cacheMetadata = cacheStore.stats().merging(cleared) { _, next in next }
+    case "learned_sources":
+      let status = string(input, "status", limit: 32)
+      guard status.isEmpty || ["candidate", "verified", "disabled"].contains(status) else {
+        return failure("invalid_source_status", "Unsupported learned source status")
+      }
+      guard let sources = cacheStore.learnedSources() else {
+        return failure("cache_unavailable", "The learned sources could not be read.", retryable: true)
+      }
+      actionMetadata["learned_sources"] = .array(sources.filter { status.isEmpty || $0.status == status }.map { .object($0.publicValue()) })
     default:
       return failure("invalid_cache_action", "Unsupported iOS web cache action")
     }
@@ -148,10 +158,10 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["documents"] = .array(documents.map { .object($0) })
     output["results"] = .array(results.map { .object($0) })
     output["cache"] = .object(cacheMetadata)
-    output["metadata"] = .object([
+    output["metadata"] = .object(actionMetadata.merging([
       "action": .string(action),
       "encryption": .string("ios_keychain_aes_gcm")
-    ])
+    ]) { _, next in next })
     return AgentNativeToolExecutionResult.success(
       output: output,
       message: "iOS encrypted web cache operation completed",
@@ -391,6 +401,18 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       limit: limit
     )
     let cacheCommitted = useCache ? cacheSearchResults(networkResults, input: input) : nil
+    let learning: AgentMcpJSONObject
+    if invocation.isCancellationRequested {
+      learning = ["status": .string("skipped_cancelled")]
+    } else if invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission),
+      invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent) {
+      learning = cacheStore.learnSourceCandidates(query: query,
+        categories: stringArray(input["categories"], maximum: 32) + stringArray(input["verticals"], maximum: 32),
+        results: (webResult.output["results"]?.arrayValue ?? []).compactMap(\.objectValue),
+        isCancelled: { invocation.isCancellationRequested })
+    } else {
+      learning = ["status": .string("skipped_cache_scope_required")]
+    }
     var response = searchSuccess(
       operation: operation,
       query: query,
@@ -400,6 +422,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       cacheHit: !cachedResults.isEmpty,
       networkAttempted: true
     )
+    response.output["learning"] = .object(learning)
     if let cacheCommitted {
       var cache = response.output["cache"]?.objectValue ?? [:]
       cache["write_committed"] = .bool(cacheCommitted)
