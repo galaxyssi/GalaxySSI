@@ -62,7 +62,7 @@ extension GalaxySSIStoreTests {
     let registry = try AgentNativeToolRegistry().registerExecutables(
       AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider))
     let result = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
-      input: ["query": .string("alpha beta"), "limit": .int(2), "verticals": .array([.string("image")])],
+      input: ["query": .string("alpha beta"), "limit": .int(2), "verticals": .array([.string("image")]), "engines": .array([.string("sogou_image")])],
       context: AgentNativeToolInvocationContext(invocationId: "image-fusion",
         grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
         grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent]),
@@ -166,7 +166,7 @@ extension GalaxySSIStoreTests {
       grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
       grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent])
     let output = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
-      input: ["query": .string("Galaxy"), "limit": .int(2), "verticals": .array([.string("image")]), "use_cache": .bool(true)],
+      input: ["query": .string("Galaxy"), "limit": .int(2), "verticals": .array([.string("image")]), "engines": .array([.string("sogou_image")]), "use_cache": .bool(true)],
       context: context, hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
     XCTAssertTrue(output.isSuccess, output.error?.message ?? "")
     XCTAssertEqual(transport.requests.count, 1)
@@ -176,7 +176,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(output.output["evidence"]?.arrayValue?.last?.objectValue?["lead_image_url"], .string("https://images.example/second.jpg"))
     XCTAssertEqual(output.output["cache"]?.objectValue?["hit"], .bool(false))
     let unsupported = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
-      input: ["query": .string("Galaxy"), "engines": .array([.string("brave_image")])],
+      input: ["query": .string("Galaxy"), "engines": .array([.string("unknown_image")])],
       context: context, hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
     XCTAssertEqual(unsupported.error?.code, "unsupported_image_engine")
     XCTAssertEqual(transport.requests.count, 1)

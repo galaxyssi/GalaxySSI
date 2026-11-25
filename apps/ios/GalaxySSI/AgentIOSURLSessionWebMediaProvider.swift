@@ -38,6 +38,8 @@ enum AgentIOSURLSessionWebError: Error {
   case sourceVerificationRequired
   case invalidSearchResponse
   case unsupportedImageEngine
+  case sourceCredentialRequired
+  case imageSearchTokenUnavailable
   case unsupportedSearchEngine
   case invalidMethod
   case invalidTimeout
@@ -285,6 +287,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   var nowMillis: () -> Int64
   var monotonicNowNanoseconds: () -> UInt64
   var sourceHealthStore: AgentIOSWebIntelligenceCacheStore?
+  var imageCredentials: AgentIOSWebIntelligenceCredentials
 
   init(
     transport: AgentIOSURLSessionWebTransporting = AgentIOSDefaultURLSessionWebTransport(),
@@ -294,6 +297,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     ocrProcessor: AgentIOSWebMediaOCRProcessing = AgentIOSWebMediaOCRPipeline(),
     dynamicRenderer: AgentIOSDynamicWebRendering = AgentIOSWKWebViewRenderer(),
     sourceHealthStore: AgentIOSWebIntelligenceCacheStore? = .shared,
+    imageCredentials: AgentIOSWebIntelligenceCredentials = AgentIOSWebIntelligenceCredentials(),
     nowMillis: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     },
@@ -306,6 +310,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     self.ocrProcessor = ocrProcessor
     self.dynamicRenderer = dynamicRenderer
     self.sourceHealthStore = sourceHealthStore
+    self.imageCredentials = imageCredentials
     self.nowMillis = nowMillis
     self.monotonicNowNanoseconds = monotonicNowNanoseconds
   }
@@ -398,7 +403,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let engineIds = Set(requestedEngines)
       let verticalIds = Set((input["verticals"]?.arrayValue ?? []).compactMap(\.stringValue))
       let imageSearch = verticalIds.contains("image") || engineIds.contains(where: { $0.hasSuffix("_image") })
-      if imageSearch, (!engineIds.isEmpty && engineIds != ["sogou_image"]) ||
+      if imageSearch, (!engineIds.isEmpty && !engineIds.isSubset(of: AgentIOSImageSearchRequestPolicy.supported)) ||
          (!verticalIds.isEmpty && verticalIds != ["image"]) {
         throw AgentIOSURLSessionWebError.unsupportedImageEngine
       }
@@ -474,12 +479,14 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
               method: .get,
               maxBodyBytes: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes,
               timeoutMillis: min(4_000, remaining),
-              invocation: searchInvocation
+              invocation: searchInvocation,
+              imagePolicy: endpoint.imageSearch ? AgentIOSImageSearchRequestPolicy(source: endpoint.provider,
+                braveKey: endpoint.provider == "brave_image" ? imageCredentials.credential(.braveAPIKey) : "") : nil
             )
             let html = decodedText(resource).text
             let results: [AgentIOSWebSearchResult]
             if endpoint.imageSearch {
-              results = try AgentIOSPublicSearchParser.sogouImages(html, limit: 20)
+              results = try imageSearchResults(endpoint: endpoint, resource: resource, query: query, invocation: searchInvocation)
             } else {
               results = try parseSearchResults(html, baseURL: resource.finalURL,
                 maxResults: maxResults, allowedHosts: endpoint.allowedHosts)
@@ -576,7 +583,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       var seenURLs: Set<String> = []
       if imageSearch {
         merged = AgentIOSImageSearchFusion.fuse(query: query, groups: attempts.filter { $0.resource != nil }.map {
-          .init(sourceID: $0.provider, results: $0.results, weight: 1.2, authority: 0.75)
+          .init(sourceID: $0.provider, results: $0.results,
+            weight: AgentIOSImageSearchRequestPolicy.weight($0.provider), authority: AgentIOSImageSearchRequestPolicy.authority($0.provider))
         }, limit: maxResults)
       }
       for attempt in attempts where !imageSearch && attempt.resource != nil {
@@ -1239,11 +1247,31 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     requestedEngineIds: [String]
   ) throws -> [AgentIOSWebSearchEndpoint] {
     if imageSearch {
-      let components = searchComponents(scheme: "https", host: "pic.sogou.com", path: "/pics",
-        queryItems: [URLQueryItem(name: "query", value: query)])
-      guard let url = components.url else { throw AgentIOSURLSessionWebError.invalidURL }
-      return [AgentIOSWebSearchEndpoint(provider: "sogou_image",
-        url: try validatedPublicHTTPSURL(url.absoluteString), imageSearch: true)]
+      let braveKey = imageCredentials.credential(.braveAPIKey)
+      let providers = requestedEngineIds.isEmpty
+        ? ["sogou_image"] + (AgentIOSImageSearchRequestPolicy.validBraveKey(braveKey) ? ["brave_image"] : []) + ["duckduckgo_image"]
+        : requestedEngineIds
+      if providers.contains("brave_image"), !AgentIOSImageSearchRequestPolicy.validBraveKey(braveKey) {
+        throw AgentIOSURLSessionWebError.sourceCredentialRequired
+      }
+      return try providers.map { provider in
+        let components: URLComponents
+        switch provider {
+        case "sogou_image":
+          components = searchComponents(scheme: "https", host: "pic.sogou.com", path: "/pics",
+            queryItems: [URLQueryItem(name: "query", value: query)])
+        case "brave_image":
+          components = searchComponents(scheme: "https", host: "api.search.brave.com", path: "/res/v1/images/search",
+            queryItems: [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "20"),
+              URLQueryItem(name: "safesearch", value: "moderate")])
+        case "duckduckgo_image":
+          components = searchComponents(scheme: "https", host: "duckduckgo.com", path: "/",
+            queryItems: [URLQueryItem(name: "q", value: query), URLQueryItem(name: "iax", value: "images"), URLQueryItem(name: "ia", value: "images")])
+        default: throw AgentIOSURLSessionWebError.unsupportedImageEngine
+        }
+        guard let url = components.url else { throw AgentIOSURLSessionWebError.invalidURL }
+        return AgentIOSWebSearchEndpoint(provider: provider, url: try validatedPublicHTTPSURL(url.absoluteString), imageSearch: true)
+      }
     }
     let orderedProviders: [String] = query.unicodeScalars.contains { $0.value > 127 }
       ? ["baidu", "bing", "duckduckgo"]
@@ -1315,6 +1343,33 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     return endpoints
   }
 
+  private func imageSearchResults(endpoint: AgentIOSWebSearchEndpoint, resource: AgentIOSURLSessionWebResource,
+                                  query: String, invocation: AgentNativeToolInvocation) throws -> [AgentIOSWebSearchResult] {
+    switch endpoint.provider {
+    case "sogou_image": return try AgentIOSPublicSearchParser.sogouImages(decodedText(resource).text, limit: 20)
+    case "brave_image": return try AgentIOSPublicSearchParser.imageRows(resource.body, brave: true, limit: 20)
+    case "duckduckgo_image":
+      let token = try AgentIOSImageSearchRequestPolicy.duckDuckGoToken(decodedText(resource).text)
+      let components = searchComponents(scheme: "https", host: "duckduckgo.com", path: "/i.js", queryItems: [
+        URLQueryItem(name: "l", value: "wt-wt"), URLQueryItem(name: "o", value: "json"),
+        URLQueryItem(name: "q", value: query), URLQueryItem(name: "vqd", value: token),
+        URLQueryItem(name: "f", value: ",,,,,"), URLQueryItem(name: "p", value: "1")])
+      guard let url = components.url else { throw AgentIOSURLSessionWebError.invalidURL }
+      let now = nowMillis()
+      let remaining = invocation.remainingTimeMillis
+      if invocation.isCancellationRequested { throw AgentIOSURLSessionWebError.cancelled }
+      guard remaining > 0 else { throw AgentIOSURLSessionWebError.timeout }
+      let child = AgentNativeToolInvocation(descriptor: invocation.descriptor, input: invocation.input, context: invocation.context,
+        startedAtEpochMillis: now, deadlineEpochMillis: invocation.deadlineEpochMillis, hardDeadlineEpochMillis: invocation.deadlineEpochMillis,
+        nowMillis: nowMillis, cancellationRequested: { invocation.isCancellationRequested }, progressReporter: { _, _ in })
+      let response = try requestResource(requestedURL: try validatedPublicHTTPSURL(url.absoluteString), method: .get,
+        maxBodyBytes: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes, timeoutMillis: remaining, invocation: child,
+        imagePolicy: AgentIOSImageSearchRequestPolicy(source: endpoint.provider, landing: endpoint.url))
+      return try AgentIOSPublicSearchParser.imageRows(response.body, brave: false, limit: 20)
+    default: throw AgentIOSURLSessionWebError.unsupportedImageEngine
+    }
+  }
+
   private func searchComponents(
     scheme: String,
     host: String,
@@ -1352,6 +1407,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     invocation: AgentNativeToolInvocation,
     contentPolicy: AgentIOSURLSessionWebContentPolicy = .fetchText,
     allowsBrowserObservation: Bool = false,
+    imagePolicy: AgentIOSImageSearchRequestPolicy? = nil,
     willDispatch: () -> Void = {}
   ) throws -> AgentIOSURLSessionWebResource {
     let requestedAt = invocation.startedAtEpochMillis
@@ -1375,7 +1431,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           url: currentURL,
           timeoutMillis: remainingMillis,
           maxBodyBytes: maxBodyBytes,
-          headers: AgentIOSPublicArticleRequestPolicy.headers(for: currentURL),
+          headers: AgentIOSPublicArticleRequestPolicy.headers(for: currentURL).merging(imagePolicy?.headers(for: currentURL) ?? [:]) { _, image in image },
           allowsPartialBody: allowsBrowserObservation
         )
       )
@@ -1774,6 +1830,10 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       return failure("invalid_engine_response", "Image search did not return readable public result data")
     case .unsupportedImageEngine:
       return failure("unsupported_image_engine", "The requested image engine is not available on iOS; no alternative engine was substituted")
+    case .sourceCredentialRequired:
+      return failure("search_source_credential_required", "Brave image search requires a configured valid API key.")
+    case .imageSearchTokenUnavailable:
+      return failure("invalid_engine_response", "DuckDuckGo Image did not return a bounded search token.", retryable: true)
     case .unsupportedSearchEngine:
       return failure("unsupported_search_engine", "The requested search engine is not available on iOS; no alternative engine was substituted")
     case .invalidMethod:

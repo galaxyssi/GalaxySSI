@@ -5,6 +5,7 @@ const root = path.resolve(__dirname, '../../..');
 const base = '55c4f7a3e199c1c7c9b480140b442f4188ce5ad5';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 function retainedProvider(source) {
+  source = require('./check-image-source-adapters-scope.cjs').retainedProvider(source);
   const hook = `      if imageSearch {
         merged = AgentIOSImageSearchFusion.fuse(query: query, groups: attempts.filter { $0.resource != nil }.map {
           .init(sourceID: $0.provider, results: $0.results, weight: 1.2, authority: 0.75)
