@@ -99,56 +99,17 @@ struct GalaxySSIHealthCareView: View {
 struct GalaxySSIHealthCareEntry: View {
   @EnvironmentObject private var store: GalaxySSIStore
   @Environment(\.scenePhase) private var scene
-  @Environment(\.galaxySSIInterfaceLanguage) private var language
   let records: GalaxySSIHealthRecords
   let conversationID: String
-  var availableHeight: CGFloat? = nil
   @State private var concerns: [GalaxySSIHealthCare.Concern] = []
-  @State private var priority: GalaxySSIHealthCarePriority.Warning?
-  @State private var priorityConcernID: UUID?
-  @State private var discussion: GalaxySSIHealthCare.AgentDiscussionTarget?
-  @State private var displayedPermission: UUID?
   @State private var displayedConversationID: String?
-  @State private var expanded = false
   @State private var revision = UUID()
 
   var body: some View {
     Group {
       if canRead, displayedConversationID == conversationID, let concern = concerns.first {
-        GalaxySSIHealthCareAgentPanel(availableHeight: availableHeight,
-          title: concern.metric.title(language: language) + " \u{00b7} " + GalaxySSIHealthCareText.stage(concern.stage, language: language),
-          summary: GalaxySSIHealthCareAgentPanelText.summary(concern, language: language),
-          priority: priority.map { _ in GalaxySSIHealthCareAgentPanelText.get("health_care_bp_title", language: language) }, expanded: $expanded) {
-          VStack(alignment: .leading, spacing: 8) {
-            if let priority, let priorityConcernID {
-              NavigationLink {
-                GalaxySSIHealthCareDetail(records: records, id: priorityConcernID, metric: .bloodPressure)
-              } label: {
-                GalaxySSIHealthCarePriorityNotice(warning: priority, compact: true)
-                  .frame(maxWidth: .infinity, alignment: .leading)
-              }
-            }
-            let reason = concern.assessment.signals.map { GalaxySSIHealthCareText.signal($0, language: language) }
-              .joined(separator: " ").ifBlank(t("agent.local_follow_up", "Local health follow-up"))
-            summaryLine(t("agent.reason", "Reason"), reason)
-              .accessibilityIdentifier("agent-health-care-reason")
-            summaryLine(t("agent.next", "Next step"), nextStep(concern.stage))
-              .accessibilityIdentifier("agent-health-care-next")
-            if concern.assessment.record != nil {
-              Button { openDiscussion(concern) } label: {
-                Label(t("agent.discuss", "Private discussion"), systemImage: "bubble.left")
-                  .font(.footnote)
-                  .frame(minHeight: 44)
-              }
-              .accessibilityIdentifier("agent-health-care-discussion")
-            }
-            if let review = concern.maintenanceReview, concern.stage == .maintenance {
-              GalaxySSIHealthMaintenanceEvidenceView(review: review).font(.footnote)
-            }
-            details(concern)
-          }
-        }
-        .layoutPriority(1)
+        GalaxySSIHealthCareAgentPanel(metric: concern.metric, assessment: concern.assessment)
+          .layoutPriority(1)
       }
     }
     .onChange(of: scene) { phase in
@@ -169,17 +130,7 @@ struct GalaxySSIHealthCareEntry: View {
       guard canRead, let session = store.agentSession(id: conversationID), let archive = try? records.load(),
         let current = GalaxySSIHealthCareAgentScope.concern(session, in: archive) else { clear(); return }
       concerns = [current]
-      if let discussion, !discussion.matches(archive) { self.discussion = nil }
-      setPriority(archive)
       revision = UUID()
-    }
-    .sheet(item: $discussion) { target in
-      if canRead {
-        NavigationView {
-          GalaxySSIHealthCareDiscussionView(records: records, concernID: target.id, metric: target.metric)
-        }
-        .navigationViewStyle(.stack)
-      }
     }
     .task(id: revision) {
       guard canRead else { clear(); return }
@@ -196,13 +147,9 @@ struct GalaxySSIHealthCareEntry: View {
             if !Task.isCancelled, revision == capturedRevision { clear() }
             return
           }
-        let current = [concern]
         try Task.checkCancellation()
-        if current.first?.id != concerns.first?.id { expanded = false }
-        displayedPermission = GalaxySSIHealthCare.AgentDiscussionTarget.permission(in: archive)
-        concerns = current
+        concerns = [concern]
         displayedConversationID = capturedConversation
-        setPriority(archive)
       } catch { if !Task.isCancelled { clear() } }
     }
   }
@@ -215,75 +162,8 @@ struct GalaxySSIHealthCareEntry: View {
     return GalaxySSIHealthCareAgentScope.concernID(session) != nil
   }
 
-  private func openDiscussion(_ concern: GalaxySSIHealthCare.Concern) {
-    guard canRead, let archive = try? records.load(), let session = store.agentSession(id: conversationID),
-      GalaxySSIHealthCareAgentScope.concern(session, in: archive)?.id == concern.id else { return }
-    let target = GalaxySSIHealthCare.AgentDiscussionTarget(concern, permission: displayedPermission)
-    guard target.matches(archive) else { return }
-    discussion = target
-  }
-
-  private func setPriority(_ archive: GalaxySSIHealthRecords.Archive) {
-    if let current = GalaxySSIHealthRecords.currentCareBloodPressureWarning(archive),
-       current.concern.id == concerns.first?.id,
-       archive.localCare?.acknowledgedBloodPressure != current.warning.record,
-       ![.paused, .closed].contains(current.concern.stage) {
-      priority = current.warning
-      priorityConcernID = current.concern.id
-    } else {
-      priority = nil; priorityConcernID = nil
-    }
-  }
-
   private func clear() {
-    concerns = []; expanded = false; priority = nil; priorityConcernID = nil; discussion = nil; displayedPermission = nil; displayedConversationID = nil
-  }
-
-  private func details(_ concern: GalaxySSIHealthCare.Concern) -> some View {
-      VStack(alignment: .leading, spacing: 0) {
-        NavigationLink {
-          GalaxySSIHealthCareDetail(records: records, id: concern.id, metric: concern.metric)
-        } label: {
-          Label(GalaxySSIHealthCareAgentPanelText.get("health_agent_open_record", language: language), systemImage: "heart.text.square")
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        }
-        .accessibilityIdentifier("agent-health-care-record")
-      }
-      .font(.footnote)
-  }
-
-  private func concernLink(_ concern: GalaxySSIHealthCare.Concern, primary: Bool) -> some View {
-    NavigationLink {
-      GalaxySSIHealthCareDetail(records: records, id: concern.id, metric: concern.metric)
-    } label: {
-      Label(concern.metric.title(language: language), systemImage: primary ? "heart.text.square" : "chevron.right")
-        .font(.footnote.weight(primary ? .semibold : .regular))
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-    }
-  }
-
-  private func summaryLine(_ label: String, _ value: String) -> some View {
-    (Text(label + ": ").fontWeight(.semibold) + Text(value))
-      .font(.caption)
-      .foregroundColor(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
-  }
-
-  private func nextStep(_ stage: GalaxySSIHealthCare.Stage) -> String {
-    switch stage {
-    case .verify, .evidence, .reviewPlan, .waitingResults:
-      return GalaxySSIHealthCareText.stage(stage, language: language)
-    case .reassess:
-      return t("agent.next_reassess", "Review what changed in the recorded results")
-    case .maintenance:
-      return t("agent.next_maintenance", "Review the ongoing follow-up")
-    case .paused, .closed:
-      return GalaxySSIHealthCareText.stage(stage, language: language)
-    }
-  }
-
-  private func t(_ key: String, _ fallback: String) -> String {
-    GalaxySSIHealthCareText.string(key, fallback, language: language)
+    concerns = []; displayedConversationID = nil
   }
 }
 

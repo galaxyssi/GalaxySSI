@@ -1,6 +1,7 @@
 "health_agent_collapse" = "Collapse health assessment";
 "health_agent_expand" = "Expand health assessment";
 "health_agent_open_record" = "View health details";
+"health_agent_report_reference" = " · Report reference %@";
 "health_care_bp_title" = "Review this blood pressure reading first";
 "health_care_comparison_correction" = "Record corrected: %1$@ → %2$@";
 "health_care_comparison_history" = "History changed: %1$@ → %2$@";
