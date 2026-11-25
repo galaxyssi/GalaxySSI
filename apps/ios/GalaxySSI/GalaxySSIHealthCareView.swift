@@ -99,10 +99,12 @@ struct GalaxySSIHealthCareView: View {
 struct GalaxySSIHealthCareEntry: View {
   @EnvironmentObject private var store: GalaxySSIStore
   @Environment(\.scenePhase) private var scene
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
   let records: GalaxySSIHealthRecords
   let conversationID: String
   @State private var concerns: [GalaxySSIHealthCare.Concern] = []
   @State private var displayedConversationID: String?
+  @State private var failed = false
   @State private var revision = UUID()
 
   var body: some View {
@@ -110,6 +112,16 @@ struct GalaxySSIHealthCareEntry: View {
       if canRead, displayedConversationID == conversationID, let concern = concerns.first {
         GalaxySSIHealthCareAgentPanel(metric: concern.metric, assessment: concern.assessment)
           .layoutPriority(1)
+      } else if canRead, failed {
+        Button { failed = false; revision = UUID() } label: {
+          Label(GalaxySSIHealthCareText.string("unavailable", "Local health review could not be loaded.", language: language),
+            systemImage: "arrow.clockwise")
+            .font(.footnote)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .accessibilityIdentifier("agent-health-care-retry")
       }
     }
     .onChange(of: scene) { phase in
@@ -128,8 +140,11 @@ struct GalaxySSIHealthCareEntry: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) {
       guard $0.object as? String == records.owner else { return }
       guard canRead, let session = store.agentSession(id: conversationID), let archive = try? records.load(),
-        let current = GalaxySSIHealthCareAgentScope.concern(session, in: archive) else { clear(); return }
+        let current = GalaxySSIHealthCareAgentScope.concern(session, in: archive) else {
+          clear(); revision = UUID(); return
+        }
       concerns = [current]
+      failed = false
       revision = UUID()
     }
     .task(id: revision) {
@@ -150,7 +165,13 @@ struct GalaxySSIHealthCareEntry: View {
         try Task.checkCancellation()
         concerns = [concern]
         displayedConversationID = capturedConversation
-      } catch { if !Task.isCancelled { clear() } }
+        failed = false
+      } catch {
+        if !Task.isCancelled, revision == capturedRevision, conversationID == capturedConversation, canRead {
+          clear()
+          failed = true
+        }
+      }
     }
   }
 
@@ -163,7 +184,7 @@ struct GalaxySSIHealthCareEntry: View {
   }
 
   private func clear() {
-    concerns = []; displayedConversationID = nil
+    concerns = []; displayedConversationID = nil; failed = false
   }
 }
 

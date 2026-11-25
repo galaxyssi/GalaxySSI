@@ -17,11 +17,19 @@ assert.equal(view.slice(0, view.indexOf(entryStart)), before.slice(0, before.ind
 assert.equal(view.slice(view.indexOf(detailStart)), before.slice(before.indexOf(detailStart)), 'Complete detail/review routes unchanged');
 const entry = section(view, entryStart, detailStart), oldEntry = section(before, entryStart, detailStart);
 assert.equal(section(entry, '  private var canRead:', '  private func clear()'), section(oldEntry, '  private var canRead:', '  private func openDiscussion'), 'Exact active owner/private-session gate retained');
-assert.equal(section(entry, '    .onChange(of: scene)', '      concerns = [current]'), section(oldEntry, '    .onChange(of: scene)', '      concerns = [current]'), 'Protected data/session/record-change guards retained');
+const notificationGuards = section(entry, '    .onChange(of: scene)', '      concerns = [current]')
+  .replace('else {\n          clear(); revision = UUID(); return\n        }', 'else { clear(); return }');
+assert.equal(notificationGuards, section(oldEntry, '    .onChange(of: scene)', '      concerns = [current]'), 'Protected data/session/record-change guards retained; notification read failure schedules guarded reload');
 assert.equal(section(entry, '    .task(id: revision)', '        try Task.checkCancellation()'), section(oldEntry, '    .task(id: revision)', '        let current = [concern]'), 'Reconcile, revision/cancellation and exact persisted binding retained');
 assert(entry.includes('displayedConversationID == conversationID'));
 assert(entry.includes('GalaxySSIHealthCareAgentPanel(metric: concern.metric, assessment: concern.assessment)'));
-for (const token of ['NavigationLink', 'Button', '.sheet(', 'expanded', 'setPriority', 'nextStep', 'concern.comparison']) assert(!entry.includes(token), token);
+for (const token of ['NavigationLink', '.sheet(', 'expanded', 'setPriority', 'nextStep', 'concern.comparison']) assert(!entry.includes(token), token);
+const successPanel = section(entry, '      if canRead, displayedConversationID', '      } else if canRead, failed');
+assert(!successPanel.includes('Button'));
+assert.equal((entry.match(/Button \{/g) || []).length, 1, 'Only the failure reload action remains');
+for (const token of ['agent-health-care-retry', 'Button { failed = false; revision = UUID() }',
+  'if !Task.isCancelled, revision == capturedRevision, conversationID == capturedConversation, canRead {',
+  'clear()\n          failed = true', 'concerns = []; displayedConversationID = nil; failed = false']) assert(entry.includes(token), token);
 const panel = read(app + 'GalaxySSIHealthCareAgentPanel.swift');
 for (const token of ['assessment.record != nil', 'assessment.result.trimmingCharacters', 'assessment.reference.trimmingCharacters',
   'kind != .qualitative', 'metric.title(language: language)', 'Text(value).font(.footnote.weight(.semibold)) + reference',
