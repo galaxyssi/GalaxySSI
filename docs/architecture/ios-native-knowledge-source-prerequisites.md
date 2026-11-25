@@ -1,0 +1,58 @@
+# iOS Native Knowledge Source Prerequisites
+
+Partial port of Android PR #3005, pinned to
+`5d1a668ee1288fc6ef013dc853d9758f9283ad94` (native crate 0.4.0).
+This change does NOT activate native retrieval or complete that Android PR.
+
+## Production Changes
+
+- Newly embedded chunks persist actual half-open UTF-16 source offsets. Literal,
+  forward-only source matching distinguishes repeated chunks without inventing
+  offsets from ordinals. Failed matching aborts indexing.
+- Source range validation rejects missing endpoints, invalid bounds, surrogate
+  splits, wrong document identities and changed source revisions. Offset-bearing
+  vector writes resolve the current encrypted source inside the write transaction.
+  Existing source revisions include policy metadata, not only source text.
+- Compact storage and legacy JSON continue to decode old checkpoints without
+  offsets. Such records remain usable by existing search; they are NOT suitable
+  for native provenance replay without reindexing/backfill.
+- Vector catalog traversal uses model-scoped opaque keyset cursors and indexed
+  pages of at most 256 rows. Cursor keys contain no plaintext source identifiers.
+  Individual reads re-use existing encryption and purpose authentication.
+- Existing semantic search hydrates only each page's sources and the at-most-256
+  retrieved candidates. It no longer calls the whole-source `all()` API or uses
+  OFFSET traversal. Candidate source revision/policy checks remain in place.
+
+Pages are individually consistent reads, not a corpus snapshot. Concurrent edits
+require source revalidation; a cursor does not grant source access. The current
+USearch cache STILL accumulates a whole vector catalog. Bounded page reads are
+not a bounded total-memory guarantee and are not a durable graph implementation.
+
+## Android Comparison and Remaining Work
+
+| Android #3005 area | iOS disposition |
+| --- | --- |
+| KnowledgeNativeIndex source offsets and bounded vector loading | Source provenance and bounded reads added; no native replay yet |
+| KnowledgeSemanticSearch source-policy re-resolution | Existing revalidation retained; whole-source hydration removed |
+| AgentKnowledgeDatabase native index directory | Deferred with native index ownership |
+| KnowledgeNativeBridge, KnowledgeNativeWire, JNI owner/arrays/mod | Not ported; iOS requires checked C ABI, not JNI |
+| KnowledgeNativeFiles key wrapping | Not ported; requires iOS Keychain-backed index key and protected files |
+| KnowledgeModelWork bounded durable successors | Not ported; requires iOS lifecycle/background scheduling |
+| memory-native Cargo files, lib.rs and replay format | Unchanged; native framework integration remains required |
+| Android Gradle, setup action, three workflows, build-memory-native.mjs | Android-specific build inputs untouched; iOS linking/signing still required |
+| Two Android device fixtures | Not executable on iOS; six Swift fixture methods authored, not run |
+| Three Android architecture documents / README | Reference only; no transferred Android device/performance claims |
+
+Still required before native activation: published-document bootstrap, model and
+epoch isolation, per-document chunk replay pages, transactional progress recovery,
+checked ABI ownership/cancellation, framework packaging, key lifecycle, privacy
+invalidation, query freshness fencing and lexical fallback during replay.
+No native framework, build, device, latency or scale acceptance is claimed here.
+
+## Verification Scope
+
+`node apps/ios/tools/check-knowledge-native-source-scope.cjs` checks source wiring.
+Swift grammar parsing and project structure checks are not Xcode type checking.
+XCTest fixture source covers repeated chunks, surrogate boundaries, old storage,
+transaction rejection, restart/model cursor isolation and bounded source lookup.
+Native builds, XCTest execution, CI monitoring and IPA generation were not run.

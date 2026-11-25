@@ -31,6 +31,11 @@ struct AgentKnowledgeVectorChangePage: Equatable {
   var events: [AgentKnowledgeVectorChange]
 }
 
+struct AgentKnowledgeVectorCatalogPage: Equatable {
+  var checkpoints: [AgentKnowledgeVectorCheckpoint]
+  var nextVectorKey: String?
+}
+
 struct AgentKnowledgeVectorCountSnapshot: Equatable {
   var chunks: Int64
   var pending: Int64
@@ -84,6 +89,29 @@ final class AgentKnowledgeDatabase {
       var items: [AgentKnowledgeItem] = []
       while sqlite3_step(statement) == SQLITE_ROW {
         items.append(try decode(statement, hashColumn: 0, payloadColumn: 1))
+      }
+      return items
+    }
+  }
+
+  func items(ids: [String]) throws -> [AgentKnowledgeItem] {
+    guard ids.count <= 256 else { throw AgentKnowledgeDatabaseError.unavailable }
+    return try locked {
+      guard let statement = prepare("SELECT item_hash, encrypted_payload FROM knowledge_items WHERE item_hash = ? LIMIT 1") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      defer { sqlite3_finalize(statement) }
+      var seen = Set<String>(), items: [AgentKnowledgeItem] = []
+      for id in ids where seen.insert(id).inserted {
+        sqlite3_reset(statement)
+        sqlite3_clear_bindings(statement)
+        bind(keyedHash(id), at: 1, to: statement)
+        let status = sqlite3_step(statement)
+        if status == SQLITE_DONE { continue }
+        guard status == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
+        let item = try decode(statement, hashColumn: 0, payloadColumn: 1)
+        guard item.id == id else { throw AgentKnowledgeDatabaseError.corruptRecord }
+        items.append(item)
       }
       return items
     }
@@ -171,6 +199,14 @@ final class AgentKnowledgeDatabase {
             """) else {
         _ = execute("ROLLBACK")
         return false
+      }
+      if checkpoint.sourceStartUTF16 != nil {
+        guard let current = try? items(ids: [checkpoint.itemId]).first,
+          checkpoint.validatedSourceRange(in: current) != nil else {
+          sqlite3_finalize(statement)
+          _ = execute("ROLLBACK")
+          return false
+        }
       }
       bind(vectorKey, at: 1, to: statement)
       bind(keyedHash(checkpoint.itemId), at: 2, to: statement)
@@ -487,6 +523,39 @@ final class AgentKnowledgeDatabase {
         checkpoints.append(checkpoint)
       }
       return checkpoints
+    }
+  }
+
+  func vectorCatalogPage(modelSHA256: String, afterVectorKey: String? = nil, limit: Int = 256) throws -> AgentKnowledgeVectorCatalogPage {
+    try locked {
+      if let afterVectorKey, !isOpaqueHash(afterVectorKey) { throw AgentKnowledgeDatabaseError.staleCursor }
+      let pageSize = min(max(limit, 1), 256)
+      guard let statement = prepare("""
+        SELECT vector_key, encrypted_payload FROM knowledge_vectors
+        WHERE model_hash = ? AND vector_key > ?
+        ORDER BY vector_key ASC LIMIT ?
+        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(statement) }
+      bind(keyedHash(modelSHA256.lowercased()), at: 1, to: statement)
+      bind(afterVectorKey ?? "", at: 2, to: statement)
+      sqlite3_bind_int(statement, 3, Int32(pageSize))
+      var checkpoints: [AgentKnowledgeVectorCheckpoint] = [], lastKey: String?
+      var status = sqlite3_step(statement)
+      while status == SQLITE_ROW {
+        guard let text = sqlite3_column_text(statement, 0), let encrypted = blob(statement, column: 1) else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        let key = String(cString: text)
+        guard isOpaqueHash(key), key > (lastKey ?? afterVectorKey ?? ""),
+          let plaintext = try? vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(key)),
+          let checkpoint = try? AgentKnowledgeVectorStorage.decode(plaintext) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+        checkpoints.append(checkpoint)
+        lastKey = key
+        status = sqlite3_step(statement)
+      }
+      guard status == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+      return AgentKnowledgeVectorCatalogPage(checkpoints: checkpoints,
+        nextVectorKey: checkpoints.count == pageSize ? lastKey : nil)
     }
   }
 
@@ -1184,6 +1253,7 @@ final class AgentKnowledgeDatabase {
       )
       """)
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_vector_lookup ON knowledge_vectors(item_hash, model_hash)")
+    _ = execute("CREATE INDEX IF NOT EXISTS knowledge_vector_model_key ON knowledge_vectors(model_hash, vector_key)")
     _ = execute("""
       CREATE TABLE IF NOT EXISTS knowledge_vector_feed_models (
         model_hash TEXT PRIMARY KEY NOT NULL,

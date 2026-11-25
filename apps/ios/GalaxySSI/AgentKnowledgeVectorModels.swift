@@ -23,6 +23,8 @@ struct AgentKnowledgeVectorCheckpoint: Codable, Equatable, Identifiable {
   var vector: [Float]
   var provenance: AgentKnowledgeVectorProvenance
   var updatedAtMillis: Int64
+  var sourceStartUTF16: Int? = nil
+  var sourceEndUTF16: Int? = nil
 
   var id: String { "\(itemId):\(chunkIndex):\(provenance.modelSHA256)" }
 
@@ -33,7 +35,9 @@ struct AgentKnowledgeVectorCheckpoint: Codable, Equatable, Identifiable {
     chunkCount: Int = 1,
     vector: [Float],
     provenance: AgentKnowledgeVectorProvenance,
-    updatedAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+    updatedAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000),
+    sourceStartUTF16: Int? = nil,
+    sourceEndUTF16: Int? = nil
   ) {
     self.itemId = String(itemId.prefix(160))
     self.sourceRevision = sourceRevision.lowercased()
@@ -42,13 +46,38 @@ struct AgentKnowledgeVectorCheckpoint: Codable, Equatable, Identifiable {
     self.vector = vector
     self.provenance = provenance
     self.updatedAtMillis = max(updatedAtMillis, 0)
+    self.sourceStartUTF16 = sourceStartUTF16
+    self.sourceEndUTF16 = sourceEndUTF16
   }
 
   var isValid: Bool {
-    !itemId.isEmpty && sourceRevision.count == 64 && chunkIndex < chunkCount &&
+    sourceRangeIsValid && !itemId.isEmpty && sourceRevision.count == 64 && chunkIndex < chunkCount &&
       provenance.modelSHA256.count == 64 &&
       vector.count == provenance.dimensions && vector.allSatisfy(\.isFinite) &&
       abs(vector.reduce(0.0) { $0 + Double($1) * Double($1) } - 1) < 0.01
+  }
+
+  private var sourceRangeIsValid: Bool {
+    if sourceStartUTF16 == nil && sourceEndUTF16 == nil { return true }
+    guard let start = sourceStartUTF16, let end = sourceEndUTF16 else { return false }
+    return start >= 0 && start < end
+  }
+
+  func validatedSourceRange(in item: AgentKnowledgeItem) -> Range<String.Index>? {
+    guard item.id == itemId, Self.sourceRevision(for: item) == sourceRevision,
+      let start = sourceStartUTF16, let end = sourceEndUTF16, start >= 0, start < end,
+      end <= item.content.utf16.count else { return nil }
+    if let unit = item.content.utf16.dropFirst(start).first, (0xdc00...0xdfff).contains(unit) { return nil }
+    if let unit = item.content.utf16.dropFirst(end).first, (0xdc00...0xdfff).contains(unit) { return nil }
+    return Range(NSRange(location: start, length: end - start), in: item.content)
+  }
+
+  static func locateSourceRange(chunk: String, content: String, afterUTF16: Int) -> NSRange? {
+    let count = content.utf16.count
+    guard !chunk.isEmpty, afterUTF16 >= 0, afterUTF16 <= count,
+      let searchRange = Range(NSRange(location: afterUTF16, length: count - afterUTF16), in: content),
+      let found = content.range(of: chunk, options: .literal, range: searchRange) else { return nil }
+    return NSRange(found, in: content)
   }
 
   static func sourceRevision(for item: AgentKnowledgeItem) -> String {
@@ -84,6 +113,8 @@ enum AgentKnowledgeVectorStorage {
     var vectorPayload: Data
     var provenance: AgentKnowledgeVectorProvenance
     var updatedAtMillis: Int64
+    var sourceStartUTF16: Int? = nil
+    var sourceEndUTF16: Int? = nil
   }
 
   static func encode(_ checkpoint: AgentKnowledgeVectorCheckpoint) throws -> Data {
@@ -98,7 +129,9 @@ enum AgentKnowledgeVectorStorage {
       chunkCount: checkpoint.chunkCount,
       vectorPayload: packed.payload,
       provenance: checkpoint.provenance,
-      updatedAtMillis: checkpoint.updatedAtMillis
+      updatedAtMillis: checkpoint.updatedAtMillis,
+      sourceStartUTF16: checkpoint.sourceStartUTF16,
+      sourceEndUTF16: checkpoint.sourceEndUTF16
     ))
   }
 
@@ -119,7 +152,9 @@ enum AgentKnowledgeVectorStorage {
         chunkCount: envelope.chunkCount,
         vector: vector,
         provenance: envelope.provenance,
-        updatedAtMillis: envelope.updatedAtMillis
+        updatedAtMillis: envelope.updatedAtMillis,
+        sourceStartUTF16: envelope.sourceStartUTF16,
+        sourceEndUTF16: envelope.sourceEndUTF16
       )
       guard checkpoint.isValid else { throw AgentKnowledgeVectorStorageError.invalidPayload }
       return checkpoint
@@ -318,8 +353,12 @@ final class AgentKnowledgeVectorIndexer {
         maximumTokens: provenance.contextTokens,
         tokenCount: { try await self.runtime.tokenCount($0) }
       )
+      var sourceCursor = 0
       for (index, chunk) in chunks.enumerated() {
         try Task.checkCancellation()
+        guard let offsets = AgentKnowledgeVectorCheckpoint.locateSourceRange(
+          chunk: chunk, content: item.content, afterUTF16: sourceCursor) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+        sourceCursor = offsets.location + offsets.length
         let vector = try await runtime.embed(chunk)
         let checkpoint = AgentKnowledgeVectorCheckpoint(
           itemId: item.id,
@@ -332,7 +371,9 @@ final class AgentKnowledgeVectorIndexer {
             dimensions: vector.count,
             contextTokens: provenance.contextTokens,
             chunkingContract: provenance.chunkingContract
-          )
+          ),
+          sourceStartUTF16: offsets.location,
+          sourceEndUTF16: offsets.location + offsets.length
         )
         guard database.storeVectorCheckpoint(checkpoint) else {
           throw AgentKnowledgeDatabaseError.corruptRecord

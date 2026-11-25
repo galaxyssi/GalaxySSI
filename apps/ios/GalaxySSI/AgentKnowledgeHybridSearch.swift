@@ -141,9 +141,10 @@ final class AgentKnowledgeSemanticSearch {
     guard !cache.entriesByLabel.isEmpty, vector.count == provenance.dimensions else { return [] }
     let (labels, distances) = try cache.index.search(
       vector: vector,
-      count: min(limit, cache.entriesByLabel.count)
+      count: min(limit, 256, cache.entriesByLabel.count)
     )
-    let currentItems = try database.all()
+    let candidateIds = Array(Set(labels.compactMap { cache.entriesByLabel[$0]?.item.id }))
+    let currentItems = try database.items(ids: candidateIds)
     let currentById = Dictionary(uniqueKeysWithValues: currentItems.map { ($0.id, $0) })
     return zip(labels, distances).compactMap { label, distance in
       guard let entry = cache.entriesByLabel[label],
@@ -189,17 +190,17 @@ final class AgentKnowledgeSemanticSearch {
   }
 
   private func loadCatalog() throws -> [IndexedEntry] {
-    let items = try database.all()
-    let itemsById = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
-    var offset = 0
+    var cursor: String?
     var output: [IndexedEntry] = []
     while true {
-      let page = try database.vectorCatalog(
+      let page = try database.vectorCatalogPage(
         modelSHA256: provenance.modelSHA256,
-        offset: offset,
+        afterVectorKey: cursor,
         limit: 256
       )
-      for checkpoint in page {
+      let ids = Array(Set(page.checkpoints.map(\.itemId)))
+      let itemsById = Dictionary(uniqueKeysWithValues: try database.items(ids: ids).map { ($0.id, $0) })
+      for checkpoint in page.checkpoints {
         guard checkpoint.provenance == provenance,
               let item = itemsById[checkpoint.itemId],
               AgentKnowledgeVectorCheckpoint.sourceRevision(for: item) == checkpoint.sourceRevision else {
@@ -207,8 +208,8 @@ final class AgentKnowledgeSemanticSearch {
         }
         output.append(IndexedEntry(checkpoint: checkpoint, item: item))
       }
-      if page.count < 256 { break }
-      offset += page.count
+      guard let next = page.nextVectorKey else { break }
+      cursor = next
     }
     return output
   }
