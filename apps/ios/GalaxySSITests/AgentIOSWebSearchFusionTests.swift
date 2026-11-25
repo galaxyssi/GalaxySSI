@@ -92,7 +92,7 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
     XCTAssertEqual(transport.requests.count, 1)
   }
 
-  func testCachedPublicationIsPreservedButQueryDependentScoreIsNotInvented() throws {
+  func testCachedPublicationIsPreservedInDocumentButNotReusedForAnotherSearch() throws {
     let transport = TextFusionTransport()
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("fusion-cache-\(UUID()).json")
     defer { try? FileManager.default.removeItem(at: file) }
@@ -107,16 +107,175 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
       input: ["query": .string("alpha"), "use_cache": .bool(true), "limit": .int(1)], context: context(cache: true),
       hooks: .init(nowMillis: { self.now }))
     XCTAssertTrue(result.isSuccess, result.error?.message ?? "")
-    XCTAssertTrue(transport.requests.isEmpty)
+    XCTAssertFalse(transport.requests.isEmpty)
     let row = try XCTUnwrap(result.output["results"]?.arrayValue?.first?.objectValue)
-    XCTAssertEqual(row["published_at"], .string("2025-01-01T00:00:00Z"))
-    XCTAssertNil(row["score"])
-    XCTAssertEqual(result.metadata["network_attempted"], .bool(false))
+    XCTAssertNotEqual(row["url"], .string("https://source.test/alpha"))
+    XCTAssertNil(row["published_at"])
+    XCTAssertNotNil(row["score"])
+    XCTAssertEqual(cache.document(url: "https://source.test/alpha")?.metadata["published_at"], "2025-01-01T00:00:00Z")
+    XCTAssertEqual(result.metadata["network_attempted"], .bool(true))
   }
 
-  private func makeRegistry(transport: TextFusionTransport, cache: AgentIOSWebIntelligenceCacheStore) throws -> AgentNativeToolRegistry {
+  func testExactResponseCachePreservesScoresAndReceiptsWithoutAnotherRequest() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("exact-response-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = InMemorySecretStore()
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: secrets, nowMillis: { self.now })
+    let transport = TextFusionTransport()
+    let registry = try makeRegistry(transport: transport, cache: cache)
+    let input: AgentMcpJSONObject = ["query": .string("alpha"), "engines": .array([.string("github")]), "limit": .int(1)]
+    let first = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search, input: input,
+      context: context(cache: true), hooks: .init(nowMillis: { self.now }))
+    let second = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search, input: input,
+      context: context(cache: true), hooks: .init(nowMillis: { self.now }))
+    XCTAssertTrue(first.isSuccess)
+    XCTAssertTrue(second.isSuccess)
+    XCTAssertEqual(transport.requests.count, 1)
+    XCTAssertEqual(second.metadata["cache_hit"], .bool(true))
+    XCTAssertEqual(second.metadata["network_attempted"], .bool(false))
+    XCTAssertEqual(second.metadata["response_cache_original_receipts"], .bool(true))
+    XCTAssertEqual(second.output["results"], first.output["results"])
+    XCTAssertEqual(second.output["source_receipts"], first.output["source_receipts"])
+    XCTAssertFalse(String(decoding: try Data(contentsOf: file), as: UTF8.self).contains("fixture/alpha"))
+    XCTAssertEqual(AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: secrets,
+      nowMillis: { self.now }).stats()["search_count"], .int(1))
+  }
+
+  func testExactSearchIdentitySeparatesQueryProfileFanoutAndTopics() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("identity-response-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { self.now })
+    let transport = TextFusionTransport(), registry = try makeRegistry(transport: transport, cache: cache)
+    let base: AgentMcpJSONObject = ["query": .string("alpha"), "engines": .array([.string("github")]), "limit": .int(1)]
+    let variations: [AgentMcpJSONObject] = [[:], ["query": .string("beta")], ["limit": .int(2)],
+      ["profile": .string("fast")], ["engine_fanout": .int(2)], ["categories": .array([.string("code")])],
+      ["verticals": .array([.string("code")])]]
+    for changes in variations {
+      let before = transport.requests.count
+      let result = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
+        input: base.merging(changes) { _, next in next }, context: context(cache: true), hooks: .init(nowMillis: { self.now }))
+      XCTAssertTrue(result.isSuccess, result.error?.message ?? "")
+      XCTAssertEqual(transport.requests.count, before + 1)
+      XCTAssertEqual(result.metadata["cache_hit"], .bool(false))
+    }
+    let invalidImage = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
+      input: base.merging(["verticals": .array([.string("image")])]) { _, next in next },
+      context: context(cache: true), hooks: .init(nowMillis: { self.now }))
+    XCTAssertFalse(invalidImage.isSuccess)
+  }
+
+  func testForcedRefreshUnconsentedSearchAndCredentialRotationDoNotHitOldResponse() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("fresh-response-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { self.now })
+    let credentials = InMemorySecretStore(), transport = TextFusionTransport()
+    let registry = try makeRegistry(transport: transport, cache: cache, credentials: credentials)
+    let input: AgentMcpJSONObject = ["query": .string("alpha"), "engines": .array([.string("github")]), "limit": .int(1)]
+    _ = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search, input: input,
+      context: context(cache: true), hooks: .init(nowMillis: { self.now }))
+    let refresh = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
+      input: input.merging(["use_cache": .bool(false)]) { _, next in next },
+      context: context(cache: true), hooks: .init(nowMillis: { self.now }))
+    XCTAssertEqual(refresh.metadata["cache_hit"], .bool(false))
+    let unscoped = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search, input: input,
+      context: context(), hooks: .init(nowMillis: { self.now }))
+    XCTAssertEqual(unscoped.metadata["cache_hit"], .bool(false))
+    XCTAssertNil(unscoped.output["cache"]?.objectValue?["search_count"])
+    try credentials.setString("changed-fixture-token", account: AgentIOSWebIntelligenceCredentialKey.githubToken.account)
+    _ = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search, input: input,
+      context: context(cache: true), hooks: .init(nowMillis: { self.now }))
+    XCTAssertEqual(transport.requests.count, 4)
+    XCTAssertEqual(cache.stats()["search_count"], .int(2))
+  }
+
+  func testSearchResponseExpiryAndClearInvalidateInFlightGeneration() throws {
+    var clock: Int64 = 1_000
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("expiry-response-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { clock })
+    let key = String(repeating: "a", count: 64), response = cachedFixture()
+    XCTAssertTrue(cache.putSearchResponse(key: key, result: response, ttlMillis: 60_000))
+    XCTAssertNotNil(cache.searchResponse(key: key))
+    clock = 61_000
+    XCTAssertNil(cache.searchResponse(key: key))
+    XCTAssertEqual(cache.clear(expiredOnly: true)["searches_removed"], .int(1))
+    let generation = cache.searchCacheGeneration()
+    XCTAssertEqual(cache.clear(expiredOnly: false)["committed"], .bool(true))
+    XCTAssertFalse(cache.putSearchResponse(key: key, result: response, ttlMillis: 60_000, expectedGeneration: generation))
+    XCTAssertNil(cache.searchResponse(key: key))
+  }
+
+  func testSearchResponseBoundsRejectEmptyFailedAndOversizedEntries() throws {
+    var clock: Int64 = 1_000
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("bounds-response-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { clock })
+    for index in 0..<33 {
+      clock += 1
+      let key = String(repeating: "a", count: 62) + String(format: "%02x", index)
+      XCTAssertTrue(cache.putSearchResponse(key: key, result: cachedFixture(), ttlMillis: 60_000))
+    }
+    XCTAssertEqual(cache.stats()["search_count"], .int(32))
+    XCTAssertNil(cache.searchResponse(key: String(repeating: "a", count: 62) + "00"))
+    let key = String(repeating: "b", count: 64)
+    XCTAssertFalse(cache.putSearchResponse(key: key, result: .failure(code: "failed", message: "fixture"), ttlMillis: 60_000))
+    XCTAssertFalse(cache.putSearchResponse(key: key, result: .success(), ttlMillis: 60_000))
+    var oversized = cachedFixture()
+    oversized.output["padding"] = .string(String(repeating: "x", count: 262_145))
+    XCTAssertFalse(cache.putSearchResponse(key: key, result: oversized, ttlMillis: 60_000))
+  }
+
+  func testSearchResponseFailedWriteAndCorruptReadDoNotErasePriorData() throws {
+    var reject = false
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("failure-response-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { 1_000 },
+      writeFile: { data, url in
+        if reject { throw CocoaError(.fileWriteOutOfSpace) }
+        try data.write(to: url, options: .atomic)
+      })
+    let key = String(repeating: "a", count: 64)
+    XCTAssertTrue(cache.putSearchResponse(key: key, result: cachedFixture(), ttlMillis: 60_000))
+    let original = try Data(contentsOf: file)
+    reject = true
+    XCTAssertFalse(cache.putSearchResponse(key: String(repeating: "b", count: 64), result: cachedFixture(), ttlMillis: 60_000))
+    XCTAssertEqual(try Data(contentsOf: file), original)
+    XCTAssertNotNil(cache.searchResponse(key: key))
+    let corrupt = Data("not-an-envelope".utf8)
+    try corrupt.write(to: file)
+    reject = false
+    XCTAssertNil(cache.searchResponse(key: key))
+    XCTAssertFalse(cache.putSearchResponse(key: key, result: cachedFixture(), ttlMillis: 60_000))
+    XCTAssertEqual(try Data(contentsOf: file), corrupt)
+  }
+
+  func testLegacySnapshotWithoutSearchResponsesRemainsReadableAndRetained() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-response-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let secrets = InMemorySecretStore(), key = SymmetricKey(size: .bits256)
+    try secrets.setString(key.withUnsafeBytes { Data($0) }.base64EncodedString(), account: AgentIOSWebIntelligenceCacheStore.keyAccount)
+    let sealed = try AES.GCM.seal(Data(#"{"version":1,"documents":[],"watches":[]}"#.utf8), using: key)
+    let envelope: [String: Any] = ["version": 1, "nonce": sealed.nonce.withUnsafeBytes { Data($0) }.base64EncodedString(),
+      "ciphertext": sealed.ciphertext.base64EncodedString(), "tag": sealed.tag.base64EncodedString()]
+    try JSONSerialization.data(withJSONObject: envelope).write(to: file)
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: secrets, nowMillis: { 1_000 })
+    XCTAssertEqual(cache.stats()["available"], .bool(true))
+    XCTAssertEqual(cache.stats()["search_count"], .int(0))
+    let id = String(repeating: "a", count: 64)
+    XCTAssertTrue(cache.putSearchResponse(key: id, result: cachedFixture(), ttlMillis: 60_000))
+    XCTAssertEqual(cache.searchResponse(key: id), cachedFixture())
+  }
+
+  private func cachedFixture() -> AgentNativeToolExecutionResult {
+    .success(output: ["results": .array([.object(["url": .string("https://source.test/a"),
+      "images": .array([.object(["url": .string("https://media.test/a.jpg")])]),
+      "score": .object(["final": .double(0.75)])])])])
+  }
+
+  private func makeRegistry(transport: TextFusionTransport, cache: AgentIOSWebIntelligenceCacheStore,
+    credentials: GalaxySSISecretStore = InMemorySecretStore()) throws -> AgentNativeToolRegistry {
     let media = AgentIOSURLSessionWebMediaToolProvider(transport: transport, sourceHealthStore: nil,
-      imageCredentials: .init(secrets: InMemorySecretStore()), nowMillis: { self.now })
+      imageCredentials: .init(secrets: credentials), nowMillis: { self.now })
     let provider = AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: media, cacheStore: cache, nowMillis: { self.now })
     return try AgentNativeToolRegistry().registerExecutables(AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider))
   }
@@ -134,6 +293,11 @@ private final class TextFusionTransport: AgentIOSURLSessionWebTransporting {
   var requests: [AgentIOSURLSessionWebRequest] { lock.lock(); defer { lock.unlock() }; return saved }
   func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
     lock.lock(); saved.append(request); lock.unlock()
+    if request.url.host == "api2.marginalia-search.com" {
+      return .init(statusCode: 200, finalURL: request.url, headers: ["content-type": "application/json"],
+        body: Data(#"{"results":[{"title":"alpha","url":"https://fresh.example/alpha","description":"alpha source excerpt"}]}"#.utf8),
+        retrievedAtEpochMillis: 1_800_000_000_000)
+    }
     let json = #"{"items":[{"full_name":"noise unrelated","html_url":"https://github.com/fixture/noise"},{"full_name":"alpha repo","html_url":"https://github.com/fixture/alpha","updated_at":"2026-01-01T00:00:00Z","description":"alpha"}]}"#
     return .init(statusCode: 200, finalURL: request.url, headers: ["content-type": "application/json"],
       body: Data(json.utf8), retrievedAtEpochMillis: 1_800_000_000_000)

@@ -4,7 +4,10 @@ const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '964a57a7139f410391ed38a0a0fe4cb8f326278c', android = '65655f0c79c6ab04121150229a65b089180f82f2';
 const normalize = value => value.replace(/\r\n/g, '\n');
-const read = file => normalize(fs.readFileSync(path.join(root, file), 'utf8'));
+const read = file => {
+  const hooks = require('./check-search-response-cache-scope.cjs');
+  return hooks.retainedResponseCache(hooks.retainedResponseSearch(normalize(fs.readFileSync(path.join(root, file), 'utf8'))));
+};
 const show = (ref, file) => normalize(cp.execFileSync('git', ['show', ref + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 8_000_000}));
 function retainedAdditionalProvider(source) {
   if (source.includes('merged = AgentIOSWebSearchFusion.fuse')) {

@@ -381,23 +381,44 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       return failure(imageSearch ? "unsupported_image_engine" : "unsupported_search_engine",
         "The requested search engine is unavailable on iOS; no alternative was substituted")
     }
-    // Text cache entries lack image, topic and explicit search-engine provenance.
-    let useCache = (input["use_cache"]?.boolValue ?? false) && !imageSearch && requestedEngines.isEmpty &&
-      requestedCategories.isEmpty && requestedVerticals.isEmpty
-    let cachedDocuments = useCache
-      ? cacheStore.search(query: query, limit: limit, allowStale: false)
-      : []
-    let cachedResults = cachedSearchResults(cachedDocuments, limit: limit)
-    if cachedResults.count >= limit {
-      return searchSuccess(
-        operation: operation,
-        query: query,
-        invocation: invocation,
-        results: cachedResults,
-        webResult: nil,
-        cacheHit: true,
-        networkAttempted: false
-      )
+    let cacheScope = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission) &&
+      invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent)
+    let credentialScope = cacheScope ? (webMediaProvider as? AgentIOSURLSessionWebMediaToolProvider).map {
+      AgentMcpJSONCodec.sha256([
+        "github": .string($0.imageCredentials.credential(.githubToken)),
+        "brave": .string($0.imageCredentials.credential(.braveAPIKey))
+      ])
+    } ?? "" : ""
+    let cacheKey = AgentMcpJSONCodec.sha256([
+      "query": .string(query), "limit": .int(Int64(limit)),
+      "fanout": .int(min(max(input["engine_fanout"]?.intValue ?? Int64(profile.fanout), 1), 32)),
+      "profile": .string(profile.rawValue),
+      "engines": .array(requestedEngines.map(AgentMcpJSONValue.string)),
+      "verticals": .array(Set(requestedVerticals).sorted().map(AgentMcpJSONValue.string)),
+      "categories": .array(Set(requestedCategories.compactMap(AgentIOSWebResearchPlanCodec.normalizedCategory)).sorted().map(AgentMcpJSONValue.string)),
+      "model": .string(AgentIOSWebSearchFusion.modelID),
+      "url_normalization": .string("ios_canonical_evidence_v1"),
+      "image_routing": .string("direct_media_subject_v2"),
+      "web_routing": .string("language_scoped_result_cards_v5"),
+      "provider": .string(webMediaProvider.implementationId),
+      "credential_scope": .string(credentialScope)
+    ])
+    let cacheGeneration = cacheScope ? cacheStore.searchCacheGeneration() : nil
+    if cacheScope, input["use_cache"]?.boolValue ?? true, !invocation.isCancellationRequested,
+      let cached = cacheStore.searchResponse(key: cacheKey) {
+      var response = cached
+      response.output["request_id"] = .string(requestId(invocation, operation: operation))
+      var cache = response.output["cache"]?.objectValue ?? [:]
+      cache["hit"] = .bool(true)
+      cache["network_attempted"] = .bool(false)
+      cache["read_at_millis"] = .int(nowMillis())
+      cache.removeValue(forKey: "write_committed")
+      response.output["cache"] = .object(cache)
+      response.metadata["cache_hit"] = .bool(true)
+      response.metadata["network_attempted"] = .bool(false)
+      response.metadata["cache_fallback"] = .bool(false)
+      response.metadata["response_cache_original_receipts"] = .bool(true)
+      return response
     }
     var webSearchInput: AgentMcpJSONObject = [
       "query": .string(query),
@@ -420,25 +441,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       invocation: invocation
     )
     let networkAttempted = !(searchProvider is AgentIOSURLSessionWebMediaToolProvider && webResult.metadata["local_index_only"] == .bool(true))
-    guard webResult.isSuccess else {
-      guard !cachedResults.isEmpty else { return webResult }
-      return searchSuccess(
-        operation: operation,
-        query: query,
-        invocation: invocation,
-        results: cachedResults,
-        webResult: webResult,
-        cacheHit: true,
-        networkAttempted: networkAttempted
-      )
-    }
-
-    let networkResults = searchResults(webResult.output["results"]?.arrayValue ?? [], limit: limit)
+    guard webResult.isSuccess else { return webResult }
     let resultObjects = reindexSearchResults(
-      mergeSearchResults(cachedResults, networkResults),
-      limit: limit
-    )
-    let cacheCommitted = useCache ? cacheSearchResults(networkResults, input: input) : nil
+      searchResults(webResult.output["results"]?.arrayValue ?? [], limit: limit), limit: limit)
     let learning: AgentMcpJSONObject
     if invocation.isCancellationRequested {
       learning = ["status": .string("skipped_cancelled")]
@@ -460,13 +465,17 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       invocation: invocation,
       results: resultObjects,
       webResult: webResult,
-      cacheHit: !cachedResults.isEmpty,
+      cacheHit: false,
       networkAttempted: networkAttempted
     )
     response.output["learning"] = .object(learning)
-    if let cacheCommitted {
+    if cacheScope, !invocation.isCancellationRequested, !resultObjects.isEmpty {
+      let ttl = min(max(input["cache_ttl_ms"]?.intValue ?? 6 * 60 * 60_000, 60_000),
+        AgentIOSWebIntelligenceNativeToolCatalog.maxCacheTtlMillis)
+      let committed = cacheStore.putSearchResponse(key: cacheKey, result: response, ttlMillis: ttl,
+        expectedGeneration: cacheGeneration)
       var cache = response.output["cache"]?.objectValue ?? [:]
-      cache["write_committed"] = .bool(cacheCommitted)
+      cache["write_committed"] = .bool(committed)
       response.output["cache"] = .object(cache)
     }
     return response
@@ -495,7 +504,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["results"] = .array(resultObjects.map { .object($0.result) })
     output["evidence"] = .array(resultObjects.map { .object($0.evidence) })
     output["source_receipts"] = .array(receipts.map { .object($0) })
-    output["cache"] = .object(cacheStore.stats().merging([
+    let canReadCache = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission) &&
+      invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent)
+    output["cache"] = .object((canReadCache ? cacheStore.stats() : [:]).merging([
       "hit": .bool(cacheHit),
       "network_attempted": .bool(networkAttempted)
     ]) { _, next in next })
@@ -513,48 +524,6 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     )
   }
 
-  private func cachedSearchResults(
-    _ documents: [AgentIOSWebIntelligenceCacheDocument],
-    limit: Int
-  ) -> [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)] {
-    documents.lazy.filter { AgentIOSWebTextDecoder.reusable(content: $0.content, metadata: $0.metadata) }
-      .prefix(limit).enumerated().map { index, document in
-      let rank = index + 1
-      let receipt = cachedSourceReceipt(document, rank: rank)
-      var result: AgentMcpJSONObject = [
-        "rank": .int(Int64(rank)),
-        "title": .string(document.title),
-        "url": .string(document.url)
-      ]
-      var evidence: AgentMcpJSONObject = [
-        "id": .string(evidenceId(url: document.url, rank: rank)),
-        "rank": .int(Int64(rank)),
-        "title": .string(document.title),
-        "url": .string(document.url),
-        "snippet": .string(String(document.content.prefix(1_024))),
-        "trust": .string("untrusted_public_web"),
-        "source_receipt": .object(receipt)
-      ]
-      if let published = document.metadata["published_at"], !published.isBlank {
-        result["published_at"] = .string(String(published.prefix(64)))
-        evidence["published_at"] = result["published_at"]
-      }
-      return (result: result, evidence: evidence)
-    }
-  }
-
-  private func mergeSearchResults(
-    _ cached: [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)],
-    _ network: [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)]
-  ) -> [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)] {
-    var seen = Set<String>()
-    return (cached + network).filter { item in
-      let identity = item.result["lead_image_url"]?.stringValue ?? item.result["url"]?.stringValue ?? ""
-      let url = canonicalURL(identity)
-      return !url.isEmpty && seen.insert(url).inserted
-    }
-  }
-
   private func reindexSearchResults(
     _ values: [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)],
     limit: Int
@@ -568,45 +537,6 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       evidence["id"] = .string(evidenceId(url: result["url"]?.stringValue ?? "", rank: rank))
       return (result: result, evidence: evidence)
     }
-  }
-
-  private func cacheSearchResults(
-    _ results: [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)],
-    input: AgentMcpJSONObject
-  ) -> Bool {
-    let retrievedAt = nowMillis()
-    let ttl = max(
-      60_000,
-      min(
-        input["cache_ttl_ms"]?.intValue ?? 30 * 60_000,
-        AgentIOSWebIntelligenceNativeToolCatalog.maxCacheTtlMillis
-      )
-    )
-    let documents = results.compactMap { item -> AgentIOSWebIntelligenceCacheDocument? in
-      let url = item.result["url"]?.stringValue ?? ""
-      guard !url.isEmpty else { return nil }
-      let title = item.result["title"]?.stringValue ?? ""
-      let snippet = item.evidence["snippet"]?.stringValue ?? ""
-      var documentMetadata = ["source": "web_search"]
-      if let published = item.result["published_at"]?.stringValue, !published.isBlank {
-        documentMetadata["published_at"] = String(published.prefix(64))
-      }
-      return AgentIOSWebIntelligenceCacheDocument(
-        url: url,
-        title: title,
-        content: snippet,
-        contentType: "text/x-galaxyssi-search-result",
-        contentSHA256: AgentMcpJSONCodec.sha256([
-          "url": .string(url),
-          "title": .string(title),
-          "snippet": .string(snippet)
-        ]),
-        retrievedAtMillis: retrievedAt,
-        expiresAtMillis: retrievedAt + ttl,
-        links: [], metadata: documentMetadata
-      )
-    }
-    return cacheStore.putDocuments(documents)
   }
 
   func fetchCapturingHTML(

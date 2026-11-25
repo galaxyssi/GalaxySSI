@@ -65,6 +65,7 @@ final class AgentIOSWebIntelligenceCacheStore {
     var watches: [AgentIOSWebIntelligenceCacheWatch] = []
     var learnedSources: [AgentIOSLearnedWebSource]? = nil
     var sourceHealth: [AgentIOSWebSourceHealth]? = nil
+    var searchResponses: [SearchResponse]? = nil
   }
 
   private struct EncryptedEnvelope: Codable {
@@ -72,6 +73,61 @@ final class AgentIOSWebIntelligenceCacheStore {
     var nonce: String
     var ciphertext: String
     var tag: String
+  }
+
+  private struct SearchResponse: Codable {
+    var key: String
+    var storedAtMillis: Int64
+    var expiresAtMillis: Int64
+    var result: AgentNativeToolExecutionResult
+
+    var isValid: Bool {
+      key.count == 64 && key.allSatisfy { "0123456789abcdef".contains($0) } &&
+        storedAtMillis >= 0 && expiresAtMillis > storedAtMillis &&
+        expiresAtMillis - storedAtMillis <= 30 * 24 * 60 * 60_000 && result.isSuccess &&
+        !(result.output["results"]?.arrayValue ?? []).isEmpty &&
+        (result.output["results"]?.arrayValue?.count ?? 0) <= 24 &&
+        (try? JSONEncoder().encode(self).count).map { $0 <= 262_144 } == true
+    }
+  }
+
+  static let maxSearchResponses = 32
+
+  func searchResponse(key: String) -> AgentNativeToolExecutionResult? {
+    lock.lock()
+    defer { lock.unlock() }
+    let now = nowMillis()
+    return readUnlocked()?.searchResponses?.first {
+      $0.key == key && $0.storedAtMillis <= now && now < $0.expiresAtMillis
+    }?.result
+  }
+
+  func searchCacheGeneration() -> UUID {
+    lock.lock()
+    defer { lock.unlock() }
+    return state.generation
+  }
+
+  @discardableResult
+  func putSearchResponse(key: String, result: AgentNativeToolExecutionResult, ttlMillis: Int64,
+    expectedGeneration: UUID? = nil) -> Bool {
+    let now = max(0, nowMillis())
+    let ttl = min(max(ttlMillis, 60_000), 30 * 24 * 60 * 60_000)
+    guard now <= Int64.max - ttl else { return false }
+    let entry = SearchResponse(key: key, storedAtMillis: now, expiresAtMillis: now + ttl, result: result)
+    guard entry.isValid else { return false }
+    lock.lock()
+    defer { lock.unlock() }
+    guard expectedGeneration == nil || expectedGeneration == state.generation,
+      var snapshot = readUnlocked() else { return false }
+    do {
+      var responses = (snapshot.searchResponses ?? []).filter { $0.key != key && $0.expiresAtMillis > now }
+      responses.append(entry)
+      snapshot.searchResponses = Array(responses.sorted {
+        $0.storedAtMillis == $1.storedAtMillis ? $0.key < $1.key : $0.storedAtMillis > $1.storedAtMillis
+      }.prefix(Self.maxSearchResponses))
+    }
+    return writeUnlocked(snapshot)
   }
 
   static let maxDocuments = 64
@@ -251,6 +307,7 @@ final class AgentIOSWebIntelligenceCacheStore {
       "source_circuits_open": .int(Int64(snapshot.sourceHealth?.filter { $0.circuitState(now: now) == "open" }.count ?? 0)),
       "cache_version": .int(Int64(snapshot.version)),
       "entry_count": .int(Int64(snapshot.documents.count)),
+      "search_count": .int(Int64(snapshot.searchResponses?.count ?? 0)),
       "content_chars": .int(snapshot.documents.reduce(0) { $0 + Int64($1.content.count) }),
       "expired_count": .int(Int64(snapshot.documents.filter { $0.expiresAtMillis < now }.count)),
       "watch_count": .int(Int64(snapshot.watches.count)),
@@ -261,6 +318,7 @@ final class AgentIOSWebIntelligenceCacheStore {
   func clear(expiredOnly: Bool) -> AgentMcpJSONObject {
     var removed = 0
     var learnedRemoved = 0
+    var searchesRemoved = 0
     let now = nowMillis()
     lock.lock()
     let committed: Bool
@@ -274,6 +332,13 @@ final class AgentIOSWebIntelligenceCacheStore {
         learnedRemoved = snapshot.learnedSources?.count ?? 0
         snapshot.learnedSources = []
       }
+      let searchesBefore = snapshot.searchResponses?.count ?? 0
+      if expiredOnly {
+        snapshot.searchResponses?.removeAll { $0.expiresAtMillis <= now }
+      } else {
+        snapshot.searchResponses = []
+      }
+      searchesRemoved = searchesBefore - (snapshot.searchResponses?.count ?? 0)
       removed = before - snapshot.documents.count
       committed = writeUnlocked(snapshot)
       if !expiredOnly { state.lastLearningStatus = committed ? "cleared" : "failed_write" }
@@ -285,7 +350,8 @@ final class AgentIOSWebIntelligenceCacheStore {
       NotificationCenter.default.post(name: .galaxySSIWebLearningDidChange, object: self)
     }
     return ["documents_removed": .int(Int64(committed ? removed : 0)), "committed": .bool(committed),
-      "learned_sources_removed": .int(Int64(committed ? learnedRemoved : 0))]
+      "learned_sources_removed": .int(Int64(committed ? learnedRemoved : 0)),
+      "searches_removed": .int(Int64(committed ? searchesRemoved : 0))]
   }
 
   func learnedSources() -> [AgentIOSLearnedWebSource]? {
@@ -446,6 +512,9 @@ final class AgentIOSWebIntelligenceCacheStore {
           Set((snapshot.learnedSources ?? []).map(\.sourceID)).count == (snapshot.learnedSources?.count ?? 0),
           (snapshot.sourceHealth?.count ?? 0) <= AgentIOSWebSourceHealth.maximumSources,
           (snapshot.sourceHealth ?? []).allSatisfy(\.isValid),
+          (snapshot.searchResponses?.count ?? 0) <= Self.maxSearchResponses,
+          (snapshot.searchResponses ?? []).allSatisfy(\.isValid),
+          Set((snapshot.searchResponses ?? []).map(\.key)).count == (snapshot.searchResponses?.count ?? 0),
           Set((snapshot.sourceHealth ?? []).map(\.sourceID)).count == (snapshot.sourceHealth?.count ?? 0) else {
       return nil
     }

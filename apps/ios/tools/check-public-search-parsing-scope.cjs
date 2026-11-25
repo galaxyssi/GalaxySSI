@@ -14,7 +14,8 @@ for (const token of ['import SwiftSoup', 'SwiftSoup.parse(source, baseURL)',
   'components.user == nil, components.password == nil', 'final.fragment = nil',
   'query.first(where: { $0.name == key })', 'seenSnippets.insert(text)']) assert(parser.includes(token), token);
 assert(!parser.includes('WKWebView'));
-const provider = require('./check-image-source-adapters-scope.cjs').retainedProvider(read(swift('AgentIOSURLSessionWebMediaProvider')));
+const provider = require('./check-image-source-adapters-scope.cjs').retainedProvider(
+  require('./check-json-search-adapters-scope.cjs').retainedJSONProvider(read(swift('AgentIOSURLSessionWebMediaProvider'))));
 assert(provider.includes('results = try parseSearchResults('));
 assert(provider.includes('baseURL: resource.finalURL'));
 assert(provider.includes('AgentIOSPublicSearchParser.parse(html, baseURL: baseURL, limit: 100).filter'));
@@ -29,8 +30,8 @@ for (const token of ['if endpoint.imageSearch {', 'results = try AgentIOSPublicS
 for (const token of ['JSONSerialization.jsonObject', 'rows.prefix(100)', 'seen.insert(image)',
   'imageSearchURL(row["oriPicUrl"]) ?? imageSearchURL(row["picUrl"])',
   '"retrieval_status": .string("search_result_not_downloaded")', 'media["original_url"] = .string(original)']) assert(parser.includes(token));
-const intelligence = read(swift('AgentIOSURLSessionWebIntelligenceProvider'));
-const cacheStore = read(swift('AgentIOSWebIntelligenceCache'));
+const intelligence = require('./check-search-response-cache-scope.cjs').retainedResponseSearch(read(swift('AgentIOSURLSessionWebIntelligenceProvider')));
+const cacheStore = require('./check-search-response-cache-scope.cjs').retainedResponseCache(read(swift('AgentIOSWebIntelligenceCache')));
 const oldCacheStore = git('show', base + ':' + swift('AgentIOSWebIntelligenceCache'));
 assert.equal(cacheStore.slice(0, cacheStore.indexOf('final class AgentIOSWebIntelligenceCacheStore')),
   oldCacheStore.slice(0, oldCacheStore.indexOf('final class AgentIOSWebIntelligenceCacheStore')),
@@ -63,7 +64,7 @@ const learning = read(swift('AgentIOSWebSourceLearning'));
 for (const token of ['results.prefix(20)', 'static let maximumSources = 512', 'queries.count >= (broad ? 3 : 2)',
   'count >= (broad ? 4 : 3)', 'previous?.status == "disabled"', 'sorted(by: >).prefix(16)',
   'queue.maxConcurrentOperationCount = 1', 'queue.operationCount < 17', 'queue.addOperation(task)',
-  'repeated_discovery_not_content_or_permission_verification', 'builtInHosts.contains(where:',
+  'repeated_discovery_not_content_or_permission_verification', 'builtInHosts.contains { host == $0 || host.hasSuffix("." + $0) }',
   'compactMap(AgentIOSWebResearchPlanCodec.normalizedCategory)',
   'AgentIOSWebResearchPlanCodec.normalizedCategory(tag) == tag']) assert(learning.includes(token), token);
 for (const token of ['let generation = state.generation', 'state.generation = UUID()',
@@ -121,17 +122,17 @@ for (const name of ['testSourceHealthBackoffEmptyCancellationAndOverflowRules',
   'testActualNativeSearchUsesScopedHealthAndCacheHealthTools',
   'testSearchWithoutCacheScopeOrWithFailedHealthWriteRetainsNetworkEvidence',
   'testAllOpenSearchCircuitsSkipTransportWithoutInventingAttempts']) assert(cacheTests.includes('func ' + name + '('));
-for (const token of ['var isSearchEligible: Bool', 'isValid && status == "verified" && vertical != "image"',
+for (const token of ['var isSearchEligible: Bool', 'isValid && !AgentIOSWebSourceLearningPolicy.isBuiltInHost(host) && status == "verified" && vertical != "image"',
   'observations >= (broad ? 4 : 3) && queryFingerprints.count >= (broad ? 3 : 2)',
   'authority: min(max(confidence, 0.55), 0.85)', 'index % 2 == 0 ? "duckduckgo" : "bing"',
   '"search_available": .bool(isSearchEligible)']) assert(learning.includes(token), token);
 for (const token of ['learnedSources.filter(\\.isSearchEligible)', 'requestedCategories.compactMap(',
-  '!categories.isDisjoint(with: $0.categoryTags)', 'let catalog = AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources + learned']) assert(learningCatalog.includes(token), token);
+  '!categories.isDisjoint(with: $0.categoryTags)', 'let catalog = orderedTextSources + learned']) assert(learningCatalog.includes(token), token);
 for (const token of ['sourceHealthStore: AgentIOSWebIntelligenceCacheStore? = .shared',
   'AgentIOSWebSearchEnginePolicy.canResolve(requestedEngines)',
   'AgentIOSWebSearchEnginePolicy.accepts(requestedEngines, learnedSources: learned)',
   'learnedSources: imageSearch ? [] : learned', 'source.indexEngine == "duckduckgo" ? "html.duckduckgo.com" : "www.bing.com"',
-  'URLQueryItem(name: "q", value: "site:\\(host) \\(query)")',
+  'URLQueryItem(name: "q", value: "site:\\(source.scope ?? host) \\(query)")',
   'return requestedEngineIds.compactMap { seen.insert($0).inserted ? byID[$0] : nil }',
   'output["learning"] = .object(healthStore.learnSourceCandidates(', '"selected_learned_sources"']) assert(provider.includes(token), token);
 assert(!provider.includes('return Array(endpoints.prefix('), 'Candidate pool is not truncated before health filtering/fanout');

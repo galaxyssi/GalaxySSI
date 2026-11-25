@@ -5,7 +5,10 @@ const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = 'fb9dda39ef15f411297ec9500c61870f8a03810c';
 const android = '65655f0c79c6ab04121150229a65b089180f82f2';
 const normalize = value => value.replace(/\r\n/g, '\n');
-const read = file => normalize(fs.readFileSync(path.join(root, file), 'utf8'));
+const read = file => {
+  const hooks = require('./check-search-response-cache-scope.cjs');
+  return hooks.retainedResponseCache(hooks.retainedResponseSearch(normalize(fs.readFileSync(path.join(root, file), 'utf8'))));
+};
 const show = (ref, file) => normalize(cp.execFileSync('git', ['show', ref + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 8_000_000}));
 function replaceOnce(value, before, after) {
   assert.equal(value.split(before).length, 2, 'Exactly one declared JSON adapter hook: ' + before);

@@ -26,6 +26,7 @@ function retainedTextFusionProvider(text) {
   return once(text, '      else { resultMetadata["text_ranker"] = .string(AgentIOSWebSearchFusion.modelID) }\n');
 }
 function retainedTextFusionIntelligence(text) {
+  text = require('./check-search-response-cache-scope.cjs').retainedResponseSearch(text);
   text = once(text, '      var result: AgentMcpJSONObject = [\n        "rank": .int(Int64(rank)),\n        "title": .string(document.title),', '      let result: AgentMcpJSONObject = [\n        "rank": .int(Int64(rank)),\n        "title": .string(document.title),');
   text = once(text, '      var evidence: AgentMcpJSONObject = [\n        "id": .string(evidenceId(url: document.url, rank: rank)),', '      let evidence: AgentMcpJSONObject = [\n        "id": .string(evidenceId(url: document.url, rank: rank)),');
   for (const block of [
@@ -71,14 +72,14 @@ if (require.main === module) {
   for (const token of ['0.28 * reciprocalRank', '0.21 * lexical', '0.14 * consensus', '0.10 * item.authority', '0.07 * freshness', '0.20 * localModel']) assert(reference.includes(token), token);
   for (const name of ['AgentIOSImageSearchFusion', 'AgentIOSImageSearchRequestPolicy', 'AgentIOSWebExecutionBudget', 'AgentIOSWebSourceHealth',
     'AgentIOSWebIntelligenceCache', 'AgentIOSWebIntelligenceSourceCatalog', 'AgentIOSHTMLWebSearchAdapter']) {
-    const current = read(app + name + '.swift');
+    const current = require('./check-search-response-cache-scope.cjs').retainedResponseCache(read(app + name + '.swift'));
     assert.equal(name === 'AgentIOSWebIntelligenceSourceCatalog'
       ? require('./check-automatic-search-routing-scope.cjs').retainedAutoRoutingCatalog(current) : current,
       show(base, app + name + '.swift'), name);
   }
   const tests = read('apps/ios/GalaxySSITests/AgentIOSWebSearchFusionTests.swift');
-  assert.equal((tests.match(/  func test/g) || []).length, 7);
-  for (const token of ['testActualRegistryRanksWithinOneProvider', 'testCachedPublicationIsPreserved', 'XCTAssertNil(row["score"])', 'String(year)', 'weight: .nan']) assert(tests.includes(token), token);
+  assert.equal((tests.match(/  func test/g) || []).length, 14);
+  for (const token of ['testActualRegistryRanksWithinOneProvider', 'testCachedPublicationIsPreserved', 'XCTAssertNil(row["published_at"])', 'String(year)', 'weight: .nan']) assert(tests.includes(token), token);
   const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
   for (const name of ['AgentIOSWebSearchFusion', 'AgentIOSWebSearchFusionTests']) assert.equal(project.split(name + '.swift in Sources */').length, 3);
   console.log('Pinned text fusion/date/cache metadata source contracts passed; image/transport/selection/cache-store policies retained. No native build, XCTest, relevance or performance acceptance.');

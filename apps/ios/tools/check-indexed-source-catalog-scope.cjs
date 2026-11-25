@@ -5,7 +5,10 @@ const root = path.resolve(__dirname, '../../..');
 const base = 'ee17e7cac043350e3f65c10ba025ecf55cde10c7';
 const android = '65655f0c79c6ab04121150229a65b089180f82f2';
 const normalize = value => value.replace(/\r\n/g, '\n');
-const read = file => normalize(fs.readFileSync(path.join(root, file), 'utf8'));
+const read = file => {
+  const hooks = require('./check-search-response-cache-scope.cjs');
+  return hooks.retainedResponseCache(hooks.retainedResponseSearch(normalize(fs.readFileSync(path.join(root, file), 'utf8'))));
+};
 const show = (ref, file) => normalize(cp.execFileSync('git', ['show', ref + ':' + file],
   {cwd: root, encoding: 'utf8', maxBuffer: 8_000_000}));
 const app = 'apps/ios/GalaxySSI/';
