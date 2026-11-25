@@ -107,6 +107,12 @@ internal fun MobileNativeAgent.submitGoal(
 
 internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
     val planningStartedAt = SystemClock.elapsedRealtime()
+    if (activeConversationContext.privateMode &&
+        HealthCareDiscussion.bound(appContext, activeConversationContext.conversationId)
+    ) {
+        currentScreen = ScreenContext(foregroundApp = "", pageTitle = "")
+        return executeInitialPlanning(planner, planningStartedAt)
+    }
     var stageStartedAt = planningStartedAt
     currentScreen = if (
         screenObservationOverride ?: AgentScreenObservationPolicy.requiresObservation(currentGoal)

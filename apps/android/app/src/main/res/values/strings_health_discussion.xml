@@ -13,6 +13,7 @@
     <string name="health_care_discussion_no_model">The selected model is unavailable. Choose an available model in this conversation before sending.</string>
     <string name="health_care_discussion_inactive">This concern is paused, closed, or its source is unavailable. Review it in Personal Health first.</string>
     <string name="health_care_discussion_expired">Health data, permissions, destination or approval have changed. Review and confirm this question again; no alternative provider was authorized.</string>
+    <string name="health_care_discussion_reply_interrupted">The model replied, but this older task could not resume on your phone. Your question was kept and was not sent again.</string>
     <string name="health_care_discussion_scope">This health discussion permits public research only. It cannot send messages, change records, schedule reminders or call another model without separate confirmation.</string>
     <string name="health_care_discussion_import">Import and confirm new health files in Personal Health first. This discussion shares only its reviewed measurements and context.</string>
 </resources>

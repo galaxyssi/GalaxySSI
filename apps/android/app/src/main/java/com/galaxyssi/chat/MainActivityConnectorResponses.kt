@@ -524,6 +524,8 @@ internal fun MainActivity.deferSupervisedProjectControlResponse(
                         taskId = response.taskId,
                         restorePersisted = true
                     )
+                    val legacyHealthInterrupted = runtime == null &&
+                        recordInterruptedLegacyHealthResponse(response)
                     handler.post {
                         agentConnectorResponsesInFlight.remove(responseKey)
                         if (isFinishing || isDestroyed) return@post
@@ -534,6 +536,15 @@ internal fun MainActivity.deferSupervisedProjectControlResponse(
                         ) return@post
                         when {
                             runtime != null -> consumeAgentConnectorResponse(response)
+                            legacyHealthInterrupted -> {
+                                pendingAgentReplyIndicators.remove(response.turnId)
+                                pendingDirectConnectorRuns.remove(response.sourceMessageId)
+                                pendingDirectConnectorActions.remove(response.turnId)
+                                liveAgentConnectorStreams.remove(response.sourceMessageId)
+                                if (response.conversationId == agentTranscriptStore.activeConversation().id) {
+                                    refreshAgentTranscriptWindow(response.conversationId)
+                                }
+                            }
                             else -> {
                                 if (attempt == 0 || attempt % 10 == 0) {
                                     Log.i(
@@ -557,6 +568,37 @@ internal fun MainActivity.deferSupervisedProjectControlResponse(
             }
         },
         AgentSupervisedControlResponseRetryPolicy.delayMillis(attempt)
+    )
+}
+
+private fun MainActivity.recordInterruptedLegacyHealthResponse(response: AgentConnectorResponse): Boolean {
+    if (response.conversationId.isBlank() || response.turnId.isBlank() || response.taskId.isBlank() ||
+        response.contactId.isBlank()) return false
+    val conversation = agentTranscriptStore.conversation(response.conversationId) ?: return false
+    if (!conversation.privateMode || !conversation.trackingPaused ||
+        !conversation.globalTopicKey.startsWith(HealthCareDiscussionPolicy.TOPIC_PREFIX)) return false
+    val delivery = AgentPendingDeliveryStore.find(applicationContext, response.sourceMessageId, response.contactId)
+        ?: return false
+    if (delivery.conversationId != response.conversationId || delivery.turnId != response.turnId ||
+        delivery.taskId != response.taskId || delivery.contactId != response.contactId ||
+        delivery.recoverySuccessorSourceMessageId != 0L) return false
+    val entries = agentTranscriptStore.entriesForTurn(delivery.turnId).filter { it.conversationId == conversation.id }
+    val key = "health-legacy-interrupted:${delivery.turnId}"
+    if (entries.any { it.dedupeKey == key }) return true
+    if (entries.none { it.role == AgentTranscriptRole.USER } ||
+        entries.any { it.dedupeKey == "agent-loop-context:${delivery.turnId}" || it.role == AgentTranscriptRole.ASSISTANT } ||
+        EncryptedAgentWorkspaceStore(applicationContext).find(delivery.turnId) != null ||
+        SharedPreferencesAgentSessionStore(applicationContext, "task:${delivery.turnId}").load() != null) return false
+
+    // A legacy direct dispatch has no checkpoint from which to interpret or execute this plan.
+    // Retain the original receipt, but stop implying that the phone is still processing it.
+    return agentTranscriptStore.upsert(
+        role = AgentTranscriptRole.ASSISTANT,
+        text = getString(R.string.health_care_discussion_reply_interrupted),
+        dedupeKey = key,
+        conversationId = conversation.id,
+        turnId = delivery.turnId,
+        taskId = delivery.taskId
     )
 }
 
