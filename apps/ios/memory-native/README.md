@@ -67,5 +67,15 @@ incompatible contracts are actually re-embedded, not assigned synthetic offsets.
 Current ranged checkpoints are skipped without duplicate publication. This
 producer-side migration does not itself advance native graph replay checkpoints.
 
+Current publications are materialized transactionally with each durable event,
+using opaque model/item identities. Schema introduction resets bounded source
+enrollment instead of synthesizing historical publication events. The query
+resolver checks current event sequence, encrypted checkpoint/specification,
+actual source revision and exact offsets before building a local excerpt. A
+feed/source-revision stamp is checked both inside the read snapshot and after
+resolution. These APIs are ready for the replay/query consumer, not proof that
+production queries already use that consumer. Target-specific cloud/Agent grants
+remain enforced by the existing RAG evidence policy on the fresh source metadata.
+
 Do not claim native activation from source checks alone. Existing App retrieval
 remains USearch until the production replay/query consumer is implemented.

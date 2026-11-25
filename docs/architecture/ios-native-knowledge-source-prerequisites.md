@@ -47,7 +47,7 @@ not a bounded total-memory guarantee and are not a durable graph implementation.
 | Android #3005 area | iOS disposition |
 | --- | --- |
 | KnowledgeNativeIndex source offsets and bounded vector loading | Source provenance, bounded catalog and published-event replay-page API added; no native replay engine yet |
-| KnowledgeSemanticSearch source-policy re-resolution | Existing revalidation retained; whole-source hydration removed |
+| KnowledgeSemanticSearch source-policy re-resolution | Existing revalidation retained; new bounded native-match resolver verifies current publication, authenticated vector/source, exact ranges and feed/source stamps; production consumer still missing |
 | AgentKnowledgeDatabase native index directory | Deferred with native index ownership |
 | KnowledgeNativeBridge, JNI owner/arrays/mod | C ABI and synchronous Swift bridge added; Xcode framework build/link/embed configured but uncompiled |
 | KnowledgeNativeWire | Swift decoder preserves Rust binary records, pending progress and match provenance with strict lengths/flags/bounds |
@@ -55,7 +55,7 @@ not a bounded total-memory guarantee and are not a durable graph implementation.
 | KnowledgeModelWork bounded durable successors | Existing iOS embedding worker now resumes bounded source enrollment/reindex with contract hash; native replay and durable background successors still required |
 | memory-native Cargo files, lib.rs and replay format | Android engine unchanged; separate iOS crate uses current 0.6.0 path dependency and a derived lockfile; native framework integration remains required |
 | Android Gradle, setup action, three workflows, build-memory-native.mjs | Android inputs untouched; iOS-only locked framework build/export isolation/CodeSignOnCopy configured, not executed |
-| Two Android device fixtures | Not executable on iOS; nineteen Swift fixture methods authored, not run |
+| Two Android device fixtures | Not executable on iOS; twenty-five Swift fixture methods authored, not run |
 | Three Android architecture documents / README | Reference only; no transferred Android device/performance claims |
 
 Still required before native activation: production native model/epoch ownership,
@@ -83,6 +83,12 @@ notifications, reset wiring and transactional legacy enrollment. Six additional
 Swift fixture methods cover resume, contract changes, legacy/current vectors,
 namespace isolation, token invalidation, key deletion and missing-key/symlink
 rejection. They are source only, not successful device/runtime acceptance.
+`node apps/ios/tools/check-knowledge-native-publication-scope.cjs` checks the
+transactional latest-publication map, schema re-enrollment barrier, source/feed
+stamps and authenticated native-match resolution. Six additional fixture methods
+cover publication pagination/re-addition, current source-policy enforcement,
+policy-only mutations, stale result batches, schema upgrade without invented
+history and non-recursive feed-registration failure. These fixtures have not run.
 Swift grammar parsing and project structure checks are not Xcode type checking.
 XCTest fixture source covers repeated chunks, surrogate boundaries, old storage,
 transaction rejection, restart/model cursor isolation, bounded source lookup,
