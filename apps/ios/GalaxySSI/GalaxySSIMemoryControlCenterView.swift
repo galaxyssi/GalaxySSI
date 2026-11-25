@@ -7,6 +7,7 @@ struct GalaxySSIMemoryControlCenterView: View {
   @State private var auditReport = GlobalMemoryAuditReport()
   @State private var evolutionRecords: [GlobalMemoryEvolutionRecord] = []
   @State private var statusMessage = ""
+  @SceneStorage("ios.memory-settings.more") private var moreExpanded = false
 
   private let evolutionStore = GlobalMemoryEvolutionStore()
 
@@ -20,21 +21,6 @@ struct GalaxySSIMemoryControlCenterView: View {
 
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
-          GalaxySSISecurityHeroView(
-            title: t("cc_memory_overview_title", "Your private memory"),
-            subtitle: t(
-              "cc_memory_overview_subtitle",
-              "Encrypted on this device, organized by purpose, and always under your control"
-            ),
-            systemImage: "brain.head.profile",
-            tint: .purple,
-            badge: store.agentSafetySettings.memoryCapture
-              ? t("cc_memory_capture_on", "Automatic memory on")
-              : t("cc_memory_capture_off", "Automatic memory off")
-          )
-
-          GalaxySSIMemoryMetricStrip(snapshot: snapshot, language: interfaceLanguage)
-
           if !statusMessage.isEmpty {
             GalaxySSISecurityStatusRow(
               title: t("cc_memory_status_title", "Memory status"),
@@ -45,10 +31,12 @@ struct GalaxySSIMemoryControlCenterView: View {
             )
           }
 
-          categoriesSection
           controlsSection
-          lifecycleSection
-          evolutionSection
+          DisclosureGroup(t("my_agent_more", "More"), isExpanded: $moreExpanded) {
+            categoriesSection
+            lifecycleSection
+            evolutionSection
+          }
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -89,7 +77,24 @@ struct GalaxySSIMemoryControlCenterView: View {
 
   private var controlsSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      GalaxySSISecuritySectionTitle(title: t("cc_memory_section_controls", "Memory Controls"))
+      GalaxySSISecuritySectionTitle(title: t("my_agent_records", "Records"))
+      GalaxySSISecurityNavigationRow(title: t("my_agent_memory_items", "Memory items"), subtitle: "",
+        systemImage: "brain", tint: .purple, badge: "\(snapshot.temporal.count(.current))") {
+        GalaxySSIAgentMemoryView()
+      }
+      GalaxySSISecurityNavigationRow(title: t("galaxyssi.agent_knowledge.title", "Knowledge"), subtitle: "",
+        systemImage: "books.vertical", tint: .blue, badge: "\(snapshot.knowledgeStats.itemCount)") {
+        GalaxySSIAgentKnowledgeView()
+      }
+      GalaxySSISecurityNavigationRow(title: t("my_agent_review", "Review inbox"), subtitle: "",
+        systemImage: "tray", tint: .orange, badge: "\(snapshot.pendingCandidates.count)") {
+        GalaxySSIMemoryInboxView()
+      }
+      GalaxySSISecurityNavigationRow(title: t("my_agent_obsidian", "Obsidian"), subtitle: "",
+        systemImage: "book", tint: .blue, badge: "") {
+        GalaxySSIGlobalAgentControlView(page: .obsidian)
+      }
+      GalaxySSISecuritySectionTitle(title: t("my_agent_record_scope", "Recording scope"))
       GalaxySSIMemoryCaptureRow(
         title: t("cc_memory_capture_title", "Remember useful context"),
         subtitle: t(
@@ -104,30 +109,6 @@ struct GalaxySSIMemoryControlCenterView: View {
             : t("cc_memory_capture_off", "Automatic memory off")
         }
       )
-      GalaxySSISecurityNavigationRow(
-        title: t("cc_memory_manage_title", "Manage all memories"),
-        subtitle: t(
-          "cc_memory_manage_subtitle",
-          "Review, edit, pin, resolve conflicts, or delete individual memories"
-        ),
-        systemImage: "brain",
-        tint: .purple,
-        badge: t("galaxyssi.common.manage", "Manage")
-      ) {
-        GalaxySSIAgentMemoryView()
-      }
-      GalaxySSISecurityNavigationRow(
-        title: t("galaxyssi.agent_knowledge.title", "Knowledge"),
-        subtitle: t(
-          "cc_memory_knowledge_library_subtitle",
-          "Imported documents and private facts that can ground Agent answers"
-        ),
-        systemImage: "books.vertical",
-        tint: .blue,
-        badge: "\(snapshot.knowledgeStats.itemCount)"
-      ) {
-        GalaxySSIAgentKnowledgeView()
-      }
     }
   }
 
