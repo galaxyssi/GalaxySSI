@@ -948,6 +948,12 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       ]
     )
     var result = delegate.execute(action: item.action, screen: item.screen)
+    if AgentConnectorFallbackAction.isTargetLocked(action: item.action, metadata: result.metadata) {
+      result.metadata["manual_target_locked"] = "true"
+    }
+    if let language = item.action.parameters["response_language"], !language.isBlank {
+      result.metadata["response_language"] = language
+    }
     let awaitingResponse = result.metadata["awaiting_response"] == "true"
     if awaitingResponse {
       var metadata = result.metadata

@@ -38,11 +38,18 @@ enum AgentConnectorTimeoutResolver {
     let targetName = clean(pending.metadata["target"] ?? "").isEmpty
       ? "Selected resource"
       : clean(pending.metadata["target"] ?? "")
-    let message = "\(targetName) timed out"
+    let manuallyLocked = AgentConnectorFallbackAction.isTargetLocked(action: nil, metadata: pending.metadata)
+    let message = manuallyLocked
+      ? AgentManualModelRecoveryPolicy.timeoutMessage(language: pending.metadata["response_language"] ?? LanguagePolicySettings.auto)
+      : "\(targetName) timed out"
     var metadata = pending.metadata
     metadata["awaiting_response"] = "false"
     metadata["timeout_stage"] = stage.rawValue
     metadata["timeout_elapsed_ms"] = String(elapsedMillis)
+    if manuallyLocked {
+      metadata["allow_unavailable_target_fallback"] = "false"
+      metadata["non_retriable"] = "true"
+    }
     let failed = AgentActionResult(
       actionId: pending.actionId,
       success: false,

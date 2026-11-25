@@ -1,0 +1,97 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4438,
+    "mergeCommit": "bf8bb0b2a00930e707c333631dab86124eca0efc"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "b54b7b735cec5dad62195cbd0914aa7b1d8f3a9976390ee0aa248de00bad6691",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump, Android/Desktop changes, build or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/AgentConnectorFallbackRuntimeDeviceTest.kt",
+      "sourceSHA256": "4437a1d64d3b1d37142e305e6e2975743d3cb8bbbe6291a86a835d3840e674ea",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/AgentRoutingCapabilityTests.swift",
+        "apps/ios/GalaxySSITests/AgentConnectorTimeoutResolverTests.swift",
+        "apps/ios/GalaxySSITests/AgentRunPolicyTests.swift",
+        "apps/ios/GalaxySSITests/AgentConnectorResponseTests.swift"
+      ],
+      "note": "Original one-dispatch manual versus bounded Auto fallback/recovery references mapped to Swift fixture sources for lock precedence, action/result pinning, unchanged manual inputs, false fallback flag, legacy/reopened durable queue rejection including stripped seed locks, bilingual scoped feedback and unchanged packets. Existing Auto budget/receipt replay fixtures retained, with the positive retry claim explicitly Auto. No XCTest, Android device, paired Desktop or dispatch-count execution performed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentConnectorFallbackAction.kt",
+      "sourceSHA256": "201a43c8da51fe4da04f70b9f808e677905fd8c99df11e0968feab7ee12fefc4",
+      "kind": "native-manual-target-preservation",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentNetworkRoutingModels.swift"
+      ],
+      "note": "Action-or-result locks block generic fallback before candidate selection. Preserve locked action inputs in prepare, pin locks/language in provider results and explicit per-request recovery records. Legacy locked Codex seeds and explicit direct contacts remain locked. Reject automatic Codex replay at scheduling, durable queue insertion, restored dispatch and final publish; do not mutate Auto budget. Localize actual manual timeouts/expiry without rewriting authenticated packet or receipt bytes. Status/result queries remain passive and existing trust/session/identity/privacy/capability gates remain in place."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgent.kt",
+      "sourceSHA256": "bc8399cd5d5282687977b54694c0a3f18c31c50d07d70efbdc95ece06bdd135c",
+      "kind": "native-manual-target-preservation",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentConnectorTimeoutResolver.swift",
+        "apps/ios/GalaxySSI/AgentControlPlaneActionExecutorModels.swift",
+        "apps/ios/GalaxySSI/AgentManualModelRecoveryPolicy.swift",
+        "apps/ios/GalaxySSI/AgentDesktopReplyRecovery.swift",
+        "apps/ios/GalaxySSI/GalaxySSIServices.swift"
+      ],
+      "note": "Action-or-result locks block generic fallback before candidate selection. Preserve locked action inputs in prepare, pin locks/language in provider results and explicit per-request recovery records. Legacy locked Codex seeds and explicit direct contacts remain locked. Reject automatic Codex replay at scheduling, durable queue insertion, restored dispatch and final publish; do not mutate Auto budget. Localize actual manual timeouts/expiry without rewriting authenticated packet or receipt bytes. Status/result queries remain passive and existing trust/session/identity/privacy/capability gates remain in place."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentCodexRecovery.kt",
+      "sourceSHA256": "eca5575d8569c837af5b558aa6843ab3f700ee89c1691e9a86c47438accf54ba",
+      "kind": "native-manual-target-preservation",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentDesktopReplyRecovery.swift",
+        "apps/ios/GalaxySSI/GalaxySSIServices.swift"
+      ],
+      "note": "Action-or-result locks block generic fallback before candidate selection. Preserve locked action inputs in prepare, pin locks/language in provider results and explicit per-request recovery records. Legacy locked Codex seeds and explicit direct contacts remain locked. Reject automatic Codex replay at scheduling, durable queue insertion, restored dispatch and final publish; do not mutate Auto budget. Localize actual manual timeouts/expiry without rewriting authenticated packet or receipt bytes. Status/result queries remain passive and existing trust/session/identity/privacy/capability gates remain in place."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentExecution.kt",
+      "sourceSHA256": "f384d95978ca5c037d16181882672ba4413ec687db9bac79b5a673841b4726fd",
+      "kind": "native-manual-target-preservation",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentNetworkRoutingModels.swift",
+        "apps/ios/GalaxySSI/GalaxySSIServices.swift"
+      ],
+      "note": "Action-or-result locks block generic fallback before candidate selection. Preserve locked action inputs in prepare, pin locks/language in provider results and explicit per-request recovery records. Legacy locked Codex seeds and explicit direct contacts remain locked. Reject automatic Codex replay at scheduling, durable queue insertion, restored dispatch and final publish; do not mutate Auto budget. Localize actual manual timeouts/expiry without rewriting authenticated packet or receipt bytes. Status/result queries remain passive and existing trust/session/identity/privacy/capability gates remain in place."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh-rCN/strings.xml",
+      "sourceSHA256": "d5bfb80a9137e6f3de7d55e10fc4d19266904f50f9e9552aa9db66559522faed",
+      "kind": "exact-bilingual-timeout-label",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AgentManualModelRecovery.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AgentManualModelRecovery.strings",
+        "apps/ios/GalaxySSI/AgentManualModelRecoveryPolicy.swift",
+        "apps/ios/tools/import-manual-model-recovery-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "One exact English/Chinese label pair from values and values-zh-rCN original XML; localized standalone native table registered in Xcode and fallback string checked against the original English."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/strings.xml",
+      "sourceSHA256": "427b3541b4f5b99e0b992baff4b16c65af8c0630816cb5d7895c13e0ad475bca",
+      "kind": "exact-bilingual-timeout-label",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AgentManualModelRecovery.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AgentManualModelRecovery.strings",
+        "apps/ios/GalaxySSI/AgentManualModelRecoveryPolicy.swift",
+        "apps/ios/tools/import-manual-model-recovery-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "One exact English/Chinese label pair from values and values-zh-rCN original XML; localized standalone native table registered in Xcode and fallback string checked against the original English."
+    }
+  ]
+}

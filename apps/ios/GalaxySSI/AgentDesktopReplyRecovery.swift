@@ -499,6 +499,11 @@ struct AgentDesktopReplyRecoveryRecord: Codable, Equatable {
   var codexProgress: AgentDesktopCodexProgress? = nil
   var codexReplay: AgentCodexReplaySeed? = nil
   var codexDispatchPending: Bool? = nil
+  var manualTargetLocked: Bool? = nil
+  var isManualTargetLocked: Bool {
+    manualTargetLocked == true || codexReplay?.lockedToOrigin == true ||
+      (binding.goalWork != true && binding.teamSource == nil && binding.managedSource == nil && binding.displayContactId != "hermes")
+  }
 
   func isCodexSilent(now: Int64) -> Bool {
     terminalObservedAt == 0 && AgentCodexSilenceRecoveryPolicy.isSilent(
@@ -631,7 +636,8 @@ final class AgentDesktopReplyRecovery {
 
   func scheduleCodexReplay(from old: AgentDesktopReplyRecoveryRecord, to next: AgentDesktopReplyBinding,
                            replay: AgentCodexReplaySeed, now: Int64) -> Bool {
-    guard now > 0, records[old.binding.key] == old, old.codexReplay != nil,
+    guard !old.isManualTargetLocked, !replay.lockedToOrigin,
+          now > 0, records[old.binding.key] == old, old.codexReplay != nil,
           next.isValid, next.sourceId == old.binding.sourceId,
           next.identity.conversationId == old.binding.identity.conversationId,
           next.identity.turnId == old.binding.identity.turnId,
@@ -642,7 +648,7 @@ final class AgentDesktopReplyRecovery {
     var updated = records
     updated.removeValue(forKey: old.binding.key)
     updated[next.key] = AgentDesktopReplyRecoveryRecord(binding: next, createdAt: now,
-      codexReplay: replay, codexDispatchPending: true)
+      codexReplay: replay, codexDispatchPending: true, manualTargetLocked: old.manualTargetLocked)
     let superseded = Array((supersededCodexBindings + [old.binding]).suffix(512))
     guard save(updated, superseded: superseded) else { return false }
     queries = queries.filter { $0.value.binding != old.binding }
@@ -777,12 +783,14 @@ final class AgentDesktopReplyRecovery {
   }
 
   @discardableResult
-  func track(_ binding: AgentDesktopReplyBinding, now: Int64, codexReplay: AgentCodexReplaySeed? = nil) -> Bool {
+  func track(_ binding: AgentDesktopReplyBinding, now: Int64, codexReplay: AgentCodexReplaySeed? = nil,
+             manualTargetLocked: Bool = false) -> Bool {
     guard healthy, binding.isValid, now > 0 else { return false }
     if records[binding.key] != nil || retiredDuringDiscovery.contains(binding.key) ||
        supersededCodexBindings.contains(binding) { return true }
     var next = records
-    next[binding.key] = AgentDesktopReplyRecoveryRecord(binding: binding, createdAt: now, codexReplay: codexReplay)
+    next[binding.key] = AgentDesktopReplyRecoveryRecord(binding: binding, createdAt: now, codexReplay: codexReplay,
+      manualTargetLocked: manualTargetLocked)
     return save(next)
   }
 

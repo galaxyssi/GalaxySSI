@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4438,
+    "mergeCommit": "bf8bb0b2a00930e707c333631dab86124eca0efc"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "b54b7b735cec5dad62195cbd0914aa7b1d8f3a9976390ee0aa248de00bad6691"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/AgentConnectorFallbackRuntimeDeviceTest.kt",
+      "status": "M",
+      "sha256": "4437a1d64d3b1d37142e305e6e2975743d3cb8bbbe6291a86a835d3840e674ea"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentConnectorFallbackAction.kt",
+      "status": "M",
+      "sha256": "201a43c8da51fe4da04f70b9f808e677905fd8c99df11e0968feab7ee12fefc4"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgent.kt",
+      "status": "M",
+      "sha256": "bc8399cd5d5282687977b54694c0a3f18c31c50d07d70efbdc95ece06bdd135c"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentCodexRecovery.kt",
+      "status": "M",
+      "sha256": "eca5575d8569c837af5b558aa6843ab3f700ee89c1691e9a86c47438accf54ba"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentExecution.kt",
+      "status": "M",
+      "sha256": "f384d95978ca5c037d16181882672ba4413ec687db9bac79b5a673841b4726fd"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh-rCN/strings.xml",
+      "status": "M",
+      "sha256": "d5bfb80a9137e6f3de7d55e10fc4d19266904f50f9e9552aa9db66559522faed"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/strings.xml",
+      "status": "M",
+      "sha256": "427b3541b4f5b99e0b992baff4b16c65af8c0630816cb5d7895c13e0ad475bca"
+    }
+  ]
+}
