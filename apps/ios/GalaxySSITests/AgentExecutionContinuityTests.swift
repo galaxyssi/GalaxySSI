@@ -2,6 +2,98 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testPlanNodeDispatchAtomicallyRetainsPreparedInputCheckpointAndIntentAudits() throws {
+    let suite = "PlanNodeDispatch.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let (proposed, checkpoint, key) = try dispatchIntentFixture()
+    var prepared = proposed
+    prepared.target = "resolved-native-target"
+    prepared.parameters["input_json"] = #"{"path":"private-final-input.txt"}"#
+    let journal = EncryptedAgentPlanNodeJournal(defaults: defaults, secrets: secrets, nowMillis: { 200 })
+    XCTAssertEqual(try journal.claim(key, action: prepared, checkpoint: checkpoint), .acquired)
+    let reopened = EncryptedAgentPlanNodeJournal(defaults: defaults, secrets: secrets)
+    let dispatch = try XCTUnwrap(reopened.readDispatch(key))
+    XCTAssertEqual(dispatch.action, prepared)
+    XCTAssertEqual(dispatch.checkpoint, checkpoint)
+    XCTAssertEqual(dispatch.audits.map(\.event), [.checkpointSaved, .toolStarted])
+    XCTAssertTrue(dispatch.audits.allSatisfy { $0.timestampMillis == 200 })
+    XCTAssertFalse(defaults.dictionaryRepresentation().values.contains {
+      String(describing: $0).contains("private-final-input.txt")
+    })
+    // A rerouted retry must not replace the original dispatch or create execution authority.
+    var different = prepared
+    different.target = "other-target"
+    XCTAssertEqual(try reopened.claim(key, action: different, checkpoint: checkpoint), .pending)
+    XCTAssertEqual(try reopened.readDispatch(key), dispatch)
+    let result = AgentActionResult(actionId: proposed.id, success: true, message: "Observed")
+    try reopened.record(key, observation: .init(result: result, verified: true))
+    XCTAssertEqual(try reopened.readDispatch(key), dispatch)
+    XCTAssertEqual(try reopened.claim(key, action: different, checkpoint: checkpoint),
+      .observed(.init(result: result, verified: true)))
+  }
+
+  func testPlanNodeDispatchRejectsMismatchedOrInactiveCheckpointBeforeClaim() throws {
+    let suite = "PlanNodeDispatchMismatch.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let (action, checkpoint, key) = try dispatchIntentFixture()
+    let journal = EncryptedAgentPlanNodeJournal(defaults: defaults, secrets: InMemorySecretStore())
+    var wrong = checkpoint
+    wrong.id = "another-checkpoint"
+    XCTAssertThrowsError(try journal.claim(key, action: action, checkpoint: wrong))
+    var wrongAction = action
+    wrongAction.id = "another-action"
+    XCTAssertThrowsError(try journal.claim(key, action: wrongAction, checkpoint: checkpoint))
+    wrong = checkpoint
+    wrong.status = .restored
+    XCTAssertThrowsError(try journal.claim(key, action: action, checkpoint: wrong))
+    XCTAssertNil(try journal.observe(key))
+    XCTAssertNil(try journal.readDispatch(key))
+  }
+
+  func testLegacyPlanNodeClaimCannotBeEnrichedIntoAnInventedDispatch() throws {
+    let suite = "PlanNodeDispatchLegacy.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore()
+    let (action, checkpoint, key) = try dispatchIntentFixture()
+    let journal = EncryptedAgentPlanNodeJournal(defaults: defaults, secrets: secrets)
+    XCTAssertEqual(try journal.claim(key), .acquired)
+    let reopened = EncryptedAgentPlanNodeJournal(defaults: defaults, secrets: secrets)
+    XCTAssertNil(try reopened.readDispatch(key))
+    XCTAssertEqual(try reopened.claim(key, action: action, checkpoint: checkpoint), .pending)
+    XCTAssertNil(try reopened.readDispatch(key))
+  }
+
+  func testUnreadableDispatchJournalCannotGrantExecution() throws {
+    let suite = "PlanNodeDispatchCorrupt.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let (action, checkpoint, key) = try dispatchIntentFixture()
+    defaults.set(Data("corrupt ciphertext".utf8), forKey: "dispatch-fixture.encrypted.v1")
+    let journal = EncryptedAgentPlanNodeJournal(defaults: defaults, secrets: InMemorySecretStore(),
+      storageKey: "dispatch-fixture")
+    var executed = false
+    XCTAssertThrowsError(try {
+      if try journal.claim(key, action: action, checkpoint: checkpoint) == .acquired { executed = true }
+    }())
+    XCTAssertFalse(executed)
+    XCTAssertEqual(defaults.data(forKey: "dispatch-fixture.encrypted.v1"), Data("corrupt ciphertext".utf8))
+  }
+
+  private func dispatchIntentFixture() throws -> (AgentAction, AgentExecutionCheckpoint, AgentPlanNodeKey) {
+    let action = AgentAction(id: "node-intent", kind: .callNativeTool, target: "proposed-target",
+      risk: .low, status: .running, description: "Read", parameters: ["input_json": #"{"path":"proposed.txt"}"#])
+    let checkpoint = AgentExecutionCheckpoint(id: "intent-checkpoint", actionId: action.id,
+      planRevision: 1, createdAtMillis: 100)
+    let plan = lifecyclePlan(action).addCheckpoint(checkpoint)
+    let key = try XCTUnwrap(AgentPlanNodeKey.make(sessionId: "session", plan: plan, action: action,
+      conversationId: "conversation", turnId: "turn"))
+    return (action, checkpoint, key)
+  }
+
   func testAgentExecutionContinuityCreatesRollbackCheckpointAndAndroidDigest() throws {
     let screen = AgentScreenContext(
       foregroundApp: "GalaxySSI",

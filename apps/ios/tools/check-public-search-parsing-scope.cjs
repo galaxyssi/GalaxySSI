@@ -265,7 +265,8 @@ assert.equal(section(provider, '  private func requestResource(', '  private fun
   section(oldProvider, '  private func requestResource(', '  private func failure(_ error:'),
   'HTTP bounds, redirect/public-host policy, resource extraction and browser transport stay unchanged');
 for (const name of ['GalaxySSIServices']) {
-  assert.equal(read(swift(name)), git('show', base + ':' + swift(name)), name + ' unchanged in this increment');
+  assert.equal(require('./check-plan-node-dispatch-scope.cjs').retainedServices(read(swift(name))),
+    git('show', base + ':' + swift(name)), name + ' retained outside checked parallel dispatch-intent hook');
 }
 const grounding = read(swift('CloudWebGrounding'));
 const aliasDefinition = section(grounding, '      functionTool(\n        name: "web_image_search",', '      functionTool(\n        name: "web_weather",');
@@ -407,6 +408,7 @@ const disposition = file => {
   if (file.endsWith('/AgentIsolatedWebRenderService.kt')) return 'Native serialized off-main DNS preflight bounds caller wait and cancels queued work. Existing nonpersistent WK store/process-pool/same-origin and auth policies retained. OS getaddrinfo already running is not forcibly interrupted; no device recovery guarantee';
   if (file.endsWith('/build.gradle.kts') || file.endsWith('/AndroidManifest.xml') || file.endsWith('/GalaxySSIApplication.kt')) return 'Android platform/build change, not copied into iOS; no iOS version change';
   if (file.includes('/androidTest/') || file.includes('/src/test/') || file.startsWith('docs/')) return 'Reference evidence inventoried, not reproduced or claimed as iOS acceptance';
+  if (file.endsWith('/MobileNativeAgentExecution.kt')) return 'Partial: native parallel plan-node claims now persist final routed/prepared action, active checkpoint and dispatch-intent audit entries together in the existing encrypted claim before executing. Pending/observed claims never rerun or acquire replacement inputs. This is not an atomic task/session transaction or completion evidence; sequential/model-loop and full audit batching/latency parity need further comparison. Native crash/fault acceptance not run';
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,

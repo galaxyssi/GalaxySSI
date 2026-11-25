@@ -197,7 +197,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentExecution.kt",
       "sha256": "49b4baed8be50562edc825d5c27bb76a772d2b06c56f2deab2435bb9acca5b5d",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Partial: native parallel plan-node claims now persist final routed/prepared action, active checkpoint and dispatch-intent audit entries together in the existing encrypted claim before executing. Pending/observed claims never rerun or acquire replacement inputs. This is not an atomic task/session transaction or completion evidence; sequential/model-loop and full audit batching/latency parity need further comparison. Native crash/fault acceptance not run"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentRuntime.kt",

@@ -13623,6 +13623,7 @@ final class MessageCoordinator: ObservableObject {
     }
     let executor = runtime.actionExecutor
     let nodeJournal = localPlanNodeJournal
+    let dispatchCheckpoints = journaledPlan.checkpoints
     let results = await Task.detached(priority: .userInitiated) {
       PhoneExecutionAuthority.authorizeParallel(actions: executionActions)
       defer { PhoneExecutionAuthority.revokeParallel(actions: executionActions) }
@@ -13635,7 +13636,8 @@ final class MessageCoordinator: ObservableObject {
         },
         operation: { index in
           let action = actions[index]
-          guard let key = nodeKeys[index] else {
+          guard let key = nodeKeys[index],
+                let checkpoint = dispatchCheckpoints.last(where: { $0.id == key.checkpointId }) else {
             return AgentActionResult(
               actionId: action.id,
               success: false,
@@ -13644,7 +13646,7 @@ final class MessageCoordinator: ObservableObject {
             )
           }
           do {
-            switch try nodeJournal.claim(key) {
+            switch try nodeJournal.claim(key, action: executionActions[index], checkpoint: checkpoint) {
             case .observed(let observation):
               return observation.result
             case .pending:
