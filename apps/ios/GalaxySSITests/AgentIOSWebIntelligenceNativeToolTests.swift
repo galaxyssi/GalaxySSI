@@ -273,7 +273,7 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(transport.hosts.contains(where: { $0.contains("bing.com") }))
     XCTAssertEqual(result.metadata["circuits_skipped"]?.arrayValue?.first?.objectValue?["source_id"], .string("bing"))
     XCTAssertEqual(result.metadata["source_health_write_committed"], .bool(true))
-    XCTAssertEqual(cache.sourceHealth()?["baidu"]?.attempts, 1)
+    XCTAssertEqual(cache.sourceHealth()?["duckduckgo"]?.attempts, 1)
     context.invocationId = "health-explicit"
     let explicit = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
       input: ["query": .string("Galaxy research"), "engines": .array([.string("bing")])], context: context,
@@ -337,7 +337,9 @@ extension GalaxySSIStoreTests {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("health-open-\(UUID()).json")
     defer { try? FileManager.default.removeItem(at: url) }
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), nowMillis: { 1000 })
-    let receipts = ["bing", "baidu", "duckduckgo"].flatMap { provider in
+    let providers = AgentIOSWebIntelligenceQueryRouting.select(query: "Galaxy research",
+      requestedVerticals: [], requestedEngineIds: [], fanout: 32).selected.map(\.id)
+    let receipts = providers.flatMap { provider in
       (0..<3).map { _ in AgentIOSWebSourceReceipt(sourceID: provider, status: "failed", durationMillis: 100, resultCount: 0) }
     }
     XCTAssertTrue(cache.recordSourceReceipts(receipts))
@@ -356,7 +358,7 @@ extension GalaxySSIStoreTests {
       hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
     XCTAssertEqual(result.error?.code, "search_sources_cooling_down")
     XCTAssertTrue(transport.hosts.isEmpty)
-    XCTAssertEqual(result.error?.details["circuits_skipped"]?.arrayValue?.count, 3)
+    XCTAssertEqual(result.error?.details["circuits_skipped"]?.arrayValue?.count, providers.count)
     XCTAssertEqual(try Data(contentsOf: url), original)
   }
 

@@ -57,7 +57,7 @@ for (const token of ['Bundle.main.url(forResource: "web-indexed-sources", withEx
   'scope.host == record.host', 'scope.port == nil, scope.query == nil, scope.fragment == nil',
   'index % 2 == 0 ? "duckduckgo" : "bing"', 'languages: Set(record.languages)',
   'result.path == path || result.path.hasPrefix(path + "/")']) assert(loader.includes(token), token);
-const catalog = read(app + 'AgentIOSWebIntelligenceSourceCatalog.swift');
+const catalog = require('./check-automatic-search-routing-scope.cjs').retainedAutoRoutingCatalog(read(app + 'AgentIOSWebIntelligenceSourceCatalog.swift'));
 for (const token of ['SourceCatalog.indexedSources + learned', 'queryLanguage(query)', 'source.languages.contains(language)',
   'for category in categories.sorted()', 'for vertical in requestedVerticals.sorted', 'seen.insert(source.id).inserted',
   'indexedSourceCount: Int { indexedSources.count }', 'sourceCount: Int { baseSearchEngineCount + indexedSourceCount }']) assert(catalog.includes(token), token);
@@ -70,7 +70,7 @@ const view = read(app + 'GalaxySSIWebIntelligenceSourcesView.swift');
 assert(view.includes('Native search adapters'));
 assert(!view.includes('18 / 18'));
 const tests = read('apps/ios/GalaxySSITests/AgentIOSIndexedWebSourceCatalogTests.swift');
-assert.equal((tests.match(/  func test/g) || []).length, 8);
+assert.equal((tests.match(/  func test/g) || []).length, 14);
 for (const token of ['XCTAssertTrue(saved.isValid)', 'XCTAssertFalse(saved.isSearchEligible)',
   'XCTAssertTrue(transport.requests.isEmpty)', 'XCTAssertEqual(transport.requests.count, 1)',
   'openai-agents-python-impostor', 'testRequestedCategoryAndVerticalCoverage']) assert(tests.includes(token), token);

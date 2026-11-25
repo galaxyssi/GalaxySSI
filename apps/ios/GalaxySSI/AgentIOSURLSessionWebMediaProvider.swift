@@ -426,7 +426,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         }),
         requestedEngineIds: engineIds,
         requestedCategories: Set((input["categories"]?.arrayValue ?? []).compactMap(\.stringValue)),
-        learnedSources: imageSearch ? [] : learned
+        learnedSources: imageSearch ? [] : learned,
+        requestedEngineOrder: requestedEngines,
+        health: sourceSnapshot?.health ?? [:],
+        fanout: Int(min(max(input["engine_fanout"]?.intValue ?? 6, 1), 32)),
+        nowMillis: nowMillis()
       )
       let candidates = try searchEndpoints(
         query: query,
@@ -436,9 +440,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         requestedEngineIds: requestedEngines
       )
       let health = sourceSnapshot?.health
-      let selection = AgentIOSWebSourceHealthRouting.select(providers: candidates.map(\.provider),
-        preferred: Set(routing.selected.map(\.id)), health: health ?? [:], explicit: explicitSources,
-        fanout: Int(min(max(input["engine_fanout"]?.intValue ?? 6, 1), 32)), now: nowMillis())
+      let selection = imageSearch
+        ? AgentIOSWebSourceHealthRouting.select(providers: candidates.map(\.provider),
+          preferred: [], health: health ?? [:], explicit: explicitSources,
+          fanout: Int(min(max(input["engine_fanout"]?.intValue ?? 6, 1), 32)), now: nowMillis())
+        : AgentIOSWebSourceHealthRouting.Selection(selected: routing.selected.map(\.id), skipped: routing.skipped)
       let endpoints = selection.selected.compactMap { id in candidates.first { $0.provider == id } }
       guard !endpoints.isEmpty else {
         return failure("search_sources_cooling_down", "Selected search sources are cooling down; no request was started.",
@@ -1293,7 +1299,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     let orderedProviders: [String] = query.unicodeScalars.contains { $0.value > 127 }
       ? ["baidu", "bing", "duckduckgo"]
       : ["bing", "baidu", "duckduckgo"]
-    var endpoints = try routing.selected.map { source -> AgentIOSWebSearchEndpoint in
+    let selectedRootIDs = Set(routing.selected.map(\.id)).intersection(["bing", "baidu", "duckduckgo"])
+    var endpoints = try routing.selected.filter { !selectedRootIDs.contains($0.id) }.map { source -> AgentIOSWebSearchEndpoint in
       if source.id == AgentIOSDevDocsSearchAdapter.entry.id {
         guard let url = URL(string: AgentIOSDevDocsSearchAdapter.entry.template) else { throw AgentIOSURLSessionWebError.invalidURL }
         return AgentIOSWebSearchEndpoint(provider: source.id, url: url, localIndex: true)
@@ -1329,7 +1336,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         siteScope: source.scope
       )
     }
-    endpoints += try orderedProviders.map { provider in
+    endpoints += try orderedProviders.filter { selectedRootIDs.contains($0) }.map { provider in
       let components: URLComponents
       switch provider {
       case "baidu":
@@ -1373,7 +1380,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       var seen = Set<String>()
       return requestedEngineIds.compactMap { seen.insert($0).inserted ? byID[$0] : nil }
     }
-    return endpoints
+    let byID = Dictionary(uniqueKeysWithValues: endpoints.map { ($0.provider, $0) })
+    return routing.selected.compactMap { byID[$0.id] }
   }
 
   private func imageSearchResults(endpoint: AgentIOSWebSearchEndpoint, resource: AgentIOSURLSessionWebResource,

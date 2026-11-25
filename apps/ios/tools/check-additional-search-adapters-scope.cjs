@@ -52,7 +52,7 @@ if (require.main === module) {
   assert.equal(docs.length, 22);
   for (const [, title, slug, aliases] of docs) assert(ref.includes('DevDocsEntry("' + title + '", "' + slug + '", setOf(' + aliases + '))'), title);
   const catalog = read(app + 'AgentIOSWebIntelligenceSourceCatalog.swift');
-  assert(catalog.includes('$0.enabledByDefault && (requestedVerticals.contains'));
+  assert(catalog.includes('$0.enabledByDefault && ((AgentIOSWebIntelligenceSourceCatalog.baseSearchEngineIDs.contains'));
   assert(html.includes('enabledByDefault: false'));
   assert(html.includes('.filter { accepts($0.url, id: id) }.prefix(min(limit, 100))'));
   for (const token of ['"/status/"', '"mp.weixin.qq.com"', '"zhuanlan.zhihu.com"', '"/explore/"', '"/discovery/item/"']) assert(html.includes(token), token);

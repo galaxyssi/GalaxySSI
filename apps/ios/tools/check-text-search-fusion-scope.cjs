@@ -17,6 +17,7 @@ function retainedFusionHit(text) {
   return text.replace('    var publishedAt = ""\n    var searchScore: AgentIOSWebSearchFusion.Score? = nil\n    var searchEngines: [String] = []\n', '');
 }
 function retainedTextFusionProvider(text) {
+  text = require('./check-automatic-search-routing-scope.cjs').retainedAutoRoutingProvider(text);
   const before = show(base, app + 'AgentIOSURLSessionWebMediaProvider.swift');
   text = once(text, '      var merged: [AgentIOSWebSearchResult] = []\n', '      var merged: [AgentIOSWebSearchResult] = []\n      var seenURLs: Set<String> = []\n');
   text = once(text, section(text, '      if !imageSearch {\n        merged = AgentIOSWebSearchFusion.fuse', '      var output = first.resource'),
@@ -69,7 +70,12 @@ if (require.main === module) {
   const reference = show(android, 'apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligence.kt');
   for (const token of ['0.28 * reciprocalRank', '0.21 * lexical', '0.14 * consensus', '0.10 * item.authority', '0.07 * freshness', '0.20 * localModel']) assert(reference.includes(token), token);
   for (const name of ['AgentIOSImageSearchFusion', 'AgentIOSImageSearchRequestPolicy', 'AgentIOSWebExecutionBudget', 'AgentIOSWebSourceHealth',
-    'AgentIOSWebIntelligenceCache', 'AgentIOSWebIntelligenceSourceCatalog', 'AgentIOSHTMLWebSearchAdapter']) assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name);
+    'AgentIOSWebIntelligenceCache', 'AgentIOSWebIntelligenceSourceCatalog', 'AgentIOSHTMLWebSearchAdapter']) {
+    const current = read(app + name + '.swift');
+    assert.equal(name === 'AgentIOSWebIntelligenceSourceCatalog'
+      ? require('./check-automatic-search-routing-scope.cjs').retainedAutoRoutingCatalog(current) : current,
+      show(base, app + name + '.swift'), name);
+  }
   const tests = read('apps/ios/GalaxySSITests/AgentIOSWebSearchFusionTests.swift');
   assert.equal((tests.match(/  func test/g) || []).length, 7);
   for (const token of ['testActualRegistryRanksWithinOneProvider', 'testCachedPublicationIsPreserved', 'XCTAssertNil(row["score"])', 'String(year)', 'weight: .nan']) assert(tests.includes(token), token);
