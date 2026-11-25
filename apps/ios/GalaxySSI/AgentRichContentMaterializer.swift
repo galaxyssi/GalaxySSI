@@ -6,7 +6,8 @@ enum AgentVisualOutputPolicy {
   static let maximumHTMLBytes = 128_000
   static let localHTMLPrefix = "galaxyssi-artifact://local-html/"
   static let localVideoPrefix = "galaxyssi-artifact://local-video/"
-  static let prompt = "For a playable animation, use a galaxyssi-html fence with complete self-contained HTML, CSS, and JS (up to 32000 characters). No external assets, network, forms, or device APIs. Use ordinary html fences for requested source code. Video requires a real exported MP4 and verified playback; HTML and filenames are not video evidence."
+  static let imageSearchInstruction = "For a simple image-search reply, use Markdown images and source links instead of rich JSON. Never repeat the same images in both Markdown and a rich image/gallery document."
+  static let prompt = "For a playable animation, use a galaxyssi-html fence with complete self-contained HTML, CSS, and JS (up to 32000 characters). No external assets, network, forms, or device APIs. Use ordinary html fences for requested source code. Video requires a real exported MP4 and verified playback; HTML and filenames are not video evidence." + " " + imageSearchInstruction
 
   struct Reply: Sendable {
     var content: String

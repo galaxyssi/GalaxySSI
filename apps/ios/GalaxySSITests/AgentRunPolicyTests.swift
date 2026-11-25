@@ -882,6 +882,24 @@ extension GalaxySSIStoreTests {
   }
 
   @MainActor
+  func testImageSearchProgressKeepsLocalizedFailureAndSuppressesRoutineSearchNoise() {
+    let events: [[String: Any]] = [
+      ["event_id": "images-start", "kind": "tool", "code": "web_image_search", "status": "started"],
+      ["event_id": "images-done", "kind": "tool", "code": "web_image_search", "status": "completed"],
+      ["event_id": "images-failed", "kind": "tool", "code": "web_image_search", "status": "failed", "detail": "PRIVATE_URL_TOKEN"],
+      ["event_id": "image-view", "kind": "tool", "code": "image_view", "status": "running"]
+    ]
+    var requestedKeys: [String] = []
+    let updates = AgentConnectorPublicProgress.entries([
+      "type": "agent_task_event", "execution_generation": 1, "status_seq": 2, "events": events
+    ]) { key, fallback in requestedKeys.append(key); return fallback }
+    XCTAssertEqual(updates.map(\.eventId), ["images-failed", "image-view"])
+    XCTAssertEqual(updates.map(\.text), ["Failed: Searching images", "Viewing images"])
+    XCTAssertTrue(requestedKeys.contains("galaxyssi.agent.progress.operation.web_image_search"))
+    XCTAssertFalse(updates.map(\.text).joined().contains("PRIVATE_URL_TOKEN"))
+  }
+
+  @MainActor
   func testConnectorResearchDiagnosticsStayOnTheMatchingToolEventAcrossReplay() throws {
     let webTool: [String: Any] = [
       "event_id": "read-pages", "kind": "tool", "code": "dynamic_tool", "status": "failed",

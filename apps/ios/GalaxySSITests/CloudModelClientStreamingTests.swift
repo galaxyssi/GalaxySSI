@@ -99,11 +99,46 @@ final class CloudModelClientStreamingTests: XCTestCase {
     XCTAssertTrue(visual.contains(LanguagePolicySettings.modelLanguageName("zh-CN")))
     XCTAssertTrue(visual.contains("native visual evidence"))
     XCTAssertTrue(visual.contains("without a tool result"))
+    XCTAssertTrue(visual.contains(AgentVisualOutputPolicy.imageSearchInstruction))
     XCTAssertFalse(visual.contains("Text-only grounding"))
     let text = CloudModelClient.conversationSystemPrompt(languagePolicy: language, images: [],
       textOnlyEvidence: evidence)
     XCTAssertEqual(groundingCalls, 1)
-    XCTAssertEqual(text, CloudModelClient.systemPrompt(languagePolicy: language) + "\nText-only grounding")
+    XCTAssertEqual(text, CloudModelClient.systemPrompt(languagePolicy: language) + "\n" + AgentVisualOutputPolicy.prompt + "\nText-only grounding")
+    XCTAssertTrue(text.contains(AgentVisualOutputPolicy.imageSearchInstruction))
+  }
+
+  func testDefaultImageSearchPresentationGuidanceReachesAllProviderAndCompatibilityBodies() throws {
+    let image = try CloudImagePayload(displayName: "fixture.png", mimeType: "image/png", data: Data([1]))
+    for style in [GalaxySSICloudAPIStyle.openAICompatible, .anthropic, .gemini] {
+      for images in [[image], []] {
+        let prompt = CloudModelClient.conversationSystemPrompt(
+          languagePolicy: LanguagePolicySettings(responseLanguage: "zh-CN"), images: images,
+          textOnlyEvidence: { "Bounded text-only evidence" })
+        let request = try CloudModelClient().conversationStreamingRequest(
+          model: model(apiStyle: style), apiKey: "fixture",
+          turns: [ChatMessage(contactId: "contact", content: "Find images", isMine: true)],
+          systemPrompt: prompt, requestId: "image-reply-policy", images: images)
+        for encoded in [request.bodyJson,
+          try CloudConversationNonStreamingToolEngine.compatibilityBody(request.bodyJson, provider: request.provider)] {
+          let body = try object(encoded)
+          let system: String?
+          switch style {
+          case .openAICompatible:
+            system = (body["messages"] as? [[String: Any]])?.first?["content"] as? String
+          case .anthropic:
+            system = body["system"] as? String
+          case .gemini:
+            system = ((body["system_instruction"] as? [String: Any])?["parts"] as? [[String: String]])?.first?["text"]
+          }
+          let actual = try XCTUnwrap(system)
+          XCTAssertTrue(actual.contains(AgentVisualOutputPolicy.imageSearchInstruction))
+          XCTAssertTrue(actual.contains("No external assets, network, forms, or device APIs."))
+          XCTAssertTrue(actual.contains(LanguagePolicySettings.modelLanguageName("zh-CN")))
+          XCTAssertEqual(actual.components(separatedBy: AgentVisualOutputPolicy.imageSearchInstruction).count, 2)
+        }
+      }
+    }
   }
 
   func testAllCloudProvidersAddVisionGuidanceToCustomImageRequestsOnly() throws {
